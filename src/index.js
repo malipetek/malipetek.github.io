@@ -3,7 +3,7 @@ var styles = document.createElement("div");
 //styles.innerHTML = `<link type="text/css" rel="stylesheet" href="./reset.css" />
 //<link type="text/css" rel="stylesheet" href="./style.css" />`;
 document.head.appendChild(styles);
-var view = document.getElementById("view");
+var view_el = document.getElementById("view");
 
 window.EXTMAP = {
   t: "template",
@@ -92,11 +92,11 @@ function parseLinks(container) {
 
 async function renderView(ext, path, prev) {
   if (path == prev) return;
-  if (prev) window.DOMCACHE[prev] = view.childNodes.detach();
+  if (prev) window.DOMCACHE[prev] = view_el.childNodes.detach();
 
   if (window.DOMCACHE[path]) {
     for (var i = 0; i < window.DOMCACHE[path].length; i++) {
-      view.appendChild(window.DOMCACHE[path][i]);
+      view_el.appendChild(window.DOMCACHE[path][i]);
     }
     return 1;
   }
@@ -116,8 +116,8 @@ async function renderView(ext, path, prev) {
     );
   }
 
-  view.innerHTML = responseText.replace(importStatements, "");
-  view.setAttribute("data-currentpath", path);
+  view_el.innerHTML = responseText.replace(importStatements, "");
+  view_el.setAttribute("data-currentpath", path);
   parseLinks(view);
 }
 
