@@ -55,18 +55,19 @@ small {
 }
 
 .df > img + small {
-  display: inline-block;
+  display: block;
   flex: 1;
   white-space: pre-line;
   padding-left: 10px;
   line-height: 1.2rem;
   padding-top: 10px;
-  vertical-align: middle;
   max-width: 100px;
 }
 .df > img {
   flex: 2;
   max-width: 200px;
+  max-height: 190px;
+  height: auto;
 }
 /* main end */
 

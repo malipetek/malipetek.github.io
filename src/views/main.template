@@ -1,6 +1,6 @@
 <h1> Intro </h1>
 <div class="df">
-<img width="200" title="me" src="./src/me.jpg"  alt="picture of the person"/>
+<img width="200" height="190" title="me" src="./src/me.jpg" alt="picture of the person"/>
 <small> This is me and I look better when I don't show teeth when smiling. </small>
 </div>
 <hr>
