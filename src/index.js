@@ -115,8 +115,13 @@ async function renderView(ext, path, prev) {
       })
     );
   }
+  responseText = responseText.replace(importStatements, "");
 
-  view_el.innerHTML = responseText.replace(importStatements, "");
+  if (ext == "md" && window.markdownit) {
+    const md = window.markdownit();
+    responseText = md.render(responseText);
+  }
+  view_el.innerHTML = responseText;
   view_el.setAttribute("data-currentpath", path);
   parseLinks(view_el);
 }
