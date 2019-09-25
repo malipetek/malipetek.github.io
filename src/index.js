@@ -118,7 +118,7 @@ async function renderView(ext, path, prev) {
 
   view_el.innerHTML = responseText.replace(importStatements, "");
   view_el.setAttribute("data-currentpath", path);
-  parseLinks(view);
+  parseLinks(view_el);
 }
 
 parseLinks(document.body);
