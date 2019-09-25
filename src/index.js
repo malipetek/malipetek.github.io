@@ -3,7 +3,7 @@ var styles = document.createElement("div");
 //styles.innerHTML = `<link type="text/css" rel="stylesheet" href="./reset.css" />
 //<link type="text/css" rel="stylesheet" href="./style.css" />`;
 document.head.appendChild(styles);
-window.view_el = document.getElementById("view");
+const view_el = document.getElementById("view");
 
 window.EXTMAP = {
   t: "template",
