@@ -101,7 +101,7 @@ async function renderView(ext, path, prev) {
     return 1;
   }
   const response = await fetch(`/src/views${path}.${window.EXTMAP[ext]}`);
-  const responseText = await response.text();
+  let responseText = await response.text();
   var importStatements = new RegExp('\\s*import\\s*"[^"]+"', "gi");
   var _imports = responseText.match(importStatements);
   if (_imports) {
