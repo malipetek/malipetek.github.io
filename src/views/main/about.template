@@ -1,0 +1,9 @@
+<h1> About me </h1>
+ <p> 
+ I am a self taught JS developer. Started when jQuery was a thing. 
+ I like to explore VanillaJS and I just love Web Components.
+ Not a React expert, but I can write React. Why not. I used Vue in few places. Its progressive/approachable nature is useful.
+</p>
+<div><a class="btn" href="https://www.github.com/malipetek/repositories" target="_blank"> Github Profile </a> </div>
+<div><a class="btn" href="https://codepen.io/malipetek" target="_blank"> Codepen Profile </a> </div>
+<div><a class="btn" href="https://www.linkedin.com/in/malipetek/" target="_blank"> Linkedin Profile </a> </div>

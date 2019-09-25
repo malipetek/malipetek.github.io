@@ -1,0 +1,146 @@
+* {
+  box-sizing: border-box;
+  line-height: 1.2;
+  font-family: "Roboto Condensed", sans-serif;
+}
+body {
+  font-family: "Roboto Condensed", sans-serif;
+  background-color: #333;
+  color: #ddd;
+  line-height: 1.2rem;
+}
+header {
+  background-color: #ffffff05;
+  display: flex;
+  align-content: center;
+}
+header {
+  display: flex;
+  align-content: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+a {
+  text-decoration: none;
+}
+.btn {
+  display: block;
+  border: 1px solid currentColor;
+  padding: 10px;
+  margin: 20px 5px;
+  color: currentColor;
+  border-radius: 5px;
+  box-shadow: 0 0 0 0 #cccccc20;
+  transition: box-shadow 0.1s ease-in-out;
+  text-transform: capitalize;
+}
+.btn.external {
+  background-color: #006064;
+}
+.btn:hover {
+  box-shadow: 0 0 5px 0 #cccccc40, 0 0 10px 0 #cccccc20, 0 0 15px 0 #cccccc10;
+}
+
+#view {
+  padding: 10px;
+  color: #ddd;
+}
+.df {
+  display: flex;
+}
+/* main */
+small {
+  font-size: 1rem;
+  font-style: italic;
+}
+
+.df > img + small {
+  display: inline-block;
+  flex: 1;
+  white-space: pre-line;
+  padding-left: 10px;
+  line-height: 1.2rem;
+  padding-top: 10px;
+  vertical-align: middle;
+  max-width: 100px;
+}
+.df > img {
+  flex: 2;
+  max-width: 200px;
+}
+/* main end */
+
+/* contact */
+input,
+textarea,
+select,
+input:-internal-autofill-selected {
+  padding: 5px 10px;
+  margin: 10px;
+  border-radius: 6px;
+  background-color: #555;
+  -webkit-appearance: none;
+  border-style: solid;
+  border: 2px solid #777;
+  color: #ddd;
+}
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #ccc;
+  -webkit-box-shadow: 0 0 0px 1000px #000 inset;
+  -webkit-box-shadow: 0 0 0px 1000px #777 inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+textarea {
+  padding: 10px 5px;
+}
+textarea:focus,
+input:focus,
+select:focus {
+  border: 2px solid cornflowerblue;
+}
+.form-element > * {
+  width: 100%;
+}
+.form-element {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+button {
+  -webkit-appearance: none;
+  border: none;
+  border-radius: 6px;
+  padding: 10px;
+  margin: 10px;
+  font-size: large;
+  background-color: #222;
+  color: #ddd;
+}
+/* contact end */
+/* grocery */
+.gallery {
+  display: flex;
+  flex-wrap: wrap;
+}
+.gallery > * {
+  min-width: 150px;
+  width: 30%;
+  height: 30%;
+}
+.gallery > * > a {
+  padding-top: 2.5em;
+  padding-bottom: 2.5em;
+  text-align: center;
+}
+/* grocery end */
+/* hire */
+select {
+  -webkit-appearance: none;
+  padding: 10px;
+}
+/* hire end */
