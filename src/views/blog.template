@@ -1,4 +1,4 @@
 import "https://cdnjs.cloudflare.com/ajax/libs/markdown-it/10.0.0/markdown-it.min.js"
 
-<h1> Imported JS when loading content. </h1>
-<div><a class="btn" href="md_1" target="_blank"> blog 1 </a> </div>
+<h1> Blog Posts </h1>
+<div><a class="btn" href="md_1" target="_blank"> How to History API </a> </div>

@@ -41,10 +41,11 @@ window.view = {
       : `${window.location.origin}/${url.replace("//", "/")}`;
     url = new URL(url);
     var path = url.pathname;
-    window.history.pushState(null, path[0].toUpperCase() + path.slice(1), url);
-    console.log("setting curent path", url.pathname, ext);
-    renderView(ext, url.pathname, this._current);
-    this._current = url.pathname;
+    if (path === this._current) return 1;
+    window.history.pushState(path, path[0].toUpperCase() + path.slice(1), url);
+    console.log("setting curent path", path, ext);
+    renderView(ext, path, this._current);
+    this._current = path;
   }
 };
 
@@ -125,6 +126,10 @@ async function renderView(ext, path, prev) {
   view_el.setAttribute("data-currentpath", path);
   parseLinks(view_el);
 }
+
+window.addEventListener("popstate", function(event) {
+  window.view.current = window.location.pathname.replace(/^\/|\/$/g, "");
+});
 
 parseLinks(document.body);
 window.view.current =

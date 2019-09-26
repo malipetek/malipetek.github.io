@@ -1,9 +1,6 @@
 <h2> Pick some project to learn more about it. </h2>
   <div class="gallery">
 	  <div><a class="btn" href="t_caps_ninja" > caps.ninja </a></div>
-	  <div><a class="btn" href="t_caps_ninja" > caps.ninja </a></div>
-	  <div><a class="btn" href="t_caps_ninja" > caps.ninja </a></div>
-	  <div><a class="btn" href="t_caps_ninja" > caps.ninja </a></div>
-	  <div><a class="btn" href="t_caps_ninja" > caps.ninja </a></div>
-	  <div><a class="btn" href="t_caps_ninja" > caps.ninja </a></div>
+	  <div><a class="btn" href="t_box_div" > Web Component: Box-Div </a></div>
+	  
   </div> 
