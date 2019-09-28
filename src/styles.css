@@ -3,6 +3,16 @@
   line-height: 1.2;
   font-family: "Roboto Condensed", sans-serif;
 }
+img {
+  max-width: 90%;
+}
+code {
+  font-family: monospace;
+  background-color: #555;
+}
+pre code {
+  background-color: inherit;
+}
 body {
   font-family: "Roboto Condensed", sans-serif;
   background-color: #333;
