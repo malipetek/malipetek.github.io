@@ -2,9 +2,11 @@ window.srequire = async function(url) {
   const relative = /^https?:\/\//i;
   const isRelative = !relative.test(url);
   url = isRelative ? `${window.location.origin}/${url}` : url;
+  url = url.test(/src\//) ? `./src${url.replace(".", "")}` : url;
+  console.log(url);
   const response = await fetch(url);
   let js = await response.text();
-  console.log(url, js);
+
   // we store globals to detect additions later
   var keys = Object.keys(window).slice();
 
