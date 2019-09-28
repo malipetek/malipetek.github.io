@@ -1,8 +1,8 @@
 window.srequire = async function(url) {
   const relative = /^https?:\/\//i;
   const isRelative = !relative.test(url);
-  url = isRelative ? `${window.location.origin}/${url}` : url;
   url = /src\//.test(url) ? `./src${url.replace(".", "")}` : url;
+  url = isRelative ? `${window.location.origin}/${url}` : url;
   console.log(url);
   const response = await fetch(url);
   let js = await response.text();
