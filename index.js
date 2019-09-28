@@ -38,4 +38,4 @@ window.require =
     ? require
     : window.srequire;
 
-require("./main.js");
+require("./src/main.js");
