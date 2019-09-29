@@ -68,7 +68,7 @@
       return 1;
     }
     const response = await window.srequire(
-      `/src/views${path}.${window.EXTMAP[ext]}`
+      `/static/views${path}.${window.EXTMAP[ext]}`
     );
 
     var importStatements = new RegExp('\\s*import\\s*"[^"]+"', "gi");
