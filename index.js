@@ -5,16 +5,13 @@ function evalGlobal(js) {
   // execute and have funtion in global
   eval.call(window, js);
 
-  // execute declared function and capture exports
-  var _exports = window[functionid]();
-
   // we find additions to global
   var new_keys = Object.keys(window).slice();
   var dif_keys = new_keys.filter(k => keys.indexOf(k) == -1);
 
-  if (_exports && dif_keys.length) {
+  if (dif_keys.length) {
     // we have both global additions and module export
-    var result = { default: _exports };
+    var result = {};
     for (var key in dif_keys) {
       result[key] = window[key];
     }
