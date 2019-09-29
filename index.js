@@ -41,6 +41,7 @@ window.srequire = async function(url) {
       return response;
       break;
     case ".md":
+      return response;
       break;
   }
 };

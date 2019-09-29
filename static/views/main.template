@@ -14,6 +14,6 @@ To learn more about me you can check "about" section.
 <div><a class="btn" href="t_about"> about </a></div>
 <p> This page is created on Codesandbox, you can fork and edit this page: </p>
 <div><a href="https://codesandbox.io/s/githubio-lq5q2?fontsize=14" class="btn">
-  <img alt="Edit github.io" src="./src/sandbox.svg">
+  <img alt="Edit github.io" src="./static/sandbox.svg">
 </a></div>
 </p>
