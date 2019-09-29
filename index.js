@@ -36,13 +36,12 @@ window.srequire = async function(url) {
   switch (ext) {
     case ".module":
       return evalGlobal(response);
-      break;
     case ".template":
       return response;
-      break;
     case ".md":
       return response;
-      break;
+    default:
+      return response;
   }
 };
 window.require =
