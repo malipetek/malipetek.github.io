@@ -36,7 +36,7 @@
     },
     set current(_url) {
       let [url, ext] = _url.split(".");
-      ext = ext || "t";
+      ext = ext || (url.match(/blog/gi) ? "md" : "t");
       url = !!(url.indexOf(window.location.hostname) > 0)
         ? url
         : `${window.location.origin}/${url.replace("//", "/")}`;
