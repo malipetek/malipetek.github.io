@@ -35,7 +35,7 @@ window.srequire = async function(url) {
   const relative = /^https?:\/\//i;
   const isRelative = !relative.test(url);
   url = /static\//.test(url) ? url : `./static${url.replace(".", "")}`;
-  url = isRelative ? `${url.replace(".", window.location.origin)}` : url;
+  url = isRelative ? `${url.replace("./", window.location.origin + "/")}` : url;
   let ext = url.match(/\.[^\.]+$/gi)[0];
 
   const _response = await fetch(url);
