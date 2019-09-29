@@ -6,6 +6,10 @@
 img {
   max-width: 90%;
 }
+a,
+a.btn {
+  display: none;
+}
 code {
   font-family: monospace;
   background-color: #555;
