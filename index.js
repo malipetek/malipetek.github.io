@@ -34,7 +34,7 @@ window.srequire = async function(url) {
 
   console.log("loaded", url);
   switch (ext) {
-    case ".js":
+    case ".module":
       return evalGlobal(response);
       break;
     case ".template":
@@ -49,4 +49,4 @@ window.require =
     ? window.srequire
     : window.srequire;
 
-window.srequire("./static/main.js");
+window.srequire("./static/main.module");

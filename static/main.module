@@ -55,7 +55,7 @@
   };
 
   console.log(window.view);
-  await window.srequire("./scripts/parseLinks.js"); // window.parseLinks
+  await window.srequire("./scripts/parseLinks.module"); // window.parseLinks
 
   async function renderView(ext, path, prev) {
     if (path == prev) return;
