@@ -55,7 +55,7 @@
   };
 
   console.log(window.view);
-  await window.srequire("./scripts/parseLinks.module"); // window.parseLinks
+  await window.require("./scripts/parseLinks.module"); // window.parseLinks
 
   async function renderView(ext, path, prev) {
     if (path == prev) return;
@@ -67,7 +67,7 @@
       }
       return 1;
     }
-    let response = await window.srequire(
+    let response = await window.require(
       `/static/views${path}.${window.EXTMAP[ext]}`
     );
 

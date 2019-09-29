@@ -1,6 +1,6 @@
 <h1> Intro </h1>
 <div class="df">
-<img width="200" height="190" title="me" src="./static/me.webp" alt="picture of the person"/>
+<img width="200" height="190" title="me" src="./static/images/me.webp" alt="picture of the person"/>
 <small> This is me and I look better when I don't show teeth when smiling. </small>
 </div>
 <hr>
@@ -14,6 +14,6 @@ To learn more about me you can check "about" section.
 <div><a class="btn" href="t_about"> about </a></div>
 <p> This page is created on Codesandbox, you can fork and edit this page: </p>
 <div><a href="https://codesandbox.io/s/githubio-lq5q2?fontsize=14" class="btn">
-  <img alt="Edit github.io" src="./static/sandbox.svg">
+  <img alt="Edit github.io" src="./static/images/sandbox.svg">
 </a></div>
 </p>

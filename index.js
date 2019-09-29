@@ -22,7 +22,7 @@ window.evalGlobal = evalGlobal;
 
 window.GLOB_SCRIPT_CACHE = {};
 
-window.srequire = async function(url) {
+window.require = async function(url) {
   const relative = /^https?:\/\//i;
   const isRelative = !relative.test(url);
   url = /static\//.test(url) ? url : `./static${url.replace(".", "")}`;
@@ -44,9 +44,5 @@ window.srequire = async function(url) {
       return response;
   }
 };
-window.require =
-  window.location.origin !== "https://malipetek.github.io"
-    ? window.srequire
-    : window.srequire;
 
-window.srequire("./static/main.module");
+window.require("./static/main.module");
