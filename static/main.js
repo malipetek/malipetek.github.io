@@ -67,7 +67,7 @@
       }
       return 1;
     }
-    const response = await window.srequire(
+    let response = await window.srequire(
       `/static/views${path}.${window.EXTMAP[ext]}`
     );
 
