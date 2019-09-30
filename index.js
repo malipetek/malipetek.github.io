@@ -20,29 +20,64 @@ function evalGlobal(js) {
 }
 window.evalGlobal = evalGlobal;
 
-window.GLOB_SCRIPT_CACHE = {};
+window.RENDER = {};
+
+window.MODULE_REGISTRY = {};
+window.RELATIVE = new RegExp(window.location.hostname, "i");
 
 window.require = async function(url) {
-  const relative = /^https?:\/\//i;
-  const isRelative = !relative.test(url);
-  url = /static\//.test(url) ? url : `./static${url.replace(".", "")}`;
-  url = isRelative ? `${url.replace("./", window.location.origin + "/")}` : url;
-  let ext = url.match(/\.[^\.]+$/gi)[0];
+  try {
+    url = new URL(url);
+  } catch (err) {
+    url = new URL(`${url.replace(/^\.*\//, window.location.origin + "/")}`);
+  }
+  const isRelative = window.RELATIVE.test(url.href);
 
-  const _response = await fetch(url);
-  const response = await _response.text();
+  url.pathname =
+    isRelative && !/static\//.test(url.pathname)
+      ? `../static/${url.pathname}`
+      : url.pathname;
 
-  console.log("loaded", url);
+  let ext = url.pathname.match(/\.[^\.]+$/gi)[0];
+
+  if (
+    (ext == ".js" || ext == ".renderer" || ext == ".module") &&
+    (window.MODULE_REGISTRY[url.href] &&
+      window.MODULE_REGISTRY[url.href]["loaded"])
+  ) {
+    return console.log("script already loaded");
+  } else {
+    console.log("loading resource", url.href);
+  }
+
+  let _response;
+  let response;
+  try {
+    _response = await fetch(url);
+    response = await _response.text();
+  } catch (err) {
+    throw new Error("script could not be loaded ", err);
+  }
+
   switch (ext) {
-    case ".module":
-      return evalGlobal(response);
     case ".template":
       return response;
     case ".md":
       return response;
+    case ".js":
+    case ".module":
+    case ".renderer":
+      window.MODULE_REGISTRY[url.href] = { loaded: true };
+      try {
+        window.evalGlobal(response);
+      } catch (err) {
+        throw new Error("Could not executre script " + url.href, err);
+      }
+      window.MODULE_REGISTRY[url]["excuted"] = true;
+      break;
     default:
       return response;
   }
 };
 
-window.require("./static/main.module");
+window.require("../static/main.module");

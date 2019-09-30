@@ -6,16 +6,6 @@
 (async () => {
   const view_el = document.getElementById("view");
 
-  window.EXTMAP = {
-    t: "template",
-    temp: "template",
-    md: "md"
-  };
-  window.internal_url_reg = new RegExp(
-    `((${Object.keys(window.EXTMAP).join(")|(")}))_`,
-    "gi"
-  );
-
   window.DOMCACHE = {};
   Object.defineProperty(NodeList.prototype, "detach", {
     value: function() {
@@ -30,13 +20,36 @@
     }
   });
   window.view = {
+    _extmap: {
+       // root is views
+        ext: 'template',
+        blog: {
+          ext: 'md'
+        },
+        scripts: {
+          ext: 'module'
+        },
+        styles: { ext: 'css' },
+    },
+    get ext(){
+      var ext_found = this._extmap.ext;
+      var path = this.current.split('/').filter(Boolean);
+      path.pop();
+      path.forEach(step => {
+        ext_found = (this._extmap[step] && this._extmap[step].ext) ? this._extmap[step].ext : ext_found;
+      });
+      return ext_found;
+    },
+    set ext(value){
+      console.warn('ext is read only');
+    },
     _current: "",
     get current() {
       return this._current;
     },
     set current(_url) {
-      let [url, ext] = _url.split(".");
-      ext = ext || (url.match(/blog/gi) ? "md" : "t");
+      let url = _url;
+      
       url = !!(url.indexOf(window.location.hostname) > 0)
         ? url
         : `${window.location.origin}/${url.replace("//", "/")}`;
@@ -48,14 +61,16 @@
         path[0].toUpperCase() + path.slice(1),
         url
       );
-      console.log("setting curent path", path, ext);
-      renderView(ext, path, this._current);
+      this._was = this._current;
       this._current = path;
+      ext = this.ext;
+      renderView(ext, path, this._was);
     }
   };
 
   console.log(window.view);
-  await window.require("./scripts/parseLinks.module"); // window.parseLinks
+
+  await window.require("../scripts/parseLinks.module"); // window.parseLinks
 
   async function renderView(ext, path, prev) {
     if (path == prev) return;
@@ -68,53 +83,12 @@
       return 1;
     }
     let response = await window.require(
-      `/static/views${path}.${window.EXTMAP[ext]}`
+      `/static/views${path}.${ext}`
     );
+    
+    await window.require(`../static/renderers/${ext}.renderer`);
 
-    var importStatements = new RegExp('\\s*import\\s*"[^"]+"', "gi");
-    var _imports = response.match(importStatements);
-    if (_imports) {
-      const loaded = await Promise.all(
-        _imports.map(async statement => {
-          var url = statement.match(/".+"/)[0].replace(/"/g, "");
-          const resp = await fetch(url);
-          const js = await resp.text();
-          return js;
-        })
-      );
-      loaded.forEach(js => {
-        console.log(window.evalGlobal.call(window, js));
-      });
-    }
-    response = response.replace(importStatements, "");
-
-    if (ext == "md" && window.markdownit) {
-      if (window.hljs) {
-        window.md = window.markdownit({
-          highlight: function(str, lang) {
-            if (lang && window.hljs.getLanguage(lang)) {
-              try {
-                return (
-                  '<pre class="hljs"><code>' +
-                  window.hljs.highlight(lang, str, true).value +
-                  "</code></pre>"
-                );
-              } catch (__) {}
-            }
-
-            return (
-              '<pre class="hljs"><code>' +
-              window.md.utils.escapeHtml(str) +
-              "</code></pre>"
-            );
-          }
-        });
-      } else {
-        window.md = window.markdownit();
-      }
-      response = window.md.render(response);
-    }
-    view_el.innerHTML = response;
+    view_el.innerHTML = await window.RENDER[ext](response);
     view_el.setAttribute("data-currentpath", path);
     window.parseLinks(view_el);
   }

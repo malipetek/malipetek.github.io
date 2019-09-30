@@ -1,0 +1,3 @@
+window.RENDER['template'] = function(responseText) {
+    return responseText;
+  }

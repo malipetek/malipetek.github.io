@@ -1,5 +1,2 @@
-import "https://cdnjs.cloudflare.com/ajax/libs/markdown-it/10.0.0/markdown-it.min.js"
-import "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.15.10/highlight.min.js"
-import "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.15.10/languages/javascript.min.js"
 <h1> Blog Posts </h1>
-<div><a class="btn" href="md_1" target="_blank"> How to History API </a> </div>
+<div><a class="btn" href="blog/1" target="_blank"> How to History API </a> </div>
