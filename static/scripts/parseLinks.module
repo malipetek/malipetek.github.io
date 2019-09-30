@@ -7,7 +7,6 @@ window.parseLinks = function(container) {
   Array.prototype.forEach.call(
     Array.prototype.filter.call(links, el => {
       var internal = window.RELATIVE.test(el.href);
-      console.log('internal', el.href, internal)
       if (!internal) el.classList.add("external");
       el.style.display = "block";
       return internal;

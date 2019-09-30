@@ -8,16 +8,26 @@ window.RENDER['md'] = async function(responseText) {
     await window.require(
       "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.15.10/languages/javascript.min.js"
     );
+    await window.require(
+      "../static/scripts/clipboard.module"
+    );
+    
     if (window.markdownit) {
       if (window.hljs) {
+        var copyButton = `<div class="copy-btn clearfix" title="copy" onclick="
+        var code = event.currentTarget.nextElementSibling.getElementsByTagName('code')[0];
+        window.CBoard.copy(code.textContent);
+        code.style.textShadow = '0 0 5px #fff';
+        setTimeout(() => code.style.textShadow = '0 0 0 #fff',300)">
+         <img src="../static/images/copy.svg" />
+    </div>`;
         window.md = window.markdownit({
           highlight: function(str, lang) {
             if (lang && window.hljs.getLanguage(lang)) {
               try {
-                return (
-                  '<pre class="hljs"><code>' +
-                  window.hljs.highlight(lang, str, true).value +
-                  "</code></pre>"
+                var code = window.hljs.highlight(lang, str, true).value;
+                return (`${copyButton}
+                  <pre class="hljs"><code>${code}</code></pre>`
                 );
               } catch (__) {}
             }

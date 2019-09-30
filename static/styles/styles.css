@@ -159,3 +159,23 @@ select {
   padding: 10px;
 }
 /* hire end */
+.language-js {
+  position: relative;
+}
+.clearfix:after {
+  content: " "; /* Older browser do not support empty content */
+  visibility: hidden;
+  display: block;
+  height: 0;
+  clear: both;
+}
+
+.copy-btn {
+  display: inline-flex;
+  width: 100%;
+  float: left;
+  justify-content: flex-end;
+}
+code {
+  transition: all 0.3s cubic-bezier(0.99, 0, 1, 0.25);
+}
