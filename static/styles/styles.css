@@ -59,6 +59,9 @@ a {
 #view {
   padding: 10px;
   color: #ddd;
+  padding: 0 3vmin;
+  max-width: 800px;
+  margin: auto;
 }
 .df {
   display: flex;
@@ -179,4 +182,10 @@ select {
 }
 code {
   transition: all 0.3s cubic-bezier(0.99, 0, 1, 0.25);
+}
+
+iframe {
+  width: 100%;
+  height: auto;
+  height: -webkit-fill-available;
 }

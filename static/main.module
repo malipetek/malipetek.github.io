@@ -32,12 +32,18 @@
         styles: { ext: 'css' },
     },
     get ext(){
+      var isExternal = /external:/.test(this.current);
       var ext_found = this._extmap.ext;
-      var path = this.current.split('/').filter(Boolean);
-      path.pop();
-      path.forEach(step => {
-        ext_found = (this._extmap[step] && this._extmap[step].ext) ? this._extmap[step].ext : ext_found;
-      });
+      if(isExternal) {
+        ext_found = (this.current.match(/\.[^.]+$/) || ['noextension'])[0];
+      }else{
+        // regular case
+        var path = this.current.split('/').filter(Boolean);
+        path.pop();
+        path.forEach(step => {
+          ext_found = (this._extmap[step] && this._extmap[step].ext) ? this._extmap[step].ext : ext_found;
+        });
+      }
       return ext_found;
     },
     set ext(value){
@@ -49,8 +55,8 @@
     },
     set current(_url) {
       let url = _url;
-      
-      url = !!(url.indexOf(window.location.hostname) > 0)
+     
+      url = !!(url.indexOf(window.location.hostname) > 0) // is internal
         ? url
         : `${window.location.origin}/${url.replace("//", "/")}`;
       url = new URL(url);
@@ -82,9 +88,19 @@
       }
       return 1;
     }
-    let response = await window.require(
-      `/static/views${path}.${ext}`
-    );
+    let response;
+    var isExternal = /external:/.test(path);
+    if(isExternal) {    
+      response = await window.require(
+        `${path}`
+      );
+    }else{
+      response = await window.require(
+        `/static/views${path}.${ext}`
+      );
+    }
+
+    ext = ext.replace('.', '');
     
     await window.require(`../static/renderers/${ext}.renderer`);
 

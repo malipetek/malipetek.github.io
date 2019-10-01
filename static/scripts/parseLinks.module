@@ -1,24 +1,24 @@
 window.parseLinks = function(container) {
-  var parentPath = "";
-  if (container.getAttribute("data-currentpath")) {
-    parentPath = container.getAttribute("data-currentpath").replace("/", "");
-  }
+
   var links = container.getElementsByTagName("a");
   Array.prototype.forEach.call(
     Array.prototype.filter.call(links, el => {
-      var internal = window.RELATIVE.test(el.href);
-      if (!internal) el.classList.add("external");
+      var internal = window.RELATIVE.test(el.href) || el.getAttribute('data-force') == 'internal';
+      if (!internal) {
+        el.classList.add("external");
+        el.target = '_blank';
+        }
       el.style.display = "block";
       return internal;
     }),
     el => {
-      if (parentPath) {
-        el.setAttribute("data-parent-path", parentPath);
-      }
+    
       el.addEventListener("click", e => {
-        if (window.RELATIVE.test(e.currentTarget.href)) {
+        var forceInternal = el.getAttribute('data-force') == 'internal';
+        if (window.RELATIVE.test(e.currentTarget.href) || forceInternal) {
           e.preventDefault();
           var virtualPath = e.currentTarget.href;
+         virtualPath = forceInternal ? e.currentTarget.href.replace(/(http)s?:\/*/, 'external:') : virtualPath;
 
           window.view.current = virtualPath;
           return !!0;

@@ -27,7 +27,12 @@ window.RELATIVE = new RegExp(window.location.hostname, "i");
 
 window.require = async function(url) {
   try {
-    url = new URL(url);
+    var isExternal = /external:/.test(url);
+    if (isExternal) {
+      url = new URL(url.replace("/external:", "https://"));
+    } else {
+      url = new URL(url);
+    }
   } catch (err) {
     url = new URL(`${url.replace(/^\.*\//, window.location.origin + "/")}`);
   }
