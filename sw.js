@@ -9,10 +9,12 @@ self.addEventListener("install", async event => {
 
 self.addEventListener("fetch", async event => {
   const response = await fetch(event.request);
+  console.log("response", response);
   if (response.ok) {
+    event.respondWith(response);
   } else {
     const MAINPAGECACHE = caches.match("/");
-    console.log(response, MAINPAGECACHE);
+    console.log("response and cache", response, MAINPAGECACHE);
     event.respondWith(MAINPAGECACHE.redirect(response.url, 200));
   }
 });
