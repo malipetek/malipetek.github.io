@@ -13,12 +13,9 @@ self.addEventListener("fetch", async event => {
   if (response.ok) {
     event.respondWith(response);
   } else {
-    const MAINPAGECACHE = caches.match("/");
+    const MAINPAGECACHE = await caches.match("/");
     if (MAINPAGECACHE) {
-      console.log("response and cache", response, MAINPAGECACHE);
-      event.respondWith(
-        new Response(MAINPAGECACHE.body, { status: 200, statusText: "OK" })
-      );
+      event.respondWith(MAINPAGECACHE);
     } else {
       event.responseWith(response);
     }
