@@ -14,7 +14,13 @@ self.addEventListener("fetch", async event => {
     event.respondWith(response);
   } else {
     const MAINPAGECACHE = caches.match("/");
-    console.log("response and cache", response, MAINPAGECACHE);
-    event.respondWith(MAINPAGECACHE.redirect(response.url, 200));
+    if (MAINPAGECACHE) {
+      console.log("response and cache", response, MAINPAGECACHE);
+      event.respondWith(
+        new Response(MAINPAGECACHE.body, { status: 200, statusText: "OK" })
+      );
+    } else {
+      event.responseWith(response);
+    }
   }
 });
