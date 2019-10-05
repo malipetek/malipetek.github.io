@@ -11,7 +11,7 @@ self.addEventListener("fetch", async event => {
   const response = await fetch(event.request);
   if (response.ok) {
   } else {
-    const MAINPAGECACHE = caches.match(new URL("/"));
+    const MAINPAGECACHE = caches.match("/");
     console.log(response, MAINPAGECACHE);
     event.redirect(response.url, 200).respondWith(MAINPAGECACHE);
   }
