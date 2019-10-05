@@ -8,6 +8,9 @@ self.addEventListener("install", async event => {
 });
 
 self.addEventListener("fetch", async event => {
-  console.log(event);
-  event.respondWith(caches.match());
+  const response = await fetch(event.request);
+  if (response.ok) {
+  } else {
+    event.respondWith(caches.match(new URL("/")));
+  }
 });
