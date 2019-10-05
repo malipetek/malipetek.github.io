@@ -73,9 +73,6 @@
       renderView(ext, path, this._was);
     }
   };
-
-  console.log(window.view);
-
   await window.require("../scripts/parseLinks.module"); // window.parseLinks
 
   async function renderView(ext, path, prev) {
