@@ -13,6 +13,6 @@ self.addEventListener("fetch", async event => {
   } else {
     const MAINPAGECACHE = caches.match(new URL("/"));
     console.log(response, MAINPAGECACHE);
-    event.respondWith();
+    event.respondWith(MAINPAGECACHE);
   }
 });
