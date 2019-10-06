@@ -16,35 +16,27 @@ self.addEventListener("fetch", event => {
   // lets make it wait
   console.log("fetch event", event.request.url);
   event.waitUntil(
-    (async () => {
-      const response = await fetch(event.request);
-      console.log("response", response);
-      if (response.ok) {
-        return event.respondWith(response);
-      } else {
-        const MAINPAGECACHE = await caches.match("/");
-        if (MAINPAGECACHE) {
-          return event.respondWith(
-            (async => {
-              var init = {
-                status: 200,
-                statusText: "OK",
-                headers: { "X-Foo": "My Custom Header" }
-              };
+    fetch(event.request).then(response => {
+      event.waitUntil(
+        caches.match("/").then(cache => {
+          if (!cache) {
+            return event.request.redirect("/");
+          }
+          var init = {
+            status: 200,
+            statusText: "OK",
+            headers: {}
+          };
 
-              response.headers.forEach(function(v, k) {
-                init.headers[k] = v;
-              });
+          response.headers.forEach(function(v, k) {
+            init.headers[k] = v;
+          });
 
-              return MAINPAGECACHE.text().then(function(body) {
-                return new Response(body, init);
-              });
-            })()
-          );
-        } else {
-          return event.respondWith(response);
-        }
-      }
-    })()
+          return cache.text().then(function(body) {
+            return new Response(body, init);
+          });
+        })
+      );
+    })
   );
 });
