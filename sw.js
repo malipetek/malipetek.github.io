@@ -19,8 +19,7 @@ self.addEventListener("fetch", async event => {
   } else {
     const MAINPAGECACHE = await caches.match("/");
     if (MAINPAGECACHE) {
-      console.log("response from cache", MAINPAGECACHE.bodyUsed);
-      event.respondWith(MAINPAGECACHE);
+      event.respondWith(MAINPAGECACHE.clone());
     } else {
       event.respondWith(response);
     }
