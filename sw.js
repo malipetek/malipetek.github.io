@@ -12,31 +12,27 @@ self.addEventListener("install", event => {
   );
 });
 
-self.addEventListener("fetch", event => {
-  // lets make it wait
-  console.log("fetch event", event.request.url);
-  event.waitUntil(
-    caches.match("/").then(cache => {
-      event.respondWith(
-        fetch(event.request).then(response => {
-          if (!cache) {
-            return event.request.redirect("/");
+self.addEventListener("fetch", function(event) {
+  console.log("Handling fetch event for", event.request.url);
+
+  event.respondWith(
+    caches.match("/").then(function(mainpagecache) {
+      return fetch(event.request)
+        .then(function(response) {
+          if (mainpagecache && !response.ok) {
+            console.log("mainpagecache found in cache:", mainpagecache);
+
+            return mainpagecache;
           }
-          var init = {
-            status: 200,
-            statusText: "OK",
-            headers: {}
-          };
+          console.log("Response from network is:", response);
 
-          response.headers.forEach(function(v, k) {
-            init.headers[k] = v;
-          });
-
-          return cache.text().then(function(body) {
-            return new Response(body, init);
-          });
+          return response;
         })
-      );
+        .catch(function(error) {
+          console.error("Fetching failed:", error);
+
+          throw error;
+        });
     })
   );
 });
