@@ -14,7 +14,7 @@ self.addEventListener("install", event => {
 
 self.addEventListener("fetch", function(event) {
   console.log("Handling fetch event for", event.request);
-
+  if (event.request.destination !== "document") return;
   event.respondWith(
     caches.match("/").then(function(mainpagecache) {
       return fetch(event.request)
