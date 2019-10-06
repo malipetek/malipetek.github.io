@@ -24,7 +24,23 @@ self.addEventListener("fetch", event => {
       } else {
         const MAINPAGECACHE = await caches.match("/");
         if (MAINPAGECACHE) {
-          return event.respondWith(MAINPAGECACHE.clone());
+          return event.respondWith(
+            (async => {
+              var init = {
+                status: 200,
+                statusText: "OK",
+                headers: { "X-Foo": "My Custom Header" }
+              };
+
+              response.headers.forEach(function(v, k) {
+                init.headers[k] = v;
+              });
+
+              return MAINPAGECACHE.text().then(function(body) {
+                return new Response(body, init);
+              });
+            })()
+          );
         } else {
           return event.respondWith(response);
         }
