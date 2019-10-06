@@ -11,17 +11,20 @@ self.addEventListener("install", async event => {
   // now we cached main mage
 });
 
-self.addEventListener("fetch", async event => {
-  const response = await fetch(event.request);
-  console.log("response", response);
-  if (response.ok) {
-    event.respondWith(response);
-  } else {
-    const MAINPAGECACHE = await caches.match("/");
-    if (MAINPAGECACHE) {
-      event.respondWith(MAINPAGECACHE.clone());
+self.addEventListener("fetch", event => {
+  // lets make it wait
+  event.waitUntil(async () => {
+    const response = await fetch(event.request);
+    console.log("response", response);
+    if (response.ok) {
+      return event.respondWith(response);
     } else {
-      event.respondWith(response);
+      const MAINPAGECACHE = await caches.match("/");
+      if (MAINPAGECACHE) {
+        return event.respondWith(MAINPAGECACHE.clone());
+      } else {
+        return event.respondWith(response);
+      }
     }
-  }
+  });
 });
