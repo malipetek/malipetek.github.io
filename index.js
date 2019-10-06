@@ -89,10 +89,9 @@
   if ("serviceWorker" in navigator) {
     try {
       await navigator.serviceWorker.register("../sw.js");
-      console.error("Service worker did register ");
+      console.log("Service worker did register ");
     } catch (err) {
       console.error("Service worker did not register ", err);
     }
   }
-  window.require("../static/main.module");
 })();
