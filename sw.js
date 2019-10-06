@@ -15,13 +15,14 @@ self.addEventListener("install", event => {
 self.addEventListener("fetch", event => {
   // lets make it wait
   console.log("fetch event", event.request.url);
-  event.waitUntil(
+  event.respondWith(
     fetch(event.request).then(response => {
       event.waitUntil(
         caches.match("/").then(cache => {
           if (!cache) {
             return event.request.redirect("/");
           }
+
           var init = {
             status: 200,
             statusText: "OK",
