@@ -1,4 +1,7 @@
 <h3> Project: </h3>
 <h1> Caps.ninja </h1>
 
+<div><a class="btn" data-force="external" href="http://capsninja.epizy.com" > Check Feed Page </a></div>
+<div><a class="btn" data-force="external" href="http://capsninja.epizy.com/capsyap" > Check Meme Editor </a></div>
+
 <iframe src="http://capsninja.epizy.com/capsyap"> </iframe>
