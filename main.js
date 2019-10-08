@@ -16,33 +16,36 @@
   });
   window.view = {
     _extmap: {
-       // root is views
-        ext: 'template',
-        blog: {
-          ext: 'md'
-        },
-        scripts: {
-          ext: 'module'
-        },
-        styles: { ext: 'css' },
+      // root is views
+      ext: "template",
+      blog: {
+        ext: "md"
+      },
+      scripts: {
+        ext: "module"
+      },
+      styles: { ext: "css" }
     },
-    get ext(){
+    get ext() {
       var isExternal = /external:/.test(this.current);
       var ext_found = this._extmap.ext;
-      if(isExternal) {
-        ext_found = (this.current.match(/\.[^.]+$/) || ['noextension'])[0];
-      }else{
+      if (isExternal) {
+        ext_found = (this.current.match(/\.[^.]+$/) || ["noextension"])[0];
+      } else {
         // regular case
-        var path = this.current.split('/').filter(Boolean);
+        var path = this.current.split("/").filter(Boolean);
         path.pop();
         path.forEach(step => {
-          ext_found = (this._extmap[step] && this._extmap[step].ext) ? this._extmap[step].ext : ext_found;
+          ext_found =
+            this._extmap[step] && this._extmap[step].ext
+              ? this._extmap[step].ext
+              : ext_found;
         });
       }
       return ext_found;
     },
-    set ext(value){
-      console.warn('ext is read only');
+    set ext(value) {
+      console.warn("ext is read only");
     },
     _current: "",
     get current() {
@@ -50,11 +53,12 @@
     },
     set current(_url) {
       let url = _url;
-     
+
       url = !!(url.indexOf(window.location.hostname) > 0) // is internal
         ? url
         : `${window.location.origin}/${url.replace("//", "/")}`;
       url = new URL(url);
+      console.log("url", url);
       var path = url.pathname;
       if (path === this._current) return 1;
       window.history.pushState(
@@ -62,10 +66,15 @@
         path[0].toUpperCase() + path.slice(1),
         url
       );
+
+      console.log("url", url);
+      console.log("path", path);
+
       this._was = this._current;
       this._current = path;
-      ext = this.ext;
-      renderView(ext, path, this._was);
+      var ext = this.ext;
+      console.log("path", this._current);
+      renderView(ext, this._current, this._was);
     }
   };
   await window.require("../scripts/parseLinks.module"); // window.parseLinks
@@ -82,18 +91,14 @@
     }
     let response;
     var isExternal = /external:/.test(path);
-    if(isExternal) {    
-      response = await window.require(
-        `${path}`
-      );
-    }else{
-      response = await window.require(
-        `/static/views${path}.${ext}`
-      );
+    if (isExternal) {
+      response = await window.require(`${path}`);
+    } else {
+      response = await window.require(`/static/views${path}.${ext}`);
     }
 
-    ext = ext.replace('.', '');
-    
+    ext = ext.replace(".", "");
+
     await window.require(`../static/renderers/${ext}.renderer`);
 
     view_el.innerHTML = await window.RENDER[ext](response);
