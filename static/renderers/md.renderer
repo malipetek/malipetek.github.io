@@ -19,7 +19,7 @@ window.RENDER['md'] = async function(responseText) {
         window.CBoard.copy(code.textContent);
         code.style.textShadow = '0 0 5px #fff';
         setTimeout(() => code.style.textShadow = '0 0 0 #fff',300)">
-         <img src="../static/images/copy.svg" />
+         <img src="/static/images/copy.svg" />
     </div>`;
         window.md = window.markdownit({
           highlight: function(str, lang) {
