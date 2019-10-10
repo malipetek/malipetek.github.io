@@ -27,13 +27,19 @@
   window.RELATIVE = new RegExp(window.location.hostname, "i");
 
   window.require = async function(url) {
+    let ext;
+    const forExtentionReg = new RegExp(":((?!//|:).)+$", "i");
     try {
       var isExternal = /external:/.test(url);
+      var forceExtension = forExtentionReg.test(url);
       if (isExternal) {
-        url = new URL(url.replace("/external:", "https://"));
-      } else {
-        url = new URL(url);
+        url = url.replace("/external:", "https://");
       }
+      if (forceExtension) {
+        ext = url.match(forExtentionReg)[0];
+        url = url.replace(forExtentionReg, "");
+      }
+      url = new URL(url);
     } catch (err) {
       url = new URL(`${url.replace(/^\.*\//, window.location.origin + "/")}`);
     }
@@ -44,7 +50,7 @@
         ? `../static/${url.pathname}`
         : url.pathname;
 
-    let ext = url.pathname.match(/\.[^\.]+$/gi)[0];
+    ext = ext ? ext : url.pathname.match(/\.[^\.]+$/gi)[0];
 
     if (
       (ext == ".js" || ext == ".renderer" || ext == ".module") &&

@@ -1,2 +1,29 @@
 <h1> Blog Posts </h1>
-<div><a class="btn" href="blog/1" target="_blank"> How to History API </a> </div>
+{- // this wrappers indicate this part will be evaluated and result will be rendered
+  // check template.renderer for more details
+  var DRIVE_KEY = 'AIzaSyB0UTQqz-yj7Lw15gQLAY1lD3ijoYYDZVY';
+  var responseHTML = '';
+  var response = await fetch(`https://www.googleapis.com/drive/v3/files?q=%2714vNEj2hEFp4s261EbdDL5ETlPAYU1D3d%27+in+parents&key=${DRIVE_KEY}`);
+  var result = await response.json();
+  var elements = await Promise.all(result.files.map(async file => {
+    var response = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?fields=createdTime%2Cdescription%2CmodifiedTime%2Cname%2CwebContentLink&key=${DRIVE_KEY}`)
+    var blogPost = await response.json();
+    var contentURL = `https://content.googleapis.com/drive/v3/files/${file.id}?alt=media&key=${DRIVE_KEY}`
+    return `<div>
+    <a class="btn" data-force-extension="md" 
+      data-force="internal" 
+      href="${contentURL}" 
+      target="_blank">
+    <h3> ${blogPost.name.replace('.md', '')} </h3>
+    <small> ${blogPost.description || 'No description.'} </small><br>
+    <date style="width: 100%;
+    text-align: right;
+    display: inline-block;">${new Date(blogPost.createdTime).toDateString()}</date>
+    </a>
+    </div>`
+  }));
+  elements.forEach(html => {
+    responseHTML += html;
+  });
+  return responseHTML;
+  -}
