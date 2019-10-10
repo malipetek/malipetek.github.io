@@ -1,3 +1,14 @@
-window.RENDER['template'] = function(responseText) {
+window.RENDER['template'] = async function(responseText) {
+    var dynamic = responseText.match(/{-((?!-})(.|\n|\t|\r))+-}/gi);
+    if(dynamic){
+      await Promise.all(dynamic.map(async match => {
+        var js = match.replace('{-', 'return (async() => {').replace('-}', '})()');
+        var result = new Function(js)();
+        // always will return a Promise
+        result = await result;
+        responseText = responseText.replace(match, result || 'no result');
+        return responseText;
+      }));
+    }
     return responseText;
   }

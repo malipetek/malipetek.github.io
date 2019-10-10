@@ -16,10 +16,13 @@ window.parseLinks = function(container) {
     
       el.addEventListener("click", e => {
         var forceInternal = el.getAttribute('data-force') == 'internal';
+        var forceExtension = el.getAttribute('data-force-extension');
         if (window.RELATIVE.test(e.currentTarget.href) || forceInternal) {
           e.preventDefault();
           var virtualPath = e.currentTarget.href;
-         virtualPath = forceInternal ? e.currentTarget.href.replace(/(http)s?:\/*/, 'external:') : virtualPath;
+
+          virtualPath = forceInternal ? e.currentTarget.href.replace(/(http)s?:\/*/, 'external:') : virtualPath;
+          virtualPath = forceExtension ? virtualPath + ':' + forceExtension : virtualPath;
           window.view.current = virtualPath;
           return !!0;
         } else {

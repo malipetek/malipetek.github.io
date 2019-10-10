@@ -28,20 +28,26 @@
     },
     get ext() {
       var isExternal = /external:/.test(this.current);
+      var forceExtension = /:[^:]+$/.test(this.current);
       var ext_found = this._extmap.ext;
-      if (isExternal) {
-        ext_found = (this.current.match(/\.[^.]+$/) || ["noextension"])[0];
-      } else {
-        // regular case
-        var path = this.current.split("/").filter(Boolean);
-        path.pop();
-        path.forEach(step => {
-          ext_found =
-            this._extmap[step] && this._extmap[step].ext
-              ? this._extmap[step].ext
-              : ext_found;
-        });
+      if (forceExtension) {
+        return (ext_found = this.current.match(/:[^:]+$/)[0]).replace(":", "");
       }
+      if (isExternal) {
+        return (ext_found = (this.current.match(/\.[^.]+$/) || [
+          "noextension"
+        ])[0]);
+      }
+
+      // regular case
+      var path = this.current.split("/").filter(Boolean);
+      path.pop();
+      path.forEach(step => {
+        ext_found =
+          this._extmap[step] && this._extmap[step].ext
+            ? this._extmap[step].ext
+            : ext_found;
+      });
       return ext_found;
     },
     set ext(value) {
@@ -58,8 +64,7 @@
         ? url
         : `${window.location.origin}/${url.replace("//", "/")}`;
       url = new URL(url);
-      console.log("url", url);
-      var path = url.pathname;
+      var path = url.pathname + url.search;
       if (path === this._current) return 1;
       window.history.pushState(
         path,
@@ -67,13 +72,10 @@
         url
       );
 
-      console.log("url", url);
-      console.log("path", path);
-
       this._was = this._current;
       this._current = path;
+
       var ext = this.ext;
-      console.log("path", this._current);
       renderView(ext, this._current, this._was);
     }
   };
@@ -112,5 +114,6 @@
 
   window.parseLinks(document.body);
   window.view.current =
-    window.location.pathname.replace(/^\/|\/$/g, "") || "main";
+    window.location.pathname.replace(/^\/|\/$/g, "") + window.location.search ||
+    "main";
 })();
