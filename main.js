@@ -30,7 +30,6 @@
       var isExternal = /external:/.test(this.current);
       var forceExtension = /:[^:]+$/.test(this.current);
       var ext_found = this._extmap.ext;
-
       if (forceExtension) {
         return (ext_found = this.current.match(/:[^:]+$/)[0]).replace(":", "");
       }

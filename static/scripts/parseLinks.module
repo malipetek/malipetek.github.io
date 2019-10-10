@@ -20,6 +20,7 @@ window.parseLinks = function(container) {
         if (window.RELATIVE.test(e.currentTarget.href) || forceInternal) {
           e.preventDefault();
           var virtualPath = e.currentTarget.href;
+
           virtualPath = forceInternal ? e.currentTarget.href.replace(/(http)s?:\/*/, 'external:') : virtualPath;
           virtualPath = forceExtension ? virtualPath + ':' + forceExtension : virtualPath;
           window.view.current = virtualPath;
