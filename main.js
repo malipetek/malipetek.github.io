@@ -114,7 +114,10 @@
   });
 
   window.parseLinks(document.body);
+  let redirect = sessionStorage.redirect
+    ? new URL(sessionStorage.redirect)
+    : false;
+  let initialPath = redirect || window.location;
   window.view.current =
-    window.location.pathname.replace(/^\/|\/$/g, "") + window.location.search ||
-    "main";
+    initialPath.pathname.replace(/^\/|\/$/g, "") + initialPath.search || "main";
 })();
