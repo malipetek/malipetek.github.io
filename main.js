@@ -510,6 +510,8 @@
     : false;
   let initialPath = redirect || window.location;
 
+  sessionStorage.redirect = "";
+
   if (initialPath.pathname.replace(/^\/|\/$/g, "") != "") {
     window.initialLoad = true;
     view_el.style.display = "none";
