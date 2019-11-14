@@ -373,6 +373,7 @@
       // DON'T EDIT BELOW THIS LINE
       // SHUT UP
       if (this.view.isDisqus) {
+        document.querySelector("#disqus_thread").style.display = "block";
         if (window.DISQUS) {
           window.DISQUS.reset({
             reload: true,
@@ -402,6 +403,8 @@
   }
   async function renderView(ext, path, prev) {
     if (path == prev) return;
+
+    document.querySelector("#disqus_thread").style.display = "none";
 
     await view_el.animateDetach();
     if (prev) window.DOMCACHE[prev] = view_el.childNodes.detach();
