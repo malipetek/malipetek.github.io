@@ -508,9 +508,10 @@
   let redirect = sessionStorage.redirect
     ? new URL(sessionStorage.redirect)
     : false;
-  let initialPath = redirect || window.location;
+  let initialPath = window.location;
 
   if (initialPath.pathname.replace(/^\/|\/$/g, "") != "") {
+    initialPath = redirect || window.location;
     window.initialLoad = true;
     view_el.style.display = "none";
     window.view.current =
