@@ -4,20 +4,22 @@
     var keys = Object.keys(window).slice();
 
     // execute and have funtion in global
-    eval.call(window, js);
+    var evalResult = eval.call(window, js);
 
     // we find additions to global
     var new_keys = Object.keys(window).slice();
     var dif_keys = new_keys.filter(k => keys.indexOf(k) == -1);
 
+    var result = {
+      default: evalResult
+    };
     if (dif_keys.length) {
       // we have both global additions and module export
-      var result = {};
       for (var key in dif_keys) {
         result[key] = window[key];
       }
-      return result;
     }
+    return result;
   }
   window.evalGlobal = evalGlobal;
 
@@ -33,7 +35,7 @@
       var isExternal = /external:/.test(url);
       var forceExtension = forExtentionReg.test(url);
       if (isExternal) {
-        url = url.replace("/external:", "https://");
+        url = url.replace(/\/?external:/, "https://");
       }
       if (forceExtension) {
         ext = url.match(forExtentionReg)[0];
@@ -79,9 +81,13 @@
       case ".js":
       case ".module":
       case ".renderer":
+      case ".mapper":
         window.MODULE_REGISTRY[url.href] = { loaded: true };
         try {
-          window.evalGlobal(response);
+          var result = window.evalGlobal(response);
+          if (result.default && result.default.constructor === Promise) {
+            await result.default;
+          }
         } catch (err) {
           throw new Error("Could not executre script " + url.href, err);
         }

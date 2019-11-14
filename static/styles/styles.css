@@ -23,13 +23,13 @@ body {
   color: #ddd;
   line-height: 1.2rem;
   overflow-x: hidden;
+  position: relative;
 }
 header {
-  background-color: #ffffff05;
+  background-color: #333;
   display: flex;
   align-content: center;
-}
-header {
+  z-index: 2;
   display: flex;
   align-content: center;
   flex-wrap: wrap;
@@ -188,4 +188,69 @@ iframe {
   width: 100%;
   height: auto;
   height: -webkit-fill-available;
+}
+
+/* crazy loading animation */
+:root {
+  --loading-color: #03a9f4;
+}
+.loading-animation {
+  display: none;
+  height: 10px;
+  box-shadow: var(--loading-color) 0px 0px 100px 10px;
+  /*0 0 30px 20px #2196f308, 0 0 10vh 0px var(--loading-color),
+    0 0 20vh 0px var(--loading-color), 0 0 30vh 0px var(--loading-color),
+    0 0 80vh 0px var(--loading-color), 0 0 100vh 0px var(--loading-color);*/
+  width: 40%;
+  z-index: -1;
+  top: 0;
+  animation: loading 0.6s linear infinite, colorchange 10s linear;
+  border-radius: 55%;
+  margin-top: -10px;
+  position: relative;
+}
+
+.loading-animation:nth-child(3) {
+  animation-delay: 0.2s;
+  margin-top: -10px;
+}
+
+.loading-animation:nth-child(4) {
+  animation-delay: 0.4s;
+  margin-top: -10px;
+}
+
+@keyframes loading {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(150vw);
+  }
+}
+
+@keyframes colorchange {
+  0% {
+    --loading-color: #2196f3;
+  }
+  20% {
+    --loading-color: #f44336;
+  }
+  40% {
+    --loading-color: #4caf50;
+  }
+  60% {
+    --loading-color: #cddc39;
+  }
+  80% {
+    --loading-color: #673ab7;
+  }
+}
+
+/* tame disqus container */
+
+#disqus_thread {
+  max-width: 800px;
+  margin: auto;
+  padding: 0 3vmin;
 }

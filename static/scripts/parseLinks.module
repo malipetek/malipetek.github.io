@@ -17,12 +17,26 @@ window.parseLinks = function(container) {
       el.addEventListener("click", e => {
         var forceInternal = el.getAttribute('data-force') == 'internal';
         var forceExtension = el.getAttribute('data-force-extension');
+        var url_map_path = el.getAttribute('data-mapped');
+       
         if (window.RELATIVE.test(e.currentTarget.href) || forceInternal) {
+
           e.preventDefault();
           var virtualPath = e.currentTarget.href;
 
-          virtualPath = forceInternal ? e.currentTarget.href.replace(/(http)s?:\/*/, 'external:') : virtualPath;
-          virtualPath = forceExtension ? virtualPath + ':' + forceExtension : virtualPath;
+          if(url_map_path){
+            virtualPath = e.currentTarget.pathname.replace('/', '');
+            var mappedURL = window.URL_MAPS[url_map_path][virtualPath];
+            //debugger;
+            mappedURL = forceInternal ? mappedURL.replace(/(http)s?:\/*/, 'external:') : mappedURL;
+            mappedURL = forceExtension ? mappedURL + ':' + forceExtension : mappedURL;
+            window.URL_MAPS[url_map_path][virtualPath] = mappedURL;
+            virtualPath = url_map_path + ':' + virtualPath;
+          }else{
+            virtualPath = forceInternal ? e.currentTarget.href.replace(/(http)s?:\/*/, 'external:') : virtualPath;
+            virtualPath = forceExtension ? virtualPath + ':' + forceExtension : virtualPath;
+          }
+         
           window.view.current = virtualPath;
           return !!0;
         } else {

@@ -1,6 +1,7 @@
 <h1> Blog Posts </h1>
 {- // this wrappers indicate this part will be evaluated and result will be rendered
   // check template.renderer for more details
+  window.URL_MAPS['blog'] = window.URL_MAPS['blog'] || {};
   var DRIVE_KEY = 'AIzaSyB0UTQqz-yj7Lw15gQLAY1lD3ijoYYDZVY';
   var responseHTML = '';
   var response = await fetch(`https://www.googleapis.com/drive/v3/files?q=%2714vNEj2hEFp4s261EbdDL5ETlPAYU1D3d%27+in+parents&key=${DRIVE_KEY}`);
@@ -9,10 +10,13 @@
     var response = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?fields=createdTime%2Cdescription%2CmodifiedTime%2Cname%2CwebContentLink&key=${DRIVE_KEY}`)
     var blogPost = await response.json();
     var contentURL = `https://content.googleapis.com/drive/v3/files/${file.id}?alt=media&key=${DRIVE_KEY}`
+    var path = blogPost.name.replace('.md', '').replace(/\s+/gi, '-');
+    window.URL_MAPS['blog'][path] = contentURL;
     return `<div>
     <a class="btn" data-force-extension="md" 
       data-force="internal" 
-      href="${contentURL}" 
+      data-mapped="blog"
+      href="${path}" 
       target="_blank">
     <h3> ${blogPost.name.replace('.md', '')} </h3>
     <small> ${blogPost.description || 'No description.'} </small><br>
