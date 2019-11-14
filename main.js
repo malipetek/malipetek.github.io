@@ -382,6 +382,10 @@
             }
           });
         } else {
+          window.disqus_config = function() {
+            this.page.url = window.location.href;
+            this.page.identifier = window.location.pathname;
+          };
           var d = document,
             s = d.createElement("script");
           s.src = "https://malipetek-github-io.disqus.com/embed.js";
