@@ -406,9 +406,17 @@
 
     document.querySelector("#disqus_thread").style.display = "none";
 
-    await view_el.animateDetach();
-    if (prev) window.DOMCACHE[prev] = view_el.childNodes.detach();
+    if (!window.initialLoad) {
+      await view_el.animateDetach();
+    }
 
+    if (prev || prev === "")
+      window.DOMCACHE[prev || "/"] = view_el.childNodes.detach();
+
+    if (window.initialLoad) {
+      view_el.style.display = "block";
+      window.initialLoad = false;
+    }
     LOADING.start();
 
     if (window.DOMCACHE[path]) {
@@ -440,6 +448,10 @@
 
     let response;
     var isExternal = /external:/.test(path);
+
+    if (path === "/") {
+      path = "/index";
+    }
     if (isExternal) {
       response = await window.require(`${path}`);
     } else {
@@ -492,10 +504,18 @@
   });
 
   window.parseLinks(document.body);
+
   let redirect = sessionStorage.redirect
     ? new URL(sessionStorage.redirect)
     : false;
   let initialPath = redirect || window.location;
-  window.view.current =
-    initialPath.pathname.replace(/^\/|\/$/g, "") + initialPath.search || "main";
+
+  if (initialPath.pathname.replace(/^\/|\/$/g, "") != "") {
+    window.initialLoad = true;
+    view_el.style.display = "none";
+    window.view.current =
+      initialPath.pathname.replace(/^\/|\/$/g, "") + initialPath.search || "";
+  } else {
+    view_el.style.display = "block";
+  }
 })();
