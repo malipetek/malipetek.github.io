@@ -11,12 +11,12 @@
     var blogPost = await response.json();
     var contentURL = `https://content.googleapis.com/drive/v3/files/${file.id}?alt=media&key=${DRIVE_KEY}`
     var path = blogPost.name.replace('.md', '').replace(/\s+/gi, '-');
-    window.URL_MAPS['blog'][path] = contentURL;
+    window.URL_MAPS['blog'][`blog:${path}`] = contentURL;
     return `<div>
     <a class="btn" data-force-extension="md" 
       data-force="internal" 
       data-mapped="blog"
-      href="${path}" 
+      href="blog:${path}" 
       target="_blank">
     <h3> ${blogPost.name.replace('.md', '')} </h3>
     <small> ${blogPost.description || 'No description.'} </small><br>

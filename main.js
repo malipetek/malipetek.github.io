@@ -339,6 +339,8 @@
       url = new URL(url);
       var path = url.pathname + url.search;
 
+      path = path == "/" ? "" : path;
+
       if (path === this._current) return 1;
       window.history.pushState(
         path,

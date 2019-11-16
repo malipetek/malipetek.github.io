@@ -3,7 +3,6 @@ window.parseLinks = function(container) {
   var links = container.getElementsByTagName("a");
   Array.prototype.forEach.call(
     Array.prototype.filter.call(links, el => {
-      console.log('target blank', el, el.target == '_blank');
       var internal = (window.RELATIVE.test(el.href) && el.getAttribute('data-force') != 'external') || el.getAttribute('data-force') == 'internal';
       if (!internal) {
         el.classList.add("external");
@@ -26,7 +25,7 @@ window.parseLinks = function(container) {
 
           if(url_map_path){
             virtualPath = e.currentTarget.pathname.replace('/', '');
-            var mappedURL = window.URL_MAPS[url_map_path][virtualPath];
+            var mappedURL = window.URL_MAPS[url_map_path][`${url_map_path}:${virtualPath}`];
             //debugger;
             mappedURL = forceInternal ? mappedURL.replace(/(http)s?:\/*/, 'external:') : mappedURL;
             mappedURL = forceExtension ? mappedURL + ':' + forceExtension : mappedURL;
@@ -35,10 +34,6 @@ window.parseLinks = function(container) {
           }else{
             virtualPath = forceInternal ? e.currentTarget.href.replace(/(http)s?:\/*/, 'external:') : virtualPath;
             virtualPath = forceExtension ? virtualPath + ':' + forceExtension : virtualPath;
-          }
-         
-          if(virtualPath == "/"){
-            virtualPath = virtualPath.replace("/", "");
           }
           
           window.view.current = virtualPath;

@@ -9,6 +9,6 @@
     var blogPost = await response.json();
     var contentURL = `external:content.googleapis.com/drive/v3/files/${file.id}?alt=media&key=${DRIVE_KEY}:md`
     var path = blogPost.name.replace('.md', '').replace(/\s+/gi, '-');
-    window.URL_MAPS['blog'][path] = contentURL;
+    window.URL_MAPS['blog'][`blog:${path}`] = contentURL;
   }));
 })()
