@@ -37,6 +37,10 @@ window.parseLinks = function(container) {
             virtualPath = forceExtension ? virtualPath + ':' + forceExtension : virtualPath;
           }
          
+          if(virtualPath == "/"){
+            virtualPath = virtualPath.replace("/", "");
+          }
+          
           window.view.current = virtualPath;
           return !!0;
         } else {
