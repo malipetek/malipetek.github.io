@@ -5,7 +5,7 @@
 
   window.URL_MAPS = {};
 
-  const pageTitle = document.querySelector("#pagetitle");
+  const pageTitle = document.head.querySelector('title')
 
   Object.defineProperty(NodeList.prototype, "detach", {
     value: function() {
