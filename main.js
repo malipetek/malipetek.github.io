@@ -5,6 +5,8 @@
 
   window.URL_MAPS = {};
 
+  const pageTitle = document.querySelector("#pagetitle");
+
   Object.defineProperty(NodeList.prototype, "detach", {
     value: function() {
       const arr = [];
@@ -342,11 +344,11 @@
       path = path == "/" ? "" : path;
 
       if (path === this._current) return 1;
-      window.history.pushState(
-        path,
-        path[0].toUpperCase() + path.slice(1),
-        url
-      );
+
+      pageTitle.innerText =
+        "malipetek - " +
+        (path ? path[0].toUpperCase() + path.slice(1) : "Main Page");
+      window.history.pushState(path, pageTitle.innerText, url);
 
       this._was = this._current;
       this._current = path;
