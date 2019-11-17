@@ -17,8 +17,8 @@ window.RENDER['md'] = async function(responseText) {
         var copyButton = `<div class="copy-btn clearfix" title="copy" onclick="
         var code = event.currentTarget.nextElementSibling.getElementsByTagName('code')[0];
         window.CBoard.copy(code.textContent);
-        code.style.textShadow = '0 0 5px #fff';
-        setTimeout(() => code.style.textShadow = '0 0 0 #fff',300)">
+        code.parentNode.style.boxShadow = '0 0 50px 5px #fff';
+        setTimeout(() => code.parentNode.style.boxShadow = '0 0 50px 5px #ffffff00',800)">
          <img src="/static/images/copy.svg" />
     </div>`;
         window.md = window.markdownit({

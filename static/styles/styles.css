@@ -180,8 +180,9 @@ select {
   float: left;
   justify-content: flex-end;
 }
+pre,
 code {
-  transition: all 0.3s cubic-bezier(0.99, 0, 1, 0.25);
+  transition: box-shadow 0.7s cubic-bezier(0.16, 0.87, 0, 1.01);
 }
 
 iframe {

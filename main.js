@@ -300,7 +300,7 @@
       if (mapped) {
         var map = this.current.match(URLMAP_REGEXP)[0];
         map = map.replace(":", "");
-        url = url.replace(URLMAP_REGEXP, "").replace("/", "");
+        url = url.replace("/", "");
         url = window.URL_MAPS[map] ? window.URL_MAPS[map][url] : ":load";
       }
 
@@ -449,7 +449,7 @@
         await window.require(`/static/url_mappers/${map}.mapper`);
         ext = window.view.ext;
       }
-      path = path.replace(URLMAP_REGEXP, "").replace("/", "");
+      path = path.replace("/", "");
       path = window.URL_MAPS[map][path];
     }
 
