@@ -426,9 +426,9 @@
     }
     LOADING.start();
 
-    if (window.DOMCACHE[path]) {
-      for (var i = 0; i < window.DOMCACHE[path].length; i++) {
-        view_el.appendChild(window.DOMCACHE[path][i]);
+    if (window.DOMCACHE[path || "/"]) {
+      for (var i = 0; i < window.DOMCACHE[path || "/"].length; i++) {
+        view_el.appendChild(window.DOMCACHE[path || "/"][i]);
       }
 
       LOADING.stop();
