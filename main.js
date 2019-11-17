@@ -348,7 +348,7 @@
       pageTitle.innerText =
         "Malipetek - " +
         (path && path.replace && path != "/"
-          ? path.replace("/", "").path[0].toUpperCase() +
+          ? path.replace("/", "")[0].toUpperCase() +
             path.replace("/", "").slice(1)
           : "Main Page");
       window.history.pushState(path, pageTitle.innerText, url);
@@ -456,7 +456,7 @@
     let response;
     var isExternal = /external:/.test(path);
 
-    if (path === "/") {
+    if (path === "/" || path === "") {
       path = "/index";
     }
     if (isExternal) {
