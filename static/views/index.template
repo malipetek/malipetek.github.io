@@ -4,12 +4,13 @@
       <small> This is me and I look better when I don't show teeth when smiling. </small>
       </div>
       <hr>
+      <h2> Gist </h2>
       <p> 
-      Hello, my name is Muhammet, I simply do HTML/CSS/JS. 
+        Hello, my name is Muhammet, I simply do HTML/CSS/JS. I am working in Customily. You can find me anywhere with handle "@malipetek" (except twitter). 
       </p>
       <p>
       <h4> To read more about me: </h4>
-      <div><a class="btn" href="/main/about"> about </a></div>
+      <div><a class="btn" href="/about"> about </a></div>
       <p> This page is created on Codesandbox, you can fork and edit this page: </p>
       <div><a href="https://codesandbox.io/s/static-ccu9y?fontsize=14">
         <img alt="Edit github.io" src="https://codesandbox.io/static/img/play-codesandbox.svg">

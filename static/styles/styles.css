@@ -156,6 +156,17 @@ button {
   padding-bottom: 2.5em;
   text-align: center;
 }
+
+#view[data-currentpath*='/grocery/'] h1{
+  font-size: 28px;
+  margin-block-start: 0;
+  margin-block-end: 0;
+}
+#view[data-currentpath*='/grocery/'] h2{
+  font-size: 34px;
+  margin-block-start: 0;
+  margin-block-end: 0;
+}
 /* grocery end */
 /* hire */
 select {
@@ -255,3 +266,5 @@ iframe {
   margin: auto;
   padding: 0 3vmin;
 }
+
+

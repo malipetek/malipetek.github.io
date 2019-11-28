@@ -1,6 +1,6 @@
-<h3> Project: </h3>
-<h1> Electron App: E-Okul Toplu Resim Düzenleyici </h1>
-
+<h1> Project: </h1>
+<h2> Electron App: E-Okul Toplu Resim Düzenleyici </h2>
+<h3> Description: </h3>
 <p> 
 This was my first electronjs project. Simply batch processes all images in a folder to a specific image size and file size.
 This is because Education Ministry in Turkey requires a specific image and file size when uploading students' images to their portal. 
