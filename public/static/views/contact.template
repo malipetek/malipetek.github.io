@@ -1,0 +1,18 @@
+<h1> Contact Form </h1>  
+<form class="animate-container" action=" https://formsubmit.co/malipetek@gmail.com " method="POST">
+    <div class="form-element">
+      <label for="name"> Name: </label>
+      <input type="text" id="name" name="name">
+    </div>
+    <div class="form-element">
+      <label for="email"> Email: </label>
+      <input required="required" type="email" id="email" name="email">
+    </div>
+    <div class="form-element">
+      <label for="message"> Your Message: </label>
+      <textarea required="required" rows="10" columns="10" name="message" id="message" >  </textarea>
+    </div>
+    <div class="form-element">
+      <button type="submit">Send</button>
+    </div>
+</form>

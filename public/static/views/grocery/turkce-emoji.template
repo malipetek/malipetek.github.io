@@ -1,0 +1,10 @@
+<h1> Project: </h1>
+<h2> Türkçe Emoji </h2>
+<h3> Description: </h3>
+<p> 
+This is a single page app backed by Firebase to allow people to submit their translation proposals to emoji shortcodes.
+Not popular at all but functional.
+</p>
+<div><a class="btn" data-force="external" href="https://turkce-emoji.github.io/ceviri/" > Open In New Tab </a></div>
+
+<iframe src="https://turkce-emoji.github.io/ceviri/" > </iframe>
