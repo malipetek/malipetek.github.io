@@ -435,6 +435,8 @@
 
       checkDisQus();
 
+      view_el.setAttribute("data-currentpath", path);
+
       await view_el.animateAppend();
       return 1;
     }
