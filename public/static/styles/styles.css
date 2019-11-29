@@ -190,6 +190,7 @@ select {
   width: 100%;
   float: left;
   justify-content: flex-end;
+  cursor: pointer;
 }
 pre,
 code {
