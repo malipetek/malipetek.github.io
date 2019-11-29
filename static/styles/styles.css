@@ -157,12 +157,12 @@ button {
   text-align: center;
 }
 
-#view[data-currentpath*='/grocery/'] h1{
+#view[data-currentpath*="/grocery/"] h1 {
   font-size: 28px;
   margin-block-start: 0;
   margin-block-end: 0;
 }
-#view[data-currentpath*='/grocery/'] h2{
+#view[data-currentpath*="/grocery/"] h2 {
   font-size: 34px;
   margin-block-start: 0;
   margin-block-end: 0;
@@ -267,4 +267,11 @@ iframe {
   padding: 0 3vmin;
 }
 
-
+/* BLOG start */
+#view[data-currentpath*=":md"] a {
+  color: #03a9f4;
+}
+#view[data-currentpath*=":md"] a:visited {
+  color: #4caf50;
+}
+/* BLOG end */
