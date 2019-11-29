@@ -6,7 +6,7 @@
 <p>
   This site is a platform with php and firebase at the backend and jQuery and some other libraries at the front end.
   Has a image editor and single feed for shared images. Signed in users also can chat with each other. 
-  It's development however is stopped because I don't have time now.
+  Its development however is stopped because I don't have time now.
 </p>
 <div><a class="btn" data-force="external" href="http://capsninja.epizy.com" > Check Feed Page </a></div>
 <div><a class="btn" data-force="external" href="http://capsninja.epizy.com/capsyap" > Check Meme Editor </a></div>
