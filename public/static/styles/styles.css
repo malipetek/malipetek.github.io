@@ -193,7 +193,11 @@ select {
 }
 pre,
 code {
-  transition: box-shadow 0.7s cubic-bezier(0.16, 0.87, 0, 1.01);
+  transition: outline-offset 0.9s cubic-bezier(0.16, 0.87, 0, 1.01),
+  outline-color 0.6s cubic-bezier(0.16, 0.87, 0, 1.01);
+outline-width: 6px;
+outline-style: solid;
+outline-color: transparent;
 }
 
 iframe {
