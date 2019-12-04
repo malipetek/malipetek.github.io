@@ -8,7 +8,7 @@
   Has a image editor and single feed for shared images. Signed in users also can chat with each other. 
   Its development however is stopped because I don't have time now.
 </p>
-<div><a class="btn" data-force="external" href="http://capsninja.epizy.com" > Check Feed Page </a></div>
-<div><a class="btn" data-force="external" href="http://capsninja.epizy.com/capsyap" > Check Meme Editor </a></div>
+<div><a class="btn" rel="noreferrer" data-force="external" href="http://capsninja.epizy.com" > Check Feed Page </a></div>
+<div><a class="btn" rel="noreferrer" data-force="external" href="http://capsninja.epizy.com/capsyap" > Check Meme Editor </a></div>
 
-<iframe src="http://capsninja.epizy.com/capsyap"> </iframe>
+<iframe rel="noreferrer" src="http://capsninja.epizy.com/capsyap"> </iframe>

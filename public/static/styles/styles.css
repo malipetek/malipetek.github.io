@@ -235,16 +235,16 @@ iframe {
     --loading-color: #2196f3;
   }
   20% {
-    --loading-color: #f44336;
-  }
-  40% {
-    --loading-color: #4caf50;
-  }
-  60% {
     --loading-color: #cddc39;
   }
-  80% {
+  40% {
     --loading-color: #673ab7;
+  }
+  60% {
+    --loading-color: #4caf50;
+  }
+  80% {
+    --loading-color: #f44336;
   }
 }
 

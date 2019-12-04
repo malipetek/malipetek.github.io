@@ -6,4 +6,4 @@ This was my first electronjs project. Simply batch processes all images in a fol
 This is because Education Ministry in Turkey requires a specific image and file size when uploading students' images to their portal. 
 </p>
 <p> Published only for Windows. </p>
-<div><a class="btn" data-force="external" href="https://malipetek.github.io/ads/e-okul/download/" > Open In New Tab </a></div>
+<div><a class="btn" data-force="external" rel="noreferrer" href="https://malipetek.github.io/ads/e-okul/download/" > Open In New Tab </a></div>
