@@ -1,5 +1,6 @@
 {
   "projects": {
-    "malipetek.github.io": "mali-petek"
+    "malipetek.github.io": "mali-petek",
+    "default": "mali-petek"
   }
 }
