@@ -17,8 +17,12 @@ window.RENDER['md'] = async function(responseText) {
         var copyButton = `<div class="copy-btn clearfix" title="copy" onclick="
         var code = event.currentTarget.nextElementSibling.getElementsByTagName('code')[0];
         window.CBoard.copy(code.textContent);
-        code.parentNode.style.boxShadow = '0 0 50px 5px #fff';
-        setTimeout(() => code.parentNode.style.boxShadow = '0 0 50px 5px #ffffff00',800)">
+        code.parentNode.style.outlineOffset = '50px';
+        code.parentNode.style.outlineColor = '#fff';
+        setTimeout(() => {
+          code.parentNode.style.outlineColor = 'transparent';
+          setTimeout( () => code.parentNode.style.outlineOffset = '0px', 600)
+        },50)">
          <img src="/static/images/copy.svg" />
     </div>`;
         window.md = window.markdownit({
