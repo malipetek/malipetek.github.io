@@ -26,6 +26,8 @@ window.RENDER['md'] = async function(responseText) {
          <img src="/static/images/copy.svg" />
     </div>`;
         window.md = window.markdownit({
+          html: true,
+          linkify: true,
           highlight: function(str, lang) {
             if (lang && window.hljs.getLanguage(lang)) {
               try {
