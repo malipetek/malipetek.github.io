@@ -1,0 +1,4 @@
+This is a Brave Rewards publisher verification file.
+
+Domain: malipetek.github.io
+Token: 4e6c69369b8cfca8c3bd544aac8650ba7576cc38685a50168bd57779f35e63d3
