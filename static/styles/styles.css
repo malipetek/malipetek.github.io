@@ -11,8 +11,9 @@ a.btn {
   display: none;
 }
 code {
-  font-family: monospace;
-  background-color: #555;
+    font-family: monospace;
+    background-color: #222;
+    padding: 1px 3px;
 }
 pre code {
   background-color: inherit;
