@@ -39,6 +39,15 @@ header {
 a {
   text-decoration: none;
 }
+
+a {
+  color: #03a9f4;
+  display: inline-block!important;
+}
+a:visited {
+  color: #4caf50;
+}
+
 .btn {
   display: block;
   border: 1px solid currentColor;
@@ -49,6 +58,7 @@ a {
   box-shadow: 0 0 0 0 #cccccc20;
   transition: box-shadow 0.1s ease-in-out;
   text-transform: capitalize;
+  color: #ddd;
 }
 .btn.external {
   background-color: #006064;
@@ -258,13 +268,6 @@ iframe {
 }
 
 /* BLOG start */
-#view[data-currentpath*=":md"] a {
-  color: #03a9f4;
-  display: inline-block!important;
-}
-#view[data-currentpath*=":md"] a:visited {
-  color: #4caf50;
-}
 
 .copy-btn {
   display: inline-flex;
@@ -283,3 +286,13 @@ outline-color: transparent;
 }
 
 /* BLOG end */
+
+small.tag {
+    float: right;
+    border: 2px outset #FF8A65;
+    padding: 2px 4px;
+    border-radius: 4px;
+    margin: 2px 4px;
+    font-size: .9rem;
+    color: #FFCC80;
+}
