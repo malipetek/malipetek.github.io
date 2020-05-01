@@ -42,7 +42,7 @@ a {
 
 a {
   color: #03a9f4;
-  display: inline-block!important;
+  display: inline-block;
 }
 a:visited {
   color: #4caf50;
