@@ -12,7 +12,8 @@
     var contentURL = `external:www.googleapis.com/drive/v3/files/${file.id}?alt=media&key=${DRIVE_KEY}:md`
     var path = blogPost.name.replace('.md', '').replace(/\s+/gi, '-');
     window.URL_MAPS['blog'][`blog:${path}`] = contentURL;
-    var tags = blogPost.description.match(/#[^#]+(\s||$)/gi).map(t => `<small class="tag">${t}</small>`);
+    var tags = blogPost.description.match(/#[^#]+(\s||$)/gi)
+    tags = tags.length ? tags.map(t => `<small class="tag">${t}</small>`) : '';
     var description = !!(blogPost.description || "").trim() ? blogPost.description.replace(/#[^#]+(\s||$)/gi, '') : 'No description.';
     return `<div>
     <a class="btn" data-force-extension="md" 
@@ -21,7 +22,7 @@
       href="blog:${path}" 
       target="_blank">
     <h3> ${blogPost.name.replace('.md', '')} </h3>
-    <small> ${ description } </small><br>
+    <small> ${ description } </small><br> ${tags}
     <date style="width: 100%;
     text-align: right;
     display: inline-block;">${new Date(blogPost.createdTime).toDateString()}</date>

@@ -59,7 +59,12 @@ a:visited {
   transition: box-shadow 0.1s ease-in-out;
   text-transform: capitalize;
   color: #ddd;
+} 
+
+.btn:visited {
+  color: #ddd;
 }
+
 .btn.external {
   background-color: #006064;
 }
