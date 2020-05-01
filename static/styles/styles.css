@@ -293,11 +293,11 @@ outline-color: transparent;
 /* BLOG end */
 
 small.tag {
-    float: right;
-    border: 2px outset #FF8A65;
-    padding: 2px 4px;
-    border-radius: 4px;
-    margin: 2px 4px;
-    font-size: .9rem;
-    color: #FFCC80;
+  float: right;
+  border: 2px outset #FF8A65;
+  padding: 2px 8px 2px 4px;
+  border-radius: 4px;
+  margin: 2px 2px;
+  font-size: .9rem;
+  color: #FFCC80;
 }
