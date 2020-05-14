@@ -297,10 +297,27 @@ outline-color: transparent;
 
 small.tag {
   float: right;
-  border: 2px outset #FF8A65;
+  border: 1px outset #FF8A65;
   padding: 2px 8px 2px 4px;
   border-radius: 4px;
   margin: 2px 2px;
   font-size: .9rem;
-  color: #FFCC80;
+  color: #66bfff;
+}
+
+/* 
+
+*/
+
+iframe[src="http://caps.ninja/"]{
+  width: 200%;
+  -ms-zoom: 0.5!important;
+  -moz-transform: scale(0.5)!important;
+  -moz-transform-origin: 0 0;
+  -o-transform: scale(0.5)!important;
+  -o-transform-origin: 0 0;
+  -webkit-transform: scale(0.5)!important;
+  -webkit-transform-origin: 0 0;
+  transform-origin: 0% 0%!important;
+  margin-bottom: -30%;
 }

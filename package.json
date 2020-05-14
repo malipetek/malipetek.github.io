@@ -18,6 +18,12 @@
   },
   "homepage": "https://github.com/codesandbox-app/static-template#readme",
   "devDependencies": {
+    "express": "^4.17.1",
     "serve": "^11.2.0"
+  },
+  "dependencies": {
+    "node-fetch": "^2.6.0",
+    "puppeteer": "^3.0.4",
+    "puppeteer-core": "^3.0.4"
   }
 }
