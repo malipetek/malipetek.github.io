@@ -66,7 +66,7 @@ var os = require("os");
             }
         }])
         const html = await page.getHtml();
-        await fs.outputFile(path.join(__dirname, 'blog/'+path_) + '.html', html, {}, () => {});
+        await fs.outputFile(path.join(__dirname, path_) + '.html', html, {}, () => {});
         return 1;
     }))
     //new Page().open('blog:CSS-only-toggleables');
