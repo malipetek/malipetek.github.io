@@ -22,8 +22,12 @@
     "serve": "^11.2.0"
   },
   "dependencies": {
+    "fs-extra": "^9.0.0",
+    "js2xml": "^1.0.9",
+    "jstoxml": "^1.6.6",
     "node-fetch": "^2.6.0",
     "puppeteer": "^3.0.4",
-    "puppeteer-core": "^3.0.4"
+    "puppeteer-core": "^3.0.4",
+    "xml-formatter": "^2.0.1"
   }
 }

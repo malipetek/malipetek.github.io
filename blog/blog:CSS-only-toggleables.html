@@ -1,0 +1,137 @@
+<!DOCTYPE html><html lang="en"><head>
+    <title id="pagetitle&quot;&quot;">Malipetek - Blog:CSS-only-toggleables</title>
+    <meta charset="UTF-8">
+    <meta name="theme-color" content="#33333">
+    <meta name="description" content="Portfolio page of malipetek a web developer from TR">
+
+    <meta name="robots" content="index, follow">
+    <meta name="googlebot" content="all">
+
+    <link rel="apple-touch-icon-precomposed" sizes="57x57" href="static/icons/apple-touch-icon-57x57.png">
+    <link rel="apple-touch-icon-precomposed" sizes="114x114" href="static/icons/apple-touch-icon-114x114.png">
+    <link rel="apple-touch-icon-precomposed" sizes="72x72" href="static/icons/apple-touch-icon-72x72.png">
+    <link rel="apple-touch-icon-precomposed" sizes="144x144" href="static/icons/apple-touch-icon-144x144.png">
+    <link rel="apple-touch-icon-precomposed" sizes="60x60" href="static/icons/apple-touch-icon-60x60.png">
+    <link rel="apple-touch-icon-precomposed" sizes="120x120" href="static/icons/apple-touch-icon-120x120.png">
+    <link rel="apple-touch-icon-precomposed" sizes="76x76" href="static/icons/apple-touch-icon-76x76.png">
+    <link rel="apple-touch-icon-precomposed" sizes="152x152" href="static/icons/apple-touch-icon-152x152.png">
+    <link rel="icon" type="image/png" href="static/icons/favicon-196x196.png" sizes="196x196">
+    <link rel="icon" type="image/png" href="static/icons/favicon-96x96.png" sizes="96x96">
+    <link rel="icon" type="image/png" href="static/icons/favicon-32x32.png" sizes="32x32">
+    <link rel="icon" type="image/png" href="static/icons/favicon-16x16.png" sizes="16x16">
+    <link rel="icon" type="image/png" href="static/icons/favicon-128.png" sizes="128x128">
+    <meta name="application-name" content="malipetek">
+    <meta name="msapplication-TileColor" content="#333333">
+    <meta name="msapplication-TileImage" content="static/icons/mstile-144x144.png">
+    <meta name="msapplication-square70x70logo" content="static/icons/mstile-70x70.png">
+    <meta name="msapplication-square150x150logo" content="static/icons/mstile-150x150.png">
+    <meta name="msapplication-wide310x150logo" content="static/icons/mstile-310x150.png">
+    <meta name="msapplication-square310x310logo" content="static/icons/mstile-310x310.png">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link type="text/css" rel="stylesheet" href="/static/styles/reset.css">
+    <link type="text/css" rel="stylesheet" href="/static/styles/styles.css">
+    <link type="text/css" rel="stylesheet" href="/static/styles/atom-one-dark.css">
+    <link href="https://fonts.googleapis.com/css?family=Roboto+Condensed&amp;display=swap" rel="stylesheet">
+  <script src="https://malipetek-github-io.disqus.com/embed.js" data-timestamp="1589681994305"></script><link rel="prefetch" as="style" href="https://c.disquscdn.com/next/embed/styles/lounge.db072b7d11b56c5c060394cab39e75c5.css"><link rel="prefetch" as="script" href="https://c.disquscdn.com/next/embed/common.bundle.f9554506a08a1cc2b021f0dfc3f59ebb.js"><link rel="prefetch" as="script" href="https://c.disquscdn.com/next/embed/lounge.bundle.d3858dbda732166bc46a5391f5b0b789.js"><link rel="prefetch" as="script" href="https://disqus.com/next/config.js"></head>
+
+  <body>
+    <header>
+      <div><a class="btn" href="/" style="display: block;"> intro </a></div>
+      <div><a class="btn" href="/blog" style="display: block;"> blog </a></div>
+      <div><a class="btn" href="/grocery" style="display: block;"> grocery </a></div>
+      <div><a class="btn" href="/contact" style="display: block;"> contact </a></div>
+    </header>
+    <div class="loading-animation" style=""></div>
+    <div class="loading-animation" style=""></div>
+    <div class="loading-animation" style=""></div>
+    <div id="view" style="display: block;"><h1 style="opacity: 1; transform: scale(1); transition: transform 0.038s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">Toggle something on a Web page without JS</h1>
+<p style="opacity: 1; transform: scale(1); transition: transform 0.038s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">If you are gaining experience in CSS and trying the limits of CSS, this trick will make you think CSS more powerful than ever before.</p>
+<p style="opacity: 1; transform: scale(1); transition: transform 0.038s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">We all know how you can use transitions and hover to change state of a element to create some interactivity. What if I told you you can make it toggle instead of temporarily changing state.</p>
+<h2 style="opacity: 1; transform: scale(1); transition: transform 0.028s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">Labels and inputs</h2>
+<p style="opacity: 1; transform: scale(1); transition: transform 0.038s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">To understand this trick, first thing you should know is <code>&lt;input&gt;</code> tags are binded to their labels with <code>id</code> and <code>for</code> properties.</p>
+<p style="opacity: 1; transform: scale(1); transition: transform 0.038s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">Lets say you have a text input with <code>id="mytext"</code>, when you click on a <code>&lt;label&gt;</code> with <code>for="mytext"</code> it behaves just like you clicked <code>&lt;input&gt;</code>.</p>
+<h2 style="opacity: 1; transform: scale(1); transition: transform 0.028s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">Checkbox</h2>
+<p style="opacity: 1; transform: scale(1); transition: transform 0.038s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">So in our case we will be using a <code>&lt;input&gt;</code> with <code>type="checkbox</code> to toggle stuff. And toggler will be a <code>&lt;label&gt;</code> with <code>for="[id of input]"</code>.</p>
+<h2 style="opacity: 1; transform: scale(1); transition: transform 0.028s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">:checked state</h2>
+<p style="opacity: 1; transform: scale(1); transition: transform 0.057s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">In css we have a pseudo selector <code>:checked</code>. It applies some styles only when a <code>&lt;input type="checkbox"&gt;</code> is checked. This allows us to apply some styles with permanent states not only to <code>&lt;input&gt;</code> itself, but also its siblings and children.</p>
+<p style="opacity: 1; transform: scale(1); transition: transform 0.019s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">However <code>&lt;input&gt;</code> tags cant have any children. Here we use these CSS selectors to enhance our selection; <code>~</code>.</p>
+<h2 style="opacity: 1; transform: scale(1); transition: transform 0.028s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">~ Selector</h2>
+<p style="opacity: 1; transform: scale(1); transition: transform 0.038s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;"><a href="https://www.w3schools.com/cssref/sel_gen_sibling.asp" class="external" target="_blank" style="display: inline-block;">~ Selector</a> is a selector that looks back in a siblings situation and checks if a selector has another selector before it among its siblings.</p>
+<p style="opacity: 1; transform: scale(1); transition: transform 0.019s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">For example if we had a html like this:</p>
+<pre style="opacity: 1; transform: scale(1); transition: transform 0.1s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;"><code class="language-html"><div class="copy-btn clearfix" title="copy" onclick="
+        var code = event.currentTarget.nextElementSibling.getElementsByTagName('code')[0];
+        window.CBoard.copy(code.textContent);
+        code.parentNode.style.outlineOffset = '50px';
+        code.parentNode.style.outlineColor = '#fff';
+        setTimeout(() => {
+          code.parentNode.style.outlineColor = 'transparent';
+          setTimeout( () => code.parentNode.style.outlineOffset = '0px', 600)
+        },50)">
+         <img src="/static/images/copy.svg">
+    </div>
+                  <pre class="hljs"><code>    <span class="hljs-tag">&lt;<span class="hljs-name">div</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">"key"</span>&gt;</span>key<span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">div</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">div</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">"lock"</span>&gt;</span>lock<span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+  <span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+   <span class="hljs-tag">&lt;<span class="hljs-name">div</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">div</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">div</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">div</span>&gt;</span><span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">"lock"</span>&gt;</span>lock<span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+  <span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+</code></pre></code></pre>
+<p style="opacity: 1; transform: scale(1); transition: transform 0.019s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">We could select only first <code>&lt;div&gt;</code> with class "lock" with this selector.</p>
+<pre style="opacity: 1; transform: scale(1); transition: transform 0.1s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;"><code class="language-css"><div class="copy-btn clearfix" title="copy" onclick="
+        var code = event.currentTarget.nextElementSibling.getElementsByTagName('code')[0];
+        window.CBoard.copy(code.textContent);
+        code.parentNode.style.outlineOffset = '50px';
+        code.parentNode.style.outlineColor = '#fff';
+        setTimeout(() => {
+          code.parentNode.style.outlineColor = 'transparent';
+          setTimeout( () => code.parentNode.style.outlineOffset = '0px', 600)
+        },50)">
+         <img src="/static/images/copy.svg">
+    </div>
+                  <pre class="hljs"><code><span class="hljs-selector-class">.key</span>~<span class="hljs-selector-class">.lock</span>{
+  <span class="hljs-attribute">color</span>: red;
+}
+</code></pre></code></pre>
+<p style="opacity: 1; transform: scale(1); transition: transform 0.019s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">See example here:</p>
+<iframe height="332" style="width: 100%; opacity: 1; transform: scale(1); transition: transform 0.1s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;" scrolling="no" title="CSS ~ selector example" src="https://codepen.io/malipetek/embed/xxwrOow?height=332&amp;theme-id=dark&amp;default-tab=css,result" frameborder="no" allowtransparency="true" allowfullscreen="true" loading="lazy">
+  See the Pen <a href='https://codepen.io/malipetek/pen/xxwrOow'>CSS ~ selector example</a> by muhammet ali petek
+  (<a href='https://codepen.io/malipetek'>@malipetek</a>) on <a href='https://codepen.io'>CodePen</a>.
+</iframe>
+<hr animating="yes" style="opacity: 1; transform: scale(1); transition: transform 0s cubic-bezier(0.5, 1.5, 0.5, 1) 0s; transform-origin: 50% 0%;">
+<p style="opacity: 1; transform: scale(0);">Once we select a element after some sibling, we can also select children of selection which is handy because we can make this our main wrapper on page and toggle any styles on our page with this stateful selector.</p>
+<p style="opacity: 1; transform: scale(0);">Here is an example on Codepen demonstrating it:</p>
+<iframe height="455" style="width: 100%; opacity: 1; transform: scale(0);" scrolling="no" title="CSS toggle stuff" src="https://codepen.io/malipetek/embed/mdemGPX?height=455&amp;theme-id=dark&amp;default-tab=result" frameborder="no" allowtransparency="true" allowfullscreen="true" loading="lazy">
+  See the Pen <a href='https://codepen.io/malipetek/pen/mdemGPX'>CSS toggle stuff</a> by muhammet ali petek
+  (<a href='https://codepen.io/malipetek'>@malipetek</a>) on <a href='https://codepen.io'>CodePen</a>.
+</iframe>
+<p style="opacity: 1; transform: scale(0);">Also you can go wild it like in below example:</p>
+<iframe height="429" style="width: 100%; opacity: 1; transform: scale(0);" scrolling="no" title="CSS only desktop" src="https://codepen.io/malipetek/embed/PoPJNWx?height=429&amp;theme-id=dark&amp;default-tab=result" frameborder="no" allowtransparency="true" allowfullscreen="true" loading="lazy">
+  See the Pen <a href='https://codepen.io/malipetek/pen/PoPJNWx'>CSS only desktop</a> by muhammet ali petek
+  (<a href='https://codepen.io/malipetek'>@malipetek</a>) on <a href='https://codepen.io'>CodePen</a>.
+</iframe>
+<p style="opacity: 1; transform: scale(0);">If you check above examples code you will see it has a html soup.</p>
+<p style="opacity: 1; transform: scale(0);">You probably would use this trick only for navigation sidebars, modals etc.</p>
+</div>
+    <div id="disqus_thread" style="display: block;"><iframe id="dsq-app8974" name="dsq-app8974" allowtransparency="true" frameborder="0" scrolling="no" tabindex="0" title="Disqus" width="100%" src="https://disqus.com/embed/comments/?base=default&amp;f=malipetek-github-io&amp;t_i=%2Fblog%3ACSS-only-toggleables&amp;t_u=https%3A%2F%2Fmalipetek.github.io%2Fblog%3ACSS-only-toggleables&amp;t_d=Malipetek%20-%20Blog%3ACSS-only-toggleables&amp;t_t=Malipetek%20-%20Blog%3ACSS-only-toggleables&amp;s_o=default#version=818c922ed2b14d28b2ebe6d4d2c576a7" style="width: 1px !important; min-width: 100% !important; border: none !important; overflow: hidden !important; height: 535px !important;" horizontalscrolling="no" verticalscrolling="no"></iframe></div>
+  
+  <script src="/index.js"></script>
+  <script src="/main.js"></script>
+  <!--<script>  
+	if ("serviceWorker" in navigator) {
+    try {
+      await navigator.serviceWorker.register("../sw.js");
+      console.log("Service worker did register ");
+    } catch (err) {
+      console.error("Service worker did not register ", err);
+    }
+  }
+	</script> -->
+
+<iframe style="display: none;"></iframe></body></html>
