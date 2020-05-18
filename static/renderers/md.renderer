@@ -1,5 +1,5 @@
 window.RENDER['md'] = async function(responseText) {
-    let head;  
+    let head = '';  
     [responseText, head] = responseText.split(/----\s*meta\s*head\s*----/gi).reverse();
     
     const image = (head.match(/image:[^\n]+[\n$]/gi) || [''])[0].replace('image:', '');
