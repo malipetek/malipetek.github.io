@@ -1,4 +1,48 @@
 window.RENDER['md'] = async function(responseText) {
+    [head, responseText] = responseText.split(/----\s*meta\s*head\s*----/gi);
+    
+    const image = (head.match(/image:[^\n]+[\n$]/gi) || [''])[0].replace('image:', '');
+    const title = (head.match(/title:[^\n]+[\n$]/gi) || [''])[0].replace('title:', '');
+    const summary = (head.match(/summary:[^\n]+[\n$]/gi) || [''])[0].replace('summary:', '');
+    const description = (head.match(/description:[^\n]+[\n$]/gi) || [''])[0].replace('description:', '');
+    const keywords = (head.match(/keywords:[^\n]+[\n$]/gi) || [''])[0].replace('keywords:', '');
+    
+    const meta = {
+        tw: function(name, content) {
+            meta.do.apply(null, [...arguments, 'twitter']);
+        },
+        og: function(name, content) {
+            meta.do.apply(null, [...arguments, 'og']);
+        },
+        do: (name, content, type) => {
+            const meta = document.createElement('meta');
+            meta.setAttribute('name', `${type ? `${type}:` : '' }${name}`);
+            if(!content) {
+                debugger
+                }
+            meta.setAttribute('content', content.replace(/\n/, ''));
+            document.head.append(meta);
+        }
+    }
+    
+    meta.tw('image:src', image);
+    meta.tw('title', title);
+    meta.tw('summary', title);
+    meta.tw('description', description);
+    meta.tw('site', '@malipetek');
+    
+    meta.og('image', image);
+    meta.og('title', title);
+    meta.og('summary', title);
+    meta.og('description', description);
+    meta.og('site_name', 'malipetek');
+    
+    meta.do('description', description);
+    meta.do('title', description);
+    meta.do('keywords', (keywords || description.split(' ').join(', ')));
+    meta.do('author', 'M.Ali Petek');
+    
+  
     await window.require(
       "https://cdnjs.cloudflare.com/ajax/libs/markdown-it/10.0.0/markdown-it.min.js"
     );

@@ -1,11 +1,10 @@
-const express = require('express');
-const fetch = require('node-fetch');
 const { toXML } = require('jstoxml');
 var format = require('xml-formatter');
 const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('fs-extra');
 var os = require("os");
+const chalk = require('chalk');
 
 (async () => {
     const sitemap = await fs.readJSON(path.join(__dirname, 'sitemap.json'));
@@ -48,6 +47,10 @@ var os = require("os");
     }
 }
 
+    await Promise.all(sitemap._content.map(async entry => {
+        entry.url.loc;
+    }));
+
     const blogsPage = await new Page().asyn();
 
     await blogsPage.open('blog');
@@ -57,18 +60,19 @@ var os = require("os");
         const page = await new Page().asyn();
         await page.open(path_);
 
-        blog = sitemap._content.find(entry => entry.url.loc.indexOf('https://malipetek.github.io/blog') !== -1 );
-        blog._content = (blog._content || []).concat([{
+        sitemap._content = sitemap._content.concat([{
             "url": {
                 "loc": `https://malipetek.github.io/blog/${path_}`,
                 "lastmod": new Date().toISOString(),
                 "priority": .7
             }
-        }])
+        }]);
         const html = await page.getHtml();
-        await fs.outputFile(path.join(__dirname, path_) + '.html', html, {}, () => {});
-        return 1;
-    }))
-    //new Page().open('blog:CSS-only-toggleables');
+        await fs.outputFile(path.join(__dirname, path_) + '.html', html + os.EOL);
+        return process.stdout.write(chalk.bgGreen('successfull:') + chalk.green(path_) + os.EOL);
+    }));
+
     await fs.outputFile(path.join(__dirname, 'sitemap.xml'), format(toXML(sitemap)) + os.EOL);
+    process.stdout.write(chalk.bgGreen('Completed.') + os.EOL);
+    process.exit();
 })();

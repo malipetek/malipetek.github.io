@@ -297,12 +297,12 @@ outline-color: transparent;
 
 small.tag {
   float: right;
-  border: 1px outset #FF8A65;
+  border: 1px outset #ddd;
   padding: 2px 8px 2px 4px;
   border-radius: 4px;
   margin: 2px 2px;
   font-size: .9rem;
-  color: #66bfff;
+  color: #ddd;
 }
 
 /* 
