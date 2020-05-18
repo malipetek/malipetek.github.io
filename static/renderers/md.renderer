@@ -1,7 +1,8 @@
 window.RENDER['md'] = async function(responseText) {
-    let head = '';  
+    let head;  
     [responseText, head] = responseText.split(/----\s*meta\s*head\s*----/gi).reverse();
-    
+    head = head || '';
+
     const image = (head.match(/image:[^\n]+[\n$]/gi) || [''])[0].replace('image:', '');
     const title = (head.match(/title:[^\n]+[\n$]/gi) || [''])[0].replace('title:', '');
     const summary = (head.match(/summary:[^\n]+[\n$]/gi) || [''])[0].replace('summary:', '');
