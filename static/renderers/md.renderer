@@ -17,9 +17,6 @@ window.RENDER['md'] = async function(responseText) {
         do: (name, content, type) => {
             const meta = document.createElement('meta');
             meta.setAttribute('name', `${type ? `${type}:` : '' }${name}`);
-            if(!content) {
-                debugger
-                }
             meta.setAttribute('content', content.replace(/\n/, ''));
             document.head.append(meta);
         }
