@@ -1,5 +1,6 @@
 window.RENDER['md'] = async function(responseText) {
-    [head, responseText] = responseText.split(/----\s*meta\s*head\s*----/gi);
+    let head;  
+    [responseText, head] = responseText.split(/----\s*meta\s*head\s*----/gi).reverse();
     
     const image = (head.match(/image:[^\n]+[\n$]/gi) || [''])[0].replace('image:', '');
     const title = (head.match(/title:[^\n]+[\n$]/gi) || [''])[0].replace('title:', '');
@@ -24,13 +25,13 @@ window.RENDER['md'] = async function(responseText) {
     
     meta.tw('image:src', image);
     meta.tw('title', title);
-    meta.tw('summary', title);
+    meta.tw('summary', summary);
     meta.tw('description', description);
     meta.tw('site', '@malipetek');
     
     meta.og('image', image);
     meta.og('title', title);
-    meta.og('summary', title);
+    meta.og('summary', summary);
     meta.og('description', description);
     meta.og('site_name', 'malipetek');
     
