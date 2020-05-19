@@ -67,6 +67,7 @@ const chalk = require('chalk');
                 "priority": .7
             }
         }]);
+
         const html = await page.getHtml();
         await fs.outputFile(path.join(__dirname, path_) + '.html', html + os.EOL);
         return process.stdout.write(chalk.bgGreen('successfull:') + chalk.green(path_) + os.EOL);
