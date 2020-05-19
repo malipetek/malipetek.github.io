@@ -5,7 +5,6 @@ window.RENDER['md'] = async function(responseText) {
 
     const image = (head.match(/image:[^\n]+[\n$]/gi) || [''])[0].replace('image:', '');
     const title = (head.match(/title:[^\n]+[\n$]/gi) || [''])[0].replace('title:', '');
-    const summary = (head.match(/summary:[^\n]+[\n$]/gi) || [''])[0].replace('summary:', '');
     const description = (head.match(/description:[^\n]+[\n$]/gi) || [''])[0].replace('description:', '');
     const keywords = (head.match(/keywords:[^\n]+[\n$]/gi) || [''])[0].replace('keywords:', '');
     
@@ -26,13 +25,12 @@ window.RENDER['md'] = async function(responseText) {
     
     meta.tw('image:src', image);
     meta.tw('title', title);
-    meta.tw('summary', summary);
+    meta.tw('card', 'summary');
     meta.tw('description', description);
     meta.tw('site', '@malipetek');
     
     meta.og('image', image);
     meta.og('title', title);
-    meta.og('summary', summary);
     meta.og('description', description);
     meta.og('site_name', 'malipetek');
     
