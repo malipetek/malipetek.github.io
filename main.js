@@ -353,7 +353,7 @@
           : "Main Page");
       window.history.pushState(path, pageTitle.innerText, url);
 
-      this._was = this._current;
+      this._was = path || this._current;
       this._current = path;
 
       var ext = this.ext;
