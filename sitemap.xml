@@ -59,40 +59,7 @@
             https://malipetek.github.io/blog/blog:How-to-serve-blog-from-Google-Drive-Folder
         </loc>
         <lastmod>
-            2020-05-18T23:59:26.189Z
-        </lastmod>
-        <priority>
-            0.7
-        </priority>
-    </url>
-    <url>
-        <loc>
-            https://malipetek.github.io/blog/blog:CSS-only-toggleables
-        </loc>
-        <lastmod>
-            2020-05-18T23:59:26.201Z
-        </lastmod>
-        <priority>
-            0.7
-        </priority>
-    </url>
-    <url>
-        <loc>
-            https://malipetek.github.io/blog/blog:Ubuntu-Accessing-Google-Drive-from-Nautilus
-        </loc>
-        <lastmod>
-            2020-05-18T23:59:26.205Z
-        </lastmod>
-        <priority>
-            0.7
-        </priority>
-    </url>
-    <url>
-        <loc>
-            https://malipetek.github.io/blog/blog:Alternative-Dock(Panel)-and-Startup-App-for-Cinnamon
-        </loc>
-        <lastmod>
-            2020-05-18T23:59:26.294Z
+            2020-05-19T01:48:39.003Z
         </lastmod>
         <priority>
             0.7
@@ -103,7 +70,40 @@
             https://malipetek.github.io/blog/blog:Convert-Bash-Scripts-Into-Named-CLI-Commands-in-Linux
         </loc>
         <lastmod>
-            2020-05-18T23:59:26.311Z
+            2020-05-19T01:48:39.033Z
+        </lastmod>
+        <priority>
+            0.7
+        </priority>
+    </url>
+    <url>
+        <loc>
+            https://malipetek.github.io/blog/blog:Ubuntu-Accessing-Google-Drive-from-Nautilus
+        </loc>
+        <lastmod>
+            2020-05-19T01:48:39.116Z
+        </lastmod>
+        <priority>
+            0.7
+        </priority>
+    </url>
+    <url>
+        <loc>
+            https://malipetek.github.io/blog/blog:Alternative-Dock(Panel)-and-Startup-App-for-Cinnamon
+        </loc>
+        <lastmod>
+            2020-05-19T01:48:39.189Z
+        </lastmod>
+        <priority>
+            0.7
+        </priority>
+    </url>
+    <url>
+        <loc>
+            https://malipetek.github.io/blog/blog:CSS-only-toggleables
+        </loc>
+        <lastmod>
+            2020-05-19T01:48:39.249Z
         </lastmod>
         <priority>
             0.7
