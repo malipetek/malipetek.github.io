@@ -56,10 +56,21 @@
     </url>
     <url>
         <loc>
+            https://malipetek.github.io/blog/blog:CSS-only-toggleables
+        </loc>
+        <lastmod>
+            2020-05-19T02:00:05.027Z
+        </lastmod>
+        <priority>
+            0.7
+        </priority>
+    </url>
+    <url>
+        <loc>
             https://malipetek.github.io/blog/blog:How-to-serve-blog-from-Google-Drive-Folder
         </loc>
         <lastmod>
-            2020-05-19T01:48:39.003Z
+            2020-05-19T02:00:05.563Z
         </lastmod>
         <priority>
             0.7
@@ -70,7 +81,7 @@
             https://malipetek.github.io/blog/blog:Convert-Bash-Scripts-Into-Named-CLI-Commands-in-Linux
         </loc>
         <lastmod>
-            2020-05-19T01:48:39.033Z
+            2020-05-19T02:00:05.792Z
         </lastmod>
         <priority>
             0.7
@@ -81,7 +92,7 @@
             https://malipetek.github.io/blog/blog:Ubuntu-Accessing-Google-Drive-from-Nautilus
         </loc>
         <lastmod>
-            2020-05-19T01:48:39.116Z
+            2020-05-19T02:00:05.825Z
         </lastmod>
         <priority>
             0.7
@@ -92,18 +103,7 @@
             https://malipetek.github.io/blog/blog:Alternative-Dock(Panel)-and-Startup-App-for-Cinnamon
         </loc>
         <lastmod>
-            2020-05-19T01:48:39.189Z
-        </lastmod>
-        <priority>
-            0.7
-        </priority>
-    </url>
-    <url>
-        <loc>
-            https://malipetek.github.io/blog/blog:CSS-only-toggleables
-        </loc>
-        <lastmod>
-            2020-05-19T01:48:39.249Z
+            2020-05-19T02:00:05.856Z
         </lastmod>
         <priority>
             0.7
