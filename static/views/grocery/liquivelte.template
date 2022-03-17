@@ -1,0 +1,17 @@
+<h1> Project: </h1>
+<h2> Liquivelte </h2>
+<h3> Description: </h3>
+<p> 
+Liquivelte is a VSCode extension that allows you to write your snippets and sections as Svelte-like components. 
+Difference is you write your templates a bit different than regular Svelte syntax. It preprocessed to svelte components of course and built.
+</p>
+<p>
+Build process uses 2 custom rollup plugins to generate both JS/CSS bundle and the Liquid content to be hydrated after page load.
+</p>
+<p>
+One might think why this is not just a svelte-preprocessor. It is because building is a bit more complicated than a avg. build config.
+I tried to make it an actually usable experience.
+</p>
+<div><a class="btn" data-force="external" rel="noreferrer" href="https://marketplace.visualstudio.com/items?itemName=malipetek.liquivelte&ssr=false#overview" > Get the extension </a></div>
+
+

@@ -1,5 +1,6 @@
 <h2> Pick some project to learn more about it. </h2>
 	  <div class="animate-container gallery">
+			<div><a class="btn" href="/grocery/liquivelte" > <h3> <b> VSCode Extension: </b> Liquivelte </h3> </a></div> 
 			<div><a class="btn" href="/grocery/caps-ninja" > <h3> <b> Project: </b> //caps.ninja </h3></a></div>
 			<div><a class="btn" href="/grocery/box-div" > <h3> <b> Web Component: </b> Box-Div </h3></a></div>
 			<div><a class="btn" href="/grocery/payoneer-calculator" > <h3> <b> Utility: </b> Payoneer Calculator </h3> </a></div>
