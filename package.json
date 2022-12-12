@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/codesandbox-app/static-template#readme",
   "devDependencies": {
-    "express": "^4.17.1",
+    "express": "^4.17.3",
     "serve": "^11.2.0"
   },
   "dependencies": {
