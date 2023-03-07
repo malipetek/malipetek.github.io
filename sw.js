@@ -1,5 +1,16 @@
 const CACHE_NAME = "githubio-cache";
-const CACHE_MAP = ["/", "/static//scripts/parseLinks.module", "/static/styles/reset.css", "/static/styles/styles.css", "/static/styles/atom-one-dark.css", "/static/images/me_optimized.jpg", "/index.js", "/main.js"];
+const CACHE_MAP = ["/", 
+                    "/static/views/blog.template",
+                    "/static/views/grocery.template",
+                    "/static/views/contact.template",
+                    "/static//scripts/parseLinks.module",
+                    "/static/renderers/template.renderer",
+                    "/static/styles/reset.css", 
+                    "/static/styles/styles.css", 
+                    "/static/styles/atom-one-dark.css", 
+                    "/static/images/me_optimized.jpg", 
+                    "/index.js", 
+                    "/main.js"];
 
 self.addEventListener("install", event => {
   event.waitUntil(
