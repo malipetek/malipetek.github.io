@@ -14,9 +14,9 @@ self.addEventListener("install", event => {
 
 self.addEventListener("fetch", function(event) {
   const url = new URL(event.request.url);
-  if(CACHE_MAP.indexOf(url.path) == -1) return;
+  if(CACHE_MAP.indexOf(url.pathname) == -1) return;
   event.respondWith(
-    caches.match(url.path).then(function(mainpagecache) {
+    caches.match(url.pathname).then(function(mainpagecache) {
       return fetch(event.request)
         .then(function(response) {
           if (mainpagecache && !response.ok) {
