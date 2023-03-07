@@ -11,9 +11,4 @@
       <p>
       <h4> To read more about me: </h4>
       <div><a class="btn" href="/about"> about </a></div>
-      <p> This page is created on Codesandbox, you can fork and edit this page: </p>
-      <div><a href="https://codesandbox.io/s/static-ccu9y?fontsize=14">
-        <img alt="Edit github.io" src="https://codesandbox.io/static/img/play-codesandbox.svg">
-      </a>
-      </div>
       </p>

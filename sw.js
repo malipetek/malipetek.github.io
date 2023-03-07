@@ -1,5 +1,5 @@
 const CACHE_NAME = "githubio-cache";
-const CACHE_MAP = ["/"];
+const CACHE_MAP = ["/", "/reset.css", "/styles.css", "/atom-one-dark.css", "/static/images/me_optimized.jpg", "/index.js", "/main.js"];
 
 self.addEventListener("install", event => {
   event.waitUntil(
@@ -13,10 +13,9 @@ self.addEventListener("install", event => {
 });
 
 self.addEventListener("fetch", function(event) {
-  if (event.request.destination !== "document") return;
-  console.log("Handling fetch event for", event.request);
+  const url = new URL(event.request.url);
   event.respondWith(
-    caches.match("/").then(function(mainpagecache) {
+    caches.match(url.path).then(function(mainpagecache) {
       return fetch(event.request)
         .then(function(response) {
           if (mainpagecache && !response.ok) {
