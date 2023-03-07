@@ -1,5 +1,5 @@
 const CACHE_NAME = "githubio-cache";
-const CACHE_MAP = ["/", "/reset.css", "/styles.css", "/atom-one-dark.css", "/static/images/me_optimized.jpg", "/index.js", "/main.js"];
+const CACHE_MAP = ["/", "/static/styles/reset.css", "/static/styles/styles.css", "/static/styles/atom-one-dark.css", "/static/images/me_optimized.jpg", "/index.js", "/main.js"];
 
 self.addEventListener("install", event => {
   event.waitUntil(
