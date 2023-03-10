@@ -1,9 +1,0 @@
-<h1> Utility: </h1>
-<h2> Warpable Class for FabricJS </h2>
-<h3> Description: </h3>
-<p> A small class extended from fabricJS Image to allow users to warp images adding warp points. 
-Warping algorithm forked from <a href="https://github.com/cxcxcxcx/imgwarp-js"> cxcxcxcx/imgwarp-js </a> which is ported from Drupal Ye's C++ code.
-</p> 
-<div><a class="btn" data-force="external" rel="noreferrer" href="https://malipetek.github.io/imgwarp-js-fabricjs/" > Open In New Tab </a></div>
-
-<iframe rel="noreferrer" src="https://malipetek.github.io/imgwarp-js-fabricjs/" > </iframe>

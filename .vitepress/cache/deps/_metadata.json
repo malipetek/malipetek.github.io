@@ -1,0 +1,50 @@
+{
+  "hash": "b00e7251",
+  "browserHash": "89bd7697",
+  "optimized": {
+    "vue": {
+      "src": "../../../node_modules/vue/dist/vue.runtime.esm-bundler.js",
+      "file": "vue.js",
+      "fileHash": "77467f3b",
+      "needsInterop": false
+    },
+    "@vue/devtools-api": {
+      "src": "../../../node_modules/@vue/devtools-api/lib/esm/index.js",
+      "file": "@vue_devtools-api.js",
+      "fileHash": "4e967abd",
+      "needsInterop": false
+    },
+    "vuetify": {
+      "src": "../../../node_modules/vuetify/lib/framework.mjs",
+      "file": "vuetify.js",
+      "fileHash": "fe465315",
+      "needsInterop": false
+    },
+    "vuetify/components": {
+      "src": "../../../node_modules/vuetify/lib/components/index.mjs",
+      "file": "vuetify_components.js",
+      "fileHash": "62bf62bd",
+      "needsInterop": false
+    },
+    "vuetify/directives": {
+      "src": "../../../node_modules/vuetify/lib/directives/index.mjs",
+      "file": "vuetify_directives.js",
+      "fileHash": "a78b51f7",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-J3JOQVQH": {
+      "file": "chunk-J3JOQVQH.js"
+    },
+    "chunk-AFTFKOOT": {
+      "file": "chunk-AFTFKOOT.js"
+    },
+    "chunk-ZSAV5S7T": {
+      "file": "chunk-ZSAV5S7T.js"
+    },
+    "chunk-B7UOCPZH": {
+      "file": "chunk-B7UOCPZH.js"
+    }
+  }
+}
