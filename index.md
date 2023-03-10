@@ -3,7 +3,7 @@ import { VPTeamMembers } from 'vitepress/theme'
 
 const theguy = [
   {
-    avatar: 'static/images/me.webp',
+    avatar: 'images/me.webp',
     name: 'Muhammet Ali Petek',
     title: 'Developer',
     links: [

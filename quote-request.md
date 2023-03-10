@@ -7,15 +7,15 @@ const email = ref("");
 const items = ref([{
     label: "Shopify",
     value: 'shopify',
-    image: 'static/images/shopify-icon.svg'
+    image: 'images/shopify-icon.svg'
   }, {
     label: "Development",
     value: 'development',
-    image: 'static/images/javascript.svg'
+    image: 'images/javascript.svg'
   }, {
     label: "Smt Else",
     value: 'generic',
-    image: 'static/images/chat.svg'
+    image: 'images/chat.svg'
   }]);
 const selection = ref('shopify');
 
