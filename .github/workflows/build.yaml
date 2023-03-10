@@ -2,6 +2,12 @@ on:
   push:
     branches:
       - "master"
+    paths:
+      - "**.md"
+      - "**.js"
+      - "**.css"
+      - "**.postcss"
+      - "**.json"
   workflow_dispatch:
 name: 🚀 Build page
 jobs:
@@ -36,4 +42,5 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         email: support+actions@github.com
+        branch: gh-pages
         build_dir: build
