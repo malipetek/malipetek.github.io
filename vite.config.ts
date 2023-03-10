@@ -1,6 +1,4 @@
 
 export default {
-  ssr: { noExternal: ['vuetify'] },
-  plugins: []
-
+  ssr: { noExternal: ['vuetify'] }
 }

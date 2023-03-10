@@ -5,7 +5,7 @@ export default {
   description: 'Your Favorite Full Stack Developer',
   lang: 'en-US',
   srcDir: './',
-  outDir: '../build',
+  outDir: 'build',
   base: '/',
   plugins: ['@vuepress/active-header-links', 'vuepress-plugin-table-of-contents'],
   themeConfig: {
