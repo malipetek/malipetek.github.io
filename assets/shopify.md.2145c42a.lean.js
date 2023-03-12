@@ -1,1 +1,0 @@
-import{_ as e,o as t,c as o,a}from"./app.e059b5d9.js";const y=JSON.parse('{"title":"Shopify","description":"","frontmatter":{},"headers":[],"relativePath":"shopify.md"}'),i={name:"shopify.md"},s=a("",5),r=[s];function n(h,d,p,l,c,f){return t(),o("div",null,r)}const _=e(i,[["render",n]]);export{y as __pageData,_ as default};
