@@ -1,4 +1,6 @@
 import path from 'path';
+import { linkToCardPlugin } from "@luckrya/markdown-it-link-to-card";
+import { generateCardDomFragment } from './link-to-card-plugin/assemble-card';
 
 export default {
   title: 'malipetek',
@@ -7,7 +9,19 @@ export default {
   srcDir: './',
   outDir: 'build',
   base: '/',
-  plugins: ['@vuepress/active-header-links', 'vuepress-plugin-table-of-contents'],
+  plugins: ['@luckrya/markdown-it-link-to-card', '@vuepress/active-header-links', 'vuepress-plugin-table-of-contents'],
+  head: [
+    ['script',
+      {
+        src: 'https://www.googletagmanager.com/gtag/js?id=G-W88DDBE0KY',
+        async: ''
+    }],
+    ['script',
+      {
+        src: 'gtag_init.js',
+        async: ''
+    }]
+  ],
   themeConfig: {
     socialLinks: [
       { icon: 'github', link: 'https://github.com/malipetek' },
@@ -28,8 +42,8 @@ export default {
             text: 'Experience',
             collapsed: false,
             items: [
-              { text: 'Customily', link: '/customily' },
               { text: 'TRUTH', link: '/truth' },
+              { text: 'Customily', link: '/customily' },
             ]
           },
           {
@@ -63,7 +77,8 @@ export default {
             collapsed: false,
             items: [
               {
-                text: 'CSS only toggleables', link: 'blog/web/CSS only toggleables.md' },
+                text: 'CSS only toggleables', link: 'blog/web/CSS only toggleables.md'
+              },
             ]
           },
           {
@@ -111,7 +126,39 @@ export default {
       'scss',
       'sass',
       'less'
-    ]
+    ],
+    config: (md) => {
+      md.use(linkToCardPlugin, {
+        // options
+        size: "small",
+        render: ({
+          logo,
+          title,
+          description
+        },
+          {
+            href,
+            linkTitle,
+            showTitle,
+            target,
+            size,
+            classPrefix
+          }) => {
+          return generateCardDomFragment({
+            logo,
+            title: title.replace('&amp;#8211;', '-'),
+            description
+          }, {
+            href,
+            target,
+            // @ts-ignore
+            showTitle,
+            linkTitle,
+            size
+          });
+        }
+      });
+    }
   },
   footer: {
     message: 'Released under the <a href="https://github.com/vuejs/vitepress/blob/main/LICENSE">MIT License</a>.',

@@ -1,35 +1,41 @@
 {
-  "hash": "b00e7251",
-  "browserHash": "89bd7697",
+  "hash": "36574850",
+  "browserHash": "141f8129",
   "optimized": {
     "vue": {
       "src": "../../../node_modules/vue/dist/vue.runtime.esm-bundler.js",
       "file": "vue.js",
-      "fileHash": "77467f3b",
+      "fileHash": "495d9a7e",
       "needsInterop": false
     },
     "@vue/devtools-api": {
       "src": "../../../node_modules/@vue/devtools-api/lib/esm/index.js",
       "file": "@vue_devtools-api.js",
-      "fileHash": "4e967abd",
+      "fileHash": "85343edf",
+      "needsInterop": false
+    },
+    "vitepress-plugin-google-analytics": {
+      "src": "../../../node_modules/vitepress-plugin-google-analytics/dist/index.mjs",
+      "file": "vitepress-plugin-google-analytics.js",
+      "fileHash": "5475acd3",
       "needsInterop": false
     },
     "vuetify": {
       "src": "../../../node_modules/vuetify/lib/framework.mjs",
       "file": "vuetify.js",
-      "fileHash": "fe465315",
+      "fileHash": "bee14e1b",
       "needsInterop": false
     },
     "vuetify/components": {
       "src": "../../../node_modules/vuetify/lib/components/index.mjs",
       "file": "vuetify_components.js",
-      "fileHash": "62bf62bd",
+      "fileHash": "eb62a114",
       "needsInterop": false
     },
     "vuetify/directives": {
       "src": "../../../node_modules/vuetify/lib/directives/index.mjs",
       "file": "vuetify_directives.js",
-      "fileHash": "a78b51f7",
+      "fileHash": "2cc35db1",
       "needsInterop": false
     }
   },

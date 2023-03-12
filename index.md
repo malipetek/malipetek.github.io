@@ -1,3 +1,10 @@
+---
+head:
+  - - meta
+    - name: ir-site-verification-token
+      content: 718139090
+---
+
 <script setup>
 import { VPTeamMembers } from 'vitepress/theme'
 
@@ -27,6 +34,10 @@ const theguy = [
 ## What I do?
 
 I do develop mostly Shopify themes/apps nowadays. But I like anything with JS really. React? fine, Vue? cool, Svelte? fantastic, jQuery? 😳 let's go. Nodejs? your computer is mine now.
+
+If you are a Shopify theme developer, I am developing a tool. I would love you to give it a try.
+
+[Liquivelte](@:https://liquivelte.js.org/)
 
 ## What is my level?
 I require zero(0) babysitting.

@@ -1,3 +1,4 @@
+
 # Shopify App Development
 
 I did develop 2 public 1 custom Shopify apps from scratch. I touched many aspects of Shopify API like 

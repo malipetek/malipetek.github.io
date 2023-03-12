@@ -6,3 +6,4 @@ Their ecom themes use a templating language called twig. Which is kind of better
 
 Downside of lightspeed, it has a traditional corporate setup when it comes to development. Being a partner does not only mean signing up like in the Shopify. It is unlikely you can get a partner as a single developer. But for the clients, probably you are good to go, their support is just like Shopify.
 
+[Lightspeed Ecom](@:https://www.lightspeedhq.com/pos/retail/ecommerce/)

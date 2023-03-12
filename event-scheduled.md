@@ -2,9 +2,9 @@
 prev: false
 next: false
 ---
-# Form submitted
+# Event Scheduled
 
-You are really good at this. 
+Looking forward to talk to you.
 
 ---
 

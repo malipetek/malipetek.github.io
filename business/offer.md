@@ -1,11 +1,11 @@
 # Partnership or Full Time Role Offers
 
 ## Your App Idea Is Not Good At All
-If you have an idea you think that would grow into a blooming source of income when it gets alive, please keep it to yourself.
+If you have an idea you think that would go big when it gets alive, please keep it to yourself.
 
-> Execution is everything
+> # Execution is everything
 
-If you are believing in execution like me tho, contact me and we can start working on facebook competition.
+If you are believing in execution like me tho, contact me and we can start working on facebook competition together. If you have realistic expectations, I can get you there.
 
 ## Full time roles
 It is hard to believe but all projects I was involved so far was small to middle sized teams. 

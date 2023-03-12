@@ -263,6 +263,19 @@
   resolved "https://registry.yarnpkg.com/@esbuild/win32-x64/-/win32-x64-0.16.17.tgz#c5a1a4bfe1b57f0c3e61b29883525c6da3e5c091"
   integrity sha512-y+EHuSchhL7FjHgvQL/0fnnFmO4T1bhvWANX6gcnqTjtnKWbTvUMCpGnv2+t+31d7RzyEAYAd4u2fnIhHL6N/Q==
 
+"@luckrya/markdown-it-link-to-card@^0.3.3":
+  version "0.3.3"
+  resolved "https://registry.yarnpkg.com/@luckrya/markdown-it-link-to-card/-/markdown-it-link-to-card-0.3.3.tgz#c489775e5921f63a9d1e95457e88ccb351f4211e"
+  integrity sha512-rvNeV7x1j1TN++au10wMyzbT3GiumMVt61DiJ++jTJeAZsdBIL4ORN/o5uqF01IAlHUWVXKGUpHRaZXqxatKdg==
+  dependencies:
+    "@luckrya/utility" "^0.1.1"
+    xmlhttprequest "^1.8.0"
+
+"@luckrya/utility@^0.1.1":
+  version "0.1.1"
+  resolved "https://registry.yarnpkg.com/@luckrya/utility/-/utility-0.1.1.tgz#aa11e64ea7fb3316bae7d385fe78748b77339551"
+  integrity sha512-TWkgqawyVdaDnPBeOGJTJfI32isrG/t4e4R0Vf2LBMvU2stSDCnJUblKJhcgL9O5EQRb5TBwWj2Pyzc209tQyA==
+
 "@nodelib/fs.scandir@2.1.5":
   version "2.1.5"
   resolved "https://registry.yarnpkg.com/@nodelib/fs.scandir/-/fs.scandir-2.1.5.tgz#7619c2eb21b25483f6d167548b4cfd5a7488c3d5"
@@ -1093,6 +1106,11 @@ vite@^4.1.4:
   optionalDependencies:
     fsevents "~2.3.2"
 
+vitepress-plugin-google-analytics@^1.0.2:
+  version "1.0.2"
+  resolved "https://registry.yarnpkg.com/vitepress-plugin-google-analytics/-/vitepress-plugin-google-analytics-1.0.2.tgz#e037d3723284a896560fe7371c223c1f737ae13c"
+  integrity sha512-ri8bFUAmt3c/DtPrALauGBIUr2gIJ11c1qNRhwd3/+aiuYZBfQpOosSxcO1AswgwRxP9FwBS6Z7jgdDVyXb2hA==
+
 vitepress@^1.0.0-alpha.50:
   version "1.0.0-alpha.50"
   resolved "https://registry.yarnpkg.com/vitepress/-/vitepress-1.0.0-alpha.50.tgz#b4d5bde195cd4ebb21520f5868c30ce20f4033f4"
@@ -1143,6 +1161,11 @@ vuetify@^3.1.7:
   version "3.1.7"
   resolved "https://registry.yarnpkg.com/vuetify/-/vuetify-3.1.7.tgz#e4b73b906a4bda8bc7a119fb0736c6a602556c00"
   integrity sha512-1hDQ4ISszEKP9S9nOhUNsv3rZ4Zr1UYn4+G4PIlcS9b16Jy4/VS2KDrLyTG8Shnv9enizg31iF5iVnlj96OEeA==
+
+xmlhttprequest@^1.8.0:
+  version "1.8.0"
+  resolved "https://registry.yarnpkg.com/xmlhttprequest/-/xmlhttprequest-1.8.0.tgz#67fe075c5c24fef39f9d65f5f7b7fe75171968fc"
+  integrity sha512-58Im/U0mlVBLM38NdZjHyhuMtCqa61469k2YP/AaPbvCoV9aQGUpbJBj1QRm2ytRiVQBD/fsw7L2bJGDVQswBA==
 
 xtend@^4.0.2:
   version "4.0.2"

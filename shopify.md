@@ -7,3 +7,5 @@ As a front end developer it is weird I started Shopify with app development but 
 Until now I have had experience with many aspects of Shopify except a headless build. Published a public app and failed, modified checkout to apply discounts, wrote background services to clone stores routinely.
 
 Now I am trying to develop and promote [Liquivelte](https://liquivelte.js.org) which is a opinionated way to write Shopify theme code other than helping you with your store.
+
+[Shopify](@:https://www.shopify.com/)

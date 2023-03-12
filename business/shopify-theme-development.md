@@ -1,3 +1,8 @@
+---
+next: 
+  text: Shopify Theme Maintenance
+  link: business/shopify-theme-maintenance
+---
 # Shopify Theme Development
 
 We all know nowadays theme development for Shopify means modifying the looks of the Dawn theme. Adding a few of special sections when necessary. Or sometimes it might mean setting up the store with configurations, app installs and metafield definitions.

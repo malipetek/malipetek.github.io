@@ -1,3 +1,7 @@
+---
+prev: false
+next: false
+---
 <script setup>
 import { ref } from "vue";
 import { useData } from "vitepress";
@@ -22,9 +26,27 @@ const selection = ref('shopify');
   </script>
 <style lang="postcss">
   @import "vuetify/dist/vuetify.min.css";
+  .vp-doc._quote-request .contact-form, .vp-doc._quote-request #send-a-request, .vp-doc._quote-request p {
+    margin-left: auto;
+    margin-right: auto;
+    text-align:  center;
+  }
+  @media screen and (min-width: 960px) {
+    .vp-doc._quote-request .contact-form, .vp-doc._quote-request #send-a-request, .vp-doc._quote-request p {
+      margin-left: initial;
+      margin-right: initial;
+      text-align: left;
+    }
+  }
+
+
 </style>
 
-<v-sheet width="320" class="mx-auto" theme="{{ isDark ? 'dark' : 'light' }}">
+# Send a request
+<br />
+
+<v-sheet theme="{{ isDark ? 'dark' : 'light' }}" width="320" 
+        class="contact-form" >
   <v-form ref="form" id="contact-form" action="https://formsubmit.co/malipetek@gmail.com" method="POST">
     <input type="hidden" name="_subject" :value="selection">
     <input type="hidden" name="_next" value="https://malipetek.github.io/form-sent">
