@@ -9,6 +9,13 @@ export default {
   srcDir: './',
   outDir: 'build',
   base: '/',
+  /** @type {import('vite').UserConfig} */
+  vite: {
+    // Vite config options
+    build: {
+      minify: false
+    }
+  },
   plugins: ['@luckrya/markdown-it-link-to-card', '@vuepress/active-header-links', 'vuepress-plugin-table-of-contents'],
   head: [
     ['script',

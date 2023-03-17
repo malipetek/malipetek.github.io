@@ -43,14 +43,38 @@ If you are a Shopify theme developer, I am developing a tool. I would love you t
 I require zero(0) babysitting.
 ::: details Wut this means?
 
-I don't get intimidated by complexity of any project. If something does not do what I expect, I go into logs or source codes of packages or chromium google groups. Where ever it takes.
+As a senior-level developer, I possess a wealth of experience and a deep understanding of complex projects. I approach challenges with confidence, undeterred by any level of complexity. In the event of unexpected issues, I draw on my extensive knowledge of source code and logs, as well as consult relevant forums and communities, such as Chromium Google Groups. My unwavering dedication to finding solutions ensures that projects are completed to the highest standard possible.
 
 I do develop anything related to front end. I write javascript like it is my mother tongue. I did work with all kinds of environments from legacy content management systems that would require char escaping to cloud functions that would require fiddling with configuration for days.
 
 If project is cool, I do whatever it takes to crush it. If it is regular work, I just add a bit extra care to feel good about my craft later on.
 :::
 
-## How much I charge?
+## What I charge?
+I have 3 slots available for ongoing theme maintenance. Let's get your store up its feet again.
 
-- Negotiable ~50$/hr
-- Wan't project based pricing? [Get a quote](/quote-request.md).
+- Negotiable ~50$/hr [Contact for ongoing contract](/quote-request.md)
+- Wan't project based pricing? [Get a quote](/quote-request.md)
+
+---
+
+::: details A more formal intro?
+
+As an expert in Shopify theme development, I am dedicated to providing exceptional services to my valued clients. I understand that having a well-designed and functional website is crucial for businesses to thrive in the highly competitive e-commerce landscape. That's why I provide a range of services that can help you create a custom Shopify theme that not only looks great but also meets your unique business needs.
+
+# Custom Shopify Theme Development
+
+I firmly believe that every business is unique and deserves a custom Shopify theme that reflects its brand identity. My extensive experience in Shopify theme development allows me to create bespoke themes that are tailored to your business goals, target audience, and brand personality. My team and I work closely with you to ensure that the final design meets your expectations and is optimized for user experience and search engines.
+
+# Shopify Theme Customization
+
+If you already have a Shopify theme but need to make some customizations to fit your business needs, I can help. I can modify your existing theme to add new features, improve performance, or enhance the user interface. My expertise in Liquid, Shopify's templating language, allows me to make any necessary modifications to your theme without affecting its functionality.
+
+# Shopify App Development
+
+I also offer Shopify app development services to help you extend your store's functionality and streamline your business processes. Whether you need a custom app to integrate with your third-party services or want to create a new feature for your store, I can help you develop a scalable and secure Shopify app that meets your needs.
+
+# Conclusion
+
+As a Shopify expert, I am committed to helping businesses succeed online through custom Shopify theme development, theme customization, and app development services. My team and I have years of experience in creating high-quality and effective Shopify solutions that drive sales and increase customer engagement. If you're looking for a reliable Shopify development partner, look no further than my services. Contact me today to learn how I can help you achieve your business goals.
+:::
