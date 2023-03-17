@@ -1,1 +1,0 @@
-import{_ as e,o as t,c as i,a as o}from"./app.d8498b5e.js";const u=JSON.parse('{"title":"Lightspeed eCom","description":"","frontmatter":{},"headers":[],"relativePath":"lightspeed.md"}'),a={name:"lightspeed.md"},s=o("",5),n=[s];function p(l,r,h,d,c,m){return t(),i("div",null,n)}const f=e(a,[["render",p]]);export{u as __pageData,f as default};

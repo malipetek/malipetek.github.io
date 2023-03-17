@@ -1,1 +1,0 @@
-import{_ as e,o as t,c as i,a as o}from"./app.d8498b5e.js";const w=JSON.parse('{"title":"Customily","description":"","frontmatter":{},"headers":[],"relativePath":"customily.md"}'),a={name:"customily.md"},n=o("",5),s=[n];function r(l,p,d,c,m,h){return t(),i("div",null,s)}const y=e(a,[["render",r]]);export{w as __pageData,y as default};
