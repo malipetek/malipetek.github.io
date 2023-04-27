@@ -53,8 +53,8 @@ If project is cool, I do whatever it takes to crush it. If it is regular work, I
 ## What I charge?
 I have 3 slots available for ongoing theme maintenance. Let's get your store up its feet again.
 
-- Negotiable ~50$/hr [Contact for ongoing contract](/quote-request.md)
-- Wan't project based pricing? [Get a quote](/quote-request.md)
+- Negotiable ~50$/hr [Contact for ongoing contract](/quote-request)
+- Wan't project based pricing? [Get a quote](/quote-request)
 
 ---
 
