@@ -96,6 +96,13 @@ export default {
             ]
           },
           {
+            text: 'Svelte',
+            collapsed: true,
+            items: [
+              {text: "Why my image is not hydrating right with Svelte", link: 'blog/svelte/why-my-image-is-not-hydrating-right.md' },
+            ]
+          },
+          {
             text: 'LightSpeed',
             collapsed: true,
             items: [
