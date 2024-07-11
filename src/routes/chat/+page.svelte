@@ -38,6 +38,7 @@
   }
 
   onMount(async () => {
+    console.log('onMount');
     const {default: Chatbot} = await import("flowise-embed/dist/web.js");
 
     Chatbot.initFull({
@@ -58,7 +59,6 @@
         },
       tooltip: {
         showTooltip: false,
-        tooltipMessage: 'Hi There 👋!',
         tooltipBackgroundColor: 'black',
         tooltipTextColor: 'white',
         tooltipFontSize: 16,
@@ -68,8 +68,7 @@
         showAgentMessages: false,
         title: 'Muhammet\'s Bot',
         titleAvatarSrc: 'https://raw.githubusercontent.com/walkxcode/dashboard-icons/main/svg/google-messages.svg',
-        // welcomeMessage: 'Hello, I am Muhammet, how can I help you?',
-        errorMessage: 'This is a custom error message',
+        welcomeMessage: 'Hello, I am Muhammet, how can I help you?',
         backgroundColor: 'transparent',
         height: null,
         width: '100%',
@@ -87,15 +86,13 @@
           avatarSrc: 'https://raw.githubusercontent.com/zahidkhawaja/langchain-chat-nextjs/main/public/usericon.png',
         },
         textInput: {
-          placeholder: 'Type your question',
+          placeholder: 'Lets talk about your project...',
           backgroundColor: 'rgba(59, 129, 246, 0.1)',
           textColor: 'inherit',
           sendButtonColor: '#3B81F6',
-          autoFocus: true, // If not used, autofocus is disabled on mobile and enabled on desktop. true enables it on both, false disables it on both.
+          autoFocus: true,
           sendMessageSound: false,
-          // sendSoundLocation: "send_message.mp3", // If this is not used, the default sound effect will be played if sendSoundMessage is true.
           receiveMessageSound: false,
-          // receiveSoundLocation: "receive_message.mp3", // If this is not used, the default sound effect will be played if receiveSoundMessage is true.
         },
         feedback: {
           color: '#ddd',
@@ -151,21 +148,21 @@
 <style>
   flowise-fullchatbot {
     position: absolute;
+    width: 90% !important;
+    height: 100vh;
     bottom: 0;
   }
-  :global(.contact-request.trigger) + flowise-fullchatbot {
+  :global(.chat .contact-request.trigger) + flowise-fullchatbot {
     bottom: 56px;
   }
-  :global(.last-update) {
+  :global(.chat .last-update) {
     display: none;
   }
   
-  :global(.content) {
-    width: 100% !important;
-  }
   @media (min-width: 950px) {
-    :global(.content) {
-      width: calc(100% - 55vw) !important;
+    flowise-fullchatbot {
+      width: 72vw !important;
+      left: 28vw !important;
     }
   }
 </style>

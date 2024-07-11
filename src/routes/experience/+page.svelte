@@ -7,7 +7,7 @@
 
   let options = [
         {
-            year: 2018,
+            year: '2017-2019',
             name: "Customily 🇺🇾",
             items: [
             {
@@ -35,13 +35,6 @@
               description:
                 "Customily is a SaaS, and I worked on service integration and JS SDK development for 2 years.",
             },
-          ],
-        },
-    
-        {
-            year: 2019,
-          name: "TRUTH NYC 🇺🇸",
-          items: [
             {
               title: "Bigcommerce",
               tags: [
@@ -51,7 +44,7 @@
                 "Vue2",
                 "Vuetify",
               ],
-              description: "...",
+              description: ``,
             },
             {
               title: "Woocommerce",
@@ -63,6 +56,7 @@
         {
         year: 2020,
           name: "TRUTH NYC 🇺🇸",
+          description: `<p> TURTH NYC is a world class design tech agency. Their projects are like so diverse I wouldnt believe they had these connections before I worked with them. Best place for a world class design. </p> Learn more about <a href="/experience/truth" class="text-blue-500">TRUTH NYC</a>`,
           items: [
             {
               title: "Magento Front End",
@@ -99,6 +93,7 @@
         {
         year: '2021-2024',
           name: "TRUTH NYC 🇺🇸",
+          description: `Learn more about <a href="/experience/truth" class="text-blue-500">TRUTH NYC</a>`,
           items: [
             {
               title: "Shopify Plus Client Migration",
@@ -128,6 +123,7 @@
         {
         year: 2022,
           name: "PAX Digital 🇹🇷",
+          description: `Learn more about <a href="https://paxdigital.net/" class="text-blue-500">PAX Digital</a>`,
           items: [
             {
               title: "Public Shopify App",
@@ -139,6 +135,7 @@
         {
           name: "Bemeir LLC 🇺🇸",
           year: '2022-2023',
+          description: `<p> Bemeir is a high tier e-commerce agency in the US. Their clients were piling up when we worked together, they are growing so fast they do something right definitely. </p> Learn more about <a href="https://bemeir.com/" class="text-blue-500">Bemeir LLC</a>`,
           items: [
             {
               title: "Plus Client",
@@ -189,7 +186,7 @@
         </h3>
         <p
           class="mb-4 text-base font-normal text-gray-500 dark:text-gray-400"
-        ></p>
+        >{@html option.description || ''}</p>
 
         {#if Array.isArray(option.items)}
           {#each option.items as op}

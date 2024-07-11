@@ -72,7 +72,7 @@
 	}
 </script>
 
-<Drawer.Root >
+<Drawer.Root shouldScaleBackground >
 	{#if $contact_request}
 		<Drawer.Trigger class="contact-request trigger z-50 absolute p-4 bottom-0 left-0 w-full gradient-bar">Contact Request 
 		{#if $contact_request.email_verified != true}	
@@ -83,7 +83,7 @@
 	<Drawer.Portal >
 		<Drawer.Overlay class="contact-request fixed inset-0 bg-black/40" />
 		<Drawer.Content 
-					class="drawer-content contact-request fixed p-4 pt-24 bottom-0 left-0 right-0 mt-24 flex h-[96%] flex-col rounded-t-[10px] z-[890]"		
+					class="drawer-content contact-request fixed p-12 bottom-0 left-0 right-0 mt-24 flex h-[96vh] flex-col rounded-t-[10px] z-[890]"		
 				>
 				{#if saving}
 				<div class="absolute w-full h-full bg-black bg-opacity-50 rounded-lg">
@@ -147,6 +147,11 @@
 					{/if}
 				</div>
 				{/if}
+
+
+				<Drawer.Close class=" my-8 text-gray-900 bg-white border border-gray-300 focus:outline-none hover:bg-gray-100 focus:ring-4 focus:ring-gray-100 font-medium rounded-full text-sm px-5 py-2.5 me-2 mb-2 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:bg-gray-700 dark:hover:border-gray-600 dark:focus:ring-gray-700">
+					Close 
+				</Drawer.Close>
 			</Drawer.Content>
 			<Drawer.Overlay />
 		</Drawer.Portal>
@@ -160,7 +165,7 @@
 	background-color: rgb(24 24 27 / var(--un-bg-opacity));
 }
 :global(.gradient-bar) {
-	--un-gradient: 45deg,#fa709a,#fee140;
+	--un-gradient: 45deg,#fa709a,#5c40fe;
 	background: linear-gradient(var(--un-gradient));
 	color: inherit;
 }
@@ -170,7 +175,7 @@
   }
   @media (min-width: 950px) {
     :global(.contact-request) {
-      width: calc(100% - 25vw) !important;
+      width: 75vw !important;
       left: 25vw !important;
     }
   }

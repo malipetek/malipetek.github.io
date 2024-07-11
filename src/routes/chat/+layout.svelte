@@ -4,4 +4,6 @@
   }
 </script>
 
-<slot />
+<div class="chat">
+  <slot />
+</div>
