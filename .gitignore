@@ -1,3 +1,81 @@
 node_modules
 .svelte-kit/
 .sveltepress/
+dist/attributes.jpg
+dist/chat.html
+dist/chatbotstack.html
+dist/debugger.jpg
+dist/directus.svg
+dist/experience.html
+dist/flowise.webp
+dist/googlefef0fb40c16b5902.html
+dist/gpt_exp.jpg
+dist/groq.svg
+dist/groq.webp
+dist/gtag_init.js
+dist/index.html
+dist/link-comparison.jpg
+dist/me.webp
+dist/meta.svg
+dist/mistral.jpg
+dist/sitemap.xml
+dist/stack.html
+dist/sveltepress.svg
+dist/sveltepress@3x.png
+dist/_app/env.js
+dist/_app/version.json
+dist/_app/immutable/assets/_layout.B1V2m5zo.css
+dist/_app/immutable/assets/_page.12SNhr3r.css
+dist/_app/immutable/assets/_page.CmL17qfp.css
+dist/_app/immutable/assets/_page.DJGkPuvP.css
+dist/_app/immutable/assets/0.BG2Yus8Y.css
+dist/_app/immutable/assets/3.CmL17qfp.css
+dist/_app/immutable/assets/11.12SNhr3r.css
+dist/_app/immutable/assets/12.DJGkPuvP.css
+dist/_app/immutable/assets/CopyCode.CtenRoN-.css
+dist/_app/immutable/assets/Dank Mono Italic.DdvTjQwK.otf
+dist/_app/immutable/assets/Dank Mono Regular.CfN0Ttr4.otf
+dist/_app/immutable/assets/Link.IfFVqzp4.css
+dist/_app/immutable/assets/PageLayout.DF0vYNcJ.css
+dist/_app/immutable/assets/PageLayout.eWWZRDuW.css
+dist/_app/immutable/assets/ReloadPrompt.D_IPwwAH.css
+dist/_app/immutable/chunks/0.CRE74yNl.js
+dist/_app/immutable/chunks/CopyCode.CUB4E8Xm.js
+dist/_app/immutable/chunks/entry.CBkBtHNQ.js
+dist/_app/immutable/chunks/External.zUOLn-OK.js
+dist/_app/immutable/chunks/index.xbmFUHOd.js
+dist/_app/immutable/chunks/Link.BN2jEHfq.js
+dist/_app/immutable/chunks/PageLayout.Chih1MCe.js
+dist/_app/immutable/chunks/preload-helper.D6kgxu3v.js
+dist/_app/immutable/chunks/Pwa.CLz3FFGV.js
+dist/_app/immutable/chunks/ReloadPrompt.DTd7pmqd.js
+dist/_app/immutable/chunks/scheduler.BBAxU3ed.js
+dist/_app/immutable/chunks/stores.DJq-YzH5.js
+dist/_app/immutable/chunks/virtual_pwa-info.C8T3Yng4.js
+dist/_app/immutable/chunks/web.DbZuorrF.js
+dist/_app/immutable/entry/app.1VCI4SKH.js
+dist/_app/immutable/entry/start.DQKHLHLG.js
+dist/_app/immutable/nodes/0.i8Un2uM7.js
+dist/_app/immutable/nodes/1.CzudnKUa.js
+dist/_app/immutable/nodes/2.CNYvHBT4.js
+dist/_app/immutable/nodes/3.mryVkbfY.js
+dist/_app/immutable/nodes/4.CPXW-YvC.js
+dist/_app/immutable/nodes/5.DYtXHaCX.js
+dist/_app/immutable/nodes/6.B5BbLVOd.js
+dist/_app/immutable/nodes/7.D4A8fbg-.js
+dist/_app/immutable/nodes/8.H5y-oFab.js
+dist/_app/immutable/nodes/9.B_zbAsyW.js
+dist/_app/immutable/nodes/10.FY0Bb_2a.js
+dist/_app/immutable/nodes/11.HLEmI7TZ.js
+dist/_app/immutable/nodes/12.Dlty8CLB.js
+dist/_app/immutable/nodes/13.DiAbYdXs.js
+dist/_app/immutable/nodes/14.D5ICbvE9.js
+dist/_app/immutable/nodes/15.JqDM4sYg.js
+dist/blog/linux/Convert Bash Scripts Into Named CLI Commands in Linux.html
+dist/blog/linux/How I Solved Chrome GPU Issue On My Linux Mint.html
+dist/blog/linux/Linux Mint XFCE How I made VGA display configuration persist.html
+dist/blog/linux/Ubuntu Accessing Google Drive from Nautilus.html
+dist/blog/shopify/how-to-partytown.html
+dist/blog/svelte/why-my-image-is-not-hydrating-right.html
+dist/blog/web/CSS only toggleables.html
+dist/experience/truth.html
