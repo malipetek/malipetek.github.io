@@ -39,3 +39,5 @@ jobs:
         email: support+actions@github.com
         branch: gh-pages
         build_dir: dist
+        cname: malipetek.dev
+        jekyll: no
