@@ -38,4 +38,4 @@ jobs:
       with:
         email: support+actions@github.com
         branch: gh-pages
-        build_dir: build
+        build_dir: dist
