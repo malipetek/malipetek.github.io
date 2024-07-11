@@ -1,0 +1,46 @@
+on:
+  push:
+    branches:
+      - "master"
+    paths:
+      - "**.md"
+      - "**.js"
+      - "**.css"
+      - "**.postcss"
+      - "**.json"
+  workflow_dispatch:
+name: 🚀 Build page
+jobs:
+  build:
+    name: 🎉 Build & deploy
+    runs-on: ubuntu-latest
+    steps:
+    - name: 🚚 Get latest code
+      uses: actions/checkout@v2
+    - name: 📦 Install Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: '16.x'
+
+    - name: Install dependencies
+      run: yarn install
+
+    - name: set git email
+      run:  git config user.email "support+actions@github.com"
+
+    - name: set git user
+      run: git config user.name "Github Actions Bot"
+
+    - name: Build ⚙️
+      run: yarn build
+      env:
+        CI: false
+    
+    - name: Deploy to GitHub Pages
+      uses: Cecilapp/GitHub-Pages-deploy@v3
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        email: support+actions@github.com
+        branch: gh-pages
+        build_dir: build
