@@ -58,6 +58,6 @@
     color: inherit;
     overflow: hidden;
     flex: 0 0 auto;
-    aspect-ratio: 3;
+    aspect-ratio: 2;
   }
 </style>

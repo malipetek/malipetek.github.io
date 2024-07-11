@@ -1,0 +1,7 @@
+@tailwind components;
+@tailwind utilities;
+
+main {
+  position: relative;
+  height: 100vh;
+}

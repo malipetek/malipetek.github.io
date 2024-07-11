@@ -9,18 +9,21 @@ const config = defineConfig({
     // mermaid({}),
     sveltepress({
       theme: defaultTheme({
+        github: 'https://github.com/malipetek',
         navbar: [
-          {
-            title: 'Chat',
-            to: '/chat',
-          }
         ],
         
         sidebar: {
-          home: {
-            title: 'Home',
-            url: '/',
-          }
+          home: [{
+            items: [{
+              title: 'Chat',
+              to: '/chat',
+            },
+            {
+              title: 'Experience',
+              to: '/experience',
+            }],
+          }]
         },
         logo: '/me.webp',
         preBuildIconifyIcons: {
