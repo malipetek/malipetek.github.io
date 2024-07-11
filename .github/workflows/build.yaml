@@ -2,12 +2,7 @@ on:
   push:
     branches:
       - "master"
-    paths:
-      - "**.md"
-      - "**.js"
-      - "**.css"
-      - "**.postcss"
-      - "**.json"
+
   workflow_dispatch:
 name: 🚀 Build page
 jobs:
