@@ -1,0 +1,32 @@
+{
+  "protocol": {
+    "name": "acp",
+    "version": "0.1",
+    "profile": "discovery-only"
+  },
+  "api_base_url": "https://malipetek.dev",
+  "transports": ["https"],
+  "capabilities": {
+    "services": ["paid-discovery", "agentic-commerce-consulting"],
+    "service_details": [
+      {
+        "id": "paid-discovery",
+        "name": "Paid discovery",
+        "description": "A scoped paid discovery pass for product architecture, AI workflow planning, technical rescue, or agentic commerce readiness.",
+        "url": "https://malipetek.dev/chat?intent=paid-discovery"
+      },
+      {
+        "id": "agentic-commerce-consulting",
+        "name": "Agentic commerce consulting",
+        "description": "Consulting for AI-agent discovery, structured product/service data, checkout or quote boundaries, and ACP implementation planning.",
+        "url": "https://malipetek.dev/services/agentic-commerce-consulting"
+      }
+    ],
+    "checkout": {
+      "available": false,
+      "reason": "No autonomous checkout, delegated payment, or self-serve purchase endpoint is exposed yet. Agents should route commercial intent to paid discovery."
+    }
+  },
+  "documentation": "https://malipetek.dev/agents",
+  "contact": "mailto:malipetek@gmail.com"
+}

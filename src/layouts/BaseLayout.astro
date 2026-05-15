@@ -93,6 +93,59 @@ const schemaGraph = {
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={absoluteUrl("/me.webp")} />
     <script type="application/ld+json" set:html={JSON.stringify(schemaGraph)} />
+    <script is:inline>
+      (() => {
+        const modelContext = navigator.modelContext;
+        if (!modelContext || typeof modelContext.registerTool !== "function") return;
+
+        const controller = new AbortController();
+        const openPath = (path) => {
+          const url = new URL(path, window.location.origin);
+          window.location.href = url.href;
+          return { status: "navigated", url: url.href };
+        };
+
+        const tools = [
+          {
+            name: "book_paid_discovery",
+            description:
+              "Start a paid discovery conversation with Muhammet Ali Petek for product engineering, technical rescue, or implementation scope.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                intent: {
+                  type: "string",
+                  description:
+                    "Optional intent slug such as paid-discovery, technical-rescue, or agentic-commerce-consulting.",
+                },
+              },
+            },
+            execute: ({ intent = "paid-discovery" } = {}) =>
+              openPath(`/chat?intent=${encodeURIComponent(intent)}`),
+          },
+          {
+            name: "open_agentic_commerce_consulting",
+            description:
+              "Open the agentic commerce consulting page for ACP readiness, agents.txt, structured product data, and agent discovery work.",
+            inputSchema: { type: "object", properties: {} },
+            execute: () => openPath("/services/agentic-commerce-consulting"),
+          },
+          {
+            name: "review_products",
+            description:
+              "Open product evidence for Muhammet Ali Petek, including GPTflare, Convexer, TAPU, publishing systems, DeepTurkishNews3, and Liquivelte.",
+            inputSchema: { type: "object", properties: {} },
+            execute: () => openPath("/products"),
+          },
+        ];
+
+        for (const tool of tools) {
+          modelContext.registerTool(tool, { signal: controller.signal });
+        }
+
+        window.addEventListener("pagehide", () => controller.abort(), { once: true });
+      })();
+    </script>
     <title>{pageTitle}</title>
   </head>
   <body>

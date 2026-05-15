@@ -38,6 +38,10 @@ Agent-facing policy:
 - agents.txt: https://malipetek.dev/agents.txt
 - agents.json: https://malipetek.dev/agents.json
 - well-known agents.json: https://malipetek.dev/.well-known/agents.json
+- API catalog: https://malipetek.dev/.well-known/api-catalog
+- OpenAPI: https://malipetek.dev/openapi.json
+- Agent skills: https://malipetek.dev/.well-known/agent-skills/index.json
+- ACP discovery: https://malipetek.dev/.well-known/acp.json
 
 Contact:
 - Start a scoped conversation: https://malipetek.dev/chat

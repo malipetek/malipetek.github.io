@@ -32,4 +32,8 @@ Machine-Readable:
 - llms.txt: https://malipetek.dev/llms.txt
 - agents.json: https://malipetek.dev/agents.json
 - well-known agents.json: https://malipetek.dev/.well-known/agents.json
+- API catalog: https://malipetek.dev/.well-known/api-catalog
+- OpenAPI: https://malipetek.dev/openapi.json
+- Agent skills: https://malipetek.dev/.well-known/agent-skills/index.json
+- ACP discovery: https://malipetek.dev/.well-known/acp.json
 - sitemap: https://malipetek.dev/sitemap.xml

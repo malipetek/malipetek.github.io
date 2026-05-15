@@ -1,0 +1,47 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://malipetek.dev",
+      "service-desc": [
+        {
+          "href": "https://malipetek.dev/openapi.json",
+          "type": "application/vnd.oai.openapi+json"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://malipetek.dev/agents",
+          "type": "text/html"
+        },
+        {
+          "href": "https://malipetek.dev/services/agentic-commerce-consulting",
+          "type": "text/html"
+        }
+      ],
+      "status": [
+        {
+          "href": "https://malipetek.dev/health",
+          "type": "application/json"
+        }
+      ],
+      "describedby": [
+        {
+          "href": "https://malipetek.dev/agents.txt",
+          "type": "text/plain"
+        },
+        {
+          "href": "https://malipetek.dev/llms.txt",
+          "type": "text/plain"
+        },
+        {
+          "href": "https://malipetek.dev/.well-known/agent-skills/index.json",
+          "type": "application/json"
+        },
+        {
+          "href": "https://malipetek.dev/.well-known/acp.json",
+          "type": "application/json"
+        }
+      ]
+    }
+  ]
+}
