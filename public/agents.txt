@@ -30,5 +30,6 @@ Commercial-Policy:
 
 Machine-Readable:
 - llms.txt: https://malipetek.dev/llms.txt
-- agents.json: https://malipetek.dev/.well-known/agents.json
+- agents.json: https://malipetek.dev/agents.json
+- well-known agents.json: https://malipetek.dev/.well-known/agents.json
 - sitemap: https://malipetek.dev/sitemap.xml
