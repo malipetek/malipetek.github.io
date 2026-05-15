@@ -56,6 +56,10 @@
     "agents": "https://malipetek.dev/agents.txt",
     "agentsJson": "https://malipetek.dev/agents.json",
     "wellKnownAgentsJson": "https://malipetek.dev/.well-known/agents.json",
+    "apiCatalog": "https://malipetek.dev/.well-known/api-catalog",
+    "openapi": "https://malipetek.dev/openapi.json",
+    "agentSkills": "https://malipetek.dev/.well-known/agent-skills/index.json",
+    "acp": "https://malipetek.dev/.well-known/acp.json",
     "sitemap": "https://malipetek.dev/sitemap.xml"
   }
 }

@@ -1,0 +1,140 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "malipetek.dev Agent Discovery API",
+    "version": "0.1.0",
+    "description": "Public discovery endpoints for Muhammet Ali Petek's product engineering portfolio, agent policy, service metadata, and paid discovery routing. This is not a protected commerce or payment API."
+  },
+  "servers": [
+    {
+      "url": "https://malipetek.dev"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Check public site health",
+        "responses": {
+          "200": {
+            "description": "Site is reachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "service": { "type": "string" },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  },
+                  "required": ["status", "service", "timestamp"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents.json": {
+      "get": {
+        "operationId": "getAgentsMetadata",
+        "summary": "Fetch machine-readable agent policy metadata",
+        "responses": {
+          "200": {
+            "description": "Agent policy metadata",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AgentMetadata" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents.txt": {
+      "get": {
+        "operationId": "getAgentsText",
+        "summary": "Fetch human-readable agent policy",
+        "responses": {
+          "200": {
+            "description": "Agent policy text",
+            "content": {
+              "text/plain": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/llms.txt": {
+      "get": {
+        "operationId": "getLlmsText",
+        "summary": "Fetch LLM-oriented site summary",
+        "responses": {
+          "200": {
+            "description": "LLM-oriented site summary",
+            "content": {
+              "text/plain": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat": {
+      "get": {
+        "operationId": "openPaidDiscoveryRoute",
+        "summary": "Open the paid discovery contact route",
+        "parameters": [
+          {
+            "name": "intent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "examples": ["paid-discovery", "agentic-commerce-consulting", "technical-rescue"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Contact page for paid discovery and project routing",
+            "content": {
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentMetadata": {
+        "type": "object",
+        "properties": {
+          "version": { "type": "string" },
+          "site": { "type": "string", "format": "uri" },
+          "entity": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "type": { "type": "string" },
+              "url": { "type": "string", "format": "uri" },
+              "email": { "type": "string" }
+            }
+          },
+          "agentPolicy": { "type": "object" },
+          "primaryActions": {
+            "type": "array",
+            "items": { "type": "object" }
+          }
+        },
+        "required": ["version", "site", "entity", "agentPolicy", "primaryActions"]
+      }
+    }
+  }
+}
