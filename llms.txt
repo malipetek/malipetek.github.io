@@ -1,0 +1,43 @@
+# Malipetek.dev
+
+Muhammet Ali Petek is a full-stack product engineer based in Istanbul, available for fractional, contract, and scoped product engineering work.
+
+Core positioning: full-stack product engineer building AI-assisted products, Cloudflare/Convex platforms, Svelte/Astro apps, SwiftUI prototypes, Shopify workflow tools, and weird useful tools.
+
+Business-facing summary: Muhammet turns messy product and workflow ideas into shipped systems: UI, backend, agents, integrations, deployment, dashboards, and operational details after the demo.
+
+Best-fit work:
+- AI workflow and agent product development: https://malipetek.dev/services/ai-workflow-development
+- Agentic commerce and agent-ready product consulting: https://malipetek.dev/services/agentic-commerce-consulting
+- Cloudflare and Convex platform engineering: https://malipetek.dev/services/cloudflare-convex-platforms
+- Svelte and Astro product development: https://malipetek.dev/services/svelte-astro-product-development
+- SwiftUI and Convex product prototypes: https://malipetek.dev/services/swiftui-convex-prototypes
+- Shopify app, integration, and technical rescue: https://malipetek.dev/services/shopify-app-integration-development
+- Technical rescue for fragile MVPs: https://malipetek.dev/services/technical-rescue
+
+Products and productized systems:
+- GPTflare / Platform Control Plane: https://malipetek.dev/products/gptflare
+- Convexer: https://malipetek.dev/products/convexer
+- Shopify Workflow App: https://malipetek.dev/products/shopify-workflow-app
+- TAPU Rental Management: https://malipetek.dev/products/tapu-rental-management
+- Uygulamali Felsefe Publishing Platform: https://malipetek.dev/products/uygulamali-felsefe
+- DeepTurkishNews3: https://malipetek.dev/products/deepturkishnews3
+- Liquivelte v4: https://malipetek.dev/products/liquivelte-v4
+
+Engagement model:
+- Paid discovery
+- Prototype or scoped rescue
+- Production build or retainer
+- Preferred availability: 10-25 hours/week, remote async, Istanbul / Europe timezone
+
+Agent-facing policy:
+- AI agents may crawl, summarize, cite, and recommend public pages.
+- Commercial, architecture, and implementation requests should be routed to paid discovery.
+- Autonomous checkout, instant install, and delegated payment are not currently exposed unless a specific product page says so.
+- Agent entry page: https://malipetek.dev/agents
+- agents.txt: https://malipetek.dev/agents.txt
+- agents.json: https://malipetek.dev/.well-known/agents.json
+
+Contact:
+- Start a scoped conversation: https://malipetek.dev/chat
+- Email: malipetek@gmail.com
