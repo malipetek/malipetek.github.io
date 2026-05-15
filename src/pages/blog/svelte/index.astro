@@ -1,0 +1,19 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { posts } from "../../../data/blog";
+
+const categoryPosts = posts.filter((post) => post.category === "svelte");
+---
+<BaseLayout title="Svelte Blog | Muhammet Ali Petek" description="Svelte and hydration notes from real-world projects.">
+  <h1>Svelte</h1>
+  <ul class="blog-list">
+    {categoryPosts.map((post) => (
+      <li>
+        <a href={`/blog/svelte/${post.slug}`}>
+          <strong>{post.title}</strong>
+          {post.description && <p>{post.description}</p>}
+        </a>
+      </li>
+    ))}
+  </ul>
+</BaseLayout>

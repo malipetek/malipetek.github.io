@@ -1,0 +1,19 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { posts } from "../../../data/blog";
+
+const categoryPosts = posts.filter((post) => post.category === "web");
+---
+<BaseLayout title="Web Blog | Muhammet Ali Petek" description="Pure web patterns and CSS interactions.">
+  <h1>Web</h1>
+  <ul class="blog-list">
+    {categoryPosts.map((post) => (
+      <li>
+        <a href={`/blog/web/${post.slug}`}>
+          <strong>{post.title}</strong>
+          {post.description && <p>{post.description}</p>}
+        </a>
+      </li>
+    ))}
+  </ul>
+</BaseLayout>

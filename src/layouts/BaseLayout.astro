@@ -1,0 +1,121 @@
+---
+import "../styles/global.css";
+import SiteNav from "../components/SiteNav.astro";
+import { absoluteUrl, site } from "../data/site";
+
+const frontmatter = Astro.props.frontmatter ?? {};
+const {
+  title = frontmatter.title ?? "Muhammet Ali Petek",
+  description = frontmatter.description ?? site.description,
+  wide = false,
+  canonical,
+  noindex = false,
+  schema = [],
+} = Astro.props;
+const pageTitle = title.includes("Muhammet") ? title : `${title} | Muhammet Ali Petek`;
+const canonicalUrl = absoluteUrl(canonical ?? Astro.url.pathname);
+const schemaItems = Array.isArray(schema) ? schema : [schema];
+const baseSchema = [
+  {
+    "@type": "Person",
+    "@id": `${site.url}/#person`,
+    name: site.name,
+    url: site.url,
+    email: site.email,
+    jobTitle: "Full-stack Product Engineer",
+    sameAs: site.sameAs,
+    knowsAbout: [
+      "AI workflows",
+      "Agentic Commerce Protocol",
+      "Agentic commerce readiness",
+      "agents.txt",
+      "Cloudflare Workers",
+      "Convex",
+      "Svelte",
+      "Astro",
+      "SwiftUI",
+      "Shopify app development",
+      "Technical rescue",
+    ],
+  },
+  {
+    "@type": "Organization",
+    "@id": `${site.url}/#organization`,
+    name: "Malipetek.dev",
+    url: site.url,
+    email: site.email,
+    founder: { "@id": `${site.url}/#person` },
+    sameAs: site.sameAs,
+  },
+  {
+    "@type": "WebSite",
+    "@id": `${site.url}/#website`,
+    name: "Malipetek.dev",
+    url: site.url,
+    description: site.description,
+    publisher: { "@id": `${site.url}/#organization` },
+    inLanguage: "en-US",
+  },
+  {
+    "@type": "WebPage",
+    "@id": `${canonicalUrl}#webpage`,
+    url: canonicalUrl,
+    name: pageTitle,
+    description,
+    isPartOf: { "@id": `${site.url}/#website` },
+    about: { "@id": `${site.url}/#person` },
+    inLanguage: "en-US",
+  },
+];
+const schemaGraph = {
+  "@context": "https://schema.org",
+  "@graph": [...baseSchema, ...schemaItems],
+};
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex,follow" />}
+    <link rel="canonical" href={canonicalUrl} />
+    <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt" />
+    <link rel="alternate" type="text/plain" title="agents.txt" href="/agents.txt" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:site_name" content="Malipetek.dev" />
+    <meta property="og:image" content={absoluteUrl("/me.webp")} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={absoluteUrl("/me.webp")} />
+    <script type="application/ld+json" set:html={JSON.stringify(schemaGraph)} />
+    <title>{pageTitle}</title>
+  </head>
+  <body>
+    <SiteNav />
+    <main class:list={["site-main", wide && "site-main-wide"]}>
+      <slot />
+    </main>
+    <footer>
+      <div class="footer-inner">
+        <p>
+          Muhammet Ali Petek builds AI-assisted products, Cloudflare/Convex platforms,
+          Svelte/Astro systems, SwiftUI prototypes, agentic commerce readiness, and technical rescue work.
+        </p>
+        <nav aria-label="Footer navigation">
+          <a href="/work-with-me">Work with me</a>
+          <a href="/products">Products</a>
+          <a href="/services">Services</a>
+          <a href="/agents">Agents</a>
+          <a href="/resume">Resume</a>
+          <a href="/privacy-policy">Privacy</a>
+          <a href="/terms-of-service">Terms</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

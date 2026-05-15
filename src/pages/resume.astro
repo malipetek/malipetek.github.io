@@ -1,0 +1,138 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const skillGroups = [
+  {
+    title: "Product systems",
+    items: ["End-to-end product engineering", "Auth and data models", "Dashboards", "Admin tooling", "Release hardening"],
+  },
+  {
+    title: "AI and workflows",
+    items: ["OpenAI and AI SDK", "Agent workflows", "AI-assisted content tools", "Workflow automation", "Testing loops"],
+  },
+  {
+    title: "Cloud and platform",
+    items: ["Cloudflare Workers", "Pages", "D1/KV", "Workers Builds", "Docker", "Traefik", "GitHub Actions"],
+  },
+  {
+    title: "Web and mobile",
+    items: ["TypeScript", "Node.js", "Svelte/SvelteKit", "Astro", "React", "SwiftUI", "Convex Swift SDK"],
+  },
+  {
+    title: "Data and integrations",
+    items: ["Convex", "PostgreSQL", "SQLite", "MongoDB", "Firestore", "REST APIs", "Webhooks"],
+  },
+  {
+    title: "Technical rescue",
+    items: ["Shopify Plus", "Liquid", "Lightspeed", "Magento", "WooCommerce", "BigCommerce", "Legacy frontend"],
+  },
+];
+
+const experience = [
+  {
+    title: "Independent / Freelance Full-Stack Developer",
+    time: "Jan 2025 - Present",
+    points: [
+      "Built AI-assisted product and platform projects across TypeScript, Convex, Cloudflare, Svelte/Astro, SwiftUI, Docker, and GitHub-backed workflows.",
+      "Created Convexer, a self-hosted manager for running multiple Convex-based backend bundles on one VPS with Docker, Traefik, PostgreSQL, Better Auth, backups, health checks, and update/rollback flows.",
+      "Built a Cloudflare Worker control plane for AI-generated static sites with D1 records, GitHub repo provisioning, Astro + Keystatic templates, Workers Builds, preview approvals, and Custom GPT configuration.",
+      "Developed TAPU rental management, an iOS + Convex product with real-time subscriptions, marketplace flows, approvals, agent messaging, push notifications, and WhatsApp integration work.",
+      "Built and maintained Astro + Keystatic publishing infrastructure for multilingual content, GitHub-backed editing, Cloudflare deployment, and PDF catalog download flows.",
+    ],
+  },
+  {
+    title: "Full-Stack Developer, TRUTH Istanbul",
+    time: "Nov 2019 - Present / Contract",
+    points: [
+      "Delivered full-stack e-commerce and content projects across Shopify Plus, Lightspeed, Magento 2, WooCommerce, BigCommerce, Node.js, Firebase, PostgreSQL, MongoDB, React/Polaris, Liquid, Twig, and Svelte.",
+      "Built custom Shopify apps and theme features for catalog workflows, wholesale logic, custom forms, conditional shipping, lookbooks, migrations, and storefront/admin workflows.",
+      "Implemented Lightspeed, Shopify, and related platform integrations using APIs, webhooks, embedded apps, and custom backend services.",
+    ],
+  },
+  {
+    title: "Earlier Frontend and E-Commerce Engineering",
+    time: "2017 - 2019",
+    points: [
+      "Started professionally with JavaScript, frontend work, Fabric.js, Vue, Firebase, Express, Webpack, BigCommerce, WooCommerce, and Shopify integrations.",
+      "Built integration surfaces that connected storefront behavior with backend services and image/personalization workflows.",
+    ],
+  },
+];
+---
+
+<BaseLayout
+  title="Resume"
+  description="Resume for Muhammet Ali Petek, full-stack product engineer focused on AI products, Cloudflare, Convex, Svelte/Astro, SwiftUI, infrastructure, and technical rescue."
+  wide={true}
+>
+  <section class="page-hero full-bleed">
+    <div class="container resume-hero">
+      <div>
+        <p class="eyebrow">Resume</p>
+        <h1>Full-stack product engineer for AI products, platforms, and practical systems.</h1>
+        <p>
+          Based in Istanbul. Remote async. Best fit for 10-25 hours/week
+          fractional, contract, prototype, and scoped rescue work.
+        </p>
+      </div>
+      <div class="download-panel">
+        <a class="btn primary" href="/resume/Muhammet-Ali-Petek-Resume-2026.pdf">Download PDF</a>
+        <a class="btn" href="/resume/Muhammet-Ali-Petek-Resume-2026.docx">Download DOCX</a>
+        <a class="text-link" href="mailto:malipetek@gmail.com">malipetek@gmail.com</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="container section-block split-section">
+    <div>
+      <p class="eyebrow">Summary</p>
+      <h2>Product-minded full-stack developer.</h2>
+    </div>
+    <p class="large-note">
+      I build working products end to end: frontend, backend, agents,
+      deployment, dashboards, integrations, and operational tooling. Recent work
+      includes Convex infrastructure, Cloudflare/GitHub control planes,
+      real-time SwiftUI prototypes, publishing systems, and AI-assisted product
+      workflows.
+    </p>
+  </section>
+
+  <section class="section-band">
+    <div class="container">
+      <div class="section-heading">
+        <p class="eyebrow">Skills</p>
+        <h2>Grouped by where they show up in real work.</h2>
+      </div>
+      <div class="skill-grid">
+        {skillGroups.map((group) => (
+          <article>
+            <h3>{group.title}</h3>
+            <ul>
+              {group.items.map((item) => <li>{item}</li>)}
+            </ul>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="container section-block">
+    <div class="section-heading">
+      <p class="eyebrow">Selected experience</p>
+      <h2>Recent work first, e-commerce as a credible rescue lane.</h2>
+    </div>
+    <div class="resume-timeline">
+      {experience.map((item) => (
+        <article>
+          <div>
+            <h3>{item.title}</h3>
+            <span>{item.time}</span>
+          </div>
+          <ul>
+            {item.points.map((point) => <li>{point}</li>)}
+          </ul>
+        </article>
+      ))}
+    </div>
+  </section>
+</BaseLayout>

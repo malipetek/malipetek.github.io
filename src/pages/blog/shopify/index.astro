@@ -1,0 +1,19 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { posts } from "../../../data/blog";
+
+const categoryPosts = posts.filter((post) => post.category === "shopify");
+---
+<BaseLayout title="Shopify Blog | Muhammet Ali Petek" description="Shopify notes and practical walkthroughs.">
+  <h1>Shopify</h1>
+  <ul class="blog-list">
+    {categoryPosts.map((post) => (
+      <li>
+        <a href={`/blog/shopify/${post.slug}`}>
+          <strong>{post.title}</strong>
+          {post.description && <p>{post.description}</p>}
+        </a>
+      </li>
+    ))}
+  </ul>
+</BaseLayout>

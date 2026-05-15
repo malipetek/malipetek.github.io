@@ -1,0 +1,19 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { posts } from "../../../data/blog";
+
+const categoryPosts = posts.filter((post) => post.category === "linux");
+---
+<BaseLayout title="Linux Blog | Muhammet Ali Petek" description="Linux troubleshooting, shell, and desktop workflows.">
+  <h1>Linux</h1>
+  <ul class="blog-list">
+    {categoryPosts.map((post) => (
+      <li>
+        <a href={`/blog/linux/${post.slug}`}>
+          <strong>{post.title}</strong>
+          {post.description && <p>{post.description}</p>}
+        </a>
+      </li>
+    ))}
+  </ul>
+</BaseLayout>

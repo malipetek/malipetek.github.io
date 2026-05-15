@@ -1,0 +1,72 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const stack = [
+  {
+    name: "Flowise",
+    image: "/flowise.webp",
+    role: "Visual workflow experiments for chatbot and agent routing prototypes.",
+  },
+  {
+    name: "Groq",
+    image: "/groq.svg",
+    role: "Fast inference experiments for low-latency conversational workflows.",
+  },
+  {
+    name: "Llama",
+    image: "/meta.svg",
+    role: "Open model testing where cost, control, and speed matter.",
+  },
+  {
+    name: "Directus",
+    image: "/directus.svg",
+    role: "Content/data admin surface and lightweight workflow automation.",
+  },
+];
+---
+
+<BaseLayout
+  title="AI Workflow Stack"
+  description="Static notes on the AI workflow stack behind Muhammet Ali Petek's chatbot and agent experiments."
+  wide={true}
+>
+  <section class="page-hero full-bleed">
+    <div class="container narrow-copy">
+      <p class="eyebrow">AI workflow stack</p>
+      <h1>Chat is a product surface, not the whole product.</h1>
+      <p>
+        This page keeps the original chatbot-stack intent without the Flowise
+        runtime embed, Turnstile, stores, or request editor. The important part
+        is the product pattern: conversation, routing, data capture, safety, and
+        follow-up workflow.
+      </p>
+    </div>
+  </section>
+
+  <section class="container section-block">
+    <div class="stack-grid">
+      {stack.map((item) => (
+        <article class="stack-item">
+          <img src={item.image} alt={`${item.name} logo`} />
+          <h2>{item.name}</h2>
+          <p>{item.role}</p>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <section class="section-band">
+    <div class="container split-section">
+      <div>
+        <p class="eyebrow">What matters</p>
+        <h2>From chatbot demo to maintainable workflow.</h2>
+      </div>
+      <ul class="lane-list">
+        <li>Capture the reason someone reached out.</li>
+        <li>Route discovery, rescue, collaboration, and strange tool ideas differently.</li>
+        <li>Protect usage and data flows without adding ceremony.</li>
+        <li>Keep the operational follow-up visible after the conversation ends.</li>
+      </ul>
+    </div>
+  </section>
+</BaseLayout>

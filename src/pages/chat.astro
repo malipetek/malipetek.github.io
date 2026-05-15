@@ -1,0 +1,83 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const intents = [
+  {
+    label: "Paid discovery",
+    subject: "Paid discovery for product engineering",
+    copy: "I have a product/workflow problem and want a paid discovery pass.",
+  },
+  {
+    label: "Fractional engineering",
+    subject: "Fractional product engineering",
+    copy: "I need 10-25 hours/week of product/platform engineering help.",
+  },
+  {
+    label: "Technical rescue",
+    subject: "Technical rescue scope",
+    copy: "I have a fragile MVP, integration, deployment, or AI workflow that needs rescue.",
+  },
+  {
+    label: "Product collaboration",
+    subject: "Product collaboration",
+    copy: "I want to discuss a scoped prototype, productized service, or build.",
+  },
+  {
+    label: "Something weird",
+    subject: "Something weird and useful",
+    copy: "I have an unusual tool/workflow idea that might fit your style.",
+  },
+];
+
+const encodedBody =
+  "Hi Muhammet,%0D%0A%0D%0AContext:%0D%0A-%20What%20are%20we%20building%20or%20fixing?%0D%0A-%20What%20exists%20today?%0D%0A-%20What%20needs%20to%20be%20true%20in%202-6%20weeks?%0D%0A-%20Rough%20budget%20or%20weekly%20hours%20shape:%0D%0A%0D%0A";
+---
+
+<BaseLayout
+  title="Start a Product Scope"
+  description="Start paid discovery, fractional engineering, technical rescue, product collaboration, or a weird useful tool with Muhammet Ali Petek."
+  wide={true}
+>
+  <section class="page-hero full-bleed">
+    <div class="container narrow-copy">
+      <p class="eyebrow">Contact</p>
+      <h1>Tell me what is messy, fragile, or almost working.</h1>
+      <p>
+        The best first message gives me the current state, the desired next
+        milestone, and the budget or time shape. We can start with paid
+        discovery, then decide if prototype or build work makes sense.
+      </p>
+    </div>
+  </section>
+
+  <section class="container section-block contact-grid">
+    <div class="intent-list">
+      {intents.map((intent) => (
+        <a
+          class="intent-card"
+          href={`mailto:malipetek@gmail.com?subject=${encodeURIComponent(intent.subject)}&body=${encodedBody}`}
+        >
+          <span>{intent.label}</span>
+          <strong>{intent.copy}</strong>
+        </a>
+      ))}
+    </div>
+    <aside class="contact-panel">
+      <p class="eyebrow">Signals that help</p>
+      <ul class="plain-list">
+        <li>What exists now: repo, demo, idea, screenshots, or nothing yet.</li>
+        <li>What is risky: AI behavior, data model, infra, integration, UX, deadline.</li>
+        <li>What kind of work fits: discovery, prototype, rescue, build, retainer.</li>
+        <li>Budget shape: fixed scope, weekly hours, or rough monthly range.</li>
+      </ul>
+      <div class="rule-box">
+        <strong>Boundary</strong>
+        <p>
+          I do not do unpaid architecture or implementation plans. Paid
+          discovery is the clean first step when the problem needs real thinking.
+        </p>
+      </div>
+      <a class="btn primary" href="mailto:malipetek@gmail.com?subject=Paid%20discovery%20for%20product%20engineering">Email directly</a>
+    </aside>
+  </section>
+</BaseLayout>

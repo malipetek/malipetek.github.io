@@ -1,0 +1,19 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const target = "/products";
+---
+
+<BaseLayout
+  title="Products moved"
+  description="The proof-of-work projects page has moved to products."
+  canonical={target}
+  noindex={true}
+>
+  <h1>Moved to products</h1>
+  <p>This page moved to <a href={target}>/products</a>.</p>
+  <script define:vars={{ target }} is:inline>
+    window.location.replace(target);
+  </script>
+  <meta http-equiv="refresh" content={`0;url=${target}`} />
+</BaseLayout>

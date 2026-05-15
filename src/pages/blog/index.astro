@@ -1,0 +1,33 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { posts } from "../../data/blog";
+
+const categories = [
+  { key: "linux", title: "Linux" },
+  { key: "shopify", title: "Shopify" },
+  { key: "svelte", title: "Svelte" },
+  { key: "web", title: "Web" },
+];
+---
+<BaseLayout title="Blog | Muhammet Ali Petek" description="Tech notes, troubleshooting, and practical guides from building in the wild.">
+  <h1>Blog</h1>
+  <div>
+    {categories.map((category) => (
+      <section>
+        <h2><a href={`/blog/${category.key}`}>{category.title}</a></h2>
+        <ul class="blog-list">
+          {posts
+            .filter((post) => post.category === category.key)
+            .map((post) => (
+              <li>
+                <a href={`/blog/${post.category}/${post.slug}`}>
+                  <strong>{post.title}</strong>
+                  {post.description && <p>{post.description}</p>}
+                </a>
+              </li>
+            ))}
+        </ul>
+      </section>
+    ))}
+  </div>
+</BaseLayout>

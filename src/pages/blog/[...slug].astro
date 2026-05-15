@@ -1,0 +1,28 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { compatibilityMap } from "../../data/blog";
+
+export function getStaticPaths() {
+  return Object.keys(compatibilityMap).map((slug) => ({
+    params: {
+      slug,
+    },
+  }));
+}
+
+const rawSlug = Astro.params.slug || "";
+const target = compatibilityMap[decodeURIComponent(rawSlug)] || "/blog";
+---
+<BaseLayout
+  title="Redirecting"
+  description="Redirecting to the normalized blog path."
+  canonical={target}
+  noindex={true}
+>
+  <h1>Moved</h1>
+  <p>This URL moved. You will be redirected to <a href={target}>{target}</a>.</p>
+  <script define:vars={{ target }} is:inline>
+    window.location.replace(target);
+  </script>
+  <meta http-equiv="refresh" content={`0;url=${target}`} />
+</BaseLayout>

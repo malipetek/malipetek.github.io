@@ -1,0 +1,42 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const notes = [
+  "Turning Convex and Cloudflare experiments into cleaner platform primitives.",
+  "Refining Astro/Keystatic publishing workflows for multilingual editorial teams.",
+  "Building SwiftUI + Convex prototypes where mobile UX and backend state move together.",
+  "Keeping technical rescue work grounded: fewer moving parts, clearer deployment paths, better operational visibility.",
+];
+---
+
+<BaseLayout
+  title="Now"
+  description="Current work and lab notes from Muhammet Ali Petek."
+  wide={true}
+>
+  <section class="page-hero full-bleed">
+    <div class="container narrow-copy">
+      <p class="eyebrow">Now / lab</p>
+      <h1>Current experiments and useful edges.</h1>
+      <p>
+        A lightweight snapshot of what I am working on around AI products,
+        Cloudflare/Convex platforms, publishing systems, and technical rescue.
+      </p>
+    </div>
+  </section>
+
+  <section class="container section-block">
+    <ul class="now-list">
+      {notes.map((note) => <li>{note}</li>)}
+    </ul>
+    <div class="contact-panel">
+      <p class="eyebrow">Availability</p>
+      <h2>Open to paid discovery and fractional work.</h2>
+      <p>
+        Best fit is 10-25 hours/week remote async for founders, small teams,
+        studios, and agencies that need product engineering ownership.
+      </p>
+      <a class="btn primary" href="/chat">Start a conversation</a>
+    </div>
+  </section>
+</BaseLayout>

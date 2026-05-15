@@ -1,24 +1,34 @@
+name: 🚀 Build page
+
 on:
   push:
     branches:
       - "master"
 
   workflow_dispatch:
-name: 🚀 Build page
+
+permissions:
+  contents: write
+
 jobs:
   build:
     name: 🎉 Build & deploy
     runs-on: ubuntu-latest
     steps:
     - name: 🚚 Get latest code
-      uses: actions/checkout@v2
-    - name: 📦 Install Node.js
-      uses: actions/setup-node@v2
+      uses: actions/checkout@v4
+    - name: 📦 Install pnpm
+      uses: pnpm/action-setup@v4
       with:
-        node-version: '18.x'
+        version: 9.4.0
+    - name: 📦 Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: pnpm
 
     - name: Install dependencies
-      run: yarn install
+      run: pnpm install --frozen-lockfile
 
     - name: set git email
       run:  git config user.email "support+actions@github.com"
@@ -27,7 +37,7 @@ jobs:
       run: git config user.name "Github Actions Bot"
 
     - name: Build ⚙️
-      run: yarn build
+      run: pnpm build
       env:
         CI: false
     

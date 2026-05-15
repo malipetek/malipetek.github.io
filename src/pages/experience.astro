@@ -1,0 +1,34 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { experienceOptions } from "../data/experience";
+---
+<BaseLayout title="Experience" description="Experience timeline and client work history for Muhammet Ali Petek.">
+  <section class="compact-page-head">
+    <p class="eyebrow">Experience archive</p>
+    <h1>Earlier client and integration history.</h1>
+    <p>
+      The newer proof-of-work focus is on <a href="/products">products</a> and
+      <a href="/resume">resume</a>. This archive keeps the original timeline,
+      especially e-commerce and agency collaboration work.
+    </p>
+  </section>
+  <section class="timeline">
+    {experienceOptions.map((option) => (
+      <article class="timeline-item">
+        <h2>{option.year} - {option.name}</h2>
+        <p set:html={option.description ?? ""}></p>
+        <div>
+          {option.items.map((op) => (
+            <section class="card">
+              <h3>{op.title}</h3>
+              <p>{op.description ?? ""}</p>
+              <ul>
+                {op.tags.map((tag) => <li>{tag}</li>)}
+              </ul>
+            </section>
+          ))}
+        </div>
+      </article>
+    ))}
+  </section>
+</BaseLayout>

@@ -1,0 +1,141 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { products } from "../../data/projects";
+import { absoluteUrl, site } from "../../data/site";
+
+export function getStaticPaths() {
+  return products.map((product) => ({
+    params: { slug: product.slug },
+    props: { product },
+  }));
+}
+
+const { product } = Astro.props;
+const breadcrumbs = [
+  { name: "Home", href: "/" },
+  { name: "Products", href: "/products" },
+  { name: product.title, href: `/products/${product.slug}` },
+];
+const breadcrumbSchema = {
+  "@type": "BreadcrumbList",
+  "@id": `${absoluteUrl(`/products/${product.slug}`)}#breadcrumbs`,
+  itemListElement: breadcrumbs.map((item, index) => ({
+    "@type": "ListItem",
+    position: index + 1,
+    name: item.name,
+    item: absoluteUrl(item.href),
+  })),
+};
+const productSchema = {
+  "@type": "SoftwareApplication",
+  "@id": `${absoluteUrl(`/products/${product.slug}`)}#software`,
+  name: product.title,
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web",
+  url: absoluteUrl(`/products/${product.slug}`),
+  description: product.outcome,
+  creator: { "@id": `${site.url}/#person` },
+  keywords: product.searchIntent.join(", "),
+};
+const faqSchema = {
+  "@type": "FAQPage",
+  "@id": `${absoluteUrl(`/products/${product.slug}`)}#faq`,
+  mainEntity: product.faq.map((item) => ({
+    "@type": "Question",
+    name: item.question,
+    acceptedAnswer: {
+      "@type": "Answer",
+      text: item.answer,
+    },
+  })),
+};
+---
+
+<BaseLayout
+  title={product.title}
+  description={`${product.title}: ${product.outcome}`}
+  wide={true}
+  schema={[breadcrumbSchema, productSchema, faqSchema]}
+>
+  <section class="page-hero full-bleed">
+    <div class="container narrow-copy">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        {breadcrumbs.map((item, index) => (
+          <>
+            {index > 0 && <span>/</span>}
+            {index < breadcrumbs.length - 1 ? (
+              <a href={item.href}>{item.name}</a>
+            ) : (
+              <strong>{item.name}</strong>
+            )}
+          </>
+        ))}
+      </nav>
+      <p class="eyebrow">{product.status}</p>
+      <h1>{product.title}</h1>
+      <p>{product.outcome}</p>
+      <div class="cta-row">
+        <a class="btn primary" href={product.cta.href}>{product.cta.label}</a>
+        <a class="btn" href="/products">All products</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="container section-block project-detail">
+    <div class="project-main">
+      <p class="eyebrow">Answer first</p>
+      <h2>{product.title} solves a concrete workflow problem.</h2>
+      <dl class="project-facts">
+        <div>
+          <dt>Problem</dt>
+          <dd>{product.problem}</dd>
+        </div>
+        <div>
+          <dt>Built</dt>
+          <dd>{product.built}</dd>
+        </div>
+        <div>
+          <dt>Judgment</dt>
+          <dd>{product.judgment}</dd>
+        </div>
+        <div>
+          <dt>Search fit</dt>
+          <dd>{product.searchIntent.join("; ")}</dd>
+        </div>
+      </dl>
+    </div>
+    <aside class="artifact-panel">
+      <p class="artifact-label">Product workflow</p>
+      <div class="system-diagram">
+        {product.diagram.map((item) => <span>{item}</span>)}
+      </div>
+      <ul class="tag-list">
+        {product.stack.map((item) => <li>{item}</li>)}
+      </ul>
+    </aside>
+  </section>
+
+  <section class="section-band">
+    <div class="container faq-section">
+      <div>
+        <p class="eyebrow">FAQ</p>
+        <h2>Questions this product answers.</h2>
+      </div>
+      <div class="faq-list">
+        {product.faq.map((item) => (
+          <article>
+            <h3>{item.question}</h3>
+            <p>{item.answer}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="container section-block contact-panel">
+    <p class="eyebrow">Next step</p>
+    <h2>{product.cta.label}</h2>
+    <p>{product.cta.note}</p>
+    <a class="btn primary" href={product.cta.href}>{product.cta.label}</a>
+  </section>
+</BaseLayout>

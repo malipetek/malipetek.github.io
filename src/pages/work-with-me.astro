@@ -1,0 +1,92 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const engagements = [
+  {
+    title: "Paid discovery",
+    fit: "You have a product idea, messy MVP, agent workflow, or integration problem and need the first real scope.",
+    output:
+      "A concise architecture/scope pass, risks, next milestone, rough effort range, and the build path I would actually trust.",
+  },
+  {
+    title: "Prototype or scoped rescue",
+    fit: "You need one hard workflow made real, or an existing AI-assisted/product system stabilized.",
+    output:
+      "A working prototype, critical path cleanup, deployment path, or rescue pass with visible before/after behavior.",
+  },
+  {
+    title: "Production build or retainer",
+    fit: "You need fractional ownership across UI, backend, agents, integrations, deployment, dashboards, and operations.",
+    output:
+      "A shipped product surface and ongoing engineering support, usually 10-25 hours/week remote async.",
+  },
+];
+---
+
+<BaseLayout
+  title="Work With Me"
+  description="Paid discovery, prototypes, scoped rescue, production builds, and fractional product engineering with Muhammet Ali Petek."
+  wide={true}
+>
+  <section class="page-hero full-bleed">
+    <div class="container narrow-copy">
+      <p class="eyebrow">Engagement model</p>
+      <h1>Useful work starts with a paid conversation.</h1>
+      <p>
+        I work best with founders and small teams who need a product engineer
+        that can hold the whole system in view: user flow, backend shape, agent
+        behavior, integrations, deployment, and operations.
+      </p>
+      <div class="cta-row">
+        <a class="btn primary" href="/chat">Book paid discovery</a>
+        <a class="btn" href="/products">Check products first</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="container section-block">
+    <div class="engagement-grid">
+      {engagements.map((item, index) => (
+        <article class="engagement-card">
+          <span class="step-number">{String(index + 1).padStart(2, "0")}</span>
+          <h2>{item.title}</h2>
+          <p><strong>Good fit:</strong> {item.fit}</p>
+          <p><strong>Output:</strong> {item.output}</p>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <section class="section-band">
+    <div class="container boundary-grid">
+      <div>
+        <p class="eyebrow">Boundary</p>
+        <h2>No free architecture theater.</h2>
+      </div>
+      <p class="large-note">
+        I do not do unpaid architecture or implementation plans. I am happy to
+        do a short paid discovery/scope pass, then we can decide whether to
+        continue into prototype or build.
+      </p>
+    </div>
+  </section>
+
+  <section class="container section-block split-section">
+    <div>
+      <p class="eyebrow">Availability</p>
+      <h2>Fractional, remote, async.</h2>
+      <p>
+        Preferred availability is 10-25 hours/week. I am based in Istanbul and
+        overlap well with Europe, plus async-friendly US teams that value clear
+        written progress.
+      </p>
+    </div>
+    <ul class="lane-list">
+      <li>AI workflow and agent product builds</li>
+      <li>Cloudflare/Convex platforms and control planes</li>
+      <li>Svelte/Astro publishing and product surfaces</li>
+      <li>SwiftUI prototypes with real backends</li>
+      <li>Technical rescue for fragile MVPs and weird integrations</li>
+    </ul>
+  </section>
+</BaseLayout>
