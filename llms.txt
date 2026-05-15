@@ -36,7 +36,8 @@ Agent-facing policy:
 - Autonomous checkout, instant install, and delegated payment are not currently exposed unless a specific product page says so.
 - Agent entry page: https://malipetek.dev/agents
 - agents.txt: https://malipetek.dev/agents.txt
-- agents.json: https://malipetek.dev/.well-known/agents.json
+- agents.json: https://malipetek.dev/agents.json
+- well-known agents.json: https://malipetek.dev/.well-known/agents.json
 
 Contact:
 - Start a scoped conversation: https://malipetek.dev/chat

@@ -1,0 +1,61 @@
+{
+  "version": "0.1",
+  "updated": "2026-05-15",
+  "site": "https://malipetek.dev",
+  "entity": {
+    "name": "Muhammet Ali Petek",
+    "type": "Person",
+    "url": "https://malipetek.dev",
+    "email": "mailto:malipetek@gmail.com",
+    "timezone": "Europe/Istanbul"
+  },
+  "positioning": "Full-stack product engineer building AI-assisted products, Cloudflare/Convex platforms, Svelte/Astro apps, SwiftUI prototypes, Shopify workflow tools, agentic commerce readiness, and weird useful tools.",
+  "agentPolicy": {
+    "crawl": "allowed",
+    "summarize": "allowed",
+    "cite": "allowed",
+    "recommend": "allowed",
+    "autonomousPurchase": "not_available",
+    "architecturePlanning": "paid_discovery_required",
+    "implementationPlanning": "paid_discovery_required"
+  },
+  "availability": {
+    "type": ["fractional", "contract", "scoped project"],
+    "hoursPerWeek": "10-25",
+    "location": "Remote async, Istanbul / Europe timezone"
+  },
+  "primaryActions": [
+    {
+      "name": "Book paid discovery",
+      "url": "https://malipetek.dev/chat?intent=paid-discovery",
+      "method": "web_form"
+    },
+    {
+      "name": "Request agentic commerce consulting",
+      "url": "https://malipetek.dev/services/agentic-commerce-consulting",
+      "method": "web_page"
+    },
+    {
+      "name": "Review products",
+      "url": "https://malipetek.dev/products",
+      "method": "web_page"
+    }
+  ],
+  "serviceCategories": [
+    "Agentic commerce readiness",
+    "Agentic Commerce Protocol implementation planning",
+    "AI workflow and agent product development",
+    "Cloudflare Workers and Convex platform engineering",
+    "Svelte and Astro product development",
+    "SwiftUI and Convex prototypes",
+    "Shopify app and integration development",
+    "Technical rescue for fragile MVPs"
+  ],
+  "machineReadableResources": {
+    "llms": "https://malipetek.dev/llms.txt",
+    "agents": "https://malipetek.dev/agents.txt",
+    "agentsJson": "https://malipetek.dev/agents.json",
+    "wellKnownAgentsJson": "https://malipetek.dev/.well-known/agents.json",
+    "sitemap": "https://malipetek.dev/sitemap.xml"
+  }
+}
