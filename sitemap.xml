@@ -4,6 +4,9 @@
     <loc>https://malipetek.dev/</loc>
   </url>
   <url>
+    <loc>https://malipetek.dev/store</loc>
+  </url>
+  <url>
     <loc>https://malipetek.dev/products</loc>
   </url>
   <url>
@@ -17,6 +20,9 @@
   </url>
   <url>
     <loc>https://malipetek.dev/resume</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/contact</loc>
   </url>
   <url>
     <loc>https://malipetek.dev/chat</loc>
@@ -55,10 +61,67 @@
     <loc>https://malipetek.dev/terms-of-service</loc>
   </url>
   <url>
+    <loc>https://malipetek.dev/refund-cancellation-policy</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/distance-sales-agreement</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/preliminary-information-form</loc>
+  </url>
+  <url>
     <loc>https://malipetek.dev/pdfextractor/privacy-policy</loc>
   </url>
   <url>
     <loc>https://malipetek.dev/pdfextractor/terms-of-service</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/store/ai-app-rescue-snapshot</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/store/critical-mvp-fix-pass</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/store/agent-ready-product-data-pack</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/store/cloudflare-worker-deploy-repair</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/store/astro-svelte-storefront-setup</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/store/shopify-workflow-fix-pack</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/store/swiftui-convex-prototype-starter</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/store/technical-proof-page-pack</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/checkout/ai-app-rescue-snapshot</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/checkout/critical-mvp-fix-pass</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/checkout/agent-ready-product-data-pack</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/checkout/cloudflare-worker-deploy-repair</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/checkout/astro-svelte-storefront-setup</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/checkout/shopify-workflow-fix-pack</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/checkout/swiftui-convex-prototype-starter</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/checkout/technical-proof-page-pack</loc>
   </url>
   <url>
     <loc>https://malipetek.dev/products/convexer</loc>

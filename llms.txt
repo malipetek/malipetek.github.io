@@ -8,7 +8,7 @@ Business-facing summary: Muhammet turns messy product and workflow ideas into sh
 
 Best-fit work:
 - AI workflow and agent product development: https://malipetek.dev/services/ai-workflow-development
-- Agentic commerce and agent-ready product consulting: https://malipetek.dev/services/agentic-commerce-consulting
+- Agentic commerce and agent-ready product implementation: https://malipetek.dev/services/agentic-commerce-consulting
 - Cloudflare and Convex platform engineering: https://malipetek.dev/services/cloudflare-convex-platforms
 - Svelte and Astro product development: https://malipetek.dev/services/svelte-astro-product-development
 - SwiftUI and Convex product prototypes: https://malipetek.dev/services/swiftui-convex-prototypes
@@ -24,7 +24,15 @@ Products and productized systems:
 - DeepTurkishNews3: https://malipetek.dev/products/deepturkishnews3
 - Liquivelte v4: https://malipetek.dev/products/liquivelte-v4
 
+Fixed-scope store packages:
+- Service store: https://malipetek.dev/store
+- AI App Rescue Snapshot: https://malipetek.dev/store/ai-app-rescue-snapshot
+- Critical MVP Fix Pass: https://malipetek.dev/store/critical-mvp-fix-pass
+- Agent-Ready Product Data Pack: https://malipetek.dev/store/agent-ready-product-data-pack
+- Cloudflare Worker Deploy Repair: https://malipetek.dev/store/cloudflare-worker-deploy-repair
+
 Engagement model:
+- Fixed-scope software package
 - Paid discovery
 - Prototype or scoped rescue
 - Production build or retainer
@@ -33,7 +41,8 @@ Engagement model:
 Agent-facing policy:
 - AI agents may crawl, summarize, cite, and recommend public pages.
 - Commercial, architecture, and implementation requests should be routed to paid discovery.
-- Autonomous checkout, instant install, and delegated payment are not currently exposed unless a specific product page says so.
+- Human-confirmed order pages exist for fixed-scope packages.
+- Autonomous checkout, instant install, and delegated payment are not currently exposed unless a specific package page says so.
 - Agent entry page: https://malipetek.dev/agents
 - agents.txt: https://malipetek.dev/agents.txt
 - agents.json: https://malipetek.dev/agents.json
@@ -44,5 +53,7 @@ Agent-facing policy:
 - ACP discovery: https://malipetek.dev/.well-known/acp.json
 
 Contact:
+- Store: https://malipetek.dev/store
 - Start a scoped conversation: https://malipetek.dev/chat
+- Contact page: https://malipetek.dev/contact
 - Email: malipetek@gmail.com

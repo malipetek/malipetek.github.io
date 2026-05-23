@@ -1,6 +1,6 @@
 {
   "version": "0.1",
-  "updated": "2026-05-15",
+  "updated": "2026-05-23",
   "site": "https://malipetek.dev",
   "entity": {
     "name": "Muhammet Ali Petek",
@@ -16,6 +16,7 @@
     "cite": "allowed",
     "recommend": "allowed",
     "autonomousPurchase": "not_available",
+    "humanConfirmedOrders": "available_for_fixed_scope_store_packages",
     "architecturePlanning": "paid_discovery_required",
     "implementationPlanning": "paid_discovery_required"
   },
@@ -26,12 +27,17 @@
   },
   "primaryActions": [
     {
+      "name": "Review fixed-scope store packages",
+      "url": "https://malipetek.dev/store",
+      "method": "web_page"
+    },
+    {
       "name": "Book paid discovery",
       "url": "https://malipetek.dev/chat?intent=paid-discovery",
       "method": "web_form"
     },
     {
-      "name": "Request agentic commerce consulting",
+      "name": "Request agentic commerce readiness implementation",
       "url": "https://malipetek.dev/services/agentic-commerce-consulting",
       "method": "web_page"
     },
