@@ -1,0 +1,151 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { formatPrice, storeProducts } from "../../data/store";
+import { absoluteUrl, site } from "../../data/site";
+
+export function getStaticPaths() {
+  return storeProducts.map((product) => ({
+    params: { slug: product.slug },
+    props: { product },
+  }));
+}
+
+const { product } = Astro.props;
+const breadcrumbs = [
+  { name: "Home", href: "/" },
+  { name: "Store", href: "/store" },
+  { name: product.title, href: `/store/${product.slug}` },
+];
+const breadcrumbSchema = {
+  "@type": "BreadcrumbList",
+  "@id": `${absoluteUrl(`/store/${product.slug}`)}#breadcrumbs`,
+  itemListElement: breadcrumbs.map((item, index) => ({
+    "@type": "ListItem",
+    position: index + 1,
+    name: item.name,
+    item: absoluteUrl(item.href),
+  })),
+};
+const productSchema = {
+  "@type": "Service",
+  "@id": `${absoluteUrl(`/store/${product.slug}`)}#service`,
+  name: product.title,
+  description: product.summary,
+  provider: { "@id": `${site.url}/#person` },
+  areaServed: "Worldwide",
+  serviceType: product.category,
+  url: absoluteUrl(`/store/${product.slug}`),
+  offers: {
+    "@type": "Offer",
+    price: product.price,
+    priceCurrency: product.currency,
+    availability: "https://schema.org/InStock",
+    url: absoluteUrl(`/checkout/${product.slug}`),
+  },
+};
+---
+
+<BaseLayout
+  title={product.title}
+  description={product.summary}
+  wide={true}
+  schema={[breadcrumbSchema, productSchema]}
+>
+  <section class="page-hero full-bleed">
+    <div class="container narrow-copy">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        {breadcrumbs.map((item, index) => (
+          <>
+            {index > 0 && <span>/</span>}
+            {index < breadcrumbs.length - 1 ? (
+              <a href={item.href}>{item.name}</a>
+            ) : (
+              <strong>{item.name}</strong>
+            )}
+          </>
+        ))}
+      </nav>
+      <p class="eyebrow">{product.category}</p>
+      <h1>{product.title}</h1>
+      <p>{product.summary}</p>
+      <div class="hero-purchase-panel">
+        <div>
+          <span>Listed price</span>
+          <strong>{formatPrice(product)}</strong>
+        </div>
+        <div>
+          <span>Delivery</span>
+          <strong>{product.delivery}</strong>
+        </div>
+        <div>
+          <span>Availability</span>
+          <strong>{product.availability}</strong>
+        </div>
+      </div>
+      <div class="cta-row">
+        <a class="btn primary" href={`/checkout/${product.slug}`}>Buy this service</a>
+        <a class="btn" href="/store">All packages</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="container section-block service-proof-grid">
+    <article>
+      <p class="eyebrow">Included</p>
+      <ul class="lane-list single-column">
+        {product.includes.map((item) => <li>{item}</li>)}
+      </ul>
+    </article>
+    <article>
+      <p class="eyebrow">Best for</p>
+      <ul class="lane-list single-column">
+        {product.buyerFit.map((item) => <li>{item}</li>)}
+      </ul>
+    </article>
+  </section>
+
+  <section class="section-band">
+    <div class="container service-proof-grid">
+      <article>
+        <p class="eyebrow">Required before delivery starts</p>
+        <ul class="plain-list">
+          {product.requirements.map((item) => <li>{item}</li>)}
+        </ul>
+      </article>
+      <article>
+        <p class="eyebrow">Not included</p>
+        <ul class="plain-list">
+          {product.notIncluded.map((item) => <li>{item}</li>)}
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section class="container section-block now-contact">
+    <article>
+      <p class="eyebrow">Purchase terms</p>
+      <h2>Plain delivery boundary.</h2>
+      <p>
+        Work begins after the order is confirmed, payment instructions are
+        accepted, and the required access or files are available. If the request
+        does not match this package, the order is declined or converted into a
+        written custom scope before payment.
+      </p>
+      <div class="policy-link-row">
+        <a class="text-link" href="/refund-cancellation-policy">Delivery and refund policy</a>
+        <a class="text-link" href="/distance-sales-agreement">Distance sales agreement</a>
+        <a class="text-link" href="/preliminary-information-form">Preliminary information form</a>
+      </div>
+    </article>
+    <article class="contact-panel">
+      <p class="eyebrow">Ready to order</p>
+      <h2>{formatPrice(product)}</h2>
+      <p>
+        Open the order page, confirm the package, and send the required buyer
+        details by email. Card payment will be routed through the active payment
+        provider when available for this site.
+      </p>
+      <a class="btn primary" href={`/checkout/${product.slug}`}>Continue to order</a>
+    </article>
+  </section>
+</BaseLayout>

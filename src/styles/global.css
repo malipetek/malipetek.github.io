@@ -687,6 +687,136 @@ header {
   font-size: 2rem;
 }
 
+.store-hero {
+  background:
+    linear-gradient(135deg, rgba(199, 240, 70, 0.2), transparent 48%),
+    linear-gradient(315deg, rgba(15, 118, 110, 0.12), transparent 42%);
+}
+
+.store-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.store-grid.compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.store-card,
+.checkout-summary {
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(255, 249, 235, 0.86);
+  padding: 1rem;
+  box-shadow: 0 10px 30px rgba(35, 28, 17, 0.06);
+}
+
+.store-card {
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
+}
+
+.store-card h2 {
+  font-size: 2rem;
+}
+
+.store-card h2 a,
+.store-card h3 a {
+  text-decoration-color: rgba(15, 118, 110, 0.35);
+}
+
+.price-line {
+  display: grid;
+  gap: 0.12rem;
+  border-block: 1px solid var(--line);
+  padding: 0.75rem 0;
+}
+
+.price-line span,
+.hero-purchase-panel span {
+  color: var(--rust);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.price-line strong {
+  font-size: 1.45rem;
+}
+
+.price-line.large strong {
+  font-size: 2.2rem;
+}
+
+.hero-purchase-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1.4rem;
+}
+
+.hero-purchase-panel div {
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(255, 249, 235, 0.82);
+  padding: 0.85rem;
+}
+
+.hero-purchase-panel strong {
+  display: block;
+  margin-top: 0.2rem;
+}
+
+.policy-link-row {
+  display: flex;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.checkout-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.72fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.checkout-summary {
+  display: grid;
+  gap: 1rem;
+}
+
+.checkout-facts {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.checkout-facts div {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: 0.75rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+
+.checkout-facts dt {
+  color: var(--rust);
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.checkout-facts dd {
+  margin: 0;
+}
+
+.checkout-policy {
+  align-content: start;
+}
+
 .service-proof-grid,
 .faq-section {
   display: grid;
@@ -1005,7 +1135,9 @@ footer {
   .skill-grid,
   .stack-grid,
   .service-grid,
-  .service-grid.compact {
+  .service-grid.compact,
+  .store-grid,
+  .store-grid.compact {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1049,8 +1181,13 @@ footer {
   .stack-grid,
   .service-grid,
   .service-grid.compact,
+  .store-grid,
+  .store-grid.compact,
   .lane-list,
   .project-facts div,
+  .hero-purchase-panel,
+  .checkout-layout,
+  .checkout-facts div,
   .section-heading {
     grid-template-columns: 1fr;
   }

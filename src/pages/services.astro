@@ -28,9 +28,13 @@ const serviceListSchema = {
       <h1>Find the service by the problem you are trying to solve.</h1>
       <p>
         These pages are written for humans first and search engines second:
-        clear answer blocks, visible proof, direct fit, and a paid discovery
-        path when the work needs real thinking.
+        clear answer blocks, visible proof, direct fit, and purchasable
+        fixed-scope packages when the work has a clean boundary.
       </p>
+      <div class="cta-row">
+        <a class="btn primary" href="/store">Buy fixed-scope package</a>
+        <a class="btn" href="/contact">Contact</a>
+      </div>
     </div>
   </section>
 
@@ -44,7 +48,10 @@ const serviceListSchema = {
           <ul class="plain-list">
             {service.keywords.slice(0, 3).map((keyword) => <li>{keyword}</li>)}
           </ul>
-          <a class="product-action" href={`/services/${service.slug}`}>Read service page</a>
+          <div class="cta-row">
+            <a class="product-action" href={`/services/${service.slug}`}>Read service page</a>
+            <a class="text-link" href="/store">Buy package</a>
+          </div>
         </article>
       ))}
     </div>

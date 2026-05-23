@@ -1,0 +1,60 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { site } from "../data/site";
+---
+
+<BaseLayout
+  title="Contact"
+  description="Contact and seller information for Malipetek.dev fixed-scope software packages and product engineering work."
+  wide={true}
+>
+  <section class="page-hero full-bleed">
+    <div class="container narrow-copy">
+      <p class="eyebrow">Contact</p>
+      <h1>Contact and seller information.</h1>
+      <p>
+        Use this page for order questions, delivery questions, service package
+        questions, and general product-engineering scope requests.
+      </p>
+    </div>
+  </section>
+
+  <section class="container section-block contact-grid">
+    <article class="policy-panel">
+      <p class="eyebrow">Seller</p>
+      <h2>Malipetek.dev</h2>
+      <dl class="checkout-facts">
+        <div>
+          <dt>Seller name</dt>
+          <dd>{site.name}</dd>
+        </div>
+        <div>
+          <dt>Website</dt>
+          <dd><a href={site.url}>{site.url}</a></dd>
+        </div>
+        <div>
+          <dt>Email</dt>
+          <dd><a href={`mailto:${site.email}`}>{site.email}</a></dd>
+        </div>
+        <div>
+          <dt>Timezone</dt>
+          <dd>Europe/Istanbul</dd>
+        </div>
+      </dl>
+    </article>
+
+    <aside class="contact-panel">
+      <p class="eyebrow">Order support</p>
+      <h2>Send the package name and buyer details.</h2>
+      <p>
+        For fixed-scope packages, include the package title, buyer name,
+        company name if any, country, invoice details, current site/app/repo,
+        and desired delivery outcome.
+      </p>
+      <div class="cta-row">
+        <a class="btn primary" href={`mailto:${site.email}?subject=Store%20order%20question`}>Email order support</a>
+        <a class="btn" href="/store">View store</a>
+      </div>
+    </aside>
+  </section>
+</BaseLayout>

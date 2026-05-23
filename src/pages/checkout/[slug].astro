@@ -1,0 +1,106 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { formatPrice, orderMailto, storeProducts } from "../../data/store";
+import { absoluteUrl, site } from "../../data/site";
+
+export function getStaticPaths() {
+  return storeProducts.map((product) => ({
+    params: { slug: product.slug },
+    props: { product },
+  }));
+}
+
+const { product } = Astro.props;
+const orderLink = orderMailto(product);
+const orderSchema = {
+  "@type": "Order",
+  "@id": `${absoluteUrl(`/checkout/${product.slug}`)}#order`,
+  merchant: { "@id": `${site.url}/#person` },
+  orderStatus: "https://schema.org/OrderPaymentDue",
+  acceptedOffer: {
+    "@type": "Offer",
+    itemOffered: {
+      "@type": "Service",
+      name: product.title,
+      description: product.summary,
+    },
+    price: product.price,
+    priceCurrency: product.currency,
+    url: absoluteUrl(`/store/${product.slug}`),
+  },
+};
+---
+
+<BaseLayout
+  title={`Checkout - ${product.title}`}
+  description={`Order ${product.title} for ${formatPrice(product)}. Fixed-scope remote software delivery by Muhammet Ali Petek.`}
+  wide={true}
+  schema={[orderSchema]}
+>
+  <section class="page-hero full-bleed">
+    <div class="container narrow-copy">
+      <p class="eyebrow">Checkout</p>
+      <h1>Order {product.title}.</h1>
+      <p>
+        This page starts the purchase flow for the selected fixed-scope package.
+        Send the order request with buyer details, then payment and start date
+        are confirmed in writing.
+      </p>
+    </div>
+  </section>
+
+  <section class="container section-block checkout-layout">
+    <article class="checkout-summary">
+      <div class="card-kicker">
+        <span>{product.category}</span>
+        <span>{product.delivery}</span>
+      </div>
+      <h2>{product.title}</h2>
+      <p>{product.summary}</p>
+      <div class="price-line large">
+        <span>Total listed price</span>
+        <strong>{formatPrice(product)}</strong>
+      </div>
+      <dl class="checkout-facts">
+        <div>
+          <dt>Delivery</dt>
+          <dd>{product.delivery}</dd>
+        </div>
+        <div>
+          <dt>Service area</dt>
+          <dd>{product.availability}</dd>
+        </div>
+        <div>
+          <dt>Seller</dt>
+          <dd>{site.name} / Malipetek.dev</dd>
+        </div>
+        <div>
+          <dt>Contact</dt>
+          <dd><a href={`mailto:${site.email}`}>{site.email}</a></dd>
+        </div>
+      </dl>
+      <a class="btn primary" href={orderLink}>Buy by order request</a>
+    </article>
+
+    <aside class="policy-panel checkout-policy">
+      <p class="eyebrow">Payment and policy</p>
+      <p>
+        Orders are confirmed in writing before work starts. Payment can be
+        completed by invoice/bank transfer today. Credit-card payment is routed
+        through the active payment provider when card checkout is enabled for
+        this site.
+      </p>
+      <ul class="plain-list">
+        <li>No work starts before the order, scope boundary, and payment step are confirmed.</li>
+        <li>If the requested work does not fit this package, the order is declined or replaced with a written custom scope.</li>
+        <li>Digital service delivery is sent by email, repository pull request, deployed URL, or written handoff note depending on package type.</li>
+      </ul>
+      <div class="policy-link-row">
+        <a class="text-link" href="/refund-cancellation-policy">Delivery and refund policy</a>
+        <a class="text-link" href="/terms-of-service">Terms of service</a>
+        <a class="text-link" href="/privacy-policy">Privacy policy</a>
+        <a class="text-link" href="/contact">Contact</a>
+      </div>
+    </aside>
+  </section>
+</BaseLayout>

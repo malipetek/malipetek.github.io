@@ -58,12 +58,12 @@ export const services: Service[] = [
   },
   {
     slug: "agentic-commerce-consulting",
-    title: "Agentic Commerce and Agent-Ready Product Consulting",
+    title: "Agentic Commerce and Agent-Ready Product Implementation",
     shortTitle: "Agentic commerce",
     summary:
       "Prepare Shopify, SaaS, and workflow-heavy products for AI-agent discovery, comparison, install, checkout, support, and Agentic Commerce Protocol readiness.",
     answer:
-      "Agentic commerce consulting means making a product or service understandable and operable by AI agents: crawlable product pages, structured data, clear commercial boundaries, machine-readable policy files, checkout or quote flows, and ACP-style implementation planning where it fits.",
+      "Agentic commerce implementation means making a product or service understandable and operable by AI agents: crawlable product pages, structured data, clear commercial boundaries, machine-readable policy files, checkout or quote flows, and ACP-style implementation planning where it fits.",
     bestFor: [
       "Shopify app or service builders who want agents to understand what can be installed, tried, quoted, or purchased.",
       "SaaS and workflow products preparing for agent-mediated discovery, evaluation, and checkout.",
@@ -78,17 +78,17 @@ export const services: Service[] = [
     proof: ["GPTflare", "Shopify Workflow App", "Malipetek.dev Astro fork"],
     relatedProducts: ["gptflare", "shopify-workflow-app"],
     keywords: [
-      "agentic commerce consultant",
+      "agentic commerce implementation",
       "Agentic Commerce Protocol implementation",
-      "agents.txt consultant",
+      "agents.txt implementation",
       "AI agent commerce readiness",
       "Shopify agentic commerce",
     ],
     faq: [
       {
-        question: "What is agentic commerce consulting?",
+        question: "What is agentic commerce implementation?",
         answer:
-          "Agentic commerce consulting prepares a product or service for AI agents that discover, compare, recommend, install, quote, or purchase on behalf of people. The work usually includes structured product data, crawlable pages, schema, policies, checkout boundaries, APIs, and operational handoff.",
+          "Agentic commerce implementation prepares a product or service for AI agents that discover, compare, recommend, install, quote, or purchase on behalf of people. The work usually includes structured product data, crawlable pages, schema, policies, checkout boundaries, APIs, and operational handoff.",
       },
       {
         question: "Can agents buy or install from this site today?",

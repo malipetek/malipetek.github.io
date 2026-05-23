@@ -11,12 +11,14 @@ This policy applies to all services provided by Malipetek.dev, including:
 - Website development and design
 - Web application development
 - AI-powered solutions
-- Consulting services
+- Fixed-scope software implementation packages
+- Technical rescue, deployment repair, and digital handoff work
 
 ## Data Collection
 - **Contact Forms**: name, email address, and message.
 - **Email Correspondence**: email address and details provided in email.
 - **Client Onboarding**: company information, address, and phone number.
+- **Store Orders**: selected package, buyer details, invoice details, project context, access details, and delivery requirements shared by the buyer.
 
 ## Data Use
 - **Communication**: to respond to inquiries and share project updates.
@@ -38,9 +40,9 @@ We retain personal data only as long as needed to support service delivery and o
 - Opt-out from marketing communications
 
 ## Contact
-hello@malipetek.dev
+malipetek@gmail.com
 
 ## Changes
 We may update this policy over time and post notice of meaningful updates.
 
-**Effective Date**: 04/11/2024
+**Effective Date**: 2026-05-23

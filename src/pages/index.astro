@@ -2,6 +2,7 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { featuredProducts } from "../data/projects";
 import { services } from "../data/services";
+import { featuredStoreProducts, formatPrice } from "../data/store";
 import { absoluteUrl } from "../data/site";
 
 const buildLanes = [
@@ -21,6 +22,17 @@ const proofStats = [
   ["Best use", "Paid discovery -> prototype -> build"],
 ];
 const homepageSchema = [
+  {
+    "@type": "ItemList",
+    "@id": `${absoluteUrl("/")}#store-packages`,
+    name: "Fixed-scope software implementation packages",
+    itemListElement: featuredStoreProducts.map((product, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: product.title,
+      url: absoluteUrl(`/store/${product.slug}`),
+    })),
+  },
   {
     "@type": "ItemList",
     "@id": `${absoluteUrl("/")}#featured-products`,
@@ -68,7 +80,8 @@ const homepageSchema = [
           operational details after the demo.
         </p>
         <div class="cta-row">
-          <a class="btn primary" href="/chat">Book paid discovery</a>
+          <a class="btn primary" href="/store">Buy fixed-scope service</a>
+          <a class="btn" href="/chat">Book paid discovery</a>
           <a class="btn" href="/products">View products</a>
           <a class="text-link" href="/resume">Download resume</a>
         </div>
@@ -104,6 +117,34 @@ const homepageSchema = [
       <ul class="lane-list">
         {buildLanes.map((lane) => <li>{lane}</li>)}
       </ul>
+    </div>
+  </section>
+
+  <section class="container section-block">
+    <div class="section-heading">
+      <p class="eyebrow">Service store</p>
+      <h2>Fixed-scope packages with visible prices.</h2>
+      <a class="text-link" href="/store">All packages</a>
+    </div>
+    <div class="store-grid compact">
+      {featuredStoreProducts.map((product) => (
+        <article class="store-card">
+          <div class="card-kicker">
+            <span>{product.category}</span>
+            <span>{product.delivery}</span>
+          </div>
+          <h3><a href={`/store/${product.slug}`}>{product.title}</a></h3>
+          <p>{product.summary}</p>
+          <div class="price-line">
+            <span>Listed price</span>
+            <strong>{formatPrice(product)}</strong>
+          </div>
+          <div class="cta-row">
+            <a class="btn primary" href={`/checkout/${product.slug}`}>Buy now</a>
+            <a class="text-link" href={`/store/${product.slug}`}>Details</a>
+          </div>
+        </article>
+      ))}
     </div>
   </section>
 

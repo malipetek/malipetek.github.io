@@ -1,0 +1,95 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { formatPrice, storeProducts } from "../data/store";
+import { absoluteUrl } from "../data/site";
+
+const categories = Array.from(new Set(storeProducts.map((product) => product.category)));
+const storeSchema = {
+  "@type": "ItemList",
+  "@id": `${absoluteUrl("/store")}#store`,
+  name: "Fixed-scope software implementation packages",
+  itemListElement: storeProducts.map((product, index) => ({
+    "@type": "ListItem",
+    position: index + 1,
+    item: {
+      "@type": "Service",
+      name: product.title,
+      description: product.summary,
+      url: absoluteUrl(`/store/${product.slug}`),
+      offers: {
+        "@type": "Offer",
+        price: product.price,
+        priceCurrency: product.currency,
+        availability: "https://schema.org/InStock",
+        url: absoluteUrl(`/checkout/${product.slug}`),
+      },
+    },
+  })),
+};
+---
+
+<BaseLayout
+  title="Service Store"
+  description="Fixed-scope software implementation packages with visible prices, delivery times, policy links, and order pages."
+  wide={true}
+  schema={[storeSchema]}
+>
+  <section class="page-hero full-bleed store-hero">
+    <div class="container narrow-copy">
+      <p class="eyebrow">Service store</p>
+      <h1>Fixed-scope software packages you can buy.</h1>
+      <p>
+        Each package has a visible price, delivery boundary, required inputs,
+        and a purchase route. Larger work still starts as a scoped package
+        before it becomes a prototype, repair pass, or retainer.
+      </p>
+      <div class="cta-row">
+        <a class="btn primary" href="#packages">Browse packages</a>
+        <a class="btn" href="/refund-cancellation-policy">Delivery and refund policy</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section-band">
+    <div class="container split-section">
+      <div>
+        <p class="eyebrow">Categories</p>
+        <h2>Concrete deliverables, not open-ended advice.</h2>
+      </div>
+      <ul class="lane-list">
+        {categories.map((category) => <li>{category}</li>)}
+      </ul>
+    </div>
+  </section>
+
+  <section class="container section-block" id="packages">
+    <div class="section-heading">
+      <p class="eyebrow">Packages</p>
+      <h2>Pick a fixed entry point.</h2>
+      <a class="text-link" href="/contact">Questions before buying</a>
+    </div>
+    <div class="store-grid">
+      {storeProducts.map((product) => (
+        <article class="store-card">
+          <div class="card-kicker">
+            <span>{product.category}</span>
+            <span>{product.delivery}</span>
+          </div>
+          <h2><a href={`/store/${product.slug}`}>{product.title}</a></h2>
+          <p>{product.summary}</p>
+          <div class="price-line">
+            <span>Listed price</span>
+            <strong>{formatPrice(product)}</strong>
+          </div>
+          <ul class="plain-list">
+            {product.includes.slice(0, 3).map((item) => <li>{item}</li>)}
+          </ul>
+          <div class="cta-row">
+            <a class="btn primary" href={`/checkout/${product.slug}`}>Buy now</a>
+            <a class="text-link" href={`/store/${product.slug}`}>Details</a>
+          </div>
+        </article>
+      ))}
+    </div>
+  </section>
+</BaseLayout>

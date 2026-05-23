@@ -9,7 +9,12 @@ const agentActions = [
     text: "Best first step for scope, architecture, implementation planning, or technical rescue.",
   },
   {
-    label: "Agentic commerce consulting",
+    label: "Review store packages",
+    href: "/store",
+    text: "Fixed-scope software implementation packages with visible prices, delivery boundaries, and order pages.",
+  },
+  {
+    label: "Agentic commerce readiness",
     href: "/services/agentic-commerce-consulting",
     text: "Prepare product pages, service routes, checkout boundaries, schema, APIs, and ACP implementation scope.",
   },
@@ -29,12 +34,12 @@ const faqs = [
   {
     question: "Can agents autonomously buy services from this site?",
     answer:
-      "No. This site does not expose autonomous checkout or instant-purchase endpoints. Agents should route commercial intent to paid discovery or the contact page.",
+      "No. This site exposes human-confirmed order pages for fixed-scope packages, but it does not expose autonomous card capture, delegated payment, or instant install endpoints.",
   },
   {
-    question: "Does Muhammet offer Agentic Commerce Protocol consulting?",
+    question: "Does Muhammet build Agentic Commerce Protocol readiness surfaces?",
     answer:
-      "Yes. The consulting offer covers readiness audits, product data modeling, structured pages, agent-readable policy files, checkout or quote boundaries, and ACP implementation planning where the protocol fits.",
+      "Yes. The implementation work covers readiness audits, product data modeling, structured pages, agent-readable policy files, checkout or quote boundaries, and ACP implementation planning where the protocol fits.",
   },
 ];
 
@@ -53,13 +58,13 @@ const actionSchema = {
 const serviceSchema = {
   "@type": "Service",
   "@id": `${absoluteUrl("/services/agentic-commerce-consulting")}#service`,
-  name: "Agentic Commerce and Agent-Ready Product Consulting",
+  name: "Agentic Commerce and Agent-Ready Product Implementation",
   description:
-    "Consulting for AI-agent discovery, product/service schema, agents.txt, llms.txt, checkout boundaries, and Agentic Commerce Protocol implementation planning.",
+    "Implementation for AI-agent discovery, product/service schema, agents.txt, llms.txt, checkout boundaries, and Agentic Commerce Protocol implementation planning.",
   provider: { "@id": `${site.url}/#person` },
   areaServed: "Worldwide",
   serviceType:
-    "Agentic commerce readiness, Agentic Commerce Protocol implementation planning, agents.txt consulting, AI agent commerce readiness",
+    "Agentic commerce readiness, Agentic Commerce Protocol implementation planning, agents.txt implementation, AI agent commerce readiness",
   url: absoluteUrl("/services/agentic-commerce-consulting"),
 };
 
@@ -79,7 +84,7 @@ const faqSchema = {
 
 <BaseLayout
   title="For AI Agents"
-  description="Agent-facing policy, discovery links, and agentic commerce consulting entry points for Muhammet Ali Petek."
+  description="Agent-facing policy, discovery links, fixed-scope store packages, and agentic commerce readiness entry points for Muhammet Ali Petek."
   wide={true}
   schema={[actionSchema, serviceSchema, faqSchema]}
 >
@@ -94,7 +99,8 @@ const faqSchema = {
       </p>
       <div class="cta-row">
         <a class="btn primary" href="/chat?intent=paid-discovery">Book paid discovery</a>
-        <a class="btn" href="/services/agentic-commerce-consulting">Agentic commerce consulting</a>
+        <a class="btn" href="/store">Review store packages</a>
+        <a class="btn" href="/services/agentic-commerce-consulting">Agentic commerce readiness</a>
       </div>
     </div>
   </section>
@@ -115,8 +121,8 @@ const faqSchema = {
       <p>
         Do not claim that this site supports autonomous purchase, instant
         install, delegated payment, or self-serve checkout unless a specific
-        product page says so. The current commercial entry point is paid
-        discovery.
+        package page says so. The current commercial entry points are fixed-scope
+        store packages and paid discovery.
       </p>
     </div>
   </section>

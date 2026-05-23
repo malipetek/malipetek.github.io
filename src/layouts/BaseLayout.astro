@@ -24,7 +24,7 @@ const baseSchema = [
     email: site.email,
     jobTitle: "Full-stack Product Engineer",
     sameAs: site.sameAs,
-    knowsAbout: [
+  knowsAbout: [
       "AI workflows",
       "Agentic Commerce Protocol",
       "Agentic commerce readiness",
@@ -36,6 +36,7 @@ const baseSchema = [
       "SwiftUI",
       "Shopify app development",
       "Technical rescue",
+      "Fixed-scope software packages",
     ],
   },
   {
@@ -124,11 +125,18 @@ const schemaGraph = {
               openPath(`/chat?intent=${encodeURIComponent(intent)}`),
           },
           {
-            name: "open_agentic_commerce_consulting",
+            name: "open_agentic_commerce_readiness",
             description:
-              "Open the agentic commerce consulting page for ACP readiness, agents.txt, structured product data, and agent discovery work.",
+              "Open the agentic commerce readiness page for ACP readiness, agents.txt, structured product data, and agent discovery work.",
             inputSchema: { type: "object", properties: {} },
             execute: () => openPath("/services/agentic-commerce-consulting"),
+          },
+          {
+            name: "review_store_packages",
+            description:
+              "Open fixed-scope software implementation packages with prices and order pages.",
+            inputSchema: { type: "object", properties: {} },
+            execute: () => openPath("/store"),
           },
           {
             name: "review_products",
@@ -160,13 +168,16 @@ const schemaGraph = {
           Svelte/Astro systems, SwiftUI prototypes, agentic commerce readiness, and technical rescue work.
         </p>
         <nav aria-label="Footer navigation">
+          <a href="/store">Store</a>
           <a href="/work-with-me">Work with me</a>
           <a href="/products">Products</a>
           <a href="/services">Services</a>
           <a href="/agents">Agents</a>
           <a href="/resume">Resume</a>
+          <a href="/contact">Contact</a>
           <a href="/privacy-policy">Privacy</a>
           <a href="/terms-of-service">Terms</a>
+          <a href="/refund-cancellation-policy">Refunds</a>
         </nav>
       </div>
     </footer>
