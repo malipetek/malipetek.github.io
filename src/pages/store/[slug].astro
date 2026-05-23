@@ -1,6 +1,6 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
-import { formatPrice, storeProducts } from "../../data/store";
+import { formatLocalPrice, formatPrice, storeProducts } from "../../data/store";
 import { absoluteUrl, site } from "../../data/site";
 
 export function getStaticPaths() {
@@ -72,6 +72,11 @@ const productSchema = {
         <div>
           <span>Listed price</span>
           <strong>{formatPrice(product)}</strong>
+          <em>{formatLocalPrice(product)} local reference</em>
+        </div>
+        <div>
+          <span>Payment currency</span>
+          <strong>Confirmed before payment</strong>
         </div>
         <div>
           <span>Delivery</span>
@@ -140,6 +145,7 @@ const productSchema = {
     <article class="contact-panel">
       <p class="eyebrow">Ready to order</p>
       <h2>{formatPrice(product)}</h2>
+      <p class="local-price">{formatLocalPrice(product)} local reference.</p>
       <p>
         Open the order page, confirm the package, and send the required buyer
         details by email. Card payment will be routed through the active payment

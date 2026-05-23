@@ -1,6 +1,6 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { formatPrice, storeProducts } from "../data/store";
+import { formatLocalPrice, formatPrice, storeProducts } from "../data/store";
 import { absoluteUrl } from "../data/site";
 
 const categories = Array.from(new Set(storeProducts.map((product) => product.category)));
@@ -80,6 +80,7 @@ const storeSchema = {
           <div class="price-line">
             <span>Listed price</span>
             <strong>{formatPrice(product)}</strong>
+            <em>{formatLocalPrice(product)} local reference</em>
           </div>
           <ul class="plain-list">
             {product.includes.slice(0, 3).map((item) => <li>{item}</li>)}

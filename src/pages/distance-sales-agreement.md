@@ -19,7 +19,7 @@ The buyer is the person or organization placing an order through the website, em
 The purchased item is the fixed-scope digital service package shown on the relevant store page. Each package page includes the package name, listed price, delivery estimate, included deliverables, required buyer inputs, and excluded work.
 
 ## Price and Payment
-The listed price appears on the package page and checkout page in TRY. Payment details are confirmed in writing before work starts. If the package is replaced by a custom scope, the written custom scope controls the commercial terms.
+The listed price appears on the package page and checkout page in USD by default. A TRY local reference amount is also shown for Turkey-based payment review and payment-provider setup. Payment currency and payment details are confirmed in writing before work starts. If the package is replaced by a custom scope, the written custom scope controls the commercial terms.
 
 ## Delivery
 Delivery is remote and digital. Delivery may be made by email, repository pull request, deployed URL, written handoff note, or other written digital handoff agreed for the package.

@@ -1,6 +1,6 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
-import { formatPrice, orderMailto, storeProducts } from "../../data/store";
+import { formatLocalPrice, formatPrice, orderMailto, storeProducts } from "../../data/store";
 import { absoluteUrl, site } from "../../data/site";
 
 export function getStaticPaths() {
@@ -60,8 +60,13 @@ const orderSchema = {
       <div class="price-line large">
         <span>Total listed price</span>
         <strong>{formatPrice(product)}</strong>
+        <em>{formatLocalPrice(product)} local reference</em>
       </div>
       <dl class="checkout-facts">
+        <div>
+          <dt>Payment currency</dt>
+          <dd>Confirmed in writing before payment</dd>
+        </div>
         <div>
           <dt>Delivery</dt>
           <dd>{product.delivery}</dd>

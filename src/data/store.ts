@@ -6,7 +6,9 @@ export type StoreProduct = {
   category: string;
   summary: string;
   price: number;
-  currency: "TRY";
+  currency: "USD";
+  localPrice: number;
+  localCurrency: "TRY";
   delivery: string;
   availability: string;
   serviceSlug: string;
@@ -23,8 +25,10 @@ export const storeProducts: StoreProduct[] = [
     category: "AI and MVP Repair",
     summary:
       "Fixed-scope review of one fragile AI app or workflow with a written fault map, priority fix list, and one concrete implementation path.",
-    price: 9500,
-    currency: "TRY",
+    price: 249,
+    currency: "USD",
+    localPrice: 9500,
+    localCurrency: "TRY",
     delivery: "3 business days after access and intake are complete",
     availability: "Remote delivery, worldwide",
     serviceSlug: "ai-workflow-development",
@@ -56,8 +60,10 @@ export const storeProducts: StoreProduct[] = [
     category: "AI and MVP Repair",
     summary:
       "A bounded implementation pass for one blocking bug, deploy failure, broken integration, or product workflow that prevents a demo or sale.",
-    price: 15000,
-    currency: "TRY",
+    price: 399,
+    currency: "USD",
+    localPrice: 15000,
+    localCurrency: "TRY",
     delivery: "2 to 5 business days after scope confirmation",
     availability: "Remote delivery, worldwide",
     serviceSlug: "technical-rescue",
@@ -89,8 +95,10 @@ export const storeProducts: StoreProduct[] = [
     category: "Agentic Commerce",
     summary:
       "Implementation package for product/service schema, llms.txt, agents.txt, sitemap updates, and agent-readable commercial boundaries.",
-    price: 8500,
-    currency: "TRY",
+    price: 229,
+    currency: "USD",
+    localPrice: 8500,
+    localCurrency: "TRY",
     delivery: "3 business days after site access and product list are complete",
     availability: "Remote delivery, worldwide",
     serviceSlug: "agentic-commerce-consulting",
@@ -122,8 +130,10 @@ export const storeProducts: StoreProduct[] = [
     category: "Platform Delivery",
     summary:
       "A focused fix for one failing Cloudflare Worker, Pages-to-Workers migration, D1 binding, route, asset, or Wrangler deployment path.",
-    price: 7500,
-    currency: "TRY",
+    price: 199,
+    currency: "USD",
+    localPrice: 7500,
+    localCurrency: "TRY",
     delivery: "2 to 4 business days after access is complete",
     availability: "Remote delivery, worldwide",
     serviceSlug: "cloudflare-convex-platforms",
@@ -155,8 +165,10 @@ export const storeProducts: StoreProduct[] = [
     category: "Web Product Surface",
     summary:
       "A small storefront-style product/service catalog for a software business, with prices, package pages, policy links, and order routes.",
-    price: 12000,
-    currency: "TRY",
+    price: 319,
+    currency: "USD",
+    localPrice: 12000,
+    localCurrency: "TRY",
     delivery: "4 business days after content and access are complete",
     availability: "Remote delivery, worldwide",
     serviceSlug: "svelte-astro-product-development",
@@ -188,8 +200,10 @@ export const storeProducts: StoreProduct[] = [
     category: "E-commerce Implementation",
     summary:
       "A bounded Shopify workflow implementation or repair package for Liquid, app, webhook, catalog, or integration issues.",
-    price: 13500,
-    currency: "TRY",
+    price: 359,
+    currency: "USD",
+    localPrice: 13500,
+    localCurrency: "TRY",
     delivery: "3 to 6 business days after access and issue selection",
     availability: "Remote delivery, worldwide",
     serviceSlug: "shopify-app-integration-development",
@@ -221,8 +235,10 @@ export const storeProducts: StoreProduct[] = [
     category: "Mobile Prototype",
     summary:
       "Starter implementation for one SwiftUI product flow connected to Convex state, useful for proving a real mobile workflow quickly.",
-    price: 17500,
-    currency: "TRY",
+    price: 469,
+    currency: "USD",
+    localPrice: 17500,
+    localCurrency: "TRY",
     delivery: "5 to 8 business days after scope and access are complete",
     availability: "Remote delivery, worldwide",
     serviceSlug: "swiftui-convex-prototypes",
@@ -254,8 +270,10 @@ export const storeProducts: StoreProduct[] = [
     category: "Web Product Surface",
     summary:
       "A compact proof-of-work page set for one product or service, including outcome, architecture, delivery boundary, and buyer CTA.",
-    price: 6500,
-    currency: "TRY",
+    price: 179,
+    currency: "USD",
+    localPrice: 6500,
+    localCurrency: "TRY",
     delivery: "2 business days after source material is complete",
     availability: "Remote delivery, worldwide",
     serviceSlug: "svelte-astro-product-development",
@@ -286,7 +304,11 @@ export const storeProducts: StoreProduct[] = [
 export const featuredStoreProducts = storeProducts.slice(0, 4);
 
 export function formatPrice(product: StoreProduct) {
-  return `${new Intl.NumberFormat("en-US").format(product.price)} ${product.currency}`;
+  return `$${new Intl.NumberFormat("en-US").format(product.price)} ${product.currency}`;
+}
+
+export function formatLocalPrice(product: StoreProduct) {
+  return `${new Intl.NumberFormat("en-US").format(product.localPrice)} ${product.localCurrency}`;
 }
 
 export function orderMailto(product: StoreProduct) {
@@ -296,6 +318,7 @@ export function orderMailto(product: StoreProduct) {
     "",
     `I want to buy: ${product.title}`,
     `Listed price: ${formatPrice(product)}`,
+    `Local TRY reference: ${formatLocalPrice(product)}`,
     `Delivery: ${product.delivery}`,
     "",
     "Buyer details:",

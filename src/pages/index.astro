@@ -2,7 +2,7 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { featuredProducts } from "../data/projects";
 import { services } from "../data/services";
-import { featuredStoreProducts, formatPrice } from "../data/store";
+import { featuredStoreProducts, formatLocalPrice, formatPrice } from "../data/store";
 import { absoluteUrl } from "../data/site";
 
 const buildLanes = [
@@ -138,6 +138,7 @@ const homepageSchema = [
           <div class="price-line">
             <span>Listed price</span>
             <strong>{formatPrice(product)}</strong>
+            <em>{formatLocalPrice(product)} local reference</em>
           </div>
           <div class="cta-row">
             <a class="btn primary" href={`/checkout/${product.slug}`}>Buy now</a>

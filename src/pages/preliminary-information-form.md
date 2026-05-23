@@ -16,7 +16,7 @@ Email: malipetek@gmail.com
 The service package characteristics are shown on each package page: title, category, summary, included deliverables, delivery estimate, required buyer inputs, and excluded work.
 
 ## Price
-The listed price is shown on the package page and checkout page in TRY.
+The listed price is shown on the package page and checkout page in USD by default. A TRY local reference amount is also shown for Turkey-based payment review and payment-provider setup.
 
 ## Delivery Method
 Delivery is remote and digital. Depending on package type, delivery may be sent by email, repository pull request, deployed URL, written handoff note, or another written digital delivery route.
@@ -25,7 +25,7 @@ Delivery is remote and digital. Depending on package type, delivery may be sent 
 The delivery period shown on the package page starts after buyer inputs, required access, scope confirmation, and payment steps are complete.
 
 ## Payment
-Payment details are confirmed in writing before work starts. Card payment is routed through the active payment provider when card checkout is enabled for this site.
+Payment currency and payment details are confirmed in writing before work starts. Card payment is routed through the active payment provider when card checkout is enabled for this site.
 
 ## Cancellation and Refund
 Cancellation and refund rules are available at /refund-cancellation-policy.

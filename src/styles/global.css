@@ -747,13 +747,22 @@ header {
   font-size: 1.45rem;
 }
 
+.price-line em,
+.hero-purchase-panel em,
+.local-price {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-style: normal;
+  font-weight: 750;
+}
+
 .price-line.large strong {
   font-size: 2.2rem;
 }
 
 .hero-purchase-panel {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.75rem;
   margin-top: 1.4rem;
 }
