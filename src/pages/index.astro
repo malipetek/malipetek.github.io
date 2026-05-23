@@ -2,7 +2,12 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { featuredProducts } from "../data/projects";
 import { services } from "../data/services";
-import { featuredStoreProducts, formatLocalPrice, formatPrice } from "../data/store";
+import {
+  featuredStoreProducts,
+  formatDefaultServicePrice,
+  formatLocalPrice,
+  formatPrice,
+} from "../data/store";
 import { absoluteUrl } from "../data/site";
 
 const buildLanes = [
@@ -161,6 +166,10 @@ const homepageSchema = [
           <p class="eyebrow">{service.shortTitle}</p>
           <h3><a href={`/services/${service.slug}`}>{service.title}</a></h3>
           <p>{service.summary}</p>
+          <div class="price-line service-price">
+            <span>Default package amount</span>
+            <strong>{formatDefaultServicePrice(service.slug)}</strong>
+          </div>
           <a class="product-action" href={`/services/${service.slug}`}>Read service page</a>
         </article>
       ))}

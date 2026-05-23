@@ -9,6 +9,7 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
+    "test:service-listings": "node tests/service-listings.test.mjs",
     "deploy:worker": "pnpm build && wrangler deploy"
   },
   "devDependencies": {

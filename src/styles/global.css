@@ -747,6 +747,16 @@ header {
   font-size: 1.45rem;
 }
 
+.price-line.service-price strong {
+  font-size: 1.05rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.hero-service-price {
+  max-width: 24rem;
+}
+
 .price-line em,
 .hero-purchase-panel em,
 .local-price {

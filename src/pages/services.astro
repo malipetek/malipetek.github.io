@@ -1,8 +1,21 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { services } from "../data/services";
+import { defaultStoreProductForService, formatDefaultServicePrice } from "../data/store";
 import { absoluteUrl } from "../data/site";
 
+const serviceOffer = (service: (typeof services)[number]) => {
+  const product = defaultStoreProductForService(service.slug);
+  if (!product) return undefined;
+
+  return {
+    "@type": "Offer",
+    price: product.price,
+    priceCurrency: product.currency,
+    availability: "https://schema.org/InStock",
+    url: absoluteUrl(`/store/${product.slug}`),
+  };
+};
 const serviceListSchema = {
   "@type": "ItemList",
   "@id": `${absoluteUrl("/services")}#services`,
@@ -10,8 +23,13 @@ const serviceListSchema = {
   itemListElement: services.map((service, index) => ({
     "@type": "ListItem",
     position: index + 1,
-    name: service.title,
-    url: absoluteUrl(`/services/${service.slug}`),
+    item: {
+      "@type": "Service",
+      name: service.title,
+      description: service.summary,
+      url: absoluteUrl(`/services/${service.slug}`),
+      offers: serviceOffer(service),
+    },
   })),
 };
 ---
@@ -45,6 +63,10 @@ const serviceListSchema = {
           <p class="eyebrow">{service.shortTitle}</p>
           <h2><a href={`/services/${service.slug}`}>{service.title}</a></h2>
           <p>{service.summary}</p>
+          <div class="price-line service-price">
+            <span>Default package amount</span>
+            <strong>{formatDefaultServicePrice(service.slug)}</strong>
+          </div>
           <ul class="plain-list">
             {service.keywords.slice(0, 3).map((keyword) => <li>{keyword}</li>)}
           </ul>

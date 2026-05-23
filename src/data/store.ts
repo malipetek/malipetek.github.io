@@ -311,6 +311,19 @@ export function formatLocalPrice(product: StoreProduct) {
   return `${new Intl.NumberFormat("en-US").format(product.localPrice)} ${product.localCurrency}`;
 }
 
+export function storeProductsForService(serviceSlug: string) {
+  return storeProducts.filter((product) => product.serviceSlug === serviceSlug);
+}
+
+export function defaultStoreProductForService(serviceSlug: string) {
+  return [...storeProductsForService(serviceSlug)].sort((a, b) => a.price - b.price)[0] ?? null;
+}
+
+export function formatDefaultServicePrice(serviceSlug: string) {
+  const product = defaultStoreProductForService(serviceSlug);
+  return product ? `Packages from ${formatPrice(product)}` : "Packages quoted after scope";
+}
+
 export function orderMailto(product: StoreProduct) {
   const subject = `Order request: ${product.title}`;
   const body = [

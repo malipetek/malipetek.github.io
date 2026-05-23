@@ -2,6 +2,7 @@
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { services } from "../../data/services";
 import { products } from "../../data/projects";
+import { defaultStoreProductForService, formatDefaultServicePrice } from "../../data/store";
 import { absoluteUrl, site } from "../../data/site";
 
 export function getStaticPaths() {
@@ -12,6 +13,7 @@ export function getStaticPaths() {
 }
 
 const { service } = Astro.props;
+const defaultStoreProduct = defaultStoreProductForService(service.slug);
 const relatedProducts = products.filter((product) =>
   service.relatedProducts.includes(product.slug)
 );
@@ -39,6 +41,15 @@ const serviceSchema = {
   areaServed: "Worldwide",
   serviceType: service.keywords.join(", "),
   url: absoluteUrl(`/services/${service.slug}`),
+  offers: defaultStoreProduct
+    ? {
+        "@type": "Offer",
+        price: defaultStoreProduct.price,
+        priceCurrency: defaultStoreProduct.currency,
+        availability: "https://schema.org/InStock",
+        url: absoluteUrl(`/store/${defaultStoreProduct.slug}`),
+      }
+    : undefined,
 };
 const faqSchema = {
   "@type": "FAQPage",
@@ -77,6 +88,12 @@ const faqSchema = {
       <p class="eyebrow">Service</p>
       <h1>{service.title}</h1>
       <p>{service.summary}</p>
+      {defaultStoreProduct && (
+        <div class="price-line service-price hero-service-price">
+          <span>Default package amount</span>
+          <strong>{formatDefaultServicePrice(service.slug)}</strong>
+        </div>
+      )}
       <div class="cta-row">
         <a class="btn primary" href="/store">Buy fixed-scope package</a>
         <a class="btn" href={`/chat?intent=${service.slug}`}>Email scope</a>
