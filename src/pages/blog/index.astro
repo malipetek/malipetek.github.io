@@ -1,11 +1,9 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
-import { blogCategories, getBlogPosts } from "../../data/blog";
+import { getBlogCategoriesWithPosts, getBlogPosts } from "../../data/blog";
 
 const posts = await getBlogPosts();
-const categories = blogCategories.filter((category) =>
-  posts.some((post) => post.category === category.key)
-);
+const categories = await getBlogCategoriesWithPosts();
 ---
 <BaseLayout title="Blog | Muhammet Ali Petek" description="Tech notes, troubleshooting, and practical guides from building in the wild.">
   <h1>Blog</h1>

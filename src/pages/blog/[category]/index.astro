@@ -1,19 +1,18 @@
 ---
 import BaseLayout from "../../../layouts/BaseLayout.astro";
-import { blogCategories, getBlogPosts } from "../../../data/blog";
+import { getBlogCategoriesWithPosts, getBlogPosts } from "../../../data/blog";
 
 export async function getStaticPaths() {
   const posts = await getBlogPosts();
+  const categories = await getBlogCategoriesWithPosts();
 
-  return blogCategories
-    .filter((category) => posts.some((post) => post.category === category.key))
-    .map((category) => ({
-      params: { category: category.key },
-      props: {
-        category,
-        posts: posts.filter((post) => post.category === category.key),
-      },
-    }));
+  return categories.map((category) => ({
+    params: { category: category.key },
+    props: {
+      category,
+      posts: posts.filter((post) => post.category === category.key),
+    },
+  }));
 }
 
 const { category, posts } = Astro.props;

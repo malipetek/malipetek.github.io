@@ -7,13 +7,6 @@ const imageOptions = {
   publicPath: "/blog-images/",
 };
 
-const blogCategoryOptions = [
-  { label: "Linux", value: "linux" },
-  { label: "Shopify", value: "shopify" },
-  { label: "Svelte", value: "svelte" },
-  { label: "Web", value: "web" },
-] as const;
-
 function blogPostCollection() {
   return collection({
     label: "Blog Posts",
@@ -31,10 +24,11 @@ function blogPostCollection() {
           validation: { isRequired: true },
         },
       }),
-      category: fields.select({
+      category: fields.text({
         label: "Category",
-        options: blogCategoryOptions,
+        description: "Type any category. It will be converted into the URL category segment.",
         defaultValue: "linux",
+        validation: { isRequired: true },
       }),
       description: fields.text({
         label: "Description",

@@ -23,15 +23,24 @@ export const blogCategories = [
   },
 ] as const;
 
-export type BlogCategory = (typeof blogCategories)[number];
+export type BlogCategory = {
+  key: string;
+  title: string;
+  description: string;
+};
 
 export type BlogPost = {
-  category: BlogCategory["key"];
+  category: string;
+  categoryTitle: string;
   slug: string;
   title: string;
   description?: string;
   entry: CollectionEntry<"blog">;
 };
+
+const knownCategoryMap = new Map<string, BlogCategory>(
+  blogCategories.map((category) => [category.key, category])
+);
 
 const categoryOrder = new Map(
   blogCategories.map((category, index) => [category.key, index])
@@ -50,7 +59,35 @@ const legacyPostOrder = new Map(
 );
 
 export function getBlogCategory(categoryKey: string) {
-  return blogCategories.find((category) => category.key === categoryKey);
+  return (
+    knownCategoryMap.get(categoryKey) ?? {
+      key: categoryKey,
+      title: formatCategoryTitle(categoryKey),
+      description: `${formatCategoryTitle(categoryKey)} posts.`,
+    }
+  );
+}
+
+export async function getBlogCategoriesWithPosts(): Promise<BlogCategory[]> {
+  const posts = await getBlogPosts();
+  const categories = new Map<string, BlogCategory>();
+
+  for (const post of posts) {
+    if (categories.has(post.category)) continue;
+
+    categories.set(post.category, {
+      ...getBlogCategory(post.category),
+      title: knownCategoryMap.get(post.category)?.title ?? post.categoryTitle,
+    });
+  }
+
+  return [...categories.values()].sort((a, b) => {
+    const categoryDelta =
+      (categoryOrder.get(a.key) ?? 999) - (categoryOrder.get(b.key) ?? 999);
+
+    if (categoryDelta !== 0) return categoryDelta;
+    return a.title.localeCompare(b.title);
+  });
 }
 
 export async function getBlogPosts(): Promise<BlogPost[]> {
@@ -58,15 +95,18 @@ export async function getBlogPosts(): Promise<BlogPost[]> {
 
   return entries
     .map((entry) => {
+      const categoryTitle = entry.data.category.trim();
+
       return {
-        category: entry.data.category,
+        category: toCategorySlug(categoryTitle),
+        categoryTitle,
         slug: entry.slug,
         title: entry.data.title,
         description: entry.data.description || undefined,
         entry,
       };
     })
-    .filter((post) => getBlogCategory(post.category) && post.slug)
+    .filter((post) => post.category && post.slug)
     .sort(sortBlogPosts);
 }
 
@@ -90,6 +130,26 @@ function sortBlogPosts(a: BlogPost, b: BlogPost) {
   }
 
   return a.title.localeCompare(b.title);
+}
+
+function toCategorySlug(category: string) {
+  return (
+    category
+      .trim()
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "uncategorized"
+  );
+}
+
+function formatCategoryTitle(categoryKey: string) {
+  return categoryKey
+    .split("-")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 export const compatibilityMap = {

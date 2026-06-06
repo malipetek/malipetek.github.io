@@ -1,4 +1,4 @@
-import { blogCategories, getBlogPosts } from "../data/blog";
+import { getBlogCategoriesWithPosts, getBlogPosts } from "../data/blog";
 import { products } from "../data/projects";
 import { services } from "../data/services";
 import { storeProducts } from "../data/store";
@@ -39,9 +39,10 @@ function escapeXml(value: string) {
 
 export async function GET() {
   const posts = await getBlogPosts();
+  const categories = await getBlogCategoriesWithPosts();
   const urls = [
     ...staticRoutes,
-    ...blogCategories.map((category) => `/blog/${category.key}`),
+    ...categories.map((category) => `/blog/${category.key}`),
     ...storeProducts.map((product) => `/store/${product.slug}`),
     ...storeProducts.map((product) => `/checkout/${product.slug}`),
     ...products.map((product) => `/products/${product.slug}`),

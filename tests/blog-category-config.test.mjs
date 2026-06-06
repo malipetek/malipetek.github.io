@@ -4,7 +4,6 @@ import { join, relative } from "node:path";
 
 const root = process.cwd();
 const blogDir = join(root, "src", "content", "blog");
-const allowedCategories = new Set(["linux", "shopify", "svelte", "web"]);
 
 const keystaticConfig = readFileSync(join(root, "keystatic.config.ts"), "utf8");
 const contentConfig = readFileSync(join(root, "src", "content", "config.ts"), "utf8");
@@ -27,18 +26,38 @@ assert.doesNotMatch(
 );
 assert.match(
   keystaticConfig,
-  /category:\s*fields\.select\(/,
-  "Keystatic blog entries should expose category as a select field"
+  /category:\s*fields\.text\(/,
+  "Keystatic blog entries should expose category as a free text field"
+);
+assert.doesNotMatch(
+  keystaticConfig,
+  /category:\s*fields\.select\(|blogCategoryOptions/,
+  "Keystatic category should not be limited to a predefined option list"
 );
 assert.match(
   contentConfig,
-  /category:\s*z\.enum\(\["linux",\s*"shopify",\s*"svelte",\s*"web"\]\)/,
-  "Astro content schema should validate blog category frontmatter"
+  /category:\s*z\.string\(\)(?:\.trim\(\))?\.min\(1\)/,
+  "Astro content schema should accept any non-empty category string"
 );
 assert.match(
   blogData,
-  /category:\s*entry\.data\.category/,
+  /categoryTitle\s*=\s*entry\.data\.category\.trim\(\)/,
   "Blog routes should derive category from frontmatter, not the file path"
+);
+assert.match(
+  blogData,
+  /category:\s*toCategorySlug\(categoryTitle\)/,
+  "Blog URL category segments should be generated from typed category text"
+);
+assert.doesNotMatch(
+  blogData,
+  /filter\(\(post\) => getBlogCategory\(post\.category\)/,
+  "Blog posts with new typed categories should not be filtered out"
+);
+assert.match(
+  blogData,
+  /getBlogCategoriesWithPosts/,
+  "Blog index pages should derive visible categories from post frontmatter"
 );
 
 const markdownFiles = listMarkdownFiles(blogDir);
@@ -54,10 +73,6 @@ for (const file of markdownFiles) {
 
   const frontmatter = parseFrontmatter(readFileSync(file, "utf8"));
   assert.ok(frontmatter.category, `${rel} should include category frontmatter`);
-  assert.ok(
-    allowedCategories.has(frontmatter.category),
-    `${rel} category should be one of ${[...allowedCategories].join(", ")}`
-  );
 }
 
 function listMarkdownFiles(dir) {
