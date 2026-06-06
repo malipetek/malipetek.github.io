@@ -43,18 +43,6 @@
     <loc>https://malipetek.dev/blog</loc>
   </url>
   <url>
-    <loc>https://malipetek.dev/blog/linux</loc>
-  </url>
-  <url>
-    <loc>https://malipetek.dev/blog/shopify</loc>
-  </url>
-  <url>
-    <loc>https://malipetek.dev/blog/svelte</loc>
-  </url>
-  <url>
-    <loc>https://malipetek.dev/blog/web</loc>
-  </url>
-  <url>
     <loc>https://malipetek.dev/privacy-policy</loc>
   </url>
   <url>
@@ -74,6 +62,18 @@
   </url>
   <url>
     <loc>https://malipetek.dev/pdfextractor/terms-of-service</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/blog/linux</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/blog/shopify</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/blog/svelte</loc>
+  </url>
+  <url>
+    <loc>https://malipetek.dev/blog/web</loc>
   </url>
   <url>
     <loc>https://malipetek.dev/store/ai-app-rescue-snapshot</loc>
