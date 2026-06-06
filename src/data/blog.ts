@@ -1,45 +1,98 @@
-export const posts = [
+import { getCollection, type CollectionEntry } from "astro:content";
+
+export const blogCategories = [
   {
-    category: "linux",
-    slug: "convert-bash-scripts-into-named-cli-commands-in-linux",
-    title: "Convert Bash Scripts Into Named CLI Commands in Linux",
-    description: "Alternative method for accessing google drive in debian desktops.",
+    key: "linux",
+    title: "Linux",
+    description: "Linux troubleshooting, shell, and desktop workflows.",
   },
   {
-    category: "linux",
-    slug: "how-i-solved-chrome-gpu-issue-on-my-linux-mint",
-    title: "How I Solved Chrome GPU Issue On My Linux Mint",
-    description: "Have chrome GPU issues on linux, this is how I solved mine.",
+    key: "shopify",
+    title: "Shopify",
+    description: "Shopify theme, app, and storefront implementation notes.",
   },
   {
-    category: "linux",
-    slug: "ubuntu-accessing-google-drive-from-nautilus",
-    title: "Access Google Drive Reliably in Ubuntu",
-    description:
-      "Alternative method for accessing google drive in Debian desktops.",
+    key: "svelte",
+    title: "Svelte",
+    description: "Svelte implementation notes and framework debugging.",
   },
   {
-    category: "linux",
-    slug: "linux-mint-xfce-how-i-made-vga-display-configuration-persist",
-    title: "Annoying Secondary Display Situation with XFCE and Linux Mint",
-    description: "Display config persistence fixes for XFCE on Linux Mint.",
+    key: "web",
+    title: "Web",
+    description: "Practical browser, CSS, and frontend notes.",
   },
-  {
-    category: "shopify",
-    slug: "how-to-partytown",
-    title: "How to use partytown as a theme developer",
-  },
-  {
-    category: "svelte",
-    slug: "why-my-image-is-not-hydrating-right",
-    title: "Why my image is not hydrating correctly when Svelte initializes",
-  },
-  {
-    category: "web",
-    slug: "css-only-toggleables",
-    title: "Old trick to use state on web pages without any js",
-  },
-];
+] as const;
+
+export type BlogCategory = (typeof blogCategories)[number];
+
+export type BlogPost = {
+  category: BlogCategory["key"];
+  slug: string;
+  title: string;
+  description?: string;
+  entry: CollectionEntry<"blog">;
+};
+
+const categoryOrder = new Map(
+  blogCategories.map((category, index) => [category.key, index])
+);
+
+const legacyPostOrder = new Map(
+  [
+    "linux/convert-bash-scripts-into-named-cli-commands-in-linux",
+    "linux/how-i-solved-chrome-gpu-issue-on-my-linux-mint",
+    "linux/ubuntu-accessing-google-drive-from-nautilus",
+    "linux/linux-mint-xfce-how-i-made-vga-display-configuration-persist",
+    "shopify/how-to-partytown",
+    "svelte/why-my-image-is-not-hydrating-right",
+    "web/css-only-toggleables",
+  ].map((slug, index) => [slug, index])
+);
+
+export function getBlogCategory(categoryKey: string) {
+  return blogCategories.find((category) => category.key === categoryKey);
+}
+
+export async function getBlogPosts(): Promise<BlogPost[]> {
+  const entries = await getCollection("blog");
+
+  return entries
+    .map((entry) => {
+      const [category, ...slugParts] = entry.slug.split("/");
+
+      return {
+        category: category as BlogCategory["key"],
+        slug: slugParts.join("/"),
+        title: entry.data.title,
+        description: entry.data.description || undefined,
+        entry,
+      };
+    })
+    .filter((post) => getBlogCategory(post.category) && post.slug)
+    .sort(sortBlogPosts);
+}
+
+export async function getBlogCategoryPosts(categoryKey: string) {
+  const posts = await getBlogPosts();
+  return posts.filter((post) => post.category === categoryKey);
+}
+
+function sortBlogPosts(a: BlogPost, b: BlogPost) {
+  const categoryDelta =
+    (categoryOrder.get(a.category) ?? 999) -
+    (categoryOrder.get(b.category) ?? 999);
+
+  if (categoryDelta !== 0) return categoryDelta;
+
+  const aLegacyOrder = legacyPostOrder.get(`${a.category}/${a.slug}`);
+  const bLegacyOrder = legacyPostOrder.get(`${b.category}/${b.slug}`);
+
+  if (aLegacyOrder !== undefined || bLegacyOrder !== undefined) {
+    return (aLegacyOrder ?? 999) - (bLegacyOrder ?? 999);
+  }
+
+  return a.title.localeCompare(b.title);
+}
 
 export const compatibilityMap = {
   "linux/How I Solved Chrome GPU Issue On My Linux Mint":

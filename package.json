@@ -10,7 +10,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "test:service-listings": "node tests/service-listings.test.mjs",
-    "deploy:worker": "pnpm build && wrangler deploy"
+    "deploy:worker": "PUBLIC_KEYSTATIC_GITHUB_APP_SLUG=malipetek-dev-keystatic pnpm build && wrangler deploy"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
@@ -18,5 +18,14 @@
     "astro": "^4.16.0",
     "typescript": "^5.5.4",
     "wrangler": "4.59.2"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "^11.2.0",
+    "@astrojs/markdoc": "^0.11.5",
+    "@astrojs/react": "^4.4.2",
+    "@keystatic/astro": "^5.1.0",
+    "@keystatic/core": "^0.5.50",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   }
 }

@@ -1,0 +1,33 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { blogCategories, getBlogPosts } from "../../../data/blog";
+
+export async function getStaticPaths() {
+  const posts = await getBlogPosts();
+
+  return blogCategories
+    .filter((category) => posts.some((post) => post.category === category.key))
+    .map((category) => ({
+      params: { category: category.key },
+      props: {
+        category,
+        posts: posts.filter((post) => post.category === category.key),
+      },
+    }));
+}
+
+const { category, posts } = Astro.props;
+---
+<BaseLayout title={`${category.title} Blog | Muhammet Ali Petek`} description={category.description}>
+  <h1>{category.title}</h1>
+  <ul class="blog-list">
+    {posts.map((post) => (
+      <li>
+        <a href={`/blog/${post.category}/${post.slug}`}>
+          <strong>{post.title}</strong>
+          {post.description && <p>{post.description}</p>}
+        </a>
+      </li>
+    ))}
+  </ul>
+</BaseLayout>

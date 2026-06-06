@@ -1,5 +1,4 @@
 ---
-layout: ../../../layouts/BaseLayout.astro
 title: How I  Solved Chrome GPU Issue on My Linux Mint
 description: Have chrome GPU issues on linux, this is how I solved mine.
 summary: Having gpu chrome issues? This is how I solved mine.

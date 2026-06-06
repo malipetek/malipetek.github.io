@@ -1,5 +1,4 @@
 ---
-layout: ../../../layouts/BaseLayout.astro
 title: Convert Bash Scripts Into Named CLI Commands in Linux
 description: Alternative method for accessing google drive in debian desktops.
 summary:

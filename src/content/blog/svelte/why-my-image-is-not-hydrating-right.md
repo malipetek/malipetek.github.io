@@ -1,5 +1,4 @@
 ---
-layout: ../../../layouts/BaseLayout.astro
 title: Why my image is not hydrating correctly when Svelte initializes
 ---
 

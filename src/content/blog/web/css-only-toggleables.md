@@ -1,5 +1,4 @@
 ---
-layout: ../../../layouts/BaseLayout.astro
 title: Old trick to use state on web pages without any js
 description:
 summary:

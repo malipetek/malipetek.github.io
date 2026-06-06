@@ -1,5 +1,4 @@
 ---
-layout: ../../../layouts/BaseLayout.astro
 title: Access Google Drive Reliably in Ubuntu
 description: Alternative method for accessing google drive in Debian desktops.
 summary: Do you think ubuntu online accounts takes too long to load your drive folder? Try this.

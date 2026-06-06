@@ -1,0 +1,29 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { getBlogPosts } from "../../../data/blog";
+
+export async function getStaticPaths() {
+  const posts = await getBlogPosts();
+
+  return posts.map((post) => ({
+    params: {
+      category: post.category,
+      slug: post.slug,
+    },
+    props: {
+      post,
+    },
+  }));
+}
+
+const { post } = Astro.props;
+const { Content } = await post.entry.render();
+const description = post.description || post.entry.data.summary || "";
+---
+<BaseLayout
+  title={post.title}
+  description={description}
+  canonical={`/blog/${post.category}/${post.slug}`}
+>
+  <Content />
+</BaseLayout>

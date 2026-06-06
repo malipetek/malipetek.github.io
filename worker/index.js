@@ -1,3 +1,5 @@
+import astroWorker from "../dist/_worker.js/index.js";
+
 const DISCOVERY_LINKS = [
   '</.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json"',
   '</openapi.json>; rel="service-desc"; type="application/vnd.oai.openapi+json"',
@@ -11,8 +13,12 @@ const DISCOVERY_LINKS = [
 const TEXT_MARKDOWN = "text/markdown; charset=utf-8";
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if (isKeystaticRequest(url)) {
+      return astroWorker.fetch(request, env, ctx);
+    }
 
     if (url.pathname === "/health") {
       return withDiscoveryHeaders(
@@ -49,6 +55,15 @@ export default {
     return withDiscoveryHeaders(response, url);
   },
 };
+
+function isKeystaticRequest(url) {
+  return (
+    url.pathname === "/keystatic" ||
+    url.pathname.startsWith("/keystatic/") ||
+    url.pathname === "/api/keystatic" ||
+    url.pathname.startsWith("/api/keystatic/")
+  );
+}
 
 function requestForAsset(request, url) {
   if (url.pathname === "/.well-known/api-catalog") {

@@ -3,6 +3,9 @@
   "name": "malipetek-dev",
   "main": "./worker/index.js",
   "compatibility_date": "2026-05-15",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "account_id": "a60af2542282e283101650bebed42dcf",
   "assets": {
     "directory": "./dist",

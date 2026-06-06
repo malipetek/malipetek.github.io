@@ -1,4 +1,4 @@
-import { posts } from "../data/blog";
+import { blogCategories, getBlogPosts } from "../data/blog";
 import { products } from "../data/projects";
 import { services } from "../data/services";
 import { storeProducts } from "../data/store";
@@ -19,10 +19,6 @@ const staticRoutes = [
   "/experience",
   "/experience/truth",
   "/blog",
-  "/blog/linux",
-  "/blog/shopify",
-  "/blog/svelte",
-  "/blog/web",
   "/privacy-policy",
   "/terms-of-service",
   "/refund-cancellation-policy",
@@ -41,9 +37,11 @@ function escapeXml(value: string) {
     .replaceAll("'", "&apos;");
 }
 
-export function GET() {
+export async function GET() {
+  const posts = await getBlogPosts();
   const urls = [
     ...staticRoutes,
+    ...blogCategories.map((category) => `/blog/${category.key}`),
     ...storeProducts.map((product) => `/store/${product.slug}`),
     ...storeProducts.map((product) => `/checkout/${product.slug}`),
     ...products.map((product) => `/products/${product.slug}`),
