@@ -11873,12 +11873,6 @@ const imageOptions = {
   directory: "public/blog-images",
   publicPath: "/blog-images/"
 };
-const blogCategoryOptions = [
-  { label: "Linux", value: "linux" },
-  { label: "Shopify", value: "shopify" },
-  { label: "Svelte", value: "svelte" },
-  { label: "Web", value: "web" }
-];
 function blogPostCollection() {
   return collection({
     label: "Blog Posts",
@@ -11896,10 +11890,11 @@ function blogPostCollection() {
           validation: { isRequired: true }
         }
       }),
-      category: index.select({
+      category: index.text({
         label: "Category",
-        options: blogCategoryOptions,
-        defaultValue: "linux"
+        description: "Type any category. It will be converted into the URL category segment.",
+        defaultValue: "linux",
+        validation: { isRequired: true }
       }),
       description: index.text({
         label: "Description",
