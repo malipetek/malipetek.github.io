@@ -11873,13 +11873,19 @@ const imageOptions = {
   directory: "public/blog-images",
   publicPath: "/blog-images/"
 };
-function blogPostCollection(label, category) {
+const blogCategoryOptions = [
+  { label: "Linux", value: "linux" },
+  { label: "Shopify", value: "shopify" },
+  { label: "Svelte", value: "svelte" },
+  { label: "Web", value: "web" }
+];
+function blogPostCollection() {
   return collection({
-    label,
-    path: `src/content/blog/${category}/*`,
+    label: "Blog Posts",
+    path: "src/content/blog/*",
     slugField: "title",
     entryLayout: "content",
-    columns: ["title", "description"],
+    columns: ["title", "category", "description"],
     format: {
       contentField: "content"
     },
@@ -11889,6 +11895,11 @@ function blogPostCollection(label, category) {
           label: "Title",
           validation: { isRequired: true }
         }
+      }),
+      category: index.select({
+        label: "Category",
+        options: blogCategoryOptions,
+        defaultValue: "linux"
       }),
       description: index.text({
         label: "Description",
@@ -11938,14 +11949,11 @@ const config = config$1({
       name: "malipetek.dev"
     },
     navigation: {
-      Blog: ["linuxPosts", "shopifyPosts", "sveltePosts", "webPosts"]
+      Blog: ["blogPosts"]
     }
   },
   collections: {
-    linuxPosts: blogPostCollection("Linux Posts", "linux"),
-    shopifyPosts: blogPostCollection("Shopify Posts", "shopify"),
-    sveltePosts: blogPostCollection("Svelte Posts", "svelte"),
-    webPosts: blogPostCollection("Web Posts", "web")
+    blogPosts: blogPostCollection()
   }
 });
 
