@@ -1,5 +1,6 @@
 ---
 title: Annoying Secondary Display Situation with XFCE and Linux Mint
+category: linux
 description:
 keywords: Linux, XFCE, X11, Display, Linux Mint
 ---

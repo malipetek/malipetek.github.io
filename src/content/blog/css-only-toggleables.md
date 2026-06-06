@@ -1,5 +1,6 @@
 ---
 title: Old trick to use state on web pages without any js
+category: web
 description:
 summary:
 keywords:

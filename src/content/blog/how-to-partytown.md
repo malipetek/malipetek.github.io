@@ -1,5 +1,6 @@
 ---
 title: How to use partytown as a theme developer
+category: shopify
 ---
 
 # How to use partytown as a theme developer

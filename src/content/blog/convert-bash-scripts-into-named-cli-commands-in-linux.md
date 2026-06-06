@@ -1,5 +1,6 @@
 ---
 title: Convert Bash Scripts Into Named CLI Commands in Linux
+category: linux
 description: Alternative method for accessing google drive in debian desktops.
 summary:
 keywords: Debian, Ubuntu, Linux, Bash, PC

@@ -1,5 +1,6 @@
 ---
 title: How I  Solved Chrome GPU Issue on My Linux Mint
+category: linux
 description: Have chrome GPU issues on linux, this is how I solved mine.
 summary: Having gpu chrome issues? This is how I solved mine.
 keywords: Debian, Ubuntu, Linux, Bash, PC, XFCE

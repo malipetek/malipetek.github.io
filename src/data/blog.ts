@@ -58,11 +58,9 @@ export async function getBlogPosts(): Promise<BlogPost[]> {
 
   return entries
     .map((entry) => {
-      const [category, ...slugParts] = entry.slug.split("/");
-
       return {
-        category: category as BlogCategory["key"],
-        slug: slugParts.join("/"),
+        category: entry.data.category,
+        slug: entry.slug,
         title: entry.data.title,
         description: entry.data.description || undefined,
         entry,

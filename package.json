@@ -9,6 +9,7 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
+    "test:blog-categories": "node tests/blog-category-config.test.mjs",
     "test:service-listings": "node tests/service-listings.test.mjs",
     "deploy:worker": "PUBLIC_KEYSTATIC_GITHUB_APP_SLUG=malipetek-dev-keystatic pnpm build && wrangler deploy"
   },

@@ -1,5 +1,6 @@
 ---
 title: Why my image is not hydrating correctly when Svelte initializes
+category: svelte
 ---
 
 # Why my image is not hydrating correctly when Svelte initializes
