@@ -3,49 +3,93 @@ layout: ../layouts/BaseLayout.astro
 title: Malipetek.dev Terms of Service
 ---
 
-Malipetek.dev sells fixed-scope remote software implementation packages and provides product engineering work through this website and other written channels.
+**Malipetek.dev Terms of Service**
+=====================================
 
-## Scope
-These terms apply to all services provided by Malipetek.dev:
+**Introduction**
+---------------
 
-- Website development and design
-- Web application development
-- AI-powered solutions
-- Fixed-scope software implementation packages
-- Technical rescue, deployment repair, and digital handoff work
+Malipetek.dev is a full-stack web development agency that provides services to clients through its website and other channels. These Terms of Service ("Terms") govern your use of our services, website, and any other interactions with Malipetek.dev.
 
-## Use of Services
-1. Client responsibilities: provide accurate information and pay on agreed schedule.
-2. Malipetek.dev responsibilities: deliver the agreed package or written scope within the confirmed delivery boundary.
+**Scope**
+--------
 
-## Payment Terms
-1. Store package prices are shown on the relevant package and checkout pages.
-2. Payment methods are confirmed in writing before work starts.
-3. Larger or custom work requires written scope confirmation before payment.
-4. Late payments may pause delivery or trigger late fees where agreed in writing.
+These Terms apply to all services provided by Malipetek.dev, including but not limited to:
 
-## Delivery, Refund, and Cancellation
-Delivery, refund, and cancellation rules are described in the Delivery, Refund, and Cancellation Policy. Digital service delivery may be sent by email, repository pull request, deployed URL, written handoff note, or another written digital delivery route.
+* Website development and design
+* Web application development
+* AI-powered solutions
+* Consulting services
 
-## Intellectual Property
-1. Malipetek.dev retains ownership of service outputs and tooling unless otherwise transferred in contract.
-2. Client receives use rights for project duration.
-3. Client keeps their materials (logos, texts, images, etc.).
+**Definitions**
+--------------
 
-## Confidentiality
-Both parties agree to keep project information confidential unless disclosed with written consent.
+* **Client**: An individual or organization that engages Malipetek.dev for services.
+* **Project**: A specific engagement between Malipetek.dev and a Client for the provision of services.
+* **Services**: The services provided by Malipetek.dev, including website development, web application development, AI-powered solutions, and consulting services.
+* **Website**: The Malipetek.dev website, including all content, materials, and functionality.
 
-## Liability
-Liability is limited to the value of the project unless law requires otherwise.
+**Use of Services**
+------------------
 
-## Governing Law
-Turkey
+1. **Client Responsibilities**: The Client is responsible for providing accurate and complete information, responding to requests in a timely manner, and making timely payments.
+2. **Malipetek.dev Responsibilities**: Malipetek.dev will provide the Services in accordance with the agreed-upon scope, timeline, and budget.
+3. **Project Management**: Malipetek.dev will manage the Project in accordance with industry best practices and will keep the Client informed of progress.
 
-## Disputes
-Handled through negotiation or litigation when needed.
+**Payment Terms**
+----------------
 
-## Contact
-Email malipetek@gmail.com for service, delivery, refund, and order questions.
+1. **Payment Schedule**: The Client will pay Malipetek.dev in accordance with the agreed-upon payment schedule.
+2. **Payment Methods**: Malipetek.dev accepts payment by bank transfer, credit card, or other methods agreed upon in writing.
+3. **Late Payments**: Late payments will incur a fee of %2 per month.
 
-## Effective Date
-2026-05-23
+**Intellectual Property**
+------------------------
+
+1. **Ownership**: Malipetek.dev retains ownership of all intellectual property rights in and to the Services, including but not limited to software, code, and designs.
+2. **License**: Malipetek.dev grants the Client a non-exclusive, non-transferable license to use the Services for the duration of the Project.
+3. **Client Intellectual Property**: The Client retains ownership of all intellectual property rights in and to their materials, including but not limited to text, images, and logos.
+
+**Confidentiality**
+------------------
+
+1. **Confidential Information**: Both parties agree to keep confidential all information exchanged during the Project, including but not limited to business strategies, technical information, and personal data.
+2. **Non-Disclosure**: Both parties agree not to disclose Confidential Information to any third party without prior written consent.
+
+**Warranties and Representations**
+--------------------------------
+
+1. **Malipetek.dev Warranties**: Malipetek.dev warrants that the Services will be provided with reasonable care and skill.
+2. **Client Representations**: The Client represents that they have the authority to engage Malipetek.dev and that they will provide accurate and complete information.
+
+**Liability**
+-------------
+
+1. **Malipetek.dev Liability**: Malipetek.dev's liability for damages arising from the Services is limited to %60 of the total Project value.
+2. **Client Liability**: The Client is liable for any damages arising from their breach of these Terms.
+
+**Termination**
+--------------
+
+1. **Termination for Cause**: Either party may terminate the Project for cause upon written notice to the other party.
+2. **Termination for Convenience**: Either party may terminate the Project for convenience upon written notice to the other party, subject to payment of all outstanding fees.
+
+**Governing Law**
+----------------
+
+These Terms will be governed by and construed in accordance with the laws of Turkey.
+
+**Dispute Resolution**
+---------------------
+
+Any disputes arising from these Terms will be resolved through negotiation or litigation.
+
+**Changes to these Terms**
+-------------------------
+
+Malipetek.dev may update these Terms from time to time. We will notify you of any significant changes by email or through our website.
+
+**Effective Date**
+-----------------
+
+These Terms are effective as of 04/11/2024.

@@ -3,46 +3,77 @@ layout: ../layouts/BaseLayout.astro
 title: Malipetek.dev Privacy Policy
 ---
 
-Malipetek.dev is a full-stack web development agency committed to protecting the privacy and security of our clients and visitors.
+**Malipetek.dev Privacy Policy**
+=====================================
 
-## Scope
-This policy applies to all services provided by Malipetek.dev, including:
+**Introduction**
+---------------
 
-- Website development and design
-- Web application development
-- AI-powered solutions
-- Fixed-scope software implementation packages
-- Technical rescue, deployment repair, and digital handoff work
+Malipetek.dev is a full-stack web development agency committed to protecting the privacy and security of our clients and visitors. This privacy policy outlines how we collect, use, and protect personal data.
 
-## Data Collection
-- **Contact Forms**: name, email address, and message.
-- **Email Correspondence**: email address and details provided in email.
-- **Client Onboarding**: company information, address, and phone number.
-- **Store Orders**: selected package, buyer details, invoice details, project context, access details, and delivery requirements shared by the buyer.
+**Scope**
+--------
 
-## Data Use
-- **Communication**: to respond to inquiries and share project updates.
-- **Project Management**: to deliver and manage services.
-- **Marketing**: newsletters and promotional materials (you can opt out at any time).
+This policy applies to all services provided by Malipetek.dev, including but not limited to:
 
-## Data Protection
-- Encryption in transit and at rest.
-- Access controls and role separation for authorized personnel.
-- Secure storage on secure servers and cloud services.
+* Website development and design
+* Web application development
+* AI-powered solutions
+* Consulting services
 
-## Data Retention
-We retain personal data only as long as needed to support service delivery and obligations, then delete or anonymize it.
+**Data Collection**
+-----------------
 
-## Your Rights
-- Access
-- Correction
-- Erasure
-- Opt-out from marketing communications
+We collect personal data in the following ways:
 
-## Contact
-malipetek@gmail.com
+* **Contact Forms**: When you submit a contact form on our website, we collect your name, email address, and message.
+* **Email Correspondence**: When you email us directly, we collect your email address and any personal data you provide in the email.
+* **Client Onboarding**: When you become a client, we collect additional personal data, such as company information, address, and phone number.
 
-## Changes
-We may update this policy over time and post notice of meaningful updates.
+**Data Use**
+------------
 
-**Effective Date**: 2026-05-23
+We use personal data for the following purposes:
+
+* **Communication**: To respond to your inquiries, provide updates on our services, and communicate with you about your projects.
+* **Project Management**: To manage and deliver our services, including website development, web application development, and AI-powered solutions.
+* **Marketing**: To send you newsletters, promotional materials, and other marketing communications (you can opt-out at any time).
+
+**Data Protection**
+-----------------
+
+We take reasonable measures to protect your personal data from unauthorized access, disclosure, alteration, and destruction. These measures include:
+
+* **Encryption**: We use encryption to protect data in transit and at rest.
+* **Access Controls**: We limit access to personal data to authorized personnel only.
+* **Data Storage**: We store personal data on secure servers and cloud storage services.
+
+**Data Retention**
+-----------------
+
+We retain personal data for as long as necessary to provide our services and fulfill our obligations to you. When we no longer need your personal data, we delete it or anonymize it.
+
+**Your Rights**
+--------------
+
+You have the following rights regarding your personal data:
+
+* **Access**: You can request access to your personal data.
+* **Correction**: You can request correction of your personal data.
+* **Erasure**: You can request erasure of your personal data.
+* **Opt-out**: You can opt-out of marketing communications.
+
+**Contact Us**
+--------------
+
+If you have any questions or concerns about this privacy policy, please contact us at hello@malipetek.dev
+
+**Changes to this Policy**
+-------------------------
+
+We may update this policy from time to time. We will notify you of any significant changes by email or through our website.
+
+**Effective Date**
+-----------------
+
+This policy is effective as of 04/11/2024.

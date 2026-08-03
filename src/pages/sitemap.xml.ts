@@ -1,16 +1,9 @@
 import { getBlogCategoriesWithPosts, getBlogPosts } from "../data/blog";
-import { products } from "../data/projects";
-import { services } from "../data/services";
-import { storeProducts } from "../data/store";
 import { absoluteUrl } from "../data/site";
 
 const staticRoutes = [
   "/",
-  "/store",
-  "/products",
-  "/services",
   "/agents",
-  "/work-with-me",
   "/resume",
   "/contact",
   "/chat",
@@ -43,10 +36,6 @@ export async function GET() {
   const urls = [
     ...staticRoutes,
     ...categories.map((category) => `/blog/${category.key}`),
-    ...storeProducts.map((product) => `/store/${product.slug}`),
-    ...storeProducts.map((product) => `/checkout/${product.slug}`),
-    ...products.map((product) => `/products/${product.slug}`),
-    ...services.map((service) => `/services/${service.slug}`),
     ...posts.map((post) => `/blog/${post.category}/${post.slug}`),
   ];
   const uniqueUrls = Array.from(new Set(urls));

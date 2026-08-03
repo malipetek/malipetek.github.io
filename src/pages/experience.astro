@@ -2,33 +2,89 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { experienceOptions } from "../data/experience";
 ---
-<BaseLayout title="Experience" description="Experience timeline and client work history for Muhammet Ali Petek.">
+
+<BaseLayout
+  title="Experience"
+  description="Programming web servers and front end since 2017"
+>
   <section class="compact-page-head">
-    <p class="eyebrow">Experience archive</p>
-    <h1>Earlier client and integration history.</h1>
-    <p>
-      The newer proof-of-work focus is on <a href="/products">products</a> and
-      <a href="/resume">resume</a>. This archive keeps the original timeline,
-      especially e-commerce and agency collaboration work.
-    </p>
+    <p class="eyebrow">Experience</p>
+    <h1>Programming web servers and front end since 2017</h1>
   </section>
   <section class="timeline">
-    {experienceOptions.map((option) => (
-      <article class="timeline-item">
-        <h2>{option.year} - {option.name}</h2>
-        <p set:html={option.description ?? ""}></p>
-        <div>
-          {option.items.map((op) => (
-            <section class="card">
-              <h3>{op.title}</h3>
-              <p>{op.description ?? ""}</p>
-              <ul>
-                {op.tags.map((tag) => <li>{tag}</li>)}
-              </ul>
-            </section>
-          ))}
+    {
+      experienceOptions.map((option) => (
+        <div class="timeline-entry">
+          <div class="timeline-dot" />
+          <div class="timeline-year">{option.year}</div>
+          <h2 class="timeline-name">{option.name}</h2>
+          {option.description && <Fragment set:html={option.description} />}
+          {option.items &&
+            option.items.map((op) => (
+              <div class="timeline-item">
+                <h3>{op.title}</h3>
+                {op.description && <p>{op.description}</p>}
+                {op.tags && (
+                  <div class="tag-list">
+                    {op.tags.map((tag) => (
+                      <span class="tag">{tag}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
         </div>
-      </article>
-    ))}
+      ))
+    }
   </section>
 </BaseLayout>
+
+<style>
+  .timeline-entry {
+    position: relative;
+    margin-bottom: 2.5rem;
+    padding-left: 1.5rem;
+    border-left: 2px solid var(--border, #e5e7eb);
+  }
+  .timeline-dot {
+    position: absolute;
+    left: -5px;
+    top: 4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--surface-3, #d1d5db);
+    border: 2px solid var(--bg, #fff);
+  }
+  .timeline-year {
+    font-size: 0.875rem;
+    color: var(--muted, #6b7280);
+    margin-bottom: 0.25rem;
+  }
+  .timeline-name {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+  .timeline-item {
+    margin-top: 1rem;
+    padding-left: 1rem;
+  }
+  .timeline-item h3 {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .tag {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    background: var(--surface-2, #f3f4f6);
+    border-radius: 0.25rem;
+  }
+</style>

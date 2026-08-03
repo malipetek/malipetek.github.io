@@ -12,7 +12,9 @@ const {
   noindex = false,
   schema = [],
 } = Astro.props;
-const pageTitle = title.includes("Muhammet") ? title : `${title} | Muhammet Ali Petek`;
+const pageTitle = title.includes("Muhammet")
+  ? title
+  : `${title} | Muhammet Ali Petek`;
 const canonicalUrl = absoluteUrl(canonical ?? Astro.url.pathname);
 const schemaItems = Array.isArray(schema) ? schema : [schema];
 const baseSchema = [
@@ -24,7 +26,7 @@ const baseSchema = [
     email: site.email,
     jobTitle: "Full-stack Product Engineer",
     sameAs: site.sameAs,
-  knowsAbout: [
+    knowsAbout: [
       "AI workflows",
       "Agentic Commerce Protocol",
       "Agentic commerce readiness",
@@ -73,6 +75,7 @@ const schemaGraph = {
   "@graph": [...baseSchema, ...schemaItems],
 };
 ---
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -82,7 +85,12 @@ const schemaGraph = {
     {noindex && <meta name="robots" content="noindex,follow" />}
     <link rel="canonical" href={canonicalUrl} />
     <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt" />
-    <link rel="alternate" type="text/plain" title="agents.txt" href="/agents.txt" />
+    <link
+      rel="alternate"
+      type="text/plain"
+      title="agents.txt"
+      href="/agents.txt"
+    />
     <meta property="og:title" content={pageTitle} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
@@ -97,7 +105,8 @@ const schemaGraph = {
     <script is:inline>
       (() => {
         const modelContext = navigator.modelContext;
-        if (!modelContext || typeof modelContext.registerTool !== "function") return;
+        if (!modelContext || typeof modelContext.registerTool !== "function")
+          return;
 
         const controller = new AbortController();
         const openPath = (path) => {
@@ -151,12 +160,37 @@ const schemaGraph = {
           modelContext.registerTool(tool, { signal: controller.signal });
         }
 
-        window.addEventListener("pagehide", () => controller.abort(), { once: true });
+        window.addEventListener("pagehide", () => controller.abort(), {
+          once: true,
+        });
       })();
     </script>
+    <!-- Google Tag Manager -->
+    <script is:inline>
+      (function (w, d, s, l, i) {
+        w[l] = w[l] || [];
+        w[l].push({ "gtm.start": new Date().getTime(), event: "gtm.js" });
+        var f = d.getElementsByTagName(s)[0],
+          j = d.createElement(s),
+          dl = l != "dataLayer" ? "&l=" + l : "";
+        j.async = true;
+        j.src = "https://www.googletagmanager.com/gtm.js?id=" + i + dl;
+        f.parentNode.insertBefore(j, f);
+      })(window, document, "script", "dataLayer", "GTM-W7MBMZ3J");
+    </script>
+    <!-- End Google Tag Manager -->
     <title>{pageTitle}</title>
   </head>
   <body>
+    <!-- Google Tag Manager (noscript) -->
+    <noscript
+      ><iframe
+        src="https://www.googletagmanager.com/ns.html?id=GTM-W7MBMZ3J"
+        height="0"
+        width="0"
+        style="display:none;visibility:hidden"></iframe></noscript
+    >
+    <!-- End Google Tag Manager (noscript) -->
     <SiteNav />
     <main class:list={["site-main", wide && "site-main-wide"]}>
       <slot />
@@ -164,8 +198,9 @@ const schemaGraph = {
     <footer>
       <div class="footer-inner">
         <p>
-          Muhammet Ali Petek builds AI-assisted products, Cloudflare/Convex platforms,
-          Svelte/Astro systems, SwiftUI prototypes, agentic commerce readiness, and technical rescue work.
+          Muhammet Ali Petek builds AI-assisted products, Cloudflare/Convex
+          platforms, Svelte/Astro systems, SwiftUI prototypes, agentic commerce
+          readiness, and technical rescue work.
         </p>
         <nav aria-label="Footer navigation">
           <a href="/store">Store</a>
