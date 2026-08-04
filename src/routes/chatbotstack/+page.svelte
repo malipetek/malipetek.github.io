@@ -8,17 +8,17 @@
     </div>
     <h2>Flowise</h2>
   </a>
-  <a href="https://groq.com/" target="_blank" style="--brand-color: #fff; --ring-color: #f54f36;">
+  <a href="https://nvidia.com/" target="_blank" style="--brand-color: #000; --ring-color: #f54f36;">
     <div class="icon">
-      <img src="groq.svg" />
+      <img src="nvidia.png" />
     </div>
-    <h2>Groq</h2>
+    <h2>NVIDIA</h2>
   </a>
-  <a href="https://llama.meta.com/llama3/" target="_blank" style="--brand-color: #fff; --ring-color: #0082fb;">
+  <a href="https://z.ai" target="_blank" style="--brand-color: #fff; --ring-color: #0082fb;">
     <div class="icon">
-      <img src="meta.svg" />
+      <img src="zai.svg" />
     </div>
-    <h2>Llama3-70b</h2>
+    <h2>Zai/GLM-5.2</h2>
   </a>
   <a href="https://directus.io/" target="_blank" style="--brand-color: #64f; --ring-color: #64f;">
     <div class="icon">
@@ -35,7 +35,10 @@
     margin-top: 20px;
   }
   img {
-    width: 100px;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
   }
   a {
     display: flex;
@@ -51,13 +54,16 @@
     transition: outline-width 0.3s;
   }
   .icon {
-    margin: 10px;
-    border-radius: 8px; 
-    background-color: var(--brand-color); 
-    padding: 1em 0.5em 0.5em 0.5em; 
+    margin: 10px 0;
+    border-radius: 8px;
+    background-color: var(--brand-color);
     color: inherit;
     overflow: hidden;
     flex: 0 0 auto;
-    aspect-ratio: 2;
+    width: 100%;
+    aspect-ratio: 4;
+    display: flex;
+    justify-content: center;
+    align-items: center;
   }
 </style>

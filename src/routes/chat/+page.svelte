@@ -100,7 +100,7 @@
         footer: {
           textColor: 'inherit',
           text: 'Powered by',
-          company: 'Flowise & Groq & Llama3-70b & Directus',
+          company: 'Flowise & NVIDIA & Zai/GML-5.2 & Directus',
           companyLink: '/chatbotstack',
         },
       },
