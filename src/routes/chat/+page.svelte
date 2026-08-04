@@ -100,7 +100,7 @@
         footer: {
           textColor: 'inherit',
           text: 'Powered by',
-          company: 'Flowise & NVIDIA & Zai/GML-5.2 & Directus',
+          company: 'Flowise & NVIDIA & DeepSeek V4 Flash & Directus',
           companyLink: '/chatbotstack',
         },
       },

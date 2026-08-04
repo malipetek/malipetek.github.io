@@ -14,11 +14,11 @@
     </div>
     <h2>NVIDIA</h2>
   </a>
-  <a href="https://z.ai" target="_blank" style="--brand-color: #fff; --ring-color: #0082fb;">
+  <a href="https://www.deepseek.com/" target="_blank" style="--brand-color: #fff; --ring-color: #0082fb;">
     <div class="icon">
-      <img src="zai.svg" />
+      <img src="deepseek.svg" />
     </div>
-    <h2>Zai/GLM-5.2</h2>
+    <h2>DeepSeek-v4-flash</h2>
   </a>
   <a href="https://directus.io/" target="_blank" style="--brand-color: #64f; --ring-color: #64f;">
     <div class="icon">
