@@ -1,0 +1,37 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>How I Solved Chrome GPU Issue on My Linux Mint — field notes</title><meta name="description" content="Chrome would not render maximized on Mint + XFCE. The fix was a 20-intel.conf I had to dig out of archive.org."><link rel="icon" href="/me.webp"><link rel="preload" href="/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="/fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin><link rel="sitemap" href="/sitemap-index.xml"><link rel="stylesheet" href="/_astro/truth.3xeU9A9O.css">
+<style>.ent-meta[data-astro-cid-4sn4zg3r]{margin:0 0 .4em}.ent-nav[data-astro-cid-4sn4zg3r]{margin-top:2.4em;border-top:1.5px solid var(--rule-dark)}.ent-nav[data-astro-cid-4sn4zg3r] td[data-astro-cid-4sn4zg3r]{border-bottom:none;padding-top:.7em}.ent-next[data-astro-cid-4sn4zg3r]{text-align:right}
+</style></head> <body> <!-- impeccable direction contract · seed 4cba959f · scope direction · mode experience · reroll 1 · register safer
+    THESIS: the site is a dense technical document — one wide column of ruled tables and tight type; every pixel carries information, nothing is a metaphor.
+    OWN-WORLD: datasheet paper #fbfaf6; ink #1c1b17; cobalt #2440c4 for links and mechanical elements only; red #b23a2e reserved for corrections and warnings; hairline rules; iA Writer faces, no hand face.
+    STORY: a working engineer's spec sheet — doc number, revision, section numbers, tabular metadata; the visitor understands this person documents precisely and wastes nothing.
+    FIRST VIEWPORT: document topbar with doc id and numbered section nav; spec title block with bordered fields; the log as a ruled table filling the column edge to edge.
+    FORM: the spec sheet — safer register, user-picked after the field notebook read twee and wasteful. Signature move: the doc's own numbered-section grammar carries every page.
+    FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance. --> <div class="doc"> <header class="doc-topbar"> <span class="doc-id">MLP—01 <span>· personal site + field log</span></span> <nav class="doc-nav" aria-label="Document sections"> <a href="/"> <span class="n">00</span>front </a><a href="/blog" aria-current="page"> <span class="n">01</span>log </a><a href="/experience"> <span class="n">02</span>work </a><a href="/chat"> <span class="n">03</span>correspondence </a> </nav> </header> <main class="doc-body">  <p class="meta ent-meta" data-astro-cid-4sn4zg3r>
+ENTRY 003 · SEC LINUX · FILED 10 MAR 2023 · ~1 MIN
+</p> <h1 data-astro-cid-4sn4zg3r>How I Solved Chrome GPU Issue on My Linux Mint</h1> <div class="prose" data-astro-cid-4sn4zg3r> <p>I was using <strong>Linux Mint</strong> with <strong>Cinnamon</strong> for quite a while. I got tired of cinnamon crashing often and chrome devtools was slow too. I was unable to open lets say 6-8 devtools. It would make my system so slow it bothered me. I remember it was better when I was using windows actually.</p>
+<p>First I transitioned to XFCE for desktop environment, hoping it would be better since it is known for its lightweightness.</p>
+<p>Then I went ahead and enabled all hardware acceleration flag in <strong>Chrome</strong>. However there was an issue, <strong>Chrome</strong> would not render when it is maximized or sometimes when I opened a second window with maximization.</p>
+<p>I have MESA drivers on my system so I should be able to use my intel HD4000 ( Ivy Bridge ) GPU for OPENGL.</p>
+<p>First I tought maybe my MESA installation was not correct.</p>
+<p>I tried uninstalling existing libdrm package. It actually removed many other packages, <strong>never do it</strong>.</p>
+<p>Finally I understood issue was this thing called X11, I dont even know what it is exactly. But it is something like a software bridge between lower gpu libraries and your window manager.</p>
+<p>Simply by trial and error and googling everything comes to my mind, I finally found this article.</p>
+<p><a href="https://www.techzim.co.zw/2017/06/tuning-intel-graphics-card-ubuntu-16-04/">https://www.techzim.co.zw/2017/06/tuning-intel-graphics-card-ubuntu-16-04/</a></p>
+<p>However file contents was not visible.</p>
+<p>I went to archive.org and found previous version.
+<a href="https://web.archive.org/web/20191019025026/https://www.techzim.co.zw/2017/06/tuning-intel-graphics-card-ubuntu-16-04/">Previous Version</a></p>
+<p>On my system I did not have <code>20-intel.conf</code> in my <code>/usr/share/X11/xorg.conf.d/</code> directory. So I created one:</p>
+<p><code>sudo touch /usr/share/X11/xorg.conf.d/20-intel.conf</code></p>
+<p>And I opened the file:</p>
+<p><code>sudo gedit /usr/share/X11/xorg.conf.d/20-intel.conf</code></p>
+<p>Pasted content saved and rebooted.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Section "Device"</span></span>
+<span class="line"><span>        Identifier  "card0"</span></span>
+<span class="line"><span>        Driver      "intel"</span></span>
+<span class="line"><span>        Option      "Backlight"  "intel_backlight"</span></span>
+<span class="line"><span>	Option 	    "AccelMethod" "sna"</span></span>
+<span class="line"><span>	Option      "TearFree" "true"</span></span>
+<span class="line"><span>	Option 	    "DRI" "3"</span></span>
+<span class="line"><span>        BusID       "PCI:0:2:0"</span></span>
+<span class="line"><span>EndSection</span></span></code></pre>
+<p>Just like this now I can run desktop and browser with gpu support(hardware acceleration).</p> </div> <table class="spec-table ent-nav" data-astro-cid-4sn4zg3r> <tbody data-astro-cid-4sn4zg3r> <tr data-astro-cid-4sn4zg3r> <td class="title-cell" style="width:50%" data-astro-cid-4sn4zg3r> <a href="/blog/xfce-vga-display-persist" data-astro-cid-4sn4zg3r><span class="meta" data-astro-cid-4sn4zg3r>← earlier </span>Annoying Secondary Display Situation with XFCE and Linux Mint</a> </td> <td class="title-cell ent-next" data-astro-cid-4sn4zg3r> <a href="/blog/how-to-partytown" data-astro-cid-4sn4zg3r><span class="meta" data-astro-cid-4sn4zg3r>later → </span>How to use Partytown as a theme developer</a> </td> </tr> </tbody> </table>  </main> <footer class="doc-foot"> <span>MLP—01 · REV A · SHEET §01/003</span> <span>set by swe-2 max</span> <span>© 2026 M. PETEK</span> </footer> </div> </body></html> 

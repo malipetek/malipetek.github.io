@@ -1,0 +1,40 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Access Google Drive Reliably in Ubuntu — field notes</title><meta name="description" content="Ubuntu online accounts takes a minute to load the drive folder. ocamlfuse opens it instantly."><link rel="icon" href="/me.webp"><link rel="preload" href="/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="/fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin><link rel="sitemap" href="/sitemap-index.xml"><link rel="stylesheet" href="/_astro/truth.3xeU9A9O.css">
+<style>.ent-meta[data-astro-cid-4sn4zg3r]{margin:0 0 .4em}.ent-nav[data-astro-cid-4sn4zg3r]{margin-top:2.4em;border-top:1.5px solid var(--rule-dark)}.ent-nav[data-astro-cid-4sn4zg3r] td[data-astro-cid-4sn4zg3r]{border-bottom:none;padding-top:.7em}.ent-next[data-astro-cid-4sn4zg3r]{text-align:right}
+</style></head> <body> <!-- impeccable direction contract · seed 4cba959f · scope direction · mode experience · reroll 1 · register safer
+    THESIS: the site is a dense technical document — one wide column of ruled tables and tight type; every pixel carries information, nothing is a metaphor.
+    OWN-WORLD: datasheet paper #fbfaf6; ink #1c1b17; cobalt #2440c4 for links and mechanical elements only; red #b23a2e reserved for corrections and warnings; hairline rules; iA Writer faces, no hand face.
+    STORY: a working engineer's spec sheet — doc number, revision, section numbers, tabular metadata; the visitor understands this person documents precisely and wastes nothing.
+    FIRST VIEWPORT: document topbar with doc id and numbered section nav; spec title block with bordered fields; the log as a ruled table filling the column edge to edge.
+    FORM: the spec sheet — safer register, user-picked after the field notebook read twee and wasteful. Signature move: the doc's own numbered-section grammar carries every page.
+    FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance. --> <div class="doc"> <header class="doc-topbar"> <span class="doc-id">MLP—01 <span>· personal site + field log</span></span> <nav class="doc-nav" aria-label="Document sections"> <a href="/"> <span class="n">00</span>front </a><a href="/blog" aria-current="page"> <span class="n">01</span>log </a><a href="/experience"> <span class="n">02</span>work </a><a href="/chat"> <span class="n">03</span>correspondence </a> </nav> </header> <main class="doc-body">  <p class="meta ent-meta" data-astro-cid-4sn4zg3r>
+ENTRY 007 · SEC LINUX · FILED 29 NOV 2019 · ~1 MIN
+</p> <h1 data-astro-cid-4sn4zg3r>Access Google Drive Reliably in Ubuntu</h1> <div class="prose" data-astro-cid-4sn4zg3r> <h1 id="access-google-drive-reliably-in-ubuntu">Access Google Drive Reliably in Ubuntu</h1>
+<h2 id="the-context">The Context</h2>
+<p>Recently I migrated from Win10 to Ubuntu as my main OS.</p>
+<p>I tried migrating before but problems always hold me back from reaping greater benefits it brings.</p>
+<p>This time it was better. I installed Cinnamon DE and feeling at home.</p>
+<h2 id="the-problem">The Problem</h2>
+<p>For collaboration of some projects and for this blog, I use Google Drive.
+I like to have it in my file manager so I can see my files like local files.</p>
+<blockquote>
+<p>Of course it is always possible to access web based UI but I like the feeling of local in file manager and other text editors.</p>
+</blockquote>
+<p>Ubuntu has a “online accounts” section in settings. It is great, it allows me to add google account and turn on “file sync” and my drive folder appears in the locations sidebar of file manager(nautilus).</p>
+<p>However when you click it, <strong>it takes around a minute</strong> to load root of Google Drive folder.</p>
+<p>Maybe it is downloading all sub directories and stuff, whatever. <strong>It is not usable.</strong></p>
+<h2 id="the-solution">The Solution</h2>
+<p>I’ve found the solution here: <a href="https://linuxconfig.org/google-drive-on-ubuntu-18-04-bionic-beaver-linux">Google Drive on Ubuntu 18.04 Bionic Beaver Linux
+</a></p>
+<p>Second section of this article mentions
+<a href="https://github.com/astrada/google-drive-ocamlfuse">ocamlfuse</a> as a alternative. This is a much better solution. Opens root directory instantly.</p>
+<p>Here is how to set it up:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">sudo</span><span style="color:var(--astro-code-token-string)"> add-apt-repository</span><span style="color:var(--astro-code-token-string)"> ppa:alessandro-strada/ppa</span></span></code></pre>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)"> sudo</span><span style="color:var(--astro-code-token-string)"> apt</span><span style="color:var(--astro-code-token-string)"> install</span><span style="color:var(--astro-code-token-string)"> google-drive-ocamlfuse</span><span style="color:var(--astro-code-foreground)"> </span></span></code></pre>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)"> mkdir</span><span style="color:var(--astro-code-token-string)"> ~/google-drive</span></span></code></pre>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">google-drive-ocamlfuse</span><span style="color:var(--astro-code-token-string)"> ~/google-drive</span></span></code></pre>
+<p>Then go to “Startup Applications Preferences” and add a new entry, give a name of your choice and paste this to “Command” field:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">google-drive-ocamlfuse</span><span style="color:var(--astro-code-token-string)"> ~/google-drive</span></span></code></pre>
+<p><img src="https://i.loli.net/2019/11/29/gYfVw9zP3BrDxKl.png" alt="startup_ocamlfuse"></p>
+<h2 id="end">End</h2>
+<p>You are done, open file manager and click on “google-drive” folder and see for yourself if it is faster.</p>
+<p><img src="https://i.loli.net/2019/11/29/DVcmFg9a2T5ejQx.png" alt="filemanager"></p> </div> <table class="spec-table ent-nav" data-astro-cid-4sn4zg3r> <tbody data-astro-cid-4sn4zg3r> <tr data-astro-cid-4sn4zg3r> <td class="title-cell" style="width:50%" data-astro-cid-4sn4zg3r>  </td> <td class="title-cell ent-next" data-astro-cid-4sn4zg3r> <a href="/blog/css-only-toggleables" data-astro-cid-4sn4zg3r><span class="meta" data-astro-cid-4sn4zg3r>later → </span>Toggle something on a web page without JS</a> </td> </tr> </tbody> </table>  </main> <footer class="doc-foot"> <span>MLP—01 · REV A · SHEET §01/007</span> <span>set by swe-2 max</span> <span>© 2026 M. PETEK</span> </footer> </div> </body></html> 
