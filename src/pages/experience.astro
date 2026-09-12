@@ -1,0 +1,40 @@
+---
+import Sheet from '../layouts/Sheet.astro';
+import { JOBS } from '../lib/experience.js';
+---
+
+<Sheet title="§02 employment record — field notes" description="Where the time went, 2017 to present." current="/experience" sheet="§02">
+
+  <h2 class="sec-head"><span class="sec-no">02</span> employment record <span class="sec-note">2017 → present · {JOBS.length} rows</span></h2>
+  <table class="spec-table">
+    <thead>
+      <tr><th>period</th><th>org</th><th>loc</th><th>scope</th><th>stack</th></tr>
+    </thead>
+    <tbody>
+      {JOBS.map((j) => (
+        <tr>
+          <td class="num">{j.years}</td>
+          <td class="title-cell">{j.link ? <a href={j.link}>{j.name}</a> : j.name}</td>
+          <td class="num">{j.where}</td>
+          <td><span class="sub">{j.blurb}</span></td>
+          <td><span class="sub stack">{j.tags.join(' · ')}</span></td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+
+  <p class="footnote">
+    <span class="fn-mark">*</span> every row is real; the gaps are called "burnout" and "hiking".
+    agencies billed — specifics under NDA. ask the <a href="/chat">desk</a> for the interesting parts.
+    the long TRUTH note is filed at <a href="/experience/truth">§02/A</a>.
+  </p>
+
+</Sheet>
+
+<style>
+  .stack { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.02em; }
+  .spec-table td:nth-child(2) { white-space: nowrap; }
+  @media (max-width: 720px) {
+    .spec-table th:nth-child(5), .spec-table td:nth-child(5) { display: none; }
+  }
+</style>

@@ -1,0 +1,11 @@
+---
+import Sheet from './Sheet.astro';
+const { frontmatter = {} } = Astro.props;
+---
+
+<Sheet title={frontmatter.title ? `${frontmatter.title} — field notes` : 'Appendix — field notes'} current={frontmatter.current} sheet="appx">
+  <p class="meta">APPENDIX{frontmatter.datestamp ? ` · ${frontmatter.datestamp}` : ''}</p>
+  <div class="prose">
+    <slot />
+  </div>
+</Sheet>

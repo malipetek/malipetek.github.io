@@ -1,0 +1,102 @@
+---
+import Sheet from '../layouts/Sheet.astro';
+import ChatCard from '../components/ChatCard.astro';
+import Figure from '../components/Figure.astro';
+import { getPosts, entryNumber, fmtDate } from '../lib/posts.js';
+import { JOBS } from '../lib/experience.js';
+
+const posts = await getPosts();
+const sections = [...new Set(posts.map((p) => p.data.category))];
+---
+
+<Sheet title="Muhammet Ali Petek — personal site + field log" current="/">
+
+  <div class="spec-head" role="presentation">
+    <div class="spec-cell">
+      <span class="spec-k">title</span>
+      <span class="spec-v">MUHAMMET ALI PETEK — full-stack developer</span>
+    </div>
+    <div class="spec-cell">
+      <span class="spec-k">doc no.</span>
+      <span class="spec-v">MLP—01</span>
+    </div>
+    <div class="spec-cell">
+      <span class="spec-k">rev</span>
+      <span class="spec-v">A</span>
+    </div>
+    <div class="spec-cell wide">
+      <span class="spec-k">scope</span>
+      <span class="spec-v muted">
+        istanbul ↔ internet · entries {String(posts.length).padStart(2, '0')} · sections {sections.join(' / ')} ·
+        status: rewriting this site. again.
+      </span>
+    </div>
+  </div>
+
+  <h2 class="sec-head"><span class="sec-no">01</span> the log <span class="sec-note">latest first — full index lives under <a href="/blog">§01</a></span></h2>
+  <table class="spec-table">
+    <thead>
+      <tr><th>№</th><th>filed</th><th>title</th><th>sec</th></tr>
+    </thead>
+    <tbody>
+      {posts.map((p, i) => (
+        <tr>
+          <td class="num">{entryNumber(i)}</td>
+          <td class="num">{fmtDate(p.data.date)}</td>
+          <td class="title-cell"><a href={`/blog/${p.id}`}>{p.data.title}</a></td>
+          <td><span class="tag">{p.data.category}</span></td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+
+  <h2 class="sec-head"><span class="sec-no">02</span> author</h2>
+  <div class="author-grid">
+    <div class="author-fig">
+      <Figure src="/me.webp" alt="Muhammet Ali Petek" fig="1" caption="the author" />
+    </div>
+    <div class="author-copy">
+      <p><strong>Muhammet Ali Petek.</strong> Full-stack developer since 2017 — Node plus whatever the problem actually needs.</p>
+      <p>I sometimes delete modules I wrote just to prove I can rewrite them once they're figured out. Cheap and open-source by conviction — clients get solutions they can keep, not subscriptions they can't leave.</p>
+      <p class="kit"><span class="meta">field kit:</span> svelte · astro (this site) · node · shopify + plus · directus · linux · css that works</p>
+    </div>
+  </div>
+
+  <h2 class="sec-head"><span class="sec-no">03</span> employment record <span class="sec-note">detail under <a href="/experience">§02</a> · agencies billed, specifics under NDA</span></h2>
+  <table class="spec-table">
+    <thead>
+      <tr><th>period</th><th>org</th><th>loc</th><th>scope</th></tr>
+    </thead>
+    <tbody>
+      {JOBS.map((j) => (
+        <tr>
+          <td class="num">{j.years}</td>
+          <td class="title-cell">{j.link ? <a href={j.link}>{j.name}</a> : j.name}</td>
+          <td class="num">{j.where}</td>
+          <td><span class="sub">{j.blurb}</span></td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+
+  <h2 class="sec-head"><span class="sec-no">04</span> correspondence <span class="sec-note">desk copy — real pipeline pending</span></h2>
+  <ChatCard compact />
+  <p class="footnote"><span class="fn-mark">*</span> prefer the real inbox? file directly: <a href="mailto:malipetek@gmail.com">malipetek@gmail.com</a> · <a href="https://github.com/malipetek">github/malipetek</a></p>
+
+</Sheet>
+
+<style>
+  .author-grid {
+    display: grid;
+    grid-template-columns: 132px 1fr;
+    gap: 1.4em;
+    align-items: start;
+  }
+  .author-copy p { margin: 0 0 0.7em; font-size: 0.94rem; }
+  .kit { font-size: 0.82rem; color: var(--ink-soft); }
+  .kit .meta { font-size: 0.68rem; margin-right: 0.5em; }
+  .spec-table td:nth-child(2) { white-space: nowrap; }
+  @media (max-width: 560px) {
+    .author-grid { grid-template-columns: 96px 1fr; }
+  }
+</style>

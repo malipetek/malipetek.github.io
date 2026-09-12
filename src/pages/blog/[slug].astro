@@ -1,0 +1,51 @@
+---
+import Sheet from '../../layouts/Sheet.astro';
+import { getPosts, fmtDate, entryNumber } from '../../lib/posts.js';
+import { render } from 'astro:content';
+
+export async function getStaticPaths() {
+  const posts = await getPosts();
+  return posts.map((post, i) => ({
+    params: { slug: post.id },
+    props: { post, prev: posts[i + 1], next: posts[i - 1], num: i },
+  }));
+}
+
+const { post, prev, next, num } = Astro.props;
+const { Content } = await render(post);
+const mins = Math.max(1, Math.round(post.body.split(/\s+/).length / 200));
+---
+
+<Sheet title={`${post.data.title} — field notes`} description={post.data.summary} current="/blog" sheet={`§01/${entryNumber(num)}`}>
+
+  <p class="meta ent-meta">
+    ENTRY {entryNumber(num)} · SEC {post.data.category.toUpperCase()} · FILED {fmtDate(post.data.date)} · ~{mins} MIN
+  </p>
+
+  <h1>{post.data.title}</h1>
+
+  <div class="prose">
+    <Content />
+  </div>
+
+  <table class="spec-table ent-nav">
+    <tbody>
+      <tr>
+        <td class="title-cell" style="width:50%">
+          {prev && <a href={`/blog/${prev.id}`}><span class="meta">← earlier </span>{prev.data.title}</a>}
+        </td>
+        <td class="title-cell ent-next">
+          {next && <a href={`/blog/${next.id}`}><span class="meta">later → </span>{next.data.title}</a>}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+</Sheet>
+
+<style>
+  .ent-meta { margin: 0 0 0.4em; }
+  .ent-nav { margin-top: 2.4em; border-top: 1.5px solid var(--rule-dark); }
+  .ent-nav td { border-bottom: none; padding-top: 0.7em; }
+  .ent-next { text-align: right; }
+</style>

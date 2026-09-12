@@ -11,25 +11,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: 🚚 Get latest code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
+    - name: 📦 Install pnpm
+      uses: pnpm/action-setup@v4
     - name: 📦 Install Node.js
-      uses: actions/setup-node@v2
+      uses: actions/setup-node@v4
       with:
-        node-version: '18.x'
+        node-version: '22.x'
+        cache: 'pnpm'
 
     - name: Install dependencies
-      run: yarn install
-
-    - name: set git email
-      run:  git config user.email "support+actions@github.com"
-
-    - name: set git user
-      run: git config user.name "Github Actions Bot"
+      run: pnpm install --frozen-lockfile
 
     - name: Build ⚙️
-      run: yarn build
-      env:
-        CI: false
+      run: pnpm build
     
     - name: Deploy to GitHub Pages
       uses: Cecilapp/GitHub-Pages-deploy@v3

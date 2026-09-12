@@ -1,0 +1,22 @@
+---
+interface Props { current?: string }
+const { current = '/' } = Astro.props;
+
+const items = [
+  { to: '/', n: '00', label: 'front' },
+  { to: '/blog', n: '01', label: 'log' },
+  { to: '/experience', n: '02', label: 'work' },
+  { to: '/chat', n: '03', label: 'correspondence' },
+];
+
+const isCurrent = (to: string) =>
+  to === '/' ? current === '/' : current.startsWith(to);
+---
+
+<nav class="doc-nav" aria-label="Document sections">
+  {items.map((t) => (
+    <a href={t.to} aria-current={isCurrent(t.to) ? 'page' : undefined}>
+      <span class="n">{t.n}</span>{t.label}
+    </a>
+  ))}
+</nav>

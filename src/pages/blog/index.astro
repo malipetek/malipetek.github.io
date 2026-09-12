@@ -1,0 +1,33 @@
+---
+import Sheet from '../../layouts/Sheet.astro';
+import { getPosts, entryNumber, fmtDate } from '../../lib/posts.js';
+
+const posts = await getPosts();
+const categories = [...new Set(posts.map((p) => p.data.category))];
+---
+
+<Sheet title="§01 the log — field notes" description="Every entry filed in the document." current="/blog" sheet="§01">
+
+  <h2 class="sec-head"><span class="sec-no">01</span> the log — full index <span class="sec-note">{posts.length} entries · {categories.length} sections</span></h2>
+  <table class="spec-table">
+    <thead>
+      <tr><th>№</th><th>filed</th><th>title / abstract</th><th>sec</th></tr>
+    </thead>
+    <tbody>
+      {posts.map((p, i) => (
+        <tr>
+          <td class="num">{entryNumber(i)}</td>
+          <td class="num">{fmtDate(p.data.date)}</td>
+          <td class="title-cell">
+            <a href={`/blog/${p.id}`}>{p.data.title}</a>
+            <span class="sub">{p.data.summary}</span>
+          </td>
+          <td><span class="tag">{p.data.category}</span></td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+
+  <p class="footnote"><span class="fn-mark">*</span> yes, some of these are years old. the fixes still work.</p>
+
+</Sheet>

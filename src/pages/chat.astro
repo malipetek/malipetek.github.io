@@ -1,0 +1,30 @@
+---
+import Sheet from '../layouts/Sheet.astro';
+import ChatCard from '../components/ChatCard.astro';
+---
+
+<Sheet title="§03 correspondence — field notes" description="Leave a note, get a note." current="/chat" sheet="§03">
+
+  <h2 class="sec-head"><span class="sec-no">03</span> correspondence <span class="sec-note">answered locally · <span style="color:var(--red)">real pipeline pending</span></span></h2>
+
+  <div class="prose" style="max-width:none">
+    <p>
+      This used to be a full Flowise pipeline — Directus contact flow, Turnstile, DeepSeek V4 Flash on NVIDIA.
+      For now the desk answers with a local ruleset: honest about being a copy, useful about me anyway.
+      When the real backend is back, this form stays exactly where it is.
+    </p>
+  </div>
+
+  <ChatCard />
+
+  <p class="footnote">
+    <span class="fn-mark">*</span> prefer the real inbox? file directly:
+    <a href="mailto:malipetek@gmail.com">malipetek@gmail.com</a> ·
+    <a href="https://github.com/malipetek">github/malipetek</a>
+  </p>
+
+</Sheet>
+
+<style>
+  .chat-panel { margin-top: 1.4em; }
+</style>
