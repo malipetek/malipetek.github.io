@@ -1,5 +1,5 @@
 ---
-layout: ../../layouts/Appendix.astro
+layout: ../../layouts/Prose.astro
 title: "TRUTH NYC — the long note"
 current: "/experience"
 ---

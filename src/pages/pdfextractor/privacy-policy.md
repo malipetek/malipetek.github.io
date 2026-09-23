@@ -1,5 +1,5 @@
 ---
-layout: ../../layouts/Appendix.astro
+layout: ../../layouts/Legal.astro
 title: "PDF Extractor — Privacy Policy"
 ---
 
@@ -78,10 +78,10 @@ If you have questions about this privacy policy, please contact us through the M
 ## Summary
 
 **PDF Extractor is a privacy-first application that:**
-- ✅ Collects zero data
-- ✅ Works completely offline
-- ✅ Never transmits your files
-- ✅ Uses no analytics or tracking
-- ✅ Integrates with no third-party services
+- Collects zero data
+- Works completely offline
+- Never transmits your files
+- Uses no analytics or tracking
+- Integrates with no third-party services
 
 Your privacy is not an afterthought—it's the foundation of our application design.

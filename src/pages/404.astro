@@ -1,14 +1,43 @@
 ---
-import Sheet from '../layouts/Sheet.astro';
+import Base from '../layouts/Base.astro';
 ---
 
-<Sheet title="404 — not in document" current="/404" sheet="err">
-
-  <p class="meta" style="color:var(--red)">ERR 404 — REFERENCE NOT FOUND</p>
-  <h1>This page is not in the document.</h1>
-  <div class="prose">
-    <p>Whatever was here either never existed or got deleted to prove a point about rewriting.</p>
-    <p><a href="/">← back to sheet 1/1</a></p>
+<Base title="Not found — malipetek" description="Nothing on this shelf." current="/404">
+  <div class="notfound">
+    <p class="notfound-code">404</p>
+    <h1>Nothing on this shelf.</h1>
+    <p class="lede">
+      Whatever was here either never existed or got deleted to prove a point about rewriting.
+    </p>
+    <p class="notfound-actions">
+      <a class="btn btn--solid" href="/">← Back to the shelf</a>
+      <a class="btn" href="/blog">Read something instead</a>
+    </p>
   </div>
+</Base>
 
-</Sheet>
+<style>
+  .notfound {
+    padding-block: clamp(1.5rem, 6vw, 4rem);
+    max-width: 60ch;
+  }
+
+  .notfound-code {
+    margin: 0 0 0.4rem;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ink-soft);
+  }
+
+  .notfound h1 {
+    margin-bottom: 0.4em;
+  }
+
+  .notfound-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+    margin: clamp(1.5rem, 4vw, 2.25rem) 0 0;
+  }
+</style>

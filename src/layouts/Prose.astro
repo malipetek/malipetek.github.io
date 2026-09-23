@@ -1,0 +1,14 @@
+---
+import Base from './Base.astro';
+
+const { frontmatter = {} } = Astro.props;
+---
+
+<Base
+  title={frontmatter.title ? `${frontmatter.title} — malipetek` : 'malipetek'}
+  current={frontmatter.current}
+>
+  <article class="prose">
+    <slot />
+  </article>
+</Base>

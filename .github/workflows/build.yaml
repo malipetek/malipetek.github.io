@@ -25,6 +25,9 @@ jobs:
 
     - name: Build ⚙️
       run: pnpm build
+      env:
+        PUBLIC_CHAT_ENDPOINT: https://malipetek-intercom.malipetek.workers.dev
+        PUBLIC_TURNSTILE_SITEKEY: ${{ vars.PUBLIC_TURNSTILE_SITEKEY }}
     
     - name: Deploy to GitHub Pages
       uses: Cecilapp/GitHub-Pages-deploy@v3

@@ -1,0 +1,28 @@
+{
+  "name": "malipetek-intercom-worker",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Flue agent behind the malipetek.dev intercom: OpenRouter (Qwen) conversation DOs + Cloudflare Email handoff.",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "deploy": "vite build && wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "build:persona": "node scripts/build-persona.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.54.10",
+    "@cloudflare/workers-types": "5.20260915.1",
+    "@flue/vite": "2.0.7",
+    "typescript": "7.0.2",
+    "vite": "8.3.0",
+    "wrangler": "4.132.0"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.83.0",
+    "@flue/runtime": "2.0.7",
+    "hono": "4.13.8",
+    "valibot": "1.5.0"
+  }
+}

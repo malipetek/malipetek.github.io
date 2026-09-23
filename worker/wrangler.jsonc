@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "malipetek-intercom",
+  "account_id": "a60af2542282e283101650bebed42dcf",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Flue generates one Durable Object class per agent; the migration history
+  // is user-owned — append new entries, never rewrite deployed tags.
+  "migrations": [
+    { "tag": "flue-class-FlueIntercomAgent", "new_sqlite_classes": ["FlueIntercomAgent"] },
+  ],
+
+  // Non-secret configuration. Secrets (API keys, tokens) are NEVER listed
+  // here — set them with `wrangler secret put NAME` (see README.md).
+  "vars": {
+    "CONTACT_FROM_EMAIL": "intercom@malipetek.dev",
+  },
+
+  // Per-IP rate limiting. Create the namespace once with:
+  //   wrangler kv namespace create RATE_LIMIT
+  // then paste the returned id below.
+  "kv_namespaces": [
+    { "binding": "RATE_LIMIT", "id": "b4c27da115ed4625841a4b30d7e8fbec" },
+  ],
+
+  // Cloudflare Email Service. Requires malipetek.dev to be onboarded to Email
+  // Sending (see README.md) — the sender address must live on that domain.
+  // destination_address pins every send to Ali's inbox.
+  "send_email": [
+    { "name": "EMAIL", "destination_address": "malipetek@gmail.com" },
+  ],
+}

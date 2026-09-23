@@ -1,51 +1,78 @@
 ---
-import Sheet from '../../layouts/Sheet.astro';
-import { getPosts, fmtDate, entryNumber } from '../../lib/posts.js';
+import Base from '../../layouts/Base.astro';
+import { getPosts, fmtDate, readMinutes } from '../../lib/posts.js';
 import { render } from 'astro:content';
 
 export async function getStaticPaths() {
   const posts = await getPosts();
   return posts.map((post, i) => ({
     params: { slug: post.id },
-    props: { post, prev: posts[i + 1], next: posts[i - 1], num: i },
+    props: { post, prev: posts[i + 1], next: posts[i - 1] },
   }));
 }
 
-const { post, prev, next, num } = Astro.props;
+const { post, prev, next } = Astro.props;
 const { Content } = await render(post);
-const mins = Math.max(1, Math.round(post.body.split(/\s+/).length / 200));
 ---
 
-<Sheet title={`${post.data.title} — field notes`} description={post.data.summary} current="/blog" sheet={`§01/${entryNumber(num)}`}>
+<Base
+  title={`${post.data.title} — malipetek`}
+  description={post.data.summary}
+  current="/blog"
+  type="article"
+>
+  <article class="entry">
+    <header class="entry-head">
+      <p class="post-meta">{fmtDate(post.data.date)} · {post.data.category} · {readMinutes(post.body)} min</p>
+      <h1>{post.data.title}</h1>
+      {post.data.summary && <p class="entry-lede">{post.data.summary}</p>}
+    </header>
 
-  <p class="meta ent-meta">
-    ENTRY {entryNumber(num)} · SEC {post.data.category.toUpperCase()} · FILED {fmtDate(post.data.date)} · ~{mins} MIN
-  </p>
+    <div class="prose">
+      <Content />
+    </div>
 
-  <h1>{post.data.title}</h1>
-
-  <div class="prose">
-    <Content />
-  </div>
-
-  <table class="spec-table ent-nav">
-    <tbody>
-      <tr>
-        <td class="title-cell" style="width:50%">
-          {prev && <a href={`/blog/${prev.id}`}><span class="meta">← earlier </span>{prev.data.title}</a>}
-        </td>
-        <td class="title-cell ent-next">
-          {next && <a href={`/blog/${next.id}`}><span class="meta">later → </span>{next.data.title}</a>}
-        </td>
-      </tr>
-    </tbody>
-  </table>
-
-</Sheet>
+    <nav class="entry-nav" aria-label="More writing">
+      {prev && <a href={`/blog/${prev.id}`}>← {prev.data.title}</a>}
+      {next && <a class="entry-next" href={`/blog/${next.id}`}>{next.data.title} →</a>}
+    </nav>
+  </article>
+</Base>
 
 <style>
-  .ent-meta { margin: 0 0 0.4em; }
-  .ent-nav { margin-top: 2.4em; border-top: 1.5px solid var(--rule-dark); }
-  .ent-nav td { border-bottom: none; padding-top: 0.7em; }
-  .ent-next { text-align: right; }
+  .entry-head {
+    margin-bottom: clamp(1.75rem, 4.5vw, 2.75rem);
+  }
+
+  .entry-head h1 {
+    /* The reading title carries the page: big, tight, Bricolage. */
+    font-size: clamp(2.2rem, 6vw, 3.8rem);
+    line-height: 1;
+    letter-spacing: -0.035em;
+    margin-bottom: 0;
+    max-width: 20ch;
+  }
+
+  .entry-lede {
+    margin: clamp(0.9rem, 2vw, 1.3rem) 0 0;
+    font-size: clamp(1.05rem, 1.8vw, 1.25rem);
+    line-height: 1.4;
+    color: var(--ink-soft);
+    max-width: 58ch;
+  }
+
+  .entry-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 1.5rem;
+    margin-top: clamp(2.5rem, 6vw, 4rem);
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule);
+    font-size: 15px;
+  }
+
+  .entry-next {
+    margin-left: auto;
+    text-align: right;
+  }
 </style>

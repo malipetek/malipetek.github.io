@@ -1,0 +1,17 @@
+# Copy to worker/.dev.vars for `vite dev`. Never commit the real file.
+# Anything that is a real credential belongs in `wrangler secret put` for deploy.
+
+OPENROUTER_API_KEY=
+
+# Leave empty to skip Turnstile verification while developing.
+TURNSTILE_SECRET_KEY=
+
+# Optional — handoffs are only stored when both are set.
+DIRECTUS_URL=https://directus.example.com
+DIRECTUS_TOKEN=
+
+# Used to sign short-lived chat session tokens and derive conversation ids.
+# Any long random string.
+SESSION_SECRET=change-me-in-production
+
+CONTACT_FROM_EMAIL=intercom@malipetek.dev

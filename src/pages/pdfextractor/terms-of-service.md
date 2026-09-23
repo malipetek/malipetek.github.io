@@ -1,5 +1,5 @@
 ---
-layout: ../../layouts/Appendix.astro
+layout: ../../layouts/Legal.astro
 title: "PDF Extractor — Terms of Service"
 ---
 

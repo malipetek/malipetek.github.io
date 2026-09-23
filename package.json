@@ -10,8 +10,14 @@
     "preview": "astro preview"
   },
   "dependencies": {
+    "@astrojs/markdoc": "0.15.11",
+    "@astrojs/react": "4.4.2",
     "@astrojs/sitemap": "^3.6.0",
-    "astro": "^5.13.0"
+    "@keystatic/astro": "5.2.0",
+    "@keystatic/core": "0.6.9",
+    "astro": "^5.13.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "playwright-core": "^1.63.0"

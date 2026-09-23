@@ -1,0 +1,24 @@
+---
+title: '[placeholder] Game'
+kind: game
+tagline: A small game Ali built — entry coming soon.
+status: wip
+links: []
+year: 2026
+featured: false
+order: 2
+---
+# Vikingwars
+
+## How it started
+
+I wanted to control one of the vikings in starcraft2, I started this project with a starcraft2 asset exporter/converter add-on in blender. At the time opus-4.5 was so promising i thought it would do the job. It did, but kind of. Some of the features eg. team colors emissive textures did not really come through. But I was satisfied because i had the model with textures and animations. \
+\
+
+## Initial implementation
+
+I went ahead and implemented a threejs version in which we used to fly like a real airplane. I didn't like it but i could not make authentic sc2 movement patterns work for a FPS setup either. Missile locking guidence and mechanics were fine and i was kind of playing it.
+
+## Babylon.js rewrite
+
+What made me abandon initial three.js implementation and go for babylon.js was this; some of the FPS flying controls were not getting right no matter how much I iterate, I used to have right left swap when player primitive made some amount of rotation. Second unsolved issue was multiplayer backend, I could never make the sync go past like 1fps. Then I said "screw this, player controls and multiplayer are wheels, lets not reinvent the wheel."

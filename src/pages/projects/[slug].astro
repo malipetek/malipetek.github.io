@@ -1,0 +1,115 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getCollection, render } from 'astro:content';
+
+export async function getStaticPaths() {
+  const projects = await getCollection('projects');
+  return projects.map((project) => ({
+    params: { slug: project.id },
+    props: { project },
+  }));
+}
+
+const { project } = Astro.props;
+const { Content } = await render(project);
+
+const KIND = {
+  'shopify-app': 'Shopify app',
+  game: 'Game',
+  tool: 'Tool',
+  experiment: 'Experiment',
+};
+const STATUS = { live: 'Live', beta: 'Beta', archived: 'Archived', wip: 'Work in progress' };
+---
+
+<Base
+  title={`${project.data.title} — malipetek`}
+  description={project.data.tagline}
+  current="/projects"
+>
+  <article class="project">
+    <p class="project-back"><a href="/#shelf">← Back to the shelf</a></p>
+
+    <header class="project-head">
+      <p class="project-meta">
+        {KIND[project.data.kind]}
+        {project.data.year ? ` · ${project.data.year}` : ''} · {STATUS[project.data.status]}
+      </p>
+      <h1>{project.data.title}</h1>
+      <p class="lede">{project.data.tagline}</p>
+      {project.data.links.length > 0 && (
+        <div class="project-links">
+          {project.data.links.map((l) => (
+            <a class="btn" href={l.url}>{l.label}</a>
+          ))}
+        </div>
+      )}
+    </header>
+
+    {project.data.cover ? (
+      <img class="project-cover" src={project.data.cover} alt={`${project.data.title} cover`} />
+    ) : (
+      <div class="project-cover project-cover--empty" aria-hidden="true">
+        <span>{project.data.title.replace(/^\[placeholder\]\s*/i, '').trim().charAt(0).toUpperCase()}</span>
+      </div>
+    )}
+
+    <div class="prose project-body">
+      <Content />
+    </div>
+  </article>
+</Base>
+
+<style>
+  .project-back {
+    margin: 0 0 1.5rem;
+    font-size: 15px;
+  }
+
+  .project-head {
+    margin-bottom: clamp(1.5rem, 4vw, 2.5rem);
+  }
+
+  .project-meta {
+    margin: 0 0 0.4rem;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+
+  .project-head h1 {
+    margin-bottom: 0.3em;
+  }
+
+  .project-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 1.2rem;
+  }
+
+  .project-cover {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    max-height: min(50vh, 460px);
+    object-fit: cover;
+    border: 2px solid var(--ink);
+    margin-bottom: clamp(1.5rem, 4vw, 2.5rem);
+  }
+
+  .project-cover--empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--orange);
+  }
+
+  .project-cover--empty span {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: clamp(64px, 14vw, 160px);
+    line-height: 1;
+    color: var(--ink);
+    opacity: 0.85;
+  }
+</style>

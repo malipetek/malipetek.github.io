@@ -5,17 +5,10 @@ export async function getPosts() {
   return posts.sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
 }
 
-export const CATEGORY_META = {
-  linux: { tab: 'tab-sage', note: 'desktop wounds, self-inflicted' },
-  shopify: { tab: 'tab-blue', note: 'theme work for money' },
-  svelte: { tab: 'tab-rose', note: 'the good framework' },
-  web: { tab: 'tab-manila', note: 'platform tricks' },
-};
-
-export function entryNumber(i) {
-  return String(i + 1).padStart(3, '0');
+export function readMinutes(body) {
+  return Math.max(1, Math.round(body.split(/\s+/).length / 200));
 }
 
 export function fmtDate(d) {
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 }

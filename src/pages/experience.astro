@@ -1,40 +1,115 @@
 ---
-import Sheet from '../layouts/Sheet.astro';
+import Base from '../layouts/Base.astro';
 import { JOBS } from '../lib/experience.js';
 ---
 
-<Sheet title="§02 employment record — field notes" description="Where the time went, 2017 to present." current="/experience" sheet="§02">
+<Base title="Work — malipetek" description="Where the time went, 2017 to present." current="/experience">
+  <header class="page-head">
+    <h1>Work</h1>
+    <p class="lede">2017 to present. Every row is real; the gaps are called burnout and hiking.</p>
+  </header>
 
-  <h2 class="sec-head"><span class="sec-no">02</span> employment record <span class="sec-note">2017 → present · {JOBS.length} rows</span></h2>
-  <table class="spec-table">
-    <thead>
-      <tr><th>period</th><th>org</th><th>loc</th><th>scope</th><th>stack</th></tr>
-    </thead>
-    <tbody>
-      {JOBS.map((j) => (
-        <tr>
-          <td class="num">{j.years}</td>
-          <td class="title-cell">{j.link ? <a href={j.link}>{j.name}</a> : j.name}</td>
-          <td class="num">{j.where}</td>
-          <td><span class="sub">{j.blurb}</span></td>
-          <td><span class="sub stack">{j.tags.join(' · ')}</span></td>
-        </tr>
-      ))}
-    </tbody>
-  </table>
+  <ol class="jobs">
+    {JOBS.map((j) => (
+      <li class="job">
+        <p class="job-years">{j.years}</p>
+        <div class="job-main">
+          <h2 class="job-name">{j.link ? <a href={j.link}>{j.name}</a> : j.name}</h2>
+          <p class="job-where">{j.where}</p>
+          <p class="job-blurb">{j.blurb}</p>
+          <p class="job-tags">{j.tags.join(' · ')}</p>
+        </div>
+      </li>
+    ))}
+  </ol>
 
-  <p class="footnote">
-    <span class="fn-mark">*</span> every row is real; the gaps are called "burnout" and "hiking".
-    agencies billed — specifics under NDA. ask the <a href="/chat">desk</a> for the interesting parts.
-    the long TRUTH note is filed at <a href="/experience/truth">§02/A</a>.
+  <p class="muted jobs-note">
+    Agencies billed, specifics under NDA. The long TRUTH note lives at
+    <a href="/experience/truth">TRUTH NYC</a>.
   </p>
-
-</Sheet>
+</Base>
 
 <style>
-  .stack { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.02em; }
-  .spec-table td:nth-child(2) { white-space: nowrap; }
-  @media (max-width: 720px) {
-    .spec-table th:nth-child(5), .spec-table td:nth-child(5) { display: none; }
+  .jobs {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 2px solid var(--ink);
+  }
+
+  .job {
+    display: grid;
+    grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
+    gap: 0.35rem clamp(1rem, 3vw, 2.5rem);
+    padding: clamp(1.25rem, 3.5vw, 2rem) 0;
+    border-bottom: 1px solid var(--rule);
+    transition: background var(--dur) var(--ease);
+  }
+
+  .job:last-child {
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .job:hover {
+    background: rgba(20, 19, 17, 0.035);
+  }
+
+  .job-years {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 15px;
+    line-height: 1.2;
+    color: var(--ink);
+  }
+
+  .job-main {
+    min-width: 0;
+  }
+
+  .job-name {
+    margin: 0;
+    font-size: clamp(1.4rem, 3vw, 1.9rem);
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+
+  .job-name a {
+    text-decoration: none;
+  }
+
+  .job-name a:hover {
+    text-decoration: underline;
+    text-decoration-color: var(--orange);
+    text-decoration-thickness: 3px;
+  }
+
+  .job-where {
+    margin: 0.25rem 0 0;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+
+  .job-blurb {
+    margin: 0.55rem 0 0.5rem;
+    max-width: 62ch;
+  }
+
+  .job-tags {
+    margin: 0;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+
+  .jobs-note {
+    margin-top: clamp(1.5rem, 4vw, 2.25rem);
+    max-width: 62ch;
+  }
+
+  @media (max-width: 620px) {
+    .job {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.2rem;
+    }
   }
 </style>

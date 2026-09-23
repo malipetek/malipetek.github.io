@@ -1,0 +1,164 @@
+---
+import '../styles/base.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+  current?: string;
+  /** Open Graph type — 'article' for blog entries, 'website' everywhere else. */
+  type?: string;
+  image?: string;
+  imageAlt?: string;
+}
+
+const {
+  title = 'M. Ali Petek',
+  description = 'M. Ali Petek builds Shopify apps, small games, and the tools he wishes existed.',
+  current = Astro.url.pathname,
+  type = 'website',
+  image = '/me.webp',
+  imageAlt = 'Muhammet Ali Petek',
+} = Astro.props;
+
+// Astro.site is set in astro.config.mjs, so these are absolute for crawlers.
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const ogImage = new URL(image, Astro.site);
+
+const nav = [
+  { href: '/', label: 'Shelf' },
+  { href: '/blog', label: 'Writing' },
+  { href: '/experience', label: 'Work' },
+  { href: '/#talk', label: 'Talk' },
+];
+
+const isCurrent = (href: string) =>
+  href === '/' ? current === '/' : current.startsWith(href);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#efebe3" />
+    <link rel="canonical" href={canonical.href} />
+    <meta property="og:type" content={type} />
+    <meta property="og:site_name" content="M. Ali Petek" />
+    <meta property="og:locale" content="en" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical.href} />
+    <meta property="og:image" content={ogImage.href} />
+    <meta property="og:image:alt" content={imageAlt} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage.href} />
+    <link rel="icon" href="/me.webp" />
+    <link rel="preload" href="/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/source-serif-4-latin-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-head">
+      <div class="wrap site-head-inner">
+        <a class="wordmark" href="/">malipetek</a>
+        <nav class="site-nav" aria-label="Primary">
+          {nav.map((item) => (
+            <a href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined}>
+              {item.label}
+            </a>
+          ))}
+        </nav>
+      </div>
+    </header>
+    <main id="main" class="wrap">
+      <slot />
+    </main>
+    <footer class="site-foot">
+      <div class="wrap site-foot-inner">
+        <a href="mailto:malipetek@gmail.com">malipetek@gmail.com</a>
+        <a href="https://github.com/malipetek">github.com/malipetek</a>
+        <span>Built with Astro, hosted on Cloudflare</span>
+      </div>
+    </footer>
+  </body>
+</html>
+
+<style>
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 10;
+    background: var(--ink);
+    color: var(--bone);
+    padding: 0.6em 1em;
+  }
+
+  .skip-link:focus {
+    left: 0;
+  }
+
+  .site-head {
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .site-head-inner {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding-block: 1rem;
+  }
+
+  .wordmark {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 1.5rem;
+    letter-spacing: -0.02em;
+    text-decoration: none;
+  }
+
+  .site-nav {
+    display: flex;
+    gap: clamp(0.9rem, 3vw, 1.8rem);
+    font-size: 15px;
+  }
+
+  .site-nav a {
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+
+  .site-nav a[aria-current='page'] {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  main {
+    padding-block: clamp(2rem, 6vw, 4rem);
+  }
+
+  .site-foot {
+    border-top: 1px solid var(--rule);
+    margin-top: clamp(3rem, 8vw, 6rem);
+  }
+
+  .site-foot-inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.4rem;
+    padding-block: 1.4rem;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+
+  .site-foot-inner a {
+    color: var(--ink-soft);
+  }
+</style>

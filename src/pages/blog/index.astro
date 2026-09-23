@@ -1,33 +1,75 @@
 ---
-import Sheet from '../../layouts/Sheet.astro';
-import { getPosts, entryNumber, fmtDate } from '../../lib/posts.js';
+import Base from '../../layouts/Base.astro';
+import { getPosts, fmtDate, readMinutes } from '../../lib/posts.js';
 
 const posts = await getPosts();
-const categories = [...new Set(posts.map((p) => p.data.category))];
+
+// Posts arrive newest-first, so walking them once yields year groups in order.
+const groups = [];
+for (const post of posts) {
+  const year = post.data.date.getFullYear();
+  let group = groups.at(-1);
+  if (!group || group.year !== year) {
+    group = { year, posts: [] };
+    groups.push(group);
+  }
+  group.posts.push(post);
+}
 ---
 
-<Sheet title="§01 the log — field notes" description="Every entry filed in the document." current="/blog" sheet="§01">
+<Base
+  title="Writing — malipetek"
+  description="Real fixes and technical writing from the desk of malipetek."
+  current="/blog"
+>
+  <header class="page-head">
+    <h1>Writing</h1>
+    <p class="lede">{posts.length} entries, mostly fixes for problems I hit myself.</p>
+  </header>
 
-  <h2 class="sec-head"><span class="sec-no">01</span> the log — full index <span class="sec-note">{posts.length} entries · {categories.length} sections</span></h2>
-  <table class="spec-table">
-    <thead>
-      <tr><th>№</th><th>filed</th><th>title / abstract</th><th>sec</th></tr>
-    </thead>
-    <tbody>
-      {posts.map((p, i) => (
-        <tr>
-          <td class="num">{entryNumber(i)}</td>
-          <td class="num">{fmtDate(p.data.date)}</td>
-          <td class="title-cell">
-            <a href={`/blog/${p.id}`}>{p.data.title}</a>
-            <span class="sub">{p.data.summary}</span>
-          </td>
-          <td><span class="tag">{p.data.category}</span></td>
-        </tr>
-      ))}
-    </tbody>
-  </table>
+  <div class="years">
+    {groups.map((group) => (
+      <section class="year-group">
+        <h2 class="year">
+          {group.year}
+          <span class="year-count" aria-hidden="true">{group.posts.length}</span>
+        </h2>
+        <ul class="post-list">
+          {group.posts.map((p) => (
+            <li>
+              <a class="post-link" href={`/blog/${p.id}`}>{p.data.title}</a>
+              {p.data.summary && <span class="post-summary">{p.data.summary}</span>}
+              <span class="post-meta">{fmtDate(p.data.date)} · {p.data.category} · {readMinutes(p.body)} min</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ))}
+  </div>
+</Base>
 
-  <p class="footnote"><span class="fn-mark">*</span> yes, some of these are years old. the fixes still work.</p>
+<style>
+  .year-group + .year-group {
+    margin-top: clamp(2rem, 5vw, 3.25rem);
+  }
 
-</Sheet>
+  .year {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin: 0 0 0.4rem;
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+
+  .year-count {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--ink-soft);
+  }
+
+  .post-list li:first-child {
+    border-top: 2px solid var(--ink);
+  }
+</style>

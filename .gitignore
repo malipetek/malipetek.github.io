@@ -4,3 +4,9 @@ node_modules
 dist/
 .astro/
 .impeccable/
+
+# Worker secrets + local state. The example file stays tracked.
+.dev.vars
+.wrangler/
+worker/.dev.vars
+worker/.flue-vite/
