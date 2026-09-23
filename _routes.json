@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "include": [
+    "/*"
+  ],
+  "exclude": [
+    "/_astro/*",
+    "/.assetsignore",
+    "/attributes.jpg",
+    "/debugger.jpg",
+    "/googlefef0fb40c16b5902.html",
+    "/gpt_exp.jpg",
+    "/link-comparison.jpg",
+    "/me.webp",
+    "/fonts/*",
+    "/projects/.gitkeep",
+    "/chat"
+  ]
+}
