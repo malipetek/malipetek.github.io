@@ -21,7 +21,8 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
-    "playwright-core": "^1.63.0"
+    "playwright-core": "^1.63.0",
+    "wrangler": "4.132.0"
   },
   "packageManager": "pnpm@9.4.0"
 }
