@@ -15,10 +15,18 @@
     "not_found_handling": "404-page",
   },
 
-  // Custom domain on the zone — Cloudflare manages the DNS record itself.
+  // Zone routes — the worker intercepts requests for proxied DNS records on
+  // the zone. (Custom domains would manage DNS for us, but they refuse to
+  // attach while the old GitHub Pages records exist.)
   "routes": [
-    { "pattern": "malipetek.dev", "custom_domain": true },
-    { "pattern": "www.malipetek.dev", "custom_domain": true },
+    {
+      "pattern": "malipetek.dev/*",
+      "zone_name": "malipetek.dev"
+    },
+    {
+      "pattern": "www.malipetek.dev/*",
+      "zone_name": "malipetek.dev"
+    },
   ],
 
   // Keystatic admin: set these three with `wrangler secret put` (see below) —
