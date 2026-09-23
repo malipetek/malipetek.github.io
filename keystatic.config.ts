@@ -2,7 +2,10 @@ import { collection, config, fields, singleton } from '@keystatic/core';
 
 export default config({
   storage: {
-    kind: 'local',
+    // Edits commit straight to the repo. Local dev still works — Keystatic
+    // falls back to local mode when the OAuth env vars aren't set.
+    kind: 'github',
+    repo: 'malipetek/malipetek.github.io',
   },
   collections: {
     projects: collection({

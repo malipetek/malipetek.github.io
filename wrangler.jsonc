@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "malipetek-site",
+  "account_id": "a60af2542282e283101650bebed42dcf",
+  "main": "./dist/_worker.js/index.js",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Static assets built by `astro build` (prerendered pages, /_astro bundles,
+  // public/*) are served by the assets binding; everything else SSRs.
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+  },
+
+  // Custom domain on the zone — Cloudflare manages the DNS record itself.
+  "routes": [
+    { "pattern": "malipetek.dev", "custom_domain": true },
+    { "pattern": "www.malipetek.dev", "custom_domain": true },
+  ],
+
+  // Keystatic admin: set these three with `wrangler secret put` (see below) —
+  // KEYSTATIC_GITHUB_CLIENT_ID / KEYSTATIC_GITHUB_CLIENT_SECRET come from the
+  // GitHub OAuth app, KEYSTATIC_SECRET is a random string.
+}

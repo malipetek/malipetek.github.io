@@ -3,24 +3,20 @@ import sitemap from '@astrojs/sitemap';
 import markdoc from '@astrojs/markdoc';
 import react from '@astrojs/react';
 import keystatic from '@keystatic/astro';
+import cloudflare from '@astrojs/cloudflare';
 
-// Keystatic needs Node APIs and React for its admin UI, which cannot exist in a
-// static build. Mount it (and React) only while the dev server is running so
-// `pnpm build` keeps emitting a plain static `dist/` with no `/keystatic` route.
-const isDev = process.env.NODE_ENV !== 'production';
-
+// The site runs on Cloudflare Workers: SSR serves /keystatic (and any dynamic
+// route) while prerendered pages stay static. Keystatic edits commit straight
+// to GitHub via its OAuth flow — the secrets are Worker env vars.
 export default defineConfig({
   site: 'https://malipetek.dev',
-  // The old /chat page is gone; the intercom lives at /#talk. Astro emits a
-  // static meta-refresh page for this redirect (no server runtime needed).
+  output: 'server',
+  adapter: cloudflare(),
+  // The old /chat page is gone; the intercom lives at /#talk.
   redirects: {
     '/chat': '/#talk',
   },
-  integrations: [
-    sitemap(),
-    markdoc(),
-    ...(isDev ? [react(), keystatic()] : []),
-  ],
+  integrations: [sitemap(), markdoc(), react(), keystatic()],
   markdown: {
     shikiConfig: {
       theme: 'css-variables',
