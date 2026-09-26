@@ -9,8 +9,6 @@ interface Props {
   type?: string;
   image?: string;
   imageAlt?: string;
-  /** Homepage only: full-height snap sections over the 3D workshop. */
-  snap?: boolean;
 }
 
 const {
@@ -20,7 +18,6 @@ const {
   type = "website",
   image = "/me.webp",
   imageAlt = "Muhammet Ali Petek",
-  snap = false,
 } = Astro.props;
 
 // Astro.site is set in astro.config.mjs, so these are absolute for crawlers.
@@ -31,6 +28,7 @@ const nav = [
   { href: "/", label: "Shelf" },
   { href: "/blog", label: "Writing" },
   { href: "/experience", label: "Work" },
+  { href: "/contact", label: "Contact" },
   { href: "/#talk", label: "Talk" },
 ];
 
@@ -39,7 +37,7 @@ const isCurrent = (href: string) =>
 ---
 
 <!doctype html>
-<html lang="en" class={snap ? "snap-rooms" : undefined}>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />

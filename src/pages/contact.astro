@@ -1,0 +1,259 @@
+---
+import Base from '../layouts/Base.astro';
+
+const endpoint = String(import.meta.env.PUBLIC_CHAT_ENDPOINT || '').replace(/\/+$/, '');
+const mail = 'malipetek@gmail.com';
+---
+
+<Base
+  title="Contact — malipetek"
+  description="Official inquiries for Muhammet Ali Petek — work, collaborations, and project questions."
+  current="/contact"
+>
+  <header class="page-head">
+    <h1>Contact</h1>
+    <p class="lede">
+      For work, collaborations, and anything official. This goes straight to
+      Ali's inbox — no CRM, no ticketing system, no assistant in between.
+    </p>
+  </header>
+
+  <div class="contact-grid">
+    <form class="contact-form" id="contact-form" data-endpoint={endpoint}>
+      <div class="field">
+        <label for="cf-name">Name</label>
+        <input id="cf-name" name="name" type="text" autocomplete="name" required />
+      </div>
+      <div class="field">
+        <label for="cf-email">Email</label>
+        <input id="cf-email" name="email" type="email" autocomplete="email" required />
+      </div>
+      <div class="field">
+        <label for="cf-org">Company <span class="opt">(optional)</span></label>
+        <input id="cf-org" name="company" type="text" autocomplete="organization" />
+      </div>
+      <div class="field">
+        <label for="cf-msg">Message</label>
+        <textarea id="cf-msg" name="message" rows="7" required></textarea>
+      </div>
+      {/* honeypot — bots fill it, humans don't see it */}
+      <div class="cf-hp" aria-hidden="true">
+        <label>Website <input name="website" type="text" tabindex="-1" autocomplete="off" /></label>
+      </div>
+      <div class="contact-actions">
+        <button class="btn btn--solid" type="submit">Send message →</button>
+        <p class="contact-status" role="status" aria-live="polite"></p>
+      </div>
+    </form>
+
+    <aside class="contact-aside">
+      <h2>Direct lines</h2>
+      <dl class="direct">
+        <div>
+          <dt>Email</dt>
+          <dd><a href={`mailto:${mail}`}>{mail}</a></dd>
+        </div>
+        <div>
+          <dt>GitHub</dt>
+          <dd><a href="https://github.com/malipetek">github.com/malipetek</a></dd>
+        </div>
+        <div>
+          <dt>Quick question?</dt>
+          <dd><a href="/#talk">The intercom answers faster</a> — it knows what Ali builds and when he's free.</dd>
+        </div>
+      </dl>
+      <p class="aside-note">
+        Everything here lands in the same inbox either way. Email is fine if
+        forms feel like paperwork.
+      </p>
+    </aside>
+  </div>
+</Base>
+
+<script>
+  const form = document.getElementById('contact-form');
+  if (form instanceof HTMLFormElement) {
+    const status = form.querySelector('.contact-status');
+    const submit = form.querySelector('button[type="submit"]');
+    const endpoint = form.dataset.endpoint || '';
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      // honeypot: pretend to succeed and bail
+      if (String(data.get('website') || '').trim()) {
+        if (status) status.textContent = 'Sent — thanks, talk soon.';
+        form.reset();
+        return;
+      }
+      const name = String(data.get('name') || '').trim();
+      const email = String(data.get('email') || '').trim();
+      const company = String(data.get('company') || '').trim();
+      const message = String(data.get('message') || '').trim();
+      if (!name || !email || !message) {
+        if (status) status.textContent = 'Name, email and message are required.';
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        if (status) status.textContent = 'That email does not look right.';
+        return;
+      }
+      if (!endpoint) {
+        if (status) status.textContent = 'Form is offline — use the email link on the right.';
+        return;
+      }
+      const text =
+        `Name: ${name}\n` +
+        (company ? `Company: ${company}\n` : '') +
+        `Source: contact page\n\n${message}`;
+      if (submit instanceof HTMLButtonElement) submit.disabled = true;
+      if (status) status.textContent = 'Sending…';
+      try {
+        const res = await fetch(`${endpoint}/handoff`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email, message: text, summary: text.slice(0, 400), source: 'contact' }),
+        });
+        if (res.ok) {
+          form.reset();
+          if (status) status.textContent = 'Sent — thanks, Ali reads these himself.';
+        } else {
+          const err = await res.json().catch(() => ({}));
+          if (status)
+            status.textContent =
+              err.error === 'rate_limited'
+                ? 'Too many messages from this address — try again in a bit, or email directly.'
+                : 'Could not send — email malipetek@gmail.com directly.';
+        }
+      } catch {
+        if (status) status.textContent = 'Network error — email malipetek@gmail.com directly.';
+      } finally {
+        if (submit instanceof HTMLButtonElement) submit.disabled = false;
+      }
+    });
+  }
+</script>
+
+<style>
+  .contact-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: clamp(1.75rem, 5vw, 4rem);
+    align-items: start;
+  }
+
+  .contact-form {
+    display: grid;
+    gap: 1.1rem;
+    border-top: 2px solid var(--ink);
+    padding-top: clamp(1.25rem, 3vw, 1.75rem);
+  }
+
+  .field {
+    display: grid;
+    gap: 0.4rem;
+  }
+
+  .field label {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+
+  .field .opt {
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .field input,
+  .field textarea {
+    font: inherit;
+    color: var(--ink);
+    background: transparent;
+    border: 2px solid var(--ink);
+    border-radius: 0;
+    padding: 0.65rem 0.8rem;
+    width: 100%;
+  }
+
+  .field input:focus-visible,
+  .field textarea:focus-visible {
+    outline: 3px solid var(--orange);
+    outline-offset: 2px;
+  }
+
+  .field textarea {
+    resize: vertical;
+    min-height: 9rem;
+  }
+
+  .cf-hp {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+
+  .contact-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .contact-status {
+    margin: 0;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+
+  .contact-aside h2 {
+    margin: 0 0 0.9rem;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    font-weight: 500;
+  }
+
+  .direct {
+    margin: 0;
+    display: grid;
+    gap: 0.9rem;
+    border-top: 2px solid var(--ink);
+    padding-top: 1.1rem;
+  }
+
+  .direct div {
+    display: grid;
+    gap: 0.15rem;
+  }
+
+  .direct dt {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  .direct dd {
+    margin: 0;
+    font-size: 16px;
+  }
+
+  .aside-note {
+    margin-top: 1.4rem;
+    font-size: 14px;
+    color: var(--ink-soft);
+    max-width: 40ch;
+  }
+
+  @media (max-width: 760px) {
+    .contact-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

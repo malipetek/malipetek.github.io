@@ -10,6 +10,7 @@
  * palettes come from the page's data-theme attribute.
  */
 import * as THREE from 'three';
+import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 
 const GAP = 16; // distance between stations
 const ORANGE = 0xff5a1f;
@@ -35,7 +36,7 @@ const LIGHT: Palette = {
   plinth: 0xf6f3ec,
   plinthDark: 0xd9d2c4,
   ink: 0x141311,
-  panel: 0x1b1a17,
+  panel: 0x141311, // code-panel chrome is an ink edge in light mode
   paper: 0xfbf9f4,
   paperInk: '#8a857b',
   hemi: 0.9,
@@ -57,47 +58,36 @@ const DARK: Palette = {
 
 /* ————— canvas textures ————— */
 
-function codeTexture(accent = '#ff8a5c'): THREE.CanvasTexture {
+function codeTexture (dark: boolean, accent = '#ff8a5c'): THREE.CanvasTexture
+{
   const c = document.createElement('canvas');
   c.width = 256;
   c.height = 160;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#141311';
+  g.fillStyle = dark ? '#141311' : '#f8f3ea';
   g.fillRect(0, 0, 256, 160);
   // title bar dots
-  ['#ff5a1f', '#8a857b', '#8a857b'].forEach((col, i) => {
+  const dot = dark ? '#8a857b' : '#b3aa98';
+  ['#ff5a1f', dot, dot].forEach((col, i) =>
+  {
     g.fillStyle = col;
     g.beginPath();
     g.arc(18 + i * 16, 14, 4, 0, 7);
     g.fill();
   });
-  // fake code lines
+  // fake code lines — darker, lower-key hues on the light card
+  const ink = dark ? '#e9e4da' : '#2a2723';
+  const blue = dark ? '#9ec5e0' : '#4a7ba6';
+  const green = dark ? '#c7d98f' : '#7a9440';
   const lines = [
-    [0.12, 0.5, accent], [0.28, 0.55, '#9ec5e0'], [0.28, 0.4, '#c7d98f'],
-    [0.44, 0.3, '#e9e4da'], [0.28, 0.45, accent], [0.12, 0.35, '#e9e4da'],
-    [0.12, 0.6, '#8a857b'], [0.28, 0.3, '#9ec5e0'],
+    [0.12, 0.5, accent], [0.28, 0.55, blue], [0.28, 0.4, green],
+    [0.44, 0.3, ink], [0.28, 0.45, accent], [0.12, 0.35, ink],
+    [0.12, 0.6, dot], [0.28, 0.3, blue],
   ];
   lines.forEach(([indent, len, col], i) => {
     g.fillStyle = col as string;
     g.fillRect(16 + (indent as number) * 100, 34 + i * 15, (len as number) * 140, 5);
   });
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-function letterTexture(letter: string, color: string, ink: string): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 128;
-  c.height = 128;
-  const g = c.getContext('2d')!;
-  g.fillStyle = color;
-  g.fillRect(0, 0, 128, 128);
-  g.fillStyle = ink;
-  g.font = '800 64px system-ui, sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText(letter, 64, 70);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -142,26 +132,68 @@ function plinth(w: number, h: number, d: number, color: number): THREE.Mesh {
   return m;
 }
 
-function codePanel(w = 3.2, h = 2): THREE.Group {
+interface ThemedPanel
+{
+  frame: THREE.MeshStandardMaterial;
+  face: THREE.MeshBasicMaterial;
+}
+
+function codePanel (w = 3.2, h = 2, themed?: ThemedPanel[]): THREE.Group
+{
   const g = new THREE.Group();
   const frame = box(w, h, 0.12, 0x141311);
   const face = new THREE.Mesh(
     new THREE.PlaneGeometry(w - 0.16, h - 0.16),
-    new THREE.MeshBasicMaterial({ map: codeTexture() }),
+    new THREE.MeshBasicMaterial({ map: codeTexture(true) }),
   );
   face.position.z = 0.065;
   g.add(frame, face);
+  themed?.push({
+    frame: frame.material as THREE.MeshStandardMaterial,
+    face: face.material as THREE.MeshBasicMaterial,
+  });
   return g;
 }
 
-function letterCube(letter: string, colorHex: number, colorCss: string, ink: string): THREE.Mesh {
-  const mats = Array.from({ length: 6 }, () =>
-    new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.8 }));
-  mats[4] = new THREE.MeshStandardMaterial({ map: letterTexture(letter, colorCss, ink), roughness: 0.8 });
-  const m = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), mats);
-  m.castShadow = true;
-  m.receiveShadow = true;
-  return m;
+/* Vendored brand SVGs (simpleicons, CC0) extruded into real 3D logos. SVG y
+   runs downward, so the group is flipped and scaled to ~unit height. */
+function loadLogo (url: string, color: number): Promise<THREE.Group>
+{
+  return new Promise((resolve, reject) =>
+  {
+    new SVGLoader().load(
+      url,
+      (data) =>
+      {
+        const group = new THREE.Group();
+        const mat = new THREE.MeshStandardMaterial({
+          color,
+          roughness: 0.55,
+          metalness: 0.15,
+        });
+        for (const path of data.paths) {
+          for (const shape of SVGLoader.createShapes(path)) {
+            const mesh = new THREE.Mesh(
+              new THREE.ExtrudeGeometry(shape, { depth: 3, bevelEnabled: false }),
+              mat,
+            );
+            mesh.castShadow = true;
+            group.add(mesh);
+          }
+        }
+        // Normalize the 24×24 viewBox to ~1 unit, center on origin. The
+        // offset lives on an inner group — callers set position on the wrap.
+        group.scale.set(0.05, -0.05, 0.05);
+        const box3 = new THREE.Box3().setFromObject(group);
+        group.position.sub(box3.getCenter(new THREE.Vector3()));
+        const wrap = new THREE.Group();
+        wrap.add(group);
+        resolve(wrap);
+      },
+      undefined,
+      () => reject(new Error(`logo load failed: ${url}`)),
+    );
+  });
 }
 
 /* The hero centerpiece: a chunky intercom unit on its plinth — body, speaker
@@ -218,7 +250,12 @@ interface Station {
   animated: THREE.Object3D[];
 }
 
-function buildStations(scene: THREE.Scene, pal: Palette): Station[] {
+function buildStations (
+  scene: THREE.Scene,
+  pal: Palette,
+  themed: ThemedPanel[],
+): Station[]
+{
   const stations: Station[] = [];
   const at = (i: number) => i * GAP;
 
@@ -232,23 +269,35 @@ function buildStations(scene: THREE.Scene, pal: Palette): Station[] {
     const unit = intercomUnit(pal);
     unit.position.y = 0.9 + 1.5;
     g.add(unit);
-    const left = codePanel();
+    const left = codePanel(3.2, 2, themed);
     left.position.set(-4.6, 3.2, -0.8);
     left.rotation.y = 0.5;
     left.rotation.x = -0.06;
-    const right = codePanel(2.6, 1.6);
+    const right = codePanel(2.6, 1.6, themed);
     right.position.set(4.4, 2.6, -1.2);
     right.rotation.y = -0.55;
     g.add(left, right);
-    // module cubes row — the stack he works in
-    const mods: [string, number, string][] = [
-      ['S', 0x0f0e0c, '#141311'], ['N', ORANGE, '#ff5a1f'], ['S', SHOPIFY, '#95bf47'], ['L', GREY, '#5b574f'],
+    // the stack he works in — real logos extruded, standing on the floor
+    const logos: [string, number][] = [
+      ['/logos/svelte.svg', 0xff3e00],
+      ['/logos/nodedotjs.svg', 0x5fa04e],
+      ['/logos/typescript.svg', 0x3178c6],
+      ['/logos/shopify.svg', 0x95bf47],
+      ['/logos/linux.svg', 0xfcc624],
     ];
-    mods.forEach(([letter, hex, css], i) => {
-      const cube = letterCube(letter, hex, css, '#efebe3');
-      cube.position.set(-1.9 + i * 1.25, 0.4, 3.1);
-      cube.rotation.y = -0.15;
-      g.add(cube);
+    logos.forEach(([url, col], i) =>
+    {
+      loadLogo(url, col)
+        .then((logo) =>
+        {
+          logo.position.set(-2.7 + i * 1.35, 0.62, 3.1);
+          logo.rotation.y = -0.12;
+          g.add(logo);
+        })
+        .catch(() =>
+        {
+          /* logo failed to load — the row just has a gap */
+        });
     });
     scene.add(g);
     stations.push({ cam: [at(0), 3.4, 12.4], look: [at(0), 1.4, 0], animated: [left, right, unit] });
@@ -362,16 +411,26 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
   floor.receiveShadow = true;
   scene.add(floor);
 
-  const stations = buildStations(scene, pal);
+  const themed: ThemedPanel[] = [];
+  const stations = buildStations(scene, pal, themed);
 
-  // Theme sync — read the page attribute, repaint on change.
+  // Theme sync — read the page attribute, repaint on change. Code panels get
+  // their texture regenerated so they read as light cards in light mode.
   const applyTheme = () => {
     pal = document.documentElement.dataset.theme === 'dark' ? DARK : LIGHT;
+    const dark = pal === DARK;
     scene.background = new THREE.Color(pal.bg);
     scene.fog = new THREE.Fog(pal.bg, 18, 46);
     (floor.material as THREE.MeshStandardMaterial).color.setHex(pal.floor);
     hemi.intensity = pal.hemi;
     key.intensity = pal.key;
+    themed.forEach(({ frame, face }) =>
+    {
+      frame.color.setHex(pal.panel);
+      face.map?.dispose();
+      face.map = codeTexture(dark);
+      face.needsUpdate = true;
+    });
     if (reduced) renderer.render(scene, camera);
   };
   applyTheme();

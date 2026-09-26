@@ -389,6 +389,7 @@ interface HandoffBody {
   email?: unknown;
   message?: unknown;
   summary?: unknown;
+  source?: unknown;
   turnstileToken?: unknown;
 }
 
@@ -420,13 +421,14 @@ async function emailViaEmailService(
   email: string,
   message: string,
   summary: string,
+  source: string,
 ): Promise<boolean> {
   if (!env.EMAIL) return false;
   try {
     await env.EMAIL.send({
       from: env.CONTACT_FROM_EMAIL || 'intercom@malipetek.dev',
       to: 'malipetek@gmail.com', // pinned by the binding's destination_address
-      subject: `Intercom note from ${email}`,
+      subject: `${source === 'contact' ? 'Contact form' : 'Intercom note'} from ${email}`,
       text: `From: ${email}\n\n${message || summary}\n\n---\n${summary}`,
     });
     return true;
@@ -471,9 +473,10 @@ app.post('/handoff', async (c) => {
     return json({ error: 'turnstile_failed' }, 403, origin);
   }
 
-  const record = { email, message: message || summary, summary, source: 'intercom' };
+  const source = body.source === 'contact' ? 'contact' : 'intercom';
+  const record = { email, message: message || summary, summary, source };
   const stored = await storeInDirectus(env, record);
-  const emailed = await emailViaEmailService(env, email, message, summary);
+  const emailed = await emailViaEmailService(env, email, message, summary, source);
 
   if (!stored && !emailed) return json({ error: 'delivery_failed' }, 502, origin);
   return json({ ok: true, stored, emailed }, 200, origin);

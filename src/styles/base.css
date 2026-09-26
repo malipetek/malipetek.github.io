@@ -509,28 +509,15 @@ pre.astro-code {
   color: inherit;
 }
 
-/* ————— snap rooms (homepage) ————— */
-
-@media (prefers-reduced-motion: no-preference) {
-  html.snap-rooms {
-    scroll-snap-type: y proximity;
-  }
-}
+/* ————— homepage rooms ————— */
 
 .room {
-  scroll-snap-align: start;
   min-height: 100svh;
   display: flex;
   flex-direction: column;
   justify-content: center;
   position: relative;
   z-index: 1;
-}
-
-/* Without its own snap point the intercom snap would keep the footer out of
-   reach — align end so scrolling to the bottom rests on it. */
-html.snap-rooms .site-foot {
-  scroll-snap-align: end;
 }
 /* ————— reduced motion ————— */
 

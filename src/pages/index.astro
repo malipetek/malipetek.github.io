@@ -64,7 +64,6 @@ const initial = (title) =>
   title="Muhammet Ali Petek — full-stack developer"
   description="Muhammet Ali Petek (malipetek) builds Shopify apps, small games, and the tools he wishes existed."
   current="/"
-  snap
 >
   <WorkshopScene />
 
@@ -324,13 +323,16 @@ const initial = (title) =>
     z-index: 1;
   }
 
-  html.snap-rooms :global(main) {
+  /* Rooms are full-viewport; the layout's main padding would push the first
+     room down. */
+  :global(main) {
     padding-block: 0;
   }
 
-  /* The intercom is the last room; its orange field covers the canvas. */
+  /* The intercom is the last room; its translucent orange field lets the
+     beacon glow through. Needs position/z-index to paint over the fixed
+     canvas. */
   :global(.intercom) {
-    scroll-snap-align: start;
     position: relative;
     z-index: 1;
     min-height: 100svh;
