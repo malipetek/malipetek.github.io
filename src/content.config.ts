@@ -16,7 +16,7 @@ const projects = defineCollection({
   loader: glob({ pattern: '**/*.mdoc', base: './src/content/projects' }),
   schema: z.object({
     title: z.string(),
-    kind: z.enum(['shopify-app', 'game', 'tool', 'experiment']),
+    kind: z.enum(['shopify-app', 'mobile-app', 'game', 'tool', 'experiment']),
     tagline: z.string().max(90),
     status: z.enum(['live', 'beta', 'archived', 'wip']),
     cover: z.string().optional(),

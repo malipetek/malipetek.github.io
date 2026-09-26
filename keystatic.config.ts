@@ -23,6 +23,7 @@ export default config({
           label: 'Kind',
           options: [
             { label: 'Shopify app', value: 'shopify-app' },
+            { label: 'Mobile app', value: 'mobile-app' },
             { label: 'Game', value: 'game' },
             { label: 'Tool', value: 'tool' },
             { label: 'Experiment', value: 'experiment' },
