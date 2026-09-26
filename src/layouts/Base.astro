@@ -1,5 +1,5 @@
 ---
-import '../styles/base.css';
+import "../styles/base.css";
 
 interface Props {
   title?: string;
@@ -9,15 +9,18 @@ interface Props {
   type?: string;
   image?: string;
   imageAlt?: string;
+  /** Homepage only: full-height snap sections over the 3D workshop. */
+  snap?: boolean;
 }
 
 const {
-  title = 'M. Ali Petek',
-  description = 'M. Ali Petek builds Shopify apps, small games, and the tools he wishes existed.',
+  title = "M. Ali Petek",
+  description = "M. Ali Petek builds Shopify apps, small games, and the tools he wishes existed.",
   current = Astro.url.pathname,
-  type = 'website',
-  image = '/me.webp',
-  imageAlt = 'Muhammet Ali Petek',
+  type = "website",
+  image = "/me.webp",
+  imageAlt = "Muhammet Ali Petek",
+  snap = false,
 } = Astro.props;
 
 // Astro.site is set in astro.config.mjs, so these are absolute for crawlers.
@@ -25,24 +28,41 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 const ogImage = new URL(image, Astro.site);
 
 const nav = [
-  { href: '/', label: 'Shelf' },
-  { href: '/blog', label: 'Writing' },
-  { href: '/experience', label: 'Work' },
-  { href: '/#talk', label: 'Talk' },
+  { href: "/", label: "Shelf" },
+  { href: "/blog", label: "Writing" },
+  { href: "/experience", label: "Work" },
+  { href: "/#talk", label: "Talk" },
 ];
 
 const isCurrent = (href: string) =>
-  href === '/' ? current === '/' : current.startsWith(href);
+  href === "/" ? current === "/" : current.startsWith(href);
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" class={snap ? "snap-rooms" : undefined}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {
+      /* Set the theme before first paint so a saved dark choice never flashes. */
+    }
+    <script is:inline>
+      document.documentElement.dataset.theme =
+        localStorage.getItem("theme") ||
+        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    </script>
     <title>{title}</title>
     <meta name="description" content={description} />
-    <meta name="theme-color" content="#efebe3" />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: light)"
+      content="#efebe3"
+    />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: dark)"
+      content="#17140f"
+    />
     <link rel="canonical" href={canonical.href} />
     <meta property="og:type" content={type} />
     <meta property="og:site_name" content="M. Ali Petek" />
@@ -57,8 +77,20 @@ const isCurrent = (href: string) =>
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImage.href} />
     <link rel="icon" href="/me.webp" />
-    <link rel="preload" href="/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/fonts/source-serif-4-latin-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link
+      rel="preload"
+      href="/fonts/bricolage-grotesque-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/source-serif-4-latin-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <link rel="sitemap" href="/sitemap-index.xml" />
   </head>
   <body>
@@ -67,11 +99,58 @@ const isCurrent = (href: string) =>
       <div class="wrap site-head-inner">
         <a class="wordmark" href="/">malipetek</a>
         <nav class="site-nav" aria-label="Primary">
-          {nav.map((item) => (
-            <a href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined}>
-              {item.label}
-            </a>
-          ))}
+          {
+            nav.map((item) => (
+              <a
+                href={item.href}
+                aria-current={isCurrent(item.href) ? "page" : undefined}
+              >
+                {item.label}
+              </a>
+            ))
+          }
+          <button
+            class="theme-toggle"
+            type="button"
+            data-theme-toggle
+            aria-label="Toggle dark mode"
+            aria-pressed="false"
+          >
+            <svg
+              class="icon-sun"
+              viewBox="0 0 16 16"
+              width="15"
+              height="15"
+              aria-hidden="true"
+            >
+              <circle
+                cx="8"
+                cy="8"
+                r="3.2"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"></circle>
+              <path
+                d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4M3.1 12.9l1.4-1.4M11.5 4.5l1.4-1.4"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"></path>
+            </svg>
+            <svg
+              class="icon-moon"
+              viewBox="0 0 16 16"
+              width="15"
+              height="15"
+              aria-hidden="true"
+            >
+              <path
+                d="M13.5 10.5A6 6 0 0 1 5.5 2.5a6 6 0 1 0 8 8z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linejoin="round"></path>
+            </svg>
+          </button>
         </nav>
       </div>
     </header>
@@ -87,6 +166,33 @@ const isCurrent = (href: string) =>
     </footer>
   </body>
 </html>
+
+<script>
+  const toggle = document.querySelector<HTMLButtonElement>(
+    "[data-theme-toggle]",
+  );
+  const metas = document.querySelectorAll<HTMLMetaElement>(
+    'meta[name="theme-color"]',
+  );
+  const COLORS = { light: "#efebe3", dark: "#17140f" } as const;
+
+  const reflect = () => {
+    const theme =
+      document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    toggle?.setAttribute("aria-pressed", String(theme === "dark"));
+    // Manual override wins over prefers-color-scheme — point both metas at it.
+    metas.forEach((m) => (m.content = COLORS[theme]));
+  };
+  reflect();
+
+  toggle?.addEventListener("click", () => {
+    const next =
+      document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("theme", next);
+    reflect();
+  });
+</script>
 
 <style>
   .skip-link {
@@ -105,6 +211,9 @@ const isCurrent = (href: string) =>
 
   .site-head {
     border-bottom: 2px solid var(--ink);
+    background: var(--bone);
+    position: relative;
+    z-index: 2;
   }
 
   .site-head-inner {
@@ -126,8 +235,38 @@ const isCurrent = (href: string) =>
 
   .site-nav {
     display: flex;
+    align-items: center;
     gap: clamp(0.9rem, 3vw, 1.8rem);
     font-size: 15px;
+  }
+
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    background: none;
+    border: 2px solid var(--ink);
+    color: var(--ink);
+    cursor: pointer;
+    transition:
+      background var(--dur) var(--ease),
+      color var(--dur) var(--ease);
+  }
+
+  .theme-toggle:hover {
+    background: var(--orange);
+    border-color: var(--orange);
+    color: var(--bone);
+  }
+
+  :root[data-theme="light"] .theme-toggle .icon-sun {
+    display: none;
+  }
+  :root[data-theme="dark"] .theme-toggle .icon-moon {
+    display: none;
   }
 
   .site-nav a {
@@ -135,7 +274,7 @@ const isCurrent = (href: string) =>
     text-decoration: none;
   }
 
-  .site-nav a[aria-current='page'] {
+  .site-nav a[aria-current="page"] {
     color: var(--ink);
     font-weight: 600;
   }
@@ -147,6 +286,9 @@ const isCurrent = (href: string) =>
   .site-foot {
     border-top: 1px solid var(--rule);
     margin-top: clamp(3rem, 8vw, 6rem);
+    background: var(--bone);
+    position: relative;
+    z-index: 2;
   }
 
   .site-foot-inner {

@@ -3,24 +3,24 @@ interface Props {
   greeting: string;
   suggestions?: string[];
   email: string;
-  availability?: 'open' | 'limited' | 'closed';
+  availability?: "open" | "limited" | "closed";
 }
 
 const {
   greeting,
   suggestions = [],
   email,
-  availability = 'limited',
+  availability = "limited",
 } = Astro.props;
 
-const greetingAttr = greeting.replace(/\s+/g, ' ').trim();
+const greetingAttr = greeting.replace(/\s+/g, " ").trim();
 
 // Availability is a fact from site.yaml, so it belongs in the idle half of the
 // field rather than buried in the conversation.
 const AVAILABILITY = {
-  open: 'Open to new work right now.',
-  limited: 'Limited availability — notes still get read.',
-  closed: 'Not taking new work right now — notes still get read.',
+  open: "Open to new work right now.",
+  limited: "Limited availability — notes still get read.",
+  closed: "Not taking new work right now — notes still get read.",
 };
 const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
 ---
@@ -37,7 +37,13 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     <div class="intercom-lead">
       <h2 class="intercom-title" id="intercom-title">Ring the bell.</h2>
 
-      <button class="bell" type="button" data-bell aria-expanded="false" aria-controls="intercom-live">
+      <button
+        class="bell"
+        type="button"
+        data-bell
+        aria-expanded="false"
+        aria-controls="intercom-live"
+      >
         <svg
           class="bell-icon"
           viewBox="0 0 24 24"
@@ -48,11 +54,15 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
           stroke-linejoin="round"
           aria-hidden="true"
         >
-          <path d="M6.2 9.4a5.8 5.8 0 0 1 11.6 0c0 3.6 1.2 5.1 1.9 5.9H4.3c.7-.8 1.9-2.3 1.9-5.9Z" />
-          <path d="M10.3 18.7a1.8 1.8 0 0 0 3.4 0" />
-          <path d="M12 3.6V2.4" />
+          <path
+            d="M6.2 9.4a5.8 5.8 0 0 1 11.6 0c0 3.6 1.2 5.1 1.9 5.9H4.3c.7-.8 1.9-2.3 1.9-5.9Z"
+          ></path>
+          <path d="M10.3 18.7a1.8 1.8 0 0 0 3.4 0"></path>
+          <path d="M12 3.6V2.4"></path>
         </svg>
-        <span class="sr-only">Ring the bell and start a conversation with Ali's assistant</span>
+        <span class="sr-only"
+          >Ring the bell and start a conversation with Ali's assistant</span
+        >
       </button>
 
       <p class="intercom-fallback" data-fallback>
@@ -61,16 +71,20 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     </div>
 
     <div class="intercom-idle" data-idle>
-      {suggestions.length > 0 && (
-        <div class="idle-ask">
-          <h3 class="idle-title">Things people ask</h3>
-          <div class="idle-chips">
-            {suggestions.map((s) => (
-              <button class="chat-chip" type="button" data-idle-chip>{s}</button>
-            ))}
+      {
+        suggestions.length > 0 && (
+          <div class="idle-ask">
+            <h3 class="idle-title">Things people ask</h3>
+            <div class="idle-chips">
+              {suggestions.map((s) => (
+                <button class="chat-chip" type="button" data-idle-chip>
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
       <p class="idle-availability" data-availability>
         <span class="idle-dot" aria-hidden="true"></span>
         <span>{availabilityText}</span>
@@ -85,15 +99,24 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
           role="log"
           aria-live="off"
           aria-label="Conversation with Ali's assistant"
-        ></div>
+        >
+        </div>
 
-        {suggestions.length > 0 && (
-          <div class="chat-suggestions" data-suggestions aria-label="Suggested questions">
-            {suggestions.map((s) => (
-              <button class="chat-chip" type="button" data-chip>{s}</button>
-            ))}
-          </div>
-        )}
+        {
+          suggestions.length > 0 && (
+            <div
+              class="chat-suggestions"
+              data-suggestions
+              aria-label="Suggested questions"
+            >
+              {suggestions.map((s) => (
+                <button class="chat-chip" type="button" data-chip>
+                  {s}
+                </button>
+              ))}
+            </div>
+          )
+        }
 
         <div class="composer" data-input>
           <form class="chat-form" data-form>
@@ -127,60 +150,84 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
           </div>
           <div class="field">
             <label for="handoff-summary">Anything else he should know?</label>
-            <textarea id="handoff-summary" name="summary" rows="3" data-handoff-summary></textarea>
+            <textarea
+              id="handoff-summary"
+              name="summary"
+              rows="3"
+              data-handoff-summary></textarea>
           </div>
-          <button type="submit" class="send send--wide" data-handoff-send>Send to Ali</button>
+          <button type="submit" class="send send--wide" data-handoff-send
+            >Send to Ali</button
+          >
           <p class="handoff-error" data-handoff-error hidden></p>
         </form>
 
-        <p class="sr-only" data-announce role="status" aria-live="polite" aria-atomic="true"></p>
+        <p
+          class="sr-only"
+          data-announce
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+        </p>
       </div>
     </div>
   </div>
 </section>
 
 <script>
-  import { streamAnswer, chunkText, sendHandoff } from '../lib/chatBackend.js';
+  import { streamAnswer, chunkText, sendHandoff } from "../lib/chatBackend.js";
 
-  type Role = 'me' | 'them';
+  type Role = "me" | "them";
   type Msg = { role: Role; text: string };
   type State =
-    | 'idle'
-    | 'ringing'
-    | 'typing'
-    | 'streaming'
-    | 'ready'
-    | 'handoff'
-    | 'sent'
-    | 'error'
-    | 'rate-limited';
+    | "idle"
+    | "ringing"
+    | "typing"
+    | "streaming"
+    | "ready"
+    | "handoff"
+    | "sent"
+    | "error"
+    | "rate-limited";
 
-  const root = document.querySelector<HTMLElement>('[data-intercom]');
+  const root = document.querySelector<HTMLElement>("[data-intercom]");
   if (root) init(root);
 
   function init(root: HTMLElement) {
-    const bell = root.querySelector<HTMLButtonElement>('[data-bell]')!;
-    const log = root.querySelector<HTMLElement>('[data-log]')!;
-    const suggestions = root.querySelector<HTMLElement>('[data-suggestions]');
-    const composer = root.querySelector<HTMLElement>('[data-input]')!;
-    const form = root.querySelector<HTMLFormElement>('[data-form]')!;
-    const input = root.querySelector<HTMLInputElement>('[data-note]')!;
-    const sendBtn = root.querySelector<HTMLButtonElement>('[data-send]')!;
-    const handoff = root.querySelector<HTMLFormElement>('[data-handoff]')!;
-    const handoffEmail = root.querySelector<HTMLInputElement>('[data-handoff-email]')!;
-    const handoffSummary = root.querySelector<HTMLTextAreaElement>('[data-handoff-summary]')!;
-    const announceEl = root.querySelector<HTMLElement>('[data-announce]')!;
-    const fallback = root.querySelector<HTMLElement>('[data-fallback]');
-    const idleChips = root.querySelectorAll<HTMLButtonElement>('[data-idle-chip]');
-    const handoffSendBtn = root.querySelector<HTMLButtonElement>('[data-handoff-send]')!;
-    const handoffError = root.querySelector<HTMLElement>('[data-handoff-error]');
+    const bell = root.querySelector<HTMLButtonElement>("[data-bell]")!;
+    const log = root.querySelector<HTMLElement>("[data-log]")!;
+    const suggestions = root.querySelector<HTMLElement>("[data-suggestions]");
+    const composer = root.querySelector<HTMLElement>("[data-input]")!;
+    const form = root.querySelector<HTMLFormElement>("[data-form]")!;
+    const input = root.querySelector<HTMLInputElement>("[data-note]")!;
+    const sendBtn = root.querySelector<HTMLButtonElement>("[data-send]")!;
+    const handoff = root.querySelector<HTMLFormElement>("[data-handoff]")!;
+    const handoffEmail = root.querySelector<HTMLInputElement>(
+      "[data-handoff-email]",
+    )!;
+    const handoffSummary = root.querySelector<HTMLTextAreaElement>(
+      "[data-handoff-summary]",
+    )!;
+    const announceEl = root.querySelector<HTMLElement>("[data-announce]")!;
+    const fallback = root.querySelector<HTMLElement>("[data-fallback]");
+    const idleChips =
+      root.querySelectorAll<HTMLButtonElement>("[data-idle-chip]");
+    const handoffSendBtn = root.querySelector<HTMLButtonElement>(
+      "[data-handoff-send]",
+    )!;
+    const handoffError = root.querySelector<HTMLElement>(
+      "[data-handoff-error]",
+    );
 
-    const greeting = root.dataset.greeting ?? '';
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const greeting = root.dataset.greeting ?? "";
+    const reduce = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
     const history: Msg[] = [];
-    let state: State = 'idle';
+    let state: State = "idle";
     let typing: HTMLElement | null = null;
     let rateTimer: number | undefined;
 
@@ -193,8 +240,8 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
       log.scrollTop = log.scrollHeight;
     };
 
-    const addBubble = (role: Role, text = '') => {
-      const el = document.createElement('div');
+    const addBubble = (role: Role, text = "") => {
+      const el = document.createElement("div");
       el.className = `msg msg--${role}`;
       el.textContent = text;
       log.appendChild(el);
@@ -204,10 +251,10 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
 
     const showTyping = () => {
       if (typing) return;
-      typing = document.createElement('div');
-      typing.className = 'msg msg--them msg--typing';
-      typing.setAttribute('aria-hidden', 'true');
-      typing.innerHTML = '<i></i><i></i><i></i>';
+      typing = document.createElement("div");
+      typing.className = "msg msg--them msg--typing";
+      typing.setAttribute("aria-hidden", "true");
+      typing.innerHTML = "<i></i><i></i><i></i>";
       log.appendChild(typing);
       scrollLog();
     };
@@ -218,7 +265,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     };
 
     const announce = (text: string) => {
-      announceEl.textContent = '';
+      announceEl.textContent = "";
       requestAnimationFrame(() => {
         announceEl.textContent = text;
       });
@@ -229,14 +276,14 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
       let bubble: HTMLElement | null = null;
       if (reduce) {
         hideTyping();
-        bubble = addBubble('them', text);
+        bubble = addBubble("them", text);
       } else {
         for (const chunk of chunkText(text)) {
           if (!bubble) {
             hideTyping();
-            bubble = addBubble('them');
-            bubble.classList.add('is-streaming');
-            setState('streaming');
+            bubble = addBubble("them");
+            bubble.classList.add("is-streaming");
+            setState("streaming");
           }
           bubble.textContent += chunk;
           scrollLog();
@@ -244,76 +291,85 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
         }
         if (!bubble) {
           hideTyping();
-          bubble = addBubble('them', text);
+          bubble = addBubble("them", text);
         }
-        bubble.classList.remove('is-streaming');
+        bubble.classList.remove("is-streaming");
       }
       scrollLog();
       return bubble;
     };
 
     const showHandoff = (summary: string) => {
-      setState('handoff');
+      setState("handoff");
       handoffSummary.value = summary;
-      handoffEmail.value = '';
+      handoffEmail.value = "";
       composer.hidden = true;
       handoff.hidden = false;
       handoffEmail.focus({ preventScroll: true });
-      announce('Ali can take it from here. Leave your email and anything else he should know. I filled in a summary you can edit.');
+      announce(
+        "Ali can take it from here. Leave your email and anything else he should know. I filled in a summary you can edit.",
+      );
     };
 
     const noteError = () => {
-      setState('error');
-      fallback?.classList.add('is-alert');
+      setState("error");
+      fallback?.classList.add("is-alert");
       input.disabled = true;
       sendBtn.disabled = true;
-      input.placeholder = 'Line down';
+      input.placeholder = "Line down";
     };
 
     const noteRateLimited = () => {
-      setState('rate-limited');
+      setState("rate-limited");
       input.disabled = true;
       sendBtn.disabled = true;
-      announce('Too many notes for now. Give it a minute, or email instead.');
+      announce("Too many notes for now. Give it a minute, or email instead.");
       window.clearTimeout(rateTimer);
       rateTimer = window.setTimeout(() => {
         input.disabled = false;
         sendBtn.disabled = false;
-        setState('ready');
+        setState("ready");
       }, 8000);
     };
 
     const ring = async () => {
-      if (state !== 'idle') return;
-      setState('ringing');
-      bell.setAttribute('aria-expanded', 'true');
-      bell.classList.add('is-ringing');
-      root.classList.add('is-live');
-      announce('Ringing.');
+      if (state !== "idle") return;
+      setState("ringing");
+      bell.setAttribute("aria-expanded", "true");
+      bell.classList.add("is-ringing");
+      root.classList.add("is-live");
+      announce("Ringing.");
       if (!reduce) await wait(720);
-      bell.classList.remove('is-ringing');
-      setState('typing');
+      bell.classList.remove("is-ringing");
+      setState("typing");
       showTyping();
       if (!reduce) await wait(520);
       await streamBubble(greeting);
       announce(greeting);
-      setState('ready');
+      setState("ready");
       input.focus({ preventScroll: true });
     };
 
     const send = async (raw: string) => {
       const text = raw.trim();
       if (!text) return;
-      if (state === 'ringing' || state === 'typing' || state === 'streaming' || state === 'handoff' || state === 'sent') return;
-      if (state === 'error') return;
+      if (
+        state === "ringing" ||
+        state === "typing" ||
+        state === "streaming" ||
+        state === "handoff" ||
+        state === "sent"
+      )
+        return;
+      if (state === "error") return;
 
-      addBubble('me', text);
+      addBubble("me", text);
       announce(`You: ${text}`);
-      history.push({ role: 'me', text });
-      input.value = '';
+      history.push({ role: "me", text });
+      input.value = "";
       if (suggestions) suggestions.hidden = true;
 
-      setState('typing');
+      setState("typing");
       showTyping();
       if (!reduce) await wait(360);
 
@@ -322,14 +378,15 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
       let end: { kind: string; handoff: string | null } | null = null;
 
       for await (const ev of streamAnswer(text, prior) as AsyncGenerator<
-        { type: 'chunk'; text: string } | { type: 'end'; kind: string; handoff: string | null }
+        | { type: "chunk"; text: string }
+        | { type: "end"; kind: string; handoff: string | null }
       >) {
-        if (ev.type === 'chunk') {
+        if (ev.type === "chunk") {
           if (!bubble) {
             hideTyping();
-            bubble = addBubble('them');
-            bubble.classList.add('is-streaming');
-            setState('streaming');
+            bubble = addBubble("them");
+            bubble.classList.add("is-streaming");
+            setState("streaming");
           }
           bubble.textContent += ev.text;
           scrollLog();
@@ -339,46 +396,48 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
         }
       }
 
-      if (bubble) bubble.classList.remove('is-streaming');
-      const finalText = bubble?.textContent ?? '';
+      if (bubble) bubble.classList.remove("is-streaming");
+      const finalText = bubble?.textContent ?? "";
       if (finalText) {
-        history.push({ role: 'them', text: finalText });
+        history.push({ role: "them", text: finalText });
         announce(finalText);
       }
 
-      if (end?.kind === 'handoff') {
+      if (end?.kind === "handoff") {
         if (!reduce) await wait(380);
-        showHandoff(end.handoff ?? '');
+        showHandoff(end.handoff ?? "");
         return;
       }
-      if (end?.kind === 'error') return noteError();
-      if (end?.kind === 'rate') return noteRateLimited();
-      setState('ready');
+      if (end?.kind === "error") return noteError();
+      if (end?.kind === "rate") return noteRateLimited();
+      setState("ready");
     };
 
     /* ——— wiring ——— */
 
-    bell.addEventListener('click', () => void ring());
+    bell.addEventListener("click", () => void ring());
 
-    form.addEventListener('submit', (e) => {
+    form.addEventListener("submit", (e) => {
       e.preventDefault();
       void send(input.value);
     });
 
-    suggestions?.querySelectorAll<HTMLButtonElement>('[data-chip]').forEach((chip) => {
-      chip.addEventListener('click', () => void send(chip.textContent ?? ''));
-    });
+    suggestions
+      ?.querySelectorAll<HTMLButtonElement>("[data-chip]")
+      .forEach((chip) => {
+        chip.addEventListener("click", () => void send(chip.textContent ?? ""));
+      });
 
     // The idle chips are the invitation: ring the bell, then ask that question.
     idleChips.forEach((chip) => {
-      chip.addEventListener('click', async () => {
-        if (state !== 'idle') return;
+      chip.addEventListener("click", async () => {
+        if (state !== "idle") return;
         await ring();
-        void send(chip.textContent ?? '');
+        void send(chip.textContent ?? "");
       });
     });
 
-    handoff.addEventListener('submit', async (e) => {
+    handoff.addEventListener("submit", async (e) => {
       e.preventDefault();
       if (!handoff.reportValidity()) return;
       const emailValue = handoffEmail.value.trim();
@@ -387,17 +446,21 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
       if (handoffError) handoffError.hidden = true;
 
       try {
-        await sendHandoff({ email: emailValue, message: summaryValue, summary: summaryValue });
-        history.push({ role: 'me', text: `Email: ${emailValue}` });
+        await sendHandoff({
+          email: emailValue,
+          message: summaryValue,
+          summary: summaryValue,
+        });
+        history.push({ role: "me", text: `Email: ${emailValue}` });
         handoff.hidden = true;
         composer.hidden = true;
-        setState('sent');
-        const sent = addBubble('them', 'Delivered. Ali reads these himself.');
-        sent.classList.add('msg--sent');
-        announce('Delivered. Ali reads these himself.');
+        setState("sent");
+        const sent = addBubble("them", "Delivered. Ali reads these himself.");
+        sent.classList.add("msg--sent");
+        announce("Delivered. Ali reads these himself.");
       } catch {
         handoffSendBtn.disabled = false;
-        fallback?.classList.add('is-alert');
+        fallback?.classList.add("is-alert");
         if (handoffError) {
           handoffError.hidden = false;
           handoffError.textContent = "Line's down — email instead.";
@@ -413,79 +476,85 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
        ———————————————————————————————————————————————— */
     if (import.meta.env.DEV) {
       const reset = () => {
-      log.innerHTML = '';
-      history.length = 0;
-      hideTyping();
-      handoff.hidden = true;
-      composer.hidden = false;
-      input.disabled = false;
-      sendBtn.disabled = false;
-      input.placeholder = 'Write a note…';
-      if (suggestions) suggestions.hidden = false;
-      fallback?.classList.remove('is-alert');
-      root.classList.remove('is-live');
-      bell.setAttribute('aria-expanded', 'false');
-      bell.classList.remove('is-ringing');
-      setState('idle');
-    };
+        log.innerHTML = "";
+        history.length = 0;
+        hideTyping();
+        handoff.hidden = true;
+        composer.hidden = false;
+        input.disabled = false;
+        sendBtn.disabled = false;
+        input.placeholder = "Write a note…";
+        if (suggestions) suggestions.hidden = false;
+        fallback?.classList.remove("is-alert");
+        root.classList.remove("is-live");
+        bell.setAttribute("aria-expanded", "false");
+        bell.classList.remove("is-ringing");
+        setState("idle");
+      };
 
-    const DEMO_QUESTION = 'Is he available for a project?';
-    const DEMO_HANDOFF =
-      'Not taking new contracts right now, but notes still get read. Say what you are building and it reaches me.';
-    const DEMO_SUMMARY =
-      'The visitor wrote: “Is he available for a project?” Reply with a time that works for you.';
+      const DEMO_QUESTION = "Is he available for a project?";
+      const DEMO_HANDOFF =
+        "Not taking new contracts right now, but notes still get read. Say what you are building and it reaches me.";
+      const DEMO_SUMMARY =
+        "The visitor wrote: “Is he available for a project?” Reply with a time that works for you.";
 
-    const simulate = (name: State) => {
-      reset();
-      if (name === 'idle') return;
-      root.classList.add('is-live');
-      bell.setAttribute('aria-expanded', 'true');
-      if (name === 'ringing') {
-        setState('ringing');
-        bell.classList.add('is-ringing');
-        return;
-      }
-      addBubble('me', DEMO_QUESTION);
-      if (suggestions) suggestions.hidden = true;
-      if (name === 'typing') {
-        setState('typing');
-        showTyping();
-        return;
-      }
-      if (name === 'streaming') {
-        const b = addBubble('them', 'Not taking new contracts right now, but notes');
-        b.classList.add('is-streaming');
-        setState('streaming');
-        return;
-      }
-      if (name === 'handoff') {
-        addBubble('them', DEMO_HANDOFF);
-        handoffSummary.value = DEMO_SUMMARY;
-        handoffEmail.value = '';
-        composer.hidden = true;
-        handoff.hidden = false;
-        setState('handoff');
-        return;
-      }
-      if (name === 'sent') {
-        addBubble('them', DEMO_HANDOFF);
-        handoffEmail.value = 'visitor@example.com';
-        const s = addBubble('them', 'Delivered. Ali reads these himself.');
-        s.classList.add('msg--sent');
-        composer.hidden = true;
-        setState('sent');
-        return;
-      }
-      if (name === 'error') {
-        addBubble('them', "Line's down — email instead.");
-        noteError();
-        return;
-      }
-      if (name === 'rate-limited') {
-        addBubble('them', 'That is a lot of notes at once. Give it a minute, or email instead.');
-        noteRateLimited();
-      }
-    };
+      const simulate = (name: State) => {
+        reset();
+        if (name === "idle") return;
+        root.classList.add("is-live");
+        bell.setAttribute("aria-expanded", "true");
+        if (name === "ringing") {
+          setState("ringing");
+          bell.classList.add("is-ringing");
+          return;
+        }
+        addBubble("me", DEMO_QUESTION);
+        if (suggestions) suggestions.hidden = true;
+        if (name === "typing") {
+          setState("typing");
+          showTyping();
+          return;
+        }
+        if (name === "streaming") {
+          const b = addBubble(
+            "them",
+            "Not taking new contracts right now, but notes",
+          );
+          b.classList.add("is-streaming");
+          setState("streaming");
+          return;
+        }
+        if (name === "handoff") {
+          addBubble("them", DEMO_HANDOFF);
+          handoffSummary.value = DEMO_SUMMARY;
+          handoffEmail.value = "";
+          composer.hidden = true;
+          handoff.hidden = false;
+          setState("handoff");
+          return;
+        }
+        if (name === "sent") {
+          addBubble("them", DEMO_HANDOFF);
+          handoffEmail.value = "visitor@example.com";
+          const s = addBubble("them", "Delivered. Ali reads these himself.");
+          s.classList.add("msg--sent");
+          composer.hidden = true;
+          setState("sent");
+          return;
+        }
+        if (name === "error") {
+          addBubble("them", "Line's down — email instead.");
+          noteError();
+          return;
+        }
+        if (name === "rate-limited") {
+          addBubble(
+            "them",
+            "That is a lot of notes at once. Give it a minute, or email instead.",
+          );
+          noteRateLimited();
+        }
+      };
 
       (window as unknown as Record<string, unknown>).__intercom = {
         get state() {
@@ -510,6 +579,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     padding-inline: calc(var(--pad) + var(--gutter));
     padding-block: clamp(2.25rem, 6vw, 3.75rem);
     background: var(--orange);
+    background: color-mix(in srgb, var(--orange) 88%, transparent);
     color: var(--ink);
     border-block: 2px solid var(--ink);
   }
@@ -568,7 +638,9 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     border-radius: 50%;
     cursor: pointer;
     transform-origin: 50% 14%;
-    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+    transition:
+      background var(--dur) var(--ease),
+      color var(--dur) var(--ease);
   }
 
   .bell:hover {
@@ -675,7 +747,9 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     /* Hidden from tab order and AT until the bell rings, then revealed at once
        while the grid row animates open. */
     visibility: hidden;
-    transition: grid-template-rows var(--dur) var(--ease), opacity var(--dur) var(--ease),
+    transition:
+      grid-template-rows var(--dur) var(--ease),
+      opacity var(--dur) var(--ease),
       visibility 0s linear var(--dur);
   }
 
@@ -683,7 +757,9 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     grid-template-rows: 1fr;
     opacity: 1;
     visibility: visible;
-    transition: grid-template-rows var(--dur) var(--ease), opacity var(--dur) var(--ease),
+    transition:
+      grid-template-rows var(--dur) var(--ease),
+      opacity var(--dur) var(--ease),
       visibility 0s;
   }
 
@@ -784,7 +860,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
   }
 
   :global(.intercom .msg.is-streaming)::after {
-    content: '';
+    content: "";
     display: inline-block;
     width: 0.5em;
     height: 1em;
@@ -820,7 +896,9 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     border-radius: 999px;
     padding: 0.42em 0.85em;
     cursor: pointer;
-    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+    transition:
+      background var(--dur) var(--ease),
+      color var(--dur) var(--ease);
   }
 
   .chat-chip:hover {
@@ -857,7 +935,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     }
   }
 
-  .chat-form input[type='text'] {
+  .chat-form input[type="text"] {
     flex: 1;
     min-width: 0;
     font-size: 15px;
@@ -866,11 +944,11 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     padding: 0.5em 0;
   }
 
-  .chat-form input[type='text']:focus {
+  .chat-form input[type="text"]:focus {
     outline: none;
   }
 
-  .chat-form input[type='text']:disabled {
+  .chat-form input[type="text"]:disabled {
     color: var(--ink-soft);
   }
 
@@ -891,7 +969,9 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     border-radius: 999px;
     padding: 0.7em 1.2em;
     cursor: pointer;
-    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+    transition:
+      background var(--dur) var(--ease),
+      color var(--dur) var(--ease);
   }
 
   .send:hover:not(:disabled) {

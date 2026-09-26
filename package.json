@@ -18,9 +18,11 @@
     "@keystatic/core": "0.6.9",
     "astro": "^5.13.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "three": "0.186.0"
   },
   "devDependencies": {
+    "@types/three": "0.186.0",
     "playwright-core": "^1.63.0",
     "wrangler": "4.132.0"
   },

@@ -1,0 +1,30 @@
+---
+/* Fixed WebGL backdrop for the homepage rooms. Purely decorative — the DOM
+   content on top carries everything. */
+---
+
+<canvas class="workshop-canvas" data-workshop aria-hidden="true"></canvas>
+
+<script>
+  import { initWorkshop } from '../lib/workshop3d';
+  const canvas = document.querySelector<HTMLCanvasElement>('[data-workshop]');
+  if (canvas) {
+    try {
+      initWorkshop(canvas);
+    } catch {
+      // No WebGL (or a driver hiccup): the page is fully usable without it.
+      canvas.remove();
+    }
+  }
+</script>
+
+<style>
+  .workshop-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+  }
+</style>

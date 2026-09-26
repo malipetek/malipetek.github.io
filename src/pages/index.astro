@@ -1,6 +1,7 @@
 ---
 import Base from "../layouts/Base.astro";
 import Intercom from "../components/Intercom.astro";
+import WorkshopScene from "../components/WorkshopScene.astro";
 import { getCollection } from "astro:content";
 import { getPosts, fmtDate, readMinutes } from "../lib/posts.js";
 import { JOBS } from "../lib/experience.js";
@@ -63,8 +64,11 @@ const initial = (title) =>
   title="Muhammet Ali Petek — full-stack developer"
   description="Muhammet Ali Petek (malipetek) builds Shopify apps, small games, and the tools he wishes existed."
   current="/"
+  snap
 >
-  <section class="masthead">
+  <WorkshopScene />
+
+  <section class="room room--masthead">
     <div class="masthead-inner">
       <h1 class="masthead-name">M. Ali<br />Petek</h1>
       <img
@@ -85,7 +89,7 @@ const initial = (title) =>
     </div>
   </section>
 
-  <section class="shelf-section" id="shelf">
+  <section class="room shelf-section" id="shelf">
     <div class="block-head">
       <h2>The shelf</h2>
     </div>
@@ -161,7 +165,7 @@ const initial = (title) =>
     </p>
   </section>
 
-  <section class="block" id="writing">
+  <section class="room room--panel" id="writing">
     <div class="block-head">
       <h2>Writing</h2>
       <a href="/blog">All writing →</a>
@@ -183,7 +187,7 @@ const initial = (title) =>
     </ul>
   </section>
 
-  <section class="block" id="work">
+  <section class="room room--panel" id="work">
     <div class="block-head">
       <h2>Where I've worked</h2>
       <a href="/experience">Full record →</a>
@@ -295,14 +299,46 @@ const initial = (title) =>
       node.addEventListener("focus", () => activate(item));
     });
   }
+
+  // On a direct load with a hash (e.g. /#talk), the browser's fragment scroll
+  // races scroll restoration + snap proximity and can land one room short.
+  // Re-assert the target once everything has settled.
+  if (location.hash) {
+    const land = () =>
+      document
+        .querySelector<HTMLElement>(location.hash)
+        ?.scrollIntoView({ behavior: "instant", block: "start" });
+    window.addEventListener("load", () => setTimeout(land, 60));
+    setTimeout(land, 600);
+  }
 </script>
 
 <style>
-  /* ————— masthead ————— */
+  /* ————— rooms ————— */
 
-  .masthead {
-    padding-block: clamp(1rem, 3vw, 2rem) clamp(1.75rem, 5vw, 3rem);
+  /* The canvas is flat --bone where no station objects sit, so DOM text stays
+     readable without extra backing. Opaque pieces (shelf boxes, the intercom)
+     cover the scene — that's the "2d on top" split. */
+  :global(main) {
+    position: relative;
+    z-index: 1;
   }
+
+  html.snap-rooms :global(main) {
+    padding-block: 0;
+  }
+
+  /* The intercom is the last room; its orange field covers the canvas. */
+  :global(.intercom) {
+    scroll-snap-align: start;
+    position: relative;
+    z-index: 1;
+    min-height: 100svh;
+    display: flex;
+    align-items: center;
+  }
+
+  /* ————— masthead ————— */
 
   .masthead-inner {
     display: grid;
@@ -367,10 +403,6 @@ const initial = (title) =>
   }
 
   /* ————— shelf ————— */
-
-  .shelf-section {
-    margin-top: clamp(2rem, 5vw, 3.5rem);
-  }
 
   .chips {
     display: flex;
