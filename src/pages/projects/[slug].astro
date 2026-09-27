@@ -44,7 +44,7 @@ const STATUS = {
         }
       </p>
       <h1>{project.data.title}</h1>
-      <p class="lede">{project.data.tagline}</p>
+      {project.data.tagline && <p class="lede">{project.data.tagline}</p>}
       {
         project.data.links.length > 0 && (
           <div class="project-links">

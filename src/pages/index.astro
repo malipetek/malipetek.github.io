@@ -145,7 +145,7 @@ const initial = (title) =>
                   {kind.label}
                   {p.data.year ? ` · ${p.data.year}` : ""}
                 </p>
-                <p class="box-tagline">{p.data.tagline}</p>
+                {p.data.tagline && <p class="box-tagline">{p.data.tagline}</p>}
               </div>
               <div class="box-foot">
                 <p class="box-status">{STATUS[p.data.status]}</p>

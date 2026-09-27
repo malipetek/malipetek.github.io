@@ -32,7 +32,7 @@ export default config({
         }),
         tagline: fields.text({
           label: 'Tagline',
-          validation: { length: { max: 90 } },
+          validation: { isRequired: true, length: { max: 90 } },
         }),
         status: fields.select({
           label: 'Status',

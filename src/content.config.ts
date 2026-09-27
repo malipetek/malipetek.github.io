@@ -17,7 +17,7 @@ const projects = defineCollection({
   schema: z.object({
     title: z.string(),
     kind: z.enum(['shopify-app', 'mobile-app', 'game', 'tool', 'experiment']),
-    tagline: z.string().max(90),
+    tagline: z.string().max(90).optional(),
     status: z.enum(['live', 'beta', 'archived', 'wip']),
     cover: z.string().optional(),
     links: z.array(z.object({ label: z.string(), url: z.string() })).default([]),
