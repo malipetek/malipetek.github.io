@@ -3,6 +3,10 @@ import Base from '../../layouts/Base.astro';
 import { getPosts, fmtDate, readMinutes } from '../../lib/posts.js';
 import { render } from 'astro:content';
 
+// Content is bundled at build time — prerender so getStaticPaths applies and
+// the page serves as a static asset instead of crashing in SSR.
+export const prerender = true;
+
 export async function getStaticPaths() {
   const posts = await getPosts();
   return posts.map((post, i) => ({
