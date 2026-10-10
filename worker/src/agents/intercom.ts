@@ -14,20 +14,27 @@ import persona from '../persona.md?raw';
 // Clone the paid entry's metadata under the free id and re-register the
 // provider — registration in an agent module applies inside the Durable
 // Object isolate where the agent runs.
+//
+// Model choice is a live dependency: OpenRouter withdrew the free tier of
+// qwen/qwen3.8-27b on 2026-10-09 (404 "unavailable for free") and the paid
+// slug is over this key's monthly limit (403), which left /chat answering with
+// a generic error. Nemotron 3 Super is free, tool-capable, and long-context.
+// Check the id is still in https://openrouter.ai/api/v1/models before assuming
+// a chat failure is our bug.
 const openrouter = openrouterProvider();
-const paidEntry = openrouter.getModels().find((m) => m.id === 'qwen/qwen3.8-27b');
+const paidEntry = openrouter.getModels().find((m) => m.id === 'nvidia/nemotron-3-super-120b-a12b');
 const freeEntry = {
   api: 'openai-completions',
   baseUrl: 'https://openrouter.ai/api/v1',
   provider: 'openrouter',
   reasoning: false,
   input: ['text'],
-  contextWindow: 131072,
+  contextWindow: 262144,
   maxTokens: 8192,
   compat: {},
   ...paidEntry,
-  id: 'qwen/qwen3.8-27b:free',
-  name: 'Qwen 3.8 27B (free)',
+  id: 'nvidia/nemotron-3-super-120b-a12b:free',
+  name: 'Nemotron 3 Super 120B (free)',
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 } as unknown as Model<'openai-completions'>;
 
@@ -86,10 +93,9 @@ setProvider({
 });
 
 export function Intercom() {
-  // Qwen via OpenRouter — authenticates with the OPENROUTER_API_KEY worker
-  // secret, no key in source. thinkingLevel 'off' keeps chat latency sane on
-  // a reasoning-capable model.
-  useModel('openrouter/qwen/qwen3.8-27b:free', { thinkingLevel: 'off' });
+  // Nemotron via OpenRouter — authenticates with the OPENROUTER_API_KEY worker
+  // secret, no key in source. thinkingLevel 'off' keeps chat latency sane.
+  useModel('openrouter/nvidia/nemotron-3-super-120b-a12b:free', { thinkingLevel: 'off' });
   useTool(requestHandoff);
   return `${persona}
 

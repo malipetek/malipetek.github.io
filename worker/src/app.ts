@@ -249,6 +249,22 @@ app.post('/chat', async (c) => {
   const upstreamLimited =
     settlement?.outcome === 'failed' &&
     /429|rate.?limit/i.test(JSON.stringify(settlement.error ?? ''));
+
+  // A bare `kind: 'error'` event is useless for diagnosis: a deprecated model,
+  // an exhausted key and a crashed agent all look identical from the browser.
+  // This is what turned a one-line upstream 404 into a hunt. Put the real
+  // reason in Workers Logs / `wrangler tail` before collapsing it for the UI.
+  if (!settled || settlement?.outcome === 'failed') {
+    console.error(
+      'intercom_settlement_failed',
+      JSON.stringify({
+        submissionId,
+        settled,
+        outcome: settlement?.outcome ?? null,
+        error: settlement?.error ?? null,
+      }),
+    );
+  }
   if (settled) {
     const lastAssistant = [...(snapshot?.messages ?? [])]
       .reverse()
