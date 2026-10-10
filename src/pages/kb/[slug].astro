@@ -15,6 +15,28 @@ if (!entry) return Astro.redirect('/kb?missing=1', 302);
 const status = KB_STATUS[entry.status];
 const problem = renderMarkdown(entry.problem_md);
 const solution = renderMarkdown(entry.solution_md);
+
+// Structured data so the entry is legible to search engines and AI crawlers
+// without scraping the rendered page.
+const iso = (value: string) => (value ? `${value.replace(' ', 'T')}Z` : undefined);
+const canonical = new URL(`/kb/${entry.slug}`, Astro.site).href;
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'TechArticle',
+  headline: entry.title,
+  description: entry.problem_md.replace(/\s+/g, ' ').slice(0, 300),
+  url: canonical,
+  mainEntityOfPage: canonical,
+  datePublished: iso(entry.created_at),
+  dateModified: iso(entry.updated_at),
+  keywords: entry.tags.join(', ') || undefined,
+  programmingLanguage: entry.language ?? undefined,
+  about: entry.framework ? { '@type': 'SoftwareApplication', name: entry.framework } : undefined,
+  creativeWorkStatus: status?.label,
+  author: { '@type': 'Person', name: 'M. Ali Petek', url: 'https://malipetek.dev' },
+  publisher: { '@type': 'Person', name: 'M. Ali Petek', url: 'https://malipetek.dev' },
+  isAccessibleForFree: true,
+};
 ---
 
 <Base
@@ -66,5 +88,7 @@ const solution = renderMarkdown(entry.solution_md);
         </p>
       </footer>
     </article>
+
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} is:inline />
   </main>
 </Base>
