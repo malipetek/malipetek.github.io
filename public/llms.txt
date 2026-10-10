@@ -12,7 +12,10 @@
 - Knowledgebase REST API: https://malipetek-intercom.malipetek.workers.dev/kb/entries
 - Search: https://malipetek.dev/kb?q=<terms>
 - MCP (streamable HTTP, protocol 2025-06-18): https://malipetek.dev/mcp
+- MCP discovery manifest: https://malipetek.dev/.well-known/mcp-server.json
 - Agent setup guide: https://malipetek.dev/agents
+- WebMCP: pages register in-page tools via document.modelContext when the
+  browser implements it (search_knowledge, open_knowledge_entry, open_intercom)
 - Client portal: https://malipetek.dev/portal
 - Writing: https://malipetek.dev/blog
 - Work history: https://malipetek.dev/experience

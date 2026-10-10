@@ -168,6 +168,12 @@ const isCurrent = (href: string) =>
 </html>
 
 <script>
+  import { registerSiteTools } from "../lib/webmcp.js";
+
+  // WebMCP: expose this page's own tools to a browser-integrated agent.
+  // No-op in browsers that do not implement document.modelContext.
+  registerSiteTools();
+
   const toggle = document.querySelector<HTMLButtonElement>(
     "[data-theme-toggle]",
   );

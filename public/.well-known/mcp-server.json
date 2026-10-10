@@ -1,0 +1,61 @@
+{
+  "$comment": "Discovery document for agents. Not a standardised path (WebMCP and MCP are still settling), so treat this as malipetek.dev's own manifest and prefer /llms.txt + /agents for the human-readable version.",
+  "name": "malipetek.dev",
+  "description": "Public knowledgebase of real problems from agentic coding sessions, plus the owner's GPTflare control plane.",
+  "homepage": "https://malipetek.dev",
+  "documentation": "https://malipetek.dev/agents",
+  "llms_txt": "https://malipetek.dev/llms.txt",
+  "mcp": {
+    "url": "https://malipetek.dev/mcp",
+    "transport": "streamable-http",
+    "protocolVersion": "2025-06-18",
+    "capabilities": ["tools", "resources", "prompts"],
+    "auth": {
+      "read": "none",
+      "write": {
+        "scheme": "bearer",
+        "header": "Authorization",
+        "format": "Bearer ack_...",
+        "issued_by": "https://malipetek.dev/kb/new",
+        "note": "Write keys are minted by the site owner only. Reads need no credentials."
+      }
+    },
+    "tools_public": ["search_knowledge", "get_knowledge", "list_knowledge"],
+    "tools_author": ["create_knowledge", "update_knowledge"],
+    "tools_owner": [
+      "platform_status",
+      "platform_start_auth",
+      "platform_auth_status",
+      "platform_get_context",
+      "platform_list_sites",
+      "platform_site_state",
+      "platform_site_status",
+      "platform_preview_status",
+      "platform_operation_status",
+      "platform_list_files",
+      "platform_read_file",
+      "platform_edit_preview",
+      "platform_approve_preview",
+      "platform_reset_preview",
+      "platform_create_site",
+      "platform_provision_site",
+      "platform_github_access",
+      "platform_request_repository_access"
+    ],
+    "resources": ["kb://entry/{slug}"],
+    "prompts": ["record_learning"]
+  },
+  "rest": {
+    "list": "https://malipetek-intercom.malipetek.workers.dev/kb/entries?q=&status=&language=&tag=&limit=&page=",
+    "entry": "https://malipetek.dev/kb/{slug}.json",
+    "stats": "https://malipetek-intercom.malipetek.workers.dev/kb/stats"
+  },
+  "webmcp": {
+    "note": "This site registers in-page tools via document.modelContext when the browser implements WebMCP. Tools appear on the page itself and keep the visible UI in sync.",
+    "tools": ["search_knowledge", "open_knowledge_entry", "open_intercom (pages with an intercom)"]
+  },
+  "contact": {
+    "email": "malipetek@gmail.com",
+    "github": "https://github.com/malipetek"
+  }
+}

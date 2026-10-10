@@ -47,20 +47,93 @@ const PLATFORM_TOOLS = [
     </header>
 
     <section class="kb-block">
-      <h2>Add it as a ChatGPT app</h2>
+      <h2>Connect, per client</h2>
       <div class="kb-prose">
         <p>
-          ChatGPT now builds apps on MCP connectors rather than Custom GPT Actions. In ChatGPT:
-          <strong>Settings → Connectors → Advanced → Developer mode</strong>, then add a connector with:
+          One URL serves everything: <code>https://malipetek.dev/mcp</code> — streamable HTTP, protocol
+          <code>2025-06-18</code>. Discovery is also published at
+          <a href="/.well-known/mcp-server.json"><code>/.well-known/mcp-server.json</code></a>.
         </p>
-        <pre><code>Name:    malipetek.dev
-URL:     https://malipetek.dev/mcp
-Auth:    No authentication (public tools only)</code></pre>
+
+        <h3>ChatGPT</h3>
         <p>
-          For the owner-only tools, use <code>Authorization: Bearer &lt;portal-session&gt;</code> — the same
-          token the <a href="/portal">client portal</a> keeps in <code>localStorage</code> after sign-in.
+          ChatGPT builds apps on MCP connectors now, not Custom GPT Actions. Turn on
+          <strong>Settings → Connectors → Advanced → Developer mode</strong>, then add a connector:
         </p>
-        <p>Claude, Cursor, and other MCP clients take the same URL; the transport is standard.</p>
+        <pre><code>Name:  malipetek.dev
+URL:   https://malipetek.dev/mcp
+Auth:  No authentication        # the public tools
+       Bearer &lt;portal-session&gt;   # the owner tools</code></pre>
+        <p>
+          The owner tier additionally needs the control plane's own sign-in — run
+          <code>platform_start_auth</code> once and open the emailed link.
+        </p>
+
+        <h3>Claude, Cursor, anything else</h3>
+        <p>
+          Same URL. Claude: <strong>Settings → Connectors → Add custom connector</strong>. Cursor, in
+          <code>mcp.json</code>:
+        </p>
+        <pre><code>&#123; "mcpServers": &#123; "malipetek": &#123; "url": "https://malipetek.dev/mcp" &#125; &#125; &#125;</code></pre>
+
+        <h3>No client at all</h3>
+        <pre><code>curl -s https://malipetek.dev/mcp -H 'content-type: application/json' \
+  -d '&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</code></pre>
+      </div>
+    </section>
+
+    <section class="kb-block">
+      <h2>Onboarding: what an agent needs, and what it does not</h2>
+      <div class="kb-prose">
+        <p>
+          <strong>Reading needs nothing.</strong> <code>search_knowledge</code>,
+          <code>get_knowledge</code>, <code>list_knowledge</code>, every <code>kb://entry/…</code> resource
+          and the whole REST API are open — no key, no sign-up, no handshake.
+        </p>
+        <p>
+          <strong>Writing needs a key we mint</strong>, and that is the point: open to read, authored only by
+          us. There is deliberately no self-serve route.
+        </p>
+        <ol>
+          <li>The owner signs in at <a href="/portal">/portal</a> and opens <a href="/kb/new">/kb/new</a>.</li>
+          <li>Mint a key named after the agent that will hold it (<code>claude-code</code>, <code>cursor</code>…).</li>
+          <li>The agent sends it as <code>Authorization: Bearer ack_…</code>. Stored only as a SHA-256 hash, shown once.</li>
+          <li>Every use updates <code>last_used_at</code>; revoking is one click, so a leaked key is visible and short-lived.</li>
+        </ol>
+        <p>
+          The control-plane tools are a third tier: the owner's portal session <em>and</em> the platform's own
+          per-conversation sign-in.
+        </p>
+      </div>
+    </section>
+
+    <section class="kb-block">
+      <h2>WebMCP: the same capabilities, inside the page</h2>
+      <div class="kb-prose">
+        <p>
+          A backend MCP server is something the agent's platform reaches. <strong>WebMCP</strong>
+          (<code>document.modelContext</code>) is the other direction: the page registers tools that reuse its
+          own code and keep the visible UI in sync with what the agent just did.
+        </p>
+        <p>
+          This site registers three, feature-detected — a browser without the API loads the module and does
+          nothing at all:
+        </p>
+        <ul>
+          <li>
+            <code>search_knowledge(query, status?)</code> — returns entries, and updates the visible results
+            when the visitor is on <a href="/kb">/kb</a>.
+          </li>
+          <li><code>open_knowledge_entry(slug)</code> — opens the entry in the visitor's own browser.</li>
+          <li>
+            <code>open_intercom()</code> — scrolls to the intercom and focuses the bell. Registered only on
+            pages that have one, because tools should match the page state.
+          </li>
+        </ul>
+        <p>
+          Three, not thirty: every registered tool spends context window and invites tool confusion, which is
+          the failure mode the spec itself warns about.
+        </p>
       </div>
     </section>
 
