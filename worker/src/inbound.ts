@@ -108,11 +108,20 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
   // Inbound mail is otherwise invisible: a rejected message leaves no trace and
   // a dropped one looks identical to a delivery that never happened. One line
   // per message makes "did it arrive, and what did we decide?" answerable.
+  //
+  // `from` is the envelope sender (MAIL FROM), which is what authorisation uses
+  // and which senders such as relays and our own sending binding rewrite to a
+  // bounce address. The header From is what the human sees; it is logged for
+  // comparison, never trusted, and the auth fields say whether the receiving
+  // infrastructure vouched for it.
   console.log(
     'inbound_mail',
     JSON.stringify({
       to,
       from,
+      headerFrom: message.headers.get('from')?.slice(0, 120) ?? null,
+      authResults: message.headers.get('authentication-results')?.slice(0, 160) ?? null,
+      receivedSpf: message.headers.get('received-spf')?.slice(0, 120) ?? null,
       autoReply: isAutoReply(message.headers),
       bytes: message.rawSize,
       subject: message.headers.get('subject')?.slice(0, 80) ?? null,
