@@ -19,6 +19,8 @@ newest message and polls the conversation snapshot until the turn settles.
 | POST   | `/handoff` | `{ email, message, summary, turnstileToken }` | Stores the note in Directus and emails it via the binding. |
 | GET    | `/health`  | —                                             | Returns `{ ok: true }`.                                    |
 | *      | `/auth/*`, `/portal/*`, `/admin/*` | see `src/portal.ts`     | Client portal (below).                                     |
+| *      | `/kb/*`    | see `src/kb.ts`                               | Public knowledgebase (below).                              |
+| *      | `/mcp`     | JSON-RPC 2.0                                  | MCP server — knowledgebase + GPTflare tools.               |
 
 `/chat` responds with `text/event-stream`. Each event is one `data:` line:
 
@@ -214,3 +216,70 @@ wrangler secret put RUNNER_TOKEN   # any long random string; same value in the r
 Local dev: `wrangler d1 migrations apply malipetek-portal --local`, then
 `pnpm dev`. With `DEV_RETURN_LINK=1` and `SITE_URL=http://localhost:4321` in
 `.dev.vars`, the sign-in form shows the magic link instead of emailing it.
+
+## Knowledgebase (`src/kb.ts`)
+
+The public "agentic coding knowledgebase" — problem/solution pairs from real
+sessions. It lives in its own D1 (`KB_DB`, database `agentic-coding-kb`), which
+the site Worker binds read-only for the `/kb` pages.
+
+| Method | Path                    | Auth            | Does                                            |
+| ------ | ----------------------- | --------------- | ----------------------------------------------- |
+| GET    | `/kb/entries`           | public          | List/search (`q`, `status`, `language`, `tag`). |
+| GET    | `/kb/entries/:idOrSlug` | public          | One entry with markdown bodies.                 |
+| GET    | `/kb/stats`             | public          | Counts and languages.                           |
+| POST   | `/kb/entries`           | key **or** admin| Create an entry.                                |
+| PATCH  | `/kb/entries/:id`       | key **or** admin| Patch; a key only its own entries.              |
+| GET/POST/DELETE | `/kb/keys`     | admin only      | Mint, list, revoke agent keys (`ack_…`).        |
+
+Reads are public on purpose. Writes need a key minted by the admin — there is no
+self-serve route, because "anyone can read, only we author" has to be enforced
+somewhere the internet cannot reach. Keys are stored as SHA-256 and shown once.
+
+`q` is never passed to FTS5 raw: tokens are stripped of FTS operators, quoted,
+prefix-matched (`"migra"*` → `migration`) and ANDed. Without that, `?q=foo OR
+bar"` is a 500.
+
+Seeded entries came out of real sessions; when one of your agents solves
+something worth keeping, `create_knowledge` over MCP is the intended path.
+
+## MCP (`src/kb.ts` + `src/platform.ts`)
+
+`POST /mcp` speaks the **streamable HTTP** transport at protocol `2025-06-18`,
+so ChatGPT apps, Claude and any MCP client can mount the same tools: session ids
+(echoed, not required), SSE when the client asks for it, `202` for notification
+posts, batch requests, and `Origin` validation so a random web page cannot drive
+it. `https://malipetek.dev/mcp` proxies here, so the public URL is the site's.
+
+Tool failures come back as a result with `isError: true`, not a protocol error —
+that is what lets a model read the message and correct itself.
+
+Tools are the five knowledgebase ones plus the GPTflare control-plane bridge:
+
+| Group      | Auth                          | Examples                                                          |
+| ---------- | ----------------------------- | ----------------------------------------------------------------- |
+| `*_knowledge` | public read; `ack_` to write | `search_knowledge`, `get_knowledge`, `create_knowledge`           |
+| `platform_*`  | admin session, then the platform's own sign-in | `platform_list_sites`, `platform_read_file`, `platform_edit_preview`, `platform_approve_preview` |
+
+### GPTflare control plane
+
+`src/platform.ts` bridges `api.gptflare.site` — the control plane that creates
+and edits Astro + Keystatic sites (draft → provision → preview → approve →
+production). It replaces the Custom-GPT Actions path:
+
+- the platform key lives in the `PLATFORM_GPT_API_KEY` secret, not in a GPT
+  configuration or a browser-automation script;
+- every tool requires **our** admin auth first, then the platform's own
+  per-conversation sign-in (`platform_start_auth` → magic link →
+  `authRequestId` threaded through later calls).
+
+```sh
+wrangler secret put PLATFORM_GPT_API_KEY   # from the control plane's own .env
+```
+
+The platform's error strings are passed through untouched (`AUTH_REQUEST_EXPIRED`,
+"the user must complete sign-in") because they are written to be acted on.
+
+Deprecated: `platform-mcp.malipetek.workers.dev` is a retired mock that now
+answers every JSON-RPC call with a pointer to `https://malipetek.dev/mcp`.
+
