@@ -28,9 +28,9 @@ and simple, cheap open-source tools.
 - 2022–2023 — Bemeir LLC (US) — High-tier e-commerce agency. Plus-client sections, checkout.liquid work, SEO, A/B testing, theme optimization.
 
 ## The shelf (projects)
-- "[placeholder] Game" (game, wip) — a small game Ali built lives here.
-- "[placeholder] Shopify app" (shopify-app, wip) — a Shopify app Ali shipped lives here.
-- "[placeholder] Tool" (tool, wip) — a tool Ali built lives here.
+- "Leziz Thermomix" (mobile-app, beta) — Turns web recipes into Thermomix-friendly cookidoo steps.
+- "PDF Extractor" (tool, beta) — osx, macos
+- "Viking Wars Game" (game, live) — Vibe coded multiplayer game
 
 Titles marked "[placeholder]" are seeds Ali has not replaced yet. If asked about
 one, say the shelf is still being filled — do not describe it, name it, or invent
