@@ -227,6 +227,22 @@ export const prerender = true;
       h('span', { class: 'portal-field' }, select),
     );
 
+    // A claimed ticket that never reported back is indistinguishable from one
+    // being worked on, and it is never claimable again — it just sits there.
+    // The runner reports by its own timeout (30 min by default), so silence
+    // past that means the process died.
+    if (ticket.status === 'in_progress') {
+      const minutes = Math.floor((Date.now() / 1000 - ticket.updated_at) / 60);
+      if (minutes >= 45) {
+        note(
+          $('[data-t-note]'),
+          `Claimed ${minutes} min ago and never reported back — the runner probably died. ` +
+            `Set the status back to Approved to let it try again.`,
+          true,
+        );
+      }
+    }
+
     const projectSelect = $<HTMLSelectElement>('[data-t-project]');
     projectSelect.replaceChildren(
       h('option', { value: '' }, 'No project'),
