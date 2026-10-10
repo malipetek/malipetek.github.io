@@ -1,0 +1,26 @@
+{
+  "endpoint": "https://malipetek-intercom.malipetek.workers.dev",
+  "token": "same value as the Worker's RUNNER_TOKEN secret (or set RUNNER_TOKEN in the environment)",
+  "pollSeconds": 30,
+  "timeoutMinutes": 30,
+  "worktreeRoot": "~/.cache/malipetek-runner/worktrees",
+  "projects": {
+    "acme-shopify": "~/Projects/acme-shopify-theme",
+    "pdf-extractor": { "path": "~/Projects/pdf-extractor", "baseRef": "main" }
+  },
+  "claude": {
+    "bin": "claude",
+    "maxBudgetUsd": 5,
+    "allowedTools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}

@@ -1,0 +1,431 @@
+/* ————————————————————————————————————————————————
+   Client portal — same Shelfware vocabulary: ruled lists,
+   2px ink boxes, mono labels, orange only as a signal.
+   Elements are built in JS, so these are plain globals
+   namespaced under .portal.
+   ———————————————————————————————————————————————— */
+
+.portal {
+  max-width: 62rem;
+}
+
+.portal [hidden] {
+  display: none !important;
+}
+
+.portal-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin-bottom: clamp(1.5rem, 4vw, 2.25rem);
+}
+
+.portal-bar h1 {
+  margin: 0;
+}
+
+.portal-who {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.portal-who button {
+  padding: 0;
+  font-size: 14px;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  text-decoration-color: var(--orange);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.portal-label {
+  display: block;
+  margin: 0 0 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* Meta lines carry emails and project names — keep their real case. */
+.portal-label--plain {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.portal-section + .portal-section {
+  margin-top: clamp(2rem, 5vw, 3rem);
+}
+
+.portal-section > h2 {
+  font-size: clamp(1.25rem, 2.4vw, 1.5rem);
+  margin-bottom: 0.75rem;
+}
+
+/* ————— forms ————— */
+
+.portal-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.portal-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.portal-field input,
+.portal-field textarea,
+.portal-field select {
+  width: 100%;
+  font: inherit;
+  color: var(--ink);
+  background: var(--bone);
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  padding: 0.65rem 0.8rem;
+}
+
+.portal-field textarea {
+  min-height: 8rem;
+  resize: vertical;
+}
+
+.portal-field input:focus-visible,
+.portal-field textarea:focus-visible,
+.portal-field select:focus-visible {
+  outline: 3px solid var(--orange);
+  outline-offset: 2px;
+}
+
+.portal-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+}
+
+.portal-note {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.portal-note.is-error {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.portal-note.is-error::before {
+  content: '';
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-right: 0.45em;
+  background: var(--orange);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ————— status badge ————— */
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.status::before {
+  content: '';
+  width: 0.7em;
+  height: 0.7em;
+  border: 2px solid var(--ink);
+  background: transparent;
+}
+
+.status--approved::before,
+.status--in_progress::before {
+  background: var(--orange);
+  border-color: var(--orange);
+}
+
+.status--review::before {
+  background: linear-gradient(135deg, var(--orange) 50%, transparent 50%);
+}
+
+.status--done::before {
+  background: var(--ink);
+}
+
+.status--declined {
+  color: var(--ink-soft);
+  text-decoration: line-through;
+}
+
+.status--declined::before {
+  border-color: var(--ink-soft);
+}
+
+/* ————— ticket list ————— */
+
+.ticket-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 2px solid var(--ink);
+}
+
+.ticket-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.ticket-no {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.ticket-title {
+  font-weight: 600;
+  font-size: 17px;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+/* Whole row is the target. */
+.ticket-title::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.ticket-row:hover .ticket-title {
+  text-decoration: underline;
+  text-decoration-color: var(--orange);
+  text-decoration-thickness: 3px;
+}
+
+.ticket-meta {
+  grid-column: 2;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.ticket-row .status {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.ticket-empty {
+  padding: 1.25rem 0;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--rule);
+}
+
+/* ————— thread ————— */
+
+.thread {
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  border-top: 2px solid var(--ink);
+}
+
+.msg {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 0.25rem 1.25rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.msg-who {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.msg-who strong {
+  display: block;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.msg-body {
+  margin: 0;
+  max-width: 68ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msg--system .msg-body {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+
+/* Runner notes carry a summary plus a diff: read them as a terminal. */
+.msg--runner .msg-body {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+  max-height: 32rem;
+  overflow: auto;
+  max-width: none;
+}
+
+.msg--internal {
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent 0 10px,
+    color-mix(in srgb, var(--orange) 10%, transparent) 10px 20px
+  );
+  padding-inline: 0.75rem;
+}
+
+.msg--internal .msg-who strong::after {
+  content: ' · private';
+  color: var(--orange);
+}
+
+/* ————— admin ————— */
+
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.admin-tabs button {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 0.45em 0.85em;
+  color: var(--ink);
+  background: var(--bone);
+  border: 2px solid var(--ink);
+  cursor: pointer;
+}
+
+.admin-tabs button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--bone);
+}
+
+.admin-tabs button:hover:not([aria-pressed='true']) {
+  background: var(--orange);
+  border-color: var(--orange);
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(1.5rem, 4vw, 3rem);
+  align-items: start;
+}
+
+.admin-controls {
+  display: grid;
+  gap: 1rem;
+  padding: 1.1rem 1.2rem;
+  margin-bottom: 1.5rem;
+  border: 2px solid var(--ink);
+}
+
+.admin-controls .portal-actions .btn {
+  font-size: 14px;
+  padding: 0.5em 0.9em;
+}
+
+.btn--approve {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: var(--ink);
+}
+
+.btn--approve:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bone);
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.check input {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--ink);
+}
+
+.client-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 2px solid var(--ink);
+}
+
+.client-list > li {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.client-projects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+@media (max-width: 760px) {
+  .admin-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .msg {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ticket-row {
+    grid-template-columns: 2.75rem minmax(0, 1fr);
+  }
+
+  .ticket-row .status {
+    grid-column: 2;
+    grid-row: auto;
+  }
+}

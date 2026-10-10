@@ -1,0 +1,219 @@
+---
+import Base from '../../layouts/Base.astro';
+import '../../styles/portal.css';
+
+// A static shell; everything signed-in is fetched from the Worker in the browser.
+export const prerender = true;
+---
+
+<Base
+  title="Client portal — malipetek"
+  description="Requests and tickets for people Ali works with."
+  current="/portal"
+>
+  <div class="portal">
+    <div class="portal-bar">
+      <h1>Client portal</h1>
+      <div class="portal-who" data-who hidden>
+        <span data-who-email></span>
+        <a href="/portal/admin" data-admin-link hidden>Admin</a>
+        <button type="button" data-logout>Sign out</button>
+      </div>
+    </div>
+
+    <p class="portal-note" data-loading>Loading…</p>
+
+    <!-- signed out -->
+    <section class="portal-section" data-signed-out hidden>
+      <p class="lede">
+        Sign in with your email. No password; you get a link that works once.
+      </p>
+      <form class="portal-form" data-login style="max-width: 28rem">
+        <div class="portal-field">
+          <label class="portal-label" for="pl-email">Email</label>
+          <input id="pl-email" name="email" type="email" autocomplete="email" required />
+        </div>
+        <div class="portal-actions">
+          <button class="btn btn--solid" type="submit">Email me a link →</button>
+          <p class="portal-note" data-login-status role="status" aria-live="polite"></p>
+        </div>
+      </form>
+      <p class="portal-note" style="margin-top: 1.5rem; max-width: 46ch">
+        New here? Same form. Your account is created when you first sign in, and
+        Ali links it to your project by hand.
+      </p>
+    </section>
+
+    <!-- signed in -->
+    <div data-signed-in hidden>
+      <section class="portal-section">
+        <h2>Your requests</h2>
+        <ul class="ticket-list" data-tickets></ul>
+      </section>
+
+      <section class="portal-section">
+        <h2>New request</h2>
+        <form class="portal-form" data-new-ticket>
+          <div class="portal-field" data-project-field hidden>
+            <label class="portal-label" for="nt-project">Project</label>
+            <select id="nt-project" name="projectId"></select>
+          </div>
+          <div class="portal-field">
+            <label class="portal-label" for="nt-title">Title</label>
+            <input id="nt-title" name="title" type="text" maxlength="140" required />
+          </div>
+          <div class="portal-field">
+            <label class="portal-label" for="nt-body">What do you need?</label>
+            <textarea id="nt-body" name="body" rows="7" maxlength="8000" required></textarea>
+          </div>
+          <div class="portal-actions">
+            <button class="btn btn--solid" type="submit">Send request →</button>
+            <p class="portal-note" data-ticket-status role="status" aria-live="polite"></p>
+          </div>
+          <p class="portal-note" style="max-width: 52ch">
+            Ali reads every request before anything happens. You'll get an email
+            when he replies or the status changes.
+          </p>
+        </form>
+      </section>
+    </div>
+  </div>
+</Base>
+
+<script>
+  import {
+    api,
+    errorText,
+    fmtTime,
+    h,
+    logout,
+    requestLink,
+    session,
+    statusBadge,
+    type Project,
+    type Ticket,
+    type User,
+  } from '../../lib/portal';
+
+  const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
+  const loading = $('[data-loading]');
+  const signedOut = $('[data-signed-out]');
+  const signedIn = $('[data-signed-in]');
+
+  const setNote = (el: HTMLElement, text: string, error = false) => {
+    el.textContent = text;
+    el.classList.toggle('is-error', error);
+  };
+
+  function showSignedOut() {
+    loading.hidden = true;
+    signedIn.hidden = true;
+    $('[data-who]').hidden = true;
+    signedOut.hidden = false;
+  }
+
+  function renderTickets(tickets: Ticket[]) {
+    const list = $('[data-tickets]');
+    list.replaceChildren(
+      ...(tickets.length
+        ? tickets.map((t) =>
+            h(
+              'li',
+              { class: 'ticket-row' },
+              h('span', { class: 'ticket-no' }, `#${t.id}`),
+              h('a', { class: 'ticket-title', href: `/portal/ticket#id=${t.id}` }, t.title),
+              statusBadge(t.status),
+              h(
+                'span',
+                { class: 'ticket-meta' },
+                [t.project_name, `updated ${fmtTime(t.updated_at)}`].filter(Boolean).join(' · '),
+              ),
+            ),
+          )
+        : [h('li', { class: 'ticket-empty' }, 'Nothing yet. Your first request goes below.')]),
+    );
+  }
+
+  async function showSignedIn() {
+    const [{ user, projects }, { tickets }] = await Promise.all([
+      api<{ user: User; projects: Project[] }>('/portal/me'),
+      api<{ tickets: Ticket[] }>('/portal/tickets'),
+    ]);
+    $('[data-who-email]').textContent = user.email;
+    $('[data-admin-link]').hidden = user.role !== 'admin';
+    $('[data-who]').hidden = false;
+
+    const select = $<HTMLSelectElement>('#nt-project');
+    select.replaceChildren(
+      h('option', { value: '' }, 'Not sure / something new'),
+      ...projects.map((p) => h('option', { value: p.id }, p.name)),
+    );
+    if (projects.length === 1) select.value = projects[0].id;
+    $('[data-project-field]').hidden = projects.length === 0;
+
+    renderTickets(tickets);
+    loading.hidden = true;
+    signedOut.hidden = true;
+    signedIn.hidden = false;
+  }
+
+  async function boot() {
+    if (!session.get()) return showSignedOut();
+    try {
+      await showSignedIn();
+    } catch (error) {
+      if (!session.get()) return showSignedOut(); // 401 cleared it
+      setNote(loading, errorText(error), true);
+    }
+  }
+
+  $<HTMLFormElement>('[data-login]').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const status = $('[data-login-status]');
+    const button = form.querySelector('button')!;
+    const email = String(new FormData(form).get('email') || '').trim();
+    button.disabled = true;
+    setNote(status, 'Sending…');
+    try {
+      const res = await requestLink(email);
+      setNote(status, `Check ${email} for your sign-in link.`);
+      // Local dev only: the Worker hands the link back instead of emailing it.
+      if (res.devLink) status.append(' ', h('a', { href: res.devLink }, 'Dev link →'));
+    } catch (error) {
+      setNote(status, errorText(error), true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $<HTMLFormElement>('[data-new-ticket]').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const status = $('[data-ticket-status]');
+    const button = form.querySelector('button')!;
+    const data = new FormData(form);
+    button.disabled = true;
+    setNote(status, 'Sending…');
+    try {
+      const { id } = await api<{ id: number }>('/portal/tickets', {
+        body: {
+          title: String(data.get('title') || ''),
+          body: String(data.get('body') || ''),
+          projectId: String(data.get('projectId') || '') || undefined,
+        },
+      });
+      location.href = `/portal/ticket#id=${id}`;
+    } catch (error) {
+      setNote(status, errorText(error), true);
+      button.disabled = false;
+    }
+  });
+
+  $('[data-logout]').addEventListener('click', async () => {
+    await logout().catch(() => {});
+    showSignedOut();
+  });
+
+  boot();
+</script>

@@ -1,0 +1,110 @@
+---
+import Base from '../../layouts/Base.astro';
+import '../../styles/portal.css';
+
+// Static shell: the ticket id rides in the hash (#id=12).
+export const prerender = true;
+---
+
+<Base title="Request — malipetek" description="A client portal request." current="/portal">
+  <div class="portal">
+    <p class="project-back" style="margin: 0 0 1.5rem; font-size: 15px">
+      <a href="/portal">← All requests</a>
+    </p>
+
+    <p class="portal-note" data-loading>Loading…</p>
+
+    <article data-ticket hidden>
+      <header style="margin-bottom: 1.5rem">
+        <p class="portal-label portal-label--plain" data-ticket-meta></p>
+        <h1 data-ticket-title style="margin-bottom: 0.5rem"></h1>
+        <div data-ticket-status></div>
+      </header>
+
+      <div data-thread></div>
+
+      <form class="portal-form" data-reply>
+        <div class="portal-field">
+          <label class="portal-label" for="tr-body">Reply</label>
+          <textarea id="tr-body" name="body" rows="5" maxlength="8000" required></textarea>
+        </div>
+        <div class="portal-actions">
+          <button class="btn btn--solid" type="submit">Send reply →</button>
+          <p class="portal-note" data-reply-status role="status" aria-live="polite"></p>
+        </div>
+      </form>
+    </article>
+  </div>
+</Base>
+
+<script>
+  import {
+    api,
+    errorText,
+    renderThread,
+    session,
+    statusBadge,
+    type Message,
+    type Ticket,
+  } from '../../lib/portal';
+
+  const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
+  const id = Number(new URLSearchParams(location.hash.slice(1)).get('id'));
+  const loading = $('[data-loading]');
+
+  async function load() {
+    const { ticket, messages } = await api<{ ticket: Ticket; messages: Message[] }>(
+      `/portal/tickets/${id}`,
+    );
+    document.title = `#${ticket.id} ${ticket.title} — malipetek`;
+    $('[data-ticket-meta]').textContent = [`#${ticket.id}`, ticket.project_name]
+      .filter(Boolean)
+      .join(' · ');
+    $('[data-ticket-title]').textContent = ticket.title;
+    $('[data-ticket-status]').replaceChildren(statusBadge(ticket.status));
+    $('[data-thread]').replaceChildren(renderThread(messages, 'client'));
+    loading.hidden = true;
+    $('[data-ticket]').hidden = false;
+  }
+
+  async function boot() {
+    if (!session.get()) return location.replace('/portal');
+    if (!Number.isInteger(id) || id <= 0) {
+      loading.textContent = 'No request selected.';
+      return;
+    }
+    try {
+      await load();
+    } catch (error) {
+      if (!session.get()) return location.replace('/portal');
+      loading.textContent = errorText(error);
+      loading.classList.add('is-error');
+    }
+  }
+
+  $<HTMLFormElement>('[data-reply]').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const status = $('[data-reply-status]');
+    const button = form.querySelector('button')!;
+    button.disabled = true;
+    status.textContent = 'Sending…';
+    status.classList.remove('is-error');
+    try {
+      await api(`/portal/tickets/${id}/messages`, {
+        body: { body: String(new FormData(form).get('body') || '') },
+      });
+      form.reset();
+      status.textContent = 'Sent.';
+      await load();
+    } catch (error) {
+      status.textContent = errorText(error);
+      status.classList.add('is-error');
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  window.addEventListener('hashchange', () => location.reload());
+  boot();
+</script>

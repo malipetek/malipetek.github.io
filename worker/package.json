@@ -23,6 +23,7 @@
     "@earendil-works/pi-ai": "0.83.0",
     "@flue/runtime": "2.0.7",
     "hono": "4.13.8",
+    "postal-mime": "^4.0.4",
     "valibot": "1.5.0"
   }
 }

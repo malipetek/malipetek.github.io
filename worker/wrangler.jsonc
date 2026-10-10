@@ -15,7 +15,25 @@
   // here — set them with `wrangler secret put NAME` (see README.md).
   "vars": {
     "CONTACT_FROM_EMAIL": "intercom@malipetek.dev",
+    "PORTAL_FROM_EMAIL": "portal@malipetek.dev",
+    "ADMIN_EMAIL": "malipetek@gmail.com",
+    "SITE_URL": "https://malipetek.dev",
+    // Email Routing: send reply@ (subaddressing on) and new@ to this Worker.
+    "REPLY_ADDRESS": "reply@malipetek.dev",
   },
+
+  // Client portal store. Create once with:
+  //   wrangler d1 create malipetek-portal
+  // paste the returned database_id below, then apply the schema:
+  //   wrangler d1 migrations apply malipetek-portal --remote
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "malipetek-portal",
+      "database_id": "d659e9f0-75fb-4b7a-8611-ca10b0218189",
+      "migrations_dir": "migrations",
+    },
+  ],
 
   // Per-IP rate limiting. Create the namespace once with:
   //   wrangler kv namespace create RATE_LIMIT
@@ -29,5 +47,8 @@
   // destination_address pins every send to Ali's inbox.
   "send_email": [
     { "name": "EMAIL", "destination_address": "malipetek@gmail.com" },
+    // Portal mail to clients (magic links, replies, status changes). No
+    // destination pin, so the sender is pinned instead.
+    { "name": "MAILER", "allowed_sender_addresses": ["portal@malipetek.dev"] },
   ],
 }

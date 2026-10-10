@@ -15,3 +15,12 @@ DIRECTUS_TOKEN=
 SESSION_SECRET=change-me-in-production
 
 CONTACT_FROM_EMAIL=intercom@malipetek.dev
+
+# Client portal, local only: magic links point at the Astro dev server, and
+# /auth/request returns the link in its response so you can click it without
+# real email. Never set DEV_RETURN_LINK in production.
+SITE_URL=http://localhost:4321
+DEV_RETURN_LINK=1
+
+# Local runner API (see runner/README.md). Any string locally.
+RUNNER_TOKEN=dev-runner-token

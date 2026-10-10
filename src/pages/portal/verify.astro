@@ -1,0 +1,44 @@
+---
+import Base from '../../layouts/Base.astro';
+import '../../styles/portal.css';
+
+export const prerender = true;
+---
+
+<Base title="Signing in — malipetek" description="Client portal sign-in." current="/portal">
+  <div class="portal">
+    <h1>Signing you in…</h1>
+    <p class="portal-note" data-status role="status" aria-live="polite"></p>
+    <p data-retry hidden style="margin-top: 1.5rem">
+      <a class="btn" href="/portal">Request a new link</a>
+    </p>
+  </div>
+</Base>
+
+<script>
+  import { api, errorText, session, type User } from '../../lib/portal';
+
+  const status = document.querySelector<HTMLElement>('[data-status]')!;
+  const token = new URLSearchParams(location.hash.slice(1)).get('token');
+  // Drop the token from the address bar and history straight away.
+  history.replaceState(null, '', location.pathname);
+
+  (async () => {
+    if (!token) {
+      status.textContent = 'This link is missing its token.';
+      document.querySelector<HTMLElement>('[data-retry]')!.hidden = false;
+      return;
+    }
+    try {
+      const { session: s, user } = await api<{ session: string; user: User }>('/auth/verify', {
+        body: { token },
+      });
+      session.set(s);
+      location.replace(user.role === 'admin' ? '/portal/admin' : '/portal');
+    } catch (error) {
+      document.querySelector('h1')!.textContent = 'That link did not work';
+      status.textContent = errorText(error);
+      document.querySelector<HTMLElement>('[data-retry]')!.hidden = false;
+    }
+  })();
+</script>

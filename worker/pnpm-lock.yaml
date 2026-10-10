@@ -17,6 +17,9 @@ importers:
       hono:
         specifier: 4.13.8
         version: 4.13.8
+      postal-mime:
+        specifier: ^4.0.4
+        version: 4.0.4
       valibot:
         specifier: 1.5.0
         version: 1.5.0(typescript@7.0.2)
@@ -1718,6 +1721,10 @@ packages:
   pkce-challenge@5.0.1:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
     engines: {node: '>=16.20.0'}
+
+  postal-mime@4.0.4:
+    resolution: {integrity: sha512-LC9FypbNof/NfF07rHg5ev2zx6KwmqfcaGQPhSSdwJSnp04MImO+7ByCPh+3bkILupgMG5fn2WrThRy4WDqHoA==}
+    engines: {node: '>=20'}
 
   postcss@8.5.28:
     resolution: {integrity: sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==}
@@ -3645,6 +3652,8 @@ snapshots:
   picomatch@4.0.7: {}
 
   pkce-challenge@5.0.1: {}
+
+  postal-mime@4.0.4: {}
 
   postcss@8.5.28:
     dependencies:

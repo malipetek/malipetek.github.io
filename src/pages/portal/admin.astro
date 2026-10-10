@@ -1,0 +1,368 @@
+---
+import Base from '../../layouts/Base.astro';
+import '../../styles/portal.css';
+
+// Static shell. The Worker enforces the admin role on every /admin/* call;
+// this page only decides what to draw.
+export const prerender = true;
+---
+
+<Base title="Portal admin — malipetek" description="Portal admin." current="/portal">
+  <div class="portal">
+    <div class="portal-bar">
+      <h1>Portal admin</h1>
+      <div class="portal-who">
+        <a href="/portal">Client view</a>
+      </div>
+    </div>
+
+    <p class="portal-note" data-loading>Loading…</p>
+
+    <div data-app hidden>
+      <div class="admin-tabs" role="group" aria-label="Section">
+        <button type="button" data-tab="tickets" aria-pressed="true">Tickets</button>
+        <button type="button" data-tab="clients" aria-pressed="false">Clients &amp; projects</button>
+      </div>
+
+      <!-- ticket queue -->
+      <section data-view="tickets">
+        <div class="admin-tabs" role="group" aria-label="Filter by status" data-filters></div>
+        <ul class="ticket-list" data-queue></ul>
+      </section>
+
+      <!-- one ticket -->
+      <section data-view="ticket" hidden>
+        <p style="margin: 0 0 1.25rem; font-size: 15px"><a href="#">← Queue</a></p>
+        <p class="portal-label portal-label--plain" data-t-meta></p>
+        <h2 data-t-title style="font-size: clamp(1.6rem, 3.5vw, 2.2rem); margin-bottom: 0.5rem"></h2>
+        <div data-t-status style="margin-bottom: 1.25rem"></div>
+
+        <div class="admin-controls">
+          <div class="portal-actions" data-t-actions></div>
+          <div class="portal-field" style="max-width: 24rem">
+            <label class="portal-label" for="at-project">Project</label>
+            <select id="at-project" data-t-project></select>
+          </div>
+          <p class="portal-note" data-t-note role="status" aria-live="polite"></p>
+        </div>
+
+        <div data-t-thread></div>
+
+        <form class="portal-form" data-t-reply>
+          <div class="portal-field">
+            <label class="portal-label" for="at-body">Reply</label>
+            <textarea id="at-body" name="body" rows="5" maxlength="8000" required></textarea>
+          </div>
+          <div class="portal-actions">
+            <button class="btn btn--solid" type="submit">Send →</button>
+            <label class="check"><input type="checkbox" name="internal" /> Private note (client never sees it)</label>
+          </div>
+        </form>
+      </section>
+
+      <!-- clients & projects -->
+      <section data-view="clients" hidden>
+        <div class="admin-grid">
+          <div>
+            <h2 style="font-size: 1.35rem">Clients</h2>
+            <ul class="client-list" data-clients></ul>
+          </div>
+          <div>
+            <h2 style="font-size: 1.35rem">Projects</h2>
+            <ul class="client-list" data-projects></ul>
+            <form class="portal-form" data-new-project style="margin-top: 1.25rem">
+              <div class="portal-field">
+                <label class="portal-label" for="np-name">Name</label>
+                <input id="np-name" name="name" required maxlength="80" />
+              </div>
+              <div class="portal-field">
+                <label class="portal-label" for="np-slug">Slug (the local runner maps this to a folder)</label>
+                <input id="np-slug" name="slug" required pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="63" />
+              </div>
+              <div class="portal-actions">
+                <button class="btn" type="submit">Add project</button>
+                <p class="portal-note" data-np-note role="status" aria-live="polite"></p>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</Base>
+
+<script>
+  import {
+    api,
+    errorText,
+    fmtTime,
+    h,
+    renderThread,
+    session,
+    statusBadge,
+    STATUS_LABEL,
+    STATUSES,
+    type Message,
+    type Project,
+    type Status,
+    type Ticket,
+  } from '../../lib/portal';
+
+  type Client = {
+    id: string;
+    email: string;
+    name: string | null;
+    role: string;
+    ticket_count: number;
+    projectIds: string[];
+  };
+
+  const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
+  const loading = $('[data-loading]');
+  let filter: Status | 'all' = 'new';
+  let projects: Project[] = [];
+
+  const note = (el: HTMLElement, text: string, error = false) => {
+    el.textContent = text;
+    el.classList.toggle('is-error', error);
+  };
+
+  function show(view: 'tickets' | 'ticket' | 'clients') {
+    document.querySelectorAll<HTMLElement>('[data-view]').forEach((el) => {
+      el.hidden = el.dataset.view !== view;
+    });
+    document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => {
+      b.setAttribute('aria-pressed', String(b.dataset.tab === (view === 'ticket' ? 'tickets' : view)));
+    });
+  }
+
+  /* ————— queue ————— */
+
+  function drawFilters() {
+    const options: (Status | 'all')[] = ['new', 'approved', 'in_progress', 'review', 'done', 'declined', 'all'];
+    $('[data-filters]').replaceChildren(
+      ...options.map((s) => {
+        const b = h(
+          'button',
+          { type: 'button', 'aria-pressed': String(s === filter) },
+          s === 'all' ? 'All' : STATUS_LABEL[s],
+        );
+        b.addEventListener('click', () => {
+          filter = s;
+          drawFilters();
+          loadQueue();
+        });
+        return b;
+      }),
+    );
+  }
+
+  async function loadQueue() {
+    const q = filter === 'all' ? '' : `?status=${filter}`;
+    const { tickets } = await api<{ tickets: Ticket[] }>(`/admin/tickets${q}`);
+    $('[data-queue]').replaceChildren(
+      ...(tickets.length
+        ? tickets.map((t) =>
+            h(
+              'li',
+              { class: 'ticket-row' },
+              h('span', { class: 'ticket-no' }, `#${t.id}`),
+              h('a', { class: 'ticket-title', href: `#ticket=${t.id}` }, t.title),
+              statusBadge(t.status),
+              h(
+                'span',
+                { class: 'ticket-meta' },
+                [t.client_email, t.project_name ?? 'no project', fmtTime(t.updated_at)].join(' · '),
+              ),
+            ),
+          )
+        : [h('li', { class: 'ticket-empty' }, 'Nothing here.')]),
+    );
+  }
+
+  /* ————— one ticket ————— */
+
+  async function loadTicket(id: number) {
+    const { ticket, messages } = await api<{ ticket: Ticket; messages: Message[] }>(`/admin/tickets/${id}`);
+    $('[data-t-meta]').textContent = `#${ticket.id} · ${ticket.client_name ? `${ticket.client_name} · ` : ''}${ticket.client_email}`;
+    $('[data-t-title]').textContent = ticket.title;
+    $('[data-t-status]').replaceChildren(statusBadge(ticket.status));
+    $('[data-t-thread]').replaceChildren(renderThread(messages, 'admin'));
+
+    // Primary moves for the current state, plus a select for anything else.
+    const primary: Partial<Record<Status, [Status, string, string][]>> = {
+      new: [
+        ['approved', 'Approve', 'btn btn--approve'],
+        ['declined', 'Decline', 'btn'],
+      ],
+      // approved: nothing to press — the local runner picks it up.
+      review: [
+        ['done', 'Mark done', 'btn btn--solid'],
+        ['approved', 'Run again', 'btn'],
+      ],
+    };
+    const setStatus = async (status: Status) => {
+      try {
+        await api(`/admin/tickets/${id}`, { method: 'PATCH', body: { status } });
+        await loadTicket(id);
+        note($('[data-t-note]'), `Now: ${STATUS_LABEL[status]}. Client emailed.`);
+      } catch (error) {
+        note($('[data-t-note]'), errorText(error), true);
+      }
+    };
+    const select = h('select', { 'aria-label': 'Set status' });
+    select.append(
+      h('option', { value: '' }, 'Set status…'),
+      ...STATUSES.filter((s) => s !== ticket.status).map((s) => h('option', { value: s }, STATUS_LABEL[s])),
+    );
+    select.addEventListener('change', () => select.value && setStatus(select.value as Status));
+    $('[data-t-actions]').replaceChildren(
+      ...(primary[ticket.status] ?? []).map(([s, label, cls]) => {
+        const b = h('button', { type: 'button', class: cls }, label);
+        b.addEventListener('click', () => setStatus(s));
+        return b;
+      }),
+      h('span', { class: 'portal-field' }, select),
+    );
+
+    const projectSelect = $<HTMLSelectElement>('[data-t-project]');
+    projectSelect.replaceChildren(
+      h('option', { value: '' }, 'No project'),
+      ...projects.map((p) => h('option', { value: p.id }, `${p.name} (${p.slug})`)),
+    );
+    projectSelect.value = ticket.project_id ?? '';
+    projectSelect.onchange = async () => {
+      try {
+        await api(`/admin/tickets/${id}`, { method: 'PATCH', body: { projectId: projectSelect.value || null } });
+        note($('[data-t-note]'), 'Project saved.');
+      } catch (error) {
+        note($('[data-t-note]'), errorText(error), true);
+      }
+    };
+
+    $<HTMLFormElement>('[data-t-reply]').onsubmit = async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const data = new FormData(form);
+      try {
+        await api(`/admin/tickets/${id}/messages`, {
+          body: { body: String(data.get('body') || ''), internal: data.get('internal') === 'on' },
+        });
+        form.reset();
+        await loadTicket(id);
+      } catch (error) {
+        note($('[data-t-note]'), errorText(error), true);
+      }
+    };
+  }
+
+  /* ————— clients & projects ————— */
+
+  async function loadClients() {
+    const [{ clients }, p] = await Promise.all([
+      api<{ clients: Client[] }>('/admin/clients'),
+      api<{ projects: Project[] }>('/admin/projects'),
+    ]);
+    projects = p.projects;
+
+    $('[data-projects]').replaceChildren(
+      ...(projects.length
+        ? projects.map((pr) => h('li', null, h('strong', null, pr.name), h('span', { class: 'portal-note' }, pr.slug)))
+        : [h('li', { class: 'ticket-empty' }, 'No projects yet.')]),
+    );
+
+    $('[data-clients]').replaceChildren(
+      ...clients.map((c) => {
+        const boxes = projects.map((pr) => {
+          const input = h('input', { type: 'checkbox', checked: c.projectIds.includes(pr.id) });
+          input.addEventListener('change', async () => {
+            try {
+              await api(`/admin/clients/${c.id}/projects/${pr.id}`, { method: input.checked ? 'PUT' : 'DELETE' });
+            } catch {
+              input.checked = !input.checked;
+            }
+          });
+          return h('label', { class: 'check' }, input, pr.name);
+        });
+        return h(
+          'li',
+          null,
+          h(
+            'div',
+            null,
+            h('strong', null, c.email),
+            h(
+              'span',
+              { class: 'portal-note' },
+              ` · ${c.role === 'admin' ? 'admin' : `${c.ticket_count} ticket${c.ticket_count === 1 ? '' : 's'}`}`,
+            ),
+          ),
+          c.role === 'admin' || !projects.length ? null : h('div', { class: 'client-projects' }, ...boxes),
+        );
+      }),
+    );
+  }
+
+  $<HTMLFormElement>('[data-new-project]').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const data = new FormData(form);
+    try {
+      await api('/admin/projects', { body: { name: data.get('name'), slug: data.get('slug') } });
+      form.reset();
+      note($('[data-np-note]'), 'Added.');
+      await loadClients();
+    } catch (error) {
+      note($('[data-np-note]'), errorText(error), true);
+    }
+  });
+
+  /* ————— routing ————— */
+
+  async function route() {
+    const id = Number(new URLSearchParams(location.hash.slice(1)).get('ticket'));
+    try {
+      if (Number.isInteger(id) && id > 0) {
+        show('ticket');
+        await loadTicket(id);
+      } else {
+        show('tickets');
+        await loadQueue();
+      }
+    } catch (error) {
+      if (!session.get()) return location.replace('/portal');
+      note(loading, errorText(error), true);
+      loading.hidden = false;
+    }
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      if (b.dataset.tab === 'clients') {
+        history.replaceState(null, '', location.pathname);
+        show('clients');
+        await loadClients().catch((e) => note(loading, errorText(e), true));
+      } else {
+        location.hash = '';
+        route();
+      }
+    }),
+  );
+  window.addEventListener('hashchange', route);
+
+  (async () => {
+    if (!session.get()) return location.replace('/portal');
+    try {
+      const { user } = await api<{ user: { role: string } }>('/portal/me');
+      if (user.role !== 'admin') return location.replace('/portal');
+      await loadClients(); // projects feed the ticket view's selector
+      loading.hidden = true;
+      $('[data-app]').hidden = false;
+      drawFilters();
+      await route();
+    } catch (error) {
+      if (!session.get()) return location.replace('/portal');
+      note(loading, errorText(error), true);
+    }
+  })();
+</script>

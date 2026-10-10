@@ -18,6 +18,7 @@ newest message and polls the conversation snapshot until the turn settles.
 | POST   | `/chat`    | `{ messages, turnstileToken }`                | Verifies the visitor, then relays the agent's reply.       |
 | POST   | `/handoff` | `{ email, message, summary, turnstileToken }` | Stores the note in Directus and emails it via the binding. |
 | GET    | `/health`  | —                                             | Returns `{ ok: true }`.                                    |
+| *      | `/auth/*`, `/portal/*`, `/admin/*` | see `src/portal.ts`     | Client portal (below).                                     |
 
 `/chat` responds with `text/event-stream`. Each event is one `data:` line:
 
@@ -159,3 +160,57 @@ headers. Requests without an `Origin` (server-to-server, curl) are allowed.
 - `/handoff`: valid email ≤ 254 chars, message/summary ≤ 4000 chars each.
 - `/chat` waits at most 25 s for the agent turn to settle before returning an
   error end event (the UI shows the email fallback).
+
+## Client portal
+
+Clients sign in at `malipetek.dev/portal` with a magic link, file requests,
+and follow a ticket thread. Ali (whoever signs in as `ADMIN_EMAIL`) gets
+`/portal/admin`: a ticket queue, Approve/Decline, private notes, and the
+client ↔ project links. Code: `src/portal.ts`; schema: `migrations/`.
+
+- **Storage:** D1 (`DB`). Sessions and magic-link tokens are stored only as
+  SHA-256 hashes. Local repo paths are never stored here — a project only has
+  a `slug`, which the (future) local runner maps to a folder on Ali's machine.
+- **Approval:** a ticket starts as `new`. Only the admin can move it to
+  `approved`; nothing in the Worker acts on a ticket by itself.
+- **Mail:** client mail (links, replies, status changes) goes through the
+  unpinned `MAILER` binding from `portal@malipetek.dev`; notices to Ali go
+  through the pinned `EMAIL` binding. Private notes are never emailed.
+
+One-time setup:
+
+```sh
+cd worker
+wrangler d1 create malipetek-portal        # paste database_id into wrangler.jsonc
+wrangler d1 migrations apply malipetek-portal --remote
+```
+
+`portal@malipetek.dev` must be allowed to send on the onboarded domain (same
+Email Service setup as the intercom). On the site, the portal uses the same
+`PUBLIC_CHAT_ENDPOINT` and `PUBLIC_TURNSTILE_SITEKEY`.
+
+### Email threading (Email Routing → `src/inbound.ts`)
+
+Every ticket email carries `Reply-To: reply+<ticket>.<c|a>.<sig>@malipetek.dev`.
+Replying from any inbox posts into the thread — `c` as the client, `a` as Ali.
+The sig is an HMAC of ticket + role (`SESSION_SECRET`), and the envelope sender
+must also match the ticket's client (or `ADMIN_EMAIL`), else the mail bounces.
+Quoted history is cut at the `##- Reply above this line -##` marker.
+Registered clients can also open a ticket by mailing `new@malipetek.dev`.
+
+Dashboard setup, once: **Email Routing → Settings → enable subaddressing**,
+then route `reply@malipetek.dev` and `new@malipetek.dev` to this Worker.
+
+### Local runner (`src/runner.ts` ↔ `../runner/`)
+
+`POST /runner/claim` and `POST /runner/tickets/:id/result`, authenticated by
+the `RUNNER_TOKEN` secret (unset → 503, runner disabled). Claim only ever
+returns tickets in `approved`. See `../runner/README.md`.
+
+```sh
+wrangler secret put RUNNER_TOKEN   # any long random string; same value in the runner config
+```
+
+Local dev: `wrangler d1 migrations apply malipetek-portal --local`, then
+`pnpm dev`. With `DEV_RETURN_LINK=1` and `SITE_URL=http://localhost:4321` in
+`.dev.vars`, the sign-in form shows the magic link instead of emailing it.

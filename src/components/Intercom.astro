@@ -35,7 +35,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
 >
   <div class="intercom-inner">
     <div class="intercom-lead">
-      <h2 class="intercom-title" id="intercom-title">Ring the bell.</h2>
+      <h2 class="intercom-title" id="intercom-title"><span class="intercom-no" aria-hidden="true">04 /</span>Ring the bell.</h2>
 
       <button
         class="bell"
@@ -135,8 +135,8 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
         </div>
 
         <form class="handoff" data-handoff hidden>
-          <p class="handoff-title">Leave a note for Ali</p>
-          <div class="field">
+          <p class="handoff-title" data-handoff-title>Leave a note for Ali</p>
+          <div class="field" data-handoff-email-field>
             <label for="handoff-email">Your email</label>
             <input
               id="handoff-email"
@@ -177,6 +177,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
 
 <script>
   import { streamAnswer, chunkText, sendHandoff } from "../lib/chatBackend.js";
+  import { api, ApiError, session as portalSession } from "../lib/portal";
 
   type Role = "me" | "them";
   type Msg = { role: Role; text: string };
@@ -299,16 +300,44 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
       return bubble;
     };
 
+    // Signed-in portal clients file the handoff as a ticket instead of an
+    // email note — same card, no email field, and it shows up in /portal.
+    const handoffTitle = root.querySelector<HTMLElement>("[data-handoff-title]")!;
+    const handoffEmailField = root.querySelector<HTMLElement>(
+      "[data-handoff-email-field]",
+    )!;
+    let asTicket = false;
+    const setHandoffMode = (ticket: boolean) => {
+      asTicket = ticket;
+      handoffTitle.textContent = ticket
+        ? "File this as a request"
+        : "Leave a note for Ali";
+      handoffEmailField.hidden = ticket;
+      handoffEmail.required = !ticket;
+      handoffSendBtn.textContent = ticket ? "File request" : "Send to Ali";
+    };
+
     const showHandoff = (summary: string) => {
       setState("handoff");
+      setHandoffMode(Boolean(portalSession.get()));
+      handoffSendBtn.disabled = false;
+      if (handoffError) handoffError.hidden = true;
       handoffSummary.value = summary;
       handoffEmail.value = "";
       composer.hidden = true;
       handoff.hidden = false;
-      handoffEmail.focus({ preventScroll: true });
+      (asTicket ? handoffSummary : handoffEmail).focus({ preventScroll: true });
       announce(
-        "Ali can take it from here. Leave your email and anything else he should know. I filled in a summary you can edit.",
+        asTicket
+          ? "Ali can take it from here. I drafted a request for your portal — edit it and file it."
+          : "Ali can take it from here. Leave your email and anything else he should know. I filled in a summary you can edit.",
       );
+    };
+
+    /** First sentence of the summary, trimmed to a title-sized line. */
+    const titleFrom = (text: string) => {
+      const first = text.split(/(?<=[.!?])\s|\n/)[0].trim();
+      return first.length > 90 ? `${first.slice(0, 87).trimEnd()}…` : first;
     };
 
     const noteError = () => {
@@ -445,6 +474,37 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
       handoffSendBtn.disabled = true;
       if (handoffError) handoffError.hidden = true;
 
+      if (asTicket) {
+        try {
+          const { id } = await api<{ id: number }>("/portal/tickets", {
+            body: { title: titleFrom(summaryValue), body: summaryValue },
+          });
+          handoff.hidden = true;
+          composer.hidden = true;
+          setState("sent");
+          const sent = addBubble("them", `Filed as request #${id}. Ali reads every one himself — `);
+          sent.classList.add("msg--sent");
+          const link = document.createElement("a");
+          link.href = `/portal/ticket#id=${id}`;
+          link.textContent = "open it";
+          sent.append(link, ".");
+          announce(`Filed as request number ${id}.`);
+        } catch (error) {
+          handoffSendBtn.disabled = false;
+          // Session expired: same card, back to the plain email note.
+          if (error instanceof ApiError && error.status === 401) {
+            setHandoffMode(false);
+            handoffEmail.focus({ preventScroll: true });
+            return;
+          }
+          if (handoffError) {
+            handoffError.hidden = false;
+            handoffError.textContent = "Couldn't file it — try the portal directly.";
+          }
+        }
+        return;
+      }
+
       try {
         await sendHandoff({
           email: emailValue,
@@ -526,11 +586,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
         }
         if (name === "handoff") {
           addBubble("them", DEMO_HANDOFF);
-          handoffSummary.value = DEMO_SUMMARY;
-          handoffEmail.value = "";
-          composer.hidden = true;
-          handoff.hidden = false;
-          setState("handoff");
+          showHandoff(DEMO_SUMMARY);
           return;
         }
         if (name === "sent") {
@@ -623,6 +679,15 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     font-size: clamp(2.75rem, 6.5vw, 5.25rem);
     line-height: 0.94;
     letter-spacing: -0.04em;
+  }
+
+  .intercom-no {
+    display: block;
+    margin-bottom: 0.9rem;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
   }
 
   .bell {
@@ -909,7 +974,8 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
   /* ————— composer + handoff card (the one soft panel) ————— */
 
   .composer[hidden],
-  .handoff[hidden] {
+  .handoff[hidden],
+  .field[hidden] {
     display: none;
   }
 
