@@ -1,0 +1,56 @@
+name: Release
+
+# Versioning and publishing for the DeepSeek Harness plugins in packages/*.
+#
+# Two modes, both driven by changesets:
+#   * a pending changeset on master  -> opens/updates a "chore: release" PR
+#   * that release PR merged         -> publishes to npm and pushes git tags
+#
+# Auth: set an NPM_TOKEN repo secret, or configure npm Trusted Publishing for
+# each package and delete the "Configure npm auth" step (the id-token
+# permission below is what trusted publishing needs).
+
+on:
+  push:
+    branches: [master]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure npm auth
+        if: env.NPM_TOKEN != ''
+        run: npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+
+      - name: Create release PR or publish
+        uses: changesets/action@v1
+        with:
+          version: pnpm version-packages
+          publish: pnpm release
+          commit: "chore: release plugins"
+          title: "chore: release plugins"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

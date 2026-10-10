@@ -28,6 +28,7 @@ const nav = [
   { href: "/", label: "Shelf" },
   { href: "/blog", label: "Writing" },
   { href: "/kb", label: "Knowledgebase" },
+  { href: "/plugins", label: "Plugins" },
   { href: "/experience", label: "Work" },
   { href: "/contact", label: "Contact" },
   { href: "/#talk", label: "Talk" },
@@ -242,7 +243,10 @@ const isCurrent = (href: string) =>
   .site-nav {
     display: flex;
     align-items: center;
-    gap: clamp(0.9rem, 3vw, 1.8rem);
+    /* Seven entries now: let them wrap onto a second line on a phone rather
+       than run off the edge. */
+    flex-wrap: wrap;
+    gap: 0.35rem clamp(0.9rem, 3vw, 1.8rem);
     font-size: 15px;
   }
 

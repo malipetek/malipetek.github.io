@@ -1,0 +1,4 @@
+# The site is the root package; every publishable DeepSeek Harness plugin lives
+# in packages/* and is released to npm with changesets.
+packages:
+  - 'packages/*'

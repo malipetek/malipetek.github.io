@@ -1,0 +1,242 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getPlugins, fmtCount, fmtDay } from '../../lib/plugins';
+
+// Prerender is off: the npm numbers are fetched per request and cached at the
+// edge, so a release shows up here without a redeploy.
+export const prerender = false;
+
+const plugins = await getPlugins();
+const published = plugins.filter((p) => p.npm.published).length;
+
+function versionCell(p: (typeof plugins)[number]) {
+  if (p.npm.published) return p.npm.version ?? '—';
+  return p.npm.checked ? 'unpublished' : 'unavailable';
+}
+---
+
+<Base
+  title="DeepSeek plugins — malipetek"
+  description="Plugins for DeepSeek Harness: a projects panel, momentum tracking, managed dev processes, and action cards."
+  current="/plugins"
+>
+  <header class="page-head">
+    <h1>DeepSeek plugins</h1>
+    <p class="lede">
+      Tools I built for my own harness and kept. Each one is a package on npm —
+      install it by name and the harness wires up both halves.
+    </p>
+  </header>
+
+  <section class="block intro">
+    <div class="block-head">
+      <h2>Install</h2>
+      <span class="label">
+        {plugins.length} plugin{plugins.length === 1 ? '' : 's'}
+        {published > 0 ? ` · ${published} on npm` : ' · none published yet'}
+      </span>
+    </div>
+    <p class="intro-note">
+      In DeepSeek Harness, open the plugin manager and use <strong>Add plugin</strong>,
+      or run the command directly:
+    </p>
+    <pre><code>dsh plugin add @malipetek/dsh-action-cards</code></pre>
+    <p class="intro-note muted">
+      Installed plugins do not update themselves — upgrading means removing the
+      old version and adding the new one.
+    </p>
+  </section>
+
+  <section class="block">
+    <div class="block-head">
+      <h2>The set</h2>
+    </div>
+
+    <ul class="plugin-list">
+      {
+        plugins.map((p) => (
+          <li>
+            <div class="plugin-main">
+              <div class="plugin-head">
+                <a class="plugin-name" href={`/plugins/${p.slug}`}>
+                  {p.title}
+                </a>
+                {!p.npm.published && (
+                  <span class="pill pill--soon" title="Not on npm yet">
+                    {p.npm.checked ? 'unpublished' : 'registry unreachable'}
+                  </span>
+                )}
+              </div>
+              <code class="plugin-pkg">{p.name}</code>
+              <p class="plugin-blurb">{p.blurb}</p>
+            </div>
+
+            <dl class="plugin-meta">
+              <div>
+                <dt>Version</dt>
+                <dd>{versionCell(p)}</dd>
+              </div>
+              <div>
+                <dt>Installs / mo</dt>
+                <dd>{fmtCount(p.npm.downloads) ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Published</dt>
+                <dd>{fmtDay(p.npm.modified) ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Surface</dt>
+                <dd>{p.hasClient ? 'host + client' : 'host'}</dd>
+              </div>
+            </dl>
+          </li>
+        ))
+      }
+    </ul>
+
+    <p class="section-foot">
+      Each package keeps its README on npm, its source at
+      <a href="https://github.com/malipetek/malipetek.github.io/tree/master/packages"
+        >github.com/malipetek</a
+      >, and its long-form docs on its own page here.
+    </p>
+  </section>
+</Base>
+
+<style>
+  .intro-note {
+    max-width: 62ch;
+    font-size: 16px;
+    color: var(--ink-soft);
+  }
+
+  .intro pre {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.6;
+    background: var(--astro-code-background);
+    color: var(--astro-code-foreground);
+    border: 2px solid var(--ink);
+    padding: 1em 1.1em;
+    margin: 1.1rem 0;
+    overflow-x: auto;
+    max-width: 100%;
+    width: fit-content;
+  }
+
+  .section-foot {
+    margin-top: 1.5rem;
+    font-size: 15px;
+    color: var(--ink-soft);
+    max-width: 72ch;
+  }
+
+  /* Rows, not a <table>: the metadata column collapses under the copy on
+     narrow screens instead of forcing a horizontal scroll. */
+  .plugin-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .plugin-list li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 17rem);
+    gap: clamp(1rem, 3vw, 3rem);
+    padding: 1.4rem 0;
+    border-top: 1px solid var(--rule);
+  }
+
+  .plugin-list li:first-child {
+    border-top: 2px solid var(--ink);
+  }
+
+  .plugin-list li:last-child {
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .plugin-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+
+  .plugin-name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 22px;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    text-decoration: none;
+  }
+
+  .plugin-name:hover {
+    text-decoration: underline;
+    text-decoration-color: var(--orange);
+    text-decoration-thickness: 3px;
+  }
+
+  .pill {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.15em 0.5em;
+    border: 1px solid var(--rule);
+    color: var(--ink-soft);
+  }
+
+  .plugin-pkg {
+    display: block;
+    margin-top: 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink-soft);
+    overflow-wrap: anywhere;
+  }
+
+  .plugin-blurb {
+    margin: 0.6rem 0 0;
+    max-width: 62ch;
+    font-family: var(--font-body);
+    font-size: 16.5px;
+    line-height: 1.5;
+  }
+
+  .plugin-meta {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem 1rem;
+    align-content: start;
+  }
+
+  .plugin-meta dt {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+
+  .plugin-meta dd {
+    margin: 0.1rem 0 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink);
+  }
+
+  @media (max-width: 62rem) {
+    .plugin-list li {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .plugin-meta {
+      grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+      padding-top: 0.4rem;
+      border-top: 1px solid var(--rule);
+    }
+  }
+</style>

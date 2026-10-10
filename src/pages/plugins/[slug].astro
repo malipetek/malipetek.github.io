@@ -1,0 +1,263 @@
+---
+import Base from '../../layouts/Base.astro';
+import {
+  getPlugin,
+  renderReadme,
+  fmtBytes,
+  fmtCount,
+  fmtDay,
+} from '../../lib/plugins';
+
+// Live npm numbers, so this page must not be baked at build time.
+export const prerender = false;
+
+const plugin = await getPlugin(Astro.params.slug ?? '');
+
+if (!plugin) {
+  Astro.response.status = 404;
+}
+
+const spec = plugin
+  ? [
+      ['Package', plugin.name],
+      [
+        'Version',
+        plugin.npm.published
+          ? (plugin.npm.version ?? '—')
+          : `${plugin.manifestVersion} (unpublished)`,
+      ],
+      ['Published', fmtDay(plugin.npm.modified) ?? '—'],
+      ['Installs / mo', fmtCount(plugin.npm.downloads) ?? '—'],
+      ['Unpacked size', fmtBytes(plugin.npm.unpackedSize) ?? '—'],
+      ['Surface', plugin.hasClient ? 'Host + client (web)' : 'Host'],
+      ['License', plugin.npm.license ?? 'MIT'],
+      ['Keywords', plugin.keywords.join(', ') || '—'],
+    ]
+  : [];
+
+const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
+---
+
+{
+  !plugin ? (
+    <Base
+      title="Not found — malipetek"
+      description="No such plugin."
+      current="/plugins"
+    >
+      <div class="notfound">
+        <p class="notfound-code">404</p>
+        <h1>No such plugin.</h1>
+        <p class="lede">
+          Nothing is published under that name — or it was renamed and this URL
+          is the ghost of it.
+        </p>
+        <p class="notfound-actions">
+          <a class="btn btn--solid" href="/plugins">
+            ← All plugins
+          </a>
+        </p>
+      </div>
+    </Base>
+  ) : (
+    <Base
+      title={`${plugin.title} — malipetek`}
+      description={plugin.blurb}
+      current="/plugins"
+    >
+      <article class="plugin">
+        <p class="plugin-back">
+          <a href="/plugins">← All plugins</a>
+        </p>
+
+        <header class="plugin-head">
+          <p class="plugin-eyebrow">
+            {plugin.hasClient ? 'Host + client' : 'Host'} ·{" "}
+            {plugin.npm.published
+              ? plugin.npm.version
+              : plugin.npm.checked
+                ? "unpublished"
+                : "registry unavailable"}
+          </p>
+          <h1>{plugin.title}</h1>
+          <p class="lede">{plugin.blurb}</p>
+          <code class="plugin-pkg">{plugin.name}</code>
+
+          <div class="plugin-links">
+            <a class="btn" href={plugin.npmUrl}>
+              npm
+            </a>
+            <a class="btn" href={plugin.repoUrl}>
+              Source
+            </a>
+          </div>
+        </header>
+
+        <section class="block install">
+          <div class="block-head">
+            <h2>Install</h2>
+          </div>
+          <pre>
+            <code>{plugin.install}</code>
+          </pre>
+          {!plugin.npm.published && (
+            <p class="note">
+              {plugin.npm.checked
+                ? "Not on npm yet. The name is reserved for the first release, so this command will work once it is."
+                : "The npm registry could not be reached, so the numbers below are missing rather than zero."}
+            </p>
+          )}
+        </section>
+
+        <section class="block">
+          <div class="block-head">
+            <h2>Package</h2>
+            <a href={plugin.repoUrl}>Browse the source →</a>
+          </div>
+          <dl class="spec">
+            {spec.map(([label, value]) => (
+              <div class="spec-row">
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        <section class="block docs">
+          <div class="block-head">
+            <h2>Documentation</h2>
+            <span class="label">from the package README</span>
+          </div>
+          <div class="prose" set:html={body} />
+        </section>
+      </article>
+    </Base>
+  )
+}
+
+<style>
+  .plugin-back {
+    margin: 0 0 1.5rem;
+    font-size: 15px;
+  }
+
+  .plugin-head {
+    margin-bottom: clamp(1.5rem, 4vw, 2.5rem);
+  }
+
+  .plugin-eyebrow {
+    margin: 0 0 0.4rem;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+
+  .plugin-head h1 {
+    margin-bottom: 0.3em;
+  }
+
+  .plugin-pkg {
+    display: block;
+    margin-top: 0.9rem;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--ink-soft);
+    overflow-wrap: anywhere;
+  }
+
+  .plugin-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 1.2rem;
+  }
+
+  .install pre {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.6;
+    background: var(--astro-code-background);
+    color: var(--astro-code-foreground);
+    border: 2px solid var(--ink);
+    padding: 1em 1.1em;
+    margin: 0;
+    overflow-x: auto;
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .note {
+    margin: 0.9rem 0 0;
+    max-width: 68ch;
+    font-size: 15px;
+    color: var(--ink-soft);
+  }
+
+  /* A spec sheet: label column fixed, value column takes the rest. */
+  .spec {
+    margin: 0;
+    border-top: 2px solid var(--ink);
+  }
+
+  .spec-row {
+    display: grid;
+    grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+    gap: 0.5rem 1.5rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .spec-row dt {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding-top: 0.15em;
+  }
+
+  .spec-row dd {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    overflow-wrap: anywhere;
+  }
+
+  .docs .prose {
+    margin-top: 0.5rem;
+  }
+
+  @media (max-width: 40rem) {
+    .spec-row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.15rem;
+    }
+  }
+
+  .notfound {
+    padding-block: clamp(1.5rem, 6vw, 4rem);
+    max-width: 60ch;
+  }
+
+  .notfound-code {
+    margin: 0 0 0.4rem;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ink-soft);
+  }
+
+  .notfound h1 {
+    margin-bottom: 0.4em;
+  }
+
+  .notfound-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+    margin: clamp(1.5rem, 4vw, 2.25rem) 0 0;
+  }
+</style>

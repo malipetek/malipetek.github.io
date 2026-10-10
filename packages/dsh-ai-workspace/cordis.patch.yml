@@ -1,0 +1,37 @@
+# Bundle patch for @malipetek/dsh-ai-workspace: one Host row, no Client row
+# (the Client half is declared through `dsh.client` in package.json and needs
+# no Loader row of its own).
+#
+# The `config` block below is the plugin's whole configuration surface; every
+# field is optional and the defaults are shown. A matching override in the
+# profile's cordis.patch.yml replaces this `config` wholesale, so restate every
+# field you need when you override it.
+- insert:
+    - id: ai-workspace
+      name: '@malipetek/dsh-ai-workspace'
+      config:
+        # Folder scanned one level deep for projects that carry an
+        # .ai-workspace.json (or legacy .claude-workspace.json).
+        projectsRoot: /Users/malipetek/Documents/Documents/Projects
+        # Extra project roots to manage even though they sit outside
+        # projectsRoot. Absolute paths only.
+        projects: []
+        # Start a project's processes when this plugin mounts. Off by default
+        # so installing the bundle never surprises you by spawning servers;
+        # turn it on once you trust the discovered configs, or press
+        # "Start all" in the panel.
+        autoStart: false
+        # Before starting a process, work out which port it will bind and move
+        # it to a free one when that port is already taken, injecting the port
+        # through the flag, argument or environment the runtime understands.
+        # A per-process `"port": N` pins an exact port and `"port": false`
+        # opts that process out.
+        managePorts: true
+        # How often the Host rewrites the status snapshot (ms).
+        flushMs: 1000
+        # Trailing lines of each process log carried into the snapshot.
+        maxTailLines: 30
+        # Also maintain a marked section in the project's AGENTS.md, for AI
+        # tools outside DeepSeek Harness. The in-Harness instruction is
+        # delivered through a system-prompt section instead.
+        writeAgentsMd: false

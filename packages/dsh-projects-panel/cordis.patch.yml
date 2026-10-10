@@ -1,0 +1,3 @@
+- insert:
+    - id: projects-panel
+      name: '@malipetek/dsh-projects-panel'

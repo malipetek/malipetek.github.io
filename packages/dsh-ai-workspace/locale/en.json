@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "AI Workspace",
+    "description": "Managed dev processes with captured logs, a live panel, and a model-facing tool so an agent reads the logs instead of re-running build and dev commands."
+  }
+}

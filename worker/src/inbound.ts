@@ -128,9 +128,19 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
     }),
   );
 
-  if (domain !== replyDomain(env)) return message.setReject('Unknown recipient.');
-  if (message.rawSize > MAX_RAW_BYTES) return message.setReject('Message too large. Use the portal for attachments.');
-  if (isAutoReply(message.headers)) return; // accept and drop
+  // Every message gets exactly one decision line, so "it arrived but nothing
+  // happened" is never the end of the story.
+  const reject = (reason: string) => {
+    console.log('inbound_rejected', JSON.stringify({ to, from, reason }));
+    return message.setReject(reason);
+  };
+  const drop = (reason: string) => {
+    console.log('inbound_dropped', JSON.stringify({ to, from, reason }));
+  };
+
+  if (domain !== replyDomain(env)) return reject('Unknown recipient.');
+  if (message.rawSize > MAX_RAW_BYTES) return reject('Message too large. Use the portal for attachments.');
+  if (isAutoReply(message.headers)) return drop('auto-reply');
 
   /* —— reply+<ticket>.<role>.<sig> —— */
   const tag = local.match(/^[^+]+\+(\d{1,9})\.([ca])\.([0-9a-f]{20})$/);
@@ -138,7 +148,7 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
     const ticketId = Number(tag[1]);
     const role = tag[2] as ReplyRole;
     if (!sameHex(tag[3], await replySig(env, ticketId, role))) {
-      return message.setReject('This reply address is not valid.');
+      return reject('This reply address is not valid.');
     }
     const ticket = await env.DB.prepare(
       `SELECT t.id, t.title, u.email AS client_email
@@ -146,18 +156,23 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
     )
       .bind(ticketId)
       .first<{ id: number; title: string; client_email: string }>();
-    if (!ticket) return message.setReject('That ticket no longer exists.');
+    if (!ticket) return reject('That ticket no longer exists.');
 
     const expected = role === 'c' ? ticket.client_email : bare(env.ADMIN_EMAIL || '');
     if (!expected || from !== expected) {
-      return message.setReject(
+      return reject(
         `Replies to this ticket are only accepted from the address it was sent to. ` +
           `Use ${siteUrl(env)}/portal instead.`,
       );
     }
 
     const { body } = await readBody(message);
-    if (!body) return; // nothing typed above the quote — drop quietly
+    if (!body) {
+      return reject(
+        `That reply had no text above the quoted history, so there was nothing to add. ` +
+          `Write your message at the top and send again, or use ${siteUrl(env)}/portal.`,
+      );
+    }
 
     const t = now();
     await env.DB.batch([
@@ -167,6 +182,7 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
     ]);
     if (role === 'c') await notifyAliOfClientMessage(env, ticket, body, false);
     else await notifyClientOfReply(env, ticket, body);
+    console.log('inbound_accepted', JSON.stringify({ ticket: ticket.id, role, chars: body.length }));
     return;
   }
 
@@ -176,13 +192,13 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
       .bind(from)
       .first<{ id: string; email: string }>();
     if (!user) {
-      return message.setReject(
+      return reject(
         `New requests by email are for existing clients. Sign up at ${siteUrl(env)}/portal first — it takes a minute.`,
       );
     }
     const { subject, body } = await readBody(message);
     const title = (subject.replace(/^\s*((re|fwd?|aw|sv)\s*:\s*)+/i, '').trim() || 'Request by email').slice(0, MAX_TITLE_CHARS);
-    if (!body) return message.setReject('The email was empty. Write what you need in the body.');
+    if (!body) return reject('The email was empty. Write what you need in the body.');
 
     const t = now();
     const ticket = await env.DB.prepare(
@@ -198,8 +214,9 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
 
     const ref = { id: ticket.id, title, client_email: user.email };
     await Promise.all([notifyAliOfClientMessage(env, ref, body, true), confirmTicketToClient(env, ref)]);
+    console.log('inbound_accepted', JSON.stringify({ ticket: ticket.id, role: 'new', chars: body.length }));
     return;
   }
 
-  return message.setReject('Unknown recipient.');
+  return reject('Unknown recipient.');
 }

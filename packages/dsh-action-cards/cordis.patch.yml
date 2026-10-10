@@ -1,0 +1,5 @@
+# Host half only. The Client half is declared through `dsh.client` in
+# package.json and needs no Loader row of its own.
+- insert:
+    - id: action-cards
+      name: '@malipetek/dsh-action-cards'

@@ -1,0 +1,9 @@
+{
+  "name": "@malipetek/dsh-action-cards-driver",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "exports": { ".": "./index.js" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}

@@ -7,6 +7,7 @@ import { getCollection } from "astro:content";
 import { getPosts, fmtDate, readMinutes } from "../lib/posts.js";
 import { JOBS } from "../lib/experience.js";
 import { kbDb, listKbEntries, kbFacets, type KbSummary } from "../lib/kb";
+import { getPluginSummaries } from "../lib/plugins";
 
 const projects = (await getCollection("projects")).sort(
   (a, b) =>
@@ -26,6 +27,10 @@ const availability = site?.availability ?? "limited";
 
 const posts = await getPosts();
 const latest = posts.slice(0, 5);
+
+// Manifest-only, so the front page never waits on the npm registry. Versions
+// and install counts live on /plugins, which does read npm.
+const plugins = getPluginSummaries();
 
 // The knowledgebase is written by agents between deploys, so it is read at
 // request time rather than baked into the build. A KB problem must never take
@@ -292,6 +297,36 @@ const initial = (title) =>
     </div>
   </section>
 
+  <section class="room room--panel" id="plugins">
+    <div class="plate">
+    <div class="block-head">
+      <h2><span class="room-no" aria-hidden="true">05</span>DeepSeek plugins</h2>
+      <a href="/plugins">All {plugins.length} plugins →</a>
+    </div>
+
+    <ul class="post-list plugin-home">
+      {
+        plugins.map((p) => (
+          <li>
+            <a class="post-link post-link--row" href={`/plugins/${p.slug}`}>
+              {p.title}
+            </a>
+            <span class="plugin-home-pkg">{p.name}</span>
+            <span class="post-summary">{p.blurb}</span>
+          </li>
+        ))
+      }
+    </ul>
+
+    <p class="kb-home-foot">
+      I build these for my own harness and publish them to npm under{" "}
+      <code>@malipetek</code>. Install one with{" "}
+      <code>dsh plugin add &lt;name&gt;</code>, or read the whole set at{" "}
+      <a href="/plugins">malipetek.dev/plugins</a>.
+    </p>
+    </div>
+  </section>
+
   <Intercom
     greeting={intercomGreeting}
     suggestions={intercomSuggestions}
@@ -445,6 +480,19 @@ const initial = (title) =>
     margin: 0;
     font-size: 14px;
     color: var(--ink-soft);
+  }
+
+  /* Plugin rows reuse the Writing room's list. The package name is the one
+     extra line, in mono so it reads as an identifier and not as prose. */
+  .plugin-home-pkg {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink-soft);
+    overflow-wrap: anywhere;
+  }
+
+  .room--panel .post-list li:has(.post-link--row:hover) .plugin-home-pkg {
+    color: var(--ink);
   }
 
   /* Plates: an opaque sheet the list/timeline sits on, so the station behind

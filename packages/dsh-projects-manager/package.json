@@ -1,0 +1,59 @@
+{
+  "name": "@malipetek/dsh-projects-manager",
+  "version": "1.0.0",
+  "description": "Projects manager: smarter per-project metadata, per-baseline stall scoring, a cron-triggered review and stall reminders.",
+  "type": "module",
+  "main": "index.js",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "locale/*.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    },
+    "meta": {
+      "title": "Projects manager",
+      "description": "Momentum tracking for your projects: per-project stall scoring, a ranked review, and a weekday nudge."
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "projects",
+    "momentum"
+  ],
+  "author": "Muhammet Ali Petek",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/malipetek/malipetek.github.io.git",
+    "directory": "packages/dsh-projects-manager"
+  },
+  "homepage": "https://malipetek.dev/plugins/dsh-projects-manager",
+  "bugs": "https://github.com/malipetek/malipetek.github.io/issues",
+  "publishConfig": {
+    "access": "public"
+  }
+}
