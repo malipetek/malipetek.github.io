@@ -29,6 +29,7 @@ import { Hono, type Context } from 'hono';
 import {
   ALLOWED_ORIGINS,
   clientIp,
+  corsHeaders,
   encoder,
   isRateLimited,
   json,
@@ -295,7 +296,26 @@ export const portal = new Hono<PortalEnv>();
 // Every portal route is browser-facing: refuse foreign origins up front.
 portal.use('*', async (c, next) => {
   const o = origin(c);
-  if (o && !ALLOWED_ORIGINS.includes(o)) return reply(c, { error: 'origin_not_allowed' }, 403);
+  const path = new URL(c.req.url).pathname;
+  // This app is mounted at '/', so this middleware sees every request. The
+  // origin allow-list and the preflight shortcut are only correct for the
+  // portal's own token-bearing routes: /kb is a public API (wildcard CORS) and
+  // /mcp validates Origin itself as the MCP spec's rebinding guard requires.
+  const isPortalPath =
+    path.startsWith('/auth/') || path.startsWith('/portal/') || path.startsWith('/admin/');
+
+  if (isPortalPath) {
+    if (o && !ALLOWED_ORIGINS.includes(o)) return reply(c, { error: 'origin_not_allowed' }, 403);
+
+    // Preflight must be answered before the auth guards below. A 401 to OPTIONS
+    // is a CORS failure, not an auth failure: the browser then refuses the real
+    // request, so every signed-in page silently breaks and looks like a dead
+    // session.
+    if (c.req.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: corsHeaders(o) });
+    }
+  }
+
   return next();
 });
 
