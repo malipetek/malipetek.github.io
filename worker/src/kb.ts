@@ -515,7 +515,92 @@ const KB_TOOLS = [
 ];
 
 /** Knowledgebase tools plus the GPTflare control-plane bridge. */
-const MCP_TOOLS = [...KB_TOOLS, ...PLATFORM_TOOLS];
+/**
+ * Tool annotations are what let a connector show "this only reads" versus
+ * "this changes production". They are derived centrally so a new tool cannot
+ * forget them: anything not named as a writer is treated as read-only.
+ */
+const READ_ONLY_TOOLS = new Set([
+  'search_knowledge',
+  'get_knowledge',
+  'list_knowledge',
+  'platform_status',
+  'platform_auth_status',
+  'platform_get_context',
+  'platform_list_sites',
+  'platform_site_state',
+  'platform_site_status',
+  'platform_preview_status',
+  'platform_operation_status',
+  'platform_list_files',
+  'platform_read_file',
+  'platform_github_access',
+]);
+const DESTRUCTIVE_TOOLS = new Set(['platform_reset_preview', 'platform_approve_preview']);
+
+const MCP_TOOLS = [...KB_TOOLS, ...PLATFORM_TOOLS].map((tool) => ({
+  ...tool,
+  annotations: {
+    title: tool.title,
+    readOnlyHint: READ_ONLY_TOOLS.has(tool.name),
+    destructiveHint: DESTRUCTIVE_TOOLS.has(tool.name),
+    idempotentHint: READ_ONLY_TOOLS.has(tool.name),
+    openWorldHint: true,
+  },
+}));
+
+const RESOURCE_PAGE = 50;
+
+/** Every entry is also an MCP resource, so a client can attach it as context. */
+function entryResource(row: EntryRow) {
+  const bits = [row.status, row.language, row.framework].filter(Boolean).join(' · ');
+  return {
+    uri: `kb://entry/${row.slug}`,
+    name: row.title,
+    title: row.title,
+    description: bits,
+    mimeType: 'text/markdown',
+  };
+}
+
+function entryMarkdown(row: EntryRow): string {
+  const tags = tagsOf(row)
+    .map((t) => `#${t}`)
+    .join(' ');
+  return [
+    `# ${row.title}`,
+    '',
+    `Status: **${row.status}**${row.language ? ` · Language: ${row.language}` : ''}${
+      row.framework ? ` · Framework: ${row.framework}` : ''
+    }`,
+    tags ? `Tags: ${tags}` : '',
+    '',
+    '## Problem',
+    '',
+    row.problem_md,
+    '',
+    row.status === 'unsolvable' ? '## Why it cannot be solved' : '## Solution',
+    '',
+    row.solution_md,
+    '',
+    `Source: https://malipetek.dev/kb/${row.slug}`,
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
+}
+
+const MCP_PROMPTS = [
+  {
+    name: 'record_learning',
+    title: 'Record what this session taught you',
+    description:
+      'Turn the session that just finished into a knowledgebase entry: one problem, one resolution, and the status that tells the next agent whether to trust it.',
+    arguments: [
+      { name: 'topic', description: 'What the session was about.', required: true },
+      { name: 'outcome', description: 'What fixed it, or why it cannot be fixed.', required: true },
+    ],
+  },
+];
 
 interface Rpc {  jsonrpc?: string;
   method?: string;
@@ -753,10 +838,14 @@ mcp.post('/', async (c) => {
           const requested = String((request.params?.protocolVersion as string) ?? MCP_PROTOCOL);
           return rpcResult(request.id, {
             protocolVersion: MCP_SUPPORTED.includes(requested) ? requested : MCP_PROTOCOL,
-            capabilities: { tools: { listChanged: false } },
-            serverInfo: { name: 'malipetek-dev', title: 'malipetek.dev', version: '1.0.0' },
+            capabilities: {
+              tools: { listChanged: false },
+              resources: { listChanged: false, subscribe: false },
+              prompts: { listChanged: false },
+            },
+            serverInfo: { name: 'malipetek-dev', title: 'malipetek.dev', version: '1.1.0' },
             instructions:
-              'Public knowledgebase of agentic coding sessions. search_knowledge, get_knowledge and list_knowledge are open; create_knowledge and update_knowledge need an ack_ API key issued by the site owner.',
+              'Public knowledgebase of agentic coding sessions — search_knowledge, get_knowledge and list_knowledge are open, and every entry is also readable as a kb://entry/<slug> resource. create_knowledge and update_knowledge need an ack_ API key issued by the site owner. The platform_* tools drive the GPTflare control plane and need the owner’s session plus a per-conversation sign-in.',
           });
         }
         case 'notifications/initialized':
@@ -766,10 +855,74 @@ mcp.post('/', async (c) => {
           return rpcResult(request.id, {});
         case 'tools/list':
           return rpcResult(request.id, { tools: MCP_TOOLS });
-        case 'resources/list':
-          return rpcResult(request.id, { resources: [] });
+        case 'resources/list': {
+          const cursor = Math.max(0, Number(request.params?.cursor ?? 0) || 0);
+          const [rows, total] = await Promise.all([
+            c.env.KB_DB.prepare(
+              `SELECT * FROM entries ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+            )
+              .bind(RESOURCE_PAGE, cursor)
+              .all<EntryRow>(),
+            c.env.KB_DB.prepare('SELECT COUNT(*) AS n FROM entries').first<{ n: number }>(),
+          ]);
+          const resources = (rows.results ?? []).map(entryResource);
+          const next = cursor + resources.length;
+          return rpcResult(request.id, {
+            resources,
+            ...(next < (total?.n ?? 0) ? { nextCursor: String(next) } : {}),
+          });
+        }
+        case 'resources/templates/list':
+          return rpcResult(request.id, {
+            resourceTemplates: [
+              {
+                uriTemplate: 'kb://entry/{slug}',
+                name: 'Knowledgebase entry',
+                description: 'One entry by slug, as markdown.',
+                mimeType: 'text/markdown',
+              },
+            ],
+          });
+        case 'resources/read': {
+          const uri = String(request.params?.uri ?? '');
+          const match = uri.match(/^kb:\/\/entry\/(.+)$/);
+          if (!match) return rpcError(request.id, -32602, `Unknown resource: ${uri}`);
+          const key = decodeURIComponent(match[1]);
+          const row = await c.env.KB_DB.prepare('SELECT * FROM entries WHERE slug = ? OR id = ?')
+            .bind(key, /^\d+$/.test(key) ? Number(key) : -1)
+            .first<EntryRow>();
+          if (!row) return rpcError(request.id, -32002, `No entry for ${uri}`);
+          return rpcResult(request.id, {
+            contents: [{ uri, mimeType: 'text/markdown', text: entryMarkdown(row) }],
+          });
+        }
         case 'prompts/list':
-          return rpcResult(request.id, { prompts: [] });
+          return rpcResult(request.id, { prompts: MCP_PROMPTS });
+        case 'prompts/get': {
+          const name = String(request.params?.name ?? '');
+          if (name !== 'record_learning') return rpcError(request.id, -32602, `Unknown prompt: ${name}`);
+          const args = (request.params?.arguments as Record<string, string>) ?? {};
+          return rpcResult(request.id, {
+            description: MCP_PROMPTS[0].description,
+            messages: [
+              {
+                role: 'user',
+                content: {
+                  type: 'text',
+                  text:
+                    `Record what we just learned about "${args.topic ?? 'this session'}" in the agentic coding knowledgebase.\n\n` +
+                    `Outcome: ${args.outcome ?? '(describe the fix or the dead end)'}\n\n` +
+                    'Write exactly one entry with create_knowledge: a specific title, the problem as it actually ' +
+                    'appeared (errors verbatim), and the resolution with real commands and code. Set status to ' +
+                    '"solved" when it worked, "workaround" when it ships but the root cause stands, or ' +
+                    '"unsolvable" when the session proved it cannot be fixed and the evidence is the useful part. ' +
+                    'Name the agent in author_agent, and search_knowledge first so an existing entry gets updated ' +
+                    'instead of duplicated.',
+                },
+              },
+            ],
+          });
+        }
         case 'tools/call': {
           const name = String(request.params?.name ?? '');
           const args = (request.params?.arguments as Record<string, unknown>) ?? {};

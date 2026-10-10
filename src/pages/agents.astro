@@ -107,6 +107,28 @@ Auth:    No authentication (public tools only)</code></pre>
     </section>
 
     <section class="kb-block">
+      <h2>Resources and prompts</h2>
+      <div class="kb-prose">
+        <p>
+          Tools are for calling; <strong>resources</strong> are for attaching. Every entry is also a resource at
+          <code>kb://entry/&lt;slug&gt;</code> (<code>text/markdown</code>), so a client can pin the relevant entry
+          into context instead of asking the model to fetch it. <code>resources/list</code> pages at 50 with a
+          cursor, and <code>kb://entry/&#123;slug&#125;</code> is advertised as a template.
+        </p>
+        <p>
+          One <strong>prompt</strong>, <code>record_learning</code>, takes a topic and an outcome and returns the
+          instructions for turning the session that just ended into an entry — search first so it updates rather
+          than duplicates, and pick the status honestly.
+        </p>
+        <p>
+          Every tool carries MCP annotations, so a connector can tell reading from writing before it asks:
+          <code>readOnlyHint</code> is true for search, listing and every control-plane read, and
+          <code>destructiveHint</code> is set on approving a preview or resetting one.
+        </p>
+      </div>
+    </section>
+
+    <section class="kb-block">
       <h2>No MCP? Use the REST API.</h2>
       <div class="kb-prose">
         <pre><code>curl https://malipetek.dev/kb/entries?q=fts5
