@@ -58,7 +58,7 @@ export function kbDb(locals: unknown): D1Database | null {
 }
 
 /** Same sanitising as the Worker: FTS5 syntax errors must not 500 the page. */
-function ftsQuery(raw: string): string | null {
+function ftsQueries(raw: string): { strict: string | null; loose: string | null } {
   const tokens = raw
     .trim()
     .slice(0, 200)
@@ -66,7 +66,12 @@ function ftsQuery(raw: string): string | null {
     .map((t) => t.replace(/["*^:(){}[\]]/g, '').trim())
     .filter((t) => t.length > 1)
     .slice(0, 8);
-  return tokens.length ? tokens.map((t) => `"${t}"*`).join(' AND ') : null;
+  if (!tokens.length) return { strict: null, loose: null };
+  const quoted = tokens.map((t) => `"${t}"*`);
+  return {
+    strict: quoted.join(' AND '),
+    loose: tokens.length > 1 ? quoted.join(' OR ') : null,
+  };
 }
 
 interface Row {
@@ -137,30 +142,39 @@ export async function listKbEntries(
     params.push(`%"${options.tag.slice(0, 40)}"%`);
   }
 
-  const match = options.q ? ftsQuery(options.q) : null;
-  const clause = where.length ? `${match ? 'AND' : 'WHERE'} ${where.join(' AND ')}` : '';
+  const { strict, loose } = options.q ? ftsQueries(options.q) : { strict: null, loose: null };
 
-  if (match) {
-    const [rows, count] = await Promise.all([
-      db
-        .prepare(
-          `SELECT e.${SUMMARY_COLUMNS.replace(/, /g, ', e.')} FROM entries_fts fts
-             JOIN entries e ON fts.rowid = e.id
-            WHERE entries_fts MATCH ? ${clause} ORDER BY rank LIMIT ? OFFSET ?`,
-        )
-        .bind(match, ...params, limit, offset)
-        .all<Row>(),
-      db
-        .prepare(
-          `SELECT COUNT(*) AS n FROM entries_fts fts JOIN entries e ON fts.rowid = e.id
-            WHERE entries_fts MATCH ? ${clause}`,
-        )
-        .bind(match, ...params)
-        .first<{ n: number }>(),
-    ]);
-    return { entries: (rows.results ?? []).map(toSummary), total: count?.n ?? 0 };
+  if (strict) {
+    const runSearch = async (match: string) => {
+      const andClause = where.length ? ` AND ${where.join(' AND ')}` : '';
+      const [rows, count] = await Promise.all([
+        db
+          .prepare(
+            `SELECT e.${SUMMARY_COLUMNS.replace(/, /g, ', e.')} FROM entries_fts fts
+               JOIN entries e ON fts.rowid = e.id
+              WHERE entries_fts MATCH ? ${andClause} ORDER BY rank LIMIT ? OFFSET ?`,
+          )
+          .bind(match, ...params, limit, offset)
+          .all<Row>(),
+        db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM entries_fts fts JOIN entries e ON fts.rowid = e.id
+              WHERE entries_fts MATCH ? ${andClause}`,
+          )
+          .bind(match, ...params)
+          .first<{ n: number }>(),
+      ]);
+      return { entries: (rows.results ?? []).map(toSummary), total: count?.n ?? 0 };
+    };
+
+    // Strict first, then OR-ranked: a question in words should still land on
+    // the entry that answers it.
+    let result = await runSearch(strict);
+    if (!result.entries.length && loose) result = await runSearch(loose);
+    return result;
   }
 
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const [rows, count] = await Promise.all([
     db
       .prepare(

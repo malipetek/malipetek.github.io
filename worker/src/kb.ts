@@ -129,9 +129,16 @@ function slugify(title: string): string {
 /**
  * Turn a human query into safe FTS5 syntax. Raw input like `foo OR bar"` is a
  * syntax error in FTS5, which would 500 a public endpoint, so each token is
- * quoted and prefix-matched, then ANDed.
+ * quoted and prefix-matched.
+ *
+ * Two forms come out of it. `strict` ANDs the tokens — precise, but a
+ * natural-language question ("fts5 search breaking on user input") matches
+ * nothing because one word is absent. `loose` ORs them, and FTS5's bm25 `rank`
+ * already floats the entries that match most terms to the top. Callers try
+ * strict, then fall back to loose, which is the difference between an agent
+ * being told "no entry exists" and finding the one that does.
  */
-function ftsQuery(raw: string): string | null {
+function ftsQueries(raw: string): { strict: string | null; loose: string | null } {
   const tokens = raw
     .trim()
     .slice(0, MAX_SEARCH_CHARS)
@@ -139,8 +146,16 @@ function ftsQuery(raw: string): string | null {
     .map((t) => t.replace(/["*^:(){}[\]]/g, '').trim())
     .filter((t) => t.length > 1)
     .slice(0, 8);
-  if (!tokens.length) return null;
-  return tokens.map((t) => `"${t}"*`).join(' AND ');
+  if (!tokens.length) return { strict: null, loose: null };
+  const quoted = tokens.map((t) => `"${t}"*`);
+  return {
+    strict: quoted.join(' AND '),
+    loose: tokens.length > 1 ? quoted.join(' OR ') : null,
+  };
+}
+
+function ftsQuery(raw: string): string | null {
+  return ftsQueries(raw).strict;
 }
 
 /* ——————————————————————— auth ——————————————————————— */
@@ -214,34 +229,53 @@ kb.get('/entries', async (c) => {
     params.push(`%"${tag.slice(0, MAX_TAG_CHARS)}"%`);
   }
 
-  const match = q ? ftsQuery(q) : null;
-  let sql: string;
-  let countSql: string;
-  let countParams: unknown[];
+  const { strict, loose } = q ? ftsQueries(q) : { strict: null, loose: null };
 
-  if (match) {
-    const clause = where.length ? ` AND ${where.join(' AND ')}` : '';
-    sql = `SELECT e.${LIST_COLUMNS.replace(/, /g, ', e.')}, rank
+  if (strict) {
+    const andClause = where.length ? ` AND ${where.join(' AND ')}` : '';
+    const runSearch = async (match: string) => {
+      const [rows, count] = await Promise.all([
+        c.env.KB_DB.prepare(
+          `SELECT e.${LIST_COLUMNS.replace(/, /g, ', e.')}, rank
              FROM entries_fts fts JOIN entries e ON fts.rowid = e.id
-            WHERE entries_fts MATCH ?${clause}
-            ORDER BY rank LIMIT ? OFFSET ?`;
-    countSql = `SELECT COUNT(*) AS n FROM entries_fts fts JOIN entries e ON fts.rowid = e.id
-                 WHERE entries_fts MATCH ?${clause}`;
-    params.unshift(match);
-    countParams = [...params];
-    params.push(limit, offset);
-  } else {
-    const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
-    sql = `SELECT e.${LIST_COLUMNS.replace(/, /g, ', e.')} FROM entries e ${clause}
-            ORDER BY e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`;
-    countSql = `SELECT COUNT(*) AS n FROM entries e ${clause}`;
-    countParams = [...params];
-    params.push(limit, offset);
+            WHERE entries_fts MATCH ?${andClause}
+            ORDER BY rank LIMIT ? OFFSET ?`,
+        )
+          .bind(match, ...params, limit, offset)
+          .all<EntryRow>(),
+        c.env.KB_DB.prepare(
+          `SELECT COUNT(*) AS n FROM entries_fts fts JOIN entries e ON fts.rowid = e.id
+            WHERE entries_fts MATCH ?${andClause}`,
+        )
+          .bind(match, ...params)
+          .first<{ n: number }>(),
+      ]);
+      return { rows: rows.results ?? [], total: count?.n ?? 0 };
+    };
+
+    let result = await runSearch(strict);
+    // A question phrased in words misses on AND; OR still ranks the best entry
+    // first via bm25, which beats telling the caller nothing exists.
+    if (!result.rows.length && loose) result = await runSearch(loose);
+
+    return kbJson({
+      entries: result.rows.map(listShape),
+      query: q || null,
+      pagination: { page, limit, total: result.total },
+    });
   }
 
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const [rows, count] = await Promise.all([
-    c.env.KB_DB.prepare(sql).bind(...params).all<EntryRow>(),
-    c.env.KB_DB.prepare(countSql).bind(...countParams).first<{ n: number }>(),
+    c.env.KB_DB.prepare(
+      `SELECT ${LIST_COLUMNS} FROM entries e ${clause}
+        ORDER BY e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...params, limit, offset)
+      .all<EntryRow>(),
+    c.env.KB_DB.prepare(`SELECT COUNT(*) AS n FROM entries e ${clause}`)
+      .bind(...params)
+      .first<{ n: number }>(),
   ]);
 
   return kbJson({
@@ -627,7 +661,7 @@ function toolText(value: unknown, isError = false) {
 async function searchEntries(env: Env, args: Record<string, unknown>) {
   const query = typeof args.query === 'string' ? args.query : '';
   const limit = Math.min(50, Math.max(1, Number(args.limit) || 10));
-  const match = ftsQuery(query);
+  const { strict, loose } = ftsQueries(query);
   const where: string[] = [];
   const params: unknown[] = [];
   if (typeof args.status === 'string' && STATUSES.includes(args.status as KbStatus)) {
@@ -644,14 +678,23 @@ async function searchEntries(env: Env, args: Record<string, unknown>) {
   }
   const clause = where.length ? ` AND ${where.join(' AND ')}` : '';
 
-  if (match) {
-    const rows = await env.KB_DB.prepare(
-      `SELECT e.${LIST_COLUMNS.replace(/, /g, ', e.')} FROM entries_fts fts JOIN entries e ON fts.rowid = e.id
-        WHERE entries_fts MATCH ?${clause} ORDER BY rank LIMIT ?`,
-    )
-      .bind(match, ...params, limit)
-      .all<EntryRow>();
-    return (rows.results ?? []).map(listShape);
+  if (strict) {
+    const runSearch = async (match: string) => {
+      const rows = await env.KB_DB.prepare(
+        `SELECT e.${LIST_COLUMNS.replace(/, /g, ', e.')} FROM entries_fts fts JOIN entries e ON fts.rowid = e.id
+          WHERE entries_fts MATCH ?${clause} ORDER BY rank LIMIT ?`,
+      )
+        .bind(match, ...params, limit)
+        .all<EntryRow>();
+      return (rows.results ?? []).map(listShape);
+    };
+
+    const hits = await runSearch(strict);
+    // Same reasoning as the REST endpoint: an agent that phrases a question in
+    // words should still find the entry, so retry with OR before reporting
+    // "no entry exists".
+    if (!hits.length && loose) return runSearch(loose);
+    return hits;
   }
 
   const andClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
