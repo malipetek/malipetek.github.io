@@ -5,6 +5,11 @@ dist/
 .astro/
 .impeccable/
 
+# pnpm writes its content-addressable store here when it runs from this
+# directory. It is a cache, not source: hundreds of megabytes that must never
+# be committed.
+.pnpm-store/
+
 # Worker secrets + local state. The example file stays tracked.
 .dev.vars
 .wrangler/
