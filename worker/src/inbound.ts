@@ -105,6 +105,20 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
   const from = bare(message.from);
   const [local, domain] = to.split('@');
 
+  // Inbound mail is otherwise invisible: a rejected message leaves no trace and
+  // a dropped one looks identical to a delivery that never happened. One line
+  // per message makes "did it arrive, and what did we decide?" answerable.
+  console.log(
+    'inbound_mail',
+    JSON.stringify({
+      to,
+      from,
+      autoReply: isAutoReply(message.headers),
+      bytes: message.rawSize,
+      subject: message.headers.get('subject')?.slice(0, 80) ?? null,
+    }),
+  );
+
   if (domain !== replyDomain(env)) return message.setReject('Unknown recipient.');
   if (message.rawSize > MAX_RAW_BYTES) return message.setReject('Message too large. Use the portal for attachments.');
   if (isAutoReply(message.headers)) return; // accept and drop
