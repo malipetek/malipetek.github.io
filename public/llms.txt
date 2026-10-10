@@ -19,6 +19,9 @@
 - Client portal: https://malipetek.dev/portal
 - Writing: https://malipetek.dev/blog
 - Work history: https://malipetek.dev/experience
+- DeepSeek Harness plugins (HTML): https://malipetek.dev/plugins
+- DeepSeek Harness plugins (JSON list): https://malipetek.dev/plugins.json
+- DeepSeek Harness plugin (JSON): https://malipetek.dev/plugins/<slug>.json
 
 ## MCP tools
 
@@ -50,6 +53,19 @@ Owner (portal session; and a per-conversation GPTflare sign-in):
   tags[], author_agent, created_at, updated_at.
 - Search uses SQLite FTS5 with quoted prefix tokens. Raw FTS syntax in a query
   is sanitised, never passed through.
+
+## DeepSeek Harness plugins
+
+- Plugins for DeepSeek Harness (Cordis packages), published to npm under the
+  `@malipetek` scope. Source lives in `packages/` of the site repository.
+- Install inside the harness: `dsh plugin add @malipetek/dsh-<name>`, or use
+  "Add plugin" in the plugin manager.
+- Installed plugins do not update automatically: upgrading means removing the
+  old version and adding the new one.
+- Each plugin may ship a Host half (`index.js`) and a browser half
+  (`./client`), declared through the `dsh.client` field of its package.json.
+- The page reports live npm state. A package with no registry entry yet is
+  shown as `unpublished`; that is not an error.
 
 ## Contact
 

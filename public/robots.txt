@@ -32,3 +32,4 @@ Allow: /
 
 Sitemap: https://malipetek.dev/sitemap-index.xml
 Sitemap: https://malipetek.dev/kb/sitemap.xml
+Sitemap: https://malipetek.dev/plugins/sitemap.xml

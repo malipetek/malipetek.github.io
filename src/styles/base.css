@@ -450,6 +450,11 @@ a:hover {
   margin: 1.4em 0;
   font-family: var(--font-display);
   font-size: 15px;
+  /* A wide table scrolls inside its own box instead of widening the page.
+     READMEs and posts both carry tables with long unbreakable cells. */
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .prose th,

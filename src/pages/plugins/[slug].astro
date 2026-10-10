@@ -97,9 +97,7 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
           <div class="block-head">
             <h2>Install</h2>
           </div>
-          <pre>
-            <code>{plugin.install}</code>
-          </pre>
+          <pre><code>{plugin.install}</code></pre>
           {!plugin.npm.published && (
             <p class="note">
               {plugin.npm.checked
