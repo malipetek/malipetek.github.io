@@ -45,19 +45,32 @@ function loadConfig() {
   const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
   const token = process.env.RUNNER_TOKEN || raw.token;
   if (!raw.endpoint || !token) throw new Error('Config needs "endpoint" and "token" (or RUNNER_TOKEN env).');
+
+  const expand = (p) => resolve(String(p).replace(/^~(?=\/)/, homedir()));
   const projects = Object.fromEntries(
     Object.entries(raw.projects ?? {}).map(([slug, value]) => {
       const p = typeof value === 'string' ? { path: value } : value;
-      return [slug, { path: resolve(p.path.replace(/^~(?=\/)/, homedir())), baseRef: p.baseRef ?? 'HEAD' }];
+      return [slug, { path: expand(p.path), baseRef: p.baseRef ?? 'HEAD' }];
     }),
   );
-  if (!Object.keys(projects).length) throw new Error('Config has no "projects" mapped.');
+
+  // One folder per project, named after its slug: then adding a project is
+  // "create it in /portal/admin and clone the repo to the right place" rather
+  // than "edit a JSON file on this machine".
+  const projectsRoot = raw.projectsRoot ? expand(raw.projectsRoot) : undefined;
+  if (!Object.keys(projects).length && !projectsRoot) {
+    throw new Error(
+      'Config needs either "projectsRoot" (a folder with one subfolder per project slug) or explicit "projects".',
+    );
+  }
+
   return {
     endpoint: raw.endpoint.replace(/\/+$/, ''),
     token,
     pollSeconds: raw.pollSeconds ?? 30,
-    worktreeRoot: resolve((raw.worktreeRoot ?? '~/.cache/malipetek-runner/worktrees').replace(/^~(?=\/)/, homedir())),
+    worktreeRoot: expand(raw.worktreeRoot ?? '~/.cache/malipetek-runner/worktrees'),
     timeoutMinutes: raw.timeoutMinutes ?? 30,
+    projectsRoot,
     projects,
     claude: {
       bin: raw.claude?.bin ?? 'claude',
@@ -66,6 +79,48 @@ function loadConfig() {
       allowedTools: raw.claude?.allowedTools ?? DEFAULT_TOOLS,
     },
   };
+}
+
+/**
+ * Reconcile the portal's project list with what exists on this machine.
+ *
+ * Explicit `projects` entries always win. Anything else is looked up at
+ * `<projectsRoot>/<slug>`, and anything still unmatched is reported by name so
+ * the gap is visible instead of silent — a ticket for an unmapped project sits
+ * in `approved` forever, which looks like the runner being broken.
+ */
+async function syncProjects(config) {
+  let portal;
+  try {
+    portal = (await apiGet(config, '/runner/projects')).projects ?? [];
+  } catch (error) {
+    log(`could not read the portal's project list (${error.message}) — using the config's mappings only`);
+    return config;
+  }
+
+  const auto = [];
+  const unmatched = [];
+  for (const project of portal) {
+    if (config.projects[project.slug]) continue;
+    const candidate = config.projectsRoot ? join(config.projectsRoot, project.slug) : null;
+    if (candidate && existsSync(candidate)) {
+      config.projects[project.slug] = { path: candidate, baseRef: 'HEAD' };
+      auto.push(project.slug);
+    } else {
+      unmatched.push(project.slug);
+    }
+  }
+
+  if (auto.length) log(`auto-mapped from projectsRoot: ${auto.join(', ')}`);
+  if (unmatched.length) {
+    log(
+      `portal project(s) with no local repo: ${unmatched.join(', ')} — ` +
+        (config.projectsRoot
+          ? `clone them under ${config.projectsRoot}/<slug>, or map them in the config`
+          : 'map them in the config, or set "projectsRoot"'),
+    );
+  }
+  return config;
 }
 
 /* ————— helpers ————— */
@@ -100,6 +155,15 @@ async function git(cwd, ...args) {
   const res = await run('git', args, { cwd });
   if (res.code !== 0) throw new Error(`git ${args.join(' ')} failed: ${res.stderr.trim()}`);
   return res.stdout.trim();
+}
+
+async function apiGet(config, path) {
+  const res = await fetch(`${config.endpoint}${path}`, {
+    headers: { authorization: `Bearer ${config.token}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`${path} → ${res.status} ${data.error ?? ''}`.trim());
+  return data;
 }
 
 async function api(config, path, body) {
@@ -230,8 +294,24 @@ async function tick(config) {
 }
 
 async function main() {
-  const config = loadConfig();
+  const config = await syncProjects(loadConfig());
   const once = process.argv.includes('--once');
+
+  // `--projects` answers "what will this thing actually claim?" without polling.
+  if (process.argv.includes('--projects')) {
+    const mapped = Object.entries(config.projects);
+    log(`${mapped.length} project(s) mapped:`);
+    for (const [slug, p] of mapped) log(`  ${slug} → ${p.path}`);
+    if (!mapped.length) log('  (none — nothing can be claimed)');
+    return;
+  }
+
+  if (!Object.keys(config.projects).length) {
+    log('nothing mapped, so nothing can be claimed — see the notes above.');
+    if (once) process.exitCode = 1;
+    return;
+  }
+
   log(`runner up · ${Object.keys(config.projects).length} project(s) · ${config.endpoint}`);
   for (;;) {
     try {

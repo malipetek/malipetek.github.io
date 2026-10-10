@@ -51,8 +51,29 @@ and only made the legitimate edit.
 | ---------------- | --------------------------------------------------------------- |
 | `endpoint`       | The intercom Worker URL.                                        |
 | `token`          | Same value as the Worker secret `RUNNER_TOKEN` (or env var).    |
-| `projects`       | `slug → path` or `slug → { path, baseRef }`. Slugs match `/portal/admin`. |
+| `projectsRoot`   | A folder holding one subfolder per project slug. Every project in `/portal/admin` whose repo sits at `<projectsRoot>/<slug>` is mapped automatically. |
+| `projects`       | Optional overrides: `slug → path` or `slug → { path, baseRef }`. Explicit entries beat `projectsRoot`. |
 | `worktreeRoot`   | Where worktrees go. Default `~/.cache/malipetek-runner/worktrees`. |
 | `pollSeconds`    | Idle poll interval. Default 30.                                 |
 | `timeoutMinutes` | Kill `claude` after this long. Default 30.                      |
 | `claude.*`       | `bin`, `model`, `maxBudgetUsd` (default 5), `allowedTools`.     |
+
+At startup the runner asks the Worker for the portal's project list and
+reconciles it with this machine:
+
+- a slug with a folder at `<projectsRoot>/<slug>` is claimed automatically;
+- a portal project with no local repo is named in the log, because otherwise its
+  tickets sit in `approved` forever and the runner looks broken;
+- `--projects` prints the mapping and exits, without polling.
+
+So onboarding a project is: create it in `/portal/admin`, clone the repo to
+`<projectsRoot>/<slug>`, restart the runner. No file to edit.
+
+## Onboarding a client
+
+Nothing to do on this machine. A client signs in at `/portal` with a magic link,
+opens a ticket, and you assign it a project and approve it — the runner picks it
+up from there. Repo paths deliberately never leave this machine, so the Worker
+has no idea where your folders are; that is the one thing the portal cannot
+configure for you.
+

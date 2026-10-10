@@ -46,6 +46,19 @@ runner.use('/runner/*', async (c, next) => {
   return next();
 });
 
+/**
+ * The portal's project slugs. The runner calls this so it can say which portal
+ * projects it has no local folder for — the one piece of project setup that
+ * cannot live in the Worker, because repo paths are deliberately never stored
+ * there.
+ */
+runner.get('/runner/projects', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, slug, name FROM projects ORDER BY slug`,
+  ).all<{ id: string; slug: string; name: string }>();
+  return c.json({ projects: results ?? [] });
+});
+
 runner.post('/runner/claim', async (c) => {
   const env = c.env;
   const body = (await c.req.json().catch(() => null)) as { slugs?: unknown } | null;
