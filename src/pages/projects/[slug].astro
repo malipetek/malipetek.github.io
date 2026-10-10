@@ -24,6 +24,13 @@ const KIND = {
   tool: "Tool",
   experiment: "Experiment",
 };
+const KIND_COLOR = {
+  "shopify-app": "#95bf47",
+  "mobile-app": "#2f6fb5",
+  game: "var(--orange)",
+  tool: "var(--ink)",
+  experiment: "#5b574f",
+};
 const STATUS = {
   live: "Live",
   beta: "Beta",
@@ -70,7 +77,11 @@ const STATUS = {
           alt={`${project.data.title} cover`}
         />
       ) : (
-        <div class="project-cover project-cover--empty" aria-hidden="true">
+        <div
+          class="project-cover project-cover--empty"
+          style={`--kind:${KIND_COLOR[project.data.kind]}`}
+          aria-hidden="true"
+        >
           <span>
             {project.data.title
               .replace(/^\[placeholder\]\s*/i, "")
@@ -125,19 +136,26 @@ const STATUS = {
     margin-bottom: clamp(1.5rem, 4vw, 2.5rem);
   }
 
+  /* No cover yet: the shelf box's face, scaled up — kind band on top, the
+     initial on bone. Shorter than a real cover so it doesn't pose as one. */
   .project-cover--empty {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--orange);
+    aspect-ratio: auto;
+    height: clamp(160px, 26vw, 280px);
+    background: linear-gradient(
+      var(--kind) 0 14px,
+      var(--ink) 14px 16px,
+      var(--bone) 16px
+    );
   }
 
   .project-cover--empty span {
     font-family: var(--font-display);
     font-weight: 800;
-    font-size: clamp(64px, 14vw, 160px);
+    font-size: clamp(72px, 12vw, 150px);
     line-height: 1;
-    color: var(--ink);
-    opacity: 0.85;
+    color: var(--kind);
   }
 </style>

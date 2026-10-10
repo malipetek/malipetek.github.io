@@ -487,11 +487,23 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
     );
   };
 
+  // Lens shift, not a camera move: wide screens slide the diorama right so
+  // the left-aligned DOM text reads on clear floor; tall screens lift it into
+  // the empty band under the header. Perspective stays identical.
+  const frame = (w: number, h: number) => {
+    const aspect = w / h;
+    const dx = aspect >= 1.25 ? -w * THREE.MathUtils.clamp((aspect - 1.25) * 0.6, 0, 0.22) : 0;
+    const dy = aspect < 0.9 ? h * 0.12 : 0;
+    if (dx || dy) camera.setViewOffset(w, h, dx, dy, w, h);
+    else camera.clearViewOffset();
+  };
+
   const resize = () => {
     const w = window.innerWidth;
     const h = window.innerHeight;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
+    frame(w, h);
     camera.updateProjectionMatrix();
     computeZoom();
     if (reduced) {
