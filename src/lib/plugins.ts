@@ -301,6 +301,9 @@ export function fmtCount(n: number | undefined): string | null {
 function slugifyHeading(text: string): string {
   return text
     .replace(/<[^>]+>/g, '')
+    // marked escapes quotes and dashes in inline text; they must not survive
+    // into an id ("metadata &quot;smarter&quot" -> "metadata-smarter").
+    .replace(/&[a-z]+;|&#\d+;/gi, '')
     .toLowerCase()
     .replace(/[^\w\s-]/g, '')
     .trim()
