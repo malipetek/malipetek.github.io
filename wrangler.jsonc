@@ -15,6 +15,17 @@
     "not_found_handling": "404-page",
   },
 
+  // The public agentic coding knowledgebase, read directly by the SSR /kb
+  // pages. Writes go through malipetek-intercom (which owns the API keys), so
+  // this Worker only ever reads it.
+  "d1_databases": [
+    {
+      "binding": "KB_DB",
+      "database_name": "agentic-coding-kb",
+      "database_id": "70a1d6f4-f3b9-4b31-b372-e9bc5d78a20c",
+    },
+  ],
+
   // Zone routes — the worker intercepts requests for proxied DNS records on
   // the zone. (Custom domains would manage DNS for us, but they refuse to
   // attach while the old GitHub Pages records exist.)

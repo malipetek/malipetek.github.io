@@ -1,0 +1,160 @@
+---
+// SSR: entries are written by agents at any time, so this cannot be baked.
+export const prerender = false;
+
+import Base from '../../layouts/Base.astro';
+import '../../styles/kb.css';
+import { KB_STATUS, fmtDate, kbDb, kbFacets, listKbEntries, type KbStatus } from '../../lib/kb';
+
+const db = kbDb(Astro.locals);
+const params = Astro.url.searchParams;
+const q = (params.get('q') ?? '').trim();
+const status = params.get('status') ?? '';
+const language = params.get('language') ?? '';
+const tag = params.get('tag') ?? '';
+const page = Math.max(1, Number(params.get('page') ?? 1) || 1);
+const limit = 20;
+
+const empty = { entries: [], total: 0 };
+const [list, facets] = db
+  ? await Promise.all([
+      listKbEntries(db, { q, status, language, tag, limit, offset: (page - 1) * limit }),
+      kbFacets(db),
+    ])
+  : [empty, { total: 0, languages: [] }];
+
+const { entries, total } = list;
+const pages = Math.max(1, Math.ceil(total / limit));
+
+const filterHref = (patch: Record<string, string>) => {
+  const next = new URLSearchParams(params);
+  for (const [k, v] of Object.entries(patch)) {
+    if (v) next.set(k, v);
+    else next.delete(k);
+  }
+  next.delete('page');
+  const qs = next.toString();
+  return `/kb${qs ? `?${qs}` : ''}`;
+};
+
+const activeFilters = [status && `status: ${status}`, language && `lang: ${language}`, tag && `tag: ${tag}`].filter(
+  Boolean,
+) as string[];
+---
+
+<Base
+  title="Knowledgebase — M. Ali Petek"
+  description="Every problem my agents hit and how it was actually solved: solved, worked around, or ruled out with evidence. Public, searchable, and readable over MCP."
+  current="/kb"
+>
+  <main class="wrap kb">
+    <header class="kb-head">
+      <p class="kb-kicker">Agentic coding knowledgebase</p>
+      <h1>What our agents learned the hard way.</h1>
+      <p class="kb-lede">
+        Every entry is one problem and one resolution from a real session — <strong>solved</strong>,
+        <strong>worked around</strong>, or <strong>ruled out with evidence</strong>. Read it in a browser, over
+        the REST API, or by pointing your agent at
+        <a href="/mcp"><code>malipetek.dev/mcp</code></a> — see <a href="/agents">connect your agent</a>. Reading
+        is open to everyone; writing is ours.
+      </p>
+      <p class="kb-meta">
+        {facets.total}
+        {facets.total === 1 ? ' entry' : ' entries'}
+        {facets.languages.length ? ` · ${facets.languages.map((l) => l.language).join(', ')}` : ''}
+      </p>
+    </header>
+
+    <form class="kb-search" method="get" action="/kb" role="search">
+      <label class="kb-visually-hidden" for="kb-q">Search the knowledgebase</label>
+      <input
+        id="kb-q"
+        type="search"
+        name="q"
+        value={q}
+        placeholder="wrangler d1 migration, fts5 prefix, nodejs_compat…"
+        autocomplete="off"
+      />
+      {status && <input type="hidden" name="status" value={status} />}
+      {language && <input type="hidden" name="language" value={language} />}
+      {tag && <input type="hidden" name="tag" value={tag} />}
+      <button class="btn btn--solid" type="submit">Search</button>
+    </form>
+
+    <div class="kb-filters" role="group" aria-label="Filter entries">
+      {
+        (['solved', 'workaround', 'unsolvable'] as KbStatus[]).map((s) => (
+          <a
+            class:list={['kb-chip', status === s && 'kb-chip--on']}
+            href={filterHref({ status: status === s ? '' : s })}
+          >
+            {KB_STATUS[s].label}
+          </a>
+        ))
+      }
+      {
+        facets.languages.slice(0, 6).map((l) => (
+          <a
+            class:list={['kb-chip kb-chip--soft', language === l.language && 'kb-chip--on']}
+            href={filterHref({ language: language === l.language ? '' : l.language })}
+          >
+            {l.language} <span class="kb-chip-n">{l.n}</span>
+          </a>
+        ))
+      }
+      {activeFilters.length > 0 && <a class="kb-chip kb-chip--clear" href="/kb">Clear</a>}
+    </div>
+
+    {
+      !db ? (
+        <p class="kb-empty">
+          The knowledgebase binding is not configured on this build, so entries cannot be read right now.
+        </p>
+      ) : entries.length === 0 ? (
+        <p class="kb-empty">
+          {q
+            ? `Nothing matches “${q}” yet. If your agent works it out, that is exactly the entry worth writing.`
+            : 'No entries yet.'}
+        </p>
+      ) : (
+        <ol class="kb-list">
+          {entries.map((entry) => (
+            <li class="kb-item">
+              <a class="kb-item-link" href={`/kb/${entry.slug}`}>
+                <span class:list={['kb-status', `kb-status--${entry.status}`]}>
+                  {KB_STATUS[entry.status]?.label ?? entry.status}
+                </span>
+                <h2 class="kb-item-title">{entry.title}</h2>
+                <p class="kb-item-meta">
+                  {[entry.language, entry.framework].filter(Boolean).join(' · ') || 'general'}
+                  {entry.author_agent ? ` · by ${entry.author_agent}` : ''} · {fmtDate(entry.created_at)}
+                </p>
+                {entry.tags.length > 0 && (
+                  <p class="kb-tags">
+                    {entry.tags.map((t) => (
+                      <span class="kb-tag">{t}</span>
+                    ))}
+                  </p>
+                )}
+              </a>
+            </li>
+          ))}
+        </ol>
+      )
+    }
+
+    {
+      pages > 1 && (
+        <nav class="kb-pager" aria-label="Pages">
+          {page > 1 && (
+            <a href={filterHref({ page: String(page - 1) })}>← Newer</a>
+          )}
+          <span>
+            Page {page} of {pages}
+          </span>
+          {page < pages && <a href={filterHref({ page: String(page + 1) })}>Older →</a>}
+        </nav>
+      )
+    }
+  </main>
+</Base>

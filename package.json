@@ -17,6 +17,7 @@
     "@keystatic/astro": "5.2.0",
     "@keystatic/core": "0.6.9",
     "astro": "^5.13.0",
+    "marked": "^18.1.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "three": "0.186.0"

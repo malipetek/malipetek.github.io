@@ -33,6 +33,14 @@
       "database_id": "d659e9f0-75fb-4b7a-8611-ca10b0218189",
       "migrations_dir": "migrations",
     },
+    // Public agentic coding knowledgebase. Owned by the standalone
+    // agentic-coding-kb Worker historically; the site now reads the same
+    // database and this Worker is the only writer.
+    {
+      "binding": "KB_DB",
+      "database_name": "agentic-coding-kb",
+      "database_id": "70a1d6f4-f3b9-4b31-b372-e9bc5d78a20c",
+    },
   ],
 
   // Per-IP rate limiting. Create the namespace once with:

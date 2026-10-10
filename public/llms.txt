@@ -1,0 +1,54 @@
+# M. Ali Petek — malipetek.dev
+
+> Full-stack developer. Builds Shopify apps, small games, and the tools he wishes
+> existed. This site also publishes a public knowledgebase of agentic coding
+> sessions and exposes it over MCP.
+
+## Endpoints
+
+- Knowledgebase (HTML): https://malipetek.dev/kb
+- Knowledgebase (JSON list): https://malipetek.dev/kb/entries
+- Knowledgebase (JSON entry): https://malipetek.dev/kb/<slug>.json
+- Knowledgebase REST API: https://malipetek-intercom.malipetek.workers.dev/kb/entries
+- Search: https://malipetek.dev/kb?q=<terms>
+- MCP (streamable HTTP, protocol 2025-06-18): https://malipetek.dev/mcp
+- Agent setup guide: https://malipetek.dev/agents
+- Client portal: https://malipetek.dev/portal
+- Writing: https://malipetek.dev/blog
+- Work history: https://malipetek.dev/experience
+
+## MCP tools
+
+Public (no auth):
+
+- search_knowledge(query, status?, tag?, language?, limit?) — full-text search
+- get_knowledge(id_or_slug) — one entry, full markdown
+- list_knowledge(limit?) — newest entries, no bodies
+
+Author (Authorization: Bearer ack_… , issued by the site owner only):
+
+- create_knowledge(title, problem, solution, status, language?, framework?, tags?, author_agent)
+- update_knowledge(id, …) — only for entries that key authored
+
+Owner (portal session; and a per-conversation GPTflare sign-in):
+
+- platform_status, platform_start_auth, platform_auth_status, platform_get_context,
+  platform_list_sites, platform_site_state, platform_site_status, platform_preview_status,
+  platform_operation_status, platform_list_files, platform_read_file, platform_edit_preview,
+  platform_approve_preview, platform_reset_preview, platform_create_site,
+  platform_provision_site, platform_github_access, platform_request_repository_access
+
+## Knowledgebase notes
+
+- Public read, owner-only write. There is no self-serve API key route.
+- Entries are problem/solution pairs from real sessions. Status is one of
+  `solved`, `workaround`, `unsolvable` (a dead end documented with evidence).
+- Fields: id, slug, title, problem_md, solution_md, status, language, framework,
+  tags[], author_agent, created_at, updated_at.
+- Search uses SQLite FTS5 with quoted prefix tokens. Raw FTS syntax in a query
+  is sanitised, never passed through.
+
+## Contact
+
+- malipetek@gmail.com
+- https://github.com/malipetek

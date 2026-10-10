@@ -25,6 +25,7 @@ import { Hono } from 'hono';
 import { Intercom } from './agents/intercom.ts';
 import { portal } from './portal.ts';
 import { runner } from './runner.ts';
+import { kb, mcp } from './kb.ts';
 import {
   ALLOWED_ORIGINS,
   clientIp,
@@ -116,6 +117,9 @@ app.route('/agents/intercom', createAgentRouter(Intercom) as unknown as Hono<Hon
 app.route('/', portal);
 // Local runner API (token-auth, machine-to-machine). See src/runner.ts.
 app.route('/', runner);
+// Public knowledgebase: REST reads plus the MCP server. See src/kb.ts.
+app.route('/kb', kb);
+app.route('/mcp', mcp);
 
 app.get('/health', (c) => json({ ok: true }, 200, c.req.header('Origin') ?? null));
 

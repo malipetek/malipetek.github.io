@@ -1,0 +1,124 @@
+---
+// Static: the tool list is our own contract, not live data.
+export const prerender = true;
+
+import Base from '../layouts/Base.astro';
+import '../styles/kb.css';
+
+const ENDPOINT = String(import.meta.env.PUBLIC_CHAT_ENDPOINT || '').replace(/\/+$/, '');
+
+const KB_TOOLS = [
+  { name: 'search_knowledge', auth: 'public', text: 'Full-text search over every entry. Prefix matching, so `migra` finds `migration`.' },
+  { name: 'get_knowledge', auth: 'public', text: 'One entry in full — problem and solution markdown — by id or slug.' },
+  { name: 'list_knowledge', auth: 'public', text: 'Newest entries first, without bodies.' },
+  { name: 'create_knowledge', auth: 'ack_ key', text: 'Record a problem/solution pair from a session.' },
+  { name: 'update_knowledge', auth: 'ack_ key', text: 'Patch an entry this key authored.' },
+];
+
+const PLATFORM_TOOLS = [
+  { name: 'platform_status', auth: 'owner', text: 'Control-plane reachability and platform-key health.' },
+  { name: 'platform_start_auth', auth: 'owner', text: 'Email the owner a magic link; returns the authRequestId every later call needs.' },
+  { name: 'platform_auth_status', auth: 'owner', text: 'Poll the sign-in until it is verified.' },
+  { name: 'platform_list_sites', auth: 'owner', text: 'Every site with status, urls and worker names.' },
+  { name: 'platform_site_state / _status / _preview_status', auth: 'owner', text: 'Git state, deploy status, preview build status.' },
+  { name: 'platform_list_files / platform_read_file', auth: 'owner', text: 'Inspect a site repo before editing it.' },
+  { name: 'platform_edit_preview', auth: 'owner', text: 'Write files to the preview branch — preview-first, never straight to production.' },
+  { name: 'platform_approve_preview', auth: 'owner', text: 'Promote a reviewed preview. The human-approval gate.' },
+  { name: 'platform_create_site / platform_provision_site', auth: 'owner', text: 'Draft a site from a brief, then turn it into a repo and a build project.' },
+  { name: 'platform_operation_status', auth: 'owner', text: 'Poll long-running operations with their user-safe envelope.' },
+];
+---
+
+<Base
+  title="Connect your agent — M. Ali Petek"
+  description="One MCP endpoint for this site: a public agentic coding knowledgebase plus the GPTflare control plane. Works with ChatGPT apps, Claude, and any MCP client."
+  current="/agents"
+>
+  <main class="wrap kb">
+    <header class="kb-head">
+      <p class="kb-kicker">Model Context Protocol</p>
+      <h1>Point an agent at this site.</h1>
+      <p class="kb-lede">
+        Everything here is reachable over one endpoint:
+        <a href="/mcp"><code>https://malipetek.dev/mcp</code></a> — streamable HTTP, protocol
+        <code>2025-06-18</code>. The knowledgebase tools are open to anyone. The control-plane tools
+        belong to the owner and are gated twice (our admin session, then the platform's own sign-in).
+      </p>
+    </header>
+
+    <section class="kb-block">
+      <h2>Add it as a ChatGPT app</h2>
+      <div class="kb-prose">
+        <p>
+          ChatGPT now builds apps on MCP connectors rather than Custom GPT Actions. In ChatGPT:
+          <strong>Settings → Connectors → Advanced → Developer mode</strong>, then add a connector with:
+        </p>
+        <pre><code>Name:    malipetek.dev
+URL:     https://malipetek.dev/mcp
+Auth:    No authentication (public tools only)</code></pre>
+        <p>
+          For the owner-only tools, use <code>Authorization: Bearer &lt;portal-session&gt;</code> — the same
+          token the <a href="/portal">client portal</a> keeps in <code>localStorage</code> after sign-in.
+        </p>
+        <p>Claude, Cursor, and other MCP clients take the same URL; the transport is standard.</p>
+      </div>
+    </section>
+
+    <section class="kb-block">
+      <h2>Knowledgebase tools</h2>
+      <ul class="kb-tool-list">
+        {KB_TOOLS.map((tool) => (
+          <li>
+            <code>{tool.name}</code>
+            <span class="kb-tool-auth">{tool.auth}</span>
+            <span class="kb-tool-text">{tool.text}</span>
+          </li>
+        ))}
+      </ul>
+      <p class="kb-entry-foot">
+        Mint an <code>ack_</code> key at <a href="/kb/new"><code>/kb/new</code></a> (owner only) and pass it as
+        <code>Authorization: Bearer ack_…</code>. Keys are stored hashed and can be revoked there.
+      </p>
+    </section>
+
+    <section class="kb-block">
+      <h2>GPTflare control-plane tools</h2>
+      <div class="kb-prose">
+        <p>
+          The <strong>GPTflare</strong> control plane creates and edits Astro + Keystatic sites: draft →
+          provision → preview → approve → production. Those operations used to be reachable only from a
+          Custom GPT through its Actions schema; they are now MCP tools, with the platform key held as a
+          Worker secret instead of living in a GPT configuration.
+        </p>
+      </div>
+      <ul class="kb-tool-list">
+        {PLATFORM_TOOLS.map((tool) => (
+          <li>
+            <code>{tool.name}</code>
+            <span class="kb-tool-auth">{tool.auth}</span>
+            <span class="kb-tool-text">{tool.text}</span>
+          </li>
+        ))}
+      </ul>
+      <p class="kb-entry-foot">
+        Control-plane calls need a per-conversation sign-in: run <code>platform_start_auth</code>, have the
+        owner open the emailed link, then pass the returned <code>authRequestId</code> to every later call.
+      </p>
+    </section>
+
+    <section class="kb-block">
+      <h2>No MCP? Use the REST API.</h2>
+      <div class="kb-prose">
+        <pre><code>curl https://malipetek.dev/kb/entries?q=fts5
+curl https://malipetek.dev/kb/&lt;slug&gt;.json
+curl -X POST {ENDPOINT}/kb/entries -H "authorization: Bearer ack_…" \
+  -H 'content-type: application/json' \
+  -d '&#123;"title":"…","problem":"…","solution":"…","status":"solved","author_agent":"…"&#125;'</code></pre>
+        <p>
+          <a href="/kb"><code>/kb</code></a> is the same data in a browser. <code>/llms.txt</code> is the
+          machine-readable summary of the whole site.
+        </p>
+      </div>
+    </section>
+  </main>
+</Base>

@@ -1,0 +1,244 @@
+---
+// Static shell; the Worker checks the admin role on every /kb write.
+export const prerender = true;
+
+import Base from '../../layouts/Base.astro';
+import '../../styles/portal.css';
+import '../../styles/kb.css';
+---
+
+<Base title="Knowledgebase admin — malipetek" description="Write knowledgebase entries." current="/kb">
+  <div class="portal">
+    <div class="portal-bar">
+      <h1>Knowledgebase</h1>
+      <div class="portal-who">
+        <a href="/kb">Public view</a>
+        <a href="/portal/admin">Portal admin</a>
+      </div>
+    </div>
+
+    <p class="portal-note" data-loading>Loading…</p>
+    <p class="portal-note" data-denied hidden>
+      This page is for the site owner. <a href="/portal">Sign in</a>.
+    </p>
+
+    <div data-app hidden>
+      <div class="admin-tabs" role="group" aria-label="Section">
+        <button type="button" data-tab="write" aria-pressed="true">New entry</button>
+        <button type="button" data-tab="keys" aria-pressed="false">Agent keys</button>
+      </div>
+
+      <section data-view="write">
+        <form class="portal-form" data-entry-form>
+          <div class="portal-field">
+            <label class="portal-label" for="kb-title">Title</label>
+            <input id="kb-title" name="title" required maxlength="200" placeholder="Wrangler D1 migrations silently no-op on a bound database" />
+          </div>
+
+          <div class="kb-form-row">
+            <div class="portal-field">
+              <label class="portal-label" for="kb-status">Status</label>
+              <select id="kb-status" name="status">
+                <option value="solved">Solved</option>
+                <option value="workaround">Workaround</option>
+                <option value="unsolvable">Dead end (ruled out)</option>
+              </select>
+            </div>
+            <div class="portal-field">
+              <label class="portal-label" for="kb-language">Language</label>
+              <input id="kb-language" name="language" maxlength="40" placeholder="typescript" />
+            </div>
+            <div class="portal-field">
+              <label class="portal-label" for="kb-framework">Framework</label>
+              <input id="kb-framework" name="framework" maxlength="40" placeholder="astro" />
+            </div>
+          </div>
+
+          <div class="portal-field">
+            <label class="portal-label" for="kb-tags">Tags (comma separated)</label>
+            <input id="kb-tags" name="tags" maxlength="200" placeholder="cloudflare, d1, migrations" />
+          </div>
+
+          <div class="portal-field">
+            <label class="portal-label" for="kb-problem">Problem (markdown)</label>
+            <textarea id="kb-problem" name="problem" rows="8" required placeholder="What broke, what the error said, what was tried first."></textarea>
+          </div>
+
+          <div class="portal-field">
+            <label class="portal-label" for="kb-solution">Solution (markdown)</label>
+            <textarea id="kb-solution" name="solution" rows="10" required placeholder="The change that fixed it. Commands, code, and why it works."></textarea>
+          </div>
+
+          <div class="portal-field">
+            <label class="portal-label" for="kb-agent">Author agent</label>
+            <input id="kb-agent" name="author_agent" required maxlength="80" value="ali" />
+          </div>
+
+          <div class="portal-actions">
+            <button class="btn btn--solid" type="submit">Publish entry →</button>
+          </div>
+          <p class="portal-note" data-entry-note role="status" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section data-view="keys" hidden>
+        <p class="portal-note">
+          Keys let an agent write entries on our behalf. A key is shown once, stored only as a SHA-256 hash,
+          and can be revoked here. Nobody else can mint one.
+        </p>
+
+        <form class="portal-form" data-key-form>
+          <div class="portal-field">
+            <label class="portal-label" for="kb-key-name">Agent name</label>
+            <input id="kb-key-name" name="agent_name" required maxlength="80" placeholder="claude-code" />
+          </div>
+          <div class="portal-actions">
+            <button class="btn btn--solid" type="submit">Create key</button>
+          </div>
+        </form>
+
+        <p class="portal-note" data-new-key hidden></p>
+        <ul class="ticket-list" data-key-list></ul>
+        <p class="portal-note" data-key-note role="status" aria-live="polite"></p>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    import { api, session, errorText, fmtTime } from '../../lib/portal';
+
+    const loading = document.querySelector<HTMLElement>('[data-loading]')!;
+    const denied = document.querySelector<HTMLElement>('[data-denied]')!;
+    const app = document.querySelector<HTMLElement>('[data-app]')!;
+
+    const entryForm = document.querySelector<HTMLFormElement>('[data-entry-form]')!;
+    const entryNote = document.querySelector<HTMLElement>('[data-entry-note]')!;
+    const keyForm = document.querySelector<HTMLFormElement>('[data-key-form]')!;
+    const keyList = document.querySelector<HTMLElement>('[data-key-list]')!;
+    const keyNote = document.querySelector<HTMLElement>('[data-key-note]')!;
+    const newKey = document.querySelector<HTMLElement>('[data-new-key]')!;
+
+    const say = (el: HTMLElement, text: string, bad = false) => {
+      el.textContent = text;
+      el.classList.toggle('portal-note--bad', bad);
+      el.hidden = !text;
+    };
+
+    async function loadKeys() {
+      const { keys } = await api<{ keys: any[] }>('/kb/keys');
+      keyList.replaceChildren(
+        ...keys.map((k) => {
+          const li = document.createElement('li');
+          const title = document.createElement('p');
+          title.innerHTML = '';
+          const strong = document.createElement('strong');
+          strong.textContent = k.agent_name;
+          title.append(strong, ` — ${k.entries} entr${k.entries === 1 ? 'y' : 'ies'}`);
+          const meta = document.createElement('p');
+          meta.className = 'portal-note';
+          meta.textContent = `created ${fmtTime(Date.parse(k.created_at.replace(' ', 'T') + 'Z') / 1000)}${
+            k.last_used_at ? ` · last used ${fmtTime(Date.parse(k.last_used_at.replace(' ', 'T') + 'Z') / 1000)}` : ' · never used'
+          }`;
+          li.append(title, meta);
+          if (!k.revoked) {
+            const btn = document.createElement('button');
+            btn.className = 'btn';
+            btn.type = 'button';
+            btn.textContent = 'Revoke';
+            btn.addEventListener('click', async () => {
+              btn.disabled = true;
+              try {
+                await api(`/kb/keys/${k.id}`, { method: 'DELETE' });
+                await loadKeys();
+              } catch (error) {
+                say(keyNote, errorText(error), true);
+                btn.disabled = false;
+              }
+            });
+            li.append(btn);
+          }
+          return li;
+        }),
+      );
+    }
+
+    entryForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const data = new FormData(entryForm);
+      const button = entryForm.querySelector('button')!;
+      button.disabled = true;
+      say(entryNote, 'Publishing…');
+      try {
+        const created = await api<{ slug: string }>('/kb/entries', {
+          body: {
+            title: data.get('title'),
+            problem: data.get('problem'),
+            solution: data.get('solution'),
+            status: data.get('status'),
+            language: data.get('language'),
+            framework: data.get('framework'),
+            tags: String(data.get('tags') ?? '')
+              .split(',')
+              .map((t) => t.trim())
+              .filter(Boolean),
+            author_agent: data.get('author_agent'),
+          },
+        });
+        entryForm.reset();
+        say(entryNote, `Published. `);
+        const link = document.createElement('a');
+        link.href = `/kb/${created.slug}`;
+        link.textContent = 'View it →';
+        entryNote.append(link);
+      } catch (error) {
+        say(entryNote, errorText(error), true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    keyForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const data = new FormData(keyForm);
+      try {
+        const created = await api<{ key: string }>('/kb/keys', { body: { agent_name: data.get('agent_name') } });
+        newKey.hidden = false;
+        newKey.textContent = '';
+        const code = document.createElement('code');
+        code.textContent = created.key;
+        newKey.append('Copy this now — it is not shown again: ', code);
+        keyForm.reset();
+        await loadKeys();
+      } catch (error) {
+        say(keyNote, errorText(error), true);
+      }
+    });
+
+    const tabs = [...document.querySelectorAll<HTMLButtonElement>('[data-tab]')];
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach((t) => t.setAttribute('aria-pressed', String(t === tab)));
+        document.querySelectorAll<HTMLElement>('[data-view]').forEach((view) => {
+          view.hidden = view.dataset.view !== tab.dataset.tab;
+        });
+      });
+    });
+
+    (async () => {
+      if (!session.get()) return location.replace('/portal');
+      try {
+        const me = await api<{ user: { role: string } }>('/portal/me');
+        if (me.user.role !== 'admin') {
+          loading.hidden = true;
+          denied.hidden = false;
+          return;
+        }
+        loading.hidden = true;
+        app.hidden = false;
+        await loadKeys();
+      } catch {
+        location.replace('/portal');
+      }
+    })();
+  </script>
+</Base>

@@ -2,9 +2,11 @@
 import Base from "../layouts/Base.astro";
 import Intercom from "../components/Intercom.astro";
 import WorkshopScene from "../components/WorkshopScene.astro";
+import "../styles/kb.css";
 import { getCollection } from "astro:content";
 import { getPosts, fmtDate, readMinutes } from "../lib/posts.js";
 import { JOBS } from "../lib/experience.js";
+import { kbDb, listKbEntries, kbFacets, type KbSummary } from "../lib/kb";
 
 const projects = (await getCollection("projects")).sort(
   (a, b) =>
@@ -24,6 +26,26 @@ const availability = site?.availability ?? "limited";
 
 const posts = await getPosts();
 const latest = posts.slice(0, 5);
+
+// The knowledgebase is written by agents between deploys, so it is read at
+// request time rather than baked into the build. A KB problem must never take
+// the front page down with it.
+const kb = kbDb(Astro.locals);
+let kbRecent: KbSummary[] = [];
+let kbTotal = 0;
+if (kb) {
+  try {
+    const [list, facets] = await Promise.all([
+      listKbEntries(kb, { limit: 4 }),
+      kbFacets(kb),
+    ]);
+    kbRecent = list.entries;
+    kbTotal = facets.total;
+  } catch {
+    kbRecent = [];
+    kbTotal = 0;
+  }
+}
 
 // Shelf vocabulary. The kind band is the only color signal on a box.
 const KIND = {
@@ -231,6 +253,42 @@ const initial = (title) =>
       </p>
       <p class="tl-readout-tags"></p>
     </div>
+    </div>
+  </section>
+
+  <section class="room room--panel" id="knowledge">
+    <div class="plate">
+    <div class="block-head">
+      <h2><span class="room-no" aria-hidden="true">04</span>Agent knowledgebase</h2>
+      <a href="/kb">All {kbTotal} entries →</a>
+    </div>
+
+    {
+      kbRecent.length > 0 ? (
+        <ul class="kb-home">
+          {kbRecent.map((entry) => (
+            <li>
+              <a href={`/kb/${entry.slug}`}>
+                <span class={`kb-home-status kb-home-status--${entry.status}`}>
+                  {entry.status === "unsolvable" ? "dead end" : entry.status}
+                </span>
+                <span class="kb-home-title">{entry.title}</span>
+                <span class="kb-home-meta">
+                  {[entry.language, entry.framework].filter(Boolean).join(" · ") || "general"}
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="block-note">Nothing published yet.</p>
+      )
+    }
+
+    <p class="kb-home-foot">
+      Every problem my agents hit, and what actually fixed it — public, searchable, and
+      mountable by your own agent at <code>malipetek.dev/mcp</code>.
+    </p>
     </div>
   </section>
 

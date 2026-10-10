@@ -1,0 +1,70 @@
+---
+// SSR: an entry can be patched by an agent after we deploy.
+export const prerender = false;
+
+import Base from '../../layouts/Base.astro';
+import '../../styles/kb.css';
+import { KB_STATUS, fmtDate, getKbEntry, kbDb, renderMarkdown } from '../../lib/kb';
+
+const slug = Astro.params.slug ?? '';
+const db = kbDb(Astro.locals);
+const entry = db ? await getKbEntry(db, slug) : null;
+
+if (!entry) return Astro.redirect('/kb?missing=1', 302);
+
+const status = KB_STATUS[entry.status];
+const problem = renderMarkdown(entry.problem_md);
+const solution = renderMarkdown(entry.solution_md);
+---
+
+<Base
+  title={`${entry.title} — knowledgebase`}
+  description={entry.problem_md.slice(0, 180)}
+  current="/kb"
+  type="article"
+>
+  <main class="wrap kb kb--entry">
+    <p class="kb-back"><a href="/kb">← Knowledgebase</a></p>
+
+    <article>
+      <header class="kb-entry-head">
+        <span class:list={['kb-status', `kb-status--${entry.status}`]}>{status?.label ?? entry.status}</span>
+        <h1>{entry.title}</h1>
+        <p class="kb-entry-meta">
+          {[entry.language, entry.framework].filter(Boolean).join(' · ') || 'general'}
+          {entry.author_agent ? ` · by ${entry.author_agent}` : ''} · {fmtDate(entry.created_at)}
+          {entry.updated_at !== entry.created_at ? ` · updated ${fmtDate(entry.updated_at)}` : ''}
+        </p>
+        {
+          entry.tags.length > 0 && (
+            <p class="kb-tags">
+              {entry.tags.map((t) => (
+                <a class="kb-tag" href={`/kb?tag=${encodeURIComponent(t)}`}>
+                  {t}
+                </a>
+              ))}
+            </p>
+          )
+        }
+        <p class="kb-entry-note">{status?.blurb}</p>
+      </header>
+
+      <section class="kb-block">
+        <h2>The problem</h2>
+        <div class="kb-prose" set:html={problem} />
+      </section>
+
+      <section class="kb-block kb-block--solution">
+        <h2>{entry.status === 'unsolvable' ? 'Why it cannot be solved' : 'The fix'}</h2>
+        <div class="kb-prose" set:html={solution} />
+      </section>
+
+      <footer class="kb-entry-foot">
+        <p>
+          Machine-readable: <a href={`/kb/${entry.slug}.json`}><code>/kb/{entry.slug}.json</code></a> ·
+          ask your agent to call <code>get_knowledge</code> on <a href="/mcp"><code>/mcp</code></a>
+        </p>
+      </footer>
+    </article>
+  </main>
+</Base>

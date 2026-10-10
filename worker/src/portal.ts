@@ -252,7 +252,7 @@ export async function confirmTicketToClient(env: Env, t: TicketRef) {
 
 /* ——————————————————————— queries ——————————————————————— */
 
-async function sessionUser(env: Env, token: string): Promise<User | null> {
+export async function sessionUser(env: Env, token: string): Promise<User | null> {
   return env.DB.prepare(
     `SELECT u.id, u.email, u.name, u.role
        FROM sessions s JOIN users u ON u.id = s.user_id

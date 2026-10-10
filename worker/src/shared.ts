@@ -22,6 +22,8 @@ export interface Env {
   RATE_LIMIT: KVNamespace;
   /** D1 — client portal: users, sessions, projects, tickets, messages. */
   DB: D1Database;
+  /** D1 — public agentic coding knowledgebase (entries, FTS, api_keys). */
+  KB_DB: D1Database;
   /** Unpinned Email Service binding: magic links and ticket updates to clients. */
   MAILER?: SendEmail;
   /** Var. From address for portal mail (must be on an onboarded domain). */
@@ -32,6 +34,10 @@ export interface Env {
   SITE_URL?: string;
   /** Var. Email Routing address (with subaddressing) that feeds src/inbound.ts. */
   REPLY_ADDRESS?: string;
+  /** Var. Base URL of the GPTflare control plane (default api.gptflare.site). */
+  PLATFORM_API_URL?: string;
+  /** Secret. GPTflare platform key; without it every /platform_* MCP tool fails. */
+  PLATFORM_GPT_API_KEY?: string;
   /** Secret. Shared with the local runner on Ali's machine; unset disables /runner/*. */
   RUNNER_TOKEN?: string;
   /** Var, local dev only. "1" returns the magic link in the /auth/request response. */
