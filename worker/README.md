@@ -133,6 +133,11 @@ pnpm --dir worker dev              # vite dev (local workerd, reads .dev.vars)
 pnpm --dir worker deploy           # vite build && wrangler deploy
 ```
 
+Run the script, not `wrangler deploy` on its own. A bare `wrangler deploy`
+uploads whatever is already in `dist/`, so an edit to `src/` ships nothing and
+looks like a successful deploy — the version id changes and the old code keeps
+running. `typecheck` does not build either.
+
 Flue generates `.flue-vite/` and `.flue-vite.wrangler.jsonc` at build time —
 both are git-ignored. Changing the agent's **function name** changes its
 durable identity: express it as a `renamed_classes` migration in
