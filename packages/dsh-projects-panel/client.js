@@ -7,13 +7,51 @@ window.__ModuleLoader__.load({
 
     /** Panel identity: one id addresses both the sidebar row and the main page. */
     const PANEL_ID = 'projects';
-    /** The folder the panel browses. Mirrored by `PROJECTS_ROOT` in `index.js`. */
-    const PROJECTS_ROOT = '/Users/malipetek/Documents/Documents/Projects';
     /**
-     * The JSONL index the Host half writes. Absolute literal, because this side
-     * cannot read the Host environment; `index.js` hardcodes the same path.
+     * The Host's home directory, as published on the Remote host facts.
+     *
+     * This half runs in the browser and cannot read the Host environment, so it
+     * rebuilds the same paths `index.js` derives from that home. The tilde forms
+     * are a last resort for a composition that publishes no host facts.
+     *
+     * @param ctx - the Client plugin context.
+     * @returns the absolute home path, or null when it is not published.
      */
-    const INDEX_PATH = '/Users/malipetek/.dsh/projects-panel/index.jsonl';
+    function hostHomeOf(ctx) {
+      try {
+        const home = ctx?.remote?.$host?.home;
+        if (typeof home === 'string' && home.length > 0) return home;
+      } catch {
+        // Host facts are optional; fall through to the tilde fallbacks.
+      }
+      return null;
+    }
+
+    /**
+     * The JSONL index the Host half writes.
+     * @param ctx - the Client plugin context.
+     * @returns an absolute path on this machine.
+     */
+    function indexPathOf(ctx) {
+      const home = hostHomeOf(ctx);
+      return home === null
+        ? '~/.dsh/projects-panel/index.jsonl'
+        : `${home}/.dsh/projects-panel/index.jsonl`;
+    }
+
+    /**
+     * The folder the Host scans, for the header line only. `DSH_PROJECTS_ROOT`
+     * is a Host-side override this half cannot see, so a configured root will
+     * still read as the default here.
+     * @param ctx - the Client plugin context.
+     * @returns an absolute path on this machine.
+     */
+    function projectsRootOf(ctx) {
+      const home = hostHomeOf(ctx);
+      return home === null
+        ? '~/Documents/Documents/Projects'
+        : `${home}/Documents/Documents/Projects`;
+    }
     /** A project untouched for longer than this counts as stale. */
     const STALE_DAYS = 90;
     /** Browser-local per-project state (likes, archives, open history). */
@@ -86,15 +124,16 @@ window.__ModuleLoader__.load({
      * Read the whole index through the session-scoped file Remote, one page at a
      * time, until end of file.
      * @param remote - the `workspaceFiles` Remote namespace.
+     * @param path - absolute path to the index on the Host.
      * @param sessionId - the Session authorizing the read.
      * @param signal - caller lifetime.
      * @returns the raw JSONL text.
      */
-    async function readIndexText(remote, sessionId, signal) {
+    async function readIndexText(remote, path, sessionId, signal) {
       let offset = 1;
       let text = '';
       for (let page = 0; page < MAX_PAGES; page += 1) {
-        const result = await remote.read(sessionId, INDEX_PATH, { offset, limit: PAGE_LINES }, signal);
+        const result = await remote.read(sessionId, path, { offset, limit: PAGE_LINES }, signal);
         if (result.ok !== true) {
           const error = result.error ?? {};
           throw new Error(`${error.code ?? 'read-failed'}${typeof error.message === 'string' ? `: ${error.message}` : ''}`);
@@ -516,7 +555,7 @@ window.__ModuleLoader__.load({
             h('h1', { style: s.title }, 'Projects'),
             h('span', { style: s.subtitle }, `${index.records.length} folder${index.records.length === 1 ? '' : 's'}`),
           ),
-          h('div', { style: s.pathText, title: PROJECTS_ROOT }, PROJECTS_ROOT),
+          h('div', { style: s.pathText, title: api.projectsRoot }, api.projectsRoot),
           h(
             'div',
             { style: s.toolbar },
@@ -662,11 +701,12 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       // One stable object so React effects that depend on it do not re-run every render.
       const api = {
+        projectsRoot: projectsRootOf(ctx),
         readIndex: async (signal) => {
           const snapshot = ctx.sessions.list.getSnapshot();
           const sessionId = Array.isArray(snapshot?.ids) ? snapshot.ids[0] : undefined;
           if (sessionId === undefined) throw new Error('No session is open to authorize the read. Open a session, then refresh.');
-          const text = await readIndexText(ctx.remote.workspaceFiles, sessionId, signal);
+          const text = await readIndexText(ctx.remote.workspaceFiles, indexPathOf(ctx), sessionId, signal);
           return parseIndex(text);
         },
         adoptWorkspace: (path) => ctx.uiWorkspace.workspaces.create({ path }),

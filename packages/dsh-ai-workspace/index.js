@@ -48,8 +48,8 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 /**
  * Where the status snapshot is written. The Client half cannot read the Host
- * environment, so it carries the same absolute literal; the `DSH_HOME`
- * fallback here keeps the two in step for the default installation.
+ * environment, so it rebuilds this same path from the Host home published on the
+ * Remote host facts.
  */
 const DSH_HOME = process.env.DSH_HOME ?? join(homedir(), '.dsh');
 const STATUS_PATH = join(DSH_HOME, 'ai-workspace', 'status.json');
@@ -64,8 +64,13 @@ const STATE_DIR = '.ai-workspace';
 const MARKER_START = '<!-- ai-workspace:start -->';
 const MARKER_END = '<!-- ai-workspace:end -->';
 
-/** Default projects root, mirroring the Projects panel. */
-const DEFAULT_PROJECTS_ROOT = '/Users/malipetek/Documents/Documents/Projects';
+/**
+ * Default projects root, mirroring the Projects panel. `DSH_PROJECTS_ROOT`
+ * overrides it and the profile's `cordis.patch.yml` can set `projectsRoot`
+ * outright; the `~/Documents/Documents/Projects` default is the author's own
+ * layout, so prefer one of those over editing this line.
+ */
+const DEFAULT_PROJECTS_ROOT = process.env.DSH_PROJECTS_ROOT || join(homedir(), 'Documents', 'Documents', 'Projects');
 
 /** Directories never treated as projects while scanning the projects root. */
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'out', 'build', 'target', '.next', '.cache']);

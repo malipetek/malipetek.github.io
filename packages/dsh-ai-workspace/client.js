@@ -12,8 +12,9 @@
  * count and its bound port, which is what makes it safe for the agent to stop
  * running `pnpm dev` itself and read the log instead.
  *
- * Two halves talk through files, not a bespoke RPC: the Host writes
- * `STATUS_PATH` and this half reads it through the session-scoped file Remote.
+ * Two halves talk through files, not a bespoke RPC: the Host writes a status
+ * snapshot to its `DSH_HOME` and this half reads it through the session-scoped
+ * file Remote, rebuilding that path from the Host home the Remote publishes.
  * An out-of-tree plugin cannot declare its own Remote, and the file Remote
  * exposes no mutation, so the controls are slash commands executed through
  * `remote.commands` — which is why each button also leaves a command row in the
@@ -32,11 +33,36 @@ window.__ModuleLoader__.load({
     const PANEL_ID = 'ai-workspace';
 
     /**
-     * The snapshot the Host half writes. An absolute literal, because this side
-     * cannot read the Host environment; `index.js` resolves the same path from
-     * `DSH_HOME` with `~/.dsh` as the fallback.
+     * The Host's home directory, as published on the Remote host facts.
+     *
+     * This half runs in the browser and cannot read the Host environment, so it
+     * rebuilds the same path `index.js` derives from `DSH_HOME`. The tilde form is
+     * a last resort for a composition that publishes no host facts.
+     *
+     * @param ctx - the Client plugin context.
+     * @returns the absolute home path, or null when it is not published.
      */
-    const STATUS_PATH = '/Users/malipetek/.dsh/ai-workspace/status.json';
+    function hostHomeOf(ctx) {
+      try {
+        const home = ctx?.remote?.$host?.home;
+        if (typeof home === 'string' && home.length > 0) return home;
+      } catch {
+        // Host facts are optional; fall through to the tilde fallback.
+      }
+      return null;
+    }
+
+    /**
+     * The status snapshot the Host half writes.
+     * @param ctx - the Client plugin context.
+     * @returns an absolute path on this machine.
+     */
+    function statusPathOf(ctx) {
+      const home = hostHomeOf(ctx);
+      return home === null
+        ? '~/.dsh/ai-workspace/status.json'
+        : `${home}/.dsh/ai-workspace/status.json`;
+    }
 
     /** How often the page re-reads the snapshot. */
     const POLL_MS = 3000;
@@ -153,11 +179,11 @@ window.__ModuleLoader__.load({
      * @param signal - caller lifetime.
      * @returns the raw JSON text.
      */
-    async function readSnapshotText(remote, sessionId, signal) {
+    async function readSnapshotText(remote, path, sessionId, signal) {
       let offset = 1;
       let text = '';
       for (let page = 0; page < MAX_PAGES; page += 1) {
-        const result = await remote.read(sessionId, STATUS_PATH, { offset, limit: PAGE_LINES }, signal);
+        const result = await remote.read(sessionId, path, { offset, limit: PAGE_LINES }, signal);
         if (result.ok !== true) {
           const error = result.error ?? {};
           throw new Error(`${error.code ?? 'read-failed'}${typeof error.message === 'string' ? `: ${error.message}` : ''}`);
@@ -736,8 +762,8 @@ window.__ModuleLoader__.load({
             }, push === 'live' ? t('streaming') : push === 'unavailable' ? t('polling') : t('connecting')),
             totals.errors > 0 && h('span', { style: { ...s.subtitle, color: C.warn } }, t('errorLines', { count: totals.errors })),
           ),
-          h('div', { style: s.pathText, title: STATUS_PATH },
-            snapshot !== null && typeof snapshot.projectsRoot === 'string' ? snapshot.projectsRoot : STATUS_PATH),
+          h('div', { style: s.pathText, title: api.statusPath },
+            snapshot !== null && typeof snapshot.projectsRoot === 'string' ? snapshot.projectsRoot : api.statusPath),
           h(
             'div',
             { style: s.toolbar },
@@ -902,13 +928,15 @@ window.__ModuleLoader__.load({
 
       // One stable object so React effects that depend on it do not re-run every render.
       const api = {
+        /** The resolved snapshot path, for the header line only. */
+        statusPath: statusPathOf(ctx),
         /**
          * Read and parse the Host's status snapshot.
          * @returns the parsed snapshot.
          */
         load: async () => {
           const sessionId = firstSession();
-          const text = await readSnapshotText(ctx.remote.workspaceFiles, sessionId, new AbortController().signal);
+          const text = await readSnapshotText(ctx.remote.workspaceFiles, statusPathOf(ctx), sessionId, new AbortController().signal);
           if (text.trim().length === 0) return { projects: [], projectsRoot: undefined };
           return JSON.parse(text);
         },
@@ -955,7 +983,7 @@ window.__ModuleLoader__.load({
           try {
             stream = ctx.remote.$stream({
               name: `ai-workspace status snapshot of ${sessionId}`,
-              open: (signal) => ctx.remote.workspaceFiles.changes(sessionId, STATUS_PATH, signal),
+              open: (signal) => ctx.remote.workspaceFiles.changes(sessionId, statusPathOf(ctx), signal),
               ended: () => new Error('ai-workspace status change stream ended'),
             });
           } catch (error) {

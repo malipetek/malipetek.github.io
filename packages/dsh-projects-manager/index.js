@@ -26,28 +26,37 @@
 import { execFile } from 'node:child_process';
 import { watch } from 'node:fs';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 
 /* -------------------------------------------------------------------------- *
  * Configuration — mirrored in part by `client.js`; change both together.
  * -------------------------------------------------------------------------- */
 
-/** The folder whose projects this plugin manages. */
-const PROJECTS_ROOT = '/Users/malipetek/Documents/Documents/Projects';
+/**
+ * DSH's data root. `DSH_HOME` wins when the launcher sets it, `~/.dsh` is the
+ * default. The Client half cannot read the environment, so it rebuilds the
+ * index path from the Host home published on the Remote host facts.
+ */
+const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh');
 
 /**
- * Where generated state lives. Absolute literals, not `DSH_HOME`-derived,
- * because the Client half hardcodes {@link INDEX_PATH} and cannot read the Host
- * environment. Change the two `*.jsonl`/`*.md` paths in `client.js` with these.
- *
- * `DSH_PROJECTS_MANAGER_DIR` overrides the directory for local smoke tests only;
- * the running app never sets it, and `client.js` does not honour it.
+ * The folder whose projects this plugin manages. `DSH_PROJECTS_ROOT` overrides
+ * it; the `~/Documents/Documents/Projects` default is the author's own layout,
+ * so set the override instead of editing this line.
  */
-const STATE_DIR = process.env.DSH_PROJECTS_MANAGER_DIR || '/Users/malipetek/.dsh/projects-manager';
-const INDEX_PATH = `${STATE_DIR}/index.jsonl`;
-const BRIEF_PATH = `${STATE_DIR}/manager-brief.md`;
-const INTENT_PATH = `${STATE_DIR}/intent.json`;
-const CACHE_PATH = `${STATE_DIR}/cache.json`;
+const PROJECTS_ROOT = process.env.DSH_PROJECTS_ROOT || join(homedir(), 'Documents', 'Documents', 'Projects');
+
+/**
+ * Where generated state lives. `DSH_PROJECTS_MANAGER_DIR` overrides the whole
+ * directory, which is also how a smoke test redirects state away from the live
+ * profile.
+ */
+const STATE_DIR = process.env.DSH_PROJECTS_MANAGER_DIR || join(DSH_HOME, 'projects-manager');
+const INDEX_PATH = join(STATE_DIR, 'index.jsonl');
+const BRIEF_PATH = join(STATE_DIR, 'manager-brief.md');
+const INTENT_PATH = join(STATE_DIR, 'intent.json');
+const CACHE_PATH = join(STATE_DIR, 'cache.json');
 /**
  * Wiring report: which optional capabilities this plugin actually reached in the
  * running Host. Written so a failed lazy import or a missing Schedule service is
@@ -56,7 +65,7 @@ const CACHE_PATH = `${STATE_DIR}/cache.json`;
 const DOCTOR_PATH = `${STATE_DIR}/doctor.json`;
 
 /** DSH's own stores, which carry the "did I actually work on it" signal. */
-const STORAGES_DIR = '/Users/malipetek/.dsh/storages';
+const STORAGES_DIR = join(DSH_HOME, 'storages');
 const WORKSPACE_STORE = `${STORAGES_DIR}/workspace.json`;
 const SESSION_CACHE_DIR = `${STORAGES_DIR}/session_projcache/sessions`;
 

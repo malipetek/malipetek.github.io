@@ -14,17 +14,26 @@
  */
 import { watch } from 'node:fs';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 
-/** The folder the panel browses. Mirrored by `PROJECTS_ROOT` in `client.js`. */
-const PROJECTS_ROOT = '/Users/malipetek/Documents/Documents/Projects';
+/**
+ * DSH's data root. `DSH_HOME` wins when the launcher sets it, `~/.dsh` is the
+ * default. The Client half cannot read the environment, so it rebuilds this
+ * same path from the Host home published on the Remote host facts.
+ */
+const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh');
 
 /**
- * Where the generated index lives. This is an absolute literal — not derived
- * from `DSH_HOME` — because the Client half hardcodes the same path and cannot
- * read the Host environment. Change it in both files together.
+ * The folder the panel browses. `DSH_PROJECTS_ROOT` overrides it; the
+ * `~/Documents/Documents/Projects` default is the author's own layout, so set
+ * the override instead of editing this line.
  */
-const INDEX_PATH = '/Users/malipetek/.dsh/projects-panel/index.jsonl';
+const PROJECTS_ROOT = process.env.DSH_PROJECTS_ROOT || join(homedir(), 'Documents', 'Documents', 'Projects');
+
+/** Where the generated JSONL index lives; the Client rebuilds this path too. */
+const STATE_DIR = process.env.DSH_PROJECTS_PANEL_DIR || join(DSH_HOME, 'projects-panel');
+const INDEX_PATH = join(STATE_DIR, 'index.jsonl');
 
 /** Re-scan cadence: activity inside an existing project fires no watch event. */
 const RESCAN_INTERVAL_MS = 5 * 60 * 1000;

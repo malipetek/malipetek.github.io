@@ -25,10 +25,36 @@ window.__ModuleLoader__.load({
      */
     const PANEL_ID = 'momentum';
     /**
-     * The index the Host half writes. Absolute literal, because this side cannot
-     * read the Host environment; `index.js` hardcodes the same path.
+     * The Host's home directory, as published on the Remote host facts.
+     *
+     * This half runs in the browser and cannot read the Host environment, so it
+     * rebuilds the same path `index.js` derives from that home. The tilde form is
+     * a last resort for a composition that publishes no host facts.
+     *
+     * @param ctx - the Client plugin context.
+     * @returns the absolute home path, or null when it is not published.
      */
-    const INDEX_PATH = '/Users/malipetek/.dsh/projects-manager/index.jsonl';
+    function hostHomeOf(ctx) {
+      try {
+        const home = ctx?.remote?.$host?.home;
+        if (typeof home === 'string' && home.length > 0) return home;
+      } catch {
+        // Host facts are optional; fall through to the tilde fallback.
+      }
+      return null;
+    }
+
+    /**
+     * The JSONL index the Host half writes.
+     * @param ctx - the Client plugin context.
+     * @returns an absolute path on this machine.
+     */
+    function indexPathOf(ctx) {
+      const home = hostHomeOf(ctx);
+      return home === null
+        ? '~/.dsh/projects-manager/index.jsonl'
+        : `${home}/.dsh/projects-manager/index.jsonl`;
+    }
     /** Browser-local dismissals for the reminder banner. */
     const STORE_KEY = 'dsh.projects.manager.v1';
     /** The file Remote caps one text page at this many lines. */
@@ -48,15 +74,16 @@ window.__ModuleLoader__.load({
      * Read the whole index through the session-scoped file Remote, one page at a
      * time, until end of file.
      * @param remote - the `workspaceFiles` Remote namespace.
+     * @param path - absolute path to the index on the Host.
      * @param sessionId - the Session authorizing the read.
      * @param signal - caller lifetime.
      * @returns the raw JSONL text.
      */
-    async function readIndexText(remote, sessionId, signal) {
+    async function readIndexText(remote, path, sessionId, signal) {
       let offset = 1;
       let text = '';
       for (let page = 0; page < MAX_PAGES; page += 1) {
-        const result = await remote.read(sessionId, INDEX_PATH, { offset, limit: PAGE_LINES }, signal);
+        const result = await remote.read(sessionId, path, { offset, limit: PAGE_LINES }, signal);
         if (result.ok !== true) {
           const error = result.error ?? {};
           throw new Error(`${error.code ?? 'read-failed'}${typeof error.message === 'string' ? `: ${error.message}` : ''}`);
@@ -780,7 +807,7 @@ window.__ModuleLoader__.load({
 
       // One stable object so React effects that depend on it do not re-run every render.
       const api = {
-        readIndex: async (signal) => parseIndex(await readIndexText(ctx.remote.workspaceFiles, currentSessionId(), signal)),
+        readIndex: async (signal) => parseIndex(await readIndexText(ctx.remote.workspaceFiles, indexPathOf(ctx), currentSessionId(), signal)),
         /**
          * Execute one command against the first Session whose agent accepts it.
          * Commands are addressed to a Session, and the panel is root-scoped, so it

@@ -12,7 +12,13 @@
       config:
         # Folder scanned one level deep for projects that carry an
         # .ai-workspace.json (or legacy .claude-workspace.json).
-        projectsRoot: /Users/malipetek/Documents/Documents/Projects
+        #
+        # Left unset on purpose: pinning an absolute path here would override the
+        # default for everyone who installs the package. The plugin resolves its
+        # own default instead — `$DSH_PROJECTS_ROOT`, else
+        # `~/Documents/Documents/Projects`. Set it in your profile's
+        # cordis.patch.yml to pin a different root.
+        # projectsRoot: /absolute/path/to/projects
         # Extra project roots to manage even though they sit outside
         # projectsRoot. Absolute paths only.
         projects: []
