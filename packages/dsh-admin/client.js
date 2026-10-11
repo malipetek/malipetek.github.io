@@ -969,19 +969,33 @@ window.__ModuleLoader__.load({
           if (sessionId === undefined) return Promise.resolve(null);
           return readTextFile(ctx.remote.workspaceFiles, sessionId, OPEN_PATH, signal).then(parseJson);
         },
+        /**
+         * Run one Host command. The line is the text after the command name,
+         * and the name with its slash is added here so no call site can forget
+         * it — a bare `login …` looks up a command called `login`, which does
+         * not exist, and the failure is silent unless the result is read.
+         *
+         * The Remote answers in two layers: `ok:false` with `error` when the
+         * call itself failed, and `ok:true` wrapping `value.result`, whose own
+         * `kind` is `error` when the command refused. Both must reach the UI.
+         */
         command: async (line) => {
           const sessionId = firstSessionId(ctx);
           if (sessionId === undefined) return { ok: false, text: 'No session is open. Open a session, then try again.' };
           try {
-            const result = await ctx.remote.commands.execute(sessionId, line, []);
-            // The Remote reports success as `ok`; treat a bare command result
-            // defensively so a shape change shows up as a message, not a crash.
-            const ok = result?.ok === true || result?.kind === 'success';
-            const text =
-              (typeof result?.text === 'string' && result.text) ||
-              (typeof result?.value?.text === 'string' && result.value.text) ||
-              (ok ? 'Done.' : 'The command failed.');
-            return { ok, text };
+            const result = await ctx.remote.commands.execute(sessionId, `/admin ${line}`, []);
+            if (result?.ok !== true) {
+              const error = result?.error ?? {};
+              return {
+                ok: false,
+                text: `${error.code ?? 'command-failed'}${typeof error.message === 'string' ? `: ${error.message}` : ''}`,
+              };
+            }
+            const payload = result.value?.result;
+            if (payload?.kind !== 'success') {
+              return { ok: false, text: typeof payload?.text === 'string' ? payload.text : 'The command failed.' };
+            }
+            return { ok: true, text: typeof payload.text === 'string' ? payload.text : 'Done.' };
           } catch (error) {
             return { ok: false, text: messageOf(error) };
           }
