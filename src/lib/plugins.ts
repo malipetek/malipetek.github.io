@@ -43,9 +43,10 @@ interface PkgJson {
   };
 }
 
-/** The four plugins in the order they read best, not alphabetical order. */
+/** The plugins in the order they read best, not alphabetical order. */
 const ORDER = [
   'dsh-projects-panel',
+  'dsh-admin',
   'dsh-projects-manager',
   'dsh-ai-workspace',
   'dsh-action-cards',

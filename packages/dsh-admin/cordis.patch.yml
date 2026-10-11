@@ -1,0 +1,3 @@
+- insert:
+    - id: admin
+      name: '@malipetek/dsh-admin'
