@@ -49,6 +49,8 @@ const ORDER = [
   'dsh-admin',
   'dsh-projects-manager',
   'dsh-ai-workspace',
+  'dsh-git-graph',
+  'dsh-file-editor',
   'dsh-action-cards',
 ];
 
