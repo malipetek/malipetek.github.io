@@ -99,6 +99,7 @@ window.__ModuleLoader__.load({
       link: 'Link',
       updated: 'updated',
       messages: 'messages',
+      runs: 'Agent runs',
     };
 
     /* ——————————————————————— helpers ——————————————————————— */
@@ -291,6 +292,7 @@ window.__ModuleLoader__.load({
       const [note, setNote] = useState('');
       const ticket = open?.ticket ?? null;
       const messages = Array.isArray(open?.messages) ? open.messages : [];
+      const runs = Array.isArray(open?.runs) ? open.runs : [];
 
       if (ticket === null) {
         return h('p', { style: { color: C.textSecondary, fontSize: 13 } }, t('loading'));
@@ -324,6 +326,23 @@ window.__ModuleLoader__.load({
           { style: { margin: 0, color: C.textSecondary, fontSize: 12 } },
           `${ticket.client_email ?? ''} · ${t('updated')} ${ago(ticket.updated_at)} ago`,
         ),
+        h(
+          'p',
+          { style: { margin: 0, color: C.textTertiary, fontSize: 12 } },
+          [
+            `AI $${((typeof ticket.ai_micro_usd === 'number' ? ticket.ai_micro_usd : 0) / 1_000_000).toFixed(4)}`,
+            `${Math.round((typeof ticket.human_seconds === 'number' ? ticket.human_seconds : 0) / 60)}m human`,
+            `attention ${ticket.attention ?? 'checked'}`,
+            typeof ticket.budget_cents === 'number' && ticket.budget_cents > 0
+              ? `budget $${(ticket.budget_cents / 100).toFixed(2)}`
+              : null,
+            typeof ticket.price_cents === 'number' && ticket.price_cents > 0
+              ? `priced $${(ticket.price_cents / 100).toFixed(2)}`
+              : null,
+          ]
+            .filter((part) => part !== null)
+            .join(' · '),
+        ),
 
         h(
           'div',
@@ -352,11 +371,55 @@ window.__ModuleLoader__.load({
           ),
         ),
 
+        runs.length > 0
+          ? h(
+              'div',
+              { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+              h(
+                'h3',
+                { style: { margin: 0, fontSize: 12, color: C.textSecondary, textTransform: 'uppercase', letterSpacing: '0.08em' } },
+                t('runs'),
+              ),
+              ...runs.map((run) =>
+                h(
+                  'div',
+                  {
+                    key: run.id,
+                    style: {
+                      display: 'flex',
+                      alignItems: 'baseline',
+                      gap: 8,
+                      flexWrap: 'wrap',
+                      padding: '6px 9px',
+                      border: `1px solid ${C.border}`,
+                      borderRadius: C.radius,
+                      background: C.layer1,
+                      fontSize: 12,
+                    },
+                  },
+                  h(
+                    'span',
+                    { style: { color: run.status === 'ok' ? C.success : run.status === 'failed' ? C.error : C.warn } },
+                    run.status,
+                  ),
+                  h('strong', { style: { color: C.text } }, run.executor),
+                  run.model ? h('span', { style: { color: C.textTertiary } }, run.model) : null,
+                  h('span', { style: { color: C.textTertiary } }, `$${((run.cost_micro_usd ?? 0) / 1_000_000).toFixed(4)}`),
+                  run.branch ? h('code', { style: { color: C.textSecondary } }, run.branch) : null,
+                  h(
+                    'span',
+                    { style: { color: C.textTertiary } },
+                    run.finished_at ? `${Math.max(1, Math.round((run.finished_at - run.started_at) / 60))}m` : 'running…',
+                  ),
+                ),
+              ),
+            )
+          : null,
+
         h(
           'ol',
           { style: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 } },
-          ...messages.map((message) =>
-            h(
+          ...messages.map((message) =>            h(
               'li',
               {
                 key: message.id,

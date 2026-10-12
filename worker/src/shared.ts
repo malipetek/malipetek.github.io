@@ -55,6 +55,13 @@ export const ALLOWED_ORIGINS = [
 export const encoder = new TextEncoder();
 export const decoder = new TextDecoder();
 
+/**
+ * Seconds since the epoch — the unit every portal table stores. It lives here
+ * rather than in portal.ts so the run-tracking module can use it without
+ * importing the portal, which imports the run-tracking module.
+ */
+export const now = () => Math.floor(Date.now() / 1000);
+
 export function corsHeaders(origin: string | null): Record<string, string> {
   const headers: Record<string, string> = {
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, PUT, DELETE, OPTIONS',

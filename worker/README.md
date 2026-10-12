@@ -192,6 +192,17 @@ wrangler d1 create malipetek-portal        # paste database_id into wrangler.jso
 wrangler d1 migrations apply malipetek-portal --remote
 ```
 
+`migrations apply` is the one command that needs the account named explicitly
+when the API token can reach more than one account — without it the API answers
+`7403  The given account is not valid or is not authorized to access this
+service`, which reads like a permissions problem rather than a missing
+selector:
+
+```sh
+CLOUDFLARE_ACCOUNT_ID=a60af2542282e283101650bebed42dcf \
+  wrangler d1 migrations apply malipetek-portal --remote
+```
+
 `portal@malipetek.dev` must be allowed to send on the onboarded domain (same
 Email Service setup as the intercom). On the site, the portal uses the same
 `PUBLIC_CHAT_ENDPOINT` and `PUBLIC_TURNSTILE_SITEKEY`.

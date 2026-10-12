@@ -26,6 +26,8 @@
  * lives in D1, same for magic-link tokens.
  */
 import { Hono, type Context } from 'hono';
+import { ATTENTION_KEYS, DEFAULT_ATTENTION, priceLine, priceOf } from '../../src/lib/pricing.js';
+import { claimTicketById, finishRun, normalizeReport, openRuns, recentRuns, ticketRuns } from './runs.ts';
 import {
   ALLOWED_ORIGINS,
   clientIp,
@@ -33,11 +35,14 @@ import {
   encoder,
   isRateLimited,
   json,
+  now,
   toBase64Url,
   verifyTurnstile,
   type Env,
   type HonoEnv,
 } from './shared.ts';
+
+export { now };
 
 const LINK_TTL_SECONDS = 15 * 60;
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -74,8 +79,6 @@ type PortalEnv = HonoEnv & { Variables: { user: User } };
 type Ctx = Context<PortalEnv>;
 
 /* ——————————————————————— helpers ——————————————————————— */
-
-export const now = () => Math.floor(Date.now() / 1000);
 
 function randomToken(): string {
   return toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
@@ -228,11 +231,11 @@ export async function notifyClientOfReply(env: Env, t: TicketRef, text: string) 
   });
 }
 
-async function notifyClientOfStatus(env: Env, t: TicketRef, status: Status) {
+async function notifyClientOfStatus(env: Env, t: TicketRef, status: Status, bill?: string) {
   await mailClient(env, t.client_email, {
     subject: `[#${t.id}] ${STATUS_LABEL[status]}: ${t.title}`,
     text: ticketMail(
-      `Your request “${t.title}” is now: ${STATUS_LABEL[status]}.`,
+      `Your request “${t.title}” is now: ${STATUS_LABEL[status]}.${bill ? `\n\nTotal: ${bill}` : ''}`,
       `Reply to this email, or open the thread: ${siteUrl(env)}/portal/ticket#id=${t.id}`,
     ),
     replyTo: await replyAddress(env, t.id, 'c'),
@@ -287,7 +290,28 @@ async function ticketMessages(env: Env, ticketId: number, includeInternal: boole
 }
 
 const TICKET_COLUMNS = `t.id, t.title, t.status, t.created_at, t.updated_at,
-  t.project_id, p.name AS project_name, p.slug AS project_slug`;
+  t.project_id, p.name AS project_name, p.slug AS project_slug,
+  t.attention, t.human_seconds, t.ai_micro_usd, t.budget_cents, t.price_cents`;
+
+/* —— pricing (src/lib/pricing.js): measured time × rate + AI at cost —— */
+
+const MAX_BUDGET_CENTS = 10_000_00;
+const MAX_TIME_STEP_SECONDS = 15 * 60; // one heartbeat from the admin view can't add more
+const MAX_HUMAN_SECONDS = 400 * 3600;
+
+type Meter = { human_seconds: number; ai_micro_usd: number };
+const meter = (t: Meter) => ({ humanSeconds: t.human_seconds, aiMicroUsd: t.ai_micro_usd });
+
+function cleanAttention(value: unknown): string | null {
+  return typeof value === 'string' && ATTENTION_KEYS.includes(value) ? value : null;
+}
+
+/** A client's optional ceiling, in whole cents. null clears it; undefined = not sent. */
+function cleanBudget(value: unknown): number | null | undefined | false {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= MAX_BUDGET_CENTS ? value : false;
+}
 
 /* ——————————————————————— app ——————————————————————— */
 
@@ -456,10 +480,13 @@ portal.get('/portal/tickets', async (c) => {
 portal.post('/portal/tickets', async (c) => {
   const env = c.env;
   const user = c.get('user');
-  const body = await readJson<{ title?: unknown; body?: unknown; projectId?: unknown }>(c);
+  const body = await readJson<{ title?: unknown; body?: unknown; projectId?: unknown; attention?: unknown; budgetCents?: unknown }>(c);
   const title = cleanText(body?.title, MAX_TITLE_CHARS);
   const text = cleanText(body?.body, MAX_BODY_CHARS);
   if (!title || !text) return reply(c, { error: 'bad_ticket' }, 400);
+  const attention = body?.attention === undefined ? DEFAULT_ATTENTION : cleanAttention(body.attention);
+  const budget = cleanBudget(body?.budgetCents);
+  if (!attention || budget === false) return reply(c, { error: 'bad_ticket' }, 400);
 
   // A client can only file against a project Ali linked them to.
   let projectId: string | null = null;
@@ -477,10 +504,10 @@ portal.post('/portal/tickets', async (c) => {
 
   const t = now();
   const ticket = await env.DB.prepare(
-    `INSERT INTO tickets (user_id, project_id, title, status, created_at, updated_at)
-     VALUES (?, ?, ?, 'new', ?, ?) RETURNING id`,
+    `INSERT INTO tickets (user_id, project_id, title, status, attention, budget_cents, created_at, updated_at)
+     VALUES (?, ?, ?, 'new', ?, ?, ?, ?) RETURNING id`,
   )
-    .bind(user.id, projectId, title, t, t)
+    .bind(user.id, projectId, title, attention, budget ?? null, t, t)
     .first<{ id: number }>();
   if (!ticket) return reply(c, { error: 'insert_failed' }, 500);
   await env.DB.prepare(
@@ -508,7 +535,7 @@ async function loadTicket(c: Ctx, admin: boolean) {
       WHERE t.id = ?`,
   )
     .bind(id)
-    .first<Record<string, unknown> & { id: number; user_id: string; client_email: string; title: string; status: Status }>();
+    .first<Record<string, unknown> & Meter & { id: number; user_id: string; client_email: string; title: string; status: Status; attention: string }>();
   if (!ticket) return null;
   if (!admin && ticket.user_id !== c.get('user').id) return null;
   return ticket;
@@ -561,14 +588,29 @@ portal.get('/admin/tickets', async (c) => {
 portal.get('/admin/tickets/:id', async (c) => {
   const ticket = await loadTicket(c, true);
   if (!ticket) return reply(c, { error: 'not_found' }, 404);
-  return reply(c, { ticket, messages: await ticketMessages(c.env, ticket.id, true) });
+  return reply(c, {
+    ticket,
+    messages: await ticketMessages(c.env, ticket.id, true),
+    runs: await ticketRuns(c.env, ticket.id),
+  });
 });
 
 portal.patch('/admin/tickets/:id', async (c) => {
   const env = c.env;
   const ticket = await loadTicket(c, true);
   if (!ticket) return reply(c, { error: 'not_found' }, 404);
-  const body = await readJson<{ status?: unknown; projectId?: unknown }>(c);
+  const body = await readJson<{ status?: unknown; projectId?: unknown; attention?: unknown; humanSeconds?: unknown }>(c);
+
+  const attention = body?.attention === undefined ? undefined : cleanAttention(body.attention);
+  if (attention === null) return reply(c, { error: 'bad_attention' }, 400);
+  // A correction to the meter (the tracker missed an email reply, or ran on a coffee break).
+  let humanSeconds: number | undefined;
+  if (body?.humanSeconds !== undefined) {
+    if (typeof body.humanSeconds !== 'number' || !Number.isInteger(body.humanSeconds) || body.humanSeconds < 0 || body.humanSeconds > MAX_HUMAN_SECONDS) {
+      return reply(c, { error: 'bad_time' }, 400);
+    }
+    humanSeconds = body.humanSeconds;
+  }
 
   const status =
     typeof body?.status === 'string' && (STATUSES as readonly string[]).includes(body.status)
@@ -591,18 +633,50 @@ portal.patch('/admin/tickets/:id', async (c) => {
   if (projectId !== undefined) {
     statements.push(env.DB.prepare('UPDATE tickets SET project_id = ?, updated_at = ? WHERE id = ?').bind(projectId, t, ticket.id));
   }
+  if (attention) {
+    statements.push(env.DB.prepare('UPDATE tickets SET attention = ?, updated_at = ? WHERE id = ?').bind(attention, t, ticket.id));
+  }
+  if (humanSeconds !== undefined) {
+    statements.push(env.DB.prepare('UPDATE tickets SET human_seconds = ?, updated_at = ? WHERE id = ?').bind(humanSeconds, t, ticket.id));
+  }
   const statusChanged = status && status !== ticket.status;
+  // Done freezes the bill at what the meter reads now; reopening unfreezes it.
+  const finalMeter = { humanSeconds: humanSeconds ?? ticket.human_seconds, aiMicroUsd: ticket.ai_micro_usd };
+  const bill = statusChanged && status === 'done' ? priceLine(finalMeter) : undefined;
   if (statusChanged) {
     statements.push(
-      env.DB.prepare('UPDATE tickets SET status = ?, updated_at = ? WHERE id = ?').bind(status, t, ticket.id),
+      env.DB.prepare('UPDATE tickets SET status = ?, price_cents = ?, updated_at = ? WHERE id = ?')
+        .bind(status, status === 'done' ? priceOf(finalMeter).totalCents : null, t, ticket.id),
       env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, created_at) VALUES (?, 'system', ?, ?)`)
-        .bind(ticket.id, `Status changed to “${STATUS_LABEL[status]}”.`, t),
+        .bind(ticket.id, `Status changed to “${STATUS_LABEL[status]}”.${bill ? ` Total: ${bill}.` : ''}`, t),
     );
   }
   if (statements.length) await env.DB.batch(statements);
 
-  if (statusChanged) c.executionCtx.waitUntil(notifyClientOfStatus(env, ticket, status));
+  if (statusChanged) c.executionCtx.waitUntil(notifyClientOfStatus(env, ticket, status, bill));
   return reply(c, { ok: true });
+});
+
+/*
+ * The time meter. The admin ticket view sends a heartbeat with the seconds
+ * Ali had it open and focused; they add up to human_seconds. A finished
+ * ticket's meter is closed — correct it with PATCH humanSeconds if needed.
+ */
+portal.post('/admin/tickets/:id/time', async (c) => {
+  const ticket = await loadTicket(c, true);
+  if (!ticket) return reply(c, { error: 'not_found' }, 404);
+  const body = await readJson<{ seconds?: unknown }>(c);
+  const seconds = body?.seconds;
+  if (typeof seconds !== 'number' || !Number.isInteger(seconds) || seconds <= 0 || seconds > MAX_TIME_STEP_SECONDS) {
+    return reply(c, { error: 'bad_time' }, 400);
+  }
+  if (ticket.status === 'done' || ticket.status === 'declined') return reply(c, { error: 'meter_closed' }, 409);
+  const row = await c.env.DB.prepare(
+    'UPDATE tickets SET human_seconds = MIN(human_seconds + ?, ?) WHERE id = ? RETURNING human_seconds',
+  )
+    .bind(seconds, MAX_HUMAN_SECONDS, ticket.id)
+    .first<{ human_seconds: number }>();
+  return reply(c, { humanSeconds: row?.human_seconds ?? ticket.human_seconds });
 });
 
 portal.post('/admin/tickets/:id/messages', async (c) => {
@@ -622,6 +696,56 @@ portal.post('/admin/tickets/:id/messages', async (c) => {
   ]);
   if (!internal) c.executionCtx.waitUntil(notifyClientOfReply(env, ticket, text));
   return reply(c, { ok: true }, 201);
+});
+
+/* —— agentic runs: the same transitions the local runner uses, driven by an
+   admin session so the Harness can claim and report without a second secret —— */
+
+portal.post('/admin/tickets/:id/claim', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return reply(c, { error: 'not_found' }, 404);
+  const body = await readJson<{ executor?: unknown; model?: unknown }>(c);
+
+  const result = await claimTicketById(c.env, id, { executor: body?.executor, model: body?.model });
+  if (!result.ok) {
+    // `not_claimable` means somebody else has it, or it was never approved.
+    return reply(c, { error: result.error }, result.error === 'not_found' ? 404 : 409);
+  }
+  return reply(c, {
+    ticket: result.claimed.ticket,
+    messages: result.claimed.messages,
+    runId: result.claimed.runId,
+    executor: result.claimed.executor,
+    model: result.claimed.model,
+  });
+});
+
+portal.post('/admin/tickets/:id/run-result', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return reply(c, { error: 'not_found' }, 404);
+
+  const body = await readJson<Record<string, unknown>>(c);
+  const report = normalizeReport(body, 'dsh');
+  const done = await finishRun(c.env, id, report);
+  if (!done.ok) return reply(c, { error: done.error }, done.error === 'not_found' ? 404 : 409);
+
+  c.executionCtx.waitUntil(
+    mailAli(c.env, {
+      subject: `[#${id}] ${report.executor} ${report.ok ? 'finished' : 'failed'}: ${done.title}`,
+      text:
+        `${report.summary}\n\n${report.diffStat ? `${report.diffStat}\n\n` : ''}` +
+        `${report.branch ? `Branch: ${report.branch} (local only, nothing pushed)\n` : ''}` +
+        `Cost: $${report.costUsd.toFixed(4)}${report.model ? ` · ${report.model}` : ''}\n` +
+        `Review: ${siteUrl(c.env)}/portal/admin#ticket=${id}`,
+    }),
+  );
+  return reply(c, { ok: true, costMicroUsd: done.costMicroUsd });
+});
+
+/** The fleet: what is running now, and what ran recently. */
+portal.get('/admin/runs', async (c) => {
+  const [running, recent] = await Promise.all([openRuns(c.env), recentRuns(c.env, 40)]);
+  return reply(c, { running, recent });
 });
 
 portal.get('/admin/clients', async (c) => {

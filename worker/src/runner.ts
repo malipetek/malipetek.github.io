@@ -4,22 +4,25 @@
  *   POST /runner/claim               { slugs }  → the oldest APPROVED ticket for
  *                                    one of those project slugs, moved to
  *                                    in_progress atomically; or { ticket: null }.
- *   POST /runner/tickets/:id/result  { ok, summary, branch?, diffStat?, diff? }
- *                                    → private runner note, status → review,
+ *   POST /runner/tickets/:id/result  { ok, summary, branch?, diffStat?, diff?,
+ *                                    costUsd?, executor?, model? }
+ *                                    → private run note, status → review,
  *                                    Ali gets an email. Client sees only the status.
  *
  * Auth is a single shared secret (RUNNER_TOKEN, a Worker secret) held by the
  * runner on Ali's machine. The runner can never approve: claim only matches
  * status = 'approved', which only the admin role can set (portal.ts).
+ *
+ * The transitions themselves live in runs.ts, shared with the Harness admin
+ * path, so a run is recorded — and attributable — the same way whoever started
+ * it. This module only adds the runner's own auth and notification.
  */
 import { Hono } from 'hono';
-import { encoder, type Env, type HonoEnv } from './shared.ts';
-import { mailAli, now, siteUrl } from './portal.ts';
+import { encoder, type HonoEnv } from './shared.ts';
+import { mailAli, siteUrl } from './portal.ts';
+import { claimNextForSlugs, finishRun, normalizeReport } from './runs.ts';
 
 const MAX_SLUGS = 50;
-const MAX_SUMMARY = 8000;
-const MAX_DIFFSTAT = 4000;
-const MAX_DIFF = 40000;
 
 export const runner = new Hono<HonoEnv>();
 
@@ -60,103 +63,35 @@ runner.get('/runner/projects', async (c) => {
 });
 
 runner.post('/runner/claim', async (c) => {
-  const env = c.env;
   const body = (await c.req.json().catch(() => null)) as { slugs?: unknown } | null;
   const slugs = Array.isArray(body?.slugs)
     ? body.slugs.filter((s): s is string => typeof s === 'string' && /^[a-z0-9][a-z0-9-]{0,62}$/.test(s)).slice(0, MAX_SLUGS)
     : [];
   if (!slugs.length) return c.json({ error: 'no_slugs' }, 400);
 
-  const t = now();
-  // One statement: pick and flip in the same write, so two runners (or a
-  // double poll) can never both get the same ticket.
-  const claimed = await env.DB.prepare(
-    `UPDATE tickets SET status = 'in_progress', updated_at = ?
-      WHERE status = 'approved' AND id = (
-        SELECT t.id FROM tickets t JOIN projects p ON p.id = t.project_id
-         WHERE t.status = 'approved' AND p.slug IN (${slugs.map(() => '?').join(',')})
-         ORDER BY t.updated_at LIMIT 1)
-      RETURNING id`,
-  )
-    .bind(t, ...slugs)
-    .first<{ id: number }>();
+  const claimed = await claimNextForSlugs(c.env, slugs, { executor: 'runner' });
   if (!claimed) return c.json({ ticket: null });
-
-  await env.DB.prepare(
-    `INSERT INTO ticket_messages (ticket_id, author, body, created_at) VALUES (?, 'system', ?, ?)`,
-  )
-    .bind(claimed.id, 'Status changed to “In progress”.', t)
-    .run();
-
-  const ticket = await env.DB.prepare(
-    `SELECT t.id, t.title, p.slug FROM tickets t JOIN projects p ON p.id = t.project_id WHERE t.id = ?`,
-  )
-    .bind(claimed.id)
-    .first<{ id: number; title: string; slug: string }>();
-  // Client messages are the request; Ali's notes (public or private) are his
-  // guidance. Status lines and earlier runner output are noise for the agent.
-  const { results: messages } = await env.DB.prepare(
-    `SELECT author, body, internal FROM ticket_messages
-      WHERE ticket_id = ? AND author IN ('client', 'ali') ORDER BY id`,
-  )
-    .bind(claimed.id)
-    .all<{ author: 'client' | 'ali'; body: string; internal: number }>();
-
-  return c.json({ ticket, messages });
+  return c.json({ ticket: claimed.ticket, messages: claimed.messages, runId: claimed.runId });
 });
 
 runner.post('/runner/tickets/:id/result', async (c) => {
-  const env = c.env;
   const id = Number(c.req.param('id'));
   if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'not_found' }, 404);
-  const body = (await c.req.json().catch(() => null)) as {
-    ok?: unknown;
-    summary?: unknown;
-    branch?: unknown;
-    diffStat?: unknown;
-    diff?: unknown;
-  } | null;
-  const str = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
-  const ok = body?.ok === true;
-  const summary = str(body?.summary, MAX_SUMMARY).trim() || (ok ? 'Done, no summary.' : 'Failed, no details.');
-  const branch = str(body?.branch, 200);
-  const diffStat = str(body?.diffStat, MAX_DIFFSTAT).trim();
-  const diff = str(body?.diff, MAX_DIFF);
 
-  const ticket = await env.DB.prepare(`SELECT id, title, status FROM tickets WHERE id = ?`)
-    .bind(id)
-    .first<{ id: number; title: string; status: string }>();
-  if (!ticket) return c.json({ error: 'not_found' }, 404);
-  // Only the run that claimed it may report; a ticket Ali already moved on wins.
-  if (ticket.status !== 'in_progress') return c.json({ error: 'not_in_progress' }, 409);
-
-  const note = [
-    ok ? `Runner finished${branch ? ` on branch ${branch}` : ''}.` : 'Runner failed.',
-    '',
-    summary,
-    diffStat && `\nChanged files:\n${diffStat}`,
-    diff && `\nDiff${diff.length >= MAX_DIFF ? ' (truncated)' : ''}:\n${diff}`,
-  ]
-    .filter((part) => part !== '')
-    .join('\n');
-
-  const t = now();
-  await env.DB.batch([
-    env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'runner', ?, 1, ?)`)
-      .bind(id, note, t),
-    env.DB.prepare(`UPDATE tickets SET status = 'review', updated_at = ? WHERE id = ?`).bind(t, id),
-    env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, created_at) VALUES (?, 'system', ?, ?)`)
-      .bind(id, 'Status changed to “In review”.', t),
-  ]);
+  const body = await c.req.json().catch(() => null);
+  const report = normalizeReport(body, 'runner');
+  const done = await finishRun(c.env, id, report);
+  if (!done.ok) return c.json({ error: done.error }, done.error === 'not_found' ? 404 : 409);
 
   c.executionCtx.waitUntil(
-    mailAli(env, {
-      subject: `[#${id}] Runner ${ok ? 'finished' : 'failed'}: ${ticket.title}`,
+    mailAli(c.env, {
+      subject: `[#${id}] Runner ${report.ok ? 'finished' : 'failed'}: ${done.title}`,
       text:
-        `${summary}\n\n${diffStat ? `${diffStat}\n\n` : ''}` +
-        `${branch ? `Branch: ${branch} (local only, nothing pushed)\n` : ''}` +
-        `Review: ${siteUrl(env)}/portal/admin#ticket=${id}`,
+        `${report.summary}\n\n${report.diffStat ? `${report.diffStat}\n\n` : ''}` +
+        `${report.branch ? `Branch: ${report.branch} (local only, nothing pushed)\n` : ''}` +
+        `Cost: $${report.costUsd.toFixed(4)} (${report.executor}${report.model ? ` · ${report.model}` : ''})\n` +
+        `Review: ${siteUrl(c.env)}/portal/admin#ticket=${id}`,
     }),
   );
-  return c.json({ ok: true });
+  return c.json({ ok: true, runCostUsd: report.costUsd });
 });

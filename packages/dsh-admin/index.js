@@ -17,7 +17,8 @@
  * @module @malipetek/dsh-admin
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 /**
  * Where the plugin keeps its state. Absolute literals, not derived from
@@ -37,6 +38,20 @@ const OPEN_PATH = '/Users/malipetek/.dsh/admin/open-ticket.json';
  * so on activation and `/admin hello` records it.
  */
 const CLIENT_PATH = '/Users/malipetek/.dsh/admin/client.json';
+/**
+ * The local runner's config. It is where the projects root and any explicit
+ * slug → folder mapping live, so the panel resolves a project folder exactly
+ * the way the runner does instead of guessing a second convention.
+ */
+const RUNNER_CONFIG = '/Users/malipetek/.config/malipetek-runner/config.json';
+
+/**
+ * Bumped when the Host half changes in a way worth telling apart. It rides in
+ * the snapshot, so "which plugin generation wrote this?" is answerable — a
+ * changed package needs a Harness restart to load a fresh module generation,
+ * and this is how that shows up.
+ */
+const VERSION = '1.1.0';
 
 /** The Worker that serves the portal. Overridable with `/admin endpoint <url>`. */
 const DEFAULT_ENDPOINT = 'https://malipetek-intercom.malipetek.workers.dev';
@@ -88,6 +103,24 @@ async function writeText(path, text, mode = 0o644) {
   await writeFile(path, text, { encoding: 'utf8', mode });
 }
 
+/** Expand a leading `~` so a config value can be written the way a human writes it. */
+function expandHome(value) {
+  return value.startsWith('~/') ? join(homedir(), value.slice(2)) : value;
+}
+
+/**
+ * Where a project slug lives on this machine, or null when nothing says.
+ * An explicit `projects[slug]` wins; otherwise it is `<projectsRoot>/<slug>`.
+ */
+async function projectPathFor(slug) {
+  if (typeof slug !== 'string' || slug.length === 0) return null;
+  const runner = await readJson(RUNNER_CONFIG, {});
+  const explicit = runner?.projects?.[slug];
+  if (typeof explicit === 'string' && explicit.length > 0) return expandHome(explicit);
+  const root = typeof runner?.projectsRoot === 'string' && runner.projectsRoot.length > 0 ? expandHome(runner.projectsRoot) : null;
+  return root === null ? null : join(root, slug);
+}
+
 /**
  * The stored connection settings.
  * @returns `{ endpoint, token }`; `token` is empty when signed out.
@@ -128,6 +161,7 @@ async function writeSnapshot(snapshot) {
  */
 async function writeFailure(endpoint, message) {
   await writeSnapshot({
+    version: VERSION,
     fetchedAt: Date.now(),
     endpoint,
     signedIn: false,
@@ -209,6 +243,8 @@ function explain(code, status) {
     bad_attention: 'That attention value is not accepted.',
     bad_time: 'That time value is not accepted.',
     meter_closed: 'The time meter is closed on a done or declined ticket.',
+    not_claimable: 'That ticket is not approved any more — somebody else claimed it, or it moved on.',
+    not_in_progress: 'Only a ticket that is in progress can take a run report. It was already moved on.',
   };
   if (known[code] !== undefined) return known[code];
   return `The portal rejected the request (${code}, HTTP ${status}).`;
@@ -226,6 +262,7 @@ async function refresh(config) {
     request(config, '/admin/projects'),
   ]);
   const snapshot = {
+    version: VERSION,
     fetchedAt: Date.now(),
     endpoint: config.endpoint,
     signedIn: true,
@@ -252,6 +289,20 @@ const postMessage = (config, ticketId, body, internal) =>
 
 const createProject = (config, name, slug) =>
   request(config, '/admin/projects', { method: 'POST', body: { name, slug } });
+
+/** Take a ticket for a named executor: flips it to in_progress and opens a run. */
+const claimTicket = (config, ticketId, executor, model) =>
+  request(config, `/admin/tickets/${encodeURIComponent(ticketId)}/claim`, {
+    method: 'POST',
+    body: { executor, model },
+  });
+
+/** Close the run that owns a ticket and move it to review. */
+const reportRun = (config, ticketId, payload) =>
+  request(config, `/admin/tickets/${encodeURIComponent(ticketId)}/run-result`, {
+    method: 'POST',
+    body: payload,
+  });
 
 const linkProject = (config, userId, projectId) =>
   request(config, `/admin/clients/${encodeURIComponent(userId)}/projects/${encodeURIComponent(projectId)}`, {
@@ -347,7 +398,16 @@ function makeCommandHandler(ctx) {
           const detail = await getTicket(config, id);
           await writeText(
             OPEN_PATH,
-            JSON.stringify({ fetchedAt: Date.now(), ticket: detail?.ticket ?? null, messages: detail?.messages ?? [] }, null, 2) + '\n',
+            JSON.stringify(
+              {
+                fetchedAt: Date.now(),
+                ticket: detail?.ticket ?? null,
+                messages: detail?.messages ?? [],
+                runs: detail?.runs ?? [],
+              },
+              null,
+              2,
+            ) + '\n',
           );
           return {
             kind: 'success',
@@ -634,6 +694,111 @@ export function apply(ctx) {
     }
     return dispose;
   }, 'admin: admin_directory tool');
+
+  ctx.effect(() => {
+    let dispose = null;
+    try {
+      dispose = ctx.tools.register({
+        name: 'admin_work',
+        description: [
+          'Take a client ticket and do the work, then report what happened.',
+          'Action "claim" moves an APPROVED ticket to in progress and hands back the brief: what the client asked plus Ali\'s guidance, the project slug, and where that project lives on this machine.',
+          'Do the work in a fresh git worktree on a `ticket-<id>` branch — never in the main checkout — or hand it to an external agent through the external_agents tool, then report it either way.',
+          'Action "report" records the outcome: the summary, the branch, the changed files and the diff, and what the run cost. That record is what the portal meters and what Ali reviews, so state plainly what changed and what is still unverified; do not claim success you did not confirm.',
+          'One run may report once. If the work cannot start, set the ticket back to approved with admin_tickets set_status rather than leaving it in progress.',
+        ].join(' '),
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['action'],
+          properties: {
+            action: { type: 'string', enum: ['claim', 'report'], description: 'claim a ticket to work on, or report the finished run.' },
+            ticketId: { type: 'number', description: 'The ticket id, for both actions.' },
+            executor: {
+              type: 'string',
+              description: 'Who did the work: "dsh" for this harness, or the external agent — "claude-code", "opencode", "devin".',
+            },
+            model: { type: 'string', description: 'The model that did the work, when it can be named.' },
+            ok: { type: 'boolean', description: 'True when the work completed, false when it failed. For report.' },
+            summary: { type: 'string', description: 'What happened, for report. This is what Ali reads first.' },
+            branch: { type: 'string', description: 'The local branch the work is on, for report. Nothing is pushed.' },
+            diffStat: { type: 'string', description: 'Output of `git diff --stat`, for report.' },
+            diff: { type: 'string', description: 'The diff itself, for report. Truncated if enormous.' },
+            costUsd: { type: 'number', description: 'What the run cost in US dollars, for report. Omit when unknown.' },
+          },
+        },
+        output: {
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['message'],
+            properties: { message: { type: 'string' } },
+          },
+          render: (_args, value) => [{ type: 'text', text: value.message }],
+        },
+        async execute(args) {
+          const config = await loadConfig();
+
+          if (args.action === 'claim') {
+            if (typeof args.ticketId !== 'number') throw new Error('ticketId is required.');
+            const claim = await claimTicket(config, args.ticketId, args.executor ?? 'dsh', args.model);
+            await refresh(config);
+            const ticket = claim?.ticket ?? {};
+            const path = await projectPathFor(ticket.slug);
+            const brief = (claim?.messages ?? [])
+              .map((message) => `[${message.author}${message.internal === 1 ? ' · private' : ''}] ${message.body}`)
+              .join('\n');
+            const budget =
+              typeof ticket.budget_cents === 'number' && ticket.budget_cents > 0
+                ? ` · budget $${(ticket.budget_cents / 100).toFixed(2)}`
+                : '';
+            return {
+              message: [
+                `Claimed #${ticket.id} "${ticket.title}" as ${claim?.executor ?? 'dsh'}${claim?.model ? ` (${claim.model})` : ''}. Run ${claim?.runId ?? '?'}.`,
+                `Project ${ticket.slug ?? '— none —'}${path === null ? ' (no local folder resolved; check the runner config)' : ` → ${path}`}`,
+                `Attention: ${ticket.attention ?? 'checked'}${budget}`,
+                `Suggested branch ticket-${ticket.id}${path === null ? '' : `, worktree ~/.cache/malipetek-runner/worktrees/${ticket.slug}-ticket-${ticket.id}`}`,
+                '',
+                'Brief:',
+                brief.length > 0 ? brief : '(no client messages)',
+                '',
+                'Report it with admin_work action "report" when it is done — the ticket moves to review and the portal meters the run.',
+              ].join('\n'),
+            };
+          }
+
+          if (args.action === 'report') {
+            if (typeof args.ticketId !== 'number') throw new Error('ticketId is required.');
+            if (typeof args.ok !== 'boolean') throw new Error('ok is required (true when the work completed).');
+            if (typeof args.summary !== 'string' || args.summary.trim().length === 0) {
+              throw new Error('summary is required — say what actually happened.');
+            }
+            const payload = {
+              ok: args.ok,
+              summary: args.summary,
+              branch: args.branch,
+              diffStat: args.diffStat,
+              diff: args.diff,
+              costUsd: args.costUsd,
+              executor: args.executor ?? 'dsh',
+              model: args.model,
+            };
+            const result = await reportRun(config, args.ticketId, payload);
+            await refresh(config);
+            const cost = typeof result?.costMicroUsd === 'number' ? ` Recorded $${(result.costMicroUsd / 1_000_000).toFixed(4)} against the ticket.` : '';
+            return {
+              message: `Reported #${args.ticketId} as ${args.ok ? 'finished' : 'failed'} (${payload.executor}). The ticket is now in review and Ali has been emailed.${cost}`,
+            };
+          }
+
+          throw new Error(`Unknown action "${args.action}". Use "claim" or "report".`);
+        },
+      });
+    } catch (error) {
+      ctx.logger?.warn?.(`admin: could not register admin_work: ${error?.message ?? String(error)}`);
+    }
+    return dispose;
+  }, 'admin: admin_work tool');
 
   // Keep the snapshot warm so the panel has something to render on first open,
   // and so a failure surfaces in the panel rather than waiting for a click.
