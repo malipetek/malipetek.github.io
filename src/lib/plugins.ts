@@ -74,6 +74,14 @@ const readmes = import.meta.glob('../../packages/*/README.md', {
   import: 'default',
 }) as Record<string, string>;
 
+/** The packument fields this module reads; present in both document forms. */
+interface Packument {
+  'dist-tags'?: { latest?: string };
+  time?: { modified?: string };
+  license?: string;
+  versions?: Record<string, { license?: string; dist?: { unpackedSize?: number } }>;
+}
+
 export interface NpmState {
   /** True when the registry knows this package. */
   published: boolean;
@@ -130,13 +138,23 @@ function titleOf(slug: string): string {
  * A Cloudflare subrequest with an edge cache. The `cf` member is ignored by
  * Node's fetch during `astro dev`, so the same code path works locally.
  */
-async function registryFetch(url: string): Promise<Response> {
+async function registryFetch(url: string, accept = 'application/json'): Promise<Response> {
   const init = {
-    headers: { accept: 'application/json' },
+    headers: { accept },
     cf: { cacheTtl: REGISTRY_TTL, cacheEverything: true },
   };
   return fetch(url, init as RequestInit);
 }
+
+/**
+ * The packument npm and pnpm actually install from.
+ *
+ * While the registry is still finishing a fresh publish it serves this and 404s
+ * the full document — observable for a minute or two after every release. Asking
+ * for it lets a just-published version read as published instead of flipping the
+ * page back to "unpublished".
+ */
+const ABBREVIATED = 'application/vnd.npm.install-v1+json';
 
 async function fetchNpm(name: string): Promise<NpmState> {
   const cached = memo.get(name);
@@ -150,21 +168,26 @@ async function fetchNpm(name: string): Promise<NpmState> {
       registryFetch(`${DOWNLOADS_API}/${name}`),
     ]);
 
-    // A 404 is an answer: the package is not published. Anything else is a
-    // failure to ask, and the page says so instead of claiming "unpublished".
-    if (pkgRes.status === 404) {
-      const value: NpmState = { published: false, checked: true };
-      memo.set(name, { at: Date.now(), value });
-      return value;
+    // The full document 404s both for a package that does not exist and for one
+    // the registry has not finished indexing, so the abbreviated document has to
+    // break the tie before either answer is trusted.
+    let doc: Packument;
+    if (pkgRes.ok) {
+      doc = (await pkgRes.json()) as Packument;
+    } else {
+      const abbreviated = await registryFetch(`${REGISTRY}/${name}`, ABBREVIATED);
+      if (!abbreviated.ok) {
+        // Now a 404 really is an answer: the package is not published.
+        if (abbreviated.status === 404 || pkgRes.status === 404) {
+          const value: NpmState = { published: false, checked: true };
+          memo.set(name, { at: Date.now(), value });
+          return value;
+        }
+        return miss;
+      }
+      doc = (await abbreviated.json()) as Packument;
     }
-    if (!pkgRes.ok) return miss;
 
-    const doc = (await pkgRes.json()) as {
-      'dist-tags'?: { latest?: string };
-      time?: { modified?: string };
-      license?: string;
-      versions?: Record<string, { license?: string; dist?: { unpackedSize?: number } }>;
-    };
     const latest = doc['dist-tags']?.latest;
     const version = latest ? doc.versions?.[latest] : undefined;
 
