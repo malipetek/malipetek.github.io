@@ -1,0 +1,14 @@
+{
+  "name": "@malipetek/admin-ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The malipetek.dev admin workbench, shared by /portal/admin and the Harness Admin plugin. One React app over one api(method, path, body).",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  }
+}

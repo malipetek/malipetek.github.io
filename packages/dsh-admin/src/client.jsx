@@ -1,0 +1,447 @@
+/**
+ * Client half of the Admin panel bundle: the shared admin workbench
+ * (packages/admin-ui), the same app /portal/admin serves on the web.
+ *
+ * Every portal call is an `/admin api <METHOD> <path> [json]` line run by the
+ * Host half, so the session token stays there and a click spends no model turn.
+ * The line goes to the Host's `/api/admin/command` route (see `makeTransport`),
+ * which touches no Session; the loopback bridge and `remote.commands.execute`
+ * are fallbacks for a Host without it. Built into ../client.js by
+ * build.mjs.
+ *
+ * @module @malipetek/dsh-admin
+ */
+import { useSyncExternalStore } from 'react';
+import { AdminApp } from '../../admin-ui/src/index.js';
+
+/** Panel identity: one id addresses both the sidebar row and the main page. */
+const PANEL_ID = 'admin';
+const NAMESPACE = 'admin';
+/** Reported to the Host on activation, so "did the panel load?" has an answer. */
+const CLIENT_VERSION = '3.4.0';
+const DICTIONARY = { title: 'Admin' };
+
+/**
+ * Rejections that mean "not this Session" rather than "this call failed".
+ * A Session another process owns, one that is gone, and one owned by
+ * subagent routing are all reasons to ask the next Session instead.
+ */
+const SESSION_RETRY_CODES = new Set(['session/writer-held', 'session/not-found', 'session/agent-busy']);
+const MAX_SESSION_TRIES = 4;
+let lastSessionId;
+
+/**
+ * Sessions this panel may borrow for a Host call, best first: the one the main
+ * view retains (what the user is looking at), then the rest newest first.
+ */
+function sessionCandidates(ctx) {
+  const snapshot = ctx.sessions?.list?.getSnapshot();
+  const rows = Object.values(snapshot?.byId ?? {});
+  const inMainView = (row) => (row?.retainedBy?.mainView ?? 0) > 0;
+  const newestFirst = (a, b) => (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0);
+  const ids = [...rows.filter(inMainView).sort(newestFirst), ...rows.filter((row) => !inMainView(row)).sort(newestFirst)]
+    .map((row) => row?.id)
+    .filter((id) => typeof id === 'string' && id.length > 0);
+  if (ids.length > 0) return ids;
+  return (Array.isArray(snapshot?.ids) ? snapshot.ids : []).filter((id) => typeof id === 'string' && id.length > 0);
+}
+
+async function withSession(ctx, call) {
+  const candidates = sessionCandidates(ctx);
+  if (candidates.length === 0) return { ok: false, text: 'No session is open. Open a session, then try again.' };
+  const known = candidates.indexOf(lastSessionId);
+  if (known > 0) candidates.unshift(candidates.splice(known, 1)[0]);
+  let failure = { ok: false, text: 'No open session would take the call.' };
+  for (const sessionId of candidates.slice(0, MAX_SESSION_TRIES)) {
+    const result = await call(sessionId);
+    if (result.ok) {
+      lastSessionId = sessionId;
+      return result;
+    }
+    failure = result;
+    if (!SESSION_RETRY_CODES.has(result.code)) break;
+  }
+  return failure;
+}
+
+/**
+ * Run one `/admin …` Host command. The Remote answers in two layers: `ok:false`
+ * when the call itself failed, and `value.result.kind === 'error'` when the
+ * command refused. Both come back as `{ ok: false, text }`.
+ */
+function makeCommand(ctx) {
+  return (line) =>
+    withSession(ctx, async (sessionId) => {
+      try {
+        const result = await ctx.remote.commands.execute(sessionId, `/admin ${line}`, []);
+        if (result?.ok !== true) {
+          const error = result?.error ?? {};
+          const code = error.code ?? 'command-failed';
+          return { ok: false, code, text: `${code}${typeof error.message === 'string' ? `: ${error.message}` : ''}` };
+        }
+        const payload = result.value?.result;
+        const text = typeof payload?.text === 'string' ? payload.text : '';
+        return payload?.kind === 'success' ? { ok: true, text: text || 'Done.' } : { ok: false, text: text || 'The command failed.' };
+      } catch (error) {
+        return { ok: false, text: error?.message ?? String(error) };
+      }
+    });
+}
+
+/**
+ * Every command lands in the session log, result text included, and the
+ * workbench polls — so after one `/admin bridge` the panel talks to the Host's
+ * loopback bridge with `fetch` instead, which logs nothing. A failed bridge
+ * call asks for the bridge again once (the Host may have restarted with a new
+ * port and secret); if that fails too, this page load falls back to commands.
+ *
+ * The fallback must not flood the log the way polling did: a read is answered
+ * from cache for FALLBACK_READ_MS, and any write clears the cache so its effect
+ * shows on the next poll.
+ *
+ * Losing the bridge is not final. Finding it is itself a command, so it fails
+ * whenever every Session is busy (an agent mid-turn holds its writer) — and the
+ * fallback fails then too, with `session/writer-held`. So after a failure the
+ * bridge is tried again once BRIDGE_RETRY_MS has passed instead of never.
+ */
+const FALLBACK_READ_MS = 5 * 60_000;
+const BRIDGE_RETRY_MS = 15_000;
+const isRead = (line) => line.startsWith('api GET ') || line === 'localinfo';
+
+/** What to say when every Session refused and the bridge is not up yet. */
+const BUSY_TEXT =
+  'Every open session is busy (an agent is working in it), so the panel could not reach the Admin Host. ' +
+  'It will reconnect on its own in a few seconds; or open a new session.';
+
+function makeTransport(command) {
+  let bridge = null;
+  let retryAt = 0;
+  const cache = new Map();
+
+  const explain = (result) => (SESSION_RETRY_CODES.has(result.code) ? { ...result, text: BUSY_TEXT } : result);
+
+  const fallback = async (line) => {
+    if (!isRead(line)) {
+      cache.clear();
+      return explain(await command(line));
+    }
+    const hit = cache.get(line);
+    if (hit && Date.now() - hit.at < FALLBACK_READ_MS) return hit.result;
+    const result = await command(line);
+    if (result.ok) cache.set(line, { at: Date.now(), result });
+    return explain(result);
+  };
+
+  const locate = async () => {
+    const r = await command('bridge');
+    if (!r.ok) throw new Error(r.text);
+    const value = JSON.parse(r.text);
+    if (typeof value?.url !== 'string' || typeof value?.secret !== 'string') throw new Error('Malformed bridge reply.');
+    return value;
+  };
+
+  const send = async ({ url, secret }, line) => {
+    const response = await fetch(`${url}/command`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ line }),
+    });
+    if (response.status !== 200) throw new Error(`Bridge answered ${response.status}.`);
+    const { kind, text } = await response.json();
+    return kind === 'success' ? { ok: true, text: text || 'Done.' } : { ok: false, text: text || 'The command failed.' };
+  };
+
+  // First choice: the Host's `/api/admin/command` route — authenticated by the
+  // Harness, no Session involved, nothing logged, nothing to look up. A 404
+  // means a Host from before the route; any failure tries the bridge instead,
+  // and the route is asked again after BRIDGE_RETRY_MS.
+  let routeRetryAt = 0;
+  const viaRoute = async (line) => {
+    const response = await fetch('api/admin/command', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ line }),
+    });
+    if (response.status !== 200) throw new Error(`Route answered ${response.status}.`);
+    const { kind, text } = await response.json();
+    return kind === 'success' ? { ok: true, text: text || 'Done.' } : { ok: false, text: text || 'The command failed.' };
+  };
+
+  const transport = async (line) => {
+    if (Date.now() >= routeRetryAt) {
+      try {
+        return await viaRoute(line);
+      } catch {
+        routeRetryAt = Date.now() + BRIDGE_RETRY_MS;
+      }
+    }
+    if (Date.now() < retryAt) return fallback(line);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      // One lookup shared by the calls the board fires together.
+      const pending = (bridge ??= locate());
+      try {
+        return await send(await pending, line);
+      } catch {
+        if (bridge === pending) bridge = null;
+      }
+    }
+    retryAt = Date.now() + BRIDGE_RETRY_MS;
+    return fallback(line);
+  };
+  return transport;
+}
+
+/** The sidebar glyph. */
+function AdminIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v7h-4z" />
+    </svg>
+  );
+}
+
+const inject = ['slots', 'sessions', 'layout', 'remote', 'remote.commands', 'sidebarRightTabs', 'sidebarRight'];
+
+function apply(ctx) {
+  const command = makeTransport(makeCommand(ctx));
+  /** Host commands whose text is JSON. */
+  const json = async (line) => {
+    const r = await command(line);
+    let value = null;
+    try {
+      value = JSON.parse(r.text);
+    } catch {
+      /* not JSON */
+    }
+    if (!r.ok) {
+      throw Object.assign(new Error(value?.message ?? r.text), { code: value?.code ?? r.code ?? 'command-failed', status: value?.status });
+    }
+    return value;
+  };
+  /**
+   * Git Graph, when its plugin is installed: it publishes its view and a
+   * `focus(repo, ref)` on `globalThis.__dshGitGraphNative`. Its Host binds to
+   * one session, so the review uses the session this panel would borrow.
+   */
+  const gitGraph = {
+    available: () => typeof globalThis.__dshGitGraphNative?.View === 'function',
+    sessionId: () => sessionCandidates(ctx)[0] ?? null,
+    View: (props) => {
+      const View = globalThis.__dshGitGraphNative?.View;
+      return View ? View(props) : null;
+    },
+    focus: (args) => globalThis.__dshGitGraphNative.focus(args),
+  };
+  /**
+   * A run's Harness conversation, opened in the main view. The Host finds the
+   * session on this disk or imports the log its node uploaded; then the
+   * built-in `uiWorkspace` service opens it. `uiWorkspace` is optional: a
+   * Harness without it leaves `available()` false and activation unblocked.
+   */
+  let workspace = null;
+  ctx.inject(['uiWorkspace'], (scope) => {
+    workspace = scope.uiWorkspace ?? null;
+    scope.effect(
+      () => () => {
+        workspace = null;
+      },
+      'admin: uiWorkspace',
+    );
+  });
+  const conversation = {
+    available: () => typeof workspace?.openSession === 'function',
+    open: async ({ runId, sessionId, sessionDir }) => {
+      if (!sessionId || !sessionDir) throw new Error('This run did not record its Harness session.');
+      const found = await json(`session ${runId} ${sessionId} ${sessionDir}`);
+      const ws = workspace;
+      if (typeof ws?.openSession !== 'function') throw new Error('This Harness cannot open sessions from a plugin.');
+      // The log is on disk now, but the session catalog still lists what it
+      // found before the import — retain() would call the id unknown.
+      if (typeof ctx.sessions?.refresh === 'function') await ctx.sessions.refresh().catch(() => undefined);
+      await ws.openSession(found?.sessionId ?? sessionId);
+      return found;
+    },
+  };
+  /** One stable object so React effects that depend on it do not re-run. */
+  const host = { command, json, gitGraph, conversation };
+  const api = (method, path, body) => json(`api ${method} ${path}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`);
+
+  /* ————— Ticket runs in the session list ————— */
+
+  const RUN_DIR_RE = /^(.+)-(task|ticket)-(\d+)(?:-run(\d+))?$/;
+
+  /** The ticket a worktree cwd belongs to: `<slug>-(task|ticket)-<id>[-run<n>]`. */
+  function ticketFromCwd(cwd) {
+    if (typeof cwd !== 'string' || !cwd.includes('/malipetek-runner/worktrees/')) return null;
+    const match = RUN_DIR_RE.exec(cwd.replace(/\/+$/, '').split('/').pop() ?? '');
+    if (!match) return null;
+    return { slug: match[1], kind: match[2], ticketId: Number(match[3]), runId: match[4] ? Number(match[4]) : null, cwd };
+  }
+
+  /** Live-read one session's cwd from the catalog (updates on refresh/import). */
+  function useSessionCwd(sessionId) {
+    const list = ctx.sessions?.list;
+    return useSyncExternalStore(
+      (notify) => (typeof list?.subscribe === 'function' ? list.subscribe(notify) : () => {}),
+      () => list?.getSnapshot?.()?.byId?.[sessionId]?.cwd,
+    );
+  }
+
+  const TICKET_COLORS = {
+    task: 'var(--dsw-alias-state-business-primary, #4c8dff)',
+    ticket: 'var(--dsw-alias-state-warning-primary, #d18f2e)',
+  };
+
+  function openTicket(run) {
+    ctx.layout?.selectPanel?.(PANEL_ID);
+    const target = `#ticket=${run.ticketId}`;
+    if (window.location.hash === target) window.dispatchEvent(new HashChangeEvent('hashchange'));
+    else window.location.hash = target;
+  }
+
+  /** The `sidebar.session.row.leading` mark: a colored #N chip on run sessions. */
+  function TicketMark({ sessionId }) {
+    const run = ticketFromCwd(useSessionCwd(sessionId));
+    if (!run) return null;
+    const color = TICKET_COLORS[run.kind];
+    return (
+      <span
+        title={`${run.kind === 'task' ? 'System task' : 'Client ticket'} #${run.ticketId}${run.runId ? ` · run ${run.runId}` : ''} — click opens the ticket`}
+        onClick={(e) => {
+          e.stopPropagation();
+          openTicket(run);
+        }}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minWidth: 14,
+          height: 14,
+          padding: '0 3px',
+          borderRadius: 4,
+          fontSize: 9,
+          fontWeight: 700,
+          lineHeight: 1,
+          color: '#fff',
+          background: color,
+          cursor: 'pointer',
+        }}
+      >
+        {run.ticketId}
+      </span>
+    );
+  }
+
+  /** Extra line in the row hover card: what ticket and run this session was. */
+  function TicketHover({ sessionId }) {
+    const run = ticketFromCwd(useSessionCwd(sessionId));
+    if (!run) return null;
+    return (
+      <div style={{ fontSize: 12, color: 'var(--dsw-alias-label-secondary, #adb2b8)' }}>
+        {run.kind === 'task' ? 'System task' : 'Client ticket'} #{run.ticketId}
+        {run.runId ? ` · run ${run.runId}` : ''} · {run.slug}
+      </div>
+    );
+  }
+
+  /** The session a right-pane tab is open on, whatever shape the slot gives it. */
+  function tabSessionId(props) {
+    const params = props?.params ?? props?.tab?.params ?? props ?? {};
+    return typeof params.sessionId === 'string' ? params.sessionId : null;
+  }
+
+  const actionStyle = {
+    display: 'block',
+    width: '100%',
+    textAlign: 'left',
+    padding: '8px 12px',
+    margin: '0 0 8px',
+    borderRadius: 6,
+    border: '1px solid var(--dsw-alias-border-l4, #333)',
+    background: 'var(--dsw-alias-button-elevated-fill, transparent)',
+    color: 'inherit',
+    font: 'inherit',
+    cursor: 'pointer',
+  };
+
+  /**
+   * The right-pane Ticket tab: the run's ticket info and its actions, out of
+   * the session rows. One tab kind for every session — a session that did not
+   * come from a run says so.
+   */
+  function TicketTab(props) {
+    const sessionId = tabSessionId(props);
+    const run = ticketFromCwd(useSessionCwd(sessionId));
+    if (!run) return <div style={{ padding: 12, fontSize: 13, opacity: 0.7 }}>This session did not come from a ticket run.</div>;
+    return (
+      <div style={{ padding: 12 }}>
+        <div style={{ fontSize: 13, marginBottom: 12, color: 'var(--dsw-alias-label-secondary, #adb2b8)' }}>
+          {run.kind === 'task' ? 'System task' : 'Client ticket'} #{run.ticketId}
+          {run.runId ? ` · run ${run.runId}` : ''}
+          <br />
+          {run.slug}
+        </div>
+        <button type="button" style={actionStyle} onClick={() => openTicket(run)}>
+          Open ticket #{run.ticketId} in Admin
+        </button>
+        {gitGraph.available() ? (
+          <button
+            type="button"
+            style={actionStyle}
+            onClick={async () => {
+              let repo = run.cwd; // the worktree itself is a valid repo path
+              try {
+                const where = await json(`review ${run.slug}`);
+                if (where?.found && where.repo) repo = where.repo;
+              } catch {
+                /* fall back to the worktree */
+              }
+              try {
+                await gitGraph.focus({ sessionId, repo, ref: `malipetek/${run.kind}-${run.ticketId}` });
+              } catch {
+                /* Git Graph not reachable */
+              }
+            }}
+          >
+            Review in Git Graph
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  function TicketTabTitle(props) {
+    const run = ticketFromCwd(useSessionCwd(tabSessionId(props)));
+    return <span>{run ? `Ticket #${run.ticketId}` : 'Ticket'}</span>;
+  }
+
+  // Downloads go through the Host (it holds the token and the disk). Uploads
+  // need the bytes, which the bridge cannot carry: /admin attach takes paths.
+  const files = { download: (path) => json(`download ${path}`) };
+
+  function AdminPage() {
+    return <AdminApp api={api} host={host} files={files} platform="dsh" />;
+  }
+
+  ctx.inject(['locale'], (localeCtx) => {
+    localeCtx.effect(() => localeCtx.locale.register(NAMESPACE, { en: DICTIONARY }), 'admin: locale namespace');
+  });
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID, locale: NAMESPACE }, AdminPage));
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL_ID, order: 12, label: 'Admin' }, AdminIcon));
+  // Run sessions get a ticket chip on the row and a line in the hover card;
+  // the actions themselves live in the right-pane Ticket tab.
+  ctx.slots.inject('sidebar.session.row.leading', () =>
+    ctx.slots.register({ name: 'sidebar.session.row.leading', id: 'admin-ticket', order: 10, locale: NAMESPACE }, TicketMark));
+  ctx.slots.inject('sidebar.session.row.hover', () =>
+    ctx.slots.register({ name: 'sidebar.session.row.hover', id: 'admin-ticket', order: 10, locale: NAMESPACE }, TicketHover));
+  ctx.effect(() => ctx.sidebarRightTabs?.register?.({ id: 'admin-ticket', kind: 'ticket', priority: 'builtin', title: () => 'Ticket' }), 'admin: ticket tab type');
+  ctx.slots.inject('sidebar.right.pane.tab', () =>
+    ctx.slots.register({ name: 'sidebar.right.pane.tab', key: 'admin-ticket', locale: NAMESPACE }, TicketTab));
+  ctx.slots.inject('sidebar.right.pane.tab.title', () =>
+    ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: 'admin-ticket', locale: NAMESPACE }, TicketTabTitle));
+  // Goes over the route when the Host has it; only an older Host makes this
+  // (and the bridge lookup behind it) a session command.
+  void command(`hello ${CLIENT_VERSION}`).catch(() => undefined);
+}
+
+export default { name: PANEL_ID, inject, apply };

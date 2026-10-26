@@ -1,7 +1,7 @@
 {
   "name": "@malipetek/dsh-admin",
   "version": "1.0.0",
-  "description": "Admin panel for malipetek.dev: the ticket queue, clients and projects, with tools so an agent can triage them too.",
+  "description": "Management portal for malipetek.dev: tickets, the agent work queue and its fleet of nodes, system tasks, clients and projects — with tools so an agent can run it too.",
   "type": "module",
   "main": "index.js",
   "icon": "./icon.svg",
@@ -33,7 +33,7 @@
     },
     "meta": {
       "title": "Admin",
-      "description": "The malipetek.dev portal from inside the Harness: ticket queue with approve, reply and internal notes, plus clients and projects."
+      "description": "The malipetek.dev management portal: tickets, the work queue and its nodes, system tasks, clients and projects."
     }
   },
   "keywords": [
