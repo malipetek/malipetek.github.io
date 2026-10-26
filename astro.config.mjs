@@ -4,6 +4,7 @@ import markdoc from '@astrojs/markdoc';
 import react from '@astrojs/react';
 import keystatic from '@keystatic/astro';
 import cloudflare from '@astrojs/cloudflare';
+import portalHeaders from './src/integrations/portalHeaders.mjs';
 
 // The site runs on Cloudflare Workers: SSR serves /keystatic (and any dynamic
 // route) while prerendered pages stay static. Keystatic edits commit straight
@@ -16,7 +17,7 @@ export default defineConfig({
   redirects: {
     '/chat': '/#talk',
   },
-  integrations: [sitemap(), markdoc(), react(), keystatic()],
+  integrations: [sitemap(), markdoc(), react(), keystatic(), portalHeaders()],
   markdown: {
     shikiConfig: {
       theme: 'css-variables',

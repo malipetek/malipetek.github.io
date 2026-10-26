@@ -1,6 +1,8 @@
 ---
 import Base from '../../layouts/Base.astro';
 import '../../styles/portal.css';
+import { ATTENTION, DEFAULT_ATTENTION, clock, money, timeCents } from '../../lib/pricing.js';
+import { ACCEPT } from '../../lib/attachments.js';
 
 // A static shell; everything signed-in is fetched from the Worker in the browser.
 export const prerender = true;
@@ -39,15 +41,39 @@ export const prerender = true;
         </div>
       </form>
       <p class="portal-note" style="margin-top: 1.5rem; max-width: 46ch">
-        New here? Same form. Your account is created when you first sign in, and
-        Ali links it to your project by hand.
+        New here? Same form. Your account is created when you first sign in;
+        then three questions set up your project.
       </p>
     </section>
 
     <!-- signed in -->
     <div data-signed-in hidden>
       <section class="portal-section">
+        <h2>Your projects</h2>
+        <ul class="project-list" data-projects></ul>
+        <p class="portal-note" data-no-projects hidden>
+          No project yet. Three questions and there is one.
+        </p>
+        <p class="portal-actions">
+          <a class="btn btn--solid" href="/portal/start" data-setup>Set up a project →</a>
+        </p>
+      </section>
+
+      <section class="portal-section" data-assistants hidden>
+        <h2>Connect an assistant</h2>
+        <p class="portal-note" style="max-width: 56ch">
+          Work from Claude, Cursor or any assistant that speaks MCP: it can see
+          your projects, file requests, reply and set budgets — the same things
+          you can do here, nothing more. Each assistant gets its own key; revoke
+          it any time.
+        </p>
+        <ul class="token-list" data-tokens></ul>
+        <p class="portal-actions"><button type="button" class="btn" data-new-token>Connect an assistant →</button></p>
+      </section>
+
+      <section class="portal-section">
         <h2>Your requests</h2>
+        <p class="portal-note" data-usage hidden></p>
         <ul class="ticket-list" data-tickets></ul>
       </section>
 
@@ -66,13 +92,42 @@ export const prerender = true;
             <label class="portal-label" for="nt-body">What do you need?</label>
             <textarea id="nt-body" name="body" rows="7" maxlength="8000" required></textarea>
           </div>
+          <div class="portal-field">
+            <label class="portal-label" for="nt-files">Files <span style="text-transform:none;letter-spacing:0">(optional: screenshots, PDFs — up to 5, 10 MB each)</span></label>
+            <input id="nt-files" class="portal-files" name="files" type="file" multiple accept={ACCEPT} />
+          </div>
+          <fieldset class="attention">
+            <legend class="portal-label">How much of me do you want?</legend>
+            {
+              ATTENTION.map((a) => (
+                <label class="attention-option">
+                  <input type="radio" name="attention" value={a.key} checked={a.key === DEFAULT_ATTENTION} />
+                  <span>
+                    <strong>{a.name}</strong>
+                    <em>
+                      {a.typicalSeconds
+                        ? `about ${clock(a.typicalSeconds)} of my time, ${money(timeCents(a.typicalSeconds))}`
+                        : `by the clock, ${money(timeCents(3600))} an hour`}
+                    </em>
+                    <span>{a.what}</span>
+                  </span>
+                </label>
+              ))
+            }
+          </fieldset>
+          <div class="portal-field" style="max-width: 16rem">
+            <label class="portal-label" for="nt-budget">Budget in USD <span style="text-transform:none;letter-spacing:0">(optional)</span></label>
+            <input id="nt-budget" name="budget" type="number" min="1" max="10000" step="1" inputmode="numeric" placeholder="No limit" />
+          </div>
           <div class="portal-actions">
             <button class="btn btn--solid" type="submit">Send request →</button>
             <p class="portal-note" data-ticket-status role="status" aria-live="polite"></p>
           </div>
           <p class="portal-note" style="max-width: 52ch">
-            Ali reads every request before anything happens. You'll get an email
-            when he replies or the status changes.
+            You pay for the time I actually spend, by the second, plus what the
+            AI run cost, with no markup. The figures above are estimates; the
+            ticket shows the real meter. Work pauses when it reaches your budget, until you raise it.
+            Nothing starts until I have read the request.
           </p>
         </form>
       </section>
@@ -90,10 +145,15 @@ export const prerender = true;
     requestLink,
     session,
     statusBadge,
+    type CheckState,
     type Project,
+    type Site,
     type Ticket,
     type User,
   } from '../../lib/portal';
+  import { confirmDialog, openDialog } from '../../lib/fleetAdmin';
+  import { money } from '../../lib/pricing.js';
+  import { checkPicked } from '../../lib/attachments.js';
 
   const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
   const loading = $('[data-loading]');
@@ -119,9 +179,9 @@ export const prerender = true;
         ? tickets.map((t) =>
             h(
               'li',
-              { class: 'ticket-row' },
+              { class: `ticket-row${t.unread ? ' is-unread' : ''}` },
               h('span', { class: 'ticket-no' }, `#${t.id}`),
-              h('a', { class: 'ticket-title', href: `/portal/ticket#id=${t.id}` }, t.title),
+              h('a', { class: 'ticket-title', href: `/portal/ticket#id=${t.id}` }, t.title, t.unread ? h('span', { class: 'ticket-new' }, 'new reply') : ''),
               statusBadge(t.status),
               h(
                 'span',
@@ -134,9 +194,278 @@ export const prerender = true;
     );
   }
 
+  const CHECK_MARK: Record<CheckState, string> = {
+    ready: '✓',
+    missing: '○',
+    pending: '…',
+    unknown: '?',
+  };
+
+  /** A project, with how far its setup is from being servable without Ali. */
+  function renderProject(project: Project) {
+    const { setup } = project;
+    const known = setup.checks.filter((check) => check.state !== 'unknown');
+    return h(
+      'li',
+      { class: 'project' },
+      h(
+        'p',
+        { class: 'project-head' },
+        h('strong', { class: 'project-name' }, project.name),
+        h('span', { class: 'project-kind' }, project.kind === 'new' ? 'built from nothing' : 'existing code'),
+        h(
+          'span',
+          { class: `project-count${setup.autonomous ? ' is-ready' : ''}` },
+          setup.autonomous ? 'ready' : `${setup.ready}/${setup.total} ready`,
+        ),
+      ),
+      h(
+        'ul',
+        { class: 'setup-checks' },
+        ...known.map((check) =>
+          h(
+            'li',
+            { class: `setup-check setup-check--${check.state}` },
+            h('span', { class: 'setup-check__mark', 'aria-hidden': 'true' }, CHECK_MARK[check.state]),
+            h('span', null, check.detail),
+          ),
+        ),
+      ),
+      siteBlock(project),
+    );
+  }
+
+  type Usage = { billedCents: number; openCents: number; aiCents: number; tickets: number };
+
+  /** What the account has cost so far: finished work, and the meter on the rest. */
+  function renderUsage(usage: Usage) {
+    const el = $('[data-usage]');
+    const parts = [
+      usage.billedCents ? `${money(usage.billedCents)} for finished requests` : '',
+      usage.openCents ? `${money(usage.openCents)} on the meter for the rest` : '',
+    ].filter(Boolean);
+    el.hidden = parts.length === 0;
+    el.textContent = parts.length ? `So far: ${parts.join(', ')}. AI is at cost (${money(usage.aiCents)} of it).` : '';
+  }
+
+  type AgentToken = { id: number; label: string; created_at: number; last_used_at: number | null };
+
+  async function renderTokens() {
+    const { tokens } = await api<{ tokens: AgentToken[] }>('/portal/agent-tokens');
+    $('[data-tokens]').replaceChildren(
+      ...tokens.map((t) =>
+        h(
+          'li',
+          { class: 'token-row' },
+          h('strong', null, t.label),
+          h('span', { class: 'portal-note' }, t.last_used_at ? `last used ${fmtTime(t.last_used_at)}` : 'not used yet'),
+          button('Revoke', () =>
+            confirmDialog(`Revoke “${t.label}”?`, 'That assistant loses access at once. You can make a new key any time.', 'Revoke', async () => {
+              await api(`/portal/agent-tokens/${t.id}`, { method: 'DELETE' });
+              await renderTokens();
+            }, true),
+          ),
+        ),
+      ),
+    );
+  }
+
+  function tokenDialog() {
+    const label = h('input', { type: 'text', maxlength: 60, placeholder: 'e.g. Claude on my laptop' });
+    openDialog({
+      title: 'Connect an assistant',
+      subtitle: 'Name it so you know which key to revoke later.',
+      body: [label],
+      actions: (close, error) => [
+        button('Cancel', close),
+        button('Make the key →', async () => {
+          try {
+            const made = await api<{ token: string; mcpUrl: string; label: string }>('/portal/agent-tokens', {
+              body: { label: label.value.trim() },
+            });
+            close();
+            showToken(made);
+            await renderTokens();
+          } catch (e) {
+            error(errorText(e));
+          }
+        }, 'btn btn--solid'),
+      ],
+    });
+  }
+
+  /** The key, once. After this dialog only its hash exists. */
+  function showToken(made: { token: string; mcpUrl: string; label: string }) {
+    const config = JSON.stringify(
+      { mcpServers: { 'malipetek-dev': { type: 'http', url: made.mcpUrl, headers: { Authorization: `Bearer ${made.token}` } } } },
+      null,
+      2,
+    );
+    const copy = (text: string) => button('Copy', async (event) => {
+      // currentTarget is null once the handler awaits; take the button first.
+      const b = event.currentTarget as HTMLButtonElement;
+      await navigator.clipboard.writeText(text).catch(() => {});
+      b.textContent = 'Copied';
+    });
+    openDialog({
+      title: `Key for ${made.label}`,
+      subtitle: 'Copy it now: it is shown only this once.',
+      wide: true,
+      body: [
+        h('div', { class: 'dlg-field' }, h('span', { class: 'portal-label' }, 'Server address'), h('code', { class: 'token-value' }, made.mcpUrl), copy(made.mcpUrl)),
+        h('div', { class: 'dlg-field' }, h('span', { class: 'portal-label' }, 'Key'), h('code', { class: 'token-value' }, made.token), copy(made.token)),
+        h('div', { class: 'dlg-field' }, h('span', { class: 'portal-label' }, 'For an MCP config file'), h('pre', { class: 'token-config' }, config), copy(config)),
+        h('p', { class: 'portal-note' }, 'The assistant sends the key as "Authorization: Bearer …". Requests it files wait for Ali like any other.'),
+      ],
+      actions: (close) => [button('Done', close, 'btn btn--solid')],
+    });
+  }
+
+  let canPublish = false;
+  /** Projects whose site is on its way: polled while this page is open. */
+  const watching = new Set<string>();
+
+  const link = (href: string, text: string) => h('a', { href, target: '_blank', rel: 'noopener' }, text);
+
+  /** The hosted site: set it up, follow it, open it, publish it. */
+  function siteBlock(project: Project) {
+    if (project.kind !== 'new') return null;
+    const site = project.site;
+    const box = h('div', { class: 'project-site' });
+    if (!site || site.state === 'failed') {
+      if (site?.state === 'failed') box.append(h('p', { class: 'portal-note is-error' }, 'Setting up the site stopped. We have been told; you can also try again.'));
+      box.append(
+        h('p', { class: 'portal-actions' }, button(site ? 'Try again →' : 'Set up my site →', () => startDialog(project), 'btn btn--solid')),
+      );
+      return box;
+    }
+    if (site.state !== 'ready') {
+      watching.add(project.id);
+      box.append(
+        h('p', { class: 'project-later', role: 'status' }, site.state === 'signin' ? 'Waiting for you to open the sign-in link we emailed you.' : 'Your site is being made…'),
+      );
+      if (site.state === 'signin') {
+        box.append(
+          h('p', { class: 'portal-actions' }, button('Send the link again', async (event) => {
+            const b = event.currentTarget as HTMLButtonElement;
+            b.disabled = true;
+            try {
+              await api(`/portal/projects/${project.id}/site/signin`, { method: 'POST', body: {} });
+              b.textContent = 'Sent — check your inbox';
+            } catch (error) {
+              b.textContent = errorText(error);
+              b.disabled = false;
+            }
+          })),
+        );
+      }
+      return box;
+    }
+    watching.delete(project.id);
+    box.append(
+      h(
+        'p',
+        { class: 'project-links' },
+        site.previewUrl ? link(site.previewUrl, 'Open the preview ↗') : null,
+        site.editorUrl ? link(site.editorUrl, 'Edit your content ↗') : null,
+        site.productionUrl ? link(site.productionUrl, 'Live site ↗') : null,
+      ),
+    );
+    if (canPublish && site.previewUrl) {
+      box.append(h('p', { class: 'portal-actions' }, button('Publish the preview →', () => publishDialog(project, site))));
+    } else {
+      box.append(h('p', { class: 'project-later' }, 'Changes land on the preview first. Ali publishes them when you say they look right.'));
+    }
+    return box;
+  }
+
+  function button(text: string, onClick: (event: MouseEvent) => void, cls = 'btn') {
+    const b = h('button', { type: 'button', class: cls }, text);
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function startDialog(project: Project) {
+    openDialog({
+      title: `Set up ${project.name}`,
+      subtitle: 'A real site, hosted for you, with a preview and an editor.',
+      body: [
+        h(
+          'ol',
+          { class: 'steps' },
+          h('li', null, 'We email you a sign-in link from our hosting platform (gptflare.site). It is your own account: nobody else can reach your site.'),
+          h('li', null, 'When you open it, the site is made from your answers: a repo, a preview address and an editor for your content.'),
+          h('li', null, 'Every change lands on the preview first. Nothing goes live until it is published.'),
+        ),
+        h('p', { class: 'portal-note' }, 'Hosting and AI runs are billed at cost on the requests that use them.'),
+      ],
+      actions: (close, error) => [
+        button('Not now', close),
+        button('Email me the link →', async (event) => {
+          const b = event.currentTarget as HTMLButtonElement;
+          b.disabled = true;
+          try {
+            await api(`/portal/projects/${project.id}/site`, { method: 'POST', body: {} });
+            close();
+            await refresh();
+          } catch (e) {
+            error(errorText(e));
+            b.disabled = false;
+          }
+        }, 'btn btn--solid'),
+      ],
+    });
+  }
+
+  function publishDialog(project: Project, site: Site) {
+    confirmDialog(
+      `Publish ${project.name}?`,
+      `What you see at ${site.previewUrl} becomes the live site${site.productionUrl ? ` at ${site.productionUrl}` : ''}.`,
+      'Publish',
+      async () => {
+        await api(`/portal/projects/${project.id}/site/publish`, { method: 'POST', body: {} });
+        await refresh();
+      },
+    );
+  }
+
+  let polling = 0;
+  /** While a site is on its way, ask about it every few seconds; each ask moves it forward. */
+  function poll() {
+    if (polling || !watching.size) return;
+    polling = window.setInterval(async () => {
+      if (!watching.size) {
+        clearInterval(polling);
+        polling = 0;
+        return;
+      }
+      if (document.visibilityState !== 'visible') return;
+      for (const id of [...watching]) {
+        const { site } = await api<{ site: Site | null }>(`/portal/projects/${id}/site`).catch(() => ({ site: null }));
+        if (site && (site.state === 'ready' || site.state === 'failed')) {
+          watching.delete(id);
+          await refresh();
+        }
+      }
+    }, 6000);
+  }
+
+  async function refresh() {
+    const { projects, canPublish: may } = await api<{ projects: Project[]; canPublish: boolean }>('/portal/me');
+    canPublish = may;
+    renderProjects(projects);
+  }
+
+  function renderProjects(projects: Project[]) {
+    $('[data-no-projects]').hidden = projects.length > 0;
+    $('[data-setup]').textContent = projects.length > 0 ? 'Add a project →' : 'Set up your first project →';
+    $('[data-projects]').replaceChildren(...projects.map(renderProject));
+    poll();
+  }
+
   async function showSignedIn() {
-    const [{ user, projects }, { tickets }] = await Promise.all([
-      api<{ user: User; projects: Project[] }>('/portal/me'),
+    const [{ user, projects, canPublish: may, usage }, { tickets }] = await Promise.all([
+      api<{ user: User; projects: Project[]; canPublish: boolean; usage: Usage }>('/portal/me'),
       api<{ tickets: Ticket[] }>('/portal/tickets'),
     ]);
     $('[data-who-email]').textContent = user.email;
@@ -151,7 +480,13 @@ export const prerender = true;
     if (projects.length === 1) select.value = projects[0].id;
     $('[data-project-field]').hidden = projects.length === 0;
 
+    canPublish = may;
+    renderUsage(usage);
+    // Only clients connect assistants; the key is a client credential.
+    $('[data-assistants]').hidden = user.role !== 'client';
+    if (user.role === 'client') void renderTokens().catch(() => {});
     renderTickets(tickets);
+    renderProjects(projects);
     loading.hidden = true;
     signedOut.hidden = true;
     signedIn.hidden = false;
@@ -193,22 +528,35 @@ export const prerender = true;
     const status = $('[data-ticket-status]');
     const button = form.querySelector('button')!;
     const data = new FormData(form);
+    const files = ($<HTMLInputElement>('#nt-files').files ?? []) as FileList;
+    const problem = files.length ? checkPicked(files) : null;
+    if (problem) return setNote(status, problem, true);
+    const fields = {
+      title: String(data.get('title') || ''),
+      body: String(data.get('body') || ''),
+      projectId: String(data.get('projectId') || '') || undefined,
+      attention: String(data.get('attention') || '') || undefined,
+      budgetCents: Number(data.get('budget')) > 0 ? Math.round(Number(data.get('budget')) * 100) : undefined,
+    };
+    // With files it goes as a form; the Worker reads the same fields from it.
+    let upload: FormData | undefined;
+    if (files.length) {
+      upload = new FormData();
+      for (const [k, v] of Object.entries(fields)) if (v !== undefined) upload.append(k, String(v));
+      for (const f of files) upload.append('files', f);
+    }
     button.disabled = true;
-    setNote(status, 'Sending…');
+    setNote(status, files.length ? 'Uploading…' : 'Sending…');
     try {
-      const { id } = await api<{ id: number }>('/portal/tickets', {
-        body: {
-          title: String(data.get('title') || ''),
-          body: String(data.get('body') || ''),
-          projectId: String(data.get('projectId') || '') || undefined,
-        },
-      });
+      const { id } = await api<{ id: number }>('/portal/tickets', upload ? { form: upload } : { body: fields });
       location.href = `/portal/ticket#id=${id}`;
     } catch (error) {
       setNote(status, errorText(error), true);
       button.disabled = false;
     }
   });
+
+  $('[data-new-token]').addEventListener('click', tokenDialog);
 
   $('[data-logout]').addEventListener('click', async () => {
     await logout().catch(() => {});

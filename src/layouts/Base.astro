@@ -13,7 +13,7 @@ interface Props {
 
 const {
   title = "M. Ali Petek",
-  description = "M. Ali Petek builds Shopify apps, small games, and the tools he wishes existed.",
+  description = "Self-serve software contracting by M. Ali Petek: human-approved, agent-built.",
   current = Astro.url.pathname,
   type = "website",
   image = "/me.webp",
@@ -56,12 +56,12 @@ const isCurrent = (href: string) =>
     <meta
       name="theme-color"
       media="(prefers-color-scheme: light)"
-      content="#efebe3"
+      content="#ffffff"
     />
     <meta
       name="theme-color"
       media="(prefers-color-scheme: dark)"
-      content="#17140f"
+      content="#0f0e0c"
     />
     <link rel="canonical" href={canonical.href} />
     <meta property="og:type" content={type} />
@@ -181,7 +181,7 @@ const isCurrent = (href: string) =>
   const metas = document.querySelectorAll<HTMLMetaElement>(
     'meta[name="theme-color"]',
   );
-  const COLORS = { light: "#efebe3", dark: "#17140f" } as const;
+  const COLORS = { light: "#ffffff", dark: "#0f0e0c" } as const;
 
   const reflect = () => {
     const theme =
@@ -217,26 +217,26 @@ const isCurrent = (href: string) =>
   }
 
   .site-head {
-    border-bottom: 2px solid var(--ink);
-    background: var(--bone);
+    background: var(--bone) var(--dash-h);
+    background-position: 0 100%;
     position: relative;
     z-index: 2;
   }
 
   .site-head-inner {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
-    padding-block: 1rem;
+    padding-block: 0.9rem;
   }
 
   .wordmark {
     font-family: var(--font-display);
-    font-weight: 800;
-    font-size: 1.5rem;
-    letter-spacing: -0.02em;
+    font-weight: 700;
+    font-size: 1.4rem;
+    letter-spacing: -0.03em;
     text-decoration: none;
   }
 
@@ -246,30 +246,30 @@ const isCurrent = (href: string) =>
     /* Seven entries now: let them wrap onto a second line on a phone rather
        than run off the edge. */
     flex-wrap: wrap;
-    gap: 0.35rem clamp(0.9rem, 3vw, 1.8rem);
+    gap: 0.35rem clamp(0.9rem, 2.6vw, 1.6rem);
     font-size: 15px;
+    font-weight: 500;
   }
 
   .theme-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
     padding: 0;
-    background: none;
-    border: 2px solid var(--ink);
+    background: var(--bone);
+    border: 1px solid var(--rule-strong);
+    border-radius: 50%;
     color: var(--ink);
     cursor: pointer;
     transition:
-      background var(--dur) var(--ease),
+      border-color var(--dur) var(--ease),
       color var(--dur) var(--ease);
   }
 
   .theme-toggle:hover {
-    background: var(--orange);
-    border-color: var(--orange);
-    color: var(--bone);
+    border-color: var(--ink);
   }
 
   :root[data-theme="light"] .theme-toggle .icon-sun {
@@ -284,9 +284,12 @@ const isCurrent = (href: string) =>
     text-decoration: none;
   }
 
+  .site-nav a:hover {
+    color: var(--ink);
+  }
+
   .site-nav a[aria-current="page"] {
     color: var(--ink);
-    font-weight: 600;
   }
 
   main {
@@ -294,9 +297,8 @@ const isCurrent = (href: string) =>
   }
 
   .site-foot {
-    border-top: 1px solid var(--rule);
     margin-top: clamp(3rem, 8vw, 6rem);
-    background: var(--bone);
+    background: var(--bone) var(--dash-h);
     position: relative;
     z-index: 2;
   }

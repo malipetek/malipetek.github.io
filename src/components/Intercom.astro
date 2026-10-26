@@ -35,7 +35,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
 >
   <div class="intercom-inner">
     <div class="intercom-lead">
-      <h2 class="intercom-title" id="intercom-title"><span class="intercom-no" aria-hidden="true">04 /</span>Ring the bell.</h2>
+      <h2 class="intercom-title" id="intercom-title"><span class="intercom-no" aria-hidden="true">07 /</span>Ring the bell.</h2>
 
       <button
         class="bell"
@@ -554,7 +554,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
 
       const DEMO_QUESTION = "Is he available for a project?";
       const DEMO_HANDOFF =
-        "Not taking new contracts right now, but notes still get read. Say what you are building and it reaches me.";
+        "Say what you need built or fixed and it reaches me. I read every request myself before anything starts.";
       const DEMO_SUMMARY =
         "The visitor wrote: “Is he available for a project?” Reply with a time that works for you.";
 
@@ -628,16 +628,19 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
 <style>
   /* ————— the orange field (full-bleed) ————— */
 
+  /* An inset panel: it bleeds to 8px from the viewport edge, rounded, and is
+     a touch translucent so the dot floor behind shows through the orange. */
   .intercom {
     --gutter: max(0px, (100vw - 78rem) / 2);
+    --inset: 8px;
     margin-top: clamp(2.5rem, 6vw, 4rem);
-    margin-inline: calc(-1 * (var(--pad) + var(--gutter)));
-    padding-inline: calc(var(--pad) + var(--gutter));
+    margin-inline: calc(-1 * (var(--pad) + var(--gutter)) + var(--inset));
+    padding-inline: calc(var(--pad) + var(--gutter) - var(--inset));
     padding-block: clamp(2.25rem, 6vw, 3.75rem);
     background: var(--orange);
-    background: color-mix(in srgb, var(--orange) 88%, transparent);
+    background: color-mix(in srgb, var(--orange) 90%, transparent);
     color: var(--ink);
-    border-block: 2px solid var(--ink);
+    border-radius: 14px;
   }
 
   .intercom-inner {
@@ -677,8 +680,9 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
   .intercom-title {
     margin: 0 0 clamp(1.2rem, 3vw, 2rem);
     font-size: clamp(2.75rem, 6.5vw, 5.25rem);
-    line-height: 0.94;
-    letter-spacing: -0.04em;
+    font-weight: 600;
+    line-height: 0.95;
+    letter-spacing: -0.035em;
   }
 
   .intercom-no {
@@ -699,7 +703,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     padding: 0;
     background: var(--ink);
     color: var(--bone);
-    border: 2px solid var(--ink);
+    border: 1px solid var(--ink);
     border-radius: 50%;
     cursor: pointer;
     transform-origin: 50% 14%;
@@ -800,7 +804,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     height: 10px;
     border-radius: 50%;
     background: var(--ink);
-    border: 2px solid var(--bone);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 18%, transparent);
   }
 
   /* ————— live panel (expands open) ————— */
@@ -858,7 +862,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     line-height: 1.45;
     background: var(--bone);
     color: var(--ink);
-    border: 2px solid var(--ink);
+    border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
     border-radius: 16px;
     overflow-wrap: anywhere;
     animation: msg-in 180ms var(--ease) both;
@@ -871,7 +875,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
 
   :global(.intercom .msg--me) {
     align-self: flex-end;
-    background: #e5ded0;
+    background: var(--paper);
     border-bottom-right-radius: 4px;
   }
 
@@ -957,9 +961,9 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     font-size: 14px;
     color: var(--ink);
     background: transparent;
-    border: 2px solid var(--ink);
+    border: 1px solid var(--ink);
     border-radius: 999px;
-    padding: 0.42em 0.85em;
+    padding: 0.5em 0.95em;
     cursor: pointer;
     transition:
       background var(--dur) var(--ease),
@@ -984,7 +988,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     display: flex;
     gap: 0.5rem;
     background: var(--bone);
-    border: 2px solid var(--ink);
+    border: 1px solid var(--ink);
     border-radius: 28px;
     padding: 0.5rem 0.5rem 0.5rem 1.1rem;
     animation: card-in 220ms var(--ease) both;
@@ -1031,7 +1035,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     line-height: 1;
     color: var(--bone);
     background: var(--ink);
-    border: 2px solid var(--ink);
+    border: 1px solid var(--ink);
     border-radius: 999px;
     padding: 0.7em 1.2em;
     cursor: pointer;
@@ -1084,7 +1088,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
   .handoff textarea {
     font-size: 15px;
     background: var(--bone);
-    border: 2px solid var(--ink);
+    border: 1px solid var(--rule-strong);
     border-radius: 12px;
     padding: 0.55em 0.7em;
     resize: vertical;

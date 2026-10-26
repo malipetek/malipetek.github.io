@@ -71,6 +71,8 @@ const mail = 'malipetek@gmail.com';
 </Base>
 
 <script>
+  import { getTurnstileToken } from '../lib/chatBackend.js';
+
   const form = document.getElementById('contact-form');
   if (form instanceof HTMLFormElement) {
     const status = form.querySelector('.contact-status');
@@ -109,10 +111,13 @@ const mail = 'malipetek@gmail.com';
       if (submit instanceof HTMLButtonElement) submit.disabled = true;
       if (status) status.textContent = 'Sending…';
       try {
+        // The Worker enforces Turnstile on /handoff; without a token every
+        // message is refused with turnstile_failed.
+        const turnstileToken = await getTurnstileToken().catch(() => '');
         const res = await fetch(`${endpoint}/handoff`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ email, message: text, summary: text.slice(0, 400), source: 'contact' }),
+          body: JSON.stringify({ email, message: text, summary: text.slice(0, 400), source: 'contact', turnstileToken }),
         });
         if (res.ok) {
           form.reset();
@@ -123,7 +128,9 @@ const mail = 'malipetek@gmail.com';
             status.textContent =
               err.error === 'rate_limited'
                 ? 'Too many messages from this address — try again in a bit, or email directly.'
-                : 'Could not send — email malipetek@gmail.com directly.';
+                : err.error === 'turnstile_failed'
+                  ? 'The spam check did not pass — reload the page and try again, or email directly.'
+                  : 'Could not send — email malipetek@gmail.com directly.';
         }
       } catch {
         if (status) status.textContent = 'Network error — email malipetek@gmail.com directly.';

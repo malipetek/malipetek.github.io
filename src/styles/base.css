@@ -35,12 +35,19 @@
 
 :root {
   /* palette */
-  --bone: #efebe3;
-  --ink: #141311;
-  --ink-soft: #5b574f;
-  --rule: #d6d0c4;
+  --bone: #ffffff;
+  --paper: #f8f7f4;
+  --ink: #16140f;
+  --ink-soft: #5d5850;
+  --rule: #e8e4dd;
+  --rule-strong: #d2ccc2;
   --orange: #ff5a1f;
   --code-bg: #1b1a17;
+
+  /* hairline system: dashed rules and the corner handles on framed blocks */
+  --dash: 12px;
+  --handle: 7px;
+  --dash-h: linear-gradient(90deg, var(--rule-strong) 50%, transparent 0) 0 0 / var(--dash) 1px repeat-x;
 
   /* type */
   --font-display: 'Bricolage Grotesque', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -75,11 +82,13 @@
 /* Night workshop — same hue family, flipped polarity. The orange and the code
    tokens stay; they were dark-ready already. */
 :root[data-theme='dark'] {
-  --bone: #17140f;
+  --bone: #0f0e0c;
+  --paper: #171512;
   --ink: #ece5d8;
-  --ink-soft: #9d9484;
-  --rule: #36302a;
-  --code-bg: #0f0e0c;
+  --ink-soft: #a0978a;
+  --rule: #2a2622;
+  --rule-strong: #3e3933;
+  --code-bg: #0a0908;
 }
 /* ————— reset ————— */
 
@@ -92,6 +101,11 @@
 html {
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
+}
+
+html {
+  scrollbar-color: var(--rule-strong) var(--bone);
+  caret-color: var(--orange);
 }
 
 body {
@@ -257,28 +271,36 @@ a:hover {
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.4em;
+  gap: 0.45em;
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: 500;
   font-size: 15px;
   line-height: 1;
   color: var(--ink);
-  background: transparent;
-  border: 2px solid var(--ink);
-  border-radius: 0;
-  padding: 0.6em 1.1em;
+  background: var(--bone);
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  padding: 0.75em 1.25em;
   text-decoration: none;
   cursor: pointer;
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .btn:hover {
-  background: var(--ink);
-  color: var(--bone);
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.btn:active {
+  background: var(--paper);
 }
 
 .btn--solid {
   background: var(--ink);
+  border-color: var(--ink);
   color: var(--bone);
 }
 
@@ -287,6 +309,61 @@ a:hover {
   border-color: var(--orange);
   color: var(--ink);
 }
+
+/* ————— hairline frames ————— */
+
+/* A block drawn like a selection on a canvas: one hairline, a small square
+   handle on each corner. The handles straddle the border line. */
+.frame {
+  position: relative;
+  background: var(--bone);
+  border: 1px solid var(--rule);
+}
+
+.frame::before {
+  content: '';
+  position: absolute;
+  inset: calc((var(--handle) - 1px) / -2 - 1px);
+  pointer-events: none;
+  --in: linear-gradient(var(--bone) 0 0);
+  --out: linear-gradient(var(--rule-strong) 0 0);
+  --i: calc(var(--handle) - 2px);
+  background:
+    var(--in) 1px 1px / var(--i) var(--i),
+    var(--in) calc(100% - 1px) 1px / var(--i) var(--i),
+    var(--in) 1px calc(100% - 1px) / var(--i) var(--i),
+    var(--in) calc(100% - 1px) calc(100% - 1px) / var(--i) var(--i),
+    var(--out) 0 0 / var(--handle) var(--handle),
+    var(--out) 100% 0 / var(--handle) var(--handle),
+    var(--out) 0 100% / var(--handle) var(--handle),
+    var(--out) 100% 100% / var(--handle) var(--handle);
+  background-repeat: no-repeat;
+}
+
+/* Page rails: the content column's edges, dashed, top to bottom. Place the
+   element inside main.wrap, on pages whose content insets from the column
+   edge. On the homepage they sit under the transparent WebGL canvas, so the
+   props occlude them. */
+.rails {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.rails::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: min(78rem, 100%);
+  transform: translateX(-50%);
+  --d: linear-gradient(var(--rule-strong) 50%, transparent 0);
+  background:
+    var(--d) var(--pad) 0 / 1px var(--dash) repeat-y,
+    var(--d) calc(100% - var(--pad)) 0 / 1px var(--dash) repeat-y;
+}
+
 
 .sr-only {
   position: absolute;
@@ -395,7 +472,7 @@ a:hover {
 
 .prose img {
   margin: 1.4em 0;
-  border: 2px solid var(--ink);
+  border: 1px solid var(--rule);
 }
 
 .prose iframe {

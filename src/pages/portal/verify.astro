@@ -34,6 +34,13 @@ export const prerender = true;
         body: { token },
       });
       session.set(s);
+      // Signed in from an assistant's consent page: go back there to decide.
+      const back = localStorage.getItem('portal-return');
+      localStorage.removeItem('portal-return');
+      // Same origin, the consent page only (the host may add a trailing slash).
+      if (back && /^\/portal\/authorize\/?\?/.test(back.slice(location.origin.length)) && back.startsWith(location.origin)) {
+        return location.replace(back);
+      }
       location.replace(user.role === 'admin' ? '/portal/admin' : '/portal');
     } catch (error) {
       document.querySelector('h1')!.textContent = 'That link did not work';

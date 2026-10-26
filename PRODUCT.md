@@ -12,15 +12,20 @@ Astro (user's choice after a reverted attempt — the revert was about design qu
 
 ## Users
 
-Peers and readers from the dev community (Linux, Shopify, Svelte, web-platform topics), plus curious visitors and potential collaborators who stumble onto the site. This is a personal home on the web, not a funnel.
+
+Business owners who need software work done and do not want to manage a development team: a fix, a feature, a small tool, an integration. Not specifically Shopify merchants. Peers and readers from the dev community still come for the blog; they are the second audience now, not the first.
 
 ## Product Purpose
 
-Muhammet Ali Petek's personal site: a showcase of who he is and what he's built, plus a blog of real fixes and technical writing. Success is a visitor thinking "this person actually builds things" and enjoying the writing — not converting.
+
+Muhammet Ali Petek's site, and the front door of his one-person contracting service. A visitor should understand in one glance what is on offer: self-serve software work, built by an AI agent, approved before and reviewed after by Ali. Success is a business owner opening a ticket. The shelf, the blog and the work record are the proof that a real developer is behind it.
 
 ## Positioning
 
-The site is the portfolio. Its craft and personality are themselves the demonstration. Voice is dry, self-aware, slightly absurd ("I sometimes just delete the modules I wrote to prove myself I can rewrite the thing", "Your favorite full stack JS developer"). Content is real solved problems, not thought-leadership.
+
+Self-serve software contracting: human-approved, agent-built. The client sends a request (portal, email or chat), Ali approves it, an AI agent builds it in a sealed copy of the project, Ali checks it before anything ships, as closely as the client asked. Price is metered, not tiered: Ali's measured time at $100/hour, billed by the second, plus the AI run at cost with no markup (`src/lib/pricing.js`). The client picks an attention level (Autopilot, Checked, Hands-on) and may set a budget; a job the agent finishes nearly unattended costs a minute or two of time. What gets built runs serverless, so there are no servers to patch or resize. The canonical wording lives in `src/lib/offer.js`.
+
+Voice stays dry, self-aware, plain. The honest framing is the selling point: "the agent types, I decide". Never "AI-powered", never "revolutionary", no invented prices or results. Written for business owners, so no jargon the reader has to look up.
 
 ## Capabilities and Constraints
 
@@ -33,7 +38,8 @@ The site is the portfolio. Its craft and personality are themselves the demonstr
 
 ## Brand Commitments
 
-Name: Muhammet Ali Petek / malipetek. Portrait: /me.webp. GitHub: github.com/malipetek. Confirmed loves: Svelte/SvelteKit, Directus, simple & cheap open-source tools. Self-deprecating humor is on-brand; marketing-speak is off-brand.
+
+Name: Muhammet Ali Petek / malipetek. Portrait: /me.webp. GitHub: github.com/malipetek. Works serverless-first and keeps tools simple and cheap. The earlier Svelte-centred stack story is retired: do not lead with frameworks. Self-deprecating humor is on-brand; marketing-speak is off-brand.
 
 ## Evidence on Hand
 

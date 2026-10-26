@@ -25,6 +25,8 @@ let sessionToken = null;
 
 let turnstileScript = null;
 let turnstileWidget = null;
+let executedOnce = false;
+const TOKEN_TIMEOUT_MS = 25_000;
 let resolveToken = null;
 
 /** Inject the Turnstile script once, and only when a site key is configured. */
@@ -54,7 +56,12 @@ export async function getTurnstileToken() {
     document.body.appendChild(container);
     turnstileWidget = turnstile.render(container, {
       sitekey: TURNSTILE_SITEKEY,
-      size: 'invisible',
+      // `size: 'invisible'` is not a Turnstile value; invisibility comes from the
+      // site key's mode, and this keeps the widget out of sight unless it must ask.
+      appearance: 'interaction-only',
+      // Run only when asked; by default render() runs it too, and the
+      // execute() below would then hit a widget that is already executing.
+      execution: 'execute',
       callback: (token) => {
         resolveToken?.(token);
         resolveToken = null;
@@ -68,7 +75,19 @@ export async function getTurnstileToken() {
 
   return new Promise((resolve) => {
     resolveToken = resolve;
+    // A challenge that never finishes (a blocked iframe, a bot check that will
+    // not pass) must not leave the caller waiting forever: give up with no
+    // token, and let the Worker's refusal produce a message the person can act on.
+    setTimeout(() => {
+      if (resolveToken === resolve) {
+        resolveToken = null;
+        resolve('');
+      }
+    }, TOKEN_TIMEOUT_MS);
     try {
+      // A token is single-use: clear the last one before asking again.
+      if (executedOnce) turnstile.reset(turnstileWidget);
+      executedOnce = true;
       turnstile.execute(turnstileWidget);
     } catch {
       resolve('');
@@ -222,19 +241,28 @@ export async function sendHandoff({ email, message, summary }) {
 /* ————————————————————— offline mock ————————————————————— */
 
 const FACTS = {
-  who: 'Muhammet Ali Petek — full-stack dev since 2017. Node plus whatever the project needs. I write the code, delete it, and rewrite it better.',
-  stack: 'Node, Svelte/SvelteKit, Shopify (Plus, checkout.liquid, apps), Directus, Linux on the desk. Cheap and open-source by conviction.',
+  who: 'Muhammet Ali Petek — full-stack dev since 2017, now a one-person contracting service. An agent does the typing; I approve the request and check the result.',
+  how: 'You send a request, I approve it, an AI agent builds it in a sealed copy of your project, and I check it before anything ships. You follow it in one thread at /portal.',
+  cost: 'You pay for the time I actually spend, by the second, at $100 an hour, plus what the AI run cost with no markup. A change the agent finishes on its own is a minute or two of my time. You pick how closely I look and can set a budget.',
+  aiCode: 'Yes. An agent does the typing. I approve every request before it starts and check the result before it ships; you choose how closely. That is the point, not the fine print.',
+  serverless: 'What I build runs serverless. No server to patch or resize, and a traffic spike is not a migration project.',
+  stack: 'Serverless-first, simple and cheap tools, whatever the project already uses. Years of Shopify and Node before that; the work record has the details.',
   svelte: 'I love Svelte. This site is Astro — the better fit for a mostly-static site. SvelteKit is still the pick for app work.',
   shopify: 'Years of Shopify: Plus migrations, Dawn-based themes, custom apps, checkout.liquid before they took it away. See /experience for the damage.',
   linux: 'Daily drove Linux Mint for years — Cinnamon then XFCE. The blog has the scars: GPU configs, xrandr scripts, ocamlfuse mounts.',
   work: 'Customily → TRUTH NYC → PAX Digital → Bemeir. Mostly e-commerce, mostly Shopify, always the weird integration nobody else wanted.',
-  built: 'Shopify apps, small games, and the tools he wished existed. The shelf lists them — see the top of this page.',
-  hire: 'Not taking new contracts right now, but notes still get read. Say what you are building and it reaches me.',
+  built: 'Apps, small games, and the tools I wished existed. The shelf lists them, further up this page.',
+  hire: 'Say what you need built or fixed and it reaches me. I read every request myself before anything starts.',
   astro: 'This site is Astro — static, cheap, no runtime. The blog and the work record are the interesting parts.',
   bot: 'I am a local ruleset standing in for Ali until the real assistant is wired up. Honest about what I do not know.',
 };
 
 const RULES = [
+  // The offer comes first: "how does this work" must not fall into the work-history rule.
+  [/how (does|do) (this|it|you)|how.*work\b|process|pipeline|ticket|portal/i, FACTS.how],
+  [/cost|price|pricing|rate|budget|cheap|expensive|how much/i, FACTS.cost],
+  [/\bai\b.*(code|write|build)|(code|written|built).*\bai\b|agent|robot.*code/i, FACTS.aiCode],
+  [/server|scal(e|ing)|hosting|infrastructure|downtime/i, FACTS.serverless],
   [/who|muhammet|petek|your name/i, FACTS.who],
   [/stack|tech|tools?|framework/i, FACTS.stack],
   [/svelte/i, FACTS.svelte],
@@ -245,13 +273,13 @@ const RULES = [
   [/built|built\?|projects?|shelf|made|shipped/i, FACTS.built],
   [/bot|chat|ai|robot|who are you/i, FACTS.bot],
   [/blog|post|wrote|writing|article/i, 'Seven entries in the log — Linux wounds, Shopify tricks, one Svelte hydration mystery. The full index is under Writing.'],
-  [/hello|hi|hey|selam/i, 'Hey. I know Ali\u2019s work — ask about the stack, Shopify, Linux, or how to reach him.'],
+  [/hello|hi|hey|selam/i, 'Hey. Ask how this works, what it costs, or just say what you need built.'],
   [/thank|thx|tesekkur/i, 'Noted. Rare politeness appreciated.'],
   [/joke/i, 'I once deleted a working module just to prove I could rewrite it. The joke is that it worked.'],
 ];
 
 const FALLBACKS = [
-  'I only know so much — try "stack", "shopify", "linux", "hire", or "who".',
+  'I only know so much — try "how does this work", "cost", "hire", or "who".',
   'Filed under: things to ask Ali. Meanwhile — "stack" or "experience" might cover it.',
   'No note on that. "who", "work", "stack", "blog" are safe bets.',
 ];

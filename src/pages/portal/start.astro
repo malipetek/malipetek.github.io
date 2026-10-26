@@ -1,0 +1,444 @@
+---
+import Base from '../../layouts/Base.astro';
+import '../../styles/portal.css';
+import { ATTENTION, DEFAULT_ATTENTION, clock, money, timeCents } from '../../lib/pricing.js';
+
+// A static shell; the wizard runs in the browser against the Worker.
+export const prerender = true;
+---
+
+<Base title="Set up a project — malipetek" description="Start a project with Ali in three questions." current="/portal">
+  <div class="portal">
+    <div class="portal-bar">
+      <h1>Set up</h1>
+      <div class="portal-who" data-who hidden>
+        <span data-who-email></span>
+        <a href="/portal">Your requests</a>
+      </div>
+    </div>
+
+    <p class="portal-note" data-loading>Loading…</p>
+
+    <section class="portal-section" data-signed-out hidden>
+      <p class="lede">The form is tied to your account. Sign in first — it takes a minute.</p>
+      <p><a class="btn btn--solid" href="/portal">Go to the portal →</a></p>
+    </section>
+
+    <!-- The fork. One question, two doors. -->
+    <section class="portal-section" data-fork hidden>
+      <p class="lede">Two ways in. Pick the one that sounds like you.</p>
+      <div class="fork">
+        <button class="fork-card" type="button" data-kind="existing">
+          <span class="fork-card__title">I have a site or codebase</span>
+          <span class="fork-card__note">It runs already, and you want it taken care of: fixes, features, upkeep.</span>
+        </button>
+        <button class="fork-card" type="button" data-kind="new">
+          <span class="fork-card__title">I need something built</span>
+          <span class="fork-card__note">Nothing exists yet. Say what you do and we build the way you work.</span>
+        </button>
+      </div>
+      <p class="portal-note" style="max-width: 52ch; margin-top: 1.25rem">
+        Three questions, then your first request is filed. Nothing is charged for asking.
+      </p>
+    </section>
+
+    <div data-flow hidden>
+      <ol class="steps" data-progress></ol>
+      <section class="portal-section" data-step></section>
+
+      <!-- The price contract, shown with the last answer. -->
+      <div data-meta hidden>
+        <fieldset class="attention">
+          <legend class="portal-label">How much of me do you want?</legend>
+          {
+            ATTENTION.map((a) => (
+              <label class="attention-option">
+                <input type="radio" name="attention" value={a.key} checked={a.key === DEFAULT_ATTENTION} />
+                <span>
+                  <strong>{a.name}</strong>
+                  <em>
+                    {a.typicalSeconds
+                      ? `about ${clock(a.typicalSeconds)} of my time, ${money(timeCents(a.typicalSeconds))}`
+                      : `by the clock, ${money(timeCents(3600))} an hour`}
+                  </em>
+                  <span>{a.what}</span>
+                </span>
+              </label>
+            ))
+          }
+        </fieldset>
+        <div class="portal-field" style="max-width: 16rem">
+          <label class="portal-label" for="st-budget">Budget in USD <span style="text-transform:none;letter-spacing:0">(optional)</span></label>
+          <input id="st-budget" name="budget" type="number" min="1" max="10000" step="1" inputmode="numeric" placeholder="No limit" />
+        </div>
+        <p class="portal-note" style="max-width: 52ch">
+          You pay for the time I actually spend, by the second, plus what the AI run cost, with no markup.
+          Nothing starts until I have read the request.
+        </p>
+      </div>
+
+      <div class="portal-actions">
+        <button class="btn" type="button" data-back hidden>← Back</button>
+        <button class="btn btn--solid" type="button" data-next>Continue →</button>
+      </div>
+      <p class="portal-note" data-status role="status" aria-live="polite"></p>
+    </div>
+  </div>
+</Base>
+
+<script>
+  import {
+    api,
+    createProject,
+    errorText,
+    h,
+    session,
+    type Brief,
+    type Project,
+    type ProjectKind,
+    type RepoKind,
+    type User,
+  } from '../../lib/portal';
+
+  const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
+
+  type FieldType = 'text' | 'area' | 'choice';
+
+  interface Field {
+    key: string;
+    label: string;
+    type: FieldType;
+    hint?: string;
+    placeholder?: string;
+    max?: number;
+    optional?: boolean;
+    options?: { value: string; label: string; note?: string }[];
+    /** Show this field only when another answer has a given value. */
+    showWhen?: { key: string; value: string };
+  }
+
+  interface Step {
+    title: string;
+    lede: string;
+    fields: Field[];
+  }
+
+  /*
+   * Two interviews, one shape: three questions each, with the last one becoming
+   * the first ticket. An existing project is asked where its code lives; a new
+   * one is asked what is done by hand, because that is the brief an agent can
+   * actually build from.
+   */
+  const STEPS: Record<ProjectKind, Step[]> = {
+    existing: [
+      {
+        title: 'What is it?',
+        lede: 'Name it, then describe it in a sentence or two.',
+        fields: [
+          { key: 'name', label: 'Project name', type: 'text', max: 80, placeholder: 'The shop, the app, the site' },
+          { key: 'what', label: 'What is it, and what does it do?', type: 'area', max: 1200 },
+        ],
+      },
+      {
+        title: 'Where does the code live?',
+        lede: 'A repo, a zip, or “not sure” — all three are fine.',
+        fields: [
+          {
+            key: 'repoKind',
+            label: 'How do we get it?',
+            type: 'choice',
+            options: [
+              { value: 'repo', label: 'A repo I can point you to', note: 'GitHub, GitLab, or a forge of your own' },
+              { value: 'zip', label: 'I will send a zip', note: 'A copy is enough to start' },
+              { value: 'none', label: 'Not sure yet', note: 'Say it on the first thread' },
+            ],
+          },
+          {
+            key: 'repo',
+            label: 'Repo URL',
+            type: 'text',
+            max: 300,
+            placeholder: 'https://github.com/you/repo',
+            showWhen: { key: 'repoKind', value: 'repo' },
+          },
+          {
+            key: 'where',
+            label: 'Anything else about where it lives?',
+            type: 'area',
+            max: 1200,
+            optional: true,
+            hint: 'Hosting, a staging copy, who has access.',
+          },
+        ],
+      },
+      {
+        title: 'What do you want first?',
+        lede: 'One request is enough to start. It becomes your first ticket.',
+        fields: [
+          {
+            key: 'goal',
+            label: 'The first thing',
+            type: 'area',
+            max: 1200,
+            hint: 'A fix, a feature, or “look at it and tell me what you would do”.',
+          },
+        ],
+      },
+    ],
+    new: [
+      {
+        title: 'What do you do?',
+        lede: 'Name it, then say what the business does — plain words.',
+        fields: [
+          { key: 'name', label: 'Project name', type: 'text', max: 80 },
+          { key: 'what', label: 'What do you do?', type: 'area', max: 1200 },
+        ],
+      },
+      {
+        title: 'What do you do by hand today?',
+        lede: 'The thing you wish happened on its own. This is the part that decides what gets built.',
+        fields: [
+          {
+            key: 'manual',
+            label: 'Done by hand, every week',
+            type: 'area',
+            max: 1200,
+            optional: true,
+            hint: 'Booking, quoting, invoices, posting, chasing people, a spreadsheet.',
+          },
+        ],
+      },
+      {
+        title: 'What would done look like?',
+        lede: 'In two weeks, what should exist that does not today?',
+        fields: [{ key: 'goal', label: 'Done looks like', type: 'area', max: 1200 }],
+      },
+    ],
+  };
+
+  const loading = $('[data-loading]');
+  const signedOut = $('[data-signed-out]');
+  const fork = $('[data-fork]');
+  const flow = $('[data-flow]');
+  const progress = $('[data-progress]');
+  const stepEl = $('[data-step]');
+  const meta = $('[data-meta]');
+  const back = $<HTMLButtonElement>('[data-back]');
+  const next = $<HTMLButtonElement>('[data-next]');
+  const status = $('[data-status]');
+
+  const answers: Record<string, string> = {};
+  let kind: ProjectKind | null = null;
+  let index = 0;
+
+  const setStatus = (text: string, error = false) => {
+    status.textContent = text;
+    status.classList.toggle('is-error', error);
+  };
+
+  const steps = () => (kind ? STEPS[kind] : []);
+
+  /** Only the fields the current answers make visible. */
+  const visibleFields = () =>
+    steps()[index].fields.filter((f) => !f.showWhen || answers[f.showWhen.key] === f.showWhen.value);
+
+  /** Read what is on screen into `answers`, so Back and re-render keep it. */
+  function capture() {
+    for (const field of steps()[index].fields) {
+      const el = document.getElementById(`f-${field.key}`);
+      if (field.type === 'choice') {
+        const checked = stepEl.querySelector<HTMLInputElement>(`input[name="f-${field.key}"]:checked`);
+        answers[field.key] = checked?.value ?? '';
+      } else if (el) {
+        answers[field.key] = (el as HTMLInputElement | HTMLTextAreaElement).value.trim();
+      }
+    }
+  }
+
+  function renderField(field: Field): HTMLElement {
+    const id = `f-${field.key}`;
+    const label = h('label', { class: 'portal-label', for: id }, field.label);
+    const hint = field.hint ? h('p', { class: 'portal-field__hint' }, field.hint) : null;
+
+    if (field.type === 'choice') {
+      return h(
+        'fieldset',
+        { class: 'choice' },
+        h('legend', { class: 'portal-label' }, field.label),
+        ...(field.options ?? []).map((option) =>
+          h(
+            'label',
+            { class: 'choice-option' },
+            h('input', {
+              type: 'radio',
+              name: id,
+              value: option.value,
+              checked: answers[field.key] === option.value,
+            }),
+            h(
+              'span',
+              { class: 'choice-option__body' },
+              h('strong', null, option.label),
+              option.note ? h('em', null, option.note) : null,
+            ),
+          ),
+        ),
+        hint,
+      );
+    }
+
+    if (field.type === 'area') {
+      return h(
+        'div',
+        { class: 'portal-field' },
+        label,
+        h('textarea', { id, rows: 5, maxlength: field.max ?? 1200 }, answers[field.key] ?? ''),
+        hint,
+      );
+    }
+
+    return h(
+      'div',
+      { class: 'portal-field' },
+      label,
+      h('input', {
+        id,
+        type: 'text',
+        maxlength: field.max ?? 200,
+        placeholder: field.placeholder,
+        value: answers[field.key] ?? '',
+      }),
+      hint,
+    );
+  }
+
+  function render() {
+    if (!kind) return;
+    const step = steps()[index];
+
+    progress.replaceChildren(
+      ...steps().map((_, at) =>
+        h(
+          'li',
+          { class: `step${at === index ? ' step--current' : ''}${at < index ? ' step--done' : ''}` },
+          String(at + 1),
+        ),
+      ),
+    );
+
+    stepEl.replaceChildren(h('h2', null, step.title), h('p', { class: 'lede' }, step.lede), ...visibleFields().map(renderField));
+
+    const last = index === steps().length - 1;
+    meta.hidden = !last;
+    back.hidden = index === 0;
+    next.textContent = last ? 'Create project →' : 'Continue →';
+    next.disabled = false;
+  }
+
+  async function submit() {
+    if (!kind) return;
+    const brief: Brief = {
+      what: answers.what ?? '',
+      goal: answers.goal ?? '',
+      ...(kind === 'existing' ? { where: answers.where || undefined } : { manual: answers.manual || undefined }),
+    };
+    const repoKind: RepoKind = kind === 'existing' && answers.repoKind ? (answers.repoKind as RepoKind) : 'none';
+    const budget = Number($<HTMLInputElement>('#st-budget').value);
+
+    next.disabled = true;
+    setStatus('Creating…');
+    try {
+      const { ticketId } = await createProject({
+        kind,
+        name: answers.name ?? '',
+        brief,
+        repoKind,
+        repo: repoKind === 'repo' ? answers.repo : undefined,
+        attention: $<HTMLInputElement>('input[name="attention"]:checked')?.value,
+        budgetCents: budget > 0 ? Math.round(budget * 100) : undefined,
+      });
+      location.href = `/portal/ticket#id=${ticketId}`;
+    } catch (error) {
+      setStatus(errorText(error), true);
+      next.disabled = false;
+    }
+  }
+
+  next.addEventListener('click', () => {
+    capture();
+    const missing = visibleFields().filter((field) => !field.optional && !answers[field.key]);
+    if (missing.length > 0) {
+      setStatus(`One more thing: ${missing.map((field) => field.label).join(', ')}.`, true);
+      return;
+    }
+    setStatus('');
+    if (index < steps().length - 1) {
+      index += 1;
+      render();
+      return;
+    }
+    void submit();
+  });
+
+  back.addEventListener('click', () => {
+    capture();
+    if (index === 0) return;
+    index -= 1;
+    setStatus('');
+    render();
+  });
+
+  // A radio can reveal the field it controls, so re-render on choice only.
+  stepEl.addEventListener('change', (event) => {
+    if ((event.target as HTMLInputElement).type !== 'radio') return;
+    capture();
+    render();
+  });
+
+  // Enter advances, except in a textarea where it is a newline.
+  stepEl.addEventListener('keydown', (event) => {
+    const target = event.target as HTMLElement;
+    if (event.key !== 'Enter' || target.tagName === 'TEXTAREA') return;
+    event.preventDefault();
+    next.click();
+  });
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-kind]')) {
+    button.addEventListener('click', () => {
+      kind = button.dataset.kind === 'new' ? 'new' : 'existing';
+      index = 0;
+      fork.hidden = true;
+      flow.hidden = false;
+      setStatus('');
+      render();
+    });
+  }
+
+  async function boot() {
+    if (!session.get()) {
+      loading.hidden = true;
+      signedOut.hidden = false;
+      return;
+    }
+    try {
+      const { user, projects } = await api<{ user: User; projects: Project[] }>('/portal/me');
+      $('[data-who-email]').textContent = user.email;
+      $('[data-who]').hidden = false;
+      loading.hidden = true;
+      fork.hidden = false;
+      if (projects.length > 0) {
+        const note = h(
+          'p',
+          { class: 'portal-note', style: 'margin: 0.6rem 0 0' },
+          `You already have ${projects.length} project${projects.length === 1 ? '' : 's'}. This adds another.`,
+        );
+        $('[data-fork] .lede').after(note);
+      }
+    } catch {
+      loading.hidden = true;
+      signedOut.hidden = false;
+    }
+  }
+
+  void boot();
+</script>

@@ -1,0 +1,130 @@
+---
+import Base from '../../layouts/Base.astro';
+import '../../styles/portal.css';
+
+// OAuth consent for an MCP client (ChatGPT and others). The Worker checks
+// every parameter; this page only asks the person. See worker/src/oauth.ts.
+export const prerender = true;
+---
+
+<Base title="Connect an assistant — malipetek" description="Allow an assistant to work on your account." current="/portal">
+  <div class="portal">
+    <p class="portal-note" data-loading>Checking the request…</p>
+
+    <section class="consent" data-bad hidden>
+      <h1>This request cannot be used</h1>
+      <p class="portal-note" data-bad-text></p>
+      <p class="portal-actions"><a class="btn" href="/portal">Go to the portal</a></p>
+    </section>
+
+    <section class="consent" data-signin hidden>
+      <h1>Sign in first</h1>
+      <p class="lede">
+        <strong data-client-name></strong> wants to connect to your malipetek.dev
+        account. Sign in, and you come straight back here to decide.
+      </p>
+      <p class="portal-actions"><a class="btn btn--solid" href="/portal" data-signin-link>Sign in →</a></p>
+    </section>
+
+    <section class="consent" data-ask hidden>
+      <h1>Connect <span data-client-name></span>?</h1>
+      <p class="lede">
+        It will act for <strong data-email></strong> and send you back to
+        <strong class="consent-host" data-host></strong>.
+      </p>
+      <p class="portal-note">Only allow this if you started connecting an assistant just now, and that address is the one you expect.</p>
+      <h2 class="portal-label">It will be able to</h2>
+      <ul class="consent-list">
+        <li>see your projects and how ready they are</li>
+        <li>read your requests and their conversations</li>
+        <li>file requests, reply, and change a request’s budget</li>
+      </ul>
+      <h2 class="portal-label">It will not be able to</h2>
+      <ul class="consent-list">
+        <li>start any work: Ali still reads every request first</li>
+        <li>see other people’s projects, or make keys for other assistants</li>
+      </ul>
+      <p class="portal-note">You can disconnect it any time under “Connect an assistant” in the portal.</p>
+      <div class="portal-actions">
+        <button type="button" class="btn btn--solid" data-allow>Allow</button>
+        <button type="button" class="btn" data-deny>Cancel</button>
+        <p class="portal-note" data-status role="status" aria-live="polite"></p>
+      </div>
+    </section>
+  </div>
+</Base>
+
+<script>
+  import { api, errorText, session, type User } from '../../lib/portal';
+
+  const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
+  const q = new URLSearchParams(location.search);
+  const params = {
+    client_id: q.get('client_id') ?? '',
+    redirect_uri: q.get('redirect_uri') ?? '',
+    code_challenge: q.get('code_challenge') ?? '',
+    code_challenge_method: q.get('code_challenge_method') ?? '',
+    state: q.get('state') ?? undefined,
+  };
+
+  function show(which: 'bad' | 'signin' | 'ask', text = '') {
+    $('[data-loading]').hidden = true;
+    for (const name of ['bad', 'signin', 'ask']) $(`[data-${name}]`).hidden = name !== which;
+    if (which === 'bad') $('[data-bad-text]').textContent = text;
+  }
+
+  /** Back to the app, with an OAuth error. Only after the Worker confirmed the URI is registered. */
+  function sendBack(error: string) {
+    const back = new URL(params.redirect_uri);
+    back.searchParams.set('error', error);
+    if (params.state) back.searchParams.set('state', params.state);
+    location.href = back.toString();
+  }
+
+  (async () => {
+    if (q.get('response_type') !== 'code') return show('bad', 'It does not ask for an authorization code.');
+    if (params.code_challenge_method !== 'S256' || !params.code_challenge) {
+      return show('bad', 'It does not use PKCE (S256), which this server requires.');
+    }
+    let client: { name: string; redirectHost: string };
+    try {
+      const query = new URLSearchParams({ client_id: params.client_id, redirect_uri: params.redirect_uri });
+      client = await api(`/oauth/client?${query}`);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      return show('bad', code === 'bad_redirect' ? 'It would send you somewhere the app never registered.' : code === 'unknown_client' ? 'The app is not registered here.' : errorText(error));
+    }
+    document.querySelectorAll('[data-client-name]').forEach((el) => (el.textContent = client.name));
+    $('[data-host]').textContent = client.redirectHost;
+
+    if (!session.get()) {
+      localStorage.setItem('portal-return', location.href);
+      return show('signin');
+    }
+    let user: User;
+    try {
+      ({ user } = await api<{ user: User }>('/portal/me'));
+    } catch {
+      localStorage.setItem('portal-return', location.href);
+      return show('signin');
+    }
+    if (user.role !== 'client') return show('bad', 'Only a client account can connect an assistant.');
+    $('[data-email]').textContent = user.email;
+    show('ask');
+
+    $('[data-allow]').addEventListener('click', async () => {
+      const status = $('[data-status]');
+      $<HTMLButtonElement>('[data-allow]').disabled = true;
+      status.textContent = 'Connecting…';
+      try {
+        const { redirect } = await api<{ redirect: string }>('/oauth/approve', { body: params });
+        location.href = redirect;
+      } catch (error) {
+        status.textContent = (error as { code?: string }).code === 'too_many_tokens' ? 'Five assistants are connected already. Disconnect one in the portal first.' : errorText(error);
+        status.classList.add('is-error');
+        $<HTMLButtonElement>('[data-allow]').disabled = false;
+      }
+    });
+    $('[data-deny]').addEventListener('click', () => sendBack('access_denied'));
+  })();
+</script>

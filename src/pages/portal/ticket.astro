@@ -1,6 +1,7 @@
 ---
 import Base from '../../layouts/Base.astro';
 import '../../styles/portal.css';
+import { ACCEPT } from '../../lib/attachments.js';
 
 // Static shell: the ticket id rides in the hash (#id=12).
 export const prerender = true;
@@ -19,6 +20,7 @@ export const prerender = true;
         <p class="portal-label portal-label--plain" data-ticket-meta></p>
         <h1 data-ticket-title style="margin-bottom: 0.5rem"></h1>
         <div data-ticket-status></div>
+        <div data-ticket-cost></div>
       </header>
 
       <div data-thread></div>
@@ -26,7 +28,11 @@ export const prerender = true;
       <form class="portal-form" data-reply>
         <div class="portal-field">
           <label class="portal-label" for="tr-body">Reply</label>
-          <textarea id="tr-body" name="body" rows="5" maxlength="8000" required></textarea>
+          <textarea id="tr-body" name="body" rows="5" maxlength="8000"></textarea>
+        </div>
+        <div class="portal-field">
+          <label class="portal-label" for="tr-files">Files <span style="text-transform:none;letter-spacing:0">(optional: screenshots, PDFs — up to 5, 10 MB each)</span></label>
+          <input id="tr-files" class="portal-files" name="files" type="file" multiple accept={ACCEPT} />
         </div>
         <div class="portal-actions">
           <button class="btn btn--solid" type="submit">Send reply →</button>
@@ -40,13 +46,17 @@ export const prerender = true;
 <script>
   import {
     api,
+    costBlock,
     errorText,
     renderThread,
     session,
+    h,
     statusBadge,
     type Message,
     type Ticket,
   } from '../../lib/portal';
+  import { field, openDialog } from '../../lib/fleetAdmin';
+  import { checkPicked } from '../../lib/attachments.js';
 
   const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
   const id = Number(new URLSearchParams(location.hash.slice(1)).get('id'));
@@ -62,10 +72,103 @@ export const prerender = true;
       .join(' · ');
     $('[data-ticket-title]').textContent = ticket.title;
     $('[data-ticket-status]').replaceChildren(statusBadge(ticket.status));
-    $('[data-thread]').replaceChildren(renderThread(messages, 'client'));
+    const open = ticket.status !== 'done' && ticket.status !== 'declined';
+    $('[data-ticket-cost]').replaceChildren(
+      costBlock(ticket),
+      open ? h('p', { class: 'portal-actions' }, budgetButton(ticket), ticket.status === 'new' ? withdrawButton() : '') : '',
+    );
+    // Only redraw the thread when it changed, so a refresh never jumps the page.
+    const seen = `${ticket.status}:${messages.length}:${messages.at(-1)?.id ?? 0}`;
+    if (seen !== lastSeen) {
+      lastSeen = seen;
+      $('[data-thread]').replaceChildren(renderThread(messages, 'client', `/portal/tickets/${id}/files`));
+    }
     loading.hidden = true;
     $('[data-ticket]').hidden = false;
   }
+
+  /** Work stops when the meter reaches the budget; this is how a client lets it go on. */
+  function budgetButton(ticket: Ticket) {
+    const b = h('button', { type: 'button', class: 'btn' }, ticket.budget_cents === null ? 'Set a budget' : 'Change the budget');
+    b.addEventListener('click', () => {
+      const input = h('input', {
+        type: 'number',
+        min: 1,
+        max: 10000,
+        step: 1,
+        inputmode: 'numeric',
+        placeholder: 'No limit',
+        value: ticket.budget_cents === null ? undefined : String(ticket.budget_cents / 100),
+        style: 'max-width: 12rem',
+      });
+      const save = async (dollars: number | null, close: () => void, error: (t: string) => void) => {
+        try {
+          await api(`/portal/tickets/${id}/budget`, {
+            method: 'PATCH',
+            body: { budgetCents: dollars === null ? null : Math.round(dollars * 100) },
+          });
+          close();
+          await load();
+        } catch (e) {
+          error(errorText(e));
+        }
+      };
+      openDialog({
+        title: 'Budget for this request',
+        subtitle: 'Work pauses when the cost reaches it, until you or Ali raise it.',
+        body: [field('Budget in USD', input, 'Leave empty for no limit.')],
+        actions: (close, error) => {
+          const cancel = h('button', { type: 'button', class: 'btn' }, 'Cancel');
+          cancel.addEventListener('click', close);
+          const ok = h('button', { type: 'button', class: 'btn btn--solid' }, 'Save budget');
+          ok.addEventListener('click', () => {
+            const raw = input.value.trim();
+            const dollars = raw === '' ? null : Number(raw);
+            if (dollars !== null && !(Number.isInteger(dollars) && dollars >= 1 && dollars <= 10000)) {
+              return error('A whole number of dollars, from 1 to 10,000.');
+            }
+            void save(dollars, close, error);
+          });
+          return [cancel, ok];
+        },
+      });
+    });
+    return b;
+  }
+
+  /** Before Ali has approved it, a request can be taken back at no cost. */
+  function withdrawButton() {
+    const b = h('button', { type: 'button', class: 'btn' }, 'Withdraw request');
+    b.addEventListener('click', () => {
+      openDialog({
+        title: 'Withdraw this request?',
+        subtitle: 'Ali has not started on it, so it costs nothing. It closes, and he is told.',
+        body: [],
+        actions: (close, error) => {
+          const cancel = h('button', { type: 'button', class: 'btn' }, 'Keep it');
+          cancel.addEventListener('click', close);
+          const ok = h('button', { type: 'button', class: 'btn btn--solid' }, 'Withdraw');
+          ok.addEventListener('click', async () => {
+            try {
+              await api(`/portal/tickets/${id}/withdraw`, { method: 'POST' });
+              close();
+              await load();
+            } catch (e) {
+              error(errorText(e));
+            }
+          });
+          return [cancel, ok];
+        },
+      });
+    });
+    return b;
+  }
+
+  let lastSeen = '';
+  // Status changes and Ali's replies show up without a reload while the tab is open.
+  setInterval(() => {
+    if (document.visibilityState === 'visible' && !$('[data-ticket]').hidden) load().catch(() => undefined);
+  }, 30_000);
 
   async function boot() {
     if (!session.get()) return location.replace('/portal');
@@ -87,13 +190,20 @@ export const prerender = true;
     const form = event.currentTarget as HTMLFormElement;
     const status = $('[data-reply-status]');
     const button = form.querySelector('button')!;
-    button.disabled = true;
-    status.textContent = 'Sending…';
+    const data = new FormData(form);
+    const files = ($<HTMLInputElement>('#tr-files').files ?? []) as FileList;
+    const text = String(data.get('body') || '').trim();
     status.classList.remove('is-error');
+    const problem = files.length ? checkPicked(files) : text ? null : 'Write something, or attach a file.';
+    if (problem) {
+      status.textContent = problem;
+      status.classList.add('is-error');
+      return;
+    }
+    button.disabled = true;
+    status.textContent = files.length ? 'Uploading…' : 'Sending…';
     try {
-      await api(`/portal/tickets/${id}/messages`, {
-        body: { body: String(new FormData(form).get('body') || '') },
-      });
+      await api(`/portal/tickets/${id}/messages`, files.length ? { form: data } : { body: { body: text } });
       form.reset();
       status.textContent = 'Sent.';
       await load();

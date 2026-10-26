@@ -6,6 +6,17 @@ import "../styles/kb.css";
 import { getCollection } from "astro:content";
 import { getPosts, fmtDate, readMinutes } from "../lib/posts.js";
 import { JOBS } from "../lib/experience.js";
+import {
+  KIND as OFFER_KIND,
+  ONE_LINE,
+  PRICE_NOTE,
+  PRICE_RULE,
+  PRICE_WHY,
+  SERVERLESS,
+  STEPS,
+  WHO,
+} from "../lib/offer.js";
+import { ATTENTION, clock, money, timeCents } from "../lib/pricing.js";
 import { kbDb, listKbEntries, kbFacets, type KbSummary } from "../lib/kb";
 import { getPluginSummaries } from "../lib/plugins";
 
@@ -15,12 +26,10 @@ const projects = (await getCollection("projects")).sort(
 );
 
 const site = (await getCollection("site"))[0]?.data;
-const tagline =
-  site?.tagline ??
-  "Full-stack developer. I build Shopify apps, small games, and the tools I wish existed.";
+const tagline = site?.tagline ?? ONE_LINE;
 const intercomGreeting =
   site?.intercomGreeting ??
-  "Ali's line. He's probably debugging something — I'm the assistant that knows his work. What are you building?";
+  "Ali's line. I'm the assistant that knows how he works. Tell me what you need built or fixed.";
 const intercomSuggestions = site?.intercomSuggestions ?? [];
 const email = site?.email ?? "malipetek@gmail.com";
 const availability = site?.availability ?? "limited";
@@ -94,37 +103,95 @@ const initial = (title) =>
 ---
 
 <Base
-  title="Muhammet Ali Petek — full-stack developer"
-  description="Muhammet Ali Petek (malipetek) builds Shopify apps, small games, and the tools he wishes existed."
+  title="M. Ali Petek — human-approved, agent-built software work"
+  description="Self-serve software contracting. You send a request, Ali approves it, an AI agent builds it, and he reviews it before anything ships."
   current="/"
 >
+  <div class="rails" aria-hidden="true"></div>
   <WorkshopScene />
 
-  <section class="room room--masthead">
+  <section class="room room--masthead" data-station="hero">
     <div class="masthead-inner">
-      <h1 class="masthead-name">M. Ali<br />Petek</h1>
-      <img
-        class="masthead-portrait"
-        src="/me.webp"
-        alt="Muhammet Ali Petek"
-        width="360"
-        height="360"
-        loading="eager"
-      />
+      <p class="masthead-who">
+        <img
+          class="masthead-portrait"
+          src="/me.webp"
+          alt="Muhammet Ali Petek"
+          width="120"
+          height="120"
+          loading="eager"
+        />
+        <span>
+          <strong>M. Ali Petek</strong>
+          <span class="masthead-kind">{OFFER_KIND}</span>
+        </span>
+      </p>
+      <h1 class="masthead-name">Human-approved,<br />agent-built.</h1>
       <div class="masthead-body">
         <p class="masthead-lede">{tagline}</p>
         <div class="masthead-actions">
-          <a class="btn" href="#shelf">See the shelf ↓</a>
-          <a class="btn btn--solid" href="#talk">Talk to me →</a>
+          <a class="btn btn--solid" href="/portal">Open a ticket →</a>
+          <a class="btn" href="#how">How it works ↓</a>
         </div>
+        <p class="masthead-note">{PRICE_NOTE}</p>
       </div>
     </div>
   </section>
 
-  <section class="room shelf-section" id="shelf">
+  <section class="room room--panel" id="how" data-station="how">
+    <div class="plate frame">
+      <div class="block-head">
+        <h2><span class="room-no" aria-hidden="true">01</span>How it works</h2>
+        <p class="block-note">{WHO}</p>
+      </div>
+
+      <ol class="steps">
+        {
+          STEPS.map((step, i) => (
+            <li class="step">
+              <span class="step-no" aria-hidden="true">{i + 1}</span>
+              <h3>{step.title}</h3>
+              <p>{step.body}</p>
+            </li>
+          ))
+        }
+      </ol>
+
+      <div class="price">
+        <div class="price-head">
+          <h3>What it costs</h3>
+          <p>{PRICE_RULE}</p>
+          <p>{PRICE_WHY}</p>
+        </div>
+        <div class="terms">
+          {
+            ATTENTION.map((a) => (
+              <div class="term">
+                <h3>
+                  {a.name}
+                  <span>
+                    {a.typicalSeconds
+                      ? `e.g. ${clock(a.typicalSeconds)} of my time = ${money(timeCents(a.typicalSeconds))}`
+                      : `by the clock = ${money(timeCents(3600))} an hour`}
+                  </span>
+                </h3>
+                <p>{a.what}</p>
+              </div>
+            ))
+          }
+        </div>
+        <p class="price-foot">
+          <strong>{SERVERLESS.title}.</strong>
+          {SERVERLESS.body}
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="room shelf-section" id="shelf" data-station="shelf">
     <div class="block-head">
-      <h2><span class="room-no" aria-hidden="true">01</span>The shelf</h2>
-      <p class="block-note">{projects.length} things I built and still answer for</p>
+      <h2><span class="room-no" aria-hidden="true">02</span>The shelf</h2>
+      <p class="block-note">{projects.length} things I built and still answer for. Proof there is a developer behind the agent.</p>
     </div>
 
     <div class="chips" role="group" aria-label="Filter projects">
@@ -198,10 +265,10 @@ const initial = (title) =>
     </p>
   </section>
 
-  <section class="room room--panel" id="writing">
-    <div class="plate">
+  <section class="room room--panel" id="writing" data-station="writing">
+    <div class="plate frame">
     <div class="block-head">
-      <h2><span class="room-no" aria-hidden="true">02</span>Writing</h2>
+      <h2><span class="room-no" aria-hidden="true">03</span>Writing</h2>
       <a href="/blog">All {posts.length} posts →</a>
     </div>
     <ul class="post-list">
@@ -222,10 +289,10 @@ const initial = (title) =>
     </div>
   </section>
 
-  <section class="room room--panel" id="work">
-    <div class="plate">
+  <section class="room room--panel" id="work" data-station="work">
+    <div class="plate frame">
     <div class="block-head">
-      <h2><span class="room-no" aria-hidden="true">03</span>Where I've worked</h2>
+      <h2><span class="room-no" aria-hidden="true">04</span>Where I've worked</h2>
       <a href="/experience">Full record →</a>
     </div>
 
@@ -261,10 +328,10 @@ const initial = (title) =>
     </div>
   </section>
 
-  <section class="room room--panel" id="knowledge">
-    <div class="plate">
+  <section class="room room--panel" id="knowledge" data-station="library">
+    <div class="plate frame">
     <div class="block-head">
-      <h2><span class="room-no" aria-hidden="true">04</span>Agent knowledgebase</h2>
+      <h2><span class="room-no" aria-hidden="true">05</span>Agent knowledgebase</h2>
       <a href="/kb">All {kbTotal} entries →</a>
     </div>
 
@@ -297,10 +364,10 @@ const initial = (title) =>
     </div>
   </section>
 
-  <section class="room room--panel" id="plugins">
-    <div class="plate">
+  <section class="room room--panel" id="plugins" data-station="library">
+    <div class="plate frame">
     <div class="block-head">
-      <h2><span class="room-no" aria-hidden="true">05</span>DeepSeek plugins</h2>
+      <h2><span class="room-no" aria-hidden="true">06</span>DeepSeek plugins</h2>
       <a href="/plugins">All {plugins.length} plugins →</a>
     </div>
 
@@ -421,10 +488,18 @@ const initial = (title) =>
 
   /* The canvas is flat --bone where no station objects sit, so DOM text stays
      readable without extra backing. Opaque pieces (shelf boxes, the intercom)
-     cover the scene — that's the "2d on top" split. */
+     cover the scene — that's the "2d on top" split. No z-index on main: the
+     page rails (z 0), the transparent canvas (z 0, later in the DOM) and the
+     rooms (z 1) must share one stacking context, so the props occlude the
+     rails and the text sits over both. */
   :global(main) {
     position: relative;
-    z-index: 1;
+  }
+
+  /* Everything in a room insets from the rails by the same amount a plate
+     pads its content, so text never sits on a rail line. */
+  .room {
+    --inset-x: clamp(1rem, 3.2vw, 2.5rem);
   }
 
   /* Rooms are full-viewport; the layout's main padding would push the first
@@ -496,12 +571,50 @@ const initial = (title) =>
   }
 
   /* Plates: an opaque sheet the list/timeline sits on, so the station behind
-     frames the content instead of running through it. */
+     frames the content instead of running through it. The hairline and the
+     corner handles come from .frame; the plate spans the column, so its
+     edges land on the page rails. */
   .plate {
-    background: var(--bone);
-    border: 2px solid var(--ink);
-    padding: clamp(1.1rem, 3vw, 2rem) clamp(1.1rem, 3vw, 2.25rem)
-      clamp(1.1rem, 3vw, 1.75rem);
+    padding: clamp(1.25rem, 3.2vw, 2.25rem) var(--inset-x)
+      clamp(1.25rem, 3.2vw, 2rem);
+  }
+
+  .room--masthead,
+  .shelf-section {
+    padding-inline: var(--inset-x);
+  }
+
+  /* Seams: a full-bleed dashed rule where one room meets the next, with a
+     handle where it crosses each rail. */
+  .room + .room::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 100vw;
+    height: 1px;
+    transform: translateX(-50%);
+    background: var(--dash-h);
+    pointer-events: none;
+  }
+
+  .room + .room::after {
+    content: "";
+    position: absolute;
+    top: calc((var(--handle) - 1px) / -2);
+    left: calc((var(--handle) - 1px) / -2);
+    right: calc((var(--handle) - 1px) / -2);
+    height: var(--handle);
+    --in: linear-gradient(var(--bone) 0 0);
+    --out: linear-gradient(var(--rule-strong) 0 0);
+    --i: calc(var(--handle) - 2px);
+    background:
+      var(--in) 1px 1px / var(--i) var(--i),
+      var(--in) calc(100% - 1px) 1px / var(--i) var(--i),
+      var(--out) 0 0 / var(--handle) var(--handle),
+      var(--out) 100% 0 / var(--handle) var(--handle);
+    background-repeat: no-repeat;
+    pointer-events: none;
   }
 
   .plate .block-head {
@@ -540,57 +653,69 @@ const initial = (title) =>
 
   .masthead-inner {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "name name"
-      "body portrait";
-    align-items: end;
-    column-gap: clamp(1rem, 3vw, 3rem);
-    row-gap: clamp(0.9rem, 2vw, 1.6rem);
+    gap: clamp(0.9rem, 2vw, 1.5rem);
+    /* The diorama owns the right side on wide screens (see workshop3d). */
+    max-width: min(100%, 46rem);
   }
 
-  .masthead-name {
-    grid-area: name;
-    /* Escape the centred .wrap so the name crops against the viewport edge. */
-    margin: 0 0 0
-      calc(-1 * (var(--pad) + max(0px, (100vw - 78rem) / 2)) - 0.035em);
-    font-family: var(--font-display);
-    font-weight: 800;
-    font-size: clamp(64px, 14vw, 200px);
-    line-height: 0.86;
-    letter-spacing: -0.05em;
+  /* Who is behind it: small, human, first — a pill badge above the headline. */
+  .masthead-who {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: fit-content;
+    margin: 0;
+    padding: 5px 18px 5px 5px;
+    font-size: 15px;
+    line-height: 1.25;
+    background: var(--bone);
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+  }
+
+  .masthead-who strong {
+    display: block;
+    font-weight: 600;
+    font-size: 16px;
+    letter-spacing: -0.01em;
+  }
+
+  .masthead-kind {
+    font-size: 14px;
+    color: var(--ink-soft);
   }
 
   .masthead-portrait {
-    grid-area: portrait;
-    justify-self: end;
-    width: clamp(160px, 18vw, 260px);
+    flex: none;
+    width: 40px;
     aspect-ratio: 1;
     object-fit: cover;
-    padding: clamp(5px, 0.7vw, 10px);
-    background: var(--bone);
-    border: 2px solid var(--ink);
-    /* Nudge off-grid with a transform, not a negative margin: a negative
-       margin would shrink the auto grid track under `max-width: 100%`. */
-    transform: rotate(-2deg) translateX(clamp(0.5rem, 2vw, 2rem));
-    /* Ride up into the name row's empty right side so the masthead stays
-       inside the first viewport without shrinking the portrait. */
-    margin-top: calc(-1 * clamp(1rem, 3vw, 3rem));
-    margin-bottom: clamp(0.25rem, 1.5vw, 1rem);
+    border-radius: 50%;
+  }
+
+  .masthead-name {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(36px, 5vw, 72px);
+    line-height: 0.95;
+    letter-spacing: -0.035em;
+    text-wrap: balance;
+    /* Optical: pull the H's stem onto the column edge. */
+    margin-left: -0.04em;
   }
 
   .masthead-body {
-    grid-area: body;
-    align-self: start;
     max-width: 52ch;
   }
 
   .masthead-lede {
     margin: 0;
-    font-size: clamp(1.05rem, 1.9vw, 1.35rem);
-    line-height: 1.35;
-    letter-spacing: -0.01em;
-    max-width: 30ch;
+    font-size: clamp(1.05rem, 1.7vw, 1.25rem);
+    line-height: 1.45;
+    letter-spacing: -0.005em;
+    color: var(--ink-soft);
+    max-width: 38ch;
   }
 
   .masthead-actions {
@@ -598,6 +723,140 @@ const initial = (title) =>
     flex-wrap: wrap;
     gap: 0.7rem;
     margin-top: clamp(1rem, 2.5vw, 1.6rem);
+  }
+
+  .masthead-note {
+    margin: 0.9rem 0 0;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+
+  /* ————— how it works ————— */
+
+  #how .block-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-top: 1px solid var(--rule);
+  }
+
+  .step {
+    padding: 1.25rem 1.25rem 1.4rem 0;
+  }
+
+  .step + .step {
+    padding-left: 1.25rem;
+    border-left: 1px solid var(--rule);
+  }
+
+  .step-no {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    margin-bottom: 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 500;
+    border: 1px solid var(--rule-strong);
+    border-radius: 50%;
+  }
+
+  /* The two steps a person does are the ones that carry the signal colour. */
+  .step:nth-child(2) .step-no,
+  .step:nth-child(4) .step-no {
+    background: var(--orange);
+    border-color: var(--orange);
+    color: var(--ink);
+  }
+
+  .step h3,
+  .term h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .step p,
+  .term p {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--ink-soft);
+  }
+
+  .price {
+    border-top: 2px solid var(--ink);
+  }
+
+  .price-head {
+    display: grid;
+    grid-template-columns: minmax(0, 0.6fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.4rem 1.5rem;
+    padding: 1rem 0;
+  }
+
+  .price-head h3 {
+    margin: 0;
+    font-size: 1.15rem;
+    letter-spacing: -0.02em;
+  }
+
+  .price-head p {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  .price-head p + p {
+    color: var(--ink-soft);
+  }
+
+  .price-foot {
+    margin: 0.9rem 0 0;
+    padding-top: 0.8rem;
+    border-top: 1px solid var(--rule);
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+
+  .price-foot strong {
+    color: var(--ink);
+  }
+
+  .terms {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-top: 1px solid var(--rule);
+  }
+
+  .term {
+    padding: 1.25rem 1.25rem 0 0;
+  }
+
+  .term + .term {
+    padding-left: 1.25rem;
+    border-left: 1px solid var(--rule);
+  }
+
+  .term h3 span {
+    display: block;
+    margin-top: 0.15rem;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--ink-soft);
   }
 
   /* ————— shelf ————— */
@@ -616,9 +875,9 @@ const initial = (title) =>
     line-height: 1;
     color: var(--ink);
     background: var(--bone);
-    border: 2px solid var(--ink);
-    border-radius: 0;
-    padding: 0.45em 0.85em;
+    border: 1px solid var(--rule-strong);
+    border-radius: 999px;
+    padding: 0.55em 1em;
     cursor: pointer;
     transition:
       background var(--dur) var(--ease),
@@ -627,19 +886,13 @@ const initial = (title) =>
   }
 
   .chip:hover {
-    background: var(--orange);
-    border-color: var(--orange);
-    color: var(--ink);
+    border-color: var(--ink);
   }
 
   .chip[aria-pressed="true"] {
     background: var(--ink);
-    color: var(--bone);
-  }
-
-  .chip[aria-pressed="true"]:hover {
-    color: var(--bone);
     border-color: var(--ink);
+    color: var(--bone);
   }
 
   .shelf {
@@ -656,7 +909,7 @@ const initial = (title) =>
     min-width: 100%;
     overflow-x: auto;
     scrollbar-width: none;
-    border-bottom: 3px solid var(--ink);
+    border-bottom: 1px solid var(--rule-strong);
   }
 
   .shelf::after {
@@ -673,7 +926,12 @@ const initial = (title) =>
     display: flex;
     flex-direction: column;
     background: var(--bone);
-    border: 2px solid var(--ink);
+    border: 1px solid var(--rule);
+    transition: border-color var(--dur) var(--ease);
+  }
+
+  .box:hover {
+    border-color: var(--rule-strong);
   }
 
   .box[hidden] {
@@ -681,9 +939,8 @@ const initial = (title) =>
   }
 
   .box-band {
-    flex: 0 0 14px;
+    flex: 0 0 4px;
     background: var(--kind);
-    border-bottom: 2px solid var(--ink);
   }
 
   .box-cover {
@@ -693,6 +950,7 @@ const initial = (title) =>
     height: 110px;
     overflow: hidden;
     text-decoration: none;
+    background: var(--paper);
   }
 
   .box-cover img {
@@ -703,7 +961,7 @@ const initial = (title) =>
 
   .box-initial {
     font-family: var(--font-display);
-    font-weight: 800;
+    font-weight: 600;
     font-size: 52px;
     line-height: 1;
     color: var(--kind);
@@ -713,13 +971,13 @@ const initial = (title) =>
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding: 10px 14px 0;
-    border-top: 2px solid var(--ink);
+    padding: 12px 14px 0;
+    border-top: 1px solid var(--rule);
   }
 
   .box-title {
     font-family: var(--font-display);
-    font-weight: 700;
+    font-weight: 600;
     font-size: 17px;
     line-height: 1.15;
     letter-spacing: -0.02em;
@@ -805,7 +1063,7 @@ const initial = (title) =>
   .tl-rail {
     position: relative;
     height: 20px;
-    border-top: 2px solid var(--ink);
+    border-top: 1px solid var(--rule-strong);
   }
 
   .tl-dot {
@@ -880,6 +1138,7 @@ const initial = (title) =>
     color: var(--ink-soft);
   }
 
+  #how,
   #shelf,
   #writing,
   #work,
@@ -890,20 +1149,51 @@ const initial = (title) =>
   /* ————— tablet + mobile ————— */
 
   @media (max-width: 760px) {
-    .masthead-inner {
+    .steps,
+    .terms,
+    .price-head {
       grid-template-columns: minmax(0, 1fr);
-      grid-template-areas:
-        "name"
-        "body"
-        "portrait";
-      align-items: start;
     }
 
-    .masthead-portrait {
-      justify-self: start;
-      transform: rotate(-2deg);
-      margin-left: clamp(0.5rem, 8vw, 3rem);
-      margin-top: 0.5rem;
+    .step,
+    .step + .step,
+    .term,
+    .term + .term {
+      padding: 0.9rem 0;
+      border-left: 0;
+    }
+
+    .step + .step,
+    .term + .term {
+      border-top: 1px solid var(--rule);
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 2.4rem minmax(0, 1fr);
+    }
+
+    .step-no {
+      grid-row: span 2;
+      margin: 0;
+    }
+
+    /* On a phone the shelf station sits right behind the heading; back the
+       text so the boxes frame it instead of running through it. */
+    .shelf-section .block-head,
+    .chips {
+      position: relative;
+      background: var(--bone);
+    }
+
+    .shelf-section .block-head {
+      margin-bottom: 0;
+      padding-block: 0.6rem 0.4rem;
+    }
+
+    .chips {
+      margin-top: 0;
+      padding-block: 0.4rem 0.6rem;
     }
 
     .shelf {
@@ -936,7 +1226,7 @@ const initial = (title) =>
 
     .timeline {
       display: block;
-      border-left: 2px solid var(--ink);
+      border-left: 1px solid var(--rule-strong);
       padding-left: 16px;
     }
 
