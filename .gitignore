@@ -15,3 +15,9 @@ dist/
 .wrangler/
 worker/.dev.vars
 worker/.flue-vite/
+
+# Agent handoff bundles hold whole conversation transcripts; this repo is public.
+.agents/handoff/
+
+# Backups the plugins and agents leave beside a file before rewriting it.
+*.bak-*
