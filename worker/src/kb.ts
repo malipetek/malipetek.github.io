@@ -24,6 +24,7 @@ import { Hono } from 'hono';
 import { clientIp, isRateLimited, type Env, type HonoEnv } from './shared.ts';
 import { now, sessionUser } from './portal.ts';
 import { PLATFORM_TOOLS, callPlatformTool } from './platform.ts';
+import { CLIENT_TOOLS, CLIENT_TOOL_NAMES, callClientTool } from './clientTools.ts';
 
 /* ——————————————————————— shapes ——————————————————————— */
 
@@ -572,16 +573,28 @@ const READ_ONLY_TOOLS = new Set([
 ]);
 const DESTRUCTIVE_TOOLS = new Set(['platform_reset_preview', 'platform_approve_preview']);
 
-const MCP_TOOLS = [...KB_TOOLS, ...PLATFORM_TOOLS].map((tool) => ({
+const annotate = (tool: { name: string; title: string }, readOnly: boolean, destructive: boolean) => ({
+  title: tool.title,
+  readOnlyHint: readOnly,
+  destructiveHint: destructive,
+  idempotentHint: readOnly,
+  openWorldHint: true,
+});
+
+const KB_AND_PLATFORM = [...KB_TOOLS, ...PLATFORM_TOOLS].map((tool) => ({
   ...tool,
-  annotations: {
-    title: tool.title,
-    readOnlyHint: READ_ONLY_TOOLS.has(tool.name),
-    destructiveHint: DESTRUCTIVE_TOOLS.has(tool.name),
-    idempotentHint: READ_ONLY_TOOLS.has(tool.name),
-    openWorldHint: true,
-  },
+  annotations: annotate(tool, READ_ONLY_TOOLS.has(tool.name), DESTRUCTIVE_TOOLS.has(tool.name)),
 }));
+const PORTAL_TOOLS = CLIENT_TOOLS.map(({ readOnly, ...tool }) => ({ ...tool, annotations: annotate(tool, readOnly, false) }));
+const MCP_TOOLS = [...KB_AND_PLATFORM, ...PORTAL_TOOLS];
+
+/**
+ * What a caller is shown: the knowledgebase and the client tools to everyone
+ * (a client connecting an assistant sees what it can do), the GPTflare
+ * platform tools only to Ali's session — they are useless to anyone else.
+ */
+const toolsFor = (author: Author | null) =>
+  MCP_TOOLS.filter((t) => !t.name.startsWith('platform_') || author?.kind === 'admin');
 
 const RESOURCE_PAGE = 50;
 
@@ -848,7 +861,7 @@ mcp.get('/', (c) => {
     protocol: MCP_PROTOCOL,
     transport: 'streamable-http',
     endpoint: '/mcp',
-    tools: MCP_TOOLS.map((t) => t.name),
+    tools: toolsFor(null).map((t) => t.name),
   });
 });
 
@@ -868,6 +881,10 @@ mcp.post('/', async (c) => {
   }
 
   const author = await authorFrom(c);
+  // A client's agent token (cat_…) drives the portal_* tools only. It is never
+  // a knowledgebase author: authorFrom() resolves it to nothing.
+  const bearer = (c.req.header('authorization') ?? '').replace(/^Bearer\s+/, '');
+  const clientToken = bearer.startsWith('cat_') ? bearer : null;
   const batch = Array.isArray(payload);
   const requests: Rpc[] = Array.isArray(payload) ? payload : [payload];
 
@@ -888,7 +905,7 @@ mcp.post('/', async (c) => {
             },
             serverInfo: { name: 'malipetek-dev', title: 'malipetek.dev', version: '1.1.0' },
             instructions:
-              'Public knowledgebase of agentic coding sessions — search_knowledge, get_knowledge and list_knowledge are open, and every entry is also readable as a kb://entry/<slug> resource. create_knowledge and update_knowledge need an ack_ API key issued by the site owner. The platform_* tools drive the GPTflare control plane and need the owner’s session plus a per-conversation sign-in.',
+              'Public knowledgebase of agentic coding sessions — search_knowledge, get_knowledge and list_knowledge are open, and every entry is also readable as a kb://entry/<slug> resource. create_knowledge and update_knowledge need an ack_ API key issued by the site owner. The portal_* tools let a malipetek.dev client work on their own projects and requests — they need the agent token the client makes in the portal (Connect an assistant), sent as Bearer cat_…. Requests are read by Ali before any work starts.',
           });
         }
         case 'notifications/initialized':
@@ -897,7 +914,7 @@ mcp.post('/', async (c) => {
         case 'ping':
           return rpcResult(request.id, {});
         case 'tools/list':
-          return rpcResult(request.id, { tools: MCP_TOOLS });
+          return rpcResult(request.id, { tools: toolsFor(author) });
         case 'resources/list': {
           const cursor = Math.max(0, Number(request.params?.cursor ?? 0) || 0);
           const [rows, total] = await Promise.all([
@@ -973,9 +990,11 @@ mcp.post('/', async (c) => {
             return rpcError(request.id, -32602, `Unknown tool: ${name}`);
           }
           try {
-            const value = name.startsWith('platform_')
-              ? await callPlatformTool(c.env, name, args, author)
-              : await callTool(c.env, name, args, author);
+            const value = CLIENT_TOOL_NAMES.has(name)
+              ? await callClientTool(c.env, c.executionCtx, clientToken, name, args)
+              : name.startsWith('platform_')
+                ? await callPlatformTool(c.env, name, args, author)
+                : await callTool(c.env, name, args, author);
             return rpcResult(request.id, toolText(value));
           } catch (error) {
             // Tool failures are results with isError, not protocol errors — that

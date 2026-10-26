@@ -22,5 +22,5 @@ CONTACT_FROM_EMAIL=intercom@malipetek.dev
 SITE_URL=http://localhost:4321
 DEV_RETURN_LINK=1
 
-# Local runner API (see runner/README.md). Any string locally.
+# Fleet node API (see fleet/README.md). Any string locally.
 RUNNER_TOKEN=dev-runner-token

@@ -2,14 +2,16 @@
  * Agentic run tracking.
  *
  * A ticket is the unit of client work; a run is one attempt at it by one
- * executor. Two callers use this module — the local runner (`/runner/*`, shared
- * secret) and the Harness admin session (`/admin/*`) — so a run claimed from
- * either place is recorded the same way and lands in one history.
+ * executor. Two callers use this module — the fleet nodes (`/node/*`, shared
+ * secret; claims live in queue.ts) and the Harness admin session (`/admin/*`) —
+ * so a run claimed from either place is recorded the same way and lands in one history.
  *
  * Mail is deliberately not sent from here: the caller owns notification, which
  * keeps this module free of imports from portal.ts (portal.ts imports it).
  */
 import { now, type Env } from './shared.ts';
+import { ADMIN_LEASE_SECONDS } from './queue.ts';
+import { withFiles, type FileMeta } from './files.ts';
 
 /** Bounds on what a run may report. A bad report must not be able to bill nonsense. */
 export const MAX_SUMMARY = 8000;
@@ -21,9 +23,50 @@ export const MAX_MODEL = 80;
 
 /** One message of the brief an executor works from. */
 export interface BriefMessage {
+  id?: number;
+  files?: FileMeta[];
   author: string;
   body: string;
   internal: number;
+  created_at: number;
+}
+
+/**
+ * An earlier run on the same ticket, as the next run needs to know it: what
+ * was done, where the work is, and whether it worked. Without this a follow-up
+ * ("now change the logo") looks like the whole task again, and every run
+ * redoes the first one.
+ */
+export interface PriorRun {
+  id: number;
+  status: string;
+  executor: string;
+  node_id: string | null;
+  branch: string | null;
+  commit_sha: string | null;
+  shared_to: 'origin' | 'bundle' | null;
+  shared_ref: string | null;
+  /** The Harness session it worked in, and whether its log is in R2. */
+  session_id: string | null;
+  session_dir: string | null;
+  session_log: number;
+  summary: string;
+  finished_at: number | null;
+}
+
+const PRIOR_SUMMARY_CHARS = 1500;
+
+/** Finished runs on a ticket, oldest first, excluding the one just opened. */
+export async function priorRuns(env: Env, ticketId: number, currentRunId: number): Promise<PriorRun[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, status, executor, node_id, branch, commit_sha, shared_to, shared_ref, session_id, session_dir, session_log, substr(coalesce(summary, ''), 1, ?) AS summary, finished_at
+       FROM ticket_runs
+      WHERE ticket_id = ? AND id <> ? AND status IN ('ok', 'failed')
+      ORDER BY id`,
+  )
+    .bind(PRIOR_SUMMARY_CHARS, ticketId, currentRunId)
+    .all<PriorRun>();
+  return results ?? [];
 }
 
 /** What a claim hands back. */
@@ -38,6 +81,8 @@ export interface Claimed {
     project_name: string | null;
   };
   messages: BriefMessage[];
+  /** Earlier runs on this ticket, oldest first. */
+  previousRuns: PriorRun[];
   runId: number;
   executor: string;
   model: string | null;
@@ -48,11 +93,23 @@ export interface RunReport {
   ok: boolean;
   summary: string;
   branch: string;
+  /** The commit the run left, when it changed files. */
+  commit: string;
+  /** Where the next run can fetch it: the repo's remote, an R2 bundle, or nowhere. */
+  sharedTo: 'origin' | 'bundle' | null;
+  /** The branch on origin: the run's work branch, or the branch the project pushes to. */
+  sharedRef: string;
   diffStat: string;
   diff: string;
   costUsd: number;
   executor: string;
   model: string | null;
+  /** The Harness session the run worked in, when it ran through the Harness. */
+  sessionId: string;
+  /** That session's folder name under ~/.dsh/sessions/ on the node. */
+  sessionDir: string;
+  /** The node says it uploaded the session log (node.ts checks R2 before keeping it). */
+  sessionLog: boolean;
 }
 
 /** The claim options any caller may pass. */
@@ -99,12 +156,69 @@ export function normalizeReport(body: unknown, fallbackExecutor = 'runner'): Run
     ok,
     summary,
     branch: str(raw.branch, 200),
+    ...sharing(raw),
     diffStat: str(raw.diffStat, MAX_DIFFSTAT).trim(),
     diff: str(raw.diff, MAX_DIFF),
     costUsd,
     executor: cleanExecutor(raw.executor, fallbackExecutor),
     model: cleanModel(raw.model),
+    ...session(raw),
   };
+}
+
+/*
+ * The Harness session a run reports. Both values are stored, sent back in
+ * headers and used by the Harness to name a folder, so they are held to a
+ * strict shape: no slashes, no `..`, nothing a header or a path could misread.
+ * A bad value is dropped, never a reason to reject the report.
+ */
+const SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const SESSION_DIR_RE = /^--[A-Za-z0-9._~-]{1,400}--$/;
+
+export function cleanSessionId(value: unknown): string {
+  return typeof value === 'string' && SESSION_ID_RE.test(value) && !value.includes('..') ? value : '';
+}
+
+export function cleanSessionDir(value: unknown): string {
+  return typeof value === 'string' && SESSION_DIR_RE.test(value) && !value.includes('..') && !value.includes('/') ? value : '';
+}
+
+/** Where a run's session log lives in R2 (`FILES`). Written by node.ts, read by the admin download. */
+export const sessionKey = (ticketId: number, runId: number) => `sessions/tickets/${ticketId}/run-${runId}.jsonl.zstd`;
+
+function session(raw: Record<string, unknown>): Pick<RunReport, 'sessionId' | 'sessionDir' | 'sessionLog'> {
+  return { sessionId: cleanSessionId(raw.sessionId), sessionDir: cleanSessionDir(raw.sessionDir), sessionLog: raw.sessionLog === true };
+}
+
+/*
+ * A branch a run may report as shared: its own work branch, or the repo's
+ * default branch. Bounded to what git accepts and a node would send — the
+ * value is stored and printed, never used as a path.
+ */
+const SHARED_REF_RE = /^(?:malipetek\/(?:task|ticket)-\d+|[A-Za-z0-9][A-Za-z0-9._/-]{0,99})$/;
+
+/** The commit and where it was shared, or nothing when any part is off. */
+function sharing(raw: Record<string, unknown>): Pick<RunReport, 'commit' | 'sharedTo' | 'sharedRef'> {
+  const commit = typeof raw.commit === 'string' && /^[0-9a-f]{40}$/.test(raw.commit) ? raw.commit : '';
+  const sharedRef = typeof raw.sharedRef === 'string' && SHARED_REF_RE.test(raw.sharedRef) ? raw.sharedRef : '';
+  const sharedTo = commit && (raw.sharedTo === 'origin' ? sharedRef !== '' : raw.sharedTo === 'bundle') ? (raw.sharedTo as 'origin' | 'bundle') : null;
+  return { commit, sharedTo, sharedRef: sharedTo === 'origin' ? sharedRef : '' };
+}
+
+/** One line on where a run's work is, for the note and the email. */
+export function sharedLine(report: Pick<RunReport, 'commit' | 'sharedTo' | 'sharedRef' | 'branch'>, nodeId?: string): string {
+  const sha = report.commit.slice(0, 8);
+  if (report.sharedTo === 'origin') {
+    if (report.sharedRef.startsWith('malipetek/')) {
+      return `Pushed to origin ${report.sharedRef} (${sha}); the next run starts from it on any node.`;
+    }
+    if (report.sharedRef === 'main' || report.sharedRef === 'master') {
+      return `Pushed to origin ${report.sharedRef} (${sha}) — this run is on the project's main line.`;
+    }
+    return `Pushed to origin ${report.sharedRef} (${sha}) — visible there without touching production.`;
+  }
+  if (report.sharedTo === 'bundle') return `Saved as a git bundle in the portal (${sha}); the next run starts from it on any node.`;
+  return report.branch ? `Only on ${nodeId ?? 'the node'}, branch ${report.branch}: not pushed, so a run on another node will not see it.` : '';
 }
 
 /**
@@ -112,11 +226,12 @@ export function normalizeReport(body: unknown, fallbackExecutor = 'runner'): Run
  * @param report - the normalized report.
  * @returns the note body.
  */
-export function runNote(report: RunReport): string {
+export function runNote(report: RunReport, nodeId?: string): string {
   return [
     report.ok
       ? `${report.executor} finished${report.branch ? ` on branch ${report.branch}` : ''}.`
       : `${report.executor} failed.`,
+    sharedLine(report, nodeId),
     '',
     report.summary,
     report.diffStat && `\nChanged files:\n${report.diffStat}`,
@@ -126,29 +241,34 @@ export function runNote(report: RunReport): string {
     .join('\n');
 }
 
-/** Open a run row and return its id (0 when the insert failed). */
+/**
+ * Open a run row and return its id (0 when the insert failed). An admin claim
+ * has no node to heartbeat for it, so it gets one long lease: an agent in the
+ * Harness that never reports still lets go of the item eventually.
+ */
 async function openRun(env: Env, ticketId: number, executor: string, model: string | null, startedAt: number): Promise<number> {
   const row = await env.DB.prepare(
-    `INSERT INTO ticket_runs (ticket_id, executor, model, status, started_at)
-     VALUES (?, ?, ?, 'running', ?) RETURNING id`,
+    `INSERT INTO ticket_runs (ticket_id, executor, model, status, lease_expires_at, attempt, started_at)
+     VALUES (?, ?, ?, 'running', ?, (SELECT count(*) + 1 FROM ticket_runs WHERE ticket_id = ? AND released = 0), ?) RETURNING id`,
   )
-    .bind(ticketId, executor, model, startedAt)
+    .bind(ticketId, executor, model, startedAt + ADMIN_LEASE_SECONDS, ticketId, startedAt)
     .first<{ id: number }>();
   return row?.id ?? 0;
 }
 
 /**
- * The brief an executor works from: what the client asked, plus Ali's guidance.
- * Status lines and earlier run output are noise for the agent doing the work.
+ * The brief an executor works from: what the client asked, plus Ali's guidance,
+ * with their times so the newest instruction can be told from the background.
+ * Earlier runs travel separately (priorRuns), summarised, not as raw notes.
  */
 async function brief(env: Env, ticketId: number): Promise<BriefMessage[]> {
   const { results } = await env.DB.prepare(
-    `SELECT author, body, internal FROM ticket_messages
+    `SELECT id, author, body, internal, created_at FROM ticket_messages
       WHERE ticket_id = ? AND author IN ('client', 'ali') ORDER BY id`,
   )
     .bind(ticketId)
-    .all<BriefMessage>();
-  return results ?? [];
+    .all<BriefMessage & { id: number }>();
+  return withFiles(env, ticketId, results ?? [], true);
 }
 
 /** Everything a claim returns about the ticket it took. */
@@ -195,57 +315,23 @@ export async function claimTicketById(
   const ticket = await claimedTicket(env, ticketId);
   if (!ticket) return { ok: false, error: 'not_found' };
 
-  return { ok: true, claimed: { ticket, messages: await brief(env, ticketId), runId, executor, model } };
-}
-
-/**
- * Claim the oldest approved ticket among a set of project slugs.
- *
- * This is the local runner's entry point: it never names a ticket, it names the
- * projects it holds folders for. The pick and the flip are one statement, so a
- * second runner — or a double poll — can never take the same ticket.
- *
- * @returns the claim, or null when nothing is approved for those projects.
- */
-export async function claimNextForSlugs(
-  env: Env,
-  slugs: string[],
-  options: Executor = {},
-): Promise<Claimed | null> {
-  const executor = cleanExecutor(options.executor);
-  const model = cleanModel(options.model);
-  const t = now();
-
-  const claimed = await env.DB.prepare(
-    `UPDATE tickets SET status = 'in_progress', updated_at = ?
-      WHERE status = 'approved' AND id = (
-        SELECT t.id FROM tickets t JOIN projects p ON p.id = t.project_id
-         WHERE t.status = 'approved' AND p.slug IN (${slugs.map(() => '?').join(',')})
-         ORDER BY t.updated_at LIMIT 1)
-      RETURNING id`,
-  )
-    .bind(t, ...slugs)
-    .first<{ id: number }>();
-  if (!claimed) return null;
-
-  await env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, created_at) VALUES (?, 'system', ?, ?)`)
-    .bind(claimed.id, 'Status changed to “In progress”.', t)
-    .run();
-
-  const runId = await openRun(env, claimed.id, executor, model, t);
-  const ticket = await claimedTicket(env, claimed.id);
-  if (!ticket) return null;
-
-  return { ticket, messages: await brief(env, claimed.id), runId, executor, model };
+  return {
+    ok: true,
+    claimed: { ticket, messages: await brief(env, ticketId), previousRuns: await priorRuns(env, ticketId, runId), runId, executor, model },
+  };
 }
 
 /**
  * Close the run that owns a ticket and move the ticket to review.
  *
- * Only an `in_progress` ticket may be reported on: a ticket Ali already moved
- * on wins over a late report. A report that arrives with no open run (a claim
- * from an older runner, or a crashed claim) still records one, so the history
- * has no holes.
+ * A ticket Ali already moved on wins over a late report: the run is closed and
+ * its cost counted, but the ticket stays where he put it. A report that arrives
+ * with no open run (a claim from an older runner, or a crashed claim) still
+ * records one while the ticket is in progress, so the history has no holes.
+ *
+ * A node names the run it holds. That report is only accepted while the run is
+ * still running and still the node's — a node that slept through its lease
+ * cannot report over the run that replaced it.
  *
  * @returns the cost recorded, in micro-dollars, and the ticket title for the
  * caller's notification; or an error code.
@@ -254,20 +340,41 @@ export async function finishRun(
   env: Env,
   ticketId: number,
   report: RunReport,
-): Promise<{ ok: true; costMicroUsd: number; title: string } | { ok: false; error: string }> {
+  owner?: { runId: number; nodeId: string },
+): Promise<{ ok: true; costMicroUsd: number; title: string; late: boolean } | { ok: false; error: string }> {
   const ticket = await env.DB.prepare(`SELECT id, title, status FROM tickets WHERE id = ?`)
     .bind(ticketId)
     .first<{ id: number; title: string; status: string }>();
   if (!ticket) return { ok: false, error: 'not_found' };
-  if (ticket.status !== 'in_progress') return { ok: false, error: 'not_in_progress' };
 
   const t = now();
   const costMicroUsd = Math.round(report.costUsd * 1_000_000);
-  const open = await env.DB.prepare(
-    `SELECT id FROM ticket_runs WHERE ticket_id = ? AND status = 'running' ORDER BY id DESC LIMIT 1`,
-  )
-    .bind(ticketId)
-    .first<{ id: number }>();
+  const open = owner
+    ? await env.DB.prepare(
+        `SELECT id FROM ticket_runs WHERE id = ? AND ticket_id = ? AND node_id = ? AND status = 'running'`,
+      )
+        .bind(owner.runId, ticketId, owner.nodeId)
+        .first<{ id: number }>()
+    : await env.DB.prepare(
+        `SELECT id FROM ticket_runs WHERE ticket_id = ? AND status = 'running' ORDER BY id DESC LIMIT 1`,
+      )
+        .bind(ticketId)
+        .first<{ id: number }>();
+  if (owner && !open) return { ok: false, error: 'lease_lost' };
+  // A report with no run of its own only counts while the ticket is being worked on.
+  if (!open && ticket.status !== 'in_progress') return { ok: false, error: 'not_in_progress' };
+
+  // A run Ali moved past (he changed the status while it worked, or requeued it
+  // and another run took it) is still recorded and its AI cost still counts —
+  // the money was spent — but it does not move the ticket. Done and declined
+  // tickets have a closed bill, so a late cost there is noted, not added.
+  const superseded = open
+    ? await env.DB.prepare(`SELECT 1 FROM ticket_runs WHERE ticket_id = ? AND status = 'running' AND id > ?`)
+        .bind(ticketId, open.id)
+        .first()
+    : null;
+  const late = ticket.status !== 'in_progress' || Boolean(superseded);
+  const billable = ticket.status !== 'done' && ticket.status !== 'declined';
 
   const statements = [];
   if (open) {
@@ -275,8 +382,9 @@ export async function finishRun(
       env.DB.prepare(
         `UPDATE ticket_runs
             SET executor = ?, model = ?, status = ?, cost_usd = ?, cost_micro_usd = ?,
-                branch = ?, diff_stat = ?, diff = ?, summary = ?, finished_at = ?
-          WHERE id = ?`,
+                branch = ?, commit_sha = ?, shared_to = ?, shared_ref = ?,
+                session_id = ?, session_dir = ?, session_log = ?, diff_stat = ?, diff = ?, summary = ?, finished_at = ?
+          WHERE id = ? AND status = 'running'`,
       ).bind(
         report.executor,
         report.model,
@@ -284,6 +392,12 @@ export async function finishRun(
         report.costUsd,
         costMicroUsd,
         report.branch || null,
+        report.commit || null,
+        report.sharedTo,
+        report.sharedRef || null,
+        report.sessionId || null,
+        report.sessionDir || null,
+        report.sessionLog ? 1 : 0,
         report.diffStat || null,
         report.diff || null,
         report.summary,
@@ -295,8 +409,9 @@ export async function finishRun(
     statements.push(
       env.DB.prepare(
         `INSERT INTO ticket_runs
-           (ticket_id, executor, model, status, cost_usd, cost_micro_usd, branch, diff_stat, diff, summary, started_at, finished_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (ticket_id, executor, model, status, cost_usd, cost_micro_usd, branch, commit_sha, shared_to, shared_ref,
+            session_id, session_dir, session_log, diff_stat, diff, summary, started_at, finished_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         ticketId,
         report.executor,
@@ -305,6 +420,12 @@ export async function finishRun(
         report.costUsd,
         costMicroUsd,
         report.branch || null,
+        report.commit || null,
+        report.sharedTo,
+        report.sharedRef || null,
+        report.sessionId || null,
+        report.sessionDir || null,
+        report.sessionLog ? 1 : 0,
         report.diffStat || null,
         report.diff || null,
         report.summary,
@@ -317,7 +438,26 @@ export async function finishRun(
   statements.push(
     env.DB.prepare(
       `INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'runner', ?, 1, ?)`,
-    ).bind(ticketId, runNote(report), t),
+    ).bind(ticketId, runNote(report, owner?.nodeId), t),
+  );
+  if (late) {
+    if (billable && costMicroUsd > 0) {
+      statements.push(
+        env.DB.prepare('UPDATE tickets SET ai_micro_usd = ai_micro_usd + ? WHERE id = ?').bind(costMicroUsd, ticketId),
+      );
+    }
+    statements.push(
+      env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 1, ?)`).bind(
+        ticketId,
+        `Run ${open!.id} reported after the ticket had moved on; the status was left as it is.` +
+          (costMicroUsd > 0 ? (billable ? '' : ` Its AI cost ($${report.costUsd.toFixed(4)}) was not added: the bill is closed.`) : ''),
+        t,
+      ),
+    );
+    await env.DB.batch(statements);
+    return { ok: true, costMicroUsd: billable ? costMicroUsd : 0, title: ticket.title, late: true };
+  }
+  statements.push(
     // Re-runs add up: the client pays for every run it took.
     env.DB.prepare(`UPDATE tickets SET status = 'review', ai_micro_usd = ai_micro_usd + ?, updated_at = ? WHERE id = ?`).bind(
       costMicroUsd,
@@ -332,13 +472,14 @@ export async function finishRun(
   );
 
   await env.DB.batch(statements);
-  return { ok: true, costMicroUsd, title: ticket.title };
+  return { ok: true, costMicroUsd, title: ticket.title, late: false };
 }
 
 /** Every run recorded for one ticket, oldest first. */
 export async function ticketRuns(env: Env, ticketId: number) {
   const { results } = await env.DB.prepare(
-    `SELECT id, executor, model, status, cost_micro_usd, cost_usd, branch, diff_stat, diff, summary, started_at, finished_at
+    `SELECT id, executor, model, status, cost_micro_usd, cost_usd, branch, commit_sha, shared_to, shared_ref, diff_stat, diff, summary, started_at, finished_at,
+            node_id, attempt, cancel_requested, session_id, session_dir, session_log
        FROM ticket_runs WHERE ticket_id = ? ORDER BY id`,
   )
     .bind(ticketId)
@@ -349,7 +490,8 @@ export async function ticketRuns(env: Env, ticketId: number) {
 /** Runs still going, for the fleet view. */
 export async function openRuns(env: Env) {
   const { results } = await env.DB.prepare(
-    `SELECT r.id, r.ticket_id, r.executor, r.model, r.started_at, t.title, t.status AS ticket_status, p.slug
+    `SELECT r.id, r.ticket_id, r.executor, r.model, r.started_at, r.node_id, r.lease_expires_at, r.attempt,
+            r.cancel_requested, r.session_id, r.session_dir, r.session_log, t.title, t.status AS ticket_status, p.slug
        FROM ticket_runs r
        JOIN tickets t ON t.id = r.ticket_id
        LEFT JOIN projects p ON p.id = t.project_id
@@ -362,7 +504,7 @@ export async function openRuns(env: Env) {
 export async function recentRuns(env: Env, limit = 40) {
   const { results } = await env.DB.prepare(
     `SELECT r.id, r.ticket_id, r.executor, r.model, r.status, r.cost_micro_usd, r.started_at, r.finished_at,
-            t.title, t.status AS ticket_status, p.slug
+            r.node_id, r.attempt, r.session_id, r.session_dir, r.session_log, t.title, t.status AS ticket_status, p.slug
        FROM ticket_runs r
        JOIN tickets t ON t.id = r.ticket_id
        LEFT JOIN projects p ON p.id = t.project_id

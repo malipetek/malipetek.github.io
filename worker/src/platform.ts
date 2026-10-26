@@ -285,13 +285,13 @@ export const PLATFORM_TOOLS: PlatformTool[] = [
 
 export class PlatformError extends Error {}
 
-interface CallOptions {
+export interface CallOptions {
   method?: 'GET' | 'POST';
   query?: Record<string, string | undefined>;
   body?: Record<string, unknown>;
 }
 
-async function platformFetch(env: Env, path: string, options: CallOptions = {}): Promise<unknown> {
+export async function platformFetch(env: Env, path: string, options: CallOptions = {}): Promise<unknown> {
   const key = env.PLATFORM_GPT_API_KEY;
   if (!key) {
     throw new PlatformError(

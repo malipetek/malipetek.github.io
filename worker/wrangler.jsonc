@@ -11,6 +11,10 @@
     { "tag": "flue-class-FlueIntercomAgent", "new_sqlite_classes": ["FlueIntercomAgent"] },
   ],
 
+  // The work queue's watchdog (src/cloudflare.ts): reap lapsed leases and mail
+  // Ali about approved work no node can take.
+  "triggers": { "crons": ["*/5 * * * *"] },
+
   // Non-secret configuration. Secrets (API keys, tokens) are NEVER listed
   // here — set them with `wrangler secret put NAME` (see README.md).
   "vars": {
@@ -48,6 +52,12 @@
   // then paste the returned id below.
   "kv_namespaces": [
     { "binding": "RATE_LIMIT", "id": "b4c27da115ed4625841a4b30d7e8fbec" },
+  ],
+
+  // Ticket attachments (src/files.ts). Create once with:
+  //   wrangler r2 bucket create malipetek-portal-files
+  "r2_buckets": [
+    { "binding": "FILES", "bucket_name": "malipetek-portal-files" },
   ],
 
   // Cloudflare Email Service. Requires malipetek.dev to be onboarded to Email

@@ -40,6 +40,8 @@ export interface Env {
   PLATFORM_GPT_API_KEY?: string;
   /** Secret. Shared with the local runner on Ali's machine; unset disables /runner/*. */
   RUNNER_TOKEN?: string;
+  /** R2 — ticket attachments (src/files.ts). Unbound = uploads are refused. */
+  FILES?: R2Bucket;
   /** Var, local dev only. "1" returns the magic link in the /auth/request response. */
   DEV_RETURN_LINK?: string;
 }

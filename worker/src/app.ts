@@ -13,7 +13,7 @@
  *                   email via the Cloudflare Email Service `EMAIL` binding.
  *   GET  /health
  *   /auth/*, /portal/*, /admin/* — client portal (src/portal.ts)
- *   /runner/*                     — local runner API (src/runner.ts)
+ *   /node/*                       — fleet node API (src/node.ts)
  *
  * The /agents/* mount is internal-only: it requires the same signed session
  * the frontend carries, so nobody can drive the agent without a session.
@@ -24,8 +24,9 @@ import { createAgentRouter } from '@flue/runtime/routing';
 import { Hono } from 'hono';
 import { Intercom } from './agents/intercom.ts';
 import { portal } from './portal.ts';
-import { runner } from './runner.ts';
+import { node } from './node.ts';
 import { kb, mcp } from './kb.ts';
+import { oauth } from './oauth.ts';
 import {
   ALLOWED_ORIGINS,
   clientIp,
@@ -115,11 +116,13 @@ app.route('/agents/intercom', createAgentRouter(Intercom) as unknown as Hono<Hon
 
 // Client portal: magic-link auth, tickets, admin. See src/portal.ts.
 app.route('/', portal);
-// Local runner API (token-auth, machine-to-machine). See src/runner.ts.
-app.route('/', runner);
+// Fleet node API (token-auth, machine-to-machine). See src/node.ts.
+app.route('/', node);
 // Public knowledgebase: REST reads plus the MCP server. See src/kb.ts.
 app.route('/kb', kb);
 app.route('/mcp', mcp);
+// OAuth for MCP clients that will not take a pasted key. See src/oauth.ts.
+app.route('/', oauth);
 
 app.get('/health', (c) => json({ ok: true }, 200, c.req.header('Origin') ?? null));
 

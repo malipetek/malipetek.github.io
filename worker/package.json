@@ -9,7 +9,10 @@
     "build": "vite build",
     "deploy": "vite build && wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "build:persona": "node scripts/build-persona.mjs"
+    "build:persona": "node scripts/build-persona.mjs",
+    "test:unit": "node --experimental-strip-types --no-warnings --test test/unit.test.ts",
+    "test:e2e": "node test/e2e.mjs",
+    "test": "pnpm run typecheck && pnpm run test:unit && pnpm run test:e2e"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.54.10",
