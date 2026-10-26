@@ -40,27 +40,40 @@ DSH_ACTION_CARDS_VERIFY_ROOT="$ROOT" SOURCE_PROFILE="$SOURCE_PROFILE" PLUGIN_DIR
 const fs = require("node:fs");
 const path = require("node:path");
 const root = process.env.DSH_ACTION_CARDS_VERIFY_ROOT;
-const profile = JSON.parse(fs.readFileSync(path.join(process.env.SOURCE_PROFILE, "package.json"), "utf8"));
+const source = process.env.SOURCE_PROFILE;
+const profile = JSON.parse(fs.readFileSync(path.join(source, "package.json"), "utf8"));
 profile.name = "dsh-profile-verify";
-delete profile.dependencies["@malipetek/dsh-action-cards"];
-profile.dsh.profile.bundles = profile.dsh.profile.bundles.filter((name) => name !== "@malipetek/dsh-action-cards");
+// Drop this plugin from the copy: the driver applies it itself, so nothing is
+// registered twice. Match on the suffix rather than a scope, because the same
+// package exists as `@local/…` and `@malipetek/…` depending on how it was
+// installed — and a scope that no longer matches is exactly how this script
+// silently stopped working once already.
+const isPlugin = (name) => /dsh-action-cards$/.test(name);
+for (const name of Object.keys(profile.dependencies ?? {})) if (isPlugin(name)) delete profile.dependencies[name];
+profile.dsh.profile.bundles = profile.dsh.profile.bundles.filter((name) => !isPlugin(name));
 profile.dependencies["@malipetek/dsh-action-cards-driver"] = `link:${path.join(process.env.PLUGIN_DIR, "dev-integration/driver")}`;
 profile.dsh.profile.bundles.push("@malipetek/dsh-action-cards-driver");
 const dir = path.join(root, "home/profiles/verify");
 fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify(profile, null, 2) + "\n");
 fs.writeFileSync(path.join(dir, "pnpm-workspace.yaml"), "packages:\n  - .\n");
-const patch = path.join(process.env.SOURCE_PROFILE, "cordis.patch.yml");
+const patch = path.join(source, "cordis.patch.yml");
 if (fs.existsSync(patch)) fs.copyFileSync(patch, path.join(dir, "cordis.patch.yml"));
-// The profile resolves its bundles from its own node_modules; link the source
-// profile'\''s @local packages so the neighbouring plugins still resolve.
-const localDir = path.join(dir, "node_modules/@local");
-fs.mkdirSync(localDir, { recursive: true });
-const sourceLocal = path.join(process.env.SOURCE_PROFILE, "node_modules/@local");
-for (const entry of fs.readdirSync(sourceLocal)) {
-  if (entry === "dsh-action-cards") continue;
-  fs.symlinkSync(path.join(sourceLocal, entry), path.join(localDir, entry));
+// The copied profile resolves its bundles from its own node_modules, so link
+// every scope the source profile uses — the neighbours it still mounts live in
+// them, and which scope they are in is not this script'\''s business.
+for (const scope of ["@local", "@malipetek"]) {
+  const from = path.join(source, "node_modules", scope);
+  if (!fs.existsSync(from)) continue;
+  const to = path.join(dir, "node_modules", scope);
+  fs.mkdirSync(to, { recursive: true });
+  for (const entry of fs.readdirSync(from)) {
+    if (isPlugin(entry) || entry.includes("action-cards-driver")) continue;
+    fs.symlinkSync(path.join(from, entry), path.join(to, entry));
+  }
 }
-fs.symlinkSync(path.join(process.env.PLUGIN_DIR, "dev-integration/driver"), path.join(localDir, "dsh-action-cards-driver"));
+const driverDir = path.join(dir, "node_modules/@malipetek");
+fs.mkdirSync(driverDir, { recursive: true });
+fs.symlinkSync(path.join(process.env.PLUGIN_DIR, "dev-integration/driver"), path.join(driverDir, "dsh-action-cards-driver"));
 '
 
 echo "setup: profile wired at $ROOT/home/profiles/verify"

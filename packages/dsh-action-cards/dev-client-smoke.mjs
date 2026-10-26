@@ -126,11 +126,14 @@ const effects = [];
 const tabTypes = [];
 let openedTab = null;
 
+const tabsCtx = {
+  effect(body) { body(); return () => {}; },
+  sidebarRightTabs: { register: (definition) => { tabTypes.push(definition); return () => {}; } },
+};
 const mockCtx = {
+  // The tab registry is reached through `ctx.inject`, so both channels are stubbed.
+  inject(_deps, callback) { callback(tabsCtx); },
   get(name) {
-    if (name === 'sidebarRightTabs') {
-      return { register: (definition) => { tabTypes.push(definition); return () => {}; } };
-    }
     if (name === 'sidebarRight') {
       return { openTab: (kind, options) => { openedTab = { kind, options }; } };
     }
@@ -141,6 +144,7 @@ const mockCtx = {
     effects.push(disposer);
     return () => {};
   },
+  sessions: { list: { getSnapshot: () => ({ ids: ['session-smoke'] }) } },
   slots: {
     inject(key, callback) { callback(); },
     register(options, component) { registered.push({ key: options.name, id: options.key ?? options.id, options, component }); },
@@ -167,8 +171,10 @@ console.log(`guide entry: ${guideEntry.id} → ${guideEntry.title()} (order ${gu
 
 const card = registered.find((entry) => entry.key === 'tool.call.toolview');
 const panel = registered.find((entry) => entry.key === 'sidebar.right.pane.tab');
+const review = registered.find((entry) => entry.key === 'conversation.input.overlay');
 if (card === undefined) throw new Error('the tool card was not registered');
 if (panel === undefined) throw new Error('the Actions panel was not registered');
+if (review === undefined) throw new Error('the composer review popup was not registered');
 if (tabTypes.length !== 1) throw new Error('the Actions tab type was not registered');
 
 /* ---------------------------------------------------------------- *
@@ -222,6 +228,24 @@ async function settle(component, props) {
     if (!dirty) break;
   }
   return tree;
+}
+
+/**
+ * Collect every button carrying a label.
+ * @param node - an element tree.
+ * @param label - the button's text.
+ * @param out - accumulator.
+ * @returns the matching elements.
+ */
+function findButtons(node, label, out = []) {
+  if (node === null || typeof node !== 'object') return out;
+  if (Array.isArray(node)) {
+    node.forEach((child) => findButtons(child, label, out));
+    return out;
+  }
+  if (node.type === 'button' && texts(node.children).join('') === label) out.push(node);
+  (node.children ?? []).forEach((child) => findButtons(child, label, out));
+  return out;
 }
 
 /**
@@ -355,234 +379,138 @@ const baseProps = {
   loadImage: async () => null,
   api,
 };
-
 /* ---------------------------------------------------------------- *
- * Phase 1 — preparing
+ * Assertions
  * ---------------------------------------------------------------- */
 
-const preparingTree = await settle(card.component, {
+/**
+ * Fail loudly, in the style of the other suites.
+ * @param label - what is being checked.
+ * @param condition - the result.
+ * @param detail - optional value to show.
+ */
+function check(label, condition, detail) {
+  console.log(`${condition ? '  ok  ' : ' FAIL '} ${label}${detail === undefined ? '' : ` — ${detail}`}`);
+  if (!condition) throw new Error(`check failed: ${label}`);
+}
+
+api.delegate = async () => {};
+
+/* ---- the row the transcript keeps ---- */
+
+const preparing = texts(await settle(card.component, {
   ...baseProps,
   phase: 'preparing',
   block: { phase: 'preparing', callId: 'call-1', name: 'propose_action', turn: 1, step: 1, time: 0, subCalls: [] },
   useToolCallArgumentsPartial: () => '{"title":"Create the Koof',
-});
-const preparingText = texts(preparingTree).join(' ');
-console.log(`\npreparing card: ${preparingText}`);
-if (!preparingText.includes('Preparing an action')) throw new Error('the preparing card did not render');
-if (!preparingText.includes('Create the Koof')) throw new Error('the preparing card dropped the streamed arguments');
+})).join(' ');
+check('the row says it is preparing', preparing.includes('Preparing an action'), preparing.trim().slice(0, 60));
 
-/* ---------------------------------------------------------------- *
- * Phase 2 — started, fully interactive
- * ---------------------------------------------------------------- */
+const rowTree = await settle(card.component, { ...baseProps, phase: 'result', block: resultBlock });
+const settled = texts(rowTree).join(' ');
+check('the row names what was proposed', settled.includes('Create the Koofr uploader config'));
+check('the row reports the status', settled.includes('Waiting for you'));
+check('the row offers a way in', findButton(rowTree, 'Open') !== undefined);
 
-const startTree = await settle(card.component, { ...baseProps, phase: 'start', block: startBlock });
-const startText = texts(startTree).join(' ');
-console.log(`\nstarted card: ${startText}`);
-for (const needle of [
-  'Create the Koofr uploader config',
-  'Create file',
-  'koofr/config.json',
-  'Run command',
-  'node koofr/upload.mjs --dry-run',
-  'Values to fill in',
-  'Koofr email',
-  'me@example.com',
-  'Koofr app token',
-  'Settings → App passwords',
-  'Apply',
-  'Dismiss',
-  'Waiting for you',
-]) {
-  if (!startText.includes(needle)) throw new Error(`the started card is missing: ${needle}`);
-}
+// The form must be gone from the transcript: inputs belong to the panel now,
+// because a tool call folds with its turn and a form there vanished mid-edit.
+const rowInputs = [];
+(function countInputs(node) {
+  if (node === null || typeof node !== 'object') return;
+  if (Array.isArray(node)) { node.forEach(countInputs); return; }
+  if (node.type === 'input') rowInputs.push(node);
+  (node.children ?? []).forEach(countInputs);
+})(rowTree);
+check('the row carries no inputs', rowInputs.length === 0, `${rowInputs.length} input(s)`);
 
-const applyButton = findButton(startTree, 'Apply');
-if (applyButton === undefined) throw new Error('the Apply button was not found');
-if (applyButton.props.disabled !== true) throw new Error('Apply was enabled despite a missing required value');
+/* ---- the panel, which holds the form ---- */
 
-const secretInput = findInput(startTree, 'Koofr app token');
-if (secretInput === undefined) throw new Error('the secret input was not found');
-if (secretInput.props.type !== 'password') throw new Error('the secret field did not render as a password input');
-
-const emailInput = findInput(startTree, 'Koofr email');
-if (emailInput === undefined) throw new Error('the plain input was not found');
-if (emailInput.props.type !== 'text') throw new Error('the plain field did not render as a text input');
-if (emailInput.props.value !== 'me@example.com') throw new Error('the proposed default was not seeded into the field');
-
-// When every declared placeholder already has a value, Apply must be live.
-const completeProposal = {
-  title: 'Set the uploader token',
-  steps: [
-    {
-      kind: 'write_file',
-      path: 'koofr/config.json',
-      content: '{"token": "{{KOOFR_TOKEN}}"}',
-      fields: [{ name: 'KOOFR_TOKEN', label: 'Koofr app token', value: 'kf_seeded' }],
-    },
-  ],
-};
-const completeTree = await settle(card.component, {
-  ...baseProps,
-  phase: 'start',
-  block: { ...startBlock, argsRaw: JSON.stringify(completeProposal) },
-});
-const completeApply = findButton(completeTree, 'Apply');
-if (completeApply === undefined) throw new Error('the Apply button vanished from the complete proposal');
-if (completeApply.props.disabled === true) throw new Error('Apply stayed disabled although every value was supplied');
-console.log('\ncomplete proposal leaves Apply enabled');
-
-/* ---------------------------------------------------------------- *
- * Phase 3 — settled result
- * ---------------------------------------------------------------- */
-
-const resultTree = await settle(card.component, { ...baseProps, phase: 'result', block: resultBlock });
-const resultText = texts(resultTree).join(' ');
-console.log(`\nsettled card: ${resultText}`);
-if (!resultText.includes('Create the Koofr uploader config')) throw new Error('the settled card lost its title');
-if (!resultText.includes('Apply')) throw new Error('the settled card lost its Apply button');
-
-/* ---------------------------------------------------------------- *
- * Phase 3b — the Host's pre-flight checks reach the card
- * ---------------------------------------------------------------- */
-
-const checkedProposal = {
-  title: 'Patch the environment file',
-  steps: [
-    { kind: 'write_file', path: 'app.env', content: 'API_URL=https://api.example.com\n' },
-    { kind: 'edit_file', path: 'app.env', search: 'DEBUG=true', replace: 'DEBUG=false' },
-  ],
-};
-const checkedTree = await settle(card.component, {
-  ...baseProps,
-  phase: 'result',
-  block: {
-    ...resultBlock,
-    call: { name: 'propose_action', argsRaw: JSON.stringify(checkedProposal) },
-    meta: {
-      actionId: 'call-1',
-      storePath: '/Users/malipetek/.dsh/action-cards/actions.json',
-      checks: { 0: { exists: true, size: 12 }, 1: { matches: 3 } },
-    },
+api.list = async () => [
+  {
+    id: 'call-2',
+    status: 'pending',
+    createdAt: Date.now(),
+    title: 'Rotate the uploader token',
+    note: '',
+    steps: [{ kind: 'edit_file', path: 'koofr/config.json', search: 'old', replace: '{{TOKEN}}', fields: [{ name: 'TOKEN', label: 'New token', secret: true }] }],
+    values: {},
+    outcomes: [],
   },
-});
-const checkedText = texts(checkedTree).join(' ');
-console.log(`\nchecked card: ${checkedText}`);
-if (!checkedText.includes('overwrites an existing file')) throw new Error('the overwrite check never reached the card');
-if (!checkedText.includes('the text to replace occurs 3 times')) throw new Error('the ambiguity check never reached the card');
-
-const missingTree = await settle(card.component, {
-  ...baseProps,
-  phase: 'result',
-  block: {
-    ...resultBlock,
-    call: { name: 'propose_action', argsRaw: JSON.stringify(checkedProposal) },
-    meta: { actionId: 'call-1', checks: { 1: { matches: 0 } } },
+  {
+    id: 'call-3',
+    status: 'returned',
+    createdAt: Date.now() - 500,
+    title: 'Install the uploader',
+    note: '',
+    steps: [],
+    values: {},
+    outcomes: [],
+    returnReason: 'The token is in their account and I cannot read it.',
   },
-});
-const missingText = texts(missingTree).join(' ');
-if (!missingText.includes('the text to replace is not in the file')) throw new Error('a zero-match check was not surfaced');
-
-/* ---------------------------------------------------------------- *
- * Phase 4 — the Sidebar page
- * ---------------------------------------------------------------- */
-
-const appliedItem = {
-  id: 'call-1',
-  status: 'applied',
-  createdAt: Date.now() - 1000,
-  title: 'Create the Koofr uploader config',
-  note: '',
-  steps: proposal.steps,
-  values: { KOOFR_EMAIL: 'me@example.com', KOOFR_TOKEN: 'kf_secret_token' },
-  outcomes: [{ ok: true, summary: 'Created koofr/config.json (64 bytes)' }],
-};
-const pendingItem = {
-  id: 'call-2',
-  status: 'pending',
-  createdAt: Date.now(),
-  title: 'Rotate the uploader token',
-  note: '',
-  steps: [{ kind: 'edit_file', path: 'koofr/config.json', search: 'old', replace: '{{TOKEN}}', fields: [{ name: 'TOKEN', label: 'New token', secret: true }] }],
-  values: {},
-  outcomes: [],
-};
-api.list = async () => [pendingItem, appliedItem];
+  {
+    id: 'call-1',
+    status: 'delegated',
+    createdAt: Date.now() - 1000,
+    title: 'Create the Koofr uploader config',
+    note: '',
+    steps: proposal.steps,
+    values: {},
+    outcomes: [],
+  },
+];
 
 const panelTree = await settle(panel.component, { sessionId: 'session-smoke', api });
 const panelText = texts(panelTree).join(' ');
-console.log(`\npanel: ${panelText}`);
-for (const needle of ['Actions', 'Refresh', 'Waiting (1)', 'Applied (1)', 'Dismissed (0)', 'All (2)', 'Rotate the uploader token', 'Waiting for you', 'New token']) {
-  if (!panelText.includes(needle)) throw new Error(`the panel is missing: ${needle}`);
-}
-// The default view is what is still waiting on the human, so a settled action
-// must not clutter it.
-if (panelText.includes('Create the Koofr uploader config')) throw new Error('the panel showed a settled action under the waiting filter');
-if (panelText.includes('Created koofr/config.json')) throw new Error('the panel showed a settled outcome under the waiting filter');
+check('the panel counts what is waiting', panelText.includes('Waiting (2)'), panelText.slice(0, 60));
+check('the panel shows the agent\'s reason', panelText.includes('cannot read it'));
+check('the panel offers the reply box', panelTree !== null);
+// The pending item's button stays live; the returned one is gated behind the
+// agent's question. Both are on screen, so the assertion is over the set.
+const handBackButtons = findButtons(panelTree, 'You do it');
+check('both waiting items offer "You do it"', handBackButtons.length === 2, `${handBackButtons.length} button(s)`);
+check('the returned item gates "You do it"', handBackButtons.some((element) => element.props.disabled === true));
+check('the panel shows the agent\'s message as a thread', panelText.includes('Agent'));
+check('the panel counts what was handed back', panelText.includes('Handed back (1)'));
+check('the panel shows the waiting item', panelText.includes('Rotate the uploader token'));
+check('the waiting view hides settled items', !panelText.includes('Create the Koofr uploader config'));
+check('the panel offers Do it here', findButton(panelTree, 'Do it here') !== undefined);
+check('the panel offers "You do it"', findButton(panelTree, 'You do it') !== undefined);
+check('the panel offers Dismiss', findButton(panelTree, 'Dismiss') !== undefined);
+// The editor's link out to the Sidebar page was rendered inside the Sidebar
+// page, where it pointed at the page it was drawn in and did nothing at all.
+check('the panel does not offer a link to itself', !panelText.includes('Open the Actions panel'));
 
 api.list = async () => [];
-const emptyPanel = await settle(panel.component, { sessionId: 'session-smoke', api });
-const emptyText = texts(emptyPanel).join(' ');
-console.log(`\nempty panel: ${emptyText}`);
-if (!emptyText.includes('No proposed actions yet')) throw new Error('the empty panel did not explain itself');
+const emptyPanel = texts(await settle(panel.component, { sessionId: 'session-smoke', api })).join(' ');
+check('the empty panel explains itself', emptyPanel.includes('No proposed actions yet'));
 
-/* ---------------------------------------------------------------- *
- * Phase 5 — apply round trip and the Sidebar reveal
- * ---------------------------------------------------------------- */
+/* ---- the review popup over the composer ---- */
 
-api.apply = async (sessionId, id, values, steps) => {
-  appliedPayload = { sessionId, id, values, steps };
-  return { status: 'applied', outcomes: [{ ok: true, summary: 'Created koofr/config.json' }] };
-};
-const applyTree = await settle(card.component, { ...baseProps, phase: 'result', block: resultBlock });
-const applyButtonNow = findButton(applyTree, 'Apply');
-if (applyButtonNow === undefined) throw new Error('the Apply button vanished');
-await applyButtonNow.props.onClick();
-if (appliedPayload === null) throw new Error('Apply did not reach the callback face');
-if (appliedPayload.id !== 'call-1') throw new Error(`Apply sent the wrong id: ${appliedPayload.id}`);
-if (appliedPayload.values.KOOFR_EMAIL !== 'me@example.com') throw new Error('Apply dropped the seeded email value');
-console.log(`\napply sent: ${JSON.stringify(appliedPayload.values)}`);
+let waiting = [];
+let opened = 0;
+const reviewApi = { ...api, pendingItems: async () => waiting, openPanel: () => { opened += 1; } };
 
-const revealTree = await settle(card.component, { ...baseProps, phase: 'result', block: resultBlock });
-const revealButton = findButton(revealTree, 'Open the Actions panel');
-if (revealButton === undefined) throw new Error('the reveal button was not found');
-revealButton.props.onClick();
-if (openedTab === null || openedTab.kind !== 'action-cards') throw new Error('the reveal button did not open the Actions tab');
-console.log(`reveal opened tab kind: ${openedTab.kind}`);
+waiting = [];
+check('the popup stays away when nothing waits', texts(await settle(review.component, { api: reviewApi, sessionId: 'session-smoke' })).length === 0);
 
-/* ---------------------------------------------------------------- *
- * Phase 6 — degraded Host: a malformed proposal must still render
- * ---------------------------------------------------------------- */
-
-const brokenTree = await settle(card.component, {
-  ...baseProps,
-  phase: 'result',
-  block: { ...resultBlock, call: null, meta: undefined, content: [{ type: 'text', text: 'no metadata' }] },
-});
-const brokenText = texts(brokenTree).join(' ');
-console.log(`\nwindowless result card: ${brokenText}`);
-if (!brokenText.includes('Proposed action')) throw new Error('a call-less result did not fall back to a generic title');
-
-// With no arguments and no metadata the store is the only source for what was
-// proposed, and the card has to become usable again from it.
-api.readItem = async () => ({
-  id: 'call-1',
-  status: 'pending',
-  title: 'Create the Koofr uploader config',
-  note: '',
-  steps: proposal.steps,
-  checks: {},
-  outcomes: [],
-});
-const recoveredTree = await settle(card.component, {
-  ...baseProps,
-  phase: 'result',
-  block: { ...resultBlock, call: null, meta: { actionId: 'call-1' } },
-});
-const recoveredText = texts(recoveredTree).join(' ');
-console.log(`\nrecovered card: ${recoveredText}`);
-if (!recoveredText.includes('KOOFR_TOKEN') && !recoveredText.includes('Koofr app token')) {
-  throw new Error('the card did not recover its steps from the store');
-}
-if (!recoveredText.includes('koofr/config.json')) throw new Error('the recovered card lost its step detail');
+waiting = [
+  { id: 'call-2', status: 'pending', createdAt: 2, title: 'Rotate the uploader token', note: '', steps: [], values: {}, outcomes: [] },
+  { id: 'call-3', status: 'returned', createdAt: 1, title: 'Install the uploader', note: '', steps: [], values: {}, outcomes: [] },
+];
+const reviewTree = await settle(review.component, { api: reviewApi, sessionId: 'session-smoke' });
+const reviewText = texts(reviewTree).join(' ');
+check('the popup announces the count', reviewText.includes('2 actions are waiting'), reviewText.trim());
+check('the popup names the first waiting action', reviewText.includes('Rotate the uploader token'));
+const reviewButton = findButton(reviewTree, 'Review');
+check('the popup offers Review', reviewButton !== undefined);
+check('the popup offers a way to hide it', findButton(reviewTree, '×') !== undefined);
+// Review is the form in place, not a disguised trip to the Sidebar. The expanded
+// form itself needs a real re-render, so dev-react/render.mjs is where that is
+// exercised; this runtime is here to fail a component that throws.
+reviewButton.props.onClick();
+check('Review does not send you to the Sidebar panel', opened === 0);
 
 console.log('\nclient smoke test complete');
+// The popup polls on an interval, and the miniature runtime never unmounts, so
+// the event loop would otherwise stay alive forever.
+process.exit(0);

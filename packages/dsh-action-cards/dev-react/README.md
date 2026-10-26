@@ -35,7 +35,12 @@ What it checks, on the real rendering path:
 - a proposal restored from the store with no arguments recovers its title, steps,
   status and outcome;
 - the Sidebar panel counts statuses, filters to what is waiting, and applies from
-  the list on the real React path;
+  the list on the real React path, and it offers no link to the page it is already
+  drawn in;
+- the composer review popup stays away when nothing waits, opens its form in place
+  on **Review** without sending you to the Sidebar, offers the link out to the
+  panel from the open form, closes again on **Hide**, and returns when the count
+  changes after a dismissal;
 - degraded input does not blank the slot: a call-less result, and an unreadable
   store, both still render a usable card.
 

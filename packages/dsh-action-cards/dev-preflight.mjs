@@ -121,10 +121,11 @@ function outOfSubset(schema, path = 'schema', out = []) {
 
 // The tool definition is built inside `apply`, so capture it the way the
 // integration driver does and inspect the real schemas it hands the registry.
-const captured = {};
+/** Every definition the plugin registers, in order. */
+const captured = { tools: [] };
 const stub = new Proxy({}, {
   get: (_target, key) => {
-    if (key === 'tools') return { register: (definition) => { captured.tool = definition; return () => {}; } };
+    if (key === 'tools') return { register: (definition) => { captured.tools.push(definition); return () => {}; } };
     if (key === 'commands') return { register: (definition) => { captured.command = definition; return () => {}; } };
     if (key === 'effect') return (body) => body();
     if (key === 'get') return () => undefined;
@@ -134,16 +135,26 @@ const stub = new Proxy({}, {
 });
 host.apply(stub);
 
-ok('the plugin registered a tool', captured.tool !== undefined, captured.tool?.name);
+ok('the plugin registered its tools', captured.tools.length > 0, captured.tools.map((tool) => tool.name).join(', '));
 ok('the plugin registered a command', captured.command !== undefined, captured.command?.name);
 
-const parametersOffenders = outOfSubset(captured.tool?.parameters, 'parameters');
-ok('the tool parameters stay inside the schema subset', parametersOffenders.length === 0, parametersOffenders.join(', ') || 'clean');
-const outputOffenders = outOfSubset(captured.tool?.output?.schema, 'output.schema');
-ok('the tool output schema stays inside the schema subset', outputOffenders.length === 0, outputOffenders.join(', ') || 'clean');
+// Every tool, not just the first: a second registration used to overwrite the
+// first in this stub, which silently stopped checking one of them.
+for (const tool of captured.tools) {
+  const parametersOffenders = outOfSubset(tool?.parameters, `${tool?.name}.parameters`);
+  ok(`${tool?.name}: parameters stay inside the schema subset`, parametersOffenders.length === 0, parametersOffenders.join(', ') || 'clean');
+  const outputOffenders = outOfSubset(tool?.output?.schema, `${tool?.name}.output.schema`);
+  ok(`${tool?.name}: output schema stays inside the schema subset`, outputOffenders.length === 0, outputOffenders.join(', ') || 'clean');
+  ok(`${tool?.name}: renders a text block`, typeof tool?.output?.render === 'function');
+}
 
-const stepBounds = JSON.stringify(captured.tool?.parameters?.properties?.steps?.description ?? '');
-ok('the step bound is stated in prose, where the model can read it', stepBounds.includes('8'), captured.tool?.parameters?.properties?.steps?.description);
+const propose = captured.tools.find((tool) => tool.name === 'propose_action');
+const stepBounds = JSON.stringify(propose?.parameters?.properties?.steps?.description ?? '');
+ok('the step bound is stated in prose, where the model can read it', stepBounds.includes('8'), propose?.parameters?.properties?.steps?.description);
+
+const returnTool = captured.tools.find((tool) => tool.name === 'return_action');
+ok('the agent has a way to send a request back', returnTool !== undefined, returnTool?.name);
+ok('sending one back requires a reason', Array.isArray(returnTool?.parameters?.required) && returnTool.parameters.required.includes('reason'));
 
 rmSync(scratch, { recursive: true, force: true });
 console.log(problems.length === 0 ? '\npreflight: all checks passed' : `\npreflight FAILED: ${problems.join('; ')}`);

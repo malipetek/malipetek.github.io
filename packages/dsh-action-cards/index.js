@@ -50,6 +50,17 @@ const STATE_DIR = process.env.DSH_ACTION_CARDS_DIR || join(DSH_HOME, 'action-car
 /** The single store file both halves share. */
 const STORE_PATH = join(STATE_DIR, 'actions.json');
 
+/**
+ * Version of this bundle, mirrored by `CLIENT_VERSION` in `client.js`.
+ *
+ * Both halves report it to disk — the Host in `doctor.json`, the Client by
+ * calling `/actions hello` at mount, which lands in `client.json`. That is how a
+ * change is confirmed to be *live* rather than merely saved: the Client bundle is
+ * fetched by the browser, so a stale one looks exactly like a working one until
+ * you can ask it what version it is. Bump both together.
+ */
+const PLUGIN_VERSION = '1.2.0';
+
 /** Steps one proposal may carry. Each is executed in order, stopping at the first failure. */
 const MAX_STEPS = 8;
 /** Characters accepted in one substituted value. */
@@ -64,6 +75,14 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 120000;
 const MAX_OUTPUT_CHARS = 4000;
 /** Characters of the report sent back to the agent. */
 const MAX_REPORT_CHARS = 1200;
+/**
+ * Delay before the wiring report is probed a second time.
+ *
+ * Long enough for the host plane to have mounted the services this plugin reads
+ * lazily, short enough that a `doctor.json` read a minute after launch is not
+ * stale. See {@link publishDoctor}.
+ */
+const DOCTOR_REPROBE_MS = 10000;
 
 /**
  * Whether applying an action wakes the agent with the outcome.
@@ -653,6 +672,68 @@ function buildReport(item) {
 }
 
 /**
+ * Read the JSON payload that follows an id in a command line.
+ *
+ * Anchored on the verb so an id that happens to be a substring of it cannot
+ * misplace the cut, and tolerant of no payload at all.
+ *
+ * @param text - the raw command line, verb included.
+ * @param id - the id token the payload follows.
+ * @returns `{ payload }`, or `{ error }` when the tail is not JSON.
+ */
+function payloadFrom(text, id) {
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`^\\S+\\s+${escaped}(?:\\s+([\\s\\S]*))?$`).exec(String(text).trim());
+  const tail = (match?.[1] ?? '').trim();
+  if (tail.length === 0) return { payload: {} };
+  try {
+    const payload = JSON.parse(tail);
+    return { payload: payload !== null && typeof payload === 'object' ? payload : {} };
+  } catch (error) {
+    return { error: `The action payload is not valid JSON: ${messageOf(error)}` };
+  }
+}
+
+/**
+ * Compose the message for a proposal the human handed back.
+ *
+ * Some proposals are work the agent could have done itself, and handing it to the
+ * human is a way of handing over the responsibility. The "You do it" button says
+ * so. The message deliberately does **not** carry the field values: those are
+ * masked on the panel precisely so a token does not travel through the
+ * conversation, and forwarding them here would spend that for nothing. The steps
+ * are named without their contents, because the tool call is already in context
+ * and will be re-read if the log is compacted.
+ *
+ * @param item - the stored record.
+ * @returns a compact report.
+ */
+function buildDelegation(item, note) {
+  const lines = [];
+  lines.push(`The user declined to apply the action you proposed and asked you to do it yourself: "${item.title}".`);
+  lines.push(`Action id: ${item.id}`);
+  lines.push('Nothing was written, and no command was run.');
+  if (typeof note === 'string' && note.trim().length > 0) {
+    lines.push(`They also said how to do it: ${note.trim()}`);
+  }
+  if (Array.isArray(item.steps) && item.steps.length > 0) {
+    lines.push('The steps you proposed were:');
+    item.steps.forEach((step, index) => {
+      const what = step.kind === 'run_command'
+        ? `run_command  ${step.command ?? ''}`
+        : `${step.kind}  ${step.path ?? ''}`;
+      lines.push(`${index + 1}. ${what}`);
+    });
+  }
+  lines.push('Carry it out with your own tools now. The exact contents and arguments are in your tool call above.');
+  lines.push('If you genuinely cannot — the work needs something only they have, or access you do not — say so with the `return_action` tool instead of replying in prose, and explain why their request is justified. They will have to tell you how to proceed before handing it back again.');
+  if (Array.isArray(item.steps) && item.steps.some((step) => Array.isArray(step.fields) && step.fields.length > 0)) {
+    lines.push('No field values were passed on: the ones the user typed are masked, and are not in this conversation.');
+  }
+  return clampText(lines.join('\n'), MAX_REPORT_CHARS);
+}
+
+/**
  * Freeze a message graph, the way the message factories do before publication.
  * @param value - the value to freeze, recursively.
  * @returns the same value.
@@ -728,17 +809,32 @@ export function apply(ctx) {
    */
   const doctor = {
     plugin: name,
+    version: PLUGIN_VERSION,
     updatedAt: 0,
+    probe: 'boot',
     tool: 'pending',
     toolError: null,
+    returnTool: 'pending',
+    returnToolError: null,
     command: 'pending',
     services: {},
     store: STORE_PATH,
   };
 
-  /** Probe and persist the wiring report. */
-  function publishDoctor() {
+  /**
+   * Probe and persist the wiring report.
+   *
+   * The Host plane mounts its services around this plugin, so a probe taken
+   * during `apply` can report `fs`, `sandboxPolicy` and `shell` as unavailable
+   * even though they are present by the time anything runs — `checkStep` already
+   * resolves paths through `fs` at propose time. The report therefore records
+   * which probe it was, and is taken twice.
+   *
+   * @param probe - `boot` for the mount-time probe, `settled` for the later one.
+   */
+  function publishDoctor(probe) {
     doctor.updatedAt = Date.now();
+    doctor.probe = probe;
     for (const service of ['fs', 'sandboxPolicy', 'shell', 'shellEnv', 'sessions']) {
       const resolved = ctx.get(service);
       doctor.services[service] = resolved === undefined || resolved === null ? 'unavailable' : 'ready';
@@ -756,6 +852,35 @@ export function apply(ctx) {
   /* ---------------------------------------------------------------------- *
    * The `/actions` command — the Client's only way in
    * ---------------------------------------------------------------------- */
+
+  /**
+   * Hand a message back to the agent.
+   *
+   * Best effort by design: the message is a courtesy to the agent, and a delivery
+   * failure must not turn a successful apply into an error the human sees. The
+   * flush is a durability nicety — the inbox splice is already a Session event, so
+   * a failed flush costs at most a replay.
+   *
+   * @param agent - the agent for the Session the command ran against.
+   * @param text - the report body.
+   * @param actionId - the proposal identity, recorded on the message source.
+   */
+  async function deliverToAgent(agent, text, actionId) {
+    if (!REPORT_TO_AGENT || agent === undefined || agent === null) return;
+    try {
+      agent.followup(await buildReportMessage(text, actionId));
+      try {
+        const sessions = ctx.get('sessions');
+        if (sessions !== undefined && sessions !== null && typeof sessions.flush === 'function') {
+          await sessions.flush(agent.session);
+        }
+      } catch {
+        // Not every composition persists eagerly.
+      }
+    } catch (error) {
+      console.warn('[action-cards] could not report the outcome to the agent:', error);
+    }
+  }
 
   /**
    * Apply one proposal.
@@ -818,25 +943,7 @@ export function apply(ctx) {
     };
     const item = { ...record, report: buildReport(record) };
     await putItem(item);
-
-    if (REPORT_TO_AGENT && agent !== undefined) {
-      try {
-        const message = await buildReportMessage(item.report, id);
-        agent.followup(message);
-        // Best effort, and only a durability nicety: the inbox splice is already a
-        // Session event, so a failed flush costs at most a replay.
-        try {
-          const sessions = ctx.get('sessions');
-          if (sessions !== undefined && sessions !== null && typeof sessions.flush === 'function') {
-            await sessions.flush(agent.session);
-          }
-        } catch {
-          // Not every composition persists eagerly.
-        }
-      } catch (error) {
-        console.warn('[action-cards] could not report the outcome to the agent:', error);
-      }
-    }
+    await deliverToAgent(agent, item.report, id);
 
     return { kind: 'success', text: JSON.stringify({ status, outcomes, report: item.report }) };
   }
@@ -878,6 +985,60 @@ export function apply(ctx) {
       return applyAction(agent, signal, id, payload);
     }
 
+    if (action === 'hello') {
+      // The Client half announces itself once at mount. That single line is what
+      // makes a stale bundle distinguishable from a broken one: `client.json`
+      // exists only if the *new* Client code loaded and could reach the Host.
+      const clientVersion = rest[0] ?? 'unknown';
+      const record = { at: Date.now(), client: clientVersion, host: PLUGIN_VERSION, sessionId: agent?.session?.id ?? '' };
+      try {
+        await mkdir(STATE_DIR, { recursive: true });
+        await writeFile(join(STATE_DIR, 'client.json'), `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+      } catch {
+        // Diagnostics only.
+      }
+      return { kind: 'success', text: `host ${PLUGIN_VERSION} speaking; client ${clientVersion}` };
+    }
+
+    if (action === 'delegate') {
+      // "You do it": the human is declining the work and handing it back. The
+      // steps were self-contained agent work, so nothing is executed here — the
+      // proposal is retired and the agent is told to carry it out itself.
+      //
+      // Once the agent has sent the request back with a reason (status
+      // `returned`), handing it over again needs a note saying *how*. Without
+      // that the exchange is just two parties restating their positions, and the
+      // agent has already given the human something to answer.
+      const id = rest[0];
+      if (typeof id !== 'string' || id.length === 0) return { kind: 'error', text: 'Usage: /actions delegate <id> {json}' };
+      const existing = (await readStore()).items[id];
+      if (existing === undefined) return { kind: 'error', text: `No action "${id}" to hand back.` };
+
+      const body = payloadFrom(text, id);
+      if (body.error !== undefined) return { kind: 'error', text: body.error };
+      const note = typeof body.payload?.note === 'string' ? body.payload.note.trim() : '';
+      if (existing.status === 'returned' && note.length === 0) {
+        return {
+          kind: 'error',
+          text: `The agent sent this one back saying: "${existing.returnReason ?? 'no reason given'}". Explain how it should proceed before handing it over again.`,
+        };
+      }
+
+      const patched = await patchItem(id, {
+        status: 'delegated',
+        decidedAt: Date.now(),
+        delegations: (Array.isArray(existing.delegations) ? existing.delegations.length : 0) + 1,
+        ...(note.length > 0 ? { delegateNote: note } : {}),
+      });
+      if (patched === null) return { kind: 'error', text: `No action "${id}" to hand back.` };
+      // Named `message`, not `text`: `text` is the command line, and shadowing it
+      // in this block puts every earlier read of it in a temporal dead zone.
+      const message = buildDelegation(patched, note);
+      await patchItem(id, { report: message });
+      await deliverToAgent(agent, message, id);
+      return { kind: 'success', text: JSON.stringify({ status: 'delegated', outcomes: [], report: message }) };
+    }
+
     if (action === 'dismiss') {
       const id = rest[0];
       if (typeof id !== 'string' || id.length === 0) return { kind: 'error', text: 'Usage: /actions dismiss <id>' };
@@ -905,7 +1066,9 @@ export function apply(ctx) {
       text: [
         'Unknown subcommand. Available:',
         '  /actions list            every proposal and its status',
+        '  /actions hello <version> record that the Client half loaded',
         '  /actions apply <id> {json}  apply one proposal with the user\'s values',
+        '  /actions delegate <id>   hand the work back to the agent',
         '  /actions dismiss <id>    mark one proposal dismissed',
         '  /actions prune           drop every decided proposal',
       ].join('\n'),
@@ -938,9 +1101,11 @@ export function apply(ctx) {
         description: [
           'Propose a concrete action for the user to carry out, instead of describing it in prose.',
           'Use this when the user must do something in their own environment — create a file, change one value inside an existing file, or run a command — and especially when a value (an API key, a path, an email) has to come from them.',
-          'The user sees an editable card: they fill in the values you declared, review the exact content, and press Apply. The Host then performs the action and tells you what happened, so you do not need to do it yourself and must not assume it already happened.',
+          'The user sees an editable form in the Actions panel: they fill in the values you declared, review the exact content, and press Apply. The Host then performs the action and tells you what happened, so you do not need to do it yourself and must not assume it already happened.',
+          'They can also answer "You do it", which hands the job back to you to carry out with your own tools.',
           'Declare every value the user must supply in the step\'s `fields`, and reference it in the content, search, replace, command, cwd or path as {{name}}.',
           'Prefer this over pasting a snippet and asking the user to create the file by hand.',
+          'Do not use it to hand the user work you could do yourself: they can answer "You do it" and send the job back.',
         ].join(' '),
         parameters: {
           type: 'object',
@@ -1084,6 +1249,114 @@ export function apply(ctx) {
     };
   }, 'action-cards: propose_action tool');
 
-  console.log(`[action-cards] ready — propose_action and /actions, store ${STORE_PATH}`);
-  publishDoctor();
+  /* ---------------------------------------------------------------------- *
+   * The `return_action` tool — the agent's answer to "You do it"
+   * ---------------------------------------------------------------------- */
+
+  ctx.effect(() => {
+    let dispose = null;
+    try {
+      dispose = ctx.tools.register({
+        name: 'return_action',
+        description: [
+          'Send a proposed action back to the user, with the reason you cannot carry it out yourself.',
+          'Use this only after the user handed you an action with "You do it" and you genuinely cannot do it — the work needs a secret only they hold, an account you cannot reach, or a decision that is theirs to make.',
+          'Explaining is the point: the user cannot hand the same action back to you again until they have said how to proceed, so a vague reason only blocks them.',
+          'Do not use it merely because the work is tedious, or because the user could do it — that is what the original proposal was for.',
+        ].join(' '),
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['reason'],
+          properties: {
+            reason: {
+              type: 'string',
+              description: 'Why you cannot carry this out, and what specifically only the user can supply or decide.',
+            },
+            actionId: {
+              type: 'string',
+              description: 'The action to send back. Omit it to answer the most recent action the user handed you in this session.',
+            },
+            needs: {
+              type: 'string',
+              description: 'Optional: what the user would have to give you later for you to take it on yourself.',
+            },
+          },
+        },
+        output: {
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['actionId', 'message'],
+            properties: {
+              actionId: { type: 'string' },
+              message: { type: 'string' },
+            },
+          },
+          render: (_args, value) => [{ type: 'text', text: value.message }],
+        },
+        async execute(args, exec) {
+          const reason = typeof args?.reason === 'string' ? args.reason.trim() : '';
+          if (reason.length === 0) {
+            const error = new Error('Give a reason: the user cannot answer without one.');
+            error.code = 'INVALID_ARGS';
+            throw error;
+          }
+          const sessionId = exec.agent?.session?.id ?? '';
+          const store = await readStore();
+          const items = Object.values(store.items);
+
+          // Prefer the named action; otherwise the most recent one this session
+          // handed over. Ordering by when the human decided is what makes "most
+          // recent" mean the delegation they are answering.
+          const target = typeof args?.actionId === 'string' && args.actionId.length > 0
+            ? items.find((item) => item.id === args.actionId)
+            : items
+                .filter((item) => item.sessionId === sessionId && item.status === 'delegated')
+                .sort((left, right) => (Number(right.decidedAt) || 0) - (Number(left.decidedAt) || 0))[0];
+
+          if (target === undefined) {
+            const handovers = items.filter((item) => item.sessionId === sessionId && item.status === 'delegated');
+            if (handovers.length === 0 && (typeof args?.actionId !== 'string' || args.actionId.length === 0)) {
+              return { actionId: '', message: 'No action has been handed to you in this session, so there is nothing to send back.' };
+            }
+            return { actionId: String(args?.actionId ?? ''), message: `No action "${args?.actionId}" to send back.` };
+          }
+          if (target.status !== 'delegated') {
+            return { actionId: target.id, message: `"${target.title}" is not in your hands (status: ${target.status}), so there is nothing to send back.` };
+          }
+
+          const needs = typeof args?.needs === 'string' ? args.needs.trim() : '';
+          await patchItem(target.id, {
+            status: 'returned',
+            returnReason: reason,
+            ...(needs.length > 0 ? { returnNeeds: needs } : {}),
+            returnedAt: Date.now(),
+          });
+
+          return {
+            actionId: target.id,
+            message: [
+              `Sent "${target.title}" back to the user with your reason.`,
+              needs.length > 0 ? 'They now have to say how to proceed before handing it to you again.' : 'They now have to say how to proceed before handing it to you again.',
+            ].join(' '),
+          };
+        },
+      });
+      doctor.returnTool = 'ready';
+    } catch (error) {
+      doctor.returnTool = 'unavailable';
+      doctor.returnToolError = `${error?.name ?? 'Error'}: ${error?.message ?? String(error)}`;
+      console.warn('[action-cards] could not register the return_action tool:', error);
+    }
+    return () => {
+      if (typeof dispose === 'function') dispose();
+    };
+  }, 'action-cards: return_action tool');
+
+  console.log(`[action-cards] ready — propose_action, return_action and /actions, store ${STORE_PATH}`);
+  publishDoctor('boot');
+  // One delayed re-probe, unref'd so a diagnostic timer never holds the process open.
+  const doctorProbe = setTimeout(() => publishDoctor('settled'), DOCTOR_REPROBE_MS);
+  if (typeof doctorProbe.unref === 'function') doctorProbe.unref();
 }

@@ -1,0 +1,7 @@
+# Host half only. The Client half is declared through `dsh.client` in
+# package.json and needs no Loader row of its own. The row carries no config:
+# the repository, the remotes and the credentials all come from the session's
+# own workspace and environment.
+- insert:
+    - id: git-graph
+      name: '@malipetek/dsh-git-graph'

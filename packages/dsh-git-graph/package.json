@@ -1,0 +1,59 @@
+{
+  "name": "@malipetek/dsh-git-graph",
+  "version": "1.0.0",
+  "description": "Source control in the right Sidebar: the working tree with stage, unstage, discard and commit; a commit graph; branches; and fetch, pull and push — plus the files the agent changed last turn.",
+  "type": "module",
+  "main": "index.js",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-shortcuts"
+      ]
+    },
+    "meta": {
+      "title": "Git graph",
+      "description": "Working tree, commit graph, branches, and fetch, pull and push from the Sidebar."
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "git",
+    "source control",
+    "diff"
+  ],
+  "author": "Muhammet Ali Petek",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/malipetek/malipetek.github.io.git",
+    "directory": "packages/dsh-git-graph"
+  },
+  "homepage": "https://malipetek.dev/plugins/dsh-git-graph",
+  "bugs": "https://github.com/malipetek/malipetek.github.io/issues",
+  "publishConfig": {
+    "access": "public"
+  }
+}

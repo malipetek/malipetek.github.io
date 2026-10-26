@@ -63,9 +63,10 @@ async function run(ctx, captured) {
   await mkdir(WORKSPACE, { recursive: true });
 
   let counter = 0;
+  const proposeTool = captured.tool;
   const propose = (args) => {
     counter += 1;
-    return captured.tool.execute(args, { callId: `verify-${counter}`, agent, signal: undefined, arguments: args });
+    return proposeTool.execute(args, { callId: `verify-${counter}`, agent, signal: undefined, arguments: args });
   };
   const apply = (id, payload) => captured.command.handler({ agent, rawInput: `apply ${id} ${JSON.stringify(payload)}`, signal: undefined });
 
@@ -195,12 +196,12 @@ async function run(ctx, captured) {
 }
 
 export function apply(ctx) {
-  const captured = {};
+  const captured = { tools: [] };
   // Recording stubs for the two registries; everything else forwards to the real
   // context, bound, so `ctx.get`, `ctx.effect` and the service lookups behave.
   const shim = new Proxy({}, {
     get: (_target, key) => {
-      if (key === 'tools') return { register: (definition) => { captured.tool = definition; return () => {}; } };
+      if (key === 'tools') return { register: (definition) => { captured.tools.push(definition); return () => {}; } };
       if (key === 'commands') return { register: (definition) => { captured.command = definition; return () => {}; } };
       const value = ctx[key];
       return typeof value === 'function' ? value.bind(ctx) : value;
@@ -213,9 +214,10 @@ export function apply(ctx) {
     try {
       const plugin = await import(PLUGIN);
       plugin.apply(shim);
-      if (captured.tool === undefined) throw new Error('the plugin registered no tool');
+      captured.tool = captured.tools.find((tool) => tool.name === 'propose_action');
+      if (captured.tool === undefined) throw new Error('the plugin registered no propose_action tool');
       if (captured.command === undefined) throw new Error('the plugin registered no command');
-      console.log(`[driver] captured tool "${captured.tool.name}" and command "${captured.command.name}"`);
+      console.log(`[driver] captured tools [${captured.tools.map((tool) => tool.name).join(', ')}] and command "${captured.command.name}"`);
       report = await run(ctx, captured);
     } catch (error) {
       report = { steps: [{ name: 'driver crashed', ok: false, detail: `${error?.name}: ${error?.message}\n${error?.stack}` }], failed: 1 };

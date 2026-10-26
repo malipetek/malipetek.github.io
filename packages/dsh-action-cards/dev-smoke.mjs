@@ -398,6 +398,96 @@ const dismissed = await run(`dismiss ${edit.actionId}`);
 if (dismissed.kind !== 'success') throw new Error('dismiss failed');
 if ((await store()).items[edit.actionId].status !== 'dismissed') throw new Error('dismiss did not stick');
 
+/* ---- "You do it": the human hands the work back ---- */
+
+// A proposal the agent could have done itself. Handing it back must not execute
+// anything here — the whole point is that the agent does it — and must tell the
+// agent what to do, without the values the human typed, which are masked on the
+// panel precisely so they do not travel through the conversation.
+const handedBack = await propose({
+  title: 'Install the uploader',
+  steps: [
+    { kind: 'write_file', path: 'install/uploader.sh', content: 'echo {{TOKEN}}\n', fields: [{ name: 'TOKEN', label: 'Token', secret: true }] },
+    { kind: 'run_command', command: 'bash install/uploader.sh' },
+  ],
+});
+const commandsBefore = commandsRun.length;
+const delegateResult = await run(`delegate ${handedBack.actionId}`);
+if (delegateResult.kind !== 'success') throw new Error(`delegate failed: ${delegateResult.text}`);
+const delegatePayload = payloadOf(delegateResult);
+if (delegatePayload.status !== 'delegated') throw new Error(`delegate reported ${delegatePayload.status}`);
+if (commandsRun.length !== commandsBefore) throw new Error('delegating ran a command; it must not');
+if (existsSync(join(WORKSPACE, 'install/uploader.sh'))) throw new Error('delegating wrote a file; it must not');
+
+const delegatedRecord = (await store()).items[handedBack.actionId];
+if (delegatedRecord.status !== 'delegated') throw new Error('the store did not record the hand-back');
+console.log('\nhanded back:\n' + delegatePayload.report);
+if (!delegatePayload.report.includes('asked you to do it yourself')) throw new Error('the delegation does not ask the agent to act');
+if (!delegatePayload.report.includes('Install the uploader')) throw new Error('the delegation lost the title');
+if (!delegatePayload.report.includes('write_file  install/uploader.sh')) throw new Error('the delegation does not name the steps');
+if (!delegatePayload.report.includes('run_command  bash install/uploader.sh')) throw new Error('the delegation does not name the command');
+if (!delegatePayload.report.includes('Nothing was written')) throw new Error('the delegation does not say nothing happened');
+if (delegatePayload.report.includes('{{TOKEN}}') || delegatePayload.report.includes('TOKEN')) {
+  throw new Error('the delegation leaked a field name into the conversation');
+}
+
+// A proposal nobody made cannot be handed back.
+const missingDelegate = await run('delegate call_does_not_exist');
+if (missingDelegate.kind !== 'error') throw new Error('delegating an unknown id was accepted');
+
+/* ---- the agent sends it back, and then the human must say how ---- */
+
+// The agent can answer a hand-back, but only with a reason.
+const returnTool = tools.get('return_action');
+if (returnTool === undefined) throw new Error('the return_action tool was not registered');
+const returnExec = (callId) => ({ callId, agent, signal: undefined, arguments: {} });
+
+// A Session that has handed nothing over has nothing to answer.
+const strangerAgent = { session: { id: 'session-other' }, followup: () => {} };
+const nothingInHand = await returnTool.execute(
+  { reason: 'test' },
+  { callId: 'return-1', agent: strangerAgent, signal: undefined, arguments: {} },
+);
+if (nothingInHand.actionId !== '') throw new Error('returning with nothing in hand should be refused');
+
+const noReason = await returnTool.execute({ actionId: handedBack.actionId, reason: '   ' }, returnExec('return-2'))
+  .then(() => null, (error) => error);
+if (noReason === null) throw new Error('returning without a reason was accepted');
+
+const returned = await returnTool.execute(
+  { actionId: handedBack.actionId, reason: 'The token is in their Koofr account and I cannot read it.' },
+  returnExec('return-3'),
+);
+if (returned.actionId !== handedBack.actionId) throw new Error(`returned the wrong action: ${returned.actionId}`);
+const returnedRecord = (await store()).items[handedBack.actionId];
+if (returnedRecord.status !== 'returned') throw new Error(`the store records ${returnedRecord.status}, not returned`);
+if (!String(returnedRecord.returnReason).includes('cannot read it')) throw new Error('the reason was not stored');
+console.log('\nsent back:', returnedRecord.returnReason);
+
+// An action that is not in the agent's hands cannot be sent back.
+const stillPending = await propose({ title: 'Never handed over', steps: [{ kind: 'write_file', path: 'x.txt', content: 'x' }] });
+const notInHand = await returnTool.execute({ actionId: stillPending.actionId, reason: 'x' }, returnExec('return-4'));
+if (String(notInHand.message).includes('Sent')) throw new Error('returning an action that was never handed over was accepted');
+
+// The gate: handing it over again without saying how is refused, and the refusal
+// quotes the agent's reason so the human knows what to answer.
+const bare = await run(`delegate ${handedBack.actionId}`);
+if (bare.kind !== 'error') throw new Error('handing back a returned action without a note was accepted');
+if (!bare.text.includes('cannot read it')) throw new Error('the refusal does not quote the agent\'s reason');
+console.log('refused without a note:', bare.text);
+
+const explained = await run(
+  `delegate ${handedBack.actionId} ${JSON.stringify({ note: 'Use the token from koofr-app-password.txt, then run the script.' })}`,
+);
+if (explained.kind !== 'success') throw new Error(`a hand-back with a note was refused: ${explained.text}`);
+const explainedPayload = payloadOf(explained);
+if (explainedPayload.status !== 'delegated') throw new Error(`explained hand-back reported ${explainedPayload.status}`);
+console.log('\nhanded back with a note:\n' + explainedPayload.report);
+if (!explainedPayload.report.includes('how to do it')) throw new Error('the note did not reach the agent');
+if (!explainedPayload.report.includes('koofr-app-password.txt')) throw new Error('the note lost its content');
+if (!explainedPayload.report.includes(`Action id: ${handedBack.actionId}`)) throw new Error('the delegation does not name the action id');
+if (!explainedPayload.report.includes('return_action')) throw new Error('the delegation does not tell the agent how to answer');
+
 const unknown = await run('frobnicate');
 if (unknown.kind !== 'error') throw new Error('an unknown subcommand was accepted');
 

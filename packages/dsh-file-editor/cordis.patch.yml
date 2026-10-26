@@ -1,0 +1,6 @@
+# Host half only. The Client half is declared through `dsh.client` in
+# package.json and needs no Loader row of its own. The row carries no config:
+# the plugin's only knobs are the workspace the session already has.
+- insert:
+    - id: file-editor
+      name: '@malipetek/dsh-file-editor'

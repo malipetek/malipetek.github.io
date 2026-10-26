@@ -1,0 +1,60 @@
+{
+  "name": "@malipetek/dsh-file-editor",
+  "version": "1.0.0",
+  "description": "Workspace files, editable: a right-Sidebar tree with new file, new folder, rename and delete, and a text editor that opens, edits and saves through the session's own filesystem and sandbox policy.",
+  "type": "module",
+  "main": "index.js",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-api-workspace-files",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-shortcuts"
+      ]
+    },
+    "meta": {
+      "title": "File editor",
+      "description": "An editable workspace tree with create, rename and delete, and a text editor that saves through the session's filesystem."
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "files",
+    "editor",
+    "workspace"
+  ],
+  "author": "Muhammet Ali Petek",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/malipetek/malipetek.github.io.git",
+    "directory": "packages/dsh-file-editor"
+  },
+  "homepage": "https://malipetek.dev/plugins/dsh-file-editor",
+  "bugs": "https://github.com/malipetek/malipetek.github.io/issues",
+  "publishConfig": {
+    "access": "public"
+  }
+}
