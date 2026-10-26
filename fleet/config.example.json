@@ -1,0 +1,38 @@
+{
+  "endpoint": "https://malipetek-intercom.malipetek.workers.dev",
+  "token": "the RUNNER_TOKEN Worker secret",
+
+  "node": {
+    "id": "macbook",
+    "slots": 1,
+    "capabilities": ["xcode"],
+    "executors": ["claude", "opencode", "dsh", "dsh-claude", "dsh-opencode", "devin"]
+  },
+
+  "projectsRoot": "~/Documents/Documents/Projects",
+  "projects": {
+    "malipetek-dev-site": {
+      "path": "~/Documents/Documents/Projects/malipetek.github.io",
+      "verify": "cd worker && npx tsc --noEmit",
+      "push": "main"
+    },
+    "leziz-app": "~/Documents/Documents/Projects/Leziz"
+  },
+
+  "//push": "Where a good run lands: 'branch' (its work branch), 'main' (also fast-forwards the default branch), any branch name such as 'preview' (a client can look there), or 'none'. Unset asks the kind rule: a system task → main, client work → branch. Override per project with projects.<slug>.push. On a hosted site the portal owns the preview branch.",
+  "//defaultBranch": "The branch 'push: main' means. Unset asks the repo's origin/HEAD, then main.",
+
+  "worktreeRoot": "~/.cache/malipetek-runner/worktrees",
+  "autoClone": true,
+  "cloneRoot": "~/.cache/malipetek-runner/projects",
+  "timeoutMinutes": 30,
+
+  "claude": { "bin": "claude", "maxBudgetUsd": 5 },
+  "executors": {
+    "opencode": { "bin": "opencode" },
+    "dsh": { "bin": "dsh", "profile": "headless" },
+    "dsh-claude": { "bin": "dsh", "profile": "fleet-agents", "agentCommand": "claude-agent-acp", "model": "opus" },
+    "dsh-opencode": { "bin": "dsh", "profile": "fleet-agents", "agentCommand": "opencode" },
+    "devin": { "bin": "devin", "model": "swe-2-high" }
+  }
+}
