@@ -121,6 +121,14 @@ export async function landWork(config, repo, { shared }) {
  * @param args.pushTo - 'none' | 'branch' | 'main'.
  * @returns { to: 'origin' | 'bundle' | null, ref?: string, why: string }.
  */
+/** Whether origin's `target` branch already contains HEAD (fetched fresh). */
+async function containedIn(dir, target) {
+  const tracking = `refs/remotes/origin/${target}`;
+  const fetched = await netGit(dir, ['fetch', '--quiet', '--no-tags', 'origin', `+${branchRef(target)}:${tracking}`]);
+  if (fetched.code !== 0) return false;
+  return (await run('git', ['merge-base', '--is-ancestor', 'HEAD', tracking], { cwd: dir })).code === 0;
+}
+
 export async function shareWork(config, repo, dir, { branch, shared, remote, start, runId, pushTo, changed = true, hostedPreview = false }) {
   const notes = [];
   let pushedBranch = false;
@@ -150,6 +158,10 @@ export async function shareWork(config, repo, dir, { branch, shared, remote, sta
     // run's changed files. Two writers on one branch would race.
     if (hostedPreview && target === 'preview') {
       notes.push("the hosted site's preview is applied by the portal");
+    } else if (await containedIn(dir, target)) {
+      // Already there — this commit, or one the branch has since moved past.
+      // Pushing it would ask git to move the branch backwards, which it refuses.
+      landed = target;
     } else {
       const res = await netGit(dir, ['push', '--quiet', '--no-verify', 'origin', `HEAD:${branchRef(target)}`]);
       if (res.code === 0) landed = target;
