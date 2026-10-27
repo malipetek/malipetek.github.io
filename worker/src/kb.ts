@@ -23,7 +23,7 @@
 import { Hono } from 'hono';
 import { clientIp, isRateLimited, type Env, type HonoEnv } from './shared.ts';
 import { now, sessionUser } from './portal.ts';
-import { CLIENT_TOOLS, CLIENT_TOOL_NAMES, callClientTool } from './clientTools.ts';
+import { CLIENT_TOOLS, CLIENT_TOOL_NAMES, OWNER_TOOLS, OWNER_TOOL_NAMES, callClientTool } from './clientTools.ts';
 
 /* ——————————————————————— shapes ——————————————————————— */
 
@@ -568,10 +568,11 @@ const KB_AND_CLIENT = KB_TOOLS.map((tool) => ({
   annotations: annotate(tool, READ_ONLY_TOOLS.has(tool.name), false),
 }));
 const PORTAL_TOOLS = CLIENT_TOOLS.map(({ readOnly, ...tool }) => ({ ...tool, annotations: annotate(tool, readOnly, false) }));
+const ADMIN_TOOLS = OWNER_TOOLS.map(({ readOnly, ...tool }) => ({ ...tool, annotations: annotate(tool, readOnly, false) }));
 const MCP_TOOLS = [...KB_AND_CLIENT, ...PORTAL_TOOLS];
 
-/** Every caller sees the same list: the knowledgebase and the client tools. */
-const toolsFor = (_author: Author | null) => MCP_TOOLS;
+/** Clients see the knowledgebase and their portal tools; Ali's session also sees the owner tools. */
+const toolsFor = (author: Author | null) => (author?.kind === 'admin' ? [...MCP_TOOLS, ...ADMIN_TOOLS] : MCP_TOOLS);
 
 const RESOURCE_PAGE = 50;
 
@@ -963,13 +964,14 @@ mcp.post('/', async (c) => {
         case 'tools/call': {
           const name = String(request.params?.name ?? '');
           const args = (request.params?.arguments as Record<string, unknown>) ?? {};
-          if (!MCP_TOOLS.some((t) => t.name === name)) {
+          if (!toolsFor(author).some((t) => t.name === name)) {
             return rpcError(request.id, -32602, `Unknown tool: ${name}`);
           }
           try {
-            const value = CLIENT_TOOL_NAMES.has(name)
-              ? await callClientTool(c.env, c.executionCtx, clientToken, name, args)
-              : await callTool(c.env, name, args, author);
+            const value =
+              CLIENT_TOOL_NAMES.has(name) || (OWNER_TOOL_NAMES.has(name) && author?.kind === 'admin')
+                ? await callClientTool(c.env, c.executionCtx, clientToken ?? (author?.kind === 'admin' ? bearer : null), name, args)
+                : await callTool(c.env, name, args, author);
             return rpcResult(request.id, toolText(value));
           } catch (error) {
             // Tool failures are results with isError, not protocol errors — that

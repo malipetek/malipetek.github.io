@@ -140,8 +140,10 @@ node.post('/node/sites/:slug/repo', async (c) => {
 /* —— deploys: a node's built site output, content-addressed —— */
 
 node.post('/node/sites/:slug/deploys', async (c) => {
-  const body = (await c.req.json().catch(() => null)) as { files?: unknown } | null;
-  const out = await createDeploy(c.env, c.req.param('slug'), body?.files);
+  const body = (await c.req.json().catch(() => null)) as
+    | { files?: unknown; source?: unknown; siteConfig?: unknown }
+    | null;
+  const out = await createDeploy(c.env, c.req.param('slug'), body?.files, body?.source, body?.siteConfig);
   if ('error' in out) return c.json({ error: out.error }, out.error === 'not_found' ? 404 : out.error === 'sites_unavailable' ? 503 : 400);
   return c.json({ deployId: out.deployId, needed: out.needed }, 201);
 });
@@ -205,6 +207,77 @@ node.post('/node/claim', async (c) => {
         .first<{ slug: string }>()
     : null;
   return c.json({ ...claim, site: site?.slug ?? null });
+});
+
+/**
+ * The pending change a client's agent sent on this ticket: the files plus the
+ * site they build into. A node fetches this to apply the change in its worktree.
+ */
+node.get('/node/builds/:ticketId', async (c) => {
+  const ticketId = Number(c.req.param('ticketId'));
+  if (!Number.isInteger(ticketId) || ticketId <= 0 || !c.env.FILES) return c.json({ error: 'not_found' }, 404);
+  const ticket = await c.env.DB.prepare(
+    `SELECT t.id, t.title, p.slug, s.slug AS site
+       FROM tickets t JOIN projects p ON p.id = t.project_id
+       JOIN sites s ON s.project_id = p.id AND s.host = 'ours' AND s.state = 'ready'
+      WHERE t.id = ? AND t.build_requested_at IS NOT NULL`,
+  )
+    .bind(ticketId)
+    .first<{ id: number; title: string; slug: string; site: string }>();
+  if (!ticket) return c.json({ error: 'not_found' }, 404);
+  const object = await c.env.FILES.get(`changes/${ticketId}.json`);
+  if (!object) return c.json({ error: 'no_change' }, 404);
+  const change = (await object.json().catch(() => null)) as { files?: { path: string; content: string }[] } | null;
+  if (!change?.files?.length) return c.json({ error: 'no_change' }, 404);
+  return c.json({
+    ticketId,
+    title: ticket.title,
+    slug: ticket.slug,
+    site: ticket.site,
+    shared: `malipetek/ticket-${ticketId}`,
+    files: change.files,
+  });
+});
+
+/**
+ * The outcome of a build a client's agent asked for: the flag clears, and the
+ * ticket says what happened — the preview link on success, the reason on
+ * failure (private, for Ali).
+ */
+node.post('/node/builds/:ticketId/result', async (c) => {
+  const ticketId = Number(c.req.param('ticketId'));
+  const body = (await c.req.json().catch(() => null)) as
+    | { ok?: unknown; error?: unknown; previewUrl?: unknown; nodeId?: unknown }
+    | null;
+  const nodeId = typeof body?.nodeId === 'string' ? body.nodeId.trim().toLowerCase() : '';
+  const ok = body?.ok === true;
+  const previewUrl = typeof body?.previewUrl === 'string' && /^https:\/\/[^\s]+$/.test(body.previewUrl) ? body.previewUrl : '';
+  const reason = typeof body?.error === 'string' ? body.error.slice(0, 500) : 'unknown error';
+  if (!Number.isInteger(ticketId) || ticketId <= 0 || !nodeId) return c.json({ error: 'not_found' }, 404);
+  const t = now();
+  const statements = [
+    c.env.DB.prepare('UPDATE tickets SET build_requested_at = NULL, updated_at = ? WHERE id = ?').bind(t, ticketId),
+  ];
+  if (ok) {
+    statements.push(
+      c.env.DB.prepare(`UPDATE tickets SET status = 'review' WHERE id = ? AND status IN ('approved', 'in_progress')`).bind(ticketId),
+      c.env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 0, ?)`).bind(
+        ticketId,
+        `The preview has this change${previewUrl ? `: ${previewUrl}` : ''}. Nothing is live until it is published.`,
+        t,
+      ),
+    );
+  } else {
+    statements.push(
+      c.env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 1, ?)`).bind(
+        ticketId,
+        `The build the client's agent asked for failed on ${nodeId}: ${reason}`,
+        t,
+      ),
+    );
+  }
+  await c.env.DB.batch(statements);
+  return c.json({ ok: true });
 });
 
 /**

@@ -381,6 +381,22 @@ const groups = {
     check('the client is told where to look', /The preview has this change: https:\/\/preview-cafe--preview\.malipetek\.online/.test(JSON.stringify((await call(`/portal/tickets/${ticketId}`, { auth: a.session })).data)));
     check('a missing blob stops the finish', (await call(`/node/sites/preview-cafe/deploys/${(await call('/node/sites/preview-cafe/deploys', { method: 'POST', auth: RUNNER_TOKEN, body: { files: [{ path: 'x.html', sha256: sha('x'), size: 1 }] } })).data.deployId}/finish`, { method: 'POST', auth: RUNNER_TOKEN, body: {} })).status === 409);
     await call(`/node/runs/${c.runId}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId, ok: true, summary: 'Done.' } });
+
+    // The client's own agent: send a change, ask for a build, a node reports it.
+    check('the client’s agent reads the context', (await call(`/portal/tickets/${ticketId}/context`, { auth: a.session })).data.ticket.id === ticketId);
+    check('a traversal path in a change is refused', (await call(`/portal/tickets/${ticketId}/change`, { method: 'POST', auth: a.session, body: { files: [{ path: '../x', content: 'y' }] } })).status === 400);
+    check('a build with no change is refused', (await call(`/portal/tickets/${ticketId}/build`, { method: 'POST', auth: a.session, body: {} })).status === 409);
+    const change = await call(`/portal/tickets/${ticketId}/change`, { method: 'POST', auth: a.session, body: { files: [{ path: 'src/pages/index.astro', content: '<h1>New</h1>' }] } });
+    check('the agent’s change is stored', change.status === 200 && change.data.files === 1, JSON.stringify(change.data));
+    const ticketRow = (await call(`/portal/tickets/${ticketId}`, { auth: a.session })).data;
+    check('the request now says a client agent did it', ticketRow.ticket.worked_by === 'client_agent');
+    const queued = await call(`/portal/tickets/${ticketId}/build`, { method: 'POST', auth: a.session, body: {} });
+    check('a build of the pending change queues', queued.status === 200 && queued.data.state === 'queued');
+    const build = await call(`/node/builds/${ticketId}`, { auth: RUNNER_TOKEN });
+    check('a node reads the pending build', build.status === 200 && build.data.files?.[0]?.path === 'src/pages/index.astro' && build.data.site === 'preview-cafe', JSON.stringify(build.data));
+    check('…and the heartbeat hands it to the node', (await node(nodeId, ['preview-cafe'])).data.builds?.some((b) => b.ticketId === ticketId));
+    const failed = await call(`/node/builds/${ticketId}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId, ok: false, error: 'build broke' } });
+    check('a failed build is recorded and clears the flag', failed.status === 200 && (await call(`/node/builds/${ticketId}`, { auth: RUNNER_TOKEN })).status === 404);
   },
 
   async budget({ admin }) {

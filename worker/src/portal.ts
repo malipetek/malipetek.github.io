@@ -77,8 +77,11 @@ import {
   listDeploys,
   publishSite,
   rollbackSite,
+  siteState,
   siteView,
   startSite,
+  workspaceFor,
+  workspaceRead,
   type SiteRow,
 } from './sites.ts';
 import { checkUploads, fileCount, fileResponse, FILE_LIMITS, sizeText, storeFiles, withFiles, type FileMeta, type Upload } from './files.ts';
@@ -116,6 +119,8 @@ interface User {
   email: string;
   name: string | null;
   role: 'client' | 'admin';
+  /** How finished work reaches them: 'preview' (a link and Publish) or 'pull_request'. */
+  handoff?: 'preview' | 'pull_request';
 }
 
 /** `viaAgent`: the caller used an agent token (agent_tokens), not a browser session. */
@@ -381,7 +386,7 @@ export async function agentUser(env: Env, token: string): Promise<User | null> {
   if (!token.startsWith(AGENT_TOKEN_PREFIX) || token.length > 200) return null;
   const hash = await sha256(token);
   const user = await env.DB.prepare(
-    `SELECT u.id, u.email, u.name, u.role
+    `SELECT u.id, u.email, u.name, u.role, u.handoff
        FROM agent_tokens a JOIN users u ON u.id = a.user_id
       WHERE a.token_hash = ? AND a.revoked_at IS NULL AND u.role = 'client'`,
   )
@@ -395,7 +400,7 @@ export async function agentUser(env: Env, token: string): Promise<User | null> {
 
 export async function sessionUser(env: Env, token: string): Promise<User | null> {
   return env.DB.prepare(
-    `SELECT u.id, u.email, u.name, u.role
+    `SELECT u.id, u.email, u.name, u.role, u.handoff
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > ?`,
   )
@@ -496,7 +501,7 @@ export const WAITING_SQL =
 const TICKET_COLUMNS = `t.id, t.title, t.status, t.created_at, t.updated_at, t.client_waiting_since,
   t.project_id, p.name AS project_name, p.slug AS project_slug,
   t.attention, t.human_seconds, t.ai_micro_usd, t.budget_cents, t.price_cents,
-  t.kind, t.source, t.priority, t.requires, t.executor`;
+  t.kind, t.source, t.priority, t.requires, t.executor, t.worked_by`;
 
 /* —— pricing (src/lib/pricing.js): measured time × rate + AI at cost —— */
 
@@ -1010,6 +1015,133 @@ portal.post('/portal/projects/:id/site/rollback', async (c) => {
   const out = await rollbackSite(c.env, project.id, typeof body?.deployId === 'string' ? body.deployId : '');
   if ('error' in out) return siteError(c, out);
   return reply(c, { ok: true, productionUrl: out.productionUrl });
+});
+
+/** The site's deploy history, newest first. */
+portal.get('/portal/projects/:id/site/deploys', async (c) => {
+  const project = await ownProject(c);
+  if (!project) return reply(c, { error: 'not_found' }, 404);
+  return reply(c, { deploys: await listDeploys(c.env, project.id) });
+});
+
+/* —— the client's own agent: context, workspace, a change, a build —— */
+
+/** The ticket, when it is the caller's own client request. Uniform 404. */
+async function ownTicket(c: Ctx) {
+  return c.env.DB.prepare(
+    `SELECT t.id, t.title, t.status, t.attention, t.worked_by, t.build_requested_at, t.project_id
+       FROM tickets t WHERE t.id = ? AND t.user_id = ? AND t.kind = 'client'`,
+  )
+    .bind(Number(c.req.param('id')) || -1, c.get('user').id)
+    .first<{ id: number; title: string; status: string; attention: string; worked_by: string; build_requested_at: number | null; project_id: string | null }>();
+}
+
+/** The pending change a client's agent sent, kept in R2 until a node builds it. */
+const changeKey = (ticketId: number) => `changes/${ticketId}.json`;
+
+const CHANGE_LIMITS = { files: 40, fileBytes: 512 * 1024, totalBytes: 2 * 1024 * 1024 };
+const CHANGE_PATH = /^(?!\/)(?!.*(^|\/)\.\.(\/|$))[\w.@+\-/ ]{1,300}$/;
+
+/** Bound a submitted change (path + full content), or say why not. */
+function cleanChangeFiles(value: unknown): { files: { path: string; content: string }[] } | { error: string } {
+  if (!Array.isArray(value) || value.length === 0) return { error: 'no files' };
+  if (value.length > CHANGE_LIMITS.files) return { error: `${value.length} files; a change takes at most ${CHANGE_LIMITS.files}` };
+  const files: { path: string; content: string }[] = [];
+  let total = 0;
+  for (const raw of value as Record<string, unknown>[]) {
+    const path = typeof raw?.path === 'string' ? raw.path : '';
+    const content = typeof raw?.content === 'string' ? raw.content : null;
+    if (!CHANGE_PATH.test(path) || content === null) return { error: `bad file entry ${JSON.stringify(path).slice(0, 80)}` };
+    if (path.startsWith('.git/') || path === '.git') return { error: 'refusing a .git path' };
+    const bytes = new TextEncoder().encode(content).length;
+    if (bytes > CHANGE_LIMITS.fileBytes) return { error: `${path} is larger than 512 KB` };
+    total += bytes;
+    files.push({ path, content });
+  }
+  if (total > CHANGE_LIMITS.totalBytes) return { error: 'the files add up to more than 2 MB' };
+  return { files };
+}
+
+/** Approved means Ali said yes; that is all a client's own agent may work on. */
+const AGENT_WORKABLE = new Set(['approved', 'in_progress', 'review']);
+
+/**
+ * The client's own agent sends a change: the files it wrote, kept in R2 until
+ * a node applies them to the ticket's branch. From here the ticket's work is
+ * the client's agent's — no fleet run, so no AI cost on our bill.
+ */
+portal.post('/portal/tickets/:id/change', async (c) => {
+  const ticket = await ownTicket(c);
+  if (!ticket) return reply(c, { error: 'not_found' }, 404);
+  if (!AGENT_WORKABLE.has(ticket.status)) return reply(c, { error: 'not_approved' }, 409);
+  if (!c.env.FILES) return reply(c, { error: 'files_unavailable' }, 503);
+  const body = await readJson<{ files?: unknown }>(c);
+  const cleaned = cleanChangeFiles(body?.files);
+  if ('error' in cleaned) return reply(c, { error: cleaned.error }, 400);
+  const t = now();
+  await c.env.FILES.put(changeKey(ticket.id), JSON.stringify({ files: cleaned.files, at: t }), {
+    httpMetadata: { contentType: 'application/json' },
+  });
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE tickets SET worked_by = 'client_agent', updated_at = ? WHERE id = ?`).bind(t, ticket.id),
+    c.env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 0, ?)`)
+      .bind(ticket.id, `Your agent sent a change for this request (${cleaned.files.length} file(s)).`, t),
+  ]);
+  return reply(c, { ok: true, files: cleaned.files.length });
+});
+
+/** Ask for a build of the pending change: a node applies it and deploys the preview. */
+portal.post('/portal/tickets/:id/build', async (c) => {
+  const ticket = await ownTicket(c);
+  if (!ticket) return reply(c, { error: 'not_found' }, 404);
+  if (!AGENT_WORKABLE.has(ticket.status)) return reply(c, { error: 'not_approved' }, 409);
+  if (!ticket.project_id || !(await getSite(c.env, ticket.project_id))) {
+    return reply(c, { error: 'not_hosted' }, 400);
+  }
+  const pending = await c.env.FILES?.head(changeKey(ticket.id));
+  if (!pending) return reply(c, { error: 'no_change' }, 409);
+  await c.env.DB.prepare('UPDATE tickets SET build_requested_at = ?, updated_at = ? WHERE id = ?').bind(now(), now(), ticket.id).run();
+  return reply(c, { ok: true, state: 'queued' });
+});
+
+/** Everything an agent needs about a request it is cleared to work on. */
+portal.get('/portal/tickets/:id/context', async (c) => {
+  const ticket = await ownTicket(c);
+  if (!ticket) return reply(c, { error: 'not_found' }, 404);
+  const [messages, project] = await Promise.all([
+    ticketMessages(c.env, ticket.id, false),
+    ticket.project_id
+      ? c.env.DB.prepare('SELECT id, slug, name, kind, brief, repo FROM projects WHERE id = ?').bind(ticket.project_id).first<Record<string, unknown>>()
+      : Promise.resolve(null),
+  ]);
+  const site = ticket.project_id ? await siteState(c.env, ticket.project_id) : null;
+  const workspace = ticket.project_id ? await workspaceFor(c.env, ticket.project_id) : null;
+  return reply(c, {
+    ticket: { id: ticket.id, title: ticket.title, status: ticket.status, attention: ticket.attention, workedBy: ticket.worked_by },
+    messages,
+    project: project ? { ...project, brief: parseBrief(project.brief) } : null,
+    site: site?.site ?? null,
+    siteConfig: workspace?.siteConfig ?? null,
+  });
+});
+
+/** The source tree the current preview was built from. */
+portal.get('/portal/tickets/:id/workspace', async (c) => {
+  const ticket = await ownTicket(c);
+  if (!ticket) return reply(c, { error: 'not_found' }, 404);
+  const workspace = ticket.project_id ? await workspaceFor(c.env, ticket.project_id) : null;
+  if (!workspace) return reply(c, { error: 'not_hosted' }, 404);
+  return reply(c, workspace);
+});
+
+/** One source file, by ?path=. */
+portal.get('/portal/tickets/:id/workspace/file', async (c) => {
+  const ticket = await ownTicket(c);
+  if (!ticket) return reply(c, { error: 'not_found' }, 404);
+  const path = c.req.query('path') ?? '';
+  const file = ticket.project_id ? await workspaceRead(c.env, ticket.project_id, path) : null;
+  if (!file) return reply(c, { error: 'not_found' }, 404);
+  return reply(c, file);
 });
 
 portal.get('/portal/tickets', async (c) => {
@@ -1703,7 +1835,7 @@ portal.post('/admin/work', async (c) => {
 portal.get('/admin/clients', async (c) => {
   const [{ results }, usage] = await Promise.all([
     c.env.DB.prepare(
-      `SELECT u.id, u.email, u.name, u.role, u.created_at,
+      `SELECT u.id, u.email, u.name, u.role, u.handoff, u.created_at,
               (SELECT group_concat(project_id) FROM user_projects WHERE user_id = u.id) AS project_ids,
               (SELECT count(*) FROM tickets WHERE user_id = u.id) AS ticket_count
          FROM users u ORDER BY u.created_at DESC`,
@@ -1817,6 +1949,19 @@ portal.post('/admin/projects', async (c) => {
     return reply(c, { error: 'slug_taken' }, 409);
   }
   return reply(c, { id, slug, name }, 201);
+});
+
+/** How a client's finished work reaches them: a preview link, or a PR in their repo. */
+portal.patch('/admin/clients/:userId', async (c) => {
+  const body = await readJson<{ handoff?: unknown }>(c);
+  if (body?.handoff !== 'preview' && body?.handoff !== 'pull_request') {
+    return reply(c, { error: 'bad_handoff' }, 400);
+  }
+  const res = await c.env.DB.prepare(`UPDATE users SET handoff = ? WHERE id = ? AND role = 'client'`)
+    .bind(body.handoff, c.req.param('userId'))
+    .run();
+  if (!res.meta.changes) return reply(c, { error: 'not_found' }, 404);
+  return reply(c, { ok: true, handoff: body.handoff });
 });
 
 portal.put('/admin/clients/:userId/projects/:projectId', async (c) => {

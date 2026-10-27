@@ -129,10 +129,43 @@ export function cleanDeployManifest(value: unknown): { files: DeployFile[]; byte
 }
 
 /** The deploy id: the manifest's own hash, so identical output is one deploy. */
-async function deployId(files: DeployFile[]): Promise<string> {
-  const canonical = JSON.stringify(files.map((f) => [f.path, f.sha256, f.size]).sort());
+async function deployId(files: DeployFile[], source: SourceFile[], siteConfig: SiteConfig): Promise<string> {
+  const canonical = JSON.stringify({
+    files: files.map((f) => [f.path, f.sha256, f.size]).sort(),
+    source: source.map((f) => [f.path, f.sha256, f.size]).sort(),
+    siteConfig,
+  });
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
   return `d${[...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 40)}`;
+}
+
+export type SourceFile = { path: string; sha256: string; size: number };
+export type SiteConfig = { build?: string; output?: string };
+const SOURCE_LIMITS = { files: 500, fileBytes: 512 * 1024, totalBytes: 20 * 1024 * 1024 };
+
+/**
+ * Bound a manifest's `source` map (the worktree the deploy was built from, so
+ * a client's agent can read the site without git access). Optional.
+ */
+function cleanSourceManifest(value: unknown): { source: SourceFile[] } | { error: string } {
+  if (value === undefined || value === null) return { source: [] };
+  if (!Array.isArray(value) || value.length > SOURCE_LIMITS.files) return { error: 'bad source manifest' };
+  const source: SourceFile[] = [];
+  const seen = new Set<string>();
+  let total = 0;
+  for (const raw of value as Record<string, unknown>[]) {
+    const path = typeof raw?.path === 'string' ? raw.path : '';
+    const sha256 = typeof raw?.sha256 === 'string' ? raw.sha256.toLowerCase() : '';
+    const size = typeof raw?.size === 'number' ? raw.size : NaN;
+    if (!SAFE_PATH.test(path) || path.startsWith('.git/') || path === '.git' || !SHA256.test(sha256) || !Number.isInteger(size) || size < 0 || size > SOURCE_LIMITS.fileBytes || seen.has(path)) {
+      return { error: `bad source entry ${JSON.stringify(path).slice(0, 80)}` };
+    }
+    seen.add(path);
+    total += size;
+    source.push({ path, sha256, size });
+  }
+  if (total > SOURCE_LIMITS.totalBytes) return { error: 'the source adds up to more than 20 MB' };
+  return { source };
 }
 
 /** Which of `shas` are not yet stored for this site. */
@@ -371,16 +404,31 @@ export async function createDeploy(
   env: Env,
   slug: string,
   rawFiles: unknown,
+  rawSource?: unknown,
+  rawSiteConfig?: unknown,
 ): Promise<{ deployId: string; needed: string[]; files: DeployFile[] } | { error: string }> {
   if (!env.SITES) return { error: 'sites_unavailable' };
   const site = await getSiteBySlug(env, slug);
   if (!site || site.host !== 'ours') return { error: 'not_found' };
   const cleaned = cleanDeployManifest(rawFiles);
   if ('error' in cleaned) return cleaned;
-  const id = await deployId(cleaned.files);
-  const manifest = { files: Object.fromEntries(cleaned.files.map((f) => [f.path, { sha: f.sha256, size: f.size, ...(f.type ? { type: f.type } : {}) }])) };
+  const source = cleanSourceManifest(rawSource);
+  if ('error' in source) return source;
+  const siteConfig: SiteConfig = {};
+  const conf = rawSiteConfig as Record<string, unknown> | null;
+  if (conf && typeof conf === 'object') {
+    if (typeof conf.build === 'string' && conf.build.length <= 300) siteConfig.build = conf.build;
+    if (typeof conf.output === 'string' && SAFE_PATH.test(conf.output) && conf.output.length <= 80) siteConfig.output = conf.output;
+  }
+  const id = await deployId(cleaned.files, source.source, siteConfig);
+  const manifest = {
+    files: Object.fromEntries(cleaned.files.map((f) => [f.path, { sha: f.sha256, size: f.size, ...(f.type ? { type: f.type } : {}) }])),
+    ...(source.source.length ? { source: Object.fromEntries(source.source.map((f) => [f.path, { sha: f.sha256, size: f.size }])) } : {}),
+    ...(Object.keys(siteConfig).length ? { siteConfig } : {}),
+  };
   await env.SITES.put(manifestKey(slug, id), JSON.stringify(manifest), { httpMetadata: { contentType: 'application/json' } });
-  const needed = await missingBlobs(env, slug, [...new Set(cleaned.files.map((f) => f.sha256))]);
+  const shas = [...new Set([...cleaned.files.map((f) => f.sha256), ...source.source.map((f) => f.sha256)])];
+  const needed = await missingBlobs(env, slug, shas);
   return { deployId: id, needed, files: cleaned.files };
 }
 
@@ -397,13 +445,17 @@ export async function uploadDeployBlob(
   if (body.byteLength === 0 || body.byteLength > DEPLOY_LIMITS.fileBytes) return { error: 'bad_size' };
   const manifestObject = await env.SITES.get(manifestKey(slug, deploy));
   if (!manifestObject) return { error: 'not_found' };
-  const manifest = (await manifestObject.json()) as { files?: Record<string, { sha: string; type?: string }> };
+  const manifest = (await manifestObject.json()) as {
+    files?: Record<string, { sha: string; type?: string }>;
+    source?: Record<string, { sha: string }>;
+  };
   const entry = Object.values(manifest.files ?? {}).find((f) => f.sha === sha);
-  if (!entry) return { error: 'not_in_manifest' };
+  const sourceEntry = Object.values(manifest.source ?? {}).find((f) => f.sha === sha);
+  if (!entry && !sourceEntry) return { error: 'not_in_manifest' };
   const digest = await sha256Hex(body);
   if (digest !== sha) return { error: 'sha_mismatch' };
   await env.SITES.put(blobKey(slug, sha), body, {
-    httpMetadata: entry.type ? { contentType: entry.type } : undefined,
+    httpMetadata: entry?.type ? { contentType: entry.type } : undefined,
   });
   return { ok: true };
 }
@@ -423,8 +475,11 @@ export async function finishDeploy(
   if (!site) return { error: 'not_found' };
   const manifestObject = await env.SITES.get(manifestKey(slug, deploy));
   if (!manifestObject) return { error: 'not_found' };
-  const manifest = (await manifestObject.json()) as { files: Record<string, { sha: string; size: number }> };
-  const shas = [...new Set(Object.values(manifest.files ?? {}).map((f) => f.sha))];
+  const manifest = (await manifestObject.json()) as {
+    files: Record<string, { sha: string; size: number }>;
+    source?: Record<string, { sha: string }>;
+  };
+  const shas = [...new Set([...Object.values(manifest.files ?? {}).map((f) => f.sha), ...Object.values(manifest.source ?? {}).map((f) => f.sha)])];
   const missing = await missingBlobs(env, slug, shas);
   if (missing.length) return { error: `missing ${missing.length} file(s)` };
 
@@ -521,3 +576,48 @@ export async function siteState(env: Env, projectId: string) {
   const { sitesDomain } = await getSettings(env);
   return { site: siteView(site, sitesDomain), deploys: await listDeploys(env, projectId) };
 }
+
+/* ——————————————————————— the workspace ——————————————————————— */
+
+/*
+ * A deploy's manifest can carry a `source` map — the worktree's own files,
+ * content-addressed in the same blob store. That is what a client's agent
+ * reads through the workspace tools: the source tree as the preview deploy
+ * was built from, without the Worker needing git access.
+ */
+interface WorkspaceManifest {
+  files?: Record<string, { sha: string; size: number; type?: string }>;
+  source?: Record<string, { sha: string; size: number }>;
+  siteConfig?: { build?: string; output?: string };
+}
+
+async function previewManifest(env: Env, projectId: string): Promise<{ slug: string; manifest: WorkspaceManifest } | null> {
+  if (!env.SITES) return null;
+  const site = await getSite(env, projectId);
+  if (!site?.preview_deploy) return null;
+  const object = await env.SITES.get(manifestKey(site.slug, site.preview_deploy));
+  if (!object) return null;
+  return { slug: site.slug, manifest: (await object.json().catch(() => ({}))) as WorkspaceManifest };
+}
+
+/** The source tree the current preview was built from. */
+export async function workspaceFor(env: Env, projectId: string) {
+  const found = await previewManifest(env, projectId);
+  if (!found) return null;
+  return {
+    files: Object.keys(found.manifest.source ?? {}).sort(),
+    siteConfig: found.manifest.siteConfig ?? null,
+  };
+}
+
+/** One source file's text, or null. Bounded by what a node may upload. */
+export async function workspaceRead(env: Env, projectId: string, path: string): Promise<{ content: string } | null> {
+  if (!SAFE_PATH.test(path)) return null;
+  const found = await previewManifest(env, projectId);
+  const entry = found?.manifest.source?.[path];
+  if (!found || !entry) return null;
+  const object = await env.SITES!.get(blobKey(found.slug, entry.sha));
+  if (!object || entry.size > DEPLOY_LIMITS.fileBytes) return null;
+  return { content: await object.text() };
+}
+

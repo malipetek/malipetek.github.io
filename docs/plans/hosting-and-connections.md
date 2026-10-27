@@ -152,6 +152,16 @@ site routes, reserved slugs refused. Serving Worker: host parsing, index /
 
 ## Phase 2 — GitHub App
 
+**App created 2026-10-27** (github.com/settings/apps/malipetek-dev):
+slug `malipetek-dev`, App ID 5495973, Client ID `Iv23liVCtH8c4lhyKCrH`,
+installable on any account. Redirect URI
+`https://malipetek-intercom.malipetek.workers.dev/auth/github/callback`,
+webhook `…/hooks/github`, "Request user authorization during installation"
+on, device flow off. Secrets already on the Worker: `GITHUB_APP_ID`,
+`GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`,
+`GITHUB_WEBHOOK_SECRET`. Not yet installed anywhere — do that once the
+webhook route exists.
+
 One GitHub App owned by Ali, installable on a client's account or org.
 
 - Permissions: contents read/write, pull requests read/write, metadata read.
@@ -255,10 +265,16 @@ new OAuth client is private until its domain is verified (then it is public
 with a verified badge). Scope names follow API-token permissions; the list is
 at `GET https://api.cloudflare.com/client/v4/oauth/scopes`.
 
-- First, confirm against that list that a scope covers Workers script upload
-  with static assets (and custom domains/routes if we want them). Phase 4
-  depends on it.
-- Register the OAuth client under Ali's account, verify `malipetek.dev`.
+- Done (2026-10-27): scope list checked — Workers scripts, routes, R2 and
+  DNS scopes all exist. OAuth client `malipetek` registered under Ali's
+  account (private for now; needs a logo + the TXT-verified domain to go
+  public). Client ID/secret live in the `malipetek-intercom` Worker secrets
+  `CLOUDFLARE_OAUTH_CLIENT_ID` / `CLOUDFLARE_OAUTH_CLIENT_SECRET`; redirect
+  URL `https://malipetek-intercom.malipetek.workers.dev/portal/cloudflare/callback`;
+  verification TXT `cloudflare_oauth_client_publisher=…` added at
+  `malipetek.dev` apex. Scopes: Workers Edit + Workers Routes Edit required;
+  DNS Write + Zone Read optional; Account Settings / Memberships / User
+  Details Read required.
 - Store the refresh token encrypted (key in a Worker secret);
   `cloudflare_connections (user_id, account_id, scopes, token_enc,
   created_at, revoked_at)`.
@@ -286,5 +302,6 @@ Each phase: migrations applied and checked before the Worker deploy
   per month, or included in something). Phase 4 gives a no-cost alternative.
 - Which GPTflare templates are good enough to keep (decided when reviewed).
 - Whether a merge in a `pull_request` client's repo should auto-publish.
-- Before building: Ali approves creating the GitHub App and the Cloudflare
-  OAuth client under Ali's accounts.
+- A logo for the Cloudflare OAuth client (required to make it public; the
+  `malipetek` client is private until then — fine for building against).
+- Before building: Ali approves creating the GitHub App under his account.

@@ -40,8 +40,13 @@ Client (agent key cat_…, minted in the portal, or OAuth):
 
 - portal_projects, portal_requests, portal_request, portal_file_request,
   portal_reply, portal_set_budget, portal_withdraw — file and follow requests;
-  each still waits for Ali. Client sites are hosted on malipetek.online,
-  preview-first.
+  each still waits for Ali.
+- Doing the work yourself (the agent the client already pays for):
+  project_context, workspace_files, workspace_read, submit_change,
+  preview_build — read the site’s source, send a change on the request’s
+  branch, build it to the preview. Costs the client $0 in AI on our bill.
+- Site: site_status, site_deploys, site_publish, site_rollback — previews and
+  publish on malipetek.online, behind the clientPublish setting.
 
 ## Knowledgebase notes
 

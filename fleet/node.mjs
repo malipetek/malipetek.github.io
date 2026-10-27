@@ -333,6 +333,36 @@ function deployManifest(dir) {
   return { files, total };
 }
 
+const SOURCE_LIMITS = { files: 500, fileBytes: 512 * 1024, totalBytes: 20 * 1024 * 1024 };
+
+/**
+ * The worktree's source files, same content-addressed shape: this is what a
+ * client's own agent reads through the workspace tools, so the portal can
+ * show it the site without git access. Text-sized files only; the build
+ * output dir, node_modules and .git are not source.
+ */
+function sourceManifest(dir, outputRel) {
+  const files = [];
+  let total = 0;
+  const skip = new Set(['.git', 'node_modules', '.malipetek-files', '.astro', outputRel].filter(Boolean));
+  const walk = (root, prefix) => {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!skip.has(entry.name)) walk(join(root, entry.name), prefix ? `${prefix}/${entry.name}` : entry.name);
+        continue;
+      }
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const buf = readFileSync(join(root, entry.name));
+      if (buf.length > SOURCE_LIMITS.fileBytes || buf.subarray(0, 4096).includes(0)) continue;
+      total += buf.length;
+      files.push({ path: rel, sha256: sha256File(buf), size: buf.length, buf });
+      if (files.length > SOURCE_LIMITS.files || total > SOURCE_LIMITS.totalBytes) return;
+    }
+  };
+  try { walk(dir, ''); } catch { /* a missing source dir is not fatal */ }
+  return files.slice(0, SOURCE_LIMITS.files);
+}
+
 /**
  * Build the worktree's site (the repo's own malipetek.site.json says how) and
  * deploy the output as the preview. Returns a line for the summary, never
@@ -351,25 +381,30 @@ async function buildAndDeploy(config, claim, dir, head, steps) {
       const built = await run('/bin/sh', ['-c', command], { cwd: dir, env: { ...process.env, CI: '1' }, signal: AbortSignal.timeout(10 * 60_000) });
       if (built.code !== 0) {
         steps.push('error', `Site build failed: ${lastLine(built.stderr) || `exit ${built.code}`}`);
-        return `site build failed (${lastLine(built.stderr).slice(0, 200)})`;
+        return { note: `site build failed (${lastLine(built.stderr).slice(0, 200)})` };
       }
     }
     const outDir = join(dir, output);
     if (!existsSync(outDir)) {
       steps.push('error', `Site build: no ${output}/ output`);
-      return `site build produced no ${output}/`;
+      return { note: `site build produced no ${output}/` };
     }
     const { files, total } = deployManifest(outDir);
-    if (!files.length) return 'site build produced an empty output';
+    if (!files.length) return { note: 'site build produced an empty output' };
     if (files.length > DEPLOY_LIMITS.files || total > DEPLOY_LIMITS.totalBytes || files.some((f) => f.size > DEPLOY_LIMITS.fileBytes)) {
       steps.push('error', `Site output over the deploy limits (${files.length} files, ${Math.round(total / 1048576)} MB)`);
-      return 'site output over the deploy limits';
+      return { note: 'site output over the deploy limits' };
     }
+    const source = sourceManifest(dir, output);
     const made = await api(config, 'POST', `/node/sites/${claim.site}/deploys`, {
       files: files.map(({ buf, ...f }) => f),
+      source: source.map(({ buf, ...f }) => f),
+      siteConfig: conf ?? {},
     });
+    const bySha = new Map([...files, ...source].map((f) => [f.sha256, f]));
     for (const sha of made.needed ?? []) {
-      const file = files.find((f) => f.sha256 === sha);
+      const file = bySha.get(sha);
+      if (!file) throw new Error(`the portal asked for an unknown blob ${sha.slice(0, 12)}`);
       const res = await fetch(`${config.endpoint}/node/sites/${claim.site}/deploys/${made.deployId}/files/${sha}`, {
         method: 'PUT',
         headers: { authorization: `Bearer ${config.token}`, 'content-type': 'application/octet-stream', 'content-length': String(file.size) },
@@ -379,13 +414,65 @@ async function buildAndDeploy(config, claim, dir, head, steps) {
       if (!res.ok) throw new Error(`blob upload refused: HTTP ${res.status}`);
     }
     const done = await api(config, 'POST', `/node/sites/${claim.site}/deploys/${made.deployId}/finish`, {
-      ticketId: ticket.id, commitSha: head, nodeId: config.nodeId,
+      ...(ticket?.id ? { ticketId: ticket.id } : {}),
+      commitSha: head,
+      nodeId: config.nodeId,
     });
     steps.push('node', `Preview deployed: ${done.previewUrl}`);
-    return `preview at ${done.previewUrl}`;
+    return { note: `preview at ${done.previewUrl}`, previewUrl: done.previewUrl };
   } catch (error) {
     steps.push('error', `Site deploy failed: ${error.message}`);
-    return `site deploy failed (${error.message.slice(0, 200)})`;
+    return { note: `site deploy failed (${error.message.slice(0, 200)})`, error: error.message };
+  }
+}
+
+/**
+ * A change a client's own agent sent: apply its files to the ticket branch on
+ * top of preview, push, build and deploy — the same result contract as land.
+ * No executor runs; the client's agent already did the thinking.
+ */
+async function buildWork(config, item) {
+  const say = (kind, text) => log(`#${item.ticketId} build ${text}`);
+  const report = async (body) =>
+    api(config, 'POST', `/node/builds/${item.ticketId}/result`, { nodeId: config.nodeId, ...body }).catch((error) =>
+      log(`#${item.ticketId} build result not recorded: ${error.message}`),
+    );
+  try {
+    const project = config.projects[item.slug];
+    if (!project) return report({ ok: false, error: `no folder for ${item.slug} on this node` });
+    const change = await api(config, 'GET', `/node/builds/${item.ticketId}`);
+    const repo = await git(project.path, 'rev-parse', '--show-toplevel');
+    await netGit(project.path, ['fetch', 'origin']);
+    const dir = join(config.worktreeRoot, `${item.slug}-build-${item.ticketId}`);
+    rmSync(dir, { recursive: true, force: true });
+    await git(project.path, 'worktree', 'prune');
+    const shared = change.shared ?? `malipetek/ticket-${item.ticketId}`;
+    const hasShared = (await run('git', ['show-ref', '--verify', '--quiet', `refs/remotes/origin/${shared}`], { cwd: repo })).code === 0;
+    const base = hasShared ? `origin/${shared}` : 'origin/preview';
+    await git(repo, 'worktree', 'add', '-B', shared, dir, base);
+    for (const file of change.files ?? []) {
+      const at = join(dir, file.path);
+      mkdirSync(dirname(at), { recursive: true });
+      writeFileSync(at, file.content);
+    }
+    await git(dir, 'add', '-A');
+    const status = await git(dir, 'status', '--porcelain');
+    if (!status.trim()) {
+      say('the change matched what is already there');
+      await report({ ok: true });
+      return;
+    }
+    await git(dir, '-c', 'user.email=node@malipetek.dev', '-c', 'user.name="Client agent"', 'commit', '-qm', `Change from the client's agent`);
+    const head = await git(dir, 'rev-parse', 'HEAD');
+    const pushed = await netGit(dir, ['push', 'origin', `+HEAD:refs/heads/${shared}`, '+HEAD:refs/heads/preview']);
+    if (pushed.code !== 0) return report({ ok: false, error: `push failed: ${lastLine(pushed.stderr)}` });
+    const steps = { push: say };
+    const out = await buildAndDeploy(config, { site: item.site, ticket: null }, dir, head, steps);
+    await report(out.error && !out.previewUrl ? { ok: false, error: out.error } : { ok: true, previewUrl: out.previewUrl });
+    log(`#${item.ticketId} agent change built${out.previewUrl ? ` → ${out.previewUrl}` : ''}`);
+  } catch (error) {
+    await report({ ok: false, error: error.message });
+    log(`#${item.ticketId} build failed: ${error.message}`);
   }
 }
 
@@ -709,7 +796,7 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
     const pushed = await netGit(dir, ['push', 'origin', '+HEAD:refs/heads/preview']);
     if (pushed.code !== 0) steps.push('error', `Preview branch push failed: ${lastLine(pushed.stderr)}`);
     else steps.push('node', 'Preview branch updated');
-    previewNote = await buildAndDeploy(config, claim, dir, head, steps);
+    previewNote = (await buildAndDeploy(config, claim, dir, head, steps)).note ?? '';
   }
   const cost = typeof result.costUsd === 'number' ? ` · $${result.costUsd.toFixed(2)}` : '';
   const turns = result.turns ? ` · ${result.turns} turns` : '';
@@ -991,6 +1078,7 @@ class Node {
       // The admin can ask for a ticket's work to go to its main line; this node
       // holds the repo and the credentials, so it does the git.
       if (Array.isArray(res.land) && res.land.length > 0) await this.land(res.land);
+      if (Array.isArray(res.builds)) for (const b of res.builds) await buildWork(this.config, b);
     } catch (error) {
       this.lastError = `heartbeat: ${error.message}`;
       log(this.lastError);

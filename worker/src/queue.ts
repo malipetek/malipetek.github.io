@@ -357,6 +357,20 @@ export async function heartbeat(env: Env, node: NodeReport, running: number[]) {
         .bind(...node.slugs)
         .all<{ ticket_id: number; kind: string; slug: string }>()
     : { results: [] as { ticket_id: number; kind: string; slug: string }[] };
+  // A client's agent asked for a preview build of the change it sent, on a
+  // hosted-site project this node holds. The node applies the files, pushes,
+  // builds and deploys — same result contract as land.
+  const { results: builds } = node.slugs.length
+    ? await env.DB.prepare(
+        `SELECT t.id AS ticket_id, p.slug, s.slug AS site
+           FROM tickets t JOIN projects p ON p.id = t.project_id
+           JOIN sites s ON s.project_id = p.id AND s.host = 'ours' AND s.state = 'ready'
+          WHERE t.build_requested_at IS NOT NULL AND p.slug IN (${node.slugs.map(() => '?').join(',')})
+          ORDER BY t.build_requested_at LIMIT 5`,
+      )
+        .bind(...node.slugs)
+        .all<{ ticket_id: number; slug: string; site: string }>()
+    : { results: [] as { ticket_id: number; slug: string; site: string }[] };
 
   return {
     draining: row?.draining === 1,
@@ -367,6 +381,7 @@ export async function heartbeat(env: Env, node: NodeReport, running: number[]) {
       slug: item.slug,
       shared: `malipetek/${item.kind === 'client' ? 'ticket' : 'task'}-${item.ticket_id}`,
     })),
+    builds: (builds ?? []).map((item) => ({ ticketId: item.ticket_id, slug: item.slug, site: item.site })),
     // Applied by the node on receipt, and reported back as its effective config
     // on the next beat — so what the views show is what the node is doing.
     overrides: parseObject(row?.overrides),

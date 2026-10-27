@@ -53,7 +53,16 @@
       "portal_file_request",
       "portal_reply",
       "portal_set_budget",
-      "portal_withdraw"
+      "portal_withdraw",
+      "project_context",
+      "workspace_files",
+      "workspace_read",
+      "submit_change",
+      "preview_build",
+      "site_status",
+      "site_deploys",
+      "site_publish",
+      "site_rollback"
     ]
   },
   "rest": {

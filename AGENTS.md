@@ -13,3 +13,9 @@
 
 ## Fleet
 - Nodes: MacBook (launchd `dev.malipetek.node`, runs from this repo's `fleet/`) and G500 (`ssh DTNMachineG500`, systemd user unit `malipetek-node`, runs from the git checkout `~/malipetek-src/fleet`: after pushing, `ssh DTNMachineG500 'git -C ~/malipetek-src pull -q && systemctl --user restart malipetek-node'`). Its `fleet-agents` Harness profile links the external-agents plugin from `~/.dsh/plugins/dsh-external-agents`.
+
+## Client sites (malipetek.online)
+- Serving worker: `sites-worker/` (`malipetek-sites`, routes `*.malipetek.online/*` + apex). Deploy: `cd sites-worker && npx wrangler deploy`.
+- Deploys are immutable in R2 `malipetek-sites` (manifests + content-addressed blobs); `sites.preview_deploy`/`production_deploy` are pointers. Publish/rollback only move pointers.
+- Nodes build the worktree (`malipetek.site.json` in the repo says how) and upload deploys via `/node/sites/:slug/deploys`; a pending `tickets.build_requested_at` means a client's agent asked for a preview build (`/node/builds/:ticketId`).
+

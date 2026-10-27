@@ -107,9 +107,179 @@ export const CLIENT_TOOLS: ClientTool[] = [
     inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
     readOnly: false,
   },
+  {
+    name: 'project_context',
+    title: 'Request context',
+    description:
+      'Everything about one approved request that your own agent needs to work on it: the project brief, the whole conversation, the site’s state and how it builds. Read this first.',
+    inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
+    readOnly: true,
+  },
+  {
+    name: 'workspace_files',
+    title: 'List source files',
+    description: 'Every source file in the site’s current preview, as a path list. Read what you need with workspace_read.',
+    inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
+    readOnly: true,
+  },
+  {
+    name: 'workspace_read',
+    title: 'Read a source file',
+    description: 'One file’s full text from the site’s current preview, by path from workspace_files.',
+    inputSchema: {
+      type: 'object',
+      properties: { request_id: REQUEST_ID, path: { type: 'string', description: 'A path exactly as workspace_files listed it.' } },
+      required: ['request_id', 'path'],
+      additionalProperties: false,
+    },
+    readOnly: true,
+  },
+  {
+    name: 'submit_change',
+    title: 'Send a change',
+    description:
+      'Send the files you changed for an approved request: whole contents, at most 40 files and 2 MB. They land on the request’s own branch — never production. Then call preview_build so the preview shows them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        request_id: REQUEST_ID,
+        files: {
+          type: 'array',
+          description: 'Changed files, whole contents.',
+          items: {
+            type: 'object',
+            properties: { path: { type: 'string' }, content: { type: 'string' } },
+            required: ['path', 'content'],
+            additionalProperties: false,
+          },
+          maxItems: 40,
+        },
+      },
+      required: ['request_id', 'files'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
+    name: 'preview_build',
+    title: 'Build the preview',
+    description:
+      'Apply the change you sent with submit_change and rebuild the preview site. A machine picks it up; the request’s thread gets the preview link. Send the change first.',
+    inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
+    readOnly: false,
+  },
+  {
+    name: 'site_status',
+    title: 'Site status',
+    description: 'The project’s hosted site: its state, the preview and live addresses, and which deploy each points at.',
+    inputSchema: { type: 'object', properties: { project_id: { type: 'string', description: 'From portal_projects.' } }, required: ['project_id'], additionalProperties: false },
+    readOnly: true,
+  },
+  {
+    name: 'site_deploys',
+    title: 'Deploy history',
+    description: 'The site’s deploys, newest first — what publish and rollback point at.',
+    inputSchema: { type: 'object', properties: { project_id: { type: 'string' } }, required: ['project_id'], additionalProperties: false },
+    readOnly: true,
+  },
+  {
+    name: 'site_publish',
+    title: 'Publish the site',
+    description:
+      'Take the preview live. Only works when Ali has turned on client publishing; until then ask him. Confirm with the client first.',
+    inputSchema: { type: 'object', properties: { project_id: { type: 'string' } }, required: ['project_id'], additionalProperties: false },
+    readOnly: false,
+  },
+  {
+    name: 'site_rollback',
+    title: 'Roll the site back',
+    description: 'Point production at an older deploy from site_deploys. Same publishing permission as site_publish.',
+    inputSchema: {
+      type: 'object',
+      properties: { project_id: { type: 'string' }, deploy_id: { type: 'string', description: 'A deploy id from site_deploys.' } },
+      required: ['project_id', 'deploy_id'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+];
+
+/**
+ * Ali's own tools: the same calls his admin views make, for his own MCP
+ * session (a portal session token as the bearer — the OAuth consent flow
+ * keeps refusing his address on purpose). Never listed for a client.
+ */
+export const OWNER_TOOLS: ClientTool[] = [
+  {
+    name: 'owner_requests',
+    title: 'Requests waiting on you',
+    description: 'New requests and anything marked waiting on Ali, oldest first.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    readOnly: true,
+  },
+  {
+    name: 'owner_request',
+    title: 'Read any request',
+    description: 'One request in full — conversation, runs, cost — by id.',
+    inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
+    readOnly: true,
+  },
+  {
+    name: 'owner_approve_request',
+    title: 'Approve a request',
+    description: 'Approve a request so work can start. It leaves the queue and a node picks it up.',
+    inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
+    readOnly: false,
+  },
+  {
+    name: 'owner_decline_request',
+    title: 'Decline a request',
+    description: 'Decline a request, with the reason the client reads.',
+    inputSchema: {
+      type: 'object',
+      properties: { request_id: REQUEST_ID, reason: { type: 'string', description: 'Why — shown to the client.' } },
+      required: ['request_id'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
+    name: 'owner_queue',
+    title: 'The queue and fleet',
+    description: 'The work queue, the nodes, and what each is doing right now.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    readOnly: true,
+  },
+  {
+    name: 'owner_runs',
+    title: 'Recent runs',
+    description: 'The latest machine runs across the fleet: outcome, cost, where the work went.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    readOnly: true,
+  },
+  {
+    name: 'owner_publish',
+    title: 'Publish a site',
+    description: 'Take a project’s preview live.',
+    inputSchema: { type: 'object', properties: { project_id: { type: 'string' } }, required: ['project_id'], additionalProperties: false },
+    readOnly: false,
+  },
+  {
+    name: 'owner_rollback',
+    title: 'Roll a site back',
+    description: 'Point a project’s production at an older deploy.',
+    inputSchema: {
+      type: 'object',
+      properties: { project_id: { type: 'string' }, deploy_id: { type: 'string' } },
+      required: ['project_id', 'deploy_id'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
 ];
 
 export const CLIENT_TOOL_NAMES = new Set(CLIENT_TOOLS.map((t) => t.name));
+export const OWNER_TOOL_NAMES = new Set(OWNER_TOOLS.map((t) => t.name));
 
 /** The portal's answer, or a thrown Error carrying its error code — which the model reads. */
 async function portalCall(env: Env, ctx: Ctx, token: string, method: string, path: string, body?: unknown) {
@@ -177,6 +347,45 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
     case 'portal_withdraw':
       await portalCall(env, ctx, token, 'POST', `/portal/tickets/${Number.isInteger(id) ? id : 0}/withdraw`);
       return { ok: true, status: 'Declined (withdrawn)' };
+    case 'project_context':
+      return portalCall(env, ctx, token, 'GET', `/portal/tickets/${Number.isInteger(id) ? id : 0}/context`);
+    case 'workspace_files':
+      return portalCall(env, ctx, token, 'GET', `/portal/tickets/${Number.isInteger(id) ? id : 0}/workspace`);
+    case 'workspace_read':
+      return portalCall(env, ctx, token, 'GET', `/portal/tickets/${Number.isInteger(id) ? id : 0}/workspace/file?path=${encodeURIComponent(String(args.path ?? ''))}`);
+    case 'submit_change':
+      return portalCall(env, ctx, token, 'POST', `/portal/tickets/${Number.isInteger(id) ? id : 0}/change`, { files: args.files });
+    case 'preview_build': {
+      await portalCall(env, ctx, token, 'POST', `/portal/tickets/${Number.isInteger(id) ? id : 0}/build`);
+      return { ok: true, state: 'queued', note: 'A machine builds it and posts the preview link to the request’s thread.' };
+    }
+    case 'site_status':
+      return portalCall(env, ctx, token, 'GET', `/portal/projects/${String(args.project_id ?? '')}/site`);
+    case 'site_deploys':
+      return portalCall(env, ctx, token, 'GET', `/portal/projects/${String(args.project_id ?? '')}/site/deploys`);
+    case 'site_publish':
+      return portalCall(env, ctx, token, 'POST', `/portal/projects/${String(args.project_id ?? '')}/site/publish`, {});
+    case 'site_rollback':
+      return portalCall(env, ctx, token, 'POST', `/portal/projects/${String(args.project_id ?? '')}/site/rollback`, { deployId: args.deploy_id });
+    case 'owner_requests':
+      return portalCall(env, ctx, token, 'GET', '/admin/tickets?status=new');
+    case 'owner_request':
+      return portalCall(env, ctx, token, 'GET', `/admin/tickets/${Number.isInteger(id) ? id : 0}`);
+    case 'owner_approve_request':
+      return portalCall(env, ctx, token, 'PATCH', `/admin/tickets/${Number.isInteger(id) ? id : 0}`, { status: 'approved' });
+    case 'owner_decline_request':
+      return portalCall(env, ctx, token, 'PATCH', `/admin/tickets/${Number.isInteger(id) ? id : 0}`, {
+        status: 'declined',
+        ...(typeof args.reason === 'string' && args.reason.trim() ? { reason: args.reason.trim() } : {}),
+      });
+    case 'owner_queue':
+      return portalCall(env, ctx, token, 'GET', '/admin/queue');
+    case 'owner_runs':
+      return portalCall(env, ctx, token, 'GET', '/admin/runs');
+    case 'owner_publish':
+      return portalCall(env, ctx, token, 'POST', `/admin/projects/${String(args.project_id ?? '')}/site/publish`, {});
+    case 'owner_rollback':
+      return portalCall(env, ctx, token, 'POST', `/admin/projects/${String(args.project_id ?? '')}/site/rollback`, { deployId: args.deploy_id });
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
