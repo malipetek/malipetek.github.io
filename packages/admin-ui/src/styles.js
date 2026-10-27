@@ -204,6 +204,7 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-ticket { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 100%; }
 .aw-ticket__main { padding: 18px 24px 24px; min-width: 0; display: flex; flex-direction: column; }
 .aw-ticket__head h2 { font-size: 22px; font-weight: 700; margin: 4px 0 10px; line-height: 1.25; }
+.aw-ticket__head { padding-bottom: 4px; border-bottom: 1px solid var(--aw-border); margin-bottom: 4px; }
 .aw-ticket__crumbs { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--aw-text2); }
 .aw-ticket__crumbs span + span::before { content: '·'; margin-right: 10px; }
 .aw-ticket__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--aw-border); }
@@ -247,6 +248,10 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-composer textarea { border: 0; padding: 4px 2px; background: none; outline: none !important; }
 .aw-details { border-left: 1px solid var(--aw-border); background: var(--aw-bg2); padding: 16px; overflow-y: auto; position: sticky; top: 0; height: 100cqh; align-self: start; }
 .aw-details select, .aw-details input { width: 100%; }
+.aw-details .aw-ticket__actions { flex-direction: column; align-items: stretch; gap: 6px; padding-bottom: 14px; margin-bottom: 4px; }
+.aw-details .aw-ticket__actions > button { width: 100%; justify-content: center; }
+.aw-details .aw-ticket__actions > :first-child { align-self: flex-start; }
+.aw-details .aw-ticket__actions > .aw-running, .aw-details .aw-ticket__actions > .aw-muted { justify-content: center; text-align: center; }
 .aw-details__h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); margin: 18px 0 6px !important; }
 .aw-cost { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 0; border-top: 1px solid var(--aw-border); border-bottom: 1px solid var(--aw-border); }
 .aw-cost > div { display: flex; flex-direction: column; gap: 2px; }

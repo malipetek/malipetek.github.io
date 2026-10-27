@@ -783,7 +783,7 @@ var __awPlugin = (() => {
     declined: [["new", "Reopen", "ghost"]]
   };
   function TicketView({ id, active }) {
-    const { api, setStatus, act, ask } = useAdmin();
+    const { api, act } = useAdmin();
     const [{ ticket, messages, runs, land, error, loading }, reload] = useTicket(api, id);
     const meter = useMeter(api, ticket, active);
     if (loading && !ticket) return /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
@@ -793,9 +793,6 @@ var __awPlugin = (() => {
     ] });
     if (!ticket) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: errorText(error) });
     const isClient = ticket.kind !== "system";
-    const live = runs.find((r) => r.status === "running");
-    const move = (s) => setStatus(ticket, s).then(reload);
-    const canLand = Boolean(ticket.project_id) && ticket.status !== "in_progress" && runs.length > 0;
     return /* @__PURE__ */ jsxs("div", { className: "aw-ticket", children: [
       /* @__PURE__ */ jsxs("div", { className: "aw-ticket__main", children: [
         /* @__PURE__ */ jsxs("header", { className: "aw-ticket__head", children: [
@@ -826,58 +823,64 @@ var __awPlugin = (() => {
                 children: "No reply needed"
               }
             )
-          ] }) : null,
-          /* @__PURE__ */ jsxs("div", { className: "aw-ticket__actions", children: [
-            /* @__PURE__ */ jsx(StatusPill, { status: ticket.status }),
-            (PRIMARY[ticket.status] ?? []).map(([s, label, kind]) => /* @__PURE__ */ jsx(Button, { kind, size: "sm", onClick: () => void move(s), children: label }, s)),
-            live && !live.cancel_requested ? /* @__PURE__ */ jsx(
-              Button,
-              {
-                kind: "danger",
-                size: "sm",
-                onClick: () => act(() => api("POST", `/admin/runs/${live.id}/cancel`), "Stopping the run; it goes to review.").then(reload, () => void 0),
-                children: "Stop run"
-              }
-            ) : null,
-            live ? /* @__PURE__ */ jsxs("span", { className: "aw-running", children: [
-              /* @__PURE__ */ jsx("span", { className: "aw-live" }),
-              " ",
-              live.cancel_requested ? "stopping" : `${live.executor} on ${live.node_id ?? "Harness"} \xB7 ${ago(live.started_at)}`
-            ] }) : null,
-            canLand ? /* @__PURE__ */ jsx(
-              Button,
-              {
-                size: "sm",
-                kind: "ghost",
-                title: "Push this ticket's work branch onto the project's main line",
-                onClick: () => ask({
-                  title: "Land on main?",
-                  text: `Pushes the work branch for #${ticket.id} onto ${ticket.project_slug ?? "the project"}'s main line. If the project deploys from main, this publishes it. Git only accepts a fast-forward.`,
-                  confirm: "Land on main",
-                  run: () => act(() => api("POST", `/admin/tickets/${ticket.id}/land`), "A node picks it up on its next heartbeat.").then(
-                    reload,
-                    () => void 0
-                  )
-                }),
-                children: "Land on main"
-              }
-            ) : null,
-            /* @__PURE__ */ jsx(ReviewButton, { ticket, runs }),
-            land?.requestedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-running", children: [
-              /* @__PURE__ */ jsx("span", { className: "aw-live" }),
-              " landing\u2026"
-            ] }) : null,
-            land?.ref && !land.requestedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", style: { fontSize: 12 }, children: [
-              "landed on ",
-              land.ref,
-              land.sha ? ` (${String(land.sha).slice(0, 8)})` : ""
-            ] }) : null
-          ] })
+          ] }) : null
         ] }),
         /* @__PURE__ */ jsx(Timeline, { ticket, messages, runs }),
         /* @__PURE__ */ jsx(Composer, { ticket, onSent: reload })
       ] }),
-      /* @__PURE__ */ jsx(Details, { ticket, runs, meter, reload })
+      /* @__PURE__ */ jsx(Details, { ticket, runs, land, meter, reload })
+    ] });
+  }
+  function TicketActions({ ticket, runs, land, reload }) {
+    const { api, setStatus, act, ask } = useAdmin();
+    const live = runs.find((r) => r.status === "running");
+    const move = (s) => setStatus(ticket, s).then(reload);
+    const canLand = Boolean(ticket.project_id) && ticket.status !== "in_progress" && runs.length > 0;
+    return /* @__PURE__ */ jsxs("div", { className: "aw-ticket__actions", children: [
+      /* @__PURE__ */ jsx(StatusPill, { status: ticket.status }),
+      (PRIMARY[ticket.status] ?? []).map(([s, label, kind]) => /* @__PURE__ */ jsx(Button, { kind, size: "sm", onClick: () => void move(s), children: label }, s)),
+      live && !live.cancel_requested ? /* @__PURE__ */ jsx(
+        Button,
+        {
+          kind: "danger",
+          size: "sm",
+          onClick: () => act(() => api("POST", `/admin/runs/${live.id}/cancel`), "Stopping the run; it goes to review.").then(reload, () => void 0),
+          children: "Stop run"
+        }
+      ) : null,
+      live ? /* @__PURE__ */ jsxs("span", { className: "aw-running", children: [
+        /* @__PURE__ */ jsx("span", { className: "aw-live" }),
+        " ",
+        live.cancel_requested ? "stopping" : `${live.executor} on ${live.node_id ?? "Harness"} \xB7 ${ago(live.started_at)}`
+      ] }) : null,
+      canLand ? /* @__PURE__ */ jsx(
+        Button,
+        {
+          size: "sm",
+          kind: "ghost",
+          title: "Push this ticket's work branch onto the project's main line",
+          onClick: () => ask({
+            title: "Land on main?",
+            text: `Pushes the work branch for #${ticket.id} onto ${ticket.project_slug ?? "the project"}'s main line. If the project deploys from main, this publishes it. Git only accepts a fast-forward.`,
+            confirm: "Land on main",
+            run: () => act(() => api("POST", `/admin/tickets/${ticket.id}/land`), "A node picks it up on its next heartbeat.").then(
+              reload,
+              () => void 0
+            )
+          }),
+          children: "Land on main"
+        }
+      ) : null,
+      /* @__PURE__ */ jsx(ReviewButton, { ticket, runs }),
+      land?.requestedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-running", children: [
+        /* @__PURE__ */ jsx("span", { className: "aw-live" }),
+        " landing\u2026"
+      ] }) : null,
+      land?.ref && !land.requestedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", style: { fontSize: 12 }, children: [
+        "landed on ",
+        land.ref,
+        land.sha ? ` (${String(land.sha).slice(0, 8)})` : ""
+      ] }) : null
     ] });
   }
   function reviewRef(runs) {
@@ -1249,7 +1252,7 @@ var __awPlugin = (() => {
       ] })
     ] });
   }
-  function Details({ ticket, runs, meter, reload }) {
+  function Details({ ticket, runs, land, meter, reload }) {
     const { api, data, act, setStatus } = useAdmin();
     const isClient = ticket.kind !== "system";
     const [fixing, setFixing] = useState(false);
@@ -1260,6 +1263,7 @@ var __awPlugin = (() => {
     const where = predict(data.nodes, { slug: ticket.project_slug, requires, executor: ticket.executor, kind: ticket.kind });
     const price = priceOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0 });
     return /* @__PURE__ */ jsxs("aside", { className: "aw-details", "aria-label": "Details", children: [
+      /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload }),
       /* @__PURE__ */ jsx(Field, { label: "Status", children: /* @__PURE__ */ jsx("select", { value: ticket.status, onChange: (e) => void setStatus(ticket, e.target.value).then(reload), children: STATUSES.map((s) => /* @__PURE__ */ jsx("option", { value: s, children: STATUS_LABEL[s] }, s)) }) }),
       /* @__PURE__ */ jsx(Field, { label: "Project", children: /* @__PURE__ */ jsxs("select", { value: ticket.project_id ?? "", onChange: (e) => void patch({ projectId: e.target.value || null }, "Project saved."), children: [
         /* @__PURE__ */ jsx("option", { value: "", children: "No project" }),
@@ -1904,6 +1908,7 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-ticket { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 100%; }
 .aw-ticket__main { padding: 18px 24px 24px; min-width: 0; display: flex; flex-direction: column; }
 .aw-ticket__head h2 { font-size: 22px; font-weight: 700; margin: 4px 0 10px; line-height: 1.25; }
+.aw-ticket__head { padding-bottom: 4px; border-bottom: 1px solid var(--aw-border); margin-bottom: 4px; }
 .aw-ticket__crumbs { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--aw-text2); }
 .aw-ticket__crumbs span + span::before { content: '\xB7'; margin-right: 10px; }
 .aw-ticket__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--aw-border); }
@@ -1947,6 +1952,10 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-composer textarea { border: 0; padding: 4px 2px; background: none; outline: none !important; }
 .aw-details { border-left: 1px solid var(--aw-border); background: var(--aw-bg2); padding: 16px; overflow-y: auto; position: sticky; top: 0; height: 100cqh; align-self: start; }
 .aw-details select, .aw-details input { width: 100%; }
+.aw-details .aw-ticket__actions { flex-direction: column; align-items: stretch; gap: 6px; padding-bottom: 14px; margin-bottom: 4px; }
+.aw-details .aw-ticket__actions > button { width: 100%; justify-content: center; }
+.aw-details .aw-ticket__actions > :first-child { align-self: flex-start; }
+.aw-details .aw-ticket__actions > .aw-running, .aw-details .aw-ticket__actions > .aw-muted { justify-content: center; text-align: center; }
 .aw-details__h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); margin: 18px 0 6px !important; }
 .aw-cost { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 0; border-top: 1px solid var(--aw-border); border-bottom: 1px solid var(--aw-border); }
 .aw-cost > div { display: flex; flex-direction: column; gap: 2px; }

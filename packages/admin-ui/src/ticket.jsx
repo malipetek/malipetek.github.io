@@ -36,16 +36,12 @@ const PRIMARY = {
 };
 
 export function TicketView({ id, active }) {
-  const { api, setStatus, act, ask } = useAdmin();
+  const { api, act } = useAdmin();
   const [{ ticket, messages, runs, land, error, loading }, reload] = useTicket(api, id);
   const meter = useMeter(api, ticket, active);
   if (loading && !ticket) return <p className="aw-empty">Loading #{id}…</p>;
   if (!ticket) return <p className="aw-empty">{errorText(error)}</p>;
   const isClient = ticket.kind !== 'system';
-  const live = runs.find((r) => r.status === 'running');
-  const move = (s) => setStatus(ticket, s).then(reload);
-  // Landable once a run has left work on the branch, and never mid-run.
-  const canLand = Boolean(ticket.project_id) && ticket.status !== 'in_progress' && runs.length > 0;
   return (
     <div className="aw-ticket">
       <div className="aw-ticket__main">
@@ -70,69 +66,84 @@ export function TicketView({ id, active }) {
               </Button>
             </div>
           ) : null}
-          <div className="aw-ticket__actions">
-            <StatusPill status={ticket.status} />
-            {(PRIMARY[ticket.status] ?? []).map(([s, label, kind]) => (
-              <Button key={s} kind={kind} size="sm" onClick={() => void move(s)}>
-                {label}
-              </Button>
-            ))}
-            {live && !live.cancel_requested ? (
-              <Button
-                kind="danger"
-                size="sm"
-                onClick={() =>
-                  act(() => api('POST', `/admin/runs/${live.id}/cancel`), 'Stopping the run; it goes to review.').then(reload, () => undefined)
-                }
-              >
-                Stop run
-              </Button>
-            ) : null}
-            {live ? (
-              <span className="aw-running">
-                <span className="aw-live" /> {live.cancel_requested ? 'stopping' : `${live.executor} on ${live.node_id ?? 'Harness'} · ${ago(live.started_at)}`}
-              </span>
-            ) : null}
-            {canLand ? (
-              <Button
-                size="sm"
-                kind="ghost"
-                title="Push this ticket's work branch onto the project's main line"
-                onClick={() =>
-                  ask({
-                    title: 'Land on main?',
-                    text: `Pushes the work branch for #${ticket.id} onto ${ticket.project_slug ?? 'the project'}'s main line. If the project deploys from main, this publishes it. Git only accepts a fast-forward.`,
-                    confirm: 'Land on main',
-                    run: () =>
-                      act(() => api('POST', `/admin/tickets/${ticket.id}/land`), 'A node picks it up on its next heartbeat.').then(
-                        reload,
-                        () => undefined,
-                      ),
-                  })
-                }
-              >
-                Land on main
-              </Button>
-            ) : null}
-            <ReviewButton ticket={ticket} runs={runs} />
-            {land?.requestedAt ? (
-              <span className="aw-running">
-                <span className="aw-live" /> landing…
-              </span>
-            ) : null}
-            {land?.ref && !land.requestedAt ? (
-              <span className="aw-muted" style={{ fontSize: 12 }}>
-                landed on {land.ref}
-                {land.sha ? ` (${String(land.sha).slice(0, 8)})` : ''}
-              </span>
-            ) : null}
-          </div>
         </header>
 
         <Timeline ticket={ticket} messages={messages} runs={runs} />
         <Composer ticket={ticket} onSent={reload} />
       </div>
-      <Details ticket={ticket} runs={runs} meter={meter} reload={reload} />
+      <Details ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} />
+    </div>
+  );
+}
+
+/**
+ * What can be done with the ticket now: its status moves, stopping the live
+ * run, landing the work, reviewing it. At the top of the sticky details
+ * column, so it stays in reach however far the thread scrolls.
+ */
+function TicketActions({ ticket, runs, land, reload }) {
+  const { api, setStatus, act, ask } = useAdmin();
+  const live = runs.find((r) => r.status === 'running');
+  const move = (s) => setStatus(ticket, s).then(reload);
+  // Landable once a run has left work on the branch, and never mid-run.
+  const canLand = Boolean(ticket.project_id) && ticket.status !== 'in_progress' && runs.length > 0;
+  return (
+    <div className="aw-ticket__actions">
+      <StatusPill status={ticket.status} />
+      {(PRIMARY[ticket.status] ?? []).map(([s, label, kind]) => (
+        <Button key={s} kind={kind} size="sm" onClick={() => void move(s)}>
+          {label}
+        </Button>
+      ))}
+      {live && !live.cancel_requested ? (
+        <Button
+          kind="danger"
+          size="sm"
+          onClick={() =>
+            act(() => api('POST', `/admin/runs/${live.id}/cancel`), 'Stopping the run; it goes to review.').then(reload, () => undefined)
+          }
+        >
+          Stop run
+        </Button>
+      ) : null}
+      {live ? (
+        <span className="aw-running">
+          <span className="aw-live" /> {live.cancel_requested ? 'stopping' : `${live.executor} on ${live.node_id ?? 'Harness'} · ${ago(live.started_at)}`}
+        </span>
+      ) : null}
+      {canLand ? (
+        <Button
+          size="sm"
+          kind="ghost"
+          title="Push this ticket's work branch onto the project's main line"
+          onClick={() =>
+            ask({
+              title: 'Land on main?',
+              text: `Pushes the work branch for #${ticket.id} onto ${ticket.project_slug ?? 'the project'}'s main line. If the project deploys from main, this publishes it. Git only accepts a fast-forward.`,
+              confirm: 'Land on main',
+              run: () =>
+                act(() => api('POST', `/admin/tickets/${ticket.id}/land`), 'A node picks it up on its next heartbeat.').then(
+                  reload,
+                  () => undefined,
+                ),
+            })
+          }
+        >
+          Land on main
+        </Button>
+      ) : null}
+      <ReviewButton ticket={ticket} runs={runs} />
+      {land?.requestedAt ? (
+        <span className="aw-running">
+          <span className="aw-live" /> landing…
+        </span>
+      ) : null}
+      {land?.ref && !land.requestedAt ? (
+        <span className="aw-muted" style={{ fontSize: 12 }}>
+          landed on {land.ref}
+          {land.sha ? ` (${String(land.sha).slice(0, 8)})` : ''}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -619,7 +630,7 @@ function Composer({ ticket, onSent }) {
 }
 
 /** Properties, cost, routing and runs. Each control saves on change. */
-function Details({ ticket, runs, meter, reload }) {
+function Details({ ticket, runs, land, meter, reload }) {
   const { api, data, act, setStatus } = useAdmin();
   const isClient = ticket.kind !== 'system';
   const [fixing, setFixing] = useState(false);
@@ -631,6 +642,7 @@ function Details({ ticket, runs, meter, reload }) {
   const price = priceOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0 });
   return (
     <aside className="aw-details" aria-label="Details">
+      <TicketActions ticket={ticket} runs={runs} land={land} reload={reload} />
       <Field label="Status">
         <select value={ticket.status} onChange={(e) => void setStatus(ticket, e.target.value).then(reload)}>
           {STATUSES.map((s) => (
