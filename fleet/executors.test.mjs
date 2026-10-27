@@ -78,7 +78,9 @@ test('dshAgentOverlay: claude, defaults', () => {
   assert.match(yaml, /^- id: external-agents\n/);
   assert.match(yaml, /- id: claude\n {8}label: "Claude Code"\n {8}command: "claude-agent-acp"\n {8}args: \[\]/);
   assert.match(yaml, /- id: opencode\n {8}label: "opencode"\n {8}command: "opencode"\n {8}args: \["acp"\]/);
-  assert.match(yaml, /- id: agent-default-model\n {2}name: "@deepseek-ai\/dsh-agent-default-model"\n {2}config:\n {4}provider: acp-claude\n {4}model: "opus"\n$/);
+  assert.match(yaml, /- id: agent-default-model\n {2}name: "@deepseek-ai\/dsh-agent-default-model"\n {2}config:\n {4}provider: acp-claude\n {4}model: "opus"\n/);
+  // The LLM title would ask the external agent mid-turn and steal the turn's answer.
+  assert.match(yaml, /- id: session-title-llm\n {2}disabled: true\n$/);
   assert.match(yaml, /discover: false\n {4}expose: explicit\n {4}envMode: minimal/);
 });
 
@@ -86,15 +88,15 @@ test('dshAgentOverlay: opencode with a configured command defaults to the free D
   const yaml = dshAgentOverlay('opencode', { agentCommand: '/opt/bin/opencode' });
   assert.match(yaml, /command: "\/opt\/bin\/opencode"/);
   assert.match(yaml, /command: "claude-agent-acp"/); // the other agent keeps its default
-  assert.match(yaml, /provider: acp-opencode\n {4}model: "opencode\/deepseek-v4.1-flash-free"\n$/);
-  assert.match(dshAgentOverlay('opencode', { model: 'gpt-5' }), /provider: acp-opencode\n {4}model: "gpt-5"\n$/);
+  assert.match(yaml, /provider: acp-opencode\n {4}model: "opencode\/deepseek-v4.1-flash-free"\n/);
+  assert.match(dshAgentOverlay('opencode', { model: 'gpt-5' }), /provider: acp-opencode\n {4}model: "gpt-5"\n/);
   assert.throws(() => dshAgentOverlay('nope'));
 });
 
 test('dshAgentOverlay: devin runs SWE-2 over `devin acp`', () => {
   const yaml = dshAgentOverlay('devin', {});
   assert.match(yaml, /- id: devin\n {8}label: "Devin"\n {8}command: "devin"\n {8}args: \["acp"\]/);
-  assert.match(yaml, /provider: acp-devin\n {4}model: "swe-2-high"\n$/);
+  assert.match(yaml, /provider: acp-devin\n {4}model: "swe-2-high"\n/);
   assert.ok(EXECUTORS['dsh-devin']);
   assert.ok(DSH_FAMILY.includes('dsh-devin'));
 });
@@ -110,7 +112,7 @@ test('isQuotaError: limits read as limits, task failures do not', () => {
 
 test('fallbackChain: system work tries the claimed executor, then Harness first', () => {
   const all = ['claude', 'opencode', 'dsh', 'devin', 'dsh-claude', 'dsh-opencode', 'dsh-devin'];
-  assert.deepEqual(fallbackChain('dsh-claude', all, 'system'), ['dsh-claude', 'dsh', 'devin', 'dsh-opencode', 'claude', 'opencode']);
+  assert.deepEqual(fallbackChain('dsh-claude', all, 'system'), ['dsh-claude', 'dsh', 'dsh-devin', 'dsh-opencode', 'devin', 'claude', 'opencode']);
   assert.deepEqual(fallbackChain('opencode', ['opencode', 'dsh', 'dsh-opencode'], 'system'), ['opencode', 'dsh', 'dsh-opencode']);
   assert.deepEqual(fallbackChain('claude', all, 'client'), ['claude']);
   // A quota on one form of an account covers the other.
@@ -172,7 +174,7 @@ test('dsh executors end to end with a fake dsh', async () => {
     assert.match(readFileSync(overlay, 'utf8'), /provider: acp-claude\n {4}model: "sonnet"/);
 
     await EXECUTORS['dsh-opencode']({ prompt: 'p', cwd: tmp, system: 's', config: { bin, overlayDir }, signal: new AbortController().signal });
-    assert.match(readFileSync(join(overlayDir, 'dsh-agent-opencode.patch.yml'), 'utf8'), /provider: acp-opencode\n {4}model: "opencode\/deepseek-v4.1-flash-free"\n$/);
+    assert.match(readFileSync(join(overlayDir, 'dsh-agent-opencode.patch.yml'), 'utf8'), /provider: acp-opencode\n {4}model: "opencode\/deepseek-v4.1-flash-free"\n/);
 
     // A failing dsh with no stdout: stderr is the text, ok is false.
     writeFileSync(bin, '#!/bin/sh\ncat >/dev/null\necho "no provider key" >&2\nexit 3\n');

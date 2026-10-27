@@ -73,14 +73,14 @@ capability. After 30 minutes stuck, Ali gets one email.
 | `dsh-claude` | system work only | The same Harness run, driving Claude Code as an external ACP agent (`claude-agent-acp`). Offered when `dsh` and `claude-agent-acp` are both on PATH. |
 | `dsh-opencode` | system work only | The same Harness run, driving OpenCode as an external ACP agent (`opencode acp`). Offered when `dsh` and `opencode` are both on PATH. |
 | `devin` | system work only | Devin over ACP; auto-approves its own permission prompts, so never client work |
-| `dsh-devin` | system work only — **not offered** | Devin under the Harness returns empty turns (EMPTY_TURN in the plugin's ACP adapter), so the node never advertises it. Kept for when the plugin is fixed. |
+| `dsh-devin` | system work only | The same Harness run, driving Devin as an external ACP agent (`devin acp`). |
 
 Client work always runs on `claude`, whatever the item asks for; the Worker
 refuses to pin anything else on a client ticket and the node refuses to run it.
 
 System work with no pinned executor takes the first of these the node runs —
 Harness executors first, so the run has a conversation to open:
-`dsh-claude → dsh → devin → dsh-opencode → claude → opencode`. When a run fails
+`dsh-claude → dsh → dsh-devin → dsh-opencode → devin → claude → opencode`. When a run fails
 on a usage limit (spend/usage/rate limit, 429, insufficient balance), the node
 retries the same worktree on the next executor that spends a different account
 (a Claude limit skips `claude` *and* `dsh-claude`), says what it switched in the
@@ -90,7 +90,10 @@ run note, and reports the executor that actually finished.
 next to its config (`~/.config/malipetek-runner/dsh-agent-<agent>.patch.yml`)
 and passes as `dsh --profile <profile> --patch <overlay> --json -`. It
 registers the two ACP agents and sets the Harness's default model to
-`acp-claude` / `acp-opencode`. They need a Harness profile with
+`acp-claude` / `acp-opencode`, and disables the Harness's LLM session titles:
+those ask the turn's own route — the external agent — for a title while the
+turn starts on it, and the ACP adapter hands the title's answer back as the
+turn's (the task never ran, or the turn ended `EMPTY_TURN`). They need a Harness profile with
 `@malipetek/dsh-external-agents` in its bundles — the node runs them under
 `fleet-agents` by default (the plain `headless` profile lacks the plugin and
 answers NO_ADAPTER), and only offers them when that profile exists. Config:

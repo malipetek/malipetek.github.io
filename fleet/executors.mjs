@@ -119,7 +119,7 @@ export function stepsOf(format, line) {
     if (ev.type === 'tool_call') say('tool', `${ev.tool ?? 'tool'} ${briefInput(ev.input)}`);
     else if (ev.type === 'tool_result' && ev.status && ev.status !== 'completed') say('error', `${ev.status}: ${briefInput(ev.result)}`);
     else if (ev.type === 'text') say('text', ev.text);
-    else if (ev.type === 'status' && ev.phase === 'turn_end' && ev.reason?.kind === 'error') say('error', ev.reason.message ?? 'the turn ended in an error');
+    else if (ev.type === 'status' && ev.phase === 'turn_end' && ev.reason?.kind === 'error') say('error', ev.reason.message ?? ev.reason.error?.message ?? 'the turn ended in an error');
   } else if (format === 'claude') {
     const content = Array.isArray(ev.message?.content) ? ev.message.content : [];
     if (ev.type === 'assistant') {
@@ -370,6 +370,12 @@ export function dshAgentOverlay(agent, config = {}) {
     `    provider: ${chosen.provider}`,
   );
   if (model) lines.push(`    model: ${q(model)}`);
+  // The Harness titles a new session by asking the turn's own route — here the
+  // external agent — for a summary, while the turn is starting on that same
+  // agent. The ACP adapter cannot serve both: the title's answer came back as
+  // the turn's, and the task never ran (or the turn ended EMPTY_TURN). A
+  // fleet run's title is the worktree name anyway, so the LLM title is off.
+  lines.push('- id: session-title-llm', '  disabled: true');
   return lines.join('\n') + '\n';
 }
 
@@ -449,10 +455,9 @@ export const ACCOUNT = {
  * System work's order when nothing is pinned, and the fallback order after a
  * quota error: Harness executors first, so the run has a conversation to open;
  * then the cheap Harness provider, Devin SWE-2 (free) and OpenCode's free
- * DeepSeek; the plain CLIs last. Devin runs directly: under the Harness its
- * ACP turns come back empty (EMPTY_TURN), so dsh-devin is pin-only for now.
+ * DeepSeek, all inside the Harness; the plain CLIs last.
  */
-export const SYSTEM_ORDER = ['dsh-claude', 'dsh', 'devin', 'dsh-opencode', 'claude', 'opencode'];
+export const SYSTEM_ORDER = ['dsh-claude', 'dsh', 'dsh-devin', 'dsh-opencode', 'devin', 'claude', 'opencode'];
 
 /** Whether a failed run's text reads as a spend, usage or rate limit. */
 export function isQuotaError(text) {

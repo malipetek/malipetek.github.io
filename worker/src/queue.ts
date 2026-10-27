@@ -140,7 +140,7 @@ export const EXECUTORS = ['claude', 'opencode', 'dsh', 'devin', 'dsh-claude', 'd
  * Harness executors first, so every run has a conversation to open. The node
  * falls back down the same order on a usage limit (fleet/executors.mjs).
  */
-export const SYSTEM_ORDER = ['dsh-claude', 'dsh', 'devin', 'dsh-opencode', 'claude', 'opencode'];
+export const SYSTEM_ORDER = ['dsh-claude', 'dsh', 'dsh-devin', 'dsh-opencode', 'devin', 'claude', 'opencode'];
 /** Client work runs only on the sandboxed executor (worktree, allow-listed tools, no MCP). */
 export const CLIENT_EXECUTOR = 'claude';
 

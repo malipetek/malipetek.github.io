@@ -549,7 +549,7 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
   else if (share.to === 'bundle') log(`#${ticket.id} saved as a portal bundle (${commit.slice(0, 8)})`);
   else if (ok && changed) log(`#${ticket.id} not shared: ${share.why}`);
   if (share.why) log(`#${ticket.id} push note: ${share.why}`);
-  if (share.to === 'origin') steps.push('node', `Pushed ${share.ref} (${commit.slice(0, 8)})`);
+  if (share.to === 'origin') steps.push('node', changed ? `Pushed ${share.ref} (${commit.slice(0, 8)})` : `No changes; ${share.ref} already at ${commit.slice(0, 8)}`);
   else if (share.to === 'bundle') steps.push('node', `Saved as a portal bundle (${commit.slice(0, 8)})`);
   if (share.why) steps.push('error', `Push: ${share.why}`);
   const diffStat = changed ? await git(dir, 'diff', '--stat', `${base}..HEAD`) : '';
