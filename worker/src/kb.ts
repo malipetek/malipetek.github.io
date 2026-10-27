@@ -554,6 +554,7 @@ const KB_TOOLS = [
  * forget them: anything not named as a writer is treated as read-only.
  */
 const READ_ONLY_TOOLS = new Set(['search_knowledge', 'get_knowledge', 'list_knowledge']);
+const DESTRUCTIVE_TOOLS = new Set(['update_knowledge', 'portal_withdraw', 'submit_change', 'site_publish', 'site_rollback']);
 
 const annotate = (tool: { name: string; title: string }, readOnly: boolean, destructive: boolean) => ({
   title: tool.title,
@@ -565,10 +566,10 @@ const annotate = (tool: { name: string; title: string }, readOnly: boolean, dest
 
 const KB_AND_CLIENT = KB_TOOLS.map((tool) => ({
   ...tool,
-  annotations: annotate(tool, READ_ONLY_TOOLS.has(tool.name), false),
+  annotations: annotate(tool, READ_ONLY_TOOLS.has(tool.name), DESTRUCTIVE_TOOLS.has(tool.name)),
 }));
-const PORTAL_TOOLS = CLIENT_TOOLS.map(({ readOnly, ...tool }) => ({ ...tool, annotations: annotate(tool, readOnly, false) }));
-const ADMIN_TOOLS = OWNER_TOOLS.map(({ readOnly, ...tool }) => ({ ...tool, annotations: annotate(tool, readOnly, false) }));
+const PORTAL_TOOLS = CLIENT_TOOLS.map(({ readOnly, ...tool }) => ({ ...tool, annotations: annotate(tool, readOnly, DESTRUCTIVE_TOOLS.has(tool.name)) }));
+const ADMIN_TOOLS = OWNER_TOOLS.map(({ readOnly, ...tool }) => ({ ...tool, annotations: annotate(tool, readOnly, DESTRUCTIVE_TOOLS.has(tool.name)) }));
 const MCP_TOOLS = [...KB_AND_CLIENT, ...PORTAL_TOOLS];
 
 /** Clients see the knowledgebase and their portal tools; Ali's session also sees the owner tools. */
@@ -883,7 +884,7 @@ mcp.post('/', async (c) => {
             },
             serverInfo: { name: 'malipetek-dev', title: 'malipetek.dev', version: '1.1.0' },
             instructions:
-              'Public knowledgebase of agentic coding sessions — search_knowledge, get_knowledge and list_knowledge are open, and every entry is also readable as a kb://entry/<slug> resource. create_knowledge and update_knowledge need an ack_ API key issued by the site owner. The portal_* tools let a malipetek.dev client work on their own projects and requests — they need the agent token the client makes in the portal (Connect an assistant), sent as Bearer cat_…. Requests are read by Ali before any work starts.',
+              'malipetek.dev serves a public knowledgebase of real problems from agentic coding sessions — search and read entries without signing in. With a connected client account, the portal tools file and track software work requests, show project and site status, and submit changes for approved requests. Every request is approved by a human before any work starts.',
           });
         }
         case 'notifications/initialized':
