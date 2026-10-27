@@ -143,7 +143,6 @@ function loadConfig() {
  */
 async function detectExecutors(config) {
   const wanted = config.enabledExecutors ?? Object.keys(EXECUTORS);
-  const onPath = async (bin) => (await run('/bin/sh', ['-c', 'command -v "$0"', bin]).catch(() => ({ code: 1 }))).code === 0;
   const found = [];
   for (const name of wanted) {
     const ex = config.executors[name];
@@ -155,6 +154,8 @@ async function detectExecutors(config) {
   }
   return found;
 }
+
+const onPath = async (bin) => (await run('/bin/sh', ['-c', 'command -v "$0"', bin]).catch(() => ({ code: 1 }))).code === 0;
 
 /* ————— Harness session logs ————— */
 
@@ -245,7 +246,8 @@ async function syncProjects(config) {
     } else missing.push(project.slug);
     // An allocating site has no repo yet: a node makes it from the template
     // and reports it back (the Worker has no git credentials).
-    if (project.needsRepo) await provisionSiteRepo(config, project.slug, project.needsRepo);
+    // Never let site provisioning take the sync (and the node) down with it.
+    if (project.needsRepo) await provisionSiteRepo(config, project.slug, project.needsRepo).catch((error) => log(`site ${project.needsRepo.site}: ${error.message}`));
   }
   if (missing.length) log(`no local folder for: ${missing.join(', ')}`);
 }

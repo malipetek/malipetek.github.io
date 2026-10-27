@@ -1905,10 +1905,10 @@ portal.post('/admin/projects/:id/site/retry', async (c) => {
   const site = await getSite(env, c.req.param('id'));
   if (!site) return reply(c, { error: 'not_found' }, 404);
   await env.DB.prepare(
-    `UPDATE sites SET state = 'allocating', error = NULL, failure_alerted_at = NULL, updated_at = ?
+    `UPDATE sites SET state = 'allocating', error = NULL, failure_alerted_at = NULL, created_at = ?, updated_at = ?
       WHERE project_id = ?`,
   )
-    .bind(now(), site.project_id)
+    .bind(now(), now(), site.project_id)
     .run();
   const { sitesDomain } = await getSettings(env);
   return reply(c, { site: siteView(await advanceSite(env, site.project_id), sitesDomain) });
