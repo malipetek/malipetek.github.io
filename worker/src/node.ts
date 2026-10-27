@@ -11,12 +11,19 @@
  *                                   renew its leases; answers { draining, cancel }.
  *   POST /node/claim                { nodeId } → lease the best eligible approved
  *                                   item (queue.ts), or { ticket: null, reason }.
+ *   POST /node/sites/:slug/repo     { repo } → a node created this site's source
+ *                                   repo; fills the project's blank repo so
+ *                                   other nodes can clone it, and moves the
+ *                                   site on.
+ *   POST /node/sites/:slug/deploys  { files: [{path, sha256, size, type?}] } →
+ *                                   opens a deploy; answers which blob hashes
+ *                                   the store still lacks.
+ *   PUT  /node/sites/:slug/deploys/:id/files/:sha   raw bytes of one blob.
+ *   POST /node/sites/:slug/deploys/:id/finish  { ticketId?, commitSha? } → all
+ *                                   blobs present → preview points at it.
  *   POST /node/runs/:runId/result   { ok, summary, branch?, diffStat?, diff?,
- *                                   costUsd?, executor?, model?, files? } → private
+ *                                   costUsd?, executor?, model? } → private
  *                                   run note, status → review, Ali gets an email.
- *                                   `files` (full contents of changed files) go
- *                                   to the project's preview branch when it has
- *                                   a hosted site — never to production.
  *                                   `commit`, `sharedTo` ('origin' | 'bundle') and
  *                                   `sharedRef` say where the next run, on any
  *                                   node, picks the work up.
@@ -38,7 +45,8 @@ import { encoder, type HonoEnv } from './shared.ts';
 import { mailAli, siteUrl } from './portal.ts';
 import { finishRun, normalizeReport, sessionKey, sharedLine } from './runs.ts';
 import { claimForNode, cleanNodeReport, getSettings, heartbeat } from './queue.ts';
-import { cleanPreviewFiles, pushToPreview } from './sites.ts';
+import { createDeploy, finishDeploy, reportSiteRepo } from './sites.ts';
+import { uploadDeployBlob, DEPLOY_LIMITS } from './sites.ts';
 import { cleanRepo } from './setup.ts';
 import { fileResponse } from './files.ts';
 import { now } from './shared.ts';
@@ -75,9 +83,9 @@ node.use('/node/*', async (c, next) => {
  */
 node.get('/node/projects', async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT p.id, p.slug, p.name, p.repo, s.state AS site_state
-       FROM projects p LEFT JOIN project_sites s ON s.project_id = p.id ORDER BY p.slug`,
-  ).all<{ id: string; slug: string; name: string; repo: string | null; site_state: string | null }>();
+    `SELECT p.id, p.slug, p.name, p.repo, s.state AS site_state, s.slug AS site_slug, s.template
+       FROM projects p LEFT JOIN sites s ON s.project_id = p.id ORDER BY p.slug`,
+  ).all<{ id: string; slug: string; name: string; repo: string | null; site_state: string | null; site_slug: string | null; template: string | null }>();
   return c.json({
     projects: (results ?? []).map((p) => ({
       id: p.id,
@@ -89,7 +97,12 @@ node.get('/node/projects', async (c) => {
       ...(p.repo ? { repo: p.repo } : {}),
       // A hosted site's work starts from its preview branch, so a run never
       // overwrites changes that are on the preview but not yet published.
-      ...(p.site_state === 'ready' ? { baseRef: 'origin/preview', preview: true } : {}),
+      ...(p.site_state === 'ready' ? { baseRef: 'origin/preview', site: p.site_slug } : {}),
+      // An allocating site with no repo yet: a node makes it from the
+      // template, pushes main + preview, and reports it back.
+      ...(p.site_state === 'allocating' && !p.repo
+        ? { needsRepo: { site: p.site_slug, template: p.template ?? 'site' } }
+        : {}),
     })),
   });
 });
@@ -111,6 +124,63 @@ node.post('/node/projects/:slug/repo', async (c) => {
   return c.json({ ok: true, updated: Boolean(row) });
 });
 
+/**
+ * A node made a site's source repo (the Worker has no git credentials) and
+ * pushed main + preview. Fills the project's blank repo and moves the site on.
+ */
+node.post('/node/sites/:slug/repo', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { repo?: unknown } | null;
+  const repo = cleanRepo(body?.repo);
+  if (!repo || /^https:\/\/[^/]*@/i.test(repo)) return c.json({ error: 'bad_repo' }, 400);
+  const out = await reportSiteRepo(c.env, c.req.param('slug'), repo);
+  if ('code' in out) return c.json({ error: out.code }, 404);
+  return c.json({ ok: true, state: out.state });
+});
+
+/* —— deploys: a node's built site output, content-addressed —— */
+
+node.post('/node/sites/:slug/deploys', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { files?: unknown } | null;
+  const out = await createDeploy(c.env, c.req.param('slug'), body?.files);
+  if ('error' in out) return c.json({ error: out.error }, out.error === 'not_found' ? 404 : out.error === 'sites_unavailable' ? 503 : 400);
+  return c.json({ deployId: out.deployId, needed: out.needed }, 201);
+});
+
+node.put('/node/sites/:slug/deploys/:id/files/:sha', async (c) => {
+  const size = Number(c.req.header('content-length') ?? NaN);
+  if (!Number.isFinite(size) || size <= 0) return c.json({ error: 'length_required' }, 411);
+  if (size > DEPLOY_LIMITS.fileBytes) return c.json({ error: 'too_large' }, 413);
+  const body = await c.req.arrayBuffer();
+  const out = await uploadDeployBlob(c.env, c.req.param('slug'), c.req.param('id'), c.req.param('sha'), body);
+  if ('error' in out) return c.json({ error: out.error }, out.error === 'not_found' ? 404 : 400);
+  return c.json({ ok: true });
+});
+
+node.post('/node/sites/:slug/deploys/:id/finish', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { ticketId?: unknown; commitSha?: unknown; nodeId?: unknown } | null;
+  const ticketId = Number(body?.ticketId);
+  const nodeId = typeof body?.nodeId === 'string' ? body.nodeId.trim().toLowerCase() : '';
+  // A deploy tied to a request must come from the node that holds its run.
+  if (Number.isInteger(ticketId) && ticketId > 0) {
+    const holds = await c.env.DB.prepare(`SELECT 1 FROM ticket_runs WHERE ticket_id = ? AND node_id = ? AND status = 'running'`)
+      .bind(ticketId, nodeId)
+      .first();
+    if (!holds) return c.json({ error: 'not_holding' }, 403);
+  }
+  const commitSha = typeof body?.commitSha === 'string' && /^[0-9a-f]{40}$/i.test(body.commitSha) ? body.commitSha : undefined;
+  const out = await finishDeploy(c.env, c.req.param('slug'), c.req.param('id'), {
+    ticketId: Number.isInteger(ticketId) && ticketId > 0 ? ticketId : undefined,
+    commitSha,
+  });
+  if ('error' in out) return c.json({ error: out.error }, out.error === 'not_found' ? 404 : 409);
+  if (out.deployId && Number.isInteger(ticketId) && ticketId > 0) {
+    await c.env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 0, ?)`)
+      .bind(ticketId, `The preview has this change: ${out.previewUrl}. Nothing is live until it is published.`, now())
+      .run();
+  }
+  return c.json({ ok: true, deployId: out.deployId, previewUrl: out.previewUrl });
+});
+
 node.post('/node/heartbeat', async (c) => {
   const body = (await c.req.json().catch(() => null)) as { node?: unknown; running?: unknown } | null;
   const report = cleanNodeReport(body?.node);
@@ -125,16 +195,16 @@ node.post('/node/claim', async (c) => {
   if (!nodeId) return c.json({ error: 'bad_node' }, 400);
   const { claim, reason } = await claimForNode(c.env, nodeId);
   if (!claim) return c.json({ ticket: null, reason });
-  // Tell the node to send changed files back, so they can reach the preview.
+  // A hosted site gets a build + preview deploy after the run; `site` names it.
   const slug = (claim as { ticket?: { slug?: string | null } }).ticket?.slug;
   const site = slug
     ? await c.env.DB.prepare(
-        `SELECT 1 FROM project_sites s JOIN projects p ON p.id = s.project_id WHERE p.slug = ? AND s.state = 'ready'`,
+        `SELECT s.slug FROM sites s JOIN projects p ON p.id = s.project_id WHERE p.slug = ? AND s.state = 'ready' AND s.host = 'ours'`,
       )
         .bind(slug)
-        .first()
+        .first<{ slug: string }>()
     : null;
-  return c.json({ ...claim, preview: Boolean(site) });
+  return c.json({ ...claim, site: site?.slug ?? null });
 });
 
 /**
@@ -305,7 +375,6 @@ node.post('/node/runs/:runId/result', async (c) => {
   if (!done.ok) return c.json({ error: done.error }, done.error === 'not_found' ? 404 : 409);
 
   const id = run.ticket_id;
-  if (report.ok && !done.late && body?.files !== undefined) c.executionCtx.waitUntil(toPreview(c.env, id, body.files, done.title));
   if ((await getSettings(c.env)).notifyRunFinished) c.executionCtx.waitUntil(
     mailAli(c.env, {
       subject: `[#${id}] ${report.executor} on ${nodeId} ${done.late ? 'stopped' : report.ok ? 'finished' : 'failed'}: ${done.title}`,
@@ -318,31 +387,3 @@ node.post('/node/runs/:runId/result', async (c) => {
   );
   return c.json({ ok: true, runCostUsd: report.costUsd });
 });
-
-/**
- * Apply a finished run's files to its project's preview branch, and say what
- * happened in the thread. The client sees the preview link; production waits
- * for a publish. A failure is a private note for Ali — the run itself stands.
- */
-async function toPreview(env: HonoEnv['Bindings'], ticketId: number, files: unknown, title: string) {
-  const ticket = await env.DB.prepare('SELECT project_id FROM tickets WHERE id = ?').bind(ticketId).first<{ project_id: string | null }>();
-  if (!ticket?.project_id) return;
-  const note = (body: string, internal: boolean) =>
-    env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, ?, ?)`)
-      .bind(ticketId, body, internal ? 1 : 0, now())
-      .run();
-  const cleaned = cleanPreviewFiles(files);
-  if ('error' in cleaned) {
-    await note(`Not sent to the preview: ${cleaned.error}. The work is on the node's local branch.`, true);
-    return;
-  }
-  try {
-    const out = await pushToPreview(env, ticket.project_id, cleaned.files, `#${ticketId}: ${title}`);
-    await note(
-      `The preview has this change${out.previewUrl ? `: ${out.previewUrl}` : ''}. Nothing is live until it is published.`,
-      false,
-    );
-  } catch (error) {
-    await note(`Sending ${cleaned.files.length} file(s) to the preview failed: ${(error as Error).message}`, true);
-  }
-}

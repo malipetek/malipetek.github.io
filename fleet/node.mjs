@@ -35,7 +35,9 @@
  * Config: $MALIPETEK_NODE_CONFIG or ~/.config/malipetek-runner/config.json
  * (see fleet/config.example.json). Folder paths live only in that file.
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, cpSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { homedir, hostname, platform } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { ACCOUNT, DSH_FAMILY, EXECUTORS, agentProfileReady, fallbackChain, findSessionLog, isQuotaError, run } from './executors.mjs';
@@ -238,9 +240,155 @@ async function syncProjects(config) {
         untrusted: path.startsWith(config.cloneRoot),
       };
     } else missing.push(project.slug);
+    // An allocating site has no repo yet: a node makes it from the template
+    // and reports it back (the Worker has no git credentials).
+    if (project.needsRepo) await provisionSiteRepo(config, project.slug, project.needsRepo);
   }
   if (missing.length) log(`no local folder for: ${missing.join(', ')}`);
 }
+
+/* ————— site repos and deploys ————— */
+
+const TEMPLATE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates');
+const DEPLOY_LIMITS = { files: 1000, fileBytes: 10 * 1024 * 1024, totalBytes: 100 * 1024 * 1024 };
+const CONTENT_TYPES = {
+  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.map': 'application/json',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+  '.webp': 'image/webp', '.avif': 'image/avif', '.ico': 'image/x-icon', '.woff': 'font/woff',
+  '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf', '.txt': 'text/plain; charset=utf-8',
+  '.xml': 'application/xml', '.pdf': 'application/pdf', '.webmanifest': 'application/manifest+json',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.wasm': 'application/wasm',
+};
+const repoCreateFailures = new Map(); // slug → last failure, so a missing gh is not retried every sync
+
+/**
+ * A site waits in 'allocating' until its source repo exists. This node makes
+ * it from the template with `gh` (its own GitHub sign-in — the Worker has no
+ * repo credentials), pushes main and preview, and reports it back.
+ */
+async function provisionSiteRepo(config, slug, needsRepo) {
+  if (repoCreateFailures.has(slug) && Date.now() - repoCreateFailures.get(slug) < 30 * 60_000) return;
+  const owner = config.githubOwner ?? 'malipetek';
+  if (!(await onPath('gh'))) {
+    repoCreateFailures.set(slug, Date.now());
+    log(`site ${needsRepo.site}: gh is not on PATH — cannot create the repo`);
+    return;
+  }
+  const template = join(TEMPLATE_ROOT, String(needsRepo.template ?? 'site').replace(/[^a-z0-9-]/g, ''));
+  const source = existsSync(template) ? template : join(TEMPLATE_ROOT, 'site');
+  if (!existsSync(source)) return;
+  const dir = join(config.worktreeRoot, `.site-${needsRepo.site}`);
+  try {
+    rmSync(dir, { recursive: true, force: true });
+    cpSync(source, dir, { recursive: true });
+    rmSync(join(dir, 'node_modules'), { recursive: true, force: true });
+    const g = (...args) => git(dir, ...args);
+    await g('init', '-q', '-b', 'main');
+    await g('add', '-A');
+    await g('-c', 'user.email=node@malipetek.dev', '-c', 'user.name=malipetek.dev', 'commit', '-qm', 'From the malipetek.dev site template');
+    const repo = `https://github.com/${owner}/${needsRepo.site}`;
+    const made = await run('gh', ['repo', 'create', `${owner}/${needsRepo.site}`, '--private', '--source', dir, '--push'], { env: { ...process.env, GH_PROMPT_DISABLED: '1' } });
+    if (made.code !== 0) {
+      if (/already exists|Name already exists/i.test(made.stderr)) {
+        await g('remote', 'add', 'origin', `git@github.com:${owner}/${needsRepo.site}.git`).catch(() => {});
+        const pushed = await netGit(dir, ['push', '-u', 'origin', 'main']);
+        if (pushed.code !== 0) throw new Error(`push to existing repo failed: ${lastLine(pushed.stderr)}`);
+      } else throw new Error(lastLine(made.stderr) || `gh repo create failed (${made.code})`);
+    }
+    await g('branch', 'preview');
+    const preview = await netGit(dir, ['push', '-u', 'origin', 'preview']);
+    if (preview.code !== 0) throw new Error(`preview push failed: ${lastLine(preview.stderr)}`);
+    await api(config, 'POST', `/node/sites/${needsRepo.site}/repo`, { repo });
+    // The node holds the folder from now on, so work on the project can claim.
+    config.projects[slug] = { path: dir, baseRef: 'origin/preview', explicit: false, fetch: true, untrusted: false };
+    repoCreateFailures.delete(slug);
+    log(`site ${needsRepo.site}: repo created at ${repo}`);
+  } catch (error) {
+    repoCreateFailures.set(slug, Date.now());
+    log(`site ${needsRepo.site}: repo not created: ${error.message}`);
+  }
+}
+
+const sha256File = (buf) => createHash('sha256').update(buf).digest('hex');
+
+/** The output dir as a deploy manifest: relative path → sha, size, content type. */
+function deployManifest(dir) {
+  const files = [];
+  let total = 0;
+  const walk = (root, prefix) => {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (entry.name !== '.git' && entry.name !== 'node_modules' && entry.name !== '.malipetek-files') walk(join(root, entry.name), rel);
+        continue;
+      }
+      const buf = readFileSync(join(root, entry.name));
+      const ext = entry.name.slice(entry.name.lastIndexOf('.')).toLowerCase();
+      total += buf.length;
+      files.push({ path: rel, sha256: sha256File(buf), size: buf.length, ...(CONTENT_TYPES[ext] ? { type: CONTENT_TYPES[ext] } : {}), buf });
+    }
+  };
+  walk(dir, '');
+  return { files, total };
+}
+
+/**
+ * Build the worktree's site (the repo's own malipetek.site.json says how) and
+ * deploy the output as the preview. Returns a line for the summary, never
+ * throws: a failed build is said, not run-ending.
+ */
+async function buildAndDeploy(config, claim, dir, head, steps) {
+  const ticket = claim.ticket;
+  try {
+    const conf = existsSync(join(dir, 'malipetek.site.json'))
+      ? JSON.parse(readFileSync(join(dir, 'malipetek.site.json'), 'utf8'))
+      : null;
+    const output = conf?.output ?? (existsSync(join(dir, 'package.json')) ? 'dist' : '.');
+    if (conf?.build || (!conf && existsSync(join(dir, 'package.json')))) {
+      const command = conf?.build ?? 'npm ci && npm run build';
+      steps.push('node', `Site build: ${command}`);
+      const built = await run('/bin/sh', ['-c', command], { cwd: dir, env: { ...process.env, CI: '1' }, signal: AbortSignal.timeout(10 * 60_000) });
+      if (built.code !== 0) {
+        steps.push('error', `Site build failed: ${lastLine(built.stderr) || `exit ${built.code}`}`);
+        return `site build failed (${lastLine(built.stderr).slice(0, 200)})`;
+      }
+    }
+    const outDir = join(dir, output);
+    if (!existsSync(outDir)) {
+      steps.push('error', `Site build: no ${output}/ output`);
+      return `site build produced no ${output}/`;
+    }
+    const { files, total } = deployManifest(outDir);
+    if (!files.length) return 'site build produced an empty output';
+    if (files.length > DEPLOY_LIMITS.files || total > DEPLOY_LIMITS.totalBytes || files.some((f) => f.size > DEPLOY_LIMITS.fileBytes)) {
+      steps.push('error', `Site output over the deploy limits (${files.length} files, ${Math.round(total / 1048576)} MB)`);
+      return 'site output over the deploy limits';
+    }
+    const made = await api(config, 'POST', `/node/sites/${claim.site}/deploys`, {
+      files: files.map(({ buf, ...f }) => f),
+    });
+    for (const sha of made.needed ?? []) {
+      const file = files.find((f) => f.sha256 === sha);
+      const res = await fetch(`${config.endpoint}/node/sites/${claim.site}/deploys/${made.deployId}/files/${sha}`, {
+        method: 'PUT',
+        headers: { authorization: `Bearer ${config.token}`, 'content-type': 'application/octet-stream', 'content-length': String(file.size) },
+        body: file.buf,
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!res.ok) throw new Error(`blob upload refused: HTTP ${res.status}`);
+    }
+    const done = await api(config, 'POST', `/node/sites/${claim.site}/deploys/${made.deployId}/finish`, {
+      ticketId: ticket.id, commitSha: head, nodeId: config.nodeId,
+    });
+    steps.push('node', `Preview deployed: ${done.previewUrl}`);
+    return `preview at ${done.previewUrl}`;
+  } catch (error) {
+    steps.push('error', `Site deploy failed: ${error.message}`);
+    return `site deploy failed (${error.message.slice(0, 200)})`;
+  }
+}
+
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const REPO_RE = /^(https:\/\/[^\s]+|git@[^\s:]+:[^\s]+)$/i;
@@ -541,7 +689,7 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
         runId: claim.runId,
         pushTo,
         changed,
-        hostedPreview: Boolean(claim.preview),
+        hostedPreview: Boolean(claim.site),
       })
     : { to: null, why: '' };
   const commit = changed || share.to === 'origin' ? head : '';
@@ -554,9 +702,15 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
   if (share.why) steps.push('error', `Push: ${share.why}`);
   const diffStat = changed ? await git(dir, 'diff', '--stat', `${base}..HEAD`) : '';
   const diff = changed ? await git(dir, 'diff', `${base}..HEAD`) : '';
-  // A hosted site: hand the changed files back so the Worker can put them on
-  // the preview branch (the node pushes only the ticket branch, never the preview).
-  const preview = claim.preview && changed ? await changedFiles(dir, base) : undefined;
+  // A hosted site: the work goes to the preview branch, and the built output
+  // becomes the preview deploy so the client can look at it right away.
+  let previewNote = '';
+  if (claim.site && ok && changed) {
+    const pushed = await netGit(dir, ['push', 'origin', '+HEAD:refs/heads/preview']);
+    if (pushed.code !== 0) steps.push('error', `Preview branch push failed: ${lastLine(pushed.stderr)}`);
+    else steps.push('node', 'Preview branch updated');
+    previewNote = await buildAndDeploy(config, claim, dir, head, steps);
+  }
   const cost = typeof result.costUsd === 'number' ? ` · $${result.costUsd.toFixed(2)}` : '';
   const turns = result.turns ? ` · ${result.turns} turns` : '';
   // A Harness run's conversation goes to the portal before the result does:
@@ -569,7 +723,7 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
 
   return {
     ok,
-    summary: `${signal.aborted ? `Stopped: ${signal.reason ?? 'cancelled'}.\n\n` : ''}${fellBack}${result.text}${verify}\n\n— ${used} on ${config.nodeId}${turns}${cost}${changed ? '' : ' · no file changes'}${share.why ? `\nPush: ${share.why}` : ''}\nLocal worktree: ${dir}`,
+    summary: `${signal.aborted ? `Stopped: ${signal.reason ?? 'cancelled'}.\n\n` : ''}${fellBack}${result.text}${verify}\n\n— ${used} on ${config.nodeId}${turns}${cost}${changed ? '' : ' · no file changes'}${share.why ? `\nPush: ${share.why}` : ''}${previewNote ? `\nSite: ${previewNote}` : ''}\nLocal worktree: ${dir}`,
     branch: changed ? branch : undefined,
     ...(commit ? { commit } : {}),
     ...(share.to ? { sharedTo: share.to, ...(share.to === 'origin' ? { sharedRef: shared } : {}) } : {}),
@@ -579,7 +733,6 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
     executor: used,
     model: result.model,
     ...session,
-    ...(preview ? { files: preview.files } : {}),
   };
 }
 
@@ -729,41 +882,6 @@ function restoreAgentSettings(parked) {
     renameSync(to, from); // overwrites anything the agent wrote there
   }
   rmSync(parked.away, { recursive: true, force: true });
-}
-
-const PREVIEW_LIMITS = { files: 40, fileBytes: 512 * 1024, totalBytes: 2 * 1024 * 1024 };
-
-/**
- * The full content of every file the run added or changed, within the
- * preview's limits. Deletions and binary files cannot go through the preview
- * API; they are left out and said so in the summary.
- */
-async function changedFiles(dir, base) {
-  const out = await git(dir, 'diff', '--name-status', '--no-renames', '-z', `${base}..HEAD`);
-  const parts = out.split('\0').filter(Boolean);
-  const files = [];
-  const skipped = [];
-  let total = 0;
-  for (let i = 0; i + 1 < parts.length; i += 2) {
-    const [status, path] = [parts[i], parts[i + 1]];
-    if (status === 'D') {
-      skipped.push(`${path} (deleted)`);
-      continue;
-    }
-    const buf = readFileSync(join(dir, path));
-    if (buf.includes(0)) {
-      skipped.push(`${path} (binary)`);
-      continue;
-    }
-    total += buf.length;
-    files.push({ path, content: buf.toString('utf8') });
-  }
-  if (files.length > PREVIEW_LIMITS.files || total > PREVIEW_LIMITS.totalBytes || files.some((f) => f.content.length > PREVIEW_LIMITS.fileBytes)) {
-    log(`changes are larger than the preview takes (${files.length} files, ${Math.round(total / 1024)} KB) — not sent`);
-    return undefined;
-  }
-  if (skipped.length) log(`not sent to the preview: ${skipped.join(', ')}`);
-  return files.length ? { files, skipped } : undefined;
 }
 
 /* ————— the node ————— */

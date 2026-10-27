@@ -74,13 +74,13 @@ import {
 import {
   advanceSite,
   getSite,
-  publishPreview,
-  resendSignIn,
+  listDeploys,
+  publishSite,
+  rollbackSite,
   siteView,
   startSite,
   type SiteRow,
 } from './sites.ts';
-import { PlatformError } from './platform.ts';
 import { checkUploads, fileCount, fileResponse, FILE_LIMITS, sizeText, storeFiles, withFiles, type FileMeta, type Upload } from './files.ts';
 
 export { now };
@@ -469,7 +469,7 @@ async function usageByUser(env: Env, userId?: string): Promise<Map<string, Usage
 
 /** Hosted sites by project id, for the views that list projects. */
 async function sitesById(env: Env): Promise<Map<string, SiteRow>> {
-  const { results } = await env.DB.prepare('SELECT * FROM project_sites').all<SiteRow>();
+  const { results } = await env.DB.prepare('SELECT * FROM sites').all<SiteRow>();
   return new Map((results ?? []).map((row) => [row.project_id, row]));
 }
 
@@ -726,7 +726,7 @@ portal.get('/portal/me', async (c) => {
     projects: (projects ?? []).map((project) => {
       const kind = isProjectKind(project.kind) ? project.kind : 'existing';
       const repoKind = isRepoKind(project.repo_kind) ? project.repo_kind : 'none';
-      const site = siteView(sites.get(project.id));
+      const site = siteView(sites.get(project.id), settings.sitesDomain);
       return {
         id: project.id,
         slug: project.slug,
@@ -929,21 +929,26 @@ const MAX_SITE_STARTS_PER_DAY = 5;
 /** The project, when the caller is linked to it. Uniform 404 otherwise. */
 async function ownProject(c: Ctx) {
   return c.env.DB.prepare(
-    `SELECT p.id, p.name, p.kind FROM projects p JOIN user_projects up ON up.project_id = p.id
+    `SELECT p.id, p.slug, p.name, p.kind FROM projects p JOIN user_projects up ON up.project_id = p.id
       WHERE p.id = ? AND up.user_id = ?`,
   )
     .bind(c.req.param('id'), c.get('user').id)
-    .first<{ id: string; name: string; kind: string }>();
+    .first<{ id: string; slug: string; name: string; kind: string }>();
 }
 
-const platformError = (c: Ctx, error: unknown) =>
-  reply(c, { error: 'platform', message: error instanceof PlatformError ? error.message : 'The hosting platform did not answer.' }, 502);
+const siteError = (c: Ctx, error: unknown) => {
+  const code = (error as { error?: string })?.error ?? '';
+  if (code === 'not_found' || code === 'not_ready' || code === 'unknown_deploy') {
+    return reply(c, { error: code }, code === 'unknown_deploy' ? 400 : 409);
+  }
+  return reply(c, { error: 'site', message: (error as Error)?.message ?? 'The site could not be set up.' }, 502);
+};
 
 /**
- * Set up the hosted site for a project we build. The platform mails a sign-in
- * link to the address this client already verified; the site is created as
- * soon as it is opened. Only a "new" project gets one: an existing stack is
- * the client's to bring, with its own credentials.
+ * Set up the hosted site for a project we build: a slug on malipetek.online,
+ * a placeholder page at once, then a fleet node makes the source repo. Only a
+ * "new" project gets one: an existing stack is the client's to bring, with
+ * its own credentials.
  */
 portal.post('/portal/projects/:id/site', async (c) => {
   const project = await ownProject(c);
@@ -954,10 +959,10 @@ portal.post('/portal/projects/:id/site', async (c) => {
     return reply(c, { error: 'rate_limited' }, 429);
   }
   try {
-    const site = await startSite(c.env, user, project.id);
+    const site = await startSite(c.env, user, project);
     return reply(c, { site: siteView(site) }, 201);
   } catch (error) {
-    return platformError(c, error);
+    return siteError(c, error);
   }
 });
 
@@ -965,25 +970,12 @@ portal.post('/portal/projects/:id/site', async (c) => {
 portal.get('/portal/projects/:id/site', async (c) => {
   const project = await ownProject(c);
   if (!project) return reply(c, { error: 'not_found' }, 404);
+  const { sitesDomain } = await getSettings(c.env);
   let site = await getSite(c.env, project.id);
   if (site && site.state !== 'ready' && site.state !== 'failed' && now() - site.updated_at >= 4) {
     site = await advanceSite(c.env, project.id);
   }
-  return reply(c, { site: siteView(site) });
-});
-
-/** A fresh sign-in link, when the first expired or went to spam. */
-portal.post('/portal/projects/:id/site/signin', async (c) => {
-  const project = await ownProject(c);
-  if (!project) return reply(c, { error: 'not_found' }, 404);
-  const user = c.get('user');
-  if (await isRateLimited(c.env, user.id, 'site-signin', 5, 60 * 60)) return reply(c, { error: 'rate_limited' }, 429);
-  try {
-    await resendSignIn(c.env, user);
-    return reply(c, { ok: true });
-  } catch (error) {
-    return platformError(c, error);
-  }
+  return reply(c, { site: siteView(site, sitesDomain) });
 });
 
 /**
@@ -995,7 +987,8 @@ portal.post('/portal/projects/:id/site/publish', async (c) => {
   if (!project) return reply(c, { error: 'not_found' }, 404);
   if (!(await getSettings(c.env)).clientPublish) return reply(c, { error: 'forbidden' }, 403);
   try {
-    const out = await publishPreview(c.env, project.id, `Published by ${c.get('user').email}`);
+    const out = await publishSite(c.env, project.id);
+    if ('error' in out) return siteError(c, out);
     c.executionCtx.waitUntil(
       mailAli(c.env, {
         subject: `${project.name} was published by its client`,
@@ -1004,8 +997,19 @@ portal.post('/portal/projects/:id/site/publish', async (c) => {
     );
     return reply(c, { ok: true, productionUrl: out.productionUrl });
   } catch (error) {
-    return platformError(c, error);
+    return siteError(c, error);
   }
+});
+
+/** Roll production back to an older deploy, when Ali lets clients do that. */
+portal.post('/portal/projects/:id/site/rollback', async (c) => {
+  const project = await ownProject(c);
+  if (!project) return reply(c, { error: 'not_found' }, 404);
+  if (!(await getSettings(c.env)).clientPublish) return reply(c, { error: 'forbidden' }, 403);
+  const body = await readJson<{ deployId?: unknown }>(c);
+  const out = await rollbackSite(c.env, project.id, typeof body?.deployId === 'string' ? body.deployId : '');
+  if ('error' in out) return siteError(c, out);
+  return reply(c, { ok: true, productionUrl: out.productionUrl });
 });
 
 portal.get('/portal/tickets', async (c) => {
@@ -1720,7 +1724,8 @@ portal.get('/admin/clients', async (c) => {
 });
 
 portal.get('/admin/projects', async (c) => {
-  const [projects, slugs, counts, sites] = await Promise.all([
+  const [{ sitesDomain }, projects, slugs, counts, sites] = await Promise.all([
+    getSettings(c.env),
     c.env.DB.prepare(
       `SELECT id, slug, name, kind, brief, repo, repo_kind, created_by, onboarded_at, created_at
          FROM projects ORDER BY name`,
@@ -1739,15 +1744,13 @@ portal.get('/admin/projects', async (c) => {
       const kind = isProjectKind(project.kind) ? project.kind : 'existing';
       const repoKind = isRepoKind(project.repo_kind) ? project.repo_kind : 'none';
       const brief = parseBrief(project.brief);
-      const row = sites.get(project.id);
-      const site = siteView(row);
+      const site = siteView(sites.get(project.id), sitesDomain);
       return {
         ...project,
         brief,
         kind,
         repoKind,
-        // Ali also sees what the platform last said, to debug a stuck site.
-        site: site ? { ...site, siteId: row?.site_id ?? null, lastPayload: row?.last_payload ?? null } : null,
+        site,
         setup: setupFor({
           kind,
           brief,
@@ -1764,27 +1767,39 @@ portal.get('/admin/projects', async (c) => {
   });
 });
 
-/** Retry a stopped site: keep the platform's site when one exists, so a retry never makes a second. */
+/** Retry a stopped site: back to allocating, so whatever it waited for is tried again. */
 portal.post('/admin/projects/:id/site/retry', async (c) => {
   const env = c.env;
   const site = await getSite(env, c.req.param('id'));
   if (!site) return reply(c, { error: 'not_found' }, 404);
   await env.DB.prepare(
-    `UPDATE project_sites SET state = ?, operation_id = NULL, error = NULL, failure_alerted_at = NULL, updated_at = ?
+    `UPDATE sites SET state = 'allocating', error = NULL, failure_alerted_at = NULL, updated_at = ?
       WHERE project_id = ?`,
   )
-    .bind(site.site_id ? 'creating' : 'signin', now(), site.project_id)
+    .bind(now(), site.project_id)
     .run();
-  return reply(c, { site: siteView(await advanceSite(env, site.project_id)) });
+  const { sitesDomain } = await getSettings(env);
+  return reply(c, { site: siteView(await advanceSite(env, site.project_id), sitesDomain) });
+});
+
+/** The deploy history of a site: what publish and rollback point at. */
+portal.get('/admin/projects/:id/site/deploys', async (c) => {
+  const site = await getSite(c.env, c.req.param('id'));
+  if (!site) return reply(c, { error: 'not_found' }, 404);
+  return reply(c, { deploys: await listDeploys(c.env, site.project_id) });
 });
 
 portal.post('/admin/projects/:id/site/publish', async (c) => {
-  try {
-    const out = await publishPreview(c.env, c.req.param('id'), 'Published by Ali from the admin view');
-    return reply(c, { ok: true, productionUrl: out.productionUrl });
-  } catch (error) {
-    return reply(c, { error: 'platform', message: (error as Error).message }, 502);
-  }
+  const out = await publishSite(c.env, c.req.param('id'));
+  if ('error' in out) return siteError(c, out);
+  return reply(c, { ok: true, productionUrl: out.productionUrl });
+});
+
+portal.post('/admin/projects/:id/site/rollback', async (c) => {
+  const body = await readJson<{ deployId?: unknown }>(c);
+  const out = await rollbackSite(c.env, c.req.param('id'), typeof body?.deployId === 'string' ? body.deployId : '');
+  if ('error' in out) return siteError(c, out);
+  return reply(c, { ok: true, productionUrl: out.productionUrl });
 });
 
 portal.post('/admin/projects', async (c) => {

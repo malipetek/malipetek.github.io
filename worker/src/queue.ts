@@ -53,8 +53,8 @@ export const SETTING_DEFAULTS = {
   notifyRunFinished: true,
   /** Priority a new system task gets when the form does not say. */
   defaultPriority: 0,
-  /** The domain hosted sites live under: `<site>.<domain>`, `<site>-preview.<domain>`. */
-  sitesDomain: 'gptflare.site',
+  /** The domain hosted sites live under: `<site>.<domain>`, `<site>--preview.<domain>`. */
+  sitesDomain: 'malipetek.online',
   /** A client may publish their own preview to production. Off = only Ali publishes. */
   clientPublish: false,
 };

@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "malipetek-sites",
+  "account_id": "a60af2542282e283101650bebed42dcf",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Every client site: <slug>.malipetek.online (production) and
+  // <slug>--preview.malipetek.online (preview). One level deep each, so the
+  // free Universal SSL wildcard covers both. The apex redirects to the portal.
+  "routes": ["*.malipetek.online/*", "malipetek.online/*"],
+
+  // The deploy store, written by malipetek-intercom and the fleet nodes:
+  //   sites/<slug>/deploys/<deployId>/manifest.json   path → { sha, size, type }
+  //   sites/<slug>/blobs/<sha256>                     file content
+  "r2_buckets": [{ "binding": "SITES", "bucket_name": "malipetek-sites" }],
+
+  // Read-only: slug → which deploy each channel points at. Written by
+  // malipetek-intercom; this Worker never writes it.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "malipetek-portal",
+      "database_id": "d659e9f0-75fb-4b7a-8611-ca10b0218189",
+    },
+  ],
+}

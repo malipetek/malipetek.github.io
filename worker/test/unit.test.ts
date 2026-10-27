@@ -10,7 +10,7 @@ import { verifySender } from '../src/mailauth.ts';
 import { budgetLeft, cleanExecutorPin, cleanNodeReport, CLIENT_EXECUTOR, EXECUTOR_CATALOG } from '../src/queue.ts';
 import { normalizeReport, sharedLine } from '../src/runs.ts';
 import { setupFor, slugify, type SetupInput } from '../src/setup.ts';
-import { cleanPreviewFiles, operationOutcome, siteUrls } from '../src/sites.ts';
+import { cleanDeployManifest, cleanSiteSlug } from '../src/sites.ts';
 import { checkUploads, cleanFileName, fileType } from '../src/files.ts';
 
 /* —— mail: who may file a ticket by email —— */
@@ -55,45 +55,37 @@ test('mail: the receiver’s ARC results count when they come first', () => {
   assert.equal(ok.ok, true);
 });
 
-/* —— preview files —— */
+/* —— deploy manifests —— */
 
-test('preview: files within the limits pass', () => {
-  const out = cleanPreviewFiles([{ path: 'src/pages/a.astro', content: 'x' }]);
+const blob = { sha256: 'a'.repeat(64), size: 10 };
+
+test('deploy: files within the limits pass', () => {
+  const out = cleanDeployManifest([{ path: 'index.html', ...blob }]);
   assert.ok('files' in out && out.files.length === 1);
 });
 
-test('preview: traversal, .git, absolute paths and oversize are refused', () => {
+test('deploy: traversal, .git, absolute paths, bad hashes and oversize are refused', () => {
   for (const files of [
-    [{ path: '../etc/passwd', content: 'x' }],
-    [{ path: 'a/../../b', content: 'x' }],
-    [{ path: '.git/config', content: 'x' }],
-    [{ path: '/etc/passwd', content: 'x' }],
-    [{ path: 'big.txt', content: 'x'.repeat(512 * 1024 + 1) }],
-    Array.from({ length: 41 }, (_, i) => ({ path: `f${i}.txt`, content: 'x' })),
+    [{ path: '../etc/passwd', ...blob }],
+    [{ path: 'a/../../b', ...blob }],
+    [{ path: '.git/config', ...blob }],
+    [{ path: '/etc/passwd', ...blob }],
+    [{ path: 'big.bin', sha256: 'a'.repeat(64), size: 10 * 1024 * 1024 + 1 }],
+    [{ path: 'x.html', sha256: 'notasha', size: 1 }],
+    [{ path: 'x.html', sha256: 'a'.repeat(64), size: -1 }],
+    [{ path: 'a.html', ...blob }, { path: 'a.html', ...blob }],
+    Array.from({ length: 1001 }, (_, i) => ({ path: `f${i}.txt`, ...blob })),
     [],
   ]) {
-    assert.ok('error' in cleanPreviewFiles(files), JSON.stringify(files).slice(0, 60));
+    assert.ok('error' in cleanDeployManifest(files), JSON.stringify(files).slice(0, 60));
   }
 });
 
-/* —— reading the platform's replies —— */
-
-test('platform: operation outcomes', () => {
-  assert.deepEqual(operationOutcome({ status: 'running' }), { done: false, failed: null });
-  assert.deepEqual(operationOutcome({ status: 'Succeeded' }), { done: true, failed: null });
-  assert.equal(operationOutcome({ operation: { status: 'failed' }, error: { message: 'boom' } }).failed, 'boom');
-  assert.equal(operationOutcome({ done: true }).done, true);
-});
-
-test('platform: site URLs from explicit fields win, the slug fills the gaps', () => {
-  const explicit = siteUrls({ previewUrl: 'https://p.example', productionUrl: 'https://x.example/' }, 'gptflare.site');
-  assert.equal(explicit.preview, 'https://p.example');
-  assert.equal(explicit.production, 'https://x.example');
-  assert.equal(explicit.editor, 'https://x.example/keystatic');
-  const bySlug = siteUrls({ site: { slug: 'rosa' }, repository: { htmlUrl: 'https://github.com/o/rosa' } }, 'sites.example');
-  assert.equal(bySlug.preview, 'https://rosa-preview.sites.example');
-  assert.equal(bySlug.repo, 'https://github.com/o/rosa');
-  assert.equal(siteUrls({}, 'gptflare.site').preview, null);
+test('deploy: site slugs refuse the preview marker and reserved names', () => {
+  assert.equal(cleanSiteSlug('rosa-florist'), 'rosa-florist');
+  for (const bad of ['www', 'api', 'admin', 'portal', 'preview', 'a--b', '-x', 'x-', 'a b', 'x.y', '', null, 42]) {
+    assert.equal(cleanSiteSlug(bad), null, String(bad));
+  }
 });
 
 /* —— budgets —— */
@@ -117,7 +109,7 @@ const base: SetupInput = {
   ticketCount: 1,
   clientCreated: true,
 };
-const ready = { state: 'ready' as const, previewUrl: 'https://p', editorUrl: 'https://e', productionUrl: 'https://l', customDomain: null, repoUrl: 'https://r', error: null, previewUpdatedAt: null, updatedAt: 0 };
+const ready = { state: 'ready' as const, slug: 'rosa', previewUrl: 'https://rosa--preview.malipetek.online', productionUrl: 'https://rosa.malipetek.online', customDomain: null, error: null, previewDeploy: 'd1', productionDeploy: 'd1', updatedAt: 0 };
 
 test('setup: a new project without a site is not autonomous', () => {
   const s = setupFor(base);

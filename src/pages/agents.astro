@@ -15,23 +15,18 @@ const KB_TOOLS = [
   { name: 'update_knowledge', auth: 'ack_ key', text: 'Patch an entry this key authored.' },
 ];
 
-const PLATFORM_TOOLS = [
-  { name: 'platform_status', auth: 'owner', text: 'Control-plane reachability and platform-key health.' },
-  { name: 'platform_start_auth', auth: 'owner', text: 'Email the owner a magic link; returns the authRequestId every later call needs.' },
-  { name: 'platform_auth_status', auth: 'owner', text: 'Poll the sign-in until it is verified.' },
-  { name: 'platform_list_sites', auth: 'owner', text: 'Every site with status, urls and worker names.' },
-  { name: 'platform_site_state / _status / _preview_status', auth: 'owner', text: 'Git state, deploy status, preview build status.' },
-  { name: 'platform_list_files / platform_read_file', auth: 'owner', text: 'Inspect a site repo before editing it.' },
-  { name: 'platform_edit_preview', auth: 'owner', text: 'Write files to the preview branch — preview-first, never straight to production.' },
-  { name: 'platform_approve_preview', auth: 'owner', text: 'Promote a reviewed preview. The human-approval gate.' },
-  { name: 'platform_create_site / platform_provision_site', auth: 'owner', text: 'Draft a site from a brief, then turn it into a repo and a build project.' },
-  { name: 'platform_operation_status', auth: 'owner', text: 'Poll long-running operations with their user-safe envelope.' },
+const PORTAL_TOOLS = [
+  { name: 'portal_projects / portal_requests / portal_request', auth: 'client key', text: 'The account\'s projects and requests, with status and cost.' },
+  { name: 'portal_file_request', auth: 'client key', text: 'File a request for Ali — nothing starts until he reads it.' },
+  { name: 'portal_reply', auth: 'client key', text: 'Add a message to a request\'s conversation.' },
+  { name: 'portal_set_budget', auth: 'client key', text: 'Raise, lower or remove a request\'s budget.' },
+  { name: 'portal_withdraw', auth: 'client key', text: 'Take back a request Ali has not approved yet.' },
 ];
 ---
 
 <Base
   title="Connect your agent — M. Ali Petek"
-  description="One MCP endpoint for this site: a public agentic coding knowledgebase plus the GPTflare control plane. Works with ChatGPT apps, Claude, and any MCP client."
+  description="One MCP endpoint for this site: a public agentic coding knowledgebase plus the client portal. Works with ChatGPT apps, Claude, and any MCP client."
   current="/agents"
 >
   <main class="wrap kb">
@@ -41,8 +36,8 @@ const PLATFORM_TOOLS = [
       <p class="kb-lede">
         Everything here is reachable over one endpoint:
         <a href="/mcp"><code>https://malipetek.dev/mcp</code></a> — streamable HTTP, protocol
-        <code>2025-06-18</code>. The knowledgebase tools are open to anyone. The control-plane tools
-        belong to the owner and are gated twice (our admin session, then the platform's own sign-in).
+        <code>2025-06-18</code>. The knowledgebase tools are open to anyone. The portal tools work for a client
+        with an agent key they mint in the portal — they see exactly their own account.
       </p>
     </header>
 
@@ -62,12 +57,8 @@ const PLATFORM_TOOLS = [
         </p>
         <pre><code>Name:  malipetek.dev
 URL:   https://malipetek.dev/mcp
-Auth:  No authentication        # the public tools
-       Bearer &lt;portal-session&gt;   # the owner tools</code></pre>
-        <p>
-          The owner tier additionally needs the control plane's own sign-in — run
-          <code>platform_start_auth</code> once and open the emailed link.
-        </p>
+Auth:  No authentication    # the public tools
+       Bearer cat_…         # a client's agent key (portal → Connect an assistant)</code></pre>
 
         <h3>Claude, Cursor, anything else</h3>
         <p>
@@ -101,8 +92,8 @@ Auth:  No authentication        # the public tools
           <li>Every use updates <code>last_used_at</code>; revoking is one click, so a leaked key is visible and short-lived.</li>
         </ol>
         <p>
-          The control-plane tools are a third tier: the owner's portal session <em>and</em> the platform's own
-          per-conversation sign-in.
+          The portal tools are a third tier: the client's own agent key (<code>cat_…</code>), which they mint
+          and revoke in the portal. It sees exactly their own account — the same routes the browser uses.
         </p>
       </div>
     </section>
@@ -155,17 +146,17 @@ Auth:  No authentication        # the public tools
     </section>
 
     <section class="kb-block">
-      <h2>GPTflare control-plane tools</h2>
+      <h2>Client portal tools</h2>
       <div class="kb-prose">
         <p>
-          The <strong>GPTflare</strong> control plane creates and edits Astro + Keystatic sites: draft →
-          provision → preview → approve → production. Those operations used to be reachable only from a
-          Custom GPT through its Actions schema; they are now MCP tools, with the platform key held as a
-          Worker secret instead of living in a GPT configuration.
+          The <strong>portal</strong> is where clients file requests and watch them get done. An agent with a
+          client's key can do the same: file, reply, set a budget, withdraw — every one still waits for Ali
+          before work starts. Client sites are hosted on <code>malipetek.online</code>; a change lands on the
+          preview first and only goes live when it is published.
         </p>
       </div>
       <ul class="kb-tool-list">
-        {PLATFORM_TOOLS.map((tool) => (
+        {PORTAL_TOOLS.map((tool) => (
           <li>
             <code>{tool.name}</code>
             <span class="kb-tool-auth">{tool.auth}</span>
@@ -174,8 +165,8 @@ Auth:  No authentication        # the public tools
         ))}
       </ul>
       <p class="kb-entry-foot">
-        Control-plane calls need a per-conversation sign-in: run <code>platform_start_auth</code>, have the
-        owner open the emailed link, then pass the returned <code>authRequestId</code> to every later call.
+        A client mints a <code>cat_</code> key in the portal under <em>Connect an assistant</em> and passes it
+        as <code>Authorization: Bearer cat_…</code>, or connects over the OAuth flow (ChatGPT does this itself).
       </p>
     </section>
 
@@ -195,8 +186,7 @@ Auth:  No authentication        # the public tools
         </p>
         <p>
           Every tool carries MCP annotations, so a connector can tell reading from writing before it asks:
-          <code>readOnlyHint</code> is true for search, listing and every control-plane read, and
-          <code>destructiveHint</code> is set on approving a preview or resetting one.
+          <code>readOnlyHint</code> is true for search, listing and every portal read.
         </p>
       </div>
     </section>

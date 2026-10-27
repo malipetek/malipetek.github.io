@@ -198,9 +198,7 @@ export interface SetupInput {
 /** The code check: where the working copy comes from, and who supplies it. */
 function codeCheck(input: SetupInput): Pick<SetupCheck, 'state' | 'detail' | 'owner'> {
   if (input.kind === 'new') {
-    if (input.site?.repoUrl || (input.site?.state === 'ready' && input.repo)) {
-      return { state: 'ready', detail: 'The repo for your site exists.', owner: 'us' };
-    }
+    if (input.repo) return { state: 'ready', detail: 'The repo for your site exists.', owner: 'us' };
     if (input.site?.state === 'ready') return { state: 'ready', detail: 'Your site’s code is hosted with it.', owner: 'us' };
     return { state: 'pending', detail: 'We create it when your site is set up.', owner: 'us' };
   }
@@ -214,9 +212,9 @@ function codeCheck(input: SetupInput): Pick<SetupCheck, 'state' | 'detail' | 'ow
 }
 
 /**
- * Preview, editor and domain: facts about the hosted site. An existing project
- * we do not host has none of them, so they stay `unknown` — hosting someone
- * else's stack means they bring its credentials, not that a check is failing.
+ * Preview and domain: facts about the hosted site. An existing project we do
+ * not host has none of them, so they stay `unknown` — hosting someone else's
+ * stack means they bring its credentials, not that a check is failing.
  */
 function siteChecks(input: SetupInput): SetupCheck[] {
   const site = input.site;
@@ -232,37 +230,28 @@ function siteChecks(input: SetupInput): SetupCheck[] {
     if (input.kind !== 'new') {
       return [
         make('preview', 'Preview URL', 'us', true, 'unknown', 'Only for sites we host.'),
-        make('editor', 'Your editor', 'us', false, 'unknown', 'Only for sites we host.'),
         make('domain', 'Your domain', 'you', false, 'unknown', 'Only for sites we host.'),
       ];
     }
     return [
       make('preview', 'Preview URL', 'you', true, 'missing', 'Set up your site to get a preview link.'),
-      make('editor', 'Your editor', 'us', false, 'pending', 'Comes with your site.'),
       make('domain', 'Your domain', 'you', false, 'pending', 'Comes after your site is set up.'),
     ];
   }
   if (site.state === 'failed') {
     return [
       make('preview', 'Preview URL', 'us', true, 'missing', 'Setting up your site stopped. We have been told and will retry.'),
-      make('editor', 'Your editor', 'us', false, 'pending', 'Comes with your site.'),
       make('domain', 'Your domain', 'you', false, 'pending', 'Comes after your site is set up.'),
     ];
   }
   if (site.state !== 'ready') {
-    const waiting =
-      site.state === 'signin'
-        ? 'Open the sign-in link we emailed you; your site is made right after.'
-        : 'Your site is being made. This takes a few minutes.';
     return [
-      make('preview', 'Preview URL', site.state === 'signin' ? 'you' : 'us', true, 'pending', waiting),
-      make('editor', 'Your editor', 'us', false, 'pending', 'Comes with your site.'),
+      make('preview', 'Preview URL', 'us', true, 'pending', 'Your site is being made. The placeholder page is already up; the code follows.'),
       make('domain', 'Your domain', 'you', false, 'pending', 'Comes after your site is set up.'),
     ];
   }
   return [
     make('preview', 'Preview URL', 'us', true, site.previewUrl ? 'ready' : 'pending', site.previewUrl ? `Preview at ${site.previewUrl}` : 'Waiting for the preview address.'),
-    make('editor', 'Your editor', 'us', false, site.editorUrl ? 'ready' : 'pending', site.editorUrl ? `Edit your content at ${site.editorUrl}` : 'Waiting for the editor address.'),
     site.customDomain
       ? make('domain', 'Your domain', 'you', false, 'ready', `Live at ${site.customDomain}.`)
       : make('domain', 'Your domain', 'you', false, 'missing', `Optional: connect your own domain. Until then it lives at ${site.productionUrl ?? 'its own address'}.`),

@@ -6,11 +6,12 @@ import { handleInbound } from './inbound.ts';
 import { mailAli, siteUrl } from './portal.ts';
 import { reapExpired, takeNewOutages, takeNewStalls } from './queue.ts';
 import type { Env } from './shared.ts';
-import { advanceSites, takeNewSiteFailures } from './sites.ts';
+import { advanceSites, pruneDeploys, takeNewSiteFailures } from './sites.ts';
 
-/** Provisioning's half of the cron: sites nobody is watching still move, and a stop is said once. */
+/** Sites' half of the cron: allocating sites still move, dead deploys are pruned, and a stop is said once. */
 async function watchSites(env: Env) {
   await advanceSites(env);
+  await pruneDeploys(env);
   const failed = await takeNewSiteFailures(env);
   if (!failed.length) return;
   await mailAli(env, {
@@ -18,7 +19,7 @@ async function watchSites(env: Env) {
     text: [
       ...failed.map((f) => `${f.name} [${f.slug}]: ${f.error ?? 'no reason given'}`),
       '',
-      'The platform\'s last answer is in the admin views (Directory → the project). Retry from there.',
+      'Retry it from the admin views (Directory → the project).',
       `Admin: ${siteUrl(env)}/portal/admin`,
     ].join('\n'),
   });

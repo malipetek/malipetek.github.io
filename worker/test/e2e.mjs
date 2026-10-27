@@ -6,7 +6,7 @@
  *   pnpm test:e2e sites      only groups whose name contains "sites"
  *
  * Each run gets a throwaway state folder (its own D1, KV and rate limits, with
- * every migration applied), a mock GPTflare control plane, and its own port, so
+ * every migration applied) and its own port, so
  * it never touches your dev database and can run beside `pnpm dev`. The `node`
  * group runs the real fleet/node.mjs once, with a fake `claude`, against a
  * local git repo. Nothing leaves this machine.
@@ -18,7 +18,6 @@ import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { KEY, startMockPlatform } from './mock-platform.mjs';
 
 const WORKER = dirname(dirname(fileURLToPath(import.meta.url)));
 const REPO = dirname(WORKER);
@@ -146,68 +145,57 @@ const groups = {
     check('admin sees the same setup', adminView?.setup?.ready === p.setup.ready && adminView.brief.manual === 'Orders by phone');
   },
 
-  async sites({ admin, mock }) {
-    const email = `site-${Date.now()}@example.com`;
-    const a = account(email);
+  async sites({ admin }) {
+    const a = account(`site-${Date.now()}@example.com`);
     const other = account(`intruder-${Date.now()}@example.com`);
     const { project } = (await newProject(a.session, { kind: 'new', name: 'Rosa Florist', brief: NEW_BRIEF })).data;
     check('another client cannot start this site', (await call(`/portal/projects/${project.id}/site`, { method: 'POST', auth: other.session, body: {} })).status === 404);
     const start = await call(`/portal/projects/${project.id}/site`, { method: 'POST', auth: a.session, body: {} });
-    check('start → waiting for the platform sign-in', start.status === 201 && start.data.site.state === 'signin');
-    check('the platform sign-in goes to the client’s own address', Object.values(mock.state.auth).some((x) => x.email === email));
-    await sleep(4500);
-    let site = (await call(`/portal/projects/${project.id}/site`, { auth: a.session })).data.site;
-    check('nothing moves before the link is opened', site.state === 'signin');
-    mock.control.verify(email);
-    for (let i = 0; i < 8 && site.state !== 'ready' && site.state !== 'failed'; i += 1) {
-      await sleep(4500);
-      site = (await call(`/portal/projects/${project.id}/site`, { auth: a.session })).data.site;
-    }
-    check('reaches ready', site.state === 'ready', JSON.stringify(site));
-    check('URLs from the platform slug and the sites domain', site.previewUrl === 'https://rosa-florist-preview.gptflare.site' && site.editorUrl === 'https://rosa-florist.gptflare.site/keystatic');
-    check('the draft was built from the brief', mock.state.drafts.some((d) => d.siteName === 'Rosa Florist' && /Orders by phone/.test(d.goals)));
-    const p = (await call('/portal/me', { auth: a.session })).data.projects.find((x) => x.id === project.id);
-    const s = Object.fromEntries(p.setup.checks.map((c) => [c.key, c]));
-    check('setup: preview, editor and repo ready; domain optional', s.preview.state === 'ready' && s.editor.state === 'ready' && s.code.state === 'ready' && s.domain.blocking === false);
+    check('start → allocating, with the preview address', start.status === 201 && start.data.site.state === 'allocating' && start.data.site.previewUrl === 'https://rosa-florist--preview.malipetek.online', JSON.stringify(start.data));
+    const np0 = (await call('/node/projects', { auth: RUNNER_TOKEN })).data.projects.find((x) => x.id === project.id);
+    check('nodes are asked to make the repo', np0?.needsRepo?.site === 'rosa-florist' && np0.needsRepo.template === 'site');
+    // A fleet node creates the repo and reports it; then the site is ready.
+    const reported = await call('/node/sites/rosa-florist/repo', { method: 'POST', auth: RUNNER_TOKEN, body: { repo: 'https://github.com/malipetek/rosa-florist' } });
+    check('a node reports the repo it made', reported.status === 200 && reported.data.state === 'ready', JSON.stringify(reported.data));
+    const site = (await call(`/portal/projects/${project.id}/site`, { auth: a.session })).data.site;
+    check('ready, with preview and production addresses', site.state === 'ready' && site.productionUrl === 'https://rosa-florist.malipetek.online');
     const np = (await call('/node/projects', { auth: RUNNER_TOKEN })).data.projects.find((x) => x.id === project.id);
-    check('nodes get the repo and the preview branch', np?.repo === 'https://github.com/GPTflare-Sites/rosa-florist' && np.baseRef === 'origin/preview');
+    check('nodes get the repo and the preview base', np?.repo === 'https://github.com/malipetek/rosa-florist' && np.baseRef === 'origin/preview' && np.site === 'rosa-florist');
+    const p = (await call('/portal/me', { auth: a.session })).data.projects.find((x) => x.id === project.id);
+    const checks = Object.fromEntries(p.setup.checks.map((c) => [c.key, c]));
+    check('setup: preview, code and repo ready; domain optional', checks.preview.state === 'ready' && checks.code.state === 'ready' && checks.domain.blocking === false);
 
-    // Publishing: Ali by default; the client only when the setting allows it.
+    // Deploys: manifest first, the blobs it lacks, then finish → the preview moves.
+    const sha = (s) => createHash('sha256').update(s).digest('hex');
+    const one = [{ path: 'index.html', sha256: sha('<h1>one</h1>'), size: 11, type: 'text/html' }];
+    const made = await call('/node/sites/rosa-florist/deploys', { method: 'POST', auth: RUNNER_TOKEN, body: { files: one } });
+    check('a deploy opens and names what it lacks', made.status === 201 && made.data.needed?.length === 1 && /^d[0-9a-f]{40}$/.test(made.data.deployId ?? ''), JSON.stringify(made.data));
+    check('the same files are the same deploy', (await call('/node/sites/rosa-florist/deploys', { method: 'POST', auth: RUNNER_TOKEN, body: { files: one } })).data.deployId === made.data.deployId);
+    const put = (id, sh, bytes) => fetch(`${W}/node/sites/rosa-florist/deploys/${id}/files/${sh}`, { method: 'PUT', headers: { authorization: `Bearer ${RUNNER_TOKEN}`, 'content-length': String(bytes.length) }, body: bytes });
+    check('a blob not in the manifest is refused', (await put(made.data.deployId, sha('nope'), new TextEncoder().encode('nope'))).status === 400);
+    check('bytes must match their sha', (await put(made.data.deployId, one[0].sha256, new TextEncoder().encode('wrong'))).status === 400);
+    check('the manifest blob uploads', (await put(made.data.deployId, one[0].sha256, new TextEncoder().encode('<h1>one</h1>'))).status === 200);
+    const fin = await call(`/node/sites/rosa-florist/deploys/${made.data.deployId}/finish`, { method: 'POST', auth: RUNNER_TOKEN, body: {} });
+    check('finish points the preview at it', fin.status === 200 && fin.data.deployId === made.data.deployId, JSON.stringify(fin.data));
+    check('…but production still shows the placeholder', (await call(`/portal/projects/${project.id}/site`, { auth: a.session })).data.site.previewDeploy === made.data.deployId);
+
+    // Publish and rollback only move the production pointer.
     check('client publish is off by default', (await call(`/portal/projects/${project.id}/site/publish`, { method: 'POST', auth: a.session, body: {} })).status === 403);
-    const pub = await call(`/admin/projects/${project.id}/site/publish`, { method: 'POST', auth: admin, body: {} });
-    check('Ali publishes', pub.status === 200 && mock.state.approvals === 1);
-    await call('/admin/settings', { method: 'PATCH', auth: admin, body: { clientPublish: true } });
-    check('client publishes once allowed', (await call(`/portal/projects/${project.id}/site/publish`, { method: 'POST', auth: a.session, body: {} })).status === 200 && mock.state.approvals === 2);
-    await call('/admin/settings', { method: 'PATCH', auth: admin, body: { clientPublish: false } });
     check('a bad sites domain is refused', (await call('/admin/settings', { method: 'PATCH', auth: admin, body: { sitesDomain: 'not a domain' } })).status !== 200);
+    const pub = await call(`/admin/projects/${project.id}/site/publish`, { method: 'POST', auth: admin, body: {} });
+    check('Ali publishes', pub.status === 200 && pub.data.productionUrl === 'https://rosa-florist.malipetek.online');
+    const deploys = (await call(`/admin/projects/${project.id}/site/deploys`, { auth: admin })).data.deploys;
+    check('the deploy is in the history', deploys?.some((d) => d.id === made.data.deployId));
+    const back = await call(`/admin/projects/${project.id}/site/rollback`, { method: 'POST', auth: admin, body: { deployId: 'placeholder' } });
+    check('rollback to an unknown deploy is refused', back.status === 400);
+    const rb = await call(`/admin/projects/${project.id}/site/rollback`, { method: 'POST', auth: admin, body: { deployId: made.data.deployId } });
+    check('rollback repoints production', rb.status === 200);
 
     const existing = (await newProject(a.session, { kind: 'existing', name: 'Old Shop', brief: OLD_BRIEF, repoKind: 'none' })).data.project;
     check('an existing stack is not hosted', (await call(`/portal/projects/${existing.id}/site`, { method: 'POST', auth: a.session, body: {} })).data?.error === 'not_hosted');
-
-    // A refusal stops the site; only the cron is watching; retry reuses the site.
-    mock.control.failProvision(true);
-    const broken = (await newProject(a.session, { kind: 'new', name: 'Broken Co', brief: NEW_BRIEF })).data.project;
-    await call(`/portal/projects/${broken.id}/site`, { method: 'POST', auth: a.session, body: {} });
-    let b = null;
-    for (let i = 0; i < 5; i += 1) {
-      await sleep(31_000); // the cron only moves sites idle for 30s
-      await fetch(`${W}/cdn-cgi/handler/scheduled`);
-      b = (await call('/admin/projects', { auth: admin })).data.projects.find((x) => x.id === broken.id).site;
-      if (b.state === 'failed') break;
-    }
-    check('the cron drives a refused site to failed, with the reason', b?.state === 'failed' && /TEMPLATE_UNAVAILABLE/.test(b.error ?? ''), JSON.stringify(b));
-    mock.control.failProvision(false);
-    const creates = mock.state.calls.filter((c) => c === 'POST /create-site').length;
-    const retry = await call(`/admin/projects/${broken.id}/site/retry`, { method: 'POST', auth: admin, body: {} });
-    check('retry moves on', retry.status === 200 && retry.data.site.state !== 'failed');
-    for (let i = 0; i < 6 && b.state !== 'ready'; i += 1) {
-      await sleep(4500);
-      b = (await call(`/portal/projects/${broken.id}/site`, { auth: a.session })).data.site;
-    }
-    check('…to ready, without a second site', b.state === 'ready' && mock.state.calls.filter((c) => c === 'POST /create-site').length === creates);
   },
 
-  async queue({ admin, mock }) {
+  async queue({ admin }) {
     const a = account(`queue-${Date.now()}@example.com`);
     const { project, ticketId } = (await newProject(a.session, { kind: 'existing', name: 'Queue Shop', brief: OLD_BRIEF, repoKind: 'none' })).data;
     const nodeId = `e2e-q-${Date.now() % 100000}`;
@@ -216,7 +204,7 @@ const groups = {
     check('a client cannot approve', (await call(`/admin/tickets/${ticketId}`, { method: 'PATCH', auth: a.session, body: { status: 'approved' } })).status === 403);
     await approve(admin, ticketId);
     const c = await claim(nodeId);
-    check('the node claims it after approval, sandboxed', c.ticket?.id === ticketId && c.executor === 'claude' && c.preview === false);
+    check('the node claims it after approval, sandboxed', c.ticket?.id === ticketId && c.executor === 'claude' && c.site === null);
     check('a second node cannot report on it', (await call(`/node/runs/${c.runId}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId: 'someone-else', ok: true, summary: 'x' } })).status === 409);
     const rep = await call(`/node/runs/${c.runId}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId, ok: true, summary: 'Did it.', costUsd: 0.25 } });
     check('the claiming node reports; the ticket goes to review', rep.status === 200 && (await call(`/portal/tickets/${ticketId}`, { auth: a.session })).data.ticket.status === 'review');
@@ -372,35 +360,27 @@ const groups = {
     check('…and nor can the same node once the run is over', (await nodeGet(nodeId)).status === 403);
   },
 
-  async preview({ admin, mock }) {
-    const email = `prev-${Date.now()}@example.com`;
-    const a = account(email);
+  async preview({ admin }) {
+    const a = account(`prev-${Date.now()}@example.com`);
     const { project, ticketId } = (await newProject(a.session, { kind: 'new', name: 'Preview Cafe', brief: NEW_BRIEF })).data;
     await call(`/portal/projects/${project.id}/site`, { method: 'POST', auth: a.session, body: {} });
-    mock.control.verify(email);
-    let site = null;
-    for (let i = 0; i < 8 && site?.state !== 'ready'; i += 1) {
-      await sleep(4500);
-      site = (await call(`/portal/projects/${project.id}/site`, { auth: a.session })).data.site;
-    }
+    await call('/node/sites/preview-cafe/repo', { method: 'POST', auth: RUNNER_TOKEN, body: { repo: 'https://github.com/malipetek/preview-cafe' } });
     const nodeId = `e2e-p-${Date.now() % 100000}`;
     await node(nodeId, [project.slug]);
     await approve(admin, ticketId);
     const c = await claim(nodeId);
-    check('a claim on a hosted site asks for the files', c.preview === true);
-    await call(`/node/runs/${c.runId}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId, ok: true, summary: 'Order page.', files: [{ path: 'src/pages/order.astro', content: '<h1>Order</h1>\n' }] } });
-    await sleep(1500);
-    const edit = mock.state.edits.at(-1);
-    check('the files went to the preview branch', edit?.files?.[0]?.path === 'src/pages/order.astro');
-    check('the client is told where to look', /The preview has this change: https:\/\/preview-cafe-preview\.gptflare\.site/.test(JSON.stringify((await call(`/portal/tickets/${ticketId}`, { auth: a.session })).data)));
-    const second = (await call('/portal/tickets', { method: 'POST', auth: a.session, body: { title: 'Two', body: 'x', projectId: project.id } })).data.id;
-    await approve(admin, second);
-    const c2 = await claim(nodeId);
-    const before = mock.state.edits.length;
-    await call(`/node/runs/${c2.runId}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId, ok: true, summary: 'x', files: [{ path: '../../etc/passwd', content: 'x' }] } });
-    await sleep(1500);
-    check('a path outside the repo never reaches the platform', mock.state.edits.length === before);
-    check('…and Ali is told why', /Not sent to the preview: bad file entry/.test(JSON.stringify((await call(`/admin/tickets/${second}`, { auth: admin })).data)));
+    check('a claim on a hosted site names the site', c.site === 'preview-cafe', JSON.stringify(c).slice(0, 200));
+    // The node builds and deploys; finish must come from the node holding the run.
+    const sha = (s) => createHash('sha256').update(s).digest('hex');
+    const file = { path: 'index.html', sha256: sha('<h1>Order</h1>'), size: 14, type: 'text/html' };
+    const made = await call('/node/sites/preview-cafe/deploys', { method: 'POST', auth: RUNNER_TOKEN, body: { files: [file] } });
+    await fetch(`${W}/node/sites/preview-cafe/deploys/${made.data.deployId}/files/${file.sha256}`, { method: 'PUT', headers: { authorization: `Bearer ${RUNNER_TOKEN}`, 'content-length': String(file.size) }, body: new TextEncoder().encode('<h1>Order</h1>') });
+    check('finish from a node not holding the run is refused', (await call(`/node/sites/preview-cafe/deploys/${made.data.deployId}/finish`, { method: 'POST', auth: RUNNER_TOKEN, body: { ticketId, nodeId: 'someone-else' } })).status === 403);
+    const fin = await call(`/node/sites/preview-cafe/deploys/${made.data.deployId}/finish`, { method: 'POST', auth: RUNNER_TOKEN, body: { ticketId, nodeId } });
+    check('finish from the holding node deploys the preview', fin.status === 200 && fin.data.previewUrl === 'https://preview-cafe--preview.malipetek.online', JSON.stringify(fin.data));
+    check('the client is told where to look', /The preview has this change: https:\/\/preview-cafe--preview\.malipetek\.online/.test(JSON.stringify((await call(`/portal/tickets/${ticketId}`, { auth: a.session })).data)));
+    check('a missing blob stops the finish', (await call(`/node/sites/preview-cafe/deploys/${(await call('/node/sites/preview-cafe/deploys', { method: 'POST', auth: RUNNER_TOKEN, body: { files: [{ path: 'x.html', sha256: sha('x'), size: 1 }] } })).data.deployId}/finish`, { method: 'POST', auth: RUNNER_TOKEN, body: {} })).status === 409);
+    await call(`/node/runs/${c.runId}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId, ok: true, summary: 'Done.' } });
   },
 
   async budget({ admin }) {
@@ -479,8 +459,7 @@ const groups = {
       return { error: r.result?.isError === true, value, text };
     };
     const names = (await rpc('tools/list', {}, null)).result.tools.map((t) => t.name);
-    check('anyone sees the client tools, not the platform ones', names.includes('portal_file_request') && !names.some((n) => n.startsWith('platform_')));
-    check('Ali’s session still sees the platform tools', (await rpc('tools/list', {}, admin)).result.tools.some((t) => t.name === 'platform_status'));
+    check('anyone sees the knowledgebase and the client tools', names.includes('portal_file_request') && names.includes('search_knowledge'));
     const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'e2e', version: '0' } }, token);
     check('initialize explains the client tools', /portal_\* tools/.test(init.result?.instructions ?? ''));
 
@@ -813,7 +792,6 @@ const groups = {
 
 async function main() {
   STATE = mkdtempSync(join(tmpdir(), 'malipetek-e2e-state-'));
-  const mock = await startMockPlatform();
   const port = await freePort();
   W = `http://localhost:${port}`;
   RUNNER_TOKEN = devVar('RUNNER_TOKEN') || 'e2e-runner-token';
@@ -821,10 +799,10 @@ async function main() {
   const turnstile = devVar('TURNSTILE_SECRET_KEY');
   if (turnstile && !turnstile.startsWith('1x0000')) throw new Error('.dev.vars has a real TURNSTILE_SECRET_KEY; leave it empty (or a test key) to run the suite.');
 
-  console.log(`state ${STATE}\nmock platform ${mock.url}\nworker ${W}\n`);
+  console.log(`state ${STATE}\nworker ${W}\n`);
   execFileSync('npx', ['wrangler', 'd1', 'migrations', 'apply', 'malipetek-portal', '--local', '--persist-to', STATE], { cwd: WORKER, stdio: 'pipe' });
 
-  const vars = { PLATFORM_API_URL: mock.url, PLATFORM_GPT_API_KEY: KEY, DEV_RETURN_LINK: '1', RUNNER_TOKEN, SITE_URL: 'http://localhost:4321' };
+  const vars = { DEV_RETURN_LINK: '1', RUNNER_TOKEN, SITE_URL: 'http://localhost:4321' };
   const dev = spawn('npx', ['vite', 'dev', '--port', String(port), '--strictPort'], {
     cwd: WORKER,
     env: { ...process.env, MALIPETEK_E2E_STATE: STATE, MALIPETEK_E2E_VARS: JSON.stringify(vars) },
@@ -846,7 +824,6 @@ async function main() {
     kill('SIGTERM');
     for (let i = 0; i < 30 && dev.exitCode === null && dev.signalCode === null; i += 1) await sleep(100);
     kill('SIGKILL'); // whatever ignored the polite ask
-    mock.close();
     rmSync(STATE, { recursive: true, force: true });
   };
   process.on('SIGINT', () => {
@@ -867,7 +844,7 @@ async function main() {
       group = name;
       console.log(`${name}`);
       try {
-        await run({ admin, mock });
+        await run({ admin });
       } catch (error) {
         check(`${name} threw`, false, error.stack ?? String(error));
       }

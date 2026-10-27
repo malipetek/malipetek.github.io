@@ -1,0 +1,8 @@
+:root { --ink: #26221b; --muted: #6d6558; --paper: #f7f4ee; --card: #fff; --accent: #e8622c; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: ui-sans-serif, system-ui, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.6; }
+main { max-width: 46rem; margin: 0 auto; padding: 4rem 1.25rem; }
+h1 { font-size: 2.2rem; line-height: 1.15; margin: 0 0 1rem; }
+p { margin: 0 0 1rem; }
+.muted { color: var(--muted); }
+a { color: var(--accent); }

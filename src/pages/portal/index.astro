@@ -343,24 +343,7 @@ export const prerender = true;
     }
     if (site.state !== 'ready') {
       watching.add(project.id);
-      box.append(
-        h('p', { class: 'project-later', role: 'status' }, site.state === 'signin' ? 'Waiting for you to open the sign-in link we emailed you.' : 'Your site is being made…'),
-      );
-      if (site.state === 'signin') {
-        box.append(
-          h('p', { class: 'portal-actions' }, button('Send the link again', async (event) => {
-            const b = event.currentTarget as HTMLButtonElement;
-            b.disabled = true;
-            try {
-              await api(`/portal/projects/${project.id}/site/signin`, { method: 'POST', body: {} });
-              b.textContent = 'Sent — check your inbox';
-            } catch (error) {
-              b.textContent = errorText(error);
-              b.disabled = false;
-            }
-          })),
-        );
-      }
+      box.append(h('p', { class: 'project-later', role: 'status' }, 'Your site is being made…'));
       return box;
     }
     watching.delete(project.id);
@@ -369,7 +352,6 @@ export const prerender = true;
         'p',
         { class: 'project-links' },
         site.previewUrl ? link(site.previewUrl, 'Open the preview ↗') : null,
-        site.editorUrl ? link(site.editorUrl, 'Edit your content ↗') : null,
         site.productionUrl ? link(site.productionUrl, 'Live site ↗') : null,
       ),
     );
@@ -390,20 +372,19 @@ export const prerender = true;
   function startDialog(project: Project) {
     openDialog({
       title: `Set up ${project.name}`,
-      subtitle: 'A real site, hosted for you, with a preview and an editor.',
+      subtitle: 'A real site, hosted for you, with a preview and a live address.',
       body: [
         h(
           'ol',
           { class: 'steps' },
-          h('li', null, 'We email you a sign-in link from our hosting platform (gptflare.site). It is your own account: nobody else can reach your site.'),
-          h('li', null, 'When you open it, the site is made from your answers: a repo, a preview address and an editor for your content.'),
-          h('li', null, 'Every change lands on the preview first. Nothing goes live until it is published.'),
+          h('li', null, 'Your site gets its own address at once — a placeholder page first, the real thing as it is built.'),
+          h('li', null, 'Every change lands on the preview address first. Nothing goes live until it is published.'),
         ),
         h('p', { class: 'portal-note' }, 'Hosting and AI runs are billed at cost on the requests that use them.'),
       ],
       actions: (close, error) => [
         button('Not now', close),
-        button('Email me the link →', async (event) => {
+        button('Set it up →', async (event) => {
           const b = event.currentTarget as HTMLButtonElement;
           b.disabled = true;
           try {

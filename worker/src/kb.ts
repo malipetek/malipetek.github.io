@@ -23,7 +23,6 @@
 import { Hono } from 'hono';
 import { clientIp, isRateLimited, type Env, type HonoEnv } from './shared.ts';
 import { now, sessionUser } from './portal.ts';
-import { PLATFORM_TOOLS, callPlatformTool } from './platform.ts';
 import { CLIENT_TOOLS, CLIENT_TOOL_NAMES, callClientTool } from './clientTools.ts';
 
 /* ——————————————————————— shapes ——————————————————————— */
@@ -549,29 +548,12 @@ const KB_TOOLS = [
   },
 ];
 
-/** Knowledgebase tools plus the GPTflare control-plane bridge. */
 /**
  * Tool annotations are what let a connector show "this only reads" versus
  * "this changes production". They are derived centrally so a new tool cannot
  * forget them: anything not named as a writer is treated as read-only.
  */
-const READ_ONLY_TOOLS = new Set([
-  'search_knowledge',
-  'get_knowledge',
-  'list_knowledge',
-  'platform_status',
-  'platform_auth_status',
-  'platform_get_context',
-  'platform_list_sites',
-  'platform_site_state',
-  'platform_site_status',
-  'platform_preview_status',
-  'platform_operation_status',
-  'platform_list_files',
-  'platform_read_file',
-  'platform_github_access',
-]);
-const DESTRUCTIVE_TOOLS = new Set(['platform_reset_preview', 'platform_approve_preview']);
+const READ_ONLY_TOOLS = new Set(['search_knowledge', 'get_knowledge', 'list_knowledge']);
 
 const annotate = (tool: { name: string; title: string }, readOnly: boolean, destructive: boolean) => ({
   title: tool.title,
@@ -581,20 +563,15 @@ const annotate = (tool: { name: string; title: string }, readOnly: boolean, dest
   openWorldHint: true,
 });
 
-const KB_AND_PLATFORM = [...KB_TOOLS, ...PLATFORM_TOOLS].map((tool) => ({
+const KB_AND_CLIENT = KB_TOOLS.map((tool) => ({
   ...tool,
-  annotations: annotate(tool, READ_ONLY_TOOLS.has(tool.name), DESTRUCTIVE_TOOLS.has(tool.name)),
+  annotations: annotate(tool, READ_ONLY_TOOLS.has(tool.name), false),
 }));
 const PORTAL_TOOLS = CLIENT_TOOLS.map(({ readOnly, ...tool }) => ({ ...tool, annotations: annotate(tool, readOnly, false) }));
-const MCP_TOOLS = [...KB_AND_PLATFORM, ...PORTAL_TOOLS];
+const MCP_TOOLS = [...KB_AND_CLIENT, ...PORTAL_TOOLS];
 
-/**
- * What a caller is shown: the knowledgebase and the client tools to everyone
- * (a client connecting an assistant sees what it can do), the GPTflare
- * platform tools only to Ali's session — they are useless to anyone else.
- */
-const toolsFor = (author: Author | null) =>
-  MCP_TOOLS.filter((t) => !t.name.startsWith('platform_') || author?.kind === 'admin');
+/** Every caller sees the same list: the knowledgebase and the client tools. */
+const toolsFor = (_author: Author | null) => MCP_TOOLS;
 
 const RESOURCE_PAGE = 50;
 
@@ -992,9 +969,7 @@ mcp.post('/', async (c) => {
           try {
             const value = CLIENT_TOOL_NAMES.has(name)
               ? await callClientTool(c.env, c.executionCtx, clientToken, name, args)
-              : name.startsWith('platform_')
-                ? await callPlatformTool(c.env, name, args, author)
-                : await callTool(c.env, name, args, author);
+              : await callTool(c.env, name, args, author);
             return rpcResult(request.id, toolText(value));
           } catch (error) {
             // Tool failures are results with isError, not protocol errors — that

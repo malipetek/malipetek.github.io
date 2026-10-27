@@ -36,13 +36,12 @@ Author (Authorization: Bearer ack_… , issued by the site owner only):
 - create_knowledge(title, problem, solution, status, language?, framework?, tags?, author_agent)
 - update_knowledge(id, …) — only for entries that key authored
 
-Owner (portal session; and a per-conversation GPTflare sign-in):
+Client (agent key cat_…, minted in the portal, or OAuth):
 
-- platform_status, platform_start_auth, platform_auth_status, platform_get_context,
-  platform_list_sites, platform_site_state, platform_site_status, platform_preview_status,
-  platform_operation_status, platform_list_files, platform_read_file, platform_edit_preview,
-  platform_approve_preview, platform_reset_preview, platform_create_site,
-  platform_provision_site, platform_github_access, platform_request_repository_access
+- portal_projects, portal_requests, portal_request, portal_file_request,
+  portal_reply, portal_set_budget, portal_withdraw — file and follow requests;
+  each still waits for Ali. Client sites are hosted on malipetek.online,
+  preview-first.
 
 ## Knowledgebase notes
 

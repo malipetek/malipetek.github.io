@@ -34,14 +34,12 @@ export interface Env {
   SITE_URL?: string;
   /** Var. Email Routing address (with subaddressing) that feeds src/inbound.ts. */
   REPLY_ADDRESS?: string;
-  /** Var. Base URL of the GPTflare control plane (default api.gptflare.site). */
-  PLATFORM_API_URL?: string;
-  /** Secret. GPTflare platform key; without it every /platform_* MCP tool fails. */
-  PLATFORM_GPT_API_KEY?: string;
   /** Secret. Shared with the local runner on Ali's machine; unset disables /runner/*. */
   RUNNER_TOKEN?: string;
   /** R2 — ticket attachments (src/files.ts). Unbound = uploads are refused. */
   FILES?: R2Bucket;
+  /** R2 — hosted site deploys (src/sites.ts). Unbound = no site setup or deploys. */
+  SITES?: R2Bucket;
   /** Var, local dev only. "1" returns the magic link in the /auth/request response. */
   DEV_RETURN_LINK?: string;
 }

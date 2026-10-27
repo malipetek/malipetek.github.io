@@ -1,0 +1,17 @@
+{
+  "name": "malipetek-sites-worker",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Serves the client sites: static deploys from the malipetek-sites R2 bucket on *.malipetek.online.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260915.1",
+    "typescript": "7.0.2",
+    "wrangler": "4.132.0"
+  }
+}

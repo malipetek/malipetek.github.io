@@ -56,8 +56,11 @@
 
   // Ticket attachments (src/files.ts). Create once with:
   //   wrangler r2 bucket create malipetek-portal-files
+  // Hosted site deploys (src/sites.ts), served by the malipetek-sites Worker:
+  //   wrangler r2 bucket create malipetek-sites
   "r2_buckets": [
     { "binding": "FILES", "bucket_name": "malipetek-portal-files" },
+    { "binding": "SITES", "bucket_name": "malipetek-sites" },
   ],
 
   // Cloudflare Email Service. Requires malipetek.dev to be onboarded to Email

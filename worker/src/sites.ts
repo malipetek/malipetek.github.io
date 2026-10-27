@@ -1,46 +1,38 @@
 /*
- * Provisioning: a project gets a hosted site, preview first, without Ali.
+ * Hosted sites, ours now: static files in the `malipetek-sites` R2 bucket,
+ * served by the malipetek-sites Worker on malipetek.online.
  *
- * The control plane (platform.ts) already creates and hosts Astro + Keystatic
- * sites: draft → provision (repo + Workers Builds) → preview branch → approve →
- * production. This module drives that pipeline for a CLIENT, server-side:
+ *   <slug>.malipetek.online            production
+ *   <slug>--preview.malipetek.online   preview
  *
- *   - Isolation comes from the platform's own sign-in. It mails a magic link
- *     to an address and scopes every later call to that account; we only ever
- *     ask it for the address the client verified with us, so a client can
- *     never reach another client's sites.
- *   - The platform key never leaves the Worker.
- *   - `advanceSite` is one idempotent step of a state machine. The portal calls
- *     it while the client watches; the five-minute cron calls it when nobody
- *     is looking. A step that is still waiting costs one platform read.
+ * A deploy is immutable: files are content-addressed blobs under
+ * `sites/<slug>/blobs/<sha256>` and a manifest at
+ * `sites/<slug>/deploys/<id>/manifest.json` maps path → hash. Preview and
+ * production are pointers to deploy ids, so publishing and rolling back move
+ * a pointer and nothing is rebuilt.
  *
- * The control plane's replies are read defensively (`pick`): this repo does
- * not own its source, so every field is looked up by the names it is known or
- * likely to use, and the trimmed reply is kept in `last_payload` so a surprise
- * shows up in the admin views instead of as a silent "pending" forever.
+ * `advanceSite` is still one idempotent step of a state machine, driven by
+ * the portal while the client watches and by the cron when nobody is looking.
+ * What it waits for now is a fleet node, not a control plane: allocation
+ * makes the placeholder deploy itself, then a node creates the source repo
+ * (the Worker has no git credentials) and reports it back.
  */
-import { PlatformError, platformFetch } from './platform.ts';
 import { getSettings } from './queue.ts';
 import { now, type Env } from './shared.ts';
-import { parseBrief, type ProjectKind } from './setup.ts';
 
-export type SiteState = 'signin' | 'creating' | 'provisioning' | 'ready' | 'failed';
+export type SiteState = 'allocating' | 'ready' | 'failed';
 
 export interface SiteRow {
   project_id: string;
-  user_id: string;
-  site_id: string | null;
+  slug: string;
   state: SiteState;
-  operation_id: string | null;
-  platform_slug: string | null;
-  repo_url: string | null;
-  preview_url: string | null;
-  editor_url: string | null;
-  production_url: string | null;
+  host: 'ours' | 'cloudflare';
+  template: string | null;
+  preview_deploy: string | null;
+  production_deploy: string | null;
+  spa: number;
   custom_domain: string | null;
   error: string | null;
-  last_payload: string | null;
-  preview_updated_at: number | null;
   failure_alerted_at: number | null;
   created_at: number;
   updated_at: number;
@@ -49,354 +41,284 @@ export interface SiteRow {
 /** What the portal and the admin views show about a site. */
 export interface SiteView {
   state: SiteState;
+  slug: string;
   previewUrl: string | null;
-  editorUrl: string | null;
   productionUrl: string | null;
   customDomain: string | null;
-  repoUrl: string | null;
   error: string | null;
-  previewUpdatedAt: number | null;
+  previewDeploy: string | null;
+  productionDeploy: string | null;
   updatedAt: number;
 }
 
-export function siteView(row: SiteRow | null | undefined): SiteView | null {
+/** The domain hosted sites live under when the setting does not say. */
+export const DEFAULT_SITES_DOMAIN = 'malipetek.online';
+
+function urls(row: Pick<SiteRow, 'slug' | 'custom_domain'>, domain: string) {
+  return {
+    previewUrl: `https://${row.slug}--preview.${domain}`,
+    productionUrl: `https://${row.slug}.${domain}`,
+    customDomain: row.custom_domain,
+  };
+}
+
+export function siteView(row: SiteRow | null | undefined, domain = DEFAULT_SITES_DOMAIN): SiteView | null {
   if (!row) return null;
   return {
     state: row.state,
-    previewUrl: row.preview_url,
-    editorUrl: row.editor_url,
-    productionUrl: row.production_url,
-    customDomain: row.custom_domain,
-    repoUrl: row.repo_url,
+    slug: row.slug,
+    ...urls(row, domain),
     error: row.error,
-    previewUpdatedAt: row.preview_updated_at,
+    previewDeploy: row.preview_deploy,
+    productionDeploy: row.production_deploy,
     updatedAt: row.updated_at,
   };
 }
 
-/** The edit-preview limits the control plane enforces; checked here first. */
-export const PREVIEW_LIMITS = { files: 40, fileBytes: 512 * 1024, totalBytes: 2 * 1024 * 1024 };
+/* ——————————————————————— deploy storage ——————————————————————— */
 
-/* ——————————————————————— reading the platform's replies ——————————————————————— */
+/** What one uploaded deploy may hold. Shared with the node's own check. */
+export const DEPLOY_LIMITS = {
+  files: 1000,
+  fileBytes: 10 * 1024 * 1024,
+  totalBytes: 100 * 1024 * 1024,
+};
 
-/** The first string (or number) found at any of `paths` ("a.b.c"). */
-export function pick(value: unknown, ...paths: string[]): string | null {
-  for (const path of paths) {
-    let cur: unknown = value;
-    for (const key of path.split('.')) {
-      cur = cur && typeof cur === 'object' ? (cur as Record<string, unknown>)[key] : undefined;
+/** Deploys kept per site, plus whichever ones a channel points at. */
+export const KEPT_DEPLOYS = 20;
+
+const manifestKey = (slug: string, deploy: string) => `sites/${slug}/deploys/${deploy}/manifest.json`;
+const blobKey = (slug: string, sha: string) => `sites/${slug}/blobs/${sha}`;
+
+const SAFE_PATH = /^(?!\/)(?!.*(^|\/)\.\.(\/|$))[\w.@+\-/ ]{1,300}$/;
+const SHA256 = /^[0-9a-f]{64}$/;
+
+export interface DeployFile {
+  path: string;
+  sha256: string;
+  size: number;
+  type?: string;
+}
+
+/** Bound a deploy manifest, or say why not. The error is the reply to send. */
+export function cleanDeployManifest(value: unknown): { files: DeployFile[]; bytes: number } | { error: string } {
+  if (!Array.isArray(value) || value.length === 0) return { error: 'no files' };
+  if (value.length > DEPLOY_LIMITS.files) return { error: `${value.length} files; a deploy takes at most ${DEPLOY_LIMITS.files}` };
+  const files: DeployFile[] = [];
+  const seen = new Set<string>();
+  let total = 0;
+  for (const raw of value as Record<string, unknown>[]) {
+    const path = typeof raw?.path === 'string' ? raw.path : '';
+    const sha256 = typeof raw?.sha256 === 'string' ? raw.sha256.toLowerCase() : '';
+    const size = typeof raw?.size === 'number' ? raw.size : NaN;
+    const type = typeof raw?.type === 'string' && raw.type.length <= 100 ? raw.type : undefined;
+    if (!SAFE_PATH.test(path) || path.startsWith('.git/') || path === '.git') {
+      return { error: `bad file entry ${JSON.stringify(path).slice(0, 80)}` };
     }
-    if (typeof cur === 'string' && cur.trim()) return cur.trim();
-    if (typeof cur === 'number' && Number.isFinite(cur)) return String(cur);
+    if (!SHA256.test(sha256)) return { error: `bad sha256 for ${JSON.stringify(path).slice(0, 80)}` };
+    if (!Number.isInteger(size) || size < 0 || size > DEPLOY_LIMITS.fileBytes) {
+      return { error: `bad size for ${JSON.stringify(path).slice(0, 80)}` };
+    }
+    if (seen.has(path)) return { error: `${path} is listed twice` };
+    seen.add(path);
+    total += size;
+    files.push({ path, sha256, size, ...(type ? { type } : {}) });
   }
-  return null;
+  if (total > DEPLOY_LIMITS.totalBytes) return { error: 'the files add up to more than 100 MB' };
+  return { files, bytes: total };
 }
 
-const DONE = new Set(['succeeded', 'success', 'successful', 'completed', 'complete', 'done', 'ready', 'finished']);
-const FAILED = new Set(['failed', 'failure', 'error', 'errored', 'cancelled', 'canceled', 'timed_out']);
-
-/** An operation's outcome: done, failed (with why), or still running. */
-export function operationOutcome(payload: unknown): { done: boolean; failed: string | null } {
-  const status = (pick(payload, 'status', 'state', 'operation.status', 'operation.state') ?? '').toLowerCase();
-  const raw = payload as Record<string, unknown> | null;
-  if (FAILED.has(status) || raw?.ok === false) {
-    return { done: false, failed: pick(payload, 'error.message', 'error', 'message', 'operation.error') ?? status ?? 'failed' };
-  }
-  return { done: DONE.has(status) || raw?.done === true || raw?.completed === true, failed: null };
+/** The deploy id: the manifest's own hash, so identical output is one deploy. */
+async function deployId(files: DeployFile[]): Promise<string> {
+  const canonical = JSON.stringify(files.map((f) => [f.path, f.sha256, f.size]).sort());
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+  return `d${[...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 40)}`;
 }
 
-const httpsUrl = (value: string | null): string | null => {
-  if (!value) return null;
-  const url = /^https?:\/\//i.test(value) ? value : `https://${value}`;
-  try {
-    return new URL(url).protocol === 'https:' || new URL(url).protocol === 'http:' ? url.replace(/\/$/, '') : null;
-  } catch {
-    return null;
+/** Which of `shas` are not yet stored for this site. */
+async function missingBlobs(env: Env, slug: string, shas: string[]): Promise<string[]> {
+  const missing: string[] = [];
+  // Bounded by DEPLOY_LIMITS.files; head calls in small batches.
+  for (let i = 0; i < shas.length; i += 50) {
+    const batch = await Promise.all(shas.slice(i, i + 50).map((sha) => env.SITES!.head(blobKey(slug, sha))));
+    batch.forEach((object, j) => {
+      if (!object) missing.push(shas[i + j]);
+    });
   }
+  return missing;
+}
+
+const sha256Hex = async (data: ArrayBuffer | Uint8Array) => {
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 };
 
-/**
- * The URLs a provisioned site answers on. The platform's own fields win; when
- * it only names the site's slug, the URLs are built from the configured sites
- * domain, which is how the platform lays them out.
- */
-export function siteUrls(payload: unknown, domain: string) {
-  const slug = pick(payload, 'slug', 'site.slug', 'siteSlug', 'subdomain', 'site.subdomain');
-  const base = slug ? `https://${slug}.${domain}` : null;
-  const production = httpsUrl(
-    pick(payload, 'productionUrl', 'production_url', 'urls.production', 'site.productionUrl', 'liveUrl', 'url', 'site.url'),
-  ) ?? base;
-  return {
-    slug,
-    production,
-    preview:
-      httpsUrl(pick(payload, 'previewUrl', 'preview_url', 'urls.preview', 'site.previewUrl', 'preview.url')) ??
-      (slug ? `https://${slug}-preview.${domain}` : null),
-    editor:
-      httpsUrl(pick(payload, 'editorUrl', 'editor_url', 'urls.editor', 'site.editorUrl', 'keystaticUrl')) ??
-      (production ? `${production}/keystatic` : null),
-    repo: httpsUrl(
-      pick(payload, 'repoUrl', 'repo_url', 'repository.htmlUrl', 'repository.url', 'repo.url', 'repo.htmlUrl', 'site.repoUrl'),
-    ),
-    domain: pick(payload, 'customDomain', 'custom_domain', 'domain.name', 'site.customDomain'),
-  };
+/* ——————————————————————— the site row ——————————————————————— */
+
+export async function getSite(env: Env, projectId: string): Promise<SiteRow | null> {
+  return env.DB.prepare('SELECT * FROM sites WHERE project_id = ?').bind(projectId).first<SiteRow>();
 }
 
-const trimPayload = (payload: unknown) => {
-  try {
-    return JSON.stringify(payload).slice(0, 4000);
-  } catch {
-    return null;
-  }
-};
-
-/* ——————————————————————— sign-in ——————————————————————— */
-
-interface Account {
-  user_id: string;
-  email: string;
-  auth_request_id: string;
-  state: 'pending' | 'verified' | 'expired';
-}
-
-const isExpired = (error: unknown) =>
-  error instanceof PlatformError && /AUTH_REQUEST_EXPIRED|expired|start-?auth again|sign-?in again/i.test(error.message);
-
-/** Ask the platform for a sign-in for this user's verified address. */
-async function startSignIn(env: Env, userId: string, email: string): Promise<void> {
-  const res = await platformFetch(env, '/api/gpt/bootstrap/start-auth', { method: 'POST', body: { email } });
-  const id = pick(res, 'authRequestId', 'auth_request_id', 'id');
-  if (!id) throw new PlatformError('The platform started a sign-in but returned no authRequestId.');
-  const t = now();
-  await env.DB.prepare(
-    `INSERT INTO platform_accounts (user_id, email, auth_request_id, state, created_at, updated_at)
-     VALUES (?, ?, ?, 'pending', ?, ?)
-     ON CONFLICT(user_id) DO UPDATE SET email = excluded.email, auth_request_id = excluded.auth_request_id,
-       state = 'pending', updated_at = excluded.updated_at`,
-  )
-    .bind(userId, email, id, t, t)
-    .run();
-}
-
-/** The user's platform sign-in, checked against the platform when still pending. */
-async function account(env: Env, userId: string): Promise<Account | null> {
-  const row = await env.DB.prepare('SELECT user_id, email, auth_request_id, state FROM platform_accounts WHERE user_id = ?')
-    .bind(userId)
-    .first<Account>();
-  if (!row || row.state !== 'pending') return row;
-  try {
-    const status = await platformFetch(env, '/api/gpt/bootstrap/auth-status', { query: { authRequestId: row.auth_request_id } });
-    const s = (pick(status, 'status', 'state') ?? '').toLowerCase();
-    const verified = s === 'verified' || (status as Record<string, unknown> | null)?.canCreateSite === true;
-    if (!verified) return row;
-    await env.DB.prepare(`UPDATE platform_accounts SET state = 'verified', updated_at = ? WHERE user_id = ?`).bind(now(), userId).run();
-    return { ...row, state: 'verified' };
-  } catch (error) {
-    if (!isExpired(error)) throw error;
-    await env.DB.prepare(`UPDATE platform_accounts SET state = 'expired', updated_at = ? WHERE user_id = ?`).bind(now(), userId).run();
-    return { ...row, state: 'expired' };
-  }
-}
-
-/* ——————————————————————— the state machine ——————————————————————— */
-
-interface ProjectForSite {
-  id: string;
-  name: string;
-  kind: ProjectKind;
-  brief: string;
-}
-
-/** The draft the platform builds from: the interview, in its vocabulary. */
-export function draftFromBrief(project: ProjectForSite) {
-  const brief = parseBrief(project.brief);
-  return {
-    siteName: project.name,
-    siteType: 'business',
-    audience: `People looking for: ${brief.what}`.slice(0, 500),
-    tone: 'Plain, warm and professional. Short sentences, no jargon.',
-    goals: [brief.goal, brief.manual && `Today done by hand: ${brief.manual}`].filter(Boolean).join('\n').slice(0, 1000),
-    differentiator: brief.what.slice(0, 500),
-  };
+export async function getSiteBySlug(env: Env, slug: string): Promise<SiteRow | null> {
+  return env.DB.prepare('SELECT * FROM sites WHERE slug = ?').bind(slug).first<SiteRow>();
 }
 
 async function save(env: Env, projectId: string, patch: Partial<SiteRow>): Promise<void> {
   const keys = Object.keys(patch) as (keyof SiteRow)[];
   if (!keys.length) return;
-  await env.DB.prepare(`UPDATE project_sites SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE project_id = ?`)
+  await env.DB.prepare(`UPDATE sites SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE project_id = ?`)
     .bind(...keys.map((k) => patch[k] ?? null), now(), projectId)
     .run();
 }
 
-export async function getSite(env: Env, projectId: string): Promise<SiteRow | null> {
-  return env.DB.prepare('SELECT * FROM project_sites WHERE project_id = ?').bind(projectId).first<SiteRow>();
+/* ——————————————————————— slugs ——————————————————————— */
+
+/** Names a client site may never take, on either channel. */
+const RESERVED_SLUGS = new Set(['www', 'api', 'admin', 'portal', 'mail', 'preview', 'sites']);
+
+export function cleanSiteSlug(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const slug = value.trim().toLowerCase();
+  // `--` is the preview marker, so a site slug may never contain it.
+  return /^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])?$/.test(slug) && !slug.includes('--') && !RESERVED_SLUGS.has(slug)
+    ? slug
+    : null;
+}
+
+/** A site slug no site holds: the project's own slug, then -2, -3, … */
+async function uniqueSiteSlug(env: Env, base: string): Promise<string | null> {
+  const first = cleanSiteSlug(base);
+  if (!first) return null;
+  for (let n = 1; n <= 20; n += 1) {
+    const slug = n === 1 ? first : `${first}-${n}`;
+    if (!cleanSiteSlug(slug)) continue;
+    const taken = await env.DB.prepare('SELECT 1 FROM sites WHERE slug = ?').bind(slug).first();
+    if (!taken) return slug;
+  }
+  return null;
+}
+
+/* ——————————————————————— allocation ——————————————————————— */
+
+/** Waiting this long for a node to make the repo stops the site. */
+const ALLOCATE_TIMEOUT_SECONDS = 30 * 60;
+
+const PLACEHOLDER_DEPLOY = 'placeholder';
+
+function placeholderHtml(name: string): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${name}</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+         font-family: ui-sans-serif, system-ui, sans-serif; background: #f6f3ec; color: #2a2620; }
+  main { max-width: 34rem; padding: 2rem; text-align: center; }
+  h1 { font-size: 1.6rem; font-weight: 600; margin: 0 0 .75rem; }
+  p { color: #6d6558; line-height: 1.6; margin: 0; }
+</style>
+</head>
+<body><main>
+<h1>${name}</h1>
+<p>This site is being built. The first real version lands here soon.</p>
+</main></body>
+</html>
+`;
 }
 
 /**
- * Start provisioning a project for this user. Idempotent: a project that
- * already has a site is returned as it is; a failed one starts over.
+ * The standing-in site: a single page so both addresses answer while the
+ * source repo is being made. Written through the same manifest+blob shape as
+ * a real deploy, under the fixed id `placeholder`.
+ */
+async function placeholderDeploy(env: Env, slug: string, name: string): Promise<void> {
+  const html = new TextEncoder().encode(placeholderHtml(name));
+  const sha = await sha256Hex(html);
+  await env.SITES!.put(blobKey(slug, sha), html, { httpMetadata: { contentType: 'text/html; charset=utf-8' } });
+  const manifest = {
+    files: { 'index.html': { sha, size: html.length, type: 'text/html; charset=utf-8' } },
+    placeholder: true,
+  };
+  await env.SITES!.put(manifestKey(slug, PLACEHOLDER_DEPLOY), JSON.stringify(manifest), {
+    httpMetadata: { contentType: 'application/json' },
+  });
+}
+
+/**
+ * Start hosting a project. Idempotent: a project that already has a site is
+ * returned as it is; a failed one starts over.
  */
 export async function startSite(
   env: Env,
-  user: { id: string; email: string },
-  projectId: string,
+  user: { id: string },
+  project: { id: string; name: string; slug: string },
 ): Promise<SiteRow> {
-  const existing = await getSite(env, projectId);
-  if (existing && existing.state !== 'failed') return advanceSite(env, projectId);
+  const existing = await getSite(env, project.id);
+  if (existing && existing.state !== 'failed') return advanceSite(env, project.id);
+  const slug = await uniqueSiteSlug(env, project.slug);
+  if (!slug) throw new Error('No free site address left for this name.');
   const t = now();
   await env.DB.prepare(
-    `INSERT INTO project_sites (project_id, user_id, state, created_at, updated_at) VALUES (?, ?, 'signin', ?, ?)
-     ON CONFLICT(project_id) DO UPDATE SET state = 'signin', site_id = NULL, operation_id = NULL, error = NULL,
-       failure_alerted_at = NULL, user_id = excluded.user_id, updated_at = excluded.updated_at`,
+    `INSERT INTO sites (project_id, slug, state, template, created_at, updated_at)
+     VALUES (?, ?, 'allocating', 'site', ?, ?)
+     ON CONFLICT(project_id) DO UPDATE SET state = 'allocating', slug = excluded.slug,
+       preview_deploy = NULL, production_deploy = NULL, error = NULL, failure_alerted_at = NULL,
+       updated_at = excluded.updated_at`,
   )
-    .bind(projectId, user.id, t, t)
+    .bind(project.id, slug, t, t)
     .run();
-  const acct = await env.DB.prepare('SELECT state FROM platform_accounts WHERE user_id = ?').bind(user.id).first<{ state: string }>();
-  if (!acct || acct.state === 'expired') await startSignIn(env, user.id, user.email);
-  return advanceSite(env, projectId);
-}
-
-/** Send a fresh sign-in link, e.g. when the first one expired or got lost. */
-export async function resendSignIn(env: Env, user: { id: string; email: string }): Promise<void> {
-  await startSignIn(env, user.id, user.email);
+  return advanceSite(env, project.id);
 }
 
 /**
- * Move one site one step forward, as far as the platform allows right now.
- * Never throws for a platform failure: the site records it instead.
+ * Move one site one step forward. Never throws for a storage failure: the
+ * site records it instead.
  */
 export async function advanceSite(env: Env, projectId: string): Promise<SiteRow> {
   let site = await getSite(env, projectId);
   if (!site) throw new Error('no site');
   try {
     for (let step = 0; step < 4 && site.state !== 'ready' && site.state !== 'failed'; step += 1) {
-      const before = `${site.state}:${site.operation_id}:${site.site_id}`;
+      const before = `${site.state}:${site.preview_deploy}`;
       await stepSite(env, site);
       site = (await getSite(env, projectId))!;
-      if (`${site.state}:${site.operation_id}:${site.site_id}` === before) break; // waiting on the platform
+      if (`${site.state}:${site.preview_deploy}` === before) break; // waiting on a node
     }
   } catch (error) {
-    const message = (error as Error)?.message ?? 'unknown error';
-    if (isExpired(error)) {
-      // The sign-in lapsed mid-way: ask again, keep the progress.
-      await env.DB.prepare(`UPDATE platform_accounts SET state = 'expired', updated_at = ? WHERE user_id = ?`).bind(now(), site.user_id).run();
-      await save(env, projectId, { state: site.site_id ? site.state : 'signin', error: 'The sign-in expired. Send a new link.' });
-    } else if (error instanceof PlatformError) {
-      // A platform refusal is a real answer: stop and say so.
-      await save(env, projectId, { state: 'failed', error: message.slice(0, 500) });
-    } else {
-      // A network blip or our own bug: keep the state, record why, try next time.
-      await save(env, projectId, { error: message.slice(0, 500) });
-    }
+    // A storage blip or our own bug: keep the state, record why, try next time.
+    await save(env, projectId, { error: ((error as Error)?.message ?? 'unknown error').slice(0, 500) });
     site = (await getSite(env, projectId))!;
   }
   return site;
 }
 
 async function stepSite(env: Env, site: SiteRow): Promise<void> {
-  const acct = await account(env, site.user_id);
-  if (!acct || acct.state !== 'verified') {
-    if (site.state !== 'signin' && !site.site_id) await save(env, site.project_id, { state: 'signin' });
-    return; // nothing to do until the client opens the link
+  if (site.state !== 'allocating') return;
+  if (!site.preview_deploy) {
+    const project = await env.DB.prepare('SELECT name FROM projects WHERE id = ?').bind(site.project_id).first<{ name: string }>();
+    await placeholderDeploy(env, site.slug, project?.name ?? site.slug);
+    await save(env, site.project_id, { preview_deploy: PLACEHOLDER_DEPLOY, production_deploy: PLACEHOLDER_DEPLOY });
+    return;
   }
-  const auth = acct.auth_request_id;
-  const { sitesDomain } = await getSettings(env);
-
-  switch (site.state) {
-    case 'signin': {
-      if (site.site_id) {
-        await save(env, site.project_id, { state: 'provisioning', error: null });
-        return;
-      }
-      const project = await env.DB.prepare('SELECT id, name, kind, brief FROM projects WHERE id = ?')
-        .bind(site.project_id)
-        .first<ProjectForSite>();
-      if (!project) throw new PlatformError('The project no longer exists.');
-      const res = await platformFetch(env, '/api/gpt/bootstrap/create-site', {
-        method: 'POST',
-        body: { authRequestId: auth, ...draftFromBrief(project) },
-      });
-      await save(env, site.project_id, {
-        state: 'creating',
-        site_id: pick(res, 'siteId', 'site_id', 'site.id', 'id'),
-        operation_id: pick(res, 'operationId', 'operation_id', 'operation.id'),
-        last_payload: trimPayload(res),
-        error: null,
-      });
-      return;
-    }
-    case 'creating': {
-      let siteId = site.site_id;
-      if (site.operation_id) {
-        const op = await platformFetch(env, '/api/gpt/bootstrap/operation-status', {
-          query: { authRequestId: auth, operationId: site.operation_id },
-        });
-        const outcome = operationOutcome(op);
-        await save(env, site.project_id, { last_payload: trimPayload(op) });
-        if (outcome.failed) throw new PlatformError(`Creating the draft failed: ${outcome.failed}`);
-        if (!outcome.done) return;
-        siteId = siteId ?? pick(op, 'siteId', 'site_id', 'result.siteId', 'result.site.id', 'site.id');
-      }
-      if (!siteId) throw new PlatformError('The platform created a draft but named no site id.');
-      const res = await platformFetch(env, '/api/gpt/bootstrap/provision-site', {
-        method: 'POST',
-        body: { authRequestId: auth, siteId },
-      });
-      await save(env, site.project_id, {
-        state: 'provisioning',
-        site_id: siteId,
-        operation_id: pick(res, 'operationId', 'operation_id', 'operation.id'),
-        last_payload: trimPayload(res),
-      });
-      return;
-    }
-    case 'provisioning': {
-      if (site.operation_id) {
-        const op = await platformFetch(env, '/api/gpt/bootstrap/operation-status', {
-          query: { authRequestId: auth, operationId: site.operation_id },
-        });
-        const outcome = operationOutcome(op);
-        await save(env, site.project_id, { last_payload: trimPayload(op) });
-        if (outcome.failed) throw new PlatformError(`Provisioning failed: ${outcome.failed}`);
-        if (!outcome.done) return;
-      }
-      const state = await platformFetch(env, '/api/gpt/bootstrap/site-state', {
-        query: { authRequestId: auth, siteId: site.site_id ?? '' },
-      });
-      const urls = siteUrls(state, sitesDomain);
-      if (!urls.preview) {
-        // Provisioned, but no address yet: keep waiting, show what came back.
-        await save(env, site.project_id, { operation_id: null, last_payload: trimPayload(state) });
-        return;
-      }
-      await save(env, site.project_id, {
-        state: 'ready',
-        operation_id: null,
-        platform_slug: urls.slug,
-        preview_url: urls.preview,
-        editor_url: urls.editor,
-        production_url: urls.production,
-        repo_url: urls.repo,
-        custom_domain: urls.domain,
-        last_payload: trimPayload(state),
-        error: null,
-      });
-      // The repo the platform made is the project's code from now on: nodes
-      // clone it, and the setup's code check reads it.
-      if (urls.repo) {
-        await env.DB.prepare(`UPDATE projects SET repo = ?, repo_kind = 'repo' WHERE id = ? AND (repo IS NULL OR repo = '')`)
-          .bind(urls.repo, site.project_id)
-          .run();
-      }
-      return;
-    }
+  const project = await env.DB.prepare('SELECT repo FROM projects WHERE id = ?').bind(site.project_id).first<{ repo: string | null }>();
+  if (project?.repo) {
+    await save(env, site.project_id, { state: 'ready', error: null });
+    return;
+  }
+  if (now() - site.created_at > ALLOCATE_TIMEOUT_SECONDS) {
+    await save(env, site.project_id, {
+      state: 'failed',
+      error: 'No machine created the source repo in 30 minutes. Check the fleet is online, then retry.',
+    });
   }
 }
 
-/** Every site still on its way, one step each. The cron's half of the machine. */
+/** Every site still being allocated, one step each. The cron's half. */
 export async function advanceSites(env: Env): Promise<SiteRow[]> {
   const { results } = await env.DB.prepare(
-    `SELECT project_id FROM project_sites WHERE state IN ('signin', 'creating', 'provisioning') AND updated_at < ? LIMIT 20`,
+    `SELECT project_id FROM sites WHERE state = 'allocating' AND updated_at < ? LIMIT 20`,
   )
     .bind(now() - 30)
     .all<{ project_id: string }>();
@@ -408,75 +330,194 @@ export async function advanceSites(env: Env): Promise<SiteRow[]> {
 /** Failed sites Ali has not been told about yet; marks them told. */
 export async function takeNewSiteFailures(env: Env) {
   const { results } = await env.DB.prepare(
-    `SELECT s.project_id, s.error, p.name, p.slug FROM project_sites s JOIN projects p ON p.id = s.project_id
+    `SELECT s.project_id, s.error, p.name, p.slug FROM sites s JOIN projects p ON p.id = s.project_id
       WHERE s.state = 'failed' AND s.failure_alerted_at IS NULL`,
   ).all<{ project_id: string; error: string | null; name: string; slug: string }>();
   if (results?.length) {
     await env.DB.batch(
-      results.map((r) => env.DB.prepare('UPDATE project_sites SET failure_alerted_at = ? WHERE project_id = ?').bind(now(), r.project_id)),
+      results.map((r) => env.DB.prepare('UPDATE sites SET failure_alerted_at = ? WHERE project_id = ?').bind(now(), r.project_id)),
     );
   }
   return results ?? [];
 }
 
-/* ——————————————————————— preview and publish ——————————————————————— */
+/* ——————————————————————— deploys ——————————————————————— */
 
-export interface PreviewFile {
-  path: string;
-  content: string;
+export interface SiteDeployRow {
+  id: string;
+  project_id: string;
+  ticket_id: number | null;
+  commit_sha: string | null;
+  files: number;
+  bytes: number;
+  created_at: number;
 }
 
-const SAFE_PATH = /^(?!\/)(?!.*(^|\/)\.\.(\/|$))[\w.@+\-/ ]{1,300}$/;
+export async function listDeploys(env: Env, projectId: string, limit = 50): Promise<SiteDeployRow[]> {
+  const { results } = await env.DB.prepare(
+    'SELECT * FROM site_deploys WHERE project_id = ? ORDER BY created_at DESC LIMIT ?',
+  )
+    .bind(projectId, Math.min(200, limit))
+    .all<SiteDeployRow>();
+  return results ?? [];
+}
 
-/** Bound a run's files to what edit-preview will take, or say why not. */
-export function cleanPreviewFiles(value: unknown): { files: PreviewFile[] } | { error: string } {
-  if (!Array.isArray(value) || value.length === 0) return { error: 'no files' };
-  if (value.length > PREVIEW_LIMITS.files) return { error: `${value.length} files; the preview takes at most ${PREVIEW_LIMITS.files}` };
-  const files: PreviewFile[] = [];
-  let total = 0;
-  for (const raw of value as Record<string, unknown>[]) {
-    const path = typeof raw?.path === 'string' ? raw.path : '';
-    const content = typeof raw?.content === 'string' ? raw.content : null;
-    if (!SAFE_PATH.test(path) || content === null) return { error: `bad file entry ${JSON.stringify(path).slice(0, 80)}` };
-    if (path.startsWith('.git/') || path === '.git') return { error: 'refusing a .git path' };
-    const bytes = new TextEncoder().encode(content).length;
-    if (bytes > PREVIEW_LIMITS.fileBytes) return { error: `${path} is larger than 512 KB` };
-    total += bytes;
-    files.push({ path, content });
+/**
+ * Open a deploy: record its manifest and answer which blobs the store still
+ * lacks. The manifest is written at once — it is content-addressed, so the
+ * same body is the same deploy and a retry is free.
+ */
+export async function createDeploy(
+  env: Env,
+  slug: string,
+  rawFiles: unknown,
+): Promise<{ deployId: string; needed: string[]; files: DeployFile[] } | { error: string }> {
+  if (!env.SITES) return { error: 'sites_unavailable' };
+  const site = await getSiteBySlug(env, slug);
+  if (!site || site.host !== 'ours') return { error: 'not_found' };
+  const cleaned = cleanDeployManifest(rawFiles);
+  if ('error' in cleaned) return cleaned;
+  const id = await deployId(cleaned.files);
+  const manifest = { files: Object.fromEntries(cleaned.files.map((f) => [f.path, { sha: f.sha256, size: f.size, ...(f.type ? { type: f.type } : {}) }])) };
+  await env.SITES.put(manifestKey(slug, id), JSON.stringify(manifest), { httpMetadata: { contentType: 'application/json' } });
+  const needed = await missingBlobs(env, slug, [...new Set(cleaned.files.map((f) => f.sha256))]);
+  return { deployId: id, needed, files: cleaned.files };
+}
+
+/** One blob of an open deploy. The sha in the path must match the bytes. */
+export async function uploadDeployBlob(
+  env: Env,
+  slug: string,
+  deploy: string,
+  sha: string,
+  body: ArrayBuffer,
+): Promise<{ ok: true } | { error: string }> {
+  if (!env.SITES) return { error: 'sites_unavailable' };
+  if (!SHA256.test(sha)) return { error: 'bad_sha' };
+  if (body.byteLength === 0 || body.byteLength > DEPLOY_LIMITS.fileBytes) return { error: 'bad_size' };
+  const manifestObject = await env.SITES.get(manifestKey(slug, deploy));
+  if (!manifestObject) return { error: 'not_found' };
+  const manifest = (await manifestObject.json()) as { files?: Record<string, { sha: string; type?: string }> };
+  const entry = Object.values(manifest.files ?? {}).find((f) => f.sha === sha);
+  if (!entry) return { error: 'not_in_manifest' };
+  const digest = await sha256Hex(body);
+  if (digest !== sha) return { error: 'sha_mismatch' };
+  await env.SITES.put(blobKey(slug, sha), body, {
+    httpMetadata: entry.type ? { contentType: entry.type } : undefined,
+  });
+  return { ok: true };
+}
+
+/**
+ * Close a deploy: every blob present, the row recorded, the preview pointed
+ * at it. Production is untouched — only publish moves that pointer.
+ */
+export async function finishDeploy(
+  env: Env,
+  slug: string,
+  deploy: string,
+  meta: { ticketId?: number; commitSha?: string } = {},
+): Promise<{ deployId: string; previewUrl: string; files: number; bytes: number } | { error: string }> {
+  if (!env.SITES) return { error: 'sites_unavailable' };
+  const site = await getSiteBySlug(env, slug);
+  if (!site) return { error: 'not_found' };
+  const manifestObject = await env.SITES.get(manifestKey(slug, deploy));
+  if (!manifestObject) return { error: 'not_found' };
+  const manifest = (await manifestObject.json()) as { files: Record<string, { sha: string; size: number }> };
+  const shas = [...new Set(Object.values(manifest.files ?? {}).map((f) => f.sha))];
+  const missing = await missingBlobs(env, slug, shas);
+  if (missing.length) return { error: `missing ${missing.length} file(s)` };
+
+  const files = Object.keys(manifest.files ?? {}).length;
+  const bytes = Object.values(manifest.files ?? {}).reduce((n, f) => n + f.size, 0);
+  const t = now();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO site_deploys (id, project_id, ticket_id, commit_sha, files, bytes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
+    ).bind(deploy, site.project_id, meta.ticketId ?? null, meta.commitSha ?? null, files, bytes, t),
+    env.DB.prepare('UPDATE sites SET preview_deploy = ?, updated_at = ? WHERE project_id = ?').bind(deploy, t, site.project_id),
+  ]);
+  const { sitesDomain } = await getSettings(env);
+  return { deployId: deploy, previewUrl: `https://${slug}--preview.${sitesDomain}`, files, bytes };
+}
+
+/** Production takes the deploy the preview is on. The caller decides who may. */
+export async function publishSite(env: Env, projectId: string): Promise<{ productionUrl: string } | { error: string }> {
+  const site = await getSite(env, projectId);
+  if (!site) return { error: 'not_found' };
+  if (site.state !== 'ready' || !site.preview_deploy) return { error: 'not_ready' };
+  await env.DB.prepare('UPDATE sites SET production_deploy = preview_deploy, updated_at = ? WHERE project_id = ?')
+    .bind(now(), projectId)
+    .run();
+  const { sitesDomain } = await getSettings(env);
+  return { productionUrl: `https://${site.slug}.${sitesDomain}` };
+}
+
+/** Production goes back to an older deploy of this same site. */
+export async function rollbackSite(env: Env, projectId: string, deployId: string): Promise<{ productionUrl: string } | { error: string }> {
+  const site = await getSite(env, projectId);
+  if (!site) return { error: 'not_found' };
+  const deploy = await env.DB.prepare('SELECT 1 FROM site_deploys WHERE id = ? AND project_id = ?')
+    .bind(deployId, projectId)
+    .first();
+  if (!deploy) return { error: 'unknown_deploy' };
+  await env.DB.prepare('UPDATE sites SET production_deploy = ?, updated_at = ? WHERE project_id = ?')
+    .bind(deployId, now(), projectId)
+    .run();
+  const { sitesDomain } = await getSettings(env);
+  return { productionUrl: `https://${site.slug}.${sitesDomain}` };
+}
+
+/**
+ * A node's report that it created the source repo: fill the project's blank
+ * repo and move the site on. The repo column is never overwritten.
+ */
+export async function reportSiteRepo(env: Env, slug: string, repo: string): Promise<SiteRow | { code: string }> {
+  const site = await getSiteBySlug(env, slug);
+  if (!site) return { code: 'not_found' };
+  await env.DB.prepare(`UPDATE projects SET repo = ?, repo_kind = 'repo' WHERE id = ? AND (repo IS NULL OR repo = '')`)
+    .bind(repo, site.project_id)
+    .run();
+  return advanceSite(env, site.project_id);
+}
+
+/** Deploys past KEPT_DEPLOYS no channel points at: manifest and row gone, blobs too when nothing references them. */
+export async function pruneDeploys(env: Env): Promise<void> {
+  if (!env.SITES) return;
+  const { results: sites } = await env.DB.prepare('SELECT project_id, slug, preview_deploy, production_deploy FROM sites')
+    .all<{ project_id: string; slug: string; preview_deploy: string | null; production_deploy: string | null }>();
+  for (const site of sites ?? []) {
+    const pointed = new Set([site.preview_deploy, site.production_deploy].filter(Boolean) as string[]);
+    const deploys = await listDeploys(env, site.project_id, KEPT_DEPLOYS + 50);
+    const keep = new Set(pointed);
+    for (const deploy of deploys.slice(0, KEPT_DEPLOYS)) keep.add(deploy.id);
+    const drop = deploys.filter((d) => !keep.has(d.id)).map((d) => d.id);
+    if (!drop.length) continue;
+
+    const statements = drop.map((id) => env.DB.prepare('DELETE FROM site_deploys WHERE id = ?').bind(id));
+    await env.DB.batch(statements);
+    for (const id of drop) await env.SITES.delete(manifestKey(site.slug, id));
+
+    // Blobs no kept manifest names: list this site's blobs, read its kept
+    // manifests, delete the difference. Bounded by the site's own prefix.
+    const referenced = new Set<string>();
+    for (const id of keep) {
+      const object = await env.SITES.get(manifestKey(site.slug, id));
+      if (!object) continue;
+      const manifest = (await object.json().catch(() => null)) as { files?: Record<string, { sha: string }> } | null;
+      for (const file of Object.values(manifest?.files ?? {})) referenced.add(file.sha);
+    }
+    const blobs = await env.SITES.list({ prefix: `sites/${site.slug}/blobs/` });
+    const orphans = blobs.objects.map((o) => o.key).filter((key) => !referenced.has(key.split('/').pop() ?? ''));
+    if (orphans.length) await env.SITES.delete(orphans);
   }
-  if (total > PREVIEW_LIMITS.totalBytes) return { error: 'the files add up to more than 2 MB' };
-  return { files };
 }
 
-async function siteAuth(env: Env, site: SiteRow): Promise<string> {
-  if (site.state !== 'ready' || !site.site_id) throw new PlatformError('The site is not set up yet.');
-  const acct = await account(env, site.user_id);
-  if (!acct || acct.state !== 'verified') throw new PlatformError('AUTH_REQUEST_EXPIRED: the site owner must sign in again.');
-  return acct.auth_request_id;
-}
-
-/** Write a run's files to the site's preview branch. Production is untouched. */
-export async function pushToPreview(env: Env, projectId: string, files: PreviewFile[], message: string) {
+/** Where a site's addresses point, for a view or a tool reply. */
+export async function siteState(env: Env, projectId: string) {
   const site = await getSite(env, projectId);
-  if (!site) throw new PlatformError('This project has no hosted site.');
-  const auth = await siteAuth(env, site);
-  const res = await platformFetch(env, '/api/gpt/bootstrap/edit-preview', {
-    method: 'POST',
-    body: { authRequestId: auth, siteId: site.site_id, files, commitMessage: message.slice(0, 200) },
-  });
-  await save(env, projectId, { preview_updated_at: now(), last_payload: trimPayload(res) });
-  return { previewUrl: site.preview_url, result: res };
-}
-
-/** Promote the preview to production. The caller decides who may. */
-export async function publishPreview(env: Env, projectId: string, message: string) {
-  const site = await getSite(env, projectId);
-  if (!site) throw new PlatformError('This project has no hosted site.');
-  const auth = await siteAuth(env, site);
-  const res = await platformFetch(env, '/api/gpt/bootstrap/approve-preview', {
-    method: 'POST',
-    body: { authRequestId: auth, siteId: site.site_id, commitMessage: message.slice(0, 200) },
-  });
-  await save(env, projectId, { last_payload: trimPayload(res) });
-  return { productionUrl: site.production_url, result: res };
+  if (!site) return null;
+  const { sitesDomain } = await getSettings(env);
+  return { site: siteView(site, sitesDomain), deploys: await listDeploys(env, projectId) };
 }
