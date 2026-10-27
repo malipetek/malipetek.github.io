@@ -2574,6 +2574,12 @@ button.aw-file:hover { border-color: currentColor; }
     };
     return transport;
   }
+  function TicketGlyph({ size = 16 }) {
+    return /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: [
+      /* @__PURE__ */ jsx("path", { d: "M4 7a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v3a2 2 0 0 0 0 4v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a2 2 0 0 0 0-4z" }),
+      /* @__PURE__ */ jsx("path", { d: "M14 6v12", strokeDasharray: "2 2" })
+    ] });
+  }
   function AdminIcon({ size = 16 }) {
     return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: "M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v7h-4z" }) });
   }
@@ -2765,7 +2771,25 @@ button.aw-file:hover { border-color: currentColor; }
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: PANEL_ID, order: 12, label: "Admin" }, AdminIcon));
     ctx.slots.inject("sidebar.session.row.leading", () => ctx.slots.register({ name: "sidebar.session.row.leading", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketMark));
     ctx.slots.inject("sidebar.session.row.hover", () => ctx.slots.register({ name: "sidebar.session.row.hover", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketHover));
-    ctx.effect(() => ctx.sidebarRightTabs?.register?.({ id: "admin-ticket", kind: "ticket", priority: "builtin", title: () => "Ticket" }), "admin: ticket tab type");
+    ctx.effect(
+      () => ctx.sidebarRightTabs.register({
+        id: "admin-ticket",
+        kind: "ticket",
+        priority: "extension",
+        keepMounted: false,
+        title: () => "Ticket",
+        guide: [
+          {
+            id: "admin-ticket",
+            order: 14,
+            title: () => "Ticket",
+            description: () => "The ticket this run session came from: open it in Admin, or review its branch in Git Graph.",
+            icon: () => /* @__PURE__ */ jsx(TicketGlyph, {})
+          }
+        ]
+      }),
+      "admin: ticket tab type"
+    );
     ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({ name: "sidebar.right.pane.tab", key: "admin-ticket", locale: NAMESPACE }, TicketTab));
     ctx.slots.inject("sidebar.right.pane.tab.title", () => ctx.slots.register({ name: "sidebar.right.pane.tab.title", key: "admin-ticket", locale: NAMESPACE }, TicketTabTitle));
     void command(`hello ${CLIENT_VERSION}`).catch(() => void 0);

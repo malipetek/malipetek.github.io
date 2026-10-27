@@ -192,6 +192,16 @@ function makeTransport(command) {
 }
 
 /** The sidebar glyph. */
+/** The Ticket tab's glyph in the right pane's guide: a ticket stub. */
+function TicketGlyph({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 7a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v3a2 2 0 0 0 0 4v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a2 2 0 0 0 0-4z" />
+      <path d="M14 6v12" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+
 function AdminIcon({ size = 16 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -434,7 +444,29 @@ function apply(ctx) {
     ctx.slots.register({ name: 'sidebar.session.row.leading', id: 'admin-ticket', order: 10, locale: NAMESPACE }, TicketMark));
   ctx.slots.inject('sidebar.session.row.hover', () =>
     ctx.slots.register({ name: 'sidebar.session.row.hover', id: 'admin-ticket', order: 10, locale: NAMESPACE }, TicketHover));
-  ctx.effect(() => ctx.sidebarRightTabs?.register?.({ id: 'admin-ticket', kind: 'ticket', priority: 'builtin', title: () => 'Ticket' }), 'admin: ticket tab type');
+  // A right-pane tab type is only listed where a person can pick it — the
+  // pane's "+" guide — when it declares a `guide` entry; without one it exists
+  // but nothing opens it.
+  ctx.effect(
+    () =>
+      ctx.sidebarRightTabs.register({
+        id: 'admin-ticket',
+        kind: 'ticket',
+        priority: 'extension',
+        keepMounted: false,
+        title: () => 'Ticket',
+        guide: [
+          {
+            id: 'admin-ticket',
+            order: 14,
+            title: () => 'Ticket',
+            description: () => 'The ticket this run session came from: open it in Admin, or review its branch in Git Graph.',
+            icon: () => <TicketGlyph />,
+          },
+        ],
+      }),
+    'admin: ticket tab type',
+  );
   ctx.slots.inject('sidebar.right.pane.tab', () =>
     ctx.slots.register({ name: 'sidebar.right.pane.tab', key: 'admin-ticket', locale: NAMESPACE }, TicketTab));
   ctx.slots.inject('sidebar.right.pane.tab.title', () =>

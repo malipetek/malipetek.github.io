@@ -1,7 +1,7 @@
 {
   "name": "@malipetek/dsh-admin",
   "version": "1.0.0",
-  "description": "Management portal for malipetek.dev: tickets, the agent work queue and its fleet of nodes, system tasks, clients and projects — with tools so an agent can run it too.",
+  "description": "Management portal for malipetek.dev: tickets, the agent work queue and its fleet of nodes, system tasks, clients and projects \u2014 with tools so an agent can run it too.",
   "type": "module",
   "main": "index.js",
   "icon": "./icon.svg",
@@ -28,7 +28,8 @@
       "immediately": true,
       "inject": [
         "@deepseek-ai/dsh-client-ui-layout",
-        "@deepseek-ai/dsh-client-ui-sidebar"
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
       ]
     },
     "meta": {
