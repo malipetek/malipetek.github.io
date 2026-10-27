@@ -45,7 +45,7 @@ import { landWork, mainBranch, pushTarget, shareWork } from './share.mjs';
 import { health } from './health.mjs';
 import { buildPrompt } from './prompt.mjs';
 
-const VERSION = '2.7.0';
+const VERSION = '2.8.0';
 const HEARTBEAT_MS = 30_000;
 const PROJECT_SYNC_MS = 10 * 60_000;
 const SHUTDOWN = 'node shutting down';
@@ -101,6 +101,9 @@ function loadConfig() {
     // Projects the portal names a repo for, and no folder exists for, are
     // cloned here — never into projectsRoot, which is a person's own folder.
     autoClone: raw.autoClone !== false,
+    // Create repos on GitHub for projects the portal wants one for (needsRepo).
+    // Follows autoClone unless set: a node that does not clone does not create.
+    createRepos: raw.createRepos ?? raw.autoClone !== false,
     cloneRoot: expand(raw.cloneRoot ?? '~/.cache/malipetek-runner/projects'),
     projects,
     executors: {
@@ -243,11 +246,12 @@ async function syncProjects(config) {
         fetch: path.startsWith(config.cloneRoot),
         untrusted: path.startsWith(config.cloneRoot),
       };
+    } else if (project.needsRepo && config.createRepos) {
+      // No repo yet and the portal wants one: make it here and hold the folder
+      // (the Worker has no git credentials). Never let it take the sync down.
+      await provisionRepo(config, project.slug, project.needsRepo).catch((error) => log(`${project.slug}: repo not created: ${error.message}`));
+      if (!config.projects[project.slug]) missing.push(project.slug);
     } else missing.push(project.slug);
-    // An allocating site has no repo yet: a node makes it from the template
-    // and reports it back (the Worker has no git credentials).
-    // Never let site provisioning take the sync (and the node) down with it.
-    if (project.needsRepo) await provisionSiteRepo(config, project.slug, project.needsRepo).catch((error) => log(`site ${project.needsRepo.site}: ${error.message}`));
   }
   if (missing.length) log(`no local folder for: ${missing.join(', ')}`);
 }
@@ -265,53 +269,96 @@ const CONTENT_TYPES = {
   '.xml': 'application/xml', '.pdf': 'application/pdf', '.webmanifest': 'application/manifest+json',
   '.mp4': 'video/mp4', '.webm': 'video/webm', '.wasm': 'application/wasm',
 };
-const repoCreateFailures = new Map(); // slug → last failure, so a missing gh is not retried every sync
+const repoCreateFailures = new Map(); // slug → when this node last could not, so it is not retried every sync
+const repoCreateTries = new Map(); // slug → failed attempts in a row
+
+/** The README a blank project repo starts with. */
+const blankReadme = ({ title, about }) =>
+  `# ${title || 'Project'}\n\n${about ? `${about}\n\n` : ''}Set up by malipetek.dev. Work arrives on branches named \`malipetek/ticket-<id>\`.\n`;
 
 /**
- * A site waits in 'allocating' until its source repo exists. This node makes
- * it from the template with `gh` (its own GitHub sign-in — the Worker has no
- * repo credentials), pushes main and preview, and reports it back.
+ * A project the portal wants a repo for (`needsRepo`): a hosted site waiting
+ * in 'allocating', or any project with no code of its own yet. This node takes
+ * the job (a lease, so two nodes never both do it), makes a private repo with
+ * `gh` (its own GitHub sign-in), pushes `main` — and `preview` for the site
+ * template — keeps the folder as its copy, and reports the repo back.
+ *
+ * A failure another node could avoid (no `gh` here) is retried later; one it
+ * could not (the name is taken by a repo with history) is reported, so the
+ * admin view shows it and nothing retries until Ali does.
  */
-async function provisionSiteRepo(config, slug, needsRepo) {
+async function provisionRepo(config, slug, needsRepo) {
   if (repoCreateFailures.has(slug) && Date.now() - repoCreateFailures.get(slug) < 30 * 60_000) return;
   const owner = config.githubOwner ?? 'malipetek';
+  const name = String(needsRepo.name ?? needsRepo.site ?? slug).replace(/[^a-z0-9-]/g, '');
+  if (!name) return;
   if (!(await onPath('gh'))) {
     repoCreateFailures.set(slug, Date.now());
-    log(`site ${needsRepo.site}: gh is not on PATH — cannot create the repo`);
+    log(`${slug}: gh is not on PATH — cannot create the repo here`);
     return;
   }
-  const template = join(TEMPLATE_ROOT, String(needsRepo.template ?? 'site').replace(/[^a-z0-9-]/g, ''));
-  const source = existsSync(template) ? template : join(TEMPLATE_ROOT, 'site');
-  if (!existsSync(source)) return;
-  const dir = join(config.worktreeRoot, `.site-${needsRepo.site}`);
+  const { ok } = await api(config, 'POST', `/node/projects/${slug}/repo-claim`, { nodeId: config.nodeId });
+  if (!ok) return; // another node has it, or it is done
+  const fail = async (error) => {
+    log(`${slug}: repo not created: ${error}`);
+    await api(config, 'POST', `/node/projects/${slug}/repo-failed`, { nodeId: config.nodeId, error }).catch(() => {});
+  };
+
+  const template = String(needsRepo.template ?? 'blank').replace(/[^a-z0-9-]/g, '');
+  const site = template !== 'blank';
+  const dir = join(config.cloneRoot, slug);
   try {
     rmSync(dir, { recursive: true, force: true });
-    cpSync(source, dir, { recursive: true });
-    rmSync(join(dir, 'node_modules'), { recursive: true, force: true });
+    mkdirSync(config.cloneRoot, { recursive: true });
+    if (site) {
+      const source = existsSync(join(TEMPLATE_ROOT, template)) ? join(TEMPLATE_ROOT, template) : join(TEMPLATE_ROOT, 'site');
+      if (!existsSync(source)) return fail(`no ${template} template on ${config.nodeId}`);
+      cpSync(source, dir, { recursive: true });
+      rmSync(join(dir, 'node_modules'), { recursive: true, force: true });
+    } else {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'README.md'), blankReadme(needsRepo));
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/\n.env\n.DS_Store\n');
+    }
     const g = (...args) => git(dir, ...args);
     await g('init', '-q', '-b', 'main');
     await g('add', '-A');
-    await g('-c', 'user.email=node@malipetek.dev', '-c', 'user.name=malipetek.dev', 'commit', '-qm', 'From the malipetek.dev site template');
-    const repo = `https://github.com/${owner}/${needsRepo.site}`;
-    const made = await run('gh', ['repo', 'create', `${owner}/${needsRepo.site}`, '--private', '--source', dir, '--push'], { env: { ...process.env, GH_PROMPT_DISABLED: '1' } });
+    await g('-c', 'user.email=node@malipetek.dev', '-c', 'user.name=malipetek.dev', 'commit', '-qm', site ? 'From the malipetek.dev site template' : 'Start the project');
+    const full = `${owner}/${name}`;
+    const repo = `https://github.com/${full}`;
+    const made = await run('gh', ['repo', 'create', full, '--private', '--source', dir, '--push'], { env: { ...process.env, GH_PROMPT_DISABLED: '1' } });
     if (made.code !== 0) {
-      if (/already exists|Name already exists/i.test(made.stderr)) {
-        await g('remote', 'add', 'origin', `git@github.com:${owner}/${needsRepo.site}.git`).catch(() => {});
-        const pushed = await netGit(dir, ['push', '-u', 'origin', 'main']);
-        if (pushed.code !== 0) throw new Error(`push to existing repo failed: ${lastLine(pushed.stderr)}`);
-      } else throw new Error(lastLine(made.stderr) || `gh repo create failed (${made.code})`);
+      if (!/already exists/i.test(made.stderr)) throw new Error(lastLine(made.stderr) || `gh repo create failed (${made.code})`);
+      // Only an empty repo of that name is ours to fill: never push into one with history.
+      const empty = await run('gh', ['repo', 'view', full, '--json', 'isEmpty', '-q', '.isEmpty']);
+      if (empty.stdout.trim() !== 'true') return fail(`${full} already exists and has commits — name a repo for it, or rename the project`);
+      await g('remote', 'add', 'origin', `git@github.com:${full}.git`).catch(() => {});
+      const pushed = await netGit(dir, ['push', '-u', 'origin', 'main']);
+      if (pushed.code !== 0) throw new Error(`push to ${full} failed: ${lastLine(pushed.stderr)}`);
     }
-    await g('branch', 'preview');
-    const preview = await netGit(dir, ['push', '-u', 'origin', 'preview']);
-    if (preview.code !== 0) throw new Error(`preview push failed: ${lastLine(preview.stderr)}`);
-    await api(config, 'POST', `/node/sites/${needsRepo.site}/repo`, { repo });
-    // The node holds the folder from now on, so work on the project can claim.
-    config.projects[slug] = { path: dir, baseRef: 'origin/preview', explicit: false, fetch: true, untrusted: false };
+    if (site) {
+      await g('branch', 'preview');
+      const preview = await netGit(dir, ['push', '-u', 'origin', 'preview']);
+      if (preview.code !== 0) throw new Error(`preview push failed: ${lastLine(preview.stderr)}`);
+    }
+    await api(config, 'POST', needsRepo.site ? `/node/sites/${needsRepo.site}/repo` : `/node/projects/${slug}/repo`, { repo });
+    // This node holds the folder from now on, so work on the project can claim.
+    config.projects[slug] = { path: dir, baseRef: site ? 'origin/preview' : undefined, repo, slug, explicit: false, fetch: true, untrusted: true };
     repoCreateFailures.delete(slug);
-    log(`site ${needsRepo.site}: repo created at ${repo}`);
+    repoCreateTries.delete(slug);
+    log(`${slug}: repo created at ${repo}`);
   } catch (error) {
-    repoCreateFailures.set(slug, Date.now());
-    log(`site ${needsRepo.site}: repo not created: ${error.message}`);
+    // A network or GitHub blip: try again in a few minutes, and only call it
+    // failed (which waits for Ali) when it keeps happening.
+    const tries = (repoCreateTries.get(slug) ?? 0) + 1;
+    repoCreateTries.set(slug, tries);
+    if (tries >= 3) {
+      repoCreateTries.delete(slug);
+      await fail(error.message);
+    } else {
+      repoCreateFailures.set(slug, Date.now() - 25 * 60_000); // retry in ~5 minutes
+      log(`${slug}: repo not created (try ${tries} of 3): ${error.message}`);
+    }
   }
 }
 
@@ -454,7 +501,9 @@ async function buildWork(config, item) {
     await git(project.path, 'worktree', 'prune');
     const shared = change.shared ?? `malipetek/ticket-${item.ticketId}`;
     const hasShared = (await run('git', ['show-ref', '--verify', '--quiet', `refs/remotes/origin/${shared}`], { cwd: repo })).code === 0;
-    const base = hasShared ? `origin/${shared}` : 'origin/preview';
+    // A repo that predates hosting has no preview branch: start from its main line.
+    const hasPreview = (await run('git', ['show-ref', '--verify', '--quiet', 'refs/remotes/origin/preview'], { cwd: repo })).code === 0;
+    const base = hasShared ? `origin/${shared}` : hasPreview ? 'origin/preview' : 'origin/HEAD';
     await git(repo, 'worktree', 'add', '-B', shared, dir, base);
     for (const file of change.files ?? []) {
       const at = join(dir, file.path);
@@ -1113,6 +1162,12 @@ class Node {
       }
       if (res.draining !== this.draining) log(res.draining ? 'draining: taking no new work' : 'no longer draining');
       this.draining = res.draining;
+      // The project list changed (a new project, a repo made or wanted): re-read
+      // it on the next loop instead of waiting out PROJECT_SYNC_MS.
+      if (typeof res.projects === 'string' && res.projects !== this.projectsShape) {
+        if (this.projectsShape !== undefined) this.projectsChanged = true;
+        this.projectsShape = res.projects;
+      }
       for (const runId of res.cancel ?? []) {
         const r = this.running.get(runId);
         if (r && !r.controller.signal.aborted) {
@@ -1287,7 +1342,8 @@ async function main() {
         log(node.lastError);
       }
     }
-    if (Date.now() - lastSync > PROJECT_SYNC_MS) {
+    if (Date.now() - lastSync > PROJECT_SYNC_MS || node.projectsChanged) {
+      node.projectsChanged = false;
       await syncProjects(config);
       lastSync = Date.now();
     }

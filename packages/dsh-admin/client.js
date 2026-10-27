@@ -1577,6 +1577,24 @@ var __awPlugin = (() => {
     ] });
   }
   var usageLine = (u) => u ? [u.billedCents && `${money(u.billedCents)} billed`, u.openCents && `${money(u.openCents)} open`, u.aiCents && `AI ${money(u.aiCents)}`].filter(Boolean).join(" \xB7 ") || "nothing owed" : "";
+  function RepoModal({ project, onClose }) {
+    const { api, act } = useAdmin();
+    const [repo, setRepo] = useState(project.repo ?? "");
+    const submit = () => act(() => api("PUT", `/admin/projects/${project.id}/repo`, { repo: repo.trim() }), "Repo saved.").then(onClose, () => void 0);
+    return /* @__PURE__ */ jsx(
+      Modal,
+      {
+        title: `Repo for ${project.name}`,
+        subtitle: "Nodes clone this on their next sync. A private repo needs a node whose git can reach it.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !repo.trim(), onClick: submit, children: "Save" })
+        ] }),
+        children: /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) })
+      }
+    );
+  }
   function ClientsView() {
     const { api, act, data, setModal, setBoardProject, open } = useAdmin();
     const toggle = (client, ids) => {
@@ -1632,13 +1650,18 @@ var __awPlugin = (() => {
                   }
                 )
               ] }),
-              /* @__PURE__ */ jsx("p", { className: "aw-muted", children: p.repo ?? "no repo yet" }),
+              /* @__PURE__ */ jsx("p", { className: p.repoStatus && !["ready", "creating", "queued"].includes(p.repoStatus.state) ? "aw-warn" : "aw-muted", children: p.repoStatus?.detail ?? p.repo ?? "no repo yet" }),
               /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
                 holders.length ? holders.map((n) => /* @__PURE__ */ jsx(Tag, { tone: n.online ? void 0 : "bad", children: n.id }, n.id)) : /* @__PURE__ */ jsx("span", { className: "aw-warn", children: "No node has it yet." }),
                 p.site ? /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
                   "site: ",
                   p.site.state
                 ] }) : null
+              ] }),
+              /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+                !p.repo ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => void act(() => api("POST", `/admin/projects/${p.id}/repo/create`), `Creating a repo for ${p.name}.`), children: p.repoStatus?.state === "failed" ? "Retry repo" : "Create repo" }) : null,
+                /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project: p, onClose: close }) }), children: p.repo ? "Change repo" : "Use a repo URL" }),
+                !p.site ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void act(() => api("POST", `/admin/projects/${p.id}/site`), `Hosting ${p.name} on malipetek.online.`), children: "Start hosting" }) : null
               ] })
             ] }, p.id);
           }) })
@@ -2480,16 +2503,23 @@ button.aw-file:hover { border-color: currentColor; }
     const [name, setName] = useState("");
     const [slug, setSlug] = useState("");
     const [edited, setEdited] = useState(false);
-    const submit = () => act(() => api("POST", "/admin/projects", { name: name.trim(), slug }), `Created ${name.trim()}.`).then(onClose, () => void 0);
+    const [kind, setKind] = useState("existing");
+    const [code, setCode] = useState("create");
+    const [repo, setRepo] = useState("");
+    const ready = name.trim() && slug && (code !== "repo" || repo.trim());
+    const submit = () => act(
+      () => api("POST", "/admin/projects", { name: name.trim(), slug, kind, code, repo: code === "repo" ? repo.trim() : void 0 }),
+      `Created ${name.trim()}.`
+    ).then(onClose, () => void 0);
     return /* @__PURE__ */ jsxs(
       Modal,
       {
         title: "New project",
-        subtitle: "What clients file against. Nodes clone it once it has a repo.",
+        subtitle: "What clients file against. Work starts once a node holds its repo.",
         onClose,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !name.trim() || !slug, onClick: submit, children: "Create" })
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !ready, onClick: submit, children: "Create" })
         ] }),
         children: [
           /* @__PURE__ */ jsx(Field, { label: "Name", children: /* @__PURE__ */ jsx(
@@ -2515,7 +2545,38 @@ button.aw-file:hover { border-color: currentColor; }
                 setSlug(e.target.value.toLowerCase());
               }
             }
-          ) })
+          ) }),
+          /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              value: kind,
+              options: [
+                { value: "existing", label: "Existing code or system" },
+                { value: "new", label: "New website" }
+              ],
+              onChange: setKind
+            }
+          ) }),
+          /* @__PURE__ */ jsx(
+            Field,
+            {
+              label: "Code",
+              hint: code === "create" ? kind === "new" ? "A node makes a private repo from the site template (main + preview)." : "A node makes a private repo with a README." : code === "repo" ? "Nodes clone this. A private repo needs a node whose git can reach it." : "A node with a folder named like the slug shares its origin.",
+              children: /* @__PURE__ */ jsx(
+                Segmented,
+                {
+                  value: code,
+                  options: [
+                    { value: "create", label: "Create a repo" },
+                    { value: "repo", label: "Use a repo URL" },
+                    { value: "folder", label: "Folder on a node" }
+                  ],
+                  onChange: setCode
+                }
+              )
+            }
+          ),
+          code === "repo" ? /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) }) : null
         ]
       }
     );

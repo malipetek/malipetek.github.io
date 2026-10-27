@@ -47,7 +47,10 @@ import { finishRun, normalizeReport, sessionKey, sharedLine } from './runs.ts';
 import { claimForNode, cleanNodeReport, getSettings, heartbeat } from './queue.ts';
 import { createDeploy, finishDeploy, reportSiteRepo } from './sites.ts';
 import { uploadDeployBlob, DEPLOY_LIMITS } from './sites.ts';
-import { cleanRepo } from './setup.ts';
+import { cleanRepo, parseBrief } from './setup.ts';
+
+/** A node creating a repo holds the job this long before another may take it. */
+const REPO_CLAIM_SECONDS = 15 * 60;
 import { fileResponse } from './files.ts';
 import { now } from './shared.ts';
 import { appendSteps, cleanSteps } from './steps.ts';
@@ -83,10 +86,23 @@ node.use('/node/*', async (c, next) => {
  */
 node.get('/node/projects', async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT p.id, p.slug, p.name, p.repo, p.github_installation_id,
+    `SELECT p.id, p.slug, p.name, p.kind, p.brief, p.repo, p.github_installation_id, p.repo_wanted, p.repo_error,
             s.state AS site_state, s.slug AS site_slug, s.template
        FROM projects p LEFT JOIN sites s ON s.project_id = p.id ORDER BY p.slug`,
-  ).all<{ id: string; slug: string; name: string; repo: string | null; github_installation_id: number | null; site_state: string | null; site_slug: string | null; template: string | null }>();
+  ).all<{
+    id: string;
+    slug: string;
+    name: string;
+    kind: string;
+    brief: string;
+    repo: string | null;
+    github_installation_id: number | null;
+    repo_wanted: number;
+    repo_error: string | null;
+    site_state: string | null;
+    site_slug: string | null;
+    template: string | null;
+  }>();
   return c.json({
     projects: (results ?? []).map((p) => ({
       id: p.id,
@@ -104,11 +120,62 @@ node.get('/node/projects', async (c) => {
       ...(p.site_state === 'ready' ? { baseRef: 'origin/preview', site: p.site_slug } : {}),
       // An allocating site with no repo yet: a node makes it from the
       // template, pushes main + preview, and reports it back.
-      ...(p.site_state === 'allocating' && !p.repo
-        ? { needsRepo: { site: p.site_slug, template: p.template ?? 'site' } }
-        : {}),
+      ...(p.site_state === 'allocating' && !p.repo && !p.repo_error
+        ? { needsRepo: { name: p.site_slug, site: p.site_slug, template: p.template ?? 'site' } }
+        : // Any other project we said we would make a repo for. A "new" one
+          // starts from the site template (main + preview), so hosting it later
+          // needs nothing more; anything else gets a README from the brief. A
+          // client's own GitHub repo is theirs to make.
+          !p.site_state && !p.repo && p.repo_wanted && !p.repo_error && !p.github_installation_id
+          ? {
+              needsRepo: {
+                name: p.slug,
+                template: p.kind === 'new' ? 'site' : 'blank',
+                title: p.name,
+                about: parseBrief(p.brief).what || '',
+              },
+            }
+          : {}),
     })),
   });
+});
+
+/**
+ * Take the job of creating a project's repo, so two nodes never both do. A
+ * lease: a node that dies holding it frees it after REPO_CLAIM_SECONDS.
+ */
+node.post('/node/projects/:slug/repo-claim', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { nodeId?: unknown } | null;
+  const nodeId = typeof body?.nodeId === 'string' ? body.nodeId.trim().toLowerCase().slice(0, 64) : '';
+  if (!nodeId) return c.json({ error: 'bad_node' }, 400);
+  const t = now();
+  const row = await c.env.DB.prepare(
+    `UPDATE projects SET repo_claim_node = ?, repo_claim_at = ?
+      WHERE slug = ? AND (repo IS NULL OR repo = '') AND repo_error IS NULL
+        AND (repo_claim_at IS NULL OR repo_claim_at < ? OR repo_claim_node = ?)
+      RETURNING id`,
+  )
+    .bind(nodeId, t, c.req.param('slug'), t - REPO_CLAIM_SECONDS, nodeId)
+    .first<{ id: string }>();
+  return c.json({ ok: Boolean(row) });
+});
+
+/**
+ * A node could not create the repo for a reason another try will not fix (the
+ * name is taken by a repo with history, say). Stops the offer and says why in
+ * the admin view; Ali retries or names a repo from there.
+ */
+node.post('/node/projects/:slug/repo-failed', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { nodeId?: unknown; error?: unknown } | null;
+  const error = typeof body?.error === 'string' ? body.error.trim().slice(0, 500) : '';
+  if (!error) return c.json({ error: 'bad_error' }, 400);
+  await c.env.DB.prepare(
+    `UPDATE projects SET repo_error = ?, repo_claim_node = NULL, repo_claim_at = NULL
+      WHERE slug = ? AND (repo IS NULL OR repo = '')`,
+  )
+    .bind(error, c.req.param('slug'))
+    .run();
+  return c.json({ ok: true });
 });
 
 /**
@@ -121,7 +188,8 @@ node.post('/node/projects/:slug/repo', async (c) => {
   const repo = cleanRepo(body?.repo);
   if (!repo || /^https:\/\/[^/]*@/i.test(repo)) return c.json({ error: 'bad_repo' }, 400);
   const row = await c.env.DB.prepare(
-    `UPDATE projects SET repo = ? WHERE slug = ? AND (repo IS NULL OR repo = '') RETURNING id`,
+    `UPDATE projects SET repo = ?, repo_error = NULL, repo_claim_node = NULL, repo_claim_at = NULL
+      WHERE slug = ? AND (repo IS NULL OR repo = '') RETURNING id`,
   )
     .bind(repo, c.req.param('slug'))
     .first<{ id: string }>();

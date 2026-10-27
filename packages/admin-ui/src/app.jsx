@@ -573,16 +573,24 @@ function ProjectModal({ onClose }) {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [edited, setEdited] = useState(false);
-  const submit = () => act(() => api('POST', '/admin/projects', { name: name.trim(), slug }), `Created ${name.trim()}.`).then(onClose, () => undefined);
+  const [kind, setKind] = useState('existing');
+  const [code, setCode] = useState('create');
+  const [repo, setRepo] = useState('');
+  const ready = name.trim() && slug && (code !== 'repo' || repo.trim());
+  const submit = () =>
+    act(
+      () => api('POST', '/admin/projects', { name: name.trim(), slug, kind, code, repo: code === 'repo' ? repo.trim() : undefined }),
+      `Created ${name.trim()}.`,
+    ).then(onClose, () => undefined);
   return (
     <Modal
       title="New project"
-      subtitle="What clients file against. Nodes clone it once it has a repo."
+      subtitle="What clients file against. Work starts once a node holds its repo."
       onClose={onClose}
       actions={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button kind="primary" disabled={!name.trim() || !slug} onClick={submit}>
+          <Button kind="primary" disabled={!ready} onClick={submit}>
             Create
           </Button>
         </>
@@ -610,6 +618,43 @@ function ProjectModal({ onClose }) {
           }}
         />
       </Field>
+      <Field label="What it is">
+        <Segmented
+          value={kind}
+          options={[
+            { value: 'existing', label: 'Existing code or system' },
+            { value: 'new', label: 'New website' },
+          ]}
+          onChange={setKind}
+        />
+      </Field>
+      <Field
+        label="Code"
+        hint={
+          code === 'create'
+            ? kind === 'new'
+              ? 'A node makes a private repo from the site template (main + preview).'
+              : 'A node makes a private repo with a README.'
+            : code === 'repo'
+              ? 'Nodes clone this. A private repo needs a node whose git can reach it.'
+              : 'A node with a folder named like the slug shares its origin.'
+        }
+      >
+        <Segmented
+          value={code}
+          options={[
+            { value: 'create', label: 'Create a repo' },
+            { value: 'repo', label: 'Use a repo URL' },
+            { value: 'folder', label: 'Folder on a node' },
+          ]}
+          onChange={setCode}
+        />
+      </Field>
+      {code === 'repo' ? (
+        <Field label="Repo URL">
+          <input className="aw-mono" value={repo} maxLength={300} placeholder="https://github.com/owner/repo" onChange={(e) => setRepo(e.target.value)} />
+        </Field>
+      ) : null}
     </Modal>
   );
 }

@@ -195,6 +195,60 @@ const groups = {
     check('an existing stack is not hosted', (await call(`/portal/projects/${existing.id}/site`, { method: 'POST', auth: a.session, body: {} })).data?.error === 'not_hosted');
   },
 
+  async repos({ admin }) {
+    const stamp = Date.now() % 1000000;
+    const np = async (slug) => (await call('/node/projects', { auth: RUNNER_TOKEN })).data.projects.find((x) => x.slug === slug);
+    const adminProject = async (id) => (await call('/admin/projects', { auth: admin })).data.projects.find((x) => x.id === id);
+    const claimRepo = (slug, nodeId) => call(`/node/projects/${slug}/repo-claim`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId } });
+
+    // An admin-made project gets a repo by default.
+    const slug = `repo-e2e-${stamp}`;
+    const made = await call('/admin/projects', { method: 'POST', auth: admin, body: { name: 'Repo E2E', slug } });
+    check('admin creates a project (default: create a repo)', made.status === 201, JSON.stringify(made.data));
+    const p0 = await np(slug);
+    check('nodes are asked to make a plain repo', p0?.needsRepo?.name === slug && p0.needsRepo.template === 'blank' && !p0.needsRepo.site, JSON.stringify(p0));
+    check('the admin card says it is queued', (await adminProject(made.data.id)).repoStatus?.state === 'queued');
+    check('a node claims the job', (await claimRepo(slug, 'node-a')).data.ok === true);
+    check('a second node is refused while the lease holds', (await claimRepo(slug, 'node-b')).data.ok === false);
+    check('the holder may claim again', (await claimRepo(slug, 'node-a')).data.ok === true);
+    check('the admin card names the node creating it', (await adminProject(made.data.id)).repoStatus?.state === 'creating');
+    await call(`/node/projects/${slug}/repo-failed`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId: 'node-a', error: 'name taken' } });
+    check('a reported failure stops the offer', !(await np(slug)).needsRepo);
+    const failed = await adminProject(made.data.id);
+    check('…and the admin card says why', failed.repoStatus?.state === 'failed' && /name taken/.test(failed.repoStatus.detail));
+    check('retry from the admin view offers it again', (await call(`/admin/projects/${made.data.id}/repo/create`, { method: 'POST', auth: admin })).status === 200 && (await np(slug)).needsRepo?.name === slug);
+    await call(`/node/projects/${slug}/repo`, { method: 'POST', auth: RUNNER_TOKEN, body: { repo: `https://github.com/malipetek/${slug}` } });
+    const done = await np(slug);
+    check('a reported repo ends it', done.repo === `https://github.com/malipetek/${slug}` && !done.needsRepo);
+    check('create on a project with a repo is refused', (await call(`/admin/projects/${made.data.id}/repo/create`, { method: 'POST', auth: admin })).status === 409);
+
+    // "Folder on a node" waits for a node to share its folder's origin.
+    const folder = await call('/admin/projects', { method: 'POST', auth: admin, body: { name: 'Folder E2E', slug: `folder-e2e-${stamp}`, code: 'folder' } });
+    check('a folder project is not offered for creation', !(await np(`folder-e2e-${stamp}`)).needsRepo);
+    check('its card says nothing is being made', (await adminProject(folder.data.id)).repoStatus?.state === 'missing');
+    check('a bad repo URL is refused', (await call(`/admin/projects/${folder.data.id}/repo`, { method: 'PUT', auth: admin, body: { repo: 'file:///etc' } })).status === 400);
+    const named = await call(`/admin/projects/${folder.data.id}/repo`, { method: 'PUT', auth: admin, body: { repo: 'https://github.com/acme/folder-e2e' } });
+    check('Ali names a repo', named.status === 200 && (await np(`folder-e2e-${stamp}`)).repo === 'https://github.com/acme/folder-e2e');
+    check('a repo URL at creation is used', (await call('/admin/projects', { method: 'POST', auth: admin, body: { name: 'Url E2E', slug: `url-e2e-${stamp}`, code: 'repo', repo: 'https://github.com/acme/url-e2e' } })).status === 201 && (await np(`url-e2e-${stamp}`)).repo === 'https://github.com/acme/url-e2e');
+
+    // A client's onboarding: a "new" project's repo comes from the site template.
+    const a = account(`repos-${stamp}@example.com`);
+    const fresh = (await newProject(a.session, { kind: 'new', name: `Fresh Cafe ${stamp}`, brief: NEW_BRIEF })).data.project;
+    const pf = await np(fresh.slug);
+    check('a client\'s new project gets a site-template repo', pf?.needsRepo?.template === 'site' && pf.needsRepo.about === NEW_BRIEF.what, JSON.stringify(pf));
+    const zip = (await newProject(a.session, { kind: 'existing', name: `Zip Shop ${stamp}`, brief: OLD_BRIEF, repoKind: 'zip' })).data.project;
+    check('a project waiting on a zip is not', !(await np(zip.slug)).needsRepo);
+
+    // Ali can host any project.
+    const host = await call(`/admin/projects/${folder.data.id}/site`, { method: 'POST', auth: admin });
+    check('admin starts hosting on a project', host.status === 201 && ['allocating', 'ready'].includes(host.data.site?.state), JSON.stringify(host.data));
+    check('a client cannot use the admin hosting route', (await call(`/admin/projects/${folder.data.id}/site`, { method: 'POST', auth: a.session })).status === 403);
+
+    // The heartbeat carries a fingerprint so nodes re-read the list at once.
+    const beat = await node(`e2e-r-${stamp}`, []);
+    check('the heartbeat carries the project fingerprint', /^\d+:\d+:\d+:\d+$/.test(beat.data?.projects ?? ''), JSON.stringify(beat.data));
+  },
+
   async github({ admin }) {
     const a = account(`gh-${Date.now()}@example.com`);
     check('the connection starts empty, with a signed install link', (await call('/portal/github', { auth: a.session })).data.installations?.length === 0 && /github\.com\/apps\/malipetek-dev\/installations\/new\?state=/.test((await call('/portal/github', { auth: a.session })).data.installUrl ?? ''));
@@ -756,6 +810,8 @@ const groups = {
           token: RUNNER_TOKEN,
           node: { id: nodeId, slots: 1, executors: ['claude'] },
           autoClone: false,
+          createRepos: false, // never make real GitHub repos from a test
+          cloneRoot: join(dir, 'clones'), // nor read or write this machine's real clones
           worktreeRoot: join(dir, 'wt'),
           projects: { [project.slug]: repo },
           claude: { bin: fake },
@@ -798,7 +854,7 @@ const groups = {
         writeFileSync(bin, ['#!/bin/sh', 'case "$1" in --version) echo 0.0.0-e2e; exit 0;; esac', `cat > ${join(dir, `prompt-${name}.txt`)}`, ...script, 'echo \'{"result":"Did the follow-up","total_cost_usd":0.01,"num_turns":1}\''].join('\n'));
         chmodSync(bin, 0o755);
         const cfg = join(dir, `config-${name}.json`);
-        writeFileSync(cfg, JSON.stringify({ endpoint: W, token: RUNNER_TOKEN, node: { id: `${nodeId}-${name}`, slots: 1, executors: ['claude'] }, autoClone: false, worktreeRoot: join(dir, `wt-${name}`), projects: { [project.slug]: clone }, claude: { bin } }), { mode: 0o600 });
+        writeFileSync(cfg, JSON.stringify({ endpoint: W, token: RUNNER_TOKEN, node: { id: `${nodeId}-${name}`, slots: 1, executors: ['claude'] }, autoClone: false, cloneRoot: join(dir, 'clones'), worktreeRoot: join(dir, `wt-${name}`), projects: { [project.slug]: clone }, claude: { bin } }), { mode: 0o600 });
         await call(`/admin/tickets/${ticketId}/messages`, { method: 'POST', auth: admin, body: { body: `Follow-up for ${name}.`, internal: true } });
         await approve(admin, ticketId);
         const log = execFileSync('node', [join(REPO, 'fleet', 'node.mjs'), '--once'], { env: { ...process.env, MALIPETEK_NODE_CONFIG: cfg }, stdio: 'pipe', timeout: 120_000 }).toString();

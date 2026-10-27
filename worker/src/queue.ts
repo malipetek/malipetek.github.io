@@ -371,8 +371,18 @@ export async function heartbeat(env: Env, node: NodeReport, running: number[]) {
         .bind(...node.slugs)
         .all<{ ticket_id: number; slug: string; site: string }>()
     : { results: [] as { ticket_id: number; slug: string; site: string }[] };
+  // A fingerprint of the project list: when it changes (a project, a repo, a
+  // repo to make) the node re-reads /node/projects now instead of in ten minutes.
+  const shape = await env.DB.prepare(
+    `SELECT count(*) AS n,
+            coalesce(sum(repo IS NOT NULL AND repo <> ''), 0) AS repos,
+            coalesce(sum(repo_wanted = 1 AND repo_error IS NULL AND (repo IS NULL OR repo = '')), 0) AS wanted,
+            (SELECT count(*) FROM sites WHERE state = 'allocating') AS allocating
+       FROM projects`,
+  ).first<{ n: number; repos: number; wanted: number; allocating: number }>();
 
   return {
+    projects: shape ? `${shape.n}:${shape.repos}:${shape.wanted}:${shape.allocating}` : '',
     draining: row?.draining === 1,
     cancel: [...(cancelled.results ?? []), ...(lost.results ?? [])].map((r) => r.id),
     leaseSeconds: LEASE_SECONDS,
@@ -615,6 +625,9 @@ type QueueTicket = {
   executor: string | null;
   updated_at: number;
   slug: string | null;
+  repo: string | null;
+  repo_error: string | null;
+  github_installation_id: number | null;
   client_email: string;
   budget_cents: number | null;
   human_seconds: number;
@@ -631,7 +644,7 @@ export async function queueView(env: Env) {
   const [nodes, { results }] = await Promise.all([
     nodesView(env),
     env.DB.prepare(
-      `SELECT t.id, t.title, t.kind, t.source, t.priority, t.requires, t.executor, t.updated_at, p.slug, u.email AS client_email,
+      `SELECT t.id, t.title, t.kind, t.source, t.priority, t.requires, t.executor, t.updated_at, p.slug, p.repo, p.repo_error, p.github_installation_id, u.email AS client_email,
               t.budget_cents, t.human_seconds, t.ai_micro_usd
          FROM tickets t LEFT JOIN projects p ON p.id = t.project_id JOIN users u ON u.id = t.user_id
         WHERE t.status = 'approved' ORDER BY t.priority DESC, t.updated_at`,
@@ -674,7 +687,18 @@ function explainEligibility(item: QueueTicket, requires: string[], nodes: NodeVi
   if (nodes.length === 0) return { eligible: [], reason: 'No node has ever connected. Start one: fleet/install.sh.' };
 
   const holders = nodes.filter((n) => n.slugs.includes(item.slug as string));
-  if (holders.length === 0) return { eligible: [], reason: `No node holds a folder for ${item.slug}.` };
+  if (holders.length === 0) {
+    // Say what is actually missing: a project with no repo has nothing to clone.
+    if (!item.repo && !item.github_installation_id) {
+      return {
+        eligible: [],
+        reason: item.repo_error
+          ? `${item.slug} has no repo: creating it failed (${item.repo_error}). Retry or set one in Directory.`
+          : `${item.slug} has no repo yet. A node creates it shortly; if not, use Create repo in Directory.`,
+      };
+    }
+    return { eligible: [], reason: `No node holds a folder for ${item.slug} yet (it clones the repo on its next sync).` };
+  }
 
   const capable = holders.filter((n) => requires.every((r) => n.capabilities.includes(r)));
   if (capable.length === 0) return { eligible: [], reason: `No node with ${item.slug} has ${requires.join(', ')}.` };

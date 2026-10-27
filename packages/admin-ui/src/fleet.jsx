@@ -267,6 +267,31 @@ const usageLine = (u) =>
     ? [u.billedCents && `${money(u.billedCents)} billed`, u.openCents && `${money(u.openCents)} open`, u.aiCents && `AI ${money(u.aiCents)}`].filter(Boolean).join(' · ') || 'nothing owed'
     : '';
 
+function RepoModal({ project, onClose }) {
+  const { api, act } = useAdmin();
+  const [repo, setRepo] = useState(project.repo ?? '');
+  const submit = () => act(() => api('PUT', `/admin/projects/${project.id}/repo`, { repo: repo.trim() }), 'Repo saved.').then(onClose, () => undefined);
+  return (
+    <Modal
+      title={`Repo for ${project.name}`}
+      subtitle="Nodes clone this on their next sync. A private repo needs a node whose git can reach it."
+      onClose={onClose}
+      actions={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button kind="primary" disabled={!repo.trim()} onClick={submit}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      <Field label="Repo URL">
+        <input className="aw-mono" value={repo} maxLength={300} placeholder="https://github.com/owner/repo" onChange={(e) => setRepo(e.target.value)} />
+      </Field>
+    </Modal>
+  );
+}
+
 export function ClientsView() {
   const { api, act, data, setModal, setBoardProject, open } = useAdmin();
   const toggle = (client, ids) => {
@@ -331,10 +356,27 @@ export function ClientsView() {
                       Board →
                     </Button>
                   </header>
-                  <p className="aw-muted">{p.repo ?? 'no repo yet'}</p>
+                  <p className={p.repoStatus && !['ready', 'creating', 'queued'].includes(p.repoStatus.state) ? 'aw-warn' : 'aw-muted'}>
+                    {p.repoStatus?.detail ?? p.repo ?? 'no repo yet'}
+                  </p>
                   <div className="aw-tags">
                     {holders.length ? holders.map((n) => <Tag key={n.id} tone={n.online ? undefined : 'bad'}>{n.id}</Tag>) : <span className="aw-warn">No node has it yet.</span>}
                     {p.site ? <Tag tone="dash">site: {p.site.state}</Tag> : null}
+                  </div>
+                  <div className="aw-inline">
+                    {!p.repo ? (
+                      <Button size="sm" kind="primary" onClick={() => void act(() => api('POST', `/admin/projects/${p.id}/repo/create`), `Creating a repo for ${p.name}.`)}>
+                        {p.repoStatus?.state === 'failed' ? 'Retry repo' : 'Create repo'}
+                      </Button>
+                    ) : null}
+                    <Button size="sm" onClick={() => setModal({ kind: 'custom', render: (close) => <RepoModal project={p} onClose={close} /> })}>
+                      {p.repo ? 'Change repo' : 'Use a repo URL'}
+                    </Button>
+                    {!p.site ? (
+                      <Button size="sm" onClick={() => void act(() => api('POST', `/admin/projects/${p.id}/site`), `Hosting ${p.name} on malipetek.online.`)}>
+                        Start hosting
+                      </Button>
+                    ) : null}
                   </div>
                 </li>
               );

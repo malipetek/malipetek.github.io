@@ -919,9 +919,11 @@ portal.post('/portal/projects', async (c) => {
   try {
     await env.DB.batch([
       env.DB.prepare(
-        `INSERT INTO projects (id, slug, name, kind, brief, repo, repo_kind, created_by, onboarded_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(id, slug, name, kind, JSON.stringify(brief), repo, repoKind, user.id, t, t),
+        `INSERT INTO projects (id, slug, name, kind, brief, repo, repo_kind, repo_wanted, created_by, onboarded_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        // No repo and no zip coming: a node makes one, so approved work has
+        // something to clone.
+      ).bind(id, slug, name, kind, JSON.stringify(brief), repo, repoKind, repoKind === 'none' ? 1 : 0, user.id, t, t),
       env.DB.prepare('INSERT INTO user_projects (user_id, project_id) VALUES (?, ?)').bind(user.id, id),
     ]);
   } catch {
@@ -1888,13 +1890,33 @@ portal.get('/admin/clients', async (c) => {
   return reply(c, { clients, total });
 });
 
+/** Where a project's repo has got to, in the words the admin card shows. */
+function repoStatus(p: {
+  repo: string | null;
+  repo_kind: string;
+  repo_wanted: number;
+  repo_error: string | null;
+  repo_claim_node: string | null;
+  repo_claim_at: number | null;
+}): { state: 'ready' | 'creating' | 'queued' | 'failed' | 'zip' | 'missing'; detail: string } {
+  if (p.repo) return { state: 'ready', detail: p.repo };
+  if (p.repo_error) return { state: 'failed', detail: `Creating the repo failed: ${p.repo_error}` };
+  if (p.repo_wanted && p.repo_claim_node && p.repo_claim_at && now() - p.repo_claim_at < 15 * 60) {
+    return { state: 'creating', detail: `${p.repo_claim_node} is creating the repo.` };
+  }
+  if (p.repo_wanted) return { state: 'queued', detail: 'A node creates the repo on its next beat.' };
+  if (p.repo_kind === 'zip') return { state: 'zip', detail: 'Waiting for the client to send a copy.' };
+  return { state: 'missing', detail: 'No repo, and none is being made. Work on it cannot start.' };
+}
+
 portal.get('/admin/projects', async (c) => {
   const [{ sitesDomain }, projects, slugs, counts, sites] = await Promise.all([
     getSettings(c.env),
     c.env.DB.prepare(
-      `SELECT id, slug, name, kind, brief, repo, repo_kind, created_by, onboarded_at, created_at
+      `SELECT id, slug, name, kind, brief, repo, repo_kind, repo_wanted, repo_error, repo_claim_node, repo_claim_at,
+              github_installation_id, created_by, onboarded_at, created_at
          FROM projects ORDER BY name`,
-    ).all<ProjectRow>(),
+    ).all<ProjectRow & { repo_wanted: number; repo_error: string | null; repo_claim_node: string | null; repo_claim_at: number | null; github_installation_id: number | null }>(),
     onlineSlugs(c.env),
     c.env.DB.prepare(
       `SELECT project_id, count(*) AS n FROM tickets WHERE project_id IS NOT NULL GROUP BY project_id`,
@@ -1916,6 +1938,7 @@ portal.get('/admin/projects', async (c) => {
         kind,
         repoKind,
         site,
+        repoStatus: repoStatus(project),
         setup: setupFor({
           kind,
           brief,
@@ -1967,21 +1990,84 @@ portal.post('/admin/projects/:id/site/rollback', async (c) => {
   return reply(c, { ok: true, productionUrl: out.productionUrl });
 });
 
+/**
+ * Where a project's code comes from, as the admin form asks it:
+ *   create  a node makes a private repo (the default — work needs something to clone)
+ *   repo    this URL
+ *   folder  a folder that already exists on a node; that node shares its origin
+ */
 portal.post('/admin/projects', async (c) => {
-  const body = await readJson<{ name?: unknown; slug?: unknown }>(c);
+  const body = await readJson<{ name?: unknown; slug?: unknown; code?: unknown; repo?: unknown; kind?: unknown }>(c);
   const name = cleanText(body?.name, MAX_NAME_CHARS);
   const slug = typeof body?.slug === 'string' ? body.slug.trim().toLowerCase() : '';
   // The slug is what the local runner maps to a folder — keep it path-safe.
   if (!name || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(slug)) return reply(c, { error: 'bad_project' }, 400);
+  const code = body?.code === 'repo' || body?.code === 'folder' ? body.code : 'create';
+  const repo = code === 'repo' ? cleanRepo(body?.repo) : null;
+  if (code === 'repo' && !repo) return reply(c, { error: 'bad_repo' }, 400);
+  const kind = body?.kind === 'new' ? 'new' : 'existing';
   const id = crypto.randomUUID();
   try {
-    await c.env.DB.prepare('INSERT INTO projects (id, slug, name, created_at) VALUES (?, ?, ?, ?)')
-      .bind(id, slug, name, now())
+    await c.env.DB.prepare(
+      `INSERT INTO projects (id, slug, name, kind, repo, repo_kind, repo_wanted, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(id, slug, name, kind, repo, repo ? 'repo' : 'none', code === 'create' ? 1 : 0, now())
       .run();
   } catch {
     return reply(c, { error: 'slug_taken' }, 409);
   }
   return reply(c, { id, slug, name }, 201);
+});
+
+/** Name the project's repo. Replaces whatever was there, and stops any pending creation. */
+portal.put('/admin/projects/:id/repo', async (c) => {
+  const body = await readJson<{ repo?: unknown }>(c);
+  const repo = cleanRepo(body?.repo);
+  if (!repo || /^https:\/\/[^/]*@/i.test(repo)) return reply(c, { error: 'bad_repo' }, 400);
+  const res = await c.env.DB.prepare(
+    `UPDATE projects SET repo = ?, repo_kind = 'repo', repo_wanted = 0, repo_error = NULL,
+            repo_claim_node = NULL, repo_claim_at = NULL WHERE id = ?`,
+  )
+    .bind(repo, c.req.param('id'))
+    .run();
+  if (!res.meta.changes) return reply(c, { error: 'not_found' }, 404);
+  // An allocating site was waiting for exactly this.
+  if (await getSite(c.env, c.req.param('id'))) await advanceSite(c.env, c.req.param('id'));
+  return reply(c, { ok: true, repo });
+});
+
+/** Ask the fleet to create the repo now: clears a failed attempt and any zip wait. */
+portal.post('/admin/projects/:id/repo/create', async (c) => {
+  const id = c.req.param('id');
+  const project = await c.env.DB.prepare('SELECT repo FROM projects WHERE id = ?').bind(id).first<{ repo: string | null }>();
+  if (!project) return reply(c, { error: 'not_found' }, 404);
+  if (project.repo) return reply(c, { error: 'has_repo' }, 409);
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE projects SET repo_wanted = 1, repo_kind = 'none', repo_error = NULL, repo_claim_node = NULL, repo_claim_at = NULL
+        WHERE id = ?`,
+    ).bind(id),
+    // A site that gave up waiting for the repo tries again with it.
+    c.env.DB.prepare(
+      `UPDATE sites SET state = 'allocating', error = NULL, failure_alerted_at = NULL, created_at = ?, updated_at = ?
+        WHERE project_id = ? AND state = 'failed'`,
+    ).bind(now(), now(), id),
+  ]);
+  return reply(c, { ok: true });
+});
+
+/** Host a project on malipetek.online, the same as a client's "Set up my site", for any project. */
+portal.post('/admin/projects/:id/site', async (c) => {
+  const project = await c.env.DB.prepare('SELECT id, name, slug FROM projects WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<{ id: string; name: string; slug: string }>();
+  if (!project) return reply(c, { error: 'not_found' }, 404);
+  try {
+    const site = await startSite(c.env, c.get('user'), project);
+    return reply(c, { site: siteView(site) }, 201);
+  } catch (error) {
+    return siteError(c, error);
+  }
 });
 
 /** How a client's finished work reaches them: a preview link, or a PR in their repo. */
