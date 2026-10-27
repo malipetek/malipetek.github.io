@@ -206,7 +206,11 @@ const groups = {
     check('a wrong signature is refused', (await fetch(`${W}/hooks/github`, { method: 'POST', headers: { 'x-github-event': 'installation', 'x-hub-signature-256': 'sha256=' + '0'.repeat(64), 'content-type': 'application/json' }, body })).status === 401);
     check('git-token needs a github-connected project', (await call('/node/git-token', { method: 'POST', auth: RUNNER_TOKEN, body: { slug: 'nope' } })).status === 404);
     check('…and the runner token', (await call('/node/git-token', { method: 'POST', auth: 'wrong', body: { slug: 'nope' } })).status === 401);
-    check('the callback refuses a bad state', (await fetch(`${W}/auth/github/callback?code=x&installation_id=1&state=bogus`)).redirected === false);
+    check('the callback refuses a bad state', (await fetch(`${W}/auth/github/callback?code=x&installation_id=1&state=bogus`, { redirect: 'manual' })).headers.get('location')?.includes('github=signin'));
+    const { installUrl } = (await call('/portal/github', { auth: a.session })).data;
+    const state = new URL(installUrl).searchParams.get('state');
+    const good = await fetch(`${W}/auth/github/callback?installation_id=1&state=${encodeURIComponent(state)}`, { redirect: 'manual' });
+    check('a signed state is accepted (fails later on the missing code, not on sign-in)', good.headers.get('location')?.includes('github=bad'), good.headers.get('location'));
   },
 
   async queue({ admin }) {

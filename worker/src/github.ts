@@ -153,20 +153,27 @@ github.post('/hooks/github', async (c) => {
  * GitHub returns it on the callback, which is how the installation binds to
  * the right account without any cookie.
  */
+async function stateMac(env: Env, payload: string): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.SESSION_SECRET ?? ''), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return b64url(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)));
+}
+
 async function signState(env: Env, userId: string): Promise<string> {
   const payload = `${userId}.${now() + 3600}`;
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.SESSION_SECRET ?? ''), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
-  return `${b64url(payload)}.${b64url(mac)}`;
+  return `${b64url(payload)}.${await stateMac(env, payload)}`;
 }
 
 async function userFromState(env: Env, state: string): Promise<string | null> {
   const [payload, mac] = state.split('.');
+  if (!payload || !mac) return null;
   const decoded = String.fromCharCode(...Uint8Array.from(atob(payload.replace(/-/g, '+').replace(/_/g, '/')), (ch) => ch.charCodeAt(0)));
-  const expected = await signState(env, decoded.split('.').slice(0, -1).join('.'));
   const [userId, exp] = decoded.split('.');
-  if (!userId || Number(exp) < now() || `${payload}.${mac}` !== expected) return null;
-  return userId;
+  if (!userId || !Number.isFinite(Number(exp)) || Number(exp) < now()) return null;
+  const expected = await stateMac(env, decoded);
+  if (expected.length !== mac.length) return null;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i += 1) diff |= expected.charCodeAt(i) ^ mac.charCodeAt(i);
+  return diff === 0 ? userId : null;
 }
 
 /** The bearer session, for the portal routes in this module. */
