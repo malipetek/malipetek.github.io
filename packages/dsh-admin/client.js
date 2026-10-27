@@ -2515,7 +2515,7 @@ button.aw-file:hover { border-color: currentColor; }
   // packages/dsh-admin/src/client.jsx
   var PANEL_ID = "admin";
   var NAMESPACE = "admin";
-  var CLIENT_VERSION = "3.4.0";
+  var CLIENT_VERSION = "3.5.0";
   var DICTIONARY = { title: "Admin" };
   var SESSION_RETRY_CODES = /* @__PURE__ */ new Set(["session/writer-held", "session/not-found", "session/agent-busy"]);
   var MAX_SESSION_TRIES = 4;
@@ -2819,6 +2819,105 @@ button.aw-file:hover { border-color: currentColor; }
       const run = ticketFromCwd(useSessionCwd(tabSessionId(props)));
       return /* @__PURE__ */ jsx("span", { children: run ? `Ticket #${run.ticketId}` : "Ticket" });
     }
+    const ATTENTION_MS = 6e4;
+    const attention = /* @__PURE__ */ (() => {
+      let value = null;
+      let timer = null;
+      const subs = /* @__PURE__ */ new Set();
+      const pull = async () => {
+        try {
+          value = await api("GET", "/admin/attention");
+        } catch {
+          value = null;
+        }
+        for (const notify of subs) notify();
+      };
+      const onFocus = () => void pull();
+      return {
+        subscribe(notify) {
+          subs.add(notify);
+          if (subs.size === 1) {
+            void pull();
+            timer = setInterval(() => void pull(), ATTENTION_MS);
+            window.addEventListener("focus", onFocus);
+          }
+          return () => {
+            subs.delete(notify);
+            if (subs.size === 0) {
+              clearInterval(timer);
+              timer = null;
+              window.removeEventListener("focus", onFocus);
+            }
+          };
+        },
+        get: () => value
+      };
+    })();
+    function AdminEntryIcon(props) {
+      const counts = useSyncExternalStore(attention.subscribe, attention.get);
+      const waiting = counts ? counts.approve + counts.review + counts.waiting : 0;
+      const parts = counts ? [
+        counts.approve && `${counts.approve} to approve`,
+        counts.review && `${counts.review} to review`,
+        counts.waiting && `${counts.waiting} client${counts.waiting === 1 ? "" : "s"} waiting`,
+        counts.running && `${counts.running} running`
+      ].filter(Boolean) : [];
+      const badge = {
+        position: "absolute",
+        top: -5,
+        right: -7,
+        minWidth: 13,
+        height: 13,
+        padding: "0 3px",
+        borderRadius: 7,
+        fontSize: 9,
+        fontWeight: 700,
+        lineHeight: "13px",
+        textAlign: "center",
+        color: "#fff",
+        boxSizing: "border-box"
+      };
+      return /* @__PURE__ */ jsxs("span", { style: { position: "relative", display: "inline-flex" }, title: parts.length ? parts.join(" \xB7 ") : void 0, children: [
+        /* @__PURE__ */ jsx(AdminIcon, { size: props?.size ?? 16 }),
+        waiting > 0 ? /* @__PURE__ */ jsx("span", { style: { ...badge, background: "var(--dsw-alias-state-warning-primary, #d18f2e)" }, children: waiting > 99 ? "99+" : waiting }) : counts?.running ? /* @__PURE__ */ jsx("span", { style: { ...badge, minWidth: 7, width: 7, height: 7, top: -2, right: -3, padding: 0, background: "var(--dsw-alias-state-success-primary, #2f9e5b)" } }) : null
+      ] });
+    }
+    function TicketHeaderChip({ sessionId }) {
+      const run = ticketFromCwd(useSessionCwd(sessionId));
+      if (!run) return null;
+      return /* @__PURE__ */ jsxs(
+        "button",
+        {
+          type: "button",
+          onClick: () => openTicket(run),
+          title: `Open ${run.kind === "task" ? "system task" : "client ticket"} #${run.ticketId} in Admin`,
+          style: {
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            height: 24,
+            padding: "0 8px",
+            borderRadius: 6,
+            border: `1px solid ${TICKET_COLORS[run.kind]}`,
+            background: "transparent",
+            color: "inherit",
+            font: "inherit",
+            fontSize: 12,
+            cursor: "pointer",
+            whiteSpace: "nowrap"
+          },
+          children: [
+            /* @__PURE__ */ jsx(TicketGlyph, { size: 13 }),
+            /* @__PURE__ */ jsxs("span", { children: [
+              run.kind === "task" ? "Task" : "Ticket",
+              " #",
+              run.ticketId,
+              run.runId ? ` \xB7 run ${run.runId}` : ""
+            ] })
+          ]
+        }
+      );
+    }
     const files = { download: (path) => json(`download ${path}`) };
     function AdminPage() {
       return /* @__PURE__ */ jsx(AdminApp, { api, host, files, platform: "dsh" });
@@ -2827,7 +2926,8 @@ button.aw-file:hover { border-color: currentColor; }
       localeCtx.effect(() => localeCtx.locale.register(NAMESPACE, { en: DICTIONARY }), "admin: locale namespace");
     });
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: PANEL_ID, locale: NAMESPACE }, AdminPage));
-    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: PANEL_ID, order: 12, label: "Admin" }, AdminIcon));
+    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: PANEL_ID, order: 12, label: "Admin" }, AdminEntryIcon));
+    ctx.slots.inject("conversation.session.header.actions", () => ctx.slots.register({ name: "conversation.session.header.actions", id: "admin-ticket", order: 5, locale: NAMESPACE }, TicketHeaderChip));
     ctx.slots.inject("sidebar.session.row.leading", () => ctx.slots.register({ name: "sidebar.session.row.leading", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketMark));
     ctx.slots.inject("sidebar.session.row.hover", () => ctx.slots.register({ name: "sidebar.session.row.hover", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketHover));
     ctx.effect(

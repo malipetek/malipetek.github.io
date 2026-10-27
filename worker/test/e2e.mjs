@@ -620,6 +620,9 @@ const groups = {
     check('steps: no steps once the run is over', (await send(c.runId, nodeId, [{ kind: 'tool', text: 'late' }])).status === 409);
     check('steps: …and the run reads as finished', (await read(c.runId)).data.live === false);
     check('steps: an unknown run is a 404', (await read(999999)).status === 404);
+    const attention = await call('/admin/attention', { auth: admin });
+    check('attention: counts for the sidebar badge', attention.status === 200 && ['approve', 'review', 'waiting', 'running'].every((k) => Number.isInteger(attention.data[k])), JSON.stringify(attention.data));
+    check('attention: a client cannot read it', (await call('/admin/attention', { auth: a.session })).status === 403);
   },
 
   async sessionlog({ admin }) {

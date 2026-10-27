@@ -1194,6 +1194,22 @@ portal.patch('/portal/tickets/:id/budget', async (c) => {
 
 /* —— admin —— */
 
+/**
+ * What needs Ali, in one cheap query: tickets to approve, runs to review,
+ * clients waiting on an answer, and runs working right now. The Harness's
+ * sidebar polls it for the Admin entry's count.
+ */
+portal.get('/admin/attention', async (c) => {
+  const row = await c.env.DB.prepare(
+    `SELECT
+       (SELECT count(*) FROM tickets WHERE status = 'new') AS approve,
+       (SELECT count(*) FROM tickets WHERE status = 'review') AS review,
+       (SELECT count(*) FROM tickets WHERE client_waiting_since IS NOT NULL AND status NOT IN ('new', 'done', 'declined')) AS waiting,
+       (SELECT count(*) FROM ticket_runs WHERE status = 'running') AS running`,
+  ).first<{ approve: number; review: number; waiting: number; running: number }>();
+  return reply(c, row ?? { approve: 0, review: 0, waiting: 0, running: 0 });
+});
+
 portal.get('/admin/tickets', async (c) => {
   const status = c.req.query('status');
   const filter = status && (STATUSES as readonly string[]).includes(status) ? status : null;

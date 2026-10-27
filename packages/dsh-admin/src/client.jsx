@@ -18,7 +18,7 @@ import { AdminApp } from '../../admin-ui/src/index.js';
 const PANEL_ID = 'admin';
 const NAMESPACE = 'admin';
 /** Reported to the Host on activation, so "did the panel load?" has an answer. */
-const CLIENT_VERSION = '3.4.0';
+const CLIENT_VERSION = '3.5.0';
 const DICTIONARY = { title: 'Admin' };
 
 /**
@@ -425,6 +425,126 @@ function apply(ctx) {
     return <span>{run ? `Ticket #${run.ticketId}` : 'Ticket'}</span>;
   }
 
+  /* ————— What needs Ali, on the Admin entry ————— */
+
+  const ATTENTION_MS = 60_000;
+
+  /**
+   * One poller for `/admin/attention`, shared by everything that shows it, and
+   * running only while something does. It goes over the panel route, so a
+   * poll never lands in a session log. Signed out or offline reads as null.
+   */
+  const attention = (() => {
+    let value = null;
+    let timer = null;
+    const subs = new Set();
+    const pull = async () => {
+      try {
+        value = await api('GET', '/admin/attention');
+      } catch {
+        value = null;
+      }
+      for (const notify of subs) notify();
+    };
+    const onFocus = () => void pull();
+    return {
+      subscribe(notify) {
+        subs.add(notify);
+        if (subs.size === 1) {
+          void pull();
+          timer = setInterval(() => void pull(), ATTENTION_MS);
+          window.addEventListener('focus', onFocus);
+        }
+        return () => {
+          subs.delete(notify);
+          if (subs.size === 0) {
+            clearInterval(timer);
+            timer = null;
+            window.removeEventListener('focus', onFocus);
+          }
+        };
+      },
+      get: () => value,
+    };
+  })();
+
+  /**
+   * The Admin entry's icon, with a count of what is waiting on Ali — tickets
+   * to approve or review, clients waiting for an answer — and a green dot when
+   * nothing is waiting but an agent is working.
+   */
+  function AdminEntryIcon(props) {
+    const counts = useSyncExternalStore(attention.subscribe, attention.get);
+    const waiting = counts ? counts.approve + counts.review + counts.waiting : 0;
+    const parts = counts
+      ? [
+          counts.approve && `${counts.approve} to approve`,
+          counts.review && `${counts.review} to review`,
+          counts.waiting && `${counts.waiting} client${counts.waiting === 1 ? '' : 's'} waiting`,
+          counts.running && `${counts.running} running`,
+        ].filter(Boolean)
+      : [];
+    const badge = {
+      position: 'absolute',
+      top: -5,
+      right: -7,
+      minWidth: 13,
+      height: 13,
+      padding: '0 3px',
+      borderRadius: 7,
+      fontSize: 9,
+      fontWeight: 700,
+      lineHeight: '13px',
+      textAlign: 'center',
+      color: '#fff',
+      boxSizing: 'border-box',
+    };
+    return (
+      <span style={{ position: 'relative', display: 'inline-flex' }} title={parts.length ? parts.join(' · ') : undefined}>
+        <AdminIcon size={props?.size ?? 16} />
+        {waiting > 0 ? (
+          <span style={{ ...badge, background: 'var(--dsw-alias-state-warning-primary, #d18f2e)' }}>{waiting > 99 ? '99+' : waiting}</span>
+        ) : counts?.running ? (
+          <span style={{ ...badge, minWidth: 7, width: 7, height: 7, top: -2, right: -3, padding: 0, background: 'var(--dsw-alias-state-success-primary, #2f9e5b)' }} />
+        ) : null}
+      </span>
+    );
+  }
+
+  /** In a run's own conversation header: which ticket it came from, one click away. */
+  function TicketHeaderChip({ sessionId }) {
+    const run = ticketFromCwd(useSessionCwd(sessionId));
+    if (!run) return null;
+    return (
+      <button
+        type="button"
+        onClick={() => openTicket(run)}
+        title={`Open ${run.kind === 'task' ? 'system task' : 'client ticket'} #${run.ticketId} in Admin`}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 5,
+          height: 24,
+          padding: '0 8px',
+          borderRadius: 6,
+          border: `1px solid ${TICKET_COLORS[run.kind]}`,
+          background: 'transparent',
+          color: 'inherit',
+          font: 'inherit',
+          fontSize: 12,
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <TicketGlyph size={13} />
+        <span>
+          {run.kind === 'task' ? 'Task' : 'Ticket'} #{run.ticketId}
+          {run.runId ? ` · run ${run.runId}` : ''}
+        </span>
+      </button>
+    );
+  }
+
   // Downloads go through the Host (it holds the token and the disk). Uploads
   // need the bytes, which the bridge cannot carry: /admin attach takes paths.
   const files = { download: (path) => json(`download ${path}`) };
@@ -437,7 +557,9 @@ function apply(ctx) {
     localeCtx.effect(() => localeCtx.locale.register(NAMESPACE, { en: DICTIONARY }), 'admin: locale namespace');
   });
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID, locale: NAMESPACE }, AdminPage));
-  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL_ID, order: 12, label: 'Admin' }, AdminIcon));
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL_ID, order: 12, label: 'Admin' }, AdminEntryIcon));
+  ctx.slots.inject('conversation.session.header.actions', () =>
+    ctx.slots.register({ name: 'conversation.session.header.actions', id: 'admin-ticket', order: 5, locale: NAMESPACE }, TicketHeaderChip));
   // Run sessions get a ticket chip on the row and a line in the hover card;
   // the actions themselves live in the right-pane Ticket tab.
   ctx.slots.inject('sidebar.session.row.leading', () =>
