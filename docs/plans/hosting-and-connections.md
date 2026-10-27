@@ -219,6 +219,19 @@ publish, rollback.
 
 ### The ChatGPT plugin
 
+**Registered and connected 2026-10-27**: added via chatgpt.com Plugins →
+Add → "Add custom MCP server", URL `https://malipetek.dev/mcp`, OAuth. ChatGPT
+dynamically registered as OAuth client `mcp_cUnjRY-vvECPlvVJWOA4iB5u`; the
+consent page + PKCE flow verified end-to-end with the client account
+`altermalipetek@gmail.com` — an `agent_tokens` row labeled `ChatGPT` exists
+and is revocable. Plugin shows under Installed on Ali's ChatGPT account.
+Directory submission pending — needs publisher name + listing; legal pages
+(`/privacy-policy`, `/terms-of-service`, `/contact`, `/robots.txt`) were
+rewritten for the real product, and a Cloudflare WAF skip rule
+`allow legal pages` (position 1, skips managed rules, SBFM, BIC, Security
+Level, remaining custom rules incl. `block_il`) keeps them fetchable by
+OpenAI's reviewer.
+
 - The same MCP server as a ChatGPT app. The tools return an HTML widget
   alongside text for: the request list (mini four-dot strips), one request
   (step strip, now/next line, budget gauge — from `src/lib/tracker.ts`), and
