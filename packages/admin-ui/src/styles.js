@@ -248,6 +248,9 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-composer textarea { border: 0; padding: 4px 2px; background: none; outline: none !important; }
 .aw-details { border-left: 1px solid var(--aw-border); background: var(--aw-bg2); padding: 16px; overflow-y: auto; position: sticky; top: 0; height: 100cqh; align-self: start; }
 .aw-details select, .aw-details input { width: 100%; }
+.aw-site { display: flex; flex-direction: column; gap: 6px; padding: 10px 0 14px; margin-bottom: 4px; border-bottom: 1px solid var(--aw-border); }
+.aw-site p { margin: 0; }
+.aw-site__links { display: flex; gap: 14px; font-weight: 600; }
 .aw-details .aw-ticket__actions { flex-direction: column; align-items: stretch; gap: 6px; padding-bottom: 14px; margin-bottom: 4px; }
 .aw-details .aw-ticket__actions > button { width: 100%; justify-content: center; }
 .aw-details .aw-ticket__actions > :first-child { align-self: flex-start; }

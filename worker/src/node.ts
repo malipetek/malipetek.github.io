@@ -255,6 +255,14 @@ node.post('/node/sites/:slug/deploys/:id/finish', async (c) => {
   return c.json({ ok: true, deployId: out.deployId, previewUrl: out.previewUrl });
 });
 
+/** How a rebuild the admin asked for went. A good one already moved the preview (finish). */
+node.post('/node/sites/:slug/rebuilt', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { ok?: unknown; error?: unknown } | null;
+  const error = body?.ok === true ? null : typeof body?.error === 'string' ? body.error.slice(0, 500) : 'failed';
+  await c.env.DB.prepare('UPDATE sites SET rebuild_error = ?, updated_at = ? WHERE slug = ?').bind(error, now(), c.req.param('slug')).run();
+  return c.json({ ok: true });
+});
+
 node.post('/node/heartbeat', async (c) => {
   const body = (await c.req.json().catch(() => null)) as { node?: unknown; running?: unknown } | null;
   const report = cleanNodeReport(body?.node);

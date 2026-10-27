@@ -371,6 +371,18 @@ export async function heartbeat(env: Env, node: NodeReport, running: number[]) {
         .bind(...node.slugs)
         .all<{ ticket_id: number; slug: string; site: string }>()
     : { results: [] as { ticket_id: number; slug: string; site: string }[] };
+  // Previews Ali asked to rebuild, for sites this node holds. Taken here, so
+  // one node builds each request.
+  const { results: rebuilds } = node.slugs.length
+    ? await env.DB.prepare(
+        `UPDATE sites SET rebuild_requested_at = NULL
+          WHERE rebuild_requested_at IS NOT NULL AND state = 'ready' AND host = 'ours'
+            AND project_id IN (SELECT id FROM projects WHERE slug IN (${node.slugs.map(() => '?').join(',')}))
+          RETURNING slug AS site, (SELECT slug FROM projects WHERE id = sites.project_id) AS slug`,
+      )
+        .bind(...node.slugs)
+        .all<{ site: string; slug: string }>()
+    : { results: [] as { site: string; slug: string }[] };
   // A fingerprint of the project list: when it changes (a project, a repo, a
   // repo to make) the node re-reads /node/projects now instead of in ten minutes.
   const shape = await env.DB.prepare(
@@ -392,6 +404,7 @@ export async function heartbeat(env: Env, node: NodeReport, running: number[]) {
       shared: `malipetek/${item.kind === 'client' ? 'ticket' : 'task'}-${item.ticket_id}`,
     })),
     builds: (builds ?? []).map((item) => ({ ticketId: item.ticket_id, slug: item.slug, site: item.site })),
+    rebuilds: rebuilds ?? [],
     // Applied by the node on receipt, and reported back as its effective config
     // on the next beat — so what the views show is what the node is doing.
     overrides: parseObject(row?.overrides),

@@ -428,7 +428,8 @@ async function buildAndDeploy(config, claim, dir, head, steps) {
       : null;
     const output = conf?.output ?? (existsSync(join(dir, 'package.json')) ? 'dist' : '.');
     if (conf?.build || (!conf && existsSync(join(dir, 'package.json')))) {
-      const command = conf?.build ?? 'npm ci && npm run build';
+      // pnpm where it exists: npm may be blocked on a node, and a template has no lockfile for `npm ci`.
+      const command = conf?.build ?? ((await onPath('pnpm')) ? 'pnpm install --no-frozen-lockfile && pnpm run build' : 'npm install && npm run build');
       steps.push('node', `Site build: ${command}`);
       const built = await run('/bin/sh', ['-c', command], { cwd: dir, env: { ...process.env, CI: '1' }, signal: AbortSignal.timeout(10 * 60_000) });
       if (built.code !== 0) {
@@ -531,6 +532,37 @@ async function buildWork(config, item) {
   }
 }
 
+/**
+ * Ali asked for the preview to be rebuilt as it is: build the preview branch
+ * (the main line when there is none) in a throwaway worktree and deploy it.
+ * No agent, no commit, no push.
+ */
+async function rebuildPreview(config, item) {
+  const report = (body) =>
+    api(config, 'POST', `/node/sites/${item.site}/rebuilt`, body).catch((error) => log(`${item.site}: rebuild result not recorded: ${error.message}`));
+  const project = config.projects[item.slug];
+  if (!project) return report({ ok: false, error: `no folder for ${item.slug} on ${config.nodeId}` });
+  const dir = join(config.worktreeRoot, `${item.slug}-rebuild`);
+  try {
+    const repo = await git(project.path, 'rev-parse', '--show-toplevel');
+    await ghRemote(config, { ...project, slug: item.slug }, repo);
+    await netGit(repo, ['fetch', '--quiet', 'origin']);
+    const hasPreview = (await run('git', ['show-ref', '--verify', '--quiet', 'refs/remotes/origin/preview'], { cwd: repo })).code === 0;
+    rmSync(dir, { recursive: true, force: true });
+    await git(repo, 'worktree', 'prune');
+    await git(repo, 'worktree', 'add', '--detach', dir, hasPreview ? 'origin/preview' : 'origin/HEAD');
+    const head = await git(dir, 'rev-parse', 'HEAD');
+    const said = [];
+    const out = await buildAndDeploy(config, { site: item.site, ticket: null }, dir, head, { push: (kind, text) => said.push(`${kind}: ${text}`) });
+    log(`${item.site}: rebuild ${out.previewUrl ? `deployed → ${out.previewUrl}` : `failed: ${out.note}`}`);
+    await report(out.previewUrl ? { ok: true } : { ok: false, error: out.note || said.at(-1) || 'no output' });
+  } catch (error) {
+    log(`${item.site}: rebuild failed: ${error.message}`);
+    await report({ ok: false, error: error.message });
+  } finally {
+    await git(project.path, 'worktree', 'remove', '--force', dir).catch(() => {});
+  }
+}
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const REPO_RE = /^(https:\/\/[^\s]+|git@[^\s:]+:[^\s]+)$/i;
@@ -1179,6 +1211,7 @@ class Node {
       // holds the repo and the credentials, so it does the git.
       if (Array.isArray(res.land) && res.land.length > 0) await this.land(res.land);
       if (Array.isArray(res.builds)) for (const b of res.builds) await buildWork(this.config, b);
+      if (Array.isArray(res.rebuilds)) for (const r of res.rebuilds) await rebuildPreview(this.config, r);
     } catch (error) {
       this.lastError = `heartbeat: ${error.message}`;
       log(this.lastError);

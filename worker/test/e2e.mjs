@@ -191,6 +191,19 @@ const groups = {
     const rb = await call(`/admin/projects/${project.id}/site/rollback`, { method: 'POST', auth: admin, body: { deployId: made.data.deployId } });
     check('rollback repoints production', rb.status === 200);
 
+    // Rebuild: Ali asks, exactly one node holding the project gets it, the result shows.
+    check('a client cannot ask for a rebuild', (await call(`/admin/projects/${project.id}/site/rebuild`, { method: 'POST', auth: a.session })).status === 403);
+    check('Ali asks for a rebuild', (await call(`/admin/projects/${project.id}/site/rebuild`, { method: 'POST', auth: admin })).status === 200);
+    check('the site says a rebuild is pending', Boolean((await call(`/portal/projects/${project.id}/site`, { auth: a.session })).data.site.rebuildRequestedAt));
+    const rbNode = `e2e-rb-${Date.now() % 100000}`;
+    const handed = (await node(rbNode, [project.slug])).data.rebuilds;
+    check('a node holding it is handed the rebuild', handed?.length === 1 && handed[0].site === 'rosa-florist' && handed[0].slug === project.slug, JSON.stringify(handed));
+    check('…once', (await node(`${rbNode}-2`, [project.slug])).data.rebuilds?.length === 0);
+    await call('/node/sites/rosa-florist/rebuilt', { method: 'POST', auth: RUNNER_TOKEN, body: { ok: false, error: 'pnpm missing' } });
+    check('a failed rebuild is shown', (await call(`/portal/projects/${project.id}/site`, { auth: a.session })).data.site.rebuildError === 'pnpm missing');
+    await call('/node/sites/rosa-florist/rebuilt', { method: 'POST', auth: RUNNER_TOKEN, body: { ok: true } });
+    check('a good one clears it', (await call(`/portal/projects/${project.id}/site`, { auth: a.session })).data.site.rebuildError === null);
+
     const existing = (await newProject(a.session, { kind: 'existing', name: 'Old Shop', brief: OLD_BRIEF, repoKind: 'none' })).data.project;
     check('an existing stack is not hosted', (await call(`/portal/projects/${existing.id}/site`, { method: 'POST', auth: a.session, body: {} })).data?.error === 'not_hosted');
   },

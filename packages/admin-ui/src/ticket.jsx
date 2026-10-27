@@ -630,6 +630,70 @@ function Composer({ ticket, onSent }) {
 }
 
 /** Properties, cost, routing and runs. Each control saves on change. */
+/**
+ * The project's hosted site, where Ali checks the work: the preview a run
+ * deployed, what is live, and the button that makes the preview live.
+ */
+export function SitePanel({ project }) {
+  const { api, act, ask, reload } = useAdmin();
+  const site = project?.site;
+  if (!site) return null;
+  const placeholder = site.previewDeploy === 'placeholder';
+  const unpublished = site.previewDeploy && site.previewDeploy !== site.productionDeploy;
+  return (
+    <section className="aw-site" aria-label="Site">
+      <span className="aw-field__label">Site · {site.state}</span>
+      {site.state !== 'ready' ? (
+        <p className="aw-muted">{site.error ?? 'Being set up: the repo and a first page are on their way.'}</p>
+      ) : (
+        <>
+          <p className="aw-site__links">
+            <a href={site.previewUrl} target="_blank" rel="noreferrer">
+              Preview ↗
+            </a>
+            <a href={site.productionUrl} target="_blank" rel="noreferrer">
+              Live ↗
+            </a>
+          </p>
+          <p className={placeholder || unpublished ? 'aw-warn' : 'aw-muted'}>
+            {placeholder
+              ? 'The preview is still the placeholder: no run has deployed a build yet.'
+              : unpublished
+                ? 'The preview has changes that are not live.'
+                : 'Live matches the preview.'}
+          </p>
+          {site.rebuildRequestedAt ? <p className="aw-muted">Rebuild asked for: a node builds it on its next beat.</p> : null}
+          {site.rebuildError ? <p className="aw-warn">Last rebuild failed: {site.rebuildError}</p> : null}
+          <Button
+            size="sm"
+            disabled={Boolean(site.rebuildRequestedAt)}
+            title="Build the preview branch as it is and deploy it, without an agent run"
+            onClick={() => void act(() => api('POST', `/admin/projects/${project.id}/site/rebuild`), 'A node rebuilds the preview on its next beat.').then(reload, () => undefined)}
+          >
+            Rebuild preview
+          </Button>
+          {unpublished && !placeholder ? (
+            <Button
+              size="sm"
+              kind="primary"
+              onClick={() =>
+                ask({
+                  title: 'Publish the preview?',
+                  text: `${site.productionUrl} will show exactly what ${site.previewUrl} shows now. You can roll back from the project's deploys.`,
+                  confirm: 'Publish',
+                  run: () => act(() => api('POST', `/admin/projects/${project.id}/site/publish`), 'Published.').then(reload, () => undefined),
+                })
+              }
+            >
+              Publish to live
+            </Button>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
 function Details({ ticket, runs, land, meter, reload }) {
   const { api, data, act, setStatus } = useAdmin();
   const isClient = ticket.kind !== 'system';
@@ -643,6 +707,7 @@ function Details({ ticket, runs, land, meter, reload }) {
   return (
     <aside className="aw-details" aria-label="Details">
       <TicketActions ticket={ticket} runs={runs} land={land} reload={reload} />
+      <SitePanel project={data.projects.find((p) => p.id === ticket.project_id)} />
       <Field label="Status">
         <select value={ticket.status} onChange={(e) => void setStatus(ticket, e.target.value).then(reload)}>
           {STATUSES.map((s) => (

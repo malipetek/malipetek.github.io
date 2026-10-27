@@ -1,4 +1,4 @@
 {
-  "build": "npm ci && npm run build",
+  "build": "pnpm install --no-frozen-lockfile && pnpm run build",
   "output": "dist"
 }

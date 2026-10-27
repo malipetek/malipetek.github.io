@@ -34,6 +34,8 @@ export interface SiteRow {
   custom_domain: string | null;
   error: string | null;
   failure_alerted_at: number | null;
+  rebuild_requested_at: number | null;
+  rebuild_error: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -48,6 +50,8 @@ export interface SiteView {
   error: string | null;
   previewDeploy: string | null;
   productionDeploy: string | null;
+  rebuildRequestedAt: number | null;
+  rebuildError: string | null;
   updatedAt: number;
 }
 
@@ -71,6 +75,8 @@ export function siteView(row: SiteRow | null | undefined, domain = DEFAULT_SITES
     error: row.error,
     previewDeploy: row.preview_deploy,
     productionDeploy: row.production_deploy,
+    rebuildRequestedAt: row.rebuild_requested_at ?? null,
+    rebuildError: row.rebuild_error ?? null,
     updatedAt: row.updated_at,
   };
 }
@@ -491,7 +497,7 @@ export async function finishDeploy(
       `INSERT INTO site_deploys (id, project_id, ticket_id, commit_sha, files, bytes, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
     ).bind(deploy, site.project_id, meta.ticketId ?? null, meta.commitSha ?? null, files, bytes, t),
-    env.DB.prepare('UPDATE sites SET preview_deploy = ?, updated_at = ? WHERE project_id = ?').bind(deploy, t, site.project_id),
+    env.DB.prepare('UPDATE sites SET preview_deploy = ?, rebuild_error = NULL, updated_at = ? WHERE project_id = ?').bind(deploy, t, site.project_id),
   ]);
   const { sitesDomain } = await getSettings(env);
   return { deployId: deploy, previewUrl: `https://${slug}--preview.${sitesDomain}`, files, bytes };

@@ -1252,6 +1252,55 @@ var __awPlugin = (() => {
       ] })
     ] });
   }
+  function SitePanel({ project }) {
+    const { api, act, ask, reload } = useAdmin();
+    const site = project?.site;
+    if (!site) return null;
+    const placeholder = site.previewDeploy === "placeholder";
+    const unpublished = site.previewDeploy && site.previewDeploy !== site.productionDeploy;
+    return /* @__PURE__ */ jsxs("section", { className: "aw-site", "aria-label": "Site", children: [
+      /* @__PURE__ */ jsxs("span", { className: "aw-field__label", children: [
+        "Site \xB7 ",
+        site.state
+      ] }),
+      site.state !== "ready" ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: site.error ?? "Being set up: the repo and a first page are on their way." }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsxs("p", { className: "aw-site__links", children: [
+          /* @__PURE__ */ jsx("a", { href: site.previewUrl, target: "_blank", rel: "noreferrer", children: "Preview \u2197" }),
+          /* @__PURE__ */ jsx("a", { href: site.productionUrl, target: "_blank", rel: "noreferrer", children: "Live \u2197" })
+        ] }),
+        /* @__PURE__ */ jsx("p", { className: placeholder || unpublished ? "aw-warn" : "aw-muted", children: placeholder ? "The preview is still the placeholder: no run has deployed a build yet." : unpublished ? "The preview has changes that are not live." : "Live matches the preview." }),
+        site.rebuildRequestedAt ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Rebuild asked for: a node builds it on its next beat." }) : null,
+        site.rebuildError ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+          "Last rebuild failed: ",
+          site.rebuildError
+        ] }) : null,
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
+            disabled: Boolean(site.rebuildRequestedAt),
+            title: "Build the preview branch as it is and deploy it, without an agent run",
+            onClick: () => void act(() => api("POST", `/admin/projects/${project.id}/site/rebuild`), "A node rebuilds the preview on its next beat.").then(reload, () => void 0),
+            children: "Rebuild preview"
+          }
+        ),
+        unpublished && !placeholder ? /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
+            kind: "primary",
+            onClick: () => ask({
+              title: "Publish the preview?",
+              text: `${site.productionUrl} will show exactly what ${site.previewUrl} shows now. You can roll back from the project's deploys.`,
+              confirm: "Publish",
+              run: () => act(() => api("POST", `/admin/projects/${project.id}/site/publish`), "Published.").then(reload, () => void 0)
+            }),
+            children: "Publish to live"
+          }
+        ) : null
+      ] })
+    ] });
+  }
   function Details({ ticket, runs, land, meter, reload }) {
     const { api, data, act, setStatus } = useAdmin();
     const isClient = ticket.kind !== "system";
@@ -1264,6 +1313,7 @@ var __awPlugin = (() => {
     const price = priceOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0 });
     return /* @__PURE__ */ jsxs("aside", { className: "aw-details", "aria-label": "Details", children: [
       /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload }),
+      /* @__PURE__ */ jsx(SitePanel, { project: data.projects.find((p) => p.id === ticket.project_id) }),
       /* @__PURE__ */ jsx(Field, { label: "Status", children: /* @__PURE__ */ jsx("select", { value: ticket.status, onChange: (e) => void setStatus(ticket, e.target.value).then(reload), children: STATUSES.map((s) => /* @__PURE__ */ jsx("option", { value: s, children: STATUS_LABEL[s] }, s)) }) }),
       /* @__PURE__ */ jsx(Field, { label: "Project", children: /* @__PURE__ */ jsxs("select", { value: ticket.project_id ?? "", onChange: (e) => void patch({ projectId: e.target.value || null }, "Project saved."), children: [
         /* @__PURE__ */ jsx("option", { value: "", children: "No project" }),
@@ -1658,6 +1708,7 @@ var __awPlugin = (() => {
                   p.site.state
                 ] }) : null
               ] }),
+              /* @__PURE__ */ jsx(SitePanel, { project: p }),
               /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
                 !p.repo ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => void act(() => api("POST", `/admin/projects/${p.id}/repo/create`), `Creating a repo for ${p.name}.`), children: p.repoStatus?.state === "failed" ? "Retry repo" : "Create repo" }) : null,
                 /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project: p, onClose: close }) }), children: p.repo ? "Change repo" : "Use a repo URL" }),
@@ -1975,6 +2026,9 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-composer textarea { border: 0; padding: 4px 2px; background: none; outline: none !important; }
 .aw-details { border-left: 1px solid var(--aw-border); background: var(--aw-bg2); padding: 16px; overflow-y: auto; position: sticky; top: 0; height: 100cqh; align-self: start; }
 .aw-details select, .aw-details input { width: 100%; }
+.aw-site { display: flex; flex-direction: column; gap: 6px; padding: 10px 0 14px; margin-bottom: 4px; border-bottom: 1px solid var(--aw-border); }
+.aw-site p { margin: 0; }
+.aw-site__links { display: flex; gap: 14px; font-weight: 600; }
 .aw-details .aw-ticket__actions { flex-direction: column; align-items: stretch; gap: 6px; padding-bottom: 14px; margin-bottom: 4px; }
 .aw-details .aw-ticket__actions > button { width: 100%; justify-content: center; }
 .aw-details .aw-ticket__actions > :first-child { align-self: flex-start; }

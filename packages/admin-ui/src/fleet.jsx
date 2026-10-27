@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useAdmin } from './store.js';
 import { EXECUTORS, PRIORITIES, ago, money, priorityName, span, usd } from './format.js';
 import { Button, Chips, Dot, Field, Modal, Segmented, Tag, cx } from './ui.jsx';
+import { SitePanel } from './ticket.jsx';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
@@ -363,6 +364,7 @@ export function ClientsView() {
                     {holders.length ? holders.map((n) => <Tag key={n.id} tone={n.online ? undefined : 'bad'}>{n.id}</Tag>) : <span className="aw-warn">No node has it yet.</span>}
                     {p.site ? <Tag tone="dash">site: {p.site.state}</Tag> : null}
                   </div>
+                  <SitePanel project={p} />
                   <div className="aw-inline">
                     {!p.repo ? (
                       <Button size="sm" kind="primary" onClick={() => void act(() => api('POST', `/admin/projects/${p.id}/repo/create`), `Creating a repo for ${p.name}.`)}>

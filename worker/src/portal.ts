@@ -2056,6 +2056,17 @@ portal.post('/admin/projects/:id/repo/create', async (c) => {
   return reply(c, { ok: true });
 });
 
+/** Build the preview branch as it is and deploy it: a node holding the project does it on its next beat. */
+portal.post('/admin/projects/:id/site/rebuild', async (c) => {
+  const res = await c.env.DB.prepare(
+    `UPDATE sites SET rebuild_requested_at = ?, rebuild_error = NULL WHERE project_id = ? AND state = 'ready' AND host = 'ours'`,
+  )
+    .bind(now(), c.req.param('id'))
+    .run();
+  if (!res.meta.changes) return reply(c, { error: 'not_ready' }, 409);
+  return reply(c, { ok: true });
+});
+
 /** Host a project on malipetek.online, the same as a client's "Set up my site", for any project. */
 portal.post('/admin/projects/:id/site', async (c) => {
   const project = await c.env.DB.prepare('SELECT id, name, slug FROM projects WHERE id = ?')
