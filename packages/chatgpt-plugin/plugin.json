@@ -15,10 +15,10 @@
     "com.openai": {
       "interface": {
         "displayName": "malipetek",
-        "shortDescription": "Software help by the minute",
-        "longDescription": "malipetek is a software contracting service: you describe the work you need — a fix, a feature, a change to your site — in plain words, and the plugin files it as a request on your malipetek account. Every request is approved and reviewed by a human before anything ships; an AI agent does the typing, billed by the second. Connect your account to file and track requests, reply on them, set budgets, and preview or publish your site. The plugin can also read malipetek's public knowledgebase of real agentic-coding problems without signing in.",
+        "shortDescription": "File and track software work",
+        "longDescription": "malipetek is a software contracting service: you describe the work you need — a fix, a feature, a change to your site — in plain words, and the plugin files it as a request on your malipetek account. Every request is approved and reviewed by a human before anything ships; an AI agent does the work. Connect your account to file and track requests, reply on them, set budgets, and preview or publish your site. The plugin can also read malipetek's public knowledgebase of real agentic-coding problems without signing in.",
         "developerName": "Muhammet Ali Petek",
-        "category": "Small Business",
+        "category": "Productivity",
         "capabilities": [
           "File a new software work request",
           "Track request status and conversation",
