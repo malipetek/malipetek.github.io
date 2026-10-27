@@ -267,8 +267,9 @@ at `GET https://api.cloudflare.com/client/v4/oauth/scopes`.
 
 - Done (2026-10-27): scope list checked — Workers scripts, routes, R2 and
   DNS scopes all exist. OAuth client `malipetek` registered under Ali's
-  account (private for now; needs a logo + the TXT-verified domain to go
-  public). Client ID/secret live in the `malipetek-intercom` Worker secrets
+  account, client ID `ec178fe1350572efdadc6a872ee2f817` (private for now;
+  needs a logo + the TXT-verified domain to go public — the verification TXT
+  is already live on `malipetek.dev`, verification is polling). Client ID/secret live in the `malipetek-intercom` Worker secrets
   `CLOUDFLARE_OAUTH_CLIENT_ID` / `CLOUDFLARE_OAUTH_CLIENT_SECRET`; redirect
   URL `https://malipetek-intercom.malipetek.workers.dev/portal/cloudflare/callback`;
   verification TXT `cloudflare_oauth_client_publisher=…` added at
