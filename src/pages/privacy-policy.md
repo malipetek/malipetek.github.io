@@ -10,71 +10,68 @@ title: "Privacy Policy"
 **Introduction**
 ---------------
 
-Malipetek.dev is a full-stack web development agency committed to protecting the privacy and security of our clients and visitors. This privacy policy outlines how we collect, use, and protect personal data.
+Malipetek.dev is the software contracting service of Muhammet Ali Petek: clients file requests through a web portal, and work is carried out by AI agents under human approval and review. This policy explains what personal data we collect, where it is stored, and what you can do with it. It covers the website, the client portal at `malipetek.dev/portal`, sites we host under `malipetek.online`, and assistants you connect to your account — including the ChatGPT app and any other MCP-compatible agent.
 
-**Scope**
---------
+**Data We Collect**
+-------------------
 
-This policy applies to all services provided by Malipetek.dev, including but not limited to:
+* **Account data.** You sign in with your email address via a one-time link we email you. We store your email address, role (client or admin), and session records. There is no password.
+* **Contact data.** When you use the contact form or email us, we collect your name, email address, and message.
+* **Portal data.** Projects you register, requests you file, conversation messages, replies, budgets, attachments you upload, and records of work performed and billed.
+* **Connected services.** If you connect GitHub, we store the installation ID, account name, and which repositories you granted — never your GitHub password. If you connect an assistant (ChatGPT, Claude, or another MCP client), we store the OAuth registration and an access token that lets it act for your account.
+* **Technical data.** IP addresses are used for rate limiting and abuse prevention, and Cloudflare Turnstile is used to keep bots out. Server logs are kept by our infrastructure providers under their own policies.
 
-* Website development and design
-* Web application development
-* AI-powered solutions
-* Consulting services
+**How Work Is Processed**
+-------------------------
 
-**Data Collection**
------------------
+Your requests and project files are processed by AI agents to produce the work you asked for. This means content you submit may be sent to AI model providers as part of a work run. Agents operate on a copy of your project; they cannot publish or deploy anything without going through the recorded approval flow.
 
-We collect personal data in the following ways:
+When you connect **your own assistant**, it receives an access token scoped to your account. It can read your projects and requests and act within the permissions shown on the consent screen at connection time. Data your assistant reads is governed additionally by that assistant's own privacy policy (for example, OpenAI's for ChatGPT).
 
-* **Contact Forms**: When you submit a contact form on our website, we collect your name, email address, and message.
-* **Email Correspondence**: When you email us directly, we collect your email address and any personal data you provide in the email.
-* **Client Onboarding**: When you become a client, we collect additional personal data, such as company information, address, and phone number.
+**How We Use Data**
+-------------------
 
-**Data Use**
-------------
+* To provide the service: sign you in, track your requests, build and preview your work, and bill you.
+* To communicate with you about your requests and account.
+* To keep the platform secure and prevent abuse.
+* We do not sell your data and do not run advertising trackers.
 
-We use personal data for the following purposes:
+**Where Data Lives**
+--------------------
 
-* **Communication**: To respond to your inquiries, provide updates on our services, and communicate with you about your projects.
-* **Project Management**: To manage and deliver our services, including website development, web application development, and AI-powered solutions.
-* **Marketing**: To send you newsletters, promotional materials, and other marketing communications (you can opt-out at any time).
-
-**Data Protection**
------------------
-
-We take reasonable measures to protect your personal data from unauthorized access, disclosure, alteration, and destruction. These measures include:
-
-* **Encryption**: We use encryption to protect data in transit and at rest.
-* **Access Controls**: We limit access to personal data to authorized personnel only.
-* **Data Storage**: We store personal data on secure servers and cloud storage services.
+The service runs on Cloudflare (Workers, D1 database, R2 storage), so your data is stored and processed on Cloudflare's global network. Sign-in links are delivered by email. Optional connections — GitHub, your own AI assistant — involve those providers only if you use them.
 
 **Data Retention**
 -----------------
 
-We retain personal data for as long as necessary to provide our services and fulfill our obligations to you. When we no longer need your personal data, we delete it or anonymize it.
+We keep your account and portal data for as long as your account is active and as needed for billing records. Magic-link tokens expire in 15 minutes; sessions expire automatically. Access tokens and stored credentials are held only as hashes where possible — a connected assistant can be revoked at any time from the portal, which deletes its access.
 
 **Your Rights**
 --------------
 
-You have the following rights regarding your personal data:
+You can ask us at any time to:
 
-* **Access**: You can request access to your personal data.
-* **Correction**: You can request correction of your personal data.
-* **Erasure**: You can request erasure of your personal data.
-* **Opt-out**: You can opt-out of marketing communications.
+* Access or export the personal data we hold about you
+* Correct inaccurate data
+* Delete your account and associated data
+* Disconnect an assistant or a linked GitHub installation (you can also do both yourself, in the portal and on GitHub)
 
-**Contact Us**
---------------
+**Security**
+------------
 
-If you have any questions or concerns about this privacy policy, please contact us at hello@malipetek.dev
+We use encryption in transit, hashed token storage, short-lived sign-in links, and per-task credentials for repository access. No method is perfectly secure; if something goes wrong that affects your data we will tell you.
 
-**Changes to this Policy**
--------------------------
+**Contact**
+----------
 
-We may update this policy from time to time. We will notify you of any significant changes by email or through our website.
+Questions about this policy: **malipetek@gmail.com**.
+
+**Changes**
+----------
+
+We may update this policy. Material changes will be announced on the site or by email.
 
 **Effective Date**
 -----------------
 
-This policy is effective as of 04/11/2024.
+27/10/2026.
