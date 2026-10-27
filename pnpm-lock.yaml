@@ -55,9 +55,21 @@ importers:
         specifier: 4.132.0
         version: 4.132.0(@cloudflare/workers-types@4.20260702.1)(@types/node@24.13.4)
 
+  packages/admin-ui:
+    dependencies:
+      react:
+        specifier: '>=18'
+        version: 19.3.0
+
   packages/dsh-action-cards: {}
 
+  packages/dsh-admin: {}
+
   packages/dsh-ai-workspace: {}
+
+  packages/dsh-file-editor: {}
+
+  packages/dsh-git-graph: {}
 
   packages/dsh-projects-manager: {}
 

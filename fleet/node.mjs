@@ -371,6 +371,7 @@ function deployManifest(dir) {
   const walk = (root, prefix) => {
     for (const entry of readdirSync(root, { withFileTypes: true })) {
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.name === '.git') continue; // a worktree's .git is a file
       if (entry.isDirectory()) {
         if (entry.name !== '.git' && entry.name !== 'node_modules' && entry.name !== '.malipetek-files') walk(join(root, entry.name), rel);
         continue;
@@ -399,6 +400,8 @@ function sourceManifest(dir, outputRel) {
   const skip = new Set(['.git', 'node_modules', '.malipetek-files', '.astro', outputRel].filter(Boolean));
   const walk = (root, prefix) => {
     for (const entry of readdirSync(root, { withFileTypes: true })) {
+      // In a worktree `.git` is a file pointing at the main repo, not a folder.
+      if (entry.name === '.git') continue;
       if (entry.isDirectory()) {
         if (!skip.has(entry.name)) walk(join(root, entry.name), prefix ? `${prefix}/${entry.name}` : entry.name);
         continue;
