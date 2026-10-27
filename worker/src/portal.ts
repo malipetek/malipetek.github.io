@@ -667,6 +667,39 @@ portal.post('/auth/verify', async (c) => {
   return reply(c, { session, user });
 });
 
+/*
+ * Reviewer demo sign-in: a fixed sample-data account behind a shared code,
+ * for app-store reviewers who cannot receive a magic link. Disabled unless
+ * both secrets are set.
+ */
+portal.post('/auth/demo', async (c) => {
+  const env = c.env;
+  if (!env.DEMO_EMAIL || !env.DEMO_LOGIN_CODE) return reply(c, { error: 'not_found' }, 404);
+
+  const body = await readJson<{ email?: unknown; code?: unknown }>(c);
+  const email = cleanEmail(body?.email);
+  const code = typeof body?.code === 'string' ? body.code : '';
+
+  const ip = clientIp(c.req.raw);
+  if (await isRateLimited(env, ip, 'auth-ip', AUTH_IP_LIMIT, AUTH_WINDOW_SECONDS)) {
+    return reply(c, { error: 'rate_limited' }, 429);
+  }
+
+  const user = email
+    ? await env.DB.prepare('SELECT id, email, name, role FROM users WHERE email = ?').bind(email).first<User>()
+    : null;
+  // Same answer either way — no hint about which half failed.
+  if (!user || email !== env.DEMO_EMAIL.toLowerCase() || code !== env.DEMO_LOGIN_CODE || user.role !== 'client') {
+    return reply(c, { error: 'unauthorized' }, 401);
+  }
+
+  const session = randomToken();
+  await env.DB.prepare('INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
+    .bind(await sha256(session), user.id, now() + SESSION_TTL_SECONDS, now())
+    .run();
+  return reply(c, { session, user });
+});
+
 /* —— session guard —— */
 
 const requireUser = async (c: Ctx, next: () => Promise<void>) => {

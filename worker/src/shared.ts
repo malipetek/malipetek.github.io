@@ -30,6 +30,10 @@ export interface Env {
   PORTAL_FROM_EMAIL?: string;
   /** Var. The one address that signs in with the admin role. */
   ADMIN_EMAIL?: string;
+  /** Secret. Reviewer demo sign-in: the only email /auth/demo accepts. */
+  DEMO_EMAIL?: string;
+  /** Secret. The code /auth/demo requires alongside DEMO_EMAIL. */
+  DEMO_LOGIN_CODE?: string;
   /** Var. Public site origin, used to build magic links. */
   SITE_URL?: string;
   /** Var. Email Routing address (with subaddressing) that feeds src/inbound.ts. */

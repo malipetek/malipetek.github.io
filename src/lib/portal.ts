@@ -205,6 +205,11 @@ export async function requestLink(email: string) {
   return api<{ ok: true; devLink?: string }>('/auth/request', { body: { email, turnstileToken } });
 }
 
+/** Reviewer demo sign-in: fixed account + shared code instead of a magic link. */
+export async function demoLogin(email: string, code: string) {
+  return api<{ session: string; user: User }>('/auth/demo', { body: { email, code } });
+}
+
 export async function logout() {
   try {
     await api('/auth/logout', { method: 'POST' });

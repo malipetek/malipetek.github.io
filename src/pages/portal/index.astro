@@ -39,6 +39,13 @@ export const prerender = true;
           <button class="btn btn--solid" type="submit">Email me a link →</button>
           <p class="portal-note" data-login-status role="status" aria-live="polite"></p>
         </div>
+        <p class="portal-note" style="margin-top: 0.5rem">
+          <a href="#" data-demo-toggle>Have a reviewer code?</a>
+        </p>
+        <div class="portal-field" data-demo-field hidden>
+          <label class="portal-label" for="pl-code">Reviewer code</label>
+          <input id="pl-code" name="code" type="text" autocomplete="off" />
+        </div>
       </form>
       <p class="portal-note" style="margin-top: 1.5rem; max-width: 46ch">
         New here? Same form. Your account is created when you first sign in;
@@ -153,6 +160,7 @@ export const prerender = true;
     fmtTime,
     h,
     logout,
+    demoLogin,
     requestLink,
     session,
     statusBadge,
@@ -528,9 +536,16 @@ export const prerender = true;
     const status = $('[data-login-status]');
     const button = form.querySelector('button')!;
     const email = String(new FormData(form).get('email') || '').trim();
+    const code = String(new FormData(form).get('code') || '').trim();
     button.disabled = true;
     setNote(status, 'Sending…');
     try {
+      if (code) {
+        const res = await demoLogin(email, code);
+        session.set(res.session);
+        location.href = '/portal/';
+        return;
+      }
       const res = await requestLink(email);
       setNote(status, `Check ${email} for your sign-in link.`);
       // Local dev only: the Worker hands the link back instead of emailing it.
@@ -540,6 +555,12 @@ export const prerender = true;
     } finally {
       button.disabled = false;
     }
+  });
+
+  $('[data-demo-toggle]')?.addEventListener('click', (event) => {
+    event.preventDefault();
+    $('[data-demo-field]').hidden = false;
+    (event.currentTarget as HTMLElement).hidden = true;
   });
 
   $<HTMLFormElement>('[data-new-ticket]').addEventListener('submit', async (event) => {

@@ -15,7 +15,7 @@
     "com.openai": {
       "interface": {
         "displayName": "malipetek",
-        "shortDescription": "File and track software work requests",
+        "shortDescription": "Software help by the minute",
         "longDescription": "Connect your malipetek account to file software work requests, watch them move through approval and build, preview finished work, and publish or roll back your site. Every request is approved and reviewed by a human; an AI agent does the typing. The plugin can also read the public malipetek knowledgebase of real problems from agentic coding sessions without signing in.",
         "developerName": "Muhammet Ali Petek",
         "category": "Productivity",
