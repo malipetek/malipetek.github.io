@@ -1013,6 +1013,56 @@ var __awPlugin = (() => {
       /* @__PURE__ */ jsx("span", { className: "aw-muted", children: sizeText(f.size) })
     ] }) }, f.id)) });
   }
+  var STEP_POLL_MS = 3e3;
+  var STEP_MARK = { tool: "\u203A", text: "\xB7", error: "!", node: "\u25E6" };
+  function RunSteps({ run, live }) {
+    const { api } = useAdmin();
+    const [open, setOpen] = useState(live);
+    const [steps, setSteps] = useState(null);
+    const listRef = useRef(null);
+    const lastSeq = useRef(0);
+    useEffect(() => {
+      if (!open) return void 0;
+      let alive = true;
+      let timer = null;
+      const pull = async () => {
+        try {
+          const data = await api("GET", `/admin/runs/${run.id}/steps?after=${lastSeq.current}`);
+          if (!alive) return;
+          const fresh = data?.steps ?? [];
+          if (fresh.length) lastSeq.current = fresh[fresh.length - 1].seq;
+          setSteps((prev) => [...prev ?? [], ...fresh]);
+          if (data?.live) timer = setTimeout(pull, STEP_POLL_MS);
+        } catch {
+          if (alive) setSteps((prev) => prev ?? []);
+        }
+      };
+      void pull();
+      return () => {
+        alive = false;
+        if (timer) clearTimeout(timer);
+      };
+    }, [open, run.id, api]);
+    useEffect(() => {
+      const el = listRef.current;
+      if (live && el && el.scrollHeight - el.scrollTop - el.clientHeight < 60) el.scrollTop = el.scrollHeight;
+    }, [steps, live]);
+    if (!open) {
+      return /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", style: { fontSize: 12, margin: "2px 0 4px" }, onClick: () => setOpen(true), children: "Show steps" });
+    }
+    if (steps === null) return /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { fontSize: 12 }, children: "Loading steps\u2026" });
+    if (steps.length === 0) {
+      return live ? /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { fontSize: 12 }, children: "Working\u2026 steps appear here as the agent takes them." }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { fontSize: 12 }, children: "No steps were recorded for this run." });
+    }
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx("ol", { className: "aw-steps", ref: listRef, children: steps.map((step) => /* @__PURE__ */ jsxs("li", { className: `aw-step--${step.kind}`, children: [
+        /* @__PURE__ */ jsx("time", { children: new Date(step.at * 1e3).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) }),
+        /* @__PURE__ */ jsx("b", { className: "aw-step__mark", "aria-hidden": "true", children: STEP_MARK[step.kind] ?? "\xB7" }),
+        /* @__PURE__ */ jsx("span", { children: step.text })
+      ] }, step.seq)) }),
+      live ? null : /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", style: { fontSize: 12 }, onClick: () => setOpen(false), children: "Hide steps" })
+    ] });
+  }
   function RunCard({ run, latest, onDiff }) {
     const live = run.status === "running";
     const summary = run.summary ?? "";
@@ -1038,6 +1088,7 @@ var __awPlugin = (() => {
           run.finished_at ? `${Math.max(1, Math.round((run.finished_at - run.started_at) / 60))}m` : `running ${ago(run.started_at)}`
         ] })
       ] }),
+      /* @__PURE__ */ jsx(RunSteps, { run, live }),
       summary ? /* @__PURE__ */ jsx("div", { className: cx("aw-run__summary", fold.long && !fold.open && "is-clipped"), children: summary }) : live ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Working\u2026 the report appears here when it finishes." }) : null,
       /* @__PURE__ */ jsxs("footer", { children: [
         fold.long ? /* @__PURE__ */ jsx(FoldMore, { fold, text: summary }) : null,
@@ -1877,6 +1928,14 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-run--failed { border-left: 3px solid var(--aw-bad); }
 .aw-run--ok { border-left: 3px solid var(--aw-ok); }
 .aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; }
+.aw-steps { list-style: none; margin: 6px 0 2px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; border: 1px solid var(--aw-border); border-radius: 6px; background: var(--aw-bg); font-size: 12px; }
+.aw-steps li { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.aw-steps time { flex: none; color: var(--aw-text2); font-family: var(--aw-mono); font-size: 10.5px; }
+.aw-steps span { min-width: 0; overflow-wrap: anywhere; }
+.aw-step--tool span { font-family: var(--aw-mono); font-size: 11.5px; }
+.aw-step--node span { color: var(--aw-text2); }
+.aw-step--error span { color: var(--aw-bad); }
+.aw-step__mark { flex: none; width: 1em; text-align: center; color: var(--aw-text2); }
 .aw-run footer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; }
 .aw-diff, .aw-log { font-family: var(--aw-mono); font-size: 11.5px; line-height: 1.5; white-space: pre; overflow: auto; max-height: 65vh; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: 6px; padding: 10px; margin: 0; }
 .aw-log { max-height: 220px; margin-top: 10px; }

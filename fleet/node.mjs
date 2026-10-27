@@ -329,6 +329,56 @@ async function api(config, method, path, body) {
   return data;
 }
 
+/* ————— live steps ————— */
+
+const STEP_FLUSH_MS = 4000;
+
+/**
+ * A run's live step log: the agent's tool calls and messages, and the node's
+ * own milestones, sent to the portal in small batches so the ticket view shows
+ * what is happening while it happens. Best effort — a step that does not
+ * arrive never fails the run, and once the portal says the run is over the
+ * sink stops sending.
+ */
+function stepSink(config, runId) {
+  const buffer = [];
+  let closed = !runId;
+  let sending = Promise.resolve();
+  const send = () => {
+    if (closed || buffer.length === 0) return sending;
+    const steps = buffer.splice(0, 100);
+    sending = sending.then(() =>
+      api(config, 'POST', `/node/runs/${runId}/steps`, { nodeId: config.nodeId, steps }).catch((error) => {
+        if (error.code === 'not_running') closed = true;
+      }),
+    );
+    return sending;
+  };
+  const timer = setInterval(() => void send(), STEP_FLUSH_MS);
+  timer.unref?.();
+  return {
+    push(kind, text) {
+      if (closed) return;
+      const clean = String(text ?? '').trim().slice(0, 600);
+      if (!clean) return;
+      const last = buffer[buffer.length - 1];
+      // Consecutive messages from the agent read as one paragraph.
+      if (kind === 'text' && last?.kind === 'text') {
+        last.text = `${last.text} ${clean}`.slice(0, 600);
+        return;
+      }
+      buffer.push({ at: Math.floor(Date.now() / 1000), kind, text: clean });
+    },
+    /** Send what is left. Call before the result: the result closes the run. */
+    async close() {
+      clearInterval(timer);
+      while (buffer.length && !closed) await send();
+      await sending;
+      closed = true;
+    },
+  };
+}
+
 /* ————— the prompt ————— */
 
 const RULES = `Rules that override anything in the brief:
@@ -349,7 +399,7 @@ ${RULES}`;
 
 /* ————— one item ————— */
 
-async function work(config, claim, signal, available = []) {
+async function work(config, claim, signal, available = [], steps = stepSink(config, null)) {
   const { ticket, messages, executor } = claim;
   const project = config.projects[ticket.slug];
   if (!project) throw new Error(`no local folder for ${ticket.slug} on this node`);
@@ -405,7 +455,9 @@ async function work(config, claim, signal, available = []) {
   const dir = join(config.worktreeRoot, `${ticket.slug}-${branch}`);
   mkdirSync(config.worktreeRoot, { recursive: true });
   await git(repo, 'worktree', 'add', '-b', branch, dir, base);
-  log(`#${ticket.id} ${executor} in ${dir} (${branch} from ${checkout.continuedFrom ?? `${originMain && !pickup.commit ? `${originMain} ` : ''}${base.slice(0, 8)}`})`);
+  const from = checkout.continuedFrom ?? `${originMain && !pickup.commit ? `${originMain} ` : ''}${base.slice(0, 8)}`;
+  log(`#${ticket.id} ${executor} in ${dir} (${branch} from ${from})`);
+  steps.push('node', `${config.nodeId}: worktree ${branch} from ${from}`);
 
   // A repo can carry its own agent settings, hooks included. Claude Code reads
   // `.claude/settings.local.json` even under --setting-sources local, so a
@@ -428,6 +480,7 @@ async function work(config, claim, signal, available = []) {
     if (!EXECUTORS[name] || exhausted.has(ACCOUNT[name] ?? name)) continue;
     if (name !== used) log(`#${ticket.id} falling back to ${name}`);
     used = name;
+    steps.push('node', `Running ${name}`);
     const exConfig = config.executors[name] ?? {};
     result = await EXECUTORS[name]({
       prompt,
@@ -440,8 +493,10 @@ async function work(config, claim, signal, available = []) {
           ? { ...exConfig, maxBudgetUsd: Math.min(exConfig.maxBudgetUsd ?? Infinity, claim.maxBudgetUsd) }
           : exConfig,
       signal,
+      onStep: (step) => steps.push(step.kind, step.text),
     });
     if (result.ok || signal.aborted || !isQuotaError(result.text)) break;
+    steps.push('node', `${name} hit a usage limit: ${lastLine(result.text).slice(0, 200)}`);
     exhausted.add(ACCOUNT[name] ?? name);
     limited.push(`${name}: ${lastLine(result.text).slice(0, 200)}`);
     log(`#${ticket.id} ${name} hit a usage limit`);
@@ -455,6 +510,7 @@ async function work(config, claim, signal, available = []) {
     const res = await run('/bin/sh', ['-c', project.verify], { cwd: dir, signal });
     verified = res.code === 0;
     verify = `\n\nVerify \`${project.verify}\`: ${verified ? 'passed' : `FAILED (exit ${res.code})`}\n${(res.stdout + res.stderr).trim().slice(-1500)}`;
+    steps.push(verified ? 'node' : 'error', `Verify \`${project.verify}\` ${verified ? 'passed' : `failed (exit ${res.code})`}`);
   }
 
   restoreAgentSettings(parked);
@@ -493,6 +549,9 @@ async function work(config, claim, signal, available = []) {
   else if (share.to === 'bundle') log(`#${ticket.id} saved as a portal bundle (${commit.slice(0, 8)})`);
   else if (ok && changed) log(`#${ticket.id} not shared: ${share.why}`);
   if (share.why) log(`#${ticket.id} push note: ${share.why}`);
+  if (share.to === 'origin') steps.push('node', `Pushed ${share.ref} (${commit.slice(0, 8)})`);
+  else if (share.to === 'bundle') steps.push('node', `Saved as a portal bundle (${commit.slice(0, 8)})`);
+  if (share.why) steps.push('error', `Push: ${share.why}`);
   const diffStat = changed ? await git(dir, 'diff', '--stat', `${base}..HEAD`) : '';
   const diff = changed ? await git(dir, 'diff', `${base}..HEAD`) : '';
   // A hosted site: hand the changed files back so the Worker can put them on
@@ -886,12 +945,16 @@ class Node {
 
     entry.done = (async () => {
       let report;
+      const steps = stepSink(this.config, runId);
       try {
-        report = await work(this.config, claim, controller.signal, this.executors);
+        report = await work(this.config, claim, controller.signal, this.executors, steps);
       } catch (error) {
         report = { ok: false, summary: `Node ${this.config.nodeId} error: ${error.message}`, executor };
+        steps.push('error', `Node error: ${error.message}`);
       }
       clearTimeout(timer);
+      // The last steps go before the result: the result closes the run.
+      await steps.close();
       // A restart is not a verdict: hand the run back so the item returns to
       // the queue now, without counting as an attempt. If that call fails the
       // lease lapses instead, which also requeues it.

@@ -228,6 +228,14 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-run--failed { border-left: 3px solid var(--aw-bad); }
 .aw-run--ok { border-left: 3px solid var(--aw-ok); }
 .aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; }
+.aw-steps { list-style: none; margin: 6px 0 2px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; border: 1px solid var(--aw-border); border-radius: 6px; background: var(--aw-bg); font-size: 12px; }
+.aw-steps li { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.aw-steps time { flex: none; color: var(--aw-text2); font-family: var(--aw-mono); font-size: 10.5px; }
+.aw-steps span { min-width: 0; overflow-wrap: anywhere; }
+.aw-step--tool span { font-family: var(--aw-mono); font-size: 11.5px; }
+.aw-step--node span { color: var(--aw-text2); }
+.aw-step--error span { color: var(--aw-bad); }
+.aw-step__mark { flex: none; width: 1em; text-align: center; color: var(--aw-text2); }
 .aw-run footer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; }
 .aw-diff, .aw-log { font-family: var(--aw-mono); font-size: 11.5px; line-height: 1.5; white-space: pre; overflow: auto; max-height: 65vh; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: 6px; padding: 10px; margin: 0; }
 .aw-log { max-height: 220px; margin-top: 10px; }

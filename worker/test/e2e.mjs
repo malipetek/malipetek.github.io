@@ -585,6 +585,43 @@ const groups = {
     check('unsupported grant types are refused', (await token({ grant_type: 'client_credentials' })).data.error === 'unsupported_grant_type');
   },
 
+  async steps({ admin }) {
+    // What the agent is doing, while it does it: the node sends steps, the admin views poll them.
+    const a = account(`steps-${Date.now()}@example.com`);
+    const { project, ticketId } = (await newProject(a.session, { kind: 'existing', name: 'Steps Shop', brief: OLD_BRIEF, repoKind: 'none' })).data;
+    const nodeId = `e2e-st-${Date.now() % 100000}`;
+    const send = (runId, who, steps) => call(`/node/runs/${runId}/steps`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId: who, steps } });
+    const read = (runId, after = 0, auth = admin) => call(`/admin/runs/${runId}/steps?after=${after}`, { auth });
+    await node(nodeId, [project.slug]);
+    await approve(admin, ticketId);
+    const c = await claim(nodeId);
+    const t = Math.floor(Date.now() / 1000);
+    check('steps: another node cannot send steps', (await send(c.runId, 'someone-else', [{ kind: 'tool', text: 'x' }])).status === 409);
+    const first = await send(c.runId, nodeId, [
+      { at: t, kind: 'node', text: 'Worktree from origin/master' },
+      { at: t, kind: 'tool', text: 'bash ls' },
+      { at: t, kind: 'bogus', text: 'dropped' },
+      { at: t, kind: 'text', text: '   ' },
+      { at: t + 999999, kind: 'text', text: 'Looking at the files.' },
+    ]);
+    check('steps: the holding node sends a batch; malformed steps are dropped', first.status === 200 && first.data.stored === 3, JSON.stringify(first.data));
+    const all = (await read(c.runId)).data;
+    check('steps: admin reads them in order, live', all.live === true && all.steps.map((s) => s.seq).join() === '1,2,3' && all.steps[1].text === 'bash ls', JSON.stringify(all).slice(0, 300));
+    check('steps: a future timestamp is clamped to now', all.steps[2].at <= Math.floor(Date.now() / 1000) + 5);
+    await send(c.runId, nodeId, [{ kind: 'error', text: 'x'.repeat(5000) }]);
+    const later = (await read(c.runId, 3)).data;
+    check('steps: after= returns only newer steps, trimmed', later.steps.length === 1 && later.steps[0].seq === 4 && later.steps[0].text.length === 600, JSON.stringify(later).slice(0, 200));
+    check('steps: a client cannot read them', (await read(c.runId, 0, a.session)).status === 403);
+    const many = Array.from({ length: 100 }, (_, i) => ({ kind: 'tool', text: `step ${i}` }));
+    for (let i = 0; i < 4; i += 1) await send(c.runId, nodeId, many);
+    const full = (await read(c.runId)).data.steps;
+    check('steps: capped at 400, with one note saying so', full.length === 400 && full[399].kind === 'node' && /full/.test(full[399].text), `${full.length} ${JSON.stringify(full.at(-1))}`);
+    await call(`/node/runs/${c.runId}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId, ok: true, summary: 'Done.' } });
+    check('steps: no steps once the run is over', (await send(c.runId, nodeId, [{ kind: 'tool', text: 'late' }])).status === 409);
+    check('steps: …and the run reads as finished', (await read(c.runId)).data.live === false);
+    check('steps: an unknown run is a 404', (await read(999999)).status === 404);
+  },
+
   async sessionlog({ admin }) {
     // A run made through the Harness leaves its session log in the portal, for the admin views on any machine.
     const a = account(`slog-${Date.now()}@example.com`);
@@ -678,7 +715,9 @@ const groups = {
           `ls .malipetek-files > ${join(dir, 'saw-files')} 2>&1`,
           `if [ -e .claude/settings.local.json ]; then echo visible > ${join(dir, 'saw-settings')}; else echo hidden > ${join(dir, 'saw-settings')}; fi`,
           'mkdir -p src/pages && printf "<h1>Order</h1>\\n" > src/pages/order.astro',
-          'echo \'{"result":"Added the order page","total_cost_usd":0.01,"num_turns":1}\'',
+          // stream-json, as the node asks for: a tool call, then the result.
+          'echo \'{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"src/pages/order.astro"}}]}}\'',
+          'echo \'{"type":"result","result":"Added the order page","total_cost_usd":0.01,"num_turns":1}\'',
         ].join('\n'),
       );
       chmodSync(fake, 0o755);
@@ -728,6 +767,10 @@ const groups = {
       const runsOf = async () => (await call(`/admin/tickets/${ticketId}`, { auth: admin })).data.runs;
       const first = (await runsOf()).at(-1);
       check('the run records where it went', first.shared_to === 'origin' && first.shared_ref === shared && /^[0-9a-f]{40}$/.test(first.commit_sha ?? ''), JSON.stringify(first).slice(0, 300));
+      const steps = (await call(`/admin/runs/${first.id}/steps`, { auth: admin })).data.steps ?? [];
+      const said = steps.map((s) => `${s.kind}:${s.text}`).join(' | ');
+      check('live steps: the node’s milestones, the agent’s tool call, in order', /node:.*worktree ticket-.* \| node:Running claude \| tool:Write src\/pages\/order\.astro \| node:Pushed /.test(said), said);
+      check('live steps: the cost came through stream-json', first.cost_micro_usd === 10000, String(first.cost_micro_usd));
 
       const nextRun = async (name, { originUrl, script }) => {
         const clone = join(dir, name);

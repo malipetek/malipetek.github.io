@@ -42,6 +42,7 @@ import { cleanPreviewFiles, pushToPreview } from './sites.ts';
 import { cleanRepo } from './setup.ts';
 import { fileResponse } from './files.ts';
 import { now } from './shared.ts';
+import { appendSteps, cleanSteps } from './steps.ts';
 
 export const node = new Hono<HonoEnv>();
 
@@ -269,6 +270,20 @@ node.put('/node/runs/:runId/session', async (c) => {
   if (body.byteLength > SESSION_LIMIT) return c.json({ error: 'too_large' }, 413);
   await c.env.FILES.put(sessionKey(run.ticket_id, runId), body, { httpMetadata: { contentType: 'application/zstd' } });
   return c.json({ ok: true });
+});
+
+/**
+ * Live steps from the agent the node is running: `{ nodeId, steps: [{ at,
+ * kind, text }] }`, accepted only while the node still holds the run.
+ */
+node.post('/node/runs/:runId/steps', async (c) => {
+  const runId = Number(c.req.param('runId'));
+  const body = (await c.req.json().catch(() => null)) as { nodeId?: unknown; steps?: unknown } | null;
+  const nodeId = typeof body?.nodeId === 'string' ? body.nodeId.trim().toLowerCase() : '';
+  if (!Number.isInteger(runId) || runId <= 0 || !nodeId) return c.json({ error: 'not_found' }, 404);
+  const result = await appendSteps(c.env, runId, nodeId, cleanSteps(body?.steps));
+  if (!result.ok) return c.json({ error: result.error }, 409);
+  return c.json(result);
 });
 
 node.post('/node/runs/:runId/result', async (c) => {

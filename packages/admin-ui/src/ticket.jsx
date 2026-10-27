@@ -338,6 +338,78 @@ function FileChips({ ticketId, files: list }) {
   );
 }
 
+const STEP_POLL_MS = 3000;
+const STEP_MARK = { tool: '›', text: '·', error: '!', node: '◦' };
+
+/**
+ * What the agent is doing, while it does it: the node streams its tool calls,
+ * messages and milestones (src/steps.ts). Shown open and polled while the run
+ * is live; afterwards it folds to one line under the report, fetched on open.
+ */
+function RunSteps({ run, live }) {
+  const { api } = useAdmin();
+  const [open, setOpen] = useState(live);
+  const [steps, setSteps] = useState(null);
+  const listRef = useRef(null);
+  const lastSeq = useRef(0);
+  useEffect(() => {
+    if (!open) return undefined;
+    let alive = true;
+    let timer = null;
+    const pull = async () => {
+      try {
+        const data = await api('GET', `/admin/runs/${run.id}/steps?after=${lastSeq.current}`);
+        if (!alive) return;
+        const fresh = data?.steps ?? [];
+        if (fresh.length) lastSeq.current = fresh[fresh.length - 1].seq;
+        setSteps((prev) => [...(prev ?? []), ...fresh]);
+        if (data?.live) timer = setTimeout(pull, STEP_POLL_MS);
+      } catch {
+        if (alive) setSteps((prev) => prev ?? []);
+      }
+    };
+    void pull();
+    return () => {
+      alive = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [open, run.id, api]);
+  // Follow the newest step while live, unless the reader scrolled up.
+  useEffect(() => {
+    const el = listRef.current;
+    if (live && el && el.scrollHeight - el.scrollTop - el.clientHeight < 60) el.scrollTop = el.scrollHeight;
+  }, [steps, live]);
+  if (!open) {
+    return (
+      <button type="button" className="aw-link" style={{ fontSize: 12, margin: '2px 0 4px' }} onClick={() => setOpen(true)}>
+        Show steps
+      </button>
+    );
+  }
+  if (steps === null) return <p className="aw-muted" style={{ fontSize: 12 }}>Loading steps…</p>;
+  if (steps.length === 0) {
+    return live ? <p className="aw-muted" style={{ fontSize: 12 }}>Working… steps appear here as the agent takes them.</p> : <p className="aw-muted" style={{ fontSize: 12 }}>No steps were recorded for this run.</p>;
+  }
+  return (
+    <>
+      <ol className="aw-steps" ref={listRef}>
+        {steps.map((step) => (
+          <li key={step.seq} className={`aw-step--${step.kind}`}>
+            <time>{new Date(step.at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time>
+            <b className="aw-step__mark" aria-hidden="true">{STEP_MARK[step.kind] ?? '·'}</b>
+            <span>{step.text}</span>
+          </li>
+        ))}
+      </ol>
+      {live ? null : (
+        <button type="button" className="aw-link" style={{ fontSize: 12 }} onClick={() => setOpen(false)}>
+          Hide steps
+        </button>
+      )}
+    </>
+  );
+}
+
 function RunCard({ run, latest, onDiff }) {
   const live = run.status === 'running';
   const summary = run.summary ?? '';
@@ -356,6 +428,7 @@ function RunCard({ run, latest, onDiff }) {
           {usd(run.cost_micro_usd)} · {run.finished_at ? `${Math.max(1, Math.round((run.finished_at - run.started_at) / 60))}m` : `running ${ago(run.started_at)}`}
         </span>
       </header>
+      <RunSteps run={run} live={live} />
       {summary ? (
         <div className={cx('aw-run__summary', fold.long && !fold.open && 'is-clipped')}>
           {summary}

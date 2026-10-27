@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ACCOUNT, DSH_FAMILY, EXECUTORS, SYSTEM_ORDER, dshAgentOverlay, fallbackChain, findSessionLog, isQuotaError, parseDshEvents } from './executors.mjs';
+import { ACCOUNT, DSH_FAMILY, EXECUTORS, SYSTEM_ORDER, briefInput, claudeResult, dshAgentOverlay, fallbackChain, findSessionLog, isQuotaError, parseDshEvents, stepsOf } from './executors.mjs';
 
 const SAMPLE = `{"type":"session","sessionId":"session-db44e5d2-8897-4d5e-9a9f-b96070283d22","cwd":"/private/tmp/dshjson"}
 {"type":"status","phase":"turn_start","turn":1}
@@ -183,4 +183,69 @@ test('dsh executors end to end with a fake dsh', async () => {
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+// Event lines as the agents really print them (trimmed), for the live step log.
+test('stepsOf dsh: tool calls, failed results, text and an errored turn', () => {
+  const lines = [
+    '{"type":"tool_call","callId":"c1","tool":"bash","input":{"command":"ls","description":"List files"}}',
+    '{"type":"tool_result","callId":"c1","status":"completed","result":"err.txt\\n"}',
+    '{"type":"tool_result","callId":"c2","status":"failed","result":"permission denied"}',
+    '{"type":"text","text":"done"}',
+    '{"type":"status","phase":"turn_end","turn":1,"reason":{"kind":"error","message":"NO_ADAPTER"}}',
+    '{"type":"status","phase":"step_end"}',
+    'not json',
+  ];
+  assert.deepEqual(lines.flatMap((l) => stepsOf('dsh', l)), [
+    { kind: 'tool', text: 'bash ls' },
+    { kind: 'error', text: 'failed: permission denied' },
+    { kind: 'text', text: 'done' },
+    { kind: 'error', text: 'NO_ADAPTER' },
+  ]);
+});
+
+test('stepsOf claude: stream-json assistant blocks, tool errors, a failed result', () => {
+  const lines = [
+    '{"type":"system","subtype":"init","session_id":"x"}',
+    '{"type":"assistant","message":{"content":[{"type":"thinking","thinking":""},{"type":"tool_use","name":"Bash","input":{"command":"ls","description":"List"}}]}}',
+    '{"type":"user","message":{"content":[{"type":"tool_result","content":"err.txt","is_error":false}]}}',
+    '{"type":"user","message":{"content":[{"type":"tool_result","content":"No such file","is_error":true}]}}',
+    '{"type":"assistant","message":{"content":[{"type":"text","text":"done"}]}}',
+    '{"type":"result","subtype":"error_max_budget_usd","is_error":true}',
+  ];
+  assert.deepEqual(lines.flatMap((l) => stepsOf('claude', l)), [
+    { kind: 'tool', text: 'Bash ls' },
+    { kind: 'error', text: 'No such file' },
+    { kind: 'text', text: 'done' },
+    { kind: 'error', text: 'error_max_budget_usd' },
+  ]);
+});
+
+test('stepsOf opencode: tool_use and text parts', () => {
+  const lines = [
+    '{"type":"step_start","part":{"type":"step-start"}}',
+    '{"type":"tool_use","part":{"type":"tool","tool":"shell","state":{"status":"completed","input":{"command":"ls"}}}}',
+    '{"type":"tool_use","part":{"type":"tool","tool":"edit","state":{"status":"error","input":{"filePath":"a.txt"},"error":"not found"}}}',
+    '{"type":"text","part":{"type":"text","text":"Done."}}',
+  ];
+  assert.deepEqual(lines.flatMap((l) => stepsOf('opencode', l)), [
+    { kind: 'tool', text: 'shell ls' },
+    { kind: 'error', text: 'edit a.txt: not found' },
+    { kind: 'text', text: 'Done.' },
+  ]);
+});
+
+test('briefInput: the telling field, one short line', () => {
+  assert.equal(briefInput({ command: 'npm   test\n -- --watch' }), 'npm test -- --watch');
+  assert.equal(briefInput({ file_path: '/a/b.js', content: 'x'.repeat(999) }), '/a/b.js');
+  assert.equal(briefInput({ foo: 1 }), '{"foo":1}');
+  assert.equal(briefInput(null), '');
+  assert.equal(briefInput('x'.repeat(300)).length, 200);
+});
+
+test('claudeResult: the last result event of a stream, or a whole JSON object', () => {
+  const stream = '{"type":"system","subtype":"init"}\n{"type":"assistant","message":{"content":[]}}\n{"type":"result","result":"done","total_cost_usd":0.0034,"num_turns":2,"is_error":false}\n';
+  assert.deepEqual(claudeResult(stream), { type: 'result', result: 'done', total_cost_usd: 0.0034, num_turns: 2, is_error: false });
+  assert.equal(claudeResult('{"result":"plain json","is_error":false}').result, 'plain json');
+  assert.deepEqual(claudeResult('Error: not logged in'), {});
 });

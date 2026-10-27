@@ -33,6 +33,7 @@
 import { Hono, type Context } from 'hono';
 import { ATTENTION_KEYS, DEFAULT_ATTENTION, money, priceLine, priceOf } from '../../src/lib/pricing.js';
 import { claimTicketById, finishRun, normalizeReport, openRuns, recentRuns, sessionKey, ticketRuns } from './runs.ts';
+import { readSteps } from './steps.ts';
 import {
   CAPABILITY_CATALOG,
   CLIENT_EXECUTOR,
@@ -1502,6 +1503,16 @@ portal.post('/admin/tickets/:id/run-result', async (c) => {
 portal.get('/admin/runs', async (c) => {
   const [running, recent] = await Promise.all([openRuns(c.env), recentRuns(c.env, 40)]);
   return reply(c, { running, recent });
+});
+
+/** A run's live steps after `?after=<seq>`, and whether it is still running. */
+portal.get('/admin/runs/:id/steps', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return reply(c, { error: 'not_found' }, 404);
+  const after = Math.max(0, Number(c.req.query('after') ?? 0) || 0);
+  const result = await readSteps(c.env, id, after);
+  if (!result.found) return reply(c, { error: 'not_found' }, 404);
+  return reply(c, { live: result.live, steps: result.steps });
 });
 
 /**

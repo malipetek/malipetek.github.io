@@ -28,8 +28,12 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import readline from 'node:readline';
 
-/** Run a command without a shell; resolve { code, stdout, stderr }. */
-export function run(cmd, args, { cwd, input, signal, env, finishOn } = {}) {
+/**
+ * Run a command without a shell; resolve { code, stdout, stderr }. `onLine`
+ * sees each complete stdout line as it arrives — how a live step log reads an
+ * agent's event stream without waiting for it to finish.
+ */
+export function run(cmd, args, { cwd, input, signal, env, finishOn, onLine } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd, env: env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
@@ -37,8 +41,21 @@ export function run(cmd, args, { cwd, input, signal, env, finishOn } = {}) {
     // A process that has said its last word but does not exit (dsh after its
     // `final` event, holding MCP connections open): give it a moment, then end it.
     let finished = false;
+    let pending = '';
     child.stdout.on('data', (d) => {
       stdout += d;
+      if (onLine) {
+        pending += d;
+        const lines = pending.split('\n');
+        pending = lines.pop();
+        for (const line of lines) {
+          try {
+            onLine(line);
+          } catch {
+            /* a step that fails to parse never fails the run */
+          }
+        }
+      }
       if (finishOn && !finished && finishOn.test(stdout)) {
         finished = true;
         setTimeout(() => child.kill('SIGTERM'), 3000).unref();
@@ -64,6 +81,75 @@ export function run(cmd, args, { cwd, input, signal, env, finishOn } = {}) {
   });
 }
 
+/* ——————————————————————— live steps ——————————————————————— */
+
+/** The most telling part of a tool's input, on one short line. */
+export function briefInput(input) {
+  if (input === null || input === undefined) return '';
+  if (typeof input !== 'object') return String(input).replace(/\s+/g, ' ').slice(0, 200);
+  for (const key of ['command', 'cmd', 'file_path', 'filePath', 'path', 'pattern', 'query', 'url', 'description']) {
+    if (typeof input[key] === 'string' && input[key].trim()) return input[key].replace(/\s+/g, ' ').trim().slice(0, 200);
+  }
+  return JSON.stringify(input).slice(0, 200);
+}
+
+/**
+ * One event line from an agent's stream, as steps for the ticket view. Pure.
+ *
+ * @param format - 'dsh' (`dsh --json`), 'claude' (`--output-format
+ *   stream-json`) or 'opencode' (`run --format json`).
+ * @param line - one stdout line.
+ * @returns `[{ kind: 'tool' | 'text' | 'error', text }]`, often empty.
+ */
+export function stepsOf(format, line) {
+  const trimmed = String(line ?? '').trim();
+  if (!trimmed.startsWith('{')) return [];
+  let ev;
+  try {
+    ev = JSON.parse(trimmed);
+  } catch {
+    return [];
+  }
+  const out = [];
+  const say = (kind, text) => {
+    const clean = String(text ?? '').trim();
+    if (clean) out.push({ kind, text: clean });
+  };
+  if (format === 'dsh') {
+    if (ev.type === 'tool_call') say('tool', `${ev.tool ?? 'tool'} ${briefInput(ev.input)}`);
+    else if (ev.type === 'tool_result' && ev.status && ev.status !== 'completed') say('error', `${ev.status}: ${briefInput(ev.result)}`);
+    else if (ev.type === 'text') say('text', ev.text);
+    else if (ev.type === 'status' && ev.phase === 'turn_end' && ev.reason?.kind === 'error') say('error', ev.reason.message ?? 'the turn ended in an error');
+  } else if (format === 'claude') {
+    const content = Array.isArray(ev.message?.content) ? ev.message.content : [];
+    if (ev.type === 'assistant') {
+      for (const block of content) {
+        if (block?.type === 'text') say('text', block.text);
+        else if (block?.type === 'tool_use') say('tool', `${block.name ?? 'tool'} ${briefInput(block.input)}`);
+      }
+    } else if (ev.type === 'user') {
+      for (const block of content) {
+        if (block?.type === 'tool_result' && block.is_error) say('error', briefInput(typeof block.content === 'string' ? block.content : JSON.stringify(block.content)));
+      }
+    } else if (ev.type === 'result' && ev.is_error) say('error', ev.result ?? ev.subtype ?? 'the run ended in an error');
+  } else if (format === 'opencode') {
+    const part = ev.part ?? {};
+    if (ev.type === 'tool_use' || part.type === 'tool') {
+      const state = part.state ?? {};
+      say(state.status === 'error' ? 'error' : 'tool', `${part.tool ?? 'tool'} ${briefInput(state.input)}${state.status === 'error' && state.error ? `: ${briefInput(state.error)}` : ''}`);
+    } else if (ev.type === 'text' || part.type === 'text') say('text', part.text ?? ev.text);
+  }
+  return out;
+}
+
+/** An `onLine` that turns one format's events into `onStep` calls. */
+const stepLines = (format, onStep) =>
+  onStep
+    ? (line) => {
+        for (const step of stepsOf(format, line)) onStep(step);
+      }
+    : undefined;
+
 /* ——————————————————————— claude ——————————————————————— */
 
 export const CLIENT_TOOLS = [
@@ -84,11 +170,15 @@ export const CLIENT_TOOLS = [
 /** Ali's own work may run commands — tests, builds — but still not push. */
 export const SYSTEM_TOOLS = [...CLIENT_TOOLS, 'Bash'];
 
-async function claude({ prompt, cwd, system, kind, config, signal }) {
+async function claude({ prompt, cwd, system, kind, config, signal, onStep }) {
   const tools = kind === 'client' ? config.allowedTools ?? CLIENT_TOOLS : config.systemAllowedTools ?? SYSTEM_TOOLS;
   const args = [
     '-p',
-    '--output-format', 'json',
+    // stream-json (which needs --verbose with -p) is one event per line: the
+    // live steps read it as it comes, and its last line is the same result
+    // object `--output-format json` prints.
+    '--output-format', 'stream-json',
+    '--verbose',
     '--permission-mode', 'dontAsk', // anything not allowed below is denied, no prompt
     '--allowedTools', ...tools,
     '--disallowedTools', 'WebFetch', 'WebSearch', 'Bash(git push:*)', 'Bash(git remote:*)', 'Bash(git config:*)',
@@ -98,13 +188,8 @@ async function claude({ prompt, cwd, system, kind, config, signal }) {
     '--max-budget-usd', String(config.maxBudgetUsd ?? 5),
   ];
   if (config.model) args.push('--model', config.model);
-  const res = await run(config.bin ?? 'claude', args, { cwd, input: prompt, signal });
-  let result = {};
-  try {
-    result = JSON.parse(res.stdout);
-  } catch {
-    /* non-JSON output: fall through to stderr */
-  }
+  const res = await run(config.bin ?? 'claude', args, { cwd, input: prompt, signal, onLine: stepLines('claude', onStep) });
+  const result = claudeResult(res.stdout);
   return {
     ok: res.code === 0 && result.is_error !== true,
     text:
@@ -115,6 +200,30 @@ async function claude({ prompt, cwd, system, kind, config, signal }) {
     turns: result.num_turns,
     model: config.model,
   };
+}
+
+/**
+ * Claude Code's final result: the last `type: "result"` event of a
+ * stream-json run, or the whole stdout when it is one JSON object (plain
+ * `--output-format json`, which a test or an older setup may still produce).
+ */
+export function claudeResult(stdout) {
+  const lines = String(stdout ?? '').trim().split('\n');
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i].trim();
+    if (!line.startsWith('{')) continue;
+    try {
+      const ev = JSON.parse(line);
+      if (ev?.type === 'result') return ev;
+    } catch {
+      /* keep looking */
+    }
+  }
+  try {
+    return JSON.parse(stdout) ?? {};
+  } catch {
+    return {};
+  }
 }
 
 /* ——————————————————————— opencode ——————————————————————— */
@@ -134,12 +243,12 @@ async function opencodeAutoFlag(bin) {
   return autoFlags.get(bin);
 }
 
-async function opencode({ prompt, cwd, system, config, signal }) {
+async function opencode({ prompt, cwd, system, config, signal, onStep }) {
   const args = ['run', '--format', 'json'];
   if (config.auto !== false) args.push(await opencodeAutoFlag(config.bin ?? 'opencode'));
   if (config.model) args.push('-m', config.model);
   args.push(`${system}\n\n${prompt}`);
-  const res = await run(config.bin ?? 'opencode', args, { cwd, signal });
+  const res = await run(config.bin ?? 'opencode', args, { cwd, signal, onLine: stepLines('opencode', onStep) });
   const texts = [];
   let cost = 0;
   for (const line of res.stdout.split('\n')) {
@@ -292,7 +401,7 @@ function writeAgentOverlay(agent, config) {
  * or, with `agent`, an overlay that has the Harness drive Claude Code or
  * OpenCode over ACP, so the run is still a Harness session with a session id.
  */
-async function dsh({ prompt, cwd, system, config, signal }, agent) {
+async function dsh({ prompt, cwd, system, config, signal, onStep }, agent) {
   const args = ['--profile', config.profile ?? (agent ? AGENT_PROFILE : 'headless')];
   if (agent) args.push('--patch', writeAgentOverlay(agent, config));
   args.push('--json', '-');
@@ -301,6 +410,7 @@ async function dsh({ prompt, cwd, system, config, signal }, agent) {
     input: `${system}\n\n${prompt}`, // `-` reads the task from stdin, so a long thread stays out of argv
     signal,
     finishOn: /^\{"type":"final"/m,
+    onLine: stepLines('dsh', onStep),
   });
   const parsed = parseDshEvents(res.stdout);
   // dsh exits 0 even when the turn ended in an error (a missing adapter, a
@@ -404,7 +514,7 @@ function devinApiKey() {
  * costs a few seconds and buys isolation — the old bridge shared one process
  * and had to grow a stall watchdog to unwedge it.
  */
-async function devin({ prompt, cwd, system, config, signal }) {
+async function devin({ prompt, cwd, system, config, signal, onStep }) {
   const proc = spawn(config.bin ?? 'devin', ['acp'], { cwd, env: process.env });
   const pending = new Map();
   let nextId = 1;
@@ -441,6 +551,12 @@ async function devin({ prompt, cwd, system, config, signal }) {
     } else if (msg.method === 'session/update') {
       const u = msg.params?.update;
       if (u?.sessionUpdate === 'agent_message_chunk') text += u.content?.text ?? '';
+      // Tool calls make the live step log; text arrives token by token, so it
+      // stays out of the log and lands in the report.
+      else if (u?.sessionUpdate === 'tool_call' && onStep) {
+        const title = String(u.title ?? u.kind ?? 'tool').trim();
+        if (title) onStep({ kind: 'tool', text: title.slice(0, 300) });
+      }
     }
   });
   proc.stderr.on('data', () => {});
