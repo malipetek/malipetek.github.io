@@ -421,31 +421,34 @@ function floorLabel(ctx: Ctx, no: string, text: string): THREE.Mesh {
   return m;
 }
 
-/* ————— stations ————— */
+/* ————— the hero machine ————— */
 
-interface Station {
-  /** Matches a room's data-station attribute. */
-  name: string;
+/** Where a single tracked ticket is, as the portal names a ticket's status. */
+export type TrackStage = 'new' | 'approved' | 'in_progress' | 'review' | 'done' | 'declined';
+
+const HERO_FOV = 26;
+
+interface Machine {
+  group: THREE.Group;
   cam: [number, number, number];
   look: [number, number, number];
   animated: THREE.Object3D[];
-  /** Vertical field of view; narrow + far reads as isometric. Default 38. */
-  fov?: number;
-  /** Per-frame motion beyond the idle float (the hero belt). */
-  tick?: (t: number) => void;
+  tick: (t: number) => void;
 }
 
-const DEFAULT_FOV = 38;
-
-function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
-  const stations: Station[] = [];
-  const at = (i: number) => i * GAP;
-
-  // 0 — hero: the service as a machine. Request → approve → build → ship,
-  // left to right along +X, viewed from the front-left so it climbs the screen.
-  {
+/**
+ * The service drawn as a machine: request → approval gate (a person) → agent
+ * at a terminal → review (a person) → shipped to a cloud, left to right along
+ * +X, seen from the front-left so it climbs the screen.
+ *
+ * Without `track` it is the homepage's: six tickets ride the belt forever.
+ * With `track` it shows one ticket, parked where that ticket really is — at
+ * the gate waiting, past it approved, at the terminal while the agent works,
+ * with the reviewer, or lifted into the cloud — and it glides there when the
+ * stage changes, so a status change is something you watch happen.
+ */
+function heroMachine(ctx: Ctx, track?: () => TrackStage): Machine {
     const g = new THREE.Group();
-    g.position.x = at(0);
     const STEP_X = [-4.8, -1.6, 1.6, 4.8];
     const BELT_Z = 0.7;
     const PAD_Z = -1.35;
@@ -520,7 +523,7 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
     const LIFT = 5.9; // where the belt ends and the ticket rises
     const END = 7.4;
     const ticketGeo = new THREE.BoxGeometry(0.66, 0.12, 0.46);
-    const tickets = Array.from({ length: 6 }, () => {
+    const tickets = Array.from({ length: track ? 1 : 6 }, () => {
       const stage = (['fill', 'ink', 'orange'] as const).map((r) => part(ctx, ticketGeo, r));
       const t = new THREE.Group();
       t.add(...stage);
@@ -529,44 +532,107 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
       g.add(t);
       return { group: t, stage, mark };
     });
+
+    /** Put one ticket at belt position x; returns how close it is to the gate. */
+    const place = (i: number, x: number, off = 0) => {
+      const { group, stage, mark } = tickets[i];
+      const lift = Math.max(0, (x - LIFT) / (END - LIFT));
+      group.position.set(x, 0.43 + lift * lift * 2.7, BELT_Z - lift * 0.2 + off);
+      group.scale.setScalar(1 - lift * 0.55);
+      const s = x > STEP_X[3] ? 2 : x > STEP_X[2] ? 1 : 0;
+      stage.forEach((m, k) => (m.visible = k === s));
+      mark.visible = x > gateX && x <= STEP_X[2];
+      // The floor glow follows the ticket; it brightens once approved and
+      // fades as the ticket lifts off into the cloud.
+      const approved = THREE.MathUtils.smoothstep(x, gateX - 0.3, gateX + 0.6);
+      const enter = THREE.MathUtils.smoothstep(x, START, START + 0.8);
+      // Centred just in front of the belt: the belt itself hides the floor.
+      ctx.kit.glow[i].set(x, BELT_Z + 0.95, (0.35 + 0.65 * approved) * enter * (1 - lift));
+      return Math.abs(x - gateX);
+    };
+
+    // Tracked: where each stage parks the ticket. A declined one waits before
+    // the gate, pushed off the belt.
+    const STAGE_X: Record<TrackStage, number> = {
+      new: gateX - 1.25,
+      approved: gateX + 0.95,
+      // Just short of the build line: the shiver must not flip its look.
+      in_progress: STEP_X[2] - 0.2,
+      review: STEP_X[3],
+      done: END,
+      declined: gateX - 1.25,
+    };
+    let tx = track ? STAGE_X[track()] : START;
+    let last = 0;
+
     const tick = (time: number) => {
       let nearestGate = Infinity;
-      tickets.forEach(({ group, stage, mark }, i) => {
-        const u = (time * 0.045 + i / tickets.length) % 1;
-        const x = START + u * (END - START);
-        const lift = Math.max(0, (x - LIFT) / (END - LIFT));
-        group.position.set(x, 0.43 + lift * lift * 2.7, BELT_Z - lift * 0.2);
-        group.scale.setScalar(1 - lift * 0.55);
-        const s = x > STEP_X[3] ? 2 : x > STEP_X[2] ? 1 : 0;
-        stage.forEach((m, k) => (m.visible = k === s));
-        mark.visible = x > gateX && x <= STEP_X[2];
-        nearestGate = Math.min(nearestGate, Math.abs(x - gateX));
-        // The floor glow follows the ticket; it brightens once approved and
-        // fades as the ticket lifts off into the cloud.
-        const approved = THREE.MathUtils.smoothstep(x, gateX - 0.3, gateX + 0.6);
-        const enter = THREE.MathUtils.smoothstep(x, START, START + 0.8);
-        // Centred just in front of the belt: the belt itself hides the floor.
-        ctx.kit.glow[i].set(x, BELT_Z + 0.95, (0.35 + 0.65 * approved) * enter * (1 - lift));
-      });
-      stamp.position.y = 1.5 - 0.72 * Math.max(0, 1 - nearestGate / 0.45);
+      if (track) {
+        const stage = track();
+        const dt = Math.min(0.1, Math.max(0, time - last));
+        last = time;
+        // Glide to the stage at a steady pace, so a change reads as travel.
+        const goal = STAGE_X[stage];
+        tx += Math.sign(goal - tx) * Math.min(Math.abs(goal - tx), dt * 2.4);
+        const working = stage === 'in_progress' && Math.abs(goal - tx) < 0.01;
+        // Being worked on: the ticket shivers on the bench and the agent nods.
+        const x = tx + (working ? Math.sin(time * 9) * 0.035 : 0);
+        nearestGate = place(0, x, stage === 'declined' ? 1.15 : 0);
+        tickets[0].group.rotation.z = stage === 'declined' ? 0.35 : 0;
+        bot.rotation.x = working ? Math.sin(time * 4.2) * 0.06 : 0;
+        // Waiting at the gate: the stamp hangs ready, breathing.
+        if (stage === 'new') nearestGate = Math.max(nearestGate, 0.45);
+      } else {
+        tickets.forEach((_, i) => {
+          const u = (time * 0.045 + i / tickets.length) % 1;
+          nearestGate = Math.min(nearestGate, place(i, START + u * (END - START)));
+        });
+      }
+      stamp.position.y = 1.5 - 0.72 * Math.max(0, 1 - nearestGate / 0.45) + (track && track() === 'new' ? Math.sin(time * 2) * 0.05 : 0);
       instances.forEach((inst, i) => {
         inst.position.y = 2.45 + Math.sin(time * 1.3 + i * 1.1) * 0.07;
       });
     };
     tick(8); // a settled frame for reduced motion and first paint
 
-    scene.add(g);
     // Classic isometric direction (1 : 0.82 : 1), from the front-left.
-    const LOOK: [number, number, number] = [at(0) - 0.4, 0.9, 0];
+    const LOOK: [number, number, number] = [-0.4, 0.9, 0];
     const D = 21;
-    stations.push({
-      name: 'hero',
+    return {
+      group: g,
       cam: [LOOK[0] - D, LOOK[1] + D * 0.82, LOOK[2] + D],
       look: LOOK,
       animated: [bubble, sky],
-      fov: 26,
       tick,
-    });
+    };
+}
+
+/* ————— stations ————— */
+
+interface Station {
+  /** Matches a room's data-station attribute. */
+  name: string;
+  cam: [number, number, number];
+  look: [number, number, number];
+  animated: THREE.Object3D[];
+  /** Vertical field of view; narrow + far reads as isometric. Default 38. */
+  fov?: number;
+  /** Per-frame motion beyond the idle float (the hero belt). */
+  tick?: (t: number) => void;
+}
+
+const DEFAULT_FOV = 38;
+
+function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
+  const stations: Station[] = [];
+  const at = (i: number) => i * GAP;
+
+  // 0 — hero: the service as a machine (see heroMachine).
+  {
+    const hero = heroMachine(ctx);
+    hero.group.position.x = at(0);
+    scene.add(hero.group);
+    stations.push({ name: 'hero', cam: hero.cam, look: hero.look, animated: hero.animated, fov: HERO_FOV, tick: hero.tick });
   }
 
   // 1 — how it works: the queue itself, tickets in a stack with one approved
@@ -831,4 +897,120 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
     requestAnimationFrame(tick);
   };
   tick();
+}
+
+/* ————— tracker: one ticket, in its own canvas ————— */
+
+/**
+ * The hero machine on its own, sized to `canvas`, showing one ticket at the
+ * stage `stage()` returns — the client's ticket page. Re-reads the stage every
+ * frame, so the caller only has to change what it returns. Pauses while the
+ * canvas is off screen or the tab is hidden; reduced motion gets one frame per
+ * change. Returns a function that stops it.
+ */
+export function initTracker(canvas: HTMLCanvasElement, stage: () => TrackStage): () => void {
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(HERO_FOV, 1, 0.1, 400);
+  let pal = LIGHT;
+  const kit = makeKit();
+  const repaint: (() => void)[] = [];
+  const ctx: Ctx = { kit, pal: () => pal, repaint };
+
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 60), kit.floor);
+  floor.rotation.x = -Math.PI / 2;
+  floor.renderOrder = -1;
+  scene.add(floor);
+  const machine = heroMachine(ctx, stage);
+  scene.add(machine.group);
+  kit.floor.uniforms.uFocus.value.set(machine.look[0], machine.look[2]);
+  document.fonts?.ready.then(() => repaint.forEach((draw) => draw()));
+
+  const look = new THREE.Vector3(...machine.look);
+  const base = new THREE.Vector3(...machine.cam);
+  const mouse = { x: 0, y: 0 };
+  let zoom = 1;
+
+  const render = () => {
+    camera.position.copy(base).sub(look).multiplyScalar(zoom).add(look);
+    camera.position.x += mouse.x * 0.5;
+    camera.position.y -= mouse.y * 0.3;
+    camera.lookAt(look);
+    renderer.render(scene, camera);
+  };
+
+  const applyTheme = () => {
+    pal = document.documentElement.dataset.theme === 'dark' ? DARK : LIGHT;
+    kit.setPalette(pal);
+    repaint.forEach((draw) => draw());
+    render();
+  };
+  applyTheme();
+  const themeWatch = new MutationObserver(applyTheme);
+  themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  const resize = () => {
+    const w = Math.max(1, canvas.clientWidth);
+    const h = Math.max(1, canvas.clientHeight);
+    renderer.setSize(w, h, false);
+    kit.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    // The machine is wide: narrower boxes pull back so all of it stays in frame.
+    zoom = THREE.MathUtils.clamp(1.8 / camera.aspect, 0.62, 0.86);
+    render();
+  };
+  const sizeWatch = new ResizeObserver(resize);
+  sizeWatch.observe(canvas);
+  resize();
+
+  const onMove = (e: PointerEvent) => {
+    const r = canvas.getBoundingClientRect();
+    mouse.x = THREE.MathUtils.clamp(((e.clientX - r.left) / r.width - 0.5) * 2, -1, 1);
+    mouse.y = THREE.MathUtils.clamp(((e.clientY - r.top) / r.height - 0.5) * 2, -1, 1);
+  };
+  window.addEventListener('pointermove', onMove);
+
+  let visible = true;
+  const seen = new IntersectionObserver(([entry]) => {
+    visible = entry.isIntersecting;
+  });
+  seen.observe(canvas);
+
+  const timer = new THREE.Timer();
+  let frame = 0;
+  let lastStage = stage();
+  const loop = () => {
+    frame = requestAnimationFrame(loop);
+    if (!visible || document.hidden) return;
+    timer.update();
+    const t = timer.getElapsed();
+    if (reduced) {
+      // One settled frame per stage change, and no motion between.
+      if (stage() === lastStage && t > 0.5) return;
+      lastStage = stage();
+      for (let i = 0; i < 400; i += 1) machine.tick(8 + i * 0.05);
+    } else {
+      machine.tick(t);
+      kit.floor.uniforms.uTime.value = t;
+      machine.animated.forEach((o, i) => {
+        o.position.y += Math.sin(t * 0.9 + i) * 0.0016;
+      });
+    }
+    render();
+  };
+  loop();
+
+  return () => {
+    cancelAnimationFrame(frame);
+    themeWatch.disconnect();
+    sizeWatch.disconnect();
+    seen.disconnect();
+    window.removeEventListener('pointermove', onMove);
+    renderer.dispose();
+  };
 }

@@ -20,8 +20,19 @@ export const prerender = true;
         <p class="portal-label portal-label--plain" data-ticket-meta></p>
         <h1 data-ticket-title style="margin-bottom: 0.5rem"></h1>
         <div data-ticket-status></div>
-        <div data-ticket-cost></div>
       </header>
+
+      <!-- Where it is: the homepage machine with this request on the belt. -->
+      <section class="track" aria-label="Where your request is">
+        <canvas class="track-canvas" data-track-canvas aria-hidden="true"></canvas>
+        <div data-track-steps></div>
+        <div data-track-now></div>
+      </section>
+
+      <section class="track-controls" aria-label="Cost and budget">
+        <div data-ticket-cost></div>
+        <div data-ticket-gauge></div>
+      </section>
 
       <div data-thread></div>
 
@@ -57,6 +68,22 @@ export const prerender = true;
   } from '../../lib/portal';
   import { field, openDialog } from '../../lib/fleetAdmin';
   import { checkPicked } from '../../lib/attachments.js';
+  import { budgetGauge, nowLine, stepStrip } from '../../lib/tracker';
+  import type { TrackStage } from '../../lib/workshop3d';
+
+  // The machine reads this every frame; load() only has to change it.
+  let stage: TrackStage = 'new';
+  let machineStarted = false;
+  /** Start the 3D machine once, lazily: three.js is only fetched on this page. */
+  function startMachine() {
+    if (machineStarted) return;
+    machineStarted = true;
+    const canvas = document.querySelector<HTMLCanvasElement>('[data-track-canvas]');
+    if (!canvas) return;
+    import('../../lib/workshop3d')
+      .then(({ initTracker }) => initTracker(canvas, () => stage))
+      .catch(() => canvas.remove()); // no WebGL: the strip below says the same thing
+  }
 
   const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
   const id = Number(new URLSearchParams(location.hash.slice(1)).get('id'));
@@ -72,9 +99,14 @@ export const prerender = true;
       .join(' · ');
     $('[data-ticket-title]').textContent = ticket.title;
     $('[data-ticket-status]').replaceChildren(statusBadge(ticket.status));
+    stage = ticket.status;
+    startMachine();
+    $('[data-track-steps]').replaceChildren(stepStrip(ticket, messages));
+    $('[data-track-now]').replaceChildren(nowLine(ticket));
     const open = ticket.status !== 'done' && ticket.status !== 'declined';
-    $('[data-ticket-cost]').replaceChildren(
-      costBlock(ticket),
+    $('[data-ticket-cost]').replaceChildren(costBlock(ticket));
+    $('[data-ticket-gauge]').replaceChildren(
+      budgetGauge(ticket),
       open ? h('p', { class: 'portal-actions' }, budgetButton(ticket), ticket.status === 'new' ? withdrawButton() : '') : '',
     );
     // Only redraw the thread when it changed, so a refresh never jumps the page.
@@ -165,10 +197,18 @@ export const prerender = true;
   }
 
   let lastSeen = '';
-  // Status changes and Ali's replies show up without a reload while the tab is open.
+  // Status changes and Ali's replies show up without a reload while the tab is
+  // open: every 10s while the request is moving through the machine, so the
+  // ticket on the belt moves soon after it really does, and every 30s otherwise.
+  const ACTIVE = new Set(['approved', 'in_progress', 'review']);
+  let lastPoll = 0;
   setInterval(() => {
-    if (document.visibilityState === 'visible' && !$('[data-ticket]').hidden) load().catch(() => undefined);
-  }, 30_000);
+    if (document.visibilityState !== 'visible' || $('[data-ticket]').hidden) return;
+    const every = ACTIVE.has(stage) ? 10_000 : 30_000;
+    if (Date.now() - lastPoll < every) return;
+    lastPoll = Date.now();
+    load().catch(() => undefined);
+  }, 2_000);
 
   async function boot() {
     if (!session.get()) return location.replace('/portal');

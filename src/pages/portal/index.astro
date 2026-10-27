@@ -151,6 +151,7 @@ export const prerender = true;
     type Ticket,
     type User,
   } from '../../lib/portal';
+  import { miniTrack } from '../../lib/tracker';
   import { confirmDialog, openDialog } from '../../lib/fleetAdmin';
   import { money } from '../../lib/pricing.js';
   import { checkPicked } from '../../lib/attachments.js';
@@ -188,6 +189,7 @@ export const prerender = true;
                 { class: 'ticket-meta' },
                 [t.project_name, `updated ${fmtTime(t.updated_at)}`].filter(Boolean).join(' · '),
               ),
+              miniTrack(t.status),
             ),
           )
         : [h('li', { class: 'ticket-empty' }, 'Nothing yet. Your first request goes below.')]),
