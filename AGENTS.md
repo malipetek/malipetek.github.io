@@ -12,4 +12,4 @@
 - Site: `npx astro build && npx wrangler deploy` at the repo root. A "workers/routes" API error after "Uploaded malipetek-site" has been harmless; check the live page.
 
 ## Fleet
-- Nodes: MacBook (launchd `dev.malipetek.node`, runs from this repo's `fleet/`) and G500 (`ssh DTNMachineG500`, systemd user unit `malipetek-node`, code in `~/malipetek-fleet/`; copy `fleet/*.mjs` there and restart after changes).
+- Nodes: MacBook (launchd `dev.malipetek.node`, runs from this repo's `fleet/`) and G500 (`ssh DTNMachineG500`, systemd user unit `malipetek-node`, runs from the git checkout `~/malipetek-src/fleet`: after pushing, `ssh DTNMachineG500 'git -C ~/malipetek-src pull -q && systemctl --user restart malipetek-node'`). Its `fleet-agents` Harness profile links the external-agents plugin from `~/.dsh/plugins/dsh-external-agents`.

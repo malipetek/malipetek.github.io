@@ -101,5 +101,7 @@ TimeoutStopSec=30
 WantedBy=default.target
 UNIT
 systemctl --user daemon-reload
-systemctl --user enable --now malipetek-node
+systemctl --user enable malipetek-node
+# `enable --now` leaves a running unit on its old code; a reinstall must restart it.
+systemctl --user restart malipetek-node
 echo "installed malipetek-node → $UNIT (logs: journalctl --user -u malipetek-node -f)"
