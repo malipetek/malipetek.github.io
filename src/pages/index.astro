@@ -680,6 +680,27 @@ const initial = (title) =>
     gap: clamp(0.9rem, 2vw, 1.5rem);
     /* The diorama owns the right side on wide screens (see workshop3d). */
     max-width: min(100%, 46rem);
+    /* Above the fixed scene layer (z-index 0), which otherwise draws over
+       the text wherever the two overlap. */
+    position: relative;
+    z-index: 1;
+  }
+
+  /* A soft backing for the text: page colour, strongest behind the words and
+     fading to nothing at the edges, so the diorama reads around it with no
+     hard line, and never through the words. */
+  .masthead-inner::before {
+    content: "";
+    position: absolute;
+    inset: -3.5rem -5rem -3.5rem -4rem;
+    z-index: -1;
+    background: radial-gradient(
+      closest-side,
+      color-mix(in srgb, var(--bone) 92%, transparent) 62%,
+      color-mix(in srgb, var(--bone) 60%, transparent) 80%,
+      transparent 100%
+    );
+    pointer-events: none;
   }
 
   /* Who is behind it: small, human, first — a pill badge above the headline. */
