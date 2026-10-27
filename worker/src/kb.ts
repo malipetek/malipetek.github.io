@@ -570,10 +570,14 @@ const KB_AND_CLIENT = KB_TOOLS.map((tool) => ({
 }));
 const PORTAL_TOOLS = CLIENT_TOOLS.map(({ readOnly, ...tool }) => ({ ...tool, annotations: annotate(tool, readOnly, DESTRUCTIVE_TOOLS.has(tool.name)) }));
 const ADMIN_TOOLS = OWNER_TOOLS.map(({ readOnly, ...tool }) => ({ ...tool, annotations: annotate(tool, readOnly, DESTRUCTIVE_TOOLS.has(tool.name)) }));
-const MCP_TOOLS = [...KB_AND_CLIENT, ...PORTAL_TOOLS];
+/** KB writes need an owner-issued ack_ key — not part of the client/plugin surface. */
+const HIDDEN_FROM_CLIENTS = new Set(['create_knowledge', 'update_knowledge']);
+const KB_WRITE_TOOLS = KB_AND_CLIENT.filter((t) => HIDDEN_FROM_CLIENTS.has(t.name));
+const MCP_TOOLS = [...KB_AND_CLIENT, ...PORTAL_TOOLS].filter((t) => !HIDDEN_FROM_CLIENTS.has(t.name));
 
 /** Clients see the knowledgebase and their portal tools; Ali's session also sees the owner tools. */
-const toolsFor = (author: Author | null) => (author?.kind === 'admin' ? [...MCP_TOOLS, ...ADMIN_TOOLS] : MCP_TOOLS);
+const toolsFor = (author: Author | null) =>
+  author?.kind === 'admin' ? [...MCP_TOOLS, ...KB_WRITE_TOOLS, ...ADMIN_TOOLS] : MCP_TOOLS;
 
 const RESOURCE_PAGE = 50;
 
@@ -884,7 +888,7 @@ mcp.post('/', async (c) => {
             },
             serverInfo: { name: 'malipetek-dev', title: 'malipetek.dev', version: '1.1.0' },
             instructions:
-              'malipetek.dev serves a public knowledgebase of real problems from agentic coding sessions — search and read entries without signing in. With a connected client account, the portal tools file and track software work requests, show project and site status, and submit changes for approved requests. Every request is approved by a human before any work starts.',
+              'malipetek.dev serves a public knowledgebase of real problems from agentic coding sessions — search and read entries without signing in. With a connected client account, the portal_* tools file and track software work requests, show project and site status, and submit changes for approved requests. Every request is approved by a human before any work starts.',
           });
         }
         case 'notifications/initialized':

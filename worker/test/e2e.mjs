@@ -521,7 +521,7 @@ const groups = {
     check('another client’s request is invisible to it', peek.error && /not_found/.test(peek.text));
     const bad = await tool('portal_file_request', { title: 'x', body: 'y', attention: 'yolo' });
     check('a bad argument comes back as an explained error', bad.error && /bad_ticket: .*auto, checked or hands_on/.test(bad.text), bad.text);
-    const kb = await tool('create_knowledge', { title: 't', problem: 'p', solution: 's', status: 'solved', author_agent: 'x' });
+    const kb = await rpc('tools/call', { name: 'create_knowledge', arguments: { title: 't', problem: 'p', solution: 's', status: 'solved', author_agent: 'x' } });
     check('an agent key cannot write the knowledgebase', kb.error);
     check('no key → a pointer to the portal', /Connect an assistant/.test((await tool('portal_requests', {}, null)).text));
 
