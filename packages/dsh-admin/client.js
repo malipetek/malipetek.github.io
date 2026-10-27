@@ -253,6 +253,7 @@ var __awPlugin = (() => {
     signed_out: "Not signed in to the portal.",
     forbidden: "This is not an admin session.",
     not_found: "That no longer exists.",
+    open_tickets: "This project still has open requests. Finish, decline or move them first.",
     bad_status: "That is not a status the portal accepts.",
     bad_message: "Write something first.",
     bad_project: "Pick a project.",
@@ -1646,7 +1647,7 @@ var __awPlugin = (() => {
     );
   }
   function ClientsView() {
-    const { api, act, data, setModal, setBoardProject, open } = useAdmin();
+    const { api, act, ask, data, setModal, setBoardProject, open } = useAdmin();
     const toggle = (client, ids) => {
       const added = ids.filter((x) => !client.projectIds.includes(x));
       const removed = client.projectIds.filter((x) => !ids.includes(x));
@@ -1712,7 +1713,29 @@ var __awPlugin = (() => {
               /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
                 !p.repo ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => void act(() => api("POST", `/admin/projects/${p.id}/repo/create`), `Creating a repo for ${p.name}.`), children: p.repoStatus?.state === "failed" ? "Retry repo" : "Create repo" }) : null,
                 /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project: p, onClose: close }) }), children: p.repo ? "Change repo" : "Use a repo URL" }),
-                !p.site ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void act(() => api("POST", `/admin/projects/${p.id}/site`), `Hosting ${p.name} on malipetek.online.`), children: "Start hosting" }) : null
+                !p.site ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void act(() => api("POST", `/admin/projects/${p.id}/site`), `Hosting ${p.name} on malipetek.online.`), children: "Start hosting" }) : null,
+                /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+                /* @__PURE__ */ jsx(
+                  Button,
+                  {
+                    size: "sm",
+                    kind: "ghost",
+                    onClick: () => ask({
+                      title: `Delete ${p.name}?`,
+                      text: [
+                        "Its finished requests stay, with their threads, but no longer belong to a project.",
+                        "Clients lose access to it.",
+                        p.site ? `The hosted site goes offline: ${p.site.productionUrl}.` : null,
+                        p.repo ? `The repo is not deleted: ${p.repo}.` : null,
+                        "This cannot be undone."
+                      ].filter(Boolean).join(" "),
+                      confirm: "Delete project",
+                      danger: true,
+                      run: () => act(() => api("DELETE", `/admin/projects/${p.id}`), `Deleted ${p.name}.`).catch(() => void 0)
+                    }),
+                    children: "Delete"
+                  }
+                )
               ] })
             ] }, p.id);
           }) })
