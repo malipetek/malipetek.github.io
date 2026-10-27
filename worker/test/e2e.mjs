@@ -198,6 +198,8 @@ const groups = {
   async github({ admin }) {
     const a = account(`gh-${Date.now()}@example.com`);
     check('the connection starts empty, with a signed install link', (await call('/portal/github', { auth: a.session })).data.installations?.length === 0 && /github\.com\/apps\/malipetek-dev\/installations\/new\?state=/.test((await call('/portal/github', { auth: a.session })).data.installUrl ?? ''));
+    const cors = await fetch(`${W}/portal/github`, { headers: { authorization: `Bearer ${a.session}`, origin: 'http://localhost:4321' } });
+    check('a browser can read the connection (CORS header on the real response)', cors.status === 200 && cors.headers.get('access-control-allow-origin') === 'http://localhost:4321', String(cors.headers.get('access-control-allow-origin')));
     check('the webhook needs a signature', (await call('/hooks/github', { method: 'POST', body: {} })).status === 401);
     const body = JSON.stringify({ action: 'created', installation: { id: 42424242, account: { login: 'clientacct', type: 'User' }, repository_selection: 'selected' } });
     const sig = 'sha256=' + createHmac('sha256', 'test-webhook-secret').update(body).digest('hex');

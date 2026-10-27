@@ -14,7 +14,15 @@
  */
 import { Hono } from 'hono';
 import { now, sessionUser } from './portal.ts';
-import type { Env, HonoEnv } from './shared.ts';
+import { corsHeaders, type Env, type HonoEnv } from './shared.ts';
+import type { Context } from 'hono';
+
+/** Browser-facing replies need CORS headers, like portal.ts reply(). */
+const reply = (c: Context<HonoEnv>, body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8', ...corsHeaders(c.req.header('Origin') ?? null) },
+  });
 
 export const github = new Hono<HonoEnv>();
 
@@ -237,13 +245,13 @@ github.get('/auth/github/callback', async (c) => {
 /** The client's GitHub connection: nothing, or the installation(s) they hold. */
 github.get('/portal/github', async (c) => {
   const user = await bearerUser(c.env, c);
-  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  if (!user) return reply(c, { error: 'unauthorized' }, 401);
   const { results } = await c.env.DB.prepare(
     'SELECT id, account_login, repository_selection FROM github_installations WHERE user_id = ? ORDER BY account_login',
   )
     .bind(user.id)
     .all<{ id: number; account_login: string; repository_selection: string }>();
-  return c.json({
+  return reply(c, {
     installations: results ?? [],
     installUrl: `https://github.com/apps/${APP_SLUG}/installations/new?state=${encodeURIComponent(await signState(c.env, user.id))}`,
   });
@@ -255,27 +263,27 @@ github.get('/portal/github', async (c) => {
  */
 github.post('/portal/projects/:id/github', async (c) => {
   const user = await bearerUser(c.env, c);
-  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  if (!user) return reply(c, { error: 'unauthorized' }, 401);
   const project = await c.env.DB.prepare(
     `SELECT p.id FROM projects p JOIN user_projects up ON up.project_id = p.id WHERE p.id = ? AND up.user_id = ?`,
   )
     .bind(c.req.param('id'), user.id)
     .first<{ id: string }>();
-  if (!project) return c.json({ error: 'not_found' }, 404);
+  if (!project) return reply(c, { error: 'not_found' }, 404);
   const body = (await c.req.json().catch(() => null)) as { repo?: unknown; installationId?: unknown } | null;
   const repo = typeof body?.repo === 'string' ? body.repo.trim() : '';
   const installationId = Number(body?.installationId);
   if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+?(\.git)?\/?$/i.test(repo) || /@/.test(repo.split('github.com/')[1].split('/')[0])) {
-    return c.json({ error: 'bad_repo' }, 400);
+    return reply(c, { error: 'bad_repo' }, 400);
   }
   const installation = await c.env.DB.prepare('SELECT id FROM github_installations WHERE id = ? AND user_id = ?')
     .bind(installationId, user.id)
     .first<{ id: number }>();
-  if (!installation) return c.json({ error: 'bad_installation' }, 400);
+  if (!installation) return reply(c, { error: 'bad_installation' }, 400);
   await c.env.DB.prepare(`UPDATE projects SET repo = ?, repo_kind = 'repo', github_installation_id = ? WHERE id = ?`)
     .bind(repo.replace(/\.git\/?$/, ''), installationId, project.id)
     .run();
-  return c.json({ ok: true });
+  return reply(c, { ok: true });
 });
 
 /* ——————————————————————— node: a token per task ——————————————————————— */
