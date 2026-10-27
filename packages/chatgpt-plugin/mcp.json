@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "malipetek": {
+      "type": "streamable-http",
+      "url": "https://malipetek.dev/mcp",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "mixed",
+            "client": {
+              "mode": "dcr"
+            },
+            "registrationUrl": "https://malipetek-intercom.malipetek.workers.dev/oauth/register",
+            "authorizationServerBase": "https://malipetek.dev",
+            "resource": "https://malipetek.dev/mcp",
+            "baseScopes": ["portal"]
+          }
+        }
+      }
+    }
+  }
+}

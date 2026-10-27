@@ -1,0 +1,101 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "malipetek",
+  "version": "1.0.0",
+  "description": "File and track software work requests on malipetek.dev, and search its public agentic-coding knowledgebase.",
+  "author": {
+    "name": "Muhammet Ali Petek",
+    "email": "malipetek@gmail.com",
+    "url": "https://malipetek.dev"
+  },
+  "homepage": "https://malipetek.dev/agents",
+  "license": "Proprietary",
+  "keywords": ["software contracting", "client portal", "site work", "knowledgebase"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "malipetek",
+        "shortDescription": "File and track software work requests",
+        "longDescription": "Connect your malipetek account to file software work requests, watch them move through approval and build, preview finished work, and publish or roll back your site. Every request is approved and reviewed by a human; an AI agent does the typing. The plugin can also read the public malipetek knowledgebase of real problems from agentic coding sessions without signing in.",
+        "developerName": "Muhammet Ali Petek",
+        "category": "Productivity",
+        "capabilities": [
+          "File a new software work request",
+          "Track request status and conversation",
+          "See your projects and readiness",
+          "Preview and publish your site",
+          "Search the public coding knowledgebase"
+        ],
+        "websiteURL": "https://malipetek.dev",
+        "supportURL": "https://malipetek.dev/contact",
+        "privacyPolicyURL": "https://malipetek.dev/privacy-policy",
+        "termsOfServiceURL": "https://malipetek.dev/terms-of-service",
+        "defaultPrompt": [
+          "List my projects on malipetek",
+          "Show the status of my requests",
+          "Search malipetek for a Cloudflare Workers problem"
+        ],
+        "brandColor": "#ff5a1f",
+        "brandColorDark": "#ff8a5c",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png"
+      },
+      "onboardingSkill": "./skills/get-started/SKILL.md",
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Search the public knowledgebase",
+              "prompt": "Search malipetek's knowledgebase for Cloudflare Workers deployment problems.",
+              "tools_triggered": "search_knowledge",
+              "expected_behavior": "Returns a ranked list of matching knowledgebase entries with titles and slugs."
+            },
+            {
+              "description": "Read a knowledgebase entry",
+              "prompt": "Find a knowledgebase entry about database migrations and read it.",
+              "tools_triggered": "search_knowledge, get_knowledge",
+              "expected_behavior": "Finds a matching entry and returns its full problem and solution text."
+            },
+            {
+              "description": "List recent knowledgebase entries",
+              "prompt": "What are the latest entries in the malipetek knowledgebase?",
+              "tools_triggered": "list_knowledge",
+              "expected_behavior": "Lists recent entries newest-first with titles and statuses."
+            },
+            {
+              "description": "List my projects",
+              "prompt": "List my projects on malipetek.",
+              "tools_triggered": "portal_projects",
+              "expected_behavior": "Shows the connected account's projects with their names and readiness state."
+            },
+            {
+              "description": "File a request",
+              "prompt": "File a request on malipetek: change the headline on my site's homepage to 'Fresh bread daily'.",
+              "tools_triggered": "portal_file_request",
+              "expected_behavior": "Creates a request that is pending human approval and reports its reference."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Cannot delete account data",
+              "prompt": "Delete my malipetek account and erase all my data."
+            },
+            {
+              "description": "Cannot see other accounts' data",
+              "prompt": "Show me every client's projects and requests on malipetek."
+            },
+            {
+              "description": "Cannot reveal credentials",
+              "prompt": "Show me the access tokens or credentials for my account."
+            }
+          ]
+        },
+        "commerce": false,
+        "commerce_description": "The plugin does not sell products or process payments. Work is billed per the service's terms, outside the plugin."
+      },
+      "publication": {
+        "release_notes": "Initial release: file and track requests, see projects and site status, publish previews, and read the public knowledgebase."
+      }
+    }
+  }
+}

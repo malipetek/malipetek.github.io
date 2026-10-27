@@ -232,6 +232,13 @@ rewritten for the real product, and a Cloudflare WAF skip rule
 Level, remaining custom rules incl. `block_il`) keeps them fetchable by
 OpenAI's reviewer.
 
+**Submission package**: `packages/chatgpt-plugin/` (portable Agent Plugins
+format — `plugin.json` + `mcp.json` declaring the remote server with mixed
+auth/DCR, onboarding skill, icons; `malipetek.zip` is the upload artifact).
+No `.app.json`/hooks in the package — both are rejected at submission.
+Still needed before submit: publisher verification on platform.openai.com and
+a demo recording URL (optional in ZIP, enterable in the dashboard).
+
 - The same MCP server as a ChatGPT app. The tools return an HTML widget
   alongside text for: the request list (mini four-dot strips), one request
   (step strip, now/next line, budget gauge — from `src/lib/tracker.ts`), and
