@@ -66,6 +66,7 @@ const ERRORS = {
   signed_out: 'Not signed in to the portal.',
   forbidden: 'This is not an admin session.',
   not_found: 'That no longer exists.',
+  open_tickets: 'This project still has open requests. Finish, decline or move them first.',
   bad_status: 'That is not a status the portal accepts.',
   bad_message: 'Write something first.',
   bad_project: 'Pick a project.',

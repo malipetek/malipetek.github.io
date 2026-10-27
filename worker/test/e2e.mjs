@@ -257,6 +257,20 @@ const groups = {
     check('admin starts hosting on a project', host.status === 201 && ['allocating', 'ready'].includes(host.data.site?.state), JSON.stringify(host.data));
     check('a client cannot use the admin hosting route', (await call(`/admin/projects/${folder.data.id}/site`, { method: 'POST', auth: a.session })).status === 403);
 
+    // Deleting: refused while a request is open; closed requests survive, unlinked.
+    const del = (await newProject(a.session, { kind: 'new', name: `Dup Bakery ${stamp}`, brief: NEW_BRIEF })).data;
+    await call(`/admin/projects/${del.project.id}/site`, { method: 'POST', auth: admin });
+    check('a client cannot delete a project', (await call(`/admin/projects/${del.project.id}`, { method: 'DELETE', auth: a.session })).status === 403);
+    const refused = await call(`/admin/projects/${del.project.id}`, { method: 'DELETE', auth: admin });
+    check('delete is refused while a request is open', refused.status === 409 && refused.data.error === 'open_tickets' && refused.data.count === 1, JSON.stringify(refused.data));
+    await call(`/admin/tickets/${del.ticketId}`, { method: 'PATCH', auth: admin, body: { status: 'declined' } });
+    check('…and allowed once it is closed', (await call(`/admin/projects/${del.project.id}`, { method: 'DELETE', auth: admin })).status === 200);
+    check('the project is gone', !(await adminProject(del.project.id)) && !(await np(del.project.slug)));
+    check('its site is gone', (await call(`/admin/projects/${del.project.id}/site/deploys`, { auth: admin })).status !== 200 || (await call(`/admin/projects/${del.project.id}/site/deploys`, { auth: admin })).data.deploys?.length === 0);
+    const kept = await call(`/portal/tickets/${del.ticketId}`, { auth: a.session });
+    check('the closed request and its thread stay with the client', kept.status === 200 && kept.data.ticket.project_id === null && kept.data.messages?.length > 0, JSON.stringify(kept.data?.ticket));
+    check('the client no longer has the project', !(await call('/portal/me', { auth: a.session })).data.projects.some((x) => x.id === del.project.id));
+
     // The heartbeat carries a fingerprint so nodes re-read the list at once.
     const beat = await node(`e2e-r-${stamp}`, []);
     check('the heartbeat carries the project fingerprint', /^\d+:\d+:\d+:\d+$/.test(beat.data?.projects ?? ''), JSON.stringify(beat.data));

@@ -294,7 +294,7 @@ function RepoModal({ project, onClose }) {
 }
 
 export function ClientsView() {
-  const { api, act, data, setModal, setBoardProject, open } = useAdmin();
+  const { api, act, ask, data, setModal, setBoardProject, open } = useAdmin();
   const toggle = (client, ids) => {
     const added = ids.filter((x) => !client.projectIds.includes(x));
     const removed = client.projectIds.filter((x) => !ids.includes(x));
@@ -379,6 +379,30 @@ export function ClientsView() {
                         Start hosting
                       </Button>
                     ) : null}
+                    <span className="aw-toolbar__fill" />
+                    <Button
+                      size="sm"
+                      kind="ghost"
+                      onClick={() =>
+                        ask({
+                          title: `Delete ${p.name}?`,
+                          text: [
+                            'Its finished requests stay, with their threads, but no longer belong to a project.',
+                            'Clients lose access to it.',
+                            p.site ? `The hosted site goes offline: ${p.site.productionUrl}.` : null,
+                            p.repo ? `The repo is not deleted: ${p.repo}.` : null,
+                            'This cannot be undone.',
+                          ]
+                            .filter(Boolean)
+                            .join(' '),
+                          confirm: 'Delete project',
+                          danger: true,
+                          run: () => act(() => api('DELETE', `/admin/projects/${p.id}`), `Deleted ${p.name}.`).catch(() => undefined),
+                        })
+                      }
+                    >
+                      Delete
+                    </Button>
                   </div>
                 </li>
               );

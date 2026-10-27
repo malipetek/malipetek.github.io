@@ -2056,6 +2056,38 @@ portal.post('/admin/projects/:id/repo/create', async (c) => {
   return reply(c, { ok: true });
 });
 
+/**
+ * Delete a project. Refused while it has open requests: those are a client's
+ * live work. Closed requests stay, unlinked, with their whole thread; client
+ * links, the hosted site and its deploys go (the schema cascades), and so do
+ * the site's files. The repo on GitHub is left alone.
+ */
+portal.delete('/admin/projects/:id', async (c) => {
+  const env = c.env;
+  const id = c.req.param('id');
+  const project = await env.DB.prepare('SELECT id, slug FROM projects WHERE id = ?').bind(id).first<{ id: string; slug: string }>();
+  if (!project) return reply(c, { error: 'not_found' }, 404);
+  const open = await env.DB.prepare(
+    `SELECT count(*) AS n FROM tickets WHERE project_id = ? AND status IN ('new', 'approved', 'in_progress', 'review')`,
+  )
+    .bind(id)
+    .first<{ n: number }>();
+  if (open?.n) return reply(c, { error: 'open_tickets', count: open.n }, 409);
+
+  const site = await getSite(env, id);
+  if (site && env.SITES) {
+    // Everything under the site's prefix: manifests and blobs.
+    let cursor: string | undefined;
+    do {
+      const page = await env.SITES.list({ prefix: `sites/${site.slug}/`, cursor });
+      if (page.objects.length) await env.SITES.delete(page.objects.map((o) => o.key));
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+  }
+  await env.DB.prepare('DELETE FROM projects WHERE id = ?').bind(id).run();
+  return reply(c, { ok: true });
+});
+
 /** Build the preview branch as it is and deploy it: a node holding the project does it on its next beat. */
 portal.post('/admin/projects/:id/site/rebuild', async (c) => {
   const res = await c.env.DB.prepare(
