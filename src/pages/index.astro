@@ -8,13 +8,18 @@ import { getPosts, fmtDate, readMinutes } from "../lib/posts.js";
 import { JOBS } from "../lib/experience.js";
 import {
   KIND as OFFER_KIND,
-  ONE_LINE,
   PRICE_NOTE,
   PRICE_RULE,
   PRICE_WHY,
+  HEADLINE,
+  LAST_MILE,
+  PRICE_HOOK,
+  PUNCHLINE,
+  SAFEGUARDS,
   SERVERLESS,
   STEPS,
   WHO,
+  WHY_NOT,
 } from "../lib/offer.js";
 import { ATTENTION, clock, money, timeCents } from "../lib/pricing.js";
 import { kbDb, listKbEntries, kbFacets, type KbSummary } from "../lib/kb";
@@ -26,7 +31,8 @@ const projects = (await getCollection("projects")).sort(
 );
 
 const site = (await getCollection("site"))[0]?.data;
-const tagline = site?.tagline ?? ONE_LINE;
+// The lede is the secondary hook; the price leads in the headline above it.
+const tagline = LAST_MILE;
 const intercomGreeting =
   site?.intercomGreeting ??
   "Ali's line. I'm the assistant that knows how he works. Tell me what you need built or fixed.";
@@ -103,8 +109,8 @@ const initial = (title) =>
 ---
 
 <Base
-  title="M. Ali Petek — human-approved, agent-built software work"
-  description="Self-serve software contracting. You send a request, Ali approves it, an AI agent builds it, and he reviews it before anything ships."
+  title="M. Ali Petek — software help by the minute, not by a quote"
+  description="Vibe coded most of it? Get developer help with the last mile, billed by the second. You send a request, Ali approves it, an AI agent builds it, and he checks it before anything ships."
   current="/"
 >
   <div class="rails" aria-hidden="true"></div>
@@ -126,14 +132,15 @@ const initial = (title) =>
           <span class="masthead-kind">{OFFER_KIND}</span>
         </span>
       </p>
-      <h1 class="masthead-name">Human-approved,<br />agent-built.</h1>
+      <h1 class="masthead-name">{HEADLINE[0]}<br />{HEADLINE[1]}</h1>
       <div class="masthead-body">
+        <p class="masthead-hook">{PRICE_HOOK}</p>
         <p class="masthead-lede">{tagline}</p>
         <div class="masthead-actions">
           <a class="btn btn--solid" href="/portal">Open a ticket →</a>
           <a class="btn" href="#how">How it works ↓</a>
         </div>
-        <p class="masthead-note">{PRICE_NOTE}</p>
+        <p class="masthead-note"><strong>{PUNCHLINE.join(' ')}</strong> {PRICE_NOTE}</p>
       </div>
     </div>
   </section>
@@ -184,6 +191,23 @@ const initial = (title) =>
           <strong>{SERVERLESS.title}.</strong>
           {SERVERLESS.body}
         </p>
+      </div>
+
+      <div class="why">
+        <h3 class="why-title">Why not just…</h3>
+        <div class="terms whys">
+          {
+            WHY_NOT.map((w) => (
+              <div class="term">
+                <h3>…{w.instead}?</h3>
+                <p>{w.answer}</p>
+              </div>
+            ))
+          }
+        </div>
+        <ul class="safeguards" aria-label="What keeps it safe">
+          {SAFEGUARDS.map((line) => <li>{line}</li>)}
+        </ul>
       </div>
     </div>
   </section>
@@ -709,6 +733,24 @@ const initial = (title) =>
     max-width: 52ch;
   }
 
+  .masthead-hook {
+    margin: 0 0 0.6rem;
+    font-size: clamp(1.2rem, 2vw, 1.5rem);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+
+  .masthead-hook::before {
+    content: '';
+    display: inline-block;
+    width: 0.55em;
+    height: 0.55em;
+    margin-right: 0.45em;
+    background: var(--orange);
+    vertical-align: 0.08em;
+  }
+
   .masthead-lede {
     margin: 0;
     font-size: clamp(1.05rem, 1.7vw, 1.25rem);
@@ -857,6 +899,42 @@ const initial = (title) =>
     font-weight: 500;
     letter-spacing: 0.02em;
     color: var(--ink-soft);
+  }
+
+  /* ————— why not just… ————— */
+
+  .why {
+    margin-top: 1.6rem;
+    border-top: 2px solid var(--ink);
+  }
+
+  .why-title {
+    margin: 0;
+    padding: 1rem 0;
+    font-size: 1.15rem;
+    letter-spacing: -0.02em;
+  }
+
+  .whys {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .safeguards {
+    list-style: none;
+    margin: 1.1rem 0 0;
+    padding: 0.8rem 0 0;
+    border-top: 1px solid var(--rule);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.6rem;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+
+  .safeguards li::before {
+    content: '✓ ';
+    color: var(--orange);
+    font-weight: 700;
   }
 
   /* ————— shelf ————— */

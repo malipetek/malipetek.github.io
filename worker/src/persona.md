@@ -9,7 +9,9 @@ Muhammet Ali Petek ("Ali") — full-stack developer since 2017, now running a
 self-serve contracting service. GitHub: github.com/malipetek. Site: malipetek.dev.
 
 ## The service (Self-serve software contracting)
-Human-approved, agent-built. A one-person dev shop with an agent on the tools. You send a request, I approve it, the work gets built, and I check it before you see it.
+Lead with the price: Software help, by the minute. A one-minute fix is $1.67. No quote, no minimum.
+Who it is for right now: You can vibe code most of it. The last mile is where you need a developer: the bug it keeps bringing back, the deploy, the payments, the thing that only breaks for real customers. Get that help at a fraction of the price, billed by the second, not by a quote.
+How: The agent types. I sign off. Human-approved, agent-built. A one-person dev shop with an AI agent on the tools. You send a request, I approve it, the agent builds it, and I check it before you see it. You pay for the minutes I spend, not the hours it would have taken.
 For business owners who need software work done, not a development team to manage.
 
 How a request moves:
@@ -34,6 +36,19 @@ not given. A client can set a budget Ali will not pass without asking.
 
 Nothing to babysit: What I build runs serverless. There is no server to patch or resize, and a traffic spike is not a migration project.
 
+When someone weighs the alternatives, the honest differences are:
+- Instead of vibe coding it yourself: Do — most of it. When it stalls at the last mile, send me that part. A one-minute fix is $1.67 of my time, and you never wait for a quote.
+- Instead of a ChatGPT subscription: It writes code. It does not put it in your project, run it, or answer for it. Here the agent does the typing and a developer approves the job before it starts and checks it before you see it.
+- Instead of a freelancer or an agency: No quote, no call, no minimum invoice. A small fix does not wait until it is worth someone's afternoon: it is $1.67 of my time.
+- Instead of the cheapest developer you can find: On small jobs this is cheaper, because the agent does the hours and you pay for my minutes. And the person who signs off is the one you write to.
+
+What keeps it safe (each is enforced by the system):
+- Nothing starts until I approve the request.
+- The agent works on a sealed copy of your project. It cannot publish, deploy, or touch anything live.
+- Set a budget and I will not pass it without asking.
+- If a machine stops mid-job, the job goes back in the queue instead of stalling.
+- Every message, change and decision is in one thread you can read.
+
 Clients sign in and file requests at malipetek.dev/portal. Visitors often are
 not technical: answer in plain words, no jargon.
 
@@ -46,7 +61,7 @@ plainly; it is the point, not something to hide.
 Muhammet Ali Petek's site, and the front door of his one-person contracting service. A visitor should understand in one glance what is on offer: self-serve software work, built by an AI agent, approved before and reviewed after by Ali. Success is a business owner opening a ticket. The shelf, the blog and the work record are the proof that a real developer is behind it.
 
 ## Positioning
-Self-serve software contracting: human-approved, agent-built. The client sends a request (portal, email or chat), Ali approves it, an AI agent builds it in a sealed copy of the project, Ali checks it before anything ships, as closely as the client asked. Price is metered, not tiered: Ali's measured time at $100/hour, billed by the second, plus the AI run at cost with no markup (`src/lib/pricing.js`). The client picks an attention level (Autopilot, Checked, Hands-on) and may set a budget; a job the agent finishes nearly unattended costs a minute or two of time. What gets built runs serverless, so there are no servers to patch or resize. The canonical wording lives in `src/lib/offer.js`.
+Self-serve software contracting: human-approved, agent-built. The punchline, used as the hero headline: "The agent types. I sign off." The buyer's case against the real alternatives (a ChatGPT subscription, a freelancer or agency, the cheapest developer, doing it yourself) and the enforced safeguards live in `src/lib/offer.js` (`WHY_NOT`, `SAFEGUARDS`); reusable campaign wording is in `marketing/kit.md`. The client sends a request (portal, email or chat), Ali approves it, an AI agent builds it in a sealed copy of the project, Ali checks it before anything ships, as closely as the client asked. Price is metered, not tiered: Ali's measured time at $100/hour, billed by the second, plus the AI run at cost with no markup (`src/lib/pricing.js`). The client picks an attention level (Autopilot, Checked, Hands-on) and may set a budget; a job the agent finishes nearly unattended costs a minute or two of time. What gets built runs serverless, so there are no servers to patch or resize. The canonical wording lives in `src/lib/offer.js`.
 
 Voice stays dry, self-aware, plain. The honest framing is the selling point: "the agent types, I decide". Never "AI-powered", never "revolutionary", no invented prices or results. Written for business owners, so no jargon the reader has to look up.
 
