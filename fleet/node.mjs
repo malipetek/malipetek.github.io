@@ -233,6 +233,9 @@ async function syncProjects(config) {
       config.projects[project.slug] = {
         path,
         baseRef: project.baseRef,
+        githubApp: Boolean(project.githubApp),
+        repo: project.repo,
+        slug: project.slug,
         explicit: false,
         // A clone tracks its remote: fetch before every run so work starts
         // from what the portal last said is current.
@@ -442,6 +445,7 @@ async function buildWork(config, item) {
     if (!project) return report({ ok: false, error: `no folder for ${item.slug} on this node` });
     const change = await api(config, 'GET', `/node/builds/${item.ticketId}`);
     const repo = await git(project.path, 'rev-parse', '--show-toplevel');
+    await ghRemote(config, { ...project, slug: item.slug }, repo);
     await netGit(project.path, ['fetch', 'origin']);
     const dir = join(config.worktreeRoot, `${item.slug}-build-${item.ticketId}`);
     rmSync(dir, { recursive: true, force: true });
@@ -506,6 +510,34 @@ async function shareRepo(config, slug, path) {
 /** https://github.com/owner/repo(.git) → git@github.com:owner/repo.git, else null. */
 const githubSsh = (url) => url.match(/^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i)?.slice(1).join('/');
 
+/* ————— GitHub App projects ————— */
+
+const ghTokens = new Map(); // project slug → { token, expiresAt }
+
+/**
+ * A client's repo, reached through their installation of our GitHub App: the
+ * Worker mints a one-hour installation token per request. Cached until five
+ * minutes from death, so a run's many pushes share one.
+ */
+async function ghToken(config, slug) {
+  const held = ghTokens.get(slug);
+  if (held && held.expiresAt - 300 > Date.now() / 1000) return held.token;
+  const out = await api(config, 'POST', '/node/git-token', { slug });
+  ghTokens.set(slug, { token: out.token, expiresAt: out.expiresAt ?? Math.floor(Date.now() / 1000) + 3600 });
+  return out.token;
+}
+
+const ghUrl = (repo, token) => repo.replace('https://github.com/', `https://x-access-token:${token}@github.com/`);
+
+/**
+ * Point origin at the token URL for this run. The token lives an hour and
+ * expires on its own; a stale URL is refreshed again at the next run.
+ */
+async function ghRemote(config, project, cwd) {
+  if (!project?.githubApp || !project.repo || !project.slug) return;
+  await git(cwd, 'remote', 'set-url', 'origin', ghUrl(project.repo, await ghToken(config, project.slug))).catch(() => {});
+}
+
 /**
  * Clone a project's repo with this machine's own git credentials. The URL came
  * from a client, so: https or ssh only, no other protocols, no submodules, no
@@ -514,6 +546,16 @@ const githubSsh = (url) => url.match(/^https:\/\/github\.com\/([^/\s]+)\/([^/\s]
  */
 async function cloneProject(config, project) {
   if (!REPO_RE.test(project.repo)) return null;
+  if (project.githubApp) {
+    try {
+      const token = await ghToken(config, project.slug);
+      project = { ...project, repo: ghUrl(project.repo, token) };
+    } catch (error) {
+      cloneFailures.set(project.slug, Date.now());
+      log(`could not get a GitHub token for ${project.slug}: ${error.message}`);
+      return null;
+    }
+  }
   const last = cloneFailures.get(project.slug);
   if (last && Date.now() - last < 60 * 60_000) return null;
   const dir = join(config.cloneRoot, project.slug);
@@ -643,6 +685,7 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
   if (!EXECUTORS[executor]) throw new Error(`this node has no executor "${executor}"`);
 
   const repo = await git(project.path, 'rev-parse', '--show-toplevel');
+  await ghRemote(config, { ...project, slug: ticket.slug }, repo);
   if (project.fetch) {
     const res = await run('git', ['fetch', '--quiet', 'origin'], { cwd: repo, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
     if (res.code !== 0) log(`#${ticket.id} fetch failed, working from the last copy: ${res.stderr.trim().split('\n').pop()}`);

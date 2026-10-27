@@ -40,6 +40,12 @@ export interface Env {
   FILES?: R2Bucket;
   /** R2 — hosted site deploys (src/sites.ts). Unbound = no site setup or deploys. */
   SITES?: R2Bucket;
+  /** Secrets — the malipetek-dev GitHub App (src/github.ts). */
+  GITHUB_APP_ID?: string;
+  GITHUB_APP_CLIENT_ID?: string;
+  GITHUB_APP_CLIENT_SECRET?: string;
+  GITHUB_APP_PRIVATE_KEY?: string;
+  GITHUB_WEBHOOK_SECRET?: string;
   /** Var, local dev only. "1" returns the magic link in the /auth/request response. */
   DEV_RETURN_LINK?: string;
 }

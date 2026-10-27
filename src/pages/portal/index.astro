@@ -59,6 +59,17 @@ export const prerender = true;
         </p>
       </section>
 
+      <section class="portal-section" data-github hidden>
+        <h2>Connect GitHub</h2>
+        <p class="portal-note" style="max-width: 56ch">
+          Optional: keep a project's code in your own GitHub account, or let us
+          work on an existing private repo. You pick exactly which repos the
+          app can reach, and you can revoke it any time on GitHub.
+        </p>
+        <ul class="token-list" data-github-list></ul>
+        <p class="portal-actions"><a class="btn" data-github-install href="#">Connect GitHub →</a></p>
+      </section>
+
       <section class="portal-section" data-assistants hidden>
         <h2>Connect an assistant</h2>
         <p class="portal-note" style="max-width: 56ch">
@@ -272,6 +283,19 @@ export const prerender = true;
     );
   }
 
+  type GithubState = { installations: { id: number; account_login: string }[]; installUrl: string };
+
+  async function renderGithub() {
+    const state = await api<GithubState>('/portal/github');
+    const install = $<HTMLAnchorElement>('[data-github-install]');
+    install.href = state.installUrl;
+    $('[data-github-list]').replaceChildren(
+      ...state.installations.map((i) =>
+        h('li', { class: 'token-row' }, h('strong', null, `@${i.account_login}`), h('span', { class: 'portal-note' }, 'connected')),
+      ),
+    );
+  }
+
   function tokenDialog() {
     const label = h('input', { type: 'text', maxlength: 60, placeholder: 'e.g. Claude on my laptop' });
     openDialog({
@@ -468,6 +492,8 @@ export const prerender = true;
     // Only clients connect assistants; the key is a client credential.
     $('[data-assistants]').hidden = user.role !== 'client';
     if (user.role === 'client') void renderTokens().catch(() => {});
+    $('[data-github]').hidden = user.role !== 'client';
+    if (user.role === 'client') void renderGithub().catch(() => {});
     renderTickets(tickets);
     renderProjects(projects);
     loading.hidden = true;

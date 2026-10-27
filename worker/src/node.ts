@@ -83,9 +83,10 @@ node.use('/node/*', async (c, next) => {
  */
 node.get('/node/projects', async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT p.id, p.slug, p.name, p.repo, s.state AS site_state, s.slug AS site_slug, s.template
+    `SELECT p.id, p.slug, p.name, p.repo, p.github_installation_id,
+            s.state AS site_state, s.slug AS site_slug, s.template
        FROM projects p LEFT JOIN sites s ON s.project_id = p.id ORDER BY p.slug`,
-  ).all<{ id: string; slug: string; name: string; repo: string | null; site_state: string | null; site_slug: string | null; template: string | null }>();
+  ).all<{ id: string; slug: string; name: string; repo: string | null; github_installation_id: number | null; site_state: string | null; site_slug: string | null; template: string | null }>();
   return c.json({
     projects: (results ?? []).map((p) => ({
       id: p.id,
@@ -95,6 +96,9 @@ node.get('/node/projects', async (c) => {
       // https or ssh only (setup.ts cleanRepo); the node's own git credentials
       // decide whether it can.
       ...(p.repo ? { repo: p.repo } : {}),
+      // The repo is reached through a client's GitHub App installation: clone
+      // and push with a token from /node/git-token, not the node's own git.
+      ...(p.github_installation_id ? { githubApp: true } : {}),
       // A hosted site's work starts from its preview branch, so a run never
       // overwrites changes that are on the preview but not yet published.
       ...(p.site_state === 'ready' ? { baseRef: 'origin/preview', site: p.site_slug } : {}),

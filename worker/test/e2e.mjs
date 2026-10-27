@@ -12,7 +12,7 @@
  * local git repo. Nothing leaves this machine.
  */
 import { spawn, execFileSync } from 'node:child_process';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
@@ -193,6 +193,20 @@ const groups = {
 
     const existing = (await newProject(a.session, { kind: 'existing', name: 'Old Shop', brief: OLD_BRIEF, repoKind: 'none' })).data.project;
     check('an existing stack is not hosted', (await call(`/portal/projects/${existing.id}/site`, { method: 'POST', auth: a.session, body: {} })).data?.error === 'not_hosted');
+  },
+
+  async github({ admin }) {
+    const a = account(`gh-${Date.now()}@example.com`);
+    check('the connection starts empty, with a signed install link', (await call('/portal/github', { auth: a.session })).data.installations?.length === 0 && /github\.com\/apps\/malipetek-dev\/installations\/new\?state=/.test((await call('/portal/github', { auth: a.session })).data.installUrl ?? ''));
+    check('the webhook needs a signature', (await call('/hooks/github', { method: 'POST', body: {} })).status === 401);
+    const body = JSON.stringify({ action: 'created', installation: { id: 42424242, account: { login: 'clientacct', type: 'User' }, repository_selection: 'selected' } });
+    const sig = 'sha256=' + createHmac('sha256', 'test-webhook-secret').update(body).digest('hex');
+    const hook = await fetch(`${W}/hooks/github`, { method: 'POST', headers: { 'x-github-event': 'installation', 'x-hub-signature-256': sig, 'content-type': 'application/json' }, body });
+    check('a signed installation.created registers (unclaimed)', hook.status === 200);
+    check('a wrong signature is refused', (await fetch(`${W}/hooks/github`, { method: 'POST', headers: { 'x-github-event': 'installation', 'x-hub-signature-256': 'sha256=' + '0'.repeat(64), 'content-type': 'application/json' }, body })).status === 401);
+    check('git-token needs a github-connected project', (await call('/node/git-token', { method: 'POST', auth: RUNNER_TOKEN, body: { slug: 'nope' } })).status === 404);
+    check('…and the runner token', (await call('/node/git-token', { method: 'POST', auth: 'wrong', body: { slug: 'nope' } })).status === 401);
+    check('the callback refuses a bad state', (await fetch(`${W}/auth/github/callback?code=x&installation_id=1&state=bogus`)).redirected === false);
   },
 
   async queue({ admin }) {
@@ -818,7 +832,7 @@ async function main() {
   console.log(`state ${STATE}\nworker ${W}\n`);
   execFileSync('npx', ['wrangler', 'd1', 'migrations', 'apply', 'malipetek-portal', '--local', '--persist-to', STATE], { cwd: WORKER, stdio: 'pipe' });
 
-  const vars = { DEV_RETURN_LINK: '1', RUNNER_TOKEN, SITE_URL: 'http://localhost:4321' };
+  const vars = { DEV_RETURN_LINK: '1', RUNNER_TOKEN, SITE_URL: 'http://localhost:4321', GITHUB_WEBHOOK_SECRET: 'test-webhook-secret' };
   const dev = spawn('npx', ['vite', 'dev', '--port', String(port), '--strictPort'], {
     cwd: WORKER,
     env: { ...process.env, MALIPETEK_E2E_STATE: STATE, MALIPETEK_E2E_VARS: JSON.stringify(vars) },

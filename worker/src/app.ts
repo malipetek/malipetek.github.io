@@ -25,6 +25,7 @@ import { Hono } from 'hono';
 import { Intercom } from './agents/intercom.ts';
 import { portal } from './portal.ts';
 import { node } from './node.ts';
+import { github } from './github.ts';
 import { kb, mcp } from './kb.ts';
 import { oauth } from './oauth.ts';
 import {
@@ -118,6 +119,8 @@ app.route('/agents/intercom', createAgentRouter(Intercom) as unknown as Hono<Hon
 app.route('/', portal);
 // Fleet node API (token-auth, machine-to-machine). See src/node.ts.
 app.route('/', node);
+
+app.route('/', github);
 // Public knowledgebase: REST reads plus the MCP server. See src/kb.ts.
 app.route('/kb', kb);
 app.route('/mcp', mcp);
