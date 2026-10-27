@@ -291,7 +291,18 @@ export const prerender = true;
     install.href = state.installUrl;
     $('[data-github-list]').replaceChildren(
       ...state.installations.map((i) =>
-        h('li', { class: 'token-row' }, h('strong', null, `@${i.account_login}`), h('span', { class: 'portal-note' }, 'connected')),
+        h(
+          'li',
+          { class: 'token-row' },
+          h('strong', null, `@${i.account_login}`),
+          h('span', { class: 'portal-note' }, 'connected'),
+          button('Disconnect', () =>
+            confirmDialog(`Disconnect @${i.account_login}?`, 'Projects using this connection lose access to the repos it reached. You can reconnect any time by installing the app again.', 'Disconnect', async () => {
+              await api(`/portal/github/${i.id}`, { method: 'DELETE' });
+              await renderGithub();
+            }, true),
+          ),
+        ),
       ),
     );
   }

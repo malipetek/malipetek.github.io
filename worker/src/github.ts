@@ -258,6 +258,22 @@ github.get('/portal/github', async (c) => {
 });
 
 /**
+ * Disconnect an installation from the client's account. Repos on projects are
+ * cleared back to needing a repo choice; GitHub uninstall (which reaches the
+ * webhook and removes the row) stays on github.com.
+ */
+github.delete('/portal/github/:id', async (c) => {
+  const user = await bearerUser(c.env, c);
+  if (!user) return reply(c, { error: 'unauthorized' }, 401);
+  const id = Number(c.req.param('id'));
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE projects SET github_installation_id = NULL WHERE github_installation_id = ?').bind(id),
+    c.env.DB.prepare('UPDATE github_installations SET user_id = NULL, updated_at = ? WHERE id = ? AND user_id = ?').bind(now(), id, user.id),
+  ]);
+  return reply(c, { ok: true });
+});
+
+/**
  * Point a project's repo at one of the client's installations. The repo URL
  * must be a GitHub URL; nodes mint their own per-task tokens to reach it.
  */
