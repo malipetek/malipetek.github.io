@@ -9,6 +9,12 @@
 ## Client portal
 - `/portal` (and `/portal/ticket`, the address in emails) mount `src/components/portal/ClientPortal.jsx`: React, hash routes (`#/ticket/12`), styles in `src/styles/client-portal.css`. The overview's 3D board is `initBoard` in `src/lib/workshop3d.ts` (the homepage machine with the client's own requests on it). Onboarding (`/portal/start`) is still the old Astro page.
 
+## Marketing automation
+- Desk: **Admin → Marketing** (`packages/admin-ui/src/marketing.jsx`); API and the send engine in `worker/src/marketing.ts`, schema in migration `0023_marketing.sql`.
+- Email goes out from `hello@malipetek.dev` through the `MARKETING` send binding on the 5-minute cron; replies, opt-outs and bounces come back through the `hello@` branch of `worker/src/inbound.ts`.
+- X/LinkedIn: `marketing/publisher` posts queued drafts from a real Chrome profile (no paid API), polled every 15 minutes by launchd, bearer `MARKETING_TOKEN` on `/marketing/publisher/*`.
+- Prospects: `marketing/prospector/extract.mjs` reads only the URLs it is given; `marketing/prospector/directory.mjs` crawls one directory within robots.txt, depth and page budget. Both write the importable CSV. Setup order, gates and compliance: `marketing/automation.md`.
+
 ## Deploy
 - Two Cloudflare credentials, neither covers everything: the shell's `CLOUDFLARE_API_TOKEN` has D1 (migrations, `d1 execute`) but no R2; the wrangler OAuth login (`env -u CLOUDFLARE_API_TOKEN …`) has R2 but no D1. Worker deploys work with either. Always pass `CLOUDFLARE_ACCOUNT_ID=a60af2542282e283101650bebed42dcf`. Apply migrations and check they succeeded before deploying a Worker that needs them.
 - Worker: `pnpm --dir worker test` then `pnpm --dir worker deploy`; new migrations first with `npx wrangler d1 migrations apply malipetek-portal --remote` (in `worker/`). Attachments need the R2 bucket once: `npx wrangler r2 bucket create malipetek-portal-files`.

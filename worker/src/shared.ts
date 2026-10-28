@@ -38,6 +38,12 @@ export interface Env {
   SITE_URL?: string;
   /** Var. Email Routing address (with subaddressing) that feeds src/inbound.ts. */
   REPLY_ADDRESS?: string;
+  /** Unpinned Email Service binding for outreach (src/marketing.ts). Unbound = no sends. */
+  MARKETING?: SendEmail;
+  /** Var. From address for outreach mail (must be on an onboarded domain). */
+  MARKETING_FROM_EMAIL?: string;
+  /** Secret. Bearer for the local publisher poll (src/marketing.ts). Unset disables it. */
+  MARKETING_TOKEN?: string;
   /** Secret. Shared with the local runner on Ali's machine; unset disables /runner/*. */
   RUNNER_TOKEN?: string;
   /** R2 — ticket attachments (src/files.ts). Unbound = uploads are refused. */

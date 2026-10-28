@@ -124,7 +124,7 @@ interface User {
 }
 
 /** `viaAgent`: the caller used an agent token (agent_tokens), not a browser session. */
-type PortalEnv = HonoEnv & { Variables: { user: User; viaAgent: boolean } };
+export type PortalEnv = HonoEnv & { Variables: { user: User; viaAgent: boolean } };
 type Ctx = Context<PortalEnv>;
 
 /* ——————————————————————— helpers ——————————————————————— */
@@ -527,7 +527,7 @@ const MAX_PRIORITY = 100;
 
 /**
  * Routing fields an admin may set on a work item. Each is undefined when not
- * sent. Client work may not pin an executor other than the sandboxed one.
+ * sent. Client work can pin any executor (Ali approves before a run starts).
  */
 function cleanRouting(
   body: { priority?: unknown; requires?: unknown; executor?: unknown },
@@ -702,7 +702,7 @@ portal.post('/auth/demo', async (c) => {
 
 /* —— session guard —— */
 
-const requireUser = async (c: Ctx, next: () => Promise<void>) => {
+export const requireUser = async (c: Ctx, next: () => Promise<void>) => {
   const header = c.req.header('authorization') ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   const viaAgent = token.startsWith(AGENT_TOKEN_PREFIX);
@@ -714,7 +714,7 @@ const requireUser = async (c: Ctx, next: () => Promise<void>) => {
 };
 
 // An agent token is a client credential: it never reaches the admin routes.
-const requireAdmin = async (c: Ctx, next: () => Promise<void>) => {
+export const requireAdmin = async (c: Ctx, next: () => Promise<void>) => {
   if (c.get('viaAgent') || c.get('user').role !== 'admin') return reply(c, { error: 'forbidden' }, 403);
   return next();
 };

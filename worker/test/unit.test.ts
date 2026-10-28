@@ -12,6 +12,7 @@ import { normalizeReport, sharedLine } from '../src/runs.ts';
 import { setupFor, slugify, type SetupInput } from '../src/setup.ts';
 import { cleanDeployManifest, cleanSiteSlug } from '../src/sites.ts';
 import { checkUploads, cleanFileName, fileType } from '../src/files.ts';
+import { fillTemplate, isOptOut, localClock, parseContactsCsv, parseCsv, sendWindow, SEQUENCES } from '../src/marketing.ts';
 
 /* —— mail: who may file a ticket by email —— */
 
@@ -320,4 +321,76 @@ test('executors: the Harness-hosted executors are known, client work stays on cl
   assert.equal(CLIENT_EXECUTOR, 'claude');
   const node = cleanNodeReport({ id: 'g500', executors: ['claude', 'dsh-claude', 'dsh-opencode', 'made-up'] });
   assert.deepEqual(node?.executors, ['claude', 'dsh-claude', 'dsh-opencode']);
+});
+
+/* —— marketing: copy, lists and the clock —— */
+
+test('marketing: templates greet by first name and never leave a placeholder', () => {
+  const contact = { name: 'Sara Yılmaz', business: 'Bakery Nine', site: 'bakerynine.com', gap: 'the menu still shows last winter' };
+  assert.equal(fillTemplate('{{greeting}}', contact), 'Hi Sara,');
+  assert.equal(fillTemplate('{{greeting}}', { ...contact, name: null }), 'Hi,');
+  assert.equal(fillTemplate('{{business}} / {{site}}', contact), 'Bakery Nine / bakerynine.com');
+  assert.equal(fillTemplate('{{business}}', { ...contact, business: null }), 'bakerynine.com');
+  assert.equal(fillTemplate('{{site}}', { ...contact, site: null }), 'your site');
+  assert.equal(fillTemplate('{{gap}}', { ...contact, gap: null }), '');
+  for (const steps of Object.values(SEQUENCES)) {
+    for (const step of steps) {
+      assert.ok(!fillTemplate(step.subject + step.body, contact).includes('{{'), step.kind);
+    }
+  }
+});
+
+test('marketing: a sequence is three steps on days 0, 4 and 10', () => {
+  for (const steps of Object.values(SEQUENCES)) {
+    assert.deepEqual(steps.map((s) => s.day), [0, 4, 10]);
+    assert.ok(steps.every((s) => s.subject && s.body));
+  }
+});
+
+test('marketing: "no" is an opt-out, a question is not', () => {
+  for (const body of ['no', 'No.', 'no thanks', 'STOP', 'unsubscribe', 'please remove me', "don't email me again", 'take me off this list']) {
+    assert.equal(isOptOut(body), true, body);
+  }
+  for (const body of ['Not interested in that one, but tell me about the other', 'No rush, next week works', 'How much is a small fix?', 'yes', '']) {
+    assert.equal(isOptOut(body), false, body);
+  }
+});
+
+test('marketing: CSV keeps quoted commas, newlines and escaped quotes', () => {
+  const rows = parseCsv('email,name,note\r\na@b.co,"Yılmaz, Sara","said ""hi""\nsecond line"\r\nc@d.co,,');
+  assert.deepEqual(rows, [
+    ['email', 'name', 'note'],
+    ['a@b.co', 'Yılmaz, Sara', 'said "hi"\nsecond line'],
+    ['c@d.co', '', ''],
+  ]);
+});
+
+test('marketing: import reads aliases, ignores unknown columns, requires email', () => {
+  const parsed = parseContactsCsv('\uFEFFEmail,Company,Website,Observation,Source URL,Consent Basis\nA@B.CO,Nine,nine.com,menu is old,https://nine.com,consent\n');
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.rows[0].email, 'A@B.CO');
+  assert.equal(parsed.rows[0].business, 'Nine');
+  assert.equal(parsed.rows[0].gap, 'menu is old');
+  assert.equal(parsed.rows[0].consentBasis, 'consent');
+  assert.deepEqual(parseContactsCsv('name,note\nx,y').skipped, [{ email: '', reason: 'no_email_column' }]);
+  assert.equal(parseContactsCsv('email\n').skipped[0].reason, 'empty');
+});
+
+test('marketing: the window follows the configured local clock', () => {
+  const epoch = 0; // 1970-01-01 00:00 UTC, a Thursday
+  assert.deepEqual(localClock(0, epoch), { hour: 0, weekday: 4, dayStart: 0 });
+  assert.equal(localClock(180, epoch).hour, 3);
+
+  const base = { dailyCap: 20, perRun: 5, offsetMinutes: 0, weekdaysOnly: true, postalAddress: 'x', fromName: 'Ali', live: true };
+  // Thursday 09:00 UTC
+  const thursdayNine = 4 * 86400 + 9 * 3600;
+  assert.deepEqual(sendWindow({ ...base, startHour: 8, endHour: 17 }, thursdayNine), { open: true });
+  assert.equal(sendWindow({ ...base, startHour: 8, endHour: 17 }, thursdayNine + 8 * 3600).reason, 'outside_hours');
+  // Saturday 09:00 UTC (1970-01-03)
+  assert.equal(sendWindow({ ...base, startHour: 8, endHour: 17 }, 2 * 86400 + 9 * 3600).reason, 'weekend');
+  assert.deepEqual(sendWindow({ ...base, weekdaysOnly: false, startHour: 8, endHour: 17 }, 2 * 86400 + 9 * 3600), { open: true });
+  // A window that wraps midnight stays open on both sides of it.
+  assert.deepEqual(sendWindow({ ...base, startHour: 22, endHour: 6 }, 4 * 86400 + 23 * 3600), { open: true });
+  assert.deepEqual(sendWindow({ ...base, startHour: 22, endHour: 6 }, 5 * 86400 + 2 * 3600), { open: true });
+  assert.equal(sendWindow({ ...base, startHour: 22, endHour: 6 }, 5 * 86400 + 12 * 3600).open, false);
 });

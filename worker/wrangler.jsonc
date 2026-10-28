@@ -24,6 +24,8 @@
     "SITE_URL": "https://malipetek.dev",
     // Email Routing: send reply@ (subaddressing on) and new@ to this Worker.
     "REPLY_ADDRESS": "reply@malipetek.dev",
+    // Outreach mail: cold and warm email, and the inbox replies land in.
+    "MARKETING_FROM_EMAIL": "hello@malipetek.dev",
   },
 
   // Client portal store. Create once with:
@@ -71,5 +73,9 @@
     // Portal mail to clients (magic links, replies, status changes). No
     // destination pin, so the sender is pinned instead.
     { "name": "MAILER", "allowed_sender_addresses": ["portal@malipetek.dev"] },
+    // Outreach (src/marketing.ts). A separate sender so a cold-email problem
+    // cannot damage the portal's reputation, and so the admin views can tell
+    // the two streams apart.
+    { "name": "MARKETING", "allowed_sender_addresses": ["hello@malipetek.dev"] },
   ],
 }

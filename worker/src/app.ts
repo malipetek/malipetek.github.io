@@ -27,6 +27,7 @@ import { portal } from './portal.ts';
 import { node } from './node.ts';
 import { github } from './github.ts';
 import { cfconnect } from './cfconnect.ts';
+import { marketing, publisher } from './marketing.ts';
 import { kb, mcp } from './kb.ts';
 import { oauth } from './oauth.ts';
 import {
@@ -123,6 +124,9 @@ app.route('/', node);
 
 app.route('/', github);
 app.route('/', cfconnect);
+// Marketing: admin views behind the portal session, publisher behind a token.
+app.route('/', marketing);
+app.route('/', publisher);
 // Public knowledgebase: REST reads plus the MCP server. See src/kb.ts.
 app.route('/kb', kb);
 app.route('/mcp', mcp);

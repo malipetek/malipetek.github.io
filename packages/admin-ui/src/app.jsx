@@ -15,12 +15,14 @@ import { Button, Chips, Confirm, Dot, Field, Icon, Modal, Resizer, Segmented, cx
 import { BoardView, InboxView, ListView } from './board.jsx';
 import { TicketView } from './ticket.jsx';
 import { ClientsView, FleetView, SettingsView } from './fleet.jsx';
+import { MarketingView } from './marketing.jsx';
 import { STYLES } from './styles.js';
 
 const VIEWS = [
   { key: 'inbox', label: 'Needs you', icon: 'inbox' },
   { key: 'board', label: 'Board', icon: 'board' },
   { key: 'list', label: 'All work', icon: 'list' },
+  { key: 'marketing', label: 'Marketing', icon: 'megaphone' },
   { key: 'fleet', label: 'Fleet', icon: 'fleet' },
   { key: 'clients', label: 'Clients & projects', icon: 'clients' },
   { key: 'settings', label: 'Settings', icon: 'settings' },
@@ -104,13 +106,16 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const fromHash = () => {
-      const id = Number(new URLSearchParams(window.location.hash.slice(1)).get('ticket'));
+      const hash = window.location.hash.slice(1);
+      const id = Number(new URLSearchParams(hash).get('ticket'));
       if (Number.isInteger(id) && id > 0) openTicket(id);
+      // Notification mail links to #marketing; a view name is a valid target too.
+      if (viewOf(hash)) open(hash);
     };
     fromHash();
     window.addEventListener('hashchange', fromHash);
     return () => window.removeEventListener('hashchange', fromHash);
-  }, [openTicket]);
+  }, [open, openTicket]);
 
   const notify = useCallback((text, kind = 'ok') => {
     setToast({ text, kind, at: Date.now() });
@@ -286,6 +291,8 @@ function View({ name }) {
       return <BoardView />;
     case 'list':
       return <ListView />;
+    case 'marketing':
+      return <MarketingView />;
     case 'fleet':
       return <FleetView />;
     case 'clients':

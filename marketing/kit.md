@@ -7,6 +7,10 @@ come from `src/lib/pricing.js` — if the rate changes, change the numbers here.
 Rules: no model names, no "AI-powered", no "revolutionary", no invented results
 or testimonials. Plain words a business owner does not have to look up.
 
+Launch assets live in `launch/`: plan, proof, one-pager, outreach, social and
+video. The only approved results are in `launch/proof.md` — pilot jobs on my own
+and demo projects, not clients. Do not call them clients.
+
 ## The hooks, in order
 
 **1. Price (primary — leads everything):**

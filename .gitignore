@@ -16,6 +16,20 @@ dist/
 worker/.dev.vars
 worker/.flue-vite/
 
+# The publisher's env file, its Chrome profile (live X and LinkedIn sessions),
+# its lock, the day's post count and the run log. Nothing here is source.
+marketing/publisher/.env
+marketing/publisher/.profile/
+marketing/publisher/.publish.lock
+marketing/publisher/.publish.day.json
+marketing/publisher/publish.log
+
+# Prospect lists hold other people's contact details; this repository is public.
+marketing/prospector/prospects.txt
+marketing/prospector/prospects-*.csv
+marketing/prospector/directory-*.csv
+marketing/prospector/*-sites.txt
+
 # Agent handoff bundles hold whole conversation transcripts; this repo is public.
 .agents/handoff/
 

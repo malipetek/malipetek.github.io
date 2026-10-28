@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template. install.sh fills in __REPO__ and __HOME__ and loads it.
+
+  Every 15 minutes the publisher asks the desk what is due. It exits in a
+  second when nothing is, and only then starts Chrome. --auto means it does
+  not ask before posting; remove that argument to get a desktop prompt.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.malipetek.marketing-publisher</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>__REPO__/marketing/publisher/publish.sh</string>
+    <string>--auto</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO__/marketing/publisher</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>__HOME__</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StartInterval</key>
+  <integer>900</integer>
+
+  <key>StandardOutPath</key>
+  <string>__REPO__/marketing/publisher/publish.log</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO__/marketing/publisher/publish.log</string>
+</dict>
+</plist>
