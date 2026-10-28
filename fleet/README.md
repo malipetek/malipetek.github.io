@@ -68,12 +68,12 @@ capability. After 30 minutes stuck, Ali gets one email.
 | executor | for | how |
 | --- | --- | --- |
 | `claude` | client and system work | Claude Code headless. Client work gets read/edit tools plus `git add`/`git commit` (it is asked to finish its own work), no MCP, no web, no inherited settings. System work may also run Bash (never `git push` — the node pushes). |
-| `opencode` | system work only | `opencode run --auto` |
-| `dsh` | system work only | `dsh --profile headless --json -` — the Harness in one shot, on whichever provider that profile uses (DeepSeek, OpenCode Go, …). |
-| `dsh-claude` | system work only | The same Harness run, driving Claude Code as an external ACP agent (`claude-agent-acp`). Offered when `dsh` and `claude-agent-acp` are both on PATH. |
-| `dsh-opencode` | system work only | The same Harness run, driving OpenCode as an external ACP agent (`opencode acp`). Offered when `dsh` and `opencode` are both on PATH. |
-| `devin` | fallback for any work | Devin over ACP; auto-approves its own permission prompts — open permissions, not sandboxed |
-| `dsh-devin` | system work only | The same Harness run, driving Devin as an external ACP agent (`devin acp`). |
+| `opencode` | approved client and system work | `opencode run --auto` — open permissions, not sandboxed |
+| `dsh` | approved client and system work | `dsh --profile headless --json -` — the Harness in one shot, on whichever provider that profile uses (DeepSeek, OpenCode Go, …). |
+| `dsh-claude` | approved client and system work | The same Harness run, driving Claude Code as an external ACP agent (`claude-agent-acp`). Offered when `dsh` and `claude-agent-acp` are both on PATH. |
+| `dsh-opencode` | approved client and system work | The same Harness run, driving OpenCode as an external ACP agent (`opencode acp`). Offered when `dsh` and `opencode` are both on PATH. |
+| `devin` | approved client and system work | Devin over ACP; auto-approves its own permission prompts — open permissions, not sandboxed |
+| `dsh-devin` | approved client and system work | The same Harness run, driving Devin as an external ACP agent (`devin acp`). Experimental — Devin's ACP adapter returns empty turns, so nodes don't advertise it yet. |
 
 Client work defaults to `claude` (the only sandboxed executor) and falls back
 through the client order `claude → dsh-claude → dsh → dsh-devin → dsh-opencode →

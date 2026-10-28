@@ -126,12 +126,12 @@ export const CAPABILITY_CATALOG = [
 ];
 export const EXECUTOR_CATALOG = [
   { id: 'claude', label: 'Claude Code', hint: 'sandboxed; the default for client work' },
-  { id: 'opencode', label: 'OpenCode', hint: 'system tasks only' },
-  { id: 'dsh', label: 'DeepSeek Harness', hint: 'system tasks only; the Harness in one shot' },
-  { id: 'devin', label: 'Devin', hint: 'system tasks only; approves its own permissions' },
-  { id: 'dsh-claude', label: 'Claude Code in the Harness', hint: 'system tasks only; Claude Code driven from a Harness session' },
-  { id: 'dsh-opencode', label: 'OpenCode in the Harness', hint: 'system tasks only; OpenCode driven from a Harness session' },
-  { id: 'dsh-devin', label: 'Devin in the Harness', hint: 'system tasks only; Devin (SWE-2) driven from a Harness session' },
+  { id: 'opencode', label: 'OpenCode', hint: 'open permissions; approved work only' },
+  { id: 'dsh', label: 'DeepSeek Harness', hint: 'the Harness in one shot' },
+  { id: 'devin', label: 'Devin', hint: 'approves its own permissions' },
+  { id: 'dsh-claude', label: 'Claude Code in the Harness', hint: 'Claude Code driven from a Harness session' },
+  { id: 'dsh-opencode', label: 'OpenCode in the Harness', hint: 'OpenCode driven from a Harness session' },
+  { id: 'dsh-devin', label: 'Devin in the Harness', hint: 'Devin (SWE-2) driven from a Harness session' },
 ];
 
 export const EXECUTORS = ['claude', 'opencode', 'dsh', 'devin', 'dsh-claude', 'dsh-opencode', 'dsh-devin'] as const;

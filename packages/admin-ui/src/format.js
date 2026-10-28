@@ -31,7 +31,7 @@ export const PRIORITIES = [
   { value: 50, label: 'Urgent' },
 ];
 export const priorityName = (v) => PRIORITIES.find((p) => p.value === v)?.label ?? `p${v}`;
-export const EXECUTORS = ['claude', 'opencode', 'dsh', 'devin'];
+export const EXECUTORS = ['claude', 'opencode', 'dsh', 'devin', 'dsh-claude', 'dsh-opencode'];
 
 export function span(seconds) {
   const s = Math.max(0, Math.floor(seconds));
@@ -93,7 +93,9 @@ export function predict(nodes, { slug, requires, executor, kind }) {
   if (!holders.length) return { state: 'bad', text: `No node has ${slug} yet. Nodes clone it once the portal knows its repo.` };
   const capable = holders.filter((n) => requires.every((r) => n.capabilities.includes(r)));
   if (!capable.length) return { state: 'bad', text: `No node with ${slug} has ${requires.join(' + ')}.` };
-  const needs = kind === 'client' ? 'claude' : executor;
+  // Unpinned client work takes CLIENT_ORDER (claude first, then the rest), so
+  // any node advertising an executor can claim it — only a pin narrows it.
+  const needs = executor;
   const runnable = needs ? capable.filter((n) => n.executors.includes(needs)) : capable;
   if (!runnable.length) return { state: 'bad', text: `No capable node runs ${needs}.` };
   const live = runnable.filter((n) => n.online && !n.draining);

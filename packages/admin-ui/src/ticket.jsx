@@ -730,11 +730,10 @@ function Details({ ticket, runs, land, meter, reload }) {
       <Field label="Priority">
         <Segmented value={ticket.priority ?? 0} options={PRIORITIES} onChange={(v) => void patch({ priority: v }, 'Priority saved.')} />
       </Field>
-      <Field label="Agent" hint={isClient ? 'Client work always runs sandboxed in Claude Code.' : undefined}>
+      <Field label="Agent" hint={isClient ? 'Runs after your approval; claude is the default sandboxed agent.' : undefined}>
         <Segmented
-          value={isClient ? 'claude' : ticket.executor ?? null}
-          disabled={isClient}
-          options={[...(isClient ? [] : [{ value: null, label: 'Any' }]), ...EXECUTORS.map((e) => ({ value: e, label: e }))]}
+          value={ticket.executor ?? null}
+          options={[{ value: null, label: 'Any' }, ...EXECUTORS.map((e) => ({ value: e, label: e }))]}
           onChange={(v) => void patch({ executor: v }, `Agent: ${v ?? 'any'}.`)}
         />
       </Field>

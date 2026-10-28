@@ -225,7 +225,7 @@ var __awPlugin = (() => {
     { value: 50, label: "Urgent" }
   ];
   var priorityName = (v) => PRIORITIES.find((p) => p.value === v)?.label ?? `p${v}`;
-  var EXECUTORS = ["claude", "opencode", "dsh", "devin"];
+  var EXECUTORS = ["claude", "opencode", "dsh", "devin", "dsh-claude", "dsh-opencode"];
   function span(seconds) {
     const s = Math.max(0, Math.floor(seconds));
     if (s < 60) return `${s}s`;
@@ -278,7 +278,7 @@ var __awPlugin = (() => {
     if (!holders.length) return { state: "bad", text: `No node has ${slug} yet. Nodes clone it once the portal knows its repo.` };
     const capable = holders.filter((n) => requires.every((r) => n.capabilities.includes(r)));
     if (!capable.length) return { state: "bad", text: `No node with ${slug} has ${requires.join(" + ")}.` };
-    const needs = kind === "client" ? "claude" : executor;
+    const needs = executor;
     const runnable = needs ? capable.filter((n) => n.executors.includes(needs)) : capable;
     if (!runnable.length) return { state: "bad", text: `No capable node runs ${needs}.` };
     const live = runnable.filter((n) => n.online && !n.draining);
@@ -1322,12 +1322,11 @@ var __awPlugin = (() => {
         data.projects.map((p) => /* @__PURE__ */ jsx("option", { value: p.id, children: p.name }, p.id))
       ] }) }),
       /* @__PURE__ */ jsx(Field, { label: "Priority", children: /* @__PURE__ */ jsx(Segmented, { value: ticket.priority ?? 0, options: PRIORITIES, onChange: (v) => void patch({ priority: v }, "Priority saved.") }) }),
-      /* @__PURE__ */ jsx(Field, { label: "Agent", hint: isClient ? "Client work always runs sandboxed in Claude Code." : void 0, children: /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsx(Field, { label: "Agent", hint: isClient ? "Runs after your approval; claude is the default sandboxed agent." : void 0, children: /* @__PURE__ */ jsx(
         Segmented,
         {
-          value: isClient ? "claude" : ticket.executor ?? null,
-          disabled: isClient,
-          options: [...isClient ? [] : [{ value: null, label: "Any" }], ...EXECUTORS.map((e) => ({ value: e, label: e }))],
+          value: ticket.executor ?? null,
+          options: [{ value: null, label: "Any" }, ...EXECUTORS.map((e) => ({ value: e, label: e }))],
           onChange: (v) => void patch({ executor: v }, `Agent: ${v ?? "any"}.`)
         }
       ) }),
