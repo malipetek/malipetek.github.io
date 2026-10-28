@@ -905,7 +905,8 @@ const groups = {
     check('session: …and without any session fields', hr2.status === 200 && row4?.session_id === null && row4.session_log === 0, JSON.stringify(row4).slice(0, 300));
 
     // Client work stays on claude even when a Harness executor is asked for.
-    check('session: a client ticket can be pinned to a Harness executor', (await call(`/admin/tickets/${ticketId}`, { method: 'PATCH', auth: admin, body: { executor: 'dsh-claude' } })).data?.ticket?.executor === 'dsh-claude');
+    await call(`/admin/tickets/${ticketId}`, { method: 'PATCH', auth: admin, body: { executor: 'dsh-claude' } });
+    check('session: a client ticket can be pinned to a Harness executor', (await call(`/admin/tickets/${ticketId}`, { auth: admin })).data.ticket.executor === 'dsh-claude');
     const catalog = (await call('/admin/settings', { auth: admin })).data?.catalog?.executors ?? [];
     check('session: the catalog offers the Harness executors', ['dsh-claude', 'dsh-opencode'].every((id) => catalog.some((e) => e.id === id)), JSON.stringify(catalog));
   },
