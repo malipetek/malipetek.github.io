@@ -118,7 +118,7 @@ const FLOOR_FRAG = /* glsl */ `
   uniform vec3 uAccent;
   uniform vec2 uFocus;
   uniform float uTime;
-  uniform vec3 uGlow[6];
+  uniform vec3 uGlow[12];
   varying vec2 vP;
   void main() {
     const float S = 0.42;
@@ -127,7 +127,7 @@ const FLOOR_FRAG = /* glsl */ `
     float aa = fwidth(d) * 1.2;
 
     float glow = 0.0;
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 12; i++) {
       // Elongated behind the ticket (it travels +x), so each one leaves a trail.
       vec2 q = vP - uGlow[i].xy;
       float kx = q.x < 0.0 ? 0.3 : 1.6;
@@ -205,7 +205,7 @@ function makeKit(): Kit {
     side: THREE.BackSide,
   });
 
-  const glow = Array.from({ length: 6 }, () => new THREE.Vector3(0, 0, 0));
+  const glow = Array.from({ length: 12 }, () => new THREE.Vector3(0, 0, 0));
   const floor = new THREE.ShaderMaterial({
     uniforms: {
       uDot: { value: new THREE.Color(LIGHT.dot) },
@@ -423,8 +423,24 @@ function floorLabel(ctx: Ctx, no: string, text: string): THREE.Mesh {
 
 /* ————— the hero machine ————— */
 
-/** Where a single tracked ticket is, as the portal names a ticket's status. */
+/** Where a tracked ticket is, as the portal names a ticket's status. */
 export type TrackStage = 'new' | 'approved' | 'in_progress' | 'review' | 'done' | 'declined';
+
+/** The stages a board shows a station for; declined requests leave the machine. */
+export const BOARD_STAGES = ['new', 'approved', 'in_progress', 'review', 'done'] as const;
+export type BoardStage = (typeof BOARD_STAGES)[number];
+
+/** One of the client's requests, as the board places it. */
+export interface BoardItem {
+  id: number;
+  stage: TrackStage;
+}
+
+/** What the board reads every frame. The caller only has to change what these return. */
+interface BoardFeed {
+  items: () => BoardItem[];
+  hovered: () => number | null;
+}
 
 const HERO_FOV = 26;
 
@@ -434,20 +450,30 @@ interface Machine {
   look: [number, number, number];
   animated: THREE.Object3D[];
   tick: (t: number) => void;
+  /** Board only: where each station's caption floats, in world space. */
+  anchors?: Record<BoardStage, THREE.Vector3>;
+  /** Board only: the meshes a pointer can pick, each with userData.id. */
+  pickable?: () => THREE.Object3D[];
+  /** Board only: where a ticket is now, or null when it is not on the machine. */
+  ticketAt?: (id: number) => THREE.Vector3 | null;
 }
+
+/** Up to this many tickets pile up at one station; the caption counts the rest. */
+const PILE = 6;
 
 /**
  * The service drawn as a machine: request → approval gate (a person) → agent
  * at a terminal → review (a person) → shipped to a cloud, left to right along
  * +X, seen from the front-left so it climbs the screen.
  *
- * Without `track` it is the homepage's: six tickets ride the belt forever.
- * With `track` it shows one ticket, parked where that ticket really is — at
- * the gate waiting, past it approved, at the terminal while the agent works,
- * with the reviewer, or lifted into the cloud — and it glides there when the
- * stage changes, so a status change is something you watch happen.
+ * Without `board` it is the homepage's: six tickets ride the belt forever.
+ * With `board` it is a client's own work: each request parked where it really
+ * is — piled before the gate while it waits, past the gate approved, on the
+ * bench while the agent works, with the reviewer, or lifted into the cloud —
+ * and it glides there when its status changes, so progress is something you
+ * watch happen.
  */
-function heroMachine(ctx: Ctx, track?: () => TrackStage): Machine {
+function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
     const g = new THREE.Group();
     const STEP_X = [-4.8, -1.6, 1.6, 4.8];
     const BELT_Z = 0.7;
@@ -523,21 +549,30 @@ function heroMachine(ctx: Ctx, track?: () => TrackStage): Machine {
     const LIFT = 5.9; // where the belt ends and the ticket rises
     const END = 7.4;
     const ticketGeo = new THREE.BoxGeometry(0.66, 0.12, 0.46);
-    const tickets = Array.from({ length: track ? 1 : 6 }, () => {
-      const stage = (['fill', 'ink', 'orange'] as const).map((r) => part(ctx, ticketGeo, r));
+    type Tk = { group: THREE.Group; stage: THREE.Mesh[]; mark: THREE.Mesh; x: number; goal: number; slot: number; lift: number; status: TrackStage };
+    const makeTicket = (id = 0): Tk => {
+      const stage = (['fill', 'ink', 'orange'] as const).map((r) => {
+        const m = part(ctx, ticketGeo, r);
+        m.userData.id = id;
+        return m;
+      });
       const t = new THREE.Group();
       t.add(...stage);
       const mark = cyl(ctx, 0.11, 0.03, 'orange', 0.16, 0.07, 0.08);
       t.add(mark);
       g.add(t);
-      return { group: t, stage, mark };
-    });
+      return { group: t, stage, mark, x: START, goal: START, slot: 0, lift: 0, status: 'new' };
+    };
+    const loop = board ? [] : Array.from({ length: 6 }, () => makeTicket());
 
-    /** Put one ticket at belt position x; returns how close it is to the gate. */
-    const place = (i: number, x: number, off = 0) => {
-      const { group, stage, mark } = tickets[i];
+    /**
+     * Put a ticket at belt position x, `up` above the belt and `off` toward the
+     * camera, lighting the floor glow slot `glow`; returns how close it is to the gate.
+     */
+    const place = (tk: Tk, x: number, glow: number, up = 0, off = 0) => {
+      const { group, stage, mark } = tk;
       const lift = Math.max(0, (x - LIFT) / (END - LIFT));
-      group.position.set(x, 0.43 + lift * lift * 2.7, BELT_Z - lift * 0.2 + off);
+      group.position.set(x, 0.43 + lift * lift * 2.7 + up, BELT_Z - lift * 0.2 + off);
       group.scale.setScalar(1 - lift * 0.55);
       const s = x > STEP_X[3] ? 2 : x > STEP_X[2] ? 1 : 0;
       stage.forEach((m, k) => (m.visible = k === s));
@@ -547,12 +582,11 @@ function heroMachine(ctx: Ctx, track?: () => TrackStage): Machine {
       const approved = THREE.MathUtils.smoothstep(x, gateX - 0.3, gateX + 0.6);
       const enter = THREE.MathUtils.smoothstep(x, START, START + 0.8);
       // Centred just in front of the belt: the belt itself hides the floor.
-      ctx.kit.glow[i].set(x, BELT_Z + 0.95, (0.35 + 0.65 * approved) * enter * (1 - lift));
+      if (glow < ctx.kit.glow.length) ctx.kit.glow[glow].set(x, BELT_Z + 0.95, (0.35 + 0.65 * approved) * enter * (1 - lift));
       return Math.abs(x - gateX);
     };
 
-    // Tracked: where each stage parks the ticket. A declined one waits before
-    // the gate, pushed off the belt.
+    // Board: where each stage parks a ticket.
     const STAGE_X: Record<TrackStage, number> = {
       new: gateX - 1.25,
       approved: gateX + 0.95,
@@ -562,33 +596,79 @@ function heroMachine(ctx: Ctx, track?: () => TrackStage): Machine {
       done: END,
       declined: gateX - 1.25,
     };
-    let tx = track ? STAGE_X[track()] : START;
+    const pool = new Map<number, Tk>();
+    let primed = false;
     let last = 0;
 
-    const tick = (time: number) => {
-      let nearestGate = Infinity;
-      if (track) {
-        const stage = track();
-        const dt = Math.min(0.1, Math.max(0, time - last));
-        last = time;
-        // Glide to the stage at a steady pace, so a change reads as travel.
-        const goal = STAGE_X[stage];
-        tx += Math.sign(goal - tx) * Math.min(Math.abs(goal - tx), dt * 2.4);
-        const working = stage === 'in_progress' && Math.abs(goal - tx) < 0.01;
-        // Being worked on: the ticket shivers on the bench and the agent nods.
-        const x = tx + (working ? Math.sin(time * 9) * 0.035 : 0);
-        nearestGate = place(0, x, stage === 'declined' ? 1.15 : 0);
-        tickets[0].group.rotation.z = stage === 'declined' ? 0.35 : 0;
-        bot.rotation.x = working ? Math.sin(time * 4.2) * 0.06 : 0;
-        // Waiting at the gate: the stamp hangs ready, breathing.
-        if (stage === 'new') nearestGate = Math.max(nearestGate, 0.45);
-      } else {
-        tickets.forEach((_, i) => {
-          const u = (time * 0.045 + i / tickets.length) % 1;
-          nearestGate = Math.min(nearestGate, place(i, START + u * (END - START)));
-        });
+    /** The board's tickets follow the feed: new ones appear, gone ones leave, moved ones glide. */
+    const follow = (time: number) => {
+      const dt = Math.min(0.1, Math.max(0, time - last));
+      last = time;
+      const piles = new Map<TrackStage, number>();
+      const seen = new Set<number>();
+      for (const item of board!.items()) {
+        if (item.stage === 'declined') continue;
+        seen.add(item.id);
+        let tk = pool.get(item.id);
+        if (!tk) {
+          tk = makeTicket(item.id);
+          // What is there on first paint is simply there; what arrives later rides in.
+          tk.x = primed ? START : STAGE_X[item.stage];
+          pool.set(item.id, tk);
+        }
+        const slot = piles.get(item.stage) ?? 0;
+        piles.set(item.stage, slot + 1);
+        tk.goal = STAGE_X[item.stage];
+        tk.slot = slot;
+        tk.status = item.stage;
       }
-      stamp.position.y = 1.5 - 0.72 * Math.max(0, 1 - nearestGate / 0.45) + (track && track() === 'new' ? Math.sin(time * 2) * 0.05 : 0);
+      for (const [id, tk] of pool) {
+        if (seen.has(id)) continue;
+        g.remove(tk.group);
+        pool.delete(id);
+      }
+      primed = true;
+      ctx.kit.glow.forEach((v) => v.set(0, 0, 0));
+
+      const hovered = board!.hovered();
+      let nearestGate = Infinity;
+      let working = false;
+      let waiting = false;
+      let glow = 0;
+      for (const [id, tk] of pool) {
+        // Glide at a steady pace, so a change reads as travel.
+        tk.x += Math.sign(tk.goal - tk.x) * Math.min(Math.abs(tk.goal - tk.x), dt * 2.4);
+        const parked = Math.abs(tk.goal - tk.x) < 0.01;
+        const busy = tk.status === 'in_progress' && parked;
+        working ||= busy;
+        waiting ||= tk.status === 'new';
+        tk.lift += ((hovered === id ? 1 : 0) - tk.lift) * Math.min(1, dt * 12);
+        tk.group.visible = tk.slot < PILE;
+        // Piles stack upward; shipped ones fan out in the cloud instead.
+        const shipped = tk.status === 'done';
+        const up = (shipped ? 0 : tk.slot * 0.15) + tk.lift * 0.35;
+        const off = shipped ? (tk.slot - 1) * 0.45 : 0;
+        // Being worked on: the ticket shivers on the bench.
+        const x = tk.x + (busy ? Math.sin(time * 9 + id) * 0.035 : 0);
+        const gate = place(tk, x, tk.slot === 0 ? glow++ : 99, up, off);
+        tk.group.rotation.y = tk.lift * 0.25;
+        if (tk.status !== 'new') nearestGate = Math.min(nearestGate, gate);
+      }
+      bot.rotation.x = working ? Math.sin(time * 4.2) * 0.06 : 0;
+      // Waiting at the gate: the stamp hangs ready, breathing.
+      stamp.position.y = 1.5 - 0.72 * Math.max(0, 1 - nearestGate / 0.45) + (waiting ? Math.sin(time * 2) * 0.05 : 0);
+    };
+
+    const tick = (time: number) => {
+      if (board) follow(time);
+      else {
+        let nearestGate = Infinity;
+        loop.forEach((tk, i) => {
+          const u = (time * 0.045 + i / loop.length) % 1;
+          nearestGate = Math.min(nearestGate, place(tk, START + u * (END - START), i));
+        });
+        stamp.position.y = 1.5 - 0.72 * Math.max(0, 1 - nearestGate / 0.45);
+      }
       instances.forEach((inst, i) => {
         inst.position.y = 2.45 + Math.sin(time * 1.3 + i * 1.1) * 0.07;
       });
@@ -604,6 +684,23 @@ function heroMachine(ctx: Ctx, track?: () => TrackStage): Machine {
       look: LOOK,
       animated: [bubble, sky],
       tick,
+      ...(board
+        ? {
+            // Each caption floats over the prop that stands for its step.
+            anchors: {
+              new: new THREE.Vector3(STEP_X[0] + 0.3, 2.9, PAD_Z),
+              approved: new THREE.Vector3(gateX + 0.2, 2.75, BELT_Z),
+              in_progress: new THREE.Vector3(STEP_X[2] - 0.2, 2.3, PAD_Z - 0.45),
+              review: new THREE.Vector3(STEP_X[3] + 0.4, 1.85, PAD_Z),
+              done: new THREE.Vector3(7.0, 2.2, BELT_Z + 0.6),
+            },
+            pickable: () => [...pool.values()].filter((tk) => tk.group.visible).flatMap((tk) => tk.stage.filter((m) => m.visible)),
+            ticketAt: (id: number) => {
+              const tk = pool.get(id);
+              return tk && tk.group.visible ? tk.group.getWorldPosition(new THREE.Vector3()) : null;
+            },
+          }
+        : {}),
     };
 }
 
@@ -899,16 +996,43 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
   tick();
 }
 
-/* ————— tracker: one ticket, in its own canvas ————— */
+/* ————— board: a client's requests, in its own canvas ————— */
+
+/** A point on screen, in CSS pixels from the canvas's top-left. */
+export interface ScreenPoint {
+  x: number;
+  y: number;
+}
+
+export interface BoardOptions {
+  /** The requests to show; read every frame. */
+  items: () => BoardItem[];
+  /** The pointer is over a ticket (its id), or left them (null). */
+  onHover?: (id: number | null) => void;
+  /** A ticket was clicked. */
+  onPick?: (id: number) => void;
+  /**
+   * After each drawn frame: where each station's caption goes and where the
+   * hovered ticket is, so DOM labels can ride on the scene.
+   */
+  onFrame?: (stations: Record<BoardStage, ScreenPoint>, hovered: (ScreenPoint & { id: number }) | null) => void;
+}
+
+export interface Board {
+  /** Glide the camera toward a ticket (a click's "going in"), or back out with null. */
+  focus: (id: number | null) => void;
+  /** Hover a ticket from outside the scene, e.g. its row in a list. */
+  hover: (id: number | null) => void;
+  stop: () => void;
+}
 
 /**
- * The hero machine on its own, sized to `canvas`, showing one ticket at the
- * stage `stage()` returns — the client's ticket page. Re-reads the stage every
- * frame, so the caller only has to change what it returns. Pauses while the
- * canvas is off screen or the tab is hidden; reduced motion gets one frame per
- * change. Returns a function that stops it.
+ * The hero machine as a client's board, sized to `canvas`: every request they
+ * have, parked at its real stage. Tickets can be hovered and clicked; station
+ * captions are DOM, placed through `onFrame`. Pauses while the canvas is off
+ * screen or the tab is hidden; reduced motion snaps instead of gliding.
  */
-export function initTracker(canvas: HTMLCanvasElement, stage: () => TrackStage): () => void {
+export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Board {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -921,26 +1045,49 @@ export function initTracker(canvas: HTMLCanvasElement, stage: () => TrackStage):
   const repaint: (() => void)[] = [];
   const ctx: Ctx = { kit, pal: () => pal, repaint };
 
+  let hovered: number | null = null;
+  let outside: number | null = null;
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 60), kit.floor);
   floor.rotation.x = -Math.PI / 2;
   floor.renderOrder = -1;
   scene.add(floor);
-  const machine = heroMachine(ctx, stage);
+  const machine = heroMachine(ctx, { items: options.items, hovered: () => hovered ?? outside });
   scene.add(machine.group);
-  kit.floor.uniforms.uFocus.value.set(machine.look[0], machine.look[2]);
   document.fonts?.ready.then(() => repaint.forEach((draw) => draw()));
 
-  const look = new THREE.Vector3(...machine.look);
-  const base = new THREE.Vector3(...machine.cam);
+  const home = new THREE.Vector3(...machine.look).add(new THREE.Vector3(1.0, 0.85, 0.6));
+  const look = home.clone();
+  // More from the front than the homepage's isometric view: the belt runs
+  // across a wide board instead of climbing it, and the stations spread out.
+  const base = home.clone().add(new THREE.Vector3(-4.5, 12, 21));
   const mouse = { x: 0, y: 0 };
-  let zoom = 1;
+  let fit = 1;
+  let dive = 0; // 0 = the whole machine, 1 = close on the focused ticket
+  let focusId: number | null = null;
+  let size = { w: 1, h: 1 };
+
+  const anchors = machine.anchors!;
+  const toScreen = (v: THREE.Vector3): ScreenPoint => {
+    const p = v.clone().project(camera);
+    return { x: ((p.x + 1) / 2) * size.w, y: ((1 - p.y) / 2) * size.h };
+  };
 
   const render = () => {
-    camera.position.copy(base).sub(look).multiplyScalar(zoom).add(look);
+    const target = focusId !== null ? machine.ticketAt!(focusId) : null;
+    if (target) look.lerpVectors(home, target, dive);
+    else look.copy(home);
+    camera.position.copy(base).sub(home).multiplyScalar(fit * (1 - dive * 0.55)).add(look);
     camera.position.x += mouse.x * 0.5;
     camera.position.y -= mouse.y * 0.3;
     camera.lookAt(look);
+    kit.floor.uniforms.uFocus.value.set(look.x, look.z);
     renderer.render(scene, camera);
+    if (options.onFrame) {
+      const stations = Object.fromEntries(BOARD_STAGES.map((s) => [s, toScreen(anchors[s])])) as Record<BoardStage, ScreenPoint>;
+      const id = hovered ?? outside;
+      const at = id !== null ? machine.ticketAt!(id) : null;
+      options.onFrame(stations, at && id !== null ? { id, ...toScreen(at.add(new THREE.Vector3(0, 0.3, 0))) } : null);
+    }
   };
 
   const applyTheme = () => {
@@ -954,26 +1101,53 @@ export function initTracker(canvas: HTMLCanvasElement, stage: () => TrackStage):
   themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
   const resize = () => {
-    const w = Math.max(1, canvas.clientWidth);
-    const h = Math.max(1, canvas.clientHeight);
-    renderer.setSize(w, h, false);
-    kit.setSize(w, h);
-    camera.aspect = w / h;
+    size = { w: Math.max(1, canvas.clientWidth), h: Math.max(1, canvas.clientHeight) };
+    renderer.setSize(size.w, size.h, false);
+    kit.setSize(size.w, size.h);
+    camera.aspect = size.w / size.h;
     camera.updateProjectionMatrix();
     // The machine is wide: narrower boxes pull back so all of it stays in frame.
-    zoom = THREE.MathUtils.clamp(1.8 / camera.aspect, 0.62, 0.86);
+    fit = THREE.MathUtils.clamp(1.6 / camera.aspect, 0.62, 1.3);
     render();
   };
   const sizeWatch = new ResizeObserver(resize);
   sizeWatch.observe(canvas);
   resize();
 
+  // Picking: the pointer over a ticket hovers it; a click opens it.
+  const ray = new THREE.Raycaster();
+  const pick = (e: PointerEvent | MouseEvent): number | null => {
+    const r = canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObjects(machine.pickable!(), false)[0];
+    return hit ? (hit.object.userData.id as number) : null;
+  };
   const onMove = (e: PointerEvent) => {
     const r = canvas.getBoundingClientRect();
     mouse.x = THREE.MathUtils.clamp(((e.clientX - r.left) / r.width - 0.5) * 2, -1, 1);
     mouse.y = THREE.MathUtils.clamp(((e.clientY - r.top) / r.height - 0.5) * 2, -1, 1);
+    if (e.target !== canvas) return;
+    const id = pick(e);
+    if (id !== hovered) {
+      hovered = id;
+      canvas.style.cursor = id === null ? '' : 'pointer';
+      options.onHover?.(id);
+    }
+  };
+  const onLeave = () => {
+    if (hovered === null) return;
+    hovered = null;
+    canvas.style.cursor = '';
+    options.onHover?.(null);
+  };
+  const onClick = (e: MouseEvent) => {
+    const id = pick(e);
+    if (id !== null) options.onPick?.(id);
   };
   window.addEventListener('pointermove', onMove);
+  canvas.addEventListener('pointerleave', onLeave);
+  canvas.addEventListener('click', onClick);
 
   let visible = true;
   const seen = new IntersectionObserver(([entry]) => {
@@ -983,34 +1157,45 @@ export function initTracker(canvas: HTMLCanvasElement, stage: () => TrackStage):
 
   const timer = new THREE.Timer();
   let frame = 0;
-  let lastStage = stage();
+  let clock = 8;
   const loop = () => {
     frame = requestAnimationFrame(loop);
     if (!visible || document.hidden) return;
     timer.update();
-    const t = timer.getElapsed();
+    const dt = Math.min(0.1, timer.getDelta());
     if (reduced) {
-      // One settled frame per stage change, and no motion between.
-      if (stage() === lastStage && t > 0.5) return;
-      lastStage = stage();
-      for (let i = 0; i < 400; i += 1) machine.tick(8 + i * 0.05);
+      // No glide, no idle motion: big steps settle everything at once.
+      for (let i = 0; i < 60; i += 1) machine.tick((clock += 0.1));
+      dive = focusId !== null ? 1 : 0;
     } else {
-      machine.tick(t);
-      kit.floor.uniforms.uTime.value = t;
+      clock += dt;
+      machine.tick(clock);
+      kit.floor.uniforms.uTime.value = clock;
       machine.animated.forEach((o, i) => {
-        o.position.y += Math.sin(t * 0.9 + i) * 0.0016;
+        o.position.y += Math.sin(clock * 0.9 + i) * 0.0016;
       });
+      dive += ((focusId !== null ? 1 : 0) - dive) * Math.min(1, dt * 6);
     }
     render();
   };
   loop();
 
-  return () => {
-    cancelAnimationFrame(frame);
-    themeWatch.disconnect();
-    sizeWatch.disconnect();
-    seen.disconnect();
-    window.removeEventListener('pointermove', onMove);
-    renderer.dispose();
+  return {
+    focus: (id) => {
+      focusId = id;
+    },
+    hover: (id) => {
+      outside = id;
+    },
+    stop: () => {
+      cancelAnimationFrame(frame);
+      themeWatch.disconnect();
+      sizeWatch.disconnect();
+      seen.disconnect();
+      window.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerleave', onLeave);
+      canvas.removeEventListener('click', onClick);
+      renderer.dispose();
+    },
   };
 }
