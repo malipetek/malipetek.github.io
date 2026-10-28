@@ -603,6 +603,14 @@ const initial = (title) =>
       clamp(1.25rem, 3.2vw, 2rem);
   }
 
+  /* Frosted, like the masthead's fade: the station behind shows through,
+     softened and dimmed enough that it never competes with the words. */
+  .plate.frame {
+    background: color-mix(in srgb, var(--bone) 72%, transparent);
+    -webkit-backdrop-filter: blur(2.5px);
+    backdrop-filter: blur(2.5px);
+  }
+
   .room--masthead,
   .shelf-section {
     padding-inline: var(--inset-x);
