@@ -14,6 +14,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import http from 'node:http';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -89,6 +90,45 @@ function account(email) {
 }
 
 let STATE = '';
+
+/*
+ * A stand-in for Cloudflare's OAuth and accounts API: the token endpoint
+ * (client secret by Basic auth), revoke, and /accounts for a good token.
+ */
+const CF = { port: 0, revoked: [] };
+const CF_CLIENT = { id: 'e2e-cf-client', secret: 'e2e-cf-secret' };
+function startFakeCloudflare() {
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => (body += d));
+    req.on('end', () => {
+      const json = (status, data) => {
+        res.writeHead(status, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(data));
+      };
+      const form = new URLSearchParams(body);
+      const basic = `Basic ${Buffer.from(`${CF_CLIENT.id}:${CF_CLIENT.secret}`).toString('base64')}`;
+      if (req.method === 'POST' && req.url === '/oauth2/token') {
+        if (req.headers.authorization !== basic) return json(401, { error: 'invalid_client' });
+        if (form.get('grant_type') === 'authorization_code' && form.get('code') === 'good-code' && /\/portal\/cloudflare\/callback$/.test(form.get('redirect_uri') ?? '')) {
+          return json(200, { access_token: 'cf-access-secret', refresh_token: 'cf-refresh-secret', expires_in: 3600, scope: 'workers-scripts.edit zone.read' });
+        }
+        return json(400, { error: 'invalid_grant' });
+      }
+      if (req.method === 'POST' && req.url === '/oauth2/revoke') {
+        CF.revoked.push(form.get('token'));
+        return json(200, {});
+      }
+      if (req.method === 'GET' && req.url.startsWith('/client/v4/accounts')) {
+        if (req.headers.authorization !== 'Bearer cf-access-secret') return json(403, { success: false });
+        return json(200, { success: true, result: [{ id: 'acc-1', name: 'Rosa Florist LLC' }] });
+      }
+      json(404, {});
+    });
+  });
+  server.unref(); // never what keeps the suite alive
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve((CF.port = server.address().port))));
+}
 /**
  * Run SQL against the test D1 from outside the dev server. That is a second
  * process on the same SQLite file, so a write can meet a lock the server holds;
@@ -274,6 +314,34 @@ const groups = {
     // The heartbeat carries a fingerprint so nodes re-read the list at once.
     const beat = await node(`e2e-r-${stamp}`, []);
     check('the heartbeat carries the project fingerprint', /^\d+:\d+:\d+:\d+$/.test(beat.data?.projects ?? ''), JSON.stringify(beat.data));
+  },
+
+  async cloudflare() {
+    const a = account(`cf-${Date.now()}@example.com`);
+    const other = account(`cf-other-${Date.now()}@example.com`);
+    const first = await call('/portal/cloudflare', { auth: a.session });
+    const link = new URL(first.data.connectUrl ?? 'http://x/');
+    check('a client starts with no connection and a connect link', first.status === 200 && first.data.connections.length === 0 && link.pathname === '/oauth2/auth', JSON.stringify(first.data));
+    check('the link asks for exactly our scopes', link.searchParams.get('scope') === 'account-settings.read memberships.read user-details.read workers-scripts.edit workers-routes.write zone.read dns.write');
+    check('…returns to the Worker callback', /\/portal\/cloudflare\/callback$/.test(link.searchParams.get('redirect_uri') ?? ''));
+    const state = link.searchParams.get('state') ?? '';
+    check('…with a long signed state', state.length > 40);
+    const back = async (query) => (await fetch(`${W}/portal/cloudflare/callback?${query}`, { redirect: 'manual' })).headers.get('location') ?? '';
+    check('a forged state is refused', /cloudflare=signin/.test(await back('code=good-code&state=bogus.state')));
+    check('declining on Cloudflare says so', /cloudflare=declined/.test(await back(`error=access_denied&state=${encodeURIComponent(state)}`)));
+    check('a bad code fails cleanly', /cloudflare=failed/.test(await back(`code=bad-code&state=${encodeURIComponent(state)}`)));
+    const ok = await back(`code=good-code&state=${encodeURIComponent(state)}`);
+    check('a good code connects and lands on Connections', /cloudflare=connected#\/connections$/.test(ok), ok);
+    const listed = (await call('/portal/cloudflare', { auth: a.session })).data.connections;
+    check('the grant lists the account Cloudflare shared', listed.length === 1 && listed[0].accounts[0]?.name === 'Rosa Florist LLC' && listed[0].lapsed === false, JSON.stringify(listed));
+    check('tokens are not stored in the clear', !/cf-access-secret|cf-refresh-secret/.test(sql('SELECT access_enc, refresh_enc FROM cloudflare_connections').toString()));
+    check('another client does not see it', (await call('/portal/cloudflare', { auth: other.session })).data.connections.length === 0);
+    check('…nor can disconnect it', (await call(`/portal/cloudflare/${listed[0].id}`, { method: 'DELETE', auth: other.session })).status === 404);
+    const key = (await call('/portal/agent-tokens', { method: 'POST', auth: a.session, body: { label: 'cf test' } })).data.token;
+    check('an assistant key cannot manage Cloudflare', (await call('/portal/cloudflare', { auth: key })).status === 401);
+    check('the client disconnects', (await call(`/portal/cloudflare/${listed[0].id}`, { method: 'DELETE', auth: a.session })).status === 200);
+    check('…which revokes at Cloudflare', CF.revoked.includes('cf-refresh-secret'));
+    check('…and it is gone', (await call('/portal/cloudflare', { auth: a.session })).data.connections.length === 0);
   },
 
   async github({ admin }) {
@@ -921,7 +989,17 @@ async function main() {
   console.log(`state ${STATE}\nworker ${W}\n`);
   execFileSync('npx', ['wrangler', 'd1', 'migrations', 'apply', 'malipetek-portal', '--local', '--persist-to', STATE], { cwd: WORKER, stdio: 'pipe' });
 
-  const vars = { DEV_RETURN_LINK: '1', RUNNER_TOKEN, SITE_URL: 'http://localhost:4321', GITHUB_WEBHOOK_SECRET: 'test-webhook-secret' };
+  await startFakeCloudflare();
+  const vars = {
+    DEV_RETURN_LINK: '1',
+    RUNNER_TOKEN,
+    SITE_URL: 'http://localhost:4321',
+    GITHUB_WEBHOOK_SECRET: 'test-webhook-secret',
+    CLOUDFLARE_OAUTH_CLIENT_ID: CF_CLIENT.id,
+    CLOUDFLARE_OAUTH_CLIENT_SECRET: CF_CLIENT.secret,
+    CLOUDFLARE_OAUTH_BASE: `http://127.0.0.1:${CF.port}`,
+    CLOUDFLARE_API_BASE: `http://127.0.0.1:${CF.port}/client/v4`,
+  };
   const dev = spawn('npx', ['vite', 'dev', '--port', String(port), '--strictPort'], {
     cwd: WORKER,
     env: { ...process.env, MALIPETEK_E2E_STATE: STATE, MALIPETEK_E2E_VARS: JSON.stringify(vars) },

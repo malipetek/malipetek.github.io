@@ -50,6 +50,12 @@ export interface Env {
   GITHUB_APP_CLIENT_SECRET?: string;
   GITHUB_APP_PRIVATE_KEY?: string;
   GITHUB_WEBHOOK_SECRET?: string;
+  /** Secrets — the `malipetek` Cloudflare OAuth client (src/cfconnect.ts). */
+  CLOUDFLARE_OAUTH_CLIENT_ID?: string;
+  CLOUDFLARE_OAUTH_CLIENT_SECRET?: string;
+  /** Var, tests only: where the Cloudflare OAuth and API calls go. */
+  CLOUDFLARE_OAUTH_BASE?: string;
+  CLOUDFLARE_API_BASE?: string;
   /** Var, local dev only. "1" returns the magic link in the /auth/request response. */
   DEV_RETURN_LINK?: string;
 }

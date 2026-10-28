@@ -726,7 +726,8 @@ const requireBrowser = async (c: Ctx, next: () => Promise<void>) => {
 };
 
 portal.use('/auth/logout', requireUser, requireBrowser);
-portal.use('/portal/*', requireUser);
+// Cloudflare's OAuth redirect carries no session; its signed state says whose it is (cfconnect.ts).
+portal.use('/portal/*', (c, next) => (c.req.path === '/portal/cloudflare/callback' ? next() : requireUser(c, next)));
 portal.use('/portal/agent-tokens', requireBrowser);
 portal.use('/portal/agent-tokens/*', requireBrowser);
 portal.use('/admin/*', requireUser, requireAdmin);
@@ -801,8 +802,10 @@ portal.patch('/portal/me', async (c) => {
 
 portal.get('/portal/agent-tokens', async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT id, label, created_at, last_used_at FROM agent_tokens
-      WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC`,
+    // `via`: the app that connected through OAuth (ChatGPT, …), null for a key made here.
+    `SELECT t.id, t.label, t.created_at, t.last_used_at, o.client_name AS via
+       FROM agent_tokens t LEFT JOIN oauth_clients o ON o.client_id = t.oauth_client_id
+      WHERE t.user_id = ? AND t.revoked_at IS NULL ORDER BY t.created_at DESC`,
   )
     .bind(c.get('user').id)
     .all();

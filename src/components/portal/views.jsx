@@ -592,54 +592,116 @@ export function ConnectionsView() {
       </div>
     );
   }
+  return <Connections />;
+}
+
+/** One list of assistant keys feeds two cards: ChatGPT's own, and everything else. */
+function Connections() {
+  const [tokens, setTokens] = useState(null);
+  const load = () => api('/portal/agent-tokens').then(({ tokens }) => setTokens(tokens), () => setTokens([]));
+  useEffect(() => void load(), []);
+  const isChatGPT = (t) => t.via === 'ChatGPT';
   return (
     <div className="cp-view">
       <PageHead title="Connections" sub="Optional. Everything works without them." />
       <div className="cp-connect">
-        <Assistants />
+        <ChatGPT tokens={(tokens ?? []).filter(isChatGPT)} reload={load} />
+        <Assistants tokens={(tokens ?? []).filter((t) => !isChatGPT(t))} reload={load} />
         <Github />
+        <Cloudflare />
       </div>
     </div>
   );
 }
 
-function Assistants() {
+/** A connected assistant's row: what it is, when it last worked, and the way to cut it off. */
+function KeyRow({ t, reload, what }) {
   const { ask } = usePortal();
-  const [tokens, setTokens] = useState(null);
-  const [making, setMaking] = useState(false);
-  const [made, setMade] = useState(null);
-  const load = () => api('/portal/agent-tokens').then(({ tokens }) => setTokens(tokens), () => setTokens([]));
-  useEffect(() => void load(), []);
+  return (
+    <li>
+      <strong>{t.label}</strong>
+      <span className="cp-muted">{t.last_used_at ? `last used ${ago(t.last_used_at)}` : `connected ${ago(t.created_at)}`}</span>
+      <Button
+        size="sm"
+        kind="ghost"
+        onClick={() =>
+          ask({
+            title: `Disconnect ${what ?? `“${t.label}”`}?`,
+            text: 'It loses access to your account at once. You can connect it again any time.',
+            confirm: 'Disconnect',
+            danger: true,
+            run: async () => {
+              await api(`/portal/agent-tokens/${t.id}`, { method: 'DELETE' });
+              await reload();
+            },
+          })
+        }
+      >
+        Disconnect
+      </Button>
+    </li>
+  );
+}
+
+/** The address assistants connect to: this site's own MCP endpoint. */
+const MCP_URL = typeof location === 'undefined' ? 'https://malipetek.dev/mcp' : `${location.origin}/mcp`;
+
+function CopyButton({ text, label = 'Copy' }) {
+  const [done, setDone] = useState(false);
+  return (
+    <Button size="sm" onClick={() => navigator.clipboard.writeText(text).then(() => setDone(true), () => {})}>
+      {done ? 'Copied' : label}
+    </Button>
+  );
+}
+
+function ChatGPT({ tokens, reload }) {
+  const connected = tokens.length > 0;
   return (
     <section className="cp-card">
-      <h2 className="cp-h2">Your AI assistant</h2>
+      <h2 className="cp-h2">ChatGPT</h2>
       <p className="cp-muted">
-        Work from ChatGPT, Claude, Cursor or any assistant that speaks MCP. It sees your projects, files requests, replies and sets budgets: the same things you can do here, nothing more. Its requests wait for Ali like any other.
+        Ask for work in a ChatGPT chat: “file a request to change my opening hours”, “how is my site request doing?”. It uses your own ChatGPT plan, and it can do what you can do here, nothing more. What it files waits for Ali like any other request.
+      </p>
+      {connected ? (
+        <ul className="cp-keys">
+          {tokens.map((t) => (
+            <KeyRow key={t.id} t={t} reload={reload} what="ChatGPT" />
+          ))}
+        </ul>
+      ) : (
+        <ol className="cp-howto">
+          <li>
+            In ChatGPT, open <strong>Plugins</strong>, then <strong>Add</strong> → <strong>Add custom MCP server</strong>.
+          </li>
+          <li>
+            Paste this address: <code>{MCP_URL}</code> <CopyButton text={MCP_URL} />
+          </li>
+          <li>ChatGPT sends you here to sign in. Approve it, and it shows up on this card.</li>
+        </ol>
+      )}
+      {!connected ? (
+        <Button href="https://chatgpt.com" target="_blank" rel="noreferrer">
+          Open ChatGPT →
+        </Button>
+      ) : null}
+    </section>
+  );
+}
+
+function Assistants({ tokens, reload }) {
+  const [making, setMaking] = useState(false);
+  const [made, setMade] = useState(null);
+  const load = reload;
+  return (
+    <section className="cp-card">
+      <h2 className="cp-h2">Other AI assistants</h2>
+      <p className="cp-muted">
+        Claude, Cursor, or any assistant that speaks MCP. It sees your projects, files requests, replies and sets budgets: the same things you can do here, nothing more. Its requests wait for Ali like any other.
       </p>
       <ul className="cp-keys">
-        {(tokens ?? []).map((t) => (
-          <li key={t.id}>
-            <strong>{t.label}</strong>
-            <span className="cp-muted">{t.last_used_at ? `last used ${ago(t.last_used_at)}` : 'not used yet'}</span>
-            <Button
-              size="sm"
-              kind="ghost"
-              onClick={() =>
-                ask({
-                  title: `Revoke “${t.label}”?`,
-                  text: 'That assistant loses access at once. You can make a new key any time.',
-                  confirm: 'Revoke',
-                  danger: true,
-                  run: async () => {
-                    await api(`/portal/agent-tokens/${t.id}`, { method: 'DELETE' });
-                    await load();
-                  },
-                })
-              }
-            >
-              Revoke
-            </Button>
-          </li>
+        {tokens.map((t) => (
+          <KeyRow key={t.id} t={t} reload={reload} />
         ))}
       </ul>
       <Button onClick={() => setMaking(true)}>Connect an assistant →</Button>
@@ -765,6 +827,66 @@ function Github() {
         ))}
       </ul>
       {state?.installUrl ? <Button href={state.installUrl}>Connect GitHub →</Button> : null}
+    </section>
+  );
+}
+
+/** What the Cloudflare callback said, from ?cloudflare=…, once. */
+const CF_OUTCOME = {
+  connected: ['ok', 'Cloudflare is connected.'],
+  declined: ['warn', 'You declined on Cloudflare, so nothing was connected.'],
+  failed: ['warn', 'Cloudflare did not finish the connection. Try again.'],
+  signin: ['warn', 'The connection link expired. Try again from here.'],
+};
+
+function Cloudflare() {
+  const { ask } = usePortal();
+  const [state, setState] = useState(null);
+  const [outcome] = useState(() => {
+    if (typeof location === 'undefined') return null;
+    const said = new URLSearchParams(location.search).get('cloudflare');
+    if (said) history.replaceState(null, '', `${location.pathname}${location.hash}`);
+    return CF_OUTCOME[said] ?? null;
+  });
+  const load = () => api('/portal/cloudflare').then(setState, () => setState({ connections: [], connectUrl: null }));
+  useEffect(() => void load(), []);
+  const names = (c) => (c.accounts.length ? c.accounts.map((a) => a.name).join(', ') : 'Your Cloudflare account');
+  return (
+    <section className="cp-card">
+      <h2 className="cp-h2">Cloudflare</h2>
+      <p className="cp-muted">
+        Have your sites hosted in your own Cloudflare account instead of ours: Cloudflare bills you directly, and a small site usually fits its free plan. Connecting changes nothing by itself: no site moves to your account until you ask for it. On Cloudflare you choose which account to share, and you can revoke it there or here any time.
+      </p>
+      {outcome ? <p className={cx('cp-notice', `cp-notice--${outcome[0]}`)}>{outcome[1]}</p> : null}
+      <ul className="cp-keys">
+        {(state?.connections ?? []).map((c) => (
+          <li key={c.id}>
+            <strong>{names(c)}</strong>
+            <span className={c.lapsed ? 'cp-warn' : 'cp-muted'}>{c.lapsed ? 'expired: connect again' : `connected ${ago(c.createdAt)}`}</span>
+            <Button
+              size="sm"
+              kind="ghost"
+              onClick={() =>
+                ask({
+                  title: `Disconnect ${names(c)}?`,
+                  text: 'We lose access to that Cloudflare account at once. Sites already there keep running in your account.',
+                  confirm: 'Disconnect',
+                  danger: true,
+                  run: async () => {
+                    await api(`/portal/cloudflare/${c.id}`, { method: 'DELETE' });
+                    await load();
+                  },
+                })
+              }
+            >
+              Disconnect
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {state?.connectUrl ? (
+        <Button href={state.connectUrl}>{state.connections.some((c) => !c.lapsed) ? 'Connect another account →' : 'Connect Cloudflare →'}</Button>
+      ) : null}
     </section>
   );
 }

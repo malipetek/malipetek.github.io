@@ -26,6 +26,7 @@ import { Intercom } from './agents/intercom.ts';
 import { portal } from './portal.ts';
 import { node } from './node.ts';
 import { github } from './github.ts';
+import { cfconnect } from './cfconnect.ts';
 import { kb, mcp } from './kb.ts';
 import { oauth } from './oauth.ts';
 import {
@@ -121,6 +122,7 @@ app.route('/', portal);
 app.route('/', node);
 
 app.route('/', github);
+app.route('/', cfconnect);
 // Public knowledgebase: REST reads plus the MCP server. See src/kb.ts.
 app.route('/kb', kb);
 app.route('/mcp', mcp);
