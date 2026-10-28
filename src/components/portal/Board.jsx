@@ -3,7 +3,7 @@
  * station it is really at (src/lib/workshop3d.ts initBoard). The scene is the
  * board, not decoration: station captions count and filter, hovering a ticket
  * names it, clicking one opens it, and hovering a row in the list below lights
- * its ticket up on the machine.
+ * its ticket up on the machine. Picking a step moves the camera in on it.
  */
 import { useEffect, useRef, useState } from 'react';
 import { cx } from './ui.jsx';
@@ -38,6 +38,8 @@ export function Board({ tickets, stage, onStage, hovered, onHover, onOpen }) {
   const [failed, setFailed] = useState(false);
   const handlers = useRef({});
   handlers.current = { onHover, onOpen };
+  const stageRef = useRef(stage);
+  stageRef.current = stage;
 
   useEffect(() => {
     let board = null;
@@ -67,6 +69,7 @@ export function Board({ tickets, stage, onStage, hovered, onHover, onOpen }) {
             }
           },
         });
+        board.zoom(stageRef.current ?? null);
         boardRef.current = board;
       })
       .catch(() => setFailed(true)); // no WebGL: the legend and list carry it all
@@ -76,6 +79,11 @@ export function Board({ tickets, stage, onStage, hovered, onHover, onOpen }) {
       boardRef.current = null;
     };
   }, []);
+
+  // A step picked in the legend or a caption: the camera moves in on that station.
+  useEffect(() => {
+    boardRef.current?.zoom(stage ?? null);
+  }, [stage]);
 
   // A row hovered in the list lights its ticket on the machine.
   useEffect(() => {

@@ -24,12 +24,13 @@ import * as THREE from 'three';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 const GAP = 26; // distance between stations — wide enough that the isometric hero sees no neighbours
 const ORANGE = 0xff5a1f;
 const SHOPIFY = 0x95bf47;
 const GREY = 0x8a857b;
-const LINE_PX = 1.15; // outline width in CSS pixels
+const LINE_PX = 1.3; // outline width in CSS pixels
 
 type Role = 'fill' | 'fill2' | 'ink' | 'orange';
 
@@ -77,7 +78,7 @@ const FACET_FRAG = /* glsl */ `
   varying vec3 vN;
   void main() {
     float l = clamp(dot(normalize(vN), normalize(vec3(-0.45, 1.0, 0.6))) / 0.82, 0.0, 1.0);
-    gl_FragColor = vec4(uColor * (0.88 + 0.12 * l), 1.0);
+    gl_FragColor = vec4(uColor * (0.84 + 0.16 * l), 1.0);
     #include <colorspace_fragment>
   }
 `;
@@ -293,12 +294,17 @@ interface Ctx {
   repaint: (() => void)[];
 }
 
-/** A mesh in line-art: facet fill, crease edges, and optionally a hull for curved silhouettes. */
+/**
+ * A mesh in line-art: facet fill and a silhouette outline (an inverted hull).
+ * Shapes are rounded and smooth-normalled, so the hull closes around them and
+ * no crease lines are needed: form reads from the facet shading, outlines
+ * stay few and clean. `edges` adds crease lines for the rare sharp object.
+ */
 function part(
   ctx: Ctx,
   geo: THREE.BufferGeometry,
   role: Role | number,
-  { edges = true, hull = false } = {},
+  { edges = false, hull = true } = {},
 ): THREE.Mesh {
   const m = new THREE.Mesh(geo, ctx.kit.role(role));
   // Ink on ink needs no outline.
@@ -314,17 +320,29 @@ function part(
   return m;
 }
 
+/** A box with softened edges: the radius follows its thinnest side, never sharp, never blobby. */
+function roundedBox(w: number, h: number, d: number): THREE.BufferGeometry {
+  const r = Math.min(0.09, Math.min(w, h, d) * 0.3);
+  return new RoundedBoxGeometry(w, h, d, 3, r);
+}
+
 const box = (
   ctx: Ctx, w: number, h: number, d: number, role: Role | number,
   x = 0, y = 0, z = 0,
 ): THREE.Mesh => {
-  const m = part(ctx, new THREE.BoxGeometry(w, h, d), role);
+  const m = part(ctx, roundedBox(w, h, d), role);
   m.position.set(x, y, z);
   return m;
 };
 
+/** A cylinder with filleted rims, turned from a profile so its normals stay smooth. */
 function cyl(ctx: Ctx, r: number, h: number, role: Role | number, x = 0, y = 0, z = 0): THREE.Mesh {
-  const m = part(ctx, new THREE.CylinderGeometry(r, r, h, 32), role, { hull: true });
+  const f = Math.min(r, h) * 0.22;
+  const profile: [number, number][] = [
+    [0, -h / 2], [r - f, -h / 2], [r - f * 0.3, -h / 2 + f * 0.3], [r, -h / 2 + f],
+    [r, h / 2 - f], [r - f * 0.3, h / 2 - f * 0.3], [r - f, h / 2], [0, h / 2],
+  ];
+  const m = part(ctx, new THREE.LatheGeometry(profile.map(([a, b]) => new THREE.Vector2(a, b)), 32), role);
   m.position.set(x, y, z);
   return m;
 }
@@ -344,7 +362,7 @@ function codePanel(ctx: Ctx, w = 3.2, h = 2): THREE.Group {
 }
 
 function paper(ctx: Ctx): THREE.Mesh {
-  const geo = new THREE.BoxGeometry(1.1, 1.4, 0.03);
+  const geo = roundedBox(1.1, 1.4, 0.03);
   const fill = ctx.kit.role('fill');
   const face = new THREE.MeshBasicMaterial({
     map: canvasTexture(160, 200, (c) => {
@@ -359,7 +377,7 @@ function paper(ctx: Ctx): THREE.Mesh {
     polygonOffsetUnits: 1,
   });
   const m = new THREE.Mesh(geo, [fill, fill, fill, fill, face, fill]);
-  m.add(new LineSegments2(new LineSegmentsGeometry().fromEdgesGeometry(new THREE.EdgesGeometry(geo)), ctx.kit.line));
+  m.add(new THREE.Mesh(geo, ctx.kit.hull));
   return m;
 }
 
@@ -368,12 +386,7 @@ function paper(ctx: Ctx): THREE.Mesh {
 /** A turned profile (radius, height pairs, bottom to top) as one line-art solid. */
 function lathe(ctx: Ctx, profile: [number, number][], role: Role | number, segments = 40): THREE.Mesh {
   const geo = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), segments);
-  return part(ctx, geo, role, { hull: true });
-}
-
-/** Ink line segments in the shared outline material; `pts` are pairs of points. */
-function lines(ctx: Ctx, pts: number[]): LineSegments2 {
-  return new LineSegments2(new LineSegmentsGeometry().setPositions(pts), ctx.kit.line);
+  return part(ctx, geo, role);
 }
 
 /**
@@ -417,7 +430,7 @@ function agentBot(ctx: Ctx): THREE.Group {
     g.add(bolt);
   }
   g.add(cyl(ctx, 0.025, 0.26, 'ink', 0.18, 1.44, 0));
-  const tip = part(ctx, new THREE.SphereGeometry(0.07, 20, 14), 'orange', { edges: false, hull: true });
+  const tip = part(ctx, new THREE.SphereGeometry(0.07, 20, 14), 'orange', {});
   tip.position.set(0.18, 1.6, 0);
   g.add(tip);
   return g;
@@ -437,7 +450,7 @@ function cloud(ctx: Ctx): THREE.Group {
     [-0.78, -0.02, 0.04, 0.38, 0.72], [-0.3, -0.08, 0.1, 0.44, 0.66], [0.26, -0.1, 0.08, 0.46, 0.64], [0.86, -0.04, 0.04, 0.38, 0.72],
   ];
   for (const [x, y, z, r, squash] of puffs) {
-    const p = part(ctx, new THREE.SphereGeometry(r, 36, 24), 'fill', { edges: false, hull: true });
+    const p = part(ctx, new THREE.SphereGeometry(r, 36, 24), 'fill', {});
     p.position.set(x, y, z);
     p.scale.set(1, squash, 1);
     g.add(p);
@@ -537,10 +550,6 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
       hub.rotation.x = Math.PI / 2;
       g.add(hub);
     }
-    // seams across the belt surface
-    const seams: number[] = [];
-    for (let x = -5.6; x <= 6.0; x += 0.8) seams.push(x, 0.305, BELT_Z - 0.5, x, 0.305, BELT_Z + 0.5);
-    g.add(lines(ctx, seams));
 
     // a pad per step, with its caption on the floor in front of the belt
     const captions: [string, string][] = [['01', 'REQUEST'], ['02', 'APPROVE'], ['03', 'BUILD'], ['04', 'SHIP']];
@@ -559,8 +568,6 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
     const seal = cyl(ctx, 0.13, 0.05, 'orange', 0, 0, 0.06);
     seal.rotation.x = Math.PI / 2;
     letter.add(seal);
-    // the envelope's flap, drawn on its face
-    letter.add(lines(ctx, [-0.56, 0.38, 0.045, 0, 0.02, 0.045, 0, 0.02, 0.045, 0.56, 0.38, 0.045]));
     const bubble = new THREE.Group();
     bubble.add(box(ctx, 1.05, 0.7, 0.3, 'fill'));
     bubble.add(box(ctx, 0.22, 0.22, 0.3, 'fill', -0.3, -0.38, 0).rotateZ(Math.PI / 4));
@@ -603,7 +610,6 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
     // a keyboard between the agent and its screen
     const keys = new THREE.Group();
     keys.add(box(ctx, 0.9, 0.06, 0.32, 'fill'));
-    for (let r = 0; r < 3; r++) keys.add(box(ctx, 0.74 - r * 0.08, 0.02, 0.05, 'fill2', 0, 0.04, -0.09 + r * 0.09));
     keys.position.set(STEP_X[2] + 0.05, 0.43, PAD_Z - 0.05);
     keys.rotation.y = FACE;
     g.add(keys);
@@ -619,7 +625,6 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
     const clipboard = box(ctx, 0.36, 0.46, 0.03, 'fill', 0.2, 0.86, 0.3);
     clipboard.rotation.set(-0.5, FACE, 0);
     clipboard.add(box(ctx, 0.14, 0.05, 0.03, 'ink', 0, 0.22, 0.01));
-    clipboard.add(lines(ctx, [-0.12, 0.08, 0.02, 0.12, 0.08, 0.02, -0.12, -0.01, 0.02, 0.1, -0.01, 0.02, -0.12, -0.1, 0.02, 0.06, -0.1, 0.02]));
     reviewer.add(clipboard);
     g.add(reviewer);
     const sky = cloud(ctx);
@@ -638,7 +643,7 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
     const START = -6.1;
     const LIFT = 5.9; // where the belt ends and the ticket rises
     const END = 7.4;
-    const ticketGeo = new THREE.BoxGeometry(0.66, 0.12, 0.46);
+    const ticketGeo = roundedBox(0.66, 0.12, 0.46);
     type Tk = { group: THREE.Group; stage: THREE.Mesh[]; mark: THREE.Mesh; x: number; goal: number; slot: number; lift: number; status: TrackStage };
     const makeTicket = (id = 0): Tk => {
       const stage = (['fill', 'ink', 'orange'] as const).map((r) => {
@@ -650,8 +655,6 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
       t.add(...stage);
       const mark = cyl(ctx, 0.11, 0.03, 'orange', 0.16, 0.07, 0.08);
       t.add(mark);
-      // the tear-off stub, as on a real ticket
-      t.add(lines(ctx, [-0.17, 0.062, -0.2, -0.17, 0.062, -0.12, -0.17, 0.062, -0.06, -0.17, 0.062, 0.02, -0.17, 0.062, 0.08, -0.17, 0.062, 0.16]));
       g.add(t);
       return { group: t, stage, mark, x: START, goal: START, slot: 0, lift: 0, status: 'new' };
     };
@@ -812,6 +815,29 @@ interface Station {
 
 const DEFAULT_FOV = 38;
 
+type Pose = { cam: [number, number, number]; look: [number, number, number] };
+
+/**
+ * Swing a camera pose around `pivot` (degrees: yaw about the vertical, pitch
+ * toward looking down). The camera and its look point move as one rigid rig,
+ * so the pivot stays where it was on screen: the prop keeps its place beside
+ * the room's text, and only the angle we see it from changes.
+ */
+function orbit(pose: Pose, pivot: [number, number, number], yawDeg: number, pitchDeg: number): Pose {
+  const p = new THREE.Vector3(...pivot);
+  const cam = new THREE.Vector3(...pose.cam).sub(p);
+  const look = new THREE.Vector3(...pose.look).sub(p);
+  const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(yawDeg));
+  // Pitch about the camera's own right-hand axis, so "down" means down for this view.
+  const forward = look.clone().sub(cam).setY(0).normalize();
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+  const pitch = new THREE.Quaternion().setFromAxisAngle(right, -THREE.MathUtils.degToRad(pitchDeg));
+  const turn = yaw.multiply(pitch);
+  cam.applyQuaternion(turn).add(p);
+  look.applyQuaternion(turn).add(p);
+  return { cam: cam.toArray() as [number, number, number], look: look.toArray() as [number, number, number] };
+}
+
 function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
   const stations: Station[] = [];
   const at = (i: number) => i * GAP;
@@ -835,7 +861,8 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
       g.add(slab);
     }
     scene.add(g);
-    stations.push({ name: 'how', cam: [at(1), 3.2, 12], look: [at(1), 1.5, -1], animated: [] });
+    // From above and to the right: you look down on the pile, the approved one among them.
+    stations.push({ name: 'how', ...orbit({ cam: [at(1), 3.2, 12], look: [at(1), 1.5, -1] }, [at(1) + 5.4, 1.4, -3.2], -32, 24), animated: [] });
   }
 
   // 2 — shelf room: kind-colored project boxes on a long plank
@@ -852,7 +879,8 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
       g.add(box(ctx, w + 0.02, 0.24, d + 0.02, 'fill', x, 0.5 + h - 0.12, -3.5));
     });
     scene.add(g);
-    stations.push({ name: 'shelf', cam: [at(2) + 1, 2.6, 11], look: [at(2) + 1.5, 1.2, -1], animated: [] });
+    // Low and from the left: the boxes stand up like products on a shelf.
+    stations.push({ name: 'shelf', ...orbit({ cam: [at(2) + 1, 2.6, 11], look: [at(2) + 1.5, 1.2, -1] }, [at(2) + 2.6, 1.5, -3.5], 26, -6), animated: [] });
   }
 
   // 3 — writing room: papers lifting off a low plinth
@@ -869,7 +897,8 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
       g.add(s);
     }
     scene.add(g);
-    stations.push({ name: 'writing', cam: [at(3) + 1, 2.8, 10.6], look: [at(3) + 1.4, 1.7, 0], animated: sheets });
+    // Over the shoulder, from above: the sheets fan out as they lift.
+    stations.push({ name: 'writing', ...orbit({ cam: [at(3) + 1, 2.8, 10.6], look: [at(3) + 1.4, 1.7, 0] }, [at(3) + 4.3, 3.2, -2.7], -24, 20), animated: sheets });
   }
 
   // 4 — work room: pillars like a bar-chart timeline
@@ -880,7 +909,8 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
       g.add(box(ctx, 1.4, h, 1.7, i === 2 ? 'orange' : 'fill', -2.6 + i * 1.9, h / 2, -4.5));
     });
     scene.add(g);
-    stations.push({ name: 'work', cam: [at(4), 3.4, 12], look: [at(4), 1.1, -2], animated: [] });
+    // Down the row from the right: the pillars read as a timeline running into depth.
+    stations.push({ name: 'work', ...orbit({ cam: [at(4), 3.4, 12], look: [at(4), 1.1, -2] }, [at(4) + 0.25, 1.4, -4.5], 20, 12), animated: [] });
   }
 
   // 5 — library (knowledgebase + plugins): index cards filed in a tray
@@ -895,7 +925,8 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
       g.add(card);
     }
     scene.add(g);
-    stations.push({ name: 'library', cam: [at(5) + 1, 2.8, 11], look: [at(5) + 1.4, 1.5, -1], animated: [] });
+    // Along the tray: the cards stack up in perspective, like flipping through a drawer.
+    stations.push({ name: 'library', ...orbit({ cam: [at(5) + 1, 2.8, 11], look: [at(5) + 1.4, 1.5, -1] }, [at(5) + 4.4, 1.2, -3], -40, 12), animated: [] });
   }
 
   // 6 — intercom room: the orange beacon
@@ -906,7 +937,8 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
     g.add(beacon);
     g.add(box(ctx, 3, 0.7, 3, 'fill', 0, 0.35, -4.5));
     scene.add(g);
-    stations.push({ name: 'talk', cam: [at(6), 3, 12.5], look: [at(6), 1.9, -2], animated: [beacon] });
+    // From below: the beacon towers.
+    stations.push({ name: 'talk', ...orbit({ cam: [at(6), 3, 12.5], look: [at(6), 1.9, -2] }, [at(6), 2.2, -4.5], 16, -10), animated: [beacon] });
   }
 
   return stations;
@@ -1113,6 +1145,8 @@ export interface BoardOptions {
 export interface Board {
   /** Glide the camera toward a ticket (a click's "going in"), or back out with null. */
   focus: (id: number | null) => void;
+  /** Move in on one station (a step picked in the legend), or back to the whole machine. */
+  zoom: (stage: BoardStage | null) => void;
   /** Hover a ticket from outside the scene, e.g. its row in a list. */
   hover: (id: number | null) => void;
   stop: () => void;
@@ -1156,6 +1190,11 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   let fit = 1;
   let dive = 0; // 0 = the whole machine, 1 = close on the focused ticket
   let focusId: number | null = null;
+  let stageId: BoardStage | null = null;
+  // Where the camera is heading; kept after a zoom ends, so backing out glides instead of jumping.
+  const aim = home.clone();
+  /** How far in a zoom goes: a ticket all the way, a station part way, so its neighbours stay in view. */
+  const depth = () => (focusId !== null ? 1 : stageId !== null ? 0.7 : 0);
   let size = { w: 1, h: 1 };
 
   const anchors = machine.anchors!;
@@ -1165,9 +1204,11 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   };
 
   const render = () => {
-    const target = focusId !== null ? machine.ticketAt!(focusId) : null;
-    if (target) look.lerpVectors(home, target, dive);
-    else look.copy(home);
+    const ticket = focusId !== null ? machine.ticketAt!(focusId) : null;
+    // A station is looked at from its middle height, not its caption above.
+    if (ticket) aim.copy(ticket);
+    else if (stageId !== null) aim.copy(anchors[stageId]).setY(stageId === 'done' ? 2.9 : 1.1); // shipped work is up in the cloud
+    look.lerpVectors(home, aim, Math.min(1, dive));
     camera.position.copy(base).sub(home).multiplyScalar(fit * (1 - dive * 0.55)).add(look);
     camera.position.x += mouse.x * 0.5;
     camera.position.y -= mouse.y * 0.3;
@@ -1258,7 +1299,7 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     if (reduced) {
       // No glide, no idle motion: big steps settle everything at once.
       for (let i = 0; i < 60; i += 1) machine.tick((clock += 0.1));
-      dive = focusId !== null ? 1 : 0;
+      dive = depth();
     } else {
       clock += dt;
       machine.tick(clock);
@@ -1266,7 +1307,8 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       machine.animated.forEach((o, i) => {
         o.position.y += Math.sin(clock * 0.9 + i) * 0.0016;
       });
-      dive += ((focusId !== null ? 1 : 0) - dive) * Math.min(1, dt * 6);
+      // Stations ease in more slowly than a click's dive: it is a look, not a jump.
+      dive += (depth() - dive) * Math.min(1, dt * (focusId !== null ? 6 : 3.2));
     }
     render();
   };
@@ -1275,6 +1317,9 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   return {
     focus: (id) => {
       focusId = id;
+    },
+    zoom: (stage) => {
+      stageId = stage;
     },
     hover: (id) => {
       outside = id;
