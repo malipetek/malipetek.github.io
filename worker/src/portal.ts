@@ -549,7 +549,7 @@ function cleanRouting(
   if (body.executor !== undefined) {
     const pin = cleanExecutorPin(body.executor);
     if (pin === undefined) return { ok: false, error: 'bad_executor' };
-    if (isClient && pin !== null && pin !== CLIENT_EXECUTOR) return { ok: false, error: 'client_executor' };
+    void isClient;
     out.executor = pin;
   }
   return out;

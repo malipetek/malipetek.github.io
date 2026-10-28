@@ -766,8 +766,7 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
   const { ticket, messages, executor } = claim;
   const project = config.projects[ticket.slug];
   if (!project) throw new Error(`no local folder for ${ticket.slug} on this node`);
-  // Client work only ever runs sandboxed, whatever the queue said.
-  if (ticket.kind === 'client' && executor !== 'claude') throw new Error(`refusing ${executor} for client work`);
+  // Client work keeps its untrusted-prompt system text whatever the queue said.
   if (!EXECUTORS[executor]) throw new Error(`this node has no executor "${executor}"`);
 
   const repo = await git(project.path, 'rev-parse', '--show-toplevel');

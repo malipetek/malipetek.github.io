@@ -125,7 +125,7 @@ export const CAPABILITY_CATALOG = [
   { id: 'sandbox', label: 'Cloud sandbox', hint: 'Cloudflare, later' },
 ];
 export const EXECUTOR_CATALOG = [
-  { id: 'claude', label: 'Claude Code', hint: 'sandboxed; the only one allowed for client work' },
+  { id: 'claude', label: 'Claude Code', hint: 'sandboxed; the default for client work' },
   { id: 'opencode', label: 'OpenCode', hint: 'system tasks only' },
   { id: 'dsh', label: 'DeepSeek Harness', hint: 'system tasks only; the Harness in one shot' },
   { id: 'devin', label: 'Devin', hint: 'system tasks only; approves its own permissions' },
@@ -141,8 +141,14 @@ export const EXECUTORS = ['claude', 'opencode', 'dsh', 'devin', 'dsh-claude', 'd
  * falls back down the same order on a usage limit (fleet/executors.mjs).
  */
 export const SYSTEM_ORDER = ['dsh-claude', 'dsh', 'dsh-devin', 'dsh-opencode', 'devin', 'claude', 'opencode'];
-/** Client work runs only on the sandboxed executor (worktree, allow-listed tools, no MCP). */
+/** Client work defaults to the sandboxed executor (worktree, allow-listed tools, no MCP). */
 export const CLIENT_EXECUTOR = 'claude';
+/**
+ * Client work's order: still claude first (only sandboxed executor), then the
+ * rest — Ali approves every client request before it runs, so a quota limit
+ * falls back like system work does (fleet/executors.mjs mirrors this).
+ */
+export const CLIENT_ORDER = ['claude', ...SYSTEM_ORDER.filter((e) => e !== 'claude')];
 
 const MAX_LIST = 32;
 const TOKEN_RE = /^[a-z0-9][a-z0-9:._-]{0,47}$/;
@@ -506,7 +512,7 @@ export interface NodeClaim {
  *
  * Eligible means: its project is one the node holds a folder for, every
  * capability it requires is one the node has, its pinned executor (if any) is
- * one the node runs, and — for client work — the node runs the sandboxed
+ * one the node runs, and — for unpinned client work — the node runs one of the client order's
  * executor, and — when the client set a budget — some of it is left. Best
  * means highest priority, then longest waiting. The pick and the
  * flip are one statement, so two nodes can never take the same item.
@@ -533,20 +539,19 @@ export async function claimForNode(env: Env, nodeId: string): Promise<{ claim: N
            AND NOT EXISTS (SELECT 1 FROM json_each(t.requires) r
                             WHERE r.value NOT IN (SELECT value FROM json_each(?3)))
            AND (t.executor IS NULL OR t.executor IN (SELECT value FROM json_each(?4)))
-           AND (t.kind <> 'client' OR ?5 IN (SELECT value FROM json_each(?4)))
+           AND (t.kind <> 'client' OR t.executor IS NOT NULL OR EXISTS (
+                  SELECT 1 FROM json_each(?4) ne JOIN json_each(?5) co ON ne.value = co.value))
            AND (t.budget_cents IS NULL OR ${SPENT_CENTS_SQL} < t.budget_cents)
          ORDER BY t.priority DESC, t.updated_at LIMIT 1)
       RETURNING id, kind, executor, budget_cents, human_seconds, ai_micro_usd`,
   )
-    .bind(t, node.slugs, node.capabilities, node.executors, CLIENT_EXECUTOR, HOURLY_USD)
+    .bind(t, node.slugs, node.capabilities, node.executors, JSON.stringify(CLIENT_ORDER), HOURLY_USD)
     .first<{ id: number; kind: string; executor: string | null; budget_cents: number | null; human_seconds: number; ai_micro_usd: number }>();
   if (!picked) return { claim: null, reason: 'nothing_eligible' };
 
   const executors = parseList(node.executors);
-  const executor =
-    picked.kind === 'client'
-      ? CLIENT_EXECUTOR
-      : (picked.executor ?? SYSTEM_ORDER.find((e) => executors.includes(e)) ?? executors[0] ?? CLIENT_EXECUTOR);
+  const order = picked.kind === 'client' ? CLIENT_ORDER : SYSTEM_ORDER;
+  const executor = picked.executor ?? order.find((e) => executors.includes(e)) ?? executors[0] ?? CLIENT_EXECUTOR;
   const prior = await env.DB.prepare('SELECT count(*) AS n FROM ticket_runs WHERE ticket_id = ? AND released = 0')
     .bind(picked.id)
     .first<{ n: number }>();
@@ -716,7 +721,7 @@ function explainEligibility(item: QueueTicket, requires: string[], nodes: NodeVi
   const capable = holders.filter((n) => requires.every((r) => n.capabilities.includes(r)));
   if (capable.length === 0) return { eligible: [], reason: `No node with ${item.slug} has ${requires.join(', ')}.` };
 
-  const needs = item.kind === 'client' ? CLIENT_EXECUTOR : item.executor;
+  const needs = item.executor;
   const runnable = needs ? capable.filter((n) => n.executors.includes(needs)) : capable;
   if (runnable.length === 0) return { eligible: [], reason: `No capable node runs ${needs}.` };
 

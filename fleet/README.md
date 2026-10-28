@@ -72,11 +72,13 @@ capability. After 30 minutes stuck, Ali gets one email.
 | `dsh` | system work only | `dsh --profile headless --json -` — the Harness in one shot, on whichever provider that profile uses (DeepSeek, OpenCode Go, …). |
 | `dsh-claude` | system work only | The same Harness run, driving Claude Code as an external ACP agent (`claude-agent-acp`). Offered when `dsh` and `claude-agent-acp` are both on PATH. |
 | `dsh-opencode` | system work only | The same Harness run, driving OpenCode as an external ACP agent (`opencode acp`). Offered when `dsh` and `opencode` are both on PATH. |
-| `devin` | system work only | Devin over ACP; auto-approves its own permission prompts, so never client work |
+| `devin` | fallback for any work | Devin over ACP; auto-approves its own permission prompts — open permissions, not sandboxed |
 | `dsh-devin` | system work only | The same Harness run, driving Devin as an external ACP agent (`devin acp`). |
 
-Client work always runs on `claude`, whatever the item asks for; the Worker
-refuses to pin anything else on a client ticket and the node refuses to run it.
+Client work defaults to `claude` (the only sandboxed executor) and falls back
+through the client order `claude → dsh-claude → dsh → dsh-devin → dsh-opencode →
+devin → opencode` on a usage limit: Ali approves every request before it runs.
+A client ticket can also be pinned to any executor.
 
 System work with no pinned executor takes the first of these the node runs —
 Harness executors first, so the run has a conversation to open:

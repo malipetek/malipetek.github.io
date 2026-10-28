@@ -3,7 +3,7 @@
  * runs one agent there, and resolves `{ ok, text, costUsd?, model?, turns? }`.
  * None of them commits, pushes, or leaves the worktree: the node does the git.
  *
- *   claude    Claude Code headless. The only executor client work may use: an
+ *   claude    Claude Code headless. Client work's default: an
  *             allow-listed tool set, no MCP, no web, no inherited settings.
  *   opencode  `opencode run`, one subprocess per run. System work only.
  *   dsh       `dsh --profile headless`, one subprocess per run. System work
@@ -467,12 +467,19 @@ export function isQuotaError(text) {
 }
 
 /**
+ * Client work's order: claude first — the only sandboxed executor — then the
+ * rest. Ali approves every client request before it runs, so a quota limit
+ * falls back like system work does.
+ */
+export const CLIENT_ORDER = ['claude', ...SYSTEM_ORDER.filter((e) => e !== 'claude')];
+
+/**
  * The executors to try, in order: the claimed one, then every other one this
- * node runs in SYSTEM_ORDER. Client work never leaves its sandboxed executor.
+ * node runs in its kind's order.
  */
 export function fallbackChain(first, available, kind) {
-  if (kind === 'client') return [first];
-  return [first, ...SYSTEM_ORDER.filter((e) => e !== first && available.includes(e))];
+  const order = kind === 'client' ? CLIENT_ORDER : SYSTEM_ORDER;
+  return [first, ...order.filter((e) => e !== first && available.includes(e))];
 }
 
 const SESSION_FILE = 'session.v4.jsonl.zstd';

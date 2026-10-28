@@ -185,6 +185,62 @@ const groups = {
     check('admin sees the same setup', adminView?.setup?.ready === p.setup.ready && adminView.brief.manual === 'Orders by phone');
   },
 
+  async marketing({ admin }) {
+    const desk = await call('/admin/marketing', { auth: admin });
+    check('the desk starts paused, with the outreach sender', desk.status === 200 && desk.data.settings.live === false && desk.data.sender === 'hello@malipetek.dev');
+    check('a paused desk sends nothing', (await call('/admin/marketing/run', { method: 'POST', auth: admin })).data.reason === 'paused');
+
+    const csv = 'email,name,business,site,gap\nsara@bakery-nine.test,Sara,Bakery Nine,bakerynine.test,menu still says summer\nnobody@example.test,,,,';
+    const imported = await call('/admin/marketing/contacts/import', {
+      method: 'POST',
+      auth: admin,
+      body: { csv, sequence: 'cold_a', campaign: 'e2e' },
+    });
+    check('import queues the contact that has an observation', imported.data.added === 2 && imported.data.paused === 1, JSON.stringify(imported.data));
+
+    const again = await call('/admin/marketing/contacts/import', {
+      method: 'POST',
+      auth: admin,
+      body: { csv, sequence: 'cold_a', campaign: 'e2e' },
+    });
+    check('a re-import skips both instead of duplicating them', again.data.added === 0 && again.data.skipped.every((s) => s.reason === 'already_in_list'));
+
+    const contacts = (await call('/admin/marketing/contacts', { auth: admin })).data.contacts;
+    check('the queued contact is marked queued', contacts.find((c) => c.email === 'sara@bakery-nine.test')?.status === 'queued');
+    check('the contact without a gap is held, not sent', contacts.find((c) => c.email === 'nobody@example.test')?.status === 'paused');
+
+    const emails = (await call('/admin/marketing/messages?channel=email', { auth: admin })).data.messages;
+    check('three steps are scheduled for the queued contact', emails.filter((m) => m.status === 'scheduled').length === 3);
+    const firstEmail = emails.find((m) => m.step === 0);
+    check('the first email carries the observation, not a placeholder', /menu still says summer/.test(firstEmail?.body ?? '') && !firstEmail.body.includes('{{'));
+
+    const bad = await call('/admin/marketing/settings', { method: 'PUT', auth: admin, body: { dailyCap: 0, live: 'yes' } });
+    check('a bad setting is refused and the old value stands', bad.data.rejected.length === 2 && bad.data.settings.dailyCap === 20);
+
+    const post = await call('/admin/marketing/messages', {
+      method: 'POST',
+      auth: admin,
+      body: { channel: 'x', body: 'The last mile is the whole job.' },
+    });
+    check('a social post starts as a draft', post.status === 201 && post.data.message.status === 'draft');
+    check('the publisher refuses an unauthenticated poll', (await call('/marketing/publisher/posts?channel=x')).status === 401);
+
+    await call(`/admin/marketing/messages/${post.data.message.id}/schedule`, { method: 'POST', auth: admin });
+    const claimed = await call('/marketing/publisher/posts?channel=x', { auth: 'e2e-marketing-token' });
+    check('the publisher claims the due post', claimed.data.posts.length === 1 && /last mile/.test(claimed.data.posts[0].text));
+    check('a second poll cannot post it twice', (await call('/marketing/publisher/posts?channel=x', { auth: 'e2e-marketing-token' })).data.posts.length === 0);
+    await call(`/marketing/publisher/posts/${post.data.message.id}/result`, {
+      method: 'POST',
+      auth: 'e2e-marketing-token',
+      body: { ok: true, url: 'https://x.com/i/status/1' },
+    });
+    const sentPost = (await call('/admin/marketing/messages?channel=x', { auth: admin })).data.messages.find((m) => m.id === post.data.message.id);
+    check('the published post records its URL', sentPost?.status === 'sent' && sentPost.url === 'https://x.com/i/status/1');
+
+    const client = account(`desk-${Date.now()}@example.com`);
+    check('a client cannot open the marketing desk', (await call('/admin/marketing', { auth: client.session })).status === 403);
+  },
+
   async sites({ admin }) {
     const a = account(`site-${Date.now()}@example.com`);
     const other = account(`intruder-${Date.now()}@example.com`);
@@ -849,7 +905,7 @@ const groups = {
     check('session: …and without any session fields', hr2.status === 200 && row4?.session_id === null && row4.session_log === 0, JSON.stringify(row4).slice(0, 300));
 
     // Client work stays on claude even when a Harness executor is asked for.
-    check('session: a client ticket cannot be pinned to a Harness executor', (await call(`/admin/tickets/${ticketId}`, { method: 'PATCH', auth: admin, body: { executor: 'dsh-claude' } })).data?.error === 'client_executor');
+    check('session: a client ticket can be pinned to a Harness executor', (await call(`/admin/tickets/${ticketId}`, { method: 'PATCH', auth: admin, body: { executor: 'dsh-claude' } })).data?.ticket?.executor === 'dsh-claude');
     const catalog = (await call('/admin/settings', { auth: admin })).data?.catalog?.executors ?? [];
     check('session: the catalog offers the Harness executors', ['dsh-claude', 'dsh-opencode'].every((id) => catalog.some((e) => e.id === id)), JSON.stringify(catalog));
   },
@@ -999,6 +1055,7 @@ async function main() {
     CLOUDFLARE_OAUTH_CLIENT_SECRET: CF_CLIENT.secret,
     CLOUDFLARE_OAUTH_BASE: `http://127.0.0.1:${CF.port}`,
     CLOUDFLARE_API_BASE: `http://127.0.0.1:${CF.port}/client/v4`,
+    MARKETING_TOKEN: 'e2e-marketing-token',
   };
   const dev = spawn('npx', ['vite', 'dev', '--port', String(port), '--strictPort'], {
     cwd: WORKER,

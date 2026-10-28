@@ -114,7 +114,7 @@ test('fallbackChain: system work tries the claimed executor, then Harness first'
   const all = ['claude', 'opencode', 'dsh', 'devin', 'dsh-claude', 'dsh-opencode', 'dsh-devin'];
   assert.deepEqual(fallbackChain('dsh-claude', all, 'system'), ['dsh-claude', 'dsh', 'dsh-devin', 'dsh-opencode', 'devin', 'claude', 'opencode']);
   assert.deepEqual(fallbackChain('opencode', ['opencode', 'dsh', 'dsh-opencode'], 'system'), ['opencode', 'dsh', 'dsh-opencode']);
-  assert.deepEqual(fallbackChain('claude', all, 'client'), ['claude']);
+  assert.deepEqual(fallbackChain('claude', all, 'client'), ['claude', 'dsh-claude', 'dsh', 'dsh-devin', 'dsh-opencode', 'devin', 'opencode']);
   // A quota on one form of an account covers the other.
   assert.equal(ACCOUNT['dsh-claude'], ACCOUNT.claude);
   assert.equal(ACCOUNT['dsh-devin'], ACCOUNT.devin);
