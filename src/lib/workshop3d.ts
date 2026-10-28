@@ -365,36 +365,81 @@ function paper(ctx: Ctx): THREE.Mesh {
 
 /* ————— pipeline props (hero) ————— */
 
-/** A person, as few shapes as will read as one: body, head. The human steps. */
+/** A turned profile (radius, height pairs, bottom to top) as one line-art solid. */
+function lathe(ctx: Ctx, profile: [number, number][], role: Role | number, segments = 40): THREE.Mesh {
+  const geo = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), segments);
+  return part(ctx, geo, role, { hull: true });
+}
+
+/** Ink line segments in the shared outline material; `pts` are pairs of points. */
+function lines(ctx: Ctx, pts: number[]): LineSegments2 {
+  return new LineSegments2(new LineSegmentsGeometry().setPositions(pts), ctx.kit.line);
+}
+
+/**
+ * A person, as few shapes as will read as one: a turned body with shoulders
+ * on a low base, a neck, a head. The human steps.
+ */
 function person(ctx: Ctx): THREE.Group {
   const g = new THREE.Group();
-  const body = part(ctx, new THREE.CylinderGeometry(0.2, 0.34, 0.95, 24), 'ink');
-  body.position.y = 0.475;
-  const head = part(ctx, new THREE.SphereGeometry(0.25, 24, 16), 'ink');
-  head.position.y = 1.22;
-  g.add(body, head);
+  g.add(
+    lathe(ctx, [
+      [0, 0], [0.34, 0], [0.34, 0.07], [0.27, 0.11], // base
+      [0.2, 0.2], [0.23, 0.6], [0.29, 0.78], // body widening to the shoulders
+      [0.27, 0.86], [0.17, 0.93], [0.09, 0.95], [0, 0.95],
+    ], 'ink'),
+  );
+  const neck = part(ctx, new THREE.CylinderGeometry(0.075, 0.09, 0.12, 20), 'ink');
+  neck.position.y = 1.0;
+  const head = part(ctx, new THREE.SphereGeometry(0.23, 32, 20), 'ink');
+  head.position.y = 1.25;
+  g.add(neck, head);
   return g;
 }
 
-/** The agent: a boxy head with two lit eyes on a block. Deliberately not a person. */
+/**
+ * The agent: a screen-faced head with two lit eyes and an antenna, on a
+ * block with a waist. Deliberately not a person.
+ */
 function agentBot(ctx: Ctx): THREE.Group {
   const g = new THREE.Group();
-  g.add(box(ctx, 0.7, 0.55, 0.6, 'fill2', 0, 0.275, 0));
-  g.add(box(ctx, 0.12, 0.14, 0.12, 'ink', 0, 0.62, 0));
+  g.add(box(ctx, 0.62, 0.5, 0.54, 'fill2', 0, 0.25, 0));
+  g.add(box(ctx, 0.72, 0.08, 0.62, 'fill', 0, 0.54, 0)); // the shoulder plate
+  g.add(cyl(ctx, 0.08, 0.12, 'ink', 0, 0.63, 0));
   g.add(box(ctx, 0.86, 0.62, 0.66, 'fill', 0, 1.0, 0));
-  for (const x of [-0.2, 0.2]) g.add(box(ctx, 0.14, 0.14, 0.04, 'orange', x, 1.03, 0.34));
+  // a dark visor the eyes light up on
+  g.add(box(ctx, 0.66, 0.36, 0.02, 'ink', 0, 1.02, 0.335));
+  for (const x of [-0.17, 0.17]) g.add(box(ctx, 0.13, 0.13, 0.02, 'orange', x, 1.03, 0.35));
+  // ear bolts and an antenna
+  for (const x of [-0.45, 0.45]) {
+    const bolt = cyl(ctx, 0.08, 0.05, 'fill2', x, 1.0, 0);
+    bolt.rotation.z = Math.PI / 2;
+    g.add(bolt);
+  }
+  g.add(cyl(ctx, 0.025, 0.26, 'ink', 0.18, 1.44, 0));
+  const tip = part(ctx, new THREE.SphereGeometry(0.07, 20, 14), 'orange', { edges: false, hull: true });
+  tip.position.set(0.18, 1.6, 0);
+  g.add(tip);
   return g;
 }
 
-/** Serverless, drawn: a cloud with identical little instances under it. */
+/**
+ * Serverless, drawn: a cloud with a flattish underside (a row of low, squashed
+ * puffs) under taller crowns, and identical little instances under it.
+ */
 function cloud(ctx: Ctx): THREE.Group {
   const g = new THREE.Group();
-  const puffs: [number, number, number, number][] = [
-    [0, 0, 0, 0.62], [-0.62, -0.1, 0.05, 0.46], [0.66, -0.08, 0, 0.5], [0.2, 0.3, -0.1, 0.48], [-0.25, 0.22, 0.1, 0.4],
+  // [x, y, z, radius, vertical squash]
+  const puffs: [number, number, number, number, number][] = [
+    // crowns
+    [0, 0.2, 0, 0.6, 0.92], [0.24, 0.48, -0.12, 0.44, 0.9], [-0.42, 0.3, 0.1, 0.42, 0.9], [0.66, 0.08, 0, 0.46, 0.88],
+    // the underside: low, wide puffs tucked into the crowns, so the bottom reads as one line
+    [-0.78, -0.02, 0.04, 0.38, 0.72], [-0.3, -0.08, 0.1, 0.44, 0.66], [0.26, -0.1, 0.08, 0.46, 0.64], [0.86, -0.04, 0.04, 0.38, 0.72],
   ];
-  for (const [x, y, z, r] of puffs) {
-    const p = part(ctx, new THREE.SphereGeometry(r, 32, 24), 'fill', { edges: false, hull: true });
+  for (const [x, y, z, r, squash] of puffs) {
+    const p = part(ctx, new THREE.SphereGeometry(r, 36, 24), 'fill', { edges: false, hull: true });
     p.position.set(x, y, z);
+    p.scale.set(1, squash, 1);
     g.add(p);
   }
   return g;
@@ -483,11 +528,26 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
     // belt + rails
     g.add(box(ctx, 12.2, 0.3, 1.1, 'fill2', 0.2, 0.15, BELT_Z));
     for (const z of [BELT_Z - 0.6, BELT_Z + 0.6]) g.add(box(ctx, 12.2, 0.12, 0.1, 'ink', 0.2, 0.36, z));
+    // a roller at each end, so the belt ends like a belt
+    for (const x of [0.2 - 6.1, 0.2 + 6.1]) {
+      const roller = cyl(ctx, 0.17, 1.3, 'fill', x, 0.17, BELT_Z);
+      roller.rotation.x = Math.PI / 2;
+      g.add(roller);
+      const hub = cyl(ctx, 0.07, 1.36, 'ink', x, 0.17, BELT_Z);
+      hub.rotation.x = Math.PI / 2;
+      g.add(hub);
+    }
+    // seams across the belt surface
+    const seams: number[] = [];
+    for (let x = -5.6; x <= 6.0; x += 0.8) seams.push(x, 0.305, BELT_Z - 0.5, x, 0.305, BELT_Z + 0.5);
+    g.add(lines(ctx, seams));
 
     // a pad per step, with its caption on the floor in front of the belt
     const captions: [string, string][] = [['01', 'REQUEST'], ['02', 'APPROVE'], ['03', 'BUILD'], ['04', 'SHIP']];
     STEP_X.forEach((x, i) => {
-      g.add(box(ctx, 2.3, 0.4, 2.0, 'fill', x, 0.2, PAD_Z));
+      // a plinth: a slab with a lipped top
+      g.add(box(ctx, 2.3, 0.34, 2.0, 'fill', x, 0.17, PAD_Z));
+      g.add(box(ctx, 2.1, 0.06, 1.8, 'fill2', x, 0.37, PAD_Z));
       const label = floorLabel(ctx, captions[i][0], captions[i][1]);
       label.position.set(x + 0.15, 0.02, BELT_Z + 1.35);
       g.add(label);
@@ -499,6 +559,8 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
     const seal = cyl(ctx, 0.13, 0.05, 'orange', 0, 0, 0.06);
     seal.rotation.x = Math.PI / 2;
     letter.add(seal);
+    // the envelope's flap, drawn on its face
+    letter.add(lines(ctx, [-0.56, 0.38, 0.045, 0, 0.02, 0.045, 0, 0.02, 0.045, 0.56, 0.38, 0.045]));
     const bubble = new THREE.Group();
     bubble.add(box(ctx, 1.05, 0.7, 0.3, 'fill'));
     bubble.add(box(ctx, 0.22, 0.22, 0.3, 'fill', -0.3, -0.38, 0).rotateZ(Math.PI / 4));
@@ -509,10 +571,22 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
 
     // 02 approve — a person at a gate; the orange stamp only drops when a ticket is under it
     const gateX = STEP_X[1];
-    g.add(box(ctx, 0.2, 2.1, 0.2, 'ink', gateX, 1.05, BELT_Z - 0.75));
-    g.add(box(ctx, 0.2, 2.1, 0.2, 'ink', gateX, 1.05, BELT_Z + 0.75));
-    g.add(box(ctx, 0.2, 0.2, 1.7, 'ink', gateX, 2.1, BELT_Z));
-    const stamp = cyl(ctx, 0.3, 0.5, 'orange', gateX, 1.5, BELT_Z);
+    for (const z of [BELT_Z - 0.75, BELT_Z + 0.75]) {
+      g.add(box(ctx, 0.16, 2.1, 0.16, 'ink', gateX, 1.05, z));
+      g.add(box(ctx, 0.36, 0.08, 0.36, 'ink', gateX, 0.04, z)); // a foot
+    }
+    g.add(box(ctx, 0.22, 0.2, 1.78, 'ink', gateX, 2.1, BELT_Z));
+    // the stamp hangs from a housing under the beam: an orange body, a dark
+    // rubber face, a handle on top
+    g.add(cyl(ctx, 0.14, 0.2, 'ink', gateX, 1.92, BELT_Z));
+    const stamp = new THREE.Group();
+    stamp.position.set(gateX, 1.5, BELT_Z);
+    stamp.add(cyl(ctx, 0.3, 0.36, 'orange', 0, 0.04, 0));
+    stamp.add(cyl(ctx, 0.33, 0.08, 'ink', 0, -0.18, 0));
+    stamp.add(cyl(ctx, 0.07, 0.16, 'ink', 0, 0.3, 0));
+    const knob = part(ctx, new THREE.SphereGeometry(0.11, 20, 14), 'ink');
+    knob.position.y = 0.42;
+    stamp.add(knob);
     g.add(stamp);
     const approver = person(ctx);
     approver.position.set(gateX, 0.4, PAD_Z);
@@ -522,7 +596,17 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
     const term = codePanel(ctx, 2.1, 1.35);
     term.position.set(STEP_X[2] + 0.55, 1.35, PAD_Z - 0.45);
     term.rotation.y = FACE;
-    g.add(box(ctx, 0.16, 0.7, 0.16, 'ink', STEP_X[2] + 0.55, 0.55, PAD_Z - 0.45));
+    g.add(box(ctx, 0.12, 0.62, 0.12, 'ink', STEP_X[2] + 0.55, 0.69, PAD_Z - 0.45));
+    const foot = box(ctx, 0.7, 0.05, 0.42, 'ink', STEP_X[2] + 0.55, 0.425, PAD_Z - 0.45);
+    foot.rotation.y = FACE;
+    g.add(foot);
+    // a keyboard between the agent and its screen
+    const keys = new THREE.Group();
+    keys.add(box(ctx, 0.9, 0.06, 0.32, 'fill'));
+    for (let r = 0; r < 3; r++) keys.add(box(ctx, 0.74 - r * 0.08, 0.02, 0.05, 'fill2', 0, 0.04, -0.09 + r * 0.09));
+    keys.position.set(STEP_X[2] + 0.05, 0.43, PAD_Z - 0.05);
+    keys.rotation.y = FACE;
+    g.add(keys);
     const bot = agentBot(ctx);
     bot.position.set(STEP_X[2] - 0.55, 0.4, PAD_Z + 0.35);
     bot.rotation.y = FACE;
@@ -531,6 +615,12 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
     // 04 ship — a second person checks it, then it lifts into the cloud
     const reviewer = person(ctx);
     reviewer.position.set(STEP_X[3] - 0.2, 0.4, PAD_Z);
+    // the reviewer holds a clipboard: the checklist the work is read against
+    const clipboard = box(ctx, 0.36, 0.46, 0.03, 'fill', 0.2, 0.86, 0.3);
+    clipboard.rotation.set(-0.5, FACE, 0);
+    clipboard.add(box(ctx, 0.14, 0.05, 0.03, 'ink', 0, 0.22, 0.01));
+    clipboard.add(lines(ctx, [-0.12, 0.08, 0.02, 0.12, 0.08, 0.02, -0.12, -0.01, 0.02, 0.1, -0.01, 0.02, -0.12, -0.1, 0.02, 0.06, -0.1, 0.02]));
+    reviewer.add(clipboard);
     g.add(reviewer);
     const sky = cloud(ctx);
     sky.position.set(7.4, 3.5, BELT_Z - 0.2);
@@ -560,6 +650,8 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
       t.add(...stage);
       const mark = cyl(ctx, 0.11, 0.03, 'orange', 0.16, 0.07, 0.08);
       t.add(mark);
+      // the tear-off stub, as on a real ticket
+      t.add(lines(ctx, [-0.17, 0.062, -0.2, -0.17, 0.062, -0.12, -0.17, 0.062, -0.06, -0.17, 0.062, 0.02, -0.17, 0.062, 0.08, -0.17, 0.062, 0.16]));
       g.add(t);
       return { group: t, stage, mark, x: START, goal: START, slot: 0, lift: 0, status: 'new' };
     };
