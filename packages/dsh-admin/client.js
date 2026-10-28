@@ -320,6 +320,49 @@ var __awPlugin = (() => {
   var StatusPill = ({ status }) => /* @__PURE__ */ jsx("span", { className: `aw-pill aw-pill--${status}`, children: STATUS_LABEL[status] ?? status });
   var Dot = ({ state }) => /* @__PURE__ */ jsx("span", { className: `aw-dot aw-dot--${state}`, "aria-hidden": "true" });
   var Tag = ({ children, tone, title }) => /* @__PURE__ */ jsx("span", { className: cx("aw-tag", tone && `aw-tag--${tone}`), title, children });
+  function Resizer({ host, cssVar, def, min, max, invert = false, storage, className }) {
+    const ref = useRef(null);
+    useEffect(() => {
+      const el = ref.current;
+      const pane = el?.closest(host);
+      if (!el || !pane) return void 0;
+      const saved = storage ? Number(localStorage.getItem(storage)) : 0;
+      if (saved >= min && saved <= max) pane.style.setProperty(cssVar, `${saved}px`);
+      let startX = 0;
+      let startW = def;
+      const read = () => parseFloat(getComputedStyle(pane).getPropertyValue(cssVar)) || def;
+      const move = (e) => {
+        const w = Math.min(max, Math.max(min, startW + (e.clientX - startX) * (invert ? -1 : 1)));
+        pane.style.setProperty(cssVar, `${Math.round(w)}px`);
+      };
+      const up = () => {
+        el.classList.remove("is-drag");
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        const w = Math.round(read());
+        if (storage && w >= min && w <= max) localStorage.setItem(storage, String(w));
+      };
+      const down = (e) => {
+        e.preventDefault();
+        startX = e.clientX;
+        startW = read();
+        el.classList.add("is-drag");
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+      };
+      el.addEventListener("pointerdown", down);
+      return () => {
+        el.removeEventListener("pointerdown", down);
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+      };
+    }, [host, cssVar, def, min, max, invert, storage]);
+    return /* @__PURE__ */ jsx("div", { ref, className: cx("aw-resize", className), role: "separator", "aria-orientation": "vertical" });
+  }
   function Segmented({ value, options, onChange, disabled }) {
     return /* @__PURE__ */ jsx("div", { className: "aw-seg", role: "group", children: options.map((o) => /* @__PURE__ */ jsx(
       "button",
@@ -401,8 +444,7 @@ var __awPlugin = (() => {
     refresh: "M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5",
     ticket: "M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z",
     folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
-    play: "M7 5l12 7-12 7z",
-    megaphone: "M3 10v4a1 1 0 0 0 1 1h2l4 3V6L6 9H4a1 1 0 0 0-1 1zM14 8a5 5 0 0 1 0 8M17 5a9 9 0 0 1 0 14"
+    play: "M7 5l12 7-12 7z"
   };
   function Icon({ name, size = 16 }) {
     return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] }) });
@@ -796,6 +838,7 @@ var __awPlugin = (() => {
     if (!ticket) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: errorText(error) });
     const isClient = ticket.kind !== "system";
     return /* @__PURE__ */ jsxs("div", { className: "aw-ticket", children: [
+      /* @__PURE__ */ jsx(Resizer, { host: ".aw-ticket", cssVar: "--aw-details-w", def: 300, min: 200, max: 640, invert: true, storage: "aw.details.w", className: "aw-resize--details" }),
       /* @__PURE__ */ jsxs("div", { className: "aw-ticket__main", children: [
         /* @__PURE__ */ jsxs("header", { className: "aw-ticket__head", children: [
           /* @__PURE__ */ jsxs("div", { className: "aw-ticket__crumbs", children: [
@@ -1803,547 +1846,6 @@ var __awPlugin = (() => {
     ] });
   }
 
-  // packages/admin-ui/src/marketing.jsx
-  var CONTACT_TONE = { new: "dash", queued: void 0, contacted: "ok", replied: "ok", opted_out: "bad", bounced: "bad", paused: "warn" };
-  var MESSAGE_TONE = { draft: "dash", scheduled: void 0, sending: "warn", sent: "ok", failed: "bad", cancelled: "dash" };
-  var CHANNELS = [
-    { value: "", label: "All" },
-    { value: "email", label: "Email" },
-    { value: "x", label: "X" },
-    { value: "linkedin", label: "LinkedIn" }
-  ];
-  var WINDOW_REASON = {
-    outside_hours: "outside the send window",
-    weekend: "weekend",
-    daily_cap: "the day\u2019s cap is used"
-  };
-  var offsetLabel = (minutes) => `UTC${minutes >= 0 ? "+" : "\u2212"}${Math.abs(minutes) / 60}`;
-  var snippet = (text, max = 90) => text.length > max ? `${text.slice(0, max)}\u2026` : text;
-  var plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  function MarketingView() {
-    const { api, act, notify } = useAdmin();
-    const [overview, setOverview] = useState(null);
-    const [contacts, setContacts] = useState([]);
-    const [messages, setMessages] = useState([]);
-    const [error, setError] = useState(null);
-    const [tab, setTab] = useState("contacts");
-    const [modal, setModal] = useState(null);
-    const [filters, setFilters] = useState({ status: "", q: "", channel: "", messageStatus: "" });
-    const load = useCallback(() => {
-      const qs = (params) => {
-        const search = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
-        return search ? `?${search}` : "";
-      };
-      return Promise.all([
-        api("GET", "/admin/marketing"),
-        api("GET", `/admin/marketing/contacts${qs({ status: filters.status, q: filters.q })}`),
-        api("GET", `/admin/marketing/messages${qs({ channel: filters.channel, status: filters.messageStatus })}`)
-      ]).then(([o, c, m]) => {
-        setOverview(o);
-        setContacts(c.contacts ?? []);
-        setMessages(m.messages ?? []);
-        setError(null);
-      }).catch(setError);
-    }, [api, filters.status, filters.q, filters.channel, filters.messageStatus]);
-    useEffect(() => {
-      void load();
-    }, [load]);
-    usePoll(load, 3e4, [load]);
-    const run = useCallback(
-      (fn, message) => act(fn, message).then(load, () => void 0),
-      [act, load]
-    );
-    const contactsById = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
-    const done = useCallback(
-      (message) => {
-        setModal(null);
-        notify(message);
-        void load();
-      },
-      [load, notify]
-    );
-    if (error) return /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
-      "Could not load the desk: ",
-      error.message ?? error.code
-    ] });
-    if (!overview) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading\u2026" });
-    const { settings } = overview;
-    const messagesToday = `${overview.today}/${settings.dailyCap} sent today`;
-    return /* @__PURE__ */ jsxs("div", { className: "aw-view", children: [
-      /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
-        /* @__PURE__ */ jsx("h2", { children: "Marketing" }),
-        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          "Email sequences, X and LinkedIn posts, from ",
-          /* @__PURE__ */ jsx("span", { className: "aw-mono", children: overview.sender }),
-          ". Replies to that address land here; \u201Cno\u201D stops everything queued for that contact."
-        ] })
-      ] }),
-      !overview.bound ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: "No outreach sender is bound on the Worker (MARKETING). Nothing can send." }) : !settings.postalAddress ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: "Set a postal address in Settings before a cold email goes out \u2014 anti-spam law asks for one on every send." }) : !settings.live ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
-        "Paused. ",
-        overview.due.email ? `${overview.due.email} email${overview.due.email === 1 ? "" : "s"} are due.` : "Nothing is due yet.",
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => run(() => api("PUT", "/admin/marketing/settings", { live: true }), "Outreach is live."), children: "Go live" })
-      ] }) : /* @__PURE__ */ jsxs("div", { className: "aw-banner", children: [
-        "Live \xB7 ",
-        settings.startHour,
-        ":00\u2013",
-        settings.endHour,
-        ":00 ",
-        offsetLabel(settings.offsetMinutes),
-        settings.weekdaysOnly ? ", weekdays" : "",
-        " \xB7 ",
-        messagesToday,
-        " \xB7 window",
-        " ",
-        overview.window.open ? "open" : `closed (${WINDOW_REASON[overview.window.reason] ?? overview.window.reason})`,
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => run(() => api("POST", "/admin/marketing/run"), "Ran the sender."), children: "Run now" }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => run(() => api("PUT", "/admin/marketing/settings", { live: false }), "Paused."), children: "Pause" })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
-        /* @__PURE__ */ jsx(Tag, { children: plural(overview.counts.contacts.queued, "queued contact", "queued contacts") }),
-        /* @__PURE__ */ jsxs(Tag, { children: [
-          overview.counts.contacts.replied,
-          " replied"
-        ] }),
-        /* @__PURE__ */ jsxs(Tag, { tone: overview.counts.contacts.opted_out ? "bad" : "dash", children: [
-          overview.counts.contacts.opted_out,
-          " opted out"
-        ] }),
-        /* @__PURE__ */ jsx(Tag, { tone: overview.counts.messages.failed ? "bad" : "dash", children: plural(overview.counts.messages.failed, "failed send", "failed sends") }),
-        /* @__PURE__ */ jsx(Tag, { tone: overview.due.email ? "warn" : "dash", children: plural(overview.due.email, "email due", "emails due") }),
-        /* @__PURE__ */ jsx(Tag, { tone: overview.due.x + overview.due.linkedin ? "warn" : "dash", children: plural(overview.due.x + overview.due.linkedin, "post due", "posts due") })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
-        /* @__PURE__ */ jsx(
-          Segmented,
-          {
-            value: tab,
-            options: [
-              { value: "contacts", label: `Contacts (${contacts.length})` },
-              { value: "queue", label: `Queue (${messages.length})` },
-              { value: "settings", label: "Settings" }
-            ],
-            onChange: setTab
-          }
-        ),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        tab === "contacts" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx("input", { className: "aw-search", value: filters.q, placeholder: "Search email, name, business\u2026", onChange: (e) => setFilters((f) => ({ ...f, q: e.target.value })) }),
-          /* @__PURE__ */ jsxs("select", { value: filters.status, onChange: (e) => setFilters((f) => ({ ...f, status: e.target.value })), children: [
-            /* @__PURE__ */ jsx("option", { value: "", children: "Every status" }),
-            Object.keys(CONTACT_TONE).map((s) => /* @__PURE__ */ jsx("option", { value: s, children: s }, s))
-          ] }),
-          /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "import" }), children: "Import CSV" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => setModal({ kind: "contact" }), children: "Add contact" })
-        ] }) : null,
-        tab === "queue" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx("select", { value: filters.channel, onChange: (e) => setFilters((f) => ({ ...f, channel: e.target.value })), children: CHANNELS.map((c) => /* @__PURE__ */ jsx("option", { value: c.value, children: c.label }, c.value)) }),
-          /* @__PURE__ */ jsxs("select", { value: filters.messageStatus, onChange: (e) => setFilters((f) => ({ ...f, messageStatus: e.target.value })), children: [
-            /* @__PURE__ */ jsx("option", { value: "", children: "Every status" }),
-            Object.keys(MESSAGE_TONE).map((s) => /* @__PURE__ */ jsx("option", { value: s, children: s }, s))
-          ] }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => setModal({ kind: "compose" }), children: "Compose" })
-        ] }) : null,
-        tab === "settings" ? /* @__PURE__ */ jsx(Button, { onClick: () => run(() => api("POST", "/admin/marketing/run"), "Ran the sender."), children: "Run now" }) : null
-      ] }),
-      tab === "contacts" ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
-          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("th", { children: "Contact" }),
-            /* @__PURE__ */ jsx("th", { children: "Business / site" }),
-            /* @__PURE__ */ jsx("th", { children: "Status" }),
-            /* @__PURE__ */ jsx("th", { children: "Sent" }),
-            /* @__PURE__ */ jsx("th", { children: "Next" }),
-            /* @__PURE__ */ jsx("th", {})
-          ] }) }),
-          /* @__PURE__ */ jsx("tbody", { children: contacts.map((c) => /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
-              /* @__PURE__ */ jsx("span", { className: "aw-mono", children: c.email }),
-              c.name ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-                " ",
-                c.name
-              ] }) : null,
-              c.gap ? /* @__PURE__ */ jsx("div", { className: "aw-muted", children: snippet(c.gap, 110) }) : null
-            ] }),
-            /* @__PURE__ */ jsxs("td", { children: [
-              c.business ?? "\u2014",
-              c.site ? /* @__PURE__ */ jsx("div", { className: "aw-muted", children: c.site }) : null
-            ] }),
-            /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: CONTACT_TONE[c.status], children: c.status }) }),
-            /* @__PURE__ */ jsx("td", { children: c.sentCount }),
-            /* @__PURE__ */ jsx("td", { className: "aw-muted", children: c.nextAt ? when(c.nextAt) : "\u2014" }),
-            /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-              ["new", "paused", "contacted"].includes(c.status) && !c.nextAt ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "queue", contact: c }), children: "Queue" }) : null,
-              /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setModal({ kind: "contact", contact: c }), children: "Edit" }),
-              c.status !== "opted_out" ? /* @__PURE__ */ jsx(
-                Button,
-                {
-                  size: "sm",
-                  kind: "ghost",
-                  onClick: () => run(() => api("PATCH", `/admin/marketing/contacts/${c.id}`, { status: "opted_out" }), `${c.email} opted out; queued mail cancelled.`),
-                  children: "Opt out"
-                }
-              ) : null
-            ] }) })
-          ] }, c.id)) })
-        ] }),
-        !contacts.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No contacts match. Import a CSV, or add one by hand." }) : null
-      ] }) : null,
-      tab === "queue" ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
-          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("th", { children: "When" }),
-            /* @__PURE__ */ jsx("th", { children: "Channel" }),
-            /* @__PURE__ */ jsx("th", { children: "To" }),
-            /* @__PURE__ */ jsx("th", { children: "Message" }),
-            /* @__PURE__ */ jsx("th", { children: "Status" }),
-            /* @__PURE__ */ jsx("th", {})
-          ] }) }),
-          /* @__PURE__ */ jsx("tbody", { children: messages.map((m) => {
-            const closed = m.status === "sent" || m.status === "cancelled" || m.status === "sending";
-            return /* @__PURE__ */ jsxs("tr", { children: [
-              /* @__PURE__ */ jsx("td", { className: "aw-muted", children: m.sentAt ? ago(m.sentAt) : m.scheduledAt ? when(m.scheduledAt) : "draft" }),
-              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: m.channel === "email" ? "dash" : void 0, children: m.channel }) }),
-              /* @__PURE__ */ jsx("td", { className: "aw-mono", children: m.contactEmail ?? "\u2014" }),
-              /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
-                m.subject ? /* @__PURE__ */ jsx("div", { children: m.subject }) : null,
-                /* @__PURE__ */ jsx("div", { className: "aw-muted", children: snippet(m.body.replace(/\s+/g, " "), 120) }),
-                m.error ? /* @__PURE__ */ jsx("div", { className: "aw-warn", children: m.error }) : null
-              ] }),
-              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: MESSAGE_TONE[m.status], children: m.status }) }),
-              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-                m.status === "failed" ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => run(() => api("POST", `/admin/marketing/messages/${m.id}/retry`), "Queued again."), children: "Retry" }) : null,
-                m.channel === "email" && ["draft", "scheduled", "failed"].includes(m.status) ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => run(() => api("POST", `/admin/marketing/messages/${m.id}/send`), "Sent."), children: "Send now" }) : null,
-                m.channel !== "email" && ["draft", "failed"].includes(m.status) ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => run(() => api("POST", `/admin/marketing/messages/${m.id}/send`), "Queued for the publisher."), children: "Queue now" }) : null,
-                !closed ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => run(() => api("POST", `/admin/marketing/messages/${m.id}/cancel`), "Cancelled."), children: "Cancel" }) : null
-              ] }) })
-            ] }, m.id);
-          }) })
-        ] }),
-        !messages.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing queued. Import contacts to build a sequence, or compose a post." }) : null,
-        /* @__PURE__ */ jsxs("div", { className: "aw-group", children: [
-          /* @__PURE__ */ jsx("h3", { children: "Recent events" }),
-          /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: overview.events.map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
-            /* @__PURE__ */ jsx(Tag, { tone: e.kind === "failed" || e.kind === "bounce" || e.kind === "opt_out" ? "bad" : e.kind === "reply" || e.kind === "sent" ? "ok" : "dash", children: e.kind }),
-            /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: e.email ?? "\u2014" }),
-            /* @__PURE__ */ jsx("span", { className: "aw-muted", children: snippet(e.detail ?? "", 100) }),
-            /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-              ago(e.createdAt),
-              " ago"
-            ] })
-          ] }, e.id)) }),
-          !overview.events.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing has happened yet." }) : null
-        ] })
-      ] }) : null,
-      tab === "settings" ? /* @__PURE__ */ jsx(SettingsTab, { overview, run, api, contactsById }) : null,
-      modal?.kind === "import" ? /* @__PURE__ */ jsx(
-        ImportModal,
-        {
-          sequences: overview.sequences,
-          onClose: () => setModal(null),
-          onDone: (result) => done(
-            `${result.added} added${result.paused ? `, ${result.paused} held for a missing observation` : ""}${result.skipped.length ? `, ${result.skipped.length} skipped` : ""}.`
-          ),
-          api
-        }
-      ) : null,
-      modal?.kind === "contact" ? /* @__PURE__ */ jsx(ContactModal, { contact: modal.contact, sequences: overview.sequences, api, onClose: () => setModal(null), onSaved: done }) : null,
-      modal?.kind === "queue" ? /* @__PURE__ */ jsx(
-        QueueModal,
-        {
-          contact: modal.contact,
-          sequences: overview.sequences,
-          api,
-          onClose: () => setModal(null),
-          onQueued: (count) => done(`${count} emails queued for ${modal.contact.email}.`)
-        }
-      ) : null,
-      modal?.kind === "compose" ? /* @__PURE__ */ jsx(
-        ComposeModal,
-        {
-          contacts: contacts.filter((c) => !["opted_out", "bounced"].includes(c.status)),
-          api,
-          onClose: () => setModal(null),
-          onSaved: done
-        }
-      ) : null
-    ] });
-  }
-  function SettingsTab({ overview, run, api, contactsById }) {
-    const [draft, setDraft] = useState(overview.settings);
-    useEffect(() => setDraft(overview.settings), [overview.settings]);
-    const set = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
-    const changed = Object.keys(draft).some((key) => draft[key] !== overview.settings[key]);
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Sending" }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
-          /* @__PURE__ */ jsx(Field, { label: "Outreach", children: /* @__PURE__ */ jsx(
-            Segmented,
-            {
-              value: Boolean(draft.live),
-              options: [
-                { value: true, label: "Live" },
-                { value: false, label: "Paused" }
-              ],
-              onChange: (v) => set("live", v)
-            }
-          ) }),
-          /* @__PURE__ */ jsx(Field, { label: "Postal address", hint: "On every cold email, as anti-spam law requires.", children: /* @__PURE__ */ jsx("input", { value: draft.postalAddress, placeholder: "Street, city, country", onChange: (e) => set("postalAddress", e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "From name", children: /* @__PURE__ */ jsx("input", { value: draft.fromName, onChange: (e) => set("fromName", e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Daily cap", hint: "Emails per day across every sequence.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.dailyCap, onChange: (e) => set("dailyCap", Number(e.target.value)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Per run", hint: "The cron runs every five minutes.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.perRun, onChange: (e) => set("perRun", Number(e.target.value)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Weekdays only", children: /* @__PURE__ */ jsx(
-            Segmented,
-            {
-              value: Boolean(draft.weekdaysOnly),
-              options: [
-                { value: true, label: "Weekdays" },
-                { value: false, label: "Every day" }
-              ],
-              onChange: (v) => set("weekdaysOnly", v)
-            }
-          ) }),
-          /* @__PURE__ */ jsx(Field, { label: "Send window (start)", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.startHour, onChange: (e) => set("startHour", Number(e.target.value)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Send window (end)", hint: "24 means midnight.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.endHour, onChange: (e) => set("endHour", Number(e.target.value)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Local offset (minutes)", hint: `${offsetLabel(draft.offsetMinutes)}. The window and the daily count use this clock.`, children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.offsetMinutes, onChange: (e) => set("offsetMinutes", Number(e.target.value)) }) })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { disabled: !changed, onClick: () => setDraft(overview.settings), children: "Reset" }),
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              kind: "primary",
-              disabled: !changed,
-              onClick: () => {
-                const patch = Object.fromEntries(Object.entries(draft).filter(([key, value]) => value !== overview.settings[key]));
-                void run(() => api("PUT", "/admin/marketing/settings", patch), "Marketing settings saved.");
-              },
-              children: "Save"
-            }
-          )
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "The publisher" }),
-        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          "X and LinkedIn have no affordable posting API, so the machine posts from a real browser profile:",
-          /* @__PURE__ */ jsx("span", { className: "aw-mono", children: " marketing/publisher/publish.mjs" }),
-          ". It polls this desk with",
-          " ",
-          /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "MARKETING_TOKEN" }),
-          ", opens the composer with the queued text, and reports back. Keep it launched from this machine \u2014 it uses that browser session, not a password."
-        ] }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Replies to the outreach address are filed here. A reply or \u201Cno\u201D from a contact cancels every queued email for them; strangers are forwarded to your inbox and never added to the list." }),
-        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          "Contacts on file: ",
-          contactsById.size,
-          ". Sender: ",
-          overview.sender,
-          ". Inbox: ",
-          overview.inbox,
-          "."
-        ] })
-      ] })
-    ] });
-  }
-  function ImportModal({ api, sequences, onClose, onDone }) {
-    const [csv, setCsv] = useState("");
-    const [sequence, setSequence] = useState("cold_a");
-    const [campaign, setCampaign] = useState("launch");
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState(null);
-    const submit = async () => {
-      setBusy(true);
-      setError(null);
-      try {
-        onDone(await api("POST", "/admin/marketing/contacts/import", { csv, sequence, campaign }));
-      } catch (err) {
-        setError(err.message ?? err.code);
-      } finally {
-        setBusy(false);
-      }
-    };
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: "Import contacts",
-        subtitle: "One row per address. Columns: email, name, business, site, gap, source_url, notes. The gap is the one specific, true observation the first email opens with.",
-        onClose,
-        wide: true,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !csv.trim(), onClick: submit, children: "Import" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx(Segmented, { value: sequence, options: sequences.map((s) => ({ value: s.key, label: s.label })), onChange: setSequence }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Campaign", hint: "Kept on every message so a later read can tell batches apart.", children: /* @__PURE__ */ jsx("input", { value: campaign, maxLength: 40, onChange: (e) => setCampaign(e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "CSV", children: /* @__PURE__ */ jsx("textarea", { rows: 10, className: "aw-mono", value: csv, placeholder: "email,name,business,site,gap\nsara@bakery.test,Sara,Bakery Nine,bakerynine.test,the menu still says summer", onChange: (e) => setCsv(e.target.value) }) }),
-          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
-        ]
-      }
-    );
-  }
-  function ContactModal({ api, contact, sequences, onClose, onSaved }) {
-    const editing = Boolean(contact);
-    const [form, setForm] = useState({
-      email: contact?.email ?? "",
-      name: contact?.name ?? "",
-      business: contact?.business ?? "",
-      site: contact?.site ?? "",
-      gap: contact?.gap ?? "",
-      notes: contact?.notes ?? ""
-    });
-    const [queue, setQueue] = useState(!editing);
-    const [sequence, setSequence] = useState("cold_a");
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState(null);
-    const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
-    const submit = async () => {
-      setBusy(true);
-      setError(null);
-      try {
-        if (editing) {
-          const patch = Object.fromEntries(Object.entries(form).filter(([key, value]) => value !== (contact[key] ?? "")));
-          await api("PATCH", `/admin/marketing/contacts/${contact.id}`, patch);
-          onSaved(`${contact.email} saved.`);
-        } else {
-          const out = await api("POST", "/admin/marketing/contacts", { ...form, sequence: queue ? sequence : void 0 });
-          onSaved(`${out.contact.email} added${queue ? " and queued" : ""}.`);
-        }
-      } catch (err) {
-        setError(err.message ?? err.code);
-        setBusy(false);
-      }
-    };
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: editing ? contact.email : "Add a contact",
-        subtitle: editing ? "The gap is what the cold email opens with; leave it blank and the sequence will not queue." : "Only someone you chose to write to. There is no list building in here.",
-        onClose,
-        wide: true,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !form.email.trim(), onClick: submit, children: editing ? "Save" : "Add" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
-            /* @__PURE__ */ jsx(Field, { label: "Email", children: /* @__PURE__ */ jsx("input", { value: form.email, disabled: editing, onChange: (e) => set("email", e.target.value) }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Name", children: /* @__PURE__ */ jsx("input", { value: form.name, onChange: (e) => set("name", e.target.value) }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Business", children: /* @__PURE__ */ jsx("input", { value: form.business, onChange: (e) => set("business", e.target.value) }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Site", children: /* @__PURE__ */ jsx("input", { value: form.site, onChange: (e) => set("site", e.target.value) }) })
-          ] }),
-          /* @__PURE__ */ jsx(Field, { label: "The gap", hint: "One specific, true observation. If it is not true, the whole email is spam.", children: /* @__PURE__ */ jsx("textarea", { rows: 3, value: form.gap, onChange: (e) => set("gap", e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Notes", children: /* @__PURE__ */ jsx("textarea", { rows: 2, value: form.notes, onChange: (e) => set("notes", e.target.value) }) }),
-          !editing ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx(Field, { label: "Queue now", children: /* @__PURE__ */ jsx(
-              Segmented,
-              {
-                value: queue,
-                options: [
-                  { value: true, label: "Queue a sequence" },
-                  { value: false, label: "Keep as a contact" }
-                ],
-                onChange: setQueue
-              }
-            ) }),
-            queue ? /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx(Segmented, { value: sequence, options: sequences.map((s) => ({ value: s.key, label: s.label })), onChange: setSequence }) }) : null
-          ] }) : null,
-          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
-        ]
-      }
-    );
-  }
-  function QueueModal({ api, contact, sequences, onClose, onQueued }) {
-    const [sequence, setSequence] = useState("cold_a");
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState(null);
-    const submit = async () => {
-      setBusy(true);
-      try {
-        const out = await api("POST", `/admin/marketing/contacts/${contact.id}/queue`, { sequence });
-        onQueued(out.queued);
-      } catch (err) {
-        setError(err.message ?? err.code);
-        setBusy(false);
-      }
-    };
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: `Queue for ${contact.email}`,
-        subtitle: "Three emails, days 0, 4 and 10. A reply or \u201Cno\u201D cancels the rest.",
-        onClose,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy, onClick: submit, children: "Queue" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx(Segmented, { value: sequence, options: sequences.map((s) => ({ value: s.key, label: s.label })), onChange: setSequence }) }),
-          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
-        ]
-      }
-    );
-  }
-  function ComposeModal({ api, contacts, onClose, onSaved }) {
-    const [channel, setChannel] = useState("x");
-    const [contactId, setContactId] = useState("");
-    const [subject, setSubject] = useState("");
-    const [body, setBody] = useState("");
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState(null);
-    const submit = async (queueNow) => {
-      setBusy(true);
-      setError(null);
-      try {
-        const out = await api("POST", "/admin/marketing/messages", {
-          channel,
-          contactId: channel === "email" ? Number(contactId) : void 0,
-          subject: channel === "email" ? subject : void 0,
-          body
-        });
-        if (queueNow) await api("POST", `/admin/marketing/messages/${out.message.id}/send`);
-        onSaved(queueNow ? channel === "email" ? "Sent." : "Queued for the publisher." : "Saved as a draft.");
-      } catch (err) {
-        setError(err.message ?? err.code);
-        setBusy(false);
-      }
-    };
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: "Compose",
-        subtitle: channel === "email" ? "One-off email to a contact. The footer and opt-out line are added when it sends." : "A post for the local publisher. It posts from your own X or LinkedIn session.",
-        onClose,
-        wide: true,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { disabled: busy || !body.trim(), onClick: () => submit(false), children: "Save draft" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !body.trim(), onClick: () => submit(true), children: channel === "email" ? "Send now" : "Queue now" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Channel", children: /* @__PURE__ */ jsx(Segmented, { value: channel, options: CHANNELS.filter((c) => c.value).map((c) => ({ value: c.value, label: c.label })), onChange: setChannel }) }),
-          channel === "email" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx(Field, { label: "Contact", children: /* @__PURE__ */ jsxs("select", { value: contactId, onChange: (e) => setContactId(e.target.value), children: [
-              /* @__PURE__ */ jsx("option", { value: "", children: "Pick a contact\u2026" }),
-              contacts.map((c) => /* @__PURE__ */ jsxs("option", { value: c.id, children: [
-                c.email,
-                c.business ? ` \u2014 ${c.business}` : ""
-              ] }, c.id))
-            ] }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Subject", children: /* @__PURE__ */ jsx("input", { value: subject, maxLength: 200, onChange: (e) => setSubject(e.target.value) }) })
-          ] }) : null,
-          /* @__PURE__ */ jsx(Field, { label: "Text", hint: "X allows 280 characters; LinkedIn a little over 3,000.", children: /* @__PURE__ */ jsx("textarea", { rows: 10, value: body, maxLength: 2e4, onChange: (e) => setBody(e.target.value) }) }),
-          channel !== "email" ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Drafts do not reach the publisher until you queue them." }) : null,
-          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
-        ]
-      }
-    );
-  }
-
   // packages/admin-ui/src/styles.js
   var STYLES = `
 .aw {
@@ -2405,7 +1907,7 @@ var __awPlugin = (() => {
 .aw-badge { position: absolute; top: 4px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--aw-accent); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; }
 
 /* explorer */
-.aw-explorer { grid-column: 2; grid-row: 1; width: 260px; overflow: auto; background: var(--aw-bg2); border-right: 1px solid var(--aw-border); padding: 6px 0 16px; }
+.aw-explorer { grid-column: 2; grid-row: 1; width: var(--aw-explorer-w, 260px); overflow: auto; background: var(--aw-bg2); border-right: 1px solid var(--aw-border); padding: 6px 0 16px; }
 .aw-explorer h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--aw-text2); padding: 12px 12px 4px; }
 .aw-tree, .aw-tree ul { list-style: none; margin: 0; padding: 0; }
 .aw-tree ul { padding-left: 18px; }
@@ -2543,7 +2045,7 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-banner--warn { background: color-mix(in srgb, var(--aw-warn) 12%, transparent); }
 
 /* ticket */
-.aw-ticket { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 100%; }
+.aw-ticket { display: grid; grid-template-columns: minmax(0, 1fr) var(--aw-details-w, 300px); min-height: 100%; position: relative; }
 .aw-ticket__main { padding: 18px 24px 24px; min-width: 0; display: flex; flex-direction: column; }
 .aw-ticket__head h2 { font-size: 22px; font-weight: 700; margin: 4px 0 10px; line-height: 1.25; }
 .aw-ticket__head { padding-bottom: 4px; border-bottom: 1px solid var(--aw-border); margin-bottom: 4px; }
@@ -2652,8 +2154,16 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-toast { position: absolute; z-index: 30; right: 16px; bottom: 38px; max-width: 420px; padding: 10px 14px; border-radius: 8px; background: var(--aw-text); color: var(--aw-bg); box-shadow: 0 8px 24px rgba(0,0,0,.25); }
 .aw-toast.is-error { background: var(--aw-bad); color: #fff; }
 
+/* pane resize handles */
+.aw-resize { position: absolute; top: 0; bottom: 0; width: 9px; cursor: col-resize; z-index: 8; touch-action: none; }
+.aw-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; }
+.aw-resize:hover::after, .aw-resize.is-drag::after { background: var(--aw-accent); }
+.aw-resize--explorer { bottom: 26px; left: calc(48px + var(--aw-explorer-w, 260px) - 5px); }
+.aw-resize--details { right: calc(var(--aw-details-w, 300px) - 5px); }
+
 @media (max-width: 900px) {
   .aw-explorer { display: none; }
+  .aw-resize { display: none; }
   .aw-ticket { grid-template-columns: 1fr; }
   .aw-details { border-left: 0; border-top: 1px solid var(--aw-border); position: static; height: auto; }
 }
@@ -2664,7 +2174,6 @@ button.aw-file:hover { border-color: currentColor; }
     { key: "inbox", label: "Needs you", icon: "inbox" },
     { key: "board", label: "Board", icon: "board" },
     { key: "list", label: "All work", icon: "list" },
-    { key: "marketing", label: "Marketing", icon: "megaphone" },
     { key: "fleet", label: "Fleet", icon: "fleet" },
     { key: "clients", label: "Clients & projects", icon: "clients" },
     { key: "settings", label: "Settings", icon: "settings" }
@@ -2730,15 +2239,13 @@ button.aw-file:hover { border-color: currentColor; }
     useEffect(() => {
       if (typeof window === "undefined") return void 0;
       const fromHash = () => {
-        const hash = window.location.hash.slice(1);
-        const id = Number(new URLSearchParams(hash).get("ticket"));
+        const id = Number(new URLSearchParams(window.location.hash.slice(1)).get("ticket"));
         if (Number.isInteger(id) && id > 0) openTicket(id);
-        if (viewOf(hash)) open(hash);
       };
       fromHash();
       window.addEventListener("hashchange", fromHash);
       return () => window.removeEventListener("hashchange", fromHash);
-    }, [open, openTicket]);
+    }, [openTicket]);
     const notify = useCallback((text, kind = "ok") => {
       setToast({ text, kind, at: Date.now() });
     }, []);
@@ -2821,6 +2328,7 @@ button.aw-file:hover { border-color: currentColor; }
           /* @__PURE__ */ jsx("button", { type: "button", title: "Search and commands (\u2318K)", onClick: () => setPalette(true), children: /* @__PURE__ */ jsx(Icon, { name: "search", size: 20 }) })
         ] }),
         sidebar ? /* @__PURE__ */ jsx(Explorer, {}) : null,
+        sidebar ? /* @__PURE__ */ jsx(Resizer, { host: ".aw", cssVar: "--aw-explorer-w", def: 260, min: 180, max: 520, storage: "aw.explorer.w", className: "aw-resize--explorer" }) : null,
         /* @__PURE__ */ jsxs("main", { className: "aw-main", children: [
           /* @__PURE__ */ jsxs("div", { className: "aw-tabs", role: "tablist", children: [
             tabs.map((key) => /* @__PURE__ */ jsxs(
@@ -2875,8 +2383,6 @@ button.aw-file:hover { border-color: currentColor; }
         return /* @__PURE__ */ jsx(BoardView, {});
       case "list":
         return /* @__PURE__ */ jsx(ListView, {});
-      case "marketing":
-        return /* @__PURE__ */ jsx(MarketingView, {});
       case "fleet":
         return /* @__PURE__ */ jsx(FleetView, {});
       case "clients":

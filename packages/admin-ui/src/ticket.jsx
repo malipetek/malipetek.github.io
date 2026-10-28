@@ -18,7 +18,7 @@ import {
   usd,
   when,
 } from './format.js';
-import { Button, Chips, Dot, Field, Modal, Segmented, StatusPill, Tag, cx } from './ui.jsx';
+import { Button, Chips, Dot, Field, Modal, Resizer, Segmented, StatusPill, Tag, cx } from './ui.jsx';
 
 /** The obvious next moves for each status; anything else is in the Status select. */
 const PRIMARY = {
@@ -44,6 +44,7 @@ export function TicketView({ id, active }) {
   const isClient = ticket.kind !== 'system';
   return (
     <div className="aw-ticket">
+      <Resizer host=".aw-ticket" cssVar="--aw-details-w" def={300} min={200} max={640} invert storage="aw.details.w" className="aw-resize--details" />
       <div className="aw-ticket__main">
         <header className="aw-ticket__head">
           <div className="aw-ticket__crumbs">

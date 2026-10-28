@@ -12,6 +12,55 @@ export const StatusPill = ({ status }) => <span className={`aw-pill aw-pill--${s
 export const Dot = ({ state }) => <span className={`aw-dot aw-dot--${state}`} aria-hidden="true" />;
 export const Tag = ({ children, tone, title }) => <span className={cx('aw-tag', tone && `aw-tag--${tone}`)} title={title}>{children}</span>;
 
+/**
+ * A vertical drag handle that resizes a pane by writing a pixel width into a
+ * CSS var on the host element (found with `closest(host)`). `invert` for panes
+ * that grow toward the left. Persists the width in localStorage under `storage`.
+ */
+export function Resizer({ host, cssVar, def, min, max, invert = false, storage, className }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    const pane = el?.closest(host);
+    if (!el || !pane) return undefined;
+    const saved = storage ? Number(localStorage.getItem(storage)) : 0;
+    if (saved >= min && saved <= max) pane.style.setProperty(cssVar, `${saved}px`);
+    let startX = 0;
+    let startW = def;
+    const read = () => parseFloat(getComputedStyle(pane).getPropertyValue(cssVar)) || def;
+    const move = (e) => {
+      const w = Math.min(max, Math.max(min, startW + (e.clientX - startX) * (invert ? -1 : 1)));
+      pane.style.setProperty(cssVar, `${Math.round(w)}px`);
+    };
+    const up = () => {
+      el.classList.remove('is-drag');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      const w = Math.round(read());
+      if (storage && w >= min && w <= max) localStorage.setItem(storage, String(w));
+    };
+    const down = (e) => {
+      e.preventDefault();
+      startX = e.clientX;
+      startW = read();
+      el.classList.add('is-drag');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    };
+    el.addEventListener('pointerdown', down);
+    return () => {
+      el.removeEventListener('pointerdown', down);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+  }, [host, cssVar, def, min, max, invert, storage]);
+  return <div ref={ref} className={cx('aw-resize', className)} role="separator" aria-orientation="vertical" />;
+}
+
 export function Segmented({ value, options, onChange, disabled }) {
   return (
     <div className="aw-seg" role="group">

@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AdminContext, useAdmin as useAdminCtx, useAdminData } from './store.js';
 import { CLIENT_VISIBLE, EXECUTORS, PRIORITIES, STATUS_LABEL, errorText, needsYou, predict, slugify } from './format.js';
-import { Button, Chips, Confirm, Dot, Field, Icon, Modal, Segmented, cx } from './ui.jsx';
+import { Button, Chips, Confirm, Dot, Field, Icon, Modal, Resizer, Segmented, cx } from './ui.jsx';
 import { BoardView, InboxView, ListView } from './board.jsx';
 import { TicketView } from './ticket.jsx';
 import { ClientsView, FleetView, SettingsView } from './fleet.jsx';
@@ -211,6 +211,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
         </nav>
 
         {sidebar ? <Explorer /> : null}
+        {sidebar ? <Resizer host=".aw" cssVar="--aw-explorer-w" def={260} min={180} max={520} storage="aw.explorer.w" className="aw-resize--explorer" /> : null}
 
         <main className="aw-main">
           <div className="aw-tabs" role="tablist">
