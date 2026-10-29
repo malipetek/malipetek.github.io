@@ -425,6 +425,118 @@ function apply(ctx) {
     return <span>{run ? `Ticket #${run.ticketId}` : 'Ticket'}</span>;
   }
 
+  /* ————— The task desk, as a right-pane tab ————— */
+
+  const TASK_TINT = {
+    new: 'var(--dsw-alias-state-warning-primary, #f0a13a)',
+    review: 'var(--dsw-alias-state-business-primary, #4c8bf5)',
+    in_progress: 'var(--dsw-alias-state-success-primary, #35c07a)',
+  };
+  const taskRowStyle = {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 8,
+    width: '100%',
+    padding: '6px 8px',
+    border: 0,
+    borderRadius: 6,
+    background: 'transparent',
+    color: 'inherit',
+    font: 'inherit',
+    fontSize: 12.5,
+    cursor: 'pointer',
+    textAlign: 'left',
+  };
+  const taskHeadStyle = {
+    margin: '0 0 4px',
+    padding: '0 8px',
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+    color: 'var(--dsw-alias-label-secondary, #adb2b8)',
+  };
+  const taskEmptyStyle = { margin: 0, padding: '2px 8px', fontSize: 12, opacity: 0.6 };
+
+  /**
+   * The task desk in the right pane: what waits on Ali and what is running,
+   * nothing else. A row opens the task in the Admin panel.
+   */
+  function TasksTab() {
+    const [state, setState] = useState({ tickets: [], loading: true });
+    useEffect(() => {
+      let alive = true;
+      const load = () =>
+        api('GET', '/admin/tickets')
+          .then((d) => {
+            if (alive) setState({ tickets: Array.isArray(d?.tickets) ? d.tickets : [], loading: false });
+          })
+          .catch(() => {
+            if (alive) setState((s) => ({ ...s, loading: false }));
+          });
+      void load();
+      const timer = setInterval(load, 20_000);
+      return () => {
+        alive = false;
+        clearInterval(timer);
+      };
+    }, []);
+
+    const waiting = state.tickets.filter((t) => t.status === 'new' || t.status === 'review');
+    const running = state.tickets.filter((t) => t.status === 'in_progress');
+
+    const row = (ticket) => (
+      <button key={ticket.id} type="button" style={taskRowStyle} onClick={() => openTicket({ ticketId: ticket.id })}>
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: 4,
+            marginTop: 5,
+            flex: '0 0 auto',
+            background: TASK_TINT[ticket.status] ?? '#888',
+          }}
+        />
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            #{ticket.id} {ticket.title}
+          </span>
+          <span
+            style={{
+              display: 'block',
+              fontSize: 11,
+              opacity: 0.65,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {ticket.project_name ?? 'no project'}
+            {ticket.kind === 'system' ? ' · your task' : ''}
+          </span>
+        </span>
+      </button>
+    );
+
+    if (state.loading) return <div style={{ padding: 12, fontSize: 13, opacity: 0.7 }}>Loading tasks…</div>;
+    return (
+      <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <section>
+          <h4 style={taskHeadStyle}>Waiting on you · {waiting.length}</h4>
+          {waiting.length > 0 ? waiting.map(row) : <p style={taskEmptyStyle}>Nothing waiting.</p>}
+        </section>
+        <section>
+          <h4 style={taskHeadStyle}>Running · {running.length}</h4>
+          {running.length > 0 ? running.map(row) : <p style={taskEmptyStyle}>Nothing running.</p>}
+        </section>
+      </div>
+    );
+  }
+
+  function TasksTabTitle() {
+    return <span>Tasks</span>;
+  }
+
   /* ————— What needs Ali, on the Admin entry ————— */
 
   const ATTENTION_MS = 60_000;
@@ -593,6 +705,32 @@ function apply(ctx) {
     ctx.slots.register({ name: 'sidebar.right.pane.tab', key: 'admin-ticket', locale: NAMESPACE }, TicketTab));
   ctx.slots.inject('sidebar.right.pane.tab.title', () =>
     ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: 'admin-ticket', locale: NAMESPACE }, TicketTabTitle));
+  // The desk itself in the right pane: the queue at a glance, beside whatever
+  // conversation is open — no trip to the main panel to see what is waiting.
+  ctx.effect(
+    () =>
+      ctx.sidebarRightTabs.register({
+        id: 'admin-tasks',
+        kind: 'tasks',
+        priority: 'extension',
+        keepMounted: true,
+        title: () => 'Tasks',
+        guide: [
+          {
+            id: 'admin-tasks',
+            order: 13,
+            title: () => 'Tasks',
+            description: () => 'What is waiting on you and what is running. A row opens the task in Admin.',
+            icon: () => <TicketGlyph />,
+          },
+        ],
+      }),
+    'admin: tasks tab type',
+  );
+  ctx.slots.inject('sidebar.right.pane.tab', () =>
+    ctx.slots.register({ name: 'sidebar.right.pane.tab', key: 'admin-tasks', locale: NAMESPACE }, TasksTab));
+  ctx.slots.inject('sidebar.right.pane.tab.title', () =>
+    ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: 'admin-tasks', locale: NAMESPACE }, TasksTabTitle));
   // Goes over the route when the Host has it; only an older Host makes this
   // (and the bridge lookup behind it) a session command.
   void command(`hello ${CLIENT_VERSION}`).catch(() => undefined);
