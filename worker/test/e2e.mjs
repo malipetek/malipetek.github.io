@@ -217,6 +217,17 @@ const groups = {
     const bad = await call('/admin/marketing/settings', { method: 'PUT', auth: admin, body: { dailyCap: 0, live: 'yes' } });
     check('a bad setting is refused and the old value stands', bad.data.rejected.length === 2 && bad.data.settings.dailyCap === 20);
 
+    const voiced = await call('/admin/marketing/settings', {
+      method: 'PUT',
+      auth: admin,
+      body: { voiceNotes: '  Short sentences, no exclamation marks.  ' },
+    });
+    check(
+      'voice notes are saved for the content cycle',
+      voiced.data.rejected.length === 0 && voiced.data.settings.voiceNotes === 'Short sentences, no exclamation marks.',
+      JSON.stringify(voiced.data),
+    );
+
     const post = await call('/admin/marketing/messages', {
       method: 'POST',
       auth: admin,
@@ -224,6 +235,15 @@ const groups = {
     });
     check('a social post starts as a draft', post.status === 201 && post.data.message.status === 'draft');
     check('the publisher refuses an unauthenticated poll', (await call('/marketing/publisher/posts?channel=x')).status === 401);
+
+    const rewritten = await call(`/admin/marketing/messages/${post.data.message.id}`, {
+      method: 'PATCH',
+      auth: admin,
+      body: { body: 'The last mile is the whole job, rewritten.' },
+    });
+    check('a queued post can be rewritten on the desk', rewritten.status === 200 && rewritten.data.message.body === 'The last mile is the whole job, rewritten.', JSON.stringify(rewritten.data));
+    const tooLong = await call(`/admin/marketing/messages/${post.data.message.id}`, { method: 'PATCH', auth: admin, body: { body: 'x'.repeat(281) } });
+    check('a post too long for its channel is refused', tooLong.status === 400 && tooLong.data.error === 'too_long' && tooLong.data.max === 280);
 
     await call(`/admin/marketing/messages/${post.data.message.id}/schedule`, { method: 'POST', auth: admin });
     const claimed = await call('/marketing/publisher/posts?channel=x', { auth: 'e2e-marketing-token' });
@@ -236,9 +256,74 @@ const groups = {
     });
     const sentPost = (await call('/admin/marketing/messages?channel=x', { auth: admin })).data.messages.find((m) => m.id === post.data.message.id);
     check('the published post records its URL', sentPost?.status === 'sent' && sentPost.url === 'https://x.com/i/status/1');
+    const late = await call(`/admin/marketing/messages/${post.data.message.id}`, { method: 'PATCH', auth: admin, body: { body: 'after' } });
+    check('a sent post is the record and cannot be rewritten', late.status === 409);
 
     const client = account(`desk-${Date.now()}@example.com`);
     check('a client cannot open the marketing desk', (await call('/admin/marketing', { auth: client.session })).status === 403);
+  },
+
+  async content({ admin }) {
+    // The dev-site project the cycle ticket is filed against.
+    sql(
+      `INSERT INTO projects (id, slug, name, created_at) VALUES ('e2e-dev-site', 'malipetek-dev-site', 'malipetek.dev', ${Math.floor(Date.now() / 1000)})`,
+    );
+
+    await call('/admin/marketing/settings', { method: 'PUT', auth: admin, body: { voiceNotes: 'Keep it dry.' } });
+    const filed = await call('/admin/marketing/cycle', { method: 'POST', auth: admin });
+    check('a cycle is filed as an approved system ticket', filed.status === 201 && filed.data.filed === true && filed.data.id > 0, JSON.stringify(filed.data));
+    const again = await call('/admin/marketing/cycle', { method: 'POST', auth: admin });
+    check('a second call joins the open cycle instead of filing one', again.data.filed === false && again.data.reason === 'open_cycle' && again.data.id === filed.data.id, JSON.stringify(again.data));
+
+    const ticket = (await call(`/admin/tickets/${filed.data.id}`, { auth: admin })).data;
+    check(
+      'the cycle ticket is approved, autonomous and on the dev-site project',
+      ticket.ticket.status === 'approved' && ticket.ticket.kind === 'system' && ticket.ticket.source === 'dsh' && ticket.ticket.attention === 'auto' && ticket.ticket.project_slug === 'malipetek-dev-site',
+      JSON.stringify(ticket.ticket),
+    );
+    const brief = ticket.messages.find((m) => m.author === 'ali')?.body ?? '';
+    check('the brief asks for the outbox and the launch kit', /marketing\/launch\/proof\.md/.test(brief) && brief.includes('<<<OUTBOX'), brief.slice(0, 200));
+    check('the brief carries the desk’s voice notes', brief.includes('Keep it dry.'), brief.slice(0, 400));
+    check(
+      'the brief frames each post as a first introduction, not a price sheet',
+      brief.includes('never heard of this') && brief.includes('Pricing is not the subject'),
+      brief.slice(0, 600),
+    );
+
+    await call(`/admin/tickets/${filed.data.id}/claim`, { method: 'POST', auth: admin, body: { executor: 'claude' } });
+    const summary = [
+      'Three posts written for the week.',
+      '',
+      '<<<OUTBOX',
+      JSON.stringify({
+        posts: [
+          { channel: 'x', text: 'A one-minute fix billed by the second is $1.67.' },
+          { channel: 'x', text: 'The bill is measured, not estimated.' },
+          { channel: 'linkedin', text: 'First five pilot jobs ran between $2.18 and $8.25. Pilot jobs, not clients.' },
+        ],
+      }),
+      'OUTBOX>>>',
+      '— dsh on macbook',
+    ].join('\n');
+    const reported = await call(`/admin/tickets/${filed.data.id}/run-result`, { method: 'POST', auth: admin, body: { ok: true, summary } });
+    check('the run reports back', reported.status === 200, JSON.stringify(reported.data));
+
+    const posts = (await call('/admin/marketing/messages', { auth: admin })).data.messages.filter((m) => m.campaign === 'auto' && m.status === 'scheduled');
+    const now = Math.floor(Date.now() / 1000);
+    check('three posts are scheduled in the future', posts.length === 3 && posts.every((m) => m.scheduledAt > now), JSON.stringify(posts.map((m) => [m.channel, m.scheduledAt])));
+    check('two go to X and one to LinkedIn', posts.filter((m) => m.channel === 'x').length === 2 && posts.filter((m) => m.channel === 'linkedin').length === 1);
+    const done = (await call(`/admin/tickets/${filed.data.id}`, { auth: admin })).data.ticket;
+    check('the cycle ticket closes itself as done', done.status === 'done');
+
+    // A cycle whose reply has no outbox queues nothing and stays for Ali.
+    const forced = await call('/admin/marketing/cycle?force=1', { method: 'POST', auth: admin });
+    check('a forced call files a new cycle', forced.data.filed === true && forced.data.id !== filed.data.id);
+    await call(`/admin/tickets/${forced.data.id}/claim`, { method: 'POST', auth: admin, body: { executor: 'claude' } });
+    await call(`/admin/tickets/${forced.data.id}/run-result`, { method: 'POST', auth: admin, body: { ok: true, summary: 'I cannot write these right now.' } });
+    const after = (await call('/admin/marketing/messages', { auth: admin })).data.messages.filter((m) => m.campaign === 'auto' && m.status === 'scheduled');
+    const held = (await call(`/admin/tickets/${forced.data.id}`, { auth: admin })).data;
+    check('a reply without an outbox queues nothing and leaves the ticket in review', after.length === 3 && held.ticket.status === 'review');
+    check('the ticket says why nothing was queued', (held.messages.find((m) => m.author === 'system' && /no readable outbox/.test(m.body)) ?? null) !== null);
   },
 
   async sites({ admin }) {

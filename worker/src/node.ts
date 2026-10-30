@@ -45,6 +45,7 @@ import { encoder, type HonoEnv } from './shared.ts';
 import { mailAli, siteUrl } from './portal.ts';
 import { finishRun, normalizeReport, sessionKey, sharedLine } from './runs.ts';
 import { claimForNode, cleanNodeReport, getSettings, heartbeat } from './queue.ts';
+import { finishContentCycle } from './content.ts';
 import { createDeploy, finishDeploy, reportSiteRepo } from './sites.ts';
 import { uploadDeployBlob, DEPLOY_LIMITS } from './sites.ts';
 import { cleanRepo, parseBrief } from './setup.ts';
@@ -526,6 +527,10 @@ node.post('/node/runs/:runId/result', async (c) => {
   if (report.sessionLog && !(await c.env.FILES?.head(sessionKey(run.ticket_id, runId)))) report.sessionLog = false;
   const done = await finishRun(c.env, run.ticket_id, report, { runId, nodeId });
   if (!done.ok) return c.json({ error: done.error }, done.error === 'not_found' ? 404 : 409);
+
+  // A content cycle reads its outbox from the summary. A failure here is not
+  // worth failing the report: the run is already closed.
+  if (!done.late) await finishContentCycle(c.env, run.ticket_id, report.summary, report.ok).catch(() => {});
 
   const id = run.ticket_id;
   if ((await getSettings(c.env)).notifyRunFinished) c.executionCtx.waitUntil(

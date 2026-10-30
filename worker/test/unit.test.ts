@@ -13,6 +13,7 @@ import { setupFor, slugify, type SetupInput } from '../src/setup.ts';
 import { cleanDeployManifest, cleanSiteSlug } from '../src/sites.ts';
 import { checkUploads, cleanFileName, fileType } from '../src/files.ts';
 import { fillTemplate, isOptOut, localClock, parseContactsCsv, parseCsv, sendWindow, SEQUENCES } from '../src/marketing.ts';
+import { cleanPost, nextSlots, parseOutbox, slotLabel } from '../src/content.ts';
 
 /* —— mail: who may file a ticket by email —— */
 
@@ -393,4 +394,63 @@ test('marketing: the window follows the configured local clock', () => {
   assert.deepEqual(sendWindow({ ...base, startHour: 22, endHour: 6 }, 4 * 86400 + 23 * 3600), { open: true });
   assert.deepEqual(sendWindow({ ...base, startHour: 22, endHour: 6 }, 5 * 86400 + 2 * 3600), { open: true });
   assert.equal(sendWindow({ ...base, startHour: 22, endHour: 6 }, 5 * 86400 + 12 * 3600).open, false);
+});
+
+/* —— marketing: the content cycle —— */
+
+/* Monday 2 Nov 2026, 12:00 at UTC+3 — the day a cycle would normally file. */
+const mondayNoon = Date.UTC(2026, 10, 2, 9, 0, 0) / 1000;
+
+test('content: a cycle lands on the next Tuesday, Thursday and Saturday, local time', () => {
+  const slots = nextSlots(mondayNoon, 3, 180);
+  assert.deepEqual(
+    slots.map((at) => slotLabel(at, 180)),
+    ['Tue 3 Nov 09:30', 'Thu 5 Nov 09:30', 'Sat 7 Nov 10:00'],
+  );
+  // A fourth post spills into the following week.
+  assert.equal(slotLabel(nextSlots(mondayNoon, 4, 180)[3], 180), 'Tue 10 Nov 09:30');
+  // The offset is the desk's, not UTC.
+  assert.equal(slotLabel(slots[0], 0), 'Tue 3 Nov 06:30');
+  // A slot that has just passed is not handed out again.
+  assert.equal(slotLabel(nextSlots(slots[0], 1, 180)[0], 180), 'Thu 5 Nov 09:30');
+  // Slots another cycle already booked are skipped.
+  const taken = new Set([slots[0], slots[1]]);
+  assert.deepEqual(
+    nextSlots(mondayNoon, 2, 180, taken).map((at) => slotLabel(at, 180)),
+    ['Sat 7 Nov 10:00', 'Tue 10 Nov 09:30'],
+  );
+});
+
+test('content: the outbox is the last block, and only its JSON is trusted', () => {
+  const summary = [
+    'Here are the posts.',
+    '',
+    '<<<OUTBOX',
+    '```json',
+    '{"posts":[{"channel":"x","text":"one"},{"channel":"bluesky","text":"no"},{"channel":"linkedin","text":"two"}]}',
+    '```',
+    'OUTBOX>>>',
+    '— dsh on macbook · $0.12',
+  ].join('\n');
+  assert.deepEqual(parseOutbox(summary), [
+    { channel: 'x', text: 'one' },
+    { channel: 'linkedin', text: 'two' },
+  ]);
+  assert.equal(parseOutbox('no block here'), null);
+  assert.equal(parseOutbox('<<<OUTBOX\nnot json\nOUTBOX>>>'), null);
+  assert.equal(parseOutbox('<<<OUTBOX\n{"posts":"x"}\nOUTBOX>>>'), null);
+});
+
+test('content: a post is cleaned, measured and checked before it is queued', () => {
+  assert.deepEqual(cleanPost('  first line   \r\n\r\n\r\n\r\nlast  ', 'x'), { ok: true, text: 'first line\n\nlast' });
+  assert.equal(cleanPost('   ', 'x').ok, false);
+  assert.equal(cleanPost('x'.repeat(281), 'x').ok, false);
+  assert.equal(cleanPost('x'.repeat(281), 'linkedin').ok, true);
+  for (const bad of ['An AI-powered shop', 'We use Claude to do it', 'GPT-4 does the typing', 'A guaranteed 10x return']) {
+    assert.equal(cleanPost(bad, 'linkedin').ok, false, bad);
+  }
+  assert.equal(cleanPost('AI at cost, $100/hour by the second', 'linkedin').ok, true);
+  assert.equal(cleanPost('one #buildinpublic two #smallbusiness', 'x').ok, true);
+  assert.equal(cleanPost('#one #two #three', 'x').ok, false);
+  assert.equal(cleanPost('text <<<OUTBOX', 'x').ok, false);
 });

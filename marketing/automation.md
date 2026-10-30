@@ -7,6 +7,7 @@ nothing sends that the desk does not hold.
 | --- | --- | --- |
 | Email sequences | every 5 minutes, Worker cron | [worker/src/marketing.ts](../worker/src/marketing.ts) |
 | X and LinkedIn posts | every 15 minutes on this Mac | [publisher/](publisher/README.md) |
+| Writing the posts | weekly, a fleet agent ticket | [worker/src/content.ts](../worker/src/content.ts) |
 | Prospect lists | by hand, per batch | [prospector/](prospector/README.md) |
 
 ## One-time setup, in this order
@@ -78,6 +79,57 @@ because the cold sequences are written around one. Nothing half-written leaves.
 
 All of it is visible in the desk's event list.
 
+## The content cycle
+
+Nobody writes the social posts by hand. Every five minutes the Worker asks
+whether the queue needs posts, and when it does, files **one approved system
+ticket** on the `malipetek-dev-site` project. A fleet node claims it like any
+other ticket and runs an agent in a worktree of this repo.
+
+The brief (the ticket's first message) tells the agent to read
+[launch/social.md](launch/social.md), [launch/proof.md](launch/proof.md) and
+[kit.md](kit.md), lists the last dozen posts so it does not repeat an angle, and
+asks for two X posts and one LinkedIn post. The agent is told not to change any
+files — this is a writing job. It ends its reply with a small JSON block:
+
+```
+<<<OUTBOX
+{"posts":[{"channel":"x","text":"…"},{"channel":"linkedin","text":"…"}]}
+OUTBOX>>>
+```
+
+The Worker reads that block from the run's report and queues whatever passes the
+checks: right channel, 280 characters for X and 3,000 for LinkedIn, no
+"AI-powered", no model or provider names, no guarantees or multipliers, at most
+two hashtags. A post that fails is left out and named in the ticket note. What
+passes is scheduled on the next **Tuesday 09:30, Thursday 09:30 and Saturday
+10:00** (desk time), and from then on it is an ordinary queued post: the desk
+shows it, the publisher posts it, the kill switch is the launchd job.
+
+| Gate | Default |
+| --- | --- |
+| An open cycle ticket | one at a time |
+| A cycle ticket from the last day | waits a day (a failed cycle retries) |
+| A cycle that queued posts in the last six days | waits for the week |
+| Posts already scheduled | three is enough |
+
+**Now** in the Queue tab files a cycle immediately, past the day and week gates
+(never past an open one). A cycle that could not queue anything — the run
+failed, the reply had no readable block, no post passed — stays in **Review**
+with the reason, and tries again the next day. A run that queues posts closes
+its ticket itself.
+
+The store is the memory: there is no log file the agent keeps, because each run
+starts from a fresh worktree. What the agent knows about the discourse is in the
+brief, and the brief is built from `marketing_messages`.
+
+**Changing the voice.** [launch/social.md](launch/social.md) is the long form; the desk's
+**Voice notes** (Marketing → Settings → Written posts) are the short form, added
+to every brief after the kit. Notes win where they disagree with the kit, so a
+new instinct — "shorter sentences", "no exclamation marks" — can go in without a
+commit. **Draft posts** files a cycle at once; **Post now** on a scheduled post
+makes it due immediately, and the publisher takes it within fifteen minutes.
+
 ## Pausing everything
 
 | What | How | Effect |
@@ -135,4 +187,6 @@ batch.
 - answering replies.
 
 The automation carries the queue and the record; it does not decide who to
-write to or what to say about them.
+write to or what to say about them. The exception is the content cycle: the
+posts are written and queued without anyone reading them, so the desk's Queue
+tab is where you look when you are curious, and **Cancel** is the override.

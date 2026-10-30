@@ -27,6 +27,19 @@ const WINDOW_REASON = {
   daily_cap: 'the day’s cap is used',
 };
 
+const CYCLE_SKIP = {
+  open_cycle: 'A cycle ticket is already open — its agent is writing.',
+  recent_cycle: 'The last cycle was filed less than a day ago.',
+  weekly_cycle: 'This week’s cycle is already queued.',
+  stocked: 'The next week already has three posts queued.',
+  no_project: 'No malipetek-dev-site project to run the agent in.',
+  no_admin: 'No admin account to file the ticket for.',
+};
+const cycleMessage = (result) =>
+  result?.filed
+    ? `Filed #${result.id}: an agent writes the posts and the desk queues them.`
+    : (CYCLE_SKIP[result?.reason] ?? `Nothing filed: ${result?.reason ?? 'unknown reason'}`);
+
 const offsetLabel = (minutes) => `UTC${minutes >= 0 ? '+' : '−'}${Math.abs(minutes) / 60}`;
 const snippet = (text, max = 90) => (text.length > max ? `${text.slice(0, max)}…` : text);
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -179,8 +192,9 @@ export function MarketingView() {
                 </option>
               ))}
             </select>
-            <Button kind="primary" onClick={() => setModal({ kind: 'compose' })}>
-              Compose
+            <Button onClick={() => setModal({ kind: 'compose' })}>Compose</Button>
+            <Button kind="primary" onClick={() => run(() => api('POST', '/admin/marketing/cycle?force=1'), cycleMessage)}>
+              Draft posts
             </Button>
           </>
         ) : null}
@@ -293,9 +307,22 @@ export function MarketingView() {
                             Send now
                           </Button>
                         ) : null}
-                        {m.channel !== 'email' && ['draft', 'failed'].includes(m.status) ? (
-                          <Button size="sm" onClick={() => run(() => api('POST', `/admin/marketing/messages/${m.id}/send`), 'Queued for the publisher.')}>
-                            Queue now
+                        {m.channel !== 'email' && ['draft', 'scheduled', 'failed'].includes(m.status) ? (
+                          <Button size="sm" onClick={() => setModal({ kind: 'edit', message: m })}>
+                            Edit
+                          </Button>
+                        ) : null}
+                        {m.channel !== 'email' && ['draft', 'scheduled', 'failed'].includes(m.status) ? (
+                          <Button
+                            size="sm"
+                            onClick={() =>
+                              run(
+                                () => api('POST', `/admin/marketing/messages/${m.id}/send`),
+                                m.status === 'scheduled' ? 'Due now — the publisher posts it within 15 minutes.' : 'Queued for the publisher.',
+                              )
+                            }
+                          >
+                            {m.status === 'scheduled' ? 'Post now' : 'Queue now'}
                           </Button>
                         ) : null}
                         {!closed ? (
@@ -317,8 +344,8 @@ export function MarketingView() {
             <ul className="aw-rows">
               {overview.events.map((e) => (
                 <li key={e.id} className="aw-row">
-                  <Tag tone={e.kind === 'failed' || e.kind === 'bounce' || e.kind === 'opt_out' ? 'bad' : e.kind === 'reply' || e.kind === 'sent' ? 'ok' : 'dash'}>
-                    {e.kind}
+                  <Tag tone={e.kind === 'failed' || e.kind === 'bounce' || e.kind === 'opt_out' || e.kind === 'cycle_failed' ? 'bad' : e.kind === 'reply' || e.kind === 'sent' || e.kind === 'published' || e.kind === 'cycle' ? 'ok' : 'dash'}>
+                    {e.kind.replace('_', ' ')}
                   </Tag>
                   <span className="aw-row__title">{e.email ?? '—'}</span>
                   <span className="aw-muted">{snippet(e.detail ?? '', 100)}</span>
@@ -370,6 +397,10 @@ export function MarketingView() {
           onSaved={done}
         />
       ) : null}
+
+      {modal?.kind === 'edit' ? (
+        <EditPostModal message={modal.message} api={api} onClose={() => setModal(null)} onSaved={done} />
+      ) : null}
     </div>
   );
 }
@@ -381,6 +412,21 @@ function SettingsTab({ overview, run, api, contactsById }) {
   useEffect(() => setDraft(overview.settings), [overview.settings]);
   const set = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
   const changed = Object.keys(draft).some((key) => draft[key] !== overview.settings[key]);
+  const save = () => {
+    const patch = Object.fromEntries(Object.entries(draft).filter(([key, value]) => value !== overview.settings[key]));
+    void run(() => api('PUT', '/admin/marketing/settings', patch), 'Marketing settings saved.');
+  };
+  const actions = (
+    <div className="aw-inline">
+      <span className="aw-toolbar__fill" />
+      <Button disabled={!changed} onClick={() => setDraft(overview.settings)}>
+        Reset
+      </Button>
+      <Button kind="primary" disabled={!changed} onClick={save}>
+        Save
+      </Button>
+    </div>
+  );
 
   return (
     <>
@@ -429,22 +475,23 @@ function SettingsTab({ overview, run, api, contactsById }) {
             <input inputMode="numeric" value={draft.offsetMinutes} onChange={(e) => set('offsetMinutes', Number(e.target.value))} />
           </Field>
         </div>
-        <div className="aw-inline">
-          <span className="aw-toolbar__fill" />
-          <Button disabled={!changed} onClick={() => setDraft(overview.settings)}>
-            Reset
-          </Button>
-          <Button
-            kind="primary"
-            disabled={!changed}
-            onClick={() => {
-              const patch = Object.fromEntries(Object.entries(draft).filter(([key, value]) => value !== overview.settings[key]));
-              void run(() => api('PUT', '/admin/marketing/settings', patch), 'Marketing settings saved.');
-            }}
-          >
-            Save
-          </Button>
-        </div>
+        {actions}
+      </section>
+
+      <section className="aw-panel">
+        <h3>Written posts</h3>
+        <Field
+          label="Voice notes"
+          hint="Added to every content brief, after the launch kit. Leave empty to follow the kit alone. The next cycle picks it up; Draft posts shows it at once."
+        >
+          <textarea
+            rows={3}
+            value={draft.voiceNotes ?? ''}
+            placeholder="Shorter sentences. No exclamation marks. Talk about the client's week, not the machine."
+            onChange={(e) => set('voiceNotes', e.target.value)}
+          />
+        </Field>
+        {actions}
       </section>
 
       <section className="aw-panel">
@@ -637,6 +684,47 @@ function QueueModal({ api, contact, sequences, onClose, onQueued }) {
       <Field label="Sequence">
         <Segmented value={sequence} options={sequences.map((s) => ({ value: s.key, label: s.label }))} onChange={setSequence} />
       </Field>
+      {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
+    </Modal>
+  );
+}
+
+function EditPostModal({ api, message, onClose, onSaved }) {
+  const [body, setBody] = useState(message.body);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const limit = message.channel === 'x' ? 280 : 3000;
+  const length = body.trim().length;
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api('PATCH', `/admin/marketing/messages/${message.id}`, { body });
+      onSaved('Post updated.');
+    } catch (err) {
+      setError(err.message ?? err.code);
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      title={`Edit ${message.channel === 'x' ? 'X' : 'LinkedIn'} post`}
+      subtitle={message.status === 'scheduled' ? 'Scheduled. The publisher posts the text as written.' : 'Not queued yet.'}
+      onClose={onClose}
+      wide
+      actions={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button kind="primary" disabled={busy || !body.trim() || length > limit} onClick={submit}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      <Field label="Text" hint={`${length} of ${limit} characters.`}>
+        <textarea rows={10} value={body} maxLength={20000} onChange={(e) => setBody(e.target.value)} />
+      </Field>
+      {length > limit ? <div className="aw-banner aw-banner--bad">{message.channel === 'x' ? 'X allows 280 characters.' : 'LinkedIn allows 3,000 characters.'}</div> : null}
       {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
     </Modal>
   );

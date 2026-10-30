@@ -6,6 +6,17 @@ match. Dry voice, no "AI-powered", no model names, no invented results.
 Every number here comes from `proof.md`. If a post needs a number that is not
 there, do not write the post.
 
+## Framing
+
+The reader has never heard of this. Each post is a first introduction:
+
+- Say plainly what the service is and who it is for, in the first line, before
+  anything else.
+- Pricing is not the subject. One plain sentence at most, only when the post
+  needs it, and never as the opening line. The launch posts below explain the
+  meter; later posts should not keep re-explaining it.
+- Do not assume the reader has seen another post, the site, or the portal.
+
 ## Cadence
 
 - LinkedIn: 3 posts a week for four weeks, then 1–2 a week. Reply to every

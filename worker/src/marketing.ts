@@ -21,6 +21,7 @@
 import { Hono, type Context } from 'hono';
 import { json, now, type Env, type HonoEnv } from './shared.ts';
 import { mailAli, requireAdmin, requireUser, siteUrl, type PortalEnv } from './portal.ts';
+import { ensureContentCycle } from './content.ts';
 
 /* ——————————————————————— settings ——————————————————————— */
 
@@ -37,6 +38,8 @@ export interface MarketingSettings {
   weekdaysOnly: boolean;
   postalAddress: string;
   fromName: string;
+  /** Added to every content-cycle brief, after the launch kit. */
+  voiceNotes: string;
 }
 
 const SETTING_DEFAULTS: MarketingSettings = {
@@ -49,6 +52,7 @@ const SETTING_DEFAULTS: MarketingSettings = {
   weekdaysOnly: true,
   postalAddress: '',
   fromName: 'Ali Petek',
+  voiceNotes: '',
 };
 
 const SETTING_KEYS: Record<keyof MarketingSettings, string> = {
@@ -61,6 +65,7 @@ const SETTING_KEYS: Record<keyof MarketingSettings, string> = {
   weekdaysOnly: 'marketing_weekdays_only',
   postalAddress: 'marketing_postal_address',
   fromName: 'marketing_from_name',
+  voiceNotes: 'marketing_voice_notes',
 };
 
 const FIELD_OF_KEY = Object.fromEntries(Object.entries(SETTING_KEYS).map(([field, key]) => [key, field])) as Record<
@@ -90,6 +95,11 @@ const RULES: Record<keyof MarketingSettings, (raw: unknown) => unknown> = {
     if (typeof raw !== 'string') return undefined;
     const value = raw.trim();
     return value && value.length <= 80 ? value : undefined;
+  },
+  voiceNotes: (raw) => {
+    if (typeof raw !== 'string') return undefined;
+    const value = raw.trim();
+    return value.length <= 800 ? value : undefined;
   },
 };
 
@@ -1270,6 +1280,45 @@ marketing.post('/admin/marketing/messages', async (c) => {
   return out(c, { message: messageView(message) }, 201);
 });
 
+/**
+ * Rewrite a social post before it goes out. The text is the whole message, so
+ * it must fit the channel; a post already claimed by the publisher, or sent,
+ * is the record and is not edited.
+ */
+marketing.patch('/admin/marketing/messages/:id', async (c) => {
+  const env = c.env;
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id)) return out(c, { error: 'bad_id' }, 400);
+  const body = await jsonBody(c);
+
+  const message = await env.DB.prepare('SELECT id, channel, status FROM marketing_messages WHERE id = ?')
+    .bind(id)
+    .first<{ id: number; channel: string; status: string }>();
+  if (!message) return out(c, { error: 'not_found' }, 404);
+  if (message.channel === 'email') return out(c, { error: 'not_a_post' }, 400);
+  if (!['draft', 'scheduled', 'failed'].includes(message.status)) return out(c, { error: 'not_editable' }, 409);
+
+  const text = (typeof body?.body === 'string' ? body.body : '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+$/, ''))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (!text) return out(c, { error: 'empty' }, 400);
+  const max = message.channel === 'x' ? 280 : 3_000;
+  if (text.length > max) return out(c, { error: 'too_long', max, length: text.length }, 400);
+
+  const updated = await env.DB.prepare(
+    `UPDATE marketing_messages SET body = ?, updated_at = ?
+      WHERE id = ? AND status IN ('draft', 'scheduled', 'failed') RETURNING *`,
+  )
+    .bind(text, now(), id)
+    .first<Message>();
+  if (!updated) return out(c, { error: 'not_editable' }, 409);
+  return out(c, { message: messageView(updated) });
+});
+
 marketing.post('/admin/marketing/messages/:id/schedule', async (c) => {
   const env = c.env;
   const id = Number(c.req.param('id'));
@@ -1374,6 +1423,12 @@ marketing.put('/admin/marketing/settings', async (c) => {
 marketing.post('/admin/marketing/run', async (c) => {
   const summary = await runMarketing(c.env);
   return out(c, summary);
+});
+
+/** File a content cycle now, past the daily and weekly gates (never past an open one). */
+marketing.post('/admin/marketing/cycle', async (c) => {
+  const result = await ensureContentCycle(c.env, now(), { force: c.req.query('force') === '1' });
+  return out(c, result, result.filed ? 201 : 200);
 });
 
 /* —— router: the local publisher, machine-auth only —— */

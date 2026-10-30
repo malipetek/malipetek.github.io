@@ -5,6 +5,7 @@
 import { handleInbound } from './inbound.ts';
 import { mailAli, siteUrl } from './portal.ts';
 import { runMarketing } from './marketing.ts';
+import { ensureContentCycle } from './content.ts';
 import { reapExpired, takeNewOutages, takeNewStalls } from './queue.ts';
 import type { Env } from './shared.ts';
 import { advanceSites, pruneDeploys, takeNewSiteFailures } from './sites.ts';
@@ -66,6 +67,6 @@ export default {
     await handleInbound(message, env);
   },
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(Promise.all([watchQueue(env), watchSites(env), runMarketing(env)]));
+    ctx.waitUntil(Promise.all([watchQueue(env), watchSites(env), runMarketing(env), ensureContentCycle(env)]));
   },
 };

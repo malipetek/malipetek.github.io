@@ -33,6 +33,7 @@
 import { Hono, type Context } from 'hono';
 import { ATTENTION_KEYS, DEFAULT_ATTENTION, money, priceLine, priceOf } from '../../src/lib/pricing.js';
 import { claimTicketById, finishRun, normalizeReport, openRuns, recentRuns, sessionKey, ticketRuns } from './runs.ts';
+import { finishContentCycle } from './content.ts';
 import { readSteps } from './steps.ts';
 import {
   CAPABILITY_CATALOG,
@@ -1675,6 +1676,10 @@ portal.post('/admin/tickets/:id/run-result', async (c) => {
   report.sessionLog = false;
   const done = await finishRun(c.env, id, report);
   if (!done.ok) return reply(c, { error: done.error }, done.error === 'not_found' ? 404 : 409);
+
+  // A content cycle reads its outbox from the summary; nothing about it may
+  // fail the report of a run that already closed.
+  if (!done.late) await finishContentCycle(c.env, id, report.summary, report.ok).catch(() => {});
 
   if ((await getSettings(c.env)).notifyRunFinished) c.executionCtx.waitUntil(
     mailAli(c.env, {
