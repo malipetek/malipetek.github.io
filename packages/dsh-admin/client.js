@@ -30,7 +30,7 @@ var __awPlugin = (() => {
 
   // host-react:react
   var R = globalThis.__AW_REACT__;
-  var { createContext, createElement, Fragment, useCallback: useCallback2, useContext, useEffect: useEffect2, useMemo, useRef, useState: useState2, useSyncExternalStore } = R;
+  var { createContext, createElement, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } = R;
 
   // packages/admin-ui/src/store.js
   var AdminContext = createContext(null);
@@ -52,15 +52,15 @@ var __awPlugin = (() => {
   };
   var visible = () => typeof document === "undefined" || document.visibilityState === "visible";
   function usePoll(fn, ms, deps = []) {
-    useEffect2(() => {
+    useEffect(() => {
       const id = setInterval(() => visible() && fn(), ms);
       return () => clearInterval(id);
     }, deps);
   }
   function useAdminData(api) {
-    const [data, setData] = useState2(EMPTY);
+    const [data, setData] = useState(EMPTY);
     const inflight = useRef(null);
-    const load = useCallback2(() => {
+    const load = useCallback(() => {
       if (inflight.current) return inflight.current;
       const get = (path) => api("GET", path);
       inflight.current = Promise.allSettled([
@@ -94,19 +94,19 @@ var __awPlugin = (() => {
       });
       return inflight.current;
     }, [api]);
-    useEffect2(() => {
+    useEffect(() => {
       void load();
     }, [load]);
     usePoll(load, 15e3, [load]);
     return [data, load];
   }
   function useTicket(api, id) {
-    const [state, setState] = useState2({ loading: true, error: null, ticket: null, messages: [], runs: [], land: null });
-    const load = useCallback2(
+    const [state, setState] = useState({ loading: true, error: null, ticket: null, messages: [], runs: [], land: null });
+    const load = useCallback(
       () => api("GET", `/admin/tickets/${id}`).then((d) => setState({ loading: false, error: null, ticket: d.ticket, messages: d.messages ?? [], runs: d.runs ?? [], land: d.land ?? null })).catch((error) => setState((s) => ({ ...s, loading: false, error }))),
       [api, id]
     );
-    useEffect2(() => {
+    useEffect(() => {
       void load();
     }, [load]);
     const live = state.ticket?.status === "in_progress" || state.runs.some((r) => r.status === "running");
@@ -122,12 +122,12 @@ var __awPlugin = (() => {
   }
   function useMeter(api, ticket, active) {
     const open = Boolean(ticket) && ticket.status !== "done" && ticket.status !== "declined";
-    const [seconds, setSeconds] = useState2(ticket?.human_seconds ?? 0);
-    const [running, setRunning] = useState2(false);
+    const [seconds, setSeconds] = useState(ticket?.human_seconds ?? 0);
+    const [running, setRunning] = useState(false);
     const pending = useRef(0);
     const id = ticket?.id;
-    useEffect2(() => setSeconds(ticket?.human_seconds ?? 0), [id, ticket?.human_seconds]);
-    useEffect2(() => {
+    useEffect(() => setSeconds(ticket?.human_seconds ?? 0), [id, ticket?.human_seconds]);
+    useEffect(() => {
       if (!id) return void 0;
       const flush = () => {
         const n = pending.current;
@@ -322,7 +322,7 @@ var __awPlugin = (() => {
   var Tag = ({ children, tone, title }) => /* @__PURE__ */ jsx("span", { className: cx("aw-tag", tone && `aw-tag--${tone}`), title, children });
   function Resizer({ host, cssVar, def, min, max, invert = false, storage, className }) {
     const ref = useRef(null);
-    useEffect2(() => {
+    useEffect(() => {
       const el = ref.current;
       const pane = el?.closest(host);
       if (!el || !pane) return void 0;
@@ -390,7 +390,7 @@ var __awPlugin = (() => {
   }
   function Modal({ title, subtitle, onClose, children, actions, wide, full }) {
     const ref = useRef(null);
-    useEffect2(() => {
+    useEffect(() => {
       const onKey = (e) => e.key === "Escape" && onClose();
       window.addEventListener("keydown", onKey);
       ref.current?.querySelector("input, textarea, select, button")?.focus();
@@ -454,10 +454,10 @@ var __awPlugin = (() => {
   // packages/admin-ui/src/board.jsx
   function useFilters() {
     const { api, boardProject, setBoardProject } = useAdmin();
-    const [kind, setKind] = useState2("all");
-    const [q, setQ] = useState2("");
-    const [hits, setHits] = useState2(/* @__PURE__ */ new Map());
-    useEffect2(() => {
+    const [kind, setKind] = useState("all");
+    const [q, setQ] = useState("");
+    const [hits, setHits] = useState(/* @__PURE__ */ new Map());
+    useEffect(() => {
       const needle = q.trim();
       if (needle.length < 3) return void setHits(/* @__PURE__ */ new Map());
       let live = true;
@@ -558,8 +558,8 @@ var __awPlugin = (() => {
   function BoardView() {
     const { data, setStatus } = useAdmin();
     const f = useFilters();
-    const [showClosed, setShowClosed] = useState2(false);
-    const [over, setOver] = useState2(null);
+    const [showClosed, setShowClosed] = useState(false);
+    const [over, setOver] = useState(null);
     const tickets = f.apply(data.tickets);
     const columns = showClosed ? STATUSES : STATUSES.filter((s) => s !== "declined");
     const byId = new Map(data.tickets.map((t) => [t.id, t]));
@@ -620,8 +620,8 @@ var __awPlugin = (() => {
   function ListView() {
     const { data, openTicket } = useAdmin();
     const f = useFilters();
-    const [status, setStatusFilter] = useState2("open");
-    const [sort, setSort] = useState2({ key: "updated", dir: -1 });
+    const [status, setStatusFilter] = useState("open");
+    const [sort, setSort] = useState({ key: "updated", dir: -1 });
     const rows = useMemo(() => {
       const col = COLUMNS.find((c) => c.key === sort.key);
       return f.apply(data.tickets).filter((t) => status === "all" || (status === "open" ? !["done", "declined"].includes(t.status) : t.status === status)).sort((a, b) => (col.get(a) > col.get(b) ? 1 : col.get(a) < col.get(b) ? -1 : 0) * sort.dir);
@@ -938,7 +938,7 @@ var __awPlugin = (() => {
   }
   function ReviewButton({ ticket, runs }) {
     const { host } = useAdmin();
-    const [open, setOpen] = useState2(false);
+    const [open, setOpen] = useState(false);
     const gitGraph = host?.gitGraph;
     if (!gitGraph?.available() || !ticket.project_slug) return null;
     const ref = reviewRef(runs);
@@ -949,8 +949,8 @@ var __awPlugin = (() => {
   }
   function ReviewModal({ ticket, gitRef, gitGraph, onClose }) {
     const { host } = useAdmin();
-    const [state, setState] = useState2({ status: "loading", text: "Finding the repository\u2026", sessionId: null });
-    useEffect2(() => {
+    const [state, setState] = useState({ status: "loading", text: "Finding the repository\u2026", sessionId: null });
+    useEffect(() => {
       let alive = true;
       void (async () => {
         try {
@@ -975,7 +975,7 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsx(Modal, { title: `Review #${ticket.id}`, subtitle: state.text, onClose, full: true, children: /* @__PURE__ */ jsx("div", { className: "aw-review", children: state.status === "ready" ? /* @__PURE__ */ jsx(View2, { sessionId: state.sessionId }) : /* @__PURE__ */ jsx("p", { className: cx("aw-empty", state.status === "failed" && "aw-error"), children: state.text }) }) });
   }
   function Timeline({ ticket, messages, runs }) {
-    const [diff, setDiff] = useState2(null);
+    const [diff, setDiff] = useState(null);
     const items = [
       ...messages.filter((m) => m.author !== "runner").map((m) => ({ at: m.created_at, kind: "msg", m })),
       ...runs.map((r) => ({ at: r.started_at, kind: "run", r }))
@@ -999,7 +999,7 @@ var __awPlugin = (() => {
   var isLong = (text) => (text ?? "").length > 320 || (text ?? "").split("\n").length > 6;
   function useFold(text, latest) {
     const long = isLong(text);
-    const [open, setOpen] = useState2(!long || latest);
+    const [open, setOpen] = useState(!long || latest);
     const toggle = () => {
       if (!long || window.getSelection?.()?.toString()) return;
       setOpen((o) => !o);
@@ -1066,11 +1066,11 @@ var __awPlugin = (() => {
   var STEP_MARK = { tool: "\u203A", text: "\xB7", error: "!", node: "\u25E6" };
   function RunSteps({ run, live }) {
     const { api } = useAdmin();
-    const [open, setOpen] = useState2(live);
-    const [steps, setSteps] = useState2(null);
+    const [open, setOpen] = useState(live);
+    const [steps, setSteps] = useState(null);
     const listRef = useRef(null);
     const lastSeq = useRef(0);
-    useEffect2(() => {
+    useEffect(() => {
       if (!open) return void 0;
       let alive = true;
       let timer = null;
@@ -1092,7 +1092,7 @@ var __awPlugin = (() => {
         if (timer) clearTimeout(timer);
       };
     }, [open, run.id, api]);
-    useEffect2(() => {
+    useEffect(() => {
       const el = listRef.current;
       if (live && el && el.scrollHeight - el.scrollTop - el.clientHeight < 60) el.scrollTop = el.scrollHeight;
     }, [steps, live]);
@@ -1157,9 +1157,9 @@ var __awPlugin = (() => {
   }
   function ConversationButton({ run }) {
     const { host } = useAdmin();
-    const [state, setState] = useState2({ busy: false, error: null });
+    const [state, setState] = useState({ busy: false, error: null });
     const alive = useRef(true);
-    useEffect2(() => {
+    useEffect(() => {
       alive.current = true;
       return () => {
         alive.current = false;
@@ -1194,10 +1194,10 @@ var __awPlugin = (() => {
   function Composer({ ticket, onSent }) {
     const { api, act, ask, notify, files: host } = useAdmin();
     const isClient = ticket.kind !== "system";
-    const [mode, setMode] = useState2(isClient ? "note" : "note");
-    const [text, setText] = useState2("");
-    const [picked, setPicked] = useState2([]);
-    const [busy, setBusy] = useState2(false);
+    const [mode, setMode] = useState(isClient ? "note" : "note");
+    const [text, setText] = useState("");
+    const [picked, setPicked] = useState([]);
+    const [busy, setBusy] = useState(false);
     const picker = useRef(null);
     const note = mode === "note" || !isClient;
     const canRerun = ["review", "done", "approved", "new"].includes(ticket.status);
@@ -1350,7 +1350,7 @@ var __awPlugin = (() => {
   function Details({ ticket, runs, land, meter, reload }) {
     const { api, data, act, setStatus, host } = useAdmin();
     const isClient = ticket.kind !== "system";
-    const [fixing, setFixing] = useState2(false);
+    const [fixing, setFixing] = useState(false);
     const patch = (body, done) => act(() => api("PATCH", `/admin/tickets/${ticket.id}`, body), done).then(reload, () => void 0);
     const requires = listOf(ticket.requires);
     const caps = data.catalog?.capabilities ?? [];
@@ -1433,7 +1433,7 @@ var __awPlugin = (() => {
     ] });
   }
   function BudgetInput({ cents, onSave }) {
-    const [value, setValue] = useState2(cents == null ? "" : String(cents / 100));
+    const [value, setValue] = useState(cents == null ? "" : String(cents / 100));
     const save = () => {
       const v = value.trim();
       const next = v === "" ? null : Math.round(Number(v) * 100);
@@ -1446,7 +1446,7 @@ var __awPlugin = (() => {
     ] });
   }
   function TimeModal({ seconds, onClose, onSave }) {
-    const [minutes, setMinutes] = useState2(String(Math.round(seconds / 6) / 10));
+    const [minutes, setMinutes] = useState(String(Math.round(seconds / 6) / 10));
     const ok = Number.isFinite(Number(minutes)) && Number(minutes) >= 0;
     return /* @__PURE__ */ jsx(
       Modal,
@@ -1552,9 +1552,9 @@ var __awPlugin = (() => {
   function NodeModal({ node, onClose }) {
     const { api, act, data } = useAdmin();
     const caps = data.catalog?.capabilities ?? [];
-    const [slots, setSlots] = useState2(node.overrides?.slots ?? node.slots);
-    const [executors, setExecutors] = useState2(node.overrides?.executors ?? node.executors);
-    const [capabilities, setCapabilities] = useState2(node.overrides?.capabilities ?? node.capabilities.filter((c) => !c.startsWith("os:")));
+    const [slots, setSlots] = useState(node.overrides?.slots ?? node.slots);
+    const [executors, setExecutors] = useState(node.overrides?.executors ?? node.executors);
+    const [capabilities, setCapabilities] = useState(node.overrides?.capabilities ?? node.capabilities.filter((c) => !c.startsWith("os:")));
     const save = () => act(() => api("PATCH", `/admin/nodes/${node.id}`, { overrides: { slots, executors, capabilities } }), `${node.id} picks this up on its next heartbeat.`).then(onClose, () => void 0);
     return /* @__PURE__ */ jsxs(
       Modal,
@@ -1576,10 +1576,10 @@ var __awPlugin = (() => {
   }
   function ThisMachine() {
     const { host, notify, reload } = useAdmin();
-    const [info, setInfo] = useState2(null);
-    const [busy, setBusy] = useState2(false);
+    const [info, setInfo] = useState(null);
+    const [busy, setBusy] = useState(false);
     const load = () => host.json("localinfo").then(setInfo, (e) => notify(e.message, "error"));
-    useEffect2(() => {
+    useEffect(() => {
       void load();
       const id = setInterval(load, 15e3);
       return () => clearInterval(id);
@@ -1685,7 +1685,7 @@ var __awPlugin = (() => {
   var usageLine = (u) => u ? [u.billedCents && `${money(u.billedCents)} billed`, u.openCents && `${money(u.openCents)} open`, u.aiCents && `AI ${money(u.aiCents)}`].filter(Boolean).join(" \xB7 ") || "nothing owed" : "";
   function RepoModal({ project, onClose }) {
     const { api, act } = useAdmin();
-    const [repo, setRepo] = useState2(project.repo ?? "");
+    const [repo, setRepo] = useState(project.repo ?? "");
     const submit = () => act(() => api("PUT", `/admin/projects/${project.id}/repo`, { repo: repo.trim() }), "Repo saved.").then(onClose, () => void 0);
     return /* @__PURE__ */ jsx(
       Modal,
@@ -1800,11 +1800,11 @@ var __awPlugin = (() => {
   }
   function SettingsView() {
     const { api, act, data, platform, host, notify, reload } = useAdmin();
-    const [draft, setDraft] = useState2(data.settings ?? {});
-    useEffect2(() => setDraft(data.settings ?? {}), [data.settings]);
+    const [draft, setDraft] = useState(data.settings ?? {});
+    useEffect(() => setDraft(data.settings ?? {}), [data.settings]);
     const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
     const changed = data.settings && Object.keys(draft).some((k) => draft[k] !== data.settings[k]);
-    const [token, setToken] = useState2("");
+    const [token, setToken] = useState("");
     return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-settings", children: [
       /* @__PURE__ */ jsx("header", { className: "aw-hero", children: /* @__PURE__ */ jsx("h2", { children: "Settings" }) }),
       platform === "dsh" && host ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
@@ -1886,14 +1886,14 @@ var __awPlugin = (() => {
   var plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   function MarketingView() {
     const { api, act, notify } = useAdmin();
-    const [overview, setOverview] = useState2(null);
-    const [contacts, setContacts] = useState2([]);
-    const [messages, setMessages] = useState2([]);
-    const [error, setError] = useState2(null);
-    const [tab, setTab] = useState2("contacts");
-    const [modal, setModal] = useState2(null);
-    const [filters, setFilters] = useState2({ status: "", q: "", channel: "", messageStatus: "" });
-    const load = useCallback2(() => {
+    const [overview, setOverview] = useState(null);
+    const [contacts, setContacts] = useState([]);
+    const [messages, setMessages] = useState([]);
+    const [error, setError] = useState(null);
+    const [tab, setTab] = useState("contacts");
+    const [modal, setModal] = useState(null);
+    const [filters, setFilters] = useState({ status: "", q: "", channel: "", messageStatus: "" });
+    const load = useCallback(() => {
       const qs = (params) => {
         const search = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
         return search ? `?${search}` : "";
@@ -1909,16 +1909,16 @@ var __awPlugin = (() => {
         setError(null);
       }).catch(setError);
     }, [api, filters.status, filters.q, filters.channel, filters.messageStatus]);
-    useEffect2(() => {
+    useEffect(() => {
       void load();
     }, [load]);
     usePoll(load, 3e4, [load]);
-    const run = useCallback2(
+    const run = useCallback(
       (fn, message) => act(fn, message).then(load, () => void 0),
       [act, load]
     );
     const contactsById = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
-    const done = useCallback2(
+    const done = useCallback(
       (message) => {
         setModal(null);
         notify(message);
@@ -2148,8 +2148,8 @@ var __awPlugin = (() => {
     ] });
   }
   function SettingsTab({ overview, run, api, contactsById }) {
-    const [draft, setDraft] = useState2(overview.settings);
-    useEffect2(() => setDraft(overview.settings), [overview.settings]);
+    const [draft, setDraft] = useState(overview.settings);
+    useEffect(() => setDraft(overview.settings), [overview.settings]);
     const set = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
     const changed = Object.keys(draft).some((key) => draft[key] !== overview.settings[key]);
     const save = () => {
@@ -2241,11 +2241,11 @@ var __awPlugin = (() => {
     ] });
   }
   function ImportModal({ api, sequences, onClose, onDone }) {
-    const [csv, setCsv] = useState2("");
-    const [sequence, setSequence] = useState2("cold_a");
-    const [campaign, setCampaign] = useState2("launch");
-    const [busy, setBusy] = useState2(false);
-    const [error, setError] = useState2(null);
+    const [csv, setCsv] = useState("");
+    const [sequence, setSequence] = useState("cold_a");
+    const [campaign, setCampaign] = useState("launch");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
     const submit = async () => {
       setBusy(true);
       setError(null);
@@ -2279,7 +2279,7 @@ var __awPlugin = (() => {
   }
   function ContactModal({ api, contact, sequences, onClose, onSaved }) {
     const editing = Boolean(contact);
-    const [form, setForm] = useState2({
+    const [form, setForm] = useState({
       email: contact?.email ?? "",
       name: contact?.name ?? "",
       business: contact?.business ?? "",
@@ -2287,10 +2287,10 @@ var __awPlugin = (() => {
       gap: contact?.gap ?? "",
       notes: contact?.notes ?? ""
     });
-    const [queue, setQueue] = useState2(!editing);
-    const [sequence, setSequence] = useState2("cold_a");
-    const [busy, setBusy] = useState2(false);
-    const [error, setError] = useState2(null);
+    const [queue, setQueue] = useState(!editing);
+    const [sequence, setSequence] = useState("cold_a");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
     const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
     const submit = async () => {
       setBusy(true);
@@ -2349,9 +2349,9 @@ var __awPlugin = (() => {
     );
   }
   function QueueModal({ api, contact, sequences, onClose, onQueued }) {
-    const [sequence, setSequence] = useState2("cold_a");
-    const [busy, setBusy] = useState2(false);
-    const [error, setError] = useState2(null);
+    const [sequence, setSequence] = useState("cold_a");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
     const submit = async () => {
       setBusy(true);
       try {
@@ -2380,9 +2380,9 @@ var __awPlugin = (() => {
     );
   }
   function EditPostModal({ api, message, onClose, onSaved }) {
-    const [body, setBody] = useState2(message.body);
-    const [busy, setBusy] = useState2(false);
-    const [error, setError] = useState2(null);
+    const [body, setBody] = useState(message.body);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
     const limit = message.channel === "x" ? 280 : 3e3;
     const length = body.trim().length;
     const submit = async () => {
@@ -2416,12 +2416,12 @@ var __awPlugin = (() => {
     );
   }
   function ComposeModal({ api, contacts, onClose, onSaved }) {
-    const [channel, setChannel] = useState2("x");
-    const [contactId, setContactId] = useState2("");
-    const [subject, setSubject] = useState2("");
-    const [body, setBody] = useState2("");
-    const [busy, setBusy] = useState2(false);
-    const [error, setError] = useState2(null);
+    const [channel, setChannel] = useState("x");
+    const [contactId, setContactId] = useState("");
+    const [subject, setSubject] = useState("");
+    const [body, setBody] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
     const submit = async (queueNow) => {
       setBusy(true);
       setError(null);
@@ -2815,8 +2815,8 @@ button.aw-file:hover { border-color: currentColor; }
     return { tabs: ["inbox", "board"], active: "inbox" };
   }
   function useUnderWindowButtons(ref, enabled) {
-    const [under, setUnder] = useState2(false);
-    useEffect2(() => {
+    const [under, setUnder] = useState(false);
+    useEffect(() => {
       const el = ref.current;
       if (!enabled || !el) return void 0;
       const check = () => {
@@ -2838,21 +2838,21 @@ button.aw-file:hover { border-color: currentColor; }
     const rootRef = useRef(null);
     const underButtons = useUnderWindowButtons(rootRef, platform === "dsh");
     const [data, reload] = useAdminData(api);
-    const [{ tabs, active }, setTabs] = useState2(loadTabs);
-    const [boardProject, setBoardProject] = useState2("all");
-    const [modal, setModal] = useState2(null);
-    const [ask, setAsk] = useState2(null);
-    const [toast, setToast] = useState2(null);
-    const [palette, setPalette] = useState2(false);
-    const [sidebar, setSidebar] = useState2(true);
-    useEffect2(() => {
+    const [{ tabs, active }, setTabs] = useState(loadTabs);
+    const [boardProject, setBoardProject] = useState("all");
+    const [modal, setModal] = useState(null);
+    const [ask, setAsk] = useState(null);
+    const [toast, setToast] = useState(null);
+    const [palette, setPalette] = useState(false);
+    const [sidebar, setSidebar] = useState(true);
+    useEffect(() => {
       try {
         localStorage.setItem(TABS_KEY, JSON.stringify({ tabs, active }));
       } catch {
       }
     }, [tabs, active]);
-    const open = useCallback2((key) => setTabs((s) => ({ tabs: s.tabs.includes(key) ? s.tabs : [...s.tabs, key], active: key })), []);
-    const close = useCallback2(
+    const open = useCallback((key) => setTabs((s) => ({ tabs: s.tabs.includes(key) ? s.tabs : [...s.tabs, key], active: key })), []);
+    const close = useCallback(
       (key) => setTabs((s) => {
         const i = s.tabs.indexOf(key);
         const next = s.tabs.filter((t) => t !== key);
@@ -2861,8 +2861,8 @@ button.aw-file:hover { border-color: currentColor; }
       }),
       []
     );
-    const openTicket = useCallback2((id) => open(`t:${id}`), [open]);
-    useEffect2(() => {
+    const openTicket = useCallback((id) => open(`t:${id}`), [open]);
+    useEffect(() => {
       if (typeof window === "undefined") return void 0;
       const fromHash = () => {
         const hash = window.location.hash.slice(1);
@@ -2874,15 +2874,15 @@ button.aw-file:hover { border-color: currentColor; }
       window.addEventListener("hashchange", fromHash);
       return () => window.removeEventListener("hashchange", fromHash);
     }, [open, openTicket]);
-    const notify = useCallback2((text, kind = "ok") => {
+    const notify = useCallback((text, kind = "ok") => {
       setToast({ text, kind, at: Date.now() });
     }, []);
-    useEffect2(() => {
+    useEffect(() => {
       if (!toast) return void 0;
       const id = setTimeout(() => setToast(null), toast.kind === "error" ? 8e3 : 3500);
       return () => clearTimeout(id);
     }, [toast]);
-    const act = useCallback2(
+    const act = useCallback(
       async (fn, done) => {
         try {
           const out = await fn();
@@ -2896,7 +2896,7 @@ button.aw-file:hover { border-color: currentColor; }
       },
       [notify, reload]
     );
-    const setStatus = useCallback2(
+    const setStatus = useCallback(
       (ticket, status) => {
         if (status === ticket.status) return Promise.resolve();
         const run = () => act(() => api("PATCH", `/admin/tickets/${ticket.id}`, { status }), `#${ticket.id} \u2192 ${STATUS_LABEL[status]}`);
@@ -2914,7 +2914,7 @@ button.aw-file:hover { border-color: currentColor; }
       },
       [act, api]
     );
-    useEffect2(() => {
+    useEffect(() => {
       const onKey = (e) => {
         const mod = e.metaKey || e.ctrlKey;
         if (mod && e.key.toLowerCase() === "k") {
@@ -3036,7 +3036,7 @@ button.aw-file:hover { border-color: currentColor; }
   }
   function Explorer() {
     const { data, open, openTicket, setBoardProject, boardProject } = useAdmin();
-    const [openSlug, setOpenSlug] = useState2({});
+    const [openSlug, setOpenSlug] = useState({});
     const byProject = /* @__PURE__ */ new Map();
     for (const t of data.tickets) {
       const key = t.project_id ?? "";
@@ -3142,10 +3142,10 @@ button.aw-file:hover { border-color: currentColor; }
   }
   function Palette({ onClose }) {
     const { data, open, openTicket, setModal, reload } = useAdmin();
-    const [q, setQ] = useState2("");
-    const [i, setI] = useState2(0);
+    const [q, setQ] = useState("");
+    const [i, setI] = useState(0);
     const input = useRef(null);
-    useEffect2(() => input.current?.focus(), []);
+    useEffect(() => input.current?.focus(), []);
     const items = useMemo(() => {
       const cmds = [
         { label: "New task\u2026", hint: "command", run: () => setModal({ kind: "task" }) },
@@ -3192,14 +3192,14 @@ button.aw-file:hover { border-color: currentColor; }
   }
   function TaskModal({ preset, onClose }) {
     const { api, data, act, openTicket } = useAdmin();
-    const [title, setTitle] = useState2("");
-    const [brief, setBrief] = useState2("");
-    const [projectId, setProjectId] = useState2(preset.projectId ?? (data.projects.length === 1 ? data.projects[0].id : ""));
-    const [priority, setPriority] = useState2(data.settings?.defaultPriority ?? 0);
-    const [executor, setExecutor] = useState2(null);
-    const [requires, setRequires] = useState2([]);
-    const [approve, setApprove] = useState2(true);
-    const [busy, setBusy] = useState2(false);
+    const [title, setTitle] = useState("");
+    const [brief, setBrief] = useState("");
+    const [projectId, setProjectId] = useState(preset.projectId ?? (data.projects.length === 1 ? data.projects[0].id : ""));
+    const [priority, setPriority] = useState(data.settings?.defaultPriority ?? 0);
+    const [executor, setExecutor] = useState(null);
+    const [requires, setRequires] = useState([]);
+    const [approve, setApprove] = useState(true);
+    const [busy, setBusy] = useState(false);
     const slug = data.projects.find((p) => p.id === projectId)?.slug ?? null;
     const where = predict(data.nodes, { slug, requires, executor, kind: "system" });
     const caps = data.catalog?.capabilities ?? [];
@@ -3259,12 +3259,12 @@ button.aw-file:hover { border-color: currentColor; }
   }
   function ProjectModal({ onClose }) {
     const { api, act } = useAdmin();
-    const [name, setName] = useState2("");
-    const [slug, setSlug] = useState2("");
-    const [edited, setEdited] = useState2(false);
-    const [kind, setKind] = useState2("existing");
-    const [code, setCode] = useState2("create");
-    const [repo, setRepo] = useState2("");
+    const [name, setName] = useState("");
+    const [slug, setSlug] = useState("");
+    const [edited, setEdited] = useState(false);
+    const [kind, setKind] = useState("existing");
+    const [code, setCode] = useState("create");
+    const [repo, setRepo] = useState("");
     const ready = name.trim() && slug && (code !== "repo" || repo.trim());
     const submit = () => act(
       () => api("POST", "/admin/projects", { name: name.trim(), slug, kind, code, repo: code === "repo" ? repo.trim() : void 0 }),

@@ -11,7 +11,7 @@
  *
  * @module @malipetek/dsh-admin
  */
-import { useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { AdminApp } from '../../admin-ui/src/index.js';
 
 /** Panel identity: one id addresses both the sidebar row and the main page. */
