@@ -170,47 +170,6 @@ const SESSION_LOG_LIMIT = 50 * 1024 * 1024;
  * and the run goes on. Returns the fields for the result body.
  */
 
-/**
- * File a run's session under the workspace it belongs to.
- *
- * The desktop groups the sidebar purely from each workspace's `sessionIds`
- * array — it never looks at the session's cwd — and only the desktop's own
- * "new session" flow appends to it. A fleet run is created by the headless CLI,
- * so it lands in the "Ungrouped" pile. This appends it where it belongs.
- *
- * @param config - the node config; `projects[slug].path` is the project folder.
- * @param sessionId - the Harness session the run just created.
- * @param ticket - the ticket being worked, for its project slug.
- */
-const WORKSPACES = join(homedir(), '.dsh/storages/workspace.json');
-
-function fileSessionUnderWorkspace(config, sessionId, ticket) {
-  try {
-    // `projects[slug]` is a bare folder path in the config, and an object with
-    // `.path` once the node has enriched it — accept both.
-    const entryValue = config.projects?.[ticket.project_slug];
-    const folder = typeof entryValue === 'string' ? entryValue : entryValue?.path;
-    if (!folder || !existsSync(WORKSPACES)) return;
-    const store = JSON.parse(readFileSync(WORKSPACES, 'utf8'));
-    const workspaces = store.tables?.workspaces ?? {};
-    const norm = (value) => String(value ?? '').replace(/\/+$/, '');
-    const entry = Object.entries(workspaces).find(([, w]) => norm(w.path) === norm(folder));
-    if (!entry) return;
-    const [id, workspace] = entry;
-    const ids = Array.isArray(workspace.sessionIds) ? workspace.sessionIds : [];
-    if (ids.includes(sessionId)) return;
-    workspace.sessionIds = [...ids, sessionId];
-    workspace.updatedAt = new Date().toISOString();
-    store.tables.workspaces[id] = workspace;
-    const tmp = `${WORKSPACES}.tmp`;
-    writeFileSync(tmp, JSON.stringify(store, null, '\t'));
-    renameSync(tmp, WORKSPACES);
-    log(`#${ticket.id} session ${sessionId} filed under ${workspace.title ?? workspace.path}`);
-  } catch (error) {
-    log(`#${ticket.id} could not file session ${sessionId}: ${error.message}`);
-  }
-}
-
 async function uploadSession(config, runId, sessionId, ticketId) {
   const fields = { sessionId, sessionLog: false };
   const found = findSessionLog(sessionId);
@@ -979,8 +938,6 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
   const hasSession = DSH_FAMILY.includes(used) && typeof result.sessionId === 'string' && result.sessionId;
   const session =
     hasSession && signal.reason !== SHUTDOWN ? await uploadSession(config, claim.runId, result.sessionId, ticket.id) : undefined;
-  // Grouped in the sidebar by its project, not left in "Ungrouped".
-  if (hasSession) fileSessionUnderWorkspace(config, result.sessionId, ticket);
 
   return {
     ok,

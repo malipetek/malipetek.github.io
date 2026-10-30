@@ -251,6 +251,9 @@ function apply(ctx) {
   let workspace = null;
   ctx.inject(['uiWorkspace'], (scope) => {
     workspace = scope.uiWorkspace ?? null;
+    // Tidy Ungrouped as soon as the archive call exists.
+    const first = setTimeout(() => void archiveFleetSessions(), 3000);
+    scope.effect(() => () => clearTimeout(first), 'admin: first archive pass');
     scope.effect(
       () => () => {
         workspace = null;
@@ -268,10 +271,73 @@ function apply(ctx) {
       // The log is on disk now, but the session catalog still lists what it
       // found before the import — retain() would call the id unknown.
       if (typeof ctx.sessions?.refresh === 'function') await ctx.sessions.refresh().catch(() => undefined);
-      await ws.openSession(found?.sessionId ?? sessionId);
+      const id = found?.sessionId ?? sessionId;
+      // Fleet runs are kept archived (see archiveFleetSessions); the sidebar
+      // will not open an archived session, so bring it back first.
+      opened.set(id, Date.now());
+      if (archivedIds().includes(id) && typeof ws.unarchiveSession === 'function') await ws.unarchiveSession(id).catch(() => undefined);
+      await ws.openSession(id);
       return found;
     },
   };
+
+  /* ————— Fleet run sessions stay out of "Ungrouped" ————— */
+
+  /*
+   * A fleet run works in a worktree, and the Harness only counts a session in
+   * a workspace whose folder is exactly the session's own (dsh-workspace
+   * `candidateMatches`), so a run can never be grouped under its project; it
+   * lands in Ungrouped. Writing workspace.json from outside does not help: the
+   * app keeps that file in memory and rewrites it whole on every save.
+   *
+   * So runs are listed in the Tasks tab instead, and their sessions are
+   * archived through the app's own `archiveSession`, which leaves workspace
+   * accounting alone. Opening one from the Tasks tab or Admin unarchives it.
+   */
+  const FLEET_CWD = '/malipetek-runner/worktrees/';
+  /** Sessions opened from here recently: not archived again while you read them. */
+  const opened = new Map();
+  const KEEP_OPENED_MS = 10 * 60_000;
+  const archivedIds = () => workspace?.workspaces?.list?.getSnapshot?.()?.archivedSessionIds ?? [];
+
+  let archiving = false;
+  async function archiveFleetSessions() {
+    const ws = workspace;
+    if (archiving || typeof ws?.archiveSession !== 'function') return;
+    archiving = true;
+    try {
+      const archived = new Set(archivedIds());
+      const rows = ctx.sessions?.list?.getSnapshot?.()?.byId ?? {};
+      for (const [id, row] of Object.entries(rows)) {
+        if (typeof row?.cwd !== 'string' || !row.cwd.includes(FLEET_CWD) || archived.has(id)) continue;
+        if ((row.retainedBy?.mainView ?? 0) > 0) continue; // on screen
+        if (Date.now() - (opened.get(id) ?? 0) < KEEP_OPENED_MS) continue;
+        // A session with live work is refused by the app itself; the next pass retries.
+        await ws.archiveSession(id).catch(() => undefined);
+      }
+    } finally {
+      archiving = false;
+    }
+  }
+  {
+    let timer = null;
+    const soon = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => void archiveFleetSessions(), 3000);
+    };
+    const list = ctx.sessions?.list;
+    const stop = typeof list?.subscribe === 'function' ? list.subscribe(soon) : () => {};
+    const every = setInterval(soon, 5 * 60_000);
+    soon();
+    ctx.effect(
+      () => () => {
+        stop();
+        clearTimeout(timer);
+        clearInterval(every);
+      },
+      'admin: archive fleet sessions',
+    );
+  }
   /** One stable object so React effects that depend on it do not re-run. */
   const host = { command, json, gitGraph, conversation };
   const api = (method, path, body) => json(`api ${method} ${path}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`);
@@ -439,22 +505,44 @@ function apply(ctx) {
   };
   const taskEmptyStyle = { margin: 0, padding: '2px 8px', fontSize: 12, opacity: 0.6 };
 
+  const RUN_TINT = {
+    running: 'var(--dsw-alias-state-success-primary, #35c07a)',
+    ok: 'var(--dsw-alias-label-secondary, #8a9099)',
+    failed: 'var(--dsw-alias-state-danger-primary, #e5534b)',
+  };
+  const ago = (unix) => {
+    const s = Math.max(0, Math.floor(Date.now() / 1000) - Number(unix || 0));
+    return s < 60 ? 'now' : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`;
+  };
+  const dot = (color) => (
+    <span style={{ width: 7, height: 7, borderRadius: 4, marginTop: 5, flex: '0 0 auto', background: color ?? '#888' }} />
+  );
+  const RUNS_SHOWN = 3;
+  const lineStyle = { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+
   /**
-   * The task desk in the right pane: what waits on Ali and what is running,
-   * nothing else. A row opens the task in the Admin panel.
+   * The task desk in the right pane: what waits on Ali, then every recent
+   * run by project and ticket. Fleet run sessions are archived out of the
+   * sidebar's Ungrouped pile, so this is where their conversations are: a run
+   * row opens its conversation, a ticket row opens the ticket in Admin.
    */
   function TasksTab() {
-    const [state, setState] = useState({ tickets: [], loading: true });
+    const [state, setState] = useState({ tickets: [], runs: [], loading: true });
+    const [note, setNote] = useState('');
+    /** Tickets showing all their runs; the rest show the newest RUNS_SHOWN. */
+    const [expanded, setExpanded] = useState(() => new Set());
     useEffect(() => {
       let alive = true;
       const load = () =>
-        api('GET', '/admin/tickets')
-          .then((d) => {
-            if (alive) setState({ tickets: Array.isArray(d?.tickets) ? d.tickets : [], loading: false });
-          })
-          .catch(() => {
-            if (alive) setState((s) => ({ ...s, loading: false }));
-          });
+        Promise.all([api('GET', '/admin/tickets').catch(() => null), api('GET', '/admin/runs').catch(() => null)]).then(([t, r]) => {
+          if (!alive) return;
+          setState((prev) => ({
+            tickets: Array.isArray(t?.tickets) ? t.tickets : prev.tickets,
+            // A live run is in `running` and also among the newest `recent`; keep one of each id.
+            runs: [...new Map([...(r?.recent ?? []), ...(r?.running ?? []).map((x) => ({ ...x, status: 'running' }))].map((x) => [x.id, x])).values()],
+            loading: false,
+          }));
+        });
       void load();
       const timer = setInterval(load, 20_000);
       return () => {
@@ -463,35 +551,29 @@ function apply(ctx) {
       };
     }, []);
 
-    const waiting = state.tickets.filter((t) => t.status === 'new' || t.status === 'review');
-    const running = state.tickets.filter((t) => t.status === 'in_progress');
+    const openRun = async (run) => {
+      if (!run.session_id || !run.session_dir || !conversation.available()) {
+        openTicket({ ticketId: run.ticket_id });
+        return;
+      }
+      setNote(`Opening run ${run.id}…`);
+      try {
+        await conversation.open({ runId: run.id, sessionId: run.session_id, sessionDir: run.session_dir });
+        setNote('');
+      } catch (error) {
+        setNote(`Run ${run.id}: ${error?.message ?? 'could not open its conversation'}`);
+      }
+    };
 
-    const row = (ticket) => (
+    const waiting = state.tickets.filter((t) => t.status === 'new' || t.status === 'review');
+    const ticketRow = (ticket) => (
       <button key={ticket.id} type="button" style={taskRowStyle} onClick={() => openTicket({ ticketId: ticket.id })}>
-        <span
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: 4,
-            marginTop: 5,
-            flex: '0 0 auto',
-            background: TASK_TINT[ticket.status] ?? '#888',
-          }}
-        />
+        {dot(TASK_TINT[ticket.status])}
         <span style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={lineStyle}>
             #{ticket.id} {ticket.title}
           </span>
-          <span
-            style={{
-              display: 'block',
-              fontSize: 11,
-              opacity: 0.65,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
+          <span style={{ ...lineStyle, fontSize: 11, opacity: 0.65 }}>
             {ticket.project_name ?? 'no project'}
             {ticket.kind === 'system' ? ' · your task' : ''}
           </span>
@@ -499,17 +581,73 @@ function apply(ctx) {
       </button>
     );
 
+    // project → ticket → runs, newest first at every level (runs arrive newest first).
+    const projects = new Map();
+    for (const run of state.runs) {
+      const slug = run.slug ?? 'no project';
+      if (!projects.has(slug)) projects.set(slug, new Map());
+      const tickets = projects.get(slug);
+      if (!tickets.has(run.ticket_id)) tickets.set(run.ticket_id, []);
+      tickets.get(run.ticket_id).push(run);
+    }
+
     if (state.loading) return <div style={{ padding: 12, fontSize: 13, opacity: 0.7 }}>Loading tasks…</div>;
     return (
-      <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <section>
           <h4 style={taskHeadStyle}>Waiting on you · {waiting.length}</h4>
-          {waiting.length > 0 ? waiting.map(row) : <p style={taskEmptyStyle}>Nothing waiting.</p>}
+          {waiting.length > 0 ? waiting.map(ticketRow) : <p style={taskEmptyStyle}>Nothing waiting.</p>}
         </section>
-        <section>
-          <h4 style={taskHeadStyle}>Running · {running.length}</h4>
-          {running.length > 0 ? running.map(row) : <p style={taskEmptyStyle}>Nothing running.</p>}
-        </section>
+        {note ? <p style={{ ...taskEmptyStyle, opacity: 0.85 }}>{note}</p> : null}
+        {projects.size === 0 ? <p style={taskEmptyStyle}>No runs yet.</p> : null}
+        {[...projects].map(([slug, tickets]) => (
+          <section key={slug}>
+            <h4 style={taskHeadStyle}>{slug}</h4>
+            {[...tickets].map(([ticketId, runs]) => (
+              <div key={ticketId} style={{ marginBottom: 4 }}>
+                <button type="button" style={taskRowStyle} title="Open the ticket in Admin" onClick={() => openTicket({ ticketId })}>
+                  {dot(TASK_TINT[runs[0].ticket_status])}
+                  <span style={{ ...lineStyle, flex: 1, minWidth: 0 }}>
+                    #{ticketId} {runs[0].title}
+                  </span>
+                </button>
+                {(expanded.has(ticketId) ? runs : runs.slice(0, RUNS_SHOWN)).map((run) => (
+                  <button
+                    key={run.id}
+                    type="button"
+                    style={{ ...taskRowStyle, padding: '3px 8px 3px 23px', fontSize: 11.5 }}
+                    title={run.session_id ? 'Open this run’s conversation' : 'This run kept no conversation; opens the ticket'}
+                    onClick={() => void openRun(run)}
+                  >
+                    {dot(RUN_TINT[run.status] ?? 'var(--dsw-alias-label-tertiary, #666)')}
+                    <span style={{ ...lineStyle, flex: 1, minWidth: 0, opacity: run.session_id ? 1 : 0.6 }}>
+                      run {run.id} · {run.executor ?? 'agent'}
+                      {run.node_id ? ` · ${run.node_id}` : ''}
+                      {run.status === 'running' ? ' · running' : run.status === 'failed' ? ' · failed' : ''}
+                    </span>
+                    <span style={{ fontSize: 11, opacity: 0.55 }}>{ago(run.finished_at ?? run.started_at)}</span>
+                  </button>
+                ))}
+                {runs.length > RUNS_SHOWN ? (
+                  <button
+                    type="button"
+                    style={{ ...taskRowStyle, padding: '2px 8px 2px 23px', fontSize: 11, opacity: 0.6 }}
+                    onClick={() =>
+                      setExpanded((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(ticketId)) next.delete(ticketId);
+                        else next.add(ticketId);
+                        return next;
+                      })
+                    }
+                  >
+                    {expanded.has(ticketId) ? 'Show fewer' : `+${runs.length - RUNS_SHOWN} more`}
+                  </button>
+                ) : null}
+              </div>
+            ))}
+          </section>
+        ))}
       </div>
     );
   }
@@ -701,7 +839,7 @@ function apply(ctx) {
             id: 'admin-tasks',
             order: 13,
             title: () => 'Tasks',
-            description: () => 'What is waiting on you and what is running. A row opens the task in Admin.',
+            description: () => 'What is waiting on you, and every recent run by project and ticket. A run opens its conversation.',
             icon: () => <TicketGlyph />,
           },
         ],

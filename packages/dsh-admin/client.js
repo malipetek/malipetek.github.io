@@ -3653,6 +3653,8 @@ ${question.text ?? ""}`)) {
     let workspace = null;
     ctx.inject(["uiWorkspace"], (scope) => {
       workspace = scope.uiWorkspace ?? null;
+      const first = setTimeout(() => void archiveFleetSessions(), 3e3);
+      scope.effect(() => () => clearTimeout(first), "admin: first archive pass");
       scope.effect(
         () => () => {
           workspace = null;
@@ -3668,10 +3670,55 @@ ${question.text ?? ""}`)) {
         const ws = workspace;
         if (typeof ws?.openSession !== "function") throw new Error("This Harness cannot open sessions from a plugin.");
         if (typeof ctx.sessions?.refresh === "function") await ctx.sessions.refresh().catch(() => void 0);
-        await ws.openSession(found?.sessionId ?? sessionId);
+        const id = found?.sessionId ?? sessionId;
+        opened.set(id, Date.now());
+        if (archivedIds().includes(id) && typeof ws.unarchiveSession === "function") await ws.unarchiveSession(id).catch(() => void 0);
+        await ws.openSession(id);
         return found;
       }
     };
+    const FLEET_CWD = "/malipetek-runner/worktrees/";
+    const opened = /* @__PURE__ */ new Map();
+    const KEEP_OPENED_MS = 10 * 6e4;
+    const archivedIds = () => workspace?.workspaces?.list?.getSnapshot?.()?.archivedSessionIds ?? [];
+    let archiving = false;
+    async function archiveFleetSessions() {
+      const ws = workspace;
+      if (archiving || typeof ws?.archiveSession !== "function") return;
+      archiving = true;
+      try {
+        const archived = new Set(archivedIds());
+        const rows = ctx.sessions?.list?.getSnapshot?.()?.byId ?? {};
+        for (const [id, row] of Object.entries(rows)) {
+          if (typeof row?.cwd !== "string" || !row.cwd.includes(FLEET_CWD) || archived.has(id)) continue;
+          if ((row.retainedBy?.mainView ?? 0) > 0) continue;
+          if (Date.now() - (opened.get(id) ?? 0) < KEEP_OPENED_MS) continue;
+          await ws.archiveSession(id).catch(() => void 0);
+        }
+      } finally {
+        archiving = false;
+      }
+    }
+    {
+      let timer = null;
+      const soon = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => void archiveFleetSessions(), 3e3);
+      };
+      const list = ctx.sessions?.list;
+      const stop = typeof list?.subscribe === "function" ? list.subscribe(soon) : () => {
+      };
+      const every = setInterval(soon, 5 * 6e4);
+      soon();
+      ctx.effect(
+        () => () => {
+          stop();
+          clearTimeout(timer);
+          clearInterval(every);
+        },
+        "admin: archive fleet sessions"
+      );
+    }
     const host = { command, json, gitGraph, conversation };
     const api = (method, path, body) => json(`api ${method} ${path}${body === void 0 ? "" : ` ${JSON.stringify(body)}`}`);
     const RUN_DIR_RE = /^(.+)-(task|ticket)-(\d+)(?:-run(\d+))?$/;
@@ -3816,14 +3863,32 @@ ${question.text ?? ""}`)) {
       color: "var(--dsw-alias-label-secondary, #adb2b8)"
     };
     const taskEmptyStyle = { margin: 0, padding: "2px 8px", fontSize: 12, opacity: 0.6 };
+    const RUN_TINT = {
+      running: "var(--dsw-alias-state-success-primary, #35c07a)",
+      ok: "var(--dsw-alias-label-secondary, #8a9099)",
+      failed: "var(--dsw-alias-state-danger-primary, #e5534b)"
+    };
+    const ago2 = (unix) => {
+      const s = Math.max(0, Math.floor(Date.now() / 1e3) - Number(unix || 0));
+      return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`;
+    };
+    const dot = (color) => /* @__PURE__ */ jsx("span", { style: { width: 7, height: 7, borderRadius: 4, marginTop: 5, flex: "0 0 auto", background: color ?? "#888" } });
+    const RUNS_SHOWN = 3;
+    const lineStyle = { display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
     function TasksTab() {
-      const [state, setState] = useState({ tickets: [], loading: true });
+      const [state, setState] = useState({ tickets: [], runs: [], loading: true });
+      const [note, setNote] = useState("");
+      const [expanded, setExpanded] = useState(() => /* @__PURE__ */ new Set());
       useEffect(() => {
         let alive = true;
-        const load = () => api("GET", "/admin/tickets").then((d) => {
-          if (alive) setState({ tickets: Array.isArray(d?.tickets) ? d.tickets : [], loading: false });
-        }).catch(() => {
-          if (alive) setState((s) => ({ ...s, loading: false }));
+        const load = () => Promise.all([api("GET", "/admin/tickets").catch(() => null), api("GET", "/admin/runs").catch(() => null)]).then(([t, r]) => {
+          if (!alive) return;
+          setState((prev) => ({
+            tickets: Array.isArray(t?.tickets) ? t.tickets : prev.tickets,
+            // A live run is in `running` and also among the newest `recent`; keep one of each id.
+            runs: [...new Map([...r?.recent ?? [], ...(r?.running ?? []).map((x) => ({ ...x, status: "running" }))].map((x) => [x.id, x])).values()],
+            loading: false
+          }));
         });
         void load();
         const timer = setInterval(load, 2e4);
@@ -3832,64 +3897,104 @@ ${question.text ?? ""}`)) {
           clearInterval(timer);
         };
       }, []);
+      const openRun = async (run) => {
+        if (!run.session_id || !run.session_dir || !conversation.available()) {
+          openTicket({ ticketId: run.ticket_id });
+          return;
+        }
+        setNote(`Opening run ${run.id}\u2026`);
+        try {
+          await conversation.open({ runId: run.id, sessionId: run.session_id, sessionDir: run.session_dir });
+          setNote("");
+        } catch (error) {
+          setNote(`Run ${run.id}: ${error?.message ?? "could not open its conversation"}`);
+        }
+      };
       const waiting = state.tickets.filter((t) => t.status === "new" || t.status === "review");
-      const running = state.tickets.filter((t) => t.status === "in_progress");
-      const row = (ticket) => /* @__PURE__ */ jsxs("button", { type: "button", style: taskRowStyle, onClick: () => openTicket({ ticketId: ticket.id }), children: [
-        /* @__PURE__ */ jsx(
-          "span",
-          {
-            style: {
-              width: 7,
-              height: 7,
-              borderRadius: 4,
-              marginTop: 5,
-              flex: "0 0 auto",
-              background: TASK_TINT[ticket.status] ?? "#888"
-            }
-          }
-        ),
+      const ticketRow = (ticket) => /* @__PURE__ */ jsxs("button", { type: "button", style: taskRowStyle, onClick: () => openTicket({ ticketId: ticket.id }), children: [
+        dot(TASK_TINT[ticket.status]),
         /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
-          /* @__PURE__ */ jsxs("span", { style: { display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: [
+          /* @__PURE__ */ jsxs("span", { style: lineStyle, children: [
             "#",
             ticket.id,
             " ",
             ticket.title
           ] }),
-          /* @__PURE__ */ jsxs(
-            "span",
-            {
-              style: {
-                display: "block",
-                fontSize: 11,
-                opacity: 0.65,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap"
-              },
-              children: [
-                ticket.project_name ?? "no project",
-                ticket.kind === "system" ? " \xB7 your task" : ""
-              ]
-            }
-          )
+          /* @__PURE__ */ jsxs("span", { style: { ...lineStyle, fontSize: 11, opacity: 0.65 }, children: [
+            ticket.project_name ?? "no project",
+            ticket.kind === "system" ? " \xB7 your task" : ""
+          ] })
         ] })
       ] }, ticket.id);
+      const projects = /* @__PURE__ */ new Map();
+      for (const run of state.runs) {
+        const slug = run.slug ?? "no project";
+        if (!projects.has(slug)) projects.set(slug, /* @__PURE__ */ new Map());
+        const tickets = projects.get(slug);
+        if (!tickets.has(run.ticket_id)) tickets.set(run.ticket_id, []);
+        tickets.get(run.ticket_id).push(run);
+      }
       if (state.loading) return /* @__PURE__ */ jsx("div", { style: { padding: 12, fontSize: 13, opacity: 0.7 }, children: "Loading tasks\u2026" });
-      return /* @__PURE__ */ jsxs("div", { style: { padding: 8, display: "flex", flexDirection: "column", gap: 10 }, children: [
+      return /* @__PURE__ */ jsxs("div", { style: { padding: 8, display: "flex", flexDirection: "column", gap: 12 }, children: [
         /* @__PURE__ */ jsxs("section", { children: [
           /* @__PURE__ */ jsxs("h4", { style: taskHeadStyle, children: [
             "Waiting on you \xB7 ",
             waiting.length
           ] }),
-          waiting.length > 0 ? waiting.map(row) : /* @__PURE__ */ jsx("p", { style: taskEmptyStyle, children: "Nothing waiting." })
+          waiting.length > 0 ? waiting.map(ticketRow) : /* @__PURE__ */ jsx("p", { style: taskEmptyStyle, children: "Nothing waiting." })
         ] }),
-        /* @__PURE__ */ jsxs("section", { children: [
-          /* @__PURE__ */ jsxs("h4", { style: taskHeadStyle, children: [
-            "Running \xB7 ",
-            running.length
-          ] }),
-          running.length > 0 ? running.map(row) : /* @__PURE__ */ jsx("p", { style: taskEmptyStyle, children: "Nothing running." })
-        ] })
+        note ? /* @__PURE__ */ jsx("p", { style: { ...taskEmptyStyle, opacity: 0.85 }, children: note }) : null,
+        projects.size === 0 ? /* @__PURE__ */ jsx("p", { style: taskEmptyStyle, children: "No runs yet." }) : null,
+        [...projects].map(([slug, tickets]) => /* @__PURE__ */ jsxs("section", { children: [
+          /* @__PURE__ */ jsx("h4", { style: taskHeadStyle, children: slug }),
+          [...tickets].map(([ticketId, runs]) => /* @__PURE__ */ jsxs("div", { style: { marginBottom: 4 }, children: [
+            /* @__PURE__ */ jsxs("button", { type: "button", style: taskRowStyle, title: "Open the ticket in Admin", onClick: () => openTicket({ ticketId }), children: [
+              dot(TASK_TINT[runs[0].ticket_status]),
+              /* @__PURE__ */ jsxs("span", { style: { ...lineStyle, flex: 1, minWidth: 0 }, children: [
+                "#",
+                ticketId,
+                " ",
+                runs[0].title
+              ] })
+            ] }),
+            (expanded.has(ticketId) ? runs : runs.slice(0, RUNS_SHOWN)).map((run) => /* @__PURE__ */ jsxs(
+              "button",
+              {
+                type: "button",
+                style: { ...taskRowStyle, padding: "3px 8px 3px 23px", fontSize: 11.5 },
+                title: run.session_id ? "Open this run\u2019s conversation" : "This run kept no conversation; opens the ticket",
+                onClick: () => void openRun(run),
+                children: [
+                  dot(RUN_TINT[run.status] ?? "var(--dsw-alias-label-tertiary, #666)"),
+                  /* @__PURE__ */ jsxs("span", { style: { ...lineStyle, flex: 1, minWidth: 0, opacity: run.session_id ? 1 : 0.6 }, children: [
+                    "run ",
+                    run.id,
+                    " \xB7 ",
+                    run.executor ?? "agent",
+                    run.node_id ? ` \xB7 ${run.node_id}` : "",
+                    run.status === "running" ? " \xB7 running" : run.status === "failed" ? " \xB7 failed" : ""
+                  ] }),
+                  /* @__PURE__ */ jsx("span", { style: { fontSize: 11, opacity: 0.55 }, children: ago2(run.finished_at ?? run.started_at) })
+                ]
+              },
+              run.id
+            )),
+            runs.length > RUNS_SHOWN ? /* @__PURE__ */ jsx(
+              "button",
+              {
+                type: "button",
+                style: { ...taskRowStyle, padding: "2px 8px 2px 23px", fontSize: 11, opacity: 0.6 },
+                onClick: () => setExpanded((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(ticketId)) next.delete(ticketId);
+                  else next.add(ticketId);
+                  return next;
+                }),
+                children: expanded.has(ticketId) ? "Show fewer" : `+${runs.length - RUNS_SHOWN} more`
+              }
+            ) : null
+          ] }, ticketId))
+        ] }, slug))
       ] });
     }
     function TasksTabTitle() {
@@ -4039,7 +4144,7 @@ ${question.text ?? ""}`)) {
             id: "admin-tasks",
             order: 13,
             title: () => "Tasks",
-            description: () => "What is waiting on you and what is running. A row opens the task in Admin.",
+            description: () => "What is waiting on you, and every recent run by project and ticket. A run opens its conversation.",
             icon: () => /* @__PURE__ */ jsx(TicketGlyph, {})
           }
         ]
