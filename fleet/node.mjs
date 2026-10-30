@@ -186,7 +186,10 @@ const WORKSPACES = join(homedir(), '.dsh/storages/workspace.json');
 
 function fileSessionUnderWorkspace(config, sessionId, ticket) {
   try {
-    const folder = config.projects?.[ticket.project_slug]?.path;
+    // `projects[slug]` is a bare folder path in the config, and an object with
+    // `.path` once the node has enriched it — accept both.
+    const entryValue = config.projects?.[ticket.project_slug];
+    const folder = typeof entryValue === 'string' ? entryValue : entryValue?.path;
     if (!folder || !existsSync(WORKSPACES)) return;
     const store = JSON.parse(readFileSync(WORKSPACES, 'utf8'));
     const workspaces = store.tables?.workspaces ?? {};
