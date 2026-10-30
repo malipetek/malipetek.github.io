@@ -887,7 +887,10 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
     result = await EXECUTORS[name]({
       prompt,
       cwd: dir,
-      system: ticket.kind === 'client' ? CLIENT_SYSTEM : SYSTEM_SYSTEM,
+      // The sidebar names a session after its system prompt's first line. Make
+      // that line this ticket and run, so four runs of one ticket are four
+      // different names instead of four identical "You are working unattended…".
+      system: `#${ticket.id} · run ${claim.runId} — ${ticket.title}\n\n${ticket.kind === 'client' ? CLIENT_SYSTEM : SYSTEM_SYSTEM}`,
       kind: ticket.kind,
       // The client's budget caps the run: never more than what is left of it.
       config:
