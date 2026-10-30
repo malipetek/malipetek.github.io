@@ -3687,10 +3687,17 @@ ${question.text ?? ""}`)) {
       if (archiving || typeof ws?.archiveSession !== "function") return;
       archiving = true;
       try {
+        let local = [];
+        try {
+          local = (await json("localinfo"))?.runGrouping?.folders ?? [];
+        } catch {
+        }
         const archived = new Set(archivedIds());
         const rows = ctx.sessions?.list?.getSnapshot?.()?.byId ?? {};
         for (const [id, row] of Object.entries(rows)) {
           if (typeof row?.cwd !== "string" || !row.cwd.includes(FLEET_CWD) || archived.has(id)) continue;
+          const perRun = RUN_DIR_RE.test(row.cwd.replace(/\/+$/, "").split("/").pop() ?? "");
+          if (!perRun && local.includes(row.cwd.replace(/\/+$/, ""))) continue;
           if ((row.retainedBy?.mainView ?? 0) > 0) continue;
           if (Date.now() - (opened.get(id) ?? 0) < KEEP_OPENED_MS) continue;
           await ws.archiveSession(id).catch(() => void 0);
@@ -3722,18 +3729,27 @@ ${question.text ?? ""}`)) {
     const host = { command, json, gitGraph, conversation };
     const api = (method, path, body) => json(`api ${method} ${path}${body === void 0 ? "" : ` ${JSON.stringify(body)}`}`);
     const RUN_DIR_RE = /^(.+)-(task|ticket)-(\d+)(?:-run(\d+))?$/;
-    function ticketFromCwd(cwd) {
+    const RUN_TITLE_RE = /^(Task|Ticket)?\s*#(\d+) · run (\d+)/;
+    const SEP = "\0";
+    function ticketFromCwd(key) {
+      const [cwd, title = ""] = String(key ?? "").split(SEP);
       if (typeof cwd !== "string" || !cwd.includes("/malipetek-runner/worktrees/")) return null;
-      const match = RUN_DIR_RE.exec(cwd.replace(/\/+$/, "").split("/").pop() ?? "");
-      if (!match) return null;
-      return { slug: match[1], kind: match[2], ticketId: Number(match[3]), runId: match[4] ? Number(match[4]) : null, cwd };
+      const folder = cwd.replace(/\/+$/, "").split("/").pop() ?? "";
+      const match = RUN_DIR_RE.exec(folder);
+      if (match) return { slug: match[1], kind: match[2], ticketId: Number(match[3]), runId: match[4] ? Number(match[4]) : null, cwd };
+      const named = RUN_TITLE_RE.exec(title.trim());
+      if (!named) return null;
+      return { slug: folder, kind: named[1] === "Ticket" ? "ticket" : "task", ticketId: Number(named[2]), runId: Number(named[3]), cwd };
     }
     function useSessionCwd(sessionId) {
       const list = ctx.sessions?.list;
       return useSyncExternalStore(
         (notify) => typeof list?.subscribe === "function" ? list.subscribe(notify) : () => {
         },
-        () => list?.getSnapshot?.()?.byId?.[sessionId]?.cwd
+        () => {
+          const row = list?.getSnapshot?.()?.byId?.[sessionId];
+          return row?.cwd === void 0 ? void 0 : `${row.cwd}${SEP}${typeof row.title === "string" ? row.title : ""}`;
+        }
       );
     }
     const TICKET_COLORS = {

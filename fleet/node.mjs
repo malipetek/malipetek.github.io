@@ -39,7 +39,7 @@ import { existsSync, mkdirSync, cpSync, readdirSync, readFileSync, renameSync, r
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { homedir, hostname, platform } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { ACCOUNT, DSH_FAMILY, EXECUTORS, agentProfileReady, fallbackChain, findSessionLog, isQuotaError, run } from './executors.mjs';
 import { landWork, mainBranch, pushTarget, shareWork } from './share.mjs';
 import { health } from './health.mjs';
@@ -816,8 +816,8 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
   for (let n = 2; (await run('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: repo })).code === 0; n += 1) {
     branch = `${prefix}-${ticket.id}-${n}`;
   }
-  const dir = join(config.worktreeRoot, `${ticket.slug}-${branch}`);
   mkdirSync(config.worktreeRoot, { recursive: true });
+  const dir = await runFolder(config, repo, ticket, claim.runId, branch);
   await git(repo, 'worktree', 'add', '-b', branch, dir, base);
   const from = checkout.continuedFrom ?? `${originMain && !pickup.commit ? `${originMain} ` : ''}${base.slice(0, 8)}`;
   log(`#${ticket.id} ${executor} in ${dir} (${branch} from ${from})`);
@@ -852,7 +852,7 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
       // The sidebar names a session after its system prompt's first line. Make
       // that line this ticket and run, so four runs of one ticket are four
       // different names instead of four identical "You are working unattended…".
-      system: `#${ticket.id} · run ${claim.runId} — ${ticket.title}\n\n${ticket.kind === 'client' ? CLIENT_SYSTEM : SYSTEM_SYSTEM}`,
+      system: `${ticket.kind === 'client' ? 'Ticket' : 'Task'} #${ticket.id} · run ${claim.runId} — ${ticket.title}\n\n${ticket.kind === 'client' ? CLIENT_SYSTEM : SYSTEM_SYSTEM}`,
       kind: ticket.kind,
       // The client's budget caps the run: never more than what is left of it.
       config:
@@ -967,6 +967,54 @@ const lastLine = (text) => text.trim().split('\n').pop() ?? '';
  * has no such branch yet, or null when there is no origin or it cannot be
  * reached (then a push is not attempted either).
  */
+/* ————— one run folder per project ————— */
+
+/*
+ * The Harness groups a session under a workspace only when the session's
+ * folder is exactly the workspace's folder. So every run of a project works in
+ * the same folder, `<worktreeRoot>/<slug>`: the admin plugin's Host side makes
+ * a "<project> · runs" workspace there and attaches each run's session to it,
+ * through the app's own registry (packages/dsh-admin/index.js).
+ *
+ * The folder is a fresh worktree per run (each run keeps its own branch, so no
+ * work is lost when the next run replaces the checkout). A second run of the
+ * same project on this node while the folder is taken gets its own folder, as
+ * before, and is not grouped.
+ */
+const RUN_WORKSPACES = join(homedir(), '.cache', 'malipetek-runner', 'run-workspaces.json');
+const runFolderHolder = new Map(); // slug → runId holding <worktreeRoot>/<slug>
+
+async function runFolder(config, repo, ticket, runId, branch) {
+  const fixed = join(config.worktreeRoot, ticket.slug);
+  if (runFolderHolder.has(ticket.slug) || !runId) return join(config.worktreeRoot, `${ticket.slug}-${branch}`);
+  runFolderHolder.set(ticket.slug, runId);
+  // Whatever the last run left there: a worktree of this repo, or of another.
+  if (existsSync(fixed)) {
+    const removed = await run('git', ['worktree', 'remove', '--force', fixed], { cwd: repo });
+    if (removed.code !== 0) rmSync(fixed, { recursive: true, force: true });
+    await git(repo, 'worktree', 'prune');
+  }
+  // Tell the Host side which folder is which project's runs, and what to call it.
+  try {
+    const map = existsSync(RUN_WORKSPACES) ? JSON.parse(readFileSync(RUN_WORKSPACES, 'utf8')) : {};
+    const project = config.projects?.[ticket.slug];
+    const folder = typeof project === 'string' ? project : project?.path;
+    const title = `${folder ? basename(folder.replace(/\/+$/, '')) : ticket.slug} · runs`;
+    if (map[fixed] !== title) {
+      map[fixed] = title;
+      mkdirSync(dirname(RUN_WORKSPACES), { recursive: true });
+      writeFileSync(RUN_WORKSPACES, JSON.stringify(map, null, 2));
+    }
+  } catch (error) {
+    log(`#${ticket.id} could not record the run folder: ${error.message}`);
+  }
+  return fixed;
+}
+
+function releaseRunFolder(slug, runId) {
+  if (runFolderHolder.get(slug) === runId) runFolderHolder.delete(slug);
+}
+
 async function remoteTip(repo, shared) {
   if ((await run('git', ['remote', 'get-url', 'origin'], { cwd: repo })).code !== 0) return null;
   const listed = await netGit(repo, ['ls-remote', '--heads', 'origin', `refs/heads/${shared}`]);
@@ -1295,6 +1343,8 @@ class Node {
       } catch (error) {
         report = { ok: false, summary: `Node ${this.config.nodeId} error: ${error.message}`, executor };
         steps.push('error', `Node error: ${error.message}`);
+      } finally {
+        releaseRunFolder(ticket.slug, runId);
       }
       clearTimeout(timer);
       // The last steps go before the result: the result closes the run.

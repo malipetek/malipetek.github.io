@@ -946,7 +946,7 @@ function makeCommandHandler(ctx) {
           const [local, runner] = await Promise.all([localNode(), loadRunner()]);
           return {
             kind: 'success',
-            text: JSON.stringify({ local, localConfig: localConfigView(runner), endpoint: config.endpoint, signedIn: config.token.length > 0 }),
+            text: JSON.stringify({ local, localConfig: localConfigView(runner), endpoint: config.endpoint, signedIn: config.token.length > 0, runGrouping }),
           };
         }
 
@@ -1259,6 +1259,73 @@ function startBridge(ctx, handleAdmin) {
  * Register the plugin: one command, two tools, the panel bridge, and a refresh loop.
  * @param ctx - the Host plugin context.
  */
+/* ——————————————————————— fleet runs in the sidebar ——————————————————————— */
+
+/*
+ * The Harness lists a session under a workspace only when the app itself
+ * attached it, and only when the session's folder is exactly the workspace's
+ * folder. A node runs every run of a project in one folder and records it in
+ * RUN_WORKSPACES (fleet/node.mjs `runFolder`); here, inside the app, we make a
+ * workspace for each such folder and attach the sessions that ran there —
+ * through the registry, so the app's own store does the writing and nothing
+ * outside it touches workspace.json.
+ */
+const RUN_WORKSPACES = join(homedir(), '.cache', 'malipetek-runner', 'run-workspaces.json');
+const GROUP_EVERY_MS = 30_000;
+/** What the last pass did, for `/admin localinfo`. */
+export const runGrouping = { lastAt: null, attached: 0, error: null, folders: [] };
+
+export function groupFleetRuns(registry) {
+  let busy = false;
+  const pass = async () => {
+    if (busy || typeof registry?.create !== 'function') return;
+    busy = true;
+    try {
+      let map = {};
+      try {
+        map = JSON.parse(await readFile(RUN_WORKSPACES, 'utf8'));
+      } catch {
+        return; // no node has run here yet
+      }
+      const folders = [];
+      for (const [path, title] of Object.entries(map)) {
+        if (typeof path !== 'string' || typeof title !== 'string') continue;
+        try {
+          await access(path);
+          folders.push([path, title]);
+        } catch {
+          /* not created yet on this machine */
+        }
+      }
+      runGrouping.folders = folders.map(([path]) => path);
+      if (folders.length === 0) return;
+      const headers = await registry.listStoredHeaders();
+      let attached = 0;
+      for (const [path, title] of folders) {
+        const workspace = await registry.create(path, title);
+        const accounted = new Set(workspace.sessionIds);
+        for (const header of headers) {
+          if (header?.cwd !== path || accounted.has(header.id)) continue;
+          try {
+            await workspace.attachSession(header.id);
+            attached += 1;
+          } catch (error) {
+            runGrouping.error = `${header.id}: ${error?.message ?? error}`;
+          }
+        }
+      }
+      Object.assign(runGrouping, { lastAt: new Date().toISOString(), attached: runGrouping.attached + attached });
+    } catch (error) {
+      runGrouping.error = error?.message ?? String(error);
+    } finally {
+      busy = false;
+    }
+  };
+  void pass();
+  const timer = setInterval(() => void pass(), GROUP_EVERY_MS);
+  return () => clearInterval(timer);
+}
+
 export function apply(ctx) {
   const handleAdmin = makeCommandHandler(ctx);
   ctx.effect(
@@ -1316,6 +1383,11 @@ export function apply(ctx) {
         }),
       'admin: panel route',
     );
+  });
+
+  // Fleet runs under "<project> · runs" in the sidebar, filed by the app itself.
+  ctx.inject(['workspaceRegistry'], (scoped) => {
+    scoped.effect(() => groupFleetRuns(scoped.workspaceRegistry), 'admin: group fleet runs');
   });
 
   ctx.effect(() => {

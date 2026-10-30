@@ -306,10 +306,21 @@ function apply(ctx) {
     if (archiving || typeof ws?.archiveSession !== 'function') return;
     archiving = true;
     try {
+      // This machine's project run folders: their runs are grouped, not archived.
+      let local = [];
+      try {
+        local = (await json('localinfo'))?.runGrouping?.folders ?? [];
+      } catch {
+        /* an older Host: treat every run folder as foreign */
+      }
       const archived = new Set(archivedIds());
       const rows = ctx.sessions?.list?.getSnapshot?.()?.byId ?? {};
       for (const [id, row] of Object.entries(rows)) {
         if (typeof row?.cwd !== 'string' || !row.cwd.includes(FLEET_CWD) || archived.has(id)) continue;
+        // A project's one run folder on this machine is grouped under "<project> · runs" by
+        // the Host side; leave those. A run folder from another node cannot be grouped here.
+        const perRun = RUN_DIR_RE.test(row.cwd.replace(/\/+$/, '').split('/').pop() ?? '');
+        if (!perRun && local.includes(row.cwd.replace(/\/+$/, ''))) continue;
         if ((row.retainedBy?.mainView ?? 0) > 0) continue; // on screen
         if (Date.now() - (opened.get(id) ?? 0) < KEEP_OPENED_MS) continue;
         // A session with live work is refused by the app itself; the next pass retries.
@@ -345,21 +356,35 @@ function apply(ctx) {
   /* ————— Ticket runs in the session list ————— */
 
   const RUN_DIR_RE = /^(.+)-(task|ticket)-(\d+)(?:-run(\d+))?$/;
+  /** The title a node gives a run's session: `Task #24 · run 43 — …` (older: `#24 · run 43 — …`). */
+  const RUN_TITLE_RE = /^(Task|Ticket)?\s*#(\d+) · run (\d+)/;
+  const SEP = '\u0000';
 
-  /** The ticket a worktree cwd belongs to: `<slug>-(task|ticket)-<id>[-run<n>]`. */
-  function ticketFromCwd(cwd) {
+  /**
+   * The ticket a session ran for. A run in its own worktree says it in the
+   * folder (`<slug>-(task|ticket)-<id>[-run<n>]`); a run in its project's one
+   * run folder (`worktrees/<slug>`) says it in the session title.
+   */
+  function ticketFromCwd(key) {
+    const [cwd, title = ''] = String(key ?? '').split(SEP);
     if (typeof cwd !== 'string' || !cwd.includes('/malipetek-runner/worktrees/')) return null;
-    const match = RUN_DIR_RE.exec(cwd.replace(/\/+$/, '').split('/').pop() ?? '');
-    if (!match) return null;
-    return { slug: match[1], kind: match[2], ticketId: Number(match[3]), runId: match[4] ? Number(match[4]) : null, cwd };
+    const folder = cwd.replace(/\/+$/, '').split('/').pop() ?? '';
+    const match = RUN_DIR_RE.exec(folder);
+    if (match) return { slug: match[1], kind: match[2], ticketId: Number(match[3]), runId: match[4] ? Number(match[4]) : null, cwd };
+    const named = RUN_TITLE_RE.exec(title.trim());
+    if (!named) return null;
+    return { slug: folder, kind: named[1] === 'Ticket' ? 'ticket' : 'task', ticketId: Number(named[2]), runId: Number(named[3]), cwd };
   }
 
-  /** Live-read one session's cwd from the catalog (updates on refresh/import). */
+  /** Live-read one session's folder and title from the catalog, as one string (updates on refresh/import). */
   function useSessionCwd(sessionId) {
     const list = ctx.sessions?.list;
     return useSyncExternalStore(
       (notify) => (typeof list?.subscribe === 'function' ? list.subscribe(notify) : () => {}),
-      () => list?.getSnapshot?.()?.byId?.[sessionId]?.cwd,
+      () => {
+        const row = list?.getSnapshot?.()?.byId?.[sessionId];
+        return row?.cwd === undefined ? undefined : `${row.cwd}${SEP}${typeof row.title === 'string' ? row.title : ''}`;
+      },
     );
   }
 
