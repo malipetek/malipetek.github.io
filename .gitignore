@@ -29,6 +29,10 @@ marketing/prospector/prospects.txt
 marketing/prospector/prospects-*.csv
 marketing/prospector/directory-*.csv
 marketing/prospector/*-sites.txt
+marketing/prospector/signals-*.jsonl
+marketing/prospector/osm-*
+marketing/prospector/tranco-top-1m.csv*
+marketing/prospector/*.log
 
 # Agent handoff bundles hold whole conversation transcripts; this repo is public.
 .agents/handoff/

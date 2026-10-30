@@ -1,13 +1,16 @@
 # Prospector
 
-Two small tools that turn public pages into a CSV the Marketing desk imports.
+Three tools that turn public pages into a CSV the Marketing desk imports.
 
 - `extract.mjs` reads a list of pages Ali chose. One request each, then stop.
 - `directory.mjs` walks one trade directory to find its member profiles, their
   contact addresses, or the members' own sites.
+- `bulk.mjs` reads homepages from a big domain list and asks Jev which ones are
+  US small businesses.
+- `osm.mjs` turns OpenStreetMap categories into a list of business websites.
 
-Neither guesses addresses (`first.last@company.com`), uses a search engine, or
-reads a site it was not pointed at. Neither sends anything.
+None guesses addresses (`first.last@company.com`), uses a search engine, or
+reads a site it was not pointed at. None sends anything.
 
 ## Extract
 
@@ -22,9 +25,9 @@ node marketing/prospector/extract.mjs --urls=prospects.txt
 # → marketing/prospector/prospects-2026-10-28.csv
 ```
 
-`prospects.txt`, `prospects-*.csv`, `directory-*.csv` and `*-sites.txt` are
-gitignored: they hold other people's contact details, and this repository is
-public.
+`prospects.txt`, `prospects-*.csv`, `directory-*.csv`, `signals-*.jsonl`,
+`*-sites.txt` and the Tranco list are gitignored: they hold other people's
+contact details (or are 22 MB), and this repository is public.
 
 ## Directories
 
@@ -63,6 +66,79 @@ first page of results. When a run comes back with a handful of profiles, seed
 the category or county filter pages (`--site=...` repeated) instead: each is a
 normal page, and the profiles under it are ordinary links.
 
+## Bulk lists
+
+A directory gives you forty businesses you had to choose yourself. A bulk list
+gives you a hundred thousand you did not. Two stages, because the judgement is
+the only part that costs money:
+
+```sh
+# 1. Read homepages. Free, no key. Stops at ~2 minutes per 1,000 domains.
+node marketing/prospector/bulk.mjs collect \
+  --domains=tranco-top-1m.csv --rank-from=300000 --limit=1500
+
+# 2. Ask Jev which are US small businesses. Only pages with an address are sent.
+TYPESAFE_API_KEY=… node marketing/prospector/bulk.mjs qualify \
+  --in=signals-2026-10-29.jsonl
+```
+
+`collect` writes `signals-<date>.jsonl`, one record per homepage that publishes
+an address: name, description, headings, the first 1,200 characters of text, and
+the address with the page it was found on. Pages without an address are
+dropped, not shelved. Interrupt it and rerun the same command: domains already
+in the file are skipped.
+
+`qualify` sends each record to `POST /v1/systemone` as one request with three
+questions — small business (0–1), US-based (0–1), sector (one of eight). Rows
+pass at `--min-small=0.7` and `--min-us=0.6`; the sector and both probabilities
+go into `notes`. Jev cost is about $0.04 per thousand pages, so a ten-thousand
+page run is a rounding error; the network is the expensive part.
+
+- `--domains=` accepts `rank,domain` (Tranco), one domain per line, or the
+  Rapid7 FDNS JSONL (`jq -r 'select(.type=="mx") | .name' fdns.2026-10-28.json`).
+  FDNS downloads are account-gated at sonardata.rapid7.com; Tranco's top-1M is
+  free and needs no key.
+- `--rank-from`/`--rank-to` slice a ranked list. Skip the head: ranks under
+  ~100k are big companies. Ranks around 300k read as the long tail of real
+  sites with plenty of noise.
+- `--tlds` defaults to `com,net,org,us,co`, which throws away most of the
+  non-US web before a single request. `--tlds=any` turns it off.
+- Expect roughly **one address per five domains** in that tail (measured: 261
+  records from 1,283 domains), and only a small share of those survive Jev —
+  most of the tail is not a US business. Popularity is not a proxy for "small
+  business", which is why OSM below is the better starting list.
+- A domain that answers slowly or not at all is not retried; the next run will
+  pick it up.
+
+## OpenStreetMap
+
+Popularity ranks nobody by trade. OSM already knows the plumber on the corner
+and, for 932 of 2,130 US plumbers, their website. `osm.mjs` turns one category
+at a time into a domain list; the bulk reader then finds the address.
+
+```sh
+node marketing/prospector/osm.mjs --area=US --categories=plumber,dentist,florist
+# → marketing/prospector/osm-US-domains-2026-10-29.txt   (+ a .jsonl of names)
+
+node marketing/prospector/bulk.mjs collect --domains=… --tlds=any
+TYPESAFE_API_KEY=… node marketing/prospector/bulk.mjs qualify --in=…
+```
+
+- `--categories=` takes names from `CATEGORIES` in `osm.mjs` (30 trades and
+  local services) and defaults to all of them; `--area=US` is an ISO 3166-1
+  code, `--bbox=south,west,north,east` works instead.
+- Only elements with a `website`, `contact:website`, `email` or
+  `contact:email` tag come back. Socials, marketplaces and site builders
+  (`wixsite.com`, `square.site`, …) are dropped: one host cannot stand for
+  forty businesses.
+- One query at a time, three seconds apart, 2,000 elements per category, and
+  the data is OSM's (ODbL, © OpenStreetMap contributors).
+- Overpass queues hard when it is busy. The tool tries the main instance, then
+  two mirrors, and reports a category as failed rather than half-reading it.
+
+Run fewer categories at once when it fails: the response size is the cost, and
+`restaurant` in the whole US is far heavier than `locksmith`.
+
 ## What comes out
 
 ```
@@ -94,7 +170,9 @@ in the CSV than in the desk.
   per origin per run. A disallowed page is skipped, and so is an origin whose
   robots.txt is unreachable or refuses.
 - **One request at a time, at least 1.5 s apart** — slower when the host's
-  `Crawl-delay` asks for it.
+  `Crawl-delay` asks for it. The bulk reader makes one homepage request and at
+  most one contact-page request per domain, so it runs several domains at once
+  and never returns to the same host.
 - **Identifies itself** as `MalipetekProspector/1.0 (+https://malipetek.dev/bot)`.
 - **The business's own domain wins** over the web agency or form vendor in the
   footer, whenever the page sits on that domain.

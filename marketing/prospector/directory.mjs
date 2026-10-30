@@ -87,6 +87,9 @@ export function linksIn(html, baseUrl) {
   return [...found];
 }
 
+/** True for socials, maps, review sites and marketplaces: never a business's own site. */
+export const notBusinessHost = (hostname) => NOT_BUSINESS_HOST.test(bare(String(hostname ?? '').toLowerCase()));
+
 export function isBusinessLink(link, pageUrl) {
   let url;
   try {
@@ -97,7 +100,7 @@ export function isBusinessLink(link, pageUrl) {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
   if (!url.hostname.includes('.')) return false;
   if (bare(url.hostname) === bare(new URL(pageUrl).hostname)) return false;
-  return !NOT_BUSINESS_HOST.test(bare(url.hostname));
+  return !notBusinessHost(url.hostname);
 }
 
 /** The business's own site for a profile page; the page origin when it has none. */
