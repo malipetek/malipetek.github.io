@@ -9,11 +9,11 @@
  *   fullscreen  fill the viewport (the web page)
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AdminContext, useAdmin as useAdminCtx, useAdminData } from './store.js';
+import { AdminContext, useAdmin as useAdminCtx, useAdminData, useMeter, useTicket } from './store.js';
 import { CLIENT_VISIBLE, EXECUTORS, PRIORITIES, STATUS_LABEL, errorText, needsYou, predict, slugify } from './format.js';
 import { Button, Chips, Confirm, Dot, Field, Icon, Modal, Resizer, Segmented, cx } from './ui.jsx';
 import { BoardView, InboxView, ListView } from './board.jsx';
-import { TicketView } from './ticket.jsx';
+import { TicketDetails, TicketView } from './ticket.jsx';
 import { ClientsView, FleetView, SettingsView } from './fleet.jsx';
 import { MarketingView } from './marketing.jsx';
 import { STYLES } from './styles.js';
@@ -664,5 +664,68 @@ function ProjectModal({ onClose }) {
         </Field>
       ) : null}
     </Modal>
+  );
+}
+
+
+/**
+ * The ticket's details panel on its own, for a host that shows one ticket
+ * outside the workbench — the Harness conversation's right pane. It renders the
+ * same `TicketDetails` component the admin ticket view does, with the same data
+ * and the same styles, so the two cannot drift.
+ */
+export function TicketSidePanel({ api, host = null, ticketId }) {
+  const [data, reloadData] = useAdminData(api);
+  const [{ ticket, runs, land, loading }, reloadTicket] = useTicket(api, ticketId);
+  const meter = useMeter(api, ticket, Boolean(ticket));
+  const reload = useCallback(() => {
+    void reloadData();
+    void reloadTicket();
+  }, [reloadData, reloadTicket]);
+
+  const value = useMemo(
+    () => ({
+      api,
+      files: null,
+      data,
+      reload,
+      platform: 'dsh',
+      host: null,
+      open: () => {},
+      openTicket: (target) => host?.openTicket?.(target),
+      setStatus: async (target, status) => {
+        await api('PATCH', `/admin/tickets/${target.id}`, { status });
+        reload();
+      },
+      act: async (run, done) => {
+        try {
+          await run();
+          if (done) host?.notify?.(done);
+        } finally {
+          reload();
+        }
+      },
+      notify: (text) => host?.notify?.(text),
+      ask: (question) => {
+        if (typeof window !== 'undefined' && window.confirm(`${question.title}\n\n${question.text ?? ''}`)) {
+          void question.run?.();
+        }
+      },
+      setModal: () => {},
+      boardProject: 'all',
+      setBoardProject: () => {},
+    }),
+    [api, data, host, reload],
+  );
+
+  if (loading && !ticket) {
+    return <p className="aw-muted" style={{ padding: 12, fontSize: 12 }}>Loading ticket…</p>;
+  }
+  if (!ticket) return <p className="aw-muted" style={{ padding: 12, fontSize: 12 }}>That ticket is not available.</p>;
+  return (
+    <AdminContext.Provider value={value}>
+      <style>{STYLES}</style>
+      <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} />
+    </AdminContext.Provider>
   );
 }

@@ -874,7 +874,7 @@ var __awPlugin = (() => {
         /* @__PURE__ */ jsx(Timeline, { ticket, messages, runs }),
         /* @__PURE__ */ jsx(Composer, { ticket, onSent: reload })
       ] }),
-      /* @__PURE__ */ jsx(Details, { ticket, runs, land, meter, reload })
+      /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload })
     ] });
   }
   function TicketActions({ ticket, runs, land, reload }) {
@@ -1347,8 +1347,8 @@ var __awPlugin = (() => {
       ] })
     ] });
   }
-  function Details({ ticket, runs, land, meter, reload }) {
-    const { api, data, act, setStatus, host } = useAdmin();
+  function TicketDetails({ ticket, runs, land, meter, reload }) {
+    const { api, data, act, setStatus } = useAdmin();
     const isClient = ticket.kind !== "system";
     const [fixing, setFixing] = useState(false);
     const patch = (body, done) => act(() => api("PATCH", `/admin/tickets/${ticket.id}`, body), done).then(reload, () => void 0);
@@ -1358,17 +1358,6 @@ var __awPlugin = (() => {
     const where = predict(data.nodes, { slug: ticket.project_slug, requires, executor: ticket.executor, kind: ticket.kind });
     const price = priceOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0 });
     return /* @__PURE__ */ jsxs("aside", { className: "aw-details", "aria-label": "Details", children: [
-      host?.TicketPanel ? /* @__PURE__ */ jsx(
-        host.TicketPanel,
-        {
-          embedded: true,
-          ticketId: ticket.id,
-          slug: ticket.project_slug ?? null,
-          kind: ticket.kind === "system" ? "task" : "ticket",
-          runId: runs.length ? runs[runs.length - 1].id : null,
-          sessionId: [...runs].reverse().find((r) => r.session_id)?.session_id ?? null
-        }
-      ) : null,
       /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload }),
       /* @__PURE__ */ jsx(SitePanel, { project: data.projects.find((p) => p.id === ticket.project_id) }),
       /* @__PURE__ */ jsx(Field, { label: "Status", children: /* @__PURE__ */ jsx("select", { value: ticket.status, onChange: (e) => void setStatus(ticket, e.target.value).then(reload), children: STATUSES.map((s) => /* @__PURE__ */ jsx("option", { value: s, children: STATUS_LABEL[s] }, s)) }) }),
@@ -3340,6 +3329,62 @@ button.aw-file:hover { border-color: currentColor; }
       }
     );
   }
+  function TicketSidePanel({ api, host = null, ticketId }) {
+    const [data, reloadData] = useAdminData(api);
+    const [{ ticket, runs, land, loading }, reloadTicket] = useTicket(api, ticketId);
+    const meter = useMeter(api, ticket, Boolean(ticket));
+    const reload = useCallback(() => {
+      void reloadData();
+      void reloadTicket();
+    }, [reloadData, reloadTicket]);
+    const value = useMemo(
+      () => ({
+        api,
+        files: null,
+        data,
+        reload,
+        platform: "dsh",
+        host: null,
+        open: () => {
+        },
+        openTicket: (target) => host?.openTicket?.(target),
+        setStatus: async (target, status) => {
+          await api("PATCH", `/admin/tickets/${target.id}`, { status });
+          reload();
+        },
+        act: async (run, done) => {
+          try {
+            await run();
+            if (done) host?.notify?.(done);
+          } finally {
+            reload();
+          }
+        },
+        notify: (text) => host?.notify?.(text),
+        ask: (question) => {
+          if (typeof window !== "undefined" && window.confirm(`${question.title}
+
+${question.text ?? ""}`)) {
+            void question.run?.();
+          }
+        },
+        setModal: () => {
+        },
+        boardProject: "all",
+        setBoardProject: () => {
+        }
+      }),
+      [api, data, host, reload]
+    );
+    if (loading && !ticket) {
+      return /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { padding: 12, fontSize: 12 }, children: "Loading ticket\u2026" });
+    }
+    if (!ticket) return /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { padding: 12, fontSize: 12 }, children: "That ticket is not available." });
+    return /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
+      /* @__PURE__ */ jsx("style", { children: STYLES }),
+      /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload })
+    ] });
+  }
 
   // packages/dsh-admin/src/client.jsx
   var PANEL_ID = "admin";
@@ -3517,7 +3562,7 @@ button.aw-file:hover { border-color: currentColor; }
         return found;
       }
     };
-    const host = { command, json, gitGraph, conversation, TicketPanel };
+    const host = { command, json, gitGraph, conversation };
     const api = (method, path, body) => json(`api ${method} ${path}${body === void 0 ? "" : ` ${JSON.stringify(body)}`}`);
     const RUN_DIR_RE = /^(.+)-(task|ticket)-(\d+)(?:-run(\d+))?$/;
     function ticketFromCwd(cwd) {
@@ -3604,104 +3649,28 @@ button.aw-file:hover { border-color: currentColor; }
       font: "inherit",
       cursor: "pointer"
     };
-    function TicketPanel({ ticketId, slug = null, kind = "task", runId = null, sessionId = null, embedded = false }) {
-      const [detail, setDetail] = useState(null);
-      const [busy, setBusy] = useState(false);
-      const [note, setNote] = useState(null);
-      const load = useCallback(() => {
-        api("GET", `/admin/tickets/${ticketId}`).then(setDetail).catch(() => setDetail(null));
-      }, [ticketId]);
-      useEffect(load, [load]);
-      const call = async (method, path, body, done) => {
-        setBusy(true);
-        setNote(null);
-        try {
-          await api(method, path, body);
-          setNote(done);
-          load();
-        } catch (error) {
-          setNote(error?.message ?? "That did not go through.");
-        } finally {
-          setBusy(false);
-        }
-      };
-      const ticket = detail?.ticket ?? null;
-      const runs = Array.isArray(detail?.runs) ? detail.runs : [];
-      const live = runs.find((r) => r.status === "running") ?? null;
-      const status = ticket?.status ?? null;
-      const setStatus = (next, done) => call("PATCH", `/admin/tickets/${ticketId}`, { status: next }, done);
-      const buttons = [];
-      if (status === "new") {
-        buttons.push(["Approve", "primary", () => setStatus("approved", "Approved.")]);
-        buttons.push(["Decline", null, () => setStatus("declined", "Declined.")]);
-      }
-      if (status === "approved") buttons.push(["Hold", null, () => setStatus("new", "Held.")]);
-      if (status === "review") {
-        buttons.push(["Mark done", "primary", () => setStatus("done", "Marked done.")]);
-        buttons.push(["Run again", null, () => setStatus("approved", "Queued again.")]);
-      }
-      if (live) buttons.push(["Stop run", null, () => call("POST", `/admin/runs/${live.id}/cancel`, void 0, "Stopping the run.")]);
-      if (runs.length > 0 && status !== "in_progress") {
-        buttons.push(["Land on main", null, () => call("POST", `/admin/tickets/${ticketId}/land`, void 0, "A node will land it on its next heartbeat.")]);
-      }
-      const review = async () => {
-        let repo = null;
-        try {
-          const where = await json(`review ${slug}`);
-          if (where?.found && where.repo) repo = where.repo;
-        } catch {
-        }
-        try {
-          await gitGraph.focus({ sessionId, repo, ref: `malipetek/${kind}-${ticketId}` });
-        } catch {
-        }
-      };
-      return /* @__PURE__ */ jsxs("div", { style: { padding: 12 }, children: [
-        /* @__PURE__ */ jsxs("div", { style: { fontSize: 13, marginBottom: 10, color: "var(--dsw-alias-label-secondary, #adb2b8)" }, children: [
-          kind === "task" ? "System task" : "Client ticket",
-          " #",
-          ticketId,
-          runId ? ` \xB7 run ${runId}` : "",
-          status ? ` \xB7 ${status.replace("_", " ")}` : "",
-          slug ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx("br", {}),
-            slug
-          ] }) : null
-        ] }),
-        status === "in_progress" && live ? /* @__PURE__ */ jsxs("div", { style: { fontSize: 12, marginBottom: 8, opacity: 0.8 }, children: [
-          live.executor ?? "agent",
-          " running",
-          live.node_id ? ` on ${live.node_id}` : ""
-        ] }) : null,
-        buttons.map(([label, kindOf, run]) => /* @__PURE__ */ jsx(
-          "button",
-          {
-            type: "button",
-            style: {
-              ...actionStyle,
-              ...kindOf === "primary" ? { background: "var(--dsw-alias-button-primary-fill, #4c8bf5)", borderColor: "transparent", color: "#fff" } : null
-            },
-            disabled: busy,
-            onClick: () => void run(),
-            children: label
-          },
-          label
-        )),
-        embedded ? null : /* @__PURE__ */ jsxs("button", { type: "button", style: actionStyle, onClick: () => openTicket({ ticketId }), children: [
-          "Open ticket #",
-          ticketId,
-          " in Admin"
-        ] }),
-        sessionId ? /* @__PURE__ */ jsx("button", { type: "button", style: actionStyle, onClick: () => void conversation.open(sessionId), children: "Open conversation" }) : null,
-        gitGraph.available() ? /* @__PURE__ */ jsx("button", { type: "button", style: actionStyle, onClick: () => void review(), children: "Review in Git Graph" }) : null,
-        note ? /* @__PURE__ */ jsx("div", { style: { fontSize: 12, marginTop: 8, opacity: 0.8 }, children: note }) : null
-      ] });
-    }
     function TicketTab(props) {
       const sessionId = tabSessionId(props);
       const run = ticketFromCwd(useSessionCwd(sessionId));
       if (!run) return /* @__PURE__ */ jsx("div", { style: { padding: 12, fontSize: 13, opacity: 0.7 }, children: "This session did not come from a ticket run." });
-      return /* @__PURE__ */ jsx(TicketPanel, { ticketId: run.ticketId, slug: run.slug, kind: run.kind, runId: run.runId, sessionId });
+      return /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }, children: [
+        /* @__PURE__ */ jsxs("div", { style: { padding: "10px 12px 0", fontSize: 12, opacity: 0.75 }, children: [
+          run.kind === "task" ? "System task" : "Client ticket",
+          " #",
+          run.ticketId,
+          run.runId ? ` \xB7 run ${run.runId}` : "",
+          " \xB7 ",
+          run.slug
+        ] }),
+        /* @__PURE__ */ jsx("div", { style: { flex: 1, minHeight: 0, overflowY: "auto" }, children: /* @__PURE__ */ jsx(
+          TicketSidePanel,
+          {
+            api,
+            ticketId: run.ticketId,
+            host: { openTicket: (target) => openTicket(target) }
+          }
+        ) })
+      ] });
     }
     function TicketTabTitle(props) {
       const run = ticketFromCwd(useSessionCwd(tabSessionId(props)));
