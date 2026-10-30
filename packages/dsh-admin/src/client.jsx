@@ -380,19 +380,67 @@ function apply(ctx) {
    * come from a run says so.
    */
   /**
-   * The ticket panel: identity and the actions a ticket has, wherever it is
+   * The ticket panel: identity and everything a ticket can do, wherever it is
    * shown — the conversation's right pane, or the admin ticket's right column
-   * (the workbench mounts it through `host.TicketPanel`). `embedded` is for the
-   * admin, where "open in Admin" would be the door you came in through.
+   * (`host.TicketPanel`). It reads the ticket, so the buttons match its state:
+   * approve a new one, mark a review done, run it again, stop a live run, land
+   * the branch — and the links out. `embedded` hides "open in Admin" when you
+   * are already there.
    */
   function TicketPanel({ ticketId, slug = null, kind = 'task', runId = null, sessionId = null, embedded = false }) {
+    const [detail, setDetail] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const [note, setNote] = useState(null);
+
+    const load = useCallback(() => {
+      api('GET', `/admin/tickets/${ticketId}`)
+        .then(setDetail)
+        .catch(() => setDetail(null));
+    }, [ticketId]);
+    useEffect(load, [load]);
+
+    const call = async (method, path, body, done) => {
+      setBusy(true);
+      setNote(null);
+      try {
+        await api(method, path, body);
+        setNote(done);
+        load();
+      } catch (error) {
+        setNote(error?.message ?? 'That did not go through.');
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const ticket = detail?.ticket ?? null;
+    const runs = Array.isArray(detail?.runs) ? detail.runs : [];
+    const live = runs.find((r) => r.status === 'running') ?? null;
+    const status = ticket?.status ?? null;
+    const setStatus = (next, done) => call('PATCH', `/admin/tickets/${ticketId}`, { status: next }, done);
+
+    const buttons = [];
+    if (status === 'new') {
+      buttons.push(['Approve', 'primary', () => setStatus('approved', 'Approved.')]);
+      buttons.push(['Decline', null, () => setStatus('declined', 'Declined.')]);
+    }
+    if (status === 'approved') buttons.push(['Hold', null, () => setStatus('new', 'Held.')]);
+    if (status === 'review') {
+      buttons.push(['Mark done', 'primary', () => setStatus('done', 'Marked done.')]);
+      buttons.push(['Run again', null, () => setStatus('approved', 'Queued again.')]);
+    }
+    if (live) buttons.push(['Stop run', null, () => call('POST', `/admin/runs/${live.id}/cancel`, undefined, 'Stopping the run.')]);
+    if (runs.length > 0 && status !== 'in_progress') {
+      buttons.push(['Land on main', null, () => call('POST', `/admin/tickets/${ticketId}/land`, undefined, 'A node will land it on its next heartbeat.')]);
+    }
+
     const review = async () => {
       let repo = null;
       try {
         const where = await json(`review ${slug}`);
         if (where?.found && where.repo) repo = where.repo;
       } catch {
-        /* no host lookup: Git Graph can still use the ref */
+        /* the ref is enough for Git Graph */
       }
       try {
         await gitGraph.focus({ sessionId, repo, ref: `malipetek/${kind}-${ticketId}` });
@@ -400,11 +448,13 @@ function apply(ctx) {
         /* Git Graph not reachable */
       }
     };
+
     return (
       <div style={{ padding: 12 }}>
-        <div style={{ fontSize: 13, marginBottom: 12, color: 'var(--dsw-alias-label-secondary, #adb2b8)' }}>
+        <div style={{ fontSize: 13, marginBottom: 10, color: 'var(--dsw-alias-label-secondary, #adb2b8)' }}>
           {kind === 'task' ? 'System task' : 'Client ticket'} #{ticketId}
           {runId ? ` · run ${runId}` : ''}
+          {status ? ` · ${status.replace('_', ' ')}` : ''}
           {slug ? (
             <>
               <br />
@@ -412,6 +462,27 @@ function apply(ctx) {
             </>
           ) : null}
         </div>
+        {status === 'in_progress' && live ? (
+          <div style={{ fontSize: 12, marginBottom: 8, opacity: 0.8 }}>
+            {live.executor ?? 'agent'} running{live.node_id ? ` on ${live.node_id}` : ''}
+          </div>
+        ) : null}
+        {buttons.map(([label, kindOf, run]) => (
+          <button
+            key={label}
+            type="button"
+            style={{
+              ...actionStyle,
+              ...(kindOf === 'primary'
+                ? { background: 'var(--dsw-alias-button-primary-fill, #4c8bf5)', borderColor: 'transparent', color: '#fff' }
+                : null),
+            }}
+            disabled={busy}
+            onClick={() => void run()}
+          >
+            {label}
+          </button>
+        ))}
         {embedded ? null : (
           <button type="button" style={actionStyle} onClick={() => openTicket({ ticketId })}>
             Open ticket #{ticketId} in Admin
@@ -423,10 +494,11 @@ function apply(ctx) {
           </button>
         ) : null}
         {gitGraph.available() ? (
-          <button type="button" style={actionStyle} onClick={review}>
+          <button type="button" style={actionStyle} onClick={() => void review()}>
             Review in Git Graph
           </button>
         ) : null}
+        {note ? <div style={{ fontSize: 12, marginTop: 8, opacity: 0.8 }}>{note}</div> : null}
       </div>
     );
   }

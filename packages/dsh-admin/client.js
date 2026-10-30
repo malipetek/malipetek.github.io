@@ -30,7 +30,7 @@ var __awPlugin = (() => {
 
   // host-react:react
   var R = globalThis.__AW_REACT__;
-  var { createContext, createElement, Fragment, useCallback, useContext, useEffect: useEffect2, useMemo, useRef, useState: useState2, useSyncExternalStore } = R;
+  var { createContext, createElement, Fragment, useCallback: useCallback2, useContext, useEffect: useEffect2, useMemo, useRef, useState: useState2, useSyncExternalStore } = R;
 
   // packages/admin-ui/src/store.js
   var AdminContext = createContext(null);
@@ -60,7 +60,7 @@ var __awPlugin = (() => {
   function useAdminData(api) {
     const [data, setData] = useState2(EMPTY);
     const inflight = useRef(null);
-    const load = useCallback(() => {
+    const load = useCallback2(() => {
       if (inflight.current) return inflight.current;
       const get = (path) => api("GET", path);
       inflight.current = Promise.allSettled([
@@ -102,7 +102,7 @@ var __awPlugin = (() => {
   }
   function useTicket(api, id) {
     const [state, setState] = useState2({ loading: true, error: null, ticket: null, messages: [], runs: [], land: null });
-    const load = useCallback(
+    const load = useCallback2(
       () => api("GET", `/admin/tickets/${id}`).then((d) => setState({ loading: false, error: null, ticket: d.ticket, messages: d.messages ?? [], runs: d.runs ?? [], land: d.land ?? null })).catch((error) => setState((s) => ({ ...s, loading: false, error }))),
       [api, id]
     );
@@ -1893,7 +1893,7 @@ var __awPlugin = (() => {
     const [tab, setTab] = useState2("contacts");
     const [modal, setModal] = useState2(null);
     const [filters, setFilters] = useState2({ status: "", q: "", channel: "", messageStatus: "" });
-    const load = useCallback(() => {
+    const load = useCallback2(() => {
       const qs = (params) => {
         const search = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
         return search ? `?${search}` : "";
@@ -1913,12 +1913,12 @@ var __awPlugin = (() => {
       void load();
     }, [load]);
     usePoll(load, 3e4, [load]);
-    const run = useCallback(
+    const run = useCallback2(
       (fn, message) => act(fn, message).then(load, () => void 0),
       [act, load]
     );
     const contactsById = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
-    const done = useCallback(
+    const done = useCallback2(
       (message) => {
         setModal(null);
         notify(message);
@@ -2851,8 +2851,8 @@ button.aw-file:hover { border-color: currentColor; }
       } catch {
       }
     }, [tabs, active]);
-    const open = useCallback((key) => setTabs((s) => ({ tabs: s.tabs.includes(key) ? s.tabs : [...s.tabs, key], active: key })), []);
-    const close = useCallback(
+    const open = useCallback2((key) => setTabs((s) => ({ tabs: s.tabs.includes(key) ? s.tabs : [...s.tabs, key], active: key })), []);
+    const close = useCallback2(
       (key) => setTabs((s) => {
         const i = s.tabs.indexOf(key);
         const next = s.tabs.filter((t) => t !== key);
@@ -2861,7 +2861,7 @@ button.aw-file:hover { border-color: currentColor; }
       }),
       []
     );
-    const openTicket = useCallback((id) => open(`t:${id}`), [open]);
+    const openTicket = useCallback2((id) => open(`t:${id}`), [open]);
     useEffect2(() => {
       if (typeof window === "undefined") return void 0;
       const fromHash = () => {
@@ -2874,7 +2874,7 @@ button.aw-file:hover { border-color: currentColor; }
       window.addEventListener("hashchange", fromHash);
       return () => window.removeEventListener("hashchange", fromHash);
     }, [open, openTicket]);
-    const notify = useCallback((text, kind = "ok") => {
+    const notify = useCallback2((text, kind = "ok") => {
       setToast({ text, kind, at: Date.now() });
     }, []);
     useEffect2(() => {
@@ -2882,7 +2882,7 @@ button.aw-file:hover { border-color: currentColor; }
       const id = setTimeout(() => setToast(null), toast.kind === "error" ? 8e3 : 3500);
       return () => clearTimeout(id);
     }, [toast]);
-    const act = useCallback(
+    const act = useCallback2(
       async (fn, done) => {
         try {
           const out = await fn();
@@ -2896,7 +2896,7 @@ button.aw-file:hover { border-color: currentColor; }
       },
       [notify, reload]
     );
-    const setStatus = useCallback(
+    const setStatus = useCallback2(
       (ticket, status) => {
         if (status === ticket.status) return Promise.resolve();
         const run = () => act(() => api("PATCH", `/admin/tickets/${ticket.id}`, { status }), `#${ticket.id} \u2192 ${STATUS_LABEL[status]}`);
@@ -3605,6 +3605,45 @@ button.aw-file:hover { border-color: currentColor; }
       cursor: "pointer"
     };
     function TicketPanel({ ticketId, slug = null, kind = "task", runId = null, sessionId = null, embedded = false }) {
+      const [detail, setDetail] = useState(null);
+      const [busy, setBusy] = useState(false);
+      const [note, setNote] = useState(null);
+      const load = useCallback(() => {
+        api("GET", `/admin/tickets/${ticketId}`).then(setDetail).catch(() => setDetail(null));
+      }, [ticketId]);
+      useEffect(load, [load]);
+      const call = async (method, path, body, done) => {
+        setBusy(true);
+        setNote(null);
+        try {
+          await api(method, path, body);
+          setNote(done);
+          load();
+        } catch (error) {
+          setNote(error?.message ?? "That did not go through.");
+        } finally {
+          setBusy(false);
+        }
+      };
+      const ticket = detail?.ticket ?? null;
+      const runs = Array.isArray(detail?.runs) ? detail.runs : [];
+      const live = runs.find((r) => r.status === "running") ?? null;
+      const status = ticket?.status ?? null;
+      const setStatus = (next, done) => call("PATCH", `/admin/tickets/${ticketId}`, { status: next }, done);
+      const buttons = [];
+      if (status === "new") {
+        buttons.push(["Approve", "primary", () => setStatus("approved", "Approved.")]);
+        buttons.push(["Decline", null, () => setStatus("declined", "Declined.")]);
+      }
+      if (status === "approved") buttons.push(["Hold", null, () => setStatus("new", "Held.")]);
+      if (status === "review") {
+        buttons.push(["Mark done", "primary", () => setStatus("done", "Marked done.")]);
+        buttons.push(["Run again", null, () => setStatus("approved", "Queued again.")]);
+      }
+      if (live) buttons.push(["Stop run", null, () => call("POST", `/admin/runs/${live.id}/cancel`, void 0, "Stopping the run.")]);
+      if (runs.length > 0 && status !== "in_progress") {
+        buttons.push(["Land on main", null, () => call("POST", `/admin/tickets/${ticketId}/land`, void 0, "A node will land it on its next heartbeat.")]);
+      }
       const review = async () => {
         let repo = null;
         try {
@@ -3618,23 +3657,44 @@ button.aw-file:hover { border-color: currentColor; }
         }
       };
       return /* @__PURE__ */ jsxs("div", { style: { padding: 12 }, children: [
-        /* @__PURE__ */ jsxs("div", { style: { fontSize: 13, marginBottom: 12, color: "var(--dsw-alias-label-secondary, #adb2b8)" }, children: [
+        /* @__PURE__ */ jsxs("div", { style: { fontSize: 13, marginBottom: 10, color: "var(--dsw-alias-label-secondary, #adb2b8)" }, children: [
           kind === "task" ? "System task" : "Client ticket",
           " #",
           ticketId,
           runId ? ` \xB7 run ${runId}` : "",
+          status ? ` \xB7 ${status.replace("_", " ")}` : "",
           slug ? /* @__PURE__ */ jsxs(Fragment2, { children: [
             /* @__PURE__ */ jsx("br", {}),
             slug
           ] }) : null
         ] }),
+        status === "in_progress" && live ? /* @__PURE__ */ jsxs("div", { style: { fontSize: 12, marginBottom: 8, opacity: 0.8 }, children: [
+          live.executor ?? "agent",
+          " running",
+          live.node_id ? ` on ${live.node_id}` : ""
+        ] }) : null,
+        buttons.map(([label, kindOf, run]) => /* @__PURE__ */ jsx(
+          "button",
+          {
+            type: "button",
+            style: {
+              ...actionStyle,
+              ...kindOf === "primary" ? { background: "var(--dsw-alias-button-primary-fill, #4c8bf5)", borderColor: "transparent", color: "#fff" } : null
+            },
+            disabled: busy,
+            onClick: () => void run(),
+            children: label
+          },
+          label
+        )),
         embedded ? null : /* @__PURE__ */ jsxs("button", { type: "button", style: actionStyle, onClick: () => openTicket({ ticketId }), children: [
           "Open ticket #",
           ticketId,
           " in Admin"
         ] }),
         sessionId ? /* @__PURE__ */ jsx("button", { type: "button", style: actionStyle, onClick: () => void conversation.open(sessionId), children: "Open conversation" }) : null,
-        gitGraph.available() ? /* @__PURE__ */ jsx("button", { type: "button", style: actionStyle, onClick: review, children: "Review in Git Graph" }) : null
+        gitGraph.available() ? /* @__PURE__ */ jsx("button", { type: "button", style: actionStyle, onClick: () => void review(), children: "Review in Git Graph" }) : null,
+        note ? /* @__PURE__ */ jsx("div", { style: { fontSize: 12, marginTop: 8, opacity: 0.8 }, children: note }) : null
       ] });
     }
     function TicketTab(props) {
