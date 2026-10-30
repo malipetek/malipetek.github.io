@@ -696,7 +696,7 @@ export function SitePanel({ project }) {
 }
 
 function Details({ ticket, runs, land, meter, reload }) {
-  const { api, data, act, setStatus } = useAdmin();
+  const { api, data, act, setStatus, host } = useAdmin();
   const isClient = ticket.kind !== 'system';
   const [fixing, setFixing] = useState(false);
   const patch = (body, done) => act(() => api('PATCH', `/admin/tickets/${ticket.id}`, body), done).then(reload, () => undefined);
@@ -707,6 +707,19 @@ function Details({ ticket, runs, land, meter, reload }) {
   const price = priceOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0 });
   return (
     <aside className="aw-details" aria-label="Details">
+      {/* The Harness's ticket panel, when there is one: the run's conversation
+          and its branch, beside the admin's own controls. The web host has no
+          such panel, so nothing renders there. */}
+      {host?.TicketPanel ? (
+        <host.TicketPanel
+          embedded
+          ticketId={ticket.id}
+          slug={ticket.project_slug ?? null}
+          kind={ticket.kind === 'system' ? 'task' : 'ticket'}
+          runId={runs.length ? runs[runs.length - 1].id : null}
+          sessionId={[...runs].reverse().find((r) => r.session_id)?.session_id ?? null}
+        />
+      ) : null}
       <TicketActions ticket={ticket} runs={runs} land={land} reload={reload} />
       <SitePanel project={data.projects.find((p) => p.id === ticket.project_id)} />
       <Field label="Status">

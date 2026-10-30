@@ -273,7 +273,7 @@ function apply(ctx) {
     },
   };
   /** One stable object so React effects that depend on it do not re-run. */
-  const host = { command, json, gitGraph, conversation };
+  const host = { command, json, gitGraph, conversation, TicketPanel };
   const api = (method, path, body) => json(`api ${method} ${path}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`);
 
   /* ————— Ticket runs in the session list ————— */
@@ -379,45 +379,63 @@ function apply(ctx) {
    * the session rows. One tab kind for every session — a session that did not
    * come from a run says so.
    */
-  function TicketTab(props) {
-    const sessionId = tabSessionId(props);
-    const run = ticketFromCwd(useSessionCwd(sessionId));
-    if (!run) return <div style={{ padding: 12, fontSize: 13, opacity: 0.7 }}>This session did not come from a ticket run.</div>;
+  /**
+   * The ticket panel: identity and the actions a ticket has, wherever it is
+   * shown — the conversation's right pane, or the admin ticket's right column
+   * (the workbench mounts it through `host.TicketPanel`). `embedded` is for the
+   * admin, where "open in Admin" would be the door you came in through.
+   */
+  function TicketPanel({ ticketId, slug = null, kind = 'task', runId = null, sessionId = null, embedded = false }) {
+    const review = async () => {
+      let repo = null;
+      try {
+        const where = await json(`review ${slug}`);
+        if (where?.found && where.repo) repo = where.repo;
+      } catch {
+        /* no host lookup: Git Graph can still use the ref */
+      }
+      try {
+        await gitGraph.focus({ sessionId, repo, ref: `malipetek/${kind}-${ticketId}` });
+      } catch {
+        /* Git Graph not reachable */
+      }
+    };
     return (
       <div style={{ padding: 12 }}>
         <div style={{ fontSize: 13, marginBottom: 12, color: 'var(--dsw-alias-label-secondary, #adb2b8)' }}>
-          {run.kind === 'task' ? 'System task' : 'Client ticket'} #{run.ticketId}
-          {run.runId ? ` · run ${run.runId}` : ''}
-          <br />
-          {run.slug}
+          {kind === 'task' ? 'System task' : 'Client ticket'} #{ticketId}
+          {runId ? ` · run ${runId}` : ''}
+          {slug ? (
+            <>
+              <br />
+              {slug}
+            </>
+          ) : null}
         </div>
-        <button type="button" style={actionStyle} onClick={() => openTicket(run)}>
-          Open ticket #{run.ticketId} in Admin
-        </button>
+        {embedded ? null : (
+          <button type="button" style={actionStyle} onClick={() => openTicket({ ticketId })}>
+            Open ticket #{ticketId} in Admin
+          </button>
+        )}
+        {sessionId ? (
+          <button type="button" style={actionStyle} onClick={() => void conversation.open(sessionId)}>
+            Open conversation
+          </button>
+        ) : null}
         {gitGraph.available() ? (
-          <button
-            type="button"
-            style={actionStyle}
-            onClick={async () => {
-              let repo = run.cwd; // the worktree itself is a valid repo path
-              try {
-                const where = await json(`review ${run.slug}`);
-                if (where?.found && where.repo) repo = where.repo;
-              } catch {
-                /* fall back to the worktree */
-              }
-              try {
-                await gitGraph.focus({ sessionId, repo, ref: `malipetek/${run.kind}-${run.ticketId}` });
-              } catch {
-                /* Git Graph not reachable */
-              }
-            }}
-          >
+          <button type="button" style={actionStyle} onClick={review}>
             Review in Git Graph
           </button>
         ) : null}
       </div>
     );
+  }
+
+  function TicketTab(props) {
+    const sessionId = tabSessionId(props);
+    const run = ticketFromCwd(useSessionCwd(sessionId));
+    if (!run) return <div style={{ padding: 12, fontSize: 13, opacity: 0.7 }}>This session did not come from a ticket run.</div>;
+    return <TicketPanel ticketId={run.ticketId} slug={run.slug} kind={run.kind} runId={run.runId} sessionId={sessionId} />;
   }
 
   function TicketTabTitle(props) {

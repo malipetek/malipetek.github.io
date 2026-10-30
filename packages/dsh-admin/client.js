@@ -1348,7 +1348,7 @@ var __awPlugin = (() => {
     ] });
   }
   function Details({ ticket, runs, land, meter, reload }) {
-    const { api, data, act, setStatus } = useAdmin();
+    const { api, data, act, setStatus, host } = useAdmin();
     const isClient = ticket.kind !== "system";
     const [fixing, setFixing] = useState2(false);
     const patch = (body, done) => act(() => api("PATCH", `/admin/tickets/${ticket.id}`, body), done).then(reload, () => void 0);
@@ -1358,6 +1358,17 @@ var __awPlugin = (() => {
     const where = predict(data.nodes, { slug: ticket.project_slug, requires, executor: ticket.executor, kind: ticket.kind });
     const price = priceOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0 });
     return /* @__PURE__ */ jsxs("aside", { className: "aw-details", "aria-label": "Details", children: [
+      host?.TicketPanel ? /* @__PURE__ */ jsx(
+        host.TicketPanel,
+        {
+          embedded: true,
+          ticketId: ticket.id,
+          slug: ticket.project_slug ?? null,
+          kind: ticket.kind === "system" ? "task" : "ticket",
+          runId: runs.length ? runs[runs.length - 1].id : null,
+          sessionId: [...runs].reverse().find((r) => r.session_id)?.session_id ?? null
+        }
+      ) : null,
       /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload }),
       /* @__PURE__ */ jsx(SitePanel, { project: data.projects.find((p) => p.id === ticket.project_id) }),
       /* @__PURE__ */ jsx(Field, { label: "Status", children: /* @__PURE__ */ jsx("select", { value: ticket.status, onChange: (e) => void setStatus(ticket, e.target.value).then(reload), children: STATUSES.map((s) => /* @__PURE__ */ jsx("option", { value: s, children: STATUS_LABEL[s] }, s)) }) }),
@@ -2141,6 +2152,15 @@ var __awPlugin = (() => {
     useEffect2(() => setDraft(overview.settings), [overview.settings]);
     const set = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
     const changed = Object.keys(draft).some((key) => draft[key] !== overview.settings[key]);
+    const save = () => {
+      const patch = Object.fromEntries(Object.entries(draft).filter(([key, value]) => value !== overview.settings[key]));
+      void run(() => api("PUT", "/admin/marketing/settings", patch), "Marketing settings saved.");
+    };
+    const actions = /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+      /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+      /* @__PURE__ */ jsx(Button, { disabled: !changed, onClick: () => setDraft(overview.settings), children: "Reset" }),
+      /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !changed, onClick: save, children: "Save" })
+    ] });
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsx("h3", { children: "Sending" }),
@@ -2175,22 +2195,27 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx(Field, { label: "Send window (end)", hint: "24 means midnight.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.endHour, onChange: (e) => set("endHour", Number(e.target.value)) }) }),
           /* @__PURE__ */ jsx(Field, { label: "Local offset (minutes)", hint: `${offsetLabel(draft.offsetMinutes)}. The window and the daily count use this clock.`, children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.offsetMinutes, onChange: (e) => set("offsetMinutes", Number(e.target.value)) }) })
         ] }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { disabled: !changed, onClick: () => setDraft(overview.settings), children: "Reset" }),
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              kind: "primary",
-              disabled: !changed,
-              onClick: () => {
-                const patch = Object.fromEntries(Object.entries(draft).filter(([key, value]) => value !== overview.settings[key]));
-                void run(() => api("PUT", "/admin/marketing/settings", patch), "Marketing settings saved.");
-              },
-              children: "Save"
-            }
-          )
-        ] })
+        actions
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Written posts" }),
+        /* @__PURE__ */ jsx(
+          Field,
+          {
+            label: "Voice notes",
+            hint: "Added to every content brief, after the launch kit. Leave empty to follow the kit alone. The next cycle picks it up; Draft posts shows it at once.",
+            children: /* @__PURE__ */ jsx(
+              "textarea",
+              {
+                rows: 3,
+                value: draft.voiceNotes ?? "",
+                placeholder: "Shorter sentences. No exclamation marks. Talk about the client's week, not the machine.",
+                onChange: (e) => set("voiceNotes", e.target.value)
+              }
+            )
+          }
+        ),
+        actions
       ] }),
       /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsx("h3", { children: "The publisher" }),
@@ -3492,7 +3517,7 @@ button.aw-file:hover { border-color: currentColor; }
         return found;
       }
     };
-    const host = { command, json, gitGraph, conversation };
+    const host = { command, json, gitGraph, conversation, TicketPanel };
     const api = (method, path, body) => json(`api ${method} ${path}${body === void 0 ? "" : ` ${JSON.stringify(body)}`}`);
     const RUN_DIR_RE = /^(.+)-(task|ticket)-(\d+)(?:-run(\d+))?$/;
     function ticketFromCwd(cwd) {
@@ -3579,45 +3604,44 @@ button.aw-file:hover { border-color: currentColor; }
       font: "inherit",
       cursor: "pointer"
     };
+    function TicketPanel({ ticketId, slug = null, kind = "task", runId = null, sessionId = null, embedded = false }) {
+      const review = async () => {
+        let repo = null;
+        try {
+          const where = await json(`review ${slug}`);
+          if (where?.found && where.repo) repo = where.repo;
+        } catch {
+        }
+        try {
+          await gitGraph.focus({ sessionId, repo, ref: `malipetek/${kind}-${ticketId}` });
+        } catch {
+        }
+      };
+      return /* @__PURE__ */ jsxs("div", { style: { padding: 12 }, children: [
+        /* @__PURE__ */ jsxs("div", { style: { fontSize: 13, marginBottom: 12, color: "var(--dsw-alias-label-secondary, #adb2b8)" }, children: [
+          kind === "task" ? "System task" : "Client ticket",
+          " #",
+          ticketId,
+          runId ? ` \xB7 run ${runId}` : "",
+          slug ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx("br", {}),
+            slug
+          ] }) : null
+        ] }),
+        embedded ? null : /* @__PURE__ */ jsxs("button", { type: "button", style: actionStyle, onClick: () => openTicket({ ticketId }), children: [
+          "Open ticket #",
+          ticketId,
+          " in Admin"
+        ] }),
+        sessionId ? /* @__PURE__ */ jsx("button", { type: "button", style: actionStyle, onClick: () => void conversation.open(sessionId), children: "Open conversation" }) : null,
+        gitGraph.available() ? /* @__PURE__ */ jsx("button", { type: "button", style: actionStyle, onClick: review, children: "Review in Git Graph" }) : null
+      ] });
+    }
     function TicketTab(props) {
       const sessionId = tabSessionId(props);
       const run = ticketFromCwd(useSessionCwd(sessionId));
       if (!run) return /* @__PURE__ */ jsx("div", { style: { padding: 12, fontSize: 13, opacity: 0.7 }, children: "This session did not come from a ticket run." });
-      return /* @__PURE__ */ jsxs("div", { style: { padding: 12 }, children: [
-        /* @__PURE__ */ jsxs("div", { style: { fontSize: 13, marginBottom: 12, color: "var(--dsw-alias-label-secondary, #adb2b8)" }, children: [
-          run.kind === "task" ? "System task" : "Client ticket",
-          " #",
-          run.ticketId,
-          run.runId ? ` \xB7 run ${run.runId}` : "",
-          /* @__PURE__ */ jsx("br", {}),
-          run.slug
-        ] }),
-        /* @__PURE__ */ jsxs("button", { type: "button", style: actionStyle, onClick: () => openTicket(run), children: [
-          "Open ticket #",
-          run.ticketId,
-          " in Admin"
-        ] }),
-        gitGraph.available() ? /* @__PURE__ */ jsx(
-          "button",
-          {
-            type: "button",
-            style: actionStyle,
-            onClick: async () => {
-              let repo = run.cwd;
-              try {
-                const where = await json(`review ${run.slug}`);
-                if (where?.found && where.repo) repo = where.repo;
-              } catch {
-              }
-              try {
-                await gitGraph.focus({ sessionId, repo, ref: `malipetek/${run.kind}-${run.ticketId}` });
-              } catch {
-              }
-            },
-            children: "Review in Git Graph"
-          }
-        ) : null
-      ] });
+      return /* @__PURE__ */ jsx(TicketPanel, { ticketId: run.ticketId, slug: run.slug, kind: run.kind, runId: run.runId, sessionId });
     }
     function TicketTabTitle(props) {
       const run = ticketFromCwd(useSessionCwd(tabSessionId(props)));
