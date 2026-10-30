@@ -324,104 +324,124 @@ button.aw-file:hover { border-color: currentColor; }
   .aw-details { border-left: 0; border-top: 1px solid var(--aw-border); position: static; height: auto; }
 }
 
-/* ————— The details panel: sections, and what you can act on ————— */
+/* ————— The details panel: an inspector, not a stack of labels ————— */
 
-/* One block per concern, separated by a rule, so the eye can find "where do I
-   change the agent" without reading every label. */
-.aw-details > .aw-field,
-.aw-details > .aw-cost,
-.aw-details > .aw-runlist,
-.aw-details > .aw-site,
-.aw-details > .aw-predict,
-.aw-details > .aw-details__h {
-  border-top: 1px solid var(--aw-border);
-  padding-top: 14px;
-  margin-top: 14px;
+/* One rhythm for the whole panel. */
+.aw-details { display: flex; flex-direction: column; gap: 0; }
+
+/* The action cluster is a card: the primary move is filled, the rest outline,
+   and they are grouped so the eye lands there first. */
+.aw-details .aw-ticket__actions {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--aw-border2);
+  border-radius: 10px;
+  background: var(--aw-bg);
+  margin-bottom: 6px;
 }
-
-.aw-details__h {
-  font-size: 10.5px;
-  letter-spacing: .1em;
-  color: var(--aw-text2);
-  margin-bottom: 8px !important;
-}
-
-/* Labels read as labels, not as another line of body text. */
-.aw-details .aw-field__label {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: var(--aw-text3, var(--aw-text2));
-  opacity: .85;
-  margin-bottom: 2px;
-}
-
-/* Anything clickable looks clickable: a real border and a hover, and the
-   primary move wears the accent so "Mark done" cannot be mistaken for a label. */
+.aw-details .aw-ticket__actions > button { width: 100%; justify-content: center; height: 32px; }
+.aw-details .aw-ticket__actions > .aw-pill { align-self: flex-start; }
 .aw-details .aw-btn {
-  border-width: 1px;
-  border-style: solid;
-  border-color: var(--aw-border2);
+  border: 1px solid var(--aw-border2);
   background: var(--aw-bg3);
+  font-weight: 550;
 }
-.aw-details .aw-btn:hover:not(:disabled) {
-  border-color: var(--aw-accent);
-  background: var(--aw-hover);
-}
+.aw-details .aw-btn:hover:not(:disabled) { border-color: var(--aw-accent); background: var(--aw-hover); }
 .aw-details .aw-btn--primary {
   background: var(--aw-accent);
   border-color: var(--aw-accent);
   color: #fff !important;
 }
 .aw-details .aw-btn--primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--aw-accent) 85%, #fff);
-  border-color: color-mix(in srgb, var(--aw-accent) 85%, #fff);
+  background: color-mix(in srgb, var(--aw-accent) 86%, #fff);
+  border-color: color-mix(in srgb, var(--aw-accent) 86%, #fff);
 }
-.aw-details .aw-btn--danger {
-  background: color-mix(in srgb, var(--aw-bad) 12%, transparent);
+.aw-details .aw-btn--danger { background: color-mix(in srgb, var(--aw-bad) 14%, transparent); }
+
+/* Fields are rows: the label sits in its own column, the control lines up down
+   the panel. Dashed rules separate rows instead of boxing each one. */
+.aw-details .aw-field {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px dashed var(--aw-border);
+}
+.aw-details .aw-field:first-of-type { border-top: 1px solid var(--aw-border); }
+.aw-details .aw-field__label {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--aw-text2);
+}
+.aw-details .aw-field__hint { grid-column: 1 / -1; margin: 0; font-size: 11px; }
+.aw-details .aw-field select,
+.aw-details .aw-field input {
+  height: 30px;
+  border: 1px solid var(--aw-border2);
+  border-radius: 6px;
+  background: var(--aw-bg);
+  color: var(--aw-text);
+  padding: 0 8px;
+}
+.aw-details .aw-field select:focus-visible,
+.aw-details .aw-field input:focus-visible {
+  outline: none;
+  border-color: var(--aw-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--aw-accent) 25%, transparent);
 }
 
-/* Chips and segments: the chosen one is tinted, the rest stay quiet. */
+/* Segment buttons fill the row and the chosen one is unmistakable. */
 .aw-details .aw-seg { width: 100%; }
-.aw-details .aw-seg button { flex: 1; padding: 5px 6px; }
+.aw-details .aw-seg button { flex: 1; height: 28px; }
 .aw-details .aw-seg button[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--aw-accent) 18%, var(--aw-bg3));
+  background: color-mix(in srgb, var(--aw-accent) 20%, var(--aw-bg3));
   color: var(--aw-text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--aw-accent) 55%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--aw-accent) 60%, transparent);
+}
+.aw-details .aw-chips { gap: 6px; }
+.aw-details .aw-chips button {
+  border: 1px solid var(--aw-border2);
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--aw-bg);
 }
 .aw-details .aw-chips button[aria-pressed="true"] {
   border-color: var(--aw-accent);
+  background: color-mix(in srgb, var(--aw-accent) 16%, transparent);
   color: var(--aw-text);
-  background: color-mix(in srgb, var(--aw-accent) 14%, transparent);
 }
 
-/* The money block: three figures on one card, the one that is billed in accent. */
+/* The money block is its own card, the billed figure in the accent. */
 .aw-details .aw-cost {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
   padding: 12px;
-  border: 1px solid var(--aw-border);
-  border-radius: 8px;
+  margin-top: 10px;
+  border: 1px solid var(--aw-border2);
+  border-radius: 10px;
   background: var(--aw-bg);
 }
-.aw-details .aw-cost > div { display: flex; flex-direction: column; gap: 2px; }
-.aw-details .aw-cost strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+.aw-details .aw-cost > div { display: flex; flex-direction: column; gap: 3px; }
+.aw-details .aw-cost strong { font-size: 17px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 .aw-details .aw-cost > div:last-child strong { color: var(--aw-accent); }
 
-/* Runs: one line each, separated, with the node and cost quiet. */
-.aw-details .aw-runlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+/* Runs: a small table, one line each. */
+.aw-details__h { margin: 18px 0 4px !important; }
+.aw-details .aw-runlist { list-style: none; margin: 0; padding: 0; }
 .aw-details .aw-runlist > li {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 0;
-  border-top: 1px dashed var(--aw-border);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--aw-border);
   font-size: 12px;
 }
-.aw-details .aw-runlist > li:first-child { border-top: 0; }
-
-/* Status and the "why nothing can take this" note get their own weight. */
-.aw-details .aw-predict { font-size: 12px; line-height: 1.45; }
+.aw-details .aw-runlist > li:last-child { border-bottom: 0; }
 `;
