@@ -429,4 +429,22 @@ app.options('*', (c) => {
   return new Response(null, { status: 204, headers: corsHeaders(origin) });
 });
 
-export default app;
+/*
+ * The Worker answers on two mounts: its own hostname (workers.dev, or a custom
+ * domain) and `malipetek.dev/api/*` on the zone. The second arrives with the
+ * prefix, so strip it once, here, and every route stays written as `/health`,
+ * `/admin/…`, `/node/…`. One machine's resolver refuses *.workers.dev outright,
+ * so the zone mount is the one that always works.
+ */
+const PREFIX = '/api';
+
+export default {
+  fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const url = new URL(request.url);
+    if (url.pathname === PREFIX || url.pathname.startsWith(`${PREFIX}/`)) {
+      url.pathname = url.pathname.slice(PREFIX.length) || '/';
+      return app.fetch(new Request(url, request), env, ctx);
+    }
+    return app.fetch(request, env, ctx);
+  },
+};

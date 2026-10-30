@@ -28,6 +28,12 @@
     "MARKETING_FROM_EMAIL": "hello@malipetek.dev",
   },
 
+  // A path on the zone that already resolves, so nothing depends on
+  // *.workers.dev — which one machine's resolver refuses outright.
+  "routes": [
+    { "pattern": "malipetek.dev/api/*", "zone_name": "malipetek.dev" }
+  ],
+
   // Client portal store. Create once with:
   //   wrangler d1 create malipetek-portal
   // paste the returned database_id below, then apply the schema:

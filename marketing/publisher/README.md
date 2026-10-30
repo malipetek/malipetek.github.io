@@ -29,6 +29,11 @@ machine. It starts your installed Chrome with that profile — not a browser
 Playwright launched — and attaches over the DevTools protocol, so Google sign-in
 works. Set `CHROME_PATH` in `.env` only if Chrome lives somewhere unusual.
 
+The desk is addressed at `https://malipetek.dev/api` by default. Keep it there:
+`*.workers.dev` resolves but answers 404/1042, and the publisher then polls
+nothing and reports nothing — the queue simply stops moving. If polls ever stop,
+run `publish.sh --dry-run`; a 404 means the host, not the browser.
+
 ## Running
 
 ```sh

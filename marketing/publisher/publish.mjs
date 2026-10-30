@@ -37,7 +37,9 @@ const opt = (name, fallback) => {
   return hit ? hit.slice(name.length + 3) : fallback;
 };
 
-const API = (process.env.MARKETING_API || 'https://malipetek-intercom.malipetek.workers.dev').replace(/\/+$/, '');
+// The zone mount, not workers.dev: this machine's resolver drops *.workers.dev
+// and Cloudflare answers that hostname with 404/1042 even when it resolves.
+const API = (process.env.MARKETING_API || 'https://malipetek.dev/api').replace(/\/+$/, '');
 const TOKEN = process.env.MARKETING_TOKEN || '';
 const PROFILE = opt('profile', join(here, '.profile'));
 const HEADLESS = args.has('--headless');
@@ -227,23 +229,33 @@ async function postLinkedIn(context, text) {
     await page.waitForTimeout(3000);
     if (loggedOut(page.url())) throw new Error('not_signed_in');
 
+    // The trigger is a plain <button> on some builds and a div[role=button]
+    // with a labelled child on others; match either.
     const start = page
-      .locator('button.share-box-feed-entry__trigger, button[aria-label="Start a post"], button:has-text("Start a post")')
+      .locator(
+        'button.share-box-feed-entry__trigger, button[aria-label="Start a post"], button:has-text("Start a post"), [role="button"]:has-text("Start a post"), [aria-label="Start a post"]',
+      )
       .first();
     await start.waitFor({ state: 'visible', timeout: 20_000 });
     await start.click();
 
-    const dialog = page.locator('div[role="dialog"]').first();
-    await dialog.waitFor({ state: 'visible', timeout: 15_000 });
-    const editor = dialog.locator('div[contenteditable="true"][role="textbox"]').first();
+    // The composer is an inline tiptap/ProseMirror surface, not a role=dialog;
+    // the only div[role=dialog] on the page are LinkedIn's hidden video modals.
+    const editor = page.locator('div[contenteditable="true"][role="textbox"]:visible').first();
+    await editor.waitFor({ state: 'visible', timeout: 20_000 });
     await editor.click();
     await page.keyboard.insertText(text);
     await page.waitForTimeout(800);
 
-    const post = dialog.locator('button.share-actions__primary-action, button:has-text("Post")').last();
+    // "Post to Anyone" is a div[role=button]; the real submit is a plain <button>
+    // that stays disabled until the editor has content.
+    const post = page.locator('button:visible').filter({ hasText: /^\s*Post\s*$/ }).last();
     await post.waitFor({ state: 'visible', timeout: 10_000 });
+    for (let i = 0; i < 20 && (await post.isDisabled().catch(() => false)); i++) {
+      await page.waitForTimeout(250);
+    }
     await post.click();
-    await dialog.waitFor({ state: 'hidden', timeout: 25_000 });
+    await editor.waitFor({ state: 'hidden', timeout: 25_000 });
     return null;
   } finally {
     await page.close().catch(() => {});
