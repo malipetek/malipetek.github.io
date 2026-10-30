@@ -3477,13 +3477,22 @@ ${question.text ?? ""}`)) {
       }),
       [api, data, host, reload]
     );
+    const scope = { display: "block", height: "100%", overflowY: "auto" };
     if (loading && !ticket) {
-      return /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { padding: 12, fontSize: 12 }, children: "Loading ticket\u2026" });
+      return /* @__PURE__ */ jsxs("div", { className: "aw", style: scope, children: [
+        /* @__PURE__ */ jsx("style", { children: STYLES }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { padding: 12, fontSize: 12 }, children: "Loading ticket\u2026" })
+      ] });
     }
-    if (!ticket) return /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { padding: 12, fontSize: 12 }, children: "That ticket is not available." });
-    return /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
+    if (!ticket) {
+      return /* @__PURE__ */ jsxs("div", { className: "aw", style: scope, children: [
+        /* @__PURE__ */ jsx("style", { children: STYLES }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { padding: 12, fontSize: 12 }, children: "That ticket is not available." })
+      ] });
+    }
+    return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: scope, children: [
       /* @__PURE__ */ jsx("style", { children: STYLES }),
-      /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload })
+      /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload }) })
     ] });
   }
 

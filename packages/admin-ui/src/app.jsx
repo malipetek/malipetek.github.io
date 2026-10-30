@@ -718,14 +718,33 @@ export function TicketSidePanel({ api, host = null, ticketId }) {
     [api, data, host, reload],
   );
 
+  // The theme lives on `.aw` (every `--aw-*` variable is defined there). Without
+  // it the panel renders with no accent, no panel background and the wrong ink —
+  // which is exactly how it looked in the conversation's side pane. Block
+  // layout, because `.aw` is also the app shell's grid.
+  const scope = { display: 'block', height: '100%', overflowY: 'auto' };
   if (loading && !ticket) {
-    return <p className="aw-muted" style={{ padding: 12, fontSize: 12 }}>Loading ticket…</p>;
+    return (
+      <div className="aw" style={scope}>
+        <style>{STYLES}</style>
+        <p className="aw-muted" style={{ padding: 12, fontSize: 12 }}>Loading ticket…</p>
+      </div>
+    );
   }
-  if (!ticket) return <p className="aw-muted" style={{ padding: 12, fontSize: 12 }}>That ticket is not available.</p>;
+  if (!ticket) {
+    return (
+      <div className="aw" style={scope}>
+        <style>{STYLES}</style>
+        <p className="aw-muted" style={{ padding: 12, fontSize: 12 }}>That ticket is not available.</p>
+      </div>
+    );
+  }
   return (
-    <AdminContext.Provider value={value}>
+    <div className="aw aw--dsh" style={scope}>
       <style>{STYLES}</style>
-      <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} />
-    </AdminContext.Provider>
+      <AdminContext.Provider value={value}>
+        <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} />
+      </AdminContext.Provider>
+    </div>
   );
 }
