@@ -356,8 +356,12 @@ function apply(ctx) {
   /* ————— Ticket runs in the session list ————— */
 
   const RUN_DIR_RE = /^(.+)-(task|ticket)-(\d+)(?:-run(\d+))?$/;
-  /** The title a node gives a run's session: `Task #24 · run 43 — …` (older: `#24 · run 43 — …`). */
-  const RUN_TITLE_RE = /^(Task|Ticket)?\s*#(\d+) · run (\d+)/;
+  /**
+   * The title a node gives a ticket's session: `Task #24 — …` (one thread for
+   * every run of the ticket); older ones carry the run, `Task #24 · run 43 — …`
+   * or `#24 · run 43 — …`.
+   */
+  const RUN_TITLE_RE = /^(Task|Ticket)?\s*#(\d+)(?: · run (\d+))?\s*(?:—|$)/;
   const SEP = '\u0000';
 
   /**
@@ -373,7 +377,7 @@ function apply(ctx) {
     if (match) return { slug: match[1], kind: match[2], ticketId: Number(match[3]), runId: match[4] ? Number(match[4]) : null, cwd };
     const named = RUN_TITLE_RE.exec(title.trim());
     if (!named) return null;
-    return { slug: folder, kind: named[1] === 'Ticket' ? 'ticket' : 'task', ticketId: Number(named[2]), runId: Number(named[3]), cwd };
+    return { slug: folder, kind: named[1] === 'Ticket' ? 'ticket' : 'task', ticketId: Number(named[2]), runId: named[3] ? Number(named[3]) : null, cwd };
   }
 
   /** Live-read one session's folder and title from the catalog, as one string (updates on refresh/import). */

@@ -43,7 +43,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { ACCOUNT, DSH_FAMILY, EXECUTORS, agentProfileReady, fallbackChain, findSessionLog, isQuotaError, run } from './executors.mjs';
 import { landWork, mainBranch, pushTarget, shareWork } from './share.mjs';
 import { health } from './health.mjs';
-import { buildPrompt } from './prompt.mjs';
+import { buildFollowUp, buildPrompt } from './prompt.mjs';
 
 const VERSION = '2.8.0';
 const HEARTBEAT_MS = 30_000;
@@ -836,6 +836,10 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
   // A usage limit is not the task failing: hand the same worktree to the next
   // executor this node runs, skipping any that spends the exhausted account.
   const prompt = buildPrompt(ticket, attached.messages, previousRuns, checkout);
+  // A rerun continues the ticket's own conversation when it can, so one ticket
+  // is one thread in the sidebar rather than one per run.
+  const resume = resumableSession(config, previousRuns, dir);
+  if (resume) steps.push('node', `Continuing the conversation of run ${resume.runId}`);
   const exhausted = new Set();
   const limited = [];
   let result;
@@ -846,13 +850,15 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
     used = name;
     steps.push('node', `Running ${name}`);
     const exConfig = config.executors[name] ?? {};
+    const resumeSessionId = resume && resume.executor === name ? resume.sessionId : undefined;
     result = await EXECUTORS[name]({
-      prompt,
+      prompt: resumeSessionId ? buildFollowUp(ticket, attached.messages, previousRuns, checkout) : prompt,
+      resumeSessionId,
       cwd: dir,
       // The sidebar names a session after its system prompt's first line. Make
       // that line this ticket and run, so four runs of one ticket are four
       // different names instead of four identical "You are working unattended…".
-      system: `${ticket.kind === 'client' ? 'Ticket' : 'Task'} #${ticket.id} · run ${claim.runId} — ${ticket.title}\n\n${ticket.kind === 'client' ? CLIENT_SYSTEM : SYSTEM_SYSTEM}`,
+      system: `${ticket.kind === 'client' ? 'Ticket' : 'Task'} #${ticket.id} — ${ticket.title}\n\n${ticket.kind === 'client' ? CLIENT_SYSTEM : SYSTEM_SYSTEM}`,
       kind: ticket.kind,
       // The client's budget caps the run: never more than what is left of it.
       config:
@@ -981,7 +987,9 @@ const lastLine = (text) => text.trim().split('\n').pop() ?? '';
  * same project on this node while the folder is taken gets its own folder, as
  * before, and is not grouped.
  */
-const RUN_WORKSPACES = join(homedir(), '.cache', 'malipetek-runner', 'run-workspaces.json');
+// Beside the worktree folder, so a test node with its own worktreeRoot keeps its
+// own map; the Host side reads the default spot, ~/.cache/malipetek-runner.
+const runWorkspacesFile = (config) => join(dirname(config.worktreeRoot), 'run-workspaces.json');
 const runFolderHolder = new Map(); // slug → runId holding <worktreeRoot>/<slug>
 
 async function runFolder(config, repo, ticket, runId, branch) {
@@ -996,14 +1004,15 @@ async function runFolder(config, repo, ticket, runId, branch) {
   }
   // Tell the Host side which folder is which project's runs, and what to call it.
   try {
-    const map = existsSync(RUN_WORKSPACES) ? JSON.parse(readFileSync(RUN_WORKSPACES, 'utf8')) : {};
+    const file = runWorkspacesFile(config);
+    const map = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
     const project = config.projects?.[ticket.slug];
     const folder = typeof project === 'string' ? project : project?.path;
     const title = `${folder ? basename(folder.replace(/\/+$/, '')) : ticket.slug} · runs`;
     if (map[fixed] !== title) {
       map[fixed] = title;
-      mkdirSync(dirname(RUN_WORKSPACES), { recursive: true });
-      writeFileSync(RUN_WORKSPACES, JSON.stringify(map, null, 2));
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, JSON.stringify(map, null, 2));
     }
   } catch (error) {
     log(`#${ticket.id} could not record the run folder: ${error.message}`);
@@ -1013,6 +1022,23 @@ async function runFolder(config, repo, ticket, runId, branch) {
 
 function releaseRunFolder(slug, runId) {
   if (runFolderHolder.get(slug) === runId) runFolderHolder.delete(slug);
+}
+
+/**
+ * The conversation a rerun can continue: the ticket's newest run that kept a
+ * Harness session, if it ran on this node in this same folder (a session is
+ * tied to its folder, and the Harness lists it by that folder), its log is
+ * still on this disk, and nothing newer replaced it. The executor must match:
+ * a session belongs to the agent that held it. Otherwise null, and the run
+ * starts a new conversation, as before.
+ */
+function resumableSession(config, previousRuns, dir) {
+  const last = [...previousRuns].reverse().find((r) => r.session_id);
+  if (!last || last.node_id !== config.nodeId || !DSH_FAMILY.includes(last.executor)) return null;
+  // The Harness keeps a session under its folder, spelled with '/' as '-'.
+  if (last.session_dir !== `-${dir.replace(/\/+$/, '').replace(/\//g, '-')}--`) return null;
+  if (!findSessionLog(last.session_id)) return null;
+  return { runId: last.id, sessionId: last.session_id, executor: last.executor };
 }
 
 async function remoteTip(repo, shared) {

@@ -54,3 +54,37 @@ export function buildPrompt(ticket, messages, previousRuns = [], checkout = {}) 
   parts.push(isClient ? 'Work in this repository, following the rules in your system prompt.' : 'Do the task in this repository.');
   return parts.join('\n\n');
 }
+
+/**
+ * The next turn when a rerun continues its ticket's own conversation
+ * (fleet/node.mjs `resumableSession`): the thread already holds the request,
+ * the background and every earlier answer, so this says only what is new and
+ * where the checkout stands.
+ */
+export function buildFollowUp(ticket, messages, previousRuns = [], checkout = {}) {
+  const guard = (text) => text.replaceAll('</client_request>', '<\\/client_request>');
+  const isClient = ticket.kind === 'client';
+  const lastRunAt = previousRuns.reduce((t, r) => Math.max(t, r.finished_at ?? 0), 0);
+  const now = messages.filter((m) => (m.created_at ?? 0) > lastRunAt);
+  const who = (m) => (m.author === 'client' ? 'client' : 'Ali');
+  const files = (m) => (m.attachedPaths?.length ? `\n(Attached, readable in this checkout: ${m.attachedPaths.join(', ')})` : '');
+  const line = (m) => `[${who(m)}]\n${m.author === 'client' ? guard(m.body + files(m)) : m.body + files(m)}`;
+  const block = (list) =>
+    isClient ? `<client_request>\n${list.map(line).join('\n\n')}\n</client_request>` : list.map(line).join('\n\n');
+
+  const parts = [`${isClient ? 'Ticket' : 'Task'} #${ticket.id} is running again, in a fresh checkout.`];
+  parts.push(
+    checkout.continuedFrom
+      ? `It continues from ${checkout.continuedFrom}: your earlier work is already in these files. Build on it; do not redo it.`
+      : checkout.elsewhere
+        ? `Your earlier work is on another machine (${checkout.elsewhere}) and is NOT in this checkout. Do only what is asked now, unless it depends on that work — then say so instead of redoing it.`
+        : 'It starts from the base branch: your earlier changes are not in it.',
+  );
+  parts.push(
+    now.length
+      ? `New since your last answer:\n\n${block(now)}\n\nDo what it asks. Do not redo earlier work unless it says to.`
+      : 'Nothing new was written since your last answer. Finish the task: fix what you reported as failed or unfinished.',
+  );
+  parts.push('The same rules apply as before: stay in this checkout, commit when your work is ready, and end with a short summary.');
+  return parts.join('\n\n');
+}

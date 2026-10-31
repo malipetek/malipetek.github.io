@@ -407,13 +407,17 @@ function writeAgentOverlay(agent, config) {
  * or, with `agent`, an overlay that has the Harness drive Claude Code or
  * OpenCode over ACP, so the run is still a Harness session with a session id.
  */
-async function dsh({ prompt, cwd, system, config, signal, onStep }, agent) {
+async function dsh({ prompt, cwd, system, config, signal, onStep, resumeSessionId }, agent) {
   const args = ['--profile', config.profile ?? (agent ? AGENT_PROFILE : 'headless')];
   if (agent) args.push('--patch', writeAgentOverlay(agent, config));
+  // A rerun continues its ticket's conversation: the thread already opens with
+  // the system prompt and the request, so only the follow-up goes in.
+  if (resumeSessionId) args.push('--session-id', resumeSessionId);
   args.push('--json', '-');
   const res = await run(config.bin ?? 'dsh', args, {
     cwd,
-    input: `${system}\n\n${prompt}`, // `-` reads the task from stdin, so a long thread stays out of argv
+    // `-` reads the task from stdin, so a long thread stays out of argv.
+    input: resumeSessionId ? prompt : `${system}\n\n${prompt}`,
     signal,
     finishOn: /^\{"type":"final"/m,
     onLine: stepLines('dsh', onStep),

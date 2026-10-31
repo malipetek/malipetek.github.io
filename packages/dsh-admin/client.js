@@ -813,6 +813,53 @@ var __awPlugin = (() => {
     return null;
   }
 
+  // src/lib/locales.js
+  var LOCALES = [
+    { code: "en-US", native: "English (United States)", english: "English (United States)", m2m: "en" },
+    { code: "am", native: "\u12A0\u121B\u122D\u129B", english: "Amharic", m2m: "am", beta: true },
+    { code: "bn", native: "\u09AC\u09BE\u0982\u09B2\u09BE", english: "Bangla", m2m: "bn" },
+    { code: "bho", native: "\u092D\u094B\u091C\u092A\u0941\u0930\u0940", english: "Bhojpuri", m2m: null, beta: true, fallback: "hi-IN" },
+    { code: "zh-Hans", native: "\u4E2D\u6587\uFF08\u7B80\u4F53\uFF09", english: "Chinese (Simplified)", m2m: "zh" },
+    { code: "zh-Hant", native: "\u4E2D\u6587\uFF08\u7E41\u9AD4\uFF09", english: "Chinese (Traditional)", m2m: null, fallback: "zh-Hans" },
+    { code: "da", native: "Dansk", english: "Danish", m2m: "da" },
+    { code: "nl", native: "Nederlands", english: "Dutch", m2m: "nl" },
+    { code: "fil", native: "Filipino", english: "Filipino", m2m: "tl", beta: true },
+    { code: "fi", native: "Suomi", english: "Finnish", m2m: "fi" },
+    { code: "fr-FR", native: "Fran\xE7ais (France)", english: "French (France)", m2m: "fr" },
+    { code: "de-DE", native: "Deutsch (Deutschland)", english: "German (Germany)", m2m: "de" },
+    { code: "gu", native: "\u0A97\u0AC1\u0A9C\u0AB0\u0ABE\u0AA4\u0AC0", english: "Gujarati", m2m: "gu" },
+    { code: "ha", native: "Hausa", english: "Hausa", m2m: "ha", beta: true },
+    { code: "hi-IN", native: "\u0939\u093F\u0928\u094D\u0926\u0940 (\u092D\u093E\u0930\u0924)", english: "Hindi (India)", m2m: "hi" },
+    { code: "id-ID", native: "Indonesia (Indonesia)", english: "Indonesian (Indonesia)", m2m: "id" },
+    { code: "it-IT", native: "Italiano (Italia)", english: "Italian (Italy)", m2m: "it" },
+    { code: "ja-JP", native: "\u65E5\u672C\u8A9E\uFF08\u65E5\u672C\uFF09", english: "Japanese (Japan)", m2m: "ja" },
+    { code: "kn", native: "\u0C95\u0CA8\u0CCD\u0CA8\u0CA1", english: "Kannada", m2m: "kn" },
+    { code: "ko-KR", native: "\uD55C\uAD6D\uC5B4\uFF08\uB300\uD55C\uBBFC\uAD6D\uFF09", english: "Korean (South Korea)", m2m: "ko" },
+    { code: "ml", native: "\u0D2E\u0D32\u0D2F\u0D3E\u0D33\u0D02", english: "Malayalam", m2m: "ml" },
+    { code: "mr", native: "\u092E\u0930\u093E\u0920\u0940", english: "Marathi", m2m: "mr" },
+    { code: "nb", native: "Norsk bokm\xE5l", english: "Norwegian Bokm\xE5l", m2m: "no" },
+    { code: "pt-BR", native: "Portugu\xEAs (Brasil)", english: "Portuguese (Brazil)", m2m: "pt" },
+    { code: "ru", native: "\u0420\u0443\u0441\u0441\u043A\u0438\u0439", english: "Russian", m2m: "ru" },
+    { code: "es-419", native: "Espa\xF1ol (Latinoam\xE9rica)", english: "Spanish (Latin America)", m2m: "es", fallback: "es-ES" },
+    { code: "es-ES", native: "Espa\xF1ol (Espa\xF1a)", english: "Spanish (Spain)", m2m: "es", fallback: "es-419" },
+    { code: "sw", native: "Kiswahili", english: "Swahili", m2m: "sw", beta: true },
+    { code: "sv", native: "Svenska", english: "Swedish", m2m: "sv" },
+    { code: "ta", native: "\u0BA4\u0BAE\u0BBF\u0BB4\u0BCD", english: "Tamil", m2m: "ta" },
+    { code: "te", native: "\u0C24\u0C46\u0C32\u0C41\u0C17\u0C41", english: "Telugu", m2m: null },
+    { code: "th", native: "\u0E44\u0E17\u0E22", english: "Thai", m2m: "th" },
+    { code: "tr", native: "T\xFCrk\xE7e", english: "Turkish", m2m: "tr" },
+    { code: "uk", native: "\u0423\u043A\u0440\u0430\u0457\u043D\u0441\u044C\u043A\u0430", english: "Ukrainian", m2m: "uk" },
+    { code: "vi", native: "Ti\u1EBFng Vi\u1EC7t", english: "Vietnamese", m2m: "vi" }
+  ];
+  var LOCALE_CODES = LOCALES.map((l) => l.code);
+  var BY_CODE = new Map(LOCALES.map((l) => [l.code.toLowerCase(), l]));
+  function localeInfo(code) {
+    return typeof code === "string" ? BY_CODE.get(code.toLowerCase()) : void 0;
+  }
+  function isEnglish(code) {
+    return typeof code === "string" && /^en(-|$)/i.test(code);
+  }
+
   // packages/admin-ui/src/ticket.jsx
   var PRIMARY = {
     new: [
@@ -852,9 +899,13 @@ var __awPlugin = (() => {
             /* @__PURE__ */ jsxs("span", { children: [
               "opened ",
               when(ticket.created_at)
-            ] })
+            ] }),
+            isClient && ticket.client_locale && !isEnglish(ticket.client_locale) ? /* @__PURE__ */ jsxs("span", { title: "Their messages are machine-translated for you; your replies reach them translated.", children: [
+              "writes in ",
+              localeInfo(ticket.client_locale)?.english ?? ticket.client_locale
+            ] }) : null
           ] }),
-          /* @__PURE__ */ jsx("h2", { children: ticket.title }),
+          /* @__PURE__ */ jsx("h2", { title: ticket.title_en ? `Original: ${ticket.title}` : void 0, children: ticket.title_en || ticket.title }),
           ticket.client_waiting_since && ticket.status !== "new" ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
             "The client wrote ",
             ago(ticket.client_waiting_since),
@@ -1029,16 +1080,32 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link aw-fold__more", onClick: fold.toggle, children: fold.open ? "Show less" : `Show all${lines > 6 ? ` (${lines} lines)` : ""}` });
   }
   function Message({ ticket, m, latest }) {
-    const fold = useFold(m.body, latest);
+    const [original, setOriginal] = useState(false);
+    const translated = m.original !== void 0;
+    const body = translated && original ? m.original : m.body;
+    const fold = useFold(body, latest);
     return /* @__PURE__ */ jsxs("li", { className: cx("aw-msg", `aw-msg--${m.author}`, m.internal === 1 && "is-private"), children: [
       /* @__PURE__ */ jsxs("header", { className: cx(fold.long && "aw-fold"), onClick: fold.toggle, children: [
         /* @__PURE__ */ jsx(FoldChevron, { fold }),
         /* @__PURE__ */ jsx("strong", { children: m.author === "ali" ? "You" : m.author === "client" ? ticket.client_name ?? ticket.client_email ?? "Client" : m.author }),
         m.internal === 1 ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "private \xB7 agent reads it" }) : m.author === "ali" ? /* @__PURE__ */ jsx(Tag, { tone: "client", children: "emailed" }) : null,
+        translated ? /* @__PURE__ */ jsx(
+          "button",
+          {
+            type: "button",
+            className: "aw-link",
+            title: "Machine-translated. The agents read the English.",
+            onClick: (e) => {
+              e.stopPropagation();
+              setOriginal((o) => !o);
+            },
+            children: original ? "show English" : `translated from ${localeInfo(m.translatedFrom)?.english ?? m.translatedFrom ?? "their language"} \xB7 show original`
+          }
+        ) : null,
         /* @__PURE__ */ jsx("time", { children: when(m.created_at) })
       ] }),
-      m.body ? /* @__PURE__ */ jsx("div", { className: cx("aw-msg__body", fold.long && !fold.open && "is-clipped"), children: m.body }) : null,
-      fold.long ? /* @__PURE__ */ jsx(FoldMore, { fold, text: m.body }) : null,
+      body ? /* @__PURE__ */ jsx("div", { className: cx("aw-msg__body", fold.long && !fold.open && "is-clipped"), children: body }) : null,
+      fold.long ? /* @__PURE__ */ jsx(FoldMore, { fold, text: body }) : null,
       m.files?.length ? /* @__PURE__ */ jsx(FileChips, { ticketId: ticket.id, files: m.files }) : null
     ] });
   }
@@ -1715,6 +1782,31 @@ var __awPlugin = (() => {
             ] }),
             c.role !== "admin" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
               /* @__PURE__ */ jsx("p", { className: "aw-muted", children: usageLine(c.usage) }),
+              /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+                /* @__PURE__ */ jsx(
+                  "select",
+                  {
+                    "aria-label": "Language",
+                    value: c.locale ?? "en-US",
+                    onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { locale: e.target.value }), "Language saved."),
+                    children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code))
+                  }
+                ),
+                /* @__PURE__ */ jsxs(
+                  "select",
+                  {
+                    "aria-label": "Translation",
+                    title: "Who translates this client\u2019s messages. They can change it themselves.",
+                    value: c.translation ?? "deepseek",
+                    onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { translation: e.target.value }), "Saved."),
+                    children: [
+                      /* @__PURE__ */ jsx("option", { value: "deepseek", children: "DeepSeek" }),
+                      /* @__PURE__ */ jsx("option", { value: "cloudflare", children: "Workers AI" }),
+                      /* @__PURE__ */ jsx("option", { value: "off", children: "no translation" })
+                    ]
+                  }
+                )
+              ] }),
               /* @__PURE__ */ jsx(Chips, { value: c.projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: (ids) => void toggle(c, ids) })
             ] }) : null
           ] }, c.id)) })
@@ -3729,7 +3821,7 @@ ${question.text ?? ""}`)) {
     const host = { command, json, gitGraph, conversation };
     const api = (method, path, body) => json(`api ${method} ${path}${body === void 0 ? "" : ` ${JSON.stringify(body)}`}`);
     const RUN_DIR_RE = /^(.+)-(task|ticket)-(\d+)(?:-run(\d+))?$/;
-    const RUN_TITLE_RE = /^(Task|Ticket)?\s*#(\d+) · run (\d+)/;
+    const RUN_TITLE_RE = /^(Task|Ticket)?\s*#(\d+)(?: · run (\d+))?\s*(?:—|$)/;
     const SEP = "\0";
     function ticketFromCwd(key) {
       const [cwd, title = ""] = String(key ?? "").split(SEP);
@@ -3739,7 +3831,7 @@ ${question.text ?? ""}`)) {
       if (match) return { slug: match[1], kind: match[2], ticketId: Number(match[3]), runId: match[4] ? Number(match[4]) : null, cwd };
       const named = RUN_TITLE_RE.exec(title.trim());
       if (!named) return null;
-      return { slug: folder, kind: named[1] === "Ticket" ? "ticket" : "task", ticketId: Number(named[2]), runId: Number(named[3]), cwd };
+      return { slug: folder, kind: named[1] === "Ticket" ? "ticket" : "task", ticketId: Number(named[2]), runId: named[3] ? Number(named[3]) : null, cwd };
     }
     function useSessionCwd(sessionId) {
       const list = ctx.sessions?.list;

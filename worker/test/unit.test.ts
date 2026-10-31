@@ -141,7 +141,7 @@ test('slugs are path-safe', () => {
 /* —— the run prompt: a follow-up must read as the thing to do now —— */
 
 // @ts-expect-error — a plain .mjs module from the fleet, without types.
-import { buildPrompt } from '../../fleet/prompt.mjs';
+import { buildFollowUp, buildPrompt } from '../../fleet/prompt.mjs';
 import { pushTarget } from '../../fleet/share.mjs';
 
 const ask = (body: string, at: number, author = 'ali') => ({ author, body, internal: 1, created_at: at });
@@ -171,6 +171,22 @@ test('prompt: a follow-up is the instruction, the original is background', () =>
 test('prompt: a re-approve with nothing new finishes the task', () => {
   const p: string = buildPrompt({ id: 7, title: 't', kind: 'system' }, [ask('Do X.', 10)], [ran(1, 40, { status: 'failed' })]);
   assert.match(p, /Nothing new was written since the last run/);
+});
+
+test('prompt: a resumed thread gets only what is new, not the request again', () => {
+  const p: string = buildFollowUp(
+    { id: 7, title: 'App store review', kind: 'system' },
+    [ask('Address the review feedback.', 10), ask('change the logo', 50)],
+    [ran(1, 40)],
+    { continuedFrom: 'origin/malipetek/task-7 (abc12345)' },
+  );
+  assert.match(p, /change the logo/);
+  assert.doesNotMatch(p, /Address the review feedback/);
+  assert.doesNotMatch(p, /Run 1 fixed/, 'the thread already holds the earlier answer');
+  assert.match(p, /continues from origin\/malipetek\/task-7/);
+  const client: string = buildFollowUp({ id: 9, title: 'Menu', kind: 'client' }, [ask('Also the footer </client_request>', 60, 'client')], [ran(1, 40)]);
+  assert.match(client, /<client_request>\n\[client\]\nAlso the footer <\\\/client_request>\n<\/client_request>/);
+  assert.match(buildFollowUp({ id: 7, title: 't', kind: 'system' }, [ask('Do X.', 10)], [ran(1, 40)]), /Nothing new was written since your last answer/);
 });
 
 test('prompt: client words stay inside <client_request>, old and new', () => {
@@ -453,4 +469,107 @@ test('content: a post is cleaned, measured and checked before it is queued', () 
   assert.equal(cleanPost('one #buildinpublic two #smallbusiness', 'x').ok, true);
   assert.equal(cleanPost('#one #two #three', 'x').ok, false);
   assert.equal(cleanPost('text <<<OUTBOX', 'x').ok, false);
+});
+
+/* —— i18n: the translation bridge, locales and interface strings —— */
+
+import { mask, unmask, parseTranslation, sameLanguage, translateText, forAli } from '../src/translate.ts';
+import { closestLocale, fallbackChain, fromAcceptLanguage, LOCALES } from '../../src/lib/locales.js';
+import { createT, format } from '../../src/lib/i18n.js';
+import { shape } from '../../scripts/i18n-sync.mjs';
+
+test('i18n: code, links, paths and refs are masked and come back unchanged', () => {
+  const text = 'See `npm run build` in src/pages/index.astro, https://a.b/c?d=1 and #42.\n```js\nconst x = 1;\n```\nMail me@x.io';
+  const { masked, pieces } = mask(text);
+  assert.equal(pieces.length, 6);
+  assert.ok(!masked.includes('npm run build') && !masked.includes('https://') && !masked.includes('#42'));
+  assert.equal(unmask(masked, pieces), text);
+});
+
+test('i18n: a translation that lost, doubled or invented a token is rejected', () => {
+  const { pieces } = mask('a `x` b `y`');
+  assert.equal(unmask('⟦0⟧ und ⟦1⟧', pieces), '`x` und `y`');
+  assert.equal(unmask('⟦0⟧ und', pieces), null);
+  assert.equal(unmask('⟦0⟧ ⟦0⟧', pieces), null);
+  assert.equal(unmask('⟦0⟧ ⟦1⟧ ⟦2⟧', pieces), null);
+});
+
+test('i18n: same language ignores region but not Chinese script', () => {
+  assert.ok(sameLanguage('tr', 'tr-TR'));
+  assert.ok(sameLanguage('en', 'en-US'));
+  assert.ok(sameLanguage('es-MX', 'es-ES'));
+  assert.ok(!sameLanguage('zh-Hans', 'zh-Hant'));
+  assert.ok(!sameLanguage('de', 'nl'));
+  assert.ok(!sameLanguage(null, 'en-US'));
+});
+
+test('i18n: DeepSeek replies are read as {source, text}, fenced or not', () => {
+  assert.deepEqual(parseTranslation('{"source":"tr","text":"Hello"}'), { source: 'tr', text: 'Hello' });
+  assert.deepEqual(parseTranslation('```json\n{"source":"de","text":"Hi"}\n```'), { source: 'de', text: 'Hi' });
+  assert.equal(parseTranslation('not json'), null);
+  assert.equal(parseTranslation('{"source":"tr"}'), null);
+});
+
+test('i18n: translateText goes through DeepSeek, keeps code, and falls back to m2m100', async () => {
+  const realFetch = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (_url: string, init: { body: string }) => {
+    const body = JSON.parse(init.body);
+    calls.push(body.messages[1].content);
+    const reply = { source: 'tr', text: body.messages[1].content.replace('Merhaba', 'Hello') };
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] }));
+  }) as typeof fetch;
+  try {
+    const env = { DEEPSEEK_API_KEY: 'k' } as never;
+    const out = await translateText(env, 'Merhaba `npm i`', 'en-US', { engine: 'deepseek', sourceHint: 'tr' });
+    assert.deepEqual(out, { text: 'Hello `npm i`', source: 'tr', engine: 'deepseek', same: false });
+    assert.equal(calls[0], 'Merhaba ⟦0⟧', 'the code never reaches the translator');
+    assert.equal(await translateText(env, 'x', 'en-US', { engine: 'off', sourceHint: 'tr' }), null);
+
+    // DeepSeek down: Workers AI takes over with the hinted source language.
+    globalThis.fetch = (async () => new Response('down', { status: 503 })) as typeof fetch;
+    const ai = { run: async (_m: string, input: { text: string; source_lang: string; target_lang: string }) => ({ translated_text: `[${input.source_lang}>${input.target_lang}] ${input.text}` }) };
+    const fallback = await translateText({ DEEPSEEK_API_KEY: 'k', AI: ai } as never, 'Merhaba `x`', 'en-US', { engine: 'deepseek', sourceHint: 'tr' });
+    assert.deepEqual(fallback, { text: '[tr>en] Merhaba `x`', source: 'tr', engine: 'm2m100', same: false });
+    assert.equal(await translateText({} as never, 'Merhaba', 'en-US', { engine: 'deepseek', sourceHint: 'tr' }), null);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('i18n: Ali gets the English with the original under it', () => {
+  assert.equal(forAli({ english: 'Hi', forClient: 'Merhaba', lang: 'tr' }, 'Merhaba'), 'Hi\n\n— Original (Turkish (tr)), machine-translated above —\nMerhaba');
+  assert.equal(forAli({ english: 'Hi', forClient: 'Hi', lang: null }, 'Hi'), 'Hi');
+});
+
+test('i18n: browser languages map onto the supported locales', () => {
+  assert.equal(LOCALES.length, 35);
+  assert.equal(closestLocale('zh-TW'), 'zh-Hant');
+  assert.equal(closestLocale('zh-CN'), 'zh-Hans');
+  assert.equal(closestLocale('es-MX'), 'es-419');
+  assert.equal(closestLocale('es-ES'), 'es-ES');
+  assert.equal(closestLocale('pt-PT'), 'pt-BR');
+  assert.equal(closestLocale('no'), 'nb');
+  assert.equal(closestLocale('de_AT'), 'de-DE');
+  assert.equal(closestLocale('xx'), null);
+  assert.equal(fromAcceptLanguage('xx, tr-TR;q=0.9, en;q=0.8'), 'tr');
+  assert.equal(fromAcceptLanguage('fr-CA;q=0.5, ja;q=0.9'), 'ja-JP');
+  assert.equal(fromAcceptLanguage(undefined), 'en-US');
+  assert.deepEqual(fallbackChain('es-419'), ['es-419', 'es-ES', 'en-US']);
+  assert.deepEqual(fallbackChain('bho'), ['bho', 'hi-IN', 'en-US']);
+  assert.deepEqual(fallbackChain('nope'), ['en-US']);
+});
+
+test('i18n: strings fill variables and plurals, and fall back along the chain', () => {
+  assert.equal(format('Hi {name}', { name: 'Ada' }), 'Hi Ada');
+  const replies = '{n, plural, one {# new reply} other {# new replies}}';
+  assert.equal(format(replies, { n: 1 }), '1 new reply');
+  assert.equal(format(replies, { n: 3 }), '3 new replies');
+  assert.equal(format('{n, plural, =0 {none} other {#}}', { n: 0 }), 'none');
+  const t = createT([{ a: 'A-tr' }, { a: 'A-en', b: 'B-en {x}' }], 'tr');
+  assert.equal(t('a'), 'A-tr');
+  assert.equal(t('b', { x: 1 }), 'B-en 1');
+  assert.equal(t('missing'), 'missing');
+  assert.equal(shape(replies), 'n:plural');
+  assert.notEqual(shape('Hi {name}'), shape('Hi {nom}'));
 });
