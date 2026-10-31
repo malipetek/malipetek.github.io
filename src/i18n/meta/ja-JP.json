@@ -1782,5 +1782,345 @@
   "start.meta.note": {
     "en": "You pay for the time I actually spend, by the second, plus what the AI run cost, with no markup. Nothing starts until I have read the request.",
     "reviewed": false
+  },
+  "site.nav.shelf": {
+    "en": "Shelf",
+    "reviewed": false
+  },
+  "site.nav.writing": {
+    "en": "Writing",
+    "reviewed": false
+  },
+  "site.nav.kb": {
+    "en": "Knowledgebase",
+    "reviewed": false
+  },
+  "site.nav.plugins": {
+    "en": "Plugins",
+    "reviewed": false
+  },
+  "site.nav.work": {
+    "en": "Work",
+    "reviewed": false
+  },
+  "site.nav.contact": {
+    "en": "Contact",
+    "reviewed": false
+  },
+  "site.nav.talk": {
+    "en": "Talk",
+    "reviewed": false
+  },
+  "site.nav.primary": {
+    "en": "Primary",
+    "reviewed": false
+  },
+  "site.skip": {
+    "en": "Skip to content",
+    "reviewed": false
+  },
+  "site.theme": {
+    "en": "Toggle dark mode",
+    "reviewed": false
+  },
+  "site.foot.portal": {
+    "en": "Client portal",
+    "reviewed": false
+  },
+  "site.foot.built": {
+    "en": "Built with Astro, hosted on Cloudflare",
+    "reviewed": false
+  },
+  "site.lang": {
+    "en": "Language",
+    "reviewed": false
+  },
+  "site.lang.other": {
+    "en": "Read this page in another language",
+    "reviewed": false
+  },
+  "site.home.title": {
+    "en": "M. Ali Petek — software help by the minute, not by a quote",
+    "reviewed": false
+  },
+  "site.home.description": {
+    "en": "Vibe coded most of it? Get developer help with the last mile, billed by the second. You send a request, Ali approves it, an AI agent builds it, and he checks it before anything ships.",
+    "reviewed": false
+  },
+  "site.home.cta.ticket": {
+    "en": "Open a ticket →",
+    "reviewed": false
+  },
+  "site.home.cta.how": {
+    "en": "How it works ↓",
+    "reviewed": false
+  },
+  "site.home.how.title": {
+    "en": "How it works",
+    "reviewed": false
+  },
+  "site.home.price.title": {
+    "en": "What it costs",
+    "reviewed": false
+  },
+  "site.home.term.example": {
+    "en": "e.g. {time} of my time = {price}",
+    "reviewed": false
+  },
+  "site.home.term.hourly": {
+    "en": "by the clock = {price} an hour",
+    "reviewed": false
+  },
+  "site.home.why.title": {
+    "en": "Why not just…",
+    "reviewed": false
+  },
+  "site.home.safeguards.label": {
+    "en": "What keeps it safe",
+    "reviewed": false
+  },
+  "site.home.shelf.title": {
+    "en": "The shelf",
+    "reviewed": false
+  },
+  "site.home.shelf.note": {
+    "en": "{n, plural, one {# thing} other {# things}} I built and still answer for. Proof there is a developer behind the agent.",
+    "reviewed": false
+  },
+  "site.home.shelf.filter": {
+    "en": "Filter projects",
+    "reviewed": false
+  },
+  "site.home.shelf.all": {
+    "en": "All",
+    "reviewed": false
+  },
+  "site.home.shelf.details": {
+    "en": "Details",
+    "reviewed": false
+  },
+  "site.home.shelf.empty": {
+    "en": "Nothing on this shelf with that label.",
+    "reviewed": false
+  },
+  "site.home.writing.title": {
+    "en": "Writing",
+    "reviewed": false
+  },
+  "site.home.writing.all": {
+    "en": "All {n} posts →",
+    "reviewed": false
+  },
+  "site.home.postMeta": {
+    "en": "{date} · {category} · {min} min",
+    "reviewed": false
+  },
+  "site.home.work.title": {
+    "en": "Where I've worked",
+    "reviewed": false
+  },
+  "site.home.work.all": {
+    "en": "Full record →",
+    "reviewed": false
+  },
+  "site.home.work.hint": {
+    "en": "Hover a stop, or tab through and press, to read the damage.",
+    "reviewed": false
+  },
+  "site.home.kb.title": {
+    "en": "Agent knowledgebase",
+    "reviewed": false
+  },
+  "site.home.kb.all": {
+    "en": "All {n} entries →",
+    "reviewed": false
+  },
+  "site.home.kb.empty": {
+    "en": "Nothing published yet.",
+    "reviewed": false
+  },
+  "site.home.kb.deadEnd": {
+    "en": "dead end",
+    "reviewed": false
+  },
+  "site.home.kb.general": {
+    "en": "general",
+    "reviewed": false
+  },
+  "site.home.plugins.title": {
+    "en": "DeepSeek plugins",
+    "reviewed": false
+  },
+  "site.home.plugins.all": {
+    "en": "All {n} plugins →",
+    "reviewed": false
+  },
+  "site.kind.shopify-app": {
+    "en": "Shopify app",
+    "reviewed": false
+  },
+  "site.kind.shopify-app.plural": {
+    "en": "Shopify apps",
+    "reviewed": false
+  },
+  "site.kind.game": {
+    "en": "Game",
+    "reviewed": false
+  },
+  "site.kind.game.plural": {
+    "en": "Games",
+    "reviewed": false
+  },
+  "site.kind.mobile-app": {
+    "en": "Mobile app",
+    "reviewed": false
+  },
+  "site.kind.mobile-app.plural": {
+    "en": "Mobile apps",
+    "reviewed": false
+  },
+  "site.kind.tool": {
+    "en": "Tool",
+    "reviewed": false
+  },
+  "site.kind.tool.plural": {
+    "en": "Tools",
+    "reviewed": false
+  },
+  "site.kind.experiment": {
+    "en": "Experiment",
+    "reviewed": false
+  },
+  "site.kind.experiment.plural": {
+    "en": "Experiments",
+    "reviewed": false
+  },
+  "site.status.live": {
+    "en": "Live",
+    "reviewed": false
+  },
+  "site.status.beta": {
+    "en": "Beta",
+    "reviewed": false
+  },
+  "site.status.archived": {
+    "en": "Archived",
+    "reviewed": false
+  },
+  "site.status.wip": {
+    "en": "Work in progress",
+    "reviewed": false
+  },
+  "offer.kind": {
+    "en": "Self-serve software contracting",
+    "reviewed": false
+  },
+  "offer.headline.1": {
+    "en": "Software help,",
+    "reviewed": false
+  },
+  "offer.headline.2": {
+    "en": "by the minute.",
+    "reviewed": false
+  },
+  "offer.priceHook": {
+    "en": "A one-minute fix is {price}. No quote, no minimum.",
+    "reviewed": false
+  },
+  "offer.tagline": {
+    "en": "You can vibe code most of it. The last mile is where you need a developer: the bug it keeps bringing back, the deploy, the payments, the thing that only breaks for real customers. Get that help at a fraction of the price, billed by the second, not by a quote.",
+    "reviewed": false
+  },
+  "offer.punchline.1": {
+    "en": "The agent types.",
+    "reviewed": false
+  },
+  "offer.punchline.2": {
+    "en": "I sign off.",
+    "reviewed": false
+  },
+  "offer.priceNote": {
+    "en": "${rate} an hour of my time, billed by the second; the AI at cost, no markup.",
+    "reviewed": false
+  },
+  "offer.priceRule": {
+    "en": "You pay for the time I actually spend, billed by the second, plus what the AI run cost, with no markup. No packages, no minimum.",
+    "reviewed": false
+  },
+  "offer.priceWhy": {
+    "en": "The less of me a job needs, the less it costs. A change the agent finishes on its own is a minute or two of my time. You choose how closely I look, and you can set a budget I will not pass without asking.",
+    "reviewed": false
+  },
+  "offer.serverless.title": {
+    "en": "Nothing to babysit",
+    "reviewed": false
+  },
+  "offer.serverless.body": {
+    "en": "What I build runs serverless. There is no server to patch or resize, and a traffic spike is not a migration project.",
+    "reviewed": false
+  },
+  "offer.who": {
+    "en": "For business owners who need software work done, not a development team to manage.",
+    "reviewed": false
+  },
+  "offer.why.yourself.instead": {
+    "en": "vibe coding it yourself",
+    "reviewed": false
+  },
+  "offer.why.yourself.answer": {
+    "en": "Do — most of it. When it stalls at the last mile, send me that part. A one-minute fix is {price} of my time, and you never wait for a quote.",
+    "reviewed": false
+  },
+  "offer.why.chatgpt.instead": {
+    "en": "a ChatGPT subscription",
+    "reviewed": false
+  },
+  "offer.why.chatgpt.answer": {
+    "en": "It writes code. It does not put it in your project, run it, or answer for it. Here the agent does the typing and a developer approves the job before it starts and checks it before you see it.",
+    "reviewed": false
+  },
+  "offer.why.agency.instead": {
+    "en": "a freelancer or an agency",
+    "reviewed": false
+  },
+  "offer.why.agency.answer": {
+    "en": "No quote, no call, no minimum invoice. A small fix does not wait until it is worth someone's afternoon: it is {price} of my time.",
+    "reviewed": false
+  },
+  "offer.why.cheapest.instead": {
+    "en": "the cheapest developer you can find",
+    "reviewed": false
+  },
+  "offer.safeguard.1": {
+    "en": "Nothing starts until I approve the request.",
+    "reviewed": false
+  },
+  "offer.safeguard.2": {
+    "en": "The agent works on a sealed copy of your project. It cannot publish, deploy, or touch anything live.",
+    "reviewed": false
+  },
+  "offer.safeguard.3": {
+    "en": "Set a budget and I will not pass it without asking.",
+    "reviewed": false
+  },
+  "offer.safeguard.4": {
+    "en": "If a machine stops mid-job, the job goes back in the queue instead of stalling.",
+    "reviewed": false
+  },
+  "offer.safeguard.5": {
+    "en": "Every message, change and decision is in one thread you can read.",
+    "reviewed": false
+  },
+  "offer.why.cheapest.answer": {
+    "en": "On small jobs this is cheaper, because the agent does the hours and you pay for my minutes. And the person who signs off is the one you write to.",
+    "reviewed": false
+  },
+  "site.home.kb.foot": {
+    "en": "Every problem my agents hit, and what actually fixed it — public, searchable, and mountable by your own agent at malipetek.dev/mcp.",
+    "reviewed": false
+  },
+  "site.home.plugins.foot": {
+    "en": "I build these for my own harness and publish them to npm as @malipetek packages. Install one with “dsh plugin add <name>”, or read the whole set at malipetek.dev/plugins.",
+    "reviewed": false
   }
 }

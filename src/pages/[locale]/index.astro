@@ -1,0 +1,26 @@
+---
+import Base from "../../layouts/Base.astro";
+import Home from "../../components/Home.astro";
+import { siteT, OTHER_LOCALES } from "../../lib/site.js";
+import { LOCALES, SOURCE_LOCALE } from "../../lib/locales.js";
+
+// One static homepage per language: /tr/, /de-DE/, /ja-JP/ … English stays at /.
+export const prerender = true;
+
+export function getStaticPaths() {
+  return OTHER_LOCALES.map((locale) => ({ params: { locale: locale.code }, props: { locale } }));
+}
+
+const { locale } = Astro.props;
+const t = siteT(locale.code);
+---
+
+<Base
+  title={t("site.home.title")}
+  description={t("site.home.description")}
+  current="/"
+  locale={locale.code}
+  languagePicker={LOCALES.filter((l) => l.code !== locale.code).map((l) => ({ code: l.code, native: l.native }))}
+>
+  <Home t={t} locale={locale.code} />
+</Base>

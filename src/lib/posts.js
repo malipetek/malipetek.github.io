@@ -9,6 +9,6 @@ export function readMinutes(body) {
   return Math.max(1, Math.round(body.split(/\s+/).length / 200));
 }
 
-export function fmtDate(d) {
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+export function fmtDate(d, locale = 'en-GB') {
+  return d.toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' });
 }

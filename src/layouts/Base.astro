@@ -1,5 +1,7 @@
 ---
 import "../styles/base.css";
+import { siteT, localePath } from "../lib/site.js";
+import { SOURCE_LOCALE } from "../lib/locales.js";
 
 interface Props {
   title?: string;
@@ -9,6 +11,10 @@ interface Props {
   type?: string;
   image?: string;
   imageAlt?: string;
+  /** The page's language; English unless a localized route says otherwise. */
+  locale?: string;
+  /** Every language this page exists in: renders hreflang links and the picker. */
+  languagePicker?: { code: string; native: string }[];
 }
 
 const {
@@ -18,20 +24,24 @@ const {
   type = "website",
   image = "/me.webp",
   imageAlt = "Muhammet Ali Petek",
+  locale = SOURCE_LOCALE,
+  languagePicker = [],
 } = Astro.props;
+
+const t = siteT(locale);
 
 // Astro.site is set in astro.config.mjs, so these are absolute for crawlers.
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const ogImage = new URL(image, Astro.site);
 
 const nav = [
-  { href: "/", label: "Shelf" },
-  { href: "/blog", label: "Writing" },
-  { href: "/kb", label: "Knowledgebase" },
-  { href: "/plugins", label: "Plugins" },
-  { href: "/experience", label: "Work" },
-  { href: "/contact", label: "Contact" },
-  { href: "/#talk", label: "Talk" },
+  { href: "/", label: t("site.nav.shelf") },
+  { href: "/blog", label: t("site.nav.writing") },
+  { href: "/kb", label: t("site.nav.kb") },
+  { href: "/plugins", label: t("site.nav.plugins") },
+  { href: "/experience", label: t("site.nav.work") },
+  { href: "/contact", label: t("site.nav.contact") },
+  { href: "/#talk", label: t("site.nav.talk") },
 ];
 
 const isCurrent = (href: string) =>
@@ -39,7 +49,7 @@ const isCurrent = (href: string) =>
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={locale}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -64,9 +74,20 @@ const isCurrent = (href: string) =>
       content="#0f0e0c"
     />
     <link rel="canonical" href={canonical.href} />
+    {
+      languagePicker.length > 0 && (
+        <>
+          <link rel="alternate" hreflang={locale} href={canonical.href} />
+          {languagePicker.map((l) => (
+            <link rel="alternate" hreflang={l.code} href={new URL(localePath(l.code), Astro.site).href} />
+          ))}
+          <link rel="alternate" hreflang="x-default" href={new URL("/", Astro.site).href} />
+        </>
+      )
+    }
     <meta property="og:type" content={type} />
     <meta property="og:site_name" content="M. Ali Petek" />
-    <meta property="og:locale" content="en" />
+    <meta property="og:locale" content={locale.replace("-", "_")} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical.href} />
@@ -94,11 +115,11 @@ const isCurrent = (href: string) =>
     <link rel="sitemap" href="/sitemap-index.xml" />
   </head>
   <body>
-    <a class="skip-link" href="#main">Skip to content</a>
+    <a class="skip-link" href="#main">{t("site.skip")}</a>
     <header class="site-head">
       <div class="wrap site-head-inner">
         <a class="wordmark" href="/">malipetek</a>
-        <nav class="site-nav" aria-label="Primary">
+        <nav class="site-nav" aria-label={t("site.nav.primary")}>
           {
             nav.map((item) => (
               <a
@@ -113,7 +134,7 @@ const isCurrent = (href: string) =>
             class="theme-toggle"
             type="button"
             data-theme-toggle
-            aria-label="Toggle dark mode"
+            aria-label={t("site.theme")}
             aria-pressed="false"
           >
             <svg
@@ -161,8 +182,24 @@ const isCurrent = (href: string) =>
       <div class="wrap site-foot-inner">
         <a href="mailto:malipetek@gmail.com">malipetek@gmail.com</a>
         <a href="https://github.com/malipetek">github.com/malipetek</a>
-        <a href="/portal">Client portal</a>
-        <span>Built with Astro, hosted on Cloudflare</span>
+        <a href="/portal">{t("site.foot.portal")}</a>
+        <span>{t("site.foot.built")}</span>
+        {
+          languagePicker.length > 0 && (
+            <details class="lang-picker">
+              <summary>{t("site.lang")}</summary>
+              <ul aria-label={t("site.lang.other")}>
+                {languagePicker.map((l) => (
+                  <li>
+                    <a href={localePath(l.code)} lang={l.code} hreflang={l.code}>
+                      {l.native}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )
+        }
       </div>
     </footer>
   </body>
@@ -314,5 +351,55 @@ const isCurrent = (href: string) =>
 
   .site-foot-inner a {
     color: var(--ink-soft);
+  }
+
+  /* The language picker: a native name per locale, folded away until asked. */
+  .lang-picker {
+    position: relative;
+  }
+
+  .lang-picker summary {
+    cursor: pointer;
+    color: var(--ink-soft);
+    list-style: none;
+  }
+
+  .lang-picker summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .lang-picker summary::after {
+    content: " ⌄";
+  }
+
+  .lang-picker[open] summary::after {
+    content: " ⌃";
+  }
+
+  .lang-picker ul {
+    position: absolute;
+    bottom: calc(100% + 0.4rem);
+    left: 0;
+    z-index: 20;
+    margin: 0;
+    padding: 0.4rem;
+    max-height: 60vh;
+    overflow-y: auto;
+    columns: 2;
+    column-gap: 1.2rem;
+    list-style: none;
+    background: var(--bone);
+    border: 1px solid var(--rule-strong);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+  }
+
+  .lang-picker li {
+    break-inside: avoid;
+  }
+
+  .lang-picker a {
+    display: block;
+    padding: 0.15rem 0.3rem;
+    white-space: nowrap;
   }
 </style>

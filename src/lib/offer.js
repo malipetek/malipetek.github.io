@@ -90,19 +90,23 @@ export const WHO = 'For business owners who need software work done, not a devel
  */
 export const WHY_NOT = [
   {
+    key: 'yourself',
     instead: 'vibe coding it yourself',
     answer: `Do — most of it. When it stalls at the last mile, send me that part. A one-minute fix is ${QUICK_FIX} of my time, and you never wait for a quote.`,
   },
   {
+    key: 'chatgpt',
     instead: 'a ChatGPT subscription',
     answer:
       'It writes code. It does not put it in your project, run it, or answer for it. Here the agent does the typing and a developer approves the job before it starts and checks it before you see it.',
   },
   {
+    key: 'agency',
     instead: 'a freelancer or an agency',
     answer: `No quote, no call, no minimum invoice. A small fix does not wait until it is worth someone's afternoon: it is ${QUICK_FIX} of my time.`,
   },
   {
+    key: 'cheapest',
     instead: 'the cheapest developer you can find',
     answer: 'On small jobs this is cheaper, because the agent does the hours and you pay for my minutes. And the person who signs off is the one you write to.',
   },
