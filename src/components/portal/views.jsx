@@ -2,41 +2,42 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, errorText, fmtTime } from '../../lib/portal';
 import { HOURLY_USD, clock, money, priceOf } from '../../lib/pricing.js';
-import { Board, STAGES } from './Board.jsx';
-import { go, href, isOpen, usePortal } from './store.js';
+import { Board, STAGES, stageText } from './Board.jsx';
+import { go, href, isOpen, useT, usePortal } from './store.js';
 import { Button, Icon, MiniTrack, Modal, StatusPill, ago, cx, fmtDate, totalOf } from './ui.jsx';
 
 const unpublished = (site) => site?.state === 'ready' && site.previewDeploy && site.previewDeploy !== site.productionDeploy;
 const overBudget = (t) => isOpen(t) && t.budget_cents !== null && totalOf(t) > t.budget_cents;
-const greeting = () => {
+const greeting = (t) => {
   const h = new Date().getHours();
-  return h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  return h < 5 ? t('views.greeting.evening') : h < 12 ? t('views.greeting.morning') : h < 18 ? t('views.greeting.afternoon') : t('views.greeting.evening');
 };
 
 /* ————— shared rows ————— */
 
-export function RequestRow({ t, hovered, onHover, showProject = true }) {
+export function RequestRow({ t: ticket, hovered, onHover, showProject = true }) {
+  const t = useT();
   return (
     <li>
       <a
-        className={cx('cp-row', !showProject && 'cp-row--bare', t.unread && 'is-unread', hovered && 'is-hover')}
-        href={href(`ticket/${t.id}`)}
-        onMouseEnter={() => onHover?.(t.id)}
+        className={cx('cp-row', !showProject && 'cp-row--bare', ticket.unread && 'is-unread', hovered && 'is-hover')}
+        href={href(`ticket/${ticket.id}`)}
+        onMouseEnter={() => onHover?.(ticket.id)}
         onMouseLeave={() => onHover?.(null)}
-        onFocus={() => onHover?.(t.id)}
+        onFocus={() => onHover?.(ticket.id)}
         onBlur={() => onHover?.(null)}
       >
-        <span className="cp-row__id">#{t.id}</span>
+        <span className="cp-row__id">#{ticket.id}</span>
         <span className="cp-row__title">
-          <span>{t.title}</span>
-          {t.unread ? <span className="cp-new">new reply</span> : null}
-          {overBudget(t) ? <span className="cp-new cp-new--warn">paused at budget</span> : null}
+          <span>{ticket.title}</span>
+          {ticket.unread ? <span className="cp-new">{t('views.row.newReply')}</span> : null}
+          {overBudget(ticket) ? <span className="cp-new cp-new--warn">{t('views.row.pausedAtBudget')}</span> : null}
         </span>
-        {showProject ? <span className="cp-row__project">{t.project_name ?? '—'}</span> : null}
-        <MiniTrack status={t.status} />
-        <StatusPill status={t.status} />
-        <span className="cp-row__cost">{totalOf(t) ? money(totalOf(t)) : ''}</span>
-        <span className="cp-row__when">{ago(t.updated_at)}</span>
+        {showProject ? <span className="cp-row__project">{ticket.project_name ?? '—'}</span> : null}
+        <MiniTrack status={ticket.status} />
+        <StatusPill status={ticket.status} />
+        <span className="cp-row__cost">{totalOf(ticket) ? money(totalOf(ticket)) : ''}</span>
+        <span className="cp-row__when">{ago(ticket.updated_at)}</span>
       </a>
     </li>
   );
@@ -57,27 +58,30 @@ function PageHead({ title, sub, children }) {
 /* ————— overview ————— */
 
 export function Overview() {
+  const t = useT();
   const { data, compose } = usePortal();
   const [stage, setStage] = useState(null);
   const [hovered, setHovered] = useState(null);
   const { tickets, projects, user } = data;
   const open = tickets.filter(isOpen);
   const shown = stage ? tickets.filter((t) => t.status === stage) : open;
-  const stageLabel = STAGES.find((s) => s.key === stage)?.label;
+  const stageEntry = STAGES.find((s) => s.key === stage);
+  const stageLabel = stageEntry ? stageText(t, stageEntry) : undefined;
   const name = user.name || user.email.split('@')[0];
+  const building = open.filter((x) => x.status === 'in_progress').length;
 
   const summary = [
-    open.length ? `${open.length} open request${open.length === 1 ? '' : 's'}` : 'No open requests',
-    open.filter((t) => t.status === 'in_progress').length ? `${open.filter((t) => t.status === 'in_progress').length} being built right now` : '',
+    open.length ? t('views.overview.openCount', { n: open.length }) : t('views.overview.noOpen'),
+    building ? t('views.overview.building', { n: building }) : '',
   ]
     .filter(Boolean)
     .join(' · ');
 
   return (
     <div className="cp-view">
-      <PageHead title={`${greeting()}, ${name}`} sub={summary}>
+      <PageHead title={t('views.overview.title', { greeting: greeting(t), name })} sub={summary}>
         <Button kind="primary" onClick={() => compose()}>
-          <Icon name="plus" size={15} /> New request
+          <Icon name="plus" size={15} /> {t('nav.newRequest')}
         </Button>
       </PageHead>
 
@@ -86,29 +90,29 @@ export function Overview() {
       <div className="cp-overview">
         <section className="cp-card cp-card--flush">
           <header className="cp-card__head">
-            <h2 className="cp-h2">{stage ? stageLabel : 'Open requests'}</h2>
+            <h2 className="cp-h2">{stage ? stageLabel : t('views.overview.openRequests')}</h2>
             {stage ? (
               <button type="button" className="cp-linkbtn" onClick={() => setStage(null)}>
-                Show all open
+                {t('views.overview.showAllOpen')}
               </button>
             ) : (
               <a className="cp-linkbtn" href={href('requests?filter=all')}>
-                All requests →
+                {t('views.overview.allRequests')}
               </a>
             )}
           </header>
           {shown.length ? (
             <ul className="cp-rows cp-rows--compact">
-              {shown.map((t) => (
-                <RequestRow key={t.id} t={t} hovered={hovered === t.id} onHover={setHovered} />
+              {shown.map((x) => (
+                <RequestRow key={x.id} t={x} hovered={hovered === x.id} onHover={setHovered} />
               ))}
             </ul>
           ) : (
             <div className="cp-empty">
-              {tickets.length ? <p>Nothing here right now.</p> : <p>Nothing yet. Write your first request: what you need, in your own words.</p>}
+              {tickets.length ? <p>{t('views.overview.nothingHere')}</p> : <p>{t('views.overview.nothingYet')}</p>}
               {!stage ? (
                 <Button kind="primary" onClick={() => compose()}>
-                  New request
+                  {t('nav.newRequest')}
                 </Button>
               ) : null}
             </div>
@@ -123,22 +127,22 @@ export function Overview() {
 
       <section className="cp-section">
         <header className="cp-section__head">
-          <h2 className="cp-h2">Projects</h2>
+          <h2 className="cp-h2">{t('views.overview.projects')}</h2>
           <a className="cp-linkbtn" href="/portal/start">
-            Add a project →
+            {t('views.overview.addProject')}
           </a>
         </header>
         {projects.length ? (
           <div className="cp-projects">
             {projects.map((p) => (
-              <ProjectCard key={p.id} project={p} tickets={tickets.filter((t) => t.project_id === p.id)} />
+              <ProjectCard key={p.id} project={p} tickets={tickets.filter((x) => x.project_id === p.id)} />
             ))}
           </div>
         ) : (
           <div className="cp-card cp-empty">
-            <p>No project yet. Three questions and there is one.</p>
+            <p>{t('views.overview.noProject')}</p>
             <Button kind="primary" href="/portal/start">
-              Set up your first project →
+              {t('views.overview.setupFirst')}
             </Button>
           </div>
         )}
@@ -149,23 +153,24 @@ export function Overview() {
 
 /** What is waiting on the client: replies, a paused meter, a preview to publish, setup to finish. */
 function NeedsYou() {
+  const t = useT();
   const { data } = usePortal();
   const items = [];
-  if (!data.projects.length) items.push({ key: 'setup', href: '/portal/start', title: 'Set up your first project', text: 'Three questions, and Ali knows what you need.' });
-  for (const t of data.tickets) {
-    if (t.unread) items.push({ key: `r${t.id}`, href: href(`ticket/${t.id}`), title: `New reply on #${t.id}`, text: t.title });
-    if (overBudget(t)) items.push({ key: `b${t.id}`, href: href(`ticket/${t.id}`), title: `#${t.id} is paused at its budget`, text: 'Raise the budget to let work go on.' });
+  if (!data.projects.length) items.push({ key: 'setup', href: '/portal/start', title: t('views.needs.setupTitle'), text: t('views.needs.setupText') });
+  for (const ticket of data.tickets) {
+    if (ticket.unread) items.push({ key: `r${ticket.id}`, href: href(`ticket/${ticket.id}`), title: t('views.needs.replyTitle', { id: ticket.id }), text: ticket.title });
+    if (overBudget(ticket)) items.push({ key: `b${ticket.id}`, href: href(`ticket/${ticket.id}`), title: t('views.needs.pausedTitle', { id: ticket.id }), text: t('views.needs.pausedText') });
   }
   for (const p of data.projects) {
     if (unpublished(p.site)) {
       items.push({
         key: `p${p.id}`,
         href: href(`project/${p.id}`),
-        title: `${p.name}: preview has changes`,
-        text: data.canPublish ? 'Look them over and publish when they are right.' : 'Look them over; tell Ali when they are right.',
+        title: t('views.needs.previewTitle', { name: p.name }),
+        text: data.canPublish ? t('views.needs.previewPublish') : t('views.needs.previewTell'),
       });
     }
-    if (p.kind === 'new' && !p.site) items.push({ key: `s${p.id}`, href: href(`project/${p.id}`), title: `Set up ${p.name}'s site`, text: 'One click: you get a preview and a live address.' });
+    if (p.kind === 'new' && !p.site) items.push({ key: `s${p.id}`, href: href(`project/${p.id}`), title: t('views.needs.siteTitle', { name: p.name }), text: t('views.needs.siteText') });
     for (const c of p.setup.checks) {
       // Optional steps (a custom domain) never nag.
       if (c.owner === 'you' && c.state === 'missing' && c.blocking) items.push({ key: `c${p.id}${c.key}`, href: href(`project/${p.id}`), title: `${p.name}: ${c.label}`, text: c.detail });
@@ -173,7 +178,7 @@ function NeedsYou() {
   }
   return (
     <section className="cp-card">
-      <h2 className="cp-h2">Needs you</h2>
+      <h2 className="cp-h2">{t('views.needs.title')}</h2>
       {items.length ? (
         <ul className="cp-todo">
           {items.slice(0, 6).map((i) => (
@@ -186,47 +191,49 @@ function NeedsYou() {
           ))}
         </ul>
       ) : (
-        <p className="cp-muted cp-allclear">Nothing. Ali has what he needs.</p>
+        <p className="cp-muted cp-allclear">{t('views.needs.clear')}</p>
       )}
     </section>
   );
 }
 
 function SpendCard() {
+  const t = useT();
   const { data } = usePortal();
   const u = data.usage ?? { billedCents: 0, openCents: 0, aiCents: 0 };
   return (
     <section className="cp-card">
       <header className="cp-card__head cp-card__head--tight">
-        <h2 className="cp-h2">Spend</h2>
+        <h2 className="cp-h2">{t('views.spend.title')}</h2>
         <a className="cp-linkbtn" href={href('billing')}>
-          Details →
+          {t('views.spend.details')}
         </a>
       </header>
       <div className="cp-spend">
         <div>
-          <span className="cp-label">Finished</span>
+          <span className="cp-label">{t('views.spend.finished')}</span>
           <b>{money(u.billedCents)}</b>
         </div>
         <div>
-          <span className="cp-label">On the meter</span>
+          <span className="cp-label">{t('views.spend.onMeter')}</span>
           <b>{money(u.openCents)}</b>
         </div>
       </div>
-      <p className="cp-hint">AI at cost, no markup: {money(u.aiCents)} of it so far.</p>
+      <p className="cp-hint">{t('views.spend.aiNote', { amount: money(u.aiCents) })}</p>
     </section>
   );
 }
 
-function siteLine(project) {
+function siteLine(project, t) {
   const s = project.site;
-  if (!s) return project.kind === 'new' ? 'No site yet' : project.repo ? 'Code connected' : 'Getting set up';
-  if (s.state === 'failed') return 'Site setup stopped';
-  if (s.state !== 'ready') return 'Site being made…';
-  return unpublished(s) ? 'Preview ahead of live' : 'Live';
+  if (!s) return project.kind === 'new' ? t('views.site.noSite') : project.repo ? t('views.site.codeConnected') : t('views.site.gettingSetUp');
+  if (s.state === 'failed') return t('views.site.setupStopped');
+  if (s.state !== 'ready') return t('views.site.being');
+  return unpublished(s) ? t('views.site.ahead') : t('views.site.live');
 }
 
 function ProjectCard({ project, tickets }) {
+  const t = useT();
   const open = tickets.filter(isOpen).length;
   const s = project.site;
   const live = s?.state === 'ready';
@@ -236,16 +243,14 @@ function ProjectCard({ project, tickets }) {
       <div className="cp-project__top">
         <span className={cx('cp-project__dot', live ? (unpublished(s) ? 'is-ahead' : 'is-live') : s?.state === 'failed' ? 'is-bad' : 'is-wait')} />
         <strong>{project.name}</strong>
-        <span className="cp-tag">{project.kind === 'new' ? 'built by us' : 'your code'}</span>
+        <span className="cp-tag">{project.kind === 'new' ? t('views.project.builtByUs') : t('views.project.yourCode')}</span>
       </div>
-      <p className="cp-project__site">{live ? s.productionUrl.replace(/^https:\/\//, '') : siteLine(project)}</p>
+      <p className="cp-project__site">{live ? s.productionUrl.replace(/^https:\/\//, '') : siteLine(project, t)}</p>
       <div className="cp-project__foot">
-        <span>{siteLine(project)}</span>
-        <span>
-          {open} open · {tickets.length} total
-        </span>
+        <span>{siteLine(project, t)}</span>
+        <span>{t('views.project.counts', { open, total: tickets.length })}</span>
       </div>
-      <div className="cp-project__setup" title={`${setup.ready} of ${setup.total} setup steps done`}>
+      <div className="cp-project__setup" title={t('views.project.setupProgress', { ready: setup.ready, total: setup.total })}>
         <span style={{ width: `${setup.total ? (setup.ready / setup.total) * 100 : 100}%` }} />
       </div>
     </a>
@@ -255,13 +260,14 @@ function ProjectCard({ project, tickets }) {
 /* ————— all requests ————— */
 
 const FILTERS = [
-  { key: 'open', label: 'Open', test: isOpen },
-  { key: 'you', label: 'Needs you', test: (t) => t.unread || overBudget(t) },
-  { key: 'done', label: 'Done', test: (t) => t.status === 'done' || t.status === 'declined' },
-  { key: 'all', label: 'All', test: () => true },
+  { key: 'open', labelKey: 'views.filter.open', test: isOpen },
+  { key: 'you', labelKey: 'views.filter.needs', test: (t) => t.unread || overBudget(t) },
+  { key: 'done', labelKey: 'views.filter.done', test: (t) => t.status === 'done' || t.status === 'declined' },
+  { key: 'all', labelKey: 'views.filter.all', test: () => true },
 ];
 
 export function RequestsView({ query }) {
+  const t = useT();
   const { data, compose } = usePortal();
   const [filter, setFilter] = useState(query.get('filter') ?? 'open');
   const [project, setProject] = useState(query.get('project') ?? '');
@@ -271,27 +277,27 @@ export function RequestsView({ query }) {
   }, [query]);
   const test = FILTERS.find((f) => f.key === filter)?.test ?? isOpen;
   const q = text.trim().toLowerCase();
-  const rows = data.tickets.filter((t) => test(t) && (!project || t.project_id === project) && (!q || `#${t.id} ${t.title}`.toLowerCase().includes(q)));
+  const rows = data.tickets.filter((x) => test(x) && (!project || x.project_id === project) && (!q || `#${x.id} ${x.title}`.toLowerCase().includes(q)));
 
   return (
     <div className="cp-view">
-      <PageHead title="Requests" sub="Everything you have asked for, newest change first.">
+      <PageHead title={t('nav.requests')} sub={t('views.requests.sub')}>
         <Button kind="primary" onClick={() => compose(project || undefined)}>
-          <Icon name="plus" size={15} /> New request
+          <Icon name="plus" size={15} /> {t('nav.newRequest')}
         </Button>
       </PageHead>
       <div className="cp-toolbar">
-        <div className="cp-seg" role="group" aria-label="Show">
+        <div className="cp-seg" role="group" aria-label={t('views.requests.show')}>
           {FILTERS.map((f) => (
             <button key={f.key} type="button" aria-pressed={filter === f.key} onClick={() => setFilter(f.key)}>
-              {f.label}
+              {t(f.labelKey)}
               <span>{data.tickets.filter(f.test).length}</span>
             </button>
           ))}
         </div>
         {data.projects.length > 1 ? (
-          <select value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project">
-            <option value="">All projects</option>
+          <select value={project} onChange={(e) => setProject(e.target.value)} aria-label={t('views.col.project')}>
+            <option value="">{t('views.requests.allProjects')}</option>
             {data.projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -299,26 +305,26 @@ export function RequestsView({ query }) {
             ))}
           </select>
         ) : null}
-        <input type="search" placeholder="Search requests" value={text} onChange={(e) => setText(e.target.value)} aria-label="Search requests" />
+        <input type="search" placeholder={t('views.requests.search')} value={text} onChange={(e) => setText(e.target.value)} aria-label={t('views.requests.search')} />
       </div>
       <section className="cp-card cp-card--flush">
         {rows.length ? (
           <ul className="cp-rows">
             <li className="cp-rows__head" aria-hidden="true">
               <span>#</span>
-              <span>Request</span>
-              <span>Project</span>
-              <span>Steps</span>
-              <span>Status</span>
-              <span>Cost</span>
-              <span>Updated</span>
+              <span>{t('views.col.request')}</span>
+              <span>{t('views.col.project')}</span>
+              <span>{t('views.col.steps')}</span>
+              <span>{t('views.col.status')}</span>
+              <span>{t('views.col.cost')}</span>
+              <span>{t('views.col.updated')}</span>
             </li>
-            {rows.map((t) => (
-              <RequestRow key={t.id} t={t} />
+            {rows.map((x) => (
+              <RequestRow key={x.id} t={x} />
             ))}
           </ul>
         ) : (
-          <p className="cp-empty">No requests match.</p>
+          <p className="cp-empty">{t('views.requests.noMatch')}</p>
         )}
       </section>
     </div>
@@ -328,20 +334,21 @@ export function RequestsView({ query }) {
 /* ————— one project ————— */
 
 export function ProjectView({ id }) {
+  const t = useT();
   const { data, compose } = usePortal();
   const project = data.projects.find((p) => p.id === id);
-  if (!project) return <p className="cp-empty">That project is not on your account.</p>;
-  const tickets = data.tickets.filter((t) => t.project_id === project.id);
+  if (!project) return <p className="cp-empty">{t('views.project.notOnAccount')}</p>;
+  const tickets = data.tickets.filter((x) => x.project_id === project.id);
   const known = project.setup.checks.filter((c) => c.state !== 'unknown');
   return (
     <div className="cp-view">
       <nav className="cp-crumbs">
-        <a href={href('')}>Overview</a>
+        <a href={href('')}>{t('nav.overview')}</a>
         <span>{project.name}</span>
       </nav>
-      <PageHead title={project.name} sub={project.kind === 'new' ? 'Built and hosted by us.' : 'Your existing code, looked after by us.'}>
+      <PageHead title={project.name} sub={project.kind === 'new' ? t('views.project.builtSub') : t('views.project.codeSub')}>
         <Button kind="primary" onClick={() => compose(project.id)}>
-          <Icon name="plus" size={15} /> New request
+          <Icon name="plus" size={15} /> {t('nav.newRequest')}
         </Button>
       </PageHead>
 
@@ -349,7 +356,7 @@ export function ProjectView({ id }) {
         <SiteCard project={project} />
         <section className="cp-card">
           <header className="cp-card__head cp-card__head--tight">
-            <h2 className="cp-h2">Setup</h2>
+            <h2 className="cp-h2">{t('views.project.setup')}</h2>
             <span className="cp-muted">
               {project.setup.ready}/{project.setup.total}
             </span>
@@ -364,7 +371,7 @@ export function ProjectView({ id }) {
                   <strong>{c.label}</strong>
                   <em>{c.detail}</em>
                 </span>
-                <span className="cp-checks__who">{c.owner === 'you' ? 'you' : 'us'}</span>
+                <span className="cp-checks__who">{c.owner === 'you' ? t('views.checks.you') : t('views.checks.us')}</span>
               </li>
             ))}
           </ul>
@@ -373,20 +380,20 @@ export function ProjectView({ id }) {
 
       <section className="cp-section">
         <header className="cp-section__head">
-          <h2 className="cp-h2">Requests</h2>
+          <h2 className="cp-h2">{t('views.project.requests')}</h2>
           <a className="cp-linkbtn" href={href(`requests?filter=all&project=${project.id}`)}>
-            Open in the list →
+            {t('views.project.openList')}
           </a>
         </header>
         <div className="cp-card cp-card--flush">
           {tickets.length ? (
             <ul className="cp-rows cp-rows--compact">
-              {tickets.map((t) => (
-                <RequestRow key={t.id} t={t} showProject={false} />
+              {tickets.map((x) => (
+                <RequestRow key={x.id} t={x} showProject={false} />
               ))}
             </ul>
           ) : (
-            <p className="cp-empty">No requests for this project yet.</p>
+            <p className="cp-empty">{t('views.project.noRequests')}</p>
           )}
         </div>
       </section>
@@ -396,6 +403,7 @@ export function ProjectView({ id }) {
 
 /** The hosted site: set it up, follow it, open it, publish it, roll it back. */
 function SiteCard({ project }) {
+  const t = useT();
   const { data, reload, ask, notify } = usePortal();
   const site = project.site;
   const [deploys, setDeploys] = useState(null);
@@ -411,23 +419,23 @@ function SiteCard({ project }) {
   if (!site && project.kind !== 'new') {
     return (
       <section className="cp-card cp-site">
-        <h2 className="cp-h2">Code</h2>
-        <p className="cp-muted">{project.repo ? `Working on ${project.repo.replace(/^https:\/\/github\.com\//, '')}.` : 'We are connecting your code. Nothing to do here.'}</p>
+        <h2 className="cp-h2">{t('views.site.code')}</h2>
+        <p className="cp-muted">{project.repo ? t('views.site.workingOn', { repo: project.repo.replace(/^https:\/\/github\.com\//, '') }) : t('views.site.connecting')}</p>
       </section>
     );
   }
   if (!site || site.state === 'failed') {
     return (
       <section className="cp-card cp-site">
-        <h2 className="cp-h2">Your site</h2>
-        {site ? <p className="cp-error">Setting up the site stopped. We have been told; you can also try again.</p> : null}
-        <p className="cp-muted">A real site, hosted for you, with its own address at once: a placeholder first, the real thing as it is built. Every change lands on a preview address first; nothing goes live until it is published.</p>
+        <h2 className="cp-h2">{t('views.site.title')}</h2>
+        {site ? <p className="cp-error">{t('views.site.setupFailed')}</p> : null}
+        <p className="cp-muted">{t('views.site.intro')}</p>
         <Button
           kind="primary"
           disabled={starting}
           onClick={() => setStarting(true)}
         >
-          {site ? 'Try again →' : 'Set up my site →'}
+          {site ? t('views.site.tryAgain') : t('views.site.setUp')}
         </Button>
         {starting ? (
           <StartSite
@@ -435,7 +443,7 @@ function SiteCard({ project }) {
             onClose={() => setStarting(false)}
             onDone={async () => {
               setStarting(false);
-              notify('Your site is being made.');
+              notify(t('views.site.startedNotice'));
               await reload();
             }}
           />
@@ -446,9 +454,9 @@ function SiteCard({ project }) {
   if (!ready) {
     return (
       <section className="cp-card cp-site">
-        <h2 className="cp-h2">Your site</h2>
+        <h2 className="cp-h2">{t('views.site.title')}</h2>
         <p className="cp-making" role="status">
-          <span className="cp-spinner" /> Your site is being made. This page follows along.
+          <span className="cp-spinner" /> {t('views.site.making')}
         </p>
       </section>
     );
@@ -457,23 +465,25 @@ function SiteCard({ project }) {
   const ahead = unpublished(site);
   const publish = () =>
     ask({
-      title: `Publish ${project.name}?`,
-      text: `What you see at ${site.previewUrl} becomes the live site at ${site.productionUrl}.`,
-      confirm: 'Publish',
+      title: t('views.site.publishTitle', { name: project.name }),
+      text: t('views.site.publishText', { preview: site.previewUrl, live: site.productionUrl }),
+      confirm: t('views.site.publish'),
       run: async () => {
         await api(`/portal/projects/${project.id}/site/publish`, { method: 'POST', body: {} });
-        notify('Published. The live site has the new version.');
+        notify(t('views.site.publishedNotice'));
         await reload();
       },
     });
   const rollback = (d) =>
     ask({
-      title: 'Put this version back live?',
-      text: `The live site goes back to the version from ${fmtDate(d.created_at)}${d.ticket_id ? ` (request #${d.ticket_id})` : ''}. The preview stays as it is.`,
-      confirm: 'Roll back',
+      title: t('views.site.rollbackTitle'),
+      text: d.ticket_id
+        ? t('views.site.rollbackRequest', { date: fmtDate(d.created_at), id: d.ticket_id })
+        : t('views.site.rollbackDated', { date: fmtDate(d.created_at) }),
+      confirm: t('views.site.rollbackConfirm'),
       run: async () => {
         await api(`/portal/projects/${project.id}/site/rollback`, { body: { deployId: d.id } });
-        notify('Rolled back.');
+        notify(t('views.site.rolledBack'));
         await reload();
       },
     });
@@ -481,35 +491,35 @@ function SiteCard({ project }) {
   return (
     <section className="cp-card cp-site">
       <header className="cp-card__head cp-card__head--tight">
-        <h2 className="cp-h2">Your site</h2>
-        <span className={cx('cp-sitestate', ahead ? 'is-ahead' : 'is-live')}>{ahead ? 'Preview ahead of live' : 'Live is up to date'}</span>
+        <h2 className="cp-h2">{t('views.site.title')}</h2>
+        <span className={cx('cp-sitestate', ahead ? 'is-ahead' : 'is-live')}>{ahead ? t('views.site.ahead') : t('views.site.liveUpToDate')}</span>
       </header>
       <div className="cp-channels">
         <a className="cp-channel" href={site.previewUrl} target="_blank" rel="noopener">
-          <span className="cp-label">Preview</span>
+          <span className="cp-label">{t('views.site.channelPreview')}</span>
           <strong>{site.previewUrl.replace(/^https:\/\//, '')}</strong>
-          <span className="cp-muted">Where changes land first</span>
+          <span className="cp-muted">{t('views.site.previewHint')}</span>
           <Icon name="ext" size={14} />
         </a>
         <a className="cp-channel" href={site.productionUrl} target="_blank" rel="noopener">
-          <span className="cp-label">Live</span>
+          <span className="cp-label">{t('views.site.channelLive')}</span>
           <strong>{(site.customDomain || site.productionUrl).replace(/^https:\/\//, '')}</strong>
-          <span className="cp-muted">What your visitors see</span>
+          <span className="cp-muted">{t('views.site.liveHint')}</span>
           <Icon name="globe" size={14} />
         </a>
       </div>
       {ahead ? (
         data.canPublish ? (
           <Button kind="primary" onClick={publish}>
-            Publish the preview →
+            {t('views.site.publishPreview')}
           </Button>
         ) : (
-          <p className="cp-hint">The preview has changes that are not live yet. Ali publishes them when you say they look right.</p>
+          <p className="cp-hint">{t('views.site.aheadHint')}</p>
         )
       ) : null}
       {deploys?.length ? (
         <>
-          <h3 className="cp-label cp-site__hist">Versions</h3>
+          <h3 className="cp-label cp-site__hist">{t('views.site.versions')}</h3>
           <ol className="cp-versions">
             {deploys.slice(0, 8).map((d) => {
               const isLive = d.id === site.productionDeploy;
@@ -518,14 +528,14 @@ function SiteCard({ project }) {
                 <li key={d.id}>
                   <span className={cx('cp-versions__dot', isLive && 'is-live', isPreview && !isLive && 'is-preview')} />
                   <span>
-                    {d.ticket_id ? <a href={href(`ticket/${d.ticket_id}`)}>Request #{d.ticket_id}</a> : 'Site version'}
+                    {d.ticket_id ? <a href={href(`ticket/${d.ticket_id}`)}>{t('views.site.requestLink', { id: d.ticket_id })}</a> : t('views.site.siteVersion')}
                     <em>{fmtTime(d.created_at)}</em>
                   </span>
-                  {isLive ? <span className="cp-tag cp-tag--live">live</span> : null}
-                  {isPreview ? <span className="cp-tag">preview</span> : null}
+                  {isLive ? <span className="cp-tag cp-tag--live">{t('views.site.tagLive')}</span> : null}
+                  {isPreview ? <span className="cp-tag">{t('views.site.tagPreview')}</span> : null}
                   {!isLive && data.canPublish ? (
                     <button type="button" className="cp-linkbtn" onClick={() => rollback(d)}>
-                      Put live
+                      {t('views.site.putLive')}
                     </button>
                   ) : null}
                 </li>
@@ -539,19 +549,20 @@ function SiteCard({ project }) {
 }
 
 function StartSite({ project, onClose, onDone }) {
+  const t = useT();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   return (
     <Modal
-      title={`Set up ${project.name}`}
-      subtitle="A real site, hosted for you, with a preview and a live address."
+      title={t('views.startSite.title', { name: project.name })}
+      subtitle={t('views.startSite.subtitle')}
       onClose={onClose}
       actions={
         <>
           <p className="cp-modal__err" role="alert">
             {error}
           </p>
-          <Button onClick={onClose}>Not now</Button>
+          <Button onClick={onClose}>{t('views.startSite.notNow')}</Button>
           <Button
             kind="primary"
             disabled={busy}
@@ -561,21 +572,21 @@ function StartSite({ project, onClose, onDone }) {
                 await api(`/portal/projects/${project.id}/site`, { method: 'POST', body: {} });
                 await onDone();
               } catch (e) {
-                setError(errorText(e));
+                setError(errorText(e, t));
                 setBusy(false);
               }
             }}
           >
-            Set it up →
+            {t('views.startSite.setIt')}
           </Button>
         </>
       }
     >
       <ol className="cp-numbered">
-        <li>Your site gets its own address at once: a placeholder page first, the real thing as it is built.</li>
-        <li>Every change lands on the preview address first. Nothing goes live until it is published.</li>
+        <li>{t('views.startSite.step1')}</li>
+        <li>{t('views.startSite.step2')}</li>
       </ol>
-      <p className="cp-hint">Hosting and AI runs are billed at cost on the requests that use them.</p>
+      <p className="cp-hint">{t('views.startSite.hint')}</p>
     </Modal>
   );
 }
@@ -583,12 +594,13 @@ function StartSite({ project, onClose, onDone }) {
 /* ————— connections ————— */
 
 export function ConnectionsView() {
+  const t = useT();
   const { data } = usePortal();
   if (data.user.role !== 'client') {
     return (
       <div className="cp-view">
-        <PageHead title="Connections" />
-        <p className="cp-empty">Connections belong to client accounts. Sign in as a client to see them.</p>
+        <PageHead title={t('nav.connections')} />
+        <p className="cp-empty">{t('views.connections.clientOnly')}</p>
       </div>
     );
   }
@@ -597,16 +609,17 @@ export function ConnectionsView() {
 
 /** One list of assistant keys feeds two cards: ChatGPT's own, and everything else. */
 function Connections() {
+  const t = useT();
   const [tokens, setTokens] = useState(null);
   const load = () => api('/portal/agent-tokens').then(({ tokens }) => setTokens(tokens), () => setTokens([]));
   useEffect(() => void load(), []);
-  const isChatGPT = (t) => t.via === 'ChatGPT';
+  const isChatGPT = (x) => x.via === 'ChatGPT';
   return (
     <div className="cp-view">
-      <PageHead title="Connections" sub="Optional. Everything works without them." />
+      <PageHead title={t('nav.connections')} sub={t('views.connections.sub')} />
       <div className="cp-connect">
         <ChatGPT tokens={(tokens ?? []).filter(isChatGPT)} reload={load} />
-        <Assistants tokens={(tokens ?? []).filter((t) => !isChatGPT(t))} reload={load} />
+        <Assistants tokens={(tokens ?? []).filter((x) => !isChatGPT(x))} reload={load} />
         <Github />
         <Cloudflare />
       </div>
@@ -615,29 +628,32 @@ function Connections() {
 }
 
 /** A connected assistant's row: what it is, when it last worked, and the way to cut it off. */
-function KeyRow({ t, reload, what }) {
+function KeyRow({ t: token, reload, what }) {
+  const t = useT();
   const { ask } = usePortal();
   return (
     <li>
-      <strong>{t.label}</strong>
-      <span className="cp-muted">{t.last_used_at ? `last used ${ago(t.last_used_at)}` : `connected ${ago(t.created_at)}`}</span>
+      <strong>{token.label}</strong>
+      <span className="cp-muted">
+        {token.last_used_at ? t('views.connections.lastUsed', { when: ago(token.last_used_at) }) : t('views.connections.connectedAgo', { when: ago(token.created_at) })}
+      </span>
       <Button
         size="sm"
         kind="ghost"
         onClick={() =>
           ask({
-            title: `Disconnect ${what ?? `“${t.label}”`}?`,
-            text: 'It loses access to your account at once. You can connect it again any time.',
-            confirm: 'Disconnect',
+            title: t('views.keys.disconnectTitle', { name: what ?? `“${token.label}”` }),
+            text: t('views.keys.disconnectText'),
+            confirm: t('views.connections.disconnect'),
             danger: true,
             run: async () => {
-              await api(`/portal/agent-tokens/${t.id}`, { method: 'DELETE' });
+              await api(`/portal/agent-tokens/${token.id}`, { method: 'DELETE' });
               await reload();
             },
           })
         }
       >
-        Disconnect
+        {t('views.connections.disconnect')}
       </Button>
     </li>
   );
@@ -646,43 +662,41 @@ function KeyRow({ t, reload, what }) {
 /** The address assistants connect to: this site's own MCP endpoint. */
 const MCP_URL = typeof location === 'undefined' ? 'https://malipetek.dev/mcp' : `${location.origin}/mcp`;
 
-function CopyButton({ text, label = 'Copy' }) {
+function CopyButton({ text, label }) {
+  const t = useT();
   const [done, setDone] = useState(false);
   return (
     <Button size="sm" onClick={() => navigator.clipboard.writeText(text).then(() => setDone(true), () => {})}>
-      {done ? 'Copied' : label}
+      {done ? t('views.copy.copied') : (label ?? t('views.copy.copy'))}
     </Button>
   );
 }
 
 function ChatGPT({ tokens, reload }) {
+  const t = useT();
   const connected = tokens.length > 0;
   return (
     <section className="cp-card">
       <h2 className="cp-h2">ChatGPT</h2>
-      <p className="cp-muted">
-        Ask for work in a ChatGPT chat: “file a request to change my opening hours”, “how is my site request doing?”. It uses your own ChatGPT plan, and it can do what you can do here, nothing more. What it files waits for Ali like any other request.
-      </p>
+      <p className="cp-muted">{t('views.chatgpt.intro')}</p>
       {connected ? (
         <ul className="cp-keys">
-          {tokens.map((t) => (
-            <KeyRow key={t.id} t={t} reload={reload} what="ChatGPT" />
+          {tokens.map((x) => (
+            <KeyRow key={x.id} t={x} reload={reload} what="ChatGPT" />
           ))}
         </ul>
       ) : (
         <ol className="cp-howto">
+          <li>{t('views.chatgpt.step1')}</li>
           <li>
-            In ChatGPT, open <strong>Plugins</strong>, then <strong>Add</strong> → <strong>Add custom MCP server</strong>.
+            {t('views.chatgpt.paste')} <code>{MCP_URL}</code> <CopyButton text={MCP_URL} />
           </li>
-          <li>
-            Paste this address: <code>{MCP_URL}</code> <CopyButton text={MCP_URL} />
-          </li>
-          <li>ChatGPT sends you here to sign in. Approve it, and it shows up on this card.</li>
+          <li>{t('views.chatgpt.step3')}</li>
         </ol>
       )}
       {!connected ? (
         <Button href="https://chatgpt.com" target="_blank" rel="noreferrer">
-          Open ChatGPT →
+          {t('views.chatgpt.open')}
         </Button>
       ) : null}
     </section>
@@ -690,21 +704,20 @@ function ChatGPT({ tokens, reload }) {
 }
 
 function Assistants({ tokens, reload }) {
+  const t = useT();
   const [making, setMaking] = useState(false);
   const [made, setMade] = useState(null);
   const load = reload;
   return (
     <section className="cp-card">
-      <h2 className="cp-h2">Other AI assistants</h2>
-      <p className="cp-muted">
-        Claude, Cursor, or any assistant that speaks MCP. It sees your projects, files requests, replies and sets budgets: the same things you can do here, nothing more. Its requests wait for Ali like any other.
-      </p>
+      <h2 className="cp-h2">{t('views.assistants.title')}</h2>
+      <p className="cp-muted">{t('views.assistants.intro')}</p>
       <ul className="cp-keys">
-        {tokens.map((t) => (
-          <KeyRow key={t.id} t={t} reload={reload} />
+        {tokens.map((x) => (
+          <KeyRow key={x.id} t={x} reload={reload} />
         ))}
       </ul>
-      <Button onClick={() => setMaking(true)}>Connect an assistant →</Button>
+      <Button onClick={() => setMaking(true)}>{t('views.assistants.connect')}</Button>
       {making ? (
         <NewKey
           onClose={() => setMaking(false)}
@@ -721,77 +734,80 @@ function Assistants({ tokens, reload }) {
 }
 
 function NewKey({ onClose, onMade }) {
+  const t = useT();
   const [label, setLabel] = useState('');
   const [error, setError] = useState('');
   const make = async () => {
     try {
       onMade(await api('/portal/agent-tokens', { body: { label: label.trim() } }));
     } catch (e) {
-      setError(errorText(e));
+      setError(errorText(e, t));
     }
   };
   return (
     <Modal
-      title="Connect an assistant"
-      subtitle="Name it so you know which key to revoke later."
+      title={t('views.newKey.title')}
+      subtitle={t('views.newKey.subtitle')}
       onClose={onClose}
       actions={
         <>
           <p className="cp-modal__err" role="alert">
             {error}
           </p>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button kind="primary" onClick={make}>
-            Make the key →
+            {t('views.newKey.make')}
           </Button>
         </>
       }
     >
-      <input type="text" maxLength={60} placeholder="e.g. Claude on my laptop" value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && make()} />
+      <input type="text" maxLength={60} placeholder={t('views.newKey.placeholder')} value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && make()} />
     </Modal>
   );
 }
 
 /** The key, once. After this dialog only its hash exists. */
 function ShowKey({ made, onClose }) {
+  const t = useT();
   const config = JSON.stringify({ mcpServers: { 'malipetek-dev': { type: 'http', url: made.mcpUrl, headers: { Authorization: `Bearer ${made.token}` } } } }, null, 2);
   const Copy = ({ text }) => {
     const [done, setDone] = useState(false);
     return (
       <Button size="sm" onClick={() => navigator.clipboard.writeText(text).then(() => setDone(true), () => {})}>
-        {done ? 'Copied' : 'Copy'}
+        {done ? t('views.copy.copied') : t('views.copy.copy')}
       </Button>
     );
   };
   return (
     <Modal
       wide
-      title={`Key for ${made.label}`}
-      subtitle="Copy it now: it is shown only this once."
+      title={t('views.showKey.title', { label: made.label })}
+      subtitle={t('views.showKey.subtitle')}
       onClose={onClose}
       actions={
         <Button kind="primary" onClick={onClose}>
-          Done
+          {t('views.showKey.done')}
         </Button>
       }
     >
       <div className="cp-keyfields">
-        <span className="cp-label">Server address</span>
+        <span className="cp-label">{t('views.showKey.server')}</span>
         <code>{made.mcpUrl}</code>
         <Copy text={made.mcpUrl} />
-        <span className="cp-label">Key</span>
+        <span className="cp-label">{t('views.showKey.key')}</span>
         <code>{made.token}</code>
         <Copy text={made.token} />
-        <span className="cp-label">For an MCP config file</span>
+        <span className="cp-label">{t('views.showKey.configFile')}</span>
         <pre>{config}</pre>
         <Copy text={config} />
       </div>
-      <p className="cp-hint">The assistant sends the key as "Authorization: Bearer …".</p>
+      <p className="cp-hint">{t('views.showKey.hint')}</p>
     </Modal>
   );
 }
 
 function Github() {
+  const t = useT();
   const { ask } = usePortal();
   const [state, setState] = useState(null);
   const load = () => api('/portal/github').then(setState, () => setState({ installations: [], installUrl: null }));
@@ -799,20 +815,20 @@ function Github() {
   return (
     <section className="cp-card">
       <h2 className="cp-h2">GitHub</h2>
-      <p className="cp-muted">Keep a project's code in your own GitHub account, or let us work on an existing private repo. You pick exactly which repos the app can reach, and can revoke it any time on GitHub.</p>
+      <p className="cp-muted">{t('views.github.intro')}</p>
       <ul className="cp-keys">
         {(state?.installations ?? []).map((i) => (
           <li key={i.id}>
             <strong>@{i.account_login}</strong>
-            <span className="cp-muted">connected</span>
+            <span className="cp-muted">{t('views.connections.connected')}</span>
             <Button
               size="sm"
               kind="ghost"
               onClick={() =>
                 ask({
-                  title: `Disconnect @${i.account_login}?`,
-                  text: 'Projects using this connection lose access to the repos it reached. You can reconnect any time by installing the app again.',
-                  confirm: 'Disconnect',
+                  title: t('views.github.disconnectTitle', { login: i.account_login }),
+                  text: t('views.github.disconnectText'),
+                  confirm: t('views.connections.disconnect'),
                   danger: true,
                   run: async () => {
                     await api(`/portal/github/${i.id}`, { method: 'DELETE' });
@@ -821,25 +837,42 @@ function Github() {
                 })
               }
             >
-              Disconnect
+              {t('views.connections.disconnect')}
             </Button>
           </li>
         ))}
       </ul>
-      {state?.installUrl ? <Button href={state.installUrl}>Connect GitHub →</Button> : null}
+      {/* A project that names a repo we cannot read: connect, or the work waits. */}
+      {(state?.unconnected ?? []).length ? (
+        <div className="cp-notice cp-notice--warn" role="status">
+          <p>
+            {t('views.github.waitingOnConnection', { count: (state?.unconnected ?? []).length })}
+          </p>
+          <ul className="cp-keys">
+            {(state?.unconnected ?? []).map((p) => (
+              <li key={p.slug}>
+                <strong>{p.name}</strong>
+                <span className="cp-muted">{p.repo.replace(/^https:\/\/github\.com\//, '')}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {state?.installUrl ? <Button href={state.installUrl}>{t('views.github.connect')}</Button> : null}
     </section>
   );
 }
 
 /** What the Cloudflare callback said, from ?cloudflare=…, once. */
 const CF_OUTCOME = {
-  connected: ['ok', 'Cloudflare is connected.'],
-  declined: ['warn', 'You declined on Cloudflare, so nothing was connected.'],
-  failed: ['warn', 'Cloudflare did not finish the connection. Try again.'],
-  signin: ['warn', 'The connection link expired. Try again from here.'],
+  connected: ['ok', 'views.cloudflare.connected'],
+  declined: ['warn', 'views.cloudflare.declined'],
+  failed: ['warn', 'views.cloudflare.failed'],
+  signin: ['warn', 'views.cloudflare.signin'],
 };
 
 function Cloudflare() {
+  const t = useT();
   const { ask } = usePortal();
   const [state, setState] = useState(null);
   const [outcome] = useState(() => {
@@ -850,27 +883,25 @@ function Cloudflare() {
   });
   const load = () => api('/portal/cloudflare').then(setState, () => setState({ connections: [], connectUrl: null }));
   useEffect(() => void load(), []);
-  const names = (c) => (c.accounts.length ? c.accounts.map((a) => a.name).join(', ') : 'Your Cloudflare account');
+  const names = (c) => (c.accounts.length ? c.accounts.map((a) => a.name).join(', ') : t('views.cloudflare.yourAccount'));
   return (
     <section className="cp-card">
       <h2 className="cp-h2">Cloudflare</h2>
-      <p className="cp-muted">
-        Have your sites hosted in your own Cloudflare account instead of ours: Cloudflare bills you directly, and a small site usually fits its free plan. Connecting changes nothing by itself: no site moves to your account until you ask for it. On Cloudflare you choose which account to share, and you can revoke it there or here any time.
-      </p>
-      {outcome ? <p className={cx('cp-notice', `cp-notice--${outcome[0]}`)}>{outcome[1]}</p> : null}
+      <p className="cp-muted">{t('views.cloudflare.intro')}</p>
+      {outcome ? <p className={cx('cp-notice', `cp-notice--${outcome[0]}`)}>{t(outcome[1])}</p> : null}
       <ul className="cp-keys">
         {(state?.connections ?? []).map((c) => (
           <li key={c.id}>
             <strong>{names(c)}</strong>
-            <span className={c.lapsed ? 'cp-warn' : 'cp-muted'}>{c.lapsed ? 'expired: connect again' : `connected ${ago(c.createdAt)}`}</span>
+            <span className={c.lapsed ? 'cp-warn' : 'cp-muted'}>{c.lapsed ? t('views.cloudflare.expired') : t('views.connections.connectedAgo', { when: ago(c.createdAt) })}</span>
             <Button
               size="sm"
               kind="ghost"
               onClick={() =>
                 ask({
-                  title: `Disconnect ${names(c)}?`,
-                  text: 'We lose access to that Cloudflare account at once. Sites already there keep running in your account.',
-                  confirm: 'Disconnect',
+                  title: t('views.cloudflare.disconnectTitle', { name: names(c) }),
+                  text: t('views.cloudflare.disconnectText'),
+                  confirm: t('views.connections.disconnect'),
                   danger: true,
                   run: async () => {
                     await api(`/portal/cloudflare/${c.id}`, { method: 'DELETE' });
@@ -879,13 +910,13 @@ function Cloudflare() {
                 })
               }
             >
-              Disconnect
+              {t('views.connections.disconnect')}
             </Button>
           </li>
         ))}
       </ul>
       {state?.connectUrl ? (
-        <Button href={state.connectUrl}>{state.connections.some((c) => !c.lapsed) ? 'Connect another account →' : 'Connect Cloudflare →'}</Button>
+        <Button href={state.connectUrl}>{state.connections.some((c) => !c.lapsed) ? t('views.cloudflare.connectAnother') : t('views.cloudflare.connect')}</Button>
       ) : null}
     </section>
   );
@@ -894,27 +925,28 @@ function Cloudflare() {
 /* ————— billing ————— */
 
 export function BillingView() {
+  const t = useT();
   const { data } = usePortal();
   const u = data.usage ?? { billedCents: 0, openCents: 0, aiCents: 0, tickets: 0 };
-  const rows = useMemo(() => data.tickets.filter((t) => totalOf(t) > 0 || t.human_seconds > 0), [data.tickets]);
+  const rows = useMemo(() => data.tickets.filter((x) => totalOf(x) > 0 || x.human_seconds > 0), [data.tickets]);
   return (
     <div className="cp-view">
-      <PageHead title="Billing" sub={`Ali's time at $${HOURLY_USD} an hour, billed by the second, plus what the AI cost, with no markup.`} />
+      <PageHead title={t('nav.billing')} sub={t('views.billing.sub', { rate: `$${HOURLY_USD}` })} />
       <div className="cp-tiles">
         <div className="cp-tile">
-          <span className="cp-label">Finished requests</span>
+          <span className="cp-label">{t('views.billing.finished')}</span>
           <b>{money(u.billedCents)}</b>
         </div>
         <div className="cp-tile">
-          <span className="cp-label">On the meter now</span>
+          <span className="cp-label">{t('views.billing.onMeterNow')}</span>
           <b>{money(u.openCents)}</b>
         </div>
         <div className="cp-tile">
-          <span className="cp-label">AI, at cost</span>
+          <span className="cp-label">{t('views.billing.aiAtCost')}</span>
           <b>{money(u.aiCents)}</b>
         </div>
         <div className="cp-tile">
-          <span className="cp-label">Requests</span>
+          <span className="cp-label">{t('nav.requests')}</span>
           <b>{data.tickets.length}</b>
         </div>
       </div>
@@ -923,43 +955,43 @@ export function BillingView() {
           <table className="cp-table">
             <thead>
               <tr>
-                <th>Request</th>
-                <th>Status</th>
-                <th className="is-num">Ali's time</th>
-                <th className="is-num">AI</th>
-                <th className="is-num">Total</th>
-                <th className="is-num">Budget</th>
+                <th>{t('views.col.request')}</th>
+                <th>{t('views.col.status')}</th>
+                <th className="is-num">{t('views.col.time')}</th>
+                <th className="is-num">{t('views.col.ai')}</th>
+                <th className="is-num">{t('views.col.total')}</th>
+                <th className="is-num">{t('views.col.budget')}</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((t) => {
-                const p = priceOf({ humanSeconds: t.human_seconds, aiMicroUsd: t.ai_micro_usd });
+              {rows.map((ticket) => {
+                const p = priceOf({ humanSeconds: ticket.human_seconds, aiMicroUsd: ticket.ai_micro_usd });
                 return (
-                  <tr key={t.id} onClick={() => go(`ticket/${t.id}`)}>
+                  <tr key={ticket.id} onClick={() => go(`ticket/${ticket.id}`)}>
                     <td>
-                      <a href={href(`ticket/${t.id}`)}>
-                        <span className="cp-row__id">#{t.id}</span> {t.title}
+                      <a href={href(`ticket/${ticket.id}`)}>
+                        <span className="cp-row__id">#{ticket.id}</span> {ticket.title}
                       </a>
                     </td>
                     <td>
-                      <StatusPill status={t.status} />
+                      <StatusPill status={ticket.status} />
                     </td>
                     <td className="is-num">
-                      {clock(t.human_seconds)} · {money(p.timeCents)}
+                      {clock(ticket.human_seconds)} · {money(p.timeCents)}
                     </td>
                     <td className="is-num">{money(p.aiCents)}</td>
                     <td className="is-num">
-                      <b>{money(totalOf(t))}</b>
-                      {t.price_cents === null && isOpen(t) ? <em> running</em> : null}
+                      <b>{money(totalOf(ticket))}</b>
+                      {ticket.price_cents === null && isOpen(ticket) ? <em> {t('views.billing.running')}</em> : null}
                     </td>
-                    <td className="is-num">{t.budget_cents === null ? '—' : money(t.budget_cents)}</td>
+                    <td className="is-num">{ticket.budget_cents === null ? '—' : money(ticket.budget_cents)}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         ) : (
-          <p className="cp-empty">Nothing billed yet. The meter starts when Ali or an agent works on a request.</p>
+          <p className="cp-empty">{t('views.billing.empty')}</p>
         )}
       </section>
     </div>

@@ -321,6 +321,16 @@ export async function heartbeat(env: Env, node: NodeReport, running: number[]) {
       t,
     ),
   ];
+  // A node holding a project's folder has cloned it: an old clone failure no longer applies.
+  if (node.slugs.length) {
+    statements.push(
+      env.DB.prepare(
+        `UPDATE projects SET repo_error = NULL
+          WHERE repo_error IS NOT NULL AND repo IS NOT NULL AND repo <> ''
+            AND slug IN (${node.slugs.map(() => '?').join(',')})`,
+      ).bind(...node.slugs),
+    );
+  }
   const ids = running.filter((id) => Number.isInteger(id) && id > 0).slice(0, 16);
   if (ids.length) {
     statements.push(
@@ -716,7 +726,19 @@ function explainEligibility(item: QueueTicket, requires: string[], nodes: NodeVi
           : `${item.slug} has no repo yet. A node creates it shortly; if not, use Create repo in Directory.`,
       };
     }
-    return { eligible: [], reason: `No node holds a folder for ${item.slug} yet (it clones the repo on its next sync).` };
+    if (item.repo_error) {
+      return {
+        eligible: [],
+        reason: `No node can clone ${item.repo}: ${item.repo_error}. Ask the client to connect GitHub in their portal (Connections) and allow this repo, or to add malipetek as a collaborator.`,
+      };
+    }
+    if (!item.github_installation_id) {
+      return {
+        eligible: [],
+        reason: `${item.slug} names ${item.repo}, but the client has not connected GitHub — a private repo cannot be read. Ask them to connect it in their portal (Connections).`,
+      };
+    }
+    return { eligible: [], reason: `No node has cloned ${item.slug} yet; it clones ${item.repo} on its next sync.` };
   }
 
   const capable = holders.filter((n) => requires.every((r) => n.capabilities.includes(r)));

@@ -166,6 +166,23 @@ node.post('/node/projects/:slug/repo-claim', async (c) => {
  * name is taken by a repo with history, say). Stops the offer and says why in
  * the admin view; Ali retries or names a repo from there.
  */
+/**
+ * A node could not clone a project's repo (private, and neither its own git nor
+ * the client's GitHub connection reaches it). Kept on the project so the queue
+ * and the admin card say why; the next heartbeat from a node holding the folder
+ * clears it.
+ */
+node.post('/node/projects/:slug/clone-failed', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { nodeId?: unknown; error?: unknown } | null;
+  const nodeId = typeof body?.nodeId === 'string' ? body.nodeId.trim().slice(0, 64) : 'a node';
+  const error = typeof body?.error === 'string' ? body.error.trim().slice(0, 300) : '';
+  if (!error) return c.json({ error: 'bad_error' }, 400);
+  await c.env.DB.prepare(`UPDATE projects SET repo_error = ? WHERE slug = ? AND repo IS NOT NULL AND repo <> ''`)
+    .bind(`${nodeId}: ${error}`, c.req.param('slug'))
+    .run();
+  return c.json({ ok: true });
+});
+
 node.post('/node/projects/:slug/repo-failed', async (c) => {
   const body = (await c.req.json().catch(() => null)) as { nodeId?: unknown; error?: unknown } | null;
   const error = typeof body?.error === 'string' ? body.error.trim().slice(0, 500) : '';

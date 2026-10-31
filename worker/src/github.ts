@@ -71,12 +71,17 @@ const ghHeaders = (token: string) => ({
 });
 
 /** A one-hour installation token for the project's repo, never stored. */
-export async function installationToken(env: Env, installationId: number, repositories?: string[]) {
+export async function installationToken(
+  env: Env,
+  installationId: number,
+  repositories?: string[],
+  extra?: Record<string, string>,
+) {
   const res = await fetch(`${GH_API}/app/installations/${installationId}/access_tokens`, {
     method: 'POST',
     headers: ghHeaders(await appJwt(env)),
     body: JSON.stringify({
-      permissions: { contents: 'write', pull_requests: 'write' },
+      permissions: { contents: 'write', pull_requests: 'write', ...extra },
       ...(repositories?.length ? { repositories } : {}),
     }),
     signal: AbortSignal.timeout(10_000),
@@ -103,6 +108,59 @@ export async function projectInstallation(env: Env, projectId: string) {
   )
     .bind(projectId)
     .first<InstallationRow>();
+}
+
+/** `owner/name` out of a GitHub repo URL, or null for anything else. */
+export function repoParts(url: string | null) {
+  const match = /^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(url ?? '');
+  return match ? { owner: match[1], name: match[2] } : null;
+}
+
+/**
+ * A client names a repo they own, then connects GitHub — and the repo may still
+ * not exist (a fresh account, a rename, a typo in the URL). With the
+ * installation token we can create it in their account, private and with a
+ * first commit, so the node has something to clone instead of retrying a 404
+ * every ten minutes.
+ *
+ * Returns what happened, and never throws for the "not connected" case.
+ */
+export async function ensureRepo(env: Env, projectId: string): Promise<'exists' | 'created' | 'unconfigured'> {
+  const project = await env.DB.prepare(
+    'SELECT id, slug, repo, github_installation_id FROM projects WHERE id = ?',
+  )
+    .bind(projectId)
+    .first<{ id: string; slug: string; repo: string | null; github_installation_id: number | null }>();
+  const parts = repoParts(project?.repo ?? null);
+  if (!project || !parts || !project.github_installation_id) return 'unconfigured';
+
+  const { token } = await installationToken(env, project.github_installation_id, undefined, {
+    administration: 'write',
+  });
+  const known = await fetch(`${GH_API}/repos/${parts.owner}/${parts.name}`, {
+    headers: ghHeaders(token),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (known.ok) return 'exists';
+  if (known.status !== 404) throw new Error(`github lookup failed (${known.status})`);
+
+  const installation = await env.DB.prepare('SELECT account_type FROM github_installations WHERE id = ?')
+    .bind(project.github_installation_id)
+    .first<{ account_type: string }>();
+  const where = installation?.account_type === 'Organization'
+    ? `${GH_API}/orgs/${parts.owner}/repos`
+    : `${GH_API}/user/repos`;
+  const created = await fetch(where, {
+    method: 'POST',
+    headers: ghHeaders(token),
+    body: JSON.stringify({ name: parts.name, private: true, auto_init: true }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!created.ok) {
+    const data = (await created.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(data?.message ?? `github create failed (${created.status})`);
+  }
+  return 'created';
 }
 
 /* ——————————————————————— the webhook ——————————————————————— */
@@ -237,8 +295,60 @@ github.get('/auth/github/callback', async (c) => {
   )
     .bind(installationId, user.id, ghUser?.login ?? null, account?.account?.login ?? ghUser?.login ?? '', account?.account?.type ?? 'User', t, t)
     .run();
+  await linkProjects(c.env, user.id);
   return c.redirect(`${siteUrl}/portal/?github=connected`);
 });
+
+/**
+ * Point a client's projects at their GitHub connection when the project's repo
+ * lives under the GitHub account they connected — the usual case: they named
+ * their own private repo at onboarding, nodes could not clone it, and then
+ * they connected GitHub. Never re-points a project already linked. A
+ * connection limited to other repos fails at clone time and says so.
+ */
+export async function linkProjects(env: Env, userId: string) {
+  await env.DB.prepare(
+    `UPDATE projects SET
+        github_installation_id = (
+          SELECT i.id FROM github_installations i
+           WHERE i.user_id = ?1 AND i.account_login <> ''
+             AND lower(projects.repo) LIKE 'https://github.com/' || lower(i.account_login) || '/%'
+           LIMIT 1),
+        repo_error = NULL
+      WHERE github_installation_id IS NULL AND repo IS NOT NULL
+        AND id IN (SELECT project_id FROM user_projects WHERE user_id = ?1)
+        AND EXISTS (SELECT 1 FROM github_installations i
+                     WHERE i.user_id = ?1 AND i.account_login <> ''
+                       AND lower(projects.repo) LIKE 'https://github.com/' || lower(i.account_login) || '/%')`,
+  )
+    .bind(userId)
+    .run();
+
+  // A client who names a repo the app cannot see usually has not made it yet.
+  // Now that they have connected, make it in their account.
+  // Only with the app configured: without it nothing can be looked up or made,
+  // and writing an error would replace a working repo status with a failure.
+  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return;
+  const { results } = await env.DB.prepare(
+    `SELECT id FROM projects
+      WHERE repo IS NOT NULL AND github_installation_id IS NOT NULL AND repo_error IS NULL
+        AND id IN (SELECT project_id FROM user_projects WHERE user_id = ?)`,
+  )
+    .bind(userId)
+    .all<{ id: string }>();
+  for (const project of results ?? []) {
+    try {
+      await ensureRepo(env, project.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // "Not configured" is not a project fault; leave the status alone.
+      if (message.includes('unconfigured')) continue;
+      await env.DB.prepare('UPDATE projects SET repo_error = ? WHERE id = ?')
+        .bind(`github: ${message}`.slice(0, 300), project.id)
+        .run();
+    }
+  }
+}
 
 /* ——————————————————————— portal: connection state + attach ——————————————————————— */
 
@@ -246,6 +356,8 @@ github.get('/auth/github/callback', async (c) => {
 github.get('/portal/github', async (c) => {
   const user = await bearerUser(c.env, c);
   if (!user) return reply(c, { error: 'unauthorized' }, 401);
+  // The webhook can register the installation after the callback ran: link here too.
+  await linkProjects(c.env, user.id);
   const { results } = await c.env.DB.prepare(
     'SELECT id, account_login, repository_selection FROM github_installations WHERE user_id = ? ORDER BY account_login',
   )
@@ -253,6 +365,17 @@ github.get('/portal/github', async (c) => {
     .all<{ id: number; account_login: string; repository_selection: string }>();
   return reply(c, {
     installations: results ?? [],
+    // A client who named a repo they own: until the app is installed on that
+    // account, nodes see a 404 and no work starts. Say it where the button is.
+    unconnected: (
+      await c.env.DB.prepare(
+        `SELECT p.slug, p.name, p.repo FROM projects p JOIN user_projects up ON up.project_id = p.id
+          WHERE up.user_id = ? AND p.repo IS NOT NULL AND p.repo <> '' AND p.github_installation_id IS NULL
+          ORDER BY p.name`,
+      )
+        .bind(user.id)
+        .all<{ slug: string; name: string; repo: string }>()
+    ).results ?? [],
     installUrl: `https://github.com/apps/${APP_SLUG}/installations/new?state=${encodeURIComponent(await signState(c.env, user.id))}`,
   });
 });

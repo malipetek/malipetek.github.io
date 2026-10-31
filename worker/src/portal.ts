@@ -1974,6 +1974,7 @@ function repoStatus(p: {
   repo_claim_node: string | null;
   repo_claim_at: number | null;
 }): { state: 'ready' | 'creating' | 'queued' | 'failed' | 'zip' | 'missing'; detail: string } {
+  if (p.repo && p.repo_error) return { state: 'failed', detail: `Nodes cannot clone ${p.repo}: ${p.repo_error}` };
   if (p.repo) return { state: 'ready', detail: p.repo };
   if (p.repo_error) return { state: 'failed', detail: `Creating the repo failed: ${p.repo_error}` };
   if (p.repo_wanted && p.repo_claim_node && p.repo_claim_at && now() - p.repo_claim_at < 15 * 60) {
