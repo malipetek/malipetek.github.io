@@ -1,6 +1,7 @@
 /* One ticket: the thread and the agent's runs in the middle, its properties on the right. */
 import { useEffect, useRef, useState } from 'react';
 import { ACCEPT, checkPicked, sizeText } from '../../../src/lib/attachments.js';
+import { isEnglish, localeInfo } from '../../../src/lib/locales.js';
 import { useAdmin, useMeter, useTicket } from './store.js';
 import {
   ATTENTION,
@@ -52,8 +53,13 @@ export function TicketView({ id, active }) {
             <span>{ticket.project_name ?? 'no project'}</span>
             <span>{isClient ? `${ticket.client_name ? `${ticket.client_name} · ` : ''}${ticket.client_email}` : 'your task'}</span>
             <span>opened {when(ticket.created_at)}</span>
+            {isClient && ticket.client_locale && !isEnglish(ticket.client_locale) ? (
+              <span title="Their messages are machine-translated for you; your replies reach them translated.">
+                writes in {localeInfo(ticket.client_locale)?.english ?? ticket.client_locale}
+              </span>
+            ) : null}
           </div>
-          <h2>{ticket.title}</h2>
+          <h2 title={ticket.title_en ? `Original: ${ticket.title}` : undefined}>{ticket.title_en || ticket.title}</h2>
           {ticket.client_waiting_since && ticket.status !== 'new' ? (
             <div className="aw-banner aw-banner--warn">
               The client wrote {ago(ticket.client_waiting_since)} ago and is waiting for an answer.
@@ -303,17 +309,33 @@ function FoldMore({ fold, text }) {
 
 /** One message. Long ones fold; click the header to toggle. */
 function Message({ ticket, m, latest }) {
-  const fold = useFold(m.body, latest);
+  const [original, setOriginal] = useState(false);
+  const translated = m.original !== undefined;
+  const body = translated && original ? m.original : m.body;
+  const fold = useFold(body, latest);
   return (
     <li className={cx('aw-msg', `aw-msg--${m.author}`, m.internal === 1 && 'is-private')}>
       <header className={cx(fold.long && 'aw-fold')} onClick={fold.toggle}>
         <FoldChevron fold={fold} />
         <strong>{m.author === 'ali' ? 'You' : m.author === 'client' ? ticket.client_name ?? ticket.client_email ?? 'Client' : m.author}</strong>
         {m.internal === 1 ? <Tag tone="warn">private · agent reads it</Tag> : m.author === 'ali' ? <Tag tone="client">emailed</Tag> : null}
+        {translated ? (
+          <button
+            type="button"
+            className="aw-link"
+            title="Machine-translated. The agents read the English."
+            onClick={(e) => {
+              e.stopPropagation();
+              setOriginal((o) => !o);
+            }}
+          >
+            {original ? 'show English' : `translated from ${localeInfo(m.translatedFrom)?.english ?? m.translatedFrom ?? 'their language'} · show original`}
+          </button>
+        ) : null}
         <time>{when(m.created_at)}</time>
       </header>
-      {m.body ? <div className={cx('aw-msg__body', fold.long && !fold.open && 'is-clipped')}>{m.body}</div> : null}
-      {fold.long ? <FoldMore fold={fold} text={m.body} /> : null}
+      {body ? <div className={cx('aw-msg__body', fold.long && !fold.open && 'is-clipped')}>{body}</div> : null}
+      {fold.long ? <FoldMore fold={fold} text={body} /> : null}
       {m.files?.length ? <FileChips ticketId={ticket.id} files={m.files} /> : null}
     </li>
   );

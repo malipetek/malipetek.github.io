@@ -95,7 +95,7 @@ let STATE = '';
  * A stand-in for Cloudflare's OAuth and accounts API: the token endpoint
  * (client secret by Basic auth), revoke, and /accounts for a good token.
  */
-const CF = { port: 0, revoked: [] };
+const CF = { port: 0, revoked: [], deepseek: [] };
 const CF_CLIENT = { id: 'e2e-cf-client', secret: 'e2e-cf-secret' };
 function startFakeCloudflare() {
   const server = http.createServer((req, res) => {
@@ -118,6 +118,20 @@ function startFakeCloudflare() {
       if (req.method === 'POST' && req.url === '/oauth2/revoke') {
         CF.revoked.push(form.get('token'));
         return json(200, {});
+      }
+      /*
+       * DeepSeek, for the translation bridge: "TR:" text is Turkish, the rest
+       * English; a translation is the text tagged with its target locale.
+       */
+      if (req.method === 'POST' && req.url === '/deepseek/chat/completions') {
+        if (req.headers.authorization !== 'Bearer e2e-deepseek') return json(401, {});
+        const ask = JSON.parse(body);
+        const target = /into .+? \(([\w-]+)\)\./.exec(ask.messages[0].content)?.[1];
+        const text = ask.messages[1].content;
+        CF.deepseek.push({ target, text });
+        const source = text.startsWith('TR:') ? 'tr' : 'en';
+        const out = source === target?.split('-')[0] ? text : `[${target}] ${text}`;
+        return json(200, { choices: [{ message: { content: JSON.stringify({ source, text: out }) } }] });
       }
       if (req.method === 'GET' && req.url.startsWith('/client/v4/accounts')) {
         if (req.headers.authorization !== 'Bearer cf-access-secret') return json(403, { success: false });
@@ -734,6 +748,73 @@ const groups = {
     check('a bad budget is refused', (await call(`/portal/tickets/${ticketId}/budget`, { method: 'PATCH', auth: a.session, body: { budgetCents: -5 } })).status === 400);
   },
 
+  async i18n({ admin }) {
+    const until = async (read, ok) => {
+      let last;
+      for (let i = 0; i < 40; i += 1) {
+        last = await read();
+        if (ok(last)) return last;
+        await sleep(150);
+      }
+      return last;
+    };
+    const asked = () => CF.deepseek.length;
+
+    // An English client: nothing goes to a translator.
+    const en = account(`i18n-en-${Date.now()}@example.com`);
+    const before = asked();
+    const enTicket = (await call('/portal/tickets', { method: 'POST', auth: en.session, body: { title: 'Fix the footer', body: 'Please fix it.' } })).data.id;
+    await call(`/admin/tickets/${enTicket}/messages`, { method: 'POST', auth: admin, body: { body: 'On it.' } });
+    await sleep(500);
+    check('an English client’s thread is never sent to a translator', asked() === before, JSON.stringify(CF.deepseek.slice(before)));
+
+    const a = account(`i18n-tr-${Date.now()}@example.com`);
+    check('a bad locale is refused', (await call('/portal/me', { method: 'PATCH', auth: a.session, body: { locale: 'xx' } })).status === 400);
+    const set = await call('/portal/me', { method: 'PATCH', auth: a.session, body: { locale: 'tr-TR' } });
+    check('the client picks Turkish (tr-TR is stored as tr)', set.status === 200 && set.data.locale === 'tr', JSON.stringify(set.data));
+    check('…and /portal/me says so', (await call('/portal/me', { auth: a.session })).data.user.locale === 'tr');
+
+    const id = (await call('/portal/tickets', { method: 'POST', auth: a.session, body: { title: 'TR: Altbilgi', body: 'TR: Merhaba, `npm run build` bozuk.' } })).data.id;
+    const seen = await until(
+      () => call(`/admin/tickets/${id}`, { auth: admin }),
+      (r) => r.data?.messages?.[0]?.original !== undefined && r.data.ticket.title_en,
+    );
+    const first = seen.data.messages[0];
+    check('Ali reads the client’s message in English', first.body === '[en-US] TR: Merhaba, `npm run build` bozuk.', JSON.stringify(first));
+    check('…with the original kept', first.original === 'TR: Merhaba, `npm run build` bozuk.' && first.translatedFrom === 'tr');
+    check('…and the title in English', seen.data.ticket.title_en === '[en-US] TR: Altbilgi', seen.data.ticket.title_en);
+    check('code never reaches the translator', CF.deepseek.every((c) => !c.text.includes('npm run build')), JSON.stringify(CF.deepseek.slice(-3)));
+    const own = (await call(`/portal/tickets/${id}`, { auth: a.session })).data.messages[0];
+    check('the client sees their own message as written', own.body === 'TR: Merhaba, `npm run build` bozuk.' && own.original === undefined);
+
+    await call(`/admin/tickets/${id}/messages`, { method: 'POST', auth: admin, body: { body: 'Fixed, see src/pages/index.astro.' } });
+    await call(`/admin/tickets/${id}/messages`, { method: 'POST', auth: admin, body: { body: 'private note', internal: true } });
+    const thread = await until(
+      () => call(`/portal/tickets/${id}`, { auth: a.session }),
+      (r) => r.data?.messages?.some((m) => m.author === 'ali' && m.original !== undefined),
+    );
+    const answer = thread.data.messages.find((m) => m.author === 'ali');
+    check('the client reads Ali’s reply in Turkish', answer?.body === '[tr] Fixed, see src/pages/index.astro.', JSON.stringify(answer));
+    check('…and can open the original', answer?.original === 'Fixed, see src/pages/index.astro.');
+    check('a private note is never translated toward the client', !CF.deepseek.some((c) => c.text.includes('private note')));
+
+    await approve(admin, id);
+    const claimed = await call(`/admin/tickets/${id}/claim`, { method: 'POST', auth: admin, body: {} });
+    const brief = claimed.data?.messages?.find((m) => m.author === 'client');
+    check('the agent’s brief is in English', brief?.body === '[en-US] TR: Merhaba, `npm run build` bozuk.', JSON.stringify(claimed.data?.messages));
+    check('…and so is its title', claimed.data?.ticket?.title === '[en-US] TR: Altbilgi', JSON.stringify(claimed.data?.ticket));
+
+    // Opting out: nothing more goes to a translator.
+    await call('/portal/me', { method: 'PATCH', auth: a.session, body: { translation: 'off' } });
+    const n = asked();
+    await call(`/portal/tickets/${id}/messages`, { method: 'POST', auth: a.session, body: { body: 'TR: Teşekkürler' } });
+    await sleep(500);
+    check('with translation off, nothing is sent', asked() === n);
+    check('bad translation settings are refused', (await call('/portal/me', { method: 'PATCH', auth: a.session, body: { translation: 'google' } })).status === 400);
+    const byAli = await call(`/admin/clients/${a.user.id}`, { method: 'PATCH', auth: admin, body: { locale: 'de-DE', translation: 'deepseek' } });
+    check('Ali can set a client’s language', byAli.status === 200 && byAli.data.locale === 'de-DE', JSON.stringify(byAli.data));
+  },
+
   async usage({ admin }) {
     const a = account(`usage-${Date.now()}@example.com`);
     const mk = async (title) => (await call('/portal/tickets', { method: 'POST', auth: a.session, body: { title, body: 'x' } })).data.id;
@@ -1142,6 +1223,8 @@ async function main() {
     CLOUDFLARE_OAUTH_BASE: `http://127.0.0.1:${CF.port}`,
     CLOUDFLARE_API_BASE: `http://127.0.0.1:${CF.port}/client/v4`,
     MARKETING_TOKEN: 'e2e-marketing-token',
+    DEEPSEEK_API_KEY: 'e2e-deepseek',
+    DEEPSEEK_API_BASE: `http://127.0.0.1:${CF.port}/deepseek`,
   };
   const dev = spawn('npx', ['vite', 'dev', '--port', String(port), '--strictPort'], {
     cwd: WORKER,

@@ -7,7 +7,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { demoLogin, errorText, logout, requestLink, session } from '../../lib/portal';
 import { STEPS } from '../../lib/offer.js';
+import { englishT, loadT } from '../../i18n/index.js';
+import { fromAcceptLanguage } from '../../lib/locales.js';
 import { Composer } from './Composer.jsx';
+import { LanguageDialog } from './Language.jsx';
 import { TicketView } from './TicketView.jsx';
 import { BillingView, ConnectionsView, Overview, ProjectView, RequestsView } from './views.jsx';
 import { PortalContext, go, href, isOpen, signedIn, usePortalData, useRoute } from './store.js';
@@ -27,26 +30,43 @@ export default function ClientPortal() {
   useEffect(() => {
     if (lost) setAuthed(false);
   }, [lost]);
+  // Their saved language once signed in; the browser's before that.
+  const t = useTranslator(data.user?.locale ?? fromAcceptLanguage(navigator.languages?.join(',') || navigator.language));
 
-  if (!authed) return <SignIn />;
-  if (!data.loaded) return <p className="cp-boot">Loading…</p>;
+  if (!authed) return <SignIn t={t} />;
+  if (!data.loaded) return <p className="cp-boot">{t('common.loading')}</p>;
   if (!data.user) {
     return (
       <div className="cp-boot">
         <p>{errorText(data.error)}</p>
-        <Button onClick={() => void reload()}>Try again</Button>
+        <Button onClick={() => void reload()}>{t('common.tryAgain')}</Button>
       </div>
     );
   }
-  return <Shell data={data} reload={reload} onSignedOut={() => setAuthed(false)} />;
+  return <Shell data={data} reload={reload} t={t} onSignedOut={() => setAuthed(false)} />;
 }
 
-function Shell({ data, reload, onSignedOut }) {
+/** t for a locale: English at once, the locale's catalog as soon as it has loaded. */
+function useTranslator(locale) {
+  const [t, setT] = useState(() => englishT);
+  useEffect(() => {
+    let live = true;
+    document.documentElement.lang = locale;
+    loadT(locale).then((next) => live && setT(() => next));
+    return () => {
+      live = false;
+    };
+  }, [locale]);
+  return t;
+}
+
+function Shell({ data, reload, t, onSignedOut }) {
   const route = useRoute();
   const [composing, setComposing] = useState(null);
   const [ask, setAsk] = useState(null);
   const [toast, setToast] = useState(null);
   const [menu, setMenu] = useState(false);
+  const [language, setLanguage] = useState(false);
 
   const notify = useCallback((text, kind = 'ok') => setToast({ text, kind, at: Date.now() }), []);
   useEffect(() => {
@@ -69,17 +89,17 @@ function Shell({ data, reload, onSignedOut }) {
   }, []);
 
   const ctx = useMemo(
-    () => ({ data, reload, notify, ask: setAsk, compose: (preset) => setComposing({ preset }) }),
-    [data, reload, notify],
+    () => ({ data, reload, notify, t, ask: setAsk, compose: (preset) => setComposing({ preset }) }),
+    [data, reload, notify, t],
   );
 
   const open = data.tickets.filter(isOpen).length;
   const attention = data.tickets.filter((t) => t.unread).length;
   const nav = [
-    { key: 'overview', path: '', label: 'Overview', icon: 'home' },
-    { key: 'requests', path: 'requests', label: 'Requests', icon: 'list', count: open, alert: attention },
-    { key: 'billing', path: 'billing', label: 'Billing', icon: 'receipt' },
-    { key: 'connections', path: 'connections', label: 'Connections', icon: 'plug' },
+    { key: 'overview', path: '', label: t('nav.overview'), icon: 'home' },
+    { key: 'requests', path: 'requests', label: t('nav.requests'), icon: 'list', count: open, alert: attention },
+    { key: 'billing', path: 'billing', label: t('nav.billing'), icon: 'receipt' },
+    { key: 'connections', path: 'connections', label: t('nav.connections'), icon: 'plug' },
   ];
   const ticketProject = route.name === 'ticket' ? data.tickets.find((t) => String(t.id) === route.id)?.project_id : null;
 
@@ -87,34 +107,34 @@ function Shell({ data, reload, onSignedOut }) {
     <PortalContext.Provider value={ctx}>
       <div className={cx('cp', menu && 'is-menu')}>
         <header className="cp-topbar">
-          <button type="button" className="cp-iconbtn" aria-label="Menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
+          <button type="button" className="cp-iconbtn" aria-label={t('nav.menu')} aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
             <Icon name="menu" size={18} />
           </button>
           <a className="cp-brand" href={href('')}>
             malipetek<span>/portal</span>
           </a>
-          <button type="button" className="cp-iconbtn" aria-label="New request" onClick={() => setComposing({})}>
+          <button type="button" className="cp-iconbtn" aria-label={t('nav.newRequest')} onClick={() => setComposing({})}>
             <Icon name="plus" size={18} />
           </button>
         </header>
 
-        <aside className="cp-side" aria-label="Portal">
+        <aside className="cp-side" aria-label={t('nav.portal')}>
           <a className="cp-brand cp-side__brand" href={href('')}>
             malipetek<span>/portal</span>
           </a>
-          <Button kind="primary" className="cp-side__new" onClick={() => setComposing({})} title="New request (N)">
-            <Icon name="plus" size={15} /> New request <kbd>N</kbd>
+          <Button kind="primary" className="cp-side__new" onClick={() => setComposing({})} title={t('nav.newRequestKey')}>
+            <Icon name="plus" size={15} /> {t('nav.newRequest')} <kbd>N</kbd>
           </Button>
           <nav className="cp-nav">
             {nav.map((n) => (
               <a key={n.key} href={href(n.path)} aria-current={route.name === n.key ? 'page' : undefined}>
                 <Icon name={n.icon} size={17} />
                 <span>{n.label}</span>
-                {n.alert ? <span className="cp-nav__alert" title={`${n.alert} new repl${n.alert === 1 ? 'y' : 'ies'}`}>{n.alert}</span> : n.count ? <span className="cp-nav__count">{n.count}</span> : null}
+                {n.alert ? <span className="cp-nav__alert" title={t('nav.newReplies', { n: n.alert })}>{n.alert}</span> : n.count ? <span className="cp-nav__count">{n.count}</span> : null}
               </a>
             ))}
           </nav>
-          <h3 className="cp-side__h">Projects</h3>
+          <h3 className="cp-side__h">{t('nav.projects')}</h3>
           <nav className="cp-nav cp-nav--projects">
             {data.projects.map((p) => {
               const live = p.site?.state === 'ready';
@@ -130,7 +150,7 @@ function Shell({ data, reload, onSignedOut }) {
             })}
             <a href="/portal/start" className="cp-nav__add">
               <Icon name="plus" size={15} />
-              <span>Add a project</span>
+              <span>{t('nav.addProject')}</span>
             </a>
           </nav>
           <span className="cp-side__fill" />
@@ -140,15 +160,18 @@ function Shell({ data, reload, onSignedOut }) {
             </span>
             <div className="cp-side__tools">
               {data.user.role === 'admin' ? (
-                <a className="cp-iconbtn" href="/portal/admin" title="Admin">
+                <a className="cp-iconbtn" href="/portal/admin" title={t('nav.admin')}>
                   <Icon name="admin" size={16} />
                 </a>
               ) : null}
-              <ThemeButton />
+              <button type="button" className="cp-iconbtn" title={t('nav.language')} onClick={() => setLanguage(true)}>
+                <Icon name="globe" size={16} />
+              </button>
+              <ThemeButton t={t} />
               <button
                 type="button"
                 className="cp-iconbtn"
-                title="Sign out"
+                title={t('nav.signOut')}
                 onClick={async () => {
                   await logout().catch(() => {});
                   onSignedOut();
@@ -158,11 +181,11 @@ function Shell({ data, reload, onSignedOut }) {
               </button>
             </div>
             <a className="cp-side__site" href="/">
-              ← malipetek.dev
+              {t('nav.backToSite')}
             </a>
           </div>
         </aside>
-        <button type="button" className="cp-sidescrim" aria-label="Close menu" onClick={() => setMenu(false)} tabIndex={-1} />
+        <button type="button" className="cp-sidescrim" aria-label={t('nav.closeMenu')} onClick={() => setMenu(false)} tabIndex={-1} />
 
         <main className="cp-main">
           <Route route={route} />
@@ -180,13 +203,23 @@ function Shell({ data, reload, onSignedOut }) {
             onClose={() => setComposing(null)}
             onSent={async (id) => {
               setComposing(null);
-              notify(`Request #${id} sent. Ali reads it before anything starts.`);
+              notify(t('toast.requestSent', { id }));
               await reload();
               go(`ticket/${id}`);
             }}
           />
         ) : null}
         {ask ? <Confirm ask={ask} onClose={() => setAsk(null)} errorText={errorText} /> : null}
+        {language ? (
+          <LanguageDialog
+            user={data.user}
+            onClose={() => setLanguage(false)}
+            onSaved={async () => {
+              setLanguage(false);
+              await reload();
+            }}
+          />
+        ) : null}
       </div>
     </PortalContext.Provider>
   );
@@ -210,13 +243,13 @@ function Route({ route }) {
 }
 
 /** The site's theme switch (src/layouts/Base.astro keeps the same key). */
-function ThemeButton() {
+function ThemeButton({ t }) {
   const [dark, setDark] = useState(() => document.documentElement.dataset.theme === 'dark');
   return (
     <button
       type="button"
       className="cp-iconbtn"
-      title={dark ? 'Light theme' : 'Dark theme'}
+      title={dark ? t('theme.light') : t('theme.dark')}
       onClick={() => {
         const next = dark ? 'light' : 'dark';
         document.documentElement.dataset.theme = next;
@@ -231,7 +264,7 @@ function ThemeButton() {
 
 /* ————— signed out ————— */
 
-function SignIn() {
+function SignIn({ t }) {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [withCode, setWithCode] = useState(false);
@@ -241,7 +274,7 @@ function SignIn() {
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
-    setNote({ text: 'Sending…', error: false, dev: null });
+    setNote({ text: t('common.sending'), error: false, dev: null });
     try {
       if (code.trim()) {
         const res = await demoLogin(email.trim(), code.trim());
@@ -251,7 +284,7 @@ function SignIn() {
       }
       const res = await requestLink(email.trim());
       // Local dev only: the Worker hands the link back instead of emailing it.
-      setNote({ text: `Check ${email.trim()} for your sign-in link.`, error: false, dev: res.devLink ?? null });
+      setNote({ text: t('signin.checkInbox', { email: email.trim() }), error: false, dev: res.devLink ?? null });
     } catch (error) {
       setNote({ text: errorText(error), error: true, dev: null });
     } finally {
@@ -265,29 +298,29 @@ function SignIn() {
         <a className="cp-brand" href="/">
           malipetek<span>/portal</span>
         </a>
-        <h1>Sign in</h1>
-        <p className="cp-muted">With your email. No password: you get a link that works once. New here? Same form; your account is made when you first sign in.</p>
+        <h1>{t('signin.title')}</h1>
+        <p className="cp-muted">{t('signin.intro')}</p>
         <form onSubmit={submit}>
           <label className="cp-field">
-            <span className="cp-label">Email</span>
+            <span className="cp-label">{t('signin.email')}</span>
             <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
           </label>
           {withCode ? (
             <label className="cp-field">
-              <span className="cp-label">Reviewer code</span>
+              <span className="cp-label">{t('signin.reviewerCode')}</span>
               <input type="text" autoComplete="off" value={code} onChange={(e) => setCode(e.target.value)} />
             </label>
           ) : null}
           <Button kind="primary" disabled={busy} type="submit" className="cp-signin__go">
-            {code.trim() ? 'Sign in →' : 'Email me a link →'}
+            {code.trim() ? t('signin.withCode') : t('signin.emailLink')}
           </Button>
           <p className={cx('cp-signin__note', note.error && 'is-error')} role="status" aria-live="polite">
-            {note.text} {note.dev ? <a href={note.dev}>Dev link →</a> : null}
+            {note.text} {note.dev ? <a href={note.dev}>{t('signin.devLink')}</a> : null}
           </p>
         </form>
         {!withCode ? (
           <button type="button" className="cp-linkbtn" onClick={() => setWithCode(true)}>
-            Have a reviewer code?
+            {t('signin.haveCode')}
           </button>
         ) : null}
       </div>

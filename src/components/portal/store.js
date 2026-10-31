@@ -5,9 +5,12 @@
  */
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { api, session } from '../../lib/portal';
+import { englishT } from '../../i18n/index.js';
 
 export const PortalContext = createContext(null);
 export const usePortal = () => useContext(PortalContext);
+/** The reader's t(key, vars): their language, English until it has loaded. */
+export const useT = () => useContext(PortalContext)?.t ?? englishT;
 
 const OPEN = new Set(['new', 'approved', 'in_progress', 'review']);
 export const isOpen = (t) => OPEN.has(t.status);

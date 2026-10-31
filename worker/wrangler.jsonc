@@ -71,6 +71,10 @@
     { "binding": "SITES", "bucket_name": "malipetek-sites" },
   ],
 
+  // Workers AI: m2m100, the translation bridge's fallback engine (src/translate.ts).
+  // DeepSeek is the main one: `wrangler secret put DEEPSEEK_API_KEY`.
+  "ai": { "binding": "AI" },
+
   // Cloudflare Email Service. Requires malipetek.dev to be onboarded to Email
   // Sending (see README.md) — the sender address must live on that domain.
   // destination_address pins every send to Ali's inbox.

@@ -263,7 +263,8 @@ async function openRun(env: Env, ticketId: number, executor: string, model: stri
  */
 async function brief(env: Env, ticketId: number): Promise<BriefMessage[]> {
   const { results } = await env.DB.prepare(
-    `SELECT id, author, body, internal, created_at FROM ticket_messages
+    `SELECT id, author, COALESCE((SELECT x.body FROM message_translations x WHERE x.message_id = ticket_messages.id AND x.locale = 'en-US'), body) AS body,
+            internal, created_at FROM ticket_messages
       WHERE ticket_id = ? AND author IN ('client', 'ali') ORDER BY id`,
   )
     .bind(ticketId)
@@ -274,7 +275,7 @@ async function brief(env: Env, ticketId: number): Promise<BriefMessage[]> {
 /** Everything a claim returns about the ticket it took. */
 async function claimedTicket(env: Env, ticketId: number) {
   return env.DB.prepare(
-    `SELECT t.id, t.title, t.status, t.attention, t.budget_cents, p.slug, p.name AS project_name
+    `SELECT t.id, COALESCE(t.title_en, t.title) AS title, t.status, t.attention, t.budget_cents, p.slug, p.name AS project_name
        FROM tickets t LEFT JOIN projects p ON p.id = t.project_id
       WHERE t.id = ?`,
   )

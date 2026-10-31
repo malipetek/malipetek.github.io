@@ -26,9 +26,9 @@ import {
   MAX_TITLE_CHARS,
   REPLY_MARKER,
   confirmTicketToClient,
-  notifyAliOfClientMessage,
-  notifyClientOfReply,
   now,
+  relayAliReply,
+  relayClientMessage,
   replyDomain,
   replySig,
   siteUrl,
@@ -227,11 +227,11 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
       return reject('This reply address is not valid.');
     }
     const ticket = await env.DB.prepare(
-      `SELECT t.id, t.title, u.email AS client_email
+      `SELECT t.id, t.title, t.title_en, u.email AS client_email, u.locale AS client_locale
          FROM tickets t JOIN users u ON u.id = t.user_id WHERE t.id = ?`,
     )
       .bind(ticketId)
-      .first<{ id: number; title: string; client_email: string }>();
+      .first<{ id: number; title: string; title_en: string | null; client_email: string; client_locale: string }>();
     if (!ticket) return reject('That ticket no longer exists.');
 
     const expected = role === 'c' ? ticket.client_email : bare(env.ADMIN_EMAIL || '');
@@ -261,9 +261,8 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
       : env.DB.prepare('UPDATE tickets SET updated_at = ?, client_waiting_since = NULL WHERE id = ?').bind(t, ticket.id)
     ).run();
     await noteSkipped(env, ticket.id, kept.skipped, t);
-    const text = withAttachmentLine(body, stored);
-    if (role === 'c') await notifyAliOfClientMessage(env, ticket, text, false);
-    else await notifyClientOfReply(env, ticket, text);
+    if (role === 'c') await relayClientMessage(env, ticket, stored.messageId, body, stored, false);
+    else await relayAliReply(env, ticket, stored.messageId, body, stored);
     console.log('inbound_accepted', JSON.stringify({ ticket: ticket.id, role, chars: body.length, files: stored.length, skipped: kept.skipped.length }));
     return;
   }
@@ -280,9 +279,9 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
           `Use ${siteUrl(env)}/portal instead.`,
       );
     }
-    const user = await env.DB.prepare('SELECT id, email FROM users WHERE email = ?')
+    const user = await env.DB.prepare('SELECT id, email, locale FROM users WHERE email = ?')
       .bind(headerFrom)
-      .first<{ id: string; email: string }>();
+      .first<{ id: string; email: string; locale: string }>();
     if (!user) {
       return reject(
         `New requests by email are for existing clients. Sign up at ${siteUrl(env)}/portal first — it takes a minute.`,
@@ -303,8 +302,8 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
     const stored = await postMessage(env, ticket.id, 'client', body, false, kept.uploads, t);
     await noteSkipped(env, ticket.id, kept.skipped, t);
 
-    const ref = { id: ticket.id, title, client_email: user.email };
-    await Promise.all([notifyAliOfClientMessage(env, ref, withAttachmentLine(body, stored), true), confirmTicketToClient(env, ref)]);
+    const ref = { id: ticket.id, title, client_email: user.email, client_locale: user.locale };
+    await Promise.all([relayClientMessage(env, ref, stored.messageId, body, stored, true), confirmTicketToClient(env, ref)]);
     console.log('inbound_accepted', JSON.stringify({ ticket: ticket.id, role: 'new', chars: body.length, files: stored.length }));
     return;
   }

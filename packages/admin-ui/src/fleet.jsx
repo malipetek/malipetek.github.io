@@ -1,5 +1,6 @@
 /* The fleet (nodes, queue, runs), the directory (clients, projects), and settings. */
 import { useEffect, useState } from 'react';
+import { LOCALES } from '../../../src/lib/locales.js';
 import { useAdmin } from './store.js';
 import { EXECUTORS, PRIORITIES, ago, money, priorityName, span, usd } from './format.js';
 import { Button, Chips, Dot, Field, Modal, Segmented, Tag, cx } from './ui.jsx';
@@ -322,6 +323,29 @@ export function ClientsView() {
                 {c.role !== 'admin' ? (
                   <>
                     <p className="aw-muted">{usageLine(c.usage)}</p>
+                    <div className="aw-toolbar">
+                      <select
+                        aria-label="Language"
+                        value={c.locale ?? 'en-US'}
+                        onChange={(e) => void act(() => api('PATCH', `/admin/clients/${c.id}`, { locale: e.target.value }), 'Language saved.')}
+                      >
+                        {LOCALES.map((l) => (
+                          <option key={l.code} value={l.code}>
+                            {l.english}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        aria-label="Translation"
+                        title="Who translates this client’s messages. They can change it themselves."
+                        value={c.translation ?? 'deepseek'}
+                        onChange={(e) => void act(() => api('PATCH', `/admin/clients/${c.id}`, { translation: e.target.value }), 'Saved.')}
+                      >
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="cloudflare">Workers AI</option>
+                        <option value="off">no translation</option>
+                      </select>
+                    </div>
                     <Chips value={c.projectIds} options={data.projects.map((p) => ({ value: p.id, label: p.name }))} onChange={(ids) => void toggle(c, ids)} />
                   </>
                 ) : null}

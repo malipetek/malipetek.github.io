@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { STATUS_LABEL } from '../../lib/portal';
 import { STEPS } from '../../lib/offer.js';
 import { money, priceOf } from '../../lib/pricing.js';
+import { useT } from './store.js';
 
 export const cx = (...parts) => parts.filter(Boolean).join(' ');
 
@@ -13,7 +14,10 @@ export function Button({ kind = 'default', size, className, href, ...props }) {
 }
 
 /** The client's words for a status; "new" means it waits for Ali. */
-export const StatusPill = ({ status }) => <span className={`cp-pill cp-pill--${status}`}>{STATUS_LABEL[status] ?? status}</span>;
+export function StatusPill({ status }) {
+  const t = useT();
+  return <span className={`cp-pill cp-pill--${status}`}>{STATUS_LABEL[status] ? t(`status.${status}`) : status}</span>;
+}
 
 export const Tag = ({ children, title }) => (
   <span className="cp-tag" title={title}>
@@ -157,8 +161,11 @@ export function Icon({ name, size = 16 }) {
 
 export const STEP_ICONS = ['request', 'approve', 'build', 'ship'];
 
+/** The reader's locale: ClientPortal sets <html lang> to it. */
+const readerLocale = () => (typeof document !== 'undefined' && document.documentElement.lang) || undefined;
+
 export function fmtDate(unix, withTime = true) {
-  return new Date(unix * 1000).toLocaleString(undefined, {
+  return new Date(unix * 1000).toLocaleString(readerLocale(), {
     day: 'numeric',
     month: 'short',
     ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
@@ -168,9 +175,10 @@ export function fmtDate(unix, withTime = true) {
 /** "3 min ago", "yesterday", or the date. */
 export function ago(unix) {
   const s = Math.max(0, Date.now() / 1000 - unix);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
-  if (s < 2 * 86400) return 'yesterday';
+  const rel = new Intl.RelativeTimeFormat(readerLocale(), { numeric: 'auto', style: 'short' });
+  if (s < 60) return rel.format(0, 'second');
+  if (s < 3600) return rel.format(-Math.floor(s / 60), 'minute');
+  if (s < 86400) return rel.format(-Math.floor(s / 3600), 'hour');
+  if (s < 2 * 86400) return rel.format(-1, 'day');
   return fmtDate(unix, false);
 }

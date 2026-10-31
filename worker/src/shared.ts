@@ -64,6 +64,14 @@ export interface Env {
   CLOUDFLARE_API_BASE?: string;
   /** Var, local dev only. "1" returns the magic link in the /auth/request response. */
   DEV_RETURN_LINK?: string;
+  /** Secret. DeepSeek API key: the ticket translation bridge (src/translate.ts). */
+  DEEPSEEK_API_KEY?: string;
+  /** Var, optional. DeepSeek model for translation; default deepseek-chat. */
+  DEEPSEEK_MODEL?: string;
+  /** Var, tests only: where the DeepSeek calls go. */
+  DEEPSEEK_API_BASE?: string;
+  /** Workers AI: m2m100, the translation fallback (and the engine for 'cloudflare' clients). */
+  AI?: Ai;
 }
 
 export type HonoEnv = { Bindings: Env };

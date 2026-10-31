@@ -34,6 +34,9 @@ import { Hono, type Context } from 'hono';
 import { ATTENTION_KEYS, DEFAULT_ATTENTION, money, priceLine, priceOf } from '../../src/lib/pricing.js';
 import { claimTicketById, finishRun, normalizeReport, openRuns, recentRuns, sessionKey, ticketRuns } from './runs.ts';
 import { finishContentCycle } from './content.ts';
+import { bridgeMessage, bridgeTitle, forAli, forClientMail, threadFor, type Bridged } from './translate.ts';
+import { tFor } from '../../src/i18n/eager.js';
+import { closestLocale, fromAcceptLanguage, TRANSLATION_ENGINES, type TranslationEngine } from '../../src/lib/locales.js';
 import { readSteps } from './steps.ts';
 import {
   CAPABILITY_CATALOG,
@@ -122,6 +125,9 @@ interface User {
   role: 'client' | 'admin';
   /** How finished work reaches them: 'preview' (a link and Publish) or 'pull_request'. */
   handoff?: 'preview' | 'pull_request';
+  /** Their language (src/lib/locales.js) and who may translate for them. */
+  locale?: string;
+  translation?: TranslationEngine;
 }
 
 /** `viaAgent`: the caller used an agent token (agent_tokens), not a browser session. */
@@ -205,14 +211,14 @@ export async function postMessage(
   internal: boolean,
   uploads: Upload[],
   t: number,
-): Promise<FileMeta[]> {
+): Promise<FileMeta[] & { messageId: number }> {
   const row = await env.DB.prepare(
     `INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id`,
   )
     .bind(ticketId, author, text, internal ? 1 : 0, t)
     .first<{ id: number }>();
   if (!row) throw new Error('message insert failed');
-  return storeFiles(env, ticketId, row.id, uploads);
+  return Object.assign(await storeFiles(env, ticketId, row.id, uploads), { messageId: row.id });
 }
 
 /** The text a notification carries: the message, then what came with it. */
@@ -220,6 +226,26 @@ export function withAttachmentLine(text: string, files: { name: string; size: nu
   if (!files.length) return text;
   const line = `Attached: ${files.map((f) => `${f.name} (${sizeText(f.size)})`).join(', ')}`;
   return text ? `${text}\n\n${line}` : line;
+}
+
+/**
+ * A new client message: across the bridge, then to Ali in English with the
+ * original under it. Runs after the response (waitUntil).
+ */
+export async function relayClientMessage(env: Env, t: TicketRef, messageId: number, text: string, files: FileMeta[], isNew: boolean) {
+  const [bridgedText, titleEn] = await Promise.all([
+    bridgeMessage(env, { id: messageId, ticketId: t.id, author: 'client', text, internal: false }),
+    isNew ? bridgeTitle(env, t.id, t.title) : Promise.resolve(t.title_en ?? null),
+  ]);
+  const ref = { ...t, title_en: titleEn && titleEn !== t.title ? titleEn : t.title_en };
+  await notifyAliOfClientMessage(env, ref, withAttachmentLine(forAli(bridgedText, text), files), isNew);
+}
+
+/** Ali's reply: across the bridge, then to the client in their language. */
+export async function relayAliReply(env: Env, t: TicketRef, messageId: number, text: string, files: FileMeta[]) {
+  const b: Bridged = await bridgeMessage(env, { id: messageId, ticketId: t.id, author: 'ali', text, internal: false });
+  const body = forClientMail(b, text, tFor(t.client_locale)('mail.translatedNote'));
+  await notifyClientOfReply(env, t, withAttachmentLine(body, files));
 }
 
 async function readJson<T>(c: Ctx): Promise<T | null> {
@@ -328,11 +354,18 @@ export async function mailAli(env: Env, mail: Mail): Promise<void> {
  * The four ticket notifications, shared by the HTTP routes and inbound mail.
  * Each one sets Reply-To so answering from an inbox lands in the thread.
  */
-type TicketRef = { id: number; title: string; client_email: string };
+type TicketRef = { id: number; title: string; client_email: string; client_locale?: string | null; title_en?: string | null };
+
+/** The title Ali reads: the English one when the client filed in another language. */
+const aliTitle = (t: TicketRef) => t.title_en || t.title;
+
+/** Footer of a client email, in their language. */
+const threadFooter = (env: Env, t: TicketRef, key = 'mail.footer.thread') =>
+  tFor(t.client_locale)(key, { url: `${siteUrl(env)}/portal/ticket#id=${t.id}` });
 
 export async function notifyAliOfClientMessage(env: Env, t: TicketRef, text: string, isNew: boolean) {
   await mailAli(env, {
-    subject: `[#${t.id}] ${isNew ? `New ticket from ${t.client_email}` : `${t.client_email} replied`}: ${t.title}`,
+    subject: `[#${t.id}] ${isNew ? `New ticket from ${t.client_email}` : `${t.client_email} replied`}: ${aliTitle(t)}`,
     text: ticketMail(
       text,
       `Replying to this email answers ${t.client_email} — they will see it.\n` +
@@ -343,32 +376,32 @@ export async function notifyAliOfClientMessage(env: Env, t: TicketRef, text: str
 }
 
 export async function notifyClientOfReply(env: Env, t: TicketRef, text: string) {
+  const tr = tFor(t.client_locale);
   await mailClient(env, t.client_email, {
-    subject: `[#${t.id}] Ali replied: ${t.title}`,
-    text: ticketMail(text, `Reply to this email, or open the thread: ${siteUrl(env)}/portal/ticket#id=${t.id}`),
+    subject: `[#${t.id}] ${tr('mail.reply.subject', { title: t.title })}`,
+    text: ticketMail(text, threadFooter(env, t)),
     replyTo: await replyAddress(env, t.id, 'c'),
   });
 }
 
 async function notifyClientOfStatus(env: Env, t: TicketRef, status: Status, bill?: string) {
+  const tr = tFor(t.client_locale);
+  const label = tr(`status.${status}`);
   await mailClient(env, t.client_email, {
-    subject: `[#${t.id}] ${STATUS_LABEL[status]}: ${t.title}`,
+    subject: `[#${t.id}] ${label}: ${t.title}`,
     text: ticketMail(
-      `Your request “${t.title}” is now: ${STATUS_LABEL[status]}.${bill ? `\n\nTotal: ${bill}` : ''}`,
-      `Reply to this email, or open the thread: ${siteUrl(env)}/portal/ticket#id=${t.id}`,
+      `${tr('mail.status.body', { title: t.title, status: label })}${bill ? `\n\n${tr('mail.status.total', { bill })}` : ''}`,
+      threadFooter(env, t),
     ),
     replyTo: await replyAddress(env, t.id, 'c'),
   });
 }
 
 export async function confirmTicketToClient(env: Env, t: TicketRef) {
+  const tr = tFor(t.client_locale);
   await mailClient(env, t.client_email, {
-    subject: `[#${t.id}] Got it: ${t.title}`,
-    text: ticketMail(
-      `Your request is in. Ali reads every one himself before anything happens, ` +
-        `and you'll get an email here when he replies or the status changes.`,
-      `Reply to this email to add details, or open the thread: ${siteUrl(env)}/portal/ticket#id=${t.id}`,
-    ),
+    subject: `[#${t.id}] ${tr('mail.confirm.subject', { title: t.title })}`,
+    text: ticketMail(tr('mail.confirm.body'), threadFooter(env, t, 'mail.confirm.footer')),
     replyTo: await replyAddress(env, t.id, 'c'),
   });
 }
@@ -387,7 +420,7 @@ export async function agentUser(env: Env, token: string): Promise<User | null> {
   if (!token.startsWith(AGENT_TOKEN_PREFIX) || token.length > 200) return null;
   const hash = await sha256(token);
   const user = await env.DB.prepare(
-    `SELECT u.id, u.email, u.name, u.role, u.handoff
+    `SELECT u.id, u.email, u.name, u.role, u.handoff, u.locale, u.translation
        FROM agent_tokens a JOIN users u ON u.id = a.user_id
       WHERE a.token_hash = ? AND a.revoked_at IS NULL AND u.role = 'client'`,
   )
@@ -401,7 +434,7 @@ export async function agentUser(env: Env, token: string): Promise<User | null> {
 
 export async function sessionUser(env: Env, token: string): Promise<User | null> {
   return env.DB.prepare(
-    `SELECT u.id, u.email, u.name, u.role, u.handoff
+    `SELECT u.id, u.email, u.name, u.role, u.handoff, u.locale, u.translation
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > ?`,
   )
@@ -481,13 +514,13 @@ async function sitesById(env: Env): Promise<Map<string, SiteRow>> {
 
 async function ticketMessages(env: Env, ticketId: number, includeInternal: boolean) {
   const { results } = await env.DB.prepare(
-    `SELECT id, author, body, internal, created_at
+    `SELECT id, author, body, internal, created_at, lang
        FROM ticket_messages
       WHERE ticket_id = ? ${includeInternal ? '' : 'AND internal = 0'}
       ORDER BY id`,
   )
     .bind(ticketId)
-    .all<{ id: number; author: string; body: string; internal: number; created_at: number }>();
+    .all<{ id: number; author: string; body: string; internal: number; created_at: number; lang: string | null }>();
   return results ?? [];
 }
 
@@ -502,7 +535,7 @@ export const WAITING_SQL =
 const TICKET_COLUMNS = `t.id, t.title, t.status, t.created_at, t.updated_at, t.client_waiting_since,
   t.project_id, p.name AS project_name, p.slug AS project_slug,
   t.attention, t.human_seconds, t.ai_micro_usd, t.budget_cents, t.price_cents,
-  t.kind, t.source, t.priority, t.requires, t.executor, t.worked_by`;
+  t.kind, t.source, t.priority, t.requires, t.executor, t.worked_by, t.title_en`;
 
 /* —— pricing (src/lib/pricing.js): measured time × rate + AI at cost —— */
 
@@ -613,11 +646,12 @@ portal.post('/auth/request', async (c) => {
 
   // Fragment, not query: the token never reaches a server log or a Referer.
   const link = `${siteUrl(env)}/portal/verify#token=${token}`;
+  // Their saved language, else the browser's: the email is the first thing they read.
+  const known = await env.DB.prepare('SELECT locale FROM users WHERE email = ?').bind(email).first<{ locale: string }>();
+  const tr = tFor(known?.locale ?? fromAcceptLanguage(c.req.header('Accept-Language')));
   const sent = await mailClient(env, email, {
-    subject: 'Your sign-in link for malipetek.dev',
-    text:
-      `Here's your sign-in link for Ali's client portal:\n\n${link}\n\n` +
-      `It works once and expires in 15 minutes. If you didn't ask for it, ignore this email.`,
+    subject: tr('mail.signin.subject'),
+    text: tr('mail.signin.body', { link }),
   });
 
   // Same answer whether or not the address has an account — no enumeration.
@@ -645,13 +679,15 @@ portal.post('/auth/verify', async (c) => {
 
   const email = claimed.email;
   const role = email === (env.ADMIN_EMAIL || '').toLowerCase() ? 'admin' : 'client';
+  // A new client starts in their browser's language; they can change it in the portal.
+  const locale = role === 'client' ? fromAcceptLanguage(c.req.header('Accept-Language')) : 'en-US';
   await env.DB.prepare(
-    `INSERT INTO users (id, email, role, created_at) VALUES (?, ?, ?, ?)
+    `INSERT INTO users (id, email, role, locale, created_at) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(email) DO UPDATE SET role = excluded.role`,
   )
-    .bind(crypto.randomUUID(), email, role, now())
+    .bind(crypto.randomUUID(), email, role, locale, now())
     .run();
-  const user = await env.DB.prepare('SELECT id, email, name, role FROM users WHERE email = ?')
+  const user = await env.DB.prepare('SELECT id, email, name, role, locale, translation FROM users WHERE email = ?')
     .bind(email)
     .first<User>();
   if (!user) return reply(c, { error: 'user_missing' }, 500);
@@ -792,12 +828,36 @@ portal.get('/portal/me', async (c) => {
 });
 
 portal.patch('/portal/me', async (c) => {
-  const body = await readJson<{ name?: unknown }>(c);
-  const name = body?.name === '' ? null : cleanText(body?.name, MAX_NAME_CHARS);
-  if (name === null && body?.name !== '') return reply(c, { error: 'bad_name' }, 400);
-  await c.env.DB.prepare('UPDATE users SET name = ? WHERE id = ?').bind(name, c.get('user').id).run();
-  return reply(c, { ok: true });
+  const body = await readJson<{ name?: unknown; locale?: unknown; translation?: unknown }>(c);
+  const id = c.get('user').id;
+  const updates: D1PreparedStatement[] = [];
+  if (body?.name !== undefined) {
+    const name = body.name === '' ? null : cleanText(body.name, MAX_NAME_CHARS);
+    if (name === null && body.name !== '') return reply(c, { error: 'bad_name' }, 400);
+    updates.push(c.env.DB.prepare('UPDATE users SET name = ? WHERE id = ?').bind(name, id));
+  }
+  const language = cleanLanguage(body);
+  if ('error' in language) return reply(c, { error: language.error }, 400);
+  if (language.locale) updates.push(c.env.DB.prepare('UPDATE users SET locale = ? WHERE id = ?').bind(language.locale, id));
+  if (language.translation) updates.push(c.env.DB.prepare('UPDATE users SET translation = ? WHERE id = ?').bind(language.translation, id));
+  if (updates.length) await c.env.DB.batch(updates);
+  return reply(c, { ok: true, ...language });
 });
+
+/** locale / translation from a settings body; each optional, each checked. */
+function cleanLanguage(body: { locale?: unknown; translation?: unknown } | null) {
+  const out: { locale?: string; translation?: TranslationEngine } = {};
+  if (body?.locale !== undefined) {
+    const locale = closestLocale(body.locale);
+    if (!locale) return { error: 'bad_locale' };
+    out.locale = locale;
+  }
+  if (body?.translation !== undefined) {
+    if (!TRANSLATION_ENGINES.includes(body.translation as TranslationEngine)) return { error: 'bad_translation' };
+    out.translation = body.translation as TranslationEngine;
+  }
+  return out;
+}
 
 /* —— agent tokens: a client connects an AI assistant —— */
 
@@ -1248,9 +1308,9 @@ portal.post('/portal/tickets', async (c) => {
   if (!ticket) return reply(c, { error: 'insert_failed' }, 500);
   const stored = await postMessage(env, ticket.id, 'client', text, false, files.uploads, t);
 
-  const ref = { id: ticket.id, title, client_email: user.email };
+  const ref = { id: ticket.id, title, client_email: user.email, client_locale: user.locale };
   c.executionCtx.waitUntil(
-    Promise.all([notifyAliOfClientMessage(env, ref, withAttachmentLine(text, stored), true), confirmTicketToClient(env, ref)]),
+    Promise.all([relayClientMessage(env, ref, stored.messageId, text, stored, true), confirmTicketToClient(env, ref)]),
   );
   return reply(c, { id: ticket.id, files: stored }, 201);
 });
@@ -1260,14 +1320,14 @@ async function loadTicket(c: Ctx, admin: boolean) {
   const id = Number(c.req.param('id'));
   if (!Number.isInteger(id) || id <= 0) return null;
   const ticket = await c.env.DB.prepare(
-    `SELECT ${TICKET_COLUMNS}, t.user_id, u.email AS client_email, u.name AS client_name
+    `SELECT ${TICKET_COLUMNS}, t.user_id, u.email AS client_email, u.name AS client_name, u.locale AS client_locale
        FROM tickets t
        LEFT JOIN projects p ON p.id = t.project_id
        JOIN users u ON u.id = t.user_id
       WHERE t.id = ?`,
   )
     .bind(id)
-    .first<Record<string, unknown> & Meter & { id: number; user_id: string; client_email: string; title: string; status: Status; attention: string; kind: string }>();
+    .first<Record<string, unknown> & Meter & { id: number; user_id: string; client_email: string; client_locale: string | null; title_en: string | null; title: string; status: Status; attention: string; kind: string }>();
   if (!ticket) return null;
   if (!admin && ticket.user_id !== c.get('user').id) return null;
   return ticket;
@@ -1276,8 +1336,10 @@ async function loadTicket(c: Ctx, admin: boolean) {
 portal.get('/portal/tickets/:id', async (c) => {
   const ticket = await loadTicket(c, false);
   if (!ticket) return reply(c, { error: 'not_found' }, 404);
-  const { user_id: _, client_email: __, ...visible } = ticket;
-  const messages = await ticketMessages(c.env, ticket.id, false);
+  const { user_id: _, client_email: __, client_locale: ___, ...visible } = ticket;
+  const messages = await threadFor(c.env, ticket.id, await ticketMessages(c.env, ticket.id, false), 'client', (p) =>
+    c.executionCtx.waitUntil(p),
+  );
   c.executionCtx.waitUntil(c.env.DB.prepare('UPDATE tickets SET client_seen_at = ? WHERE id = ?').bind(now(), ticket.id).run());
   return reply(c, { ticket: visible, messages: await withFiles(c.env, ticket.id, messages, false) });
 });
@@ -1305,7 +1367,7 @@ portal.post('/portal/tickets/:id/messages', async (c) => {
   const t = now();
   const stored = await postMessage(env, ticket.id, 'client', msg.text, false, files.uploads, t);
   await env.DB.prepare(WAITING_SQL).bind(t, t, ticket.id).run();
-  c.executionCtx.waitUntil(notifyAliOfClientMessage(env, ticket, withAttachmentLine(msg.text, stored), false));
+  c.executionCtx.waitUntil(relayClientMessage(env, ticket, stored.messageId, msg.text, stored, false));
   return reply(c, { ok: true, files: stored }, 201);
 });
 
@@ -1439,7 +1501,12 @@ portal.get('/admin/tickets/:id', async (c) => {
     .first<{ land_requested_at: number | null; landed_ref: string | null; landed_sha: string | null }>();
   return reply(c, {
     ticket,
-    messages: await withFiles(c.env, ticket.id, await ticketMessages(c.env, ticket.id, true), true),
+    messages: await withFiles(
+      c.env,
+      ticket.id,
+      await threadFor(c.env, ticket.id, await ticketMessages(c.env, ticket.id, true), 'ali', (p) => c.executionCtx.waitUntil(p)),
+      true,
+    ),
     runs: await ticketRuns(c.env, ticket.id),
     land: {
       requestedAt: land?.land_requested_at ?? null,
@@ -1631,7 +1698,7 @@ portal.post('/admin/tickets/:id/messages', async (c) => {
   await env.DB.prepare(`UPDATE tickets SET updated_at = ?${internal ? '' : ', client_waiting_since = NULL'} WHERE id = ?`)
     .bind(t, ticket.id)
     .run();
-  if (!internal && ticket.kind === 'client') c.executionCtx.waitUntil(notifyClientOfReply(env, ticket, withAttachmentLine(msg.text, stored)));
+  if (!internal && ticket.kind === 'client') c.executionCtx.waitUntil(relayAliReply(env, ticket, stored.messageId, msg.text, stored));
   return reply(c, { ok: true, files: stored }, 201);
 });
 
@@ -1878,7 +1945,7 @@ portal.post('/admin/work', async (c) => {
 portal.get('/admin/clients', async (c) => {
   const [{ results }, usage] = await Promise.all([
     c.env.DB.prepare(
-      `SELECT u.id, u.email, u.name, u.role, u.handoff, u.created_at,
+      `SELECT u.id, u.email, u.name, u.role, u.handoff, u.locale, u.translation, u.created_at,
               (SELECT group_concat(project_id) FROM user_projects WHERE user_id = u.id) AS project_ids,
               (SELECT count(*) FROM tickets WHERE user_id = u.id) AS ticket_count
          FROM users u ORDER BY u.created_at DESC`,
@@ -2123,15 +2190,22 @@ portal.post('/admin/projects/:id/site', async (c) => {
 
 /** How a client's finished work reaches them: a preview link, or a PR in their repo. */
 portal.patch('/admin/clients/:userId', async (c) => {
-  const body = await readJson<{ handoff?: unknown }>(c);
-  if (body?.handoff !== 'preview' && body?.handoff !== 'pull_request') {
+  const body = await readJson<{ handoff?: unknown; locale?: unknown; translation?: unknown }>(c);
+  if (body?.handoff !== undefined && body.handoff !== 'preview' && body.handoff !== 'pull_request') {
     return reply(c, { error: 'bad_handoff' }, 400);
   }
-  const res = await c.env.DB.prepare(`UPDATE users SET handoff = ? WHERE id = ? AND role = 'client'`)
-    .bind(body.handoff, c.req.param('userId'))
+  const language = cleanLanguage(body);
+  if ('error' in language) return reply(c, { error: language.error }, 400);
+  const sets: [string, string][] = [];
+  if (body?.handoff !== undefined) sets.push(['handoff', body.handoff as string]);
+  if (language.locale) sets.push(['locale', language.locale]);
+  if (language.translation) sets.push(['translation', language.translation]);
+  if (!sets.length) return reply(c, { error: 'nothing_to_change' }, 400);
+  const res = await c.env.DB.prepare(`UPDATE users SET ${sets.map(([k]) => `${k} = ?`).join(', ')} WHERE id = ? AND role = 'client'`)
+    .bind(...sets.map(([, v]) => v), c.req.param('userId'))
     .run();
   if (!res.meta.changes) return reply(c, { error: 'not_found' }, 404);
-  return reply(c, { ok: true, handoff: body.handoff });
+  return reply(c, { ok: true, ...(body?.handoff !== undefined ? { handoff: body.handoff } : {}), ...language });
 });
 
 portal.put('/admin/clients/:userId/projects/:projectId', async (c) => {

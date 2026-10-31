@@ -1,0 +1,326 @@
+{
+  "status.new": {
+    "en": "Waiting for Ali",
+    "reviewed": false
+  },
+  "status.approved": {
+    "en": "Approved",
+    "reviewed": false
+  },
+  "status.in_progress": {
+    "en": "In progress",
+    "reviewed": false
+  },
+  "status.review": {
+    "en": "In review",
+    "reviewed": false
+  },
+  "status.done": {
+    "en": "Done",
+    "reviewed": false
+  },
+  "status.declined": {
+    "en": "Declined",
+    "reviewed": false
+  },
+  "mail.footer.thread": {
+    "en": "Reply to this email, or open the thread: {url}",
+    "reviewed": false
+  },
+  "mail.reply.subject": {
+    "en": "Ali replied: {title}",
+    "reviewed": false
+  },
+  "mail.status.body": {
+    "en": "Your request “{title}” is now: {status}.",
+    "reviewed": false
+  },
+  "mail.status.total": {
+    "en": "Total: {bill}",
+    "reviewed": false
+  },
+  "mail.confirm.subject": {
+    "en": "Got it: {title}",
+    "reviewed": false
+  },
+  "mail.confirm.body": {
+    "en": "Your request is in. Ali reads every one himself before anything happens, and you'll get an email here when he replies or the status changes.",
+    "reviewed": false
+  },
+  "mail.confirm.footer": {
+    "en": "Reply to this email to add details, or open the thread: {url}",
+    "reviewed": false
+  },
+  "mail.translatedNote": {
+    "en": "Machine-translated from English. The original is in the thread.",
+    "reviewed": false
+  },
+  "mail.signin.subject": {
+    "en": "Your sign-in link for malipetek.dev",
+    "reviewed": false
+  },
+  "mail.signin.body": {
+    "en": "Here's your sign-in link for Ali's client portal:\n\n{link}\n\nIt works once and expires in 15 minutes. If you didn't ask for it, ignore this email.",
+    "reviewed": false
+  },
+  "common.loading": {
+    "en": "Loading…",
+    "reviewed": false
+  },
+  "common.tryAgain": {
+    "en": "Try again",
+    "reviewed": false
+  },
+  "common.cancel": {
+    "en": "Cancel",
+    "reviewed": false
+  },
+  "common.save": {
+    "en": "Save",
+    "reviewed": false
+  },
+  "common.sending": {
+    "en": "Sending…",
+    "reviewed": false
+  },
+  "nav.portal": {
+    "en": "Portal",
+    "reviewed": false
+  },
+  "nav.menu": {
+    "en": "Menu",
+    "reviewed": false
+  },
+  "nav.closeMenu": {
+    "en": "Close menu",
+    "reviewed": false
+  },
+  "nav.overview": {
+    "en": "Overview",
+    "reviewed": false
+  },
+  "nav.requests": {
+    "en": "Requests",
+    "reviewed": false
+  },
+  "nav.billing": {
+    "en": "Billing",
+    "reviewed": false
+  },
+  "nav.connections": {
+    "en": "Connections",
+    "reviewed": false
+  },
+  "nav.projects": {
+    "en": "Projects",
+    "reviewed": false
+  },
+  "nav.addProject": {
+    "en": "Add a project",
+    "reviewed": false
+  },
+  "nav.newRequest": {
+    "en": "New request",
+    "reviewed": false
+  },
+  "nav.newRequestKey": {
+    "en": "New request (N)",
+    "reviewed": false
+  },
+  "nav.newReplies": {
+    "en": "{n, plural, one {# new reply} other {# new replies}}",
+    "reviewed": false
+  },
+  "nav.admin": {
+    "en": "Admin",
+    "reviewed": false
+  },
+  "nav.signOut": {
+    "en": "Sign out",
+    "reviewed": false
+  },
+  "nav.language": {
+    "en": "Language",
+    "reviewed": false
+  },
+  "nav.backToSite": {
+    "en": "← malipetek.dev",
+    "reviewed": false
+  },
+  "theme.light": {
+    "en": "Light theme",
+    "reviewed": false
+  },
+  "theme.dark": {
+    "en": "Dark theme",
+    "reviewed": false
+  },
+  "toast.requestSent": {
+    "en": "Request #{id} sent. Ali reads it before anything starts.",
+    "reviewed": false
+  },
+  "signin.title": {
+    "en": "Sign in",
+    "reviewed": false
+  },
+  "signin.intro": {
+    "en": "With your email. No password: you get a link that works once. New here? Same form; your account is made when you first sign in.",
+    "reviewed": false
+  },
+  "signin.email": {
+    "en": "Email",
+    "reviewed": false
+  },
+  "signin.reviewerCode": {
+    "en": "Reviewer code",
+    "reviewed": false
+  },
+  "signin.withCode": {
+    "en": "Sign in →",
+    "reviewed": false
+  },
+  "signin.emailLink": {
+    "en": "Email me a link →",
+    "reviewed": false
+  },
+  "signin.checkInbox": {
+    "en": "Check {email} for your sign-in link.",
+    "reviewed": false
+  },
+  "signin.devLink": {
+    "en": "Dev link →",
+    "reviewed": false
+  },
+  "signin.haveCode": {
+    "en": "Have a reviewer code?",
+    "reviewed": false
+  },
+  "lang.title": {
+    "en": "Language",
+    "reviewed": false
+  },
+  "lang.subtitle": {
+    "en": "The portal, your emails and Ali's replies come to you in this language. Ali and his agents read your messages in English.",
+    "reviewed": false
+  },
+  "lang.pick": {
+    "en": "Your language",
+    "reviewed": false
+  },
+  "lang.beta": {
+    "en": "beta",
+    "reviewed": false
+  },
+  "lang.betaNote": {
+    "en": "Machine translation is weaker for this language. You can always open the original of a message.",
+    "reviewed": false
+  },
+  "lang.engine": {
+    "en": "Who translates your messages",
+    "reviewed": false
+  },
+  "lang.engine.deepseek": {
+    "en": "DeepSeek (recommended)",
+    "reviewed": false
+  },
+  "lang.engine.deepseekNote": {
+    "en": "Best quality. Your messages are sent to DeepSeek's API, which runs in China, to be translated.",
+    "reviewed": false
+  },
+  "lang.engine.cloudflare": {
+    "en": "Cloudflare Workers AI",
+    "reviewed": false
+  },
+  "lang.engine.cloudflareNote": {
+    "en": "Your messages stay on Cloudflare, where the portal already runs. Lower quality, and a few languages are not available.",
+    "reviewed": false
+  },
+  "lang.engine.off": {
+    "en": "Don't translate",
+    "reviewed": false
+  },
+  "lang.engine.offNote": {
+    "en": "Nothing is sent to a translator. Write to Ali in English, and his replies stay in English.",
+    "reviewed": false
+  },
+  "lang.saved": {
+    "en": "Language saved.",
+    "reviewed": false
+  },
+  "thread.you": {
+    "en": "You",
+    "reviewed": false
+  },
+  "thread.ali": {
+    "en": "Ali",
+    "reviewed": false
+  },
+  "thread.log": {
+    "en": "Work log",
+    "reviewed": false
+  },
+  "thread.translated": {
+    "en": "Machine-translated",
+    "reviewed": false
+  },
+  "thread.showOriginal": {
+    "en": "Show original",
+    "reviewed": false
+  },
+  "thread.showTranslation": {
+    "en": "Show translation",
+    "reviewed": false
+  },
+  "thread.movedTo": {
+    "en": "Moved to {status}",
+    "reviewed": false
+  },
+  "thread.total": {
+    "en": "Total: {bill}",
+    "reviewed": false
+  },
+  "thread.preview": {
+    "en": "The preview has this change: {url}. Nothing is live until it is published.",
+    "reviewed": false
+  },
+  "thread.previewNoUrl": {
+    "en": "The preview has this change. Nothing is live until it is published.",
+    "reviewed": false
+  },
+  "thread.withdrew": {
+    "en": "The client withdrew this request.",
+    "reviewed": false
+  },
+  "reply.empty": {
+    "en": "Write something, or attach a file.",
+    "reviewed": false
+  },
+  "reply.uploading": {
+    "en": "Uploading…",
+    "reviewed": false
+  },
+  "reply.placeholder": {
+    "en": "Write to Ali…",
+    "reviewed": false
+  },
+  "reply.placeholderReopen": {
+    "en": "Something to add? Writing here opens it again.",
+    "reviewed": false
+  },
+  "reply.label": {
+    "en": "Reply",
+    "reviewed": false
+  },
+  "reply.send": {
+    "en": "Send",
+    "reviewed": false
+  },
+  "reply.anyLanguage": {
+    "en": "Write in your own language. Ali reads it in English.",
+    "reviewed": false
+  },
+  "thread.agentChange": {
+    "en": "{n, plural, one {Your agent sent a change for this request (# file).} other {Your agent sent a change for this request (# files).}}",
+    "reviewed": false
+  }
+}

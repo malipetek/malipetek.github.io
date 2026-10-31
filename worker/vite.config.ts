@@ -19,7 +19,11 @@ export default defineConfig({
     cloudflare({
       config: (config) => {
         flueConfig(config);
-        if (e2eVars) config.vars = { ...(config.vars ?? {}), ...e2eVars };
+        if (e2eVars) {
+          config.vars = { ...(config.vars ?? {}), ...e2eVars };
+          // Workers AI is remote-only; the suite fakes DeepSeek and needs no account.
+          delete (config as { ai?: unknown }).ai;
+        }
       },
       ...(e2eState ? { persistState: { path: e2eState } } : {}),
     }),

@@ -26,6 +26,8 @@ Malipetek.dev is the software contracting service of Muhammet Ali Petek: clients
 
 Your requests and project files are processed by AI agents to produce the work you asked for. This means content you submit may be sent to AI model providers as part of a work run. Agents operate on a copy of your project; they cannot publish or deploy anything without going through the recorded approval flow.
 
+**Translation.** If your portal language is not English, your messages are machine-translated into English for us, and our replies into your language. By default this is done by DeepSeek's API, whose servers are in China; the text is sent without code, links, file names or email addresses, which are masked first. You can switch to Cloudflare Workers AI, which keeps the text on Cloudflare, or turn translation off, under Language in the portal. Originals are always kept, and translations are stored alongside them.
+
 When you connect **your own assistant**, it receives an access token scoped to your account. It can read your projects and requests and act within the permissions shown on the consent screen at connection time. Data your assistant reads is governed additionally by that assistant's own privacy policy (for example, OpenAI's for ChatGPT).
 
 **How We Use Data**

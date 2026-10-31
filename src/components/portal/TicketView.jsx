@@ -8,7 +8,7 @@ import { api, downloadFile, errorText, STATUS_LABEL } from '../../lib/portal';
 import { STEPS } from '../../lib/offer.js';
 import { checkPicked, sizeText } from '../../lib/attachments.js';
 import { ATTENTION, clock, money, priceOf } from '../../lib/pricing.js';
-import { usePortal, href, isOpen } from './store.js';
+import { usePortal, useT, href, isOpen } from './store.js';
 import { Files } from './Composer.jsx';
 import { Button, Gauge, Icon, Modal, STEP_ICONS, StatusPill, ago, cx, fmtDate, stepOf, totalOf } from './ui.jsx';
 
@@ -279,10 +279,54 @@ function Cost({ ticket }) {
   );
 }
 
-const WHO = { client: 'You', ali: 'Ali', runner: 'Work log' };
+const WHO = { client: 'thread.you', ali: 'thread.ali', runner: 'thread.log' };
+
+const STATUS_BY_LABEL = new Map(Object.entries(STATUS_LABEL).map(([key, label]) => [label, key]));
+
+/**
+ * A system line in the reader's language. The Worker writes these from fixed
+ * English templates (and stepTimes reads them), so they are matched here
+ * rather than machine-translated; anything unknown shows as written.
+ */
+export function systemLine(body, t) {
+  const status = /^Status changed to “([^”]+)”\.?(?: Total: (.+?)\.?)?$/.exec(body);
+  if (status) {
+    const key = STATUS_BY_LABEL.get(status[1]);
+    const moved = t('thread.movedTo', { status: key ? t(`status.${key}`) : status[1] });
+    return status[2] ? `${moved} · ${t('thread.total', { bill: status[2] })}` : moved;
+  }
+  const preview = /^The preview has this change(?:: (\S+?))?\. Nothing is live until it is published\.$/.exec(body);
+  if (preview) return preview[1] ? t('thread.preview', { url: preview[1] }) : t('thread.previewNoUrl');
+  if (body === 'The client withdrew this request.') return t('thread.withdrew');
+  const change = /^Your agent sent a change for this request \((\d+) file\(s\)\)\.$/.exec(body);
+  if (change) return t('thread.agentChange', { n: Number(change[1]) });
+  return body;
+}
+
+/** A message body; a machine-translated one can be switched to what was written. */
+function MessageBody({ m }) {
+  const t = useT();
+  const [original, setOriginal] = useState(false);
+  if (!m.body) return null;
+  if (m.original === undefined) return <p className="cp-msg__body">{m.body}</p>;
+  return (
+    <>
+      <p className="cp-msg__body" lang={original ? m.translatedFrom ?? undefined : t.locale}>
+        {original ? m.original : m.body}
+      </p>
+      <p className="cp-msg__tr">
+        <span>{t('thread.translated')}</span>
+        <button type="button" onClick={() => setOriginal((o) => !o)}>
+          {original ? t('thread.showTranslation') : t('thread.showOriginal')}
+        </button>
+      </p>
+    </>
+  );
+}
 
 /** The conversation; status changes read as small events between messages. */
 function Thread({ ticketId, messages }) {
+  const t = useT();
   const end = useRef(null);
   const count = useRef(messages.length);
   useEffect(() => {
@@ -295,7 +339,7 @@ function Thread({ ticketId, messages }) {
         m.author === 'system' ? (
           <li key={m.id} className="cp-event">
             <span className="cp-event__dot" />
-            <span>{m.body.replace(/^Status changed to “([^”]+)”\.?/, 'Moved to $1')}</span>
+            <span>{systemLine(m.body, t)}</span>
             <time>{fmtDate(m.created_at)}</time>
           </li>
         ) : (
@@ -305,10 +349,10 @@ function Thread({ ticketId, messages }) {
             </span>
             <div className="cp-msg__box">
               <p className="cp-msg__who">
-                <strong>{WHO[m.author] ?? m.author}</strong>
+                <strong>{WHO[m.author] ? t(WHO[m.author]) : m.author}</strong>
                 <time>{fmtDate(m.created_at)}</time>
               </p>
-              {m.body ? <p className="cp-msg__body">{m.body}</p> : null}
+              <MessageBody m={m} />
               {m.files?.length ? (
                 <ul className="cp-files">
                   {m.files.map((f) => (
@@ -337,16 +381,19 @@ function download(button, path, name) {
 }
 
 function Reply({ ticketId, onSent, reopen }) {
+  const t = useT();
+  const { data } = usePortal();
+  const translating = data.user?.locale && data.user.locale !== 'en-US' && data.user.translation !== 'off';
   const [text, setText] = useState('');
   const [files, setFiles] = useState([]);
   const [note, setNote] = useState({ text: '', error: false });
   const [sending, setSending] = useState(false);
 
   const send = async () => {
-    const problem = files.length ? checkPicked(files) : text.trim() ? null : 'Write something, or attach a file.';
+    const problem = files.length ? checkPicked(files) : text.trim() ? null : t('reply.empty');
     if (problem) return setNote({ text: problem, error: true });
     setSending(true);
-    setNote({ text: files.length ? 'Uploading…' : 'Sending…', error: false });
+    setNote({ text: files.length ? t('reply.uploading') : t('common.sending'), error: false });
     try {
       if (files.length) {
         const form = new FormData();
@@ -373,18 +420,18 @@ function Reply({ ticketId, onSent, reopen }) {
         rows={4}
         maxLength={8000}
         value={text}
-        placeholder={reopen ? 'Something to add? Writing here opens it again.' : 'Write to Ali…'}
-        aria-label="Reply"
+        placeholder={reopen ? t('reply.placeholderReopen') : t('reply.placeholder')}
+        aria-label={t('reply.label')}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === 'Enter' && send()}
       />
       <div className="cp-reply__bar">
         <Files files={files} setFiles={setFiles} compact />
         <span className={cx('cp-reply__note', note.error && 'is-error')} role="status">
-          {note.text}
+          {note.text || (translating ? t('reply.anyLanguage') : '')}
         </span>
         <Button kind="primary" disabled={sending} onClick={send}>
-          Send <kbd>⌘↵</kbd>
+          {t('reply.send')} <kbd>⌘↵</kbd>
         </Button>
       </div>
     </div>

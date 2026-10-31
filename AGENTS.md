@@ -9,6 +9,11 @@
 ## Client portal
 - `/portal` (and `/portal/ticket`, the address in emails) mount `src/components/portal/ClientPortal.jsx`: React, hash routes (`#/ticket/12`), styles in `src/styles/client-portal.css`. The overview's 3D board is `initBoard` in `src/lib/workshop3d.ts` (the homepage machine with the client's own requests on it). Onboarding (`/portal/start`) is still the old Astro page.
 
+## Languages (i18n)
+- Locales: `src/lib/locales.js` (35, English source). Clients pick theirs in the portal (globe button) → `users.locale` + `users.translation` (`deepseek | cloudflare | off`); Ali can set both in Admin → Clients.
+- Ticket bridge: `worker/src/translate.ts`. Client messages are translated to English for Ali, his email and the agent brief; Ali's replies are translated into the client's language. Originals are never changed; translations live in `message_translations` (migration `0025_i18n.sql`). DeepSeek is the main engine (secret `DEEPSEEK_API_KEY`), Workers AI m2m100 (`AI` binding) the fallback. System lines stay English in the database and are translated in the portal by `systemLine` in `TicketView.jsx`.
+- Interface strings: `src/i18n/messages/<locale>.json`, English in `en-US.json`, `t()` from `useT()` in the portal. After adding or changing English keys: `DEEPSEEK_API_KEY=… node scripts/i18n-sync.mjs` (also regenerates `src/i18n/mail.js`, the Worker's email strings).
+
 ## Marketing automation
 - Desk: **Admin → Marketing** (`packages/admin-ui/src/marketing.jsx`); API and the send engine in `worker/src/marketing.ts`, schema in migration `0023_marketing.sql`.
 - Email goes out from `hello@malipetek.dev` through the `MARKETING` send binding on the 5-minute cron; replies, opt-outs and bounces come back through the `hello@` branch of `worker/src/inbound.ts`.
