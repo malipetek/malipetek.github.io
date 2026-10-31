@@ -63,12 +63,6 @@
               "expected_behavior": "Finds a matching entry and returns its full problem and solution text."
             },
             {
-              "description": "List recent knowledgebase entries",
-              "prompt": "What are the latest entries in the malipetek knowledgebase?",
-              "tools_triggered": "list_knowledge",
-              "expected_behavior": "Lists recent entries newest-first with titles and statuses."
-            },
-            {
               "description": "List my projects",
               "prompt": "List my projects on malipetek.",
               "tools_triggered": "portal_projects",
