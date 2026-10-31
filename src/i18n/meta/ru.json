@@ -322,5 +322,1241 @@
   "reply.anyLanguage": {
     "en": "Write in your own language. Ali reads it in English.",
     "reviewed": false
+  },
+  "views.greeting.morning": {
+    "en": "Good morning",
+    "reviewed": false
+  },
+  "views.greeting.afternoon": {
+    "en": "Good afternoon",
+    "reviewed": false
+  },
+  "views.greeting.evening": {
+    "en": "Good evening",
+    "reviewed": false
+  },
+  "views.overview.title": {
+    "en": "{greeting}, {name}",
+    "reviewed": false
+  },
+  "views.overview.openCount": {
+    "en": "{n, plural, one {# open request} other {# open requests}}",
+    "reviewed": false
+  },
+  "views.overview.noOpen": {
+    "en": "No open requests",
+    "reviewed": false
+  },
+  "views.overview.building": {
+    "en": "{n} being built right now",
+    "reviewed": false
+  },
+  "views.overview.openRequests": {
+    "en": "Open requests",
+    "reviewed": false
+  },
+  "views.overview.showAllOpen": {
+    "en": "Show all open",
+    "reviewed": false
+  },
+  "views.overview.allRequests": {
+    "en": "All requests →",
+    "reviewed": false
+  },
+  "views.overview.nothingHere": {
+    "en": "Nothing here right now.",
+    "reviewed": false
+  },
+  "views.overview.nothingYet": {
+    "en": "Nothing yet. Write your first request: what you need, in your own words.",
+    "reviewed": false
+  },
+  "views.overview.projects": {
+    "en": "Projects",
+    "reviewed": false
+  },
+  "views.overview.addProject": {
+    "en": "Add a project →",
+    "reviewed": false
+  },
+  "views.overview.noProject": {
+    "en": "No project yet. Three questions and there is one.",
+    "reviewed": false
+  },
+  "views.overview.setupFirst": {
+    "en": "Set up your first project →",
+    "reviewed": false
+  },
+  "views.needs.title": {
+    "en": "Needs you",
+    "reviewed": false
+  },
+  "views.needs.setupTitle": {
+    "en": "Set up your first project",
+    "reviewed": false
+  },
+  "views.needs.setupText": {
+    "en": "Three questions, and Ali knows what you need.",
+    "reviewed": false
+  },
+  "views.needs.replyTitle": {
+    "en": "New reply on #{id}",
+    "reviewed": false
+  },
+  "views.needs.pausedTitle": {
+    "en": "#{id} is paused at its budget",
+    "reviewed": false
+  },
+  "views.needs.pausedText": {
+    "en": "Raise the budget to let work go on.",
+    "reviewed": false
+  },
+  "views.needs.previewTitle": {
+    "en": "{name}: preview has changes",
+    "reviewed": false
+  },
+  "views.needs.previewPublish": {
+    "en": "Look them over and publish when they are right.",
+    "reviewed": false
+  },
+  "views.needs.previewTell": {
+    "en": "Look them over; tell Ali when they are right.",
+    "reviewed": false
+  },
+  "views.needs.siteTitle": {
+    "en": "Set up {name}'s site",
+    "reviewed": false
+  },
+  "views.needs.siteText": {
+    "en": "One click: you get a preview and a live address.",
+    "reviewed": false
+  },
+  "views.needs.clear": {
+    "en": "Nothing. Ali has what he needs.",
+    "reviewed": false
+  },
+  "views.spend.title": {
+    "en": "Spend",
+    "reviewed": false
+  },
+  "views.spend.details": {
+    "en": "Details →",
+    "reviewed": false
+  },
+  "views.spend.finished": {
+    "en": "Finished",
+    "reviewed": false
+  },
+  "views.spend.onMeter": {
+    "en": "On the meter",
+    "reviewed": false
+  },
+  "views.spend.aiNote": {
+    "en": "AI at cost, no markup: {amount} of it so far.",
+    "reviewed": false
+  },
+  "views.site.noSite": {
+    "en": "No site yet",
+    "reviewed": false
+  },
+  "views.site.codeConnected": {
+    "en": "Code connected",
+    "reviewed": false
+  },
+  "views.site.gettingSetUp": {
+    "en": "Getting set up",
+    "reviewed": false
+  },
+  "views.site.setupStopped": {
+    "en": "Site setup stopped",
+    "reviewed": false
+  },
+  "views.site.being": {
+    "en": "Site being made…",
+    "reviewed": false
+  },
+  "views.site.ahead": {
+    "en": "Preview ahead of live",
+    "reviewed": false
+  },
+  "views.site.live": {
+    "en": "Live",
+    "reviewed": false
+  },
+  "views.site.code": {
+    "en": "Code",
+    "reviewed": false
+  },
+  "views.site.workingOn": {
+    "en": "Working on {repo}.",
+    "reviewed": false
+  },
+  "views.site.connecting": {
+    "en": "We are connecting your code. Nothing to do here.",
+    "reviewed": false
+  },
+  "views.site.title": {
+    "en": "Your site",
+    "reviewed": false
+  },
+  "views.site.setupFailed": {
+    "en": "Setting up the site stopped. We have been told; you can also try again.",
+    "reviewed": false
+  },
+  "views.site.intro": {
+    "en": "A real site, hosted for you, with its own address at once: a placeholder first, the real thing as it is built. Every change lands on a preview address first; nothing goes live until it is published.",
+    "reviewed": false
+  },
+  "views.site.tryAgain": {
+    "en": "Try again →",
+    "reviewed": false
+  },
+  "views.site.setUp": {
+    "en": "Set up my site →",
+    "reviewed": false
+  },
+  "views.site.making": {
+    "en": "Your site is being made. This page follows along.",
+    "reviewed": false
+  },
+  "views.site.startedNotice": {
+    "en": "Your site is being made.",
+    "reviewed": false
+  },
+  "views.site.publishTitle": {
+    "en": "Publish {name}?",
+    "reviewed": false
+  },
+  "views.site.publishText": {
+    "en": "What you see at {preview} becomes the live site at {live}.",
+    "reviewed": false
+  },
+  "views.site.publish": {
+    "en": "Publish",
+    "reviewed": false
+  },
+  "views.site.publishedNotice": {
+    "en": "Published. The live site has the new version.",
+    "reviewed": false
+  },
+  "views.site.rollbackTitle": {
+    "en": "Put this version back live?",
+    "reviewed": false
+  },
+  "views.site.rollbackDated": {
+    "en": "The live site goes back to the version from {date}. The preview stays as it is.",
+    "reviewed": false
+  },
+  "views.site.rollbackRequest": {
+    "en": "The live site goes back to the version from {date} (request #{id}). The preview stays as it is.",
+    "reviewed": false
+  },
+  "views.site.rollbackConfirm": {
+    "en": "Roll back",
+    "reviewed": false
+  },
+  "views.site.rolledBack": {
+    "en": "Rolled back.",
+    "reviewed": false
+  },
+  "views.site.liveUpToDate": {
+    "en": "Live is up to date",
+    "reviewed": false
+  },
+  "views.site.channelPreview": {
+    "en": "Preview",
+    "reviewed": false
+  },
+  "views.site.previewHint": {
+    "en": "Where changes land first",
+    "reviewed": false
+  },
+  "views.site.channelLive": {
+    "en": "Live",
+    "reviewed": false
+  },
+  "views.site.liveHint": {
+    "en": "What your visitors see",
+    "reviewed": false
+  },
+  "views.site.publishPreview": {
+    "en": "Publish the preview →",
+    "reviewed": false
+  },
+  "views.site.aheadHint": {
+    "en": "The preview has changes that are not live yet. Ali publishes them when you say they look right.",
+    "reviewed": false
+  },
+  "views.site.versions": {
+    "en": "Versions",
+    "reviewed": false
+  },
+  "views.site.requestLink": {
+    "en": "Request #{id}",
+    "reviewed": false
+  },
+  "views.site.siteVersion": {
+    "en": "Site version",
+    "reviewed": false
+  },
+  "views.startSite.title": {
+    "en": "Set up {name}",
+    "reviewed": false
+  },
+  "views.startSite.subtitle": {
+    "en": "A real site, hosted for you, with a preview and a live address.",
+    "reviewed": false
+  },
+  "views.startSite.notNow": {
+    "en": "Not now",
+    "reviewed": false
+  },
+  "views.startSite.setIt": {
+    "en": "Set it up →",
+    "reviewed": false
+  },
+  "views.startSite.step1": {
+    "en": "Your site gets its own address at once: a placeholder page first, the real thing as it is built.",
+    "reviewed": false
+  },
+  "views.startSite.step2": {
+    "en": "Every change lands on the preview address first. Nothing goes live until it is published.",
+    "reviewed": false
+  },
+  "views.startSite.hint": {
+    "en": "Hosting and AI runs are billed at cost on the requests that use them.",
+    "reviewed": false
+  },
+  "views.site.tagLive": {
+    "en": "live",
+    "reviewed": false
+  },
+  "views.site.tagPreview": {
+    "en": "preview",
+    "reviewed": false
+  },
+  "views.site.putLive": {
+    "en": "Put live",
+    "reviewed": false
+  },
+  "views.row.newReply": {
+    "en": "new reply",
+    "reviewed": false
+  },
+  "views.row.pausedAtBudget": {
+    "en": "paused at budget",
+    "reviewed": false
+  },
+  "views.filter.open": {
+    "en": "Open",
+    "reviewed": false
+  },
+  "views.filter.needs": {
+    "en": "Needs you",
+    "reviewed": false
+  },
+  "views.filter.done": {
+    "en": "Done",
+    "reviewed": false
+  },
+  "views.filter.all": {
+    "en": "All",
+    "reviewed": false
+  },
+  "views.requests.sub": {
+    "en": "Everything you have asked for, newest change first.",
+    "reviewed": false
+  },
+  "views.requests.show": {
+    "en": "Show",
+    "reviewed": false
+  },
+  "views.requests.allProjects": {
+    "en": "All projects",
+    "reviewed": false
+  },
+  "views.requests.search": {
+    "en": "Search requests",
+    "reviewed": false
+  },
+  "views.requests.noMatch": {
+    "en": "No requests match.",
+    "reviewed": false
+  },
+  "views.col.request": {
+    "en": "Request",
+    "reviewed": false
+  },
+  "views.col.project": {
+    "en": "Project",
+    "reviewed": false
+  },
+  "views.col.steps": {
+    "en": "Steps",
+    "reviewed": false
+  },
+  "views.col.status": {
+    "en": "Status",
+    "reviewed": false
+  },
+  "views.col.cost": {
+    "en": "Cost",
+    "reviewed": false
+  },
+  "views.col.updated": {
+    "en": "Updated",
+    "reviewed": false
+  },
+  "views.col.time": {
+    "en": "Ali's time",
+    "reviewed": false
+  },
+  "views.col.ai": {
+    "en": "AI",
+    "reviewed": false
+  },
+  "views.col.total": {
+    "en": "Total",
+    "reviewed": false
+  },
+  "views.col.budget": {
+    "en": "Budget",
+    "reviewed": false
+  },
+  "views.project.notOnAccount": {
+    "en": "That project is not on your account.",
+    "reviewed": false
+  },
+  "views.project.builtSub": {
+    "en": "Built and hosted by us.",
+    "reviewed": false
+  },
+  "views.project.codeSub": {
+    "en": "Your existing code, looked after by us.",
+    "reviewed": false
+  },
+  "views.project.builtByUs": {
+    "en": "built by us",
+    "reviewed": false
+  },
+  "views.project.yourCode": {
+    "en": "your code",
+    "reviewed": false
+  },
+  "views.project.setupProgress": {
+    "en": "{ready} of {total} setup steps done",
+    "reviewed": false
+  },
+  "views.project.counts": {
+    "en": "{open} open · {total} total",
+    "reviewed": false
+  },
+  "views.project.setup": {
+    "en": "Setup",
+    "reviewed": false
+  },
+  "views.project.requests": {
+    "en": "Requests",
+    "reviewed": false
+  },
+  "views.project.openList": {
+    "en": "Open in the list →",
+    "reviewed": false
+  },
+  "views.project.noRequests": {
+    "en": "No requests for this project yet.",
+    "reviewed": false
+  },
+  "views.checks.you": {
+    "en": "you",
+    "reviewed": false
+  },
+  "views.checks.us": {
+    "en": "us",
+    "reviewed": false
+  },
+  "views.connections.clientOnly": {
+    "en": "Connections belong to client accounts. Sign in as a client to see them.",
+    "reviewed": false
+  },
+  "views.connections.sub": {
+    "en": "Optional. Everything works without them.",
+    "reviewed": false
+  },
+  "views.connections.connected": {
+    "en": "connected",
+    "reviewed": false
+  },
+  "views.connections.connectedAgo": {
+    "en": "connected {when}",
+    "reviewed": false
+  },
+  "views.connections.lastUsed": {
+    "en": "last used {when}",
+    "reviewed": false
+  },
+  "views.connections.disconnect": {
+    "en": "Disconnect",
+    "reviewed": false
+  },
+  "views.keys.disconnectTitle": {
+    "en": "Disconnect {name}?",
+    "reviewed": false
+  },
+  "views.keys.disconnectText": {
+    "en": "It loses access to your account at once. You can connect it again any time.",
+    "reviewed": false
+  },
+  "views.copy.copy": {
+    "en": "Copy",
+    "reviewed": false
+  },
+  "views.copy.copied": {
+    "en": "Copied",
+    "reviewed": false
+  },
+  "views.chatgpt.intro": {
+    "en": "Ask for work in a ChatGPT chat: “file a request to change my opening hours”, “how is my site request doing?”. It uses your own ChatGPT plan, and it can do what you can do here, nothing more. What it files waits for Ali like any other request.",
+    "reviewed": false
+  },
+  "views.chatgpt.step1": {
+    "en": "In ChatGPT, open Plugins, then Add → Add custom MCP server.",
+    "reviewed": false
+  },
+  "views.chatgpt.paste": {
+    "en": "Paste this address:",
+    "reviewed": false
+  },
+  "views.chatgpt.step3": {
+    "en": "ChatGPT sends you here to sign in. Approve it, and it shows up on this card.",
+    "reviewed": false
+  },
+  "views.chatgpt.open": {
+    "en": "Open ChatGPT →",
+    "reviewed": false
+  },
+  "views.assistants.title": {
+    "en": "Other AI assistants",
+    "reviewed": false
+  },
+  "views.assistants.intro": {
+    "en": "Claude, Cursor, or any assistant that speaks MCP. It sees your projects, files requests, replies and sets budgets: the same things you can do here, nothing more. Its requests wait for Ali like any other.",
+    "reviewed": false
+  },
+  "views.assistants.connect": {
+    "en": "Connect an assistant →",
+    "reviewed": false
+  },
+  "views.newKey.title": {
+    "en": "Connect an assistant",
+    "reviewed": false
+  },
+  "views.newKey.subtitle": {
+    "en": "Name it so you know which key to revoke later.",
+    "reviewed": false
+  },
+  "views.newKey.placeholder": {
+    "en": "e.g. Claude on my laptop",
+    "reviewed": false
+  },
+  "views.newKey.make": {
+    "en": "Make the key →",
+    "reviewed": false
+  },
+  "views.showKey.title": {
+    "en": "Key for {label}",
+    "reviewed": false
+  },
+  "views.showKey.subtitle": {
+    "en": "Copy it now: it is shown only this once.",
+    "reviewed": false
+  },
+  "views.showKey.done": {
+    "en": "Done",
+    "reviewed": false
+  },
+  "views.showKey.server": {
+    "en": "Server address",
+    "reviewed": false
+  },
+  "views.showKey.key": {
+    "en": "Key",
+    "reviewed": false
+  },
+  "views.showKey.configFile": {
+    "en": "For an MCP config file",
+    "reviewed": false
+  },
+  "views.showKey.hint": {
+    "en": "The assistant sends the key as \"Authorization: Bearer …\".",
+    "reviewed": false
+  },
+  "views.github.intro": {
+    "en": "Keep a project's code in your own GitHub account, or let us work on an existing private repo. You pick exactly which repos the app can reach, and can revoke it any time on GitHub.",
+    "reviewed": false
+  },
+  "views.github.disconnectTitle": {
+    "en": "Disconnect @{login}?",
+    "reviewed": false
+  },
+  "views.github.disconnectText": {
+    "en": "Projects using this connection lose access to the repos it reached. You can reconnect any time by installing the app again.",
+    "reviewed": false
+  },
+  "views.github.connect": {
+    "en": "Connect GitHub →",
+    "reviewed": false
+  },
+  "views.cloudflare.intro": {
+    "en": "Have your sites hosted in your own Cloudflare account instead of ours: Cloudflare bills you directly, and a small site usually fits its free plan. Connecting changes nothing by itself: no site moves to your account until you ask for it. On Cloudflare you choose which account to share, and you can revoke it there or here any time.",
+    "reviewed": false
+  },
+  "views.cloudflare.connected": {
+    "en": "Cloudflare is connected.",
+    "reviewed": false
+  },
+  "views.cloudflare.declined": {
+    "en": "You declined on Cloudflare, so nothing was connected.",
+    "reviewed": false
+  },
+  "views.cloudflare.failed": {
+    "en": "Cloudflare did not finish the connection. Try again.",
+    "reviewed": false
+  },
+  "views.cloudflare.signin": {
+    "en": "The connection link expired. Try again from here.",
+    "reviewed": false
+  },
+  "views.cloudflare.yourAccount": {
+    "en": "Your Cloudflare account",
+    "reviewed": false
+  },
+  "views.cloudflare.expired": {
+    "en": "expired: connect again",
+    "reviewed": false
+  },
+  "views.cloudflare.disconnectTitle": {
+    "en": "Disconnect {name}?",
+    "reviewed": false
+  },
+  "views.cloudflare.disconnectText": {
+    "en": "We lose access to that Cloudflare account at once. Sites already there keep running in your account.",
+    "reviewed": false
+  },
+  "views.cloudflare.connectAnother": {
+    "en": "Connect another account →",
+    "reviewed": false
+  },
+  "views.cloudflare.connect": {
+    "en": "Connect Cloudflare →",
+    "reviewed": false
+  },
+  "views.billing.sub": {
+    "en": "Ali's time at {rate} an hour, billed by the second, plus what the AI cost, with no markup.",
+    "reviewed": false
+  },
+  "views.billing.finished": {
+    "en": "Finished requests",
+    "reviewed": false
+  },
+  "views.billing.onMeterNow": {
+    "en": "On the meter now",
+    "reviewed": false
+  },
+  "views.billing.aiAtCost": {
+    "en": "AI, at cost",
+    "reviewed": false
+  },
+  "views.billing.running": {
+    "en": "running",
+    "reviewed": false
+  },
+  "views.billing.empty": {
+    "en": "Nothing billed yet. The meter starts when Ali or an agent works on a request.",
+    "reviewed": false
+  },
+  "composer.title": {
+    "en": "New request",
+    "reviewed": false
+  },
+  "composer.subtitle": {
+    "en": "Write it the way you would say it. Nothing starts until Ali has read it.",
+    "reviewed": false
+  },
+  "composer.send": {
+    "en": "Send request →",
+    "reviewed": false
+  },
+  "composer.uploading": {
+    "en": "Uploading…",
+    "reviewed": false
+  },
+  "composer.project.label": {
+    "en": "Project",
+    "reviewed": false
+  },
+  "composer.project.unsure": {
+    "en": "Not sure / something new",
+    "reviewed": false
+  },
+  "composer.field.title": {
+    "en": "Title",
+    "reviewed": false
+  },
+  "composer.field.titlePlaceholder": {
+    "en": "e.g. Add our opening hours to the homepage",
+    "reviewed": false
+  },
+  "composer.field.need": {
+    "en": "What do you need?",
+    "reviewed": false
+  },
+  "composer.field.needPlaceholder": {
+    "en": "What should change, where, and why. Links and examples help.",
+    "reviewed": false
+  },
+  "composer.error.missing": {
+    "en": "Give it a title and say what you need.",
+    "reviewed": false
+  },
+  "composer.error.budget": {
+    "en": "A budget is a whole number of dollars, from 1 to 10,000.",
+    "reviewed": false
+  },
+  "composer.files.remove": {
+    "en": "Remove {name}",
+    "reviewed": false
+  },
+  "composer.files.attach": {
+    "en": "Attach",
+    "reviewed": false
+  },
+  "composer.files.drop": {
+    "en": "Drop screenshots or files here, or pick them",
+    "reviewed": false
+  },
+  "composer.files.limit": {
+    "en": "up to 5, 10 MB each",
+    "reviewed": false
+  },
+  "composer.attention.label": {
+    "en": "How much of Ali",
+    "reviewed": false
+  },
+  "composer.attention.about": {
+    "en": "about {cost}",
+    "reviewed": false
+  },
+  "composer.attention.hour": {
+    "en": "{rate} an hour",
+    "reviewed": false
+  },
+  "composer.budget.label": {
+    "en": "Budget in USD (optional)",
+    "reviewed": false
+  },
+  "composer.budget.placeholder": {
+    "en": "No limit",
+    "reviewed": false
+  },
+  "composer.estimate.typical": {
+    "en": "Typically {time} of Ali's time ({cost}), plus AI at cost. You pay what the meter shows, by the second.",
+    "reviewed": false
+  },
+  "composer.estimate.typicalCapped": {
+    "en": "Typically {time} of Ali's time ({cost}), plus AI at cost. You pay what the meter shows, by the second, and work pauses at {cap}.",
+    "reviewed": false
+  },
+  "composer.estimate.clock": {
+    "en": "By the clock at {rate} an hour, plus AI at cost. You pay what the meter shows, by the second.",
+    "reviewed": false
+  },
+  "composer.estimate.clockCapped": {
+    "en": "By the clock at {rate} an hour, plus AI at cost. You pay what the meter shows, by the second, and work pauses at {cap}.",
+    "reviewed": false
+  },
+  "ticket.now.new.title": {
+    "en": "Waiting for Ali to read it",
+    "reviewed": false
+  },
+  "ticket.now.new.next": {
+    "en": "Nothing starts until he approves it. Add details or files while you wait, or withdraw it at no cost.",
+    "reviewed": false
+  },
+  "ticket.now.approved.title": {
+    "en": "Approved, and queued for an agent",
+    "reviewed": false
+  },
+  "ticket.now.approved.next": {
+    "en": "It starts as soon as a machine is free. Details you add now reach the agent before it starts.",
+    "reviewed": false
+  },
+  "ticket.now.in_progress.title": {
+    "en": "An agent is building it",
+    "reviewed": false
+  },
+  "ticket.now.in_progress.next": {
+    "en": "It works on a sealed copy of your project; nothing live is touched. Replies you send now are read before it ships.",
+    "reviewed": false
+  },
+  "ticket.now.review.title": {
+    "en": "Ali is checking the result",
+    "reviewed": false
+  },
+  "ticket.now.review.next": {
+    "en": "He writes here when it is ready, or asks you something.",
+    "reviewed": false
+  },
+  "ticket.now.done.title": {
+    "en": "Done and shipped",
+    "reviewed": false
+  },
+  "ticket.now.done.next": {
+    "en": "Something to add? Reply below and it opens again.",
+    "reviewed": false
+  },
+  "ticket.now.declined.title": {
+    "en": "Ali declined this request",
+    "reviewed": false
+  },
+  "ticket.now.declined.next": {
+    "en": "The reason is in the conversation. Reply if something was misunderstood.",
+    "reviewed": false
+  },
+  "ticket.backToAll": {
+    "en": "← All requests",
+    "reviewed": false
+  },
+  "ticket.crumbs.requests": {
+    "en": "Requests",
+    "reviewed": false
+  },
+  "ticket.builtByAssistant": {
+    "en": "built by your assistant",
+    "reviewed": false
+  },
+  "ticket.filed": {
+    "en": "filed {date}",
+    "reviewed": false
+  },
+  "ticket.progress.label": {
+    "en": "Where your request is",
+    "reviewed": false
+  },
+  "ticket.step.now": {
+    "en": "now",
+    "reviewed": false
+  },
+  "ticket.preview.open": {
+    "en": "Open the preview",
+    "reviewed": false
+  },
+  "ticket.live.see": {
+    "en": "See it live",
+    "reviewed": false
+  },
+  "ticket.conversation": {
+    "en": "Conversation",
+    "reviewed": false
+  },
+  "ticket.cost.total": {
+    "en": "Total",
+    "reviewed": false
+  },
+  "ticket.cost.soFar": {
+    "en": "Cost so far",
+    "reviewed": false
+  },
+  "ticket.cost.time": {
+    "en": "{time} of Ali's time",
+    "reviewed": false
+  },
+  "ticket.cost.ai": {
+    "en": "AI at cost",
+    "reviewed": false
+  },
+  "ticket.budget.set": {
+    "en": "Set a budget",
+    "reviewed": false
+  },
+  "ticket.budget.change": {
+    "en": "Change the budget",
+    "reviewed": false
+  },
+  "ticket.budget.title": {
+    "en": "Budget for this request",
+    "reviewed": false
+  },
+  "ticket.budget.subtitle": {
+    "en": "Work pauses when the cost reaches it, until you or Ali raise it.",
+    "reviewed": false
+  },
+  "ticket.budget.save": {
+    "en": "Save budget",
+    "reviewed": false
+  },
+  "ticket.budget.label": {
+    "en": "Budget in USD",
+    "reviewed": false
+  },
+  "ticket.budget.placeholder": {
+    "en": "No limit",
+    "reviewed": false
+  },
+  "ticket.budget.hint": {
+    "en": "Leave it empty for no limit. So far: {amount}.",
+    "reviewed": false
+  },
+  "ticket.budget.invalid": {
+    "en": "A whole number of dollars, from 1 to 10,000.",
+    "reviewed": false
+  },
+  "ticket.budget.saved": {
+    "en": "Budget saved.",
+    "reviewed": false
+  },
+  "ticket.site.title": {
+    "en": "The site",
+    "reviewed": false
+  },
+  "ticket.site.live": {
+    "en": "This request is live.",
+    "reviewed": false
+  },
+  "ticket.site.onPreview": {
+    "en": "This request is on the preview, not live yet.",
+    "reviewed": false
+  },
+  "ticket.site.older": {
+    "en": "This request was built; newer changes came after it.",
+    "reviewed": false
+  },
+  "ticket.site.doneNotLive": {
+    "en": "Changes land on the preview first.",
+    "reviewed": false
+  },
+  "ticket.site.pending": {
+    "en": "When it is built, it lands on the preview first.",
+    "reviewed": false
+  },
+  "ticket.site.previewLink": {
+    "en": "Preview",
+    "reviewed": false
+  },
+  "ticket.site.liveLink": {
+    "en": "Live site",
+    "reviewed": false
+  },
+  "ticket.publish.title": {
+    "en": "Publish {name}?",
+    "reviewed": false
+  },
+  "ticket.publish.text": {
+    "en": "What you see at {preview} becomes the live site at {live}.",
+    "reviewed": false
+  },
+  "ticket.publish.confirm": {
+    "en": "Publish",
+    "reviewed": false
+  },
+  "ticket.publish.done": {
+    "en": "Published. The live site has the new version.",
+    "reviewed": false
+  },
+  "ticket.publish.button": {
+    "en": "Publish to live",
+    "reviewed": false
+  },
+  "ticket.details.title": {
+    "en": "Details",
+    "reviewed": false
+  },
+  "ticket.details.project": {
+    "en": "Project",
+    "reviewed": false
+  },
+  "ticket.details.none": {
+    "en": "None yet",
+    "reviewed": false
+  },
+  "ticket.details.attention": {
+    "en": "Attention",
+    "reviewed": false
+  },
+  "ticket.details.filed": {
+    "en": "Filed",
+    "reviewed": false
+  },
+  "ticket.details.lastChange": {
+    "en": "Last change",
+    "reviewed": false
+  },
+  "ticket.withdraw.title": {
+    "en": "Withdraw this request?",
+    "reviewed": false
+  },
+  "ticket.withdraw.text": {
+    "en": "Ali has not started on it, so it costs nothing. It closes, and he is told.",
+    "reviewed": false
+  },
+  "ticket.withdraw.confirm": {
+    "en": "Withdraw",
+    "reviewed": false
+  },
+  "ticket.withdraw.cancel": {
+    "en": "Keep it",
+    "reviewed": false
+  },
+  "ticket.withdraw.button": {
+    "en": "Withdraw request",
+    "reviewed": false
+  },
+  "offer.step.request.title": {
+    "en": "You ask",
+    "reviewed": false
+  },
+  "offer.step.request.body": {
+    "en": "Sign in with your email and write what you need: in the portal, by email, or in the chat below. No call to get started.",
+    "reviewed": false
+  },
+  "offer.step.approve.title": {
+    "en": "I approve",
+    "reviewed": false
+  },
+  "offer.step.approve.body": {
+    "en": "I read every request myself. Nothing starts until I say so, and I tell you if it is the wrong thing to build.",
+    "reviewed": false
+  },
+  "offer.step.build.title": {
+    "en": "An agent builds",
+    "reviewed": false
+  },
+  "offer.step.build.body": {
+    "en": "An AI agent does the typing in a sealed copy of your project. It cannot publish, deploy, or touch anything live.",
+    "reviewed": false
+  },
+  "offer.step.ship.title": {
+    "en": "I check, then ship",
+    "reviewed": false
+  },
+  "offer.step.ship.body": {
+    "en": "I check the result before it goes anywhere. How closely is your call: a quick check that it runs, or every changed line. You follow it all in one thread.",
+    "reviewed": false
+  },
+  "pricing.attention.auto.name": {
+    "en": "Autopilot",
+    "reviewed": false
+  },
+  "pricing.attention.auto.what": {
+    "en": "The agent does the work. I approve the request and check that it runs. I do not read every line.",
+    "reviewed": false
+  },
+  "pricing.attention.auto.for": {
+    "en": "Text and style changes, small fixes, anything easy to undo",
+    "reviewed": false
+  },
+  "pricing.attention.checked.name": {
+    "en": "Checked",
+    "reviewed": false
+  },
+  "pricing.attention.checked.what": {
+    "en": "The agent does the work and I read every changed line before it ships.",
+    "reviewed": false
+  },
+  "pricing.attention.checked.for": {
+    "en": "New pages, forms, features, anything customers touch",
+    "reviewed": false
+  },
+  "pricing.attention.hands_on.name": {
+    "en": "Hands-on",
+    "reviewed": false
+  },
+  "pricing.attention.hands_on.what": {
+    "en": "I work on it with the agent: decisions, hard problems, advice.",
+    "reviewed": false
+  },
+  "pricing.attention.hands_on.for": {
+    "en": "Architecture, debugging the weird one, consultation",
+    "reviewed": false
+  },
+  "ui.close": {
+    "en": "Close",
+    "reviewed": false
+  },
+  "ui.gauge.noBudget": {
+    "en": "No budget set. Set one and work pauses before it passes.",
+    "reviewed": false
+  },
+  "ui.gauge.over": {
+    "en": "Over the {budget} budget: work is paused until it is raised.",
+    "reviewed": false
+  },
+  "ui.gauge.used": {
+    "en": "{spent} of {budget} · {percent}% used",
+    "reviewed": false
+  },
+  "ui.mini.done": {
+    "en": "Done: all four steps",
+    "reviewed": false
+  },
+  "ui.mini.step": {
+    "en": "Step {n} of 4: {title}",
+    "reviewed": false
+  },
+  "board.stage.new": {
+    "en": "Waiting for Ali",
+    "reviewed": false
+  },
+  "board.stage.approved": {
+    "en": "Approved",
+    "reviewed": false
+  },
+  "board.stage.in_progress": {
+    "en": "Being built",
+    "reviewed": false
+  },
+  "board.stage.review": {
+    "en": "Being checked",
+    "reviewed": false
+  },
+  "board.stage.done": {
+    "en": "Shipped",
+    "reviewed": false
+  },
+  "board.empty": {
+    "en": "Your requests ride this line, from your words to shipped.",
+    "reviewed": false
+  },
+  "board.legend": {
+    "en": "Show requests at one step",
+    "reviewed": false
+  },
+  "error.generic": {
+    "en": "Something went wrong. Try again.",
+    "reviewed": false
+  },
+  "error.offline": {
+    "en": "The portal backend is not configured on this build.",
+    "reviewed": false
+  },
+  "error.network": {
+    "en": "Network error. Check your connection and try again.",
+    "reviewed": false
+  },
+  "error.rate_limited": {
+    "en": "Too many tries. Give it a few minutes.",
+    "reviewed": false
+  },
+  "error.turnstile_failed": {
+    "en": "The bot check failed. Reload and try again.",
+    "reviewed": false
+  },
+  "error.bad_email": {
+    "en": "That email does not look right.",
+    "reviewed": false
+  },
+  "error.mail_failed": {
+    "en": "Could not send the email. Try again, or email malipetek@gmail.com.",
+    "reviewed": false
+  },
+  "error.link_expired": {
+    "en": "This sign-in link has expired or was already used.",
+    "reviewed": false
+  },
+  "error.unauthorized": {
+    "en": "Your session expired. Sign in again.",
+    "reviewed": false
+  },
+  "error.not_found": {
+    "en": "Not found.",
+    "reviewed": false
+  },
+  "error.bad_ticket": {
+    "en": "Add a title and a description.",
+    "reviewed": false
+  },
+  "error.bad_message": {
+    "en": "It needs some text.",
+    "reviewed": false
+  },
+  "error.bad_project": {
+    "en": "Pick a project.",
+    "reviewed": false
+  },
+  "error.bad_brief": {
+    "en": "Answer the questions — a sentence each is enough.",
+    "reviewed": false
+  },
+  "error.bad_repo": {
+    "en": "That does not look like a repo URL. Send a https:// or git@ link, or pick a zip.",
+    "reviewed": false
+  },
+  "error.slug_taken": {
+    "en": "A project with that slug already exists.",
+    "reviewed": false
+  },
+  "error.bad_priority": {
+    "en": "That priority is out of range.",
+    "reviewed": false
+  },
+  "error.bad_requires": {
+    "en": "Those capabilities are not valid.",
+    "reviewed": false
+  },
+  "error.bad_executor": {
+    "en": "Pick claude, opencode, dsh or devin — or any.",
+    "reviewed": false
+  },
+  "error.client_executor": {
+    "en": "Client work only runs on Claude Code.",
+    "reviewed": false
+  },
+  "error.bad_settings": {
+    "en": "One of those settings is out of range.",
+    "reviewed": false
+  },
+  "error.bad_overrides": {
+    "en": "Those node settings are out of range.",
+    "reviewed": false
+  },
+  "error.bad_node": {
+    "en": "That node is not known.",
+    "reviewed": false
+  },
+  "error.not_running": {
+    "en": "That run already finished.",
+    "reviewed": false
+  },
+  "error.file_type": {
+    "en": "That type of file is not accepted. Images, PDF, text, CSV, JSON, zip, Word and Excel are.",
+    "reviewed": false
+  },
+  "error.file_too_large": {
+    "en": "A file is over 10 MB.",
+    "reviewed": false
+  },
+  "error.too_many_files": {
+    "en": "Too many files: at most 5 at a time, 30 on one request.",
+    "reviewed": false
+  },
+  "error.bad_file": {
+    "en": "A file was empty or had no name.",
+    "reviewed": false
+  },
+  "error.files_unavailable": {
+    "en": "Attachments are not available right now. Send the text alone, or try later.",
+    "reviewed": false
+  },
+  "error.not_withdrawable": {
+    "en": "Ali has already approved this one. Write to him below to stop it.",
+    "reviewed": false
+  },
+  "error.forbidden": {
+    "en": "That needs the admin account.",
+    "reviewed": false
+  },
+  "views.github.waitingOnConnection": {
+    "en": "{count, plural, one {# project names a repo we cannot read yet.} other {# projects name a repo we cannot read yet.}} Connect GitHub and I will create it in your account if it is missing — until then that work waits.",
+    "reviewed": false
   }
 }

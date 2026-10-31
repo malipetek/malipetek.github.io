@@ -9,16 +9,18 @@ import { STEPS } from '../../lib/offer.js';
 import { checkPicked, sizeText } from '../../lib/attachments.js';
 import { ATTENTION, clock, money, priceOf } from '../../lib/pricing.js';
 import { usePortal, useT, href, isOpen } from './store.js';
+import { attentionText, stepText } from './copy.js';
 import { Files } from './Composer.jsx';
 import { Button, Gauge, Icon, Modal, STEP_ICONS, StatusPill, ago, cx, fmtDate, stepOf, totalOf } from './ui.jsx';
 
+/** Status → [headline key, explanation key], looked up with t inside the component. */
 const NOW = {
-  new: ['Waiting for Ali to read it', 'Nothing starts until he approves it. Add details or files while you wait, or withdraw it at no cost.'],
-  approved: ['Approved, and queued for an agent', 'It starts as soon as a machine is free. Details you add now reach the agent before it starts.'],
-  in_progress: ['An agent is building it', 'It works on a sealed copy of your project; nothing live is touched. Replies you send now are read before it ships.'],
-  review: ['Ali is checking the result', 'He writes here when it is ready, or asks you something.'],
-  done: ['Done and shipped', 'Something to add? Reply below and it opens again.'],
-  declined: ['Ali declined this request', 'The reason is in the conversation. Reply if something was misunderstood.'],
+  new: ['ticket.now.new.title', 'ticket.now.new.next'],
+  approved: ['ticket.now.approved.title', 'ticket.now.approved.next'],
+  in_progress: ['ticket.now.in_progress.title', 'ticket.now.in_progress.next'],
+  review: ['ticket.now.review.title', 'ticket.now.review.next'],
+  done: ['ticket.now.done.title', 'ticket.now.done.next'],
+  declined: ['ticket.now.declined.title', 'ticket.now.declined.next'],
 };
 
 /** When the ticket entered each step, from the thread's status lines. */
@@ -36,6 +38,7 @@ function stepTimes(ticket, messages) {
 }
 
 export function TicketView({ id }) {
+  const t = useT();
   const { data, reload, notify, ask } = usePortal();
   const [state, setState] = useState({ ticket: null, messages: [], error: null });
   const [deploys, setDeploys] = useState(null);
@@ -63,8 +66,8 @@ export function TicketView({ id }) {
   useEffect(() => {
     if (!status) return undefined;
     const every = ['approved', 'in_progress', 'review'].includes(status) ? 10_000 : 30_000;
-    const t = setInterval(() => document.visibilityState === 'visible' && void load(), every);
-    return () => clearInterval(t);
+    const timer = setInterval(() => document.visibilityState === 'visible' && void load(), every);
+    return () => clearInterval(timer);
   }, [status, load]);
 
   // Which deploy carries this request's work, so the side can say if it is live.
@@ -79,20 +82,20 @@ export function TicketView({ id }) {
   if (state.error && !state.ticket) {
     return (
       <div className="cp-view">
-        <p className="cp-empty">{errorText(state.error)}</p>
+        <p className="cp-empty">{errorText(state.error, t)}</p>
         <p className="cp-center">
-          <a href={href('requests')}>← All requests</a>
+          <a href={href('requests')}>{t('ticket.backToAll')}</a>
         </p>
       </div>
     );
   }
-  if (!state.ticket) return <p className="cp-empty">Loading…</p>;
+  if (!state.ticket) return <p className="cp-empty">{t('common.loading')}</p>;
 
   const { ticket, messages } = state;
   const open = isOpen(ticket);
   const at = stepOf(ticket.status);
   const times = stepTimes(ticket, messages);
-  const [now, next] = NOW[ticket.status];
+  const [nowKey, nextKey] = NOW[ticket.status];
   const mine = deploys?.find((d) => d.ticket_id === ticket.id);
   const where = !mine ? null : mine.id === site?.productionDeploy ? 'live' : mine.id === site?.previewDeploy ? 'preview' : 'older';
 
@@ -100,20 +103,20 @@ export function TicketView({ id }) {
     <div className="cp-view cp-ticket">
       <header className="cp-ticket__head">
         <nav className="cp-crumbs">
-          <a href={href('requests')}>Requests</a>
+          <a href={href('requests')}>{t('ticket.crumbs.requests')}</a>
           {project ? <a href={href(`project/${project.id}`)}>{project.name}</a> : null}
           <span>#{ticket.id}</span>
         </nav>
         <h1>{ticket.title}</h1>
         <div className="cp-ticket__meta">
           <StatusPill status={ticket.status} />
-          <span>{ATTENTION.find((a) => a.key === ticket.attention)?.name}</span>
-          <span>filed {fmtDate(ticket.created_at)}</span>
-          {ticket.worked_by === 'client_agent' ? <span>built by your assistant</span> : null}
+          <span>{attentionName(t, ticket.attention)}</span>
+          <span>{t('ticket.filed', { date: fmtDate(ticket.created_at) })}</span>
+          {ticket.worked_by === 'client_agent' ? <span>{t('ticket.builtByAssistant')}</span> : null}
         </div>
       </header>
 
-      <section className={cx('cp-progress', ticket.status === 'declined' && 'is-declined')} aria-label="Where your request is">
+      <section className={cx('cp-progress', ticket.status === 'declined' && 'is-declined')} aria-label={t('ticket.progress.label')}>
         <ol className="cp-steps">
           {STEPS.map((step, i) => {
             const s = ticket.status === 'declined' ? (i === 0 ? 'done' : 'ahead') : i < at ? 'done' : i === at ? 'now' : 'ahead';
@@ -122,24 +125,24 @@ export function TicketView({ id }) {
                 <span className="cp-step__icon">
                   <Icon name={STEP_ICONS[i]} size={20} />
                 </span>
-                <span className="cp-step__name">{step.title}</span>
-                <span className="cp-step__time">{times[i] && s !== 'ahead' ? fmtDate(times[i]) : s === 'now' ? 'now' : ''}</span>
+                <span className="cp-step__name">{stepText(t, step, 'title')}</span>
+                <span className="cp-step__time">{times[i] && s !== 'ahead' ? fmtDate(times[i]) : s === 'now' ? t('ticket.step.now') : ''}</span>
               </li>
             );
           })}
         </ol>
         <div className="cp-progress__now" role="status">
           <div>
-            <strong>{now}</strong>
-            <p>{next}</p>
+            <strong>{t(nowKey)}</strong>
+            <p>{t(nextKey)}</p>
           </div>
           {site && ticket.status === 'review' ? (
             <Button kind="primary" href={site.previewUrl} target="_blank" rel="noopener">
-              Open the preview <Icon name="ext" size={14} />
+              {t('ticket.preview.open')} <Icon name="ext" size={14} />
             </Button>
           ) : site && ticket.status === 'done' && where === 'live' ? (
             <Button href={site.productionUrl} target="_blank" rel="noopener">
-              See it live <Icon name="ext" size={14} />
+              {t('ticket.live.see')} <Icon name="ext" size={14} />
             </Button>
           ) : null}
         </div>
@@ -147,43 +150,43 @@ export function TicketView({ id }) {
 
       <div className="cp-ticket__cols">
         <div className="cp-ticket__main">
-          <h2 className="cp-h2">Conversation</h2>
+          <h2 className="cp-h2">{t('ticket.conversation')}</h2>
           <Thread ticketId={ticket.id} messages={messages} />
           <Reply ticketId={ticket.id} onSent={load} reopen={ticket.status === 'done' || ticket.status === 'declined'} />
         </div>
 
         <aside className="cp-ticket__side">
           <section className="cp-card">
-            <h3 className="cp-label">{ticket.price_cents !== null ? 'Total' : 'Cost so far'}</h3>
+            <h3 className="cp-label">{ticket.price_cents !== null ? t('ticket.cost.total') : t('ticket.cost.soFar')}</h3>
             <Cost ticket={ticket} />
             <Gauge ticket={ticket} />
             {open ? (
               <Button size="sm" onClick={() => setBudgetOpen(true)}>
-                {ticket.budget_cents === null ? 'Set a budget' : 'Change the budget'}
+                {ticket.budget_cents === null ? t('ticket.budget.set') : t('ticket.budget.change')}
               </Button>
             ) : null}
           </section>
 
           {site ? (
             <section className="cp-card">
-              <h3 className="cp-label">The site</h3>
+              <h3 className="cp-label">{t('ticket.site.title')}</h3>
               <p className="cp-side__line">
                 {where === 'live'
-                  ? 'This request is live.'
+                  ? t('ticket.site.live')
                   : where === 'preview'
-                    ? 'This request is on the preview, not live yet.'
+                    ? t('ticket.site.onPreview')
                     : where === 'older'
-                      ? 'This request was built; newer changes came after it.'
+                      ? t('ticket.site.older')
                       : ticket.status === 'done'
-                        ? 'Changes land on the preview first.'
-                        : 'When it is built, it lands on the preview first.'}
+                        ? t('ticket.site.doneNotLive')
+                        : t('ticket.site.pending')}
               </p>
               <div className="cp-links">
                 <a href={site.previewUrl} target="_blank" rel="noopener">
-                  <Icon name="ext" size={13} /> Preview
+                  <Icon name="ext" size={13} /> {t('ticket.site.previewLink')}
                 </a>
                 <a href={site.productionUrl} target="_blank" rel="noopener">
-                  <Icon name="globe" size={13} /> Live site
+                  <Icon name="globe" size={13} /> {t('ticket.site.liveLink')}
                 </a>
               </div>
               {where === 'preview' && data.canPublish ? (
@@ -192,33 +195,33 @@ export function TicketView({ id }) {
                   kind="primary"
                   onClick={() =>
                     ask({
-                      title: `Publish ${project.name}?`,
-                      text: `What you see at ${site.previewUrl} becomes the live site at ${site.productionUrl}.`,
-                      confirm: 'Publish',
+                      title: t('ticket.publish.title', { name: project.name }),
+                      text: t('ticket.publish.text', { preview: site.previewUrl, live: site.productionUrl }),
+                      confirm: t('ticket.publish.confirm'),
                       run: async () => {
                         await api(`/portal/projects/${project.id}/site/publish`, { method: 'POST', body: {} });
-                        notify('Published. The live site has the new version.');
+                        notify(t('ticket.publish.done'));
                         await reload();
                       },
                     })
                   }
                 >
-                  Publish to live
+                  {t('ticket.publish.button')}
                 </Button>
               ) : null}
             </section>
           ) : null}
 
           <section className="cp-card">
-            <h3 className="cp-label">Details</h3>
+            <h3 className="cp-label">{t('ticket.details.title')}</h3>
             <dl className="cp-dl">
-              <dt>Project</dt>
-              <dd>{project ? <a href={href(`project/${project.id}`)}>{project.name}</a> : 'None yet'}</dd>
-              <dt>Attention</dt>
-              <dd>{ATTENTION.find((a) => a.key === ticket.attention)?.name}</dd>
-              <dt>Filed</dt>
+              <dt>{t('ticket.details.project')}</dt>
+              <dd>{project ? <a href={href(`project/${project.id}`)}>{project.name}</a> : t('ticket.details.none')}</dd>
+              <dt>{t('ticket.details.attention')}</dt>
+              <dd>{attentionName(t, ticket.attention)}</dd>
+              <dt>{t('ticket.details.filed')}</dt>
               <dd>{fmtDate(ticket.created_at)}</dd>
-              <dt>Last change</dt>
+              <dt>{t('ticket.details.lastChange')}</dt>
               <dd>{ago(ticket.updated_at)}</dd>
             </dl>
           </section>
@@ -229,10 +232,10 @@ export function TicketView({ id }) {
               className="cp-side__withdraw"
               onClick={() =>
                 ask({
-                  title: 'Withdraw this request?',
-                  text: 'Ali has not started on it, so it costs nothing. It closes, and he is told.',
-                  confirm: 'Withdraw',
-                  cancel: 'Keep it',
+                  title: t('ticket.withdraw.title'),
+                  text: t('ticket.withdraw.text'),
+                  confirm: t('ticket.withdraw.confirm'),
+                  cancel: t('ticket.withdraw.cancel'),
                   danger: true,
                   run: async () => {
                     await api(`/portal/tickets/${ticket.id}/withdraw`, { method: 'POST' });
@@ -241,7 +244,7 @@ export function TicketView({ id }) {
                 })
               }
             >
-              Withdraw request
+              {t('ticket.withdraw.button')}
             </Button>
           ) : null}
         </aside>
@@ -253,7 +256,7 @@ export function TicketView({ id }) {
           onClose={() => setBudgetOpen(false)}
           onSaved={async () => {
             setBudgetOpen(false);
-            notify('Budget saved.');
+            notify(t('ticket.budget.saved'));
             await Promise.all([load(), reload()]);
           }}
         />
@@ -263,20 +266,27 @@ export function TicketView({ id }) {
 }
 
 function Cost({ ticket }) {
+  const t = useT();
   const p = priceOf({ humanSeconds: ticket.human_seconds, aiMicroUsd: ticket.ai_micro_usd });
   return (
     <div className="cp-cost">
       <p className="cp-cost__total">{money(totalOf(ticket))}</p>
       <p className="cp-cost__parts">
         <span>
-          {clock(ticket.human_seconds)} of Ali's time <b>{money(p.timeCents)}</b>
+          {t('ticket.cost.time', { time: clock(ticket.human_seconds) })} <b>{money(p.timeCents)}</b>
         </span>
         <span>
-          AI at cost <b>{money(p.aiCents)}</b>
+          {t('ticket.cost.ai')} <b>{money(p.aiCents)}</b>
         </span>
       </p>
     </div>
   );
+}
+
+/** An attention level's name in the reader's language, from its key. */
+function attentionName(t, key) {
+  const level = ATTENTION.find((a) => a.key === key);
+  return level ? attentionText(t, level, 'name') : undefined;
 }
 
 const WHO = { client: 'thread.you', ali: 'thread.ali', runner: 'thread.log' };
@@ -408,7 +418,7 @@ function Reply({ ticketId, onSent, reopen }) {
       setNote({ text: '', error: false });
       await onSent();
     } catch (e) {
-      setNote({ text: errorText(e), error: true });
+      setNote({ text: errorText(e, t), error: true });
     } finally {
       setSending(false);
     }
@@ -439,40 +449,41 @@ function Reply({ ticketId, onSent, reopen }) {
 }
 
 function BudgetDialog({ ticket, onClose, onSaved }) {
+  const t = useT();
   const [value, setValue] = useState(ticket.budget_cents === null ? '' : String(ticket.budget_cents / 100));
   const [error, setError] = useState('');
   const save = async () => {
     const raw = value.trim();
     const dollars = raw === '' ? null : Number(raw);
-    if (dollars !== null && !(Number.isInteger(dollars) && dollars >= 1 && dollars <= 10000)) return setError('A whole number of dollars, from 1 to 10,000.');
+    if (dollars !== null && !(Number.isInteger(dollars) && dollars >= 1 && dollars <= 10000)) return setError(t('ticket.budget.invalid'));
     try {
       await api(`/portal/tickets/${ticket.id}/budget`, { method: 'PATCH', body: { budgetCents: dollars === null ? null : dollars * 100 } });
       await onSaved();
     } catch (e) {
-      setError(errorText(e));
+      setError(errorText(e, t));
     }
   };
   return (
     <Modal
-      title="Budget for this request"
-      subtitle="Work pauses when the cost reaches it, until you or Ali raise it."
+      title={t('ticket.budget.title')}
+      subtitle={t('ticket.budget.subtitle')}
       onClose={onClose}
       actions={
         <>
           <p className="cp-modal__err" role="alert">
             {error}
           </p>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button kind="primary" onClick={save}>
-            Save budget
+            {t('ticket.budget.save')}
           </Button>
         </>
       }
     >
       <label className="cp-field">
-        <span className="cp-label">Budget in USD</span>
-        <input type="number" min="1" max="10000" step="1" inputMode="numeric" placeholder="No limit" value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()} />
-        <span className="cp-hint">Leave it empty for no limit. So far: {money(totalOf(ticket))}.</span>
+        <span className="cp-label">{t('ticket.budget.label')}</span>
+        <input type="number" min="1" max="10000" step="1" inputMode="numeric" placeholder={t('ticket.budget.placeholder')} value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()} />
+        <span className="cp-hint">{t('ticket.budget.hint', { amount: money(totalOf(ticket)) })}</span>
       </label>
     </Modal>
   );

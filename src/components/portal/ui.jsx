@@ -4,6 +4,7 @@ import { STATUS_LABEL } from '../../lib/portal';
 import { STEPS } from '../../lib/offer.js';
 import { money, priceOf } from '../../lib/pricing.js';
 import { useT } from './store.js';
+import { stepText } from './copy.js';
 
 export const cx = (...parts) => parts.filter(Boolean).join(' ');
 
@@ -30,8 +31,9 @@ export const stepOf = (status) => ({ new: 0, approved: 1, in_progress: 2, review
 
 /** Four dots for a row: done, current, ahead. */
 export function MiniTrack({ status }) {
+  const t = useT();
   const at = stepOf(status);
-  const label = status === 'declined' ? 'Declined' : at >= 4 ? 'Done: all four steps' : `Step ${at + 1} of 4: ${STEPS[at].title}`;
+  const label = status === 'declined' ? t('status.declined') : at >= 4 ? t('ui.mini.done') : t('ui.mini.step', { n: at + 1, title: stepText(t, STEPS[at], 'title') });
   return (
     <span className={cx('cp-mini', status === 'declined' && 'cp-mini--declined')} role="img" aria-label={label} title={label}>
       {STEPS.map((s, i) => (
@@ -48,6 +50,7 @@ export function totalOf(ticket) {
 
 /** Cost so far against the budget, as a bar. No budget reads as an open bar. */
 export function Gauge({ ticket }) {
+  const t = useT();
   const total = totalOf(ticket);
   const budget = ticket.budget_cents;
   const share = budget ? Math.min(1, total / budget) : 0;
@@ -59,16 +62,17 @@ export function Gauge({ ticket }) {
       </div>
       <p className="cp-gauge__note">
         {budget === null
-          ? 'No budget set. Set one and work pauses before it passes.'
+          ? t('ui.gauge.noBudget')
           : over
-            ? `Over the ${money(budget)} budget: work is paused until it is raised.`
-            : `${money(total)} of ${money(budget)} · ${Math.round(share * 100)}% used`}
+            ? t('ui.gauge.over', { budget: money(budget) })
+            : t('ui.gauge.used', { spent: money(total), budget: money(budget), percent: Math.round(share * 100) })}
       </p>
     </div>
   );
 }
 
 export function Modal({ title, subtitle, onClose, children, actions, wide }) {
+  const t = useT();
   const ref = useRef(null);
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -84,7 +88,7 @@ export function Modal({ title, subtitle, onClose, children, actions, wide }) {
             <h2>{title}</h2>
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
-          <button type="button" className="cp-modal__x" onClick={onClose} aria-label="Close">
+          <button type="button" className="cp-modal__x" onClick={onClose} aria-label={t('ui.close')}>
             ✕
           </button>
         </header>
@@ -97,6 +101,7 @@ export function Modal({ title, subtitle, onClose, children, actions, wide }) {
 
 /** `ask`: { title, text, confirm, danger, run } — run may throw; its error shows in the dialog. */
 export function Confirm({ ask, onClose, errorText }) {
+  const t = useT();
   const errRef = useRef(null);
   return (
     <Modal
@@ -106,7 +111,7 @@ export function Confirm({ ask, onClose, errorText }) {
       actions={
         <>
           <p className="cp-modal__err" ref={errRef} role="alert" />
-          <Button onClick={onClose}>{ask.cancel ?? 'Cancel'}</Button>
+          <Button onClick={onClose}>{ask.cancel ?? t('common.cancel')}</Button>
           <Button
             kind={ask.danger ? 'danger' : 'primary'}
             onClick={async (e) => {
@@ -116,7 +121,7 @@ export function Confirm({ ask, onClose, errorText }) {
                 await ask.run();
                 onClose();
               } catch (error) {
-                if (errRef.current) errRef.current.textContent = errorText(error);
+                if (errRef.current) errRef.current.textContent = errorText(error, t);
                 b.disabled = false;
               }
             }}

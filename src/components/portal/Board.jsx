@@ -7,6 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { cx } from './ui.jsx';
+import { useT } from './store.js';
 
 export const STAGES = [
   { key: 'new', label: 'Waiting for Ali' },
@@ -15,6 +16,13 @@ export const STAGES = [
   { key: 'review', label: 'Being checked' },
   { key: 'done', label: 'Shipped' },
 ];
+
+/** A stage's label in the reader's language; the English `label` above is the fallback. */
+export function stageText(t, s) {
+  const key = `board.stage.${s.key}`;
+  const v = t(key);
+  return v !== key ? v : s.label;
+}
 
 const RECENT = 14 * 86400;
 
@@ -27,6 +35,7 @@ export function boardItems(tickets) {
 }
 
 export function Board({ tickets, stage, onStage, hovered, onHover, onOpen }) {
+  const t = useT();
   const canvasRef = useRef(null);
   const capRefs = useRef({});
   const tipRef = useRef(null);
@@ -109,7 +118,7 @@ export function Board({ tickets, stage, onStage, hovered, onHover, onOpen }) {
                 tabIndex={-1}
                 aria-hidden="true"
               >
-                <b>{count(s.key)}</b> {s.label}
+                <b>{count(s.key)}</b> {stageText(t, s)}
               </button>
             ))
           : null}
@@ -120,13 +129,13 @@ export function Board({ tickets, stage, onStage, hovered, onHover, onOpen }) {
             </>
           ) : null}
         </div>
-        {!items.length ? <p className="cp-board__empty">Your requests ride this line, from your words to shipped.</p> : null}
+        {!items.length ? <p className="cp-board__empty">{t('board.empty')}</p> : null}
       </div>
-      <div className="cp-board__legend" role="group" aria-label="Show requests at one step">
+      <div className="cp-board__legend" role="group" aria-label={t('board.legend')}>
         {STAGES.map((s, i) => (
           <button key={s.key} type="button" aria-pressed={stage === s.key} onClick={() => onStage(stage === s.key ? null : s.key)}>
             <span className="cp-board__no">{String(i + 1).padStart(2, '0')}</span>
-            <span className="cp-board__label">{s.label}</span>
+            <span className="cp-board__label">{stageText(t, s)}</span>
             <b>{count(s.key)}</b>
           </button>
         ))}

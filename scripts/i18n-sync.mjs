@@ -80,7 +80,7 @@ export function shape(text) {
   return [...found].sort().join('|');
 }
 
-async function deepseek(system, payload) {
+async function deepseek(system, payload, attempt = 0) {
   const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
@@ -96,7 +96,14 @@ async function deepseek(system, payload) {
   });
   if (!res.ok) throw new Error(`DeepSeek ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
-  return JSON.parse(data.choices[0].message.content);
+  const body = data.choices[0].message.content;
+  try {
+    return JSON.parse(body);
+  } catch {
+    // Occasionally the reply is cut off mid-object. One retry, then let the caller skip this batch.
+    if (attempt > 0) throw new Error(`DeepSeek sent malformed JSON: ${body.slice(0, 200)}`);
+    return deepseek(system, payload, attempt + 1);
+  }
 }
 
 const prompt = (locale) =>
@@ -105,6 +112,7 @@ const prompt = (locale) =>
     'They are interface strings and emails of a client portal: clients file requests ("tickets") with Ali, a web developer at malipetek.dev, and AI agents build them after he approves.',
     'Return a JSON object with exactly the same keys.',
     'Keep {variables} exactly as they are. Keep ICU plural blocks like {n, plural, one {…} other {…}}: translate only the text inside the branches, keep # and the variable name, and use the plural categories this language needs.',
+    'Do not add or remove plural blocks: if the English has a plain {variable}, the translation keeps it plain.',
     'Keep names as they are: malipetek.dev, Ali, DeepSeek, Cloudflare, Workers AI, GitHub. Keep ⌘, ↵, →, ←, “ ” and line breaks.',
     'Use the polite form of address the language normally uses with customers, and short, plain wording.',
   ].join('\n');

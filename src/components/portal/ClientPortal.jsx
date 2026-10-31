@@ -11,6 +11,7 @@ import { englishT, loadT } from '../../i18n/index.js';
 import { fromAcceptLanguage } from '../../lib/locales.js';
 import { Composer } from './Composer.jsx';
 import { LanguageDialog } from './Language.jsx';
+import { stepText } from './copy.js';
 import { TicketView } from './TicketView.jsx';
 import { BillingView, ConnectionsView, Overview, ProjectView, RequestsView } from './views.jsx';
 import { PortalContext, go, href, isOpen, signedIn, usePortalData, useRoute } from './store.js';
@@ -38,7 +39,7 @@ export default function ClientPortal() {
   if (!data.user) {
     return (
       <div className="cp-boot">
-        <p>{errorText(data.error)}</p>
+        <p>{errorText(data.error, t)}</p>
         <Button onClick={() => void reload()}>{t('common.tryAgain')}</Button>
       </div>
     );
@@ -286,7 +287,7 @@ function SignIn({ t }) {
       // Local dev only: the Worker hands the link back instead of emailing it.
       setNote({ text: t('signin.checkInbox', { email: email.trim() }), error: false, dev: res.devLink ?? null });
     } catch (error) {
-      setNote({ text: errorText(error), error: true, dev: null });
+      setNote({ text: errorText(error, t), error: true, dev: null });
     } finally {
       setBusy(false);
     }
@@ -327,7 +328,7 @@ function SignIn({ t }) {
       <ol className="cp-signin__steps">
         {STEPS.map((step, i) => (
           <li key={step.key}>
-            <b>{String(i + 1).padStart(2, '0')}</b> {step.title}
+            <b>{String(i + 1).padStart(2, '0')}</b> {stepText(t, step, 'title')}
           </li>
         ))}
       </ol>

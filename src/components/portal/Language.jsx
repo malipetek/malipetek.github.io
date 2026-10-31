@@ -26,7 +26,7 @@ export function LanguageDialog({ user, onClose, onSaved }) {
       notify(t('lang.saved'));
       await onSaved();
     } catch (e) {
-      setError(errorText(e));
+      setError(errorText(e, t));
       setBusy(false);
     }
   };

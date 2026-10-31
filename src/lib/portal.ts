@@ -254,7 +254,7 @@ export function fmtTime(unix: number) {
   });
 }
 
-export function errorText(error: unknown) {
+export function errorText(error: unknown, t?: ((key: string, vars?: Record<string, unknown>) => string) | undefined) {
   const code = error instanceof ApiError ? error.code : 'error';
   const MAP: Record<string, string> = {
     offline: 'The portal backend is not configured on this build.',
@@ -288,7 +288,13 @@ export function errorText(error: unknown) {
     not_withdrawable: 'Ali has already approved this one. Write to him below to stop it.',
     forbidden: 'That needs the admin account.',
   };
-  return MAP[code] ?? 'Something went wrong. Try again.';
+  const known = MAP[code] !== undefined;
+  const english = known ? MAP[code] : 'Something went wrong. Try again.';
+  if (!t) return english;
+  // t returns the key itself when a translation is missing: fall back to the English.
+  const key = known ? `error.${code}` : 'error.generic';
+  const translated = t(key);
+  return translated !== key ? translated : english;
 }
 
 /**
