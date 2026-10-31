@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "malipetek",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "File and track software work requests on malipetek.dev, and search its public agentic-coding knowledgebase.",
   "author": {
     "name": "Muhammet Ali Petek",
@@ -10,7 +10,12 @@
   },
   "homepage": "https://malipetek.dev/agents",
   "license": "Proprietary",
-  "keywords": ["software contracting", "client portal", "site work", "knowledgebase"],
+  "keywords": [
+    "software contracting",
+    "client portal",
+    "site work",
+    "knowledgebase"
+  ],
   "extensions": {
     "com.openai": {
       "interface": {
@@ -22,6 +27,7 @@
         "capabilities": [
           "File a new software work request",
           "Track request status and conversation",
+          "See requests as a visual card",
           "See your projects and readiness",
           "Preview and publish your site",
           "Search the public coding knowledgebase"
@@ -69,6 +75,12 @@
               "expected_behavior": "Shows the connected account's projects with their names and readiness state."
             },
             {
+              "description": "See requests as a card",
+              "prompt": "Show me my requests.",
+              "tools_triggered": "portal_board",
+              "expected_behavior": "Renders the request board card with each request's status, project and cost, and a link into the portal for each one."
+            },
+            {
               "description": "File a request",
               "prompt": "File a request on malipetek: change the headline on my site's homepage to 'Fresh bread daily'.",
               "tools_triggered": "portal_file_request",
@@ -94,7 +106,7 @@
         "commerce_description": "The plugin does not sell products or process payments. Work is billed per the service's terms, outside the plugin."
       },
       "publication": {
-        "release_notes": "Initial release: file and track requests, see projects and site status, publish previews, and read the public knowledgebase."
+        "release_notes": "Adds a request board card: your requests with status, project and cost, refreshed from the portal. File and track requests, see projects and site status, publish previews, and read the public knowledgebase."
       }
     }
   }

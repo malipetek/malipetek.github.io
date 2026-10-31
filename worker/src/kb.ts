@@ -24,6 +24,7 @@ import { Hono } from 'hono';
 import { clientIp, isRateLimited, type Env, type HonoEnv } from './shared.ts';
 import { now, sessionUser } from './portal.ts';
 import { CLIENT_TOOLS, CLIENT_TOOL_NAMES, OWNER_TOOLS, OWNER_TOOL_NAMES, callClientTool } from './clientTools.ts';
+import { BOARD_HTML, BOARD_MIME, BOARD_UI_URI, boardSummary, type Board } from './boardUi.ts';
 
 /* ——————————————————————— shapes ——————————————————————— */
 
@@ -653,6 +654,15 @@ function toolText(value: unknown, isError = false) {
   };
 }
 
+/**
+ * Tools that carry a UI resource. The model still gets a short text result —
+ * the same data as `structuredContent`, written for reading — so hosts without
+ * MCP Apps support lose nothing but the card.
+ */
+const UI_TOOLS: Record<string, (value: unknown) => string> = {
+  portal_board: (value) => boardSummary(value as Board),
+};
+
 /** Reuse the REST list logic so MCP and HTTP can never drift apart. */
 async function searchEntries(env: Env, args: Record<string, unknown>) {
   const query = typeof args.query === 'string' ? args.query : '';
@@ -928,6 +938,19 @@ mcp.post('/', async (c) => {
           });
         case 'resources/read': {
           const uri = String(request.params?.uri ?? '');
+          // The board's view ships with the server; it is UI, not an entry.
+          if (uri === BOARD_UI_URI) {
+            return rpcResult(request.id, {
+              contents: [
+                {
+                  uri,
+                  mimeType: BOARD_MIME,
+                  text: BOARD_HTML,
+                  _meta: { ui: { prefersBorder: true } },
+                },
+              ],
+            });
+          }
           const match = uri.match(/^kb:\/\/entry\/(.+)$/);
           if (!match) return rpcError(request.id, -32602, `Unknown resource: ${uri}`);
           const key = decodeURIComponent(match[1]);
@@ -969,7 +992,8 @@ mcp.post('/', async (c) => {
         case 'tools/call': {
           const name = String(request.params?.name ?? '');
           const args = (request.params?.arguments as Record<string, unknown>) ?? {};
-          if (!toolsFor(author).some((t) => t.name === name)) {
+          const tool = toolsFor(author).find((t) => t.name === name);
+          if (!tool) {
             return rpcError(request.id, -32602, `Unknown tool: ${name}`);
           }
           try {
@@ -977,6 +1001,15 @@ mcp.post('/', async (c) => {
               CLIENT_TOOL_NAMES.has(name) || (OWNER_TOOL_NAMES.has(name) && author?.kind === 'admin')
                 ? await callClientTool(c.env, c.executionCtx, clientToken ?? (author?.kind === 'admin' ? bearer : null), name, args)
                 : await callTool(c.env, name, args, author);
+            // A UI tool answers twice: model-readable text and the structured
+            // payload the view renders (MCP Apps: ui/notifications/tool-result).
+            const summarize = UI_TOOLS[name];
+            if (summarize && (tool as { _meta?: { ui?: { resourceUri?: string } } })._meta?.ui?.resourceUri) {
+              return rpcResult(request.id, {
+                content: [{ type: 'text', text: summarize(value) }],
+                structuredContent: value as Record<string, unknown>,
+              });
+            }
             return rpcResult(request.id, toolText(value));
           } catch (error) {
             // Tool failures are results with isError, not protocol errors — that

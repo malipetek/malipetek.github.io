@@ -8,4 +8,4 @@ export const prerender = false;
 import type { APIRoute } from 'astro';
 import { proxyToWorker } from '../lib/workerProxy';
 
-export const ALL: APIRoute = ({ request }) => proxyToWorker(request, '/mcp');
+export const ALL: APIRoute = (context) => proxyToWorker(context, '/mcp');

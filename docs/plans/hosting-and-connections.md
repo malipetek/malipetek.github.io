@@ -233,16 +233,40 @@ Level, remaining custom rules incl. `block_il`) keeps them fetchable by
 OpenAI's reviewer.
 
 **Submission package**: `packages/chatgpt-plugin/` (portable Agent Plugins
-format — `plugin.json` + `mcp.json` declaring the remote server with mixed
-auth/DCR, onboarding skill, icons; `malipetek.zip` is the upload artifact).
-No `.app.json`/hooks in the package — both are rejected at submission.
+format — `plugin.json` + `mcp.json` declaring the remote server with OAuth and
+DCR, onboarding skill, icons; `malipetek.zip` is the upload artifact, 1.1.0 as
+of the board card). No `.app.json`/hooks in the package — both are rejected at
+submission.
 Still needed before submit: publisher verification on platform.openai.com and
 a demo recording URL (optional in ZIP, enterable in the dashboard).
 
-- The same MCP server as a ChatGPT app. The tools return an HTML widget
-  alongside text for: the request list (mini four-dot strips), one request
-  (step strip, now/next line, budget gauge — from `src/lib/tracker.ts`), and
-  a site card (preview / production links, last deploys).
+**UI (2026-11-01)**: one MCP Apps view, `ui://malipetek/board-v1.html`, served
+from `worker/src/boardUi.ts` by `resources/read` as `text/html;profile=mcp-app`
+and attached to `portal_board` via `_meta.ui.resourceUri`. The tool answers
+twice: `structuredContent` for the view, a short text summary
+(`boardSummary`) for the model and hosts without MCP Apps. The view is
+hand-written HTML/CSS/JS (no bundler, no framework, no external asset), so its
+CSP declares nothing and the host's restrictive default holds — the iframe
+makes no network request; everything goes over the `postMessage` bridge
+(`ui/initialize`, `tool-result`, `tools/call` for refresh, `ui/open-link` for
+"Open"). The URI is the cache key: a breaking change means a new URI and a new
+`_meta` in `clientTools.ts`. Planned next, when the request card proves
+useful: one request (step strip, now/next line, budget gauge — from
+`src/lib/tracker.ts`) and a site card (preview / production links, last
+deploys).
+
+**Fixed 2026-11-01 — the proxy hop**: `https://malipetek.dev/mcp` and the
+OAuth discovery documents are served by the intercom Worker through
+`src/lib/workerProxy.ts`. That hop was a plain `fetch()` to
+`https://malipetek.dev/api/…`, and a same-zone fetch from a Worker is **not**
+routed to another Worker's route — Cloudflare answers it from the zone origin,
+which for this domain is the old GitHub Pages site (404 on GET, 405 on POST).
+So `/mcp` was dead whenever the site build carried
+`PUBLIC_CHAT_ENDPOINT=https://malipetek.dev/api` (`.env.production`, since
+commit 5422f8b5). The hop now goes through the `INTERCOM` service binding
+(root `wrangler.jsonc`); `PUBLIC_CHAT_ENDPOINT` remains only as the local-dev
+fallback. Verified: `tools/list` returns 20 tools, `resources/read` returns the
+view, OAuth discovery returns JSON.
 - First test in developer mode with a client account (e.g.
   altermalipetek@gmail.com) end to end: connect, file a request, Ali
   approves, the client's ChatGPT submits a change, preview link appears.

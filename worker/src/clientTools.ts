@@ -9,6 +9,7 @@
  * /admin/* or manage tokens (portal.ts), so neither can these tools.
  */
 import { ATTENTION_KEYS } from '../../src/lib/pricing.js';
+import { BOARD_UI_URI } from './boardUi.ts';
 import { portal } from './portal.ts';
 import type { Env } from './shared.ts';
 
@@ -21,6 +22,8 @@ export interface ClientTool {
   description: string;
   inputSchema: Record<string, unknown>;
   readOnly: boolean;
+  /** MCP Apps: a tool carrying `ui.resourceUri` renders that view instead of plain text. */
+  _meta?: { ui?: { resourceUri: string } };
 }
 
 const ATTENTION = {
@@ -45,6 +48,15 @@ export const CLIENT_TOOLS: ClientTool[] = [
     description: 'List the requests on this account, newest activity first, with status and cost so far.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     readOnly: true,
+  },
+  {
+    name: 'portal_board',
+    title: 'Show my requests as a card',
+    description:
+      'Draw this account’s requests as an interactive card in the conversation: status, project, cost so far, and a link into the portal for each one. Use it when the person wants to see their requests rather than read a list of them. Mention only what matters afterwards — the card shows the details.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    readOnly: true,
+    _meta: { ui: { resourceUri: BOARD_UI_URI } },
   },
   {
     name: 'portal_request',
@@ -327,6 +339,36 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
     }
     case 'portal_requests':
       return portalCall(env, ctx, token, 'GET', '/portal/tickets');
+    case 'portal_board': {
+      // One shape for the card: what the view draws, and what a text-only host reads.
+      const [me, list] = await Promise.all([
+        portalCall(env, ctx, token, 'GET', '/portal/me'),
+        portalCall(env, ctx, token, 'GET', '/portal/tickets'),
+      ]);
+      const projects = Array.isArray(me?.projects) ? (me.projects as Array<Record<string, unknown>>) : [];
+      const tickets = Array.isArray(list?.tickets) ? (list.tickets as Array<Record<string, unknown>>) : [];
+      const cents = (value: unknown) => (typeof value === 'number' ? value : null);
+      const text = (value: unknown) => (typeof value === 'string' && value ? value : null);
+      return {
+        account: { name: text((me?.user as Record<string, unknown> | undefined)?.name) },
+        projects: projects.map((project) => ({
+          id: text(project.id),
+          name: text(project.name),
+          requests: typeof project.ticketCount === 'number' ? project.ticketCount : 0,
+        })),
+        requests: tickets.map((ticket) => ({
+          id: ticket.id,
+          title: text(ticket.title),
+          status: text(ticket.status),
+          project: text(ticket.project_name),
+          updated_at: text(ticket.updated_at),
+          unread: !!ticket.unread,
+          price_cents: cents(ticket.price_cents),
+          budget_cents: cents(ticket.budget_cents),
+        })),
+        updated_at: new Date().toISOString(),
+      };
+    }
     case 'portal_request':
       return portalCall(env, ctx, token, 'GET', `/portal/tickets/${Number.isInteger(id) ? id : 0}`);
     case 'portal_file_request': {

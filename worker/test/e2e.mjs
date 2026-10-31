@@ -517,6 +517,29 @@ const groups = {
     const state = new URL(installUrl).searchParams.get('state');
     const good = await fetch(`${W}/auth/github/callback?installation_id=1&state=${encodeURIComponent(state)}`, { redirect: 'manual' });
     check('a signed state is accepted (fails later on the missing code, not on sign-in)', good.headers.get('location')?.includes('github=bad'), good.headers.get('location'));
+
+    // A private repo the nodes cannot clone: the queue says why, and connecting
+    // GitHub links the project to that connection by itself.
+    const { project, ticketId } = (await newProject(a.session, { kind: 'existing', name: `Private Site ${Date.now() % 100000}`, brief: OLD_BRIEF, repoKind: 'repo', repo: 'https://github.com/ClientAcct/private-site' })).data;
+    await approve(admin, ticketId);
+    const failed = await call(`/node/projects/${project.slug}/clone-failed`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId: 'macbook', error: 'private repo this machine has no access to' } });
+    check('a node reports a failed clone', failed.status === 200);
+    await node(`e2e-gh-none-${Date.now() % 100000}`, []); // a live node that does not hold the folder
+    const reason = (await call('/admin/queue', { auth: admin })).data.queue?.find((i) => i.id === ticketId)?.reason ?? '';
+    check('the queue says the repo cannot be cloned, and what to do', /No node can clone https:\/\/github\.com\/ClientAcct\/private-site: macbook: private repo/.test(reason) && /connect GitHub/.test(reason), reason);
+    const card = (await call('/admin/projects', { auth: admin })).data.projects.find((p) => p.id === project.id);
+    check('the admin card says so too', card?.repoStatus?.state === 'failed' && /cannot clone/.test(card.repoStatus.detail), JSON.stringify(card?.repoStatus));
+    sql(`UPDATE github_installations SET user_id = '${a.user.id}' WHERE id = 42424242;`);
+    await call('/portal/github', { auth: a.session });
+    const linked = (await call('/node/projects', { auth: RUNNER_TOKEN })).data.projects.find((p) => p.id === project.id);
+    check('connecting GitHub links the project whose repo is under that account', linked?.githubApp === true, JSON.stringify(linked));
+    check('…and clears the old clone failure', (await call('/admin/projects', { auth: admin })).data.projects.find((p) => p.id === project.id)?.repoStatus?.state === 'ready');
+    const { project: other } = (await newProject(a.session, { kind: 'existing', name: `Elsewhere ${Date.now() % 100000}`, brief: OLD_BRIEF, repoKind: 'repo', repo: 'https://github.com/someoneelse/site' })).data;
+    await call('/portal/github', { auth: a.session });
+    check('a repo under another account is not linked', !(await call('/node/projects', { auth: RUNNER_TOKEN })).data.projects.find((p) => p.id === other.id)?.githubApp);
+    await call(`/node/projects/${other.slug}/clone-failed`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId: 'macbook', error: 'no access' } });
+    await node(`e2e-gh-${Date.now() % 100000}`, [other.slug]);
+    check('a node that holds the folder clears the failure', (await call('/admin/projects', { auth: admin })).data.projects.find((p) => p.id === other.id)?.repoStatus?.state === 'ready');
   },
 
   async queue({ admin }) {
@@ -877,6 +900,12 @@ const groups = {
     check('…which waits for Ali, with its budget and attention', !read.error && read.value.ticket.status === 'new' && read.value.ticket.budget_cents === 2000 && read.value.ticket.attention === 'auto', read.text.slice(0, 200));
     check('it lists the account’s requests', (await tool('portal_requests', {})).value.tickets?.some((t) => t.id === rid));
     check('it lists projects with their setup', (await tool('portal_projects', {})).value.projects?.some((p) => p.id === project.id && p.setup));
+    const boardTool = (await rpc('tools/list', {}, token)).result.tools.find((t) => t.name === 'portal_board');
+    check('the board tool points at a UI resource', boardTool?._meta?.ui?.resourceUri === 'ui://malipetek/board-v1.html');
+    const view = await rpc('resources/read', { uri: 'ui://malipetek/board-v1.html' }, token);
+    check('the view is served as an MCP App', view.result?.contents?.[0]?.mimeType === 'text/html;profile=mcp-app' && /^<!DOCTYPE html>/.test(view.result.contents[0].text ?? ''));
+    const board = await rpc('tools/call', { name: 'portal_board', arguments: {} }, token);
+    check('the board answers with structured card data and a text fallback', board.result?.structuredContent?.requests?.some((r) => r.id === rid) && /#\d+ Add opening hours/.test(board.result?.content?.[0]?.text ?? ''), JSON.stringify(board.result?.structuredContent ?? {}).slice(0, 200));
     check('it replies on a request', !(await tool('portal_reply', { request_id: rid, text: 'Saturdays too.' })).error && /Saturdays too/.test(JSON.stringify((await call(`/portal/tickets/${rid}`, { auth: a.session })).data)));
     check('it raises the budget', !(await tool('portal_set_budget', { request_id: rid, budget_usd: 50 })).error && (await tool('portal_request', { request_id: rid })).value.ticket.budget_cents === 5000);
     const second = (await tool('portal_file_request', { title: 'Never mind this', body: 'Changed my mind.', project_id: project.id })).value.request_id;
@@ -1143,7 +1172,8 @@ const groups = {
       const local = execFileSync('git', ['for-each-ref', '--format=%(refname:short)', `refs/heads/ticket-${ticketId}-run*`], { cwd: repo }).toString().trim();
       const branch = execFileSync('git', ['show', '--stat', '--format=', local], { cwd: repo }).toString();
       check('the commit holds the agent’s change only', /src\/pages\/order\.astro/.test(branch) && !/settings\.local\.json/.test(branch), branch);
-      check('the settings file is back where it was', existsSync(join(dir, 'wt', `${project.slug}-${local}`, '.claude', 'settings.local.json')));
+      // A project's runs share one folder (fleet/node.mjs runFolder).
+      check('the settings file is back where it was', existsSync(join(dir, 'wt', project.slug, '.claude', 'settings.local.json')));
       const status = (await call(`/portal/tickets/${ticketId}`, { auth: a.session })).data.ticket.status;
       check('the ticket is in review', status === 'review', status);
       check('the agent found the attachment in its checkout', /1-logo\.png/.test(readFileSync(join(dir, 'saw-files'), 'utf8')));

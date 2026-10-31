@@ -40,6 +40,18 @@
     },
   ],
 
+  // /mcp and the OAuth discovery documents are answered by the intercom
+  // Worker, proxied through this one (src/lib/workerProxy.ts). A service
+  // binding is the only reliable hop between two Workers on the same zone —
+  // a same-zone fetch is answered by the zone origin (the old GitHub Pages
+  // site), not by the other Worker's route.
+  "services": [
+    {
+      "binding": "INTERCOM",
+      "service": "malipetek-intercom"
+    }
+  ],
+
   // Keystatic admin: set these three with `wrangler secret put` (see below) —
   // KEYSTATIC_GITHUB_CLIENT_ID / KEYSTATIC_GITHUB_CLIENT_SECRET come from the
   // GitHub OAuth app, KEYSTATIC_SECRET is a random string.
