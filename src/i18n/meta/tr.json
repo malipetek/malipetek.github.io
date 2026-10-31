@@ -1558,5 +1558,229 @@
   "views.github.waitingOnConnection": {
     "en": "{count, plural, one {# project names a repo we cannot read yet.} other {# projects name a repo we cannot read yet.}} Connect GitHub and I will create it in your account if it is missing — until then that work waits.",
     "reviewed": false
+  },
+  "start.pageTitle": {
+    "en": "Set up a project — malipetek",
+    "reviewed": false
+  },
+  "start.heading": {
+    "en": "Set up",
+    "reviewed": false
+  },
+  "start.who.requests": {
+    "en": "Your requests",
+    "reviewed": false
+  },
+  "start.signedOut.lede": {
+    "en": "The form is tied to your account. Sign in first — it takes a minute.",
+    "reviewed": false
+  },
+  "start.signedOut.cta": {
+    "en": "Go to the portal →",
+    "reviewed": false
+  },
+  "start.fork.lede": {
+    "en": "Two ways in. Pick the one that sounds like you.",
+    "reviewed": false
+  },
+  "start.fork.existing.title": {
+    "en": "I have a site or codebase",
+    "reviewed": false
+  },
+  "start.fork.existing.note": {
+    "en": "It runs already, and you want it taken care of: fixes, features, upkeep.",
+    "reviewed": false
+  },
+  "start.fork.new.title": {
+    "en": "I need something built",
+    "reviewed": false
+  },
+  "start.fork.new.note": {
+    "en": "Nothing exists yet. Say what you do and we build the way you work.",
+    "reviewed": false
+  },
+  "start.fork.footnote": {
+    "en": "Three questions, then your first request is filed. Nothing is charged for asking.",
+    "reviewed": false
+  },
+  "start.already": {
+    "en": "You already have {n, plural, one {# project} other {# projects}}. This adds another.",
+    "reviewed": false
+  },
+  "start.back": {
+    "en": "← Back",
+    "reviewed": false
+  },
+  "start.next": {
+    "en": "Continue →",
+    "reviewed": false
+  },
+  "start.create": {
+    "en": "Create project →",
+    "reviewed": false
+  },
+  "start.creating": {
+    "en": "Creating…",
+    "reviewed": false
+  },
+  "start.missing": {
+    "en": "One more thing: {fields}.",
+    "reviewed": false
+  },
+  "start.step.existing.1.title": {
+    "en": "What is it?",
+    "reviewed": false
+  },
+  "start.step.existing.1.lede": {
+    "en": "Name it, then describe it in a sentence or two.",
+    "reviewed": false
+  },
+  "start.field.name.label": {
+    "en": "Project name",
+    "reviewed": false
+  },
+  "start.field.existing.name.placeholder": {
+    "en": "The shop, the app, the site",
+    "reviewed": false
+  },
+  "start.field.existing.what.label": {
+    "en": "What is it, and what does it do?",
+    "reviewed": false
+  },
+  "start.step.existing.2.title": {
+    "en": "Where does the code live?",
+    "reviewed": false
+  },
+  "start.step.existing.2.lede": {
+    "en": "A repo, a zip, or “not sure” — all three are fine.",
+    "reviewed": false
+  },
+  "start.field.repoKind.label": {
+    "en": "How do we get it?",
+    "reviewed": false
+  },
+  "start.option.repo.label": {
+    "en": "A repo I can point you to",
+    "reviewed": false
+  },
+  "start.option.repo.note": {
+    "en": "GitHub, GitLab, or a forge of your own",
+    "reviewed": false
+  },
+  "start.option.zip.label": {
+    "en": "I will send a zip",
+    "reviewed": false
+  },
+  "start.option.zip.note": {
+    "en": "A copy is enough to start",
+    "reviewed": false
+  },
+  "start.option.none.label": {
+    "en": "Not sure yet",
+    "reviewed": false
+  },
+  "start.option.none.note": {
+    "en": "Say it on the first thread",
+    "reviewed": false
+  },
+  "start.field.repo.label": {
+    "en": "Repo URL",
+    "reviewed": false
+  },
+  "start.field.repo.placeholder": {
+    "en": "https://github.com/you/repo",
+    "reviewed": false
+  },
+  "start.field.where.label": {
+    "en": "Anything else about where it lives?",
+    "reviewed": false
+  },
+  "start.field.where.hint": {
+    "en": "Hosting, a staging copy, who has access.",
+    "reviewed": false
+  },
+  "start.step.existing.3.title": {
+    "en": "What do you want first?",
+    "reviewed": false
+  },
+  "start.step.existing.3.lede": {
+    "en": "One request is enough to start. It becomes your first ticket.",
+    "reviewed": false
+  },
+  "start.field.existing.goal.label": {
+    "en": "The first thing",
+    "reviewed": false
+  },
+  "start.field.existing.goal.hint": {
+    "en": "A fix, a feature, or “look at it and tell me what you would do”.",
+    "reviewed": false
+  },
+  "start.step.new.1.title": {
+    "en": "What do you do?",
+    "reviewed": false
+  },
+  "start.step.new.1.lede": {
+    "en": "Name it, then say what the business does — plain words.",
+    "reviewed": false
+  },
+  "start.field.new.what.label": {
+    "en": "What do you do?",
+    "reviewed": false
+  },
+  "start.step.new.2.title": {
+    "en": "What do you do by hand today?",
+    "reviewed": false
+  },
+  "start.step.new.2.lede": {
+    "en": "The thing you wish happened on its own. This is the part that decides what gets built.",
+    "reviewed": false
+  },
+  "start.field.manual.label": {
+    "en": "Done by hand, every week",
+    "reviewed": false
+  },
+  "start.field.manual.hint": {
+    "en": "Booking, quoting, invoices, posting, chasing people, a spreadsheet.",
+    "reviewed": false
+  },
+  "start.step.new.3.title": {
+    "en": "What would done look like?",
+    "reviewed": false
+  },
+  "start.step.new.3.lede": {
+    "en": "In two weeks, what should exist that does not today?",
+    "reviewed": false
+  },
+  "start.field.new.goal.label": {
+    "en": "Done looks like",
+    "reviewed": false
+  },
+  "start.attention.legend": {
+    "en": "How much of me do you want?",
+    "reviewed": false
+  },
+  "start.attention.about": {
+    "en": "about {time} of my time, {price}",
+    "reviewed": false
+  },
+  "start.attention.hourly": {
+    "en": "by the clock, {price} an hour",
+    "reviewed": false
+  },
+  "start.budget.label": {
+    "en": "Budget in USD",
+    "reviewed": false
+  },
+  "start.budget.optional": {
+    "en": "(optional)",
+    "reviewed": false
+  },
+  "start.budget.placeholder": {
+    "en": "No limit",
+    "reviewed": false
+  },
+  "start.meta.note": {
+    "en": "You pay for the time I actually spend, by the second, plus what the AI run cost, with no markup. Nothing starts until I have read the request.",
+    "reviewed": false
   }
 }

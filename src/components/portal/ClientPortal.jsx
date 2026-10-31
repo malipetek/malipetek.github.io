@@ -7,8 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { demoLogin, errorText, logout, requestLink, session } from '../../lib/portal';
 import { STEPS } from '../../lib/offer.js';
-import { englishT, loadT } from '../../i18n/index.js';
-import { fromAcceptLanguage } from '../../lib/locales.js';
+import { browserLocale, useTranslator } from './useTranslator.js';
 import { Composer } from './Composer.jsx';
 import { LanguageDialog } from './Language.jsx';
 import { stepText } from './copy.js';
@@ -32,7 +31,7 @@ export default function ClientPortal() {
     if (lost) setAuthed(false);
   }, [lost]);
   // Their saved language once signed in; the browser's before that.
-  const t = useTranslator(data.user?.locale ?? fromAcceptLanguage(navigator.languages?.join(',') || navigator.language));
+  const t = useTranslator(data.user?.locale ?? browserLocale());
 
   if (!authed) return <SignIn t={t} />;
   if (!data.loaded) return <p className="cp-boot">{t('common.loading')}</p>;
@@ -45,20 +44,6 @@ export default function ClientPortal() {
     );
   }
   return <Shell data={data} reload={reload} t={t} onSignedOut={() => setAuthed(false)} />;
-}
-
-/** t for a locale: English at once, the locale's catalog as soon as it has loaded. */
-function useTranslator(locale) {
-  const [t, setT] = useState(() => englishT);
-  useEffect(() => {
-    let live = true;
-    document.documentElement.lang = locale;
-    loadT(locale).then((next) => live && setT(() => next));
-    return () => {
-      live = false;
-    };
-  }, [locale]);
-  return t;
 }
 
 function Shell({ data, reload, t, onSignedOut }) {
