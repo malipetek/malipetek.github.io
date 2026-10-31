@@ -134,15 +134,21 @@ export async function ensureRepo(env: Env, projectId: string): Promise<'exists' 
   const parts = repoParts(project?.repo ?? null);
   if (!project || !parts || !project.github_installation_id) return 'unconfigured';
 
-  const { token } = await installationToken(env, project.github_installation_id, undefined, {
-    administration: 'write',
-  });
+  // The lookup only needs contents; asking for administration here would fail
+  // the token for an app that was never granted it, and break ordinary runs.
+  const { token } = await installationToken(env, project.github_installation_id);
   const known = await fetch(`${GH_API}/repos/${parts.owner}/${parts.name}`, {
     headers: ghHeaders(token),
     signal: AbortSignal.timeout(10_000),
   });
   if (known.ok) return 'exists';
   if (known.status !== 404) throw new Error(`github lookup failed (${known.status})`);
+
+  // Creating one needs Administration: write on the app. If it is not granted
+  // this throws with GitHub's own words, which land in repo_error for Ali.
+  const { token: admin } = await installationToken(env, project.github_installation_id, undefined, {
+    administration: 'write',
+  });
 
   const installation = await env.DB.prepare('SELECT account_type FROM github_installations WHERE id = ?')
     .bind(project.github_installation_id)
@@ -152,7 +158,7 @@ export async function ensureRepo(env: Env, projectId: string): Promise<'exists' 
     : `${GH_API}/user/repos`;
   const created = await fetch(where, {
     method: 'POST',
-    headers: ghHeaders(token),
+    headers: ghHeaders(admin),
     body: JSON.stringify({ name: parts.name, private: true, auto_init: true }),
     signal: AbortSignal.timeout(20_000),
   });
