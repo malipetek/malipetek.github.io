@@ -36,6 +36,7 @@
 
 ## Client sites (malipetek.online)
 - Serving worker: `sites-worker/` (`malipetek-sites`, routes `*.malipetek.online/*` + apex). Deploy: `cd sites-worker && npx wrangler deploy`.
+- Previews carry a feedback launcher (`public/preview-feedback.js`): note, voice note (transcribed by Workers AI Whisper) or annotated screenshot → a normal client ticket on that site's project. `sites-worker` injects it into preview HTML at serve time; client-Cloudflare previews get it at upload time (`worker/src/cloudflare-sites.ts`). Auth is `sites.feedback_token` (migration 0030), appended as `?mf=` to the portal's `feedbackUrl`; `POST /api/portal/preview-feedback` is the one portal route without a session. Screenshot rendering is vendored in `public/vendor/modern-screenshot.js`.
 - Deploys are immutable in R2 `malipetek-sites` (manifests + content-addressed blobs); `sites.preview_deploy`/`production_deploy` are pointers. Publish/rollback only move pointers.
 - Nodes build the worktree (`malipetek.site.json` in the repo says how) and upload deploys via `/node/sites/:slug/deploys`; a pending `tickets.build_requested_at` means a client's agent asked for a preview build (`/node/builds/:ticketId`).
 

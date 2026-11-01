@@ -139,7 +139,7 @@ export function TicketView({ id }) {
             <p>{t(nextKey)}</p>
           </div>
           {site && ticket.status === 'review' ? (
-            <Button kind="primary" href={site.previewUrl} target="_blank" rel="noopener">
+            <Button kind="primary" href={site.feedbackUrl || site.previewUrl} target="_blank" rel="noopener">
               {t('ticket.preview.open')} <Icon name="ext" size={14} />
             </Button>
           ) : site && ticket.status === 'done' && where === 'live' ? (
@@ -184,7 +184,7 @@ export function TicketView({ id }) {
                         : t('ticket.site.pending')}
               </p>
               <div className="cp-links">
-                <a href={site.previewUrl} target="_blank" rel="noopener">
+                <a href={site.feedbackUrl || site.previewUrl} target="_blank" rel="noopener">
                   <Icon name="ext" size={13} /> {t('ticket.site.previewLink')}
                 </a>
                 <a href={site.productionUrl} target="_blank" rel="noopener">

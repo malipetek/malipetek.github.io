@@ -20,6 +20,13 @@ export const FILE_TYPES = {
   jpeg: 'image/jpeg',
   gif: 'image/gif',
   webp: 'image/webp',
+  // Voice notes from the preview feedback widget. Media containers only: a
+  // browser plays them, nothing executes them.
+  webm: 'audio/webm',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  ogg: 'audio/ogg',
+  wav: 'audio/wav',
   pdf: 'application/pdf',
   txt: 'text/plain',
   log: 'text/plain',
@@ -48,7 +55,7 @@ export function checkPicked(files) {
   if (files.length > FILE_LIMITS.perMessage) return `At most ${FILE_LIMITS.perMessage} files at a time.`;
   for (const f of files) {
     const ext = f.name.includes('.') ? f.name.split('.').pop().toLowerCase() : '';
-    if (!FILE_TYPES[ext]) return `${f.name}: that type is not accepted. Images, PDF, text, CSV, JSON, zip, Word and Excel are.`;
+    if (!FILE_TYPES[ext]) return `${f.name}: that type is not accepted. Images, voice notes, PDF, text, CSV, JSON, zip, Word and Excel are.`;
     if (f.size > FILE_LIMITS.bytes) return `${f.name} is over 10 MB.`;
   }
   return null;

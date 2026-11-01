@@ -19,6 +19,12 @@ interface Env {
 
 const DOMAIN = 'malipetek.online';
 const PORTAL = 'https://malipetek.dev';
+/**
+ * The feedback widget on previews: the script lives on the portal (one copy,
+ * shared with client-hosted mirrors), the API hop is the portal's Worker.
+ */
+const FEEDBACK_SCRIPT = `${PORTAL}/preview-feedback.js?v=1`;
+const FEEDBACK_API = `${PORTAL}/api`;
 
 interface ManifestFile {
   sha: string;
@@ -36,14 +42,32 @@ const blobKey = (slug: string, sha: string) => `sites/${slug}/blobs/${sha}`;
 function baseHeaders(preview: boolean): Record<string, string> {
   const headers: Record<string, string> = {
     'content-security-policy':
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
-      "img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; " +
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://malipetek.dev; style-src 'self' 'unsafe-inline'; " +
+      "img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob: data:; " +
+      "connect-src 'self' https://malipetek.dev; " +
       "frame-ancestors 'none'; base-uri 'self'; form-action 'self' https:",
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'strict-origin-when-cross-origin',
   };
   if (preview) headers['x-robots-tag'] = 'noindex';
   return headers;
+}
+
+/**
+ * The preview feedback launcher. A client looking at a preview is the person
+ * who notices what is wrong, and making them find the portal first loses the
+ * note. The tag carries the site slug and the API base; the token arrives in
+ * the preview link's `?mf=`, so it never sits in the HTML or the page source.
+ */
+function feedbackTag(slug: string): string {
+  return `<script src="${FEEDBACK_SCRIPT}" data-slug="${slug}" data-api="${FEEDBACK_API}" data-malipetek-feedback="1" defer></script>`;
+}
+
+function injectFeedback(html: string, slug: string): string {
+  if (html.includes('data-malipetek-feedback')) return html;
+  const tag = feedbackTag(slug);
+  const end = html.toLowerCase().lastIndexOf('</body>');
+  return end === -1 ? html + tag : html.slice(0, end) + tag + html.slice(end);
 }
 
 /** Hashed build output is immutable; HTML is always revalidated; the rest sits between. */
@@ -106,14 +130,29 @@ async function serve(
   const object = await env.SITES.get(blobKey(slug, entry.sha));
   if (!object) return null;
   const type = entry.type ?? 'application/octet-stream';
-  return new Response(object.body, {
+  const inject = preview && type.startsWith('text/html');
+  if (!inject) {
+    return new Response(object.body, {
+      status,
+      headers: {
+        ...baseHeaders(preview),
+        'content-type': type,
+        'content-length': String(entry.size),
+        'cache-control': cacheFor(path, type),
+        etag: object.httpEtag,
+      },
+    });
+  }
+  // Preview HTML is revalidated already, so rewriting it here costs nothing
+  // and keeps the stored blob (shared by both channels) untouched.
+  const html = injectFeedback(await object.text(), slug);
+  return new Response(html, {
     status,
     headers: {
       ...baseHeaders(preview),
-      'content-type': type,
-      'content-length': String(entry.size),
+      'content-type': type.replace(/;\s*charset=.*/i, '') + '; charset=utf-8',
+      'content-length': String(new TextEncoder().encode(html).byteLength),
       'cache-control': cacheFor(path, type),
-      etag: object.httpEtag,
     },
   });
 }

@@ -505,6 +505,62 @@ const groups = {
     check('the ticket says why nothing was queued', (held.messages.find((m) => m.author === 'system' && /no readable outbox/.test(m.body)) ?? null) !== null);
   },
 
+  async previewFeedback() {
+    const a = account(`preview-${Date.now()}@example.com`);
+    const project = (await newProject(a.session, { kind: 'new', name: 'Feedback Cafe', brief: NEW_BRIEF })).data.project;
+    const slug = `feedback-${Date.now() % 100000}`;
+    const started = (await call(`/portal/projects/${project.id}/site`, { method: 'POST', auth: a.session, body: { name: 'Main', siteSlug: slug } })).data.site;
+    await call(`/node/sites/${slug}/repo`, { method: 'POST', auth: RUNNER_TOKEN, body: { repo: `https://github.com/malipetek/${slug}` } });
+    const site = (await call(`/portal/projects/${project.id}/sites`, { auth: a.session })).data.sites.find((s) => s.id === started.id);
+    check(
+      'a ready site hands out a feedback link but shows a clean preview address',
+      site.state === 'ready' && /[?&]mf=/.test(site.feedbackUrl ?? '') && !/[?&]mf=/.test(site.previewUrl ?? ''),
+      JSON.stringify(site),
+    );
+    const token = new URL(site.feedbackUrl).searchParams.get('mf');
+
+    const form = new FormData();
+    form.append('token', token);
+    form.append('body', 'The hero image is cut off on mobile');
+    form.append('page', `${site.previewUrl}/?from=portal&mf=${token}`);
+    form.append('viewport', '390x844');
+    form.append('files', new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }), 'screenshot.png');
+    const res = await fetch(`${W}/portal/preview-feedback`, { method: 'POST', body: form });
+    const data = await res.json();
+    check('the preview files a request', res.status === 201 && Number.isInteger(data.ticketId), JSON.stringify(data));
+
+    const ticket = (await call(`/portal/tickets/${data.ticketId}`, { auth: a.session })).data;
+    check(
+      'it lands on the site’s project and site, waiting for approval',
+      ticket.ticket.project_id === project.id && ticket.ticket.site_id === site.id && ticket.ticket.status === 'new',
+      JSON.stringify(ticket.ticket),
+    );
+    check(
+      'the thread has the note and the screenshot',
+      ticket.messages.some((m) => /cut off/.test(m.body)) && ticket.messages.some((m) => m.files?.length === 1),
+      JSON.stringify(ticket.messages),
+    );
+    check(
+      'it records where the note was made, without the token',
+      ticket.messages.some((m) => m.author === 'system' && /\/\?from=portal/.test(m.body) && !/mf=/.test(m.body)),
+      JSON.stringify(ticket.messages),
+    );
+
+    const bad = new FormData();
+    bad.append('token', 'f'.repeat(36));
+    bad.append('body', 'anything');
+    check('an unknown token is refused', (await fetch(`${W}/portal/preview-feedback`, { method: 'POST', body: bad })).status === 404);
+
+    const malformed = new FormData();
+    malformed.append('token', 'not-a-token');
+    malformed.append('body', 'anything');
+    check('a malformed token is refused', (await fetch(`${W}/portal/preview-feedback`, { method: 'POST', body: malformed })).status === 401);
+
+    const empty = new FormData();
+    empty.append('token', token);
+    check('an empty note is refused', (await fetch(`${W}/portal/preview-feedback`, { method: 'POST', body: empty })).status === 400);
+  },
+
   async sites({ admin }) {
     const a = account(`site-${Date.now()}@example.com`);
     const other = account(`intruder-${Date.now()}@example.com`);

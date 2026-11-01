@@ -99,6 +99,7 @@ import { grantedAccounts, connectionRow } from './cfaccess.ts';
 import { ensureRepo, useClientRepo } from './ghapp.ts';
 import { moveSite, moveTicket, promotePrimary } from './move.ts';
 import { runIntake } from './intake.ts';
+import { isAudioType, transcribe } from './transcribe.ts';
 import { checkUploads, fileCount, fileResponse, FILE_LIMITS, sizeText, storeFiles, withFiles, type FileMeta, type Upload } from './files.ts';
 
 export { now };
@@ -783,7 +784,11 @@ const requireBrowser = async (c: Ctx, next: () => Promise<void>) => {
 
 portal.use('/auth/logout', requireUser, requireBrowser);
 // Cloudflare's OAuth redirect carries no session; its signed state says whose it is (cfconnect.ts).
-portal.use('/portal/*', (c, next) => (c.req.path === '/portal/cloudflare/callback' ? next() : requireUser(c, next)));
+// Two portal routes are reached without a portal session: Cloudflare's OAuth
+// redirect (its signed state says whose it is) and preview feedback (the
+// site's token is the credential).
+const PUBLIC_PORTAL_PATHS = new Set(['/portal/cloudflare/callback', '/portal/preview-feedback']);
+portal.use('/portal/*', (c, next) => (PUBLIC_PORTAL_PATHS.has(c.req.path) ? next() : requireUser(c, next)));
 portal.use('/portal/agent-tokens', requireBrowser);
 portal.use('/portal/agent-tokens/*', requireBrowser);
 portal.use('/admin/*', requireUser, requireAdmin);
@@ -1575,6 +1580,126 @@ portal.post('/portal/tickets', async (c) => {
     ]),
   );
   return reply(c, { id: ticket.id, files: stored, intake }, 201);
+});
+
+/* ——————————————————————— preview feedback ——————————————————————— */
+
+/**
+ * A request filed from a preview site by the widget the preview host injects.
+ *
+ * The caller is not on the portal origin, so there is no session: the site's
+ * `feedback_token` in the form body is the credential. It only allows filing a
+ * request for that one site's project — nothing is read back except the new
+ * ticket's own id, and the ticket still waits for Ali's approval like any
+ * other client request.
+ *
+ * Multipart body: `token`, `body`, optional `page`, `viewport`, `files`.
+ * CORS is echoed for this route only: a preview lives on another origin
+ * (malipetek.online, workers.dev or the client's own domain). Since the token
+ * travels in the body and no cookie is read, echoing the origin grants nothing.
+ */
+const PREVIEW_FEEDBACK_LIMIT = 8;
+const PREVIEW_FEEDBACK_WINDOW_SECONDS = 60 * 60;
+
+/** `pathname + search` of the page the note was made on, without the token. */
+function previewPage(value: unknown): string | null {
+  if (typeof value !== 'string' || !value || value.length > 2000) return null;
+  try {
+    const url = new URL(value);
+    url.searchParams.delete('mf');
+    const path = `${url.pathname}${url.search}`;
+    return path.length > 300 ? path.slice(0, 300) : path;
+  } catch {
+    return null;
+  }
+}
+
+portal.post('/portal/preview-feedback', async (c) => {
+  const env = c.env;
+  const requestOrigin = c.req.header('Origin') ?? null;
+  // Unlike the rest of the portal this route cannot use `reply`: the caller's
+  // origin is a preview host, which is not on ALLOWED_ORIGINS.
+  const out = (data: unknown, status = 200) => {
+    const res = json(data, status, null);
+    if (requestOrigin) {
+      res.headers.set('Access-Control-Allow-Origin', requestOrigin);
+      res.headers.set('Vary', 'Origin');
+    }
+    return res;
+  };
+
+  const msg = await readMessage(c);
+  if (msg === 'too_large') return out({ error: 'file_too_large' }, 413);
+  if (!msg) return out({ error: 'bad_request' }, 400);
+
+  const token = typeof msg.fields.token === 'string' ? msg.fields.token : '';
+  if (!/^[a-f0-9]{32,64}$/.test(token)) return out({ error: 'signed_out' }, 401);
+
+  const site = await env.DB.prepare(
+    `SELECT s.id, s.project_id, s.name, s.state, p.name AS project_name
+       FROM sites s JOIN projects p ON p.id = s.project_id
+      WHERE s.feedback_token = ?`,
+  )
+    .bind(token)
+    .first<{ id: string; project_id: string; name: string | null; state: string; project_name: string }>();
+  if (!site || site.state !== 'ready') return out({ error: 'unknown_site' }, 404);
+
+  const client = await env.DB.prepare(
+    `SELECT u.id, u.email, u.name, u.locale
+       FROM user_projects up JOIN users u ON u.id = up.user_id
+      WHERE up.project_id = ? AND u.role = 'client'
+      ORDER BY u.created_at ASC LIMIT 1`,
+  )
+    .bind(site.project_id)
+    .first<{ id: string; email: string; name: string | null; locale: string | null }>();
+  if (!client) return out({ error: 'unknown_site' }, 404);
+
+  if (await isRateLimited(env, clientIp(c.req.raw), 'preview-feedback', PREVIEW_FEEDBACK_LIMIT, PREVIEW_FEEDBACK_WINDOW_SECONDS)) {
+    return out({ error: 'rate_limited' }, 429);
+  }
+
+  if (msg.text.length > MAX_BODY_CHARS) return out({ error: 'bad_ticket' }, 400);
+  const text = msg.text;
+  if (msg.files.length && !env.FILES) return out({ error: 'files_unavailable' }, 503);
+  const checked = checkUploads(msg.files, 0);
+  if (!checked.ok) return out({ error: checked.error, name: checked.name }, checked.error === 'file_too_large' ? 413 : 400);
+  if (!text && !checked.uploads.length) return out({ error: 'empty' }, 400);
+
+  const audio = checked.uploads.find((file) => isAudioType(file.type));
+  const transcript = audio ? await transcribe(env, audio.data, audio.type) : null;
+
+  const siteName = site.name || site.project_name;
+  const firstLine = text.split('\n').map((line) => line.trim()).find(Boolean);
+  const title = (firstLine ? firstLine.slice(0, 120) : `Feedback on the preview of ${siteName}`).slice(0, MAX_TITLE_CHARS);
+
+  let body = text;
+  if (transcript) body = body ? `${body}\n\nVoice note transcript:\n${transcript}` : `Voice note transcript:\n${transcript}`;
+  if (!body) body = audio ? 'Voice note attached.' : 'See the attached screenshot.';
+
+  const t = now();
+  const ticket = await env.DB.prepare(
+    `INSERT INTO tickets (user_id, project_id, site_id, title, status, attention, kind, worked_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'new', ?, 'client', 'fleet', ?, ?) RETURNING id`,
+  )
+    .bind(client.id, site.project_id, site.id, title, DEFAULT_ATTENTION, t, t)
+    .first<{ id: number }>();
+  if (!ticket) return out({ error: 'insert_failed' }, 500);
+
+  const stored = await postMessage(env, ticket.id, 'client', body, false, checked.uploads, t);
+  const page = previewPage(msg.fields.page);
+  const viewport = typeof msg.fields.viewport === 'string' && /^\d{2,5}x\d{2,5}$/.test(msg.fields.viewport) ? msg.fields.viewport : null;
+  const where = [page ? `on ${page}` : null, viewport ? `at ${viewport}` : null].filter(Boolean).join(' ');
+  await env.DB.prepare(
+    `INSERT INTO ticket_messages (ticket_id, author, body, created_at) VALUES (?, 'system', ?, ?)`,
+  )
+    .bind(ticket.id, `Filed from the preview of ${siteName}${where ? ` ${where}` : ''}.`, t)
+    .run();
+
+  const ref = { id: ticket.id, title, client_email: client.email, client_locale: client.locale };
+  c.executionCtx.waitUntil(
+    Promise.all([relayClientMessage(env, ref, stored.messageId, body, stored, true), confirmTicketToClient(env, ref)]),
+  );
+  return out({ ticketId: ticket.id, url: `${siteUrl(env)}/portal/ticket#id=${ticket.id}`, transcript }, 201);
 });
 
 /** Load a ticket the caller may see: their own, or any ticket for the admin. */

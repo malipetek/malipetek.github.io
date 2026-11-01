@@ -28,6 +28,23 @@ export const CLOUDFLARE_MIRROR_LIMITS = {
 
 const COMPATIBILITY_DATE = '2026-01-01';
 
+/*
+ * A mirrored preview gets the same feedback launcher as one on
+ * malipetek.online. Mirrors are uploaded ahead of time, so unlike our own
+ * host this cannot be injected at serve time: the HTML is rewritten here, on
+ * the preview channel only. The script is loaded from the portal because the
+ * client's Worker has no copy of it.
+ */
+const FEEDBACK_SCRIPT = 'https://malipetek.dev/preview-feedback.js?v=1';
+const FEEDBACK_API = 'https://malipetek.dev/api';
+
+function injectFeedback(html: string, slug: string): string {
+  if (html.includes('data-malipetek-feedback')) return html;
+  const tag = `<script src="${FEEDBACK_SCRIPT}" data-slug="${slug}" data-api="${FEEDBACK_API}" data-malipetek-feedback="1" defer></script>`;
+  const end = html.toLowerCase().lastIndexOf('</body>');
+  return end === -1 ? html + tag : html.slice(0, end) + tag + html.slice(end);
+}
+
 /** A Worker that does nothing but hand requests to its static assets. */
 const ASSET_WORKER = `export default {
   async fetch(request, env) {
@@ -115,7 +132,12 @@ interface PreparedFile {
   size: number;
 }
 
-async function readDeployFiles(env: Env, slug: string, files: DeployFile[]): Promise<PreparedFile[]> {
+async function readDeployFiles(
+  env: Env,
+  slug: string,
+  files: DeployFile[],
+  channel: 'preview' | 'production',
+): Promise<PreparedFile[]> {
   if (!env.SITES) throw new Error('site storage is not configured');
   if (files.length > CLOUDFLARE_MIRROR_LIMITS.files) {
     throw new Error(`this site has ${files.length} files; the Cloudflare mirror takes at most ${CLOUDFLARE_MIRROR_LIMITS.files}`);
@@ -128,7 +150,10 @@ async function readDeployFiles(env: Env, slug: string, files: DeployFile[]): Pro
   for (const file of files) {
     const object = await env.SITES.get(`sites/${slug}/blobs/${file.sha}`);
     if (!object) throw new Error(`the deploy is missing ${file.path}`);
-    const bytes = new Uint8Array(await object.arrayBuffer());
+    let bytes: Uint8Array = new Uint8Array(await object.arrayBuffer());
+    if (channel === 'preview' && /\.html?$/i.test(file.path)) {
+      bytes = new TextEncoder().encode(injectFeedback(new TextDecoder().decode(bytes), slug));
+    }
     const base64 = bytesToBase64(bytes);
     out.push({
       path: file.path.replace(/^\/+/, ''),
@@ -252,7 +277,7 @@ export async function mirrorDeploy(
   const token = await cloudflareAccess(env, opts.connectionId);
   if (!token) throw new Error('the Cloudflare connection has expired; reconnect it in Connections');
 
-  const prepared = await readDeployFiles(env, opts.slug, opts.files);
+  const prepared = await readDeployFiles(env, opts.slug, opts.files, opts.channel);
   const script = cloudflareScriptName(opts.slug, opts.channel);
   const completion = await uploadAssets(env, token, opts.accountId, script, prepared);
   await uploadScript(env, token, opts.accountId, script, completion, opts.spa);

@@ -10,7 +10,7 @@ import { verifySender } from '../src/mailauth.ts';
 import { budgetLeft, cleanExecutorPin, cleanNodeReport, CLIENT_EXECUTOR, EXECUTOR_CATALOG } from '../src/queue.ts';
 import { normalizeReport, sharedLine } from '../src/runs.ts';
 import { setupFor, slugify, type SetupInput } from '../src/setup.ts';
-import { cleanDeployManifest, cleanSiteSlug } from '../src/sites.ts';
+import { cleanDeployManifest, cleanSiteSlug, siteView, type SiteRow } from '../src/sites.ts';
 import { checkUploads, cleanFileName, fileType } from '../src/files.ts';
 import { fillTemplate, isOptOut, localClock, parseContactsCsv, parseCsv, sendWindow, SEQUENCES } from '../src/marketing.ts';
 import { cleanPost, nextSlots, parseOutbox, slotLabel } from '../src/content.ts';
@@ -88,6 +88,58 @@ test('deploy: site slugs refuse the preview marker and reserved names', () => {
   for (const bad of ['www', 'api', 'admin', 'portal', 'preview', 'a--b', '-x', 'x-', 'a b', 'x.y', '', null, 42]) {
     assert.equal(cleanSiteSlug(bad), null, String(bad));
   }
+});
+
+/* —— preview feedback —— */
+
+const siteRow: SiteRow = {
+  id: 's1',
+  project_id: 'p1',
+  name: 'Main',
+  slug: 'rosa',
+  is_primary: 1,
+  state: 'ready',
+  host: 'ours',
+  template: null,
+  preview_deploy: 'd1',
+  production_deploy: 'd1',
+  spa: 0,
+  custom_domain: null,
+  error: null,
+  failure_alerted_at: null,
+  rebuild_requested_at: null,
+  rebuild_error: null,
+  cloudflare_connection_id: null,
+  cloudflare_account_id: null,
+  cloudflare_preview_script: null,
+  cloudflare_production_script: null,
+  cloudflare_preview_url: null,
+  cloudflare_production_url: null,
+  cloudflare_preview_deploy: null,
+  cloudflare_production_deploy: null,
+  cloudflare_error: null,
+  cloudflare_deployed_at: null,
+  feedback_token: 'a'.repeat(36),
+  created_at: 0,
+  updated_at: 0,
+};
+
+test('site: the feedback link carries the token, the shown preview address does not', () => {
+  const view = siteView(siteRow)!;
+  assert.equal(view.previewUrl, 'https://rosa--preview.malipetek.online');
+  assert.equal(view.feedbackUrl, `https://rosa--preview.malipetek.online/?mf=${'a'.repeat(36)}`);
+  assert.equal(new URL(view.feedbackUrl!).searchParams.get('mf'), 'a'.repeat(36));
+});
+
+test('site: a site without a token has no feedback link', () => {
+  assert.equal(siteView({ ...siteRow, feedback_token: null })!.feedbackUrl, null);
+});
+
+test('files: voice notes are accepted attachments', () => {
+  assert.equal(fileType('voice-note.webm'), 'audio/webm');
+  assert.equal(fileType('voice-note.m4a'), 'audio/mp4');
+  assert.equal(fileType('voice-note.mp3'), 'audio/mpeg');
+  assert.equal(fileType('voice-note.html'), null);
 });
 
 /* —— budgets —— */

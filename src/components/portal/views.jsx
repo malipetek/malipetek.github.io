@@ -666,7 +666,7 @@ function SiteItem({ project, site }) {
             <p className="cp-error">{t('views.site.cloudflareError', { message: site.cloudflare.error })}</p>
           ) : null}
           <div className="cp-channels">
-            <a className="cp-channel" href={site.previewUrl} target="_blank" rel="noopener">
+            <a className="cp-channel" href={site.feedbackUrl || site.previewUrl} target="_blank" rel="noopener">
               <span className="cp-label">{t('views.site.channelPreview')}</span>
               <strong>{site.previewUrl.replace(/^https:\/\//, '')}</strong>
               <span className="cp-muted">{t('views.site.previewHint')}</span>

@@ -53,6 +53,8 @@ export interface SiteRow {
   cloudflare_production_deploy: string | null;
   cloudflare_error: string | null;
   cloudflare_deployed_at: number | null;
+  /** Capability for the preview feedback widget; see migration 0030. */
+  feedback_token: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -66,6 +68,8 @@ export interface SiteView {
   slug: string;
   host: SiteHost;
   previewUrl: string | null;
+  /** `previewUrl` with the feedback token: open this one and the page can file a request. */
+  feedbackUrl: string | null;
   productionUrl: string | null;
   customDomain: string | null;
   error: string | null;
@@ -97,8 +101,24 @@ function urls(
   };
 }
 
+/**
+ * The preview address carrying the site's feedback token. The token stays out
+ * of `previewUrl` so the address shown to people stays readable.
+ */
+function withFeedbackToken(previewUrl: string | null, token: string | null): string | null {
+  if (!previewUrl || !token) return null;
+  try {
+    const url = new URL(previewUrl);
+    url.searchParams.set('mf', token);
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 export function siteView(row: SiteRow | null | undefined, domain = DEFAULT_SITES_DOMAIN): SiteView | null {
   if (!row) return null;
+  const addresses = urls(row, domain);
   return {
     id: row.id,
     name: row.name,
@@ -106,7 +126,8 @@ export function siteView(row: SiteRow | null | undefined, domain = DEFAULT_SITES
     state: row.state,
     slug: row.slug,
     host: row.host === 'cloudflare' ? 'cloudflare' : 'ours',
-    ...urls(row, domain),
+    ...addresses,
+    feedbackUrl: withFeedbackToken(addresses.previewUrl, row.feedback_token),
     error: row.error,
     previewDeploy: row.preview_deploy,
     productionDeploy: row.production_deploy,
@@ -304,6 +325,11 @@ async function uniqueSiteSlug(env: Env, base: string): Promise<string | null> {
   return null;
 }
 
+/** A site's feedback capability. Unguessable, and only ever shown in link form. */
+export function newFeedbackToken(): string {
+  return [...crypto.getRandomValues(new Uint8Array(18))].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 /** Whether the address a client typed is still free. */
 export async function siteSlugFree(env: Env, slug: string): Promise<boolean> {
   if (!cleanSiteSlug(slug)) return false;
@@ -389,8 +415,8 @@ export async function startSite(
   const name = (options.name ?? '').trim().slice(0, 80) || (isPrimary ? project.name : slug);
   const t = now();
   await env.DB.prepare(
-    `INSERT INTO sites (id, project_id, name, slug, is_primary, state, host, cloudflare_connection_id, cloudflare_account_id, template, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'allocating', ?, ?, ?, 'site', ?, ?)`,
+    `INSERT INTO sites (id, project_id, name, slug, is_primary, state, host, cloudflare_connection_id, cloudflare_account_id, template, feedback_token, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'allocating', ?, ?, ?, 'site', ?, ?, ?)`,
   )
     .bind(
       id,
@@ -401,6 +427,7 @@ export async function startSite(
       cloudflare ? 'cloudflare' : 'ours',
       cloudflare ? options.connectionId : null,
       cloudflare ? options.accountId : null,
+      newFeedbackToken(),
       t,
       t,
     )

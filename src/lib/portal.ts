@@ -73,6 +73,8 @@ export interface Site {
   slug: string;
   host: 'ours' | 'cloudflare';
   previewUrl: string | null;
+  /** `previewUrl` + the feedback token: the link that lets the page file a request. */
+  feedbackUrl: string | null;
   productionUrl: string | null;
   customDomain: string | null;
   error: string | null;
