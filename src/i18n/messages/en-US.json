@@ -594,5 +594,8 @@
   "views.site.moved": "The site moved. Cloudflare may take a minute to answer at the new address.",
   "views.site.connectCloudflare": "Connect Cloudflare to host this site in your account.",
   "views.github.noRepo": "{count, plural, one {# site has no repository yet.} other {# sites have no repository yet.}} Create one in @{account}, or set it up from the site’s page.",
-  "views.github.createRepo": "Create repo"
+  "views.github.createRepo": "Create repo",
+  "start.repoMode.none.label": "Not sure yet",
+  "start.repoMode.none.note": "Say where it lives on the first thread.",
+  "start.summary.none": "Not sure yet — say it on the first thread"
 }

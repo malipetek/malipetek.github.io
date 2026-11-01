@@ -358,7 +358,7 @@ export default function Start() {
 
               <fieldset className="choice">
                 <legend className="portal-label">{t('start.field.repoMode.label')}</legend>
-                {(kind === 'new' ? ['create', 'repo'] : ['create', 'repo', 'zip']).map((mode) => (
+                {(kind === 'new' ? ['create', 'repo'] : ['create', 'repo', 'zip', 'none']).map((mode) => (
                   <label className="choice-option" key={mode}>
                     <input
                       type="radio"
@@ -555,7 +555,9 @@ export default function Start() {
                           : t('start.summary.ours')
                         : repoMode === 'repo'
                           ? answers.repo || '—'
-                          : t('start.summary.zip')}
+                          : repoMode === 'zip'
+                            ? t('start.summary.zip')
+                            : t('start.summary.none')}
                     </dd>
                   </div>
                   <div>
