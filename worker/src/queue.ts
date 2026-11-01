@@ -381,7 +381,7 @@ export async function heartbeat(env: Env, node: NodeReport, running: number[]) {
     ? await env.DB.prepare(
         `SELECT t.id AS ticket_id, p.slug, s.slug AS site
            FROM tickets t JOIN projects p ON p.id = t.project_id
-           JOIN sites s ON s.project_id = p.id AND s.is_primary = 1 AND s.host = 'ours' AND s.state = 'ready'
+           JOIN sites s ON s.project_id = p.id AND s.is_primary = 1 AND s.state = 'ready'
           WHERE t.build_requested_at IS NOT NULL AND p.slug IN (${node.slugs.map(() => '?').join(',')})
           ORDER BY t.build_requested_at LIMIT 5`,
       )
@@ -393,7 +393,7 @@ export async function heartbeat(env: Env, node: NodeReport, running: number[]) {
   const { results: rebuilds } = node.slugs.length
     ? await env.DB.prepare(
         `UPDATE sites SET rebuild_requested_at = NULL
-          WHERE rebuild_requested_at IS NOT NULL AND state = 'ready' AND host = 'ours'
+          WHERE rebuild_requested_at IS NOT NULL AND state = 'ready'
             AND project_id IN (SELECT id FROM projects WHERE slug IN (${node.slugs.map(() => '?').join(',')}))
           RETURNING slug AS site, (SELECT slug FROM projects WHERE id = sites.project_id) AS slug`,
       )

@@ -314,7 +314,7 @@ node.post('/node/claim', async (c) => {
   const slug = (claim as { ticket?: { slug?: string | null } }).ticket?.slug;
   const site = slug
     ? await c.env.DB.prepare(
-        `SELECT s.slug FROM sites s JOIN projects p ON p.id = s.project_id WHERE p.slug = ? AND s.state = 'ready' AND s.host = 'ours'`,
+        `SELECT s.slug FROM sites s JOIN projects p ON p.id = s.project_id WHERE p.slug = ? AND s.state = 'ready'`,
       )
         .bind(slug)
         .first<{ slug: string }>()
@@ -332,7 +332,7 @@ node.get('/node/builds/:ticketId', async (c) => {
   const ticket = await c.env.DB.prepare(
     `SELECT t.id, t.title, p.slug, s.slug AS site
        FROM tickets t JOIN projects p ON p.id = t.project_id
-       JOIN sites s ON s.project_id = p.id AND s.host = 'ours' AND s.state = 'ready'
+       JOIN sites s ON s.project_id = p.id AND s.state = 'ready'
       WHERE t.id = ? AND t.build_requested_at IS NOT NULL`,
   )
     .bind(ticketId)

@@ -712,7 +712,7 @@ export async function createDeploy(
 ): Promise<{ deployId: string; needed: string[]; files: DeployFile[] } | { error: string }> {
   if (!env.SITES) return { error: 'sites_unavailable' };
   const site = await getSiteBySlug(env, slug);
-  if (!site || site.host !== 'ours') return { error: 'not_found' };
+  if (!site) return { error: 'not_found' };
   const cleaned = cleanDeployManifest(rawFiles);
   if ('error' in cleaned) return cleaned;
   const source = cleanSourceManifest(rawSource);

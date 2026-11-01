@@ -2768,7 +2768,7 @@ portal.post('/admin/projects/:id/site/rebuild', async (c) => {
       : await getSite(c.env, c.req.param('id'));
   if (!site) return reply(c, { error: 'not_found' }, 404);
   const res = await c.env.DB.prepare(
-    `UPDATE sites SET rebuild_requested_at = ?, rebuild_error = NULL WHERE id = ? AND state = 'ready' AND host = 'ours'`,
+    `UPDATE sites SET rebuild_requested_at = ?, rebuild_error = NULL WHERE id = ? AND state = 'ready'`,
   )
     .bind(now(), site.id)
     .run();
