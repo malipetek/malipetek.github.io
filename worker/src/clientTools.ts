@@ -197,6 +197,38 @@ export const CLIENT_TOOLS: ClientTool[] = [
     readOnly: false,
   },
   {
+    name: 'portal_move_request',
+    title: 'Move a request',
+    description:
+      'Move one of this account’s requests to another of its projects, and optionally to one of that project’s sites. An approved request goes back to Ali for approval.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        request_id: REQUEST_ID,
+        project_id: { type: 'string', description: 'The target project id, from portal_projects.' },
+        site_id: { type: 'string', description: 'Optional site id under the target project.' },
+      },
+      required: ['request_id', 'project_id'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
+    name: 'portal_move_site',
+    title: 'Move a site',
+    description: 'Move one of this account’s sites to another of its projects. Its address and deploys stay.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'The site id, from portal_projects.' },
+        project_id: { type: 'string', description: 'The target project id.' },
+      },
+      required: ['site_id', 'project_id'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
     name: 'project_context',
     title: 'Request context',
     description:
@@ -478,6 +510,17 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
     case 'portal_withdraw':
       await portalCall(env, ctx, token, 'POST', `/portal/tickets/${Number.isInteger(id) ? id : 0}/withdraw`);
       return { ok: true, status: 'Declined (withdrawn)' };
+    case 'portal_move_request': {
+      const id = Number(args.request_id);
+      return portalCall(env, ctx, token, 'PATCH', `/portal/tickets/${Number.isInteger(id) ? id : 0}`, {
+        projectId: args.project_id,
+        siteId: args.site_id ?? null,
+      });
+    }
+    case 'portal_move_site':
+      return portalCall(env, ctx, token, 'PATCH', `/portal/sites/${encodeURIComponent(String(args.site_id ?? ''))}`, {
+        projectId: args.project_id,
+      });
     case 'project_context':
       return portalCall(env, ctx, token, 'GET', `/portal/tickets/${Number.isInteger(id) ? id : 0}/context`);
     case 'workspace_files':
