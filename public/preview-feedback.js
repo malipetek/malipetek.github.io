@@ -393,7 +393,7 @@
       var blob = new Blob(chunks, { type: type });
       var name = 'voice-note.' + extensionFor(type);
       addAttachment({ kind: 'audio', blob: blob, name: name, url: URL.createObjectURL(blob), type: type });
-      setStatus('Voice note ready. It is transcribed for the request.');
+      setStatus('Voice note ready.');
       if (attachments.length + text.value.trim().length > 0) sendButton.disabled = false;
     };
 
