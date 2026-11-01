@@ -565,12 +565,34 @@ const annotate = (tool: { name: string; title: string }, readOnly: boolean, dest
   openWorldHint: true,
 });
 
-const KB_AND_CLIENT = KB_TOOLS.map((tool) => ({
+/**
+ * Per-tool auth policy. ChatGPT shows its linking UI only when a tool declares
+ * `oauth2` *and* the server hands back a `mcp/www_authenticate` challenge at
+ * runtime — see `authChallenge`. `_meta.securitySchemes` mirrors it for clients
+ * that only read `_meta`.
+ */
+type Scheme = { type: 'noauth' } | { type: 'oauth2'; scopes: string[] };
+const OPEN: Scheme[] = [{ type: 'noauth' }];
+const SIGNED_IN: Scheme[] = [{ type: 'oauth2', scopes: ['portal'] }];
+
+const withAuth = <T extends object>(tool: T, schemes: Scheme[]) => ({
   ...tool,
-  annotations: annotate(tool, READ_ONLY_TOOLS.has(tool.name), DESTRUCTIVE_TOOLS.has(tool.name)),
-}));
-const PORTAL_TOOLS = CLIENT_TOOLS.map(({ readOnly, ...tool }) => ({ ...tool, annotations: annotate(tool, readOnly, DESTRUCTIVE_TOOLS.has(tool.name)) }));
-const ADMIN_TOOLS = OWNER_TOOLS.map(({ readOnly, ...tool }) => ({ ...tool, annotations: annotate(tool, readOnly, DESTRUCTIVE_TOOLS.has(tool.name)) }));
+  securitySchemes: schemes,
+  _meta: {
+    ...((tool as { _meta?: Record<string, unknown> })._meta ?? {}),
+    securitySchemes: schemes,
+  },
+});
+
+const KB_AND_CLIENT = KB_TOOLS.map((tool) =>
+  withAuth({ ...tool, annotations: annotate(tool, READ_ONLY_TOOLS.has(tool.name), DESTRUCTIVE_TOOLS.has(tool.name)) }, OPEN),
+);
+const PORTAL_TOOLS = CLIENT_TOOLS.map(({ readOnly, ...tool }) =>
+  withAuth({ ...tool, annotations: annotate(tool, readOnly, DESTRUCTIVE_TOOLS.has(tool.name)) }, SIGNED_IN),
+);
+const ADMIN_TOOLS = OWNER_TOOLS.map(({ readOnly, ...tool }) =>
+  withAuth({ ...tool, annotations: annotate(tool, readOnly, DESTRUCTIVE_TOOLS.has(tool.name)) }, OPEN),
+);
 /** KB writes need an owner-issued ack_ key — not part of the client/plugin surface. */
 const HIDDEN_FROM_CLIENTS = new Set(['create_knowledge', 'update_knowledge']);
 const KB_WRITE_TOOLS = KB_AND_CLIENT.filter((t) => HIDDEN_FROM_CLIENTS.has(t.name));
@@ -662,6 +684,30 @@ function toolText(value: unknown, isError = false) {
 const UI_TOOLS: Record<string, (value: unknown) => string> = {
   portal_board: (value) => boardSummary(value as Board),
 };
+
+/**
+ * The other half of the OAuth contract (see `SIGNED_IN` in the tool table): a
+ * tool result carrying `mcp/www_authenticate` is what makes ChatGPT open its
+ * linking UI. Without this the server looks anonymous no matter what the
+ * metadata says, and the connection never shows as authenticated.
+ */
+function authChallenge(env: Env) {
+  const site = String(env.SITE_URL ?? 'https://malipetek.dev').replace(/\/+$/, '');
+  return {
+    content: [
+      {
+        type: 'text',
+        text: 'Authentication required: sign in with your malipetek.dev account to use this tool.',
+      },
+    ],
+    isError: true,
+    _meta: {
+      'mcp/www_authenticate': [
+        `Bearer resource_metadata="${site}/.well-known/oauth-protected-resource", error="invalid_token", error_description="No valid malipetek.dev access token. Sign in to continue."`,
+      ],
+    },
+  };
+}
 
 /** Reuse the REST list logic so MCP and HTTP can never drift apart. */
 async function searchEntries(env: Env, args: Record<string, unknown>) {
@@ -946,7 +992,17 @@ mcp.post('/', async (c) => {
                   uri,
                   mimeType: BOARD_MIME,
                   text: BOARD_HTML,
-                  _meta: { ui: { prefersBorder: true } },
+                  _meta: {
+                    ui: { prefersBorder: true },
+                    // Declared before the view loads, so a fullscreen surface
+                    // (sidebar, thread tab) opens without an inline flash.
+                    'openai/ui': {
+                      availableDisplayModes: ['inline', 'fullscreen'],
+                      preferredDisplayMode: 'inline',
+                    },
+                    'openai/widgetDescription':
+                      'The client’s requests on malipetek.dev: status, project, cost so far, and a link into the portal.',
+                  },
                 },
               ],
             });
@@ -996,10 +1052,14 @@ mcp.post('/', async (c) => {
           if (!tool) {
             return rpcError(request.id, -32602, `Unknown tool: ${name}`);
           }
+          const schemes = (tool as { securitySchemes?: Array<{ type: string }> }).securitySchemes ?? [];
+          const needsSignIn = schemes.length === 1 && schemes[0].type === 'oauth2';
+          const credential = clientToken ?? (author?.kind === 'admin' ? bearer : null);
+          if (needsSignIn && !credential) return rpcResult(request.id, authChallenge(c.env));
           try {
             const value =
               CLIENT_TOOL_NAMES.has(name) || (OWNER_TOOL_NAMES.has(name) && author?.kind === 'admin')
-                ? await callClientTool(c.env, c.executionCtx, clientToken ?? (author?.kind === 'admin' ? bearer : null), name, args)
+                ? await callClientTool(c.env, c.executionCtx, credential, name, args)
                 : await callTool(c.env, name, args, author);
             // A UI tool answers twice: model-readable text and the structured
             // payload the view renders (MCP Apps: ui/notifications/tool-result).
@@ -1012,9 +1072,13 @@ mcp.post('/', async (c) => {
             }
             return rpcResult(request.id, toolText(value));
           } catch (error) {
+            // An expired or revoked token is still "you need to sign in again":
+            // answer with the challenge, not just a message.
+            const message = (error as Error)?.message ?? 'Tool failed.';
+            if (needsSignIn && /^unauthorized/.test(message)) return rpcResult(request.id, authChallenge(c.env));
             // Tool failures are results with isError, not protocol errors — that
             // is what lets the model read the message and retry.
-            return rpcResult(request.id, toolText((error as Error)?.message ?? 'Tool failed.', true));
+            return rpcResult(request.id, toolText(message, true));
           }
         }
         default:

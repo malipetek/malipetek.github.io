@@ -255,6 +255,28 @@ useful: one request (step strip, now/next line, budget gauge — from
 `src/lib/tracker.ts`) and a site card (preview / production links, last
 deploys).
 
+**Auth surfaced to ChatGPT (2026-11-01)**: ChatGPT shows its linking UI only
+when *both* halves are present — per-tool `securitySchemes` (`oauth2` with the
+`portal` scope on every portal tool, `noauth` on the knowledgebase tools, plus
+the `_meta.securitySchemes` mirror) and a runtime tool result carrying
+`_meta["mcp/www_authenticate"]` with `error` and `error_description`
+(`authChallenge` in `kb.ts`). Without the second half the server looks
+anonymous however good the metadata is. An expired or revoked token gets the
+same challenge, so ChatGPT re-links instead of just failing. `portal_profile`
+(`_meta["openai/profile"]`, stable `mpt_<uuid>` id, name/email as display only)
+lets ChatGPT label and de-duplicate several connected accounts.
+
+**Extensions (2026-11-01)**: `portal_board` carries
+`_meta["openai/ui"].entrypoints` `[{type:"global"},{type:"thread"}]`, so the
+same view opens fullscreen from the sidebar and as a tab beside a conversation
+(the host calls the tool with `{}`). The tool also advertises an `icons` entry
+(`https://malipetek.dev/plugin-icon.png`) for the sidebar, and the resource
+declares `_meta["openai/ui"].availableDisplayModes` +
+`preferredDisplayMode: "inline"` so a fullscreen surface opens without an
+inline flash. Still on the table from the extension set: plugin settings
+(`openai/settings`), composer @-mentions (`openai/mentions`), deep links, and
+file viewers.
+
 **Fixed 2026-11-01 — the proxy hop**: `https://malipetek.dev/mcp` and the
 OAuth discovery documents are served by the intercom Worker through
 `src/lib/workerProxy.ts`. That hop was a plain `fetch()` to

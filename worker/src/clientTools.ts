@@ -22,8 +22,14 @@ export interface ClientTool {
   description: string;
   inputSchema: Record<string, unknown>;
   readOnly: boolean;
-  /** MCP Apps: a tool carrying `ui.resourceUri` renders that view instead of plain text. */
-  _meta?: { ui?: { resourceUri: string } };
+  /** MCP: the exact shape of `structuredContent`, when the tool returns one. */
+  outputSchema?: Record<string, unknown>;
+  /** MCP: what this tool needs — `noauth` or `oauth2` with scopes (ChatGPT reads these per tool). */
+  securitySchemes?: Array<{ type: 'noauth' } | { type: 'oauth2'; scopes: string[] }>;
+  /** Sidebar icon for an entrypoint tool (MCP Icon). */
+  icons?: Array<{ src: string; mimeType?: string; sizes?: string[] }>;
+  /** MCP Apps / OpenAI extensions: `ui.resourceUri`, `openai/ui` entrypoints, `openai/profile`, … */
+  _meta?: Record<string, unknown>;
 }
 
 const ATTENTION = {
@@ -55,8 +61,80 @@ export const CLIENT_TOOLS: ClientTool[] = [
     description:
       'Draw this account’s requests as an interactive card in the conversation: status, project, cost so far, and a link into the portal for each one. Use it when the person wants to see their requests rather than read a list of them. Mention only what matters afterwards — the card shows the details.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        account: {
+          type: 'object',
+          properties: { name: { type: ['string', 'null'] } },
+          required: ['name'],
+          additionalProperties: false,
+        },
+        projects: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: ['string', 'null'] },
+              name: { type: ['string', 'null'] },
+              requests: { type: 'integer' },
+            },
+            required: ['id', 'name', 'requests'],
+            additionalProperties: false,
+          },
+        },
+        requests: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'integer' },
+              title: { type: ['string', 'null'] },
+              status: { type: ['string', 'null'] },
+              project: { type: ['string', 'null'] },
+              updated_at: { type: ['string', 'null'] },
+              unread: { type: 'boolean' },
+              price_cents: { type: ['integer', 'null'] },
+              budget_cents: { type: ['integer', 'null'] },
+            },
+            required: ['id', 'title', 'status', 'project', 'updated_at', 'unread', 'price_cents', 'budget_cents'],
+            additionalProperties: false,
+          },
+        },
+        updated_at: { type: 'string' },
+      },
+      required: ['account', 'projects', 'requests', 'updated_at'],
+      additionalProperties: false,
+    },
     readOnly: true,
-    _meta: { ui: { resourceUri: BOARD_UI_URI } },
+    icons: [{ src: 'https://malipetek.dev/plugin-icon.png', mimeType: 'image/png', sizes: ['512x512'] }],
+    _meta: {
+      ui: { resourceUri: BOARD_UI_URI },
+      // Opens from the sidebar (global) and as a tab beside a conversation (thread).
+      'openai/ui': { entrypoints: [{ type: 'global' }, { type: 'thread' }] },
+      'openai/toolInvocation/invoking': 'Opening your requests…',
+      'openai/toolInvocation/invoked': 'Requests ready',
+    },
+  },
+  {
+    name: 'portal_profile',
+    title: 'My malipetek profile',
+    description:
+      'The account this connection belongs to: a stable opaque id plus the name and email to show. Use it to tell several connected accounts apart.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    outputSchema: {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: {
+        id: { type: 'string', minLength: 1, pattern: '\\S' },
+        name: { type: 'string' },
+        email: { type: 'string' },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    readOnly: true,
+    _meta: { 'openai/profile': true },
   },
   {
     name: 'portal_request',
@@ -336,6 +414,18 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
     case 'portal_projects': {
       const me = await portalCall(env, ctx, token, 'GET', '/portal/me');
       return { projects: me?.projects ?? [], spending: me?.usage ?? null };
+    }
+    case 'portal_profile': {
+      // `_meta["openai/profile"]`: a stable opaque id, so ChatGPT can label and
+      // de-duplicate connected accounts. Never the email — that can change.
+      const me = await portalCall(env, ctx, token, 'GET', '/portal/me');
+      const user = (me?.user ?? {}) as Record<string, unknown>;
+      if (user.id === undefined || user.id === null) throw new Error('unauthorized: no account behind this token.');
+      return {
+        id: `mpt_${String(user.id)}`,
+        ...(typeof user.name === 'string' && user.name ? { name: user.name } : {}),
+        ...(typeof user.email === 'string' && user.email ? { email: user.email } : {}),
+      };
     }
     case 'portal_requests':
       return portalCall(env, ctx, token, 'GET', '/portal/tickets');

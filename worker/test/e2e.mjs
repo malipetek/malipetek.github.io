@@ -890,6 +890,19 @@ const groups = {
     };
     const names = (await rpc('tools/list', {}, null)).result.tools.map((t) => t.name);
     check('anyone sees the knowledgebase and the client tools', names.includes('portal_file_request') && names.includes('search_knowledge'));
+    const anonTools = (await rpc('tools/list', {}, null)).result.tools;
+    const boardTool = anonTools.find((t) => t.name === 'portal_board');
+    check(
+      'the board opens from the sidebar and the thread panel',
+      boardTool?._meta?.['openai/ui']?.entrypoints?.map((e) => e.type).join() === 'global,thread' && boardTool?.icons?.length > 0,
+      JSON.stringify(boardTool?._meta),
+    );
+    check(
+      'portal tools ask for OAuth, knowledgebase tools stay open',
+      JSON.stringify(boardTool?.securitySchemes) === JSON.stringify([{ type: 'oauth2', scopes: ['portal'] }]) &&
+        JSON.stringify(anonTools.find((t) => t.name === 'search_knowledge')?.securitySchemes) === JSON.stringify([{ type: 'noauth' }]),
+      JSON.stringify(boardTool?.securitySchemes),
+    );
     const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'e2e', version: '0' } }, token);
     check('initialize explains the client tools', /portal_\* tools/.test(init.result?.instructions ?? ''));
 
@@ -900,10 +913,16 @@ const groups = {
     check('…which waits for Ali, with its budget and attention', !read.error && read.value.ticket.status === 'new' && read.value.ticket.budget_cents === 2000 && read.value.ticket.attention === 'auto', read.text.slice(0, 200));
     check('it lists the account’s requests', (await tool('portal_requests', {})).value.tickets?.some((t) => t.id === rid));
     check('it lists projects with their setup', (await tool('portal_projects', {})).value.projects?.some((p) => p.id === project.id && p.setup));
-    const boardTool = (await rpc('tools/list', {}, token)).result.tools.find((t) => t.name === 'portal_board');
-    check('the board tool points at a UI resource', boardTool?._meta?.ui?.resourceUri === 'ui://malipetek/board-v1.html');
-    const view = await rpc('resources/read', { uri: 'ui://malipetek/board-v1.html' }, token);
-    check('the view is served as an MCP App', view.result?.contents?.[0]?.mimeType === 'text/html;profile=mcp-app' && /^<!DOCTYPE html>/.test(view.result.contents[0].text ?? ''));
+    const profile = await tool('portal_profile', {});
+    check('the profile tool names the account stably', !profile.error && /^mpt_[\w-]{8,}$/.test(profile.value?.id ?? ''), profile.text);
+    const view = await rpc('resources/read', { uri: boardTool?._meta?.ui?.resourceUri ?? '' }, token);
+    const contents = view.result?.contents?.[0];
+    check(
+      'the view is served as an MCP App with its display modes',
+      contents?.mimeType === 'text/html;profile=mcp-app' &&
+        /^<!DOCTYPE html>/.test(contents?.text ?? '') &&
+        contents?._meta?.['openai/ui']?.availableDisplayModes?.includes('fullscreen'),
+    );
     const board = await rpc('tools/call', { name: 'portal_board', arguments: {} }, token);
     check('the board answers with structured card data and a text fallback', board.result?.structuredContent?.requests?.some((r) => r.id === rid) && /#\d+ Add opening hours/.test(board.result?.content?.[0]?.text ?? ''), JSON.stringify(board.result?.structuredContent ?? {}).slice(0, 200));
     check('it replies on a request', !(await tool('portal_reply', { request_id: rid, text: 'Saturdays too.' })).error && /Saturdays too/.test(JSON.stringify((await call(`/portal/tickets/${rid}`, { auth: a.session })).data)));
@@ -923,11 +942,17 @@ const groups = {
     check('a bad argument comes back as an explained error', bad.error && /bad_ticket: .*auto, checked or hands_on/.test(bad.text), bad.text);
     const kb = await rpc('tools/call', { name: 'create_knowledge', arguments: { title: 't', problem: 'p', solution: 's', status: 'solved', author_agent: 'x' } });
     check('an agent key cannot write the knowledgebase', kb.error);
-    check('no key → a pointer to the portal', /Connect an assistant/.test((await tool('portal_requests', {}, null)).text));
+    const anon = await rpc('tools/call', { name: 'portal_requests', arguments: {} }, null);
+    const challenge = anon.result?._meta?.['mcp/www_authenticate']?.[0] ?? '';
+    check(
+      'no key → an OAuth challenge ChatGPT can act on',
+      anon.result?.isError === true && /resource_metadata="https?:\/\/[^"]+"/.test(challenge) && /error_description=/.test(challenge),
+      challenge || JSON.stringify(anon.result),
+    );
 
     await call(`/portal/agent-tokens/${listed[0].id}`, { method: 'DELETE', auth: a.session });
     const after = await tool('portal_requests', {});
-    check('a revoked key stops working at once', after.error && /unauthorized/.test(after.text));
+    check('a revoked key stops working at once', after.error && /Authentication required/.test(after.text), after.text);
     check('another client cannot revoke your key', (await call(`/portal/agent-tokens/${listed[0].id}`, { method: 'DELETE', auth: other.session })).status === 404);
   },
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "malipetek",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "File and track software work requests on malipetek.dev, and search its public agentic-coding knowledgebase.",
   "author": {
     "name": "Muhammet Ali Petek",
@@ -30,7 +30,9 @@
           "See requests as a visual card",
           "See your projects and readiness",
           "Preview and publish your site",
-          "Search the public coding knowledgebase"
+          "Search the public coding knowledgebase",
+          "Open your requests from the ChatGPT sidebar",
+          "Sign in once with OAuth to your own account"
         ],
         "websiteURL": "https://malipetek.dev",
         "supportURL": "https://malipetek.dev/contact",
@@ -72,7 +74,7 @@
               "description": "See requests as a card",
               "prompt": "Show me my requests.",
               "tools_triggered": "portal_board",
-              "expected_behavior": "Renders the request board card with each request's status, project and cost, and a link into the portal for each one."
+              "expected_behavior": "Renders the request board card with each request's status, project and cost, and a link into the portal; the same board also opens from the ChatGPT sidebar and as a tab beside the conversation."
             },
             {
               "description": "File a request",
@@ -100,7 +102,7 @@
         "commerce_description": "The plugin does not sell products or process payments. Work is billed per the service's terms, outside the plugin."
       },
       "publication": {
-        "release_notes": "Adds a request board card: your requests with status, project and cost, refreshed from the portal. File and track requests, see projects and site status, publish previews, and read the public knowledgebase."
+        "release_notes": "The request board now opens from the ChatGPT sidebar and from a conversation's side panel, and the account connection shows as a proper OAuth sign-in, including connecting more than one account."
       }
     }
   }

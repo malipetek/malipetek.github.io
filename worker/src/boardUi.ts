@@ -103,6 +103,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     padding: 12px 14px 10px;
     -webkit-font-smoothing: antialiased;
   }
+  .mk-app { max-width: 760px; margin: 0 auto; }
   .mk-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .mk-brand {
     font: 600 10px/1 var(--mk-mono);
@@ -185,6 +186,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
 </style>
 </head>
 <body>
+<main class="mk-app">
 <div class="mk-top">
   <div class="mk-brand">malipetek.dev</div>
   <div class="mk-actions">
@@ -206,6 +208,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
   <span>Every request is read by a human before work starts.</span>
   <button class="mk-link" id="portal" type="button">Open the portal ↗</button>
 </div>
+</main>
 
 <script>
 (function () {
