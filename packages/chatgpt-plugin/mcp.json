@@ -11,7 +11,7 @@
             "client": {
               "mode": "dcr"
             },
-            "registrationUrl": "https://malipetek-intercom.malipetek.workers.dev/oauth/register",
+            "registrationUrl": "https://malipetek.dev/api/oauth/register",
             "authorizationServerBase": "https://malipetek.dev",
             "resource": "https://malipetek.dev/mcp",
             "baseScopes": ["portal"]

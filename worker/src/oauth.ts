@@ -37,7 +37,9 @@ const resource = (env: Env) => `${siteUrl(env)}/mcp`;
 
 /** Public endpoints: any origin, no credentials. */
 const open = (data: unknown, status = 200, extra: Record<string, string> = {}) =>
-  new Response(JSON.stringify(data), {
+  // A 204 must have no body: `new Response('null', { status: 204 })` throws,
+  // which turned every CORS preflight here into a 500.
+  new Response(data === null ? null : JSON.stringify(data), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
@@ -128,8 +130,10 @@ oauth.get('/.well-known/oauth-protected-resource/mcp', protectedResource);
 
 const serverMetadata = (c: Ctx) => {
   const base = issuer(c.env);
-  // This Worker's public origin; through the site's proxy it is still ours.
-  const worker = new URL(c.req.url).origin;
+  // The zone mount (`malipetek.dev/api/*`), never the request's own origin:
+  // through the site's INTERCOM binding that origin is `https://intercom`, and
+  // workers.dev is switched off, so neither can be reached by a client.
+  const worker = `${siteUrl(c.env)}/api`;
   return open({
     issuer: base,
     authorization_endpoint: `${base}/portal/authorize`,

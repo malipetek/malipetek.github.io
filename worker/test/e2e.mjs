@@ -963,7 +963,9 @@ const groups = {
     const pr = (await call('/.well-known/oauth-protected-resource/mcp')).data;
     check('discovery: the resource names its authorization server', pr?.resource === `${SITE}/mcp` && pr.authorization_servers?.[0] === SITE);
     const meta = (await call('/.well-known/oauth-authorization-server')).data;
-    check('discovery: PKCE S256, public clients, dynamic registration', meta?.authorization_endpoint === `${SITE}/portal/authorize` && meta.code_challenge_methods_supported?.join() === 'S256' && meta.registration_endpoint === `${W}/oauth/register` && meta.token_endpoint === `${W}/oauth/token`);
+    check('discovery: PKCE S256, public clients, dynamic registration', meta?.authorization_endpoint === `${SITE}/portal/authorize` && meta.code_challenge_methods_supported?.join() === 'S256' && meta.registration_endpoint === `${SITE}/api/oauth/register` && meta.token_endpoint === `${SITE}/api/oauth/token`);
+
+    check('discovery: a CORS preflight on the token endpoint is a 204', (await fetch(`${W}/oauth/token`, { method: 'OPTIONS' })).status === 204);
 
     for (const bad of [['http://evil.example/cb'], ['javascript:alert(1)'], [], ['https://a.example/cb#frag']]) {
       check(`registration refuses ${JSON.stringify(bad)}`, (await call('/oauth/register', { method: 'POST', body: { client_name: 'X', redirect_uris: bad } })).status === 400);
