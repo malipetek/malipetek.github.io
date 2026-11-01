@@ -464,7 +464,16 @@ kb.delete('/keys/:id', async (c) => {
 
 const MCP_PROTOCOL = '2025-06-18';
 const MCP_SUPPORTED = ['2025-06-18', '2025-03-26', '2024-11-05'];
-const ALLOWED_MCP_ORIGINS = ['https://malipetek.dev', 'https://www.malipetek.dev', 'http://localhost:4321'];
+// Browser origins that may call /mcp. Server-side clients send none. ChatGPT's
+// own pages are listed because its connector setup may check from the browser.
+const ALLOWED_MCP_ORIGINS = [
+  'https://malipetek.dev',
+  'https://www.malipetek.dev',
+  'http://localhost:4321',
+  'https://chatgpt.com',
+  'https://chat.openai.com',
+  'https://platform.openai.com',
+];
 
 const KB_TOOLS = [
   {
@@ -915,6 +924,10 @@ mcp.post('/', async (c) => {
   let payload: Rpc | Rpc[];
   try {
     payload = JSON.parse(raw);
+    // One line per call in Workers Logs: enough to see what a client such as
+    // ChatGPT asked for when it rejects the server. No arguments, no tokens.
+    const calls = (Array.isArray(payload) ? payload : [payload]).map((r) => (r.method === 'tools/call' ? `tools/call:${(r.params as { name?: string } | undefined)?.name ?? '?'}` : r.method));
+    console.log(JSON.stringify({ mcp: calls, ua: c.req.header('user-agent') ?? '', origin: c.req.header('origin') ?? '', version: c.req.header('mcp-protocol-version') ?? '', auth: Boolean(c.req.header('authorization')) }));
   } catch {
     return kbJson(rpcError(null, -32700, 'Parse error'), 400);
   }

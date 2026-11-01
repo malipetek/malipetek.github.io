@@ -15,6 +15,10 @@
   // Ali about approved work no node can take.
   "triggers": { "crons": ["*/5 * * * *"] },
 
+  // Workers Logs: request lines and console output, queryable after the fact
+  // (what ChatGPT asked /mcp for when it refused the server, for instance).
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+
   // Non-secret configuration. Secrets (API keys, tokens) are NEVER listed
   // here — set them with `wrangler secret put NAME` (see README.md).
   "vars": {

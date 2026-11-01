@@ -894,7 +894,7 @@ const groups = {
     const boardTool = anonTools.find((t) => t.name === 'portal_board');
     check(
       'the board opens from the sidebar and the thread panel',
-      boardTool?._meta?.['openai/ui']?.entrypoints?.map((e) => e.type).join() === 'global,thread' && boardTool?.icons?.length > 0,
+      boardTool?._meta?.['openai/ui']?.entrypoints?.map((e) => e.type).join() === 'global,thread',
       JSON.stringify(boardTool?._meta),
     );
     check(

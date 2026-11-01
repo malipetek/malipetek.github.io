@@ -107,7 +107,6 @@ export const CLIENT_TOOLS: ClientTool[] = [
       additionalProperties: false,
     },
     readOnly: true,
-    icons: [{ src: 'https://malipetek.dev/plugin-icon.png', mimeType: 'image/png', sizes: ['512x512'] }],
     _meta: {
       ui: { resourceUri: BOARD_UI_URI },
       // Opens from the sidebar (global) and as a tab beside a conversation (thread).
