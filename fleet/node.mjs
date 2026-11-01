@@ -633,18 +633,26 @@ async function ghRemote(config, project, cwd) {
  */
 async function cloneProject(config, project) {
   if (!REPO_RE.test(project.repo)) return null;
+  // Keyed by how the repo is reached, so a change (the client connected GitHub,
+  // Ali named another repo) is tried at once instead of after the back-off.
+  const key = `${project.slug}|${project.repo}|${project.githubApp ? 'app' : 'node'}`;
+  const last = cloneFailures.get(key);
+  if (last && Date.now() - last < 60 * 60_000) return null;
+  const failed = async (reason) => {
+    cloneFailures.set(key, Date.now());
+    log(`could not clone ${project.slug}: ${reason}`);
+    // Tell the portal, so the queue and the admin card say why instead of "next sync".
+    await api(config, 'POST', `/node/projects/${project.slug}/clone-failed`, { nodeId: config.nodeId, error: reason }).catch(() => {});
+    return null;
+  };
   if (project.githubApp) {
     try {
       const token = await ghToken(config, project.slug);
       project = { ...project, repo: ghUrl(project.repo, token) };
     } catch (error) {
-      cloneFailures.set(project.slug, Date.now());
-      log(`could not get a GitHub token for ${project.slug}: ${error.message}`);
-      return null;
+      return failed(`the client's GitHub connection gave no access: ${error.message}`);
     }
   }
-  const last = cloneFailures.get(project.slug);
-  if (last && Date.now() - last < 60 * 60_000) return null;
   const dir = join(config.cloneRoot, project.slug);
   mkdirSync(config.cloneRoot, { recursive: true });
   const clone = (url) =>
@@ -658,9 +666,14 @@ async function cloneProject(config, project) {
   const ssh = githubSsh(project.repo);
   if (res.code !== 0 && ssh) res = await clone(`git@github.com:${ssh}.git`);
   if (res.code !== 0) {
-    cloneFailures.set(project.slug, Date.now());
-    log(`could not clone ${project.slug}: ${res.stderr.trim().split('\n').pop()}`);
-    return null;
+    const text = res.stderr.trim();
+    return failed(
+      /not found|access rights|permission denied|authentication failed|could not read username/i.test(text)
+        ? project.githubApp
+          ? "the client's GitHub connection does not include this repo"
+          : 'private repo this machine has no access to'
+        : text.split('\n').slice(-2).join(' ').slice(0, 300),
+    );
   }
   log(`cloned ${project.slug} into ${dir}`);
   return dir;
