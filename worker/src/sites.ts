@@ -583,6 +583,45 @@ export async function setSiteHost(
   return getSiteById(env, site.id);
 }
 
+/**
+ * After a client reconnects Cloudflare (for example to grant Workers Admin),
+ * rebind the sites whose last mirror failed to the new grant and try the
+ * current preview again. The account a site already used is kept when the new
+ * grant reaches it; otherwise the first shared account is used.
+ */
+export async function retryCloudflareSites(
+  env: Env,
+  userId: string,
+  connectionId: number,
+  accounts: { id: string; name: string }[],
+): Promise<void> {
+  if (!accounts.length) return;
+  const { results } = await env.DB.prepare(
+    `SELECT s.* FROM sites s JOIN user_projects up ON up.project_id = s.project_id
+      WHERE up.user_id = ? AND s.host = 'cloudflare'
+        AND (s.cloudflare_error IS NOT NULL OR s.cloudflare_connection_id IS NULL)`,
+  )
+    .bind(userId)
+    .all<SiteRow>();
+  for (const site of results ?? []) {
+    const account = accounts.find((a) => a.id === site.cloudflare_account_id) ?? accounts[0];
+    await save(env, site.id, {
+      cloudflare_connection_id: connectionId,
+      cloudflare_account_id: account.id,
+      cloudflare_error: null,
+      cloudflare_preview_deploy: null,
+      cloudflare_production_deploy: null,
+      cloudflare_preview_url: null,
+      cloudflare_production_url: null,
+    });
+    const fresh = await getSiteById(env, site.id);
+    if (!fresh) continue;
+    if (fresh.preview_deploy) await mirrorSite(env, fresh, 'preview');
+    const afterPreview = (await getSiteById(env, site.id))!;
+    if (afterPreview.production_deploy) await mirrorSite(env, afterPreview, 'production');
+  }
+}
+
 /** Delete one site: its address, deploy history and files. */
 export async function deleteSite(
   env: Env,

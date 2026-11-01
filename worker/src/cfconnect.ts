@@ -15,6 +15,7 @@
  */
 import { Hono, type Context } from 'hono';
 import { now, sessionUser, siteUrl } from './portal.ts';
+import { retryCloudflareSites } from './sites.ts';
 import { corsHeaders, type Env, type HonoEnv } from './shared.ts';
 import {
   apiBase,
@@ -182,7 +183,7 @@ cfconnect.get('/portal/cloudflare/callback', async (c) => {
   if (!token.access_token) return back('failed');
   const accounts = await fetchGrantedAccounts(env, token.access_token).catch(() => []);
   const t = now();
-  await env.DB.prepare(
+  const inserted = await env.DB.prepare(
     `INSERT INTO cloudflare_connections (user_id, accounts, scopes, access_enc, refresh_enc, expires_at, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
@@ -197,6 +198,12 @@ cfconnect.get('/portal/cloudflare/callback', async (c) => {
       t,
     )
     .run();
+  // A site whose mirror failed (an old missing permission, a lapsed grant) is
+  // repaired by the reconnect, without another click.
+  const connectionId = Number(inserted.meta.last_row_id);
+  if (connectionId && accounts.length) {
+    c.executionCtx.waitUntil(retryCloudflareSites(env, user.id, connectionId, accounts));
+  }
   return back('connected');
 });
 
