@@ -617,5 +617,10 @@
   "views.sites.versions": "Versions",
   "views.sites.untitled": "Site",
   "views.sites.count": "{n, plural, one {# site} other {# sites}}",
-  "views.sites.host": "Where should it be hosted?"
+  "views.sites.host": "Where should it be hosted?",
+  "views.sites.delete": "Delete site",
+  "views.sites.deleteTitle": "Delete {name}?",
+  "views.sites.deleteText": "Its address and deploy history stop working. The project's code and requests stay.",
+  "views.sites.deleteConfirm": "Delete site",
+  "views.sites.deleted": "Site deleted."
 }

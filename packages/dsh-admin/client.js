@@ -1427,7 +1427,25 @@ var __awPlugin = (() => {
             }),
             children: "Publish to live"
           }
-        ) : null
+        ) : null,
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
+            kind: "ghost",
+            onClick: () => ask({
+              title: `Delete ${site.name || project.name}?`,
+              text: "Its address and deploy history stop working. The project\u2019s code and requests stay.",
+              confirm: "Delete site",
+              danger: true,
+              run: () => act(
+                () => api("DELETE", `/admin/projects/${project.id}/site`, { siteId: site.id }),
+                "Site deleted."
+              ).then(reload, () => void 0)
+            }),
+            children: "Delete site"
+          }
+        )
       ] })
     ] });
   }

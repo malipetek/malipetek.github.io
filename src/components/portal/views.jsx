@@ -546,6 +546,18 @@ function SiteItem({ project, site }) {
         await reload();
       },
     });
+  const remove = () =>
+    ask({
+      title: t('views.sites.deleteTitle', { name: site.name || project.name }),
+      text: t('views.sites.deleteText'),
+      confirm: t('views.sites.deleteConfirm'),
+      danger: true,
+      run: async () => {
+        await api(`/portal/projects/${project.id}/site`, { method: 'DELETE', body: { siteId: site.id } });
+        notify(t('views.sites.deleted'));
+        await reload();
+      },
+    });
   const rollback = (d) =>
     ask({
       title: t('views.site.rollbackTitle'),
@@ -627,6 +639,9 @@ function SiteItem({ project, site }) {
             ) : null}
             <button type="button" className="cp-linkbtn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
               {t('views.sites.versions')}
+            </button>
+            <button type="button" className="cp-linkbtn cp-linkbtn--danger" onClick={remove}>
+              {t('views.sites.delete')}
             </button>
             <HostSwitch project={project} site={site} />
           </div>

@@ -556,6 +556,38 @@ export async function setSiteHost(
   return getSiteById(env, site.id);
 }
 
+/** Delete one site: its address, deploy history and files. */
+export async function deleteSite(
+  env: Env,
+  projectId: string,
+  siteId: string,
+): Promise<{ ok: true } | { error: string }> {
+  const site = await siteFor(env, projectId, siteId);
+  if (!site) return { error: 'not_found' };
+  if (env.SITES) {
+    let cursor: string | undefined;
+    do {
+      const page = await env.SITES.list({ prefix: `sites/${site.slug}/`, cursor });
+      if (page.objects.length) await env.SITES.delete(page.objects.map((o) => o.key));
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+  }
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM site_deploys WHERE site_id = ?').bind(site.id),
+    env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(site.id),
+  ]);
+  // If the main site went, the oldest remaining one takes over.
+  if (site.is_primary === 1) {
+    await env.DB.prepare(
+      `UPDATE sites SET is_primary = 1
+        WHERE id = (SELECT id FROM sites WHERE project_id = ? ORDER BY created_at ASC, id ASC LIMIT 1)`,
+    )
+      .bind(projectId)
+      .run();
+  }
+  return { ok: true };
+}
+
 /** Failed sites Ali has not been told about yet; marks them told. */
 export async function takeNewSiteFailures(env: Env) {
   const { results } = await env.DB.prepare(

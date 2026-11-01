@@ -733,6 +733,25 @@ function AdminSite({ project, site }) {
               Publish to live
             </Button>
           ) : null}
+          <Button
+            size="sm"
+            kind="ghost"
+            onClick={() =>
+              ask({
+                title: `Delete ${site.name || project.name}?`,
+                text: 'Its address and deploy history stop working. The project’s code and requests stay.',
+                confirm: 'Delete site',
+                danger: true,
+                run: () =>
+                  act(
+                    () => api('DELETE', `/admin/projects/${project.id}/site`, { siteId: site.id }),
+                    'Site deleted.',
+                  ).then(reload, () => undefined),
+              })
+            }
+          >
+            Delete site
+          </Button>
         </>
       )}
     </div>

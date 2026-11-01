@@ -2293,3 +2293,6 @@ fieldset.cp-field {
 .cp-sitestate.is-wait {
   color: var(--ink-soft);
 }
+.cp-linkbtn--danger {
+  color: var(--cp-bad);
+}

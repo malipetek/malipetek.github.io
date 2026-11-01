@@ -78,6 +78,7 @@ import {
 import {
   advanceSite,
   cleanSiteSlug,
+  deleteSite,
   getSite,
   getSiteById,
   getSites,
@@ -1229,6 +1230,17 @@ portal.post('/portal/projects/:id/site', async (c) => {
   } catch (error) {
     return siteError(c, error);
   }
+});
+
+/** Delete one of the client's own sites. */
+portal.delete('/portal/projects/:id/site', async (c) => {
+  const project = await ownProject(c);
+  if (!project) return reply(c, { error: 'not_found' }, 404);
+  const body = await readJson<{ siteId?: unknown }>(c);
+  if (typeof body?.siteId !== 'string' || !body.siteId) return reply(c, { error: 'bad_site' }, 400);
+  const out = await deleteSite(c.env, project.id, body.siteId);
+  if ('error' in out) return reply(c, out, out.error === 'not_found' ? 404 : 409);
+  return reply(c, { ok: true });
 });
 
 /** Every site under a project, main first. */
@@ -2455,6 +2467,15 @@ portal.post('/admin/projects/:id/site/host', async (c) => {
   if (!site) return reply(c, { error: 'not_found' }, 404);
   const { sitesDomain } = await getSettings(c.env);
   return reply(c, { site: siteView(site, sitesDomain) });
+});
+
+/** Delete one site of a project. */
+portal.delete('/admin/projects/:id/site', async (c) => {
+  const body = await readJson<{ siteId?: unknown }>(c);
+  if (typeof body?.siteId !== 'string' || !body.siteId) return reply(c, { error: 'bad_site' }, 400);
+  const out = await deleteSite(c.env, c.req.param('id'), body.siteId);
+  if ('error' in out) return reply(c, out, out.error === 'not_found' ? 404 : 409);
+  return reply(c, { ok: true });
 });
 
 /**

@@ -240,6 +240,18 @@ const groups = {
     check('a project gets a site as a sub-entity', made.status === 201 && made.data.site?.slug === address && made.data.site?.isPrimary === true, JSON.stringify(made.data));
     const after = (await call('/portal/me', { auth: a.session })).data.projects.find((x) => x.id === created.data.project.id);
     check('the project lists its sites', after.sites?.length === 1 && after.sites[0].slug === address, JSON.stringify(after.sites));
+    const extra = await call(`/portal/projects/${created.data.project.id}/site`, {
+      method: 'POST',
+      auth: a.session,
+      body: { name: 'Docs', siteSlug: `${address}-docs` },
+    });
+    const removed = await call(`/portal/projects/${created.data.project.id}/site`, {
+      method: 'DELETE',
+      auth: a.session,
+      body: { siteId: extra.data.site.id },
+    });
+    const left = (await call(`/portal/projects/${created.data.project.id}/sites`, { auth: a.session })).data.sites;
+    check('a site can be removed without touching the other', removed.status === 200 && left.length === 1 && left[0].slug === address, JSON.stringify(left));
     const adminView = (await call('/admin/projects', { auth: admin })).data.projects.find((x) => x.id === created.data.project.id);
     check('admin sees the same setup', adminView?.setup?.ready === p.setup.ready && adminView.brief.manual === 'Orders by phone');
   },
