@@ -36,8 +36,11 @@ export const CLOUDFLARE_SCOPES = [
 
 const oauthBase = (env: Env) => (env.CLOUDFLARE_OAUTH_BASE ?? 'https://dash.cloudflare.com').replace(/\/+$/, '');
 const apiBase = (env: Env) => (env.CLOUDFLARE_API_BASE ?? 'https://api.cloudflare.com/client/v4').replace(/\/+$/, '');
-const workerOrigin = (c: Context<HonoEnv>) => new URL(c.req.url).origin;
-const callbackUrl = (c: Context<HonoEnv>) => `${workerOrigin(c)}/portal/cloudflare/callback`;
+// The zone mount, never the request's origin: through the site's INTERCOM
+// binding that is `https://intercom`, on the zone the `/api` prefix is already
+// stripped, and workers.dev is switched off. Cloudflare matches this exactly
+// against the redirect URL registered on our OAuth client.
+const callbackUrl = (c: Context<HonoEnv>) => `${siteUrl(c.env)}/api/portal/cloudflare/callback`;
 const STATE_SECONDS = 15 * 60;
 
 const reply = (c: Context<HonoEnv>, body: unknown, status = 200) =>

@@ -478,7 +478,7 @@ const groups = {
     const link = new URL(first.data.connectUrl ?? 'http://x/');
     check('a client starts with no connection and a connect link', first.status === 200 && first.data.connections.length === 0 && link.pathname === '/oauth2/auth', JSON.stringify(first.data));
     check('the link asks for exactly our scopes', link.searchParams.get('scope') === 'account-settings.read memberships.read user-details.read workers-scripts.edit workers-routes.write zone.read dns.write');
-    check('…returns to the Worker callback', /\/portal\/cloudflare\/callback$/.test(link.searchParams.get('redirect_uri') ?? ''));
+    check('…returns to the Worker callback on the zone mount', link.searchParams.get('redirect_uri') === 'http://localhost:4321/api/portal/cloudflare/callback', link.searchParams.get('redirect_uri'));
     const state = link.searchParams.get('state') ?? '';
     check('…with a long signed state', state.length > 40);
     const back = async (query) => (await fetch(`${W}/portal/cloudflare/callback?${query}`, { redirect: 'manual' })).headers.get('location') ?? '';

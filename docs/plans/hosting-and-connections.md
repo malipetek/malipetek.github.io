@@ -337,7 +337,8 @@ at `GET https://api.cloudflare.com/client/v4/oauth/scopes`.
   needs a logo + the TXT-verified domain to go public — the verification TXT
   is already live on `malipetek.dev`, verification is polling). Client ID/secret live in the `malipetek-intercom` Worker secrets
   `CLOUDFLARE_OAUTH_CLIENT_ID` / `CLOUDFLARE_OAUTH_CLIENT_SECRET`; redirect
-  URL `https://malipetek-intercom.malipetek.workers.dev/portal/cloudflare/callback`;
+  URL `https://malipetek.dev/api/portal/cloudflare/callback` (was the workers.dev
+  address until 2026-11-01; workers.dev is switched off);
   verification TXT `cloudflare_oauth_client_publisher=…` added at
   `malipetek.dev` apex. Scopes: Workers Edit + Workers Routes Edit required;
   DNS Write + Zone Read optional; Account Settings / Memberships / User
