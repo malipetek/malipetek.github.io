@@ -16,6 +16,14 @@
 import { Hono, type Context } from 'hono';
 import { now, sessionUser, siteUrl } from './portal.ts';
 import { corsHeaders, type Env, type HonoEnv } from './shared.ts';
+import {
+  apiBase,
+  oauthBase,
+  open,
+  seal,
+  tokenRequest,
+  type ConnectionRow,
+} from './cfaccess.ts';
 
 export const cfconnect = new Hono<HonoEnv>();
 
@@ -34,8 +42,6 @@ export const CLOUDFLARE_SCOPES = [
   'dns.write',
 ];
 
-const oauthBase = (env: Env) => (env.CLOUDFLARE_OAUTH_BASE ?? 'https://dash.cloudflare.com').replace(/\/+$/, '');
-const apiBase = (env: Env) => (env.CLOUDFLARE_API_BASE ?? 'https://api.cloudflare.com/client/v4').replace(/\/+$/, '');
 // The zone mount, never the request's origin: through the site's INTERCOM
 // binding that is `https://intercom`, on the zone the `/api` prefix is already
 // stripped, and workers.dev is switched off. Cloudflare matches this exactly
@@ -85,106 +91,16 @@ async function userFromState(env: Env, state: string): Promise<string | null> {
   return diff === 0 ? userId : null;
 }
 
-/* ——————————————————————— tokens at rest ——————————————————————— */
-
-/** AES-GCM, with a key derived from SESSION_SECRET for this one purpose. */
-async function tokenKey(env: Env): Promise<CryptoKey> {
-  const base = await crypto.subtle.importKey('raw', enc.encode(env.SESSION_SECRET ?? ''), 'HKDF', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    { name: 'HKDF', hash: 'SHA-256', salt: enc.encode('malipetek-cloudflare-connections'), info: enc.encode('token-at-rest') },
-    base,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  );
-}
-
-async function seal(env: Env, text: string): Promise<string> {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const box = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await tokenKey(env), enc.encode(text));
-  return `${b64url(iv)}.${b64url(box)}`;
-}
-
-async function open(env: Env, sealed: string): Promise<string> {
-  const [iv, box] = sealed.split('.');
-  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64url(iv) }, await tokenKey(env), fromB64url(box));
-  return new TextDecoder().decode(plain);
-}
-
 /* ——————————————————————— Cloudflare calls ——————————————————————— */
 
-type TokenReply = { access_token?: string; refresh_token?: string; expires_in?: number; scope?: string; error?: string; error_description?: string };
-
-/**
- * The token endpoint, with the client secret. Basic auth first; a client
- * registered for client_secret_post refuses that with invalid_client, so the
- * same request is tried once more with the secret in the body.
- */
-async function tokenRequest(env: Env, params: Record<string, string>): Promise<TokenReply> {
-  const id = env.CLOUDFLARE_OAUTH_CLIENT_ID ?? '';
-  const secret = env.CLOUDFLARE_OAUTH_CLIENT_SECRET ?? '';
-  const send = (post: boolean) =>
-    fetch(`${oauthBase(env)}/oauth2/token`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-        accept: 'application/json',
-        ...(post ? {} : { authorization: `Basic ${btoa(`${id}:${secret}`)}` }),
-      },
-      body: new URLSearchParams(post ? { ...params, client_id: id, client_secret: secret } : params),
-      signal: AbortSignal.timeout(15_000),
-    });
-  let res = await send(false);
-  if (res.status === 401) res = await send(true);
-  return ((await res.json().catch(() => null)) as TokenReply | null) ?? { error: `HTTP ${res.status}` };
-}
-
 /** The accounts this grant reaches, for the portal to name. */
-async function grantedAccounts(env: Env, accessToken: string): Promise<{ id: string; name: string }[]> {
+async function fetchGrantedAccounts(env: Env, accessToken: string): Promise<{ id: string; name: string }[]> {
   const res = await fetch(`${apiBase(env)}/accounts?per_page=50`, {
     headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
     signal: AbortSignal.timeout(15_000),
   });
   const body = (await res.json().catch(() => null)) as { result?: { id?: string; name?: string }[] } | null;
   return (body?.result ?? []).filter((a) => a.id).map((a) => ({ id: String(a.id), name: String(a.name ?? a.id).slice(0, 120) }));
-}
-
-type ConnectionRow = {
-  id: number;
-  user_id: string;
-  accounts: string;
-  scopes: string;
-  access_enc: string;
-  refresh_enc: string | null;
-  expires_at: number | null;
-  created_at: number;
-  revoked_at: number | null;
-};
-
-/**
- * A usable access token for a connection, refreshed when it is about to lapse
- * and a refresh token exists. Null when the grant has lapsed for good: the
- * portal shows "reconnect".
- */
-export async function cloudflareAccess(env: Env, connectionId: number): Promise<string | null> {
-  const row = await env.DB.prepare('SELECT * FROM cloudflare_connections WHERE id = ? AND revoked_at IS NULL')
-    .bind(connectionId)
-    .first<ConnectionRow>();
-  if (!row) return null;
-  if (!row.expires_at || row.expires_at - 60 > now()) return open(env, row.access_enc);
-  if (!row.refresh_enc) return null;
-  const fresh = await tokenRequest(env, { grant_type: 'refresh_token', refresh_token: await open(env, row.refresh_enc) });
-  if (!fresh.access_token) return null;
-  await env.DB.prepare('UPDATE cloudflare_connections SET access_enc = ?, refresh_enc = coalesce(?, refresh_enc), expires_at = ?, updated_at = ? WHERE id = ?')
-    .bind(
-      await seal(env, fresh.access_token),
-      fresh.refresh_token ? await seal(env, fresh.refresh_token) : null,
-      fresh.expires_in ? now() + fresh.expires_in : null,
-      now(),
-      row.id,
-    )
-    .run();
-  return fresh.access_token;
 }
 
 /* ——————————————————————— routes ——————————————————————— */
@@ -245,7 +161,7 @@ cfconnect.get('/portal/cloudflare/callback', async (c) => {
 
   const token = await tokenRequest(env, { grant_type: 'authorization_code', code, redirect_uri: callbackUrl(c) });
   if (!token.access_token) return back('failed');
-  const accounts = await grantedAccounts(env, token.access_token).catch(() => []);
+  const accounts = await fetchGrantedAccounts(env, token.access_token).catch(() => []);
   const t = now();
   await env.DB.prepare(
     `INSERT INTO cloudflare_connections (user_id, accounts, scopes, access_enc, refresh_enc, expires_at, created_at, updated_at)

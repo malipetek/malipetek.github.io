@@ -19,14 +19,16 @@
  */
 import { getSettings } from './queue.ts';
 import { now, type Env } from './shared.ts';
+import { mirrorDeploy, type DeployFile as MirrorFile } from './cloudflare-sites.ts';
 
 export type SiteState = 'allocating' | 'ready' | 'failed';
+export type SiteHost = 'ours' | 'cloudflare';
 
 export interface SiteRow {
   project_id: string;
   slug: string;
   state: SiteState;
-  host: 'ours' | 'cloudflare';
+  host: SiteHost;
   template: string | null;
   preview_deploy: string | null;
   production_deploy: string | null;
@@ -36,6 +38,16 @@ export interface SiteRow {
   failure_alerted_at: number | null;
   rebuild_requested_at: number | null;
   rebuild_error: string | null;
+  cloudflare_connection_id: number | null;
+  cloudflare_account_id: string | null;
+  cloudflare_preview_script: string | null;
+  cloudflare_production_script: string | null;
+  cloudflare_preview_url: string | null;
+  cloudflare_production_url: string | null;
+  cloudflare_preview_deploy: string | null;
+  cloudflare_production_deploy: string | null;
+  cloudflare_error: string | null;
+  cloudflare_deployed_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -44,6 +56,7 @@ export interface SiteRow {
 export interface SiteView {
   state: SiteState;
   slug: string;
+  host: SiteHost;
   previewUrl: string | null;
   productionUrl: string | null;
   customDomain: string | null;
@@ -52,16 +65,26 @@ export interface SiteView {
   productionDeploy: string | null;
   rebuildRequestedAt: number | null;
   rebuildError: string | null;
+  cloudflare: {
+    accountId: string | null;
+    previewUrl: string | null;
+    productionUrl: string | null;
+    error: string | null;
+  } | null;
   updatedAt: number;
 }
 
 /** The domain hosted sites live under when the setting does not say. */
 export const DEFAULT_SITES_DOMAIN = 'malipetek.online';
 
-function urls(row: Pick<SiteRow, 'slug' | 'custom_domain'>, domain: string) {
+function urls(
+  row: Pick<SiteRow, 'slug' | 'custom_domain' | 'host' | 'cloudflare_preview_url' | 'cloudflare_production_url'>,
+  domain: string,
+) {
+  const cloud = row.host === 'cloudflare';
   return {
-    previewUrl: `https://${row.slug}--preview.${domain}`,
-    productionUrl: `https://${row.slug}.${domain}`,
+    previewUrl: cloud && row.cloudflare_preview_url ? row.cloudflare_preview_url : `https://${row.slug}--preview.${domain}`,
+    productionUrl: cloud && row.cloudflare_production_url ? row.cloudflare_production_url : `https://${row.slug}.${domain}`,
     customDomain: row.custom_domain,
   };
 }
@@ -71,12 +94,22 @@ export function siteView(row: SiteRow | null | undefined, domain = DEFAULT_SITES
   return {
     state: row.state,
     slug: row.slug,
+    host: row.host === 'cloudflare' ? 'cloudflare' : 'ours',
     ...urls(row, domain),
     error: row.error,
     previewDeploy: row.preview_deploy,
     productionDeploy: row.production_deploy,
     rebuildRequestedAt: row.rebuild_requested_at ?? null,
     rebuildError: row.rebuild_error ?? null,
+    cloudflare:
+      row.host === 'cloudflare'
+        ? {
+            accountId: row.cloudflare_account_id,
+            previewUrl: row.cloudflare_preview_url,
+            productionUrl: row.cloudflare_production_url,
+            error: row.cloudflare_error,
+          }
+        : null,
     updatedAt: row.updated_at,
   };
 }
@@ -231,10 +264,16 @@ async function uniqueSiteSlug(env: Env, base: string): Promise<string | null> {
   for (let n = 1; n <= 20; n += 1) {
     const slug = n === 1 ? first : `${first}-${n}`;
     if (!cleanSiteSlug(slug)) continue;
-    const taken = await env.DB.prepare('SELECT 1 FROM sites WHERE slug = ?').bind(slug).first();
-    if (!taken) return slug;
+    if (await siteSlugFree(env, slug)) return slug;
   }
   return null;
+}
+
+/** Whether the address a client typed is still free. */
+export async function siteSlugFree(env: Env, slug: string): Promise<boolean> {
+  if (!cleanSiteSlug(slug)) return false;
+  const taken = await env.DB.prepare('SELECT 1 FROM sites WHERE slug = ?').bind(slug).first();
+  return !taken;
 }
 
 /* ——————————————————————— allocation ——————————————————————— */
@@ -288,27 +327,42 @@ async function placeholderDeploy(env: Env, slug: string, name: string): Promise<
 /**
  * Start hosting a project. Idempotent: a project that already has a site is
  * returned as it is; a failed one starts over.
+ *
+ * `host: 'cloudflare'` needs the client's grant and one of its account ids;
+ * without either it falls back to our own hosting rather than failing.
  */
 export async function startSite(
   env: Env,
   user: { id: string },
   project: { id: string; name: string; slug: string },
+  options: { siteSlug?: string | null; host?: SiteHost; connectionId?: number | null; accountId?: string | null } = {},
 ): Promise<SiteRow> {
   const existing = await getSite(env, project.id);
   if (existing && existing.state !== 'failed') return advanceSite(env, project.id);
-  const slug = await uniqueSiteSlug(env, project.slug);
+  const wanted = options.siteSlug ? cleanSiteSlug(options.siteSlug) : null;
+  const slug = wanted && (await siteSlugFree(env, wanted)) ? wanted : await uniqueSiteSlug(env, wanted ?? project.slug);
   if (!slug) throw new Error('No free site address left for this name.');
+  const cloudflare = options.host === 'cloudflare' && options.connectionId && options.accountId;
   const t = now();
   await env.DB.prepare(
-    `INSERT INTO sites (project_id, slug, state, template, created_at, updated_at)
-     VALUES (?, ?, 'allocating', 'site', ?, ?)
+    `INSERT INTO sites (project_id, slug, state, host, cloudflare_connection_id, cloudflare_account_id, template, created_at, updated_at)
+     VALUES (?, ?, 'allocating', ?, ?, ?, 'site', ?, ?)
      ON CONFLICT(project_id) DO UPDATE SET state = 'allocating', slug = excluded.slug,
+       host = excluded.host, cloudflare_connection_id = excluded.cloudflare_connection_id,
+       cloudflare_account_id = excluded.cloudflare_account_id,
        preview_deploy = NULL, production_deploy = NULL, error = NULL, failure_alerted_at = NULL,
+       cloudflare_preview_deploy = NULL, cloudflare_production_deploy = NULL, cloudflare_error = NULL,
        updated_at = excluded.updated_at`,
   )
-    .bind(project.id, slug, t, t)
+    .bind(project.id, slug, cloudflare ? 'cloudflare' : 'ours', cloudflare ? options.connectionId : null, cloudflare ? options.accountId : null, t, t)
     .run();
-  return advanceSite(env, project.id);
+  let site = await advanceSite(env, project.id);
+  if (site.host === 'cloudflare' && site.preview_deploy) {
+    await mirrorSite(env, site, 'preview');
+    await mirrorSite(env, site, 'production');
+    site = (await getSite(env, project.id))!;
+  }
+  return site;
 }
 
 /**
@@ -364,6 +418,88 @@ export async function advanceSites(env: Env): Promise<SiteRow[]> {
   const out: SiteRow[] = [];
   for (const row of results ?? []) out.push(await advanceSite(env, row.project_id));
   return out;
+}
+
+/* ——————————————————————— the client's own Cloudflare ——————————————————————— */
+
+/**
+ * Copy one channel's deploy into the client's account and remember where it
+ * landed. Never throws: a mirror failure is recorded on the site and our own
+ * copy keeps working.
+ */
+async function mirrorSite(
+  env: Env,
+  site: SiteRow,
+  channel: 'preview' | 'production',
+  deployId?: string | null,
+): Promise<void> {
+  if (site.host !== 'cloudflare' || !site.cloudflare_connection_id || !site.cloudflare_account_id) return;
+  const deploy = deployId ?? (channel === 'preview' ? site.preview_deploy : site.production_deploy);
+  if (!deploy) return;
+  const already = channel === 'preview' ? site.cloudflare_preview_deploy : site.cloudflare_production_deploy;
+  if (already === deploy && !site.cloudflare_error) return;
+  if (!env.SITES) return;
+  try {
+    const object = await env.SITES.get(manifestKey(site.slug, deploy));
+    if (!object) throw new Error('the deploy manifest is missing');
+    const manifest = (await object.json()) as { files?: Record<string, { sha: string; size: number; type?: string }> };
+    const files: MirrorFile[] = Object.entries(manifest.files ?? {}).map(([path, file]) => ({
+      path,
+      sha: file.sha,
+      size: file.size,
+      ...(file.type ? { type: file.type } : {}),
+    }));
+    if (!files.length) throw new Error('the deploy has no files');
+    const out = await mirrorDeploy(env, {
+      connectionId: site.cloudflare_connection_id,
+      accountId: site.cloudflare_account_id,
+      slug: site.slug,
+      channel,
+      files,
+      spa: site.spa === 1,
+    });
+    await save(env, site.project_id, {
+      cloudflare_error: null,
+      cloudflare_deployed_at: now(),
+      ...(channel === 'preview'
+        ? { cloudflare_preview_url: out.url, cloudflare_preview_deploy: deploy, cloudflare_preview_script: out.script }
+        : { cloudflare_production_url: out.url, cloudflare_production_deploy: deploy, cloudflare_production_script: out.script }),
+    });
+  } catch (error) {
+    await save(env, site.project_id, {
+      cloudflare_error: ((error as Error)?.message ?? 'Cloudflare deploy failed').slice(0, 500),
+    });
+  }
+}
+
+/**
+ * Move a site between our hosting and the client's Cloudflare account. The
+ * deploy history is unchanged; switching to Cloudflare mirrors the current
+ * preview and production into their account.
+ */
+export async function setSiteHost(
+  env: Env,
+  projectId: string,
+  host: SiteHost,
+  connection?: { id: number; accountId: string } | null,
+): Promise<SiteRow | null> {
+  const site = await getSite(env, projectId);
+  if (!site) return null;
+  const next: SiteHost = host === 'cloudflare' && connection ? 'cloudflare' : 'ours';
+  await save(env, projectId, {
+    host: next,
+    cloudflare_connection_id: next === 'cloudflare' ? connection!.id : null,
+    cloudflare_account_id: next === 'cloudflare' ? connection!.accountId : null,
+    cloudflare_error: null,
+    cloudflare_preview_deploy: null,
+    cloudflare_production_deploy: null,
+  });
+  const fresh = (await getSite(env, projectId))!;
+  if (next === 'cloudflare') {
+    await mirrorSite(env, fresh, 'preview');
+    await mirrorSite(env, fresh, 'production');
+  }
+  return getSite(env, projectId);
 }
 
 /** Failed sites Ali has not been told about yet; marks them told. */
@@ -475,6 +611,7 @@ export async function finishDeploy(
   slug: string,
   deploy: string,
   meta: { ticketId?: number; commitSha?: string } = {},
+  background?: (work: Promise<unknown>) => void,
 ): Promise<{ deployId: string; previewUrl: string; files: number; bytes: number } | { error: string }> {
   if (!env.SITES) return { error: 'sites_unavailable' };
   const site = await getSiteBySlug(env, slug);
@@ -499,24 +636,50 @@ export async function finishDeploy(
     ).bind(deploy, site.project_id, meta.ticketId ?? null, meta.commitSha ?? null, files, bytes, t),
     env.DB.prepare('UPDATE sites SET preview_deploy = ?, rebuild_error = NULL, updated_at = ? WHERE project_id = ?').bind(deploy, t, site.project_id),
   ]);
+  if (site.host === 'cloudflare') {
+    // Mirroring is a second upload to a different account; keep it off the
+    // node's 20-second request when the route can wait in the background.
+    const mirror = mirrorSite(env, { ...site, preview_deploy: deploy }, 'preview');
+    if (background) background(mirror);
+    else await mirror;
+  }
   const { sitesDomain } = await getSettings(env);
-  return { deployId: deploy, previewUrl: `https://${slug}--preview.${sitesDomain}`, files, bytes };
+  const view = siteView(await getSite(env, site.project_id), sitesDomain);
+  return {
+    deployId: deploy,
+    previewUrl: view?.previewUrl ?? `https://${slug}--preview.${sitesDomain}`,
+    files,
+    bytes,
+  };
 }
 
 /** Production takes the deploy the preview is on. The caller decides who may. */
-export async function publishSite(env: Env, projectId: string): Promise<{ productionUrl: string } | { error: string }> {
+export async function publishSite(
+  env: Env,
+  projectId: string,
+): Promise<{ productionUrl: string; cloudflareError?: string } | { error: string }> {
   const site = await getSite(env, projectId);
   if (!site) return { error: 'not_found' };
   if (site.state !== 'ready' || !site.preview_deploy) return { error: 'not_ready' };
   await env.DB.prepare('UPDATE sites SET production_deploy = preview_deploy, updated_at = ? WHERE project_id = ?')
     .bind(now(), projectId)
     .run();
+  const fresh = (await getSite(env, projectId))!;
+  if (fresh.host === 'cloudflare') await mirrorSite(env, fresh, 'production');
   const { sitesDomain } = await getSettings(env);
-  return { productionUrl: `https://${site.slug}.${sitesDomain}` };
+  const view = siteView((await getSite(env, projectId))!, sitesDomain);
+  return {
+    productionUrl: view?.productionUrl ?? `https://${site.slug}.${sitesDomain}`,
+    ...(view?.cloudflare?.error ? { cloudflareError: view.cloudflare.error } : {}),
+  };
 }
 
 /** Production goes back to an older deploy of this same site. */
-export async function rollbackSite(env: Env, projectId: string, deployId: string): Promise<{ productionUrl: string } | { error: string }> {
+export async function rollbackSite(
+  env: Env,
+  projectId: string,
+  deployId: string,
+): Promise<{ productionUrl: string; cloudflareError?: string } | { error: string }> {
   const site = await getSite(env, projectId);
   if (!site) return { error: 'not_found' };
   const deploy = await env.DB.prepare('SELECT 1 FROM site_deploys WHERE id = ? AND project_id = ?')
@@ -526,8 +689,14 @@ export async function rollbackSite(env: Env, projectId: string, deployId: string
   await env.DB.prepare('UPDATE sites SET production_deploy = ?, updated_at = ? WHERE project_id = ?')
     .bind(deployId, now(), projectId)
     .run();
+  const fresh = (await getSite(env, projectId))!;
+  if (fresh.host === 'cloudflare') await mirrorSite(env, fresh, 'production', deployId);
   const { sitesDomain } = await getSettings(env);
-  return { productionUrl: `https://${site.slug}.${sitesDomain}` };
+  const view = siteView((await getSite(env, projectId))!, sitesDomain);
+  return {
+    productionUrl: view?.productionUrl ?? `https://${site.slug}.${sitesDomain}`,
+    ...(view?.cloudflare?.error ? { cloudflareError: view.cloudflare.error } : {}),
+  };
 }
 
 /**

@@ -77,17 +77,23 @@ import {
 } from './setup.ts';
 import {
   advanceSite,
+  cleanSiteSlug,
   getSite,
   listDeploys,
   publishSite,
   rollbackSite,
+  setSiteHost,
+  siteSlugFree,
   siteState,
   siteView,
   startSite,
   workspaceFor,
   workspaceRead,
+  type SiteHost,
   type SiteRow,
 } from './sites.ts';
+import { grantedAccounts, connectionRow } from './cfaccess.ts';
+import { ensureRepo, useClientRepo } from './ghapp.ts';
 import { checkUploads, fileCount, fileResponse, FILE_LIMITS, sizeText, storeFiles, withFiles, type FileMeta, type Upload } from './files.ts';
 
 export { now };
@@ -451,13 +457,17 @@ type ProjectRow = {
   brief: string;
   repo: string | null;
   repo_kind: string;
+  repo_wanted: number;
+  repo_error: string | null;
+  github_installation_id: number | null;
   created_by: string | null;
   created_at: number;
 };
 
 async function userProjects(env: Env, userId: string) {
   const { results } = await env.DB.prepare(
-    `SELECT p.id, p.slug, p.name, p.kind, p.brief, p.repo, p.repo_kind, p.created_by, p.created_at
+    `SELECT p.id, p.slug, p.name, p.kind, p.brief, p.repo, p.repo_kind, p.repo_wanted, p.repo_error,
+            p.github_installation_id, p.created_by, p.created_at
        FROM user_projects up JOIN projects p ON p.id = up.project_id
       WHERE up.user_id = ? ORDER BY p.name`,
   )
@@ -810,6 +820,9 @@ portal.get('/portal/me', async (c) => {
         kind,
         repoKind,
         repo: project.repo,
+        repoWanted: Boolean(project.repo_wanted),
+        repoError: project.repo_error,
+        githubInstallationId: project.github_installation_id,
         site,
         setup: setupFor({
           kind,
@@ -944,6 +957,22 @@ const MAX_PROJECTS_PER_DAY = 3;
  * The last interview answer becomes the first ticket, so the flow ends in a
  * thread that carries the brief rather than a confirmation screen.
  */
+/** Whether an address on malipetek.online is still free, while the client types it. */
+portal.get('/portal/site-address', async (c) => {
+  const raw = c.req.query('slug') ?? '';
+  const slug = cleanSiteSlug(raw);
+  if (!slug) return reply(c, { available: false, slug: raw, reason: 'bad' });
+  return reply(c, { available: await siteSlugFree(c.env, slug), slug });
+});
+
+/**
+ * Create a project from the setup form, and file the first request against it.
+ *
+ * The form now chooses the three things that used to be guessed: the site's
+ * address, where the code lives (our org, their GitHub, or a repo they named),
+ * and where it is hosted (ours or their Cloudflare account). A new project's
+ * site starts here rather than waiting for a second button on another page.
+ */
 portal.post('/portal/projects', async (c) => {
   const env = c.env;
   const user = c.get('user');
@@ -952,7 +981,14 @@ portal.post('/portal/projects', async (c) => {
     name?: unknown;
     brief?: unknown;
     repoKind?: unknown;
+    repoMode?: unknown;
     repo?: unknown;
+    repoSource?: unknown;
+    installationId?: unknown;
+    siteSlug?: unknown;
+    host?: unknown;
+    connectionId?: unknown;
+    accountId?: unknown;
     attention?: unknown;
     budgetCents?: unknown;
   }>(c);
@@ -964,14 +1000,52 @@ portal.post('/portal/projects', async (c) => {
   const brief = cleanBrief(body?.brief, kind);
   if (!brief) return reply(c, { error: 'bad_brief' }, 400);
 
-  // Only an existing project names a repo. A new one is created at provisioning.
-  const repoKind = kind === 'existing' && isRepoKind(body?.repoKind) ? body.repoKind : 'none';
-  const repo = repoKind === 'repo' ? cleanRepo(body?.repo) : null;
-  if (repoKind === 'repo' && !repo) return reply(c, { error: 'bad_repo' }, 400);
+  // Where the code comes from. `repoKind` is the old form; `repoMode` adds
+  // "create it for me" and "in my GitHub account" as first-class choices.
+  const mode =
+    body?.repoMode === 'create' || body?.repoMode === 'repo' || body?.repoMode === 'zip'
+      ? body.repoMode
+      : body?.repoKind === 'repo' || body?.repoKind === 'zip'
+        ? body.repoKind
+        : kind === 'new'
+          ? 'create'
+          : 'none';
+  const repoKind = mode === 'repo' ? 'repo' : mode === 'zip' ? 'zip' : 'none';
+  const repo = mode === 'repo' ? cleanRepo(body?.repo) : null;
+  if (mode === 'repo' && !repo) return reply(c, { error: 'bad_repo' }, 400);
 
   const attention = body?.attention === undefined ? DEFAULT_ATTENTION : cleanAttention(body.attention);
   const budget = cleanBudget(body?.budgetCents);
   if (!attention || budget === false) return reply(c, { error: 'bad_ticket' }, 400);
+
+  const rawSiteSlug = typeof body?.siteSlug === 'string' ? body.siteSlug : '';
+  const siteSlug = rawSiteSlug ? cleanSiteSlug(rawSiteSlug) : null;
+  if (rawSiteSlug && !siteSlug) return reply(c, { error: 'bad_slug' }, 400);
+  if (siteSlug && !(await siteSlugFree(env, siteSlug))) return reply(c, { error: 'slug_taken' }, 409);
+
+  // Hosting in the client's own account is only offered when they granted one.
+  let host: SiteHost = 'ours';
+  let connectionId: number | null = null;
+  let accountId: string | null = null;
+  if (body?.host === 'cloudflare') {
+    const wanted = Number(body?.connectionId);
+    const connection =
+      Number.isInteger(wanted) && wanted > 0
+        ? await connectionRow(env, wanted)
+        : await env.DB.prepare(
+            'SELECT * FROM cloudflare_connections WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1',
+          )
+            .bind(user.id)
+            .first<{ id: number; user_id: string; accounts: string }>();
+    if (!connection || connection.user_id !== user.id) return reply(c, { error: 'no_cloudflare' }, 400);
+    const accounts = grantedAccounts(connection);
+    const wantedAccount = typeof body?.accountId === 'string' ? body.accountId : '';
+    const account = accounts.find((a) => a.id === wantedAccount) ?? accounts[0];
+    if (!account) return reply(c, { error: 'no_cloudflare_account' }, 400);
+    host = 'cloudflare';
+    connectionId = connection.id;
+    accountId = account.id;
+  }
 
   if (await isRateLimited(env, user.id, 'project', MAX_PROJECTS_PER_DAY, 24 * 60 * 60)) {
     return reply(c, { error: 'rate_limited' }, 429);
@@ -980,18 +1054,63 @@ portal.post('/portal/projects', async (c) => {
   const t = now();
   const id = crypto.randomUUID();
   const slug = await uniqueSlug(env, name);
+  const repoWanted = mode === 'create' ? 1 : 0;
   try {
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO projects (id, slug, name, kind, brief, repo, repo_kind, repo_wanted, created_by, onboarded_at, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        // No repo and no zip coming: a node makes one, so approved work has
-        // something to clone.
-      ).bind(id, slug, name, kind, JSON.stringify(brief), repo, repoKind, repoKind === 'none' ? 1 : 0, user.id, t, t),
+      ).bind(id, slug, name, kind, JSON.stringify(brief), repo, repoKind, repoWanted, user.id, t, t),
       env.DB.prepare('INSERT INTO user_projects (user_id, project_id) VALUES (?, ?)').bind(user.id, id),
     ]);
   } catch {
     return reply(c, { error: 'slug_taken' }, 409);
+  }
+
+  // A repo in the client's own GitHub account, when they asked for one.
+  let repoOutcome: string | null = null;
+  let repoError: string | null = null;
+  if (mode === 'create' && body?.repoSource === 'github') {
+    const wantedInstall = Number(body?.installationId);
+    const installation =
+      Number.isInteger(wantedInstall) && wantedInstall > 0
+        ? await env.DB.prepare('SELECT id, account_login FROM github_installations WHERE id = ? AND user_id = ?')
+            .bind(wantedInstall, user.id)
+            .first<{ id: number; account_login: string }>()
+        : await env.DB.prepare('SELECT id, account_login FROM github_installations WHERE user_id = ? ORDER BY account_login LIMIT 1')
+            .bind(user.id)
+            .first<{ id: number; account_login: string }>();
+    if (!installation) {
+      repoError = 'Connect GitHub first, then choose “create it in my account”.';
+    } else {
+      try {
+        const out = await useClientRepo(env, { id, slug }, installation);
+        repoOutcome = out.outcome;
+      } catch (error) {
+        repoError = (error as Error)?.message ?? 'Could not create the repo.';
+        await env.DB.prepare('UPDATE projects SET repo_error = ? WHERE id = ?')
+          .bind(`github: ${repoError}`.slice(0, 300), id)
+          .run();
+      }
+    }
+  } else if (mode === 'repo' && repo) {
+    const owner = repo.split('github.com/')[1]?.split('/')[0] ?? '';
+    const installation = await env.DB.prepare(
+      'SELECT id FROM github_installations WHERE user_id = ? AND lower(account_login) = lower(?)',
+    )
+      .bind(user.id, owner)
+      .first<{ id: number }>();
+    if (installation) {
+      await env.DB.prepare('UPDATE projects SET github_installation_id = ? WHERE id = ?').bind(installation.id, id).run();
+      try {
+        await ensureRepo(env, id);
+      } catch (error) {
+        repoError = (error as Error)?.message ?? 'Could not reach the repo.';
+        await env.DB.prepare('UPDATE projects SET repo_error = ? WHERE id = ?')
+          .bind(`github: ${repoError}`.slice(0, 300), id)
+          .run();
+      }
+    }
   }
 
   // A "new" project's first request is the build itself; an existing one's is
@@ -1019,11 +1138,33 @@ portal.post('/portal/projects', async (c) => {
     ),
   ]);
 
+  // A new site starts at once: the placeholder is live while the repo is made.
+  let site: SiteRow | null = null;
+  let siteError: string | null = null;
+  if (kind === 'new') {
+    try {
+      site = await startSite(env, user, { id, slug, name }, { siteSlug, host, connectionId, accountId });
+    } catch (error) {
+      siteError = (error as Error)?.message ?? 'The site could not be started.';
+    }
+  }
+
   c.executionCtx.waitUntil(
     notifyAliOfClientMessage(env, { id: ticket.id, title, client_email: user.email }, text, true),
   );
 
-  return reply(c, { project: { id, slug, name, kind, repoKind, repo, brief }, ticketId: ticket.id }, 201);
+  return reply(
+    c,
+    {
+      project: { id, slug, name, kind, repoKind, repo, brief },
+      ticketId: ticket.id,
+      site: siteView(site),
+      siteError,
+      repoOutcome,
+      repoError,
+    },
+    201,
+  );
 });
 
 /* —— provisioning: the client's own hosted site —— */
@@ -1038,6 +1179,29 @@ async function ownProject(c: Ctx) {
   )
     .bind(c.req.param('id'), c.get('user').id)
     .first<{ id: string; slug: string; name: string; kind: string }>();
+}
+
+/** A grant the caller owns, and one of its accounts: the target for a site. */
+async function cloudflareTarget(
+  c: Ctx,
+  body: { connectionId?: unknown; accountId?: unknown } | null,
+): Promise<{ connectionId: number; accountId: string } | { error: string }> {
+  const user = c.get('user');
+  const wanted = Number(body?.connectionId);
+  const connection =
+    Number.isInteger(wanted) && wanted > 0
+      ? await connectionRow(c.env, wanted)
+      : await c.env.DB.prepare(
+          'SELECT * FROM cloudflare_connections WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1',
+        )
+          .bind(user.id)
+          .first<{ id: number; user_id: string; accounts: string }>();
+  if (!connection || connection.user_id !== user.id) return { error: 'no_cloudflare' };
+  const accounts = grantedAccounts(connection);
+  const wantedAccount = typeof body?.accountId === 'string' ? body.accountId : '';
+  const account = accounts.find((a) => a.id === wantedAccount) ?? accounts[0];
+  if (!account) return { error: 'no_cloudflare_account' };
+  return { connectionId: connection.id, accountId: account.id };
 }
 
 const siteError = (c: Ctx, error: unknown) => {
@@ -1062,12 +1226,47 @@ portal.post('/portal/projects/:id/site', async (c) => {
   if (await isRateLimited(c.env, user.id, 'site', MAX_SITE_STARTS_PER_DAY, 24 * 60 * 60)) {
     return reply(c, { error: 'rate_limited' }, 429);
   }
+  const body = await readJson<{ host?: unknown; connectionId?: unknown; accountId?: unknown; siteSlug?: unknown }>(c);
+  let host: SiteHost = 'ours';
+  let connectionId: number | null = null;
+  let accountId: string | null = null;
+  if (body?.host === 'cloudflare') {
+    const target = await cloudflareTarget(c, body);
+    if ('error' in target) return reply(c, { error: target.error }, 400);
+    host = 'cloudflare';
+    connectionId = target.connectionId;
+    accountId = target.accountId;
+  }
   try {
-    const site = await startSite(c.env, user, project);
-    return reply(c, { site: siteView(site) }, 201);
+    const site = await startSite(c.env, user, project, {
+      siteSlug: typeof body?.siteSlug === 'string' ? body.siteSlug : null,
+      host,
+      connectionId,
+      accountId,
+    });
+    const { sitesDomain } = await getSettings(c.env);
+    return reply(c, { site: siteView(site, sitesDomain) }, 201);
   } catch (error) {
     return siteError(c, error);
   }
+});
+
+/** Move a live site between our hosting and the client's Cloudflare account. */
+portal.post('/portal/projects/:id/site/host', async (c) => {
+  const project = await ownProject(c);
+  if (!project) return reply(c, { error: 'not_found' }, 404);
+  const body = await readJson<{ host?: unknown; connectionId?: unknown; accountId?: unknown }>(c);
+  if (body?.host !== 'ours' && body?.host !== 'cloudflare') return reply(c, { error: 'bad_host' }, 400);
+  let target: { id: number; accountId: string } | null = null;
+  if (body.host === 'cloudflare') {
+    const found = await cloudflareTarget(c, body);
+    if ('error' in found) return reply(c, { error: found.error }, 400);
+    target = { id: found.connectionId, accountId: found.accountId };
+  }
+  const site = await setSiteHost(c.env, project.id, body.host, target);
+  if (!site) return reply(c, { error: 'not_found' }, 404);
+  const { sitesDomain } = await getSettings(c.env);
+  return reply(c, { site: siteView(site, sitesDomain) });
 });
 
 /** Where the site has got to. Asking moves it forward, at most every few seconds. */
@@ -1099,7 +1298,11 @@ portal.post('/portal/projects/:id/site/publish', async (c) => {
         text: `${c.get('user').email} published the preview of ${project.name} to production.\n${out.productionUrl ?? ''}`,
       }),
     );
-    return reply(c, { ok: true, productionUrl: out.productionUrl });
+    return reply(c, {
+      ok: true,
+      productionUrl: out.productionUrl,
+      ...(out.cloudflareError ? { cloudflareError: out.cloudflareError } : {}),
+    });
   } catch (error) {
     return siteError(c, error);
   }
@@ -1113,7 +1316,11 @@ portal.post('/portal/projects/:id/site/rollback', async (c) => {
   const body = await readJson<{ deployId?: unknown }>(c);
   const out = await rollbackSite(c.env, project.id, typeof body?.deployId === 'string' ? body.deployId : '');
   if ('error' in out) return siteError(c, out);
-  return reply(c, { ok: true, productionUrl: out.productionUrl });
+  return reply(c, {
+    ok: true,
+    productionUrl: out.productionUrl,
+    ...(out.cloudflareError ? { cloudflareError: out.cloudflareError } : {}),
+  });
 });
 
 /** The site's deploy history, newest first. */
@@ -1986,7 +2193,7 @@ function repoStatus(p: {
 }
 
 portal.get('/admin/projects', async (c) => {
-  const [{ sitesDomain }, projects, slugs, counts, sites] = await Promise.all([
+  const [{ sitesDomain }, projects, slugs, counts, sites, installations, links] = await Promise.all([
     getSettings(c.env),
     c.env.DB.prepare(
       `SELECT id, slug, name, kind, brief, repo, repo_kind, repo_wanted, repo_error, repo_claim_node, repo_claim_at,
@@ -1998,8 +2205,22 @@ portal.get('/admin/projects', async (c) => {
       `SELECT project_id, count(*) AS n FROM tickets WHERE project_id IS NOT NULL GROUP BY project_id`,
     ).all<{ project_id: string; n: number }>(),
     sitesById(c.env),
+    c.env.DB.prepare('SELECT id, user_id, account_login FROM github_installations').all<{
+      id: number;
+      user_id: string | null;
+      account_login: string;
+    }>(),
+    c.env.DB.prepare('SELECT project_id, user_id FROM user_projects').all<{ project_id: string; user_id: string }>(),
   ]);
   const filed = new Map((counts.results ?? []).map((row) => [row.project_id, row.n]));
+  const installationsById = new Map((installations.results ?? []).map((row) => [row.id, row]));
+  const installationsByUser = new Map(
+    (installations.results ?? []).filter((row) => row.user_id).map((row) => [row.user_id as string, row]),
+  );
+  const usersByProject = new Map<string, string[]>();
+  for (const link of links.results ?? []) {
+    usersByProject.set(link.project_id, [...(usersByProject.get(link.project_id) ?? []), link.user_id]);
+  }
 
   // The same setup the client sees, so the admin view is not guessing at it.
   return reply(c, {
@@ -2008,12 +2229,22 @@ portal.get('/admin/projects', async (c) => {
       const repoKind = isRepoKind(project.repo_kind) ? project.repo_kind : 'none';
       const brief = parseBrief(project.brief);
       const site = siteView(sites.get(project.id), sitesDomain);
+      // For a project never linked, offer the installation of a client who is
+      // linked to it: that is the account the repo can now be created in.
+      const clientInstallation = (usersByProject.get(project.id) ?? [])
+        .map((userId) => installationsByUser.get(userId))
+        .find(Boolean);
+      const installation = project.github_installation_id
+        ? installationsById.get(project.github_installation_id)
+        : clientInstallation;
       return {
         ...project,
         brief,
         kind,
         repoKind,
         site,
+        githubAccount: installation?.account_login ?? null,
+        githubInstallationId: project.github_installation_id ?? clientInstallation?.id ?? null,
         repoStatus: repoStatus(project),
         setup: setupFor({
           kind,
@@ -2056,14 +2287,22 @@ portal.get('/admin/projects/:id/site/deploys', async (c) => {
 portal.post('/admin/projects/:id/site/publish', async (c) => {
   const out = await publishSite(c.env, c.req.param('id'));
   if ('error' in out) return siteError(c, out);
-  return reply(c, { ok: true, productionUrl: out.productionUrl });
+  return reply(c, {
+    ok: true,
+    productionUrl: out.productionUrl,
+    ...(out.cloudflareError ? { cloudflareError: out.cloudflareError } : {}),
+  });
 });
 
 portal.post('/admin/projects/:id/site/rollback', async (c) => {
   const body = await readJson<{ deployId?: unknown }>(c);
   const out = await rollbackSite(c.env, c.req.param('id'), typeof body?.deployId === 'string' ? body.deployId : '');
   if ('error' in out) return siteError(c, out);
-  return reply(c, { ok: true, productionUrl: out.productionUrl });
+  return reply(c, {
+    ok: true,
+    productionUrl: out.productionUrl,
+    ...(out.cloudflareError ? { cloudflareError: out.cloudflareError } : {}),
+  });
 });
 
 /**
@@ -2130,6 +2369,70 @@ portal.post('/admin/projects/:id/repo/create', async (c) => {
     ).bind(now(), now(), id),
   ]);
   return reply(c, { ok: true });
+});
+
+/**
+ * Create the project's repo in the client's own GitHub account. The account is
+ * the project's installation, or one belonging to a client linked to it.
+ */
+portal.post('/admin/projects/:id/repo/github', async (c) => {
+  const id = c.req.param('id');
+  const body = await readJson<{ installationId?: unknown }>(c);
+  const project = await c.env.DB.prepare('SELECT id, slug, name, github_installation_id FROM projects WHERE id = ?')
+    .bind(id)
+    .first<{ id: string; slug: string; name: string; github_installation_id: number | null }>();
+  if (!project) return reply(c, { error: 'not_found' }, 404);
+  const wanted = Number(body?.installationId);
+  const installation =
+    Number.isInteger(wanted) && wanted > 0
+      ? await c.env.DB.prepare('SELECT id, account_login FROM github_installations WHERE id = ?')
+          .bind(wanted)
+          .first<{ id: number; account_login: string }>()
+      : project.github_installation_id
+        ? await c.env.DB.prepare('SELECT id, account_login FROM github_installations WHERE id = ?')
+            .bind(project.github_installation_id)
+            .first<{ id: number; account_login: string }>()
+        : await c.env.DB.prepare(
+            `SELECT i.id, i.account_login FROM github_installations i
+               JOIN users u ON u.id = i.user_id
+               JOIN user_projects up ON up.user_id = u.id
+              WHERE up.project_id = ? AND u.role = 'client'
+              ORDER BY i.account_login LIMIT 1`,
+          )
+            .bind(id)
+            .first<{ id: number; account_login: string }>();
+  if (!installation) return reply(c, { error: 'no_github' }, 400);
+  try {
+    const out = await useClientRepo(c.env, project, installation);
+    return reply(c, { ok: true, repo: out.repo, outcome: out.outcome, account: installation.account_login });
+  } catch (error) {
+    const message = (error as Error)?.message ?? 'Could not create the repo.';
+    await c.env.DB.prepare('UPDATE projects SET repo_error = ? WHERE id = ?')
+      .bind(`github: ${message}`.slice(0, 300), id)
+      .run();
+    return reply(c, { error: 'github', message }, 502);
+  }
+});
+
+/** Move a site between our hosting and a client's Cloudflare account (Ali's switch). */
+portal.post('/admin/projects/:id/site/host', async (c) => {
+  const id = c.req.param('id');
+  const body = await readJson<{ host?: unknown; connectionId?: unknown; accountId?: unknown }>(c);
+  if (body?.host !== 'ours' && body?.host !== 'cloudflare') return reply(c, { error: 'bad_host' }, 400);
+  let target: { id: number; accountId: string } | null = null;
+  if (body.host === 'cloudflare') {
+    const wanted = Number(body?.connectionId);
+    const connection = Number.isInteger(wanted) && wanted > 0 ? await connectionRow(c.env, wanted) : null;
+    if (!connection) return reply(c, { error: 'no_cloudflare' }, 400);
+    const accounts = grantedAccounts(connection);
+    const account = accounts.find((a) => a.id === body.accountId) ?? accounts[0];
+    if (!account) return reply(c, { error: 'no_cloudflare_account' }, 400);
+    target = { id: connection.id, accountId: account.id };
+  }
+  const site = await setSiteHost(c.env, id, body.host, target);
+  if (!site) return reply(c, { error: 'not_found' }, 404);
+  const { sitesDomain } = await getSettings(c.env);
+  return reply(c, { site: siteView(site, sitesDomain) });
 });
 
 /**

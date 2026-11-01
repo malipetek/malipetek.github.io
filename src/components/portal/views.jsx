@@ -354,6 +354,7 @@ export function ProjectView({ id }) {
 
       <div className="cp-projectgrid">
         <SiteCard project={project} />
+        <RepoCard project={project} />
         <section className="cp-card">
           <header className="cp-card__head cp-card__head--tight">
             <h2 className="cp-h2">{t('views.project.setup')}</h2>
@@ -398,6 +399,74 @@ export function ProjectView({ id }) {
         </div>
       </section>
     </div>
+  );
+}
+
+/** Where the code lives, with the action that was missing: create it in the client's GitHub. */
+function RepoCard({ project }) {
+  const t = useT();
+  const { reload, notify } = usePortal();
+  const [state, setState] = useState(null);
+  const [repo, setRepo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = () => api(`/portal/projects/${project.id}/repo`).then(setState, () => setState(null));
+  useEffect(() => {
+    load();
+  }, [project.id]);
+  const act = async (body) => {
+    setBusy(true);
+    try {
+      await api(`/portal/projects/${project.id}/repo`, { body });
+      await load();
+      await reload();
+      notify(t('views.repo.connected'));
+    } catch (error) {
+      notify(errorText(error, t), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!state) return null;
+  const github = state.installations?.[0];
+  return (
+    <section className="cp-card cp-repo">
+      <h2 className="cp-h2">{t('views.repo.title')}</h2>
+      {state.repo ? (
+        <p className="cp-muted">
+          {state.installation ? t('views.repo.mine', { account: state.installation.account_login }) : t('views.repo.ours')}{' '}
+          <a href={state.repo} target="_blank" rel="noreferrer">
+            {state.repo.replace(/^https:\/\/github\.com\//, '')}
+          </a>
+        </p>
+      ) : state.repoWanted ? (
+        <p className="cp-muted">{t('views.repo.wanted')}</p>
+      ) : (
+        <p className="cp-error">{t('views.repo.missing')}</p>
+      )}
+      {state.error ? <p className="cp-error">{t('views.repo.githubError', { message: state.error.replace(/^github:\s*/, '') })}</p> : null}
+      {!state.repo ? (
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
+          {github ? (
+            <Button size="sm" kind="primary" disabled={busy} onClick={() => act({ create: 'github', installationId: github.id })}>
+              {t('views.repo.createGithub', { account: github.account_login })}
+            </Button>
+          ) : null}
+          <Button size="sm" disabled={busy} onClick={() => act({ create: 'ours' })}>
+            {t('views.repo.createOurs')}
+          </Button>
+        </div>
+      ) : null}
+      <details style={{ marginTop: '0.75rem' }}>
+        <summary className="cp-linkbtn">{t('views.repo.useExisting')}</summary>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+          <input type="text" placeholder="https://github.com/you/repo" value={repo} onChange={(e) => setRepo(e.target.value)} />
+          <Button size="sm" disabled={busy || !repo.trim()} onClick={() => act({ repo })}>
+            {t('views.repo.use')}
+          </Button>
+        </div>
+        <p className="cp-hint">{t('views.repo.hint')}</p>
+      </details>
+    </section>
   );
 }
 
@@ -469,8 +538,12 @@ function SiteCard({ project }) {
       text: t('views.site.publishText', { preview: site.previewUrl, live: site.productionUrl }),
       confirm: t('views.site.publish'),
       run: async () => {
-        await api(`/portal/projects/${project.id}/site/publish`, { method: 'POST', body: {} });
-        notify(t('views.site.publishedNotice'));
+        const out = await api(`/portal/projects/${project.id}/site/publish`, { method: 'POST', body: {} });
+        if (out?.cloudflareError) {
+          notify(t('views.site.cloudflareError', { message: out.cloudflareError }), 'error');
+        } else {
+          notify(t('views.site.publishedNotice'));
+        }
         await reload();
       },
     });
@@ -494,6 +567,8 @@ function SiteCard({ project }) {
         <h2 className="cp-h2">{t('views.site.title')}</h2>
         <span className={cx('cp-sitestate', ahead ? 'is-ahead' : 'is-live')}>{ahead ? t('views.site.ahead') : t('views.site.liveUpToDate')}</span>
       </header>
+      <p className="cp-hint">{site.host === 'cloudflare' ? t('views.site.cloudflareHost') : t('views.site.oursHost')}</p>
+      {site.cloudflare?.error ? <p className="cp-error">{t('views.site.cloudflareError', { message: site.cloudflare.error })}</p> : null}
       <div className="cp-channels">
         <a className="cp-channel" href={site.previewUrl} target="_blank" rel="noopener">
           <span className="cp-label">{t('views.site.channelPreview')}</span>
@@ -517,6 +592,7 @@ function SiteCard({ project }) {
           <p className="cp-hint">{t('views.site.aheadHint')}</p>
         )
       ) : null}
+      <HostSwitch project={project} site={site} />
       {deploys?.length ? (
         <>
           <h3 className="cp-label cp-site__hist">{t('views.site.versions')}</h3>
@@ -545,6 +621,59 @@ function SiteCard({ project }) {
         </>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * Moving a site between our hosting and the client's Cloudflare account. The
+ * deploy history does not change; the server mirrors the current preview and
+ * production into their account.
+ */
+function HostSwitch({ project, site }) {
+  const t = useT();
+  const { reload, notify } = usePortal();
+  const [cloudflare, setCloudflare] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api('/portal/cloudflare').then(setCloudflare, () => setCloudflare({ connections: [] }));
+  }, []);
+  const connections = (cloudflare?.connections ?? []).filter((c) => !c.lapsed);
+  const move = async (host) => {
+    setBusy(true);
+    try {
+      await api(`/portal/projects/${project.id}/site/host`, {
+        method: 'POST',
+        body: host === 'cloudflare' ? { host, connectionId: connections[0]?.id } : { host: 'ours' },
+      });
+      notify(t('views.site.moved'));
+      await reload();
+    } catch (error) {
+      notify(errorText(error, t), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (site.host === 'cloudflare') {
+    return (
+      <p style={{ margin: '0.6rem 0 0' }}>
+        <button type="button" className="cp-linkbtn" disabled={busy} onClick={() => move('ours')}>
+          {t('views.site.moveToOurs')}
+        </button>
+      </p>
+    );
+  }
+  return (
+    <p style={{ margin: '0.6rem 0 0' }}>
+      {connections.length ? (
+        <button type="button" className="cp-linkbtn" disabled={busy} onClick={() => move('cloudflare')}>
+          {t('views.site.moveToCloudflare')}
+        </button>
+      ) : (
+        <a className="cp-linkbtn" href={href('connections')}>
+          {t('views.site.connectCloudflare')}
+        </a>
+      )}
+    </p>
   );
 }
 
@@ -808,10 +937,24 @@ function ShowKey({ made, onClose }) {
 
 function Github() {
   const t = useT();
-  const { ask } = usePortal();
+  const { ask, data, reload, notify } = usePortal();
   const [state, setState] = useState(null);
   const load = () => api('/portal/github').then(setState, () => setState({ installations: [], installUrl: null }));
   useEffect(() => void load(), []);
+  const first = state?.installations?.[0];
+  const withoutRepo = (data.projects ?? []).filter((p) => !p.repo);
+  const create = async (project) => {
+    try {
+      await api(`/portal/projects/${project.id}/repo`, { body: { create: 'github', installationId: first?.id } });
+      await load();
+      await reload();
+    } catch (error) {
+      // The connection card is the place to say it: GitHub's own words are
+      // more useful than a generic failure.
+      await load();
+      notify(errorText(error, t), 'error');
+    }
+  };
   return (
     <section className="cp-card">
       <h2 className="cp-h2">GitHub</h2>
@@ -845,14 +988,29 @@ function Github() {
       {/* A project that names a repo we cannot read: connect, or the work waits. */}
       {(state?.unconnected ?? []).length ? (
         <div className="cp-notice cp-notice--warn" role="status">
-          <p>
-            {t('views.github.waitingOnConnection', { count: (state?.unconnected ?? []).length })}
-          </p>
+          <p>{t('views.github.waitingOnConnection', { count: (state?.unconnected ?? []).length })}</p>
           <ul className="cp-keys">
             {(state?.unconnected ?? []).map((p) => (
               <li key={p.slug}>
                 <strong>{p.name}</strong>
                 <span className="cp-muted">{p.repo.replace(/^https:\/\/github\.com\//, '')}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {/* Connected, but a site has no repository yet: the action lives here too. */}
+      {first && withoutRepo.length ? (
+        <div className="cp-notice" role="status">
+          <p>{t('views.github.noRepo', { account: first.account_login, count: withoutRepo.length })}</p>
+          <ul className="cp-keys">
+            {withoutRepo.map((p) => (
+              <li key={p.id}>
+                <strong>{p.name}</strong>
+                {p.repoError ? <span className="cp-warn">{p.repoError.replace(/^github:\s*/, '')}</span> : null}
+                <Button size="sm" onClick={() => void create(p)}>
+                  {t('views.github.createRepo')}
+                </Button>
               </li>
             ))}
           </ul>

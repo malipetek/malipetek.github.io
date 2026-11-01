@@ -665,7 +665,10 @@ export function SitePanel({ project }) {
   const unpublished = site.previewDeploy && site.previewDeploy !== site.productionDeploy;
   return (
     <section className="aw-site" aria-label="Site">
-      <span className="aw-field__label">Site · {site.state}</span>
+      <span className="aw-field__label">
+        Site · {site.state} · {site.host === 'cloudflare' ? 'Cloudflare' : 'malipetek.online'}
+      </span>
+      {site.cloudflare?.error ? <p className="aw-warn">Cloudflare: {site.cloudflare.error}</p> : null}
       {site.state !== 'ready' ? (
         <p className="aw-muted">{site.error ?? 'Being set up: the repo and a first page are on their way.'}</p>
       ) : (

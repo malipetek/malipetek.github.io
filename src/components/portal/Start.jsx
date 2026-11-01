@@ -1,106 +1,66 @@
 /*
- * /portal/start: the three-question setup wizard. A fork (an existing site, or
- * something new), then three questions; the last answer becomes the first
- * ticket. Text comes from the catalog like the rest of the portal, so a client
- * who picked a language on the sign-in screen sees this page in it too.
+ * /portal/start: add a site. Three steps that ask the questions the old form
+ * left to guesswork:
+ *
+ *   1. what it is called, and the address it gets on malipetek.online
+ *   2. where the code lives — ours, their GitHub, a repo they name, or a zip
+ *   3. the first request, where it is hosted, and how closely Ali should look
+ *
+ * The form is saved in sessionStorage, so a client who leaves to connect
+ * GitHub or Cloudflare in another tab comes back to the same step. Creating
+ * the site also starts its hosting; there is no second button to find.
+ *
+ * Text comes from the catalog like the rest of the portal, so a client who
+ * picked a language on the sign-in screen sees this page in it too.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, createProject, errorText, session } from '../../lib/portal';
 import { ATTENTION, DEFAULT_ATTENTION, clock, money, timeCents } from '../../lib/pricing.js';
 import { attentionText } from './copy.js';
 import { browserLocale, useTranslator } from './useTranslator.js';
 
-/*
- * Two interviews, one shape: three questions each, with the last one becoming
- * the first ticket. An existing project is asked where its code lives; a new
- * one is asked what is done by hand, because that is the brief an agent can
- * actually build from. Keys, not English: t() supplies the words.
- */
-const STEPS = {
-  existing: [
-    {
-      title: 'start.step.existing.1.title',
-      lede: 'start.step.existing.1.lede',
-      fields: [
-        { key: 'name', label: 'start.field.name.label', placeholder: 'start.field.existing.name.placeholder', type: 'text', max: 80 },
-        { key: 'what', label: 'start.field.existing.what.label', type: 'area', max: 1200 },
-      ],
-    },
-    {
-      title: 'start.step.existing.2.title',
-      lede: 'start.step.existing.2.lede',
-      fields: [
-        {
-          key: 'repoKind',
-          label: 'start.field.repoKind.label',
-          type: 'choice',
-          options: [
-            { value: 'repo', label: 'start.option.repo.label', note: 'start.option.repo.note' },
-            { value: 'zip', label: 'start.option.zip.label', note: 'start.option.zip.note' },
-            { value: 'none', label: 'start.option.none.label', note: 'start.option.none.note' },
-          ],
-        },
-        {
-          key: 'repo',
-          label: 'start.field.repo.label',
-          placeholder: 'start.field.repo.placeholder',
-          type: 'text',
-          max: 300,
-          showWhen: { key: 'repoKind', value: 'repo' },
-        },
-        { key: 'where', label: 'start.field.where.label', hint: 'start.field.where.hint', type: 'area', max: 1200, optional: true },
-      ],
-    },
-    {
-      title: 'start.step.existing.3.title',
-      lede: 'start.step.existing.3.lede',
-      fields: [
-        {
-          key: 'goal',
-          label: 'start.field.existing.goal.label',
-          hint: 'start.field.existing.goal.hint',
-          type: 'area',
-          max: 1200,
-        },
-      ],
-    },
-  ],
-  new: [
-    {
-      title: 'start.step.new.1.title',
-      lede: 'start.step.new.1.lede',
-      fields: [
-        { key: 'name', label: 'start.field.name.label', type: 'text', max: 80 },
-        { key: 'what', label: 'start.field.new.what.label', type: 'area', max: 1200 },
-      ],
-    },
-    {
-      title: 'start.step.new.2.title',
-      lede: 'start.step.new.2.lede',
-      fields: [
-        { key: 'manual', label: 'start.field.manual.label', hint: 'start.field.manual.hint', type: 'area', max: 1200, optional: true },
-      ],
-    },
-    {
-      title: 'start.step.new.3.title',
-      lede: 'start.step.new.3.lede',
-      fields: [{ key: 'goal', label: 'start.field.new.goal.label', type: 'area', max: 1200 }],
-    },
-  ],
-};
+const SAVE_KEY = 'malipetek.portal.start';
+
+/** The same rule the Worker uses for a site address. */
+function slugify(text) {
+  const base = String(text ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/g, '');
+  return /^[a-z0-9]/.test(base) ? base : '';
+}
+
+function savedState() {
+  if (typeof window === 'undefined') return null;
+  try {
+    return JSON.parse(window.sessionStorage.getItem(SAVE_KEY) ?? 'null');
+  } catch {
+    return null;
+  }
+}
 
 export default function Start() {
+  const saved = savedState();
   const [booted, setBooted] = useState(false);
   const [user, setUser] = useState(null);
   const [count, setCount] = useState(0);
-  const [kind, setKind] = useState(null);
-  const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
+  const [kind, setKind] = useState(saved?.kind ?? null);
+  const [index, setIndex] = useState(Number(saved?.index) || 0);
+  const [answers, setAnswers] = useState(saved?.answers ?? {});
+  const [attention, setAttention] = useState(saved?.attention ?? DEFAULT_ATTENTION);
+  const [budget, setBudget] = useState(saved?.budget ?? '');
   const [status, setStatus] = useState({ text: '', error: false });
   const [busy, setBusy] = useState(false);
-  const [attention, setAttention] = useState(DEFAULT_ATTENTION);
-  const [budget, setBudget] = useState('');
+  const [github, setGithub] = useState(null);
+  const [cloudflare, setCloudflare] = useState(null);
+  const [address, setAddress] = useState(null);
   const t = useTranslator(user?.locale ?? browserLocale());
+
+  const set = (key, value) => setAnswers((a) => ({ ...a, [key]: value }));
 
   useEffect(() => {
     document.title = t('start.pageTitle');
@@ -120,17 +80,79 @@ export default function Start() {
       .finally(() => setBooted(true));
   }, []);
 
-  const steps = kind ? STEPS[kind] : [];
+  // The connection cards. A client can connect in another tab and come back;
+  // refreshing on focus is what makes "come back" work.
+  const loadConnections = () => {
+    if (!session.get()) return;
+    api('/portal/github').then(setGithub, () => setGithub({ installations: [], installUrl: null }));
+    api('/portal/cloudflare').then(setCloudflare, () => setCloudflare({ connections: [], connectUrl: null }));
+  };
+  useEffect(() => {
+    loadConnections();
+    const onFocus = () => loadConnections();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  // Persist progress, so a trip to GitHub does not cost the form.
+  useEffect(() => {
+    if (!kind) return;
+    try {
+      window.sessionStorage.setItem(SAVE_KEY, JSON.stringify({ kind, index, answers, attention, budget }));
+    } catch {
+      /* private mode */
+    }
+  }, [kind, index, answers, attention, budget]);
+
+  const addressSlug = answers.siteSlug || slugify(answers.name);
+  useEffect(() => {
+    if (!addressSlug || addressSlug.length < 2) {
+      setAddress(null);
+      return undefined;
+    }
+    let alive = true;
+    const timer = setTimeout(() => {
+      api(`/portal/site-address?slug=${encodeURIComponent(addressSlug)}`)
+        .then((out) => alive && setAddress(out))
+        .catch(() => alive && setAddress(null));
+    }, 350);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [addressSlug]);
+
+  const steps = kind ? ['site', 'code', 'first'] : [];
   const step = steps[index];
-  const fields = step ? step.fields.filter((f) => !f.showWhen || answers[f.showWhen.key] === f.showWhen.value) : [];
   const last = index === steps.length - 1;
+  const installations = github?.installations ?? [];
+  const cloudflareConnections = (cloudflare?.connections ?? []).filter((c) => !c.lapsed);
+  const cloudflareAccount = cloudflareConnections[0]?.accounts?.[0] ?? null;
+  const repoMode = answers.repoMode ?? (kind === 'new' ? 'create' : 'none');
+  const repoSource = answers.repoSource ?? (installations.length ? 'github' : 'ours');
+  const host = answers.host ?? 'ours';
+
+  const missing = useMemo(() => {
+    const need = [];
+    if (!answers.name?.trim()) need.push(t('start.field.name.label'));
+    if (step === 'site' && !answers.what?.trim()) need.push(t(kind === 'new' ? 'start.field.new.what.label' : 'start.field.existing.what.label'));
+    if (step === 'code') {
+      if (repoMode === 'repo' && !answers.repo?.trim()) need.push(t('start.field.repo.label'));
+      if (repoMode === 'create' && repoSource === 'github' && !installations.length) need.push(t('start.github.account'));
+    }
+    if (step === 'first' && !answers.goal?.trim()) need.push(t(kind === 'new' ? 'start.field.new.goal.label' : 'start.field.existing.goal.label'));
+    return need;
+  }, [answers, kind, step, repoMode, repoSource, installations.length, t]);
 
   const say = (text, error = false) => setStatus({ text, error });
 
   const next = async () => {
-    const missing = fields.filter((f) => !f.optional && !answers[f.key]?.trim());
     if (missing.length) {
-      say(t('start.missing', { fields: missing.map((f) => t(f.label)).join(', ') }), true);
+      say(t('start.missing', { fields: missing.join(', ') }), true);
+      return;
+    }
+    if (step === 'site' && address && address.slug === addressSlug && address.available === false) {
+      say(t('start.address.taken'), true);
       return;
     }
     say('');
@@ -145,8 +167,7 @@ export default function Start() {
     setBusy(true);
     say(t('start.creating'));
     try {
-      const repoKind = kind === 'existing' && answers.repoKind ? answers.repoKind : 'none';
-      const { ticketId } = await createProject({
+      const { project } = await createProject({
         kind,
         name: answers.name ?? '',
         brief: {
@@ -154,12 +175,19 @@ export default function Start() {
           goal: answers.goal ?? '',
           ...(kind === 'existing' ? { where: answers.where || undefined } : { manual: answers.manual || undefined }),
         },
-        repoKind,
-        repo: repoKind === 'repo' ? answers.repo : undefined,
+        repoMode,
+        repo: repoMode === 'repo' ? answers.repo : undefined,
+        repoSource: repoMode === 'create' ? repoSource : undefined,
+        installationId: repoMode === 'create' && repoSource === 'github' ? installations[0]?.id : undefined,
+        siteSlug: addressSlug || undefined,
+        host,
+        connectionId: host === 'cloudflare' ? cloudflareConnections[0]?.id : undefined,
+        accountId: host === 'cloudflare' ? cloudflareAccount?.id : undefined,
         attention,
         budgetCents: Number(budget) > 0 ? Math.round(Number(budget) * 100) : undefined,
       });
-      window.location.href = `/portal/ticket#id=${ticketId}`;
+      window.sessionStorage.removeItem(SAVE_KEY);
+      window.location.href = `/portal#/project/${project.id}`;
     } catch (error) {
       say(errorText(error, t), true);
       setBusy(false);
@@ -212,6 +240,7 @@ export default function Start() {
                 onClick={() => {
                   setKind(k);
                   setIndex(0);
+                  setAnswers((a) => ({ ...a, repoMode: k === 'new' ? 'create' : 'none' }));
                   say('');
                 }}
               >
@@ -234,34 +263,249 @@ export default function Start() {
             ))}
           </ol>
 
-          <section className="portal-section">
-            <h2>{t(step.title)}</h2>
-            <p className="lede">{t(step.lede)}</p>
-            {fields.map((field) => (
-              <Field
-                key={field.key}
-                field={field}
-                value={answers[field.key] ?? ''}
-                onChange={(v) => setAnswers((a) => ({ ...a, [field.key]: v }))}
-                onEnter={() => void next()}
-                t={t}
-              />
-            ))}
-          </section>
+          {step === 'site' ? (
+            <section className="portal-section">
+              <h2>{t('start.step.site.title')}</h2>
+              <p className="lede">{t(kind === 'new' ? 'start.step.site.new.lede' : 'start.step.site.existing.lede')}</p>
 
-          {last ? (
-            <div>
+              <div className="portal-field">
+                <label className="portal-label" htmlFor="f-name">
+                  {t('start.field.name.label')}
+                </label>
+                <input
+                  id="f-name"
+                  type="text"
+                  maxLength={80}
+                  placeholder={t('start.field.existing.name.placeholder')}
+                  value={answers.name ?? ''}
+                  onChange={(e) => set('name', e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void next();
+                    }
+                  }}
+                />
+                <p className="portal-field__hint">{t('start.field.name.hint')}</p>
+              </div>
+
+              <div className="portal-field">
+                <label className="portal-label" htmlFor="f-address">
+                  {t('start.field.address.label')}
+                </label>
+                <div className="start-address">
+                  <span>https://</span>
+                  <input
+                    id="f-address"
+                    type="text"
+                    maxLength={63}
+                    placeholder={slugify(answers.name) || t('start.field.address.placeholder')}
+                    value={answers.siteSlug ?? ''}
+                    onChange={(e) => set('siteSlug', slugify(e.target.value))}
+                  />
+                  <span>.malipetek.online</span>
+                </div>
+                <p className={`portal-field__hint${address && address.available === false ? ' is-error' : ''}`} role="status" aria-live="polite">
+                  {!addressSlug
+                    ? t('start.address.hint')
+                    : address === null
+                      ? t('start.address.checking')
+                      : address.available
+                        ? t('start.address.available')
+                        : t('start.address.taken')}
+                </p>
+              </div>
+
+              <div className="portal-field">
+                <label className="portal-label" htmlFor="f-what">
+                  {t(kind === 'new' ? 'start.field.new.what.label' : 'start.field.existing.what.label')}
+                </label>
+                <textarea id="f-what" rows={5} maxLength={1200} value={answers.what ?? ''} onChange={(e) => set('what', e.target.value)} />
+              </div>
+
+              {kind === 'existing' ? (
+                <div className="portal-field">
+                  <label className="portal-label" htmlFor="f-where">
+                    {t('start.field.where.label')}
+                  </label>
+                  <textarea
+                    id="f-where"
+                    rows={3}
+                    maxLength={1200}
+                    placeholder={t('start.field.where.hint')}
+                    value={answers.where ?? ''}
+                    onChange={(e) => set('where', e.target.value)}
+                  />
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {step === 'code' ? (
+            <section className="portal-section">
+              <h2>{t('start.step.code.title')}</h2>
+              <p className="lede">{t('start.step.code.lede')}</p>
+
+              <ConnectionNote
+                t={t}
+                label="GitHub"
+                connected={installations.length > 0}
+                account={installations.map((i) => `@${i.account_login}`).join(', ')}
+                href={github?.installUrl}
+                connectedText={t('start.github.connected', { account: installations.map((i) => `@${i.account_login}`).join(', ') })}
+                missingText={t('start.github.notConnected')}
+              />
+
+              <fieldset className="choice">
+                <legend className="portal-label">{t('start.field.repoMode.label')}</legend>
+                {(kind === 'new' ? ['create', 'repo'] : ['create', 'repo', 'zip']).map((mode) => (
+                  <label className="choice-option" key={mode}>
+                    <input
+                      type="radio"
+                      name="repoMode"
+                      value={mode}
+                      checked={repoMode === mode}
+                      onChange={() => {
+                        set('repoMode', mode);
+                        if (mode === 'create' && !answers.repoSource) {
+                          set('repoSource', installations.length ? 'github' : 'ours');
+                        }
+                      }}
+                    />
+                    <span className="choice-option__body">
+                      <strong>{t(`start.repoMode.${mode}.label`)}</strong>
+                      <em>{t(`start.repoMode.${mode}.note`)}</em>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+
+              {repoMode === 'create' ? (
+                <fieldset className="choice">
+                  <legend className="portal-label">{t('start.field.repoSource.label')}</legend>
+                  <label className="choice-option">
+                    <input
+                      type="radio"
+                      name="repoSource"
+                      value="github"
+                      checked={repoSource === 'github'}
+                      disabled={!installations.length}
+                      onChange={() => set('repoSource', 'github')}
+                    />
+                    <span className="choice-option__body">
+                      <strong>{t('start.repoSource.github.label')}</strong>
+                      <em>
+                        {installations.length
+                          ? t('start.repoSource.github.note', { account: installations[0].account_login })
+                          : t('start.repoSource.github.missing')}
+                      </em>
+                    </span>
+                  </label>
+                  <label className="choice-option">
+                    <input type="radio" name="repoSource" value="ours" checked={repoSource === 'ours'} onChange={() => set('repoSource', 'ours')} />
+                    <span className="choice-option__body">
+                      <strong>{t('start.repoSource.ours.label')}</strong>
+                      <em>{t('start.repoSource.ours.note')}</em>
+                    </span>
+                  </label>
+                </fieldset>
+              ) : null}
+
+              {repoMode === 'repo' ? (
+                <div className="portal-field">
+                  <label className="portal-label" htmlFor="f-repo">
+                    {t('start.field.repo.label')}
+                  </label>
+                  <input
+                    id="f-repo"
+                    type="text"
+                    maxLength={300}
+                    placeholder="https://github.com/you/repo"
+                    value={answers.repo ?? ''}
+                    onChange={(e) => set('repo', e.target.value)}
+                  />
+                  <p className="portal-field__hint">{t('start.field.repo.hint')}</p>
+                </div>
+              ) : null}
+
+              {repoMode === 'zip' ? <p className="portal-note">{t('start.repoMode.zip.hint')}</p> : null}
+            </section>
+          ) : null}
+
+          {step === 'first' ? (
+            <section className="portal-section">
+              <h2>{t('start.step.first.title')}</h2>
+              <p className="lede">{t(kind === 'new' ? 'start.step.first.new.lede' : 'start.step.first.existing.lede')}</p>
+
+              {kind === 'new' ? (
+                <div className="portal-field">
+                  <label className="portal-label" htmlFor="f-manual">
+                    {t('start.field.manual.label')} <span style={{ textTransform: 'none', letterSpacing: 0 }}>{t('start.budget.optional')}</span>
+                  </label>
+                  <textarea
+                    id="f-manual"
+                    rows={3}
+                    maxLength={1200}
+                    placeholder={t('start.field.manual.hint')}
+                    value={answers.manual ?? ''}
+                    onChange={(e) => set('manual', e.target.value)}
+                  />
+                </div>
+              ) : null}
+
+              <div className="portal-field">
+                <label className="portal-label" htmlFor="f-goal">
+                  {t(kind === 'new' ? 'start.field.new.goal.label' : 'start.field.existing.goal.label')}
+                </label>
+                <textarea
+                  id="f-goal"
+                  rows={4}
+                  maxLength={1200}
+                  placeholder={t(kind === 'new' ? 'start.field.new.goal.hint' : 'start.field.existing.goal.hint')}
+                  value={answers.goal ?? ''}
+                  onChange={(e) => set('goal', e.target.value)}
+                />
+              </div>
+
+              <fieldset className="choice">
+                <legend className="portal-label">{t('start.field.host.label')}</legend>
+                <label className="choice-option">
+                  <input type="radio" name="host" value="ours" checked={host === 'ours'} onChange={() => set('host', 'ours')} />
+                  <span className="choice-option__body">
+                    <strong>{t('start.host.ours.label')}</strong>
+                    <em>{t('start.host.ours.note', { address: `${addressSlug || slugify(answers.name) || 'your-site'}.malipetek.online` })}</em>
+                  </span>
+                </label>
+                <label className="choice-option">
+                  <input
+                    type="radio"
+                    name="host"
+                    value="cloudflare"
+                    checked={host === 'cloudflare'}
+                    disabled={!cloudflareConnections.length}
+                    onChange={() => set('host', 'cloudflare')}
+                  />
+                  <span className="choice-option__body">
+                    <strong>{t('start.host.cloudflare.label')}</strong>
+                    <em>
+                      {cloudflareConnections.length
+                        ? t('start.host.cloudflare.note', { account: cloudflareAccount?.name ?? t('views.cloudflare.yourAccount') })
+                        : t('start.host.cloudflare.missing')}
+                    </em>
+                    {!cloudflareConnections.length && cloudflare?.connectUrl ? (
+                      <a href={cloudflare.connectUrl} target="_blank" rel="noreferrer">
+                        {t('views.cloudflare.connect')}
+                      </a>
+                    ) : null}
+                  </span>
+                </label>
+              </fieldset>
+
               <fieldset className="attention">
                 <legend className="portal-label">{t('start.attention.legend')}</legend>
                 {ATTENTION.map((a) => (
                   <label className="attention-option" key={a.key}>
-                    <input
-                      type="radio"
-                      name="attention"
-                      value={a.key}
-                      checked={attention === a.key}
-                      onChange={() => setAttention(a.key)}
-                    />
+                    <input type="radio" name="attention" value={a.key} checked={attention === a.key} onChange={() => setAttention(a.key)} />
                     <span>
                       <strong>{attentionText(t, a, 'name')}</strong>
                       <em>
@@ -274,10 +518,10 @@ export default function Start() {
                   </label>
                 ))}
               </fieldset>
+
               <div className="portal-field" style={{ maxWidth: '16rem' }}>
                 <label className="portal-label" htmlFor="st-budget">
-                  {t('start.budget.label')}{' '}
-                  <span style={{ textTransform: 'none', letterSpacing: 0 }}>{t('start.budget.optional')}</span>
+                  {t('start.budget.label')} <span style={{ textTransform: 'none', letterSpacing: 0 }}>{t('start.budget.optional')}</span>
                 </label>
                 <input
                   id="st-budget"
@@ -294,7 +538,33 @@ export default function Start() {
               <p className="portal-note" style={{ maxWidth: '52ch' }}>
                 {t('start.meta.note')}
               </p>
-            </div>
+
+              <div className="start-summary" aria-label={t('start.summary.title')}>
+                <strong>{t('start.summary.title')}</strong>
+                <dl>
+                  <div>
+                    <dt>{t('start.summary.address')}</dt>
+                    <dd>{addressSlug || slugify(answers.name) || '—'}.malipetek.online</dd>
+                  </div>
+                  <div>
+                    <dt>{t('start.summary.code')}</dt>
+                    <dd>
+                      {repoMode === 'create'
+                        ? repoSource === 'github' && installations.length
+                          ? t('start.summary.github', { account: installations[0].account_login })
+                          : t('start.summary.ours')
+                        : repoMode === 'repo'
+                          ? answers.repo || '—'
+                          : t('start.summary.zip')}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('start.summary.host')}</dt>
+                    <dd>{host === 'cloudflare' ? t('start.summary.cloudflare', { account: cloudflareAccount?.name ?? '' }) : t('start.summary.oursHost')}</dd>
+                  </div>
+                </dl>
+              </div>
+            </section>
           ) : null}
 
           <div className="portal-actions">
@@ -323,61 +593,17 @@ export default function Start() {
   );
 }
 
-function Field({ field, value, onChange, onEnter, t }) {
-  const id = `f-${field.key}`;
-  const hint = field.hint ? <p className="portal-field__hint">{t(field.hint)}</p> : null;
-
-  if (field.type === 'choice') {
-    return (
-      <fieldset className="choice">
-        <legend className="portal-label">{t(field.label)}</legend>
-        {(field.options ?? []).map((option) => (
-          <label className="choice-option" key={option.value}>
-            <input type="radio" name={id} value={option.value} checked={value === option.value} onChange={() => onChange(option.value)} />
-            <span className="choice-option__body">
-              <strong>{t(option.label)}</strong>
-              {option.note ? <em>{t(option.note)}</em> : null}
-            </span>
-          </label>
-        ))}
-        {hint}
-      </fieldset>
-    );
-  }
-
-  if (field.type === 'area') {
-    return (
-      <div className="portal-field">
-        <label className="portal-label" htmlFor={id}>
-          {t(field.label)}
-        </label>
-        <textarea id={id} rows={5} maxLength={field.max ?? 1200} value={value} onChange={(e) => onChange(e.target.value)} />
-        {hint}
-      </div>
-    );
-  }
-
+/** A connection the choice depends on: said plainly, with the way to make it. */
+function ConnectionNote({ t, label, connected, account, href, connectedText, missingText }) {
   return (
-    <div className="portal-field">
-      <label className="portal-label" htmlFor={id}>
-        {t(field.label)}
-      </label>
-      <input
-        id={id}
-        type="text"
-        maxLength={field.max ?? 200}
-        placeholder={field.placeholder ? t(field.placeholder) : undefined}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          // Enter advances; a textarea keeps it as a newline.
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            onEnter();
-          }
-        }}
-      />
-      {hint}
+    <div className={`start-connection${connected ? ' is-connected' : ''}`}>
+      <strong>{label}</strong>
+      <span>{connected ? connectedText ?? account : missingText}</span>
+      {!connected && href ? (
+        <a href={href} target="_blank" rel="noreferrer">
+          {t('start.connection.open', { label })}
+        </a>
+      ) : null}
     </div>
   );
 }

@@ -62,18 +62,27 @@ export interface Brief {
   goal: string;
 }
 
-export type SiteState = 'signin' | 'creating' | 'provisioning' | 'ready' | 'failed';
+export type SiteState = 'allocating' | 'ready' | 'failed';
 
 /** A project's hosted site, when it has one. */
 export interface Site {
   state: SiteState;
+  slug: string;
+  host: 'ours' | 'cloudflare';
   previewUrl: string | null;
-  editorUrl: string | null;
   productionUrl: string | null;
   customDomain: string | null;
-  repoUrl: string | null;
   error: string | null;
-  previewUpdatedAt: number | null;
+  previewDeploy: string | null;
+  productionDeploy: string | null;
+  rebuildRequestedAt: number | null;
+  rebuildError: string | null;
+  cloudflare: {
+    accountId: string | null;
+    previewUrl: string | null;
+    productionUrl: string | null;
+    error: string | null;
+  } | null;
   updatedAt: number;
 }
 
@@ -84,6 +93,9 @@ export interface Project {
   kind: ProjectKind;
   repoKind: RepoKind;
   repo: string | null;
+  repoWanted?: boolean;
+  repoError?: string | null;
+  githubInstallationId?: number | null;
   site: Site | null;
   setup: Setup;
 }
@@ -182,7 +194,14 @@ export interface NewProject {
   name: string;
   brief: Brief;
   repoKind?: RepoKind;
+  repoMode?: 'create' | 'repo' | 'zip' | 'none';
+  repoSource?: 'ours' | 'github';
+  installationId?: number;
   repo?: string;
+  siteSlug?: string;
+  host?: 'ours' | 'cloudflare';
+  connectionId?: number;
+  accountId?: string;
   attention?: string;
   budgetCents?: number;
 }
@@ -192,7 +211,14 @@ export interface NewProject {
  * Resolves to the new project and the ticket the client lands on.
  */
 export async function createProject(input: NewProject) {
-  return api<{ project: Omit<Project, 'setup'>; ticketId: number }>('/portal/projects', { body: input });
+  return api<{
+    project: Omit<Project, 'setup'>;
+    ticketId: number;
+    site?: Site | null;
+    siteError?: string | null;
+    repoOutcome?: string | null;
+    repoError?: string | null;
+  }>('/portal/projects', { body: input });
 }
 
 export async function requestLink(email: string) {

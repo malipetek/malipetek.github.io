@@ -122,7 +122,15 @@ node.get('/node/projects', async (c) => {
       // An allocating site with no repo yet: a node makes it from the
       // template, pushes main + preview, and reports it back.
       ...(p.site_state === 'allocating' && !p.repo && !p.repo_error
-        ? { needsRepo: { name: p.site_slug, site: p.site_slug, template: p.template ?? 'site' } }
+        ? {
+            needsRepo: {
+              name: p.site_slug,
+              site: p.site_slug,
+              template: p.template ?? 'site',
+              title: p.name,
+              about: parseBrief(p.brief).what || '',
+            },
+          }
         : // Any other project we said we would make a repo for. A "new" one
           // starts from the site template (main + preview), so hosting it later
           // needs nothing more; anything else gets a README from the brief. A
@@ -260,10 +268,16 @@ node.post('/node/sites/:slug/deploys/:id/finish', async (c) => {
     if (!holds) return c.json({ error: 'not_holding' }, 403);
   }
   const commitSha = typeof body?.commitSha === 'string' && /^[0-9a-f]{40}$/i.test(body.commitSha) ? body.commitSha : undefined;
-  const out = await finishDeploy(c.env, c.req.param('slug'), c.req.param('id'), {
-    ticketId: Number.isInteger(ticketId) && ticketId > 0 ? ticketId : undefined,
-    commitSha,
-  });
+  const out = await finishDeploy(
+    c.env,
+    c.req.param('slug'),
+    c.req.param('id'),
+    {
+      ticketId: Number.isInteger(ticketId) && ticketId > 0 ? ticketId : undefined,
+      commitSha,
+    },
+    (work) => c.executionCtx.waitUntil(work),
+  );
   if ('error' in out) return c.json({ error: out.error }, out.error === 'not_found' ? 404 : 409);
   if (out.deployId && Number.isInteger(ticketId) && ticketId > 0) {
     await c.env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 0, ?)`)

@@ -384,6 +384,7 @@ export function ClientsView() {
                   <p className={p.repoStatus && !['ready', 'creating', 'queued'].includes(p.repoStatus.state) ? 'aw-warn' : 'aw-muted'}>
                     {p.repoStatus?.detail ?? p.repo ?? 'no repo yet'}
                   </p>
+                  {p.githubAccount ? <p className="aw-muted">GitHub: @{p.githubAccount}</p> : null}
                   <div className="aw-tags">
                     {holders.length ? holders.map((n) => <Tag key={n.id} tone={n.online ? undefined : 'bad'}>{n.id}</Tag>) : <span className="aw-warn">No node has it yet.</span>}
                     {p.site ? <Tag tone="dash">site: {p.site.state}</Tag> : null}
@@ -393,6 +394,19 @@ export function ClientsView() {
                     {!p.repo ? (
                       <Button size="sm" kind="primary" onClick={() => void act(() => api('POST', `/admin/projects/${p.id}/repo/create`), `Creating a repo for ${p.name}.`)}>
                         {p.repoStatus?.state === 'failed' ? 'Retry repo' : 'Create repo'}
+                      </Button>
+                    ) : null}
+                    {!p.repo && p.githubInstallationId ? (
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          void act(
+                            () => api('POST', `/admin/projects/${p.id}/repo/github`, {}),
+                            `Creating ${p.slug} in @${p.githubAccount ?? 'the client’s GitHub'}.`,
+                          )
+                        }
+                      >
+                        Create in GitHub
                       </Button>
                     ) : null}
                     <Button size="sm" onClick={() => setModal({ kind: 'custom', render: (close) => <RepoModal project={p} onClose={close} /> })}>

@@ -1374,8 +1374,14 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsxs("section", { className: "aw-site", "aria-label": "Site", children: [
       /* @__PURE__ */ jsxs("span", { className: "aw-field__label", children: [
         "Site \xB7 ",
-        site.state
+        site.state,
+        " \xB7 ",
+        site.host === "cloudflare" ? "Cloudflare" : "malipetek.online"
       ] }),
+      site.cloudflare?.error ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        "Cloudflare: ",
+        site.cloudflare.error
+      ] }) : null,
       site.state !== "ready" ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: site.error ?? "Being set up: the repo and a first page are on their way." }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
         /* @__PURE__ */ jsxs("p", { className: "aw-site__links", children: [
           /* @__PURE__ */ jsx("a", { href: site.previewUrl, target: "_blank", rel: "noreferrer", children: "Preview \u2197" }),
@@ -1838,6 +1844,10 @@ var __awPlugin = (() => {
                 )
               ] }),
               /* @__PURE__ */ jsx("p", { className: p.repoStatus && !["ready", "creating", "queued"].includes(p.repoStatus.state) ? "aw-warn" : "aw-muted", children: p.repoStatus?.detail ?? p.repo ?? "no repo yet" }),
+              p.githubAccount ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+                "GitHub: @",
+                p.githubAccount
+              ] }) : null,
               /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
                 holders.length ? holders.map((n) => /* @__PURE__ */ jsx(Tag, { tone: n.online ? void 0 : "bad", children: n.id }, n.id)) : /* @__PURE__ */ jsx("span", { className: "aw-warn", children: "No node has it yet." }),
                 p.site ? /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
@@ -1848,6 +1858,17 @@ var __awPlugin = (() => {
               /* @__PURE__ */ jsx(SitePanel, { project: p }),
               /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
                 !p.repo ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => void act(() => api("POST", `/admin/projects/${p.id}/repo/create`), `Creating a repo for ${p.name}.`), children: p.repoStatus?.state === "failed" ? "Retry repo" : "Create repo" }) : null,
+                !p.repo && p.githubInstallationId ? /* @__PURE__ */ jsx(
+                  Button,
+                  {
+                    size: "sm",
+                    onClick: () => void act(
+                      () => api("POST", `/admin/projects/${p.id}/repo/github`, {}),
+                      `Creating ${p.slug} in @${p.githubAccount ?? "the client\u2019s GitHub"}.`
+                    ),
+                    children: "Create in GitHub"
+                  }
+                ) : null,
                 /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project: p, onClose: close }) }), children: p.repo ? "Change repo" : "Use a repo URL" }),
                 !p.site ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void act(() => api("POST", `/admin/projects/${p.id}/site`), `Hosting ${p.name} on malipetek.online.`), children: "Start hosting" }) : null,
                 /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),

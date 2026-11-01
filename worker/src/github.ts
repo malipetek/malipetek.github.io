@@ -16,6 +16,7 @@ import { Hono } from 'hono';
 import { now, sessionUser } from './portal.ts';
 import { corsHeaders, type Env, type HonoEnv } from './shared.ts';
 import type { Context } from 'hono';
+import { APP_SLUG, GH_API, appJwt, ensureRepo, ghHeaders, installationToken, projectInstallation, useClientRepo } from './ghapp.ts';
 
 /** Browser-facing replies need CORS headers, like portal.ts reply(). */
 const reply = (c: Context<HonoEnv>, body: unknown, status = 200) =>
@@ -26,148 +27,13 @@ const reply = (c: Context<HonoEnv>, body: unknown, status = 200) =>
 
 export const github = new Hono<HonoEnv>();
 
-const GH_API = 'https://api.github.com';
-const APP_SLUG = 'malipetek-dev';
-const TOKEN_MARGIN_SECONDS = 120; // treat a token as dead this early
-
-/* ——————————————————————— app JWT ——————————————————————— */
-
-let cachedJwt: { token: string; expiresAt: number } | null = null;
-
-const b64url = (data: ArrayBuffer | Uint8Array | string) => {
+const b64url = (data: string | ArrayBuffer | Uint8Array) => {
   const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : new Uint8Array(data);
   let bin = '';
   bytes.forEach((b) => (bin += String.fromCharCode(b)));
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 };
 
-const pemToDer = (pem: string) =>
-  Uint8Array.from(atob(pem.replace(/-----[A-Z ]+-----|\s/g, '')), (ch) => ch.charCodeAt(0));
-
-/** A 10-minute RS256 JWT for the app itself; cached until nearly dead. */
-async function appJwt(env: Env): Promise<string> {
-  const t = now();
-  if (cachedJwt && cachedJwt.expiresAt > t + TOKEN_MARGIN_SECONDS) return cachedJwt.token;
-  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) throw new Error('github_app_unconfigured');
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    pemToDer(env.GITHUB_APP_PRIVATE_KEY),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const payload = b64url(JSON.stringify({ iss: env.GITHUB_APP_ID, iat: t - 60, exp: t + 540 }));
-  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(`${header}.${payload}`));
-  cachedJwt = { token: `${header}.${payload}.${b64url(sig)}`, expiresAt: t + 540 };
-  return cachedJwt.token;
-}
-
-const ghHeaders = (token: string) => ({
-  authorization: `Bearer ${token}`,
-  accept: 'application/vnd.github+json',
-  'x-github-api-version': '2022-11-28',
-  'user-agent': 'malipetek-dev/1.0',
-});
-
-/** A one-hour installation token for the project's repo, never stored. */
-export async function installationToken(
-  env: Env,
-  installationId: number,
-  repositories?: string[],
-  extra?: Record<string, string>,
-) {
-  const res = await fetch(`${GH_API}/app/installations/${installationId}/access_tokens`, {
-    method: 'POST',
-    headers: ghHeaders(await appJwt(env)),
-    body: JSON.stringify({
-      permissions: { contents: 'write', pull_requests: 'write', ...extra },
-      ...(repositories?.length ? { repositories } : {}),
-    }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  const data = (await res.json().catch(() => null)) as { token?: string; expires_at?: string; message?: string } | null;
-  if (!res.ok || !data?.token) throw new Error(data?.message ?? `github token refused (${res.status})`);
-  return { token: data.token, expiresAt: Math.floor(Date.parse(data.expires_at ?? '') / 1000) || now() + 3600 };
-}
-
-interface InstallationRow {
-  id: number;
-  user_id: string | null;
-  github_login: string | null;
-  account_login: string;
-  account_type: string;
-  repository_selection: string;
-}
-
-/** The installation a project is reached through, when it is GitHub-connected. */
-export async function projectInstallation(env: Env, projectId: string) {
-  return env.DB.prepare(
-    `SELECT i.* FROM github_installations i JOIN projects p ON p.github_installation_id = i.id
-      WHERE p.id = ?`,
-  )
-    .bind(projectId)
-    .first<InstallationRow>();
-}
-
-/** `owner/name` out of a GitHub repo URL, or null for anything else. */
-export function repoParts(url: string | null) {
-  const match = /^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(url ?? '');
-  return match ? { owner: match[1], name: match[2] } : null;
-}
-
-/**
- * A client names a repo they own, then connects GitHub — and the repo may still
- * not exist (a fresh account, a rename, a typo in the URL). With the
- * installation token we can create it in their account, private and with a
- * first commit, so the node has something to clone instead of retrying a 404
- * every ten minutes.
- *
- * Returns what happened, and never throws for the "not connected" case.
- */
-export async function ensureRepo(env: Env, projectId: string): Promise<'exists' | 'created' | 'unconfigured'> {
-  const project = await env.DB.prepare(
-    'SELECT id, slug, repo, github_installation_id FROM projects WHERE id = ?',
-  )
-    .bind(projectId)
-    .first<{ id: string; slug: string; repo: string | null; github_installation_id: number | null }>();
-  const parts = repoParts(project?.repo ?? null);
-  if (!project || !parts || !project.github_installation_id) return 'unconfigured';
-
-  // The lookup only needs contents; asking for administration here would fail
-  // the token for an app that was never granted it, and break ordinary runs.
-  const { token } = await installationToken(env, project.github_installation_id);
-  const known = await fetch(`${GH_API}/repos/${parts.owner}/${parts.name}`, {
-    headers: ghHeaders(token),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (known.ok) return 'exists';
-  if (known.status !== 404) throw new Error(`github lookup failed (${known.status})`);
-
-  // Creating one needs Administration: write on the app. If it is not granted
-  // this throws with GitHub's own words, which land in repo_error for Ali.
-  const { token: admin } = await installationToken(env, project.github_installation_id, undefined, {
-    administration: 'write',
-  });
-
-  const installation = await env.DB.prepare('SELECT account_type FROM github_installations WHERE id = ?')
-    .bind(project.github_installation_id)
-    .first<{ account_type: string }>();
-  const where = installation?.account_type === 'Organization'
-    ? `${GH_API}/orgs/${parts.owner}/repos`
-    : `${GH_API}/user/repos`;
-  const created = await fetch(where, {
-    method: 'POST',
-    headers: ghHeaders(admin),
-    body: JSON.stringify({ name: parts.name, private: true, auto_init: true }),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!created.ok) {
-    const data = (await created.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(data?.message ?? `github create failed (${created.status})`);
-  }
-  return 'created';
-}
 
 /* ——————————————————————— the webhook ——————————————————————— */
 
@@ -429,6 +295,129 @@ github.post('/portal/projects/:id/github', async (c) => {
     .bind(repo.replace(/\.git\/?$/, ''), installationId, project.id)
     .run();
   return reply(c, { ok: true });
+});
+
+/* ——————————————————————— portal: a project's repo, chosen by the client ——————————————————————— */
+
+/** The project, when the caller is linked to it. */
+async function ownProject(env: Env, projectId: string, userId: string) {
+  return env.DB.prepare(
+    `SELECT p.id, p.slug, p.name, p.repo, p.repo_kind, p.repo_wanted, p.repo_error, p.github_installation_id
+       FROM projects p JOIN user_projects up ON up.project_id = p.id
+      WHERE p.id = ? AND up.user_id = ?`,
+  )
+    .bind(projectId, userId)
+    .first<{
+      id: string;
+      slug: string;
+      name: string;
+      repo: string | null;
+      repo_kind: string;
+      repo_wanted: number;
+      repo_error: string | null;
+      github_installation_id: number | null;
+    }>();
+}
+
+/** Where this project's code lives, as the site page asks it. */
+github.get('/portal/projects/:id/repo', async (c) => {
+  const user = await bearerUser(c.env, c);
+  if (!user) return reply(c, { error: 'unauthorized' }, 401);
+  const project = await ownProject(c.env, c.req.param('id'), user.id);
+  if (!project) return reply(c, { error: 'not_found' }, 404);
+  const installation = project.github_installation_id
+    ? await c.env.DB.prepare('SELECT id, account_login FROM github_installations WHERE id = ?')
+        .bind(project.github_installation_id)
+        .first<{ id: number; account_login: string }>()
+    : null;
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, account_login FROM github_installations WHERE user_id = ? ORDER BY account_login',
+  )
+    .bind(user.id)
+    .all<{ id: number; account_login: string }>();
+  return reply(c, {
+    repo: project.repo,
+    repoKind: project.repo_kind,
+    repoWanted: Boolean(project.repo_wanted),
+    error: project.repo_error,
+    installation,
+    installations: results ?? [],
+  });
+});
+
+/**
+ * Choose where the code lives:
+ *   { create: 'github', installationId? }  a private repo in their account (created if missing)
+ *   { create: 'ours' }                      a node creates one in our org
+ *   { repo: 'https://github.com/...' }      one they already have
+ *
+ * This is the button that did not exist: before it, a connected client could
+ * not ask us to use their account, and onboarding never offered the choice.
+ */
+github.post('/portal/projects/:id/repo', async (c) => {
+  const user = await bearerUser(c.env, c);
+  if (!user) return reply(c, { error: 'unauthorized' }, 401);
+  const project = await ownProject(c.env, c.req.param('id'), user.id);
+  if (!project) return reply(c, { error: 'not_found' }, 404);
+  const body = (await c.req.json().catch(() => null)) as { repo?: unknown; create?: unknown; installationId?: unknown } | null;
+
+  if (body?.create === 'ours') {
+    await c.env.DB.prepare(
+      `UPDATE projects SET repo = NULL, repo_kind = 'none', repo_wanted = 1, repo_error = NULL,
+         github_installation_id = NULL WHERE id = ?`,
+    )
+      .bind(project.id)
+      .run();
+    return reply(c, { ok: true, repo: null, wanted: true });
+  }
+
+  if (body?.create === 'github') {
+    const wanted = Number(body.installationId);
+    const installation = Number.isInteger(wanted) && wanted > 0
+      ? await c.env.DB.prepare('SELECT id, account_login FROM github_installations WHERE id = ? AND user_id = ?')
+          .bind(wanted, user.id)
+          .first<{ id: number; account_login: string }>()
+      : await c.env.DB.prepare('SELECT id, account_login FROM github_installations WHERE user_id = ? ORDER BY account_login LIMIT 1')
+          .bind(user.id)
+          .first<{ id: number; account_login: string }>();
+    if (!installation) return reply(c, { error: 'no_github' }, 400);
+    try {
+      const out = await useClientRepo(c.env, project, installation);
+      return reply(c, { ok: true, repo: out.repo, outcome: out.outcome, installation: { id: installation.id, account_login: installation.account_login } });
+    } catch (error) {
+      const message = (error as Error)?.message ?? 'Could not create the repo.';
+      await c.env.DB.prepare('UPDATE projects SET repo_error = ? WHERE id = ?')
+        .bind(`github: ${message}`.slice(0, 300), project.id)
+        .run();
+      return reply(c, { error: 'github', message }, 502);
+    }
+  }
+
+  const repo = typeof body?.repo === 'string' ? body.repo.trim().replace(/\.git\/?$/, '') : '';
+  if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/i.test(repo)) return reply(c, { error: 'bad_repo' }, 400);
+  const owner = repo.split('github.com/')[1]?.split('/')[0] ?? '';
+  const installation = await c.env.DB.prepare(
+    'SELECT id, account_login FROM github_installations WHERE user_id = ? AND lower(account_login) = lower(?)',
+  )
+    .bind(user.id, owner)
+    .first<{ id: number; account_login: string }>();
+  await c.env.DB.prepare(
+    `UPDATE projects SET repo = ?, repo_kind = 'repo', repo_wanted = 0, repo_error = NULL,
+       github_installation_id = ? WHERE id = ?`,
+  )
+    .bind(repo, installation?.id ?? null, project.id)
+    .run();
+  if (installation) {
+    try {
+      await ensureRepo(c.env, project.id);
+    } catch (error) {
+      const message = (error as Error)?.message ?? 'Could not reach the repo.';
+      await c.env.DB.prepare('UPDATE projects SET repo_error = ? WHERE id = ?')
+        .bind(`github: ${message}`.slice(0, 300), project.id)
+        .run();
+    }
+  }
+  return reply(c, { ok: true, repo, installation: installation ?? null });
 });
 
 /* ——————————————————————— node: a token per task ——————————————————————— */

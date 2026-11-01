@@ -55,13 +55,23 @@ let W = '';
 let RUNNER_TOKEN = '';
 const DUMMY_TURNSTILE = 'XXXX.DUMMY.TOKEN.XXXX'; // passes Cloudflare's always-pass test secret
 
-async function call(path, { method = 'GET', body, auth } = {}) {
-  const res = await fetch(W + path, {
-    method,
-    headers: { 'content-type': 'application/json', ...(auth ? { authorization: `Bearer ${auth}` } : {}) },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  return { status: res.status, data: await res.json().catch(() => null) };
+async function call(path, { method = 'GET', body, auth } = {}, tries = 3) {
+  try {
+    const res = await fetch(W + path, {
+      method,
+      headers: { 'content-type': 'application/json', ...(auth ? { authorization: `Bearer ${auth}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: res.status, data: await res.json().catch(() => null) };
+  } catch (error) {
+    // `wrangler d1 execute` writing the same SQLite file can bounce workerd for
+    // a moment; the request itself never reached the Worker.
+    if (tries > 1 && /fetch failed/i.test(String(error))) {
+      await sleep(400);
+      return call(path, { method, body, auth }, tries - 1);
+    }
+    throw error;
+  }
 }
 
 async function signIn(email) {
@@ -95,7 +105,7 @@ let STATE = '';
  * A stand-in for Cloudflare's OAuth and accounts API: the token endpoint
  * (client secret by Basic auth), revoke, and /accounts for a good token.
  */
-const CF = { port: 0, revoked: [], deepseek: [] };
+const CF = { port: 0, revoked: [], deepseek: [], uploads: [], deploys: [] };
 const CF_CLIENT = { id: 'e2e-cf-client', secret: 'e2e-cf-secret' };
 function startFakeCloudflare() {
   const server = http.createServer((req, res) => {
@@ -133,9 +143,35 @@ function startFakeCloudflare() {
         const out = source === target?.split('-')[0] ? text : `[${target}] ${text}`;
         return json(200, { choices: [{ message: { content: JSON.stringify({ source, text: out }) } }] });
       }
-      if (req.method === 'GET' && req.url.startsWith('/client/v4/accounts')) {
-        if (req.headers.authorization !== 'Bearer cf-access-secret') return json(403, { success: false });
-        return json(200, { success: true, result: [{ id: 'acc-1', name: 'Rosa Florist LLC' }] });
+      if (req.url.startsWith('/client/v4/accounts')) {
+        const upload = req.url.endsWith('/workers/assets/upload?base64=true');
+        const expected = upload ? 'Bearer upload-jwt' : 'Bearer cf-access-secret';
+        if (req.headers.authorization !== expected) return json(403, { success: false });
+        const api = '/client/v4/accounts/acc-1';
+        if (req.method === 'GET' && req.url === '/client/v4/accounts?per_page=50') {
+          return json(200, { success: true, result: [{ id: 'acc-1', name: 'Rosa Florist LLC' }] });
+        }
+        if (req.method === 'GET' && req.url === `${api}/workers/subdomain`) {
+          return json(200, { success: true, result: { subdomain: 'e2e-sub' } });
+        }
+        const session = new RegExp(`^${api}/workers/scripts/([^/]+)/assets-upload-session$`).exec(req.url);
+        if (req.method === 'POST' && session) {
+          const manifest = JSON.parse(body).manifest ?? {};
+          const hashes = Object.values(manifest).map((f) => f.hash);
+          CF.uploads.push({ script: session[1], hashes });
+          return json(200, { success: true, result: { jwt: 'upload-jwt', buckets: hashes.length ? [hashes] : [] } });
+        }
+        if (req.method === 'POST' && req.url === `${api}/workers/assets/upload?base64=true`) {
+          return json(201, { success: true, result: { jwt: 'completion-jwt' } });
+        }
+        const script = new RegExp(`^${api}/workers/scripts/([^/]+)$`).exec(req.url);
+        if (req.method === 'PUT' && script) {
+          CF.deploys.push(script[1]);
+          return json(200, { success: true, result: {} });
+        }
+        const sub = new RegExp(`^${api}/workers/scripts/([^/]+)/subdomain$`).exec(req.url);
+        if (req.method === 'POST' && sub) return json(200, { success: true, result: {} });
+        return json(404, {});
       }
       json(404, {});
     });
@@ -182,8 +218,9 @@ const groups = {
   async onboarding({ admin }) {
     const a = await signIn(`onb-${Date.now()}@example.com`);
     check('a real magic-link sign-in creates the account', a.user?.role === 'client' && typeof a.session === 'string');
-    const created = await newProject(a.session, { kind: 'new', name: 'Acme Bakery', brief: NEW_BRIEF });
+    const created = await newProject(a.session, { kind: 'new', name: 'Acme Bakery', brief: NEW_BRIEF, siteSlug: 'acme-bakery' });
     check('client creates a project from the interview', created.status === 201 && created.data.project.slug === 'acme-bakery');
+    check('the chosen address is the site address', created.data.site?.slug === 'acme-bakery', JSON.stringify(created.data.site));
     const again = await newProject(a.session, { kind: 'new', name: 'Acme Bakery', brief: NEW_BRIEF });
     check('a second project with the same name gets its own slug', again.data?.project?.slug === 'acme-bakery-2', JSON.stringify(again.data));
     check('the first request is filed with it', Number.isInteger(created.data.ticketId));
@@ -194,7 +231,7 @@ const groups = {
     check('signed out is refused', (await newProject(undefined, { kind: 'new', name: 'Z', brief: NEW_BRIEF })).status === 401);
     const me = (await call('/portal/me', { auth: a.session })).data;
     const p = me.projects.find((x) => x.id === created.data.project.id);
-    check('setup: brief and request ready, preview missing and blocking', p.setup.checks.find((c) => c.key === 'brief').state === 'ready' && p.setup.checks.find((c) => c.key === 'preview').state === 'missing' && !p.setup.autonomous);
+    check('setup: brief and request ready, preview pending and blocking', p.setup.checks.find((c) => c.key === 'brief').state === 'ready' && p.setup.checks.find((c) => c.key === 'preview').state === 'pending' && !p.setup.autonomous);
     const adminView = (await call('/admin/projects', { auth: admin })).data.projects.find((x) => x.id === created.data.project.id);
     check('admin sees the same setup', adminView?.setup?.ready === p.setup.ready && adminView.brief.manual === 'Orders by phone');
   },
@@ -471,7 +508,7 @@ const groups = {
     check('the heartbeat carries the project fingerprint', /^\d+:\d+:\d+:\d+$/.test(beat.data?.projects ?? ''), JSON.stringify(beat.data));
   },
 
-  async cloudflare() {
+  async cloudflare({ admin }) {
     const a = account(`cf-${Date.now()}@example.com`);
     const other = account(`cf-other-${Date.now()}@example.com`);
     const first = await call('/portal/cloudflare', { auth: a.session });
@@ -494,6 +531,47 @@ const groups = {
     check('…nor can disconnect it', (await call(`/portal/cloudflare/${listed[0].id}`, { method: 'DELETE', auth: other.session })).status === 404);
     const key = (await call('/portal/agent-tokens', { method: 'POST', auth: a.session, body: { label: 'cf test' } })).data.token;
     check('an assistant key cannot manage Cloudflare', (await call('/portal/cloudflare', { auth: key })).status === 401);
+
+    // A site in the client's own account: the placeholder is mirrored at once,
+    // and the address they chose is the one that is taken.
+    const slug = `rosa-${Date.now() % 100000}`;
+    const created = await newProject(a.session, {
+      kind: 'new',
+      name: `Rosa ${slug}`,
+      brief: NEW_BRIEF,
+      repoMode: 'create',
+      repoSource: 'ours',
+      siteSlug: slug,
+      host: 'cloudflare',
+      connectionId: listed[0].id,
+    });
+    check(
+      'a new site can be hosted in the client account',
+      created.data.site?.host === 'cloudflare' && /\.e2e-sub\.workers\.dev$/.test(created.data.site?.previewUrl ?? ''),
+      JSON.stringify(created.data.site),
+    );
+    check(
+      'the preview and production scripts were uploaded',
+      CF.deploys.includes(`malipetek-${slug}-preview`) && CF.deploys.includes(`malipetek-${slug}`),
+      JSON.stringify(CF.deploys),
+    );
+    check('the chosen address is taken', (await call(`/portal/site-address?slug=${slug}`, { auth: a.session })).data.available === false);
+    check('another address is free', (await call(`/portal/site-address?slug=${slug}-free`, { auth: a.session })).data.available === true);
+    await call(`/node/sites/${slug}/repo`, { method: 'POST', auth: RUNNER_TOKEN, body: { repo: `https://github.com/malipetek/${slug}` } });
+    const hosted = (await call(`/portal/projects/${created.data.project.id}/site`, { auth: a.session })).data.site;
+    check('the site is ready after the repo report', hosted?.state === 'ready' && hosted?.host === 'cloudflare', JSON.stringify(hosted));
+    const moved = await call(`/portal/projects/${created.data.project.id}/site/host`, {
+      method: 'POST',
+      auth: a.session,
+      body: { host: 'ours' },
+    });
+    check(
+      'the client can move it back to malipetek.online',
+      moved.data.site?.host === 'ours' && /\.malipetek\.online$/.test(moved.data.site?.previewUrl ?? ''),
+      JSON.stringify(moved.data.site),
+    );
+    check('the admin sees the same host', (await call('/admin/projects', { auth: admin })).data.projects.find((p) => p.id === created.data.project.id)?.site?.host === 'ours');
+
     check('the client disconnects', (await call(`/portal/cloudflare/${listed[0].id}`, { method: 'DELETE', auth: a.session })).status === 200);
     check('…which revokes at Cloudflare', CF.revoked.includes('cf-refresh-secret'));
     check('…and it is gone', (await call('/portal/cloudflare', { auth: a.session })).data.connections.length === 0);
@@ -1327,6 +1405,7 @@ async function main() {
         await run({ admin });
       } catch (error) {
         check(`${name} threw`, false, error.stack ?? String(error));
+        if (devLog) console.log(devLog.slice(-2500));
       }
     }
   } finally {
