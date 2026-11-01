@@ -125,7 +125,7 @@ function startFakeCloudflare() {
             access_token: 'cf-access-secret',
             refresh_token: 'cf-refresh-secret',
             expires_in: 3600,
-            scope: 'account-settings.read memberships.read user-details.read workers-scripts.edit workers-routes.write zone.read dns.write offline_access',
+            scope: 'account-settings.read memberships.read user-details.read workers-scripts.edit workers-scripts.admin workers-routes.write zone.read dns.write offline_access',
           });
         }
         if (form.get('grant_type') === 'refresh_token' && form.get('refresh_token') === 'cf-refresh-secret') {
@@ -706,7 +706,7 @@ const groups = {
     const first = await call('/portal/cloudflare', { auth: a.session });
     const link = new URL(first.data.connectUrl ?? 'http://x/');
     check('a client starts with no connection and a connect link', first.status === 200 && first.data.connections.length === 0 && link.pathname === '/oauth2/auth', JSON.stringify(first.data));
-    check('the link asks for exactly our scopes', link.searchParams.get('scope') === 'account-settings.read memberships.read user-details.read workers-scripts.edit workers-routes.write zone.read dns.write offline_access', link.searchParams.get('scope') ?? '');
+    check('the link asks for exactly our scopes', link.searchParams.get('scope') === 'account-settings.read memberships.read user-details.read workers-scripts.edit workers-scripts.admin workers-routes.write zone.read dns.write offline_access', link.searchParams.get('scope') ?? '');
     check('…returns to the Worker callback on the zone mount', link.searchParams.get('redirect_uri') === 'http://localhost:4321/api/portal/cloudflare/callback', link.searchParams.get('redirect_uri'));
     const state = link.searchParams.get('state') ?? '';
     check('…with a long signed state', state.length > 40);

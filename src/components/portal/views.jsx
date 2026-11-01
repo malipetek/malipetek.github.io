@@ -954,9 +954,16 @@ function HostSwitch({ project, site }) {
   };
   if (site.host === 'cloudflare') {
     return (
-      <button type="button" className="cp-linkbtn" disabled={busy} onClick={() => move('ours')}>
-        {t('views.site.moveToOurs')}
-      </button>
+      <>
+        {site.cloudflare?.error && connections.length ? (
+          <button type="button" className="cp-linkbtn" disabled={busy} onClick={() => move('cloudflare')}>
+            {t('views.site.retryCloudflare', { account: connections[0]?.accounts?.map((a) => a.name).join(', ') || '' })}
+          </button>
+        ) : null}
+        <button type="button" className="cp-linkbtn" disabled={busy} onClick={() => move('ours')}>
+          {t('views.site.moveToOurs')}
+        </button>
+      </>
     );
   }
   return connections.length ? (

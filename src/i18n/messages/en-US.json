@@ -660,5 +660,6 @@
   "views.sites.moveNone": "You need another project first.",
   "board.lanes": "Projects",
   "board.gettingSetUp": "Getting set up",
-  "views.repo.githubPermission": "The GitHub App is missing the Administration permission, so it cannot create a repository in your account. Grant it in the GitHub App settings, or choose “Create it in our account” — work starts either way."
+  "views.repo.githubPermission": "The GitHub App is missing the Administration permission, so it cannot create a repository in your account. Grant it in the GitHub App settings, or choose “Create it in our account” — work starts either way.",
+  "views.site.retryCloudflare": "Retry with my Cloudflare account ({account})"
 }

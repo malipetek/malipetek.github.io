@@ -37,6 +37,9 @@ export const CLOUDFLARE_SCOPES = [
   'memberships.read',
   'user-details.read',
   'workers-scripts.edit',
+  // Static-assets upload creates a script/version; Edit alone is refused with
+  // 403 "No access to the specified resource". Workers Admin covers it.
+  'workers-scripts.admin',
   'workers-routes.write',
   'zone.read',
   'dns.write',
