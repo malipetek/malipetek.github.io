@@ -27,7 +27,7 @@ export const PRICE_HOOK = `A one-minute fix is ${QUICK_FIX}. No quote, no minimu
  * themselves with AI and stall on the part that needs a developer.
  */
 export const LAST_MILE =
-  'You can vibe code most of it. The last mile is where you need a developer: the bug it keeps bringing back, the deploy, the payments, the thing that only breaks for real customers. Get that help at a fraction of the price, billed by the second, not by a quote.';
+  'You vibe code most of it. I take the last mile — the bug, the deploy, the payments — billed by the second.';
 
 /** How it is done, in two beats: supports the hooks, never leads. */
 export const PUNCHLINE = ['The agent types.', 'I sign off.'];

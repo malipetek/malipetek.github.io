@@ -9,6 +9,10 @@
 ## Client portal
 - `/portal` (and `/portal/ticket`, the address in emails) mount `src/components/portal/ClientPortal.jsx`: React, hash routes (`#/ticket/12`), styles in `src/styles/client-portal.css`. The overview's 3D board is `initBoard` in `src/lib/workshop3d.ts` (the homepage machine with the client's own requests on it). Onboarding (`/portal/start`) is `src/components/portal/Start.jsx`, mounted in a static Astro shell like the portal itself.
 
+## Intercom (the talk section)
+- `src/components/Intercom.astro` streams from `PUBLIC_CHAT_ENDPOINT` (`/api` in production) through `src/lib/chatBackend.js`. The site Worker owns `malipetek.dev/*`, so it proxies `/api/*` to `malipetek-intercom` over the `INTERCOM` service binding (`src/pages/api/[...path].ts`); `/mcp` and `/.well-known/*` take the same hop.
+- The assistant is a Flue agent (`worker/src/agents/intercom.ts`) on DeepSeek `deepseek-v4-flash` with `DEEPSEEK_API_KEY`; `/chat` answers 503 without that secret. It used to run a free OpenRouter model, which kept being withdrawn.
+
 ## Languages (i18n)
 - Locales: `src/lib/locales.js` (35, English source). Clients pick theirs in the portal (globe button) → `users.locale` + `users.translation` (`deepseek | cloudflare | off`); Ali can set both in Admin → Clients.
 - Ticket bridge: `worker/src/translate.ts`. Client messages are translated to English for Ali, his email and the agent brief; Ali's replies are translated into the client's language. Originals are never changed; translations live in `message_translations` (migration `0025_i18n.sql`). DeepSeek is the main engine (secret `DEEPSEEK_API_KEY`), Workers AI m2m100 (`AI` binding) the fallback. System lines stay English in the database and are translated in the portal by `systemLine` in `TicketView.jsx`.

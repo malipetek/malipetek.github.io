@@ -4,8 +4,6 @@
  */
 
 export interface Env {
-  /** Secret. OpenRouter API key, consumed by the Flue `openrouter` provider. */
-  OPENROUTER_API_KEY?: string;
   /** Secret. Turnstile secret. If unset, verification is skipped (local dev). */
   TURNSTILE_SECRET_KEY?: string;
   /** Var/secret. Directus base URL. */
@@ -66,6 +64,8 @@ export interface Env {
   DEV_RETURN_LINK?: string;
   /** Secret. DeepSeek API key: the ticket translation bridge (src/translate.ts). */
   DEEPSEEK_API_KEY?: string;
+  /** Only a session-secret fallback now that the intercom runs on DeepSeek. */
+  OPENROUTER_API_KEY?: string;
   /** Var, optional. DeepSeek model for translation; default deepseek-chat. */
   DEEPSEEK_MODEL?: string;
   /** Var, tests only: where the DeepSeek calls go. */

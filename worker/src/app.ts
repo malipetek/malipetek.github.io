@@ -201,7 +201,7 @@ app.post('/chat', async (c) => {
   if (origin && !ALLOWED_ORIGINS.includes(origin)) {
     return json({ error: 'origin_not_allowed' }, 403, origin);
   }
-  if (!env.OPENROUTER_API_KEY) return json({ error: 'backend_not_configured' }, 503, origin);
+  if (!env.DEEPSEEK_API_KEY) return json({ error: 'backend_not_configured' }, 503, origin);
 
   let body: { messages?: unknown; turnstileToken?: unknown };
   try {

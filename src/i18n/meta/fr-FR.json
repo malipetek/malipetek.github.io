@@ -215,34 +215,6 @@
     "en": "Machine translation is weaker for this language. You can always open the original of a message.",
     "reviewed": false
   },
-  "lang.engine": {
-    "en": "Who translates your messages",
-    "reviewed": false
-  },
-  "lang.engine.deepseek": {
-    "en": "DeepSeek (recommended)",
-    "reviewed": false
-  },
-  "lang.engine.deepseekNote": {
-    "en": "Best quality. Your messages are sent to DeepSeek's API, which runs in China, to be translated.",
-    "reviewed": false
-  },
-  "lang.engine.cloudflare": {
-    "en": "Cloudflare Workers AI",
-    "reviewed": false
-  },
-  "lang.engine.cloudflareNote": {
-    "en": "Your messages stay on Cloudflare, where the portal already runs. Lower quality, and a few languages are not available.",
-    "reviewed": false
-  },
-  "lang.engine.off": {
-    "en": "Don't translate",
-    "reviewed": false
-  },
-  "lang.engine.offNote": {
-    "en": "Nothing is sent to a translator. Write to Ali in English, and his replies stay in English.",
-    "reviewed": false
-  },
   "lang.saved": {
     "en": "Language saved.",
     "reviewed": false
@@ -2028,7 +2000,7 @@
     "reviewed": false
   },
   "offer.tagline": {
-    "en": "You can vibe code most of it. The last mile is where you need a developer: the bug it keeps bringing back, the deploy, the payments, the thing that only breaks for real customers. Get that help at a fraction of the price, billed by the second, not by a quote.",
+    "en": "You vibe code most of it. I take the last mile — the bug, the deploy, the payments — billed by the second.",
     "reviewed": false
   },
   "offer.punchline.1": {
@@ -2121,6 +2093,10 @@
   },
   "site.home.plugins.foot": {
     "en": "I build these for my own harness and publish them to npm as @malipetek packages. Install one with “dsh plugin add <name>”, or read the whole set at malipetek.dev/plugins.",
+    "reviewed": false
+  },
+  "site.nav.portal": {
+    "en": "Portal",
     "reviewed": false
   }
 }

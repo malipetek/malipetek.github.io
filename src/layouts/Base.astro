@@ -46,6 +46,11 @@ const nav = [
 
 const isCurrent = (href: string) =>
   href === "/" ? current === "/" : current.startsWith(href);
+
+// The language menu shows the page's own language; the list holds every
+// language this page exists in, the current one included.
+const currentLanguage = languagePicker.find((l) => l.code === locale);
+const otherLanguages = languagePicker.filter((l) => l.code !== locale);
 ---
 
 <!doctype html>
@@ -78,9 +83,11 @@ const isCurrent = (href: string) =>
       languagePicker.length > 0 && (
         <>
           <link rel="alternate" hreflang={locale} href={canonical.href} />
-          {languagePicker.map((l) => (
-            <link rel="alternate" hreflang={l.code} href={new URL(localePath(l.code), Astro.site).href} />
-          ))}
+          {languagePicker
+            .filter((l) => l.code !== locale)
+            .map((l) => (
+              <link rel="alternate" hreflang={l.code} href={new URL(localePath(l.code), Astro.site).href} />
+            ))}
           <link rel="alternate" hreflang="x-default" href={new URL("/", Astro.site).href} />
         </>
       )
@@ -130,6 +137,40 @@ const isCurrent = (href: string) =>
               </a>
             ))
           }
+          <a class="nav-portal" href="/portal">{t("site.nav.portal")}</a>
+          {
+            currentLanguage && (
+              <details class="lang-menu" data-lang-menu>
+                <summary aria-label={t("site.lang")}>
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                    <circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.4" />
+                    <path
+                      d="M1.6 8h12.8M8 1.6c1.7 1.8 2.6 4 2.6 6.4S9.7 12.6 8 14.4C6.3 12.6 5.4 10.4 5.4 8S6.3 3.4 8 1.6Z"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                    />
+                  </svg>
+                  <span>{currentLanguage.native}</span>
+                  <span class="lang-menu__caret" aria-hidden="true">⌄</span>
+                </summary>
+                <ul aria-label={t("site.lang.other")}>
+                  <li>
+                    <a href={localePath(locale)} aria-current="true" lang={locale}>
+                      {currentLanguage.native}
+                    </a>
+                  </li>
+                  {otherLanguages.map((l) => (
+                    <li data-code={l.code}>
+                      <a href={localePath(l.code)} lang={l.code} hreflang={l.code}>
+                        {l.native}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )
+          }
           <button
             class="theme-toggle"
             type="button"
@@ -175,6 +216,28 @@ const isCurrent = (href: string) =>
         </nav>
       </div>
     </header>
+    {
+      languagePicker.length > 0 && (
+        <div class="lang-suggest" data-lang-suggest hidden>
+          <div class="wrap lang-suggest-inner">
+            <a data-lang-suggest-link href="/">
+              <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.4" />
+                <path
+                  d="M1.6 8h12.8M8 1.6c1.7 1.8 2.6 4 2.6 6.4S9.7 12.6 8 14.4C6.3 12.6 5.4 10.4 5.4 8S6.3 3.4 8 1.6Z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                />
+              </svg>
+              <span data-lang-suggest-name></span>
+              <span aria-hidden="true">→</span>
+            </a>
+            <button type="button" class="lang-suggest-close" data-lang-dismiss aria-label="×">×</button>
+          </div>
+        </div>
+      )
+    }
     <main id="main" class="wrap">
       <slot />
     </main>
@@ -184,22 +247,6 @@ const isCurrent = (href: string) =>
         <a href="https://github.com/malipetek">github.com/malipetek</a>
         <a href="/portal">{t("site.foot.portal")}</a>
         <span>{t("site.foot.built")}</span>
-        {
-          languagePicker.length > 0 && (
-            <details class="lang-picker">
-              <summary>{t("site.lang")}</summary>
-              <ul aria-label={t("site.lang.other")}>
-                {languagePicker.map((l) => (
-                  <li>
-                    <a href={localePath(l.code)} lang={l.code} hreflang={l.code}>
-                      {l.native}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )
-        }
       </div>
     </footer>
   </body>
@@ -207,10 +254,48 @@ const isCurrent = (href: string) =>
 
 <script>
   import { registerSiteTools } from "../lib/webmcp.js";
+  import { fromAcceptLanguage } from "../lib/locales.js";
 
   // WebMCP: expose this page's own tools to a browser-integrated agent.
   // No-op in browsers that do not implement document.modelContext.
   registerSiteTools();
+
+  /*
+   * The browser already says which language its reader wants. Offer that page
+   * when it differs from the one they landed on — a strip, not a redirect:
+   * auto-redirecting bounces crawlers and people who type the URL they meant.
+   * Dismissing it sticks.
+   */
+  const suggest = document.querySelector<HTMLElement>("[data-lang-suggest]");
+  if (suggest && !localStorage.getItem("lang-suggest-dismissed")) {
+    const page = document.documentElement.lang;
+    const detected = fromAcceptLanguage(
+      navigator.languages?.join(",") || navigator.language || "",
+    );
+    const match =
+      detected && detected !== page
+        ? document.querySelector<HTMLAnchorElement>(
+            `[data-lang-menu] li[data-code="${detected}"] a`,
+          )
+        : null;
+    if (match) {
+      const link = suggest.querySelector<HTMLAnchorElement>(
+        "[data-lang-suggest-link]",
+      )!;
+      link.href = match.href;
+      link.hreflang = detected;
+      suggest.querySelector("[data-lang-suggest-name]")!.textContent =
+        match.textContent?.trim() ?? "";
+      match.parentElement?.classList.add("is-detected");
+      suggest.hidden = false;
+    }
+    suggest
+      .querySelector("[data-lang-dismiss]")
+      ?.addEventListener("click", () => {
+        localStorage.setItem("lang-suggest-dismissed", "1");
+        suggest.hidden = true;
+      });
+  }
 
   const toggle = document.querySelector<HTMLButtonElement>(
     "[data-theme-toggle]",
@@ -353,34 +438,43 @@ const isCurrent = (href: string) =>
     color: var(--ink-soft);
   }
 
-  /* The language picker: a native name per locale, folded away until asked. */
-  .lang-picker {
+  /* The language menu sits in the header: the page's own language, then every
+     language the page exists in. */
+  .lang-menu {
     position: relative;
   }
 
-  .lang-picker summary {
+  .lang-menu summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     cursor: pointer;
-    color: var(--ink-soft);
     list-style: none;
+    padding: 0.15rem 0.45rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    color: var(--ink-soft);
+    font-size: 14px;
   }
 
-  .lang-picker summary::-webkit-details-marker {
+  .lang-menu summary:hover {
+    border-color: var(--rule-strong);
+    color: var(--ink);
+  }
+
+  .lang-menu summary::-webkit-details-marker {
     display: none;
   }
 
-  .lang-picker summary::after {
-    content: " ⌄";
+  .lang-menu__caret {
+    font-size: 12px;
   }
 
-  .lang-picker[open] summary::after {
-    content: " ⌃";
-  }
-
-  .lang-picker ul {
+  .lang-menu ul {
     position: absolute;
-    bottom: calc(100% + 0.4rem);
-    left: 0;
-    z-index: 20;
+    right: 0;
+    top: calc(100% + 0.4rem);
+    z-index: 30;
     margin: 0;
     padding: 0.4rem;
     max-height: 60vh;
@@ -393,13 +487,76 @@ const isCurrent = (href: string) =>
     box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
   }
 
-  .lang-picker li {
+  .lang-menu li {
     break-inside: avoid;
   }
 
-  .lang-picker a {
+  .lang-menu a {
     display: block;
-    padding: 0.15rem 0.3rem;
+    padding: 0.15rem 0.35rem;
     white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .lang-menu a[aria-current] {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  /* The language the browser asked for, when it is not the one on screen. */
+  .lang-menu li.is-detected a::after {
+    content: " •";
+    color: var(--orange);
+  }
+
+  /* The offer strip: one line, the reader's own language, dismissible. */
+  .lang-suggest {
+    background: var(--ink);
+    color: var(--bone);
+    font-size: 14px;
+  }
+
+  .lang-suggest-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-block: 0.4rem;
+  }
+
+  .lang-suggest a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--bone);
+    text-decoration: none;
+  }
+
+  .lang-suggest a:hover {
+    text-decoration: underline;
+    text-decoration-color: var(--orange);
+  }
+
+  .lang-suggest-close {
+    background: none;
+    border: 0;
+    color: var(--bone);
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 0.3rem;
+    cursor: pointer;
+  }
+
+  .nav-portal {
+    border: 1px solid var(--rule-strong);
+    border-radius: 999px;
+    padding: 0.1rem 0.7rem;
+    text-decoration: none;
+  }
+
+  .nav-portal:hover {
+    background: var(--ink);
+    color: var(--bone);
+    text-decoration: none;
   }
 </style>

@@ -1,6 +1,11 @@
 /*
- * The client's language, and who may translate their messages. Saved on the
- * account (PATCH /portal/me), so it follows them to email and to every device.
+ * The client's language. Saved on the account (PATCH /portal/me), so it follows
+ * them to email and to every device.
+ *
+ * Who does the translating is not their problem: DeepSeek does it, Workers AI
+ * takes over when DeepSeek is down, and a client who needs neither is set to
+ * `off` by Ali in Admin → Clients. Asking someone to choose between two
+ * machine translators they have never heard of was noise.
  */
 import { useState } from 'react';
 import { api, errorText } from '../../lib/portal';
@@ -8,21 +13,17 @@ import { LOCALES, localeInfo } from '../../lib/locales.js';
 import { usePortal } from './store.js';
 import { Button, Modal } from './ui.jsx';
 
-const ENGINES = ['deepseek', 'cloudflare', 'off'];
-
 export function LanguageDialog({ user, onClose, onSaved }) {
   const { t, notify } = usePortal();
   const [locale, setLocale] = useState(localeInfo(user.locale)?.code ?? 'en-US');
-  const [engine, setEngine] = useState(user.translation ?? 'deepseek');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const info = localeInfo(locale);
-  const english = locale === 'en-US';
 
   const save = async () => {
     setBusy(true);
     try {
-      await api('/portal/me', { method: 'PATCH', body: { locale, translation: engine } });
+      await api('/portal/me', { method: 'PATCH', body: { locale } });
       notify(t('lang.saved'));
       await onSaved();
     } catch (e) {
@@ -61,20 +62,6 @@ export function LanguageDialog({ user, onClose, onSaved }) {
         </select>
         {info?.beta ? <span className="cp-hint">{t('lang.betaNote')}</span> : null}
       </label>
-      {english ? null : (
-        <fieldset className="cp-field">
-          <legend className="cp-label">{t('lang.engine')}</legend>
-          {ENGINES.map((key) => (
-            <label key={key} className="cp-choice">
-              <input type="radio" name="engine" value={key} checked={engine === key} onChange={() => setEngine(key)} />
-              <span>
-                <strong>{t(`lang.engine.${key}`)}</strong>
-                <span className="cp-hint">{t(`lang.engine.${key}Note`)}</span>
-              </span>
-            </label>
-          ))}
-        </fieldset>
-      )}
     </Modal>
   );
 }

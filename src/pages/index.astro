@@ -1,12 +1,12 @@
 ---
 import Base from "../layouts/Base.astro";
 import Home from "../components/Home.astro";
-import { siteT, copy, OTHER_LOCALES } from "../lib/site.js";
-import { SOURCE_LOCALE } from "../lib/locales.js";
+import { siteT } from "../lib/site.js";
+import { LOCALES, SOURCE_LOCALE } from "../lib/locales.js";
 
 const t = siteT(SOURCE_LOCALE);
 // A static shell per language; the homepage is the one page that exists in all
-// of them so far, so it is also where the language picker points.
+// of them so far, so it is also where the language menu points.
 export const prerender = true;
 ---
 
@@ -15,7 +15,7 @@ export const prerender = true;
   description={t("site.home.description")}
   current="/"
   locale={SOURCE_LOCALE}
-  languagePicker={OTHER_LOCALES.map((l) => ({ code: l.code, native: l.native }))}
+  languagePicker={LOCALES.map((l) => ({ code: l.code, native: l.native }))}
 >
   <Home t={t} locale={SOURCE_LOCALE} />
 </Base>
