@@ -214,7 +214,8 @@ node.post('/node/projects/:slug/repo', async (c) => {
   const repo = cleanRepo(body?.repo);
   if (!repo || /^https:\/\/[^/]*@/i.test(repo)) return c.json({ error: 'bad_repo' }, 400);
   const row = await c.env.DB.prepare(
-    `UPDATE projects SET repo = ?, repo_error = NULL, repo_claim_node = NULL, repo_claim_at = NULL
+    `UPDATE projects SET repo = ?, repo_kind = 'repo', repo_wanted = 0, repo_error = NULL,
+         repo_claim_node = NULL, repo_claim_at = NULL
       WHERE slug = ? AND (repo IS NULL OR repo = '') RETURNING id`,
   )
     .bind(repo, c.req.param('slug'))
