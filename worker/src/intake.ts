@@ -344,10 +344,18 @@ async function tool(ctx: ToolContext, name: string, args: Record<string, unknown
           };
         } catch (error) {
           const message = (error as Error)?.message ?? 'Could not create the repo.';
-          await env.DB.prepare('UPDATE projects SET repo_error = ? WHERE id = ?')
+          // Do not leave the client with a repo that cannot exist. Fall back to
+          // our account (a node creates it), and say what GitHub refused.
+          await env.DB.prepare(
+            `UPDATE projects SET repo = NULL, repo_kind = 'none', repo_wanted = 1,
+               github_installation_id = NULL, repo_error = ? WHERE id = ?`,
+          )
             .bind(`github: ${message}`.slice(0, 300), project.id)
             .run();
-          return { result: { error: 'github', message } };
+          return {
+            result: { error: 'github', message, fellBack: 'ours' },
+            note: `Could not create the repo in @${installation.account_login}: ${message}. A machine will create one in our account instead.`,
+          };
         }
       }
       if (mode === 'existing') {
