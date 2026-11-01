@@ -2350,3 +2350,22 @@ fieldset.cp-field {
 .cp-group .cp-rows {
   padding-top: 0.25rem;
 }
+.cp-cloudflare-token {
+  margin-top: 0.75rem;
+}
+.cp-cloudflare-token .cp-inline {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+.cp-cloudflare-token input {
+  flex: 1;
+  min-width: 12rem;
+  font: inherit;
+  color: inherit;
+  background: var(--bone);
+  border: 1px solid var(--rule-strong);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+}

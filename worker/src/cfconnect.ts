@@ -22,6 +22,7 @@ import {
   open,
   seal,
   tokenRequest,
+  verifyApiToken,
   type ConnectionRow,
 } from './cfaccess.ts';
 
@@ -128,25 +129,68 @@ cfconnect.get('/portal/cloudflare', async (c) => {
   const user = await browserUser(env, c);
   if (!user) return reply(c, { error: 'unauthorized' }, 401);
   const { results } = await env.DB.prepare(
-    `SELECT id, accounts, scopes, expires_at, refresh_enc IS NOT NULL AS renewable, created_at
+    `SELECT id, kind, label, accounts, scopes, expires_at, refresh_enc IS NOT NULL AS renewable, created_at
        FROM cloudflare_connections WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC`,
   )
     .bind(user.id)
-    .all<{ id: number; accounts: string; scopes: string; expires_at: number | null; renewable: number; created_at: number }>();
+    .all<{
+      id: number;
+      kind: string;
+      label: string | null;
+      accounts: string;
+      scopes: string;
+      expires_at: number | null;
+      renewable: number;
+      created_at: number;
+    }>();
   const configured = Boolean(env.CLOUDFLARE_OAUTH_CLIENT_ID && env.CLOUDFLARE_OAUTH_CLIENT_SECRET);
   const connectUrl = configured && user.role === 'client' ? await cloudflareConnectUrl(env, user.id) : null;
   return reply(c, {
     connections: (results ?? []).map((r) => ({
       id: r.id,
+      kind: r.kind === 'token' ? 'token' : 'oauth',
+      label: r.label,
       accounts: JSON.parse(r.accounts || '[]'),
       scopes: r.scopes ? r.scopes.split(' ') : [],
       createdAt: r.created_at,
       expiresAt: r.expires_at,
-      // No refresh token and past its time: it cannot be used again.
-      lapsed: !r.renewable && r.expires_at !== null && r.expires_at < now(),
+      // A token does not expire. An OAuth grant with no refresh token dies at expires_at.
+      lapsed: r.kind !== 'token' && !r.renewable && r.expires_at !== null && r.expires_at < now(),
     })),
     connectUrl,
   });
+});
+
+/**
+ * Connect with a Cloudflare API token instead of OAuth. OAuth grants live an
+ * hour and this client cannot be granted `offline_access`, so a token is the
+ * durable option: it works until the client deletes it in Cloudflare.
+ */
+cfconnect.post('/portal/cloudflare/token', async (c) => {
+  const env = c.env;
+  const user = await browserUser(env, c);
+  if (!user) return reply(c, { error: 'unauthorized' }, 401);
+  const body = (await c.req.json().catch(() => null)) as { token?: unknown } | null;
+  const token = typeof body?.token === 'string' ? body.token.trim() : '';
+  if (!/^[A-Za-z0-9_-]{20,200}$/.test(token)) return reply(c, { error: 'bad_token' }, 400);
+  const verified = await verifyApiToken(env, token).catch((error) => ({ error: (error as Error)?.message ?? 'Cloudflare refused the token' }));
+  if ('error' in verified) return reply(c, { error: 'bad_token', message: verified.error }, 400);
+  const t = now();
+  const { meta } = await env.DB.prepare(
+    `INSERT INTO cloudflare_connections (user_id, kind, label, accounts, scopes, access_enc, refresh_enc, expires_at, created_at, updated_at)
+     VALUES (?, 'token', ?, ?, ?, ?, NULL, NULL, ?, ?)`,
+  )
+    .bind(
+      user.id,
+      'API token',
+      JSON.stringify(verified.accounts),
+      'api-token',
+      await seal(env, token),
+      t,
+      t,
+    )
+    .run();
+  return reply(c, { ok: true, id: meta.last_row_id, accounts: verified.accounts });
 });
 
 /** Cloudflare's redirect after consent (or refusal). Always lands back on the portal's Connections page. */
@@ -194,6 +238,7 @@ cfconnect.delete('/portal/cloudflare/:id', async (c) => {
     .first<ConnectionRow>();
   if (!row) return reply(c, { error: 'not_found' }, 404);
   try {
+    if (row.kind === 'token') throw new Error('api_token');
     const token = await open(env, row.refresh_enc ?? row.access_enc);
     await fetch(`${oauthBase(env)}/oauth2/revoke`, {
       method: 'POST',

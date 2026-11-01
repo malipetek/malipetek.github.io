@@ -1275,8 +1275,11 @@ const CF_OUTCOME = {
 
 function Cloudflare() {
   const t = useT();
-  const { ask } = usePortal();
+  const { ask, notify } = usePortal();
   const [state, setState] = useState(null);
+  const [token, setToken] = useState('');
+  const [tokenBusy, setTokenBusy] = useState(false);
+  const [tokenError, setTokenError] = useState('');
   const [outcome] = useState(() => {
     if (typeof location === 'undefined') return null;
     const said = new URLSearchParams(location.search).get('cloudflare');
@@ -1295,7 +1298,14 @@ function Cloudflare() {
         {(state?.connections ?? []).map((c) => (
           <li key={c.id}>
             <strong>{names(c)}</strong>
-            <span className={c.lapsed ? 'cp-warn' : 'cp-muted'}>{c.lapsed ? t('views.cloudflare.expired') : t('views.connections.connectedAgo', { when: ago(c.createdAt) })}</span>
+            <span className="cp-tag">{c.kind === 'token' ? t('views.cloudflare.apiToken') : 'OAuth'}</span>
+            <span className={c.lapsed ? 'cp-warn' : 'cp-muted'}>
+              {c.lapsed
+                ? t('views.cloudflare.expired')
+                : c.kind === 'token'
+                  ? t('views.cloudflare.tokenLasts')
+                  : t('views.connections.connectedAgo', { when: ago(c.createdAt) })}
+            </span>
             <Button
               size="sm"
               kind="ghost"
@@ -1320,6 +1330,40 @@ function Cloudflare() {
       {state?.connectUrl ? (
         <Button href={state.connectUrl}>{state.connections.some((c) => !c.lapsed) ? t('views.cloudflare.connectAnother') : t('views.cloudflare.connect')}</Button>
       ) : null}
+      <details className="cp-cloudflare-token">
+        <summary className="cp-linkbtn">{t('views.cloudflare.useToken')}</summary>
+        <p className="cp-hint">{t('views.cloudflare.tokenHint')}</p>
+        <div className="cp-inline">
+          <input
+            type="password"
+            autoComplete="off"
+            placeholder={t('views.cloudflare.tokenPlaceholder')}
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+          <Button
+            size="sm"
+            disabled={tokenBusy || !token.trim()}
+            onClick={async () => {
+              setTokenBusy(true);
+              setTokenError('');
+              try {
+                await api('/portal/cloudflare/token', { body: { token: token.trim() } });
+                setToken('');
+                notify(t('views.cloudflare.tokenConnected'));
+                await load();
+              } catch (e) {
+                setTokenError(errorText(e, t));
+              } finally {
+                setTokenBusy(false);
+              }
+            }}
+          >
+            {t('views.cloudflare.connectToken')}
+          </Button>
+        </div>
+        {tokenError ? <p className="cp-error">{tokenError}</p> : null}
+      </details>
     </section>
   );
 }

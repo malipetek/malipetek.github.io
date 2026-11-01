@@ -433,10 +433,15 @@ github.post('/portal/projects/:id/repo', async (c) => {
       return reply(c, { ok: true, repo: out.repo, outcome: out.outcome, installation: { id: installation.id, account_login: installation.account_login } });
     } catch (error) {
       const message = (error as Error)?.message ?? 'Could not create the repo.';
-      await c.env.DB.prepare('UPDATE projects SET repo_error = ? WHERE id = ?')
+      // Never leave a repo the app cannot reach: fall back to our account, and
+      // keep GitHub's reason for the admin card.
+      await c.env.DB.prepare(
+        `UPDATE projects SET repo = NULL, repo_kind = 'none', repo_wanted = 1,
+           github_installation_id = NULL, repo_error = ? WHERE id = ?`,
+      )
         .bind(`github: ${message}`.slice(0, 300), project.id)
         .run();
-      return reply(c, { error: 'github', message }, 502);
+      return reply(c, { error: 'github', message, fellBack: 'ours' }, 502);
     }
   }
 

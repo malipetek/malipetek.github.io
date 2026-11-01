@@ -168,10 +168,17 @@ function startFakeCloudflare() {
         const out = source === target?.split('-')[0] ? text : `[${target}] ${text}`;
         return json(200, { choices: [{ message: { content: JSON.stringify({ source, text: out }) } }] });
       }
+      if (req.method === 'GET' && req.url === '/client/v4/user/tokens/verify') {
+        if (req.headers.authorization !== 'Bearer cf-api-token-0123456789') {
+          return json(403, { success: false, errors: [{ message: 'Invalid API Token' }] });
+        }
+        return json(200, { success: true, result: { status: 'active' } });
+      }
       if (req.url.startsWith('/client/v4/accounts')) {
         const upload = req.url.endsWith('/workers/assets/upload?base64=true');
         const expected = upload ? 'Bearer upload-jwt' : 'Bearer cf-access-secret';
-        if (req.headers.authorization !== expected) return json(403, { success: false });
+        const tokenOk = req.headers.authorization === 'Bearer cf-api-token-0123456789';
+        if (!tokenOk && req.headers.authorization !== expected) return json(403, { success: false });
         const api = '/client/v4/accounts/acc-1';
         if (req.method === 'GET' && req.url === '/client/v4/accounts?per_page=50') {
           return json(200, { success: true, result: [{ id: 'acc-1', name: 'Rosa Florist LLC' }] });
@@ -645,6 +652,24 @@ const groups = {
     check('…nor can disconnect it', (await call(`/portal/cloudflare/${listed[0].id}`, { method: 'DELETE', auth: other.session })).status === 404);
     const key = (await call('/portal/agent-tokens', { method: 'POST', auth: a.session, body: { label: 'cf test' } })).data.token;
     check('an assistant key cannot manage Cloudflare', (await call('/portal/cloudflare', { auth: key })).status === 401);
+    const tokenUser = account(`cf-token-${Date.now()}@example.com`);
+    check(
+      'a short token is refused',
+      (await call('/portal/cloudflare/token', { method: 'POST', auth: tokenUser.session, body: { token: 'short' } })).status === 400,
+    );
+    const tokenMade = await call('/portal/cloudflare/token', { method: 'POST', auth: tokenUser.session, body: { token: 'cf-api-token-0123456789' } });
+    check('an API token connects', tokenMade.status === 200 && tokenMade.data.accounts?.[0]?.name === 'Rosa Florist LLC', JSON.stringify(tokenMade.data));
+    const tokenList = (await call('/portal/cloudflare', { auth: tokenUser.session })).data.connections;
+    check(
+      'the token has no expiry and is marked as a token',
+      tokenList.length === 1 && tokenList[0].kind === 'token' && tokenList[0].lapsed === false && tokenList[0].expiresAt === null,
+      JSON.stringify(tokenList),
+    );
+    check(
+      'Cloudflare refusing the token is reported',
+      (await call('/portal/cloudflare/token', { method: 'POST', auth: other.session, body: { token: 'invalid-token-0123456789' } })).status === 400,
+    );
+    check('a token can be disconnected', (await call(`/portal/cloudflare/${tokenList[0].id}`, { method: 'DELETE', auth: tokenUser.session })).status === 200);
 
     // A site in the client's own account: the placeholder is mirrored at once,
     // and the address they chose is the one that is taken.

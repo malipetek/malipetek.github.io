@@ -659,5 +659,12 @@
   "views.sites.moveHint": "The target project keeps one main site; this one is added alongside it.",
   "views.sites.moveNone": "You need another project first.",
   "board.lanes": "Projects",
-  "board.gettingSetUp": "Getting set up"
+  "board.gettingSetUp": "Getting set up",
+  "views.cloudflare.useToken": "Use an API token instead",
+  "views.cloudflare.tokenHint": "Create a token in Cloudflare → My Profile → API Tokens with Account Settings: Read, Workers Scripts: Edit, Workers Routes: Edit, Zone: Read and DNS: Edit. It lasts until you delete it there, unlike the one-hour OAuth connection.",
+  "views.cloudflare.tokenPlaceholder": "Cloudflare API token",
+  "views.cloudflare.connectToken": "Connect token",
+  "views.cloudflare.tokenConnected": "API token connected.",
+  "views.cloudflare.apiToken": "API token",
+  "views.cloudflare.tokenLasts": "lasts until you revoke it"
 }
