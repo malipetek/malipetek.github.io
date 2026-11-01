@@ -1187,9 +1187,11 @@ function Github() {
   useEffect(() => void load(), []);
   const first = state?.installations?.[0];
   const withoutRepo = (data.projects ?? []).filter((p) => !p.repo);
-  const create = async (project) => {
+  const create = async (project, mode = 'github') => {
     try {
-      await api(`/portal/projects/${project.id}/repo`, { body: { create: 'github', installationId: first?.id } });
+      await api(`/portal/projects/${project.id}/repo`, {
+        body: mode === 'github' ? { create: 'github', installationId: first?.id } : { create: 'ours' },
+      });
       await load();
       await reload();
     } catch (error) {
@@ -1254,6 +1256,9 @@ function Github() {
                 {p.repoError ? <span className="cp-warn">{p.repoError.replace(/^github:\s*/, '')}</span> : null}
                 <Button size="sm" onClick={() => void create(p)}>
                   {t('views.github.createRepo')}
+                </Button>
+                <Button size="sm" kind="ghost" onClick={() => void create(p, 'ours')}>
+                  {t('views.repo.createOurs')}
                 </Button>
               </li>
             ))}
