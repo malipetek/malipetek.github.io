@@ -1488,7 +1488,8 @@ portal.get('/portal/tickets', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT ${TICKET_COLUMNS},
             EXISTS (SELECT 1 FROM ticket_messages m
-                     WHERE m.ticket_id = t.id AND m.internal = 0 AND m.author IN ('ali', 'system')
+                     WHERE m.ticket_id = t.id AND m.internal = 0
+                       AND (m.author IN ('ali', 'system') OR (t.kind = 'intake' AND m.author = 'runner'))
                        AND m.created_at > COALESCE(t.client_seen_at, t.created_at)) AS unread
        FROM tickets t LEFT JOIN projects p ON p.id = t.project_id
       WHERE t.user_id = ? ORDER BY t.updated_at DESC`,
