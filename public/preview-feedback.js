@@ -732,14 +732,7 @@
       ann.redraw = redraw;
 
       foot.querySelector('.mf-attach').addEventListener('click', function () {
-        var output = document.createElement('canvas');
-        var limit = 1800;
-        var ratio = Math.min(1, limit / source.width);
-        output.width = Math.round(source.width * ratio);
-        output.height = Math.round(source.height * ratio);
-        var context = output.getContext('2d');
-        context.drawImage(base, 0, 0, output.width, output.height);
-        output.toBlob(function (blob) {
+        exportScreenshot(base, source, 1800, function (blob) {
           if (!blob) {
             setStatus('Could not save the marked-up screenshot.', 'error');
             return;
@@ -753,7 +746,7 @@
           });
           closeAnnotator();
           setStatus('Screenshot attached.');
-        }, 'image/png');
+        });
       });
 
       redraw();
@@ -764,6 +757,26 @@
       panel.hidden = false;
     };
     image.src = dataUrl;
+  }
+
+  /**
+   * PNG of the marked-up screenshot, under the 10 MB attachment limit. A very
+   * tall or busy page can still be large at 1800px, so the width steps down
+   * until it fits.
+   */
+  function exportScreenshot(base, source, limit, done) {
+    var output = document.createElement('canvas');
+    var ratio = Math.min(1, limit / source.width);
+    output.width = Math.max(1, Math.round(source.width * ratio));
+    output.height = Math.max(1, Math.round(source.height * ratio));
+    output.getContext('2d').drawImage(base, 0, 0, output.width, output.height);
+    output.toBlob(function (blob) {
+      if (blob && blob.size > 9 * 1024 * 1024 && limit > 900) {
+        exportScreenshot(base, source, Math.round(limit * 0.7), done);
+        return;
+      }
+      done(blob);
+    }, 'image/png');
   }
 
   function drawOp(ctx, op, source) {

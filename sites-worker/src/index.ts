@@ -130,7 +130,7 @@ async function serve(
   const object = await env.SITES.get(blobKey(slug, entry.sha));
   if (!object) return null;
   const type = entry.type ?? 'application/octet-stream';
-  const inject = preview && type.startsWith('text/html');
+  const inject = preview && (type.startsWith('text/html') || /\.html?$/i.test(path));
   if (!inject) {
     return new Response(object.body, {
       status,
