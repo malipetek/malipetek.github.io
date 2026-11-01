@@ -352,6 +352,8 @@ export async function startSite(
        cloudflare_account_id = excluded.cloudflare_account_id,
        preview_deploy = NULL, production_deploy = NULL, error = NULL, failure_alerted_at = NULL,
        cloudflare_preview_deploy = NULL, cloudflare_production_deploy = NULL, cloudflare_error = NULL,
+       cloudflare_preview_url = NULL, cloudflare_production_url = NULL,
+       cloudflare_preview_script = NULL, cloudflare_production_script = NULL,
        updated_at = excluded.updated_at`,
   )
     .bind(project.id, slug, cloudflare ? 'cloudflare' : 'ours', cloudflare ? options.connectionId : null, cloudflare ? options.accountId : null, t, t)
@@ -493,6 +495,10 @@ export async function setSiteHost(
     cloudflare_error: null,
     cloudflare_preview_deploy: null,
     cloudflare_production_deploy: null,
+    cloudflare_preview_url: null,
+    cloudflare_production_url: null,
+    cloudflare_preview_script: null,
+    cloudflare_production_script: null,
   });
   const fresh = (await getSite(env, projectId))!;
   if (next === 'cloudflare') {
