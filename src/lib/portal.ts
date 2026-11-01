@@ -89,6 +89,12 @@ export interface Site {
   updatedAt: number;
 }
 
+export interface Lane {
+  id: string;
+  name: string;
+  sites: { id: string; name: string; url: string | null; live: boolean }[];
+}
+
 export interface Project {
   id: string;
   slug: string;
@@ -113,6 +119,8 @@ export interface Ticket {
   updated_at: number;
   project_id: string | null;
   project_name: string | null;
+  site_id?: string | null;
+  kind?: string;
   /** How much of Ali the client asked for (src/lib/pricing.js ATTENTION). */
   attention: 'auto' | 'checked' | 'hands_on';
   human_seconds: number;

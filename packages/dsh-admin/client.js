@@ -1452,6 +1452,7 @@ var __awPlugin = (() => {
   function TicketDetails({ ticket, runs, land, meter, reload }) {
     const { api, data, act, setStatus } = useAdmin();
     const isClient = ticket.kind !== "system";
+    const projectSites = data.projects.find((p) => p.id === ticket.project_id)?.sites ?? [];
     const [fixing, setFixing] = useState(false);
     const patch = (body, done) => act(() => api("PATCH", `/admin/tickets/${ticket.id}`, body), done).then(reload, () => void 0);
     const requires = listOf(ticket.requires);
@@ -1466,6 +1467,10 @@ var __awPlugin = (() => {
       /* @__PURE__ */ jsx(Field, { label: "Project", children: /* @__PURE__ */ jsxs("select", { value: ticket.project_id ?? "", onChange: (e) => void patch({ projectId: e.target.value || null }, "Project saved."), children: [
         /* @__PURE__ */ jsx("option", { value: "", children: "No project" }),
         data.projects.map((p) => /* @__PURE__ */ jsx("option", { value: p.id, children: p.name }, p.id))
+      ] }) }),
+      /* @__PURE__ */ jsx(Field, { label: "Site", children: /* @__PURE__ */ jsxs("select", { value: ticket.site_id ?? "", onChange: (e) => void patch({ siteId: e.target.value || null }, "Site saved."), children: [
+        /* @__PURE__ */ jsx("option", { value: "", children: "Main site" }),
+        projectSites.map((s) => /* @__PURE__ */ jsx("option", { value: s.id, children: s.name || s.slug }, s.id))
       ] }) }),
       /* @__PURE__ */ jsx(Field, { label: "Priority", children: /* @__PURE__ */ jsx(Segmented, { value: ticket.priority ?? 0, options: PRIORITIES, onChange: (v) => void patch({ priority: v }, "Priority saved.") }) }),
       /* @__PURE__ */ jsx(Field, { label: "Agent", hint: isClient ? "Runs after your approval; claude is the default sandboxed agent." : void 0, children: /* @__PURE__ */ jsx(
@@ -1805,7 +1810,16 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsxs("div", { className: "aw-view", children: [
       /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
         /* @__PURE__ */ jsx("h2", { children: "Clients & projects" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : "" })
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : "" }),
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
+            title: "List the GitHub App\u2019s installations from GitHub and record any the callback missed",
+            onClick: () => void act(() => api("POST", "/admin/github/reconcile", {}), "GitHub installations reconciled."),
+            children: "Reconcile GitHub"
+          }
+        )
       ] }),
       /* @__PURE__ */ jsxs("div", { className: "aw-split", children: [
         /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [

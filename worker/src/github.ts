@@ -16,7 +16,7 @@ import { Hono } from 'hono';
 import { now, sessionUser } from './portal.ts';
 import { corsHeaders, type Env, type HonoEnv } from './shared.ts';
 import type { Context } from 'hono';
-import { APP_SLUG, GH_API, appJwt, ensureRepo, ghHeaders, installationToken, projectInstallation, useClientRepo } from './ghapp.ts';
+import { APP_SLUG, GH_API, appJwt, ensureRepo, ghHeaders, installationToken, projectInstallation, repoParts, useClientRepo } from './ghapp.ts';
 
 /** Browser-facing replies need CORS headers, like portal.ts reply(). */
 const reply = (c: Context<HonoEnv>, body: unknown, status = 200) =>
@@ -114,6 +114,11 @@ async function userFromState(env: Env, state: string): Promise<string | null> {
   return diff === 0 ? userId : null;
 }
 
+/** The signed install link, shared by the route and the intake agent. */
+export async function githubInstallUrl(env: Env, userId: string): Promise<string> {
+  return `https://github.com/apps/${APP_SLUG}/installations/new?state=${encodeURIComponent(await signState(env, userId))}`;
+}
+
 /** The bearer session, for the portal routes in this module. */
 async function bearerUser(env: Env, c: { req: { header: (n: string) => string | undefined } }) {
   const token = (c.req.header('authorization') ?? '').replace(/^Bearer\s+/i, '');
@@ -196,11 +201,50 @@ export async function linkProjects(env: Env, userId: string) {
     .bind(userId)
     .run();
 
+  // A repo may be under an org or a collaborator account rather than the
+  // installation's own login. Ask GitHub, with each installation token, whether
+  // the connection can see it; if one can, link that installation. Only a
+  // project with no reported clone failure is worth probing.
+  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return;
+  const { results: owned } = await env.DB.prepare(
+    `SELECT p.id, p.repo FROM projects p
+      WHERE p.repo IS NOT NULL AND p.repo <> '' AND p.github_installation_id IS NULL
+        AND p.repo_error IS NULL AND p.id IN (SELECT project_id FROM user_projects WHERE user_id = ?)
+      LIMIT 5`,
+  )
+    .bind(userId)
+    .all<{ id: string; repo: string }>();
+  const { results: grants } = await env.DB.prepare(
+    'SELECT id FROM github_installations WHERE user_id = ? AND account_login <> ? ORDER BY account_login',
+  )
+    .bind(userId, '')
+    .all<{ id: number }>();
+  for (const project of owned ?? []) {
+    const parts = repoParts(project.repo);
+    if (!parts) continue;
+    for (const grant of grants ?? []) {
+      try {
+        const { token } = await installationToken(env, grant.id);
+        const res = await fetch(`${GH_API}/repos/${parts.owner}/${parts.name}`, {
+          headers: ghHeaders(token),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (res.ok) {
+          await env.DB.prepare('UPDATE projects SET github_installation_id = ?, repo_error = NULL WHERE id = ?')
+            .bind(grant.id, project.id)
+            .run();
+          break;
+        }
+      } catch {
+        /* a bad token for one installation does not stop the next */
+      }
+    }
+  }
+
   // A client who names a repo the app cannot see usually has not made it yet.
   // Now that they have connected, make it in their account.
   // Only with the app configured: without it nothing can be looked up or made,
   // and writing an error would replace a working repo status with a failure.
-  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return;
   const { results } = await env.DB.prepare(
     `SELECT id FROM projects
       WHERE repo IS NOT NULL AND github_installation_id IS NOT NULL AND repo_error IS NULL
@@ -251,7 +295,7 @@ github.get('/portal/github', async (c) => {
           .bind(user.id)
           .all<{ slug: string; name: string; repo: string }>()
       ).results ?? [],
-    installUrl: `https://github.com/apps/${APP_SLUG}/installations/new?state=${encodeURIComponent(await signState(c.env, user.id))}`,
+    installUrl: await githubInstallUrl(c.env, user.id),
   });
 });
 
@@ -421,6 +465,48 @@ github.post('/portal/projects/:id/repo', async (c) => {
     }
   }
   return reply(c, { ok: true, repo, installation: installation ?? null });
+});
+
+/**
+ * Reconcile the GitHub App's installations from GitHub. A client's install can
+ * be lost when the callback does not land (a wrong Setup URL, a resolver that
+ * refuses workers.dev); this lists them and upserts the rows without touching
+ * a user link that already exists.
+ */
+github.post('/admin/github/reconcile', async (c) => {
+  const user = await bearerUser(c.env, c);
+  if (!user || user.role !== 'admin') return reply(c, { error: 'forbidden' }, 403);
+  if (!c.env.GITHUB_APP_ID || !c.env.GITHUB_APP_PRIVATE_KEY) return reply(c, { error: 'unconfigured' }, 503);
+  try {
+    const res = await fetch(`${GH_API}/app/installations?per_page=100`, {
+      headers: ghHeaders(await appJwt(c.env)),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return reply(c, { error: 'github', message: `GitHub answered ${res.status}` }, 502);
+    const rows = (await res.json().catch(() => [])) as {
+      id?: number;
+      account?: { login?: string; type?: string };
+      repository_selection?: string;
+    }[];
+    const t = now();
+    let changed = 0;
+    for (const row of rows) {
+      if (!row.id) continue;
+      const updated = await c.env.DB.prepare(
+        `INSERT INTO github_installations (id, account_login, account_type, repository_selection, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET account_login = excluded.account_login,
+           account_type = excluded.account_type, repository_selection = excluded.repository_selection,
+           updated_at = excluded.updated_at`,
+      )
+        .bind(row.id, row.account?.login ?? '', row.account?.type ?? 'User', row.repository_selection ?? 'all', t, t)
+        .run();
+      changed += updated.meta.changes ?? 0;
+    }
+    return reply(c, { ok: true, installations: rows.length, changed });
+  } catch (error) {
+    return reply(c, { error: 'github', message: (error as Error)?.message ?? 'Could not list installations' }, 502);
+  }
 });
 
 /* ——————————————————————— node: a token per task ——————————————————————— */

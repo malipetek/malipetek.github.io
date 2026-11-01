@@ -97,6 +97,8 @@ import {
 } from './sites.ts';
 import { grantedAccounts, connectionRow } from './cfaccess.ts';
 import { ensureRepo, useClientRepo } from './ghapp.ts';
+import { moveSite, moveTicket, promotePrimary } from './move.ts';
+import { runIntake } from './intake.ts';
 import { checkUploads, fileCount, fileResponse, FILE_LIMITS, sizeText, storeFiles, withFiles, type FileMeta, type Upload } from './files.ts';
 
 export { now };
@@ -550,7 +552,7 @@ export const WAITING_SQL =
   'UPDATE tickets SET updated_at = ?, client_waiting_since = COALESCE(client_waiting_since, ?) WHERE id = ?';
 
 const TICKET_COLUMNS = `t.id, t.title, t.status, t.created_at, t.updated_at, t.client_waiting_since,
-  t.project_id, p.name AS project_name, p.slug AS project_slug,
+  t.project_id, t.site_id, p.name AS project_name, p.slug AS project_slug,
   t.attention, t.human_seconds, t.ai_micro_usd, t.budget_cents, t.price_cents,
   t.kind, t.source, t.priority, t.requires, t.executor, t.worked_by, t.title_en`;
 
@@ -843,6 +845,22 @@ portal.get('/portal/me', async (c) => {
           ticketCount: filed.get(project.id) ?? 0,
           clientCreated: project.created_by !== null,
           site,
+        }),
+      };
+    }),
+    lanes: (projects ?? []).map((project) => {
+      const rows = sites.get(project.id) ?? [];
+      return {
+        id: project.id,
+        name: project.name,
+        sites: rows.map((row) => {
+          const view = siteView(row, settings.sitesDomain);
+          return {
+            id: view?.id ?? row.id,
+            name: view?.name || project.name,
+            url: view?.productionUrl ?? null,
+            live: view?.state === 'ready',
+          };
         }),
       };
     }),
@@ -1493,6 +1511,7 @@ portal.post('/portal/tickets', async (c) => {
         title: fields.title,
         body: fields.body,
         projectId: fields.projectId,
+        intake: fields.intake === true || fields.intake === 'true',
         attention: fields.attention === '' ? undefined : fields.attention,
         budgetCents: fromForm(fields.budgetCents),
       }
@@ -1520,21 +1539,41 @@ portal.post('/portal/tickets', async (c) => {
     return reply(c, { error: 'rate_limited' }, 429);
   }
 
+  // A request with no project cannot be claimed by a fleet node. It becomes
+  // an intake ticket: the Worker's setup assistant works it, creates the
+  // project/site/repo the client described, and files the real work (which
+  // still needs Ali's approval).
+  const intake = !projectId || body?.intake === true;
   const t = now();
   const ticket = await env.DB.prepare(
-    `INSERT INTO tickets (user_id, project_id, title, status, attention, budget_cents, created_at, updated_at)
-     VALUES (?, ?, ?, 'new', ?, ?, ?, ?) RETURNING id`,
+    `INSERT INTO tickets (user_id, project_id, title, status, attention, budget_cents, kind, worked_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
   )
-    .bind(user.id, projectId, title, attention, budget ?? null, t, t)
+    .bind(
+      user.id,
+      intake ? null : projectId,
+      title,
+      intake ? 'in_progress' : 'new',
+      attention,
+      budget ?? null,
+      intake ? 'intake' : 'client',
+      intake ? 'client_agent' : 'fleet',
+      t,
+      t,
+    )
     .first<{ id: number }>();
   if (!ticket) return reply(c, { error: 'insert_failed' }, 500);
   const stored = await postMessage(env, ticket.id, 'client', text, false, files.uploads, t);
 
   const ref = { id: ticket.id, title, client_email: user.email, client_locale: user.locale };
   c.executionCtx.waitUntil(
-    Promise.all([relayClientMessage(env, ref, stored.messageId, text, stored, true), confirmTicketToClient(env, ref)]),
+    Promise.all([
+      relayClientMessage(env, ref, stored.messageId, text, stored, true),
+      confirmTicketToClient(env, ref),
+      ...(intake ? [runIntake(env, ticket.id)] : []),
+    ]),
   );
-  return reply(c, { id: ticket.id, files: stored }, 201);
+  return reply(c, { id: ticket.id, files: stored, intake }, 201);
 });
 
 /** Load a ticket the caller may see: their own, or any ticket for the admin. */
@@ -1589,7 +1628,12 @@ portal.post('/portal/tickets/:id/messages', async (c) => {
   const t = now();
   const stored = await postMessage(env, ticket.id, 'client', msg.text, false, files.uploads, t);
   await env.DB.prepare(WAITING_SQL).bind(t, t, ticket.id).run();
-  c.executionCtx.waitUntil(relayClientMessage(env, ticket, stored.messageId, msg.text, stored, false));
+  c.executionCtx.waitUntil(
+    Promise.all([
+      relayClientMessage(env, ticket, stored.messageId, msg.text, stored, false),
+      ...(ticket.kind === 'intake' ? [runIntake(env, ticket.id)] : []),
+    ]),
+  );
   return reply(c, { ok: true, files: stored }, 201);
 });
 
@@ -1616,6 +1660,32 @@ portal.post('/portal/tickets/:id/withdraw', async (c) => {
     .bind(ticket.id, 'The client withdrew this request.', t)
     .run();
   c.executionCtx.waitUntil(notifyAliOfClientMessage(env, ticket, 'I withdrew this request. No need to act on it.', false));
+  return reply(c, { ok: true });
+});
+
+/**
+ * Move a client's request to another of their projects (and optionally one of
+ * that project's sites). A run in progress refuses the move: it holds a
+ * worktree of the old project.
+ */
+portal.patch('/portal/tickets/:id', async (c) => {
+  const id = Number(c.req.param('id'));
+  const body = await readJson<{ projectId?: unknown; siteId?: unknown }>(c);
+  if (typeof body?.projectId !== 'string' || !body.projectId) return reply(c, { error: 'bad_project' }, 400);
+  const siteId = typeof body?.siteId === 'string' && body.siteId ? body.siteId : null;
+  const out = await moveTicket(c.env, c.get('user').id, id, body.projectId, siteId);
+  if ('error' in out) {
+    return reply(c, out, out.error === 'not_found' ? 404 : out.error === 'in_progress' ? 409 : 400);
+  }
+  return reply(c, { ok: true, status: out.status });
+});
+
+/** Move one of the client's sites to another of their projects. */
+portal.patch('/portal/sites/:id', async (c) => {
+  const body = await readJson<{ projectId?: unknown }>(c);
+  if (typeof body?.projectId !== 'string' || !body.projectId) return reply(c, { error: 'bad_project' }, 400);
+  const out = await moveSite(c.env, c.get('user').id, c.req.param('id'), body.projectId);
+  if ('error' in out) return reply(c, out, out.error === 'not_found' ? 404 : 400);
   return reply(c, { ok: true });
 });
 
@@ -1772,6 +1842,7 @@ portal.patch('/admin/tickets/:id', async (c) => {
   const body = await readJson<{
     status?: unknown;
     projectId?: unknown;
+    siteId?: unknown;
     attention?: unknown;
     humanSeconds?: unknown;
     priority?: unknown;
@@ -1814,10 +1885,29 @@ portal.patch('/admin/tickets/:id', async (c) => {
     } else return reply(c, { error: 'bad_project' }, 400);
   }
 
+  const effectiveProject = projectId !== undefined ? projectId : ticket.project_id;
+  let siteId: string | null | undefined;
+  if (body?.siteId !== undefined) {
+    if (body.siteId === null || body.siteId === '') siteId = null;
+    else if (typeof body.siteId === 'string') {
+      const site = await env.DB.prepare('SELECT 1 FROM sites WHERE id = ? AND project_id = ?')
+        .bind(body.siteId, effectiveProject)
+        .first();
+      if (!site) return reply(c, { error: 'bad_site' }, 400);
+      siteId = body.siteId;
+    } else return reply(c, { error: 'bad_site' }, 400);
+  } else if (projectId !== undefined && projectId !== ticket.project_id) {
+    // A site belongs to one project; keep it only when it is the same project.
+    siteId = null;
+  }
+
   const t = now();
   const statements = [];
   if (projectId !== undefined) {
     statements.push(env.DB.prepare('UPDATE tickets SET project_id = ?, updated_at = ? WHERE id = ?').bind(projectId, t, ticket.id));
+  }
+  if (siteId !== undefined) {
+    statements.push(env.DB.prepare('UPDATE tickets SET site_id = ?, updated_at = ? WHERE id = ?').bind(siteId, t, ticket.id));
   }
   if (attention) {
     statements.push(env.DB.prepare('UPDATE tickets SET attention = ?, updated_at = ? WHERE id = ?').bind(attention, t, ticket.id));
@@ -2277,6 +2367,27 @@ portal.get('/admin/projects', async (c) => {
       };
     }),
   });
+});
+
+/** Move any site to another project (Ali's view). */
+portal.patch('/admin/sites/:id', async (c) => {
+  const site = await c.env.DB.prepare('SELECT id, project_id, is_primary FROM sites WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<{ id: string; project_id: string; is_primary: number }>();
+  if (!site) return reply(c, { error: 'not_found' }, 404);
+  const body = await readJson<{ projectId?: unknown }>(c);
+  if (typeof body?.projectId !== 'string' || !body.projectId) return reply(c, { error: 'bad_project' }, 400);
+  const target = await c.env.DB.prepare('SELECT 1 FROM projects WHERE id = ?').bind(body.projectId).first();
+  if (!target) return reply(c, { error: 'bad_project' }, 400);
+  if (site.project_id !== body.projectId) {
+    const old = site.project_id;
+    await c.env.DB.prepare('UPDATE sites SET project_id = ?, is_primary = 0, updated_at = ? WHERE id = ?')
+      .bind(body.projectId, now(), site.id)
+      .run();
+    if (site.is_primary === 1) await promotePrimary(c.env, old);
+    await promotePrimary(c.env, body.projectId);
+  }
+  return reply(c, { ok: true });
 });
 
 /** Retry a stopped site: back to allocating, so whatever it waited for is tried again. */

@@ -136,6 +136,31 @@ function startFakeCloudflare() {
       if (req.method === 'POST' && req.url === '/deepseek/chat/completions') {
         if (req.headers.authorization !== 'Bearer e2e-deepseek') return json(401, {});
         const ask = JSON.parse(body);
+        // The intake agent: a fixed three-tool script, so the loop, the tool
+        // scope and the thread are exercised without a real model.
+        if (Array.isArray(ask.tools)) {
+          const toolMsgs = (ask.messages ?? []).filter((m) => m.role === 'tool');
+          const results = toolMsgs.map((m) => JSON.parse(m.content));
+          const project = results.map((r) => r?.project).filter(Boolean).at(-1);
+          const hasSite = results.some((r) => r?.site);
+          const filed = results.some((r) => r?.ticket);
+          const call = (name, args) =>
+            json(200, {
+              choices: [
+                {
+                  message: {
+                    role: 'assistant',
+                    content: null,
+                    tool_calls: [{ id: `call-${toolMsgs.length + 1}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
+                  },
+                },
+              ],
+            });
+          if (!project) return call('create_project', { name: `E2E Intake ${Date.now() % 100000}`, what: 'A bakery', goal: 'Orders online', kind: 'new' });
+          if (!hasSite) return call('add_site', { projectId: project.id, name: 'Main', slug: `e2e-intake-${Date.now() % 100000}` });
+          if (!filed) return call('file_request', { projectId: project.id, title: 'Order online', body: 'Add an order form.' });
+          return json(200, { choices: [{ message: { role: 'assistant', content: 'Set up the project and filed a request for Ali to approve.' } }] });
+        }
         const target = /into .+? \(([\w-]+)\)\./.exec(ask.messages[0].content)?.[1];
         const text = ask.messages[1].content;
         CF.deepseek.push({ target, text });
@@ -238,8 +263,16 @@ const groups = {
       body: { name: 'Main', siteSlug: address },
     });
     check('a project gets a site as a sub-entity', made.status === 201 && made.data.site?.slug === address && made.data.site?.isPrimary === true, JSON.stringify(made.data));
-    const after = (await call('/portal/me', { auth: a.session })).data.projects.find((x) => x.id === created.data.project.id);
+    const meAfter = (await call('/portal/me', { auth: a.session })).data;
+    const after = meAfter.projects.find((x) => x.id === created.data.project.id);
     check('the project lists its sites', after.sites?.length === 1 && after.sites[0].slug === address, JSON.stringify(after.sites));
+    check(
+      'the board has a lane per project with its sites',
+      Array.isArray(meAfter.lanes) && meAfter.lanes.some((lane) => lane.id === created.data.project.id && lane.sites.length === 1),
+      JSON.stringify(meAfter.lanes),
+    );
+    const adminView = (await call('/admin/projects', { auth: admin })).data.projects.find((x) => x.id === created.data.project.id);
+    check('admin sees the same setup', adminView?.setup?.ready === after.setup.ready && adminView.brief.manual === 'Orders by phone');
     const extra = await call(`/portal/projects/${created.data.project.id}/site`, {
       method: 'POST',
       auth: a.session,
@@ -252,8 +285,68 @@ const groups = {
     });
     const left = (await call(`/portal/projects/${created.data.project.id}/sites`, { auth: a.session })).data.sites;
     check('a site can be removed without touching the other', removed.status === 200 && left.length === 1 && left[0].slug === address, JSON.stringify(left));
-    const adminView = (await call('/admin/projects', { auth: admin })).data.projects.find((x) => x.id === created.data.project.id);
-    check('admin sees the same setup', adminView?.setup?.ready === p.setup.ready && adminView.brief.manual === 'Orders by phone');
+    const moved = await call(`/portal/tickets/${created.data.ticketId}`, {
+      method: 'PATCH',
+      auth: a.session,
+      body: { projectId: again.data.project.id },
+    });
+    check('a client moves a request to another own project', moved.status === 200 && moved.data.status === 'new', JSON.stringify(moved.data));
+    const foreign = account(`move-foreign-${Date.now()}@example.com`);
+    const foreignProject = (await newProject(foreign.session, { kind: 'existing', name: 'Not Mine', brief: OLD_BRIEF, repoKind: 'none' })).data.project;
+    check(
+      'a move to a foreign project is refused',
+      (await call(`/portal/tickets/${created.data.ticketId}`, { method: 'PATCH', auth: a.session, body: { projectId: foreignProject.id } })).status === 400,
+    );
+    const siteMoved = await call(`/portal/sites/${made.data.site.id}`, {
+      method: 'PATCH',
+      auth: a.session,
+      body: { projectId: again.data.project.id },
+    });
+    check('a site moves to another own project', siteMoved.status === 200, JSON.stringify(siteMoved.data));
+    check(
+      'the site is no longer under the old project',
+      (await call(`/portal/me`, { auth: a.session })).data.projects.find((p) => p.id === created.data.project.id)?.sites?.length === 0,
+    );
+
+  },
+
+  async intake({ admin }) {
+    const a = account(`intake-${Date.now()}@example.com`);
+    const created = await call('/portal/tickets', {
+      method: 'POST',
+      auth: a.session,
+      body: { title: 'I need a bakery site', body: 'I need a bakery site with online orders.', intake: true },
+    });
+    check('a request with no project becomes an intake ticket', created.status === 201 && created.data.intake === true, JSON.stringify(created.data));
+    let thread = null;
+    for (let i = 0; i < 30; i += 1) {
+      await sleep(200);
+      thread = (await call(`/portal/tickets/${created.data.id}`, { auth: a.session })).data;
+      if (thread?.messages?.some((m) => m.author === 'runner')) break;
+    }
+    check(
+      'the setup assistant answers in the thread',
+      Boolean(thread?.messages?.some((m) => m.author === 'runner')),
+      JSON.stringify(thread?.messages).slice(0, 500),
+    );
+    const me = (await call('/portal/me', { auth: a.session })).data;
+    const project = me.projects.find((p) => /E2E Intake/.test(p.name));
+    check('it created a project', Boolean(project), JSON.stringify(me.projects));
+    check('it added a site', project?.sites?.length === 1, JSON.stringify(project?.sites));
+    const tickets = (await call('/portal/tickets', { auth: a.session })).data.tickets;
+    check(
+      'it filed a real request for approval',
+      tickets.some((t) => t.id !== created.data.id && t.status === 'new' && /Order online/.test(t.title)),
+      JSON.stringify(tickets),
+    );
+    check(
+      'the intake ticket moved to review',
+      (await call(`/portal/tickets/${created.data.id}`, { auth: a.session })).data.ticket.status === 'review',
+    );
+    const queue = (await call('/admin/queue', { auth: admin })).data.queue;
+    check('an intake ticket is never in the node queue', !queue.some((q) => q.id === created.data.id));
+    const other = account(`intake-other-${Date.now()}@example.com`);
+    check('another client cannot read it', (await call(`/portal/tickets/${created.data.id}`, { auth: other.session })).status === 404);
   },
 
   async marketing({ admin }) {
@@ -948,7 +1041,8 @@ const groups = {
 
   async usage({ admin }) {
     const a = account(`usage-${Date.now()}@example.com`);
-    const mk = async (title) => (await call('/portal/tickets', { method: 'POST', auth: a.session, body: { title, body: 'x' } })).data.id;
+    const { project } = (await newProject(a.session, { kind: 'existing', name: 'Usage Shop', brief: OLD_BRIEF, repoKind: 'none' })).data;
+    const mk = async (title) => (await call('/portal/tickets', { method: 'POST', auth: a.session, body: { title, body: 'x', projectId: project.id } })).data.id;
     const [done, open, declined] = [await mk('Done'), await mk('Open'), await mk('Declined')];
     sql(`UPDATE tickets SET human_seconds = 2160, ai_micro_usd = 420000 WHERE id = ${done}`);
     await call(`/admin/tickets/${done}`, { method: 'PATCH', auth: admin, body: { status: 'done' } });
@@ -959,7 +1053,7 @@ const groups = {
     const u = (await call('/portal/me', { auth: a.session })).data.usage;
     check('billed = the frozen price of Done work', u.billedCents === 6042, JSON.stringify(u));
     check('open = the live meter on the rest', u.openCents === 502);
-    check('declined work owes nothing', u.tickets === 2 && u.aiCents === 44);
+    check('declined work owes nothing', u.tickets === 3 && u.aiCents === 44, JSON.stringify(u));
     const row = (await call('/admin/clients', { auth: admin })).data.clients.find((x) => x.id === a.user.id);
     check('Ali sees the same per client', row?.usage.billedCents === 6042 && row.usage.openCents === 502);
     check('a client cannot read everyone’s', (await call('/admin/clients', { auth: a.session })).status === 403);

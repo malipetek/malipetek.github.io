@@ -492,6 +492,8 @@ export type BoardStage = (typeof BOARD_STAGES)[number];
 export interface BoardItem {
   id: number;
   stage: TrackStage;
+  /** Which project belt it rides; -1 is the "getting set up" hopper. */
+  lane?: number;
 }
 
 /** What the board reads every frame. The caller only has to change what these return. */
@@ -644,7 +646,7 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
     const LIFT = 5.9; // where the belt ends and the ticket rises
     const END = 7.4;
     const ticketGeo = roundedBox(0.66, 0.12, 0.46);
-    type Tk = { group: THREE.Group; stage: THREE.Mesh[]; mark: THREE.Mesh; x: number; goal: number; slot: number; lift: number; status: TrackStage };
+    type Tk = { group: THREE.Group; stage: THREE.Mesh[]; mark: THREE.Mesh; x: number; goal: number; slot: number; lift: number; status: TrackStage; lane: number };
     const makeTicket = (id = 0): Tk => {
       const stage = (['fill', 'ink', 'orange'] as const).map((r) => {
         const m = part(ctx, ticketGeo, r);
@@ -656,7 +658,7 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
       const mark = cyl(ctx, 0.11, 0.03, 'orange', 0.16, 0.07, 0.08);
       t.add(mark);
       g.add(t);
-      return { group: t, stage, mark, x: START, goal: START, slot: 0, lift: 0, status: 'new' };
+      return { group: t, stage, mark, x: START, goal: START, slot: 0, lift: 0, status: 'new', lane: 0 };
     };
     const loop = board ? [] : Array.from({ length: 6 }, () => makeTicket());
 
@@ -667,7 +669,8 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
     const place = (tk: Tk, x: number, glow: number, up = 0, off = 0) => {
       const { group, stage, mark } = tk;
       const lift = Math.max(0, (x - LIFT) / (END - LIFT));
-      group.position.set(x, 0.43 + lift * lift * 2.7 + up, BELT_Z - lift * 0.2 + off);
+      const laneZ = (tk.lane ?? 0) * 0.95;
+      group.position.set(x, 0.43 + lift * lift * 2.7 + up, BELT_Z - lift * 0.2 + off + laneZ);
       group.scale.setScalar(1 - lift * 0.55);
       const s = x > STEP_X[3] ? 2 : x > STEP_X[2] ? 1 : 0;
       stage.forEach((m, k) => (m.visible = k === s));
@@ -677,7 +680,9 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
       const approved = THREE.MathUtils.smoothstep(x, gateX - 0.3, gateX + 0.6);
       const enter = THREE.MathUtils.smoothstep(x, START, START + 0.8);
       // Centred just in front of the belt: the belt itself hides the floor.
-      if (glow < ctx.kit.glow.length) ctx.kit.glow[glow].set(x, BELT_Z + 0.95, (0.35 + 0.65 * approved) * enter * (1 - lift));
+      if (tk.lane === 0 && glow < ctx.kit.glow.length) {
+        ctx.kit.glow[glow].set(x, BELT_Z + 0.95, (0.35 + 0.65 * approved) * enter * (1 - lift));
+      }
       return Math.abs(x - gateX);
     };
 
@@ -716,6 +721,7 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
         tk.goal = STAGE_X[item.stage];
         tk.slot = slot;
         tk.status = item.stage;
+        tk.lane = item.lane ?? 0;
       }
       for (const [id, tk] of pool) {
         if (seen.has(id)) continue;

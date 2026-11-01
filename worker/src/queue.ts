@@ -17,6 +17,7 @@ import { now, type Env } from './shared.ts';
 import { HOURLY_USD, money, priceOf } from '../../src/lib/pricing.js';
 import { priorRuns, type PriorRun } from './runs.ts';
 import { withFiles, type FileMeta } from './files.ts';
+import { portalLinks } from './links.ts';
 
 /**
  * What a ticket has cost so far, in cents, as SQL over `t` — the same rounding
@@ -705,7 +706,15 @@ type NodeView = Awaited<ReturnType<typeof nodesView>>[number];
 
 /** Which nodes could take an item now, and if none, the most useful reason why. */
 function explainEligibility(env: Env, item: QueueTicket, requires: string[], nodes: NodeView[], t: number) {
-  if (!item.slug) return { eligible: [], reason: 'No project set — it cannot be claimed until it has one.' };
+  if (!item.slug) {
+    return {
+      eligible: [],
+      reason:
+        item.kind === 'intake'
+          ? 'An intake request: the setup assistant handles it in the portal; a node never claims it.'
+          : 'No project set — it cannot be claimed until it has one. Move it to a project in the ticket.',
+    };
+  }
   const left = budgetLeft(item);
   if (left !== null && left <= 0) {
     return {
@@ -729,7 +738,7 @@ function explainEligibility(env: Env, item: QueueTicket, requires: string[], nod
     if (item.repo_error) {
       return {
         eligible: [],
-        reason: `No node can clone ${item.repo}: ${item.repo_error}. Ask the client to connect GitHub in their portal (Connections) and allow this repo, or to add malipetek as a collaborator.`,
+        reason: `No node can clone ${item.repo}: ${item.repo_error}. Ask the client to connect GitHub in their portal (Connections) and allow this repo, or to add malipetek as a collaborator. ${portalLinks(env).connections}`,
       };
     }
     return { eligible: [], reason: `No node has cloned ${item.slug} yet; it clones ${item.repo} on its next sync.` };

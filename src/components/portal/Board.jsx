@@ -34,7 +34,7 @@ export function boardItems(tickets) {
   return [...open, ...shipped];
 }
 
-export function Board({ tickets, stage, onStage, hovered, onHover, onOpen }) {
+export function Board({ tickets, lanes = [], stage, onStage, hovered, onHover, onOpen }) {
   const t = useT();
   const canvasRef = useRef(null);
   const capRefs = useRef({});
@@ -43,6 +43,13 @@ export function Board({ tickets, stage, onStage, hovered, onHover, onOpen }) {
   const items = boardItems(tickets);
   const itemsRef = useRef(items);
   itemsRef.current = items;
+  const lanesRef = useRef(lanes);
+  lanesRef.current = lanes;
+  const laneOf = (projectId) => {
+    if (!projectId) return -1; // the hopper
+    const at = lanesRef.current.findIndex((l) => l.id === projectId);
+    return at >= 0 ? at : 0;
+  };
   const [tip, setTip] = useState(null);
   const [failed, setFailed] = useState(false);
   const handlers = useRef({});
@@ -57,7 +64,7 @@ export function Board({ tickets, stage, onStage, hovered, onHover, onOpen }) {
       .then(({ initBoard }) => {
         if (stopped || !canvasRef.current) return;
         board = initBoard(canvasRef.current, {
-          items: () => itemsRef.current.map((t) => ({ id: t.id, stage: t.status })),
+          items: () => itemsRef.current.map((t) => ({ id: t.id, stage: t.status, lane: laneOf(t.project_id) })),
           onHover: (id) => {
             setTip(id);
             handlers.current.onHover?.(id);
@@ -131,6 +138,18 @@ export function Board({ tickets, stage, onStage, hovered, onHover, onOpen }) {
         </div>
         {!items.length ? <p className="cp-board__empty">{t('board.empty')}</p> : null}
       </div>
+      {lanes.length ? (
+        <div className="cp-board__lanes" aria-label={t('board.lanes')}>
+          <span className="cp-label">{t('board.lanes')}</span>
+          {lanes.map((lane) => (
+            <span key={lane.id} className="cp-board__lane">
+              {lane.name}
+              {lane.sites.length ? <em>{lane.sites.length}</em> : null}
+            </span>
+          ))}
+          {items.some((it) => !it.project_id) ? <span className="cp-board__lane cp-board__lane--none">{t('board.gettingSetUp')}</span> : null}
+        </div>
+      ) : null}
       <div className="cp-board__legend" role="group" aria-label={t('board.legend')}>
         {STAGES.map((s, i) => (
           <button key={s.key} type="button" aria-pressed={stage === s.key} onClick={() => onStage(stage === s.key ? null : s.key)}>

@@ -761,6 +761,7 @@ function AdminSite({ project, site }) {
 export function TicketDetails({ ticket, runs, land, meter, reload }) {
   const { api, data, act, setStatus } = useAdmin();
   const isClient = ticket.kind !== 'system';
+  const projectSites = data.projects.find((p) => p.id === ticket.project_id)?.sites ?? [];
   const [fixing, setFixing] = useState(false);
   const patch = (body, done) => act(() => api('PATCH', `/admin/tickets/${ticket.id}`, body), done).then(reload, () => undefined);
   const requires = listOf(ticket.requires);
@@ -787,6 +788,16 @@ export function TicketDetails({ ticket, runs, land, meter, reload }) {
           {data.projects.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Site">
+        <select value={ticket.site_id ?? ''} onChange={(e) => void patch({ siteId: e.target.value || null }, 'Site saved.')}>
+          <option value="">Main site</option>
+          {projectSites.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name || s.slug}
             </option>
           ))}
         </select>

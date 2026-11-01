@@ -55,6 +55,47 @@ function PageHead({ title, sub, children }) {
   );
 }
 
+/** The same requests, grouped by the project (and its sites) they belong to. */
+function GroupedRequests({ projects, tickets, hovered, onHover }) {
+  const t = useT();
+  const groups = projects
+    .map((project) => ({ project, rows: tickets.filter((x) => x.project_id === project.id) }))
+    .filter((group) => group.rows.length);
+  const loose = tickets.filter((x) => !x.project_id);
+  return (
+    <div className="cp-groups">
+      {groups.map(({ project, rows }) => {
+        const sites = project.sites ?? [];
+        return (
+          <section className="cp-group" key={project.id}>
+            <header className="cp-group__head">
+              <a href={href(`project/${project.id}`)}>{project.name}</a>
+              <span className="cp-muted">{t('views.sites.count', { n: sites.length })}</span>
+            </header>
+            <ul className="cp-rows cp-rows--compact">
+              {rows.map((x) => (
+                <RequestRow key={x.id} t={x} showProject={false} hovered={hovered === x.id} onHover={onHover} />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+      {loose.length ? (
+        <section className="cp-group">
+          <header className="cp-group__head">
+            <span>{t('board.gettingSetUp')}</span>
+          </header>
+          <ul className="cp-rows cp-rows--compact">
+            {loose.map((x) => (
+              <RequestRow key={x.id} t={x} showProject={false} hovered={hovered === x.id} onHover={onHover} />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 /* ————— overview ————— */
 
 export function Overview() {
@@ -85,7 +126,7 @@ export function Overview() {
         </Button>
       </PageHead>
 
-      <Board tickets={tickets} stage={stage} onStage={setStage} hovered={hovered} onHover={setHovered} onOpen={(id) => go(`ticket/${id}`)} />
+      <Board tickets={tickets} lanes={data.lanes} stage={stage} onStage={setStage} hovered={hovered} onHover={setHovered} onOpen={(id) => go(`ticket/${id}`)} />
 
       <div className="cp-overview">
         <section className="cp-card cp-card--flush">
@@ -102,11 +143,15 @@ export function Overview() {
             )}
           </header>
           {shown.length ? (
-            <ul className="cp-rows cp-rows--compact">
-              {shown.map((x) => (
-                <RequestRow key={x.id} t={x} hovered={hovered === x.id} onHover={setHovered} />
-              ))}
-            </ul>
+            !stage && projects.length ? (
+              <GroupedRequests projects={projects} tickets={shown} hovered={hovered} onHover={setHovered} />
+            ) : (
+              <ul className="cp-rows cp-rows--compact">
+                {shown.map((x) => (
+                  <RequestRow key={x.id} t={x} hovered={hovered === x.id} onHover={setHovered} />
+                ))}
+              </ul>
+            )
           ) : (
             <div className="cp-empty">
               {tickets.length ? <p>{t('views.overview.nothingHere')}</p> : <p>{t('views.overview.nothingYet')}</p>}
@@ -520,6 +565,7 @@ function SiteItem({ project, site }) {
   const { data, reload, ask, notify } = usePortal();
   const [deploys, setDeploys] = useState(null);
   const [open, setOpen] = useState(false);
+  const [moving, setMoving] = useState(false);
   const ready = site.state === 'ready';
   useEffect(() => {
     if (!ready || !open) return;
@@ -640,6 +686,9 @@ function SiteItem({ project, site }) {
             <button type="button" className="cp-linkbtn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
               {t('views.sites.versions')}
             </button>
+            <button type="button" className="cp-linkbtn" onClick={() => setMoving(true)}>
+              {t('views.sites.move')}
+            </button>
             <button type="button" className="cp-linkbtn cp-linkbtn--danger" onClick={remove}>
               {t('views.sites.delete')}
             </button>
@@ -679,7 +728,77 @@ function SiteItem({ project, site }) {
           ) : null}
         </>
       )}
+      {moving ? (
+        <MoveSiteModal
+          site={site}
+          fromProject={project}
+          projects={data.projects}
+          onClose={() => setMoving(false)}
+          onDone={async () => {
+            setMoving(false);
+            notify(t('views.sites.moved'));
+            await reload();
+          }}
+        />
+      ) : null}
     </li>
+  );
+}
+
+/** Move a site to another of the client's projects. */
+function MoveSiteModal({ site, fromProject, projects, onClose, onDone }) {
+  const t = useT();
+  const options = (projects ?? []).filter((p) => p.id !== fromProject.id);
+  const [projectId, setProjectId] = useState(options[0]?.id ?? '');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (!projectId) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/portal/sites/${site.id}`, { method: 'PATCH', body: { projectId } });
+      await onDone();
+    } catch (e) {
+      setError(errorText(e, t));
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      title={t('views.sites.moveTitle', { name: site.name || site.slug })}
+      subtitle={t('views.sites.moveSubtitle')}
+      onClose={onClose}
+      actions={
+        <>
+          <p className="cp-modal__err" role="alert">
+            {error}
+          </p>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
+          <Button kind="primary" disabled={busy || !projectId} onClick={() => void save()}>
+            {t('views.sites.moveConfirm')}
+          </Button>
+        </>
+      }
+    >
+      {options.length ? (
+        <div className="cp-site-form">
+          <label className="cp-label" htmlFor="move-site-project">
+            {t('views.sites.moveTo')}
+          </label>
+          <select id="move-site-project" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+            {options.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <p className="cp-hint">{t('views.sites.moveHint')}</p>
+        </div>
+      ) : (
+        <p className="cp-hint">{t('views.sites.moveNone')}</p>
+      )}
+    </Modal>
   );
 }
 

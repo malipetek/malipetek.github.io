@@ -17,7 +17,7 @@ export const isOpen = (t) => OPEN.has(t.status);
 /** Moving through the machine right now: worth checking on more often. */
 const MOVING = new Set(['approved', 'in_progress', 'review']);
 
-const EMPTY = { loaded: false, user: null, projects: [], tickets: [], usage: null, canPublish: false, error: null };
+const EMPTY = { loaded: false, user: null, projects: [], lanes: [], tickets: [], usage: null, canPublish: false, error: null };
 
 export function usePortalData(enabled) {
   const [data, setData] = useState(EMPTY);
@@ -28,7 +28,7 @@ export function usePortalData(enabled) {
     busy.current = true;
     try {
       const [me, { tickets }] = await Promise.all([api('/portal/me'), api('/portal/tickets')]);
-      setData({ loaded: true, user: me.user, projects: me.projects, usage: me.usage, canPublish: me.canPublish, tickets, error: null });
+      setData({ loaded: true, user: me.user, projects: me.projects, lanes: me.lanes ?? [], usage: me.usage, canPublish: me.canPublish, tickets, error: null });
     } catch (error) {
       setData((d) => ({ ...d, loaded: true, error }));
     } finally {

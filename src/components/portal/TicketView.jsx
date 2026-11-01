@@ -43,6 +43,7 @@ export function TicketView({ id }) {
   const [state, setState] = useState({ ticket: null, messages: [], error: null });
   const [deploys, setDeploys] = useState(null);
   const [budgetOpen, setBudgetOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
   const project = data.projects.find((p) => p.id === state.ticket?.project_id);
   const site = project?.site?.state === 'ready' ? project.site : null;
 
@@ -112,7 +113,8 @@ export function TicketView({ id }) {
           <StatusPill status={ticket.status} />
           <span>{attentionName(t, ticket.attention)}</span>
           <span>{t('ticket.filed', { date: fmtDate(ticket.created_at) })}</span>
-          {ticket.worked_by === 'client_agent' ? <span>{t('ticket.builtByAssistant')}</span> : null}
+          {ticket.kind === 'intake' ? <span>{t('ticket.setupAssistant')}</span> : null}
+          {ticket.worked_by === 'client_agent' && ticket.kind !== 'intake' ? <span>{t('ticket.builtByAssistant')}</span> : null}
         </div>
       </header>
 
@@ -151,7 +153,7 @@ export function TicketView({ id }) {
       <div className="cp-ticket__cols">
         <div className="cp-ticket__main">
           <h2 className="cp-h2">{t('ticket.conversation')}</h2>
-          <Thread ticketId={ticket.id} messages={messages} />
+          <Thread ticketId={ticket.id} messages={messages} intake={ticket.kind === 'intake'} />
           <Reply ticketId={ticket.id} onSent={load} reopen={ticket.status === 'done' || ticket.status === 'declined'} />
         </div>
 
@@ -216,7 +218,16 @@ export function TicketView({ id }) {
             <h3 className="cp-label">{t('ticket.details.title')}</h3>
             <dl className="cp-dl">
               <dt>{t('ticket.details.project')}</dt>
-              <dd>{project ? <a href={href(`project/${project.id}`)}>{project.name}</a> : t('ticket.details.none')}</dd>
+              <dd>
+                {project ? <a href={href(`project/${project.id}`)}>{project.name}</a> : t('ticket.details.none')}{' '}
+                {data.projects.length ? (
+                  <button type="button" className="cp-linkbtn" onClick={() => setMoveOpen(true)}>
+                    {t('ticket.details.move')}
+                  </button>
+                ) : null}
+              </dd>
+              <dt>{t('ticket.details.site')}</dt>
+              <dd>{project?.sites?.find((s) => s.id === ticket.site_id)?.name || t('ticket.details.mainSite')}</dd>
               <dt>{t('ticket.details.attention')}</dt>
               <dd>{attentionName(t, ticket.attention)}</dd>
               <dt>{t('ticket.details.filed')}</dt>
@@ -257,6 +268,18 @@ export function TicketView({ id }) {
           onSaved={async () => {
             setBudgetOpen(false);
             notify(t('ticket.budget.saved'));
+            await Promise.all([load(), reload()]);
+          }}
+        />
+      ) : null}
+      {moveOpen ? (
+        <MoveDialog
+          ticket={ticket}
+          projects={data.projects}
+          onClose={() => setMoveOpen(false)}
+          onSaved={async () => {
+            setMoveOpen(false);
+            notify(t('ticket.move.done'));
             await Promise.all([load(), reload()]);
           }}
         />
@@ -335,7 +358,7 @@ function MessageBody({ m }) {
 }
 
 /** The conversation; status changes read as small events between messages. */
-function Thread({ ticketId, messages }) {
+function Thread({ ticketId, messages, intake = false }) {
   const t = useT();
   const end = useRef(null);
   const count = useRef(messages.length);
@@ -359,7 +382,9 @@ function Thread({ ticketId, messages }) {
             </span>
             <div className="cp-msg__box">
               <p className="cp-msg__who">
-                <strong>{WHO[m.author] ? t(WHO[m.author]) : m.author}</strong>
+                <strong>
+                  {m.author === 'runner' && intake ? t('thread.assistant') : WHO[m.author] ? t(WHO[m.author]) : m.author}
+                </strong>
                 <time>{fmtDate(m.created_at)}</time>
               </p>
               <MessageBody m={m} />
@@ -485,6 +510,92 @@ function BudgetDialog({ ticket, onClose, onSaved }) {
         <input type="number" min="1" max="10000" step="1" inputMode="numeric" placeholder={t('ticket.budget.placeholder')} value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()} />
         <span className="cp-hint">{t('ticket.budget.hint', { amount: money(totalOf(ticket)) })}</span>
       </label>
+    </Modal>
+  );
+}
+
+
+/** Move a request to another project (and optionally one of its sites). */
+function MoveDialog({ ticket, projects, onClose, onSaved }) {
+  const t = useT();
+  const [projectId, setProjectId] = useState(ticket.project_id || projects[0]?.id || '');
+  const [siteId, setSiteId] = useState(ticket.site_id || '');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const project = projects.find((p) => p.id === projectId);
+  const sites = project?.sites ?? [];
+  const running = ticket.status === 'in_progress';
+  const save = async () => {
+    if (!projectId || running) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/portal/tickets/${ticket.id}`, {
+        method: 'PATCH',
+        body: { projectId, siteId: siteId || null },
+      });
+      await onSaved();
+    } catch (e) {
+      setError(errorText(e, t));
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      title={t('ticket.move.title')}
+      subtitle={t('ticket.move.subtitle')}
+      onClose={onClose}
+      actions={
+        <>
+          <p className="cp-modal__err" role="alert">
+            {error}
+          </p>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
+          <Button kind="primary" disabled={busy || running || !projectId} onClick={() => void save()}>
+            {t('ticket.move.confirm')}
+          </Button>
+        </>
+      }
+    >
+      {running ? (
+        <p className="cp-warn">{t('ticket.move.running')}</p>
+      ) : projects.length ? (
+        <div className="cp-site-form">
+          <label className="cp-label" htmlFor="move-project">
+            {t('ticket.move.project')}
+          </label>
+          <select
+            id="move-project"
+            value={projectId}
+            onChange={(e) => {
+              setProjectId(e.target.value);
+              setSiteId('');
+            }}
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <label className="cp-label" htmlFor="move-site">
+            {t('ticket.move.site')}
+          </label>
+          <select id="move-site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
+            <option value="">{t('ticket.move.noSite')}</option>
+            {sites.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name || s.slug}
+              </option>
+            ))}
+          </select>
+          <p className="cp-hint">{t('ticket.move.approval')}</p>
+        </div>
+      ) : (
+        <p className="cp-hint">
+          {t('ticket.move.noProjects')} <a href="/portal/start">{t('ticket.move.addProject')}</a>
+        </p>
+      )}
     </Modal>
   );
 }

@@ -309,6 +309,13 @@ export function ClientsView() {
       <header className="aw-hero">
         <h2>Clients & projects</h2>
         <p className="aw-muted">{data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : ''}</p>
+        <Button
+          size="sm"
+          title="List the GitHub App’s installations from GitHub and record any the callback missed"
+          onClick={() => void act(() => api('POST', '/admin/github/reconcile', {}), 'GitHub installations reconciled.')}
+        >
+          Reconcile GitHub
+        </Button>
       </header>
       <div className="aw-split">
         <section className="aw-group">

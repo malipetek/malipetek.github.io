@@ -49,6 +49,18 @@ export const CLOUDFLARE_SCOPES = [
 const callbackUrl = (c: Context<HonoEnv>) => `${siteUrl(c.env)}/api/portal/cloudflare/callback`;
 const STATE_SECONDS = 15 * 60;
 
+/** The signed consent link, shared by the route and the intake agent. */
+export async function cloudflareConnectUrl(env: Env, userId: string): Promise<string> {
+  const redirect = `${siteUrl(env)}/api/portal/cloudflare/callback`;
+  return `${oauthBase(env)}/oauth2/auth?${new URLSearchParams({
+    response_type: 'code',
+    client_id: env.CLOUDFLARE_OAUTH_CLIENT_ID ?? '',
+    redirect_uri: redirect,
+    scope: CLOUDFLARE_SCOPES.join(' '),
+    state: await signState(env, userId),
+  })}`;
+}
+
 const reply = (c: Context<HonoEnv>, body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -122,16 +134,7 @@ cfconnect.get('/portal/cloudflare', async (c) => {
     .bind(user.id)
     .all<{ id: number; accounts: string; scopes: string; expires_at: number | null; renewable: number; created_at: number }>();
   const configured = Boolean(env.CLOUDFLARE_OAUTH_CLIENT_ID && env.CLOUDFLARE_OAUTH_CLIENT_SECRET);
-  const connectUrl =
-    configured && user.role === 'client'
-      ? `${oauthBase(env)}/oauth2/auth?${new URLSearchParams({
-          response_type: 'code',
-          client_id: env.CLOUDFLARE_OAUTH_CLIENT_ID!,
-          redirect_uri: callbackUrl(c),
-          scope: CLOUDFLARE_SCOPES.join(' '),
-          state: await signState(env, user.id),
-        })}`
-      : null;
+  const connectUrl = configured && user.role === 'client' ? await cloudflareConnectUrl(env, user.id) : null;
   return reply(c, {
     connections: (results ?? []).map((r) => ({
       id: r.id,
