@@ -64,8 +64,11 @@ export interface Brief {
 
 export type SiteState = 'allocating' | 'ready' | 'failed';
 
-/** A project's hosted site, when it has one. */
+/** One of a project's hosted sites. */
 export interface Site {
+  id: string;
+  name: string | null;
+  isPrimary: boolean;
   state: SiteState;
   slug: string;
   host: 'ours' | 'cloudflare';
@@ -96,7 +99,9 @@ export interface Project {
   repoWanted?: boolean;
   repoError?: string | null;
   githubInstallationId?: number | null;
+  /** The project's main site, kept for older views. */
   site: Site | null;
+  sites?: Site[];
   setup: Setup;
 }
 

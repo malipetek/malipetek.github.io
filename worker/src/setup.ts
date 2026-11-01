@@ -198,8 +198,8 @@ export interface SetupInput {
 /** The code check: where the working copy comes from, and who supplies it. */
 function codeCheck(input: SetupInput): Pick<SetupCheck, 'state' | 'detail' | 'owner'> {
   if (input.kind === 'new') {
-    if (input.repo) return { state: 'ready', detail: 'The repo for your site exists.', owner: 'us' };
-    if (input.site?.state === 'ready') return { state: 'ready', detail: 'Your site’s code is hosted with it.', owner: 'us' };
+    if (input.repo) return { state: 'ready', detail: 'The repo for this project exists.', owner: 'us' };
+    if (input.site?.state === 'ready') return { state: 'ready', detail: 'The project’s code is hosted with it.', owner: 'us' };
     return { state: 'pending', detail: 'We create it when your site is set up.', owner: 'us' };
   }
   if (input.repoKind === 'repo' && input.repo) {

@@ -387,7 +387,7 @@ export function ClientsView() {
                   {p.githubAccount ? <p className="aw-muted">GitHub: @{p.githubAccount}</p> : null}
                   <div className="aw-tags">
                     {holders.length ? holders.map((n) => <Tag key={n.id} tone={n.online ? undefined : 'bad'}>{n.id}</Tag>) : <span className="aw-warn">No node has it yet.</span>}
-                    {p.site ? <Tag tone="dash">site: {p.site.state}</Tag> : null}
+                    {p.sites?.length ? <Tag tone="dash">{p.sites.length} site{p.sites.length === 1 ? '' : 's'}</Tag> : null}
                   </div>
                   <SitePanel project={p} />
                   <div className="aw-inline">
@@ -412,11 +412,9 @@ export function ClientsView() {
                     <Button size="sm" onClick={() => setModal({ kind: 'custom', render: (close) => <RepoModal project={p} onClose={close} /> })}>
                       {p.repo ? 'Change repo' : 'Use a repo URL'}
                     </Button>
-                    {!p.site ? (
-                      <Button size="sm" onClick={() => void act(() => api('POST', `/admin/projects/${p.id}/site`), `Hosting ${p.name} on malipetek.online.`)}>
-                        Start hosting
-                      </Button>
-                    ) : null}
+                    <Button size="sm" onClick={() => void act(() => api('POST', `/admin/projects/${p.id}/site`, {}), `Adding a site to ${p.name}.`)}>
+                      {p.sites?.length ? 'Add a site' : 'Start hosting'}
+                    </Button>
                     <span className="aw-toolbar__fill" />
                     <Button
                       size="sm"
@@ -427,7 +425,7 @@ export function ClientsView() {
                           text: [
                             'Its finished requests stay, with their threads, but no longer belong to a project.',
                             'Clients lose access to it.',
-                            p.site ? `The hosted site goes offline: ${p.site.productionUrl}.` : null,
+                            p.sites?.length ? `${p.sites.length} hosted site${p.sites.length === 1 ? '' : 's'} go offline.` : null,
                             p.repo ? `The repo is not deleted: ${p.repo}.` : null,
                             'This cannot be undone.',
                           ]

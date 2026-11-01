@@ -25,8 +25,13 @@ export type SiteState = 'allocating' | 'ready' | 'failed';
 export type SiteHost = 'ours' | 'cloudflare';
 
 export interface SiteRow {
+  id: string;
   project_id: string;
+  /** A human name for this site ("Main site", "Docs"); null reads as the project's name. */
+  name: string | null;
   slug: string;
+  /** One site per project is the one ticket builds target. */
+  is_primary: number;
   state: SiteState;
   host: SiteHost;
   template: string | null;
@@ -54,6 +59,9 @@ export interface SiteRow {
 
 /** What the portal and the admin views show about a site. */
 export interface SiteView {
+  id: string;
+  name: string | null;
+  isPrimary: boolean;
   state: SiteState;
   slug: string;
   host: SiteHost;
@@ -92,6 +100,9 @@ function urls(
 export function siteView(row: SiteRow | null | undefined, domain = DEFAULT_SITES_DOMAIN): SiteView | null {
   if (!row) return null;
   return {
+    id: row.id,
+    name: row.name,
+    isPrimary: row.is_primary === 1,
     state: row.state,
     slug: row.slug,
     host: row.host === 'cloudflare' ? 'cloudflare' : 'ours',
@@ -227,19 +238,43 @@ const sha256Hex = async (data: ArrayBuffer | Uint8Array) => {
 
 /* ——————————————————————— the site row ——————————————————————— */
 
+/** The project's main site: the one a ticket's builds and previews target. */
 export async function getSite(env: Env, projectId: string): Promise<SiteRow | null> {
-  return env.DB.prepare('SELECT * FROM sites WHERE project_id = ?').bind(projectId).first<SiteRow>();
+  return env.DB.prepare('SELECT * FROM sites WHERE project_id = ? ORDER BY is_primary DESC, created_at ASC LIMIT 1')
+    .bind(projectId)
+    .first<SiteRow>();
+}
+
+/** Every site under a project, main first. */
+export async function getSites(env: Env, projectId: string): Promise<SiteRow[]> {
+  const { results } = await env.DB.prepare(
+    'SELECT * FROM sites WHERE project_id = ? ORDER BY is_primary DESC, created_at ASC',
+  )
+    .bind(projectId)
+    .all<SiteRow>();
+  return results ?? [];
+}
+
+export async function getSiteById(env: Env, id: string): Promise<SiteRow | null> {
+  return env.DB.prepare('SELECT * FROM sites WHERE id = ?').bind(id).first<SiteRow>();
 }
 
 export async function getSiteBySlug(env: Env, slug: string): Promise<SiteRow | null> {
   return env.DB.prepare('SELECT * FROM sites WHERE slug = ?').bind(slug).first<SiteRow>();
 }
 
-async function save(env: Env, projectId: string, patch: Partial<SiteRow>): Promise<void> {
+/** One site of a project by id, or the main one when no id is given. */
+async function siteFor(env: Env, projectId: string, siteId?: string | null): Promise<SiteRow | null> {
+  if (!siteId) return getSite(env, projectId);
+  const site = await getSiteById(env, siteId);
+  return site && site.project_id === projectId ? site : null;
+}
+
+async function save(env: Env, siteId: string, patch: Partial<SiteRow>): Promise<void> {
   const keys = Object.keys(patch) as (keyof SiteRow)[];
   if (!keys.length) return;
-  await env.DB.prepare(`UPDATE sites SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE project_id = ?`)
-    .bind(...keys.map((k) => patch[k] ?? null), now(), projectId)
+  await env.DB.prepare(`UPDATE sites SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
+    .bind(...keys.map((k) => patch[k] ?? null), now(), siteId)
     .run();
 }
 
@@ -325,8 +360,9 @@ async function placeholderDeploy(env: Env, slug: string, name: string): Promise<
 }
 
 /**
- * Start hosting a project. Idempotent: a project that already has a site is
- * returned as it is; a failed one starts over.
+ * Add a site under a project. The first one is the project's main site; later
+ * ones are extra addresses (a landing page, a docs site) that share the
+ * project's code and deploy history.
  *
  * `host: 'cloudflare'` needs the client's grant and one of its account ids;
  * without either it falls back to our own hosting rather than failing.
@@ -335,56 +371,67 @@ export async function startSite(
   env: Env,
   user: { id: string },
   project: { id: string; name: string; slug: string },
-  options: { siteSlug?: string | null; host?: SiteHost; connectionId?: number | null; accountId?: string | null } = {},
+  options: {
+    name?: string | null;
+    siteSlug?: string | null;
+    host?: SiteHost;
+    connectionId?: number | null;
+    accountId?: string | null;
+  } = {},
 ): Promise<SiteRow> {
-  const existing = await getSite(env, project.id);
-  if (existing && existing.state !== 'failed') return advanceSite(env, project.id);
+  const existing = await getSites(env, project.id);
   const wanted = options.siteSlug ? cleanSiteSlug(options.siteSlug) : null;
   const slug = wanted && (await siteSlugFree(env, wanted)) ? wanted : await uniqueSiteSlug(env, wanted ?? project.slug);
   if (!slug) throw new Error('No free site address left for this name.');
   const cloudflare = options.host === 'cloudflare' && options.connectionId && options.accountId;
+  const isPrimary = existing.length === 0 ? 1 : 0;
+  const id = crypto.randomUUID();
+  const name = (options.name ?? '').trim().slice(0, 80) || (isPrimary ? project.name : slug);
   const t = now();
   await env.DB.prepare(
-    `INSERT INTO sites (project_id, slug, state, host, cloudflare_connection_id, cloudflare_account_id, template, created_at, updated_at)
-     VALUES (?, ?, 'allocating', ?, ?, ?, 'site', ?, ?)
-     ON CONFLICT(project_id) DO UPDATE SET state = 'allocating', slug = excluded.slug,
-       host = excluded.host, cloudflare_connection_id = excluded.cloudflare_connection_id,
-       cloudflare_account_id = excluded.cloudflare_account_id,
-       preview_deploy = NULL, production_deploy = NULL, error = NULL, failure_alerted_at = NULL,
-       cloudflare_preview_deploy = NULL, cloudflare_production_deploy = NULL, cloudflare_error = NULL,
-       cloudflare_preview_url = NULL, cloudflare_production_url = NULL,
-       cloudflare_preview_script = NULL, cloudflare_production_script = NULL,
-       updated_at = excluded.updated_at`,
+    `INSERT INTO sites (id, project_id, name, slug, is_primary, state, host, cloudflare_connection_id, cloudflare_account_id, template, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'allocating', ?, ?, ?, 'site', ?, ?)`,
   )
-    .bind(project.id, slug, cloudflare ? 'cloudflare' : 'ours', cloudflare ? options.connectionId : null, cloudflare ? options.accountId : null, t, t)
+    .bind(
+      id,
+      project.id,
+      name,
+      slug,
+      isPrimary,
+      cloudflare ? 'cloudflare' : 'ours',
+      cloudflare ? options.connectionId : null,
+      cloudflare ? options.accountId : null,
+      t,
+      t,
+    )
     .run();
-  let site = await advanceSite(env, project.id);
+  let site = await advanceSite(env, project.id, id);
   if (site.host === 'cloudflare' && site.preview_deploy) {
     await mirrorSite(env, site, 'preview');
     await mirrorSite(env, site, 'production');
-    site = (await getSite(env, project.id))!;
+    site = (await getSiteById(env, id))!;
   }
   return site;
 }
 
 /**
  * Move one site one step forward. Never throws for a storage failure: the
- * site records it instead.
+ * site records it instead. Without `siteId` it moves the project's main site.
  */
-export async function advanceSite(env: Env, projectId: string): Promise<SiteRow> {
-  let site = await getSite(env, projectId);
+export async function advanceSite(env: Env, projectId: string, siteId?: string | null): Promise<SiteRow> {
+  let site = await siteFor(env, projectId, siteId);
   if (!site) throw new Error('no site');
   try {
     for (let step = 0; step < 4 && site.state !== 'ready' && site.state !== 'failed'; step += 1) {
       const before = `${site.state}:${site.preview_deploy}`;
       await stepSite(env, site);
-      site = (await getSite(env, projectId))!;
+      site = (await getSiteById(env, site.id))!;
       if (`${site.state}:${site.preview_deploy}` === before) break; // waiting on a node
     }
   } catch (error) {
     // A storage blip or our own bug: keep the state, record why, try next time.
-    await save(env, projectId, { error: ((error as Error)?.message ?? 'unknown error').slice(0, 500) });
-    site = (await getSite(env, projectId))!;
+    await save(env, site.id, { error: ((error as Error)?.message ?? 'unknown error').slice(0, 500) });
+    site = (await getSiteById(env, site.id))!;
   }
   return site;
 }
@@ -393,17 +440,17 @@ async function stepSite(env: Env, site: SiteRow): Promise<void> {
   if (site.state !== 'allocating') return;
   if (!site.preview_deploy) {
     const project = await env.DB.prepare('SELECT name FROM projects WHERE id = ?').bind(site.project_id).first<{ name: string }>();
-    await placeholderDeploy(env, site.slug, project?.name ?? site.slug);
-    await save(env, site.project_id, { preview_deploy: PLACEHOLDER_DEPLOY, production_deploy: PLACEHOLDER_DEPLOY });
+    await placeholderDeploy(env, site.slug, site.name || project?.name || site.slug);
+    await save(env, site.id, { preview_deploy: PLACEHOLDER_DEPLOY, production_deploy: PLACEHOLDER_DEPLOY });
     return;
   }
   const project = await env.DB.prepare('SELECT repo FROM projects WHERE id = ?').bind(site.project_id).first<{ repo: string | null }>();
   if (project?.repo) {
-    await save(env, site.project_id, { state: 'ready', error: null });
+    await save(env, site.id, { state: 'ready', error: null });
     return;
   }
   if (now() - site.created_at > ALLOCATE_TIMEOUT_SECONDS) {
-    await save(env, site.project_id, {
+    await save(env, site.id, {
       state: 'failed',
       error: 'No machine created the source repo in 30 minutes. Check the fleet is online, then retry.',
     });
@@ -413,12 +460,12 @@ async function stepSite(env: Env, site: SiteRow): Promise<void> {
 /** Every site still being allocated, one step each. The cron's half. */
 export async function advanceSites(env: Env): Promise<SiteRow[]> {
   const { results } = await env.DB.prepare(
-    `SELECT project_id FROM sites WHERE state = 'allocating' AND updated_at < ? LIMIT 20`,
+    `SELECT project_id, id FROM sites WHERE state = 'allocating' AND updated_at < ? LIMIT 20`,
   )
     .bind(now() - 30)
-    .all<{ project_id: string }>();
+    .all<{ project_id: string; id: string }>();
   const out: SiteRow[] = [];
-  for (const row of results ?? []) out.push(await advanceSite(env, row.project_id));
+  for (const row of results ?? []) out.push(await advanceSite(env, row.project_id, row.id));
   return out;
 }
 
@@ -460,7 +507,7 @@ async function mirrorSite(
       files,
       spa: site.spa === 1,
     });
-    await save(env, site.project_id, {
+    await save(env, site.id, {
       cloudflare_error: null,
       cloudflare_deployed_at: now(),
       ...(channel === 'preview'
@@ -468,7 +515,7 @@ async function mirrorSite(
         : { cloudflare_production_url: out.url, cloudflare_production_deploy: deploy, cloudflare_production_script: out.script }),
     });
   } catch (error) {
-    await save(env, site.project_id, {
+    await save(env, site.id, {
       cloudflare_error: ((error as Error)?.message ?? 'Cloudflare deploy failed').slice(0, 500),
     });
   }
@@ -484,11 +531,12 @@ export async function setSiteHost(
   projectId: string,
   host: SiteHost,
   connection?: { id: number; accountId: string } | null,
+  siteId?: string | null,
 ): Promise<SiteRow | null> {
-  const site = await getSite(env, projectId);
+  const site = await siteFor(env, projectId, siteId);
   if (!site) return null;
   const next: SiteHost = host === 'cloudflare' && connection ? 'cloudflare' : 'ours';
-  await save(env, projectId, {
+  await save(env, site.id, {
     host: next,
     cloudflare_connection_id: next === 'cloudflare' ? connection!.id : null,
     cloudflare_account_id: next === 'cloudflare' ? connection!.accountId : null,
@@ -500,23 +548,23 @@ export async function setSiteHost(
     cloudflare_preview_script: null,
     cloudflare_production_script: null,
   });
-  const fresh = (await getSite(env, projectId))!;
+  const fresh = (await getSiteById(env, site.id))!;
   if (next === 'cloudflare') {
     await mirrorSite(env, fresh, 'preview');
     await mirrorSite(env, fresh, 'production');
   }
-  return getSite(env, projectId);
+  return getSiteById(env, site.id);
 }
 
 /** Failed sites Ali has not been told about yet; marks them told. */
 export async function takeNewSiteFailures(env: Env) {
   const { results } = await env.DB.prepare(
-    `SELECT s.project_id, s.error, p.name, p.slug FROM sites s JOIN projects p ON p.id = s.project_id
+    `SELECT s.id, s.project_id, s.error, p.name, p.slug FROM sites s JOIN projects p ON p.id = s.project_id
       WHERE s.state = 'failed' AND s.failure_alerted_at IS NULL`,
-  ).all<{ project_id: string; error: string | null; name: string; slug: string }>();
+  ).all<{ id: string; project_id: string; error: string | null; name: string; slug: string }>();
   if (results?.length) {
     await env.DB.batch(
-      results.map((r) => env.DB.prepare('UPDATE sites SET failure_alerted_at = ? WHERE project_id = ?').bind(now(), r.project_id)),
+      results.map((r) => env.DB.prepare('UPDATE sites SET failure_alerted_at = ? WHERE id = ?').bind(now(), r.id)),
     );
   }
   return results ?? [];
@@ -527,6 +575,7 @@ export async function takeNewSiteFailures(env: Env) {
 export interface SiteDeployRow {
   id: string;
   project_id: string;
+  site_id: string | null;
   ticket_id: number | null;
   commit_sha: string | null;
   files: number;
@@ -534,12 +583,20 @@ export interface SiteDeployRow {
   created_at: number;
 }
 
-export async function listDeploys(env: Env, projectId: string, limit = 50): Promise<SiteDeployRow[]> {
-  const { results } = await env.DB.prepare(
-    'SELECT * FROM site_deploys WHERE project_id = ? ORDER BY created_at DESC LIMIT ?',
-  )
-    .bind(projectId, Math.min(200, limit))
-    .all<SiteDeployRow>();
+export async function listDeploys(
+  env: Env,
+  projectId: string,
+  limit = 50,
+  siteId?: string | null,
+): Promise<SiteDeployRow[]> {
+  const capped = Math.min(200, limit);
+  const { results } = siteId
+    ? await env.DB.prepare('SELECT * FROM site_deploys WHERE site_id = ? ORDER BY created_at DESC LIMIT ?')
+        .bind(siteId, capped)
+        .all<SiteDeployRow>()
+    : await env.DB.prepare('SELECT * FROM site_deploys WHERE project_id = ? ORDER BY created_at DESC LIMIT ?')
+        .bind(projectId, capped)
+        .all<SiteDeployRow>();
   return results ?? [];
 }
 
@@ -637,10 +694,10 @@ export async function finishDeploy(
   const t = now();
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO site_deploys (id, project_id, ticket_id, commit_sha, files, bytes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
-    ).bind(deploy, site.project_id, meta.ticketId ?? null, meta.commitSha ?? null, files, bytes, t),
-    env.DB.prepare('UPDATE sites SET preview_deploy = ?, rebuild_error = NULL, updated_at = ? WHERE project_id = ?').bind(deploy, t, site.project_id),
+      `INSERT INTO site_deploys (id, project_id, site_id, ticket_id, commit_sha, files, bytes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
+    ).bind(deploy, site.project_id, site.id, meta.ticketId ?? null, meta.commitSha ?? null, files, bytes, t),
+    env.DB.prepare('UPDATE sites SET preview_deploy = ?, rebuild_error = NULL, updated_at = ? WHERE id = ?').bind(deploy, t, site.id),
   ]);
   if (site.host === 'cloudflare') {
     // Mirroring is a second upload to a different account; keep it off the
@@ -650,7 +707,7 @@ export async function finishDeploy(
     else await mirror;
   }
   const { sitesDomain } = await getSettings(env);
-  const view = siteView(await getSite(env, site.project_id), sitesDomain);
+  const view = siteView(await getSiteById(env, site.id), sitesDomain);
   return {
     deployId: deploy,
     previewUrl: view?.previewUrl ?? `https://${slug}--preview.${sitesDomain}`,
@@ -663,17 +720,18 @@ export async function finishDeploy(
 export async function publishSite(
   env: Env,
   projectId: string,
+  siteId?: string | null,
 ): Promise<{ productionUrl: string; cloudflareError?: string } | { error: string }> {
-  const site = await getSite(env, projectId);
+  const site = await siteFor(env, projectId, siteId);
   if (!site) return { error: 'not_found' };
   if (site.state !== 'ready' || !site.preview_deploy) return { error: 'not_ready' };
-  await env.DB.prepare('UPDATE sites SET production_deploy = preview_deploy, updated_at = ? WHERE project_id = ?')
-    .bind(now(), projectId)
+  await env.DB.prepare('UPDATE sites SET production_deploy = preview_deploy, updated_at = ? WHERE id = ?')
+    .bind(now(), site.id)
     .run();
-  const fresh = (await getSite(env, projectId))!;
+  const fresh = (await getSiteById(env, site.id))!;
   if (fresh.host === 'cloudflare') await mirrorSite(env, fresh, 'production');
   const { sitesDomain } = await getSettings(env);
-  const view = siteView((await getSite(env, projectId))!, sitesDomain);
+  const view = siteView((await getSiteById(env, site.id))!, sitesDomain);
   return {
     productionUrl: view?.productionUrl ?? `https://${site.slug}.${sitesDomain}`,
     ...(view?.cloudflare?.error ? { cloudflareError: view.cloudflare.error } : {}),
@@ -685,20 +743,23 @@ export async function rollbackSite(
   env: Env,
   projectId: string,
   deployId: string,
+  siteId?: string | null,
 ): Promise<{ productionUrl: string; cloudflareError?: string } | { error: string }> {
-  const site = await getSite(env, projectId);
+  const site = await siteFor(env, projectId, siteId);
   if (!site) return { error: 'not_found' };
-  const deploy = await env.DB.prepare('SELECT 1 FROM site_deploys WHERE id = ? AND project_id = ?')
-    .bind(deployId, projectId)
+  const deploy = await env.DB.prepare(
+    'SELECT 1 FROM site_deploys WHERE id = ? AND (site_id = ? OR (site_id IS NULL AND project_id = ?))',
+  )
+    .bind(deployId, site.id, projectId)
     .first();
   if (!deploy) return { error: 'unknown_deploy' };
-  await env.DB.prepare('UPDATE sites SET production_deploy = ?, updated_at = ? WHERE project_id = ?')
-    .bind(deployId, now(), projectId)
+  await env.DB.prepare('UPDATE sites SET production_deploy = ?, updated_at = ? WHERE id = ?')
+    .bind(deployId, now(), site.id)
     .run();
-  const fresh = (await getSite(env, projectId))!;
+  const fresh = (await getSiteById(env, site.id))!;
   if (fresh.host === 'cloudflare') await mirrorSite(env, fresh, 'production', deployId);
   const { sitesDomain } = await getSettings(env);
-  const view = siteView((await getSite(env, projectId))!, sitesDomain);
+  const view = siteView((await getSiteById(env, site.id))!, sitesDomain);
   return {
     productionUrl: view?.productionUrl ?? `https://${site.slug}.${sitesDomain}`,
     ...(view?.cloudflare?.error ? { cloudflareError: view.cloudflare.error } : {}),
@@ -715,17 +776,17 @@ export async function reportSiteRepo(env: Env, slug: string, repo: string): Prom
   await env.DB.prepare(`UPDATE projects SET repo = ?, repo_kind = 'repo' WHERE id = ? AND (repo IS NULL OR repo = '')`)
     .bind(repo, site.project_id)
     .run();
-  return advanceSite(env, site.project_id);
+  return advanceSite(env, site.project_id, site.id);
 }
 
 /** Deploys past KEPT_DEPLOYS no channel points at: manifest and row gone, blobs too when nothing references them. */
 export async function pruneDeploys(env: Env): Promise<void> {
   if (!env.SITES) return;
-  const { results: sites } = await env.DB.prepare('SELECT project_id, slug, preview_deploy, production_deploy FROM sites')
-    .all<{ project_id: string; slug: string; preview_deploy: string | null; production_deploy: string | null }>();
+  const { results: sites } = await env.DB.prepare('SELECT id, project_id, slug, preview_deploy, production_deploy FROM sites')
+    .all<{ id: string; project_id: string; slug: string; preview_deploy: string | null; production_deploy: string | null }>();
   for (const site of sites ?? []) {
     const pointed = new Set([site.preview_deploy, site.production_deploy].filter(Boolean) as string[]);
-    const deploys = await listDeploys(env, site.project_id, KEPT_DEPLOYS + 50);
+    const deploys = await listDeploys(env, site.project_id, KEPT_DEPLOYS + 50, site.id);
     const keep = new Set(pointed);
     for (const deploy of deploys.slice(0, KEPT_DEPLOYS)) keep.add(deploy.id);
     const drop = deploys.filter((d) => !keep.has(d.id)).map((d) => d.id);
@@ -752,10 +813,15 @@ export async function pruneDeploys(env: Env): Promise<void> {
 
 /** Where a site's addresses point, for a view or a tool reply. */
 export async function siteState(env: Env, projectId: string) {
-  const site = await getSite(env, projectId);
-  if (!site) return null;
+  const sites = await getSites(env, projectId);
+  if (!sites.length) return null;
   const { sitesDomain } = await getSettings(env);
-  return { site: siteView(site, sitesDomain), deploys: await listDeploys(env, projectId) };
+  const primary = sites[0];
+  return {
+    site: siteView(primary, sitesDomain),
+    sites: sites.map((site) => siteView(site, sitesDomain)),
+    deploys: await listDeploys(env, projectId, 50, primary.id),
+  };
 }
 
 /* ——————————————————————— the workspace ——————————————————————— */

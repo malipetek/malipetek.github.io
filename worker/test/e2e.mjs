@@ -218,9 +218,8 @@ const groups = {
   async onboarding({ admin }) {
     const a = await signIn(`onb-${Date.now()}@example.com`);
     check('a real magic-link sign-in creates the account', a.user?.role === 'client' && typeof a.session === 'string');
-    const created = await newProject(a.session, { kind: 'new', name: 'Acme Bakery', brief: NEW_BRIEF, siteSlug: 'acme-bakery' });
+    const created = await newProject(a.session, { kind: 'new', name: 'Acme Bakery', brief: NEW_BRIEF });
     check('client creates a project from the interview', created.status === 201 && created.data.project.slug === 'acme-bakery');
-    check('the chosen address is the site address', created.data.site?.slug === 'acme-bakery', JSON.stringify(created.data.site));
     const again = await newProject(a.session, { kind: 'new', name: 'Acme Bakery', brief: NEW_BRIEF });
     check('a second project with the same name gets its own slug', again.data?.project?.slug === 'acme-bakery-2', JSON.stringify(again.data));
     check('the first request is filed with it', Number.isInteger(created.data.ticketId));
@@ -231,7 +230,16 @@ const groups = {
     check('signed out is refused', (await newProject(undefined, { kind: 'new', name: 'Z', brief: NEW_BRIEF })).status === 401);
     const me = (await call('/portal/me', { auth: a.session })).data;
     const p = me.projects.find((x) => x.id === created.data.project.id);
-    check('setup: brief and request ready, preview pending and blocking', p.setup.checks.find((c) => c.key === 'brief').state === 'ready' && p.setup.checks.find((c) => c.key === 'preview').state === 'pending' && !p.setup.autonomous);
+    check('setup: brief and request ready, preview missing and blocking', p.setup.checks.find((c) => c.key === 'brief').state === 'ready' && p.setup.checks.find((c) => c.key === 'preview').state === 'missing' && !p.setup.autonomous);
+    const address = `acme-${Date.now() % 100000}`;
+    const made = await call(`/portal/projects/${created.data.project.id}/site`, {
+      method: 'POST',
+      auth: a.session,
+      body: { name: 'Main', siteSlug: address },
+    });
+    check('a project gets a site as a sub-entity', made.status === 201 && made.data.site?.slug === address && made.data.site?.isPrimary === true, JSON.stringify(made.data));
+    const after = (await call('/portal/me', { auth: a.session })).data.projects.find((x) => x.id === created.data.project.id);
+    check('the project lists its sites', after.sites?.length === 1 && after.sites[0].slug === address, JSON.stringify(after.sites));
     const adminView = (await call('/admin/projects', { auth: admin })).data.projects.find((x) => x.id === created.data.project.id);
     check('admin sees the same setup', adminView?.setup?.ready === p.setup.ready && adminView.brief.manual === 'Orders by phone');
   },
@@ -437,7 +445,8 @@ const groups = {
     check('a good one clears it', (await call(`/portal/projects/${project.id}/site`, { auth: a.session })).data.site.rebuildError === null);
 
     const existing = (await newProject(a.session, { kind: 'existing', name: 'Old Shop', brief: OLD_BRIEF, repoKind: 'none' })).data.project;
-    check('an existing stack is not hosted', (await call(`/portal/projects/${existing.id}/site`, { method: 'POST', auth: a.session, body: {} })).data?.error === 'not_hosted');
+    const existingSite = await call(`/portal/projects/${existing.id}/site`, { method: 'POST', auth: a.session, body: {} });
+    check('an existing project can be given a site too', existingSite.status === 201 && existingSite.data.site?.slug === 'old-shop', JSON.stringify(existingSite.data));
   },
 
   async repos({ admin }) {
@@ -541,14 +550,17 @@ const groups = {
       brief: NEW_BRIEF,
       repoMode: 'create',
       repoSource: 'ours',
-      siteSlug: slug,
-      host: 'cloudflare',
-      connectionId: listed[0].id,
     });
+    const added = await call(`/portal/projects/${created.data.project.id}/site`, {
+      method: 'POST',
+      auth: a.session,
+      body: { name: 'Main', siteSlug: slug, host: 'cloudflare', connectionId: listed[0].id },
+    });
+    const site = added.data.site;
     check(
       'a new site can be hosted in the client account',
-      created.data.site?.host === 'cloudflare' && /\.e2e-sub\.workers\.dev$/.test(created.data.site?.previewUrl ?? ''),
-      JSON.stringify(created.data.site),
+      site?.host === 'cloudflare' && /\.e2e-sub\.workers\.dev$/.test(site?.previewUrl ?? ''),
+      JSON.stringify(site),
     );
     check(
       'the preview and production scripts were uploaded',
@@ -563,14 +575,17 @@ const groups = {
     const moved = await call(`/portal/projects/${created.data.project.id}/site/host`, {
       method: 'POST',
       auth: a.session,
-      body: { host: 'ours' },
+      body: { host: 'ours', siteId: site.id },
     });
     check(
       'the client can move it back to malipetek.online',
       moved.data.site?.host === 'ours' && /\.malipetek\.online$/.test(moved.data.site?.previewUrl ?? ''),
       JSON.stringify(moved.data.site),
     );
-    check('the admin sees the same host', (await call('/admin/projects', { auth: admin })).data.projects.find((p) => p.id === created.data.project.id)?.site?.host === 'ours');
+    check(
+      'the admin sees the same host',
+      (await call('/admin/projects', { auth: admin })).data.projects.find((p) => p.id === created.data.project.id)?.sites?.[0]?.host === 'ours',
+    );
 
     check('the client disconnects', (await call(`/portal/cloudflare/${listed[0].id}`, { method: 'DELETE', auth: a.session })).status === 200);
     check('…which revokes at Cloudflare', CF.revoked.includes('cf-refresh-secret'));

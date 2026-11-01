@@ -89,7 +89,7 @@ node.get('/node/projects', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT p.id, p.slug, p.name, p.kind, p.brief, p.repo, p.github_installation_id, p.repo_wanted, p.repo_error,
             s.state AS site_state, s.slug AS site_slug, s.template
-       FROM projects p LEFT JOIN sites s ON s.project_id = p.id ORDER BY p.slug`,
+       FROM projects p LEFT JOIN sites s ON s.project_id = p.id AND s.is_primary = 1 ORDER BY p.slug`,
   ).all<{
     id: string;
     slug: string;

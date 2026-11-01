@@ -380,7 +380,7 @@ export async function heartbeat(env: Env, node: NodeReport, running: number[]) {
     ? await env.DB.prepare(
         `SELECT t.id AS ticket_id, p.slug, s.slug AS site
            FROM tickets t JOIN projects p ON p.id = t.project_id
-           JOIN sites s ON s.project_id = p.id AND s.host = 'ours' AND s.state = 'ready'
+           JOIN sites s ON s.project_id = p.id AND s.is_primary = 1 AND s.host = 'ours' AND s.state = 'ready'
           WHERE t.build_requested_at IS NOT NULL AND p.slug IN (${node.slugs.map(() => '?').join(',')})
           ORDER BY t.build_requested_at LIMIT 5`,
       )

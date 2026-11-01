@@ -658,15 +658,25 @@ function Composer({ ticket, onSent }) {
  * deployed, what is live, and the button that makes the preview live.
  */
 export function SitePanel({ project }) {
+  const sites = project?.sites ?? (project?.site ? [project.site] : []);
+  if (!sites.length) return null;
+  return (
+    <section className="aw-site" aria-label="Sites">
+      {sites.map((site) => (
+        <AdminSite key={site.id} project={project} site={site} />
+      ))}
+    </section>
+  );
+}
+
+function AdminSite({ project, site }) {
   const { api, act, ask, reload } = useAdmin();
-  const site = project?.site;
-  if (!site) return null;
   const placeholder = site.previewDeploy === 'placeholder';
   const unpublished = site.previewDeploy && site.previewDeploy !== site.productionDeploy;
   return (
-    <section className="aw-site" aria-label="Site">
+    <div className="aw-site__one">
       <span className="aw-field__label">
-        Site · {site.state} · {site.host === 'cloudflare' ? 'Cloudflare' : 'malipetek.online'}
+        Site · {site.name || project.name} · {site.state} · {site.host === 'cloudflare' ? 'Cloudflare' : 'malipetek.online'}
       </span>
       {site.cloudflare?.error ? <p className="aw-warn">Cloudflare: {site.cloudflare.error}</p> : null}
       {site.state !== 'ready' ? (
@@ -694,7 +704,12 @@ export function SitePanel({ project }) {
             size="sm"
             disabled={Boolean(site.rebuildRequestedAt)}
             title="Build the preview branch as it is and deploy it, without an agent run"
-            onClick={() => void act(() => api('POST', `/admin/projects/${project.id}/site/rebuild`), 'A node rebuilds the preview on its next beat.').then(reload, () => undefined)}
+            onClick={() =>
+              void act(
+                () => api('POST', `/admin/projects/${project.id}/site/rebuild`, { siteId: site.id }),
+                'A node rebuilds the preview on its next beat.',
+              ).then(reload, () => undefined)
+            }
           >
             Rebuild preview
           </Button>
@@ -707,7 +722,11 @@ export function SitePanel({ project }) {
                   title: 'Publish the preview?',
                   text: `${site.productionUrl} will show exactly what ${site.previewUrl} shows now. You can roll back from the project's deploys.`,
                   confirm: 'Publish',
-                  run: () => act(() => api('POST', `/admin/projects/${project.id}/site/publish`), 'Published.').then(reload, () => undefined),
+                  run: () =>
+                    act(
+                      () => api('POST', `/admin/projects/${project.id}/site/publish`, { siteId: site.id }),
+                      'Published.',
+                    ).then(reload, () => undefined),
                 })
               }
             >
@@ -716,7 +735,7 @@ export function SitePanel({ project }) {
           ) : null}
         </>
       )}
-    </section>
+    </div>
   );
 }
 

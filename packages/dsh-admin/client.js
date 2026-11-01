@@ -1366,14 +1366,19 @@ var __awPlugin = (() => {
     ] });
   }
   function SitePanel({ project }) {
+    const sites = project?.sites ?? (project?.site ? [project.site] : []);
+    if (!sites.length) return null;
+    return /* @__PURE__ */ jsx("section", { className: "aw-site", "aria-label": "Sites", children: sites.map((site) => /* @__PURE__ */ jsx(AdminSite, { project, site }, site.id)) });
+  }
+  function AdminSite({ project, site }) {
     const { api, act, ask, reload } = useAdmin();
-    const site = project?.site;
-    if (!site) return null;
     const placeholder = site.previewDeploy === "placeholder";
     const unpublished = site.previewDeploy && site.previewDeploy !== site.productionDeploy;
-    return /* @__PURE__ */ jsxs("section", { className: "aw-site", "aria-label": "Site", children: [
+    return /* @__PURE__ */ jsxs("div", { className: "aw-site__one", children: [
       /* @__PURE__ */ jsxs("span", { className: "aw-field__label", children: [
         "Site \xB7 ",
+        site.name || project.name,
+        " \xB7 ",
         site.state,
         " \xB7 ",
         site.host === "cloudflare" ? "Cloudflare" : "malipetek.online"
@@ -1399,7 +1404,10 @@ var __awPlugin = (() => {
             size: "sm",
             disabled: Boolean(site.rebuildRequestedAt),
             title: "Build the preview branch as it is and deploy it, without an agent run",
-            onClick: () => void act(() => api("POST", `/admin/projects/${project.id}/site/rebuild`), "A node rebuilds the preview on its next beat.").then(reload, () => void 0),
+            onClick: () => void act(
+              () => api("POST", `/admin/projects/${project.id}/site/rebuild`, { siteId: site.id }),
+              "A node rebuilds the preview on its next beat."
+            ).then(reload, () => void 0),
             children: "Rebuild preview"
           }
         ),
@@ -1412,7 +1420,10 @@ var __awPlugin = (() => {
               title: "Publish the preview?",
               text: `${site.productionUrl} will show exactly what ${site.previewUrl} shows now. You can roll back from the project's deploys.`,
               confirm: "Publish",
-              run: () => act(() => api("POST", `/admin/projects/${project.id}/site/publish`), "Published.").then(reload, () => void 0)
+              run: () => act(
+                () => api("POST", `/admin/projects/${project.id}/site/publish`, { siteId: site.id }),
+                "Published."
+              ).then(reload, () => void 0)
             }),
             children: "Publish to live"
           }
@@ -1850,9 +1861,10 @@ var __awPlugin = (() => {
               ] }) : null,
               /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
                 holders.length ? holders.map((n) => /* @__PURE__ */ jsx(Tag, { tone: n.online ? void 0 : "bad", children: n.id }, n.id)) : /* @__PURE__ */ jsx("span", { className: "aw-warn", children: "No node has it yet." }),
-                p.site ? /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-                  "site: ",
-                  p.site.state
+                p.sites?.length ? /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+                  p.sites.length,
+                  " site",
+                  p.sites.length === 1 ? "" : "s"
                 ] }) : null
               ] }),
               /* @__PURE__ */ jsx(SitePanel, { project: p }),
@@ -1870,7 +1882,7 @@ var __awPlugin = (() => {
                   }
                 ) : null,
                 /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project: p, onClose: close }) }), children: p.repo ? "Change repo" : "Use a repo URL" }),
-                !p.site ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void act(() => api("POST", `/admin/projects/${p.id}/site`), `Hosting ${p.name} on malipetek.online.`), children: "Start hosting" }) : null,
+                /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void act(() => api("POST", `/admin/projects/${p.id}/site`, {}), `Adding a site to ${p.name}.`), children: p.sites?.length ? "Add a site" : "Start hosting" }),
                 /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
                 /* @__PURE__ */ jsx(
                   Button,
@@ -1882,7 +1894,7 @@ var __awPlugin = (() => {
                       text: [
                         "Its finished requests stay, with their threads, but no longer belong to a project.",
                         "Clients lose access to it.",
-                        p.site ? `The hosted site goes offline: ${p.site.productionUrl}.` : null,
+                        p.sites?.length ? `${p.sites.length} hosted site${p.sites.length === 1 ? "" : "s"} go offline.` : null,
                         p.repo ? `The repo is not deleted: ${p.repo}.` : null,
                         "This cannot be undone."
                       ].filter(Boolean).join(" "),

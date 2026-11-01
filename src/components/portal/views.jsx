@@ -236,6 +236,7 @@ function ProjectCard({ project, tickets }) {
   const t = useT();
   const open = tickets.filter(isOpen).length;
   const s = project.site;
+  const sites = project.sites ?? (s ? [s] : []);
   const live = s?.state === 'ready';
   const { setup } = project;
   return (
@@ -247,7 +248,7 @@ function ProjectCard({ project, tickets }) {
       </div>
       <p className="cp-project__site">{live ? s.productionUrl.replace(/^https:\/\//, '') : siteLine(project, t)}</p>
       <div className="cp-project__foot">
-        <span>{siteLine(project, t)}</span>
+        <span>{sites.length ? t('views.sites.count', { n: sites.length }) : siteLine(project, t)}</span>
         <span>{t('views.project.counts', { open, total: tickets.length })}</span>
       </div>
       <div className="cp-project__setup" title={t('views.project.setupProgress', { ready: setup.ready, total: setup.total })}>
@@ -353,7 +354,7 @@ export function ProjectView({ id }) {
       </PageHead>
 
       <div className="cp-projectgrid">
-        <SiteCard project={project} />
+        <SitesCard project={project} />
         <RepoCard project={project} />
         <section className="cp-card">
           <header className="cp-card__head cp-card__head--tight">
@@ -470,75 +471,73 @@ function RepoCard({ project }) {
   );
 }
 
-/** The hosted site: set it up, follow it, open it, publish it, roll it back. */
-function SiteCard({ project }) {
+/** The project's sites: add one, open its channels, publish a preview. */
+function SitesCard({ project }) {
+  const t = useT();
+  const { reload, notify } = usePortal();
+  const sites = project.sites ?? (project.site ? [project.site] : []);
+  const [adding, setAdding] = useState(false);
+  return (
+    <section className="cp-card cp-site">
+      <header className="cp-card__head cp-card__head--tight">
+        <h2 className="cp-h2">{t('views.sites.title')}</h2>
+        <Button size="sm" onClick={() => setAdding(true)}>
+          <Icon name="plus" size={14} /> {t('views.sites.add')}
+        </Button>
+      </header>
+      {sites.length ? (
+        <ul className="cp-sites">
+          {sites.map((site) => (
+            <SiteItem key={site.id} project={project} site={site} />
+          ))}
+        </ul>
+      ) : (
+        <div className="cp-empty">
+          <p>{t('views.sites.none')}</p>
+          <Button kind="primary" onClick={() => setAdding(true)}>
+            {t('views.sites.add')}
+          </Button>
+        </div>
+      )}
+      {adding ? (
+        <AddSiteModal
+          project={project}
+          onClose={() => setAdding(false)}
+          onDone={async () => {
+            setAdding(false);
+            notify(t('views.sites.created'));
+            await reload();
+          }}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+/** One address under a project: its channels, its preview, its versions. */
+function SiteItem({ project, site }) {
   const t = useT();
   const { data, reload, ask, notify } = usePortal();
-  const site = project.site;
   const [deploys, setDeploys] = useState(null);
-  const [starting, setStarting] = useState(false);
-  const ready = site?.state === 'ready';
+  const [open, setOpen] = useState(false);
+  const ready = site.state === 'ready';
   useEffect(() => {
-    if (!ready) return;
-    api(`/portal/projects/${project.id}/site/deploys`)
+    if (!ready || !open) return;
+    api(`/portal/projects/${project.id}/site/deploys?siteId=${encodeURIComponent(site.id)}`)
       .then(({ deploys }) => setDeploys(deploys))
       .catch(() => setDeploys([]));
-  }, [project.id, ready, site?.previewDeploy, site?.productionDeploy]);
-
-  if (!site && project.kind !== 'new') {
-    return (
-      <section className="cp-card cp-site">
-        <h2 className="cp-h2">{t('views.site.code')}</h2>
-        <p className="cp-muted">{project.repo ? t('views.site.workingOn', { repo: project.repo.replace(/^https:\/\/github\.com\//, '') }) : t('views.site.connecting')}</p>
-      </section>
-    );
-  }
-  if (!site || site.state === 'failed') {
-    return (
-      <section className="cp-card cp-site">
-        <h2 className="cp-h2">{t('views.site.title')}</h2>
-        {site ? <p className="cp-error">{t('views.site.setupFailed')}</p> : null}
-        <p className="cp-muted">{t('views.site.intro')}</p>
-        <Button
-          kind="primary"
-          disabled={starting}
-          onClick={() => setStarting(true)}
-        >
-          {site ? t('views.site.tryAgain') : t('views.site.setUp')}
-        </Button>
-        {starting ? (
-          <StartSite
-            project={project}
-            onClose={() => setStarting(false)}
-            onDone={async () => {
-              setStarting(false);
-              notify(t('views.site.startedNotice'));
-              await reload();
-            }}
-          />
-        ) : null}
-      </section>
-    );
-  }
-  if (!ready) {
-    return (
-      <section className="cp-card cp-site">
-        <h2 className="cp-h2">{t('views.site.title')}</h2>
-        <p className="cp-making" role="status">
-          <span className="cp-spinner" /> {t('views.site.making')}
-        </p>
-      </section>
-    );
-  }
-
+  }, [project.id, site.id, ready, open, site.previewDeploy, site.productionDeploy]);
   const ahead = unpublished(site);
   const publish = () =>
     ask({
-      title: t('views.site.publishTitle', { name: project.name }),
+      title: t('views.site.publishTitle', { name: site.name || project.name }),
       text: t('views.site.publishText', { preview: site.previewUrl, live: site.productionUrl }),
       confirm: t('views.site.publish'),
       run: async () => {
-        const out = await api(`/portal/projects/${project.id}/site/publish`, { method: 'POST', body: {} });
+        const out = await api(`/portal/projects/${project.id}/site/publish`, {
+          method: 'POST',
+          body: { siteId: site.id },
+        });
         if (out?.cloudflareError) {
           notify(t('views.site.cloudflareError', { message: out.cloudflareError }), 'error');
         } else {
@@ -555,79 +554,239 @@ function SiteCard({ project }) {
         : t('views.site.rollbackDated', { date: fmtDate(d.created_at) }),
       confirm: t('views.site.rollbackConfirm'),
       run: async () => {
-        await api(`/portal/projects/${project.id}/site/rollback`, { body: { deployId: d.id } });
+        await api(`/portal/projects/${project.id}/site/rollback`, {
+          body: { deployId: d.id, siteId: site.id },
+        });
         notify(t('views.site.rolledBack'));
         await reload();
       },
     });
-
   return (
-    <section className="cp-card cp-site">
-      <header className="cp-card__head cp-card__head--tight">
-        <h2 className="cp-h2">{t('views.site.title')}</h2>
-        <span className={cx('cp-sitestate', ahead ? 'is-ahead' : 'is-live')}>{ahead ? t('views.site.ahead') : t('views.site.liveUpToDate')}</span>
-      </header>
-      <p className="cp-hint">{site.host === 'cloudflare' ? t('views.site.cloudflareHost') : t('views.site.oursHost')}</p>
-      {site.cloudflare?.error ? <p className="cp-error">{t('views.site.cloudflareError', { message: site.cloudflare.error })}</p> : null}
-      <div className="cp-channels">
-        <a className="cp-channel" href={site.previewUrl} target="_blank" rel="noopener">
-          <span className="cp-label">{t('views.site.channelPreview')}</span>
-          <strong>{site.previewUrl.replace(/^https:\/\//, '')}</strong>
-          <span className="cp-muted">{t('views.site.previewHint')}</span>
-          <Icon name="ext" size={14} />
-        </a>
-        <a className="cp-channel" href={site.productionUrl} target="_blank" rel="noopener">
-          <span className="cp-label">{t('views.site.channelLive')}</span>
-          <strong>{(site.customDomain || site.productionUrl).replace(/^https:\/\//, '')}</strong>
-          <span className="cp-muted">{t('views.site.liveHint')}</span>
-          <Icon name="globe" size={14} />
-        </a>
+    <li className="cp-site-item">
+      <div className="cp-site-item__head">
+        <strong>{site.name || project.name}</strong>
+        {site.isPrimary ? <span className="cp-tag">{t('views.sites.main')}</span> : null}
+        <span className="cp-muted cp-site-item__slug">{site.slug}</span>
+        <span
+          className={cx(
+            'cp-sitestate',
+            site.state === 'failed' ? 'is-bad' : ahead ? 'is-ahead' : site.state === 'ready' ? 'is-live' : 'is-wait',
+          )}
+        >
+          {site.state === 'failed'
+            ? t('views.site.setupStopped')
+            : site.state !== 'ready'
+              ? t('views.site.being')
+              : ahead
+                ? t('views.site.ahead')
+                : t('views.site.liveUpToDate')}
+        </span>
       </div>
-      {ahead ? (
-        data.canPublish ? (
-          <Button kind="primary" onClick={publish}>
-            {t('views.site.publishPreview')}
-          </Button>
-        ) : (
-          <p className="cp-hint">{t('views.site.aheadHint')}</p>
-        )
-      ) : null}
-      <HostSwitch project={project} site={site} />
-      {deploys?.length ? (
+
+      {site.state === 'failed' ? (
+        <p className="cp-error">{site.error || t('views.site.setupFailed')}</p>
+      ) : site.state !== 'ready' ? (
+        <p className="cp-making" role="status">
+          <span className="cp-spinner" /> {t('views.site.making')}
+        </p>
+      ) : (
         <>
-          <h3 className="cp-label cp-site__hist">{t('views.site.versions')}</h3>
-          <ol className="cp-versions">
-            {deploys.slice(0, 8).map((d) => {
-              const isLive = d.id === site.productionDeploy;
-              const isPreview = d.id === site.previewDeploy;
-              return (
-                <li key={d.id}>
-                  <span className={cx('cp-versions__dot', isLive && 'is-live', isPreview && !isLive && 'is-preview')} />
-                  <span>
-                    {d.ticket_id ? <a href={href(`ticket/${d.ticket_id}`)}>{t('views.site.requestLink', { id: d.ticket_id })}</a> : t('views.site.siteVersion')}
-                    <em>{fmtTime(d.created_at)}</em>
-                  </span>
-                  {isLive ? <span className="cp-tag cp-tag--live">{t('views.site.tagLive')}</span> : null}
-                  {isPreview ? <span className="cp-tag">{t('views.site.tagPreview')}</span> : null}
-                  {!isLive && data.canPublish ? (
-                    <button type="button" className="cp-linkbtn" onClick={() => rollback(d)}>
-                      {t('views.site.putLive')}
-                    </button>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ol>
+          <p className="cp-hint">
+            {site.host === 'cloudflare'
+              ? site.cloudflare?.error
+                ? t('views.site.cloudflareFallingBack')
+                : t('views.site.cloudflareHost')
+              : t('views.site.oursHost')}
+          </p>
+          {site.cloudflare?.error ? (
+            <p className="cp-error">{t('views.site.cloudflareError', { message: site.cloudflare.error })}</p>
+          ) : null}
+          <div className="cp-channels">
+            <a className="cp-channel" href={site.previewUrl} target="_blank" rel="noopener">
+              <span className="cp-label">{t('views.site.channelPreview')}</span>
+              <strong>{site.previewUrl.replace(/^https:\/\//, '')}</strong>
+              <span className="cp-muted">{t('views.site.previewHint')}</span>
+              <Icon name="ext" size={14} />
+            </a>
+            <a className="cp-channel" href={site.customDomain || site.productionUrl} target="_blank" rel="noopener">
+              <span className="cp-label">{t('views.site.channelLive')}</span>
+              <strong>{(site.customDomain || site.productionUrl).replace(/^https:\/\//, '')}</strong>
+              <span className="cp-muted">{t('views.site.liveHint')}</span>
+              <Icon name="globe" size={14} />
+            </a>
+          </div>
+          <div className="cp-site-item__actions">
+            {ahead ? (
+              data.canPublish ? (
+                <Button kind="primary" onClick={publish}>
+                  {t('views.site.publishPreview')}
+                </Button>
+              ) : (
+                <p className="cp-hint">{t('views.site.aheadHint')}</p>
+              )
+            ) : null}
+            <button type="button" className="cp-linkbtn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+              {t('views.sites.versions')}
+            </button>
+            <HostSwitch project={project} site={site} />
+          </div>
+          {open ? (
+            deploys?.length ? (
+              <ol className="cp-versions">
+                {deploys.slice(0, 8).map((d) => {
+                  const isLive = d.id === site.productionDeploy;
+                  const isPreview = d.id === site.previewDeploy;
+                  return (
+                    <li key={d.id}>
+                      <span className={cx('cp-versions__dot', isLive && 'is-live', isPreview && !isLive && 'is-preview')} />
+                      <span>
+                        {d.ticket_id ? (
+                          <a href={href(`ticket/${d.ticket_id}`)}>{t('views.site.requestLink', { id: d.ticket_id })}</a>
+                        ) : (
+                          t('views.site.siteVersion')
+                        )}
+                        <em>{fmtTime(d.created_at)}</em>
+                      </span>
+                      {isLive ? <span className="cp-tag cp-tag--live">{t('views.site.tagLive')}</span> : null}
+                      {isPreview ? <span className="cp-tag">{t('views.site.tagPreview')}</span> : null}
+                      {!isLive && data.canPublish ? (
+                        <button type="button" className="cp-linkbtn" onClick={() => rollback(d)}>
+                          {t('views.site.putLive')}
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : (
+              <p className="cp-hint">{t('common.loading')}</p>
+            )
+          ) : null}
         </>
-      ) : null}
-    </section>
+      )}
+    </li>
+  );
+}
+
+/** Add another site under a project: name, address, host. */
+function AddSiteModal({ project, onClose, onDone }) {
+  const t = useT();
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [host, setHost] = useState('ours');
+  const [cloudflare, setCloudflare] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api('/portal/cloudflare').then(setCloudflare, () => setCloudflare({ connections: [] }));
+  }, []);
+  const connections = (cloudflare?.connections ?? []).filter((c) => !c.lapsed);
+  const account = connections[0]?.accounts?.[0] ?? null;
+  const count = project.sites?.length ?? (project.site ? 1 : 0);
+  const defaultSlug = `${project.slug}${count > 0 ? `-${count + 1}` : ''}`;
+  const go = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/portal/projects/${project.id}/site`, {
+        method: 'POST',
+        body: {
+          name: name || undefined,
+          siteSlug: slug || defaultSlug,
+          host,
+          connectionId: host === 'cloudflare' ? connections[0]?.id : undefined,
+          accountId: host === 'cloudflare' ? account?.id : undefined,
+        },
+      });
+      await onDone();
+    } catch (e) {
+      setError(errorText(e, t));
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      title={t('views.sites.addTitle', { name: project.name })}
+      subtitle={t('views.sites.addLede')}
+      onClose={onClose}
+      actions={
+        <>
+          <p className="cp-modal__err" role="alert">
+            {error}
+          </p>
+          <Button onClick={onClose}>{t('views.startSite.notNow')}</Button>
+          <Button kind="primary" disabled={busy} onClick={() => void go()}>
+            {t('views.sites.add')}
+          </Button>
+        </>
+      }
+    >
+      <div className="cp-site-form">
+        <label className="cp-label" htmlFor="site-name">
+          {t('views.sites.name')}
+        </label>
+        <input
+          id="site-name"
+          type="text"
+          maxLength={80}
+          placeholder={t('views.sites.namePlaceholder')}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <label className="cp-label" htmlFor="site-slug">
+          {t('start.field.address.label')}
+        </label>
+        <div className="cp-address">
+          <span>https://</span>
+          <input
+            id="site-slug"
+            type="text"
+            maxLength={63}
+            placeholder={defaultSlug}
+            value={slug}
+            onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+          />
+          <span>.malipetek.online</span>
+        </div>
+        <span className="cp-label">{t('views.sites.host')}</span>
+        <label className="choice-option">
+          <input type="radio" name="site-host" checked={host === 'ours'} onChange={() => setHost('ours')} />
+          <span className="choice-option__body">
+            <strong>{t('start.host.ours.label')}</strong>
+            <em>{t('start.host.ours.note', { address: `${slug || defaultSlug}.malipetek.online` })}</em>
+          </span>
+        </label>
+        <label className="choice-option">
+          <input
+            type="radio"
+            name="site-host"
+            checked={host === 'cloudflare'}
+            disabled={!connections.length}
+            onChange={() => setHost('cloudflare')}
+          />
+          <span className="choice-option__body">
+            <strong>{t('start.host.cloudflare.label')}</strong>
+            <em>
+              {connections.length
+                ? t('start.host.cloudflare.note', { account: account?.name ?? t('views.cloudflare.yourAccount') })
+                : t('start.host.cloudflare.missing')}
+            </em>
+            {!connections.length ? (
+              <a href={href('connections')} className="cp-linkbtn">
+                {t('views.site.connectCloudflare')}
+              </a>
+            ) : null}
+          </span>
+        </label>
+      </div>
+    </Modal>
   );
 }
 
 /**
- * Moving a site between our hosting and the client's Cloudflare account. The
- * deploy history does not change; the server mirrors the current preview and
- * production into their account.
+ * Moving one site between our hosting and the client's Cloudflare account.
+ * The deploy history does not change; the server mirrors the current preview
+ * and production into their account.
  */
 function HostSwitch({ project, site }) {
   const t = useT();
@@ -643,7 +802,7 @@ function HostSwitch({ project, site }) {
     try {
       await api(`/portal/projects/${project.id}/site/host`, {
         method: 'POST',
-        body: host === 'cloudflare' ? { host, connectionId: connections[0]?.id } : { host: 'ours' },
+        body: host === 'cloudflare' ? { host, siteId: site.id, connectionId: connections[0]?.id } : { host: 'ours', siteId: site.id },
       });
       notify(t('views.site.moved'));
       await reload();
@@ -655,68 +814,19 @@ function HostSwitch({ project, site }) {
   };
   if (site.host === 'cloudflare') {
     return (
-      <p style={{ margin: '0.6rem 0 0' }}>
-        <button type="button" className="cp-linkbtn" disabled={busy} onClick={() => move('ours')}>
-          {t('views.site.moveToOurs')}
-        </button>
-      </p>
+      <button type="button" className="cp-linkbtn" disabled={busy} onClick={() => move('ours')}>
+        {t('views.site.moveToOurs')}
+      </button>
     );
   }
-  return (
-    <p style={{ margin: '0.6rem 0 0' }}>
-      {connections.length ? (
-        <button type="button" className="cp-linkbtn" disabled={busy} onClick={() => move('cloudflare')}>
-          {t('views.site.moveToCloudflare')}
-        </button>
-      ) : (
-        <a className="cp-linkbtn" href={href('connections')}>
-          {t('views.site.connectCloudflare')}
-        </a>
-      )}
-    </p>
-  );
-}
-
-function StartSite({ project, onClose, onDone }) {
-  const t = useT();
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  return (
-    <Modal
-      title={t('views.startSite.title', { name: project.name })}
-      subtitle={t('views.startSite.subtitle')}
-      onClose={onClose}
-      actions={
-        <>
-          <p className="cp-modal__err" role="alert">
-            {error}
-          </p>
-          <Button onClick={onClose}>{t('views.startSite.notNow')}</Button>
-          <Button
-            kind="primary"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await api(`/portal/projects/${project.id}/site`, { method: 'POST', body: {} });
-                await onDone();
-              } catch (e) {
-                setError(errorText(e, t));
-                setBusy(false);
-              }
-            }}
-          >
-            {t('views.startSite.setIt')}
-          </Button>
-        </>
-      }
-    >
-      <ol className="cp-numbered">
-        <li>{t('views.startSite.step1')}</li>
-        <li>{t('views.startSite.step2')}</li>
-      </ol>
-      <p className="cp-hint">{t('views.startSite.hint')}</p>
-    </Modal>
+  return connections.length ? (
+    <button type="button" className="cp-linkbtn" disabled={busy} onClick={() => move('cloudflare')}>
+      {t('views.site.moveToCloudflare')}
+    </button>
+  ) : (
+    <a className="cp-linkbtn" href={href('connections')}>
+      {t('views.site.connectCloudflare')}
+    </a>
   );
 }
 

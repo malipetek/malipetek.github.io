@@ -1,17 +1,16 @@
 /*
- * /portal/start: add a site. Three steps that ask the questions the old form
- * left to guesswork:
+ * /portal/start: add a project. A project is the codebase and the work; its
+ * sites (addresses that publish its build) are added from the project page,
+ * where they are visible as its sub-entity.
  *
- *   1. what it is called, and the address it gets on malipetek.online
+ *   1. what it is called, and what it is
  *   2. where the code lives — ours, their GitHub, a repo they name, or a zip
- *   3. the first request, where it is hosted, and how closely Ali should look
+ *   3. the first request, how closely Ali should look, and the budget
  *
  * The form is saved in sessionStorage, so a client who leaves to connect
- * GitHub or Cloudflare in another tab comes back to the same step. Creating
- * the site also starts its hosting; there is no second button to find.
- *
- * Text comes from the catalog like the rest of the portal, so a client who
- * picked a language on the sign-in screen sees this page in it too.
+ * GitHub in another tab comes back to the same step. Text comes from the
+ * catalog like the rest of the portal, so a client who picked a language on
+ * the sign-in screen sees this page in it too.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { api, createProject, errorText, session } from '../../lib/portal';
@@ -20,19 +19,6 @@ import { attentionText } from './copy.js';
 import { browserLocale, useTranslator } from './useTranslator.js';
 
 const SAVE_KEY = 'malipetek.portal.start';
-
-/** The same rule the Worker uses for a site address. */
-function slugify(text) {
-  const base = String(text ?? '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40)
-    .replace(/-+$/g, '');
-  return /^[a-z0-9]/.test(base) ? base : '';
-}
 
 function savedState() {
   if (typeof window === 'undefined') return null;
@@ -56,8 +42,6 @@ export default function Start() {
   const [status, setStatus] = useState({ text: '', error: false });
   const [busy, setBusy] = useState(false);
   const [github, setGithub] = useState(null);
-  const [cloudflare, setCloudflare] = useState(null);
-  const [address, setAddress] = useState(null);
   const t = useTranslator(user?.locale ?? browserLocale());
 
   const set = (key, value) => setAnswers((a) => ({ ...a, [key]: value }));
@@ -80,12 +64,11 @@ export default function Start() {
       .finally(() => setBooted(true));
   }, []);
 
-  // The connection cards. A client can connect in another tab and come back;
+  // The GitHub card. A client can connect in another tab and come back;
   // refreshing on focus is what makes "come back" work.
   const loadConnections = () => {
     if (!session.get()) return;
     api('/portal/github').then(setGithub, () => setGithub({ installations: [], installUrl: null }));
-    api('/portal/cloudflare').then(setCloudflare, () => setCloudflare({ connections: [], connectUrl: null }));
   };
   useEffect(() => {
     loadConnections();
@@ -104,43 +87,26 @@ export default function Start() {
     }
   }, [kind, index, answers, attention, budget]);
 
-  const addressSlug = answers.siteSlug || slugify(answers.name);
-  useEffect(() => {
-    if (!addressSlug || addressSlug.length < 2) {
-      setAddress(null);
-      return undefined;
-    }
-    let alive = true;
-    const timer = setTimeout(() => {
-      api(`/portal/site-address?slug=${encodeURIComponent(addressSlug)}`)
-        .then((out) => alive && setAddress(out))
-        .catch(() => alive && setAddress(null));
-    }, 350);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
-  }, [addressSlug]);
-
-  const steps = kind ? ['site', 'code', 'first'] : [];
+  const steps = kind ? ['project', 'code', 'first'] : [];
   const step = steps[index];
   const last = index === steps.length - 1;
   const installations = github?.installations ?? [];
-  const cloudflareConnections = (cloudflare?.connections ?? []).filter((c) => !c.lapsed);
-  const cloudflareAccount = cloudflareConnections[0]?.accounts?.[0] ?? null;
   const repoMode = answers.repoMode ?? (kind === 'new' ? 'create' : 'none');
   const repoSource = answers.repoSource ?? (installations.length ? 'github' : 'ours');
-  const host = answers.host ?? 'ours';
 
   const missing = useMemo(() => {
     const need = [];
     if (!answers.name?.trim()) need.push(t('start.field.name.label'));
-    if (step === 'site' && !answers.what?.trim()) need.push(t(kind === 'new' ? 'start.field.new.what.label' : 'start.field.existing.what.label'));
+    if (step === 'project' && !answers.what?.trim()) {
+      need.push(t(kind === 'new' ? 'start.field.new.what.label' : 'start.field.existing.what.label'));
+    }
     if (step === 'code') {
       if (repoMode === 'repo' && !answers.repo?.trim()) need.push(t('start.field.repo.label'));
       if (repoMode === 'create' && repoSource === 'github' && !installations.length) need.push(t('start.github.account'));
     }
-    if (step === 'first' && !answers.goal?.trim()) need.push(t(kind === 'new' ? 'start.field.new.goal.label' : 'start.field.existing.goal.label'));
+    if (step === 'first' && !answers.goal?.trim()) {
+      need.push(t(kind === 'new' ? 'start.field.new.goal.label' : 'start.field.existing.goal.label'));
+    }
     return need;
   }, [answers, kind, step, repoMode, repoSource, installations.length, t]);
 
@@ -149,10 +115,6 @@ export default function Start() {
   const next = async () => {
     if (missing.length) {
       say(t('start.missing', { fields: missing.join(', ') }), true);
-      return;
-    }
-    if (step === 'site' && address && address.slug === addressSlug && address.available === false) {
-      say(t('start.address.taken'), true);
       return;
     }
     say('');
@@ -179,10 +141,6 @@ export default function Start() {
         repo: repoMode === 'repo' ? answers.repo : undefined,
         repoSource: repoMode === 'create' ? repoSource : undefined,
         installationId: repoMode === 'create' && repoSource === 'github' ? installations[0]?.id : undefined,
-        siteSlug: addressSlug || undefined,
-        host,
-        connectionId: host === 'cloudflare' ? cloudflareConnections[0]?.id : undefined,
-        accountId: host === 'cloudflare' ? cloudflareAccount?.id : undefined,
         attention,
         budgetCents: Number(budget) > 0 ? Math.round(Number(budget) * 100) : undefined,
       });
@@ -263,10 +221,10 @@ export default function Start() {
             ))}
           </ol>
 
-          {step === 'site' ? (
+          {step === 'project' ? (
             <section className="portal-section">
-              <h2>{t('start.step.site.title')}</h2>
-              <p className="lede">{t(kind === 'new' ? 'start.step.site.new.lede' : 'start.step.site.existing.lede')}</p>
+              <h2>{t('start.step.project.title')}</h2>
+              <p className="lede">{t(kind === 'new' ? 'start.step.project.new.lede' : 'start.step.project.existing.lede')}</p>
 
               <div className="portal-field">
                 <label className="portal-label" htmlFor="f-name">
@@ -287,33 +245,6 @@ export default function Start() {
                   }}
                 />
                 <p className="portal-field__hint">{t('start.field.name.hint')}</p>
-              </div>
-
-              <div className="portal-field">
-                <label className="portal-label" htmlFor="f-address">
-                  {t('start.field.address.label')}
-                </label>
-                <div className="start-address">
-                  <span>https://</span>
-                  <input
-                    id="f-address"
-                    type="text"
-                    maxLength={63}
-                    placeholder={slugify(answers.name) || t('start.field.address.placeholder')}
-                    value={answers.siteSlug ?? ''}
-                    onChange={(e) => set('siteSlug', slugify(e.target.value))}
-                  />
-                  <span>.malipetek.online</span>
-                </div>
-                <p className={`portal-field__hint${address && address.available === false ? ' is-error' : ''}`} role="status" aria-live="polite">
-                  {!addressSlug
-                    ? t('start.address.hint')
-                    : address === null
-                      ? t('start.address.checking')
-                      : address.available
-                        ? t('start.address.available')
-                        : t('start.address.taken')}
-                </p>
               </div>
 
               <div className="portal-field">
@@ -467,40 +398,6 @@ export default function Start() {
                 />
               </div>
 
-              <fieldset className="choice">
-                <legend className="portal-label">{t('start.field.host.label')}</legend>
-                <label className="choice-option">
-                  <input type="radio" name="host" value="ours" checked={host === 'ours'} onChange={() => set('host', 'ours')} />
-                  <span className="choice-option__body">
-                    <strong>{t('start.host.ours.label')}</strong>
-                    <em>{t('start.host.ours.note', { address: `${addressSlug || slugify(answers.name) || 'your-site'}.malipetek.online` })}</em>
-                  </span>
-                </label>
-                <label className="choice-option">
-                  <input
-                    type="radio"
-                    name="host"
-                    value="cloudflare"
-                    checked={host === 'cloudflare'}
-                    disabled={!cloudflareConnections.length}
-                    onChange={() => set('host', 'cloudflare')}
-                  />
-                  <span className="choice-option__body">
-                    <strong>{t('start.host.cloudflare.label')}</strong>
-                    <em>
-                      {cloudflareConnections.length
-                        ? t('start.host.cloudflare.note', { account: cloudflareAccount?.name ?? t('views.cloudflare.yourAccount') })
-                        : t('start.host.cloudflare.missing')}
-                    </em>
-                    {!cloudflareConnections.length && cloudflare?.connectUrl ? (
-                      <a href={cloudflare.connectUrl} target="_blank" rel="noreferrer">
-                        {t('views.cloudflare.connect')}
-                      </a>
-                    ) : null}
-                  </span>
-                </label>
-              </fieldset>
-
               <fieldset className="attention">
                 <legend className="portal-label">{t('start.attention.legend')}</legend>
                 {ATTENTION.map((a) => (
@@ -543,8 +440,8 @@ export default function Start() {
                 <strong>{t('start.summary.title')}</strong>
                 <dl>
                   <div>
-                    <dt>{t('start.summary.address')}</dt>
-                    <dd>{addressSlug || slugify(answers.name) || '—'}.malipetek.online</dd>
+                    <dt>{t('start.summary.project')}</dt>
+                    <dd>{answers.name || '—'}</dd>
                   </div>
                   <div>
                     <dt>{t('start.summary.code')}</dt>
@@ -559,10 +456,6 @@ export default function Start() {
                             ? t('start.summary.zip')
                             : t('start.summary.none')}
                     </dd>
-                  </div>
-                  <div>
-                    <dt>{t('start.summary.host')}</dt>
-                    <dd>{host === 'cloudflare' ? t('start.summary.cloudflare', { account: cloudflareAccount?.name ?? '' }) : t('start.summary.oursHost')}</dd>
                   </div>
                 </dl>
               </div>

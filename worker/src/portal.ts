@@ -79,6 +79,8 @@ import {
   advanceSite,
   cleanSiteSlug,
   getSite,
+  getSiteById,
+  getSites,
   listDeploys,
   publishSite,
   rollbackSite,
@@ -516,10 +518,14 @@ async function usageByUser(env: Env, userId?: string): Promise<Map<string, Usage
   return out;
 }
 
-/** Hosted sites by project id, for the views that list projects. */
-async function sitesById(env: Env): Promise<Map<string, SiteRow>> {
-  const { results } = await env.DB.prepare('SELECT * FROM sites').all<SiteRow>();
-  return new Map((results ?? []).map((row) => [row.project_id, row]));
+/** Hosted sites grouped by project, main site first. */
+async function sitesByProject(env: Env): Promise<Map<string, SiteRow[]>> {
+  const { results } = await env.DB.prepare(
+    'SELECT * FROM sites ORDER BY is_primary DESC, created_at ASC',
+  ).all<SiteRow>();
+  const out = new Map<string, SiteRow[]>();
+  for (const row of results ?? []) out.set(row.project_id, [...(out.get(row.project_id) ?? []), row]);
+  return out;
 }
 
 async function ticketMessages(env: Env, ticketId: number, includeInternal: boolean) {
@@ -799,7 +805,7 @@ portal.get('/portal/me', async (c) => {
     )
       .bind(user.id)
       .all<{ project_id: string; n: number }>(),
-    sitesById(env),
+    sitesByProject(env),
     getSettings(env),
     usageByUser(env, user.id),
   ]);
@@ -812,7 +818,8 @@ portal.get('/portal/me', async (c) => {
     projects: (projects ?? []).map((project) => {
       const kind = isProjectKind(project.kind) ? project.kind : 'existing';
       const repoKind = isRepoKind(project.repo_kind) ? project.repo_kind : 'none';
-      const site = siteView(sites.get(project.id), settings.sitesDomain);
+      const rows = sites.get(project.id) ?? [];
+      const site = siteView(rows[0], settings.sitesDomain);
       return {
         id: project.id,
         slug: project.slug,
@@ -824,6 +831,7 @@ portal.get('/portal/me', async (c) => {
         repoError: project.repo_error,
         githubInstallationId: project.github_installation_id,
         site,
+        sites: rows.map((row) => siteView(row, settings.sitesDomain)),
         setup: setupFor({
           kind,
           brief: parseBrief(project.brief),
@@ -1018,35 +1026,6 @@ portal.post('/portal/projects', async (c) => {
   const budget = cleanBudget(body?.budgetCents);
   if (!attention || budget === false) return reply(c, { error: 'bad_ticket' }, 400);
 
-  const rawSiteSlug = typeof body?.siteSlug === 'string' ? body.siteSlug : '';
-  const siteSlug = rawSiteSlug ? cleanSiteSlug(rawSiteSlug) : null;
-  if (rawSiteSlug && !siteSlug) return reply(c, { error: 'bad_slug' }, 400);
-  if (siteSlug && !(await siteSlugFree(env, siteSlug))) return reply(c, { error: 'slug_taken' }, 409);
-
-  // Hosting in the client's own account is only offered when they granted one.
-  let host: SiteHost = 'ours';
-  let connectionId: number | null = null;
-  let accountId: string | null = null;
-  if (body?.host === 'cloudflare') {
-    const wanted = Number(body?.connectionId);
-    const connection =
-      Number.isInteger(wanted) && wanted > 0
-        ? await connectionRow(env, wanted)
-        : await env.DB.prepare(
-            'SELECT * FROM cloudflare_connections WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1',
-          )
-            .bind(user.id)
-            .first<{ id: number; user_id: string; accounts: string }>();
-    if (!connection || connection.user_id !== user.id) return reply(c, { error: 'no_cloudflare' }, 400);
-    const accounts = grantedAccounts(connection);
-    const wantedAccount = typeof body?.accountId === 'string' ? body.accountId : '';
-    const account = accounts.find((a) => a.id === wantedAccount) ?? accounts[0];
-    if (!account) return reply(c, { error: 'no_cloudflare_account' }, 400);
-    host = 'cloudflare';
-    connectionId = connection.id;
-    accountId = account.id;
-  }
-
   if (await isRateLimited(env, user.id, 'project', MAX_PROJECTS_PER_DAY, 24 * 60 * 60)) {
     return reply(c, { error: 'rate_limited' }, 429);
   }
@@ -1138,17 +1117,6 @@ portal.post('/portal/projects', async (c) => {
     ),
   ]);
 
-  // A new site starts at once: the placeholder is live while the repo is made.
-  let site: SiteRow | null = null;
-  let siteError: string | null = null;
-  if (kind === 'new') {
-    try {
-      site = await startSite(env, user, { id, slug, name }, { siteSlug, host, connectionId, accountId });
-    } catch (error) {
-      siteError = (error as Error)?.message ?? 'The site could not be started.';
-    }
-  }
-
   c.executionCtx.waitUntil(
     notifyAliOfClientMessage(env, { id: ticket.id, title, client_email: user.email }, text, true),
   );
@@ -1158,8 +1126,6 @@ portal.post('/portal/projects', async (c) => {
     {
       project: { id, slug, name, kind, repoKind, repo, brief },
       ticketId: ticket.id,
-      site: siteView(site),
-      siteError,
       repoOutcome,
       repoError,
     },
@@ -1218,15 +1184,28 @@ const siteError = (c: Ctx, error: unknown) => {
  * "new" project gets one: an existing stack is the client's to bring, with
  * its own credentials.
  */
+/**
+ * Add a site under a project. The first is the project's main site; later ones
+ * are extra addresses that share the project's code.
+ */
 portal.post('/portal/projects/:id/site', async (c) => {
   const project = await ownProject(c);
   if (!project) return reply(c, { error: 'not_found' }, 404);
-  if (project.kind !== 'new') return reply(c, { error: 'not_hosted' }, 400);
   const user = c.get('user');
   if (await isRateLimited(c.env, user.id, 'site', MAX_SITE_STARTS_PER_DAY, 24 * 60 * 60)) {
     return reply(c, { error: 'rate_limited' }, 429);
   }
-  const body = await readJson<{ host?: unknown; connectionId?: unknown; accountId?: unknown; siteSlug?: unknown }>(c);
+  const body = await readJson<{
+    name?: unknown;
+    siteSlug?: unknown;
+    host?: unknown;
+    connectionId?: unknown;
+    accountId?: unknown;
+  }>(c);
+  const rawSlug = typeof body?.siteSlug === 'string' ? body.siteSlug : '';
+  const wanted = rawSlug ? cleanSiteSlug(rawSlug) : null;
+  if (rawSlug && !wanted) return reply(c, { error: 'bad_slug' }, 400);
+  if (wanted && !(await siteSlugFree(c.env, wanted))) return reply(c, { error: 'slug_taken' }, 409);
   let host: SiteHost = 'ours';
   let connectionId: number | null = null;
   let accountId: string | null = null;
@@ -1239,7 +1218,8 @@ portal.post('/portal/projects/:id/site', async (c) => {
   }
   try {
     const site = await startSite(c.env, user, project, {
-      siteSlug: typeof body?.siteSlug === 'string' ? body.siteSlug : null,
+      name: typeof body?.name === 'string' ? body.name : null,
+      siteSlug: wanted,
       host,
       connectionId,
       accountId,
@@ -1251,11 +1231,19 @@ portal.post('/portal/projects/:id/site', async (c) => {
   }
 });
 
-/** Move a live site between our hosting and the client's Cloudflare account. */
+/** Every site under a project, main first. */
+portal.get('/portal/projects/:id/sites', async (c) => {
+  const project = await ownProject(c);
+  if (!project) return reply(c, { error: 'not_found' }, 404);
+  const { sitesDomain } = await getSettings(c.env);
+  return reply(c, { sites: (await getSites(c.env, project.id)).map((row) => siteView(row, sitesDomain)) });
+});
+
+/** Move a site between our hosting and the client's Cloudflare account. */
 portal.post('/portal/projects/:id/site/host', async (c) => {
   const project = await ownProject(c);
   if (!project) return reply(c, { error: 'not_found' }, 404);
-  const body = await readJson<{ host?: unknown; connectionId?: unknown; accountId?: unknown }>(c);
+  const body = await readJson<{ host?: unknown; connectionId?: unknown; accountId?: unknown; siteId?: unknown }>(c);
   if (body?.host !== 'ours' && body?.host !== 'cloudflare') return reply(c, { error: 'bad_host' }, 400);
   let target: { id: number; accountId: string } | null = null;
   if (body.host === 'cloudflare') {
@@ -1263,20 +1251,28 @@ portal.post('/portal/projects/:id/site/host', async (c) => {
     if ('error' in found) return reply(c, { error: found.error }, 400);
     target = { id: found.connectionId, accountId: found.accountId };
   }
-  const site = await setSiteHost(c.env, project.id, body.host, target);
+  const site = await setSiteHost(
+    c.env,
+    project.id,
+    body.host,
+    target,
+    typeof body?.siteId === 'string' ? body.siteId : null,
+  );
   if (!site) return reply(c, { error: 'not_found' }, 404);
   const { sitesDomain } = await getSettings(c.env);
   return reply(c, { site: siteView(site, sitesDomain) });
 });
 
-/** Where the site has got to. Asking moves it forward, at most every few seconds. */
+/** Where one site has got to. Asking moves it forward, at most every few seconds. */
 portal.get('/portal/projects/:id/site', async (c) => {
   const project = await ownProject(c);
   if (!project) return reply(c, { error: 'not_found' }, 404);
   const { sitesDomain } = await getSettings(c.env);
-  let site = await getSite(c.env, project.id);
+  const siteId = c.req.query('siteId') ?? null;
+  let site = siteId ? await getSiteById(c.env, siteId) : await getSite(c.env, project.id);
+  if (site && site.project_id !== project.id) return reply(c, { error: 'not_found' }, 404);
   if (site && site.state !== 'ready' && site.state !== 'failed' && now() - site.updated_at >= 4) {
-    site = await advanceSite(c.env, project.id);
+    site = await advanceSite(c.env, project.id, site.id);
   }
   return reply(c, { site: siteView(site, sitesDomain) });
 });
@@ -1289,8 +1285,9 @@ portal.post('/portal/projects/:id/site/publish', async (c) => {
   const project = await ownProject(c);
   if (!project) return reply(c, { error: 'not_found' }, 404);
   if (!(await getSettings(c.env)).clientPublish) return reply(c, { error: 'forbidden' }, 403);
+  const body = await readJson<{ siteId?: unknown }>(c);
   try {
-    const out = await publishSite(c.env, project.id);
+    const out = await publishSite(c.env, project.id, typeof body?.siteId === 'string' ? body.siteId : null);
     if ('error' in out) return siteError(c, out);
     c.executionCtx.waitUntil(
       mailAli(c.env, {
@@ -1313,8 +1310,13 @@ portal.post('/portal/projects/:id/site/rollback', async (c) => {
   const project = await ownProject(c);
   if (!project) return reply(c, { error: 'not_found' }, 404);
   if (!(await getSettings(c.env)).clientPublish) return reply(c, { error: 'forbidden' }, 403);
-  const body = await readJson<{ deployId?: unknown }>(c);
-  const out = await rollbackSite(c.env, project.id, typeof body?.deployId === 'string' ? body.deployId : '');
+  const body = await readJson<{ deployId?: unknown; siteId?: unknown }>(c);
+  const out = await rollbackSite(
+    c.env,
+    project.id,
+    typeof body?.deployId === 'string' ? body.deployId : '',
+    typeof body?.siteId === 'string' ? body.siteId : null,
+  );
   if ('error' in out) return siteError(c, out);
   return reply(c, {
     ok: true,
@@ -1323,11 +1325,12 @@ portal.post('/portal/projects/:id/site/rollback', async (c) => {
   });
 });
 
-/** The site's deploy history, newest first. */
+/** One site's deploy history, newest first. */
 portal.get('/portal/projects/:id/site/deploys', async (c) => {
   const project = await ownProject(c);
   if (!project) return reply(c, { error: 'not_found' }, 404);
-  return reply(c, { deploys: await listDeploys(c.env, project.id) });
+  const siteId = c.req.query('siteId') ?? null;
+  return reply(c, { deploys: await listDeploys(c.env, project.id, 50, siteId) });
 });
 
 /* —— the client's own agent: context, workspace, a change, a build —— */
@@ -2204,7 +2207,7 @@ portal.get('/admin/projects', async (c) => {
     c.env.DB.prepare(
       `SELECT project_id, count(*) AS n FROM tickets WHERE project_id IS NOT NULL GROUP BY project_id`,
     ).all<{ project_id: string; n: number }>(),
-    sitesById(c.env),
+    sitesByProject(c.env),
     c.env.DB.prepare('SELECT id, user_id, account_login FROM github_installations').all<{
       id: number;
       user_id: string | null;
@@ -2228,7 +2231,8 @@ portal.get('/admin/projects', async (c) => {
       const kind = isProjectKind(project.kind) ? project.kind : 'existing';
       const repoKind = isRepoKind(project.repo_kind) ? project.repo_kind : 'none';
       const brief = parseBrief(project.brief);
-      const site = siteView(sites.get(project.id), sitesDomain);
+      const rows = sites.get(project.id) ?? [];
+      const site = siteView(rows[0], sitesDomain);
       // For a project never linked, offer the installation of a client who is
       // linked to it: that is the account the repo can now be created in.
       const clientInstallation = (usersByProject.get(project.id) ?? [])
@@ -2243,6 +2247,7 @@ portal.get('/admin/projects', async (c) => {
         kind,
         repoKind,
         site,
+        sites: rows.map((row) => siteView(row, sitesDomain)),
         githubAccount: installation?.account_login ?? null,
         githubInstallationId: project.github_installation_id ?? clientInstallation?.id ?? null,
         repoStatus: repoStatus(project),
@@ -2265,27 +2270,33 @@ portal.get('/admin/projects', async (c) => {
 /** Retry a stopped site: back to allocating, so whatever it waited for is tried again. */
 portal.post('/admin/projects/:id/site/retry', async (c) => {
   const env = c.env;
-  const site = await getSite(env, c.req.param('id'));
+  const body = await readJson<{ siteId?: unknown }>(c);
+  const site =
+    typeof body?.siteId === 'string' && body.siteId
+      ? await getSiteById(env, body.siteId)
+      : await getSite(env, c.req.param('id'));
   if (!site) return reply(c, { error: 'not_found' }, 404);
   await env.DB.prepare(
     `UPDATE sites SET state = 'allocating', error = NULL, failure_alerted_at = NULL, created_at = ?, updated_at = ?
-      WHERE project_id = ?`,
+      WHERE id = ?`,
   )
-    .bind(now(), now(), site.project_id)
+    .bind(now(), now(), site.id)
     .run();
   const { sitesDomain } = await getSettings(env);
-  return reply(c, { site: siteView(await advanceSite(env, site.project_id), sitesDomain) });
+  return reply(c, { site: siteView(await advanceSite(env, site.project_id, site.id), sitesDomain) });
 });
 
 /** The deploy history of a site: what publish and rollback point at. */
 portal.get('/admin/projects/:id/site/deploys', async (c) => {
-  const site = await getSite(c.env, c.req.param('id'));
+  const siteId = c.req.query('siteId');
+  const site = siteId ? await getSiteById(c.env, siteId) : await getSite(c.env, c.req.param('id'));
   if (!site) return reply(c, { error: 'not_found' }, 404);
-  return reply(c, { deploys: await listDeploys(c.env, site.project_id) });
+  return reply(c, { deploys: await listDeploys(c.env, site.project_id, 50, site.id) });
 });
 
 portal.post('/admin/projects/:id/site/publish', async (c) => {
-  const out = await publishSite(c.env, c.req.param('id'));
+  const body = await readJson<{ siteId?: unknown }>(c);
+  const out = await publishSite(c.env, c.req.param('id'), typeof body?.siteId === 'string' ? body.siteId : null);
   if ('error' in out) return siteError(c, out);
   return reply(c, {
     ok: true,
@@ -2295,8 +2306,13 @@ portal.post('/admin/projects/:id/site/publish', async (c) => {
 });
 
 portal.post('/admin/projects/:id/site/rollback', async (c) => {
-  const body = await readJson<{ deployId?: unknown }>(c);
-  const out = await rollbackSite(c.env, c.req.param('id'), typeof body?.deployId === 'string' ? body.deployId : '');
+  const body = await readJson<{ deployId?: unknown; siteId?: unknown }>(c);
+  const out = await rollbackSite(
+    c.env,
+    c.req.param('id'),
+    typeof body?.deployId === 'string' ? body.deployId : '',
+    typeof body?.siteId === 'string' ? body.siteId : null,
+  );
   if ('error' in out) return siteError(c, out);
   return reply(c, {
     ok: true,
@@ -2417,7 +2433,7 @@ portal.post('/admin/projects/:id/repo/github', async (c) => {
 /** Move a site between our hosting and a client's Cloudflare account (Ali's switch). */
 portal.post('/admin/projects/:id/site/host', async (c) => {
   const id = c.req.param('id');
-  const body = await readJson<{ host?: unknown; connectionId?: unknown; accountId?: unknown }>(c);
+  const body = await readJson<{ host?: unknown; connectionId?: unknown; accountId?: unknown; siteId?: unknown }>(c);
   if (body?.host !== 'ours' && body?.host !== 'cloudflare') return reply(c, { error: 'bad_host' }, 400);
   let target: { id: number; accountId: string } | null = null;
   if (body.host === 'cloudflare') {
@@ -2429,7 +2445,13 @@ portal.post('/admin/projects/:id/site/host', async (c) => {
     if (!account) return reply(c, { error: 'no_cloudflare_account' }, 400);
     target = { id: connection.id, accountId: account.id };
   }
-  const site = await setSiteHost(c.env, id, body.host, target);
+  const site = await setSiteHost(
+    c.env,
+    id,
+    body.host,
+    target,
+    typeof body?.siteId === 'string' ? body.siteId : null,
+  );
   if (!site) return reply(c, { error: 'not_found' }, 404);
   const { sitesDomain } = await getSettings(c.env);
   return reply(c, { site: siteView(site, sitesDomain) });
@@ -2453,15 +2475,16 @@ portal.delete('/admin/projects/:id', async (c) => {
     .first<{ n: number }>();
   if (open?.n) return reply(c, { error: 'open_tickets', count: open.n }, 409);
 
-  const site = await getSite(env, id);
-  if (site && env.SITES) {
-    // Everything under the site's prefix: manifests and blobs.
-    let cursor: string | undefined;
-    do {
-      const page = await env.SITES.list({ prefix: `sites/${site.slug}/`, cursor });
-      if (page.objects.length) await env.SITES.delete(page.objects.map((o) => o.key));
-      cursor = page.truncated ? page.cursor : undefined;
-    } while (cursor);
+  if (env.SITES) {
+    // Every site under the project: each has its own prefix.
+    for (const site of await getSites(env, id)) {
+      let cursor: string | undefined;
+      do {
+        const page = await env.SITES.list({ prefix: `sites/${site.slug}/`, cursor });
+        if (page.objects.length) await env.SITES.delete(page.objects.map((o) => o.key));
+        cursor = page.truncated ? page.cursor : undefined;
+      } while (cursor);
+    }
   }
   await env.DB.prepare('DELETE FROM projects WHERE id = ?').bind(id).run();
   return reply(c, { ok: true });
@@ -2469,24 +2492,56 @@ portal.delete('/admin/projects/:id', async (c) => {
 
 /** Build the preview branch as it is and deploy it: a node holding the project does it on its next beat. */
 portal.post('/admin/projects/:id/site/rebuild', async (c) => {
+  const body = await readJson<{ siteId?: unknown }>(c);
+  const site =
+    typeof body?.siteId === 'string' && body.siteId
+      ? await getSiteById(c.env, body.siteId)
+      : await getSite(c.env, c.req.param('id'));
+  if (!site) return reply(c, { error: 'not_found' }, 404);
   const res = await c.env.DB.prepare(
-    `UPDATE sites SET rebuild_requested_at = ?, rebuild_error = NULL WHERE project_id = ? AND state = 'ready' AND host = 'ours'`,
+    `UPDATE sites SET rebuild_requested_at = ?, rebuild_error = NULL WHERE id = ? AND state = 'ready' AND host = 'ours'`,
   )
-    .bind(now(), c.req.param('id'))
+    .bind(now(), site.id)
     .run();
   if (!res.meta.changes) return reply(c, { error: 'not_ready' }, 409);
   return reply(c, { ok: true });
 });
 
-/** Host a project on malipetek.online, the same as a client's "Set up my site", for any project. */
+/** Add a site to any project, the same as a client's "Add a site". */
 portal.post('/admin/projects/:id/site', async (c) => {
   const project = await c.env.DB.prepare('SELECT id, name, slug FROM projects WHERE id = ?')
     .bind(c.req.param('id'))
     .first<{ id: string; name: string; slug: string }>();
   if (!project) return reply(c, { error: 'not_found' }, 404);
+  const body = await readJson<{ name?: unknown; siteSlug?: unknown; host?: unknown; connectionId?: unknown; accountId?: unknown }>(c);
+  const rawSlug = typeof body?.siteSlug === 'string' ? body.siteSlug : '';
+  const wanted = rawSlug ? cleanSiteSlug(rawSlug) : null;
+  if (rawSlug && !wanted) return reply(c, { error: 'bad_slug' }, 400);
+  if (wanted && !(await siteSlugFree(c.env, wanted))) return reply(c, { error: 'slug_taken' }, 409);
+  let host: SiteHost = 'ours';
+  let connectionId: number | null = null;
+  let accountId: string | null = null;
+  if (body?.host === 'cloudflare') {
+    const wantedConnection = Number(body?.connectionId);
+    const connection = Number.isInteger(wantedConnection) && wantedConnection > 0 ? await connectionRow(c.env, wantedConnection) : null;
+    if (!connection) return reply(c, { error: 'no_cloudflare' }, 400);
+    const accounts = grantedAccounts(connection);
+    const account = accounts.find((a) => a.id === body.accountId) ?? accounts[0];
+    if (!account) return reply(c, { error: 'no_cloudflare_account' }, 400);
+    host = 'cloudflare';
+    connectionId = connection.id;
+    accountId = account.id;
+  }
   try {
-    const site = await startSite(c.env, c.get('user'), project);
-    return reply(c, { site: siteView(site) }, 201);
+    const site = await startSite(c.env, c.get('user'), project, {
+      name: typeof body?.name === 'string' ? body.name : null,
+      siteSlug: wanted,
+      host,
+      connectionId,
+      accountId,
+    });
+    const { sitesDomain } = await getSettings(c.env);
+    return reply(c, { site: siteView(site, sitesDomain) }, 201);
   } catch (error) {
     return siteError(c, error);
   }
