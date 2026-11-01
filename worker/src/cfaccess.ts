@@ -116,35 +116,6 @@ export function grantedAccounts(row: Pick<ConnectionRow, 'accounts'>): GrantedAc
 }
 
 /**
- * Check a pasted Cloudflare API token and list the accounts it reaches. The
- * token is a durable alternative to OAuth, whose grants expire after an hour
- * unless Cloudflare issues a refresh token (this client does not).
- */
-export async function verifyApiToken(
-  env: Env,
-  token: string,
-): Promise<{ accounts: GrantedAccount[] } | { error: string }> {
-  const headers = { authorization: `Bearer ${token}`, accept: 'application/json' };
-  const verify = await fetch(`${apiBase(env)}/user/tokens/verify`, {
-    headers,
-    signal: AbortSignal.timeout(15_000),
-  });
-  const body = (await verify.json().catch(() => null)) as
-    | { success?: boolean; result?: { status?: string }; errors?: { message?: string }[] }
-    | null;
-  if (!verify.ok || !body?.success || body.result?.status !== 'active') {
-    return { error: body?.errors?.[0]?.message ?? `Cloudflare answered ${verify.status}` };
-  }
-  const res = await fetch(`${apiBase(env)}/accounts?per_page=50`, { headers, signal: AbortSignal.timeout(15_000) });
-  const data = (await res.json().catch(() => null)) as { result?: { id?: string; name?: string }[] } | null;
-  const accounts = (data?.result ?? [])
-    .filter((a) => a.id)
-    .map((a) => ({ id: String(a.id), name: String(a.name ?? a.id).slice(0, 120) }));
-  if (!accounts.length) return { error: 'the token reaches no Cloudflare account' };
-  return { accounts };
-}
-
-/**
  * A usable access token for a connection, refreshed when it is about to lapse
  * and a refresh token exists. Null when the grant has lapsed for good: the
  * portal shows "reconnect".

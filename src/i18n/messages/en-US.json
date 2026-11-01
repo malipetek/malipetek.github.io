@@ -660,12 +660,5 @@
   "views.sites.moveNone": "You need another project first.",
   "board.lanes": "Projects",
   "board.gettingSetUp": "Getting set up",
-  "views.cloudflare.useToken": "Use an API token instead",
-  "views.cloudflare.tokenHint": "Create a token in Cloudflare → My Profile → API Tokens with Account Settings: Read, Workers Scripts: Edit, Workers Routes: Edit, Zone: Read and DNS: Edit. It lasts until you delete it there, unlike the one-hour OAuth connection.",
-  "views.cloudflare.tokenPlaceholder": "Cloudflare API token",
-  "views.cloudflare.connectToken": "Connect token",
-  "views.cloudflare.tokenConnected": "API token connected.",
-  "views.cloudflare.apiToken": "API token",
-  "views.cloudflare.tokenLasts": "lasts until you revoke it",
   "views.repo.githubPermission": "The GitHub App is missing the Administration permission, so it cannot create a repository in your account. Grant it in the GitHub App settings, or choose “Create it in our account” — work starts either way."
 }

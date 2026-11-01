@@ -22,7 +22,6 @@ import {
   open,
   seal,
   tokenRequest,
-  verifyApiToken,
   type ConnectionRow,
 } from './cfaccess.ts';
 
@@ -41,6 +40,8 @@ export const CLOUDFLARE_SCOPES = [
   'workers-routes.write',
   'zone.read',
   'dns.write',
+  // A refresh token; the client now allows it, so a grant no longer dies after an hour.
+  'offline_access',
 ];
 
 // The zone mount, never the request's origin: through the site's INTERCOM
@@ -159,38 +160,6 @@ cfconnect.get('/portal/cloudflare', async (c) => {
     })),
     connectUrl,
   });
-});
-
-/**
- * Connect with a Cloudflare API token instead of OAuth. OAuth grants live an
- * hour and this client cannot be granted `offline_access`, so a token is the
- * durable option: it works until the client deletes it in Cloudflare.
- */
-cfconnect.post('/portal/cloudflare/token', async (c) => {
-  const env = c.env;
-  const user = await browserUser(env, c);
-  if (!user) return reply(c, { error: 'unauthorized' }, 401);
-  const body = (await c.req.json().catch(() => null)) as { token?: unknown } | null;
-  const token = typeof body?.token === 'string' ? body.token.trim() : '';
-  if (!/^[A-Za-z0-9_-]{20,200}$/.test(token)) return reply(c, { error: 'bad_token' }, 400);
-  const verified = await verifyApiToken(env, token).catch((error) => ({ error: (error as Error)?.message ?? 'Cloudflare refused the token' }));
-  if ('error' in verified) return reply(c, { error: 'bad_token', message: verified.error }, 400);
-  const t = now();
-  const { meta } = await env.DB.prepare(
-    `INSERT INTO cloudflare_connections (user_id, kind, label, accounts, scopes, access_enc, refresh_enc, expires_at, created_at, updated_at)
-     VALUES (?, 'token', ?, ?, ?, ?, NULL, NULL, ?, ?)`,
-  )
-    .bind(
-      user.id,
-      'API token',
-      JSON.stringify(verified.accounts),
-      'api-token',
-      await seal(env, token),
-      t,
-      t,
-    )
-    .run();
-  return reply(c, { ok: true, id: meta.last_row_id, accounts: verified.accounts });
 });
 
 /** Cloudflare's redirect after consent (or refusal). Always lands back on the portal's Connections page. */

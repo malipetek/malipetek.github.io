@@ -121,6 +121,14 @@ function startFakeCloudflare() {
       if (req.method === 'POST' && req.url === '/oauth2/token') {
         if (req.headers.authorization !== basic) return json(401, { error: 'invalid_client' });
         if (form.get('grant_type') === 'authorization_code' && form.get('code') === 'good-code' && /\/portal\/cloudflare\/callback$/.test(form.get('redirect_uri') ?? '')) {
+          return json(200, {
+            access_token: 'cf-access-secret',
+            refresh_token: 'cf-refresh-secret',
+            expires_in: 3600,
+            scope: 'account-settings.read memberships.read user-details.read workers-scripts.edit workers-routes.write zone.read dns.write offline_access',
+          });
+        }
+        if (form.get('grant_type') === 'refresh_token' && form.get('refresh_token') === 'cf-refresh-secret') {
           return json(200, { access_token: 'cf-access-secret', refresh_token: 'cf-refresh-secret', expires_in: 3600, scope: 'workers-scripts.edit zone.read' });
         }
         return json(400, { error: 'invalid_grant' });
@@ -635,7 +643,7 @@ const groups = {
     const first = await call('/portal/cloudflare', { auth: a.session });
     const link = new URL(first.data.connectUrl ?? 'http://x/');
     check('a client starts with no connection and a connect link', first.status === 200 && first.data.connections.length === 0 && link.pathname === '/oauth2/auth', JSON.stringify(first.data));
-    check('the link asks for exactly our scopes', link.searchParams.get('scope') === 'account-settings.read memberships.read user-details.read workers-scripts.edit workers-routes.write zone.read dns.write');
+    check('the link asks for exactly our scopes', link.searchParams.get('scope') === 'account-settings.read memberships.read user-details.read workers-scripts.edit workers-routes.write zone.read dns.write offline_access', link.searchParams.get('scope') ?? '');
     check('…returns to the Worker callback on the zone mount', link.searchParams.get('redirect_uri') === 'http://localhost:4321/api/portal/cloudflare/callback', link.searchParams.get('redirect_uri'));
     const state = link.searchParams.get('state') ?? '';
     check('…with a long signed state', state.length > 40);
@@ -652,27 +660,10 @@ const groups = {
     check('…nor can disconnect it', (await call(`/portal/cloudflare/${listed[0].id}`, { method: 'DELETE', auth: other.session })).status === 404);
     const key = (await call('/portal/agent-tokens', { method: 'POST', auth: a.session, body: { label: 'cf test' } })).data.token;
     check('an assistant key cannot manage Cloudflare', (await call('/portal/cloudflare', { auth: key })).status === 401);
-    const tokenUser = account(`cf-token-${Date.now()}@example.com`);
-    check(
-      'a short token is refused',
-      (await call('/portal/cloudflare/token', { method: 'POST', auth: tokenUser.session, body: { token: 'short' } })).status === 400,
-    );
-    const tokenMade = await call('/portal/cloudflare/token', { method: 'POST', auth: tokenUser.session, body: { token: 'cf-api-token-0123456789' } });
-    check('an API token connects', tokenMade.status === 200 && tokenMade.data.accounts?.[0]?.name === 'Rosa Florist LLC', JSON.stringify(tokenMade.data));
-    const tokenList = (await call('/portal/cloudflare', { auth: tokenUser.session })).data.connections;
-    check(
-      'the token has no expiry and is marked as a token',
-      tokenList.length === 1 && tokenList[0].kind === 'token' && tokenList[0].lapsed === false && tokenList[0].expiresAt === null,
-      JSON.stringify(tokenList),
-    );
-    check(
-      'Cloudflare refusing the token is reported',
-      (await call('/portal/cloudflare/token', { method: 'POST', auth: other.session, body: { token: 'invalid-token-0123456789' } })).status === 400,
-    );
-    check('a token can be disconnected', (await call(`/portal/cloudflare/${tokenList[0].id}`, { method: 'DELETE', auth: tokenUser.session })).status === 200);
-
     // A site in the client's own account: the placeholder is mirrored at once,
-    // and the address they chose is the one that is taken.
+    // and the address they chose is the one that is taken. Expire the grant
+    // first: the mirror must refresh it, not ask the client to reconnect.
+    sql(`UPDATE cloudflare_connections SET expires_at = strftime('%s','now') - 60 WHERE id = ${listed[0].id}`);
     const slug = `rosa-${Date.now() % 100000}`;
     const created = await newProject(a.session, {
       kind: 'new',
@@ -692,6 +683,10 @@ const groups = {
       site?.host === 'cloudflare' && /\.e2e-sub\.workers\.dev$/.test(site?.previewUrl ?? ''),
       JSON.stringify(site),
     );
+    const renewed = sql(`SELECT expires_at FROM cloudflare_connections WHERE id = ${listed[0].id}`)
+      .toString()
+      .match(/(\d{9,})/)?.[1];
+    check('an expired grant is refreshed before the deploy', Number(renewed) > Math.floor(Date.now() / 1000), renewed);
     check(
       'the preview and production scripts were uploaded',
       CF.deploys.includes(`malipetek-${slug}-preview`) && CF.deploys.includes(`malipetek-${slug}`),

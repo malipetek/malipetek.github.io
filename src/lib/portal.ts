@@ -311,7 +311,6 @@ export function errorText(error: unknown, t?: ((key: string, vars?: Record<strin
     bad_brief: 'Answer the questions — a sentence each is enough.',
     bad_repo: 'That does not look like a repo URL. Send a https:// or git@ link, or pick a zip.',
     slug_taken: 'A project with that slug already exists.',
-    bad_token: 'Cloudflare refused that token. Check its permissions and try again.',
     bad_site: 'Pick a site in the same project.',
     bad_priority: 'That priority is out of range.',
     bad_requires: 'Those capabilities are not valid.',
