@@ -14,7 +14,7 @@
  */
 import { Hono } from 'hono';
 import { now, sessionUser } from './portal.ts';
-import { corsHeaders, type Env, type HonoEnv } from './shared.ts';
+import { corsHeaders, isStudioRepo, type Env, type HonoEnv } from './shared.ts';
 import type { Context } from 'hono';
 import { APP_SLUG, GH_API, appJwt, ensureRepo, ghHeaders, installationToken, projectInstallation, useClientRepo } from './ghapp.ts';
 
@@ -239,6 +239,7 @@ github.get('/portal/github', async (c) => {
     installations: results ?? [],
     // A client who named a repo they own: until the app is installed on that
     // account, nodes see a 404 and no work starts. Say it where the button is.
+    // Repos in the studio's own account are read with the nodes' credential.
     unconnected: (
       await c.env.DB.prepare(
         `SELECT p.slug, p.name, p.repo FROM projects p JOIN user_projects up ON up.project_id = p.id
@@ -247,7 +248,7 @@ github.get('/portal/github', async (c) => {
       )
         .bind(user.id)
         .all<{ slug: string; name: string; repo: string }>()
-    ).results ?? [],
+    ).results?.filter((p) => !isStudioRepo(c.env, p.repo)) ?? [],
     installUrl: `https://github.com/apps/${APP_SLUG}/installations/new?state=${encodeURIComponent(await signState(c.env, user.id))}`,
   });
 });

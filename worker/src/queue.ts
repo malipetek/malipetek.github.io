@@ -13,7 +13,7 @@
  * needs" — `queueView` says which, and the cron in cloudflare.ts mails Ali once
  * when an item has waited too long for a node that is not coming.
  */
-import { now, type Env } from './shared.ts';
+import { isStudioRepo, now, type Env } from './shared.ts';
 import { HOURLY_USD, money, priceOf } from '../../src/lib/pricing.js';
 import { priorRuns, type PriorRun } from './runs.ts';
 import { withFiles, type FileMeta } from './files.ts';
@@ -682,7 +682,7 @@ export async function queueView(env: Env) {
 
   return (results ?? []).map((item) => {
     const requires = parseList(item.requires);
-    const { eligible, reason } = explainEligibility(item, requires, nodes, t);
+    const { eligible, reason } = explainEligibility(env, item, requires, nodes, t);
     return {
       id: item.id,
       title: item.title,
@@ -704,7 +704,7 @@ export async function queueView(env: Env) {
 type NodeView = Awaited<ReturnType<typeof nodesView>>[number];
 
 /** Which nodes could take an item now, and if none, the most useful reason why. */
-function explainEligibility(item: QueueTicket, requires: string[], nodes: NodeView[], t: number) {
+function explainEligibility(env: Env, item: QueueTicket, requires: string[], nodes: NodeView[], t: number) {
   if (!item.slug) return { eligible: [], reason: 'No project set — it cannot be claimed until it has one.' };
   const left = budgetLeft(item);
   if (left !== null && left <= 0) {
@@ -732,7 +732,7 @@ function explainEligibility(item: QueueTicket, requires: string[], nodes: NodeVi
         reason: `No node can clone ${item.repo}: ${item.repo_error}. Ask the client to connect GitHub in their portal (Connections) and allow this repo, or to add malipetek as a collaborator.`,
       };
     }
-    if (!item.github_installation_id) {
+    if (!item.github_installation_id && !isStudioRepo(env, item.repo)) {
       return {
         eligible: [],
         reason: `${item.slug} names ${item.repo}, but the client has not connected GitHub — a private repo cannot be read. Ask them to connect it in their portal (Connections).`,
