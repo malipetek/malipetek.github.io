@@ -621,18 +621,26 @@ portal.use('*', async (c, next) => {
   // origin allow-list and the preflight shortcut are only correct for the
   // portal's own token-bearing routes: /kb is a public API (wildcard CORS) and
   // /mcp validates Origin itself as the MCP spec's rebinding guard requires.
+  // Preview feedback is called from a preview origin, not the portal, and its
+  // site token is the credential; the route echoes its own origin.
+  const isPreviewFeedback = path === '/portal/preview-feedback';
   const isPortalPath =
     path.startsWith('/auth/') || path.startsWith('/portal/') || path.startsWith('/admin/');
 
   if (isPortalPath) {
-    if (o && !ALLOWED_ORIGINS.includes(o)) return reply(c, { error: 'origin_not_allowed' }, 403);
+    if (!isPreviewFeedback && o && !ALLOWED_ORIGINS.includes(o)) return reply(c, { error: 'origin_not_allowed' }, 403);
 
     // Preflight must be answered before the auth guards below. A 401 to OPTIONS
     // is a CORS failure, not an auth failure: the browser then refuses the real
     // request, so every signed-in page silently breaks and looks like a dead
     // session.
     if (c.req.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: corsHeaders(o) });
+      const headers = new Headers(corsHeaders(o));
+      if (isPreviewFeedback && o) {
+        headers.set('Access-Control-Allow-Origin', o);
+        headers.set('Vary', 'Origin');
+      }
+      return new Response(null, { status: 204, headers });
     }
   }
 

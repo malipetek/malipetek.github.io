@@ -525,9 +525,15 @@ const groups = {
     form.append('page', `${site.previewUrl}/?from=portal&mf=${token}`);
     form.append('viewport', '390x844');
     form.append('files', new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }), 'screenshot.png');
-    const res = await fetch(`${W}/portal/preview-feedback`, { method: 'POST', body: form });
+    const previewOrigin = `${site.previewUrl}`;
+    const res = await fetch(`${W}/portal/preview-feedback`, { method: 'POST', body: form, headers: { origin: previewOrigin } });
     const data = await res.json();
     check('the preview files a request', res.status === 201 && Number.isInteger(data.ticketId), JSON.stringify(data));
+    check(
+      'the preview origin may read the answer',
+      res.headers.get('access-control-allow-origin') === previewOrigin,
+      `${res.status} ${res.headers.get('access-control-allow-origin')}`,
+    );
 
     const ticket = (await call(`/portal/tickets/${data.ticketId}`, { auth: a.session })).data;
     check(
@@ -546,19 +552,20 @@ const groups = {
       JSON.stringify(ticket.messages),
     );
 
+    const foreign = { origin: 'https://elsewhere.example' };
     const bad = new FormData();
     bad.append('token', 'f'.repeat(36));
     bad.append('body', 'anything');
-    check('an unknown token is refused', (await fetch(`${W}/portal/preview-feedback`, { method: 'POST', body: bad })).status === 404);
+    check('an unknown token is refused', (await fetch(`${W}/portal/preview-feedback`, { method: 'POST', body: bad, headers: foreign })).status === 404);
 
     const malformed = new FormData();
     malformed.append('token', 'not-a-token');
     malformed.append('body', 'anything');
-    check('a malformed token is refused', (await fetch(`${W}/portal/preview-feedback`, { method: 'POST', body: malformed })).status === 401);
+    check('a malformed token is refused', (await fetch(`${W}/portal/preview-feedback`, { method: 'POST', body: malformed, headers: foreign })).status === 401);
 
     const empty = new FormData();
     empty.append('token', token);
-    check('an empty note is refused', (await fetch(`${W}/portal/preview-feedback`, { method: 'POST', body: empty })).status === 400);
+    check('an empty note is refused', (await fetch(`${W}/portal/preview-feedback`, { method: 'POST', body: empty, headers: foreign })).status === 400);
   },
 
   async sites({ admin }) {
