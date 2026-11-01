@@ -937,6 +937,7 @@ function HostSwitch({ project, site }) {
     api('/portal/cloudflare').then(setCloudflare, () => setCloudflare({ connections: [] }));
   }, []);
   const connections = (cloudflare?.connections ?? []).filter((c) => !c.lapsed);
+  const canDeploy = connections.some((c) => (c.scopes ?? []).includes('workers-scripts.admin'));
   const move = async (host) => {
     setBusy(true);
     try {
@@ -956,9 +957,15 @@ function HostSwitch({ project, site }) {
     return (
       <>
         {site.cloudflare?.error && connections.length ? (
-          <button type="button" className="cp-linkbtn" disabled={busy} onClick={() => move('cloudflare')}>
-            {t('views.site.retryCloudflare', { account: connections[0]?.accounts?.map((a) => a.name).join(', ') || '' })}
-          </button>
+          canDeploy ? (
+            <button type="button" className="cp-linkbtn" disabled={busy} onClick={() => move('cloudflare')}>
+              {t('views.site.retryCloudflare', { account: connections[0]?.accounts?.map((a) => a.name).join(', ') || '' })}
+            </button>
+          ) : (
+            <a className="cp-linkbtn" href={href('connections')}>
+              {t('views.site.grantCloudflare')}
+            </a>
+          )
         ) : null}
         <button type="button" className="cp-linkbtn" disabled={busy} onClick={() => move('ours')}>
           {t('views.site.moveToOurs')}
