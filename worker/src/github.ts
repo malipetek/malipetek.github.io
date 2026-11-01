@@ -437,9 +437,9 @@ github.post('/portal/projects/:id/repo', async (c) => {
       // keep GitHub's reason for the admin card.
       await c.env.DB.prepare(
         `UPDATE projects SET repo = NULL, repo_kind = 'none', repo_wanted = 1,
-           github_installation_id = NULL, repo_error = ? WHERE id = ?`,
+           github_installation_id = NULL, repo_error = NULL WHERE id = ?`,
       )
-        .bind(`github: ${message}`.slice(0, 300), project.id)
+        .bind(project.id)
         .run();
       return reply(c, { error: 'github', message, fellBack: 'ours' }, 502);
     }

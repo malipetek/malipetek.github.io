@@ -736,9 +736,12 @@ function explainEligibility(env: Env, item: QueueTicket, requires: string[], nod
       };
     }
     if (item.repo_error) {
+      const permission = /permissions requested are not granted/i.test(item.repo_error);
       return {
         eligible: [],
-        reason: `No node can clone ${item.repo}: ${item.repo_error}. Ask the client to connect GitHub in their portal (Connections) and allow this repo, or to add malipetek as a collaborator. ${portalLinks(env).connections}`,
+        reason: permission
+          ? `The GitHub App cannot create ${item.repo}: it lacks Administration: write. Grant that permission in the GitHub App settings, or use our account for this project. ${portalLinks(env).connections}`
+          : `No node can clone ${item.repo}: ${item.repo_error}. Ask the client to connect GitHub in their portal (Connections) and allow this repo, or to add malipetek as a collaborator. ${portalLinks(env).connections}`,
       };
     }
     return { eligible: [], reason: `No node has cloned ${item.slug} yet; it clones ${item.repo} on its next sync.` };

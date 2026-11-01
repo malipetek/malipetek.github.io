@@ -666,5 +666,6 @@
   "views.cloudflare.connectToken": "Connect token",
   "views.cloudflare.tokenConnected": "API token connected.",
   "views.cloudflare.apiToken": "API token",
-  "views.cloudflare.tokenLasts": "lasts until you revoke it"
+  "views.cloudflare.tokenLasts": "lasts until you revoke it",
+  "views.repo.githubPermission": "The GitHub App is missing the Administration permission, so it cannot create a repository in your account. Grant it in the GitHub App settings, or choose “Create it in our account” — work starts either way."
 }

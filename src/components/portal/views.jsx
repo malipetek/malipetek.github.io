@@ -489,7 +489,13 @@ function RepoCard({ project }) {
       ) : (
         <p className="cp-error">{t('views.repo.missing')}</p>
       )}
-      {state.error ? <p className="cp-error">{t('views.repo.githubError', { message: state.error.replace(/^github:\s*/, '') })}</p> : null}
+      {state.error ? (
+        <p className="cp-error">
+          {/permissions requested are not granted/i.test(state.error)
+            ? t('views.repo.githubPermission')
+            : t('views.repo.githubError', { message: state.error.replace(/^github:\s*/, '') })}
+        </p>
+      ) : null}
       {!state.repo || state.error ? (
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
           {github ? (

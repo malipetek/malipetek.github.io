@@ -805,7 +805,7 @@ export async function rollbackSite(
 export async function reportSiteRepo(env: Env, slug: string, repo: string): Promise<SiteRow | { code: string }> {
   const site = await getSiteBySlug(env, slug);
   if (!site) return { code: 'not_found' };
-  await env.DB.prepare(`UPDATE projects SET repo = ?, repo_kind = 'repo', repo_wanted = 0 WHERE id = ? AND (repo IS NULL OR repo = '')`)
+  await env.DB.prepare(`UPDATE projects SET repo = ?, repo_kind = 'repo', repo_wanted = 0, repo_error = NULL WHERE id = ? AND (repo IS NULL OR repo = '')`)
     .bind(repo, site.project_id)
     .run();
   return advanceSite(env, site.project_id, site.id);

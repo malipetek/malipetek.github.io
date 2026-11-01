@@ -348,9 +348,9 @@ async function tool(ctx: ToolContext, name: string, args: Record<string, unknown
           // our account (a node creates it), and say what GitHub refused.
           await env.DB.prepare(
             `UPDATE projects SET repo = NULL, repo_kind = 'none', repo_wanted = 1,
-               github_installation_id = NULL, repo_error = ? WHERE id = ?`,
+               github_installation_id = NULL, repo_error = NULL WHERE id = ?`,
           )
-            .bind(`github: ${message}`.slice(0, 300), project.id)
+            .bind(project.id)
             .run();
           return {
             result: { error: 'github', message, fellBack: 'ours' },
@@ -590,6 +590,7 @@ Rules:
 - Give absolute portal links from the state. If a connection is missing, give the signed connect link.
 - A repo warning is real only when the state says clone failed. A repo in malipetek or a public repo is readable; do not tell the client to connect GitHub because of its owner.
 - If the client replies later, continue from the thread; do not recreate what exists.
+- A new site does not need every content detail before it can start. If the product or business name, price, photos or order method are missing, file the request anyway as a scaffold: say clearly that the page must use marked placeholders and that the client will fill them in. Ask for the details in your reply. Do not block the build on them.
 
 Current state:
 ${JSON.stringify(state, null, 2)}`;

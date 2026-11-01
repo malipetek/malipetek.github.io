@@ -2549,9 +2549,9 @@ portal.post('/admin/projects/:id/repo/github', async (c) => {
     const message = (error as Error)?.message ?? 'Could not create the repo.';
     await c.env.DB.prepare(
       `UPDATE projects SET repo = NULL, repo_kind = 'none', repo_wanted = 1,
-         github_installation_id = NULL, repo_error = ? WHERE id = ?`,
+         github_installation_id = NULL, repo_error = NULL WHERE id = ?`,
     )
-      .bind(`github: ${message}`.slice(0, 300), id)
+      .bind(id)
       .run();
     return reply(c, { error: 'github', message, fellBack: 'ours' }, 502);
   }
