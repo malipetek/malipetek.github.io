@@ -481,6 +481,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
     overflow-y: auto;
     columns: 2;
     column-gap: 1.2rem;
+    max-width: min(28rem, calc(100vw - 2rem));
     list-style: none;
     background: var(--bone);
     border: 1px solid var(--rule-strong);
@@ -501,6 +502,12 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
   .lang-menu a[aria-current] {
     color: var(--ink);
     font-weight: 600;
+  }
+
+  @media (max-width: 32rem) {
+    .lang-menu ul {
+      columns: 1;
+    }
   }
 
   /* The language the browser asked for, when it is not the one on screen. */
