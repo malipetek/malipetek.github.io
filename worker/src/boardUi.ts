@@ -12,7 +12,7 @@
  * URI in BOARD_UI_URI and in the tool's _meta (clientTools.ts).
  */
 
-export const BOARD_UI_URI = 'ui://malipetek/board-v1.html';
+export const BOARD_UI_URI = 'ui://malipetek/board-v2.html';
 
 export const BOARD_MIME = 'text/html;profile=mcp-app';
 
@@ -128,7 +128,19 @@ export const BOARD_HTML = `<!DOCTYPE html>
   .mk-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 12px 0 2px; }
   h1 { font: 600 15px/1.2 var(--mk-sans); letter-spacing: -.01em; margin: 0; }
   .mk-count { font: 500 11px/1 var(--mk-mono); color: var(--mk-soft); }
-  .mk-list { margin-top: 4px; }
+  .mk-list { margin-top: 4px; display: flex; flex-direction: column; gap: 10px; }
+  /* One block per project: the thing a client thinks in. Its requests sit
+     underneath, so "what is happening on my site" is one glance, not a filter. */
+  .mk-group { border: 1px solid var(--mk-rule); border-radius: var(--mk-radius); overflow: hidden; }
+  .mk-group__head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 9px 12px; background: light-dark(#faf8f4, #1b1917);
+    border-bottom: 1px solid var(--mk-rule);
+  }
+  .mk-group__name { font: 600 12.5px/1.2 var(--mk-sans); letter-spacing: -.005em; }
+  .mk-group__meta { font: 500 10.5px/1 var(--mk-mono); color: var(--mk-soft); text-transform: uppercase; letter-spacing: .08em; }
+  .mk-group .mk-row { padding: 9px 12px; }
+  .mk-group .mk-row + .mk-row { border-top: 1px solid var(--mk-rule); }
   .mk-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -195,7 +207,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
 </div>
 
 <div class="mk-head">
-  <h1>Your requests</h1>
+  <h1>Projects &amp; requests</h1>
   <div class="mk-count" id="count">—</div>
 </div>
 
@@ -326,7 +338,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     request('ui/open-link', { url: PORTAL + '/#/ticket/' + id }).catch(function () {});
   }
 
-  function row(requestItem) {
+  function row(requestItem, showProject) {
     var status = STATUS[requestItem.status] || { label: requestItem.status || 'Unknown', tone: 'active' };
     var wrap = el('div', 'mk-row');
 
@@ -341,7 +353,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     var pill = el('span', 'mk-pill', status.label);
     pill.setAttribute('data-tone', status.tone);
     meta.appendChild(pill);
-    if (requestItem.project) meta.appendChild(el('span', null, requestItem.project));
+    if (showProject && requestItem.project) meta.appendChild(el('span', null, requestItem.project));
     var cost = money(requestItem.price_cents);
     if (cost) meta.appendChild(el('span', null, cost));
     var when = relative(requestItem.updated_at);
@@ -357,18 +369,58 @@ export const BOARD_HTML = `<!DOCTYPE html>
     return wrap;
   }
 
-  function render(board) {
+  function groupByProject(board) {
     var requests = (board && board.requests) || [];
+    var projects = (board && board.projects) || [];
+    var order = projects.map(function (p) { return p.name; });
+    var groups = new Map();
+    for (var i = 0; i < requests.length; i++) {
+      var item = requests[i];
+      var key = item.project || 'Other work';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    }
+    // Projects as the board lists them, then anything else, most recent first
+    // inside each group (the payload already arrives in that order).
+    var keys = Array.from(groups.keys()).sort(function (a, b) {
+      var ia = order.indexOf(a);
+      var ib = order.indexOf(b);
+      if (ia === -1 && ib === -1) return a.localeCompare(b);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+    return { requests: requests, groups: groups, keys: keys };
+  }
+
+  function group(name, items) {
+    var wrap = el('section', 'mk-group');
+    var head = el('div', 'mk-group__head');
+    head.appendChild(el('span', 'mk-group__name', name));
+    var open = items.filter(function (r) {
+      return r.status !== 'done' && r.status !== 'declined';
+    }).length;
+    head.appendChild(el('span', 'mk-group__meta', open === items.length ? items.length + ' open' : open + ' of ' + items.length + ' open'));
+    wrap.appendChild(head);
+    var loose = name === 'Other work';
+    for (var i = 0; i < items.length; i++) wrap.appendChild(row(items[i], loose));
+    return wrap;
+  }
+
+  function render(board) {
+    var split = groupByProject(board);
     rendered = true;
     if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
     clear(listEl);
-    countEl.textContent = requests.length === 1 ? '1 open item' : requests.length + ' items';
+    countEl.textContent = split.groups.size === 1 ? '1 project' : split.groups.size + ' projects';
 
-    if (!requests.length) {
+    if (!split.requests.length) {
       listEl.appendChild(el('div', 'mk-empty', 'No requests yet. Describe the work you need and it lands here.'));
       return;
     }
-    for (var i = 0; i < requests.length; i++) listEl.appendChild(row(requests[i]));
+    for (var i = 0; i < split.keys.length; i++) {
+      listEl.appendChild(group(split.keys[i], split.groups.get(split.keys[i])));
+    }
     notifySize();
   }
 

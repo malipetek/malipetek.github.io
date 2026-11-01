@@ -57,7 +57,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
   },
   {
     name: 'portal_board',
-    title: 'Show my requests as a card',
+    title: 'Projects & requests',
     description:
       'Draw this account’s requests as an interactive card in the conversation: status, project, cost so far, and a link into the portal for each one. Use it when the person wants to see their requests rather than read a list of them. Mention only what matters afterwards — the card shows the details.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
