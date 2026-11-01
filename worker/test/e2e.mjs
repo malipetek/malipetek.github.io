@@ -627,8 +627,11 @@ const groups = {
     // GitHub links the project to that connection by itself.
     const { project, ticketId } = (await newProject(a.session, { kind: 'existing', name: `Private Site ${Date.now() % 100000}`, brief: OLD_BRIEF, repoKind: 'repo', repo: 'https://github.com/ClientAcct/private-site' })).data;
     await approve(admin, ticketId);
+    const warned = async () => ((await call('/portal/github', { auth: a.session })).data.unconnected ?? []).some((p) => p.slug === project.slug);
+    check('naming a repo alone raises no "connect GitHub" warning: a node may read it fine', !(await warned()));
     const failed = await call(`/node/projects/${project.slug}/clone-failed`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId: 'macbook', error: 'private repo this machine has no access to' } });
     check('a node reports a failed clone', failed.status === 200);
+    check('…and only then the portal asks the client to connect GitHub', await warned());
     await node(`e2e-gh-none-${Date.now() % 100000}`, []); // a live node that does not hold the folder
     const reason = (await call('/admin/queue', { auth: admin })).data.queue?.find((i) => i.id === ticketId)?.reason ?? '';
     check('the queue says the repo cannot be cloned, and what to do', /No node can clone https:\/\/github\.com\/ClientAcct\/private-site: macbook: private repo/.test(reason) && /connect GitHub/.test(reason), reason);

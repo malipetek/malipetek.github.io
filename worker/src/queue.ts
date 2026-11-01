@@ -13,7 +13,7 @@
  * needs" — `queueView` says which, and the cron in cloudflare.ts mails Ali once
  * when an item has waited too long for a node that is not coming.
  */
-import { isStudioRepo, now, type Env } from './shared.ts';
+import { now, type Env } from './shared.ts';
 import { HOURLY_USD, money, priceOf } from '../../src/lib/pricing.js';
 import { priorRuns, type PriorRun } from './runs.ts';
 import { withFiles, type FileMeta } from './files.ts';
@@ -730,12 +730,6 @@ function explainEligibility(env: Env, item: QueueTicket, requires: string[], nod
       return {
         eligible: [],
         reason: `No node can clone ${item.repo}: ${item.repo_error}. Ask the client to connect GitHub in their portal (Connections) and allow this repo, or to add malipetek as a collaborator.`,
-      };
-    }
-    if (!item.github_installation_id && !isStudioRepo(env, item.repo)) {
-      return {
-        eligible: [],
-        reason: `${item.slug} names ${item.repo}, but the client has not connected GitHub — a private repo cannot be read. Ask them to connect it in their portal (Connections).`,
       };
     }
     return { eligible: [], reason: `No node has cloned ${item.slug} yet; it clones ${item.repo} on its next sync.` };

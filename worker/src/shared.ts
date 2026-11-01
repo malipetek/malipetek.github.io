@@ -54,8 +54,6 @@ export interface Env {
   GITHUB_APP_CLIENT_SECRET?: string;
   GITHUB_APP_PRIVATE_KEY?: string;
   GITHUB_WEBHOOK_SECRET?: string;
-  /** Var, optional. The studio's own GitHub account (nodes create repos there); default malipetek. */
-  STUDIO_GITHUB_OWNER?: string;
   /** Secrets — the `malipetek` Cloudflare OAuth client (src/cfconnect.ts). */
   CLOUDFLARE_OAUTH_CLIENT_ID?: string;
   CLOUDFLARE_OAUTH_CLIENT_SECRET?: string;
@@ -182,11 +180,3 @@ export async function verifyTurnstile(env: Env, token: string | undefined, ip: s
 }
 
 
-/**
- * A repo in the studio's own GitHub account: the nodes read and push it with
- * their own credential, so it needs no client GitHub connection.
- */
-export function isStudioRepo(env: Env, repo: string | null | undefined): boolean {
-  const owner = (env.STUDIO_GITHUB_OWNER || 'malipetek').toLowerCase();
-  return typeof repo === 'string' && repo.toLowerCase().startsWith(`https://github.com/${owner}/`);
-}

@@ -12,7 +12,6 @@ import { normalizeReport, sharedLine } from '../src/runs.ts';
 import { setupFor, slugify, type SetupInput } from '../src/setup.ts';
 import { cleanDeployManifest, cleanSiteSlug } from '../src/sites.ts';
 import { checkUploads, cleanFileName, fileType } from '../src/files.ts';
-import { isStudioRepo, type Env } from '../src/shared.ts';
 import { fillTemplate, isOptOut, localClock, parseContactsCsv, parseCsv, sendWindow, SEQUENCES } from '../src/marketing.ts';
 import { cleanPost, nextSlots, parseOutbox, slotLabel } from '../src/content.ts';
 
@@ -575,12 +574,3 @@ test('i18n: strings fill variables and plurals, and fall back along the chain', 
   assert.notEqual(shape('Hi {name}'), shape('Hi {nom}'));
 });
 
-test('github: a repo in the studio account needs no client connection', () => {
-  const env = {} as Env;
-  assert.equal(isStudioRepo(env, 'https://github.com/malipetek/ai-automation-for-my-business'), true);
-  assert.equal(isStudioRepo(env, 'https://github.com/MaliPetek/x'), true);
-  assert.equal(isStudioRepo(env, 'https://github.com/malipetek2/x'), false);
-  assert.equal(isStudioRepo(env, 'https://github.com/mapetek/akif.petek'), false);
-  assert.equal(isStudioRepo(env, null), false);
-  assert.equal(isStudioRepo({ STUDIO_GITHUB_OWNER: 'acme' } as Env, 'https://github.com/acme/site'), true);
-});
