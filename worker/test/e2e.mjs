@@ -525,6 +525,11 @@ const groups = {
       brief.includes('never heard of this') && brief.includes('Pricing is not the subject'),
       brief.slice(0, 600),
     );
+    check(
+      'the brief makes the style guide and the vibe contracting name mandatory',
+      brief.includes('marketing/style/README.md') && brief.includes('vibe contracting') && /stop-slop/.test(brief),
+      brief.slice(0, 900),
+    );
 
     await call(`/admin/tickets/${filed.data.id}/claim`, { method: 'POST', auth: admin, body: { executor: 'claude' } });
     const summary = [
@@ -544,7 +549,13 @@ const groups = {
     const reported = await call(`/admin/tickets/${filed.data.id}/run-result`, { method: 'POST', auth: admin, body: { ok: true, summary } });
     check('the run reports back', reported.status === 200, JSON.stringify(reported.data));
 
-    const posts = (await call('/admin/marketing/messages', { auth: admin })).data.messages.filter((m) => m.campaign === 'auto' && m.status === 'scheduled');
+    // Ask per post channel: the list is capped at 200, and other groups queue
+    // thousands of emails that would push the posts off it.
+    const scheduledPosts = async () =>
+      (
+        await Promise.all(['x', 'linkedin'].map((ch) => call(`/admin/marketing/messages?channel=${ch}&status=scheduled`, { auth: admin })))
+      ).flatMap((r) => r.data.messages.filter((m) => m.campaign === 'auto'));
+    const posts = await scheduledPosts();
     const now = Math.floor(Date.now() / 1000);
     check('three posts are scheduled in the future', posts.length === 3 && posts.every((m) => m.scheduledAt > now), JSON.stringify(posts.map((m) => [m.channel, m.scheduledAt])));
     check('two go to X and one to LinkedIn', posts.filter((m) => m.channel === 'x').length === 2 && posts.filter((m) => m.channel === 'linkedin').length === 1);
@@ -556,7 +567,7 @@ const groups = {
     check('a forced call files a new cycle', forced.data.filed === true && forced.data.id !== filed.data.id);
     await call(`/admin/tickets/${forced.data.id}/claim`, { method: 'POST', auth: admin, body: { executor: 'claude' } });
     await call(`/admin/tickets/${forced.data.id}/run-result`, { method: 'POST', auth: admin, body: { ok: true, summary: 'I cannot write these right now.' } });
-    const after = (await call('/admin/marketing/messages', { auth: admin })).data.messages.filter((m) => m.campaign === 'auto' && m.status === 'scheduled');
+    const after = await scheduledPosts();
     const held = (await call(`/admin/tickets/${forced.data.id}`, { auth: admin })).data;
     check('a reply without an outbox queues nothing and leaves the ticket in review', after.length === 3 && held.ticket.status === 'review');
     check('the ticket says why nothing was queued', (held.messages.find((m) => m.author === 'system' && /no readable outbox/.test(m.body)) ?? null) !== null);
