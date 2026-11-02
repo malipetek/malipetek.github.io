@@ -455,8 +455,8 @@
   "site.foot.built": "Built with Astro, hosted on Cloudflare",
   "site.lang": "Language",
   "site.lang.other": "Read this page in another language",
-  "site.home.title": "M. Ali Petek — software help by the minute, not by a quote",
-  "site.home.description": "Vibe coded most of it? Get developer help with the last mile, billed by the second. You send a request, Ali approves it, an AI agent builds it, and he checks it before anything ships.",
+  "site.home.title": "M. Ali Petek — vibe contracting: software help by the minute, not by a quote",
+  "site.home.description": "Vibe contracting: you describe the change, an AI agent builds it, and a developer signs off before it ships. Billed by the second, no quote, no minimum.",
   "site.home.cta.ticket": "Open a ticket →",
   "site.home.cta.how": "How it works ↓",
   "site.home.how.title": "How it works",
@@ -500,7 +500,7 @@
   "site.status.beta": "Beta",
   "site.status.archived": "Archived",
   "site.status.wip": "Work in progress",
-  "offer.kind": "Self-serve software contracting",
+  "offer.kind": "Vibe contracting",
   "offer.headline.1": "Software help,",
   "offer.headline.2": "by the minute.",
   "offer.priceHook": "A one-minute fix is {price}. No quote, no minimum.",
@@ -514,7 +514,7 @@
   "offer.serverless.body": "What I build runs serverless. There is no server to patch or resize, and a traffic spike is not a migration project.",
   "offer.who": "For business owners who need software work done, not a development team to manage.",
   "offer.why.yourself.instead": "vibe coding it yourself",
-  "offer.why.yourself.answer": "Do — most of it. When it stalls at the last mile, send me that part. A one-minute fix is {price} of my time, and you never wait for a quote.",
+  "offer.why.yourself.answer": "Do — it gets you most of the way. When it stalls at the last mile, hand me that part. A one-minute fix is {price} of my time, and you never wait for a quote.",
   "offer.why.chatgpt.instead": "a ChatGPT subscription",
   "offer.why.chatgpt.answer": "It writes code. It does not put it in your project, run it, or answer for it. Here the agent does the typing and a developer approves the job before it starts and checks it before you see it.",
   "offer.why.agency.instead": "a freelancer or an agency",
@@ -734,5 +734,8 @@
   "board.movedSite": "Site moved.",
   "board.zoomIn": "Zoom in",
   "board.zoomOut": "Zoom out",
-  "board.reset": "Reset the view"
+  "board.reset": "Reset the view",
+  "offer.define": "Vibe contracting: you describe the change in plain words, an AI agent builds it, and a developer who answers for the result signs off before it ships. Billed by the minute, not by the project.",
+  "offer.contrast": "Vibe coding is you and an AI. Vibe contracting is an AI and a developer who signs for its work.",
+  "offer.byo": "Already pay for ChatGPT or Claude? Connect it to your account and it can make the change itself, on a preview. I review it, and you pay only for my review minutes."
 }

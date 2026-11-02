@@ -210,7 +210,7 @@ export const SEQUENCES: Record<SequenceKind, SequenceStep[]> = {
 
 I looked at {{site}} — {{gap}}. That is usually the last mile: it works until it does not.
 
-I run a one-person dev shop with an AI agent on the tools. You send a request, I approve it, the agent builds it on a sealed copy of your project, and I check it before you see it. You pay for my minutes, billed by the second: a one-minute fix is $1.67. No quote, no minimum.
+I do what I call vibe contracting: you send a request, I approve it, an AI agent builds it on a sealed copy of your project, and I check it before you see it. You pay for my minutes, billed by the second: a one-minute fix is $1.67. No quote, no minimum.
 
 If that is on your list, send it and I will tell you whether it fits.
 
@@ -246,7 +246,7 @@ Ali`,
 
 {{gap}} — the kind of small thing that never gets to the top of the list because it is too small to hire for.
 
-That is what I do. One-person dev shop; an AI agent does the typing on a copy of your project; I approve the job and check the result before it goes live. You pay for my minutes, by the second: a one-minute fix is $1.67. No quote, no call, no minimum.
+That is what I do. I call it vibe contracting: an AI agent does the typing on a copy of your project, and I approve the job and check the result before it goes live. You pay for my minutes, by the second: a one-minute fix is $1.67. No quote, no call, no minimum.
 
 What is the smallest thing on {{site}} you have been meaning to fix? Reply with it and I will tell you if it fits.
 
@@ -280,7 +280,7 @@ Ali`,
       subject: 'A small experiment (and a favour)',
       body: `{{greeting}}
 
-I have turned the contracting work into a self-serve portal. You write what you need, I approve it, an AI agent builds it on a sealed copy of the project, and I check it before it ships. You pay for my minutes, billed by the second — a one-minute fix is $1.67. No quote, no minimum.
+I have turned my contracting work into what I call vibe contracting. You write what you need, I approve it, an AI agent builds it on a sealed copy of the project, and I check it before it ships. You pay for my minutes, billed by the second — a one-minute fix is $1.67. No quote, no minimum.
 
 I am looking for the first few real jobs to put through it. Is there a small thing on {{site}} you have been putting off? I would rather it were yours than a stranger's.
 

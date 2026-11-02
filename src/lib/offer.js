@@ -12,8 +12,25 @@ import { ATTENTION, HOURLY_USD, money, timeCents } from './pricing.js';
 /** What the quickest kind of job costs in time, from the Autopilot example. */
 const QUICK_FIX = money(timeCents(ATTENTION.find((a) => a.key === 'auto')?.typicalSeconds ?? 60));
 
+/*
+ * The category, named. "Vibe coding" is you and an AI, and nobody answers for
+ * the result. Agencies answer for it, but quote by the project. Vibe
+ * contracting is the space between: you describe the change in plain words,
+ * an agent builds it, and a developer who answers for it signs off before it
+ * ships, billed by the minute. Use the term the same way everywhere (site,
+ * posts, email, the persona) so it can stick; define it on first use.
+ */
+export const CATEGORY = 'Vibe contracting';
+
+/** The definition, for the first time a reader meets the term. */
+export const DEFINITION =
+  'Vibe contracting: you describe the change in plain words, an AI agent builds it, and a developer who answers for the result signs off before it ships. Billed by the minute, not by the project.';
+
+/** The contrast that makes the term stick. Use it once per piece, at most. */
+export const CONTRAST = 'Vibe coding is you and an AI. Vibe contracting is an AI and a developer who signs for its work.';
+
 /** The descriptor: page titles, the persona, subject lines. */
-export const SHORT = 'Human-approved, agent-built.';
+export const SHORT = 'Vibe contracting: agent-built, developer-signed.';
 
 /**
  * The primary hook is the price. The headline, in two beats so it can break
@@ -34,10 +51,17 @@ export const PUNCHLINE = ['The agent types.', 'I sign off.'];
 
 /** The one sentence. */
 export const ONE_LINE =
-  'A one-person dev shop with an AI agent on the tools. You send a request, I approve it, the agent builds it, and I check it before you see it. You pay for the minutes I spend, not the hours it would have taken.';
+  'Vibe contracting from a one-person dev shop: you send a request, I approve it, an AI agent builds it, and I check it before you see it. You pay for the minutes I spend, not the hours it would have taken.';
 
-/** What it is, in three words, for eyebrows and footers. */
-export const KIND = 'Self-serve software contracting';
+/** What it is, in two words, for eyebrows and footers. */
+export const KIND = CATEGORY;
+
+/**
+ * The self-serve half: a client's own assistant can do the typing on their
+ * subscription (the MCP tools), and I review. True of the portal today.
+ */
+export const BRING_YOUR_OWN =
+  'Already pay for ChatGPT or Claude? Connect it to your account and it can make the change itself, on a preview. I review it, and you pay only for my review minutes.';
 
 /** The pipeline. Also what the hero scene draws, in this order. */
 export const STEPS = [
@@ -92,7 +116,7 @@ export const WHY_NOT = [
   {
     key: 'yourself',
     instead: 'vibe coding it yourself',
-    answer: `Do — most of it. When it stalls at the last mile, send me that part. A one-minute fix is ${QUICK_FIX} of my time, and you never wait for a quote.`,
+    answer: `Do — it gets you most of the way. When it stalls at the last mile, hand me that part. A one-minute fix is ${QUICK_FIX} of my time, and you never wait for a quote.`,
   },
   {
     key: 'chatgpt',

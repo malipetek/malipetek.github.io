@@ -34,7 +34,8 @@ rebuild.
 
 ## The message
 
-In this order, everywhere:
+The category is **vibe contracting** — define it on first use (see
+`marketing/kit.md` → "The name"). Then, in this order, everywhere:
 
 1. **Price.** "Software help, by the minute. A one-minute fix is $1.67. No
    quote, no minimum."

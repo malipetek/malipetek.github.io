@@ -11,7 +11,10 @@ there, do not write the post.
 The reader has never heard of this. Each post is a first introduction:
 
 - Say plainly what the service is and who it is for, in the first line, before
-  anything else.
+  anything else. The service is **vibe contracting**: use the term, and define
+  it in one plain sentence the first time it appears in a post (see
+  `marketing/kit.md` → "The name"). Not every post has to lead with the term,
+  but none should describe the service under another name.
 - Pricing is not the subject. One plain sentence at most, only when the post
   needs it, and never as the opening line. The launch posts below explain the
   meter; later posts should not keep re-explaining it.
@@ -140,8 +143,8 @@ then participate like a person.
 
 ### Indie Hackers — Show IH
 
-> **I built a metered dev shop where an agent does the typing and a human
-> approves the work**
+> **Vibe contracting: a metered dev shop where an agent does the typing and a
+> human signs off on the work**
 >
 > The problem I kept running into: small software jobs are too small for an
 > agency and too risky to hand to a chatbot. So I built the middle.
@@ -197,8 +200,8 @@ Use the same short text everywhere:
 
 Longer, where the field allows:
 
-> malipetek.dev is a one-person software contracting service with an AI agent on
-> the tools. Its MCP server exposes a public knowledgebase of real agentic-coding
+> malipetek.dev is a vibe contracting service: an AI agent builds, and one
+> developer signs off on every change. Its MCP server exposes a public knowledgebase of real agentic-coding
 > problems (search, read, list) and a client portal (projects, requests, replies,
 > budgets, preview and publish). Reading needs no authentication. Writing needs a
 > key the owner mints, or the client's own portal key.
@@ -208,8 +211,8 @@ discovery; do not count it as a launch channel.
 
 ### "Available for work" listing (HN freelancer thread, local boards)
 
-> **Software help, by the minute.** One-person dev shop with an AI agent on the
-> tools: you send a request, I approve it, the agent builds it on a sealed copy
+> **Software help, by the minute.** Vibe contracting from a one-person dev shop:
+> you send a request, I approve it, the agent builds it on a sealed copy
 > of your project, and I check it before you see it. You pay for my minutes,
 > billed by the second — a one-minute fix is $1.67. No quote, no minimum.
 > Serverless, small jobs welcome. malipetek.dev
@@ -220,11 +223,12 @@ discovery; do not count it as a launch channel.
 
 ### LinkedIn headline
 
-> Software help, by the minute. Human-approved, agent-built.
+> Vibe contracting · software help, by the minute
 
 ### LinkedIn about
 
-> I run a one-person dev shop with an AI agent on the tools.
+> I do vibe contracting: an AI agent does the typing, and I sign off on every
+> change before it ships.
 >
 > You send a request — a fix, a feature, an integration that broke. I approve it
 > before anything starts. The agent does the typing in a sealed copy of your

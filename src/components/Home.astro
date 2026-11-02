@@ -11,6 +11,9 @@ import { getCollection } from "astro:content";
 import { getPosts, fmtDate, readMinutes } from "../lib/posts.js";
 import { JOBS } from "../lib/experience.js";
 import {
+  BRING_YOUR_OWN,
+  CONTRAST,
+  DEFINITION,
   KIND as OFFER_KIND,
   PRICE_NOTE,
   PRICE_RULE,
@@ -169,6 +172,11 @@ const initial = (title) =>
       <p class="block-note">{copy(t, "offer.who", WHO)}</p>
     </div>
 
+    <p class="define">
+      {copy(t, "offer.define", DEFINITION)}
+      <span class="define-contrast">{copy(t, "offer.contrast", CONTRAST)}</span>
+    </p>
+
     <ol class="steps">
       {
         STEPS.map((step, i) => (
@@ -180,6 +188,8 @@ const initial = (title) =>
         ))
       }
     </ol>
+
+    <p class="byo">{copy(t, "offer.byo", BRING_YOUR_OWN)}</p>
 
     <div class="price">
       <div class="price-head">
@@ -595,6 +605,25 @@ const initial = (title) =>
 
   .block-note {
     margin: 0;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+
+  /* The category, defined where the reader first meets it. */
+  .define {
+    margin: 0 0 1.25rem;
+    max-width: 64ch;
+    font-size: 17px;
+    line-height: 1.55;
+  }
+  .define-contrast {
+    display: block;
+    margin-top: 0.4rem;
+    color: var(--ink-soft);
+  }
+  .byo {
+    margin: 1rem 0 1.5rem;
+    max-width: 64ch;
     font-size: 14px;
     color: var(--ink-soft);
   }

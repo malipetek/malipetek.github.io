@@ -9,7 +9,7 @@ stock photography.
 
 ## Software help, by the minute.
 
-**Human-approved, agent-built.**
+**Vibe contracting: agent-built, developer-signed.**
 
 You can vibe code most of it. The last mile is where you need a developer: the
 bug it keeps bringing back, the deploy, the payments, the thing that only breaks

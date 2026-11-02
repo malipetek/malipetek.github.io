@@ -29,8 +29,8 @@ Use for Customily, TRUTH NYC, PAX Digital, Bemeir, and personal contacts.
 
 > Hi {name},
 >
-> I have turned the contracting work into a self-serve portal. You write what
-> you need, I approve it, an AI agent builds it on a sealed copy of the project,
+> I have turned my contracting work into what I call vibe contracting. You
+> write what you need, I approve it, an AI agent builds it on a sealed copy of the project,
 > and I check it before it ships. You pay for my minutes, billed by the second —
 > a one-minute fix is $1.67. No quote, no minimum.
 >
@@ -73,9 +73,9 @@ breaks.
 > I looked at {site} — {one specific, true observation}. That is usually the
 > last mile: it works until it does not.
 >
-> I run a one-person dev shop with an AI agent on the tools. You send a request,
-> I approve it, the agent builds it on a sealed copy of your project, and I
-> check it before you see it. You pay for my minutes, billed by the second: a
+> I do what I call vibe contracting: you send a request, I approve it, an AI
+> agent builds it on a sealed copy of your project, and I check it before you
+> see it. You pay for my minutes, billed by the second: a
 > one-minute fix is $1.67. No quote, no minimum.
 >
 > If {gap} is on your list, send it and I will tell you whether it fits.
@@ -112,8 +112,9 @@ site that is mostly fine and a list of small things that never get done.
 > {one specific, true observation} — the kind of small thing that never gets to
 > the top of the list because it is too small to hire for.
 >
-> That is what I do. One-person dev shop; an AI agent does the typing on a copy
-> of your project; I approve the job and check the result before it goes live.
+> That is what I do. I call it vibe contracting: an AI agent does the typing on
+> a copy of your project, and I approve the job and check the result before it
+> goes live.
 > You pay for my minutes, by the second: a one-minute fix is $1.67. No quote, no
 > call, no minimum.
 >

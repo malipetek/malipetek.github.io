@@ -1003,7 +1003,7 @@ mcp.post('/', async (c) => {
             },
             serverInfo: { name: 'malipetek-dev', title: 'malipetek.dev', version: '1.1.0' },
             instructions:
-              'malipetek.dev is a software contracting service: Ali Petek (a human) and AI agents build and change clients’ websites. It also serves a public knowledgebase of real problems from agentic coding sessions — search and read entries without signing in.\n\n' +
+              'malipetek.dev is a vibe contracting service: AI agents build and change clients’ websites, and Ali Petek (a human developer) signs off on the work. It also serves a public knowledgebase of real problems from agentic coding sessions — search and read entries without signing in.\n\n' +
               'With a connected client account there are two ways to get work done:\n' +
               '1. You make the change yourself (start_change → workspace_files/workspace_read → submit_change → preview_build → finish_change). You are the client’s own assistant on their own subscription, so this costs nothing on malipetek: no AI cost and no approval to wait for. You may change anything in their site, and say so plainly. Every change is recorded as its own request with who made it. Changes go to the preview, never straight to production. When the preview has it, show the link and ask whether to send it to Ali for review. Either way the client can take the preview live with site_publish; that is their decision and it is recorded as theirs, so confirm first and say when it includes unreviewed changes. Ali is emailed about every change, every review choice and every publish. ' +
               reviewEstimate() +

@@ -11,6 +11,49 @@ Launch assets live in `launch/`: plan, proof, one-pager, outreach, social and
 video. The only approved results are in `launch/proof.md` — pilot jobs on my own
 and demo projects, not clients. Do not call them clients.
 
+## The name: vibe contracting
+
+The service is a category of its own, and it needs a name people can repeat.
+**Vibe contracting** is that name. Use it the same way everywhere (site, posts,
+email, replies, bios) so it can stick the way "vibe coding" did.
+
+**Definition** (the first time a reader meets the term):
+
+> Vibe contracting: you describe the change in plain words, an AI agent builds
+> it, and a developer who answers for the result signs off before it ships.
+> Billed by the minute, not by the project.
+
+**Contrast** (once per piece, at most):
+
+> Vibe coding is you and an AI. Vibe contracting is an AI and a developer who
+> signs for its work.
+
+Why this name and not another:
+
+- It keeps the term the reader already knows, and "contracting" adds what vibe
+  coding lacks: someone hired, who answers for the work.
+- "Vibe coding agency" is a crowded, generic label. "Managed vibe coding" is
+  another company's product name. "Software factory" collides with a known AI
+  coding brand and an old enterprise term. Do not use any of these to describe
+  this service.
+- "Agentic engineering" describes engineers supervising agents. It is a
+  practice, not a service anyone buys. Do not borrow it.
+
+How to use it:
+
+- Lowercase in running text ("vibe contracting"), capitalised only at the start
+  of a sentence or as a label. A person doing it is a "vibe contractor"; Ali is
+  one. The verb works too: "I vibe-contracted the checkout fix."
+- Define it once, early, then use it plainly. Do not explain it twice in one
+  piece, and do not put it in quotes after the first use.
+- It names the model, not a vibe: the point is that a developer signs. Never
+  use it to suggest the work is casual or unreviewed.
+- The two ways in are both vibe contracting: Ali's agents do the work, or the
+  client's own assistant does it and Ali reviews (bring your own agent).
+- The factory is the picture, not the name: the portal and the site show a
+  workshop where requests move along a belt. Say "workshop" or "the belt" when
+  describing that picture; do not call the service a factory.
+
 ## The hooks, in order
 
 **1. Price (primary — leads everything):**
@@ -26,7 +69,7 @@ and demo projects, not clients. Do not call them clients.
 
 **3. How (supports, never leads):**
 
-> **The agent types. I sign off.** Human-approved, agent-built.
+> **The agent types. I sign off.** Vibe contracting: agent-built, developer-signed.
 
 Short alternates:
 
@@ -37,7 +80,7 @@ Short alternates:
 
 ## The pitch
 
-**One line.** A one-person dev shop with an AI agent on the tools: you send a
+**One line.** Vibe contracting from a one-person dev shop: you send a
 request, I approve it, the agent builds it, and I check it before you see it.
 
 **Thirty seconds.** Most small software jobs — a fix on the site, a new form,
@@ -112,7 +155,7 @@ I tell you why. Big rebuilds go by the clock, with me on them, not on autopilot.
 >
 > Hi {name},
 >
-> I run a one-person dev shop with an AI agent on the tools. You send a
+> I do what I call vibe contracting. You send a
 > request — a fix on {site}, a new form, an integration — I approve it, the
 > agent builds it on a copy of your project, and I check it before you see it.
 >
@@ -138,6 +181,6 @@ I tell you why. Big rebuilds go by the clock, with me on them, not on autopilot.
 
 - **Short:** Software help, by the minute. The last mile of your vibe-coded app,
   without a quote — malipetek.dev
-- **Longer:** One-person dev shop with an AI agent on the tools. You send a
+- **Longer:** Vibe contracting from a one-person dev shop. You send a
   request, I approve it, the agent builds it, I check it before you see it. You
   pay for my minutes, by the second. malipetek.dev
