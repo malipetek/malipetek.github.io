@@ -88,6 +88,14 @@ export interface Claimed {
   model: string | null;
 }
 
+/** The project's own verify command, as the node ran it. */
+export interface RunVerify {
+  command: string;
+  /** null when the command did not finish (cancelled or timed out). */
+  ok: boolean | null;
+  output: string;
+}
+
 /** A normalized run report. */
 export interface RunReport {
   ok: boolean;
@@ -110,6 +118,8 @@ export interface RunReport {
   sessionDir: string;
   /** The node says it uploaded the session log (node.ts checks R2 before keeping it). */
   sessionLog: boolean;
+  /** The project's build gate, so the pre-review can trust a pass. */
+  verify: RunVerify | null;
 }
 
 /** The claim options any caller may pass. */
@@ -163,7 +173,19 @@ export function normalizeReport(body: unknown, fallbackExecutor = 'runner'): Run
     executor: cleanExecutor(raw.executor, fallbackExecutor),
     model: cleanModel(raw.model),
     ...session(raw),
+    verify: cleanVerify(raw.verify),
   };
+}
+
+/** A bounded verify report; an absent one means the project had no gate. */
+export function cleanVerify(raw: unknown): RunVerify | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const value = raw as Record<string, unknown>;
+  const command = str(value.command, 300).trim();
+  const ok = typeof value.ok === 'boolean' ? value.ok : null;
+  const output = str(value.output, 4000).trim();
+  if (!command && ok === null && !output) return null;
+  return { command, ok, output };
 }
 
 /*
@@ -342,7 +364,7 @@ export async function finishRun(
   ticketId: number,
   report: RunReport,
   owner?: { runId: number; nodeId: string },
-): Promise<{ ok: true; costMicroUsd: number; title: string; late: boolean } | { ok: false; error: string }> {
+): Promise<{ ok: true; costMicroUsd: number; title: string; late: boolean; runId: number } | { ok: false; error: string }> {
   const ticket = await env.DB.prepare(`SELECT id, title, status FROM tickets WHERE id = ?`)
     .bind(ticketId)
     .first<{ id: number; title: string; status: string }>();
@@ -384,7 +406,8 @@ export async function finishRun(
         `UPDATE ticket_runs
             SET executor = ?, model = ?, status = ?, cost_usd = ?, cost_micro_usd = ?,
                 branch = ?, commit_sha = ?, shared_to = ?, shared_ref = ?,
-                session_id = ?, session_dir = ?, session_log = ?, diff_stat = ?, diff = ?, summary = ?, finished_at = ?
+                session_id = ?, session_dir = ?, session_log = ?, diff_stat = ?, diff = ?, summary = ?,
+                verify_ok = ?, verify_command = ?, verify_output = ?, finished_at = ?
           WHERE id = ? AND status = 'running'`,
       ).bind(
         report.executor,
@@ -402,6 +425,9 @@ export async function finishRun(
         report.diffStat || null,
         report.diff || null,
         report.summary,
+        report.verify?.ok === null || report.verify?.ok === undefined ? null : report.verify.ok ? 1 : 0,
+        report.verify?.command || null,
+        report.verify?.output || null,
         t,
         open.id,
       ),
@@ -411,8 +437,9 @@ export async function finishRun(
       env.DB.prepare(
         `INSERT INTO ticket_runs
            (ticket_id, executor, model, status, cost_usd, cost_micro_usd, branch, commit_sha, shared_to, shared_ref,
-            session_id, session_dir, session_log, diff_stat, diff, summary, started_at, finished_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            session_id, session_dir, session_log, diff_stat, diff, summary,
+            verify_ok, verify_command, verify_output, started_at, finished_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         ticketId,
         report.executor,
@@ -430,6 +457,9 @@ export async function finishRun(
         report.diffStat || null,
         report.diff || null,
         report.summary,
+        report.verify?.ok === null || report.verify?.ok === undefined ? null : report.verify.ok ? 1 : 0,
+        report.verify?.command || null,
+        report.verify?.output || null,
         t,
         t,
       ),
@@ -456,7 +486,8 @@ export async function finishRun(
       ),
     );
     await env.DB.batch(statements);
-    return { ok: true, costMicroUsd: billable ? costMicroUsd : 0, title: ticket.title, late: true };
+    const runId = open?.id ?? (await newestRunId(env, ticketId));
+    return { ok: true, costMicroUsd: billable ? costMicroUsd : 0, title: ticket.title, late: true, runId };
   }
   statements.push(
     // Re-runs add up: the client pays for every run it took.
@@ -473,14 +504,23 @@ export async function finishRun(
   );
 
   await env.DB.batch(statements);
-  return { ok: true, costMicroUsd, title: ticket.title, late: false };
+  return { ok: true, costMicroUsd, title: ticket.title, late: false, runId: open?.id ?? (await newestRunId(env, ticketId)) };
+}
+
+/** The run a report without an open row just created. */
+async function newestRunId(env: Env, ticketId: number): Promise<number> {
+  const row = await env.DB.prepare('SELECT id FROM ticket_runs WHERE ticket_id = ? ORDER BY id DESC LIMIT 1')
+    .bind(ticketId)
+    .first<{ id: number }>();
+  return row?.id ?? 0;
 }
 
 /** Every run recorded for one ticket, oldest first. */
 export async function ticketRuns(env: Env, ticketId: number) {
   const { results } = await env.DB.prepare(
     `SELECT id, executor, model, status, cost_micro_usd, cost_usd, branch, commit_sha, shared_to, shared_ref, diff_stat, diff, summary, started_at, finished_at,
-            node_id, attempt, cancel_requested, session_id, session_dir, session_log
+            node_id, attempt, cancel_requested, session_id, session_dir, session_log,
+            verify_ok, verify_command, verify_output
        FROM ticket_runs WHERE ticket_id = ? ORDER BY id`,
   )
     .bind(ticketId)

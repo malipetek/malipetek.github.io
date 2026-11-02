@@ -10,7 +10,9 @@
     "preview": "astro preview",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "changeset publish"
+    "release": "changeset publish",
+    "deploy": "astro build && wrangler deploy",
+    "predeploy": "node scripts/require-ci.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "12.6.13",

@@ -133,7 +133,13 @@ app.route('/mcp', mcp);
 // OAuth for MCP clients that will not take a pasted key. See src/oauth.ts.
 app.route('/', oauth);
 
-app.get('/health', (c) => json({ ok: true }, 200, c.req.header('Origin') ?? null));
+app.get('/health', (c) =>
+  json(
+    { ok: true, sha: c.env.BUILD_SHA || null, service: 'malipetek-intercom' },
+    200,
+    c.req.header('Origin') ?? null,
+  ),
+);
 
 /* ——————————————————————— /chat ——————————————————————— */
 

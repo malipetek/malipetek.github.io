@@ -4,6 +4,7 @@
  *
  *   pnpm test:e2e            every group
  *   pnpm test:e2e sites      only groups whose name contains "sites"
+ *   pnpm test:e2e sites,node several groups in one run (comma-separated)
  *
  * Each run gets a throwaway state folder (its own D1, KV and rate limits, with
  * every migration applied) and its own port, so
@@ -22,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 const WORKER = dirname(dirname(fileURLToPath(import.meta.url)));
 const REPO = dirname(WORKER);
-const only = process.argv[2] ?? '';
+const only = (process.argv[2] ?? '').split(',').filter(Boolean);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ——————————————————————— harness ——————————————————————— */
@@ -525,7 +526,9 @@ const groups = {
     const reported = await call(`/admin/tickets/${filed.data.id}/run-result`, { method: 'POST', auth: admin, body: { ok: true, summary } });
     check('the run reports back', reported.status === 200, JSON.stringify(reported.data));
 
-    const posts = (await call('/admin/marketing/messages', { auth: admin })).data.messages.filter((m) => m.campaign === 'auto' && m.status === 'scheduled');
+    const posts = (await call('/admin/marketing/messages?campaign=auto', { auth: admin })).data.messages.filter(
+      (m) => m.campaign === 'auto' && m.status === 'scheduled',
+    );
     const now = Math.floor(Date.now() / 1000);
     check('three posts are scheduled in the future', posts.length === 3 && posts.every((m) => m.scheduledAt > now), JSON.stringify(posts.map((m) => [m.channel, m.scheduledAt])));
     check('two go to X and one to LinkedIn', posts.filter((m) => m.channel === 'x').length === 2 && posts.filter((m) => m.channel === 'linkedin').length === 1);
@@ -537,7 +540,9 @@ const groups = {
     check('a forced call files a new cycle', forced.data.filed === true && forced.data.id !== filed.data.id);
     await call(`/admin/tickets/${forced.data.id}/claim`, { method: 'POST', auth: admin, body: { executor: 'claude' } });
     await call(`/admin/tickets/${forced.data.id}/run-result`, { method: 'POST', auth: admin, body: { ok: true, summary: 'I cannot write these right now.' } });
-    const after = (await call('/admin/marketing/messages', { auth: admin })).data.messages.filter((m) => m.campaign === 'auto' && m.status === 'scheduled');
+    const after = (await call('/admin/marketing/messages?campaign=auto', { auth: admin })).data.messages.filter(
+      (m) => m.campaign === 'auto' && m.status === 'scheduled',
+    );
     const held = (await call(`/admin/tickets/${forced.data.id}`, { auth: admin })).data;
     check('a reply without an outbox queues nothing and leaves the ticket in review', after.length === 3 && held.ticket.status === 'review');
     check('the ticket says why nothing was queued', (held.messages.find((m) => m.author === 'system' && /no readable outbox/.test(m.body)) ?? null) !== null);
@@ -887,6 +892,14 @@ const groups = {
     await call(`/node/projects/${other.slug}/clone-failed`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId: 'macbook', error: 'no access' } });
     await node(`e2e-gh-${Date.now() % 100000}`, [other.slug]);
     check('a node that holds the folder clears the failure', (await call('/admin/projects', { auth: admin })).data.projects.find((p) => p.id === other.id)?.repoStatus?.state === 'ready');
+  },
+
+  async health({ admin }) {
+    const page = await call('/admin/health', { auth: admin });
+    check('the health page answers with its checks', page.status === 200 && Array.isArray(page.data.checks), JSON.stringify(page.data).slice(0, 200));
+    check('health is admin only', (await call('/admin/health')).status === 401);
+    const shot = await call('/shot/1/before?t=nope');
+    check('a screenshot URL needs a signed token', shot.status === 404);
   },
 
   async queue({ admin }) {
@@ -1299,7 +1312,11 @@ const groups = {
     const rid = filed.value?.request_id;
     check('an assistant files a request', !filed.error && Number.isInteger(rid), filed.text);
     const read = await tool('portal_request', { request_id: rid });
-    check('…which waits for Ali, with its budget and attention', !read.error && read.value.ticket.status === 'new' && read.value.ticket.budget_cents === 2000 && read.value.ticket.attention === 'auto', read.text.slice(0, 200));
+    check(
+      '…which starts at once on Autopilot under the cap, with its budget and attention',
+      !read.error && read.value.ticket.status === 'approved' && read.value.ticket.budget_cents === 2000 && read.value.ticket.attention === 'auto',
+      read.text.slice(0, 200),
+    );
     check('it lists the account’s requests', (await tool('portal_requests', {})).value.tickets?.some((t) => t.id === rid));
     check('it lists projects with their setup', (await tool('portal_projects', {})).value.projects?.some((p) => p.id === project.id && p.setup));
     const profile = await tool('portal_profile', {});
@@ -1687,6 +1704,8 @@ async function main() {
   const vars = {
     DEV_RETURN_LINK: '1',
     RUNNER_TOKEN,
+    // CI has no .dev.vars; the suite must bring every secret it needs.
+    SESSION_SECRET: 'e2e-session-secret',
     SITE_URL: 'http://localhost:4321',
     GITHUB_WEBHOOK_SECRET: 'test-webhook-secret',
     CLOUDFLARE_OAUTH_CLIENT_ID: CF_CLIENT.id,
@@ -1734,7 +1753,7 @@ async function main() {
     const admin = (await signIn('malipetek@gmail.com')).session;
 
     for (const [name, run] of Object.entries(groups)) {
-      if (only && !name.includes(only)) continue;
+      if (only.length && !only.some((part) => name.includes(part))) continue;
       group = name;
       console.log(`${name}`);
       try {

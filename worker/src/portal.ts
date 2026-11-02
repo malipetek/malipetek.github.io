@@ -32,12 +32,16 @@
  */
 import { Hono, type Context } from 'hono';
 import { ATTENTION_KEYS, DEFAULT_ATTENTION, money, priceLine, priceOf } from '../../src/lib/pricing.js';
-import { claimTicketById, finishRun, normalizeReport, openRuns, recentRuns, sessionKey, ticketRuns } from './runs.ts';
+import { claimTicketById, finishRun, normalizeReport, openRuns, recentRuns, sessionKey, sharedLine, ticketRuns } from './runs.ts';
 import { finishContentCycle } from './content.ts';
 import { bridgeMessage, bridgeTitle, forAli, forClientMail, threadFor, type Bridged } from './translate.ts';
 import { previewStrings, tFor } from '../../src/i18n/eager.js';
 import { closestLocale, fromAcceptLanguage, TRANSLATION_ENGINES, type TranslationEngine } from '../../src/lib/locales.js';
 import { readSteps } from './steps.ts';
+import { healthMail, healthView, markHealthAlerted, runHealthChecks } from './health.ts';
+import { latestReview, reviewLine, reviewRun } from './review.ts';
+import { maybeAutoApprove } from './approve.ts';
+import { screenshotResponse, screenshotsFor, verifyShotToken } from './screenshots.ts';
 import {
   CAPABILITY_CATALOG,
   CLIENT_EXECUTOR,
@@ -347,10 +351,10 @@ export async function mailClient(env: Env, to: string, mail: Mail): Promise<bool
 }
 
 /** Mail to Ali (the pinned EMAIL binding — it can only ever reach his inbox). */
-export async function mailAli(env: Env, mail: Mail): Promise<void> {
+export async function mailAli(env: Env, mail: Mail): Promise<boolean> {
   if (!env.EMAIL) {
     console.warn('email_not_configured', mail.subject);
-    return;
+    return false;
   }
   try {
     await env.EMAIL.send({
@@ -358,9 +362,53 @@ export async function mailAli(env: Env, mail: Mail): Promise<void> {
       to: 'malipetek@gmail.com', // pinned by the binding's destination_address
       ...mail,
     });
+    return true;
   } catch (error) {
     console.error('mail_ali_failed', error);
+    return false;
   }
+}
+
+/**
+ * Run every health check and mail the transitions: once when a check starts
+ * failing, once when it recovers. Called by the five-minute cron and by
+ * Admin → Health → Run now.
+ */
+export async function runAndNotifyHealth(env: Env) {
+  const run = await runHealthChecks(env);
+  const mail = healthMail(run, `${siteUrl(env)}/portal/admin`);
+  if (mail) {
+    // Only mark a failure reported when the mail really went out, so a mailer
+    // outage retries on the next run instead of going quiet.
+    const sent = await mailAli(env, mail);
+    if (sent && run.fresh.length) await markHealthAlerted(env, run.fresh.map((check) => check.name));
+  }
+  return run;
+}
+
+/**
+ * Pre-review a finished run, then mail Ali. Both callers (the node API and the
+ * Harness) hand this to waitUntil, so the report itself is not delayed.
+ */
+export async function notifyRunFinished(
+  env: Env,
+  id: number,
+  report: ReturnType<typeof normalizeReport>,
+  done: { runId: number; late: boolean; title: string },
+  nodeId?: string,
+): Promise<void> {
+  const review = await reviewRun(env, { ticketId: id, runId: done.runId, report }).catch(() => null);
+  if (!(await getSettings(env)).notifyRunFinished) return;
+  await mailAli(env, {
+    subject: `[#${id}] ${report.executor}${nodeId ? ` on ${nodeId}` : ''} ${done.late ? 'stopped' : report.ok ? 'finished' : 'failed'}: ${done.title}`,
+    text:
+      `${review ? `${reviewLine(review)}\n\n` : ''}` +
+      `${report.summary}\n\n${report.diffStat ? `${report.diffStat}\n\n` : ''}` +
+      `${sharedLine(report, nodeId) ? `${sharedLine(report, nodeId)}\n` : ''}` +
+      `${report.branch ? `Branch: ${report.branch} (local only, nothing pushed)\n` : ''}` +
+      `Cost: $${report.costUsd.toFixed(4)}${report.model ? ` · ${report.model}` : ''}\n` +
+      `Review: ${siteUrl(env)}/portal/admin#ticket=${id}`,
+  });
 }
 
 /*
@@ -377,12 +425,20 @@ const threadFooter = (env: Env, t: TicketRef, key = 'mail.footer.thread') =>
   tFor(t.client_locale)(key, { url: `${siteUrl(env)}/portal/ticket#id=${t.id}` });
 
 export async function notifyAliOfClientMessage(env: Env, t: TicketRef, text: string, isNew: boolean) {
+  // A request that started itself (Autopilot, under the cap) must not say
+  // "Review and approve" — Ali would look for work that is already running.
+  const state = isNew
+    ? await env.DB.prepare('SELECT status, attention FROM tickets WHERE id = ?')
+        .bind(t.id)
+        .first<{ status: string; attention: string }>()
+    : null;
+  const autoApproved = state?.status === 'approved' && state.attention === 'auto';
   await mailAli(env, {
     subject: `[#${t.id}] ${isNew ? `New ticket from ${t.client_email}` : `${t.client_email} replied`}: ${aliTitle(t)}`,
     text: ticketMail(
       text,
       `Replying to this email answers ${t.client_email} — they will see it.\n` +
-        `${isNew ? 'Review and approve' : 'Open'}: ${siteUrl(env)}/portal/admin#ticket=${t.id}`,
+        `${isNew ? (autoApproved ? 'Autopilot: approved and queued without you' : 'Review and approve') : 'Open'}: ${siteUrl(env)}/portal/admin#ticket=${t.id}`,
     ),
     replyTo: await replyAddress(env, t.id, 'a'),
   });
@@ -1150,6 +1206,9 @@ portal.post('/portal/projects', async (c) => {
     ),
   ]);
 
+  // The first request of a project follows the same Autopilot rule.
+  await maybeAutoApprove(env, ticket.id);
+
   c.executionCtx.waitUntil(
     notifyAliOfClientMessage(env, { id: ticket.id, title, client_email: user.email }, text, true),
   );
@@ -1759,6 +1818,8 @@ portal.post('/portal/tickets', async (c) => {
     .first<{ id: number }>();
   if (!ticket) return reply(c, { error: 'insert_failed' }, 500);
   const stored = await postMessage(env, ticket.id, 'client', text, false, files.uploads, t);
+  // Autopilot + a budget under the cap: start without waiting for Ali.
+  const autoApproved = intake ? false : await maybeAutoApprove(env, ticket.id);
 
   const ref = { id: ticket.id, title, client_email: user.email, client_locale: user.locale };
   c.executionCtx.waitUntil(
@@ -1768,7 +1829,7 @@ portal.post('/portal/tickets', async (c) => {
       ...(intake ? [runIntake(env, ticket.id)] : []),
     ]),
   );
-  return reply(c, { id: ticket.id, files: stored, intake }, 201);
+  return reply(c, { id: ticket.id, files: stored, intake, autoApproved }, 201);
 });
 
 /* ——————————————————————— preview feedback ——————————————————————— */
@@ -2154,6 +2215,8 @@ portal.get('/admin/tickets/:id', async (c) => {
       true,
     ),
     runs: await ticketRuns(c.env, ticket.id),
+    review: await latestReview(c.env, ticket.id),
+    screenshots: await screenshotsFor(c.env, ticket.id, siteUrl(c.env)),
     land: {
       requestedAt: land?.land_requested_at ?? null,
       ref: land?.landed_ref ?? null,
@@ -2414,17 +2477,8 @@ portal.post('/admin/tickets/:id/run-result', async (c) => {
   // fail the report of a run that already closed.
   if (!done.late) await finishContentCycle(c.env, id, report.summary, report.ok).catch(() => {});
 
-  if ((await getSettings(c.env)).notifyRunFinished) c.executionCtx.waitUntil(
-    mailAli(c.env, {
-      subject: `[#${id}] ${report.executor} ${done.late ? 'stopped' : report.ok ? 'finished' : 'failed'}: ${done.title}`,
-      text:
-        `${report.summary}\n\n${report.diffStat ? `${report.diffStat}\n\n` : ''}` +
-        `${report.branch ? `Branch: ${report.branch} (local only, nothing pushed)\n` : ''}` +
-        `Cost: $${report.costUsd.toFixed(4)}${report.model ? ` · ${report.model}` : ''}\n` +
-        `Review: ${siteUrl(c.env)}/portal/admin#ticket=${id}`,
-    }),
-  );
-  return reply(c, { ok: true, costMicroUsd: done.costMicroUsd });
+  c.executionCtx.waitUntil(notifyRunFinished(c.env, id, report, done));
+  return reply(c, { ok: true, costMicroUsd: done.costMicroUsd, review: 'pending' });
 });
 
 /** The fleet: what is running now, and what ran recently. */
@@ -2525,6 +2579,28 @@ portal.patch('/admin/nodes/:id', async (c) => {
   if (!statements.length) return reply(c, { error: 'bad_node' }, 400);
   await c.env.DB.batch(statements);
   return reply(c, { ok: true });
+});
+
+/** A signed screenshot URL for <img>: no session header needed, expires in an hour. */
+portal.get('/shot/:runId/:kind', async (c) => {
+  const runId = Number(c.req.param('runId'));
+  const kind = c.req.param('kind');
+  const token = c.req.query('t') ?? '';
+  if (!Number.isInteger(runId) || runId <= 0 || (kind !== 'before' && kind !== 'after')) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+  if (!(await verifyShotToken(c.env, runId, kind, token))) return c.json({ error: 'not_found' }, 404);
+  const res = await screenshotResponse(c.env, runId, kind);
+  return res ?? c.json({ error: 'not_found' }, 404);
+});
+
+/** The health page: every check, its last result and when it last changed. */
+portal.get('/admin/health', async (c) => reply(c, await healthView(c.env)));
+
+/** Run every check now, mail any transition, and return the fresh page. */
+portal.post('/admin/health/run', async (c) => {
+  const run = await runAndNotifyHealth(c.env);
+  return reply(c, { ...(await healthView(c.env)), fresh: run.fresh.length, recovered: run.recovered.length });
 });
 
 /** System-wide settings, plus the catalogs the views build their buttons from. */

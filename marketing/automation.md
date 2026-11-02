@@ -25,8 +25,8 @@ cd ..
 #    marketing/publisher/.env afterwards.
 cd worker && npx wrangler secret put MARKETING_TOKEN && cd ..
 
-# 3. Deploy.
-pnpm --dir worker test && pnpm --dir worker deploy
+# 3. Deploy: commit and merge to master. The Deploy workflow runs the tests,
+#    applies migrations and deploys; nothing deploys from this folder.
 ```
 
 Two dashboard steps that no command covers:

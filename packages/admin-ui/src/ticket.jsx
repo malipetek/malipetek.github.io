@@ -38,7 +38,7 @@ const PRIMARY = {
 
 export function TicketView({ id, active }) {
   const { api, act } = useAdmin();
-  const [{ ticket, messages, runs, land, error, loading }, reload] = useTicket(api, id);
+  const [{ ticket, messages, runs, review, screenshots, land, error, loading }, reload] = useTicket(api, id);
   const meter = useMeter(api, ticket, active);
   if (loading && !ticket) return <p className="aw-empty">Loading #{id}…</p>;
   if (!ticket) return <p className="aw-empty">{errorText(error)}</p>;
@@ -75,6 +75,10 @@ export function TicketView({ id, active }) {
           ) : null}
         </header>
 
+        <ReviewCard
+          review={review}
+          screenshots={screenshots.filter((shot) => shot.runId === (review?.runId ?? runs[runs.length - 1]?.id))}
+        />
         <Timeline ticket={ticket} messages={messages} runs={runs} />
         <Composer ticket={ticket} onSent={reload} />
       </div>
@@ -220,6 +224,56 @@ function ReviewModal({ ticket, gitRef, gitGraph, onClose }) {
         {state.status === 'ready' ? <View sessionId={state.sessionId} /> : <p className={cx('aw-empty', state.status === 'failed' && 'aw-error')}>{state.text}</p>}
       </div>
     </Modal>
+  );
+}
+
+/** The pre-review's one screen: verdict, why, and the build it was based on. */
+function ReviewCard({ review, screenshots = [] }) {
+  if (!review) return null;
+  const tone = review.verdict === 'pass' ? 'ok' : review.verdict === 'attention' ? 'warn' : 'bad';
+  const label = review.verdict === 'pass' ? 'pass' : review.verdict === 'attention' ? 'check' : 'fail';
+  return (
+    <section className={cx('aw-prereview', `aw-prereview--${tone}`)}>
+      <header>
+        <Dot state={tone} />
+        <strong>Pre-review</strong>
+        <Tag tone={tone}>{label}</Tag>
+        <span className="aw-toolbar__fill" />
+        <span className="aw-muted">
+          {review.model ?? 'model'} · {ago(review.createdAt)}
+        </span>
+      </header>
+      <p className="aw-prereview__headline">{review.headline}</p>
+      {review.points?.length ? (
+        <ul>
+          {review.points.map((point, i) => (
+            <li key={i}>{point}</li>
+          ))}
+        </ul>
+      ) : null}
+      {screenshots.length ? (
+        <div className="aw-shots">
+          {screenshots.map((shot) => (
+            <figure key={`${shot.runId}-${shot.kind}`}>
+              <a href={shot.url} target="_blank" rel="noreferrer">
+                <img src={shot.url} alt={`Preview ${shot.kind} the change`} loading="lazy" />
+              </a>
+              <figcaption>{shot.kind}</figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : null}
+      <footer>
+        {review.buildOk === null ? (
+          <Tag tone="dash">no build gate</Tag>
+        ) : review.buildOk ? (
+          <Tag tone="ok">build passed</Tag>
+        ) : (
+          <Tag tone="bad">build failed</Tag>
+        )}
+        <span className="aw-muted">A cheap agent's read; you still decide.</span>
+      </footer>
+    </section>
   );
 }
 

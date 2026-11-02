@@ -44,8 +44,9 @@ import { ACCOUNT, DSH_FAMILY, EXECUTORS, agentProfileReady, fallbackChain, findS
 import { landWork, mainBranch, pushTarget, shareWork } from './share.mjs';
 import { health } from './health.mjs';
 import { buildFollowUp, buildPrompt } from './prompt.mjs';
+import { capture } from './shot.mjs';
 
-const VERSION = '2.8.0';
+const VERSION = '2.9.0';
 const HEARTBEAT_MS = 30_000;
 const PROJECT_SYNC_MS = 10 * 60_000;
 const SHUTDOWN = 'node shutting down';
@@ -847,6 +848,11 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
   // are deleted again before the commit.
   const attached = await fetchAttachments(config, claim, dir);
 
+  // The preview as the client sees it now, before this run changes anything.
+  // Only hosted sites have one; a missing Chrome just means no picture.
+  const beforeShot = claim.site?.previewUrl ? await capture(claim.site.previewUrl) : null;
+  if (beforeShot) steps.push('node', 'Preview photographed (before)');
+
   // A usage limit is not the task failing: hand the same worktree to the next
   // executor this node runs, skipping any that spends the exhausted account.
   const prompt = buildPrompt(ticket, attached.messages, previousRuns, checkout);
@@ -892,11 +898,15 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
 
   // The verify gate: a command from this machine's config, never from the brief.
   let verify = '';
+  let verifyReport = null;
   let verified = true;
   if (project.verify && !signal.aborted) {
     const res = await run('/bin/sh', ['-c', project.verify], { cwd: dir, signal });
     verified = res.code === 0;
-    verify = `\n\nVerify \`${project.verify}\`: ${verified ? 'passed' : `FAILED (exit ${res.code})`}\n${(res.stdout + res.stderr).trim().slice(-1500)}`;
+    const output = (res.stdout + res.stderr).trim().slice(-4000);
+    verify = `\n\nVerify \`${project.verify}\`: ${verified ? 'passed' : `FAILED (exit ${res.code})`}\n${output.slice(-1500)}`;
+    // Structured too: the pre-review trusts a boolean, not a sentence.
+    verifyReport = { command: project.verify, ok: verified, exitCode: res.code, output };
     steps.push(verified ? 'node' : 'error', `Verify \`${project.verify}\` ${verified ? 'passed' : `failed (exit ${res.code})`}`);
   }
 
@@ -944,11 +954,17 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
   // A hosted site: the work goes to the preview branch, and the built output
   // becomes the preview deploy so the client can look at it right away.
   let previewNote = '';
+  let afterShot = null;
   if (claim.site && ok && changed) {
     const pushed = await netGit(dir, ['push', 'origin', '+HEAD:refs/heads/preview']);
     if (pushed.code !== 0) steps.push('error', `Preview branch push failed: ${lastLine(pushed.stderr)}`);
     else steps.push('node', 'Preview branch updated');
-    previewNote = (await buildAndDeploy(config, claim, dir, head, steps)).note ?? '';
+    const built = await buildAndDeploy(config, claim, dir, head, steps);
+    previewNote = built.note ?? '';
+    if (built.previewUrl) {
+      afterShot = await capture(built.previewUrl);
+      if (afterShot) steps.push('node', 'Preview photographed (after)');
+    }
   }
   const cost = typeof result.costUsd === 'number' ? ` · $${result.costUsd.toFixed(2)}` : '';
   const turns = result.turns ? ` · ${result.turns} turns` : '';
@@ -958,6 +974,14 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
   const hasSession = DSH_FAMILY.includes(used) && typeof result.sessionId === 'string' && result.sessionId;
   const session =
     hasSession && signal.reason !== SHUTDOWN ? await uploadSession(config, claim.runId, result.sessionId, ticket.id) : undefined;
+
+  // Before the result closes the run, so the server still accepts them.
+  if (beforeShot || afterShot) {
+    await api(config, 'POST', `/node/runs/${claim.runId}/screenshots`, {
+      ...(beforeShot ? { before: beforeShot } : {}),
+      ...(afterShot ? { after: afterShot } : {}),
+    }).catch((error) => log(`#${ticket.id} screenshots not saved: ${error.message}`));
+  }
 
   return {
     ok,
@@ -970,6 +994,7 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
     costUsd: result.costUsd,
     executor: used,
     model: result.model,
+    ...(verifyReport ? { verify: verifyReport } : {}),
     ...session,
   };
 }

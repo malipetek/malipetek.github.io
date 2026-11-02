@@ -66,9 +66,9 @@
     ]
   },
   "rest": {
-    "list": "https://malipetek-intercom.malipetek.workers.dev/kb/entries?q=&status=&language=&tag=&limit=&page=",
+    "list": "https://malipetek.dev/api/kb/entries?q=&status=&language=&tag=&limit=&page=",
     "entry": "https://malipetek.dev/kb/{slug}.json",
-    "stats": "https://malipetek-intercom.malipetek.workers.dev/kb/stats"
+    "stats": "https://malipetek.dev/api/kb/stats"
   },
   "webmcp": {
     "note": "This site registers in-page tools via document.modelContext when the browser implements WebMCP. Tools appear on the page itself and keep the visible UI in sync.",
