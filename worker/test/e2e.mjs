@@ -1331,6 +1331,9 @@ const groups = {
     check('Claude calls the public tools without signing in', publicForClaude.status === 200);
     check('the board answers with structured card data and a text fallback', board.result?.structuredContent?.requests?.some((r) => r.id === rid) && /#\d+ Add opening hours/.test(board.result?.content?.[0]?.text ?? ''), JSON.stringify(board.result?.structuredContent ?? {}).slice(0, 200));
     const card = board.result?.structuredContent ?? {};
+    const focused = (await rpc('tools/call', { name: 'portal_board', arguments: { request_id: rid } }, token)).result;
+    check('the board opens on one request’s conversation when asked', focused?.structuredContent?.focus === rid && card.focus === null && /The card is open on #/.test(focused?.content?.[0]?.text ?? ''), JSON.stringify(focused?.structuredContent?.focus));
+    check('…and ignores a request that is not theirs', (await rpc('tools/call', { name: 'portal_board', arguments: { request_id: 999999 } }, token)).result?.structuredContent?.focus === null);
     check(
       'the board carries projects with setup, sites, and requests with real times',
       boardTool?.title === 'malipetek development' &&

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "malipetek",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "File and track software work requests on malipetek.dev, and search its public agentic-coding knowledgebase.",
   "author": {
     "name": "Muhammet Ali Petek",
@@ -27,7 +27,7 @@
         "capabilities": [
           "Change your site directly from ChatGPT, with an optional human review",
           "File a new software work request",
-          "Track request status and conversation",
+          "Read and answer a request as a chat inside the card",
           "See projects, sites and requests in one card",
           "See your projects and readiness",
           "Preview and publish your site",
@@ -103,7 +103,7 @@
         "commerce_description": "The plugin does not sell products or process payments. Work is billed per the service's terms, outside the plugin."
       },
       "publication": {
-        "release_notes": "ChatGPT can change your site itself and you choose whether a human reviews it; you can publish the preview yourself, and every change and publish is on record."
+        "release_notes": "Open any request in the malipetek development card to read its conversation with Ali and reply, laid out like a chat."
       }
     }
   }

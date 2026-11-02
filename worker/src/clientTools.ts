@@ -59,8 +59,14 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'portal_board',
     title: 'malipetek development',
     description:
-      'Draw this account as an interactive card in the conversation, in three tabs: projects (setup progress and the next step), sites (live or preview, with links) and requests (status, cost so far, a link into the portal for each). Use it when the person wants to see their work rather than read a list. Mention only what matters afterwards — the card shows the details.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      'Draw this account as an interactive card in the conversation, in three tabs: projects (setup progress and the next step), sites (live or preview, with links) and requests (status, cost so far). Any request opens as a chat with Ali inside the card, where the person can read the thread and reply. Pass request_id to open that request’s conversation straight away, e.g. when they ask to see or answer request 12. Use it when the person wants to see their work rather than read a list. Mention only what matters afterwards — the card shows the details.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        request_id: { type: 'integer', description: 'Optional: open this request’s conversation in the card.' },
+      },
+      additionalProperties: false,
+    },
     outputSchema: {
       type: 'object',
       properties: {
@@ -134,8 +140,9 @@ export const CLIENT_TOOLS: ClientTool[] = [
           },
         },
         updated_at: { type: 'string' },
+        focus: { type: ['integer', 'null'], description: 'The request whose conversation the card opens on, if any.' },
       },
-      required: ['account', 'projects', 'sites', 'requests', 'updated_at'],
+      required: ['account', 'projects', 'sites', 'requests', 'updated_at', 'focus'],
       additionalProperties: false,
     },
     readOnly: true,
@@ -587,6 +594,7 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
           budget_cents: cents(ticket.budget_cents),
         })),
         updated_at: new Date().toISOString(),
+        focus: Number.isInteger(args.request_id) && tickets.some((ticket) => ticket.id === args.request_id) ? (args.request_id as number) : null,
       };
     }
     case 'portal_request':

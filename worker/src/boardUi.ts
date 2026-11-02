@@ -13,7 +13,7 @@
  * URI in BOARD_UI_URI and in the tool's _meta (clientTools.ts).
  */
 
-export const BOARD_UI_URI = 'ui://malipetek/board-v3.html';
+export const BOARD_UI_URI = 'ui://malipetek/board-v4.html';
 
 export const BOARD_MIME = 'text/html;profile=mcp-app';
 
@@ -58,6 +58,8 @@ export interface Board {
   sites: BoardSite[];
   requests: BoardRequest[];
   updated_at: string;
+  /** The request whose conversation the card opens on. */
+  focus?: number | null;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -119,6 +121,8 @@ export function boardSummary(board: Board): string {
   } else {
     out.push('', 'No requests yet.');
   }
+  const focused = board.focus ? requests.find((request) => request.id === board.focus) : null;
+  if (focused) out.push('', `The card is open on #${focused.id} ${focused.title ?? 'Untitled request'}: its conversation with Ali, where the client can reply.`);
   out.push('', `The same in the portal: ${BOARD_PORTAL}`);
   return out.join('\n');
 }
@@ -142,6 +146,9 @@ export const BOARD_HTML = `<!DOCTYPE html>
     --mk-soft: var(--color-text-secondary, light-dark(#5d5850, #a0978a));
     --mk-rule: var(--color-border-secondary, light-dark(#e8e4dd, #2a2622));
     --mk-tint: light-dark(#faf8f4, #1b1917);
+    --mk-bubble: light-dark(#f4f4f4, #303030);
+    --mk-field: light-dark(#ffffff, #303030);
+    --mk-paper: light-dark(#ffffff, #212121);
     --mk-orange: #ff5a1f;
     --mk-ok: light-dark(#2f9e5b, #6fce8f);
     --mk-bad: light-dark(#c0392b, #f08a80);
@@ -279,6 +286,52 @@ export const BOARD_HTML = `<!DOCTYPE html>
   }
   .mk-link:hover { color: var(--mk-orange); }
   .mk-err { color: var(--mk-bad); font-size: 12.5px; padding: 8px 0; }
+  /* —— one request as a conversation, laid out like a ChatGPT chat —— */
+  .mk-tabs[hidden] { display: none; }
+  .mk-thread-head { display: flex; align-items: center; gap: 10px; margin: 12px 0 0; padding-bottom: 10px; border-bottom: 1px solid var(--mk-rule); }
+  .mk-thread-title { flex: 1; min-width: 0; font: 600 14px/1.3 var(--mk-sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mk-chat { display: flex; flex-direction: column; gap: 20px; padding: 18px 4px 14px; max-height: 460px; overflow-y: auto; overscroll-behavior: contain; }
+  body[data-mode="fullscreen"] .mk-chat { max-height: calc(100vh - 210px); }
+  .mk-turn--client {
+    align-self: flex-end; max-width: 78%;
+    background: var(--mk-bubble); border-radius: 18px; padding: 9px 15px;
+  }
+  .mk-turn--client.mk-sending { opacity: .55; }
+  .mk-turn--other { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 11px; }
+  .mk-avatar {
+    width: 26px; height: 26px; border-radius: 999px; display: grid; place-items: center;
+    font: 600 11px/1 var(--mk-sans); color: #fff; background: var(--mk-orange); margin-top: 1px;
+  }
+  .mk-avatar[data-who="runner"] { background: color-mix(in srgb, var(--mk-ink) 72%, transparent); color: var(--mk-paper); }
+  .mk-who-line { font: 600 13px/1.2 var(--mk-sans); margin-bottom: 4px; }
+  .mk-when { font: 400 11.5px/1 var(--mk-sans); color: var(--mk-soft); margin-left: 6px; }
+  .mk-text { font-size: 15px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .mk-turn--client .mk-when { display: block; text-align: right; margin: 4px 0 0; }
+  .mk-sys { align-self: center; max-width: 88%; text-align: center; font-size: 12px; line-height: 1.45; color: var(--mk-soft); }
+  .mk-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .mk-file { font: 500 11px/1 var(--mk-mono); border: 1px solid var(--mk-rule); border-radius: 8px; padding: 6px 8px; background: var(--mk-paper); }
+  .mk-inline-link { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; text-align: left; }
+  .mk-inline-link:hover { color: var(--mk-orange); }
+  .mk-composer {
+    display: flex; align-items: flex-end; gap: 8px;
+    border: 1px solid var(--mk-rule); border-radius: 26px; background: var(--mk-field);
+    padding: 6px 6px 6px 18px; box-shadow: 0 1px 8px rgba(0, 0, 0, .06);
+  }
+  .mk-composer:focus-within { border-color: color-mix(in srgb, var(--mk-ink) 30%, var(--mk-rule)); }
+  .mk-composer textarea {
+    flex: 1; min-width: 0; border: 0; outline: 0; resize: none; background: transparent;
+    color: var(--mk-ink); font: 15px/1.5 var(--mk-sans); padding: 7px 0; max-height: 160px;
+  }
+  .mk-composer textarea::placeholder { color: var(--mk-soft); }
+  .mk-send {
+    width: 36px; height: 36px; flex: none; border: 0; border-radius: 999px; cursor: pointer;
+    display: grid; place-items: center; background: var(--mk-ink); color: var(--mk-paper);
+    transition: opacity .15s ease;
+  }
+  .mk-send[disabled] { opacity: .25; cursor: default; }
+  .mk-send:focus-visible { outline: 2px solid var(--mk-orange); outline-offset: 2px; }
+  body[data-view="thread"] .mk-foot { display: none; }
+  .mk-compose-note { margin-top: 7px; text-align: center; font-size: 11px; color: var(--mk-soft); }
   @media (max-width: 420px) {
     .mk-row { grid-template-columns: minmax(0, 1fr); }
     .mk-tab { padding: 8px 7px 9px; }
@@ -297,7 +350,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
   <button class="mk-btn" id="refresh" type="button">Refresh</button>
 </div>
 
-<div class="mk-tabs" role="tablist" aria-label="Your work">
+<div class="mk-tabs" id="tabs" role="tablist" aria-label="Your work">
   <button class="mk-tab" role="tab" id="tab-projects" data-tab="projects" aria-controls="panel-projects" aria-selected="true" type="button">Projects <span class="mk-tab__n" id="n-projects">–</span></button>
   <button class="mk-tab" role="tab" id="tab-sites" data-tab="sites" aria-controls="panel-sites" aria-selected="false" tabindex="-1" type="button">Sites <span class="mk-tab__n" id="n-sites">–</span></button>
   <button class="mk-tab" role="tab" id="tab-requests" data-tab="requests" aria-controls="panel-requests" aria-selected="false" tabindex="-1" type="button">Requests <span class="mk-tab__n" id="n-requests">–</span></button>
@@ -315,6 +368,22 @@ export const BOARD_HTML = `<!DOCTYPE html>
     <button class="mk-link" id="filter-clear" type="button">Show all</button>
   </div>
   <div class="mk-list" id="requests"></div>
+</section>
+
+<section class="mk-panel" id="panel-thread" aria-label="Conversation" hidden>
+  <div class="mk-thread-head">
+    <button class="mk-btn" id="back" type="button">← Requests</button>
+    <div class="mk-thread-title" id="thread-title"></div>
+    <span id="thread-status"></span>
+  </div>
+  <div class="mk-chat" id="chat" role="log" aria-live="polite"></div>
+  <form class="mk-composer" id="composer">
+    <textarea id="reply" rows="1" placeholder="Reply to Ali" aria-label="Reply to Ali"></textarea>
+    <button class="mk-send" id="send" type="submit" aria-label="Send" disabled>
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </form>
+  <div class="mk-compose-note">Ali gets your reply by email and answers here. <button class="mk-link" id="thread-portal" type="button">Open in the portal ↗</button></div>
 </section>
 
 <div class="mk-foot">
@@ -347,6 +416,8 @@ export const BOARD_HTML = `<!DOCTYPE html>
   var tab = 'projects';
   var chosen = false;
   var projectFilter = null;
+  var threadId = null;
+  var focusDone = false;
 
   function $(id) { return document.getElementById(id); }
   var refreshEl = $('refresh');
@@ -441,6 +512,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     // The host's theme wins over the OS: ChatGPT decides how its card looks.
     if (context.theme) document.documentElement.style.colorScheme = context.theme;
     if (context.locale) document.documentElement.lang = context.locale;
+    if (context.displayMode) document.body.setAttribute('data-mode', context.displayMode);
     var vars = context.styles && context.styles.variables;
     for (var key in vars) {
       if (vars[key]) document.documentElement.style.setProperty(key, vars[key]);
@@ -457,6 +529,10 @@ export const BOARD_HTML = `<!DOCTYPE html>
 
   function show(name, focus) {
     tab = name;
+    threadId = null;
+    document.body.removeAttribute('data-view');
+    $('panel-thread').hidden = true;
+    $('tabs').hidden = false;
     for (var i = 0; i < TABS.length; i++) {
       var on = TABS[i] === name;
       var t = $('tab-' + TABS[i]);
@@ -612,7 +688,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     main.appendChild(meta);
     wrap.appendChild(main);
 
-    wrap.appendChild(button('Open', function () { openLink(PORTAL + '/#/ticket/' + item.id); }));
+    wrap.appendChild(button('Open', function () { openThread(item.id); }));
     return wrap;
   }
 
@@ -668,6 +744,212 @@ export const BOARD_HTML = `<!DOCTYPE html>
     notifySize();
   });
 
+  /* —— one request as a conversation —— */
+
+  var WHO = { ali: { name: 'Ali', mark: 'A' }, runner: { name: 'Agent', mark: '⚙' } };
+  var NL = String.fromCharCode(10);
+  var replyEl = $('reply');
+  var sendEl = $('send');
+
+  function at(value) {
+    return typeof value === 'number' ? relative(new Date(value * 1000).toISOString()) : relative(value);
+  }
+
+  function requestById(id) {
+    return ((board && board.requests) || []).filter(function (r) { return r.id === id; })[0] || null;
+  }
+
+  /* Plain text with its line breaks, and web addresses that open through the host. */
+  function linkify(node, text) {
+    var lines = String(text || '').split(NL);
+    for (var i = 0; i < lines.length; i++) {
+      if (i) node.appendChild(document.createTextNode(NL));
+      var words = lines[i].split(' ');
+      for (var j = 0; j < words.length; j++) {
+        if (j) node.appendChild(document.createTextNode(' '));
+        var word = words[j];
+        if (/^https?:[/][/]/.test(word)) {
+          var url = word.replace(/[).,;:!?]+$/, '');
+          (function (href) {
+            var link = el('button', 'mk-inline-link', href);
+            link.type = 'button';
+            link.addEventListener('click', function () { openLink(href); });
+            node.appendChild(link);
+          })(url);
+          if (url.length < word.length) node.appendChild(document.createTextNode(word.slice(url.length)));
+        } else {
+          node.appendChild(document.createTextNode(word));
+        }
+      }
+    }
+  }
+
+  /* Status lines are stored in English as "Status changed to “In review”. Total: $6.40." */
+  function systemText(body) {
+    var moved = /^Status changed to “([^”]+)”[.]?(?: Total: (.+?)[.]?)?$/.exec(String(body || ''));
+    if (!moved) return body;
+    return 'Moved to ' + moved[1] + (moved[2] ? ' · total ' + moved[2] : '');
+  }
+
+  function attachments(list) {
+    var wrap = el('div', 'mk-files');
+    for (var i = 0; i < list.length; i++) wrap.appendChild(el('span', 'mk-file', '📎 ' + (list[i].name || 'file')));
+    return wrap;
+  }
+
+  function text(body) {
+    var node = el('div', 'mk-text');
+    linkify(node, body);
+    return node;
+  }
+
+  /* The client on the right in a bubble, Ali and the agent on the left, status lines centred. */
+  function turn(m, sending) {
+    var when = at(m.created_at);
+    if (m.author === 'system') {
+      var line = el('div', 'mk-sys');
+      linkify(line, systemText(m.body));
+      if (when) line.appendChild(document.createTextNode(' · ' + when));
+      return line;
+    }
+    if (m.author === 'client') {
+      var mine = el('div', 'mk-turn--client' + (sending ? ' mk-sending' : ''));
+      mine.appendChild(text(m.body));
+      if (m.files && m.files.length) mine.appendChild(attachments(m.files));
+      var stamp = sending ? 'Sending…' : when;
+      if (stamp) mine.appendChild(el('span', 'mk-when', stamp));
+      return mine;
+    }
+    var who = WHO[m.author] || { name: m.author || 'malipetek', mark: '•' };
+    var row = el('div', 'mk-turn--other');
+    var avatar = el('span', 'mk-avatar', who.mark);
+    avatar.setAttribute('data-who', m.author || '');
+    avatar.setAttribute('aria-hidden', 'true');
+    row.appendChild(avatar);
+    var main = el('div');
+    var head = el('div', 'mk-who-line', who.name);
+    if (when) head.appendChild(el('span', 'mk-when', when));
+    main.appendChild(head);
+    main.appendChild(text(m.body));
+    if (m.files && m.files.length) main.appendChild(attachments(m.files));
+    row.appendChild(main);
+    return row;
+  }
+
+  function threadHead(id, title, status) {
+    $('thread-title').textContent = '#' + id + ' ' + (title || 'Untitled request');
+    var holder = $('thread-status');
+    clear(holder);
+    if (status) {
+      var known = STATUS[status] || { label: status, tone: 'active' };
+      holder.appendChild(pill(known.label, known.tone));
+    }
+  }
+
+  function openThread(id) {
+    threadId = id;
+    document.body.setAttribute('data-view', 'thread');
+    $('tabs').hidden = true;
+    for (var i = 0; i < TABS.length; i++) $('panel-' + TABS[i]).hidden = true;
+    $('panel-thread').hidden = false;
+    var known = requestById(id);
+    threadHead(id, known && known.title, known && known.status);
+    var chat = $('chat');
+    clear(chat);
+    chat.appendChild(el('div', 'mk-skel'));
+    chat.appendChild(el('div', 'mk-skel'));
+    notifySize();
+    loadThread(id);
+  }
+
+  function closeThread() {
+    show(tab);
+  }
+
+  function threadError(message) {
+    var chat = $('chat');
+    clear(chat);
+    chat.appendChild(el('div', 'mk-err', message || 'This conversation could not load.'));
+    notifySize();
+  }
+
+  function renderThread(data) {
+    var ticket = data.ticket;
+    threadHead(ticket.id, ticket.title, ticket.status);
+    var known = requestById(ticket.id);
+    // Reading it in the portal marks it seen; so does reading it here.
+    if (known && known.unread) { known.unread = false; renderRequests(); }
+    var chat = $('chat');
+    clear(chat);
+    var messages = data.messages || [];
+    if (!messages.length) chat.appendChild(el('div', 'mk-empty', 'No messages yet.'));
+    for (var i = 0; i < messages.length; i++) chat.appendChild(turn(messages[i]));
+    chat.scrollTop = chat.scrollHeight;
+    notifySize();
+  }
+
+  function loadThread(id) {
+    refreshEl.disabled = true;
+    return request('tools/call', { name: 'portal_request', arguments: { request_id: id } })
+      .then(function (result) {
+        if (threadId !== id) return;
+        if (!result || result.isError) { threadError(textOf(result)); return; }
+        var data = result.structuredContent;
+        if (!data) { try { data = JSON.parse(textOf(result)); } catch (e) { data = null; } }
+        if (!data || !data.ticket) { threadError(); return; }
+        renderThread(data);
+      })
+      .catch(function (error) { if (threadId === id) threadError(error && error.message); })
+      .then(function () { refreshEl.disabled = false; });
+  }
+
+  function fit() {
+    replyEl.style.height = 'auto';
+    replyEl.style.height = Math.min(replyEl.scrollHeight, 160) + 'px';
+  }
+
+  function submitReply() {
+    var body = replyEl.value.trim();
+    var id = threadId;
+    if (!body || !id || sendEl.disabled) return;
+    replyEl.value = '';
+    fit();
+    sendEl.disabled = true;
+    var chat = $('chat');
+    var empty = chat.querySelector('.mk-empty');
+    if (empty) chat.removeChild(empty);
+    var sending = turn({ author: 'client', body: body }, true);
+    chat.appendChild(sending);
+    chat.scrollTop = chat.scrollHeight;
+    notifySize();
+    request('tools/call', { name: 'portal_reply', arguments: { request_id: id, text: body } })
+      .then(function (result) {
+        if (!result || result.isError) throw new Error(textOf(result) || 'Your reply was not sent.');
+        return loadThread(id);
+      })
+      .catch(function (error) {
+        if (sending.parentNode) sending.parentNode.removeChild(sending);
+        if (threadId !== id) return;
+        replyEl.value = body;
+        fit();
+        sendEl.disabled = false;
+        chat.appendChild(el('div', 'mk-err', (error && error.message) || 'Your reply was not sent.'));
+        notifySize();
+      });
+  }
+
+  replyEl.addEventListener('input', function () { sendEl.disabled = !replyEl.value.trim(); fit(); });
+  replyEl.addEventListener('keydown', function (event) {
+    // Enter sends and Shift+Enter starts a new line, as in the chat around it.
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      submitReply();
+    }
+  });
+  $('composer').addEventListener('submit', function (event) { event.preventDefault(); submitReply(); });
+  $('back').addEventListener('click', closeThread);
+  $('thread-portal').addEventListener('click', function () { if (threadId) openLink(PORTAL + '/#/ticket/' + threadId); });
+
   /* —— the whole board —— */
 
   function render(data) {
@@ -687,8 +969,15 @@ export const BOARD_HTML = `<!DOCTYPE html>
     renderProjects();
     renderSites();
     renderRequests();
+    if (data.focus && !focusDone && requestById(data.focus)) {
+      // Opened on one request (portal_board with request_id): straight to its conversation.
+      focusDone = true;
+      openThread(data.focus);
+      return;
+    }
     // Something new to read beats the overview, until the person picks a tab.
-    if (!chosen) show(board.requests.some(function (r) { return r.unread; }) ? 'requests' : 'projects');
+    if (threadId) notifySize();
+    else if (!chosen) show(board.requests.some(function (r) { return r.unread; }) ? 'requests' : 'projects');
     else notifySize();
   }
 
@@ -723,7 +1012,11 @@ export const BOARD_HTML = `<!DOCTYPE html>
     notify('ui/notifications/size-changed', { width: Math.ceil(rect.width), height: Math.ceil(rect.height) });
   }
 
-  refreshEl.addEventListener('click', function () { if (!refreshEl.disabled) load(); });
+  refreshEl.addEventListener('click', function () {
+    if (refreshEl.disabled) return;
+    if (threadId) loadThread(threadId);
+    else load();
+  });
   $('portal').addEventListener('click', function () { openLink(PORTAL); });
 
   window.addEventListener('message', function (event) {
