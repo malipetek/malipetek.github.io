@@ -439,6 +439,16 @@ const groups = {
     sql(`UPDATE marketing_messages SET body = 'stale wording' WHERE status = 'scheduled' AND to_email = 'bulk7@example.test';`);
     const rerendered = await call('/admin/marketing/messages/rerender', { method: 'POST', auth: admin });
     check('re-render brings scheduled emails back to the current templates', rerendered.status === 200 && rerendered.data.updated >= 1500 && !/stale wording/.test(firstOf()), JSON.stringify(rerendered.data));
+    const subjectOf = () =>
+      sql(`SELECT subject FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
+            WHERE c.email = 'bulk7@example.test' AND m.step = 0 AND m.status = 'scheduled'`).toString();
+    check('an unknown sequence move is refused', (await call('/admin/marketing/messages/rerender', { method: 'POST', auth: admin, body: { from: 'cold_a', to: 'nope' } })).status === 400);
+    const movedSeq = await call('/admin/marketing/messages/rerender', { method: 'POST', auth: admin, body: { from: 'cold_a', to: 'cold_b' } });
+    check(
+      'queued Cold A mail can move to Cold B, keeping its slots',
+      movedSeq.status === 200 && movedSeq.data.moved >= 1500 && /The smallest thing on/.test(subjectOf()) && /Most business sites carry/.test(firstOf()),
+      JSON.stringify(movedSeq.data),
+    );
 
     const bad = await call('/admin/marketing/settings', { method: 'PUT', auth: admin, body: { dailyCap: 0, live: 'yes' } });
     check('a bad setting is refused and the old value stands', bad.data.rejected.length === 2 && bad.data.settings.dailyCap === 20);

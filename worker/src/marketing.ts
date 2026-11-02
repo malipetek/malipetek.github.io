@@ -373,13 +373,23 @@ export interface ContactFields {
 }
 
 /** Fill the copy in. An empty site or gap reads as a neutral phrase, never a dangling em dash. */
+/** A site as a person would write it in a sentence: "watercoursefoods.com", not the full URL. */
+export function siteLabel(site: string | null | undefined): string {
+  const raw = (site ?? '').trim();
+  if (!raw) return '';
+  const bare = raw.replace(/^https?:\/\//i, '').replace(/^www\./i, '');
+  // Only the host when the address is a homepage; a deeper path is kept as written.
+  return /^[^/]+\/?$/.test(bare) ? bare.replace(/\/$/, '') : bare;
+}
+
 export function fillTemplate(text: string, contact: ContactFields): string {
   const first = contact.name?.trim().split(/\s+/)[0] ?? '';
-  const business = contact.business || contact.site || 'your business';
+  const site = siteLabel(contact.site);
+  const business = contact.business || site || 'your business';
   return text
     .replaceAll('{{greeting}}', first ? `Hi ${first},` : 'Hi,')
     .replaceAll('{{business}}', business)
-    .replaceAll('{{site}}', contact.site || 'your site')
+    .replaceAll('{{site}}', site || 'your site')
     .replaceAll('{{gap}}', contact.gap?.trim() || '');
 }
 
@@ -490,7 +500,10 @@ export function sequenceOfSubject(subject: string | null): SequenceKind | null {
  * change reaches mail that is already queued. Keeps each message's slot,
  * recipient and step; a message whose sequence cannot be told is left alone.
  */
-export async function rerenderScheduled(env: Env): Promise<{ updated: number; skipped: number }> {
+export async function rerenderScheduled(
+  env: Env,
+  move: { from?: SequenceKind; to?: SequenceKind } = {},
+): Promise<{ updated: number; skipped: number; moved: number }> {
   const { results } = await env.DB.prepare(
     `SELECT m.id, m.step, m.subject, c.email, c.name, c.business, c.site, c.gap
        FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
@@ -499,8 +512,13 @@ export async function rerenderScheduled(env: Env): Promise<{ updated: number; sk
   const t = now();
   const updates: D1PreparedStatement[] = [];
   let skipped = 0;
+  let moved = 0;
   for (const row of results ?? []) {
-    const kind = sequenceOfSubject(row.subject);
+    const current = sequenceOfSubject(row.subject);
+    // Moving a sequence keeps each message's step and slot: the sequences share
+    // their step days, so only the words change.
+    const kind = current && move.from && move.to && current === move.from ? move.to : current;
+    if (kind !== current) moved += 1;
     const step = kind ? SEQUENCES[kind][row.step] : undefined;
     if (!step) {
       skipped += 1;
@@ -519,7 +537,7 @@ export async function rerenderScheduled(env: Env): Promise<{ updated: number; sk
     );
   }
   for (const batch of chunk(updates, 50)) await env.DB.batch(batch);
-  return { updated: updates.length, skipped };
+  return { updated: updates.length, skipped, moved };
 }
 
 /** A true, if generic, opener for contacts whose specific observation is not written yet. */
@@ -1658,8 +1676,19 @@ marketing.put('/admin/marketing/settings', async (c) => {
 
 /** Templates changed: bring the scheduled emails in line with them. */
 marketing.post('/admin/marketing/messages/rerender', async (c) => {
-  const done = await rerenderScheduled(c.env);
-  await logEvent(c.env, { kind: 'rerendered', detail: `${done.updated} scheduled emails re-rendered, ${done.skipped} left alone` });
+  const body = (await c.req.json().catch(() => ({}))) as { from?: unknown; to?: unknown };
+  const isKind = (v: unknown): v is SequenceKind => typeof v === 'string' && v in SEQUENCES;
+  if ((body.from !== undefined || body.to !== undefined) && !(isKind(body.from) && isKind(body.to))) {
+    return out(c, { error: 'bad_sequence' }, 400);
+  }
+  if (isKind(body.from) && isKind(body.to) && SEQUENCES[body.from].some((step, i) => SEQUENCES[body.to as SequenceKind][i]?.day !== step.day)) {
+    return out(c, { error: 'sequences_differ' }, 400);
+  }
+  const done = await rerenderScheduled(c.env, isKind(body.from) && isKind(body.to) ? { from: body.from, to: body.to } : {});
+  await logEvent(c.env, {
+    kind: 'rerendered',
+    detail: `${done.updated} scheduled emails re-rendered${done.moved ? `, ${done.moved} moved from ${body.from} to ${body.to}` : ''}, ${done.skipped} left alone`,
+  });
   return out(c, done);
 });
 

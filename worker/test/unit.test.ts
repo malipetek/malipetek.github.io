@@ -12,7 +12,7 @@ import { normalizeReport, sharedLine } from '../src/runs.ts';
 import { setupFor, slugify, type SetupInput } from '../src/setup.ts';
 import { cleanDeployManifest, cleanSiteSlug, siteView, type SiteRow } from '../src/sites.ts';
 import { checkUploads, cleanFileName, fileType } from '../src/files.ts';
-import { fillTemplate, isOptOut, localClock, parseContactsCsv, parseCsv, sendWindow, SEQUENCES } from '../src/marketing.ts';
+import { fillTemplate, isOptOut, localClock, parseContactsCsv, parseCsv, sendWindow, SEQUENCES, siteLabel } from '../src/marketing.ts';
 import { cleanPost, nextSlots, parseOutbox, slotLabel } from '../src/content.ts';
 
 /* —— mail: who may file a ticket by email —— */
@@ -670,4 +670,15 @@ test('mcp: Anthropic’s outbound range and Claude user agents count as Claude',
   assert.equal(fromClaude('203.0.113.5', 'Claude-User'), true);
   assert.equal(fromClaude('203.0.113.5', 'openai-mcp/1.0.0'), false);
   assert.equal(fromClaude('', ''), false);
+});
+
+test('marketing: a site reads as a domain in running text', () => {
+  assert.equal(siteLabel('https://www.watercoursefoods.com/'), 'watercoursefoods.com');
+  assert.equal(siteLabel('http://acme.test'), 'acme.test');
+  assert.equal(siteLabel('acme.test/shop/menu'), 'acme.test/shop/menu');
+  assert.equal(siteLabel(''), '');
+  assert.equal(
+    fillTemplate('{{greeting}} {{site}} {{business}}', { email: 'a@b.c', name: 'Ann Lee', business: null, site: 'https://www.acme.test/', gap: null } as never),
+    'Hi Ann, acme.test acme.test',
+  );
 });
