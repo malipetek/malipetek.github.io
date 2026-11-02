@@ -92,6 +92,8 @@ function Shell({ data, reload, t, onSignedOut }) {
   return (
     <PortalContext.Provider value={ctx}>
       <div className={cx('cp', menu && 'is-menu')}>
+        {/* The 3D room lives behind the whole portal, under the sidebar and cards. */}
+        <div className="cp-scene" aria-hidden="true" />
         <header className="cp-topbar">
           <button type="button" className="cp-iconbtn" aria-label={t('nav.menu')} aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
             <Icon name="menu" size={18} />

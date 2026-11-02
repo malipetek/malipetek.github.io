@@ -1741,6 +1741,10 @@ export interface BoardOptions {
   items: () => BoardItem[];
   /** The projects (their belts) and sites (their docks); read when they change. */
   lanes: () => BoardLane[];
+  /** The element that receives pointer input; the canvas sits behind the page. */
+  input?: HTMLElement;
+  /** The visible frame the camera centres on, in viewport coordinates. */
+  frame?: HTMLElement;
   /** The pointer is over a ticket (its id), or left them (null). */
   onHover?: (id: number | null) => void;
   /** A ticket was clicked. */
@@ -1782,6 +1786,8 @@ export interface Board {
  * screen or the tab is hidden; reduced motion snaps instead of gliding.
  */
 export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Board {
+  const input = options.input ?? canvas;
+  const frameEl = options.frame ?? input;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -1805,9 +1811,6 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   document.fonts?.ready.then(() => repaint.forEach((draw) => draw()));
 
   const home = new THREE.Vector3(...machine.look).add(new THREE.Vector3(1.0, 0.85, 0.6));
-  // The board canvas bleeds below the stage. Look a little lower so the machine
-  // stays in the top of the canvas and the extra space is floor, not a cut belt.
-  home.y -= 1.5;
   const look = home.clone();
   // More from the front than the homepage's isometric view: the belts run
   // across a wide board instead of climbing it, and the stations spread out.
@@ -1830,7 +1833,9 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   const anchors = machine.anchors!;
   const toScreen = (v: THREE.Vector3): ScreenPoint => {
     const p = v.clone().project(camera);
-    return { x: ((p.x + 1) / 2) * size.w, y: ((1 - p.y) / 2) * size.h };
+    // The canvas is fixed to the viewport; the labels live in the board frame.
+    const f = frameEl.getBoundingClientRect();
+    return { x: ((p.x + 1) / 2) * size.w - f.left, y: ((1 - p.y) / 2) * size.h - f.top };
   };
 
   const render = () => {
@@ -1871,9 +1876,20 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     renderer.setSize(size.w, size.h, false);
     kit.setSize(size.w, size.h);
     camera.aspect = size.w / size.h;
+    // The canvas fills the whole portal; the board frame is where the machine
+    // must sit. Shift the projection centre instead of moving the canvas.
+    const f = frameEl.getBoundingClientRect();
+    camera.setViewOffset(
+      size.w,
+      size.h,
+      size.w / 2 - (f.left + f.width / 2),
+      size.h / 2 - (f.top + f.height / 2),
+      size.w,
+      size.h,
+    );
     camera.updateProjectionMatrix();
     // The machine is wide: narrower boxes pull back so all of it stays in frame.
-    fit = THREE.MathUtils.clamp(2.3 / camera.aspect, 0.7, 1.85);
+    fit = THREE.MathUtils.clamp(2.8 / camera.aspect, 0.72, 2.0);
     render();
   };
   const sizeWatch = new ResizeObserver(resize);
@@ -1901,18 +1917,18 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   let dragged = false;
   let suppressClick = false;
   const onPointerDown = (e: PointerEvent) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || e.target !== input) return;
     drag = { x: e.clientX, y: e.clientY, panX: panGoal.x, panY: panGoal.y };
     dragged = false;
     suppressClick = false;
-    canvas.setPointerCapture?.(e.pointerId);
+    input.setPointerCapture?.(e.pointerId);
   };
   const onPointerUp = (e: PointerEvent) => {
     if (!drag) return;
     if (dragged) suppressClick = true;
     drag = null;
-    canvas.style.cursor = '';
-    canvas.releasePointerCapture?.(e.pointerId);
+    input.style.cursor = '';
+    input.releasePointerCapture?.(e.pointerId);
   };
   const onMove = (e: PointerEvent) => {
     const r = canvas.getBoundingClientRect();
@@ -1925,14 +1941,14 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       if (dragged) {
         panGoal.x = THREE.MathUtils.clamp(drag.panX - dx * 0.018 * fit * zoom, -9, 9);
         panGoal.y = THREE.MathUtils.clamp(drag.panY - dy * 0.018 * fit * zoom, -9, 9);
-        canvas.style.cursor = 'grabbing';
+        input.style.cursor = 'grabbing';
         return;
       }
     }
-    if (e.target !== canvas) return;
+    if (e.target !== input) return;
     const id = pickTicket(e);
     const node = id === null ? pickNode(e) : null;
-    canvas.style.cursor = id === null && !node ? '' : 'pointer';
+    input.style.cursor = id === null && !node ? '' : 'pointer';
     if (id !== hovered) {
       hovered = id;
       options.onHover?.(id);
@@ -1941,10 +1957,11 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   const onLeave = () => {
     if (hovered === null) return;
     hovered = null;
-    canvas.style.cursor = '';
+    input.style.cursor = '';
     options.onHover?.(null);
   };
   const onClick = (e: MouseEvent) => {
+    if (e.target !== input) return;
     if (suppressClick) {
       suppressClick = false;
       return;
@@ -1958,16 +1975,16 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     if (node) options.onPickNode?.(node);
   };
   const onWheel = (e: WheelEvent) => {
-    if (!e.deltaY) return;
+    if (e.target !== input || !e.deltaY) return;
     e.preventDefault();
     zoomGoal = THREE.MathUtils.clamp(zoomGoal * (1 - e.deltaY * 0.0012), 0.55, 2.4);
   };
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onPointerUp);
-  canvas.addEventListener('pointerdown', onPointerDown);
-  canvas.addEventListener('pointerleave', onLeave);
-  canvas.addEventListener('click', onClick);
-  canvas.addEventListener('wheel', onWheel, { passive: false });
+  input.addEventListener('pointerdown', onPointerDown);
+  input.addEventListener('pointerleave', onLeave);
+  input.addEventListener('click', onClick);
+  input.addEventListener('wheel', onWheel, { passive: false });
 
   let visible = true;
   const seen = new IntersectionObserver(([entry]) => {
@@ -2032,10 +2049,10 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       seen.disconnect();
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onPointerUp);
-      canvas.removeEventListener('pointerdown', onPointerDown);
-      canvas.removeEventListener('pointerleave', onLeave);
-      canvas.removeEventListener('click', onClick);
-      canvas.removeEventListener('wheel', onWheel);
+      input.removeEventListener('pointerdown', onPointerDown);
+      input.removeEventListener('pointerleave', onLeave);
+      input.removeEventListener('click', onClick);
+      input.removeEventListener('wheel', onWheel);
       renderer.dispose();
     },
   };

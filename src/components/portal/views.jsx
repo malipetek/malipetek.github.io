@@ -168,7 +168,7 @@ export function Overview() {
     .join(' · ');
 
   return (
-    <div className="cp-view">
+    <div className="cp-view cp-view--board">
       <PageHead title={t('views.overview.title', { greeting: greeting(t), name })} sub={summary}>
         <Button kind="primary" onClick={() => compose()}>
           <Icon name="plus" size={15} /> {t('nav.newRequest')}
@@ -190,8 +190,9 @@ export function Overview() {
         onMoveSite={moveSite}
       />
 
-      <div className="cp-overview">
-        <section className="cp-card cp-card--flush">
+      <div className="cp-board-scroll">
+        <div className="cp-overview">
+          <section className="cp-card cp-card--flush">
           <header className="cp-card__head">
             <h2 className="cp-h2">{stage ? stageLabel : projectName ?? t('views.overview.openRequests')}</h2>
             <div className="cp-card__tools">
@@ -260,7 +261,8 @@ export function Overview() {
             </Button>
           </div>
         )}
-      </section>
+        </section>
+      </div>
     </div>
   );
 }

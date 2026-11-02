@@ -58,7 +58,7 @@ export function Board({
   onMoveSite,
 }) {
   const t = useT();
-  const canvasRef = useRef(null);
+  const stageElRef = useRef(null);
   const capRefs = useRef({});
   const tipRef = useRef(null);
   const boardRef = useRef(null);
@@ -184,8 +184,17 @@ export function Board({
     let stopped = false;
     import('../../lib/workshop3d')
       .then(({ initBoard }) => {
-        if (stopped || !canvasRef.current) return;
-        board = initBoard(canvasRef.current, {
+        const host = document.querySelector('.cp-scene');
+        if (stopped || !host || !stageElRef.current) return;
+        // The renderer lives in the page shell, behind the portal; the stage is
+        // only the transparent input surface and the labels.
+        const canvas = document.createElement('canvas');
+        canvas.className = 'cp-board__canvas';
+        canvas.setAttribute('aria-hidden', 'true');
+        host.appendChild(canvas);
+        board = initBoard(canvas, {
+          input: stageElRef.current,
+          frame: stageElRef.current,
           items: () =>
             itemsRef.current.map((x) => ({
               id: x.id,
@@ -237,6 +246,7 @@ export function Board({
       stopped = true;
       board?.stop();
       boardRef.current = null;
+      document.querySelector('.cp-scene canvas')?.remove();
     };
   }, []);
 
@@ -262,8 +272,11 @@ export function Board({
 
   return (
     <div className={cx('cp-board', failed && 'is-flat')}>
-      <div className="cp-board__stage">
-        {!failed ? <canvas ref={canvasRef} className="cp-board__canvas" aria-hidden="true" /> : null}
+      <div
+        ref={stageElRef}
+        className="cp-board__stage"
+        aria-hidden={failed ? 'true' : undefined}
+      >
         {!failed ? (
           <div className="cp-board__nodes">
             {nodeDefs.map((n) =>

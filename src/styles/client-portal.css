@@ -111,19 +111,12 @@
     radial-gradient(42% 48% at 22% 38%, color-mix(in srgb, var(--orange) 8%, transparent), transparent 72%),
     radial-gradient(38% 42% at 82% 26%, color-mix(in srgb, var(--ink) 5%, transparent), transparent 72%);
 }
-/* The room continues behind the panels. It starts under the scene so the flat
-   page grid never fights the 3D floor's perspective. */
-.cp::before {
-  content: '';
-  position: absolute;
+/* The real 3D room lives here, behind the sidebar, the board and the cards. */
+.cp-scene {
+  position: fixed;
   inset: 0;
   z-index: 0;
-  background-image: radial-gradient(circle, color-mix(in srgb, var(--ink) 24%, transparent) 1px, transparent 1.3px);
-  background-size: 22px 22px;
-  opacity: 0.55;
   pointer-events: none;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, transparent 40%, rgba(0, 0, 0, 0.45) 58%, #000 100%);
-  mask-image: linear-gradient(to bottom, transparent 0%, transparent 40%, rgba(0, 0, 0, 0.45) 58%, #000 100%);
 }
 .cp-topbar,
 .cp-side,
@@ -647,7 +640,11 @@
 .cp-board__stage {
   position: relative;
   height: clamp(280px, 32vw, 440px);
-  isolation: isolate;
+  cursor: grab;
+  touch-action: none;
+}
+.cp-board__stage:active {
+  cursor: grabbing;
 }
 /* Instead of a frame, the scene sits in a soft, out-of-focus pool of light
    that spills past its own edges into the page. */
@@ -660,29 +657,20 @@
 .cp-board__canvas {
   position: absolute;
   inset: 0;
-  z-index: 1;
-  top: 0;
-  left: 0;
-  bottom: auto;
+  z-index: 0;
   width: 100%;
-  height: calc(100% + 220px);
+  height: 100%;
   display: block;
-  cursor: grab;
-  touch-action: none;
-  /* Fade the render into the page instead of ending it at a border. The sides
-     fade first: the scene bleeds past the text column but never ends on a hard
-     vertical cut at the sidebar. */
+  pointer-events: none;
+  /* The scene is the room: it fades at the viewport edges, never at a card. */
   -webkit-mask-image:
-    linear-gradient(to right, transparent 0%, #000 7%, #000 93%, transparent 100%),
-    linear-gradient(to bottom, transparent 0%, #000 6%, #000 72%, transparent 100%);
+    linear-gradient(to right, transparent 0%, #000 4%, #000 96%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, #000 10%, #000 91%, transparent 100%);
   -webkit-mask-composite: source-in;
   mask-image:
-    linear-gradient(to right, transparent 0%, #000 7%, #000 93%, transparent 100%),
-    linear-gradient(to bottom, transparent 0%, #000 6%, #000 72%, transparent 100%);
+    linear-gradient(to right, transparent 0%, #000 4%, #000 96%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, #000 10%, #000 91%, transparent 100%);
   mask-composite: intersect;
-}
-.cp-board__canvas:active {
-  cursor: grabbing;
 }
 /* Project and site labels ride the 3D points the scene reports each frame. */
 .cp-board__nodes {
@@ -1021,6 +1009,31 @@
 }
 
 /* ————— overview ————— */
+
+/* The overview is a cockpit: the scene and its controls stay, the cards scroll. */
+.cp-view--board {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  /* The board is wider than this column; do not clip its labels at the edge. */
+  overflow: visible;
+}
+.cp-view--board .cp-board-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 24px;
+}
+@media (max-width: 1023px) {
+  .cp-view--board {
+    height: auto;
+    display: block;
+    overflow: visible;
+  }
+  .cp-view--board .cp-board-scroll {
+    overflow: visible;
+  }
+}
 
 .cp-overview {
   display: grid;
