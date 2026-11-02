@@ -194,6 +194,12 @@ export function MarketingView() {
               ))}
             </select>
             <Button onClick={() => setModal({ kind: 'compose' })}>Compose</Button>
+            <Button
+              title="Rewrite every scheduled email from the current templates. Use it after changing the email wording."
+              onClick={() => run(() => api('POST', '/admin/marketing/messages/rerender'), 'Scheduled emails now use the current wording.')}
+            >
+              Re-render scheduled
+            </Button>
             <Button kind="primary" onClick={() => run(() => api('POST', '/admin/marketing/cycle?force=1'), cycleMessage)}>
               Draft posts
             </Button>

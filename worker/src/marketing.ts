@@ -193,6 +193,12 @@ interface SequenceStep {
   day: number;
   subject: string;
   body: string;
+  /**
+   * The same step for a contact with no observation written yet. A step whose
+   * body leans on {{gap}} ("I looked at your site and noticed…") must have one:
+   * without a real observation that sentence would be untrue.
+   */
+  plain?: string;
 }
 
 /*
@@ -208,13 +214,28 @@ export const SEQUENCES: Record<SequenceKind, SequenceStep[]> = {
       subject: 'The last mile of {{business}}',
       body: `{{greeting}}
 
-I looked at {{site}} — {{gap}}. That is usually the last mile: it works until it does not.
+I looked at {{site}} and noticed this: {{gap}}.
 
-I do what I call vibe contracting: you send a request, I approve it, an AI agent builds it on a sealed copy of your project, and I check it before you see it. You pay for my minutes, billed by the second: a one-minute fix is $1.67. No quote, no minimum.
+If you built the site with an AI tool, this is usually where the tool stops helping. I finish that part. An AI agent does the typing on a copy of your project, and I approve the job and check the result before anything goes live. I call it vibe contracting.
 
-If that is on your list, send it and I will tell you whether it fits.
+You pay for my time by the second, so a one-minute fix is $1.67. There is no quote and no minimum.
 
-Ali — malipetek.dev`,
+If you want it fixed, reply with a line and I will tell you whether it is a quick job.
+
+Ali
+malipetek.dev`,
+      plain: `{{greeting}}
+
+If you built {{site}} with an AI tool, you may have reached the point where the tool stops helping: a bug it keeps bringing back, or a deploy that fails.
+
+I finish that part. An AI agent does the typing on a copy of your project, and I approve the job and check the result before anything goes live. I call it vibe contracting.
+
+You pay for my time by the second, so a one-minute fix is $1.67. There is no quote and no minimum.
+
+If something on the site needs fixing, reply with a line and I will tell you whether it is a quick job.
+
+Ali
+malipetek.dev`,
     },
     {
       kind: 'followup_1',
@@ -222,7 +243,12 @@ Ali — malipetek.dev`,
       subject: 'Re: The last mile of {{business}}',
       body: `{{greeting}}
 
-One thing only: is that something you want fixed, or is it not worth the trouble? Either answer is useful.
+Do you want that fixed, or is it not worth the trouble? Either answer helps me.
+
+Ali`,
+      plain: `{{greeting}}
+
+Is there anything on {{site}} you want fixed, or is now a bad time? Either answer helps me.
 
 Ali`,
     },
@@ -235,6 +261,11 @@ Ali`,
 Last note from me. If it becomes worth fixing, it is $1.67 a minute of my time and no quote to wait for: malipetek.dev/portal.
 
 Ali`,
+      plain: `{{greeting}}
+
+Last note from me. If something on {{site}} becomes worth fixing, it is $1.67 a minute of my time and no quote to wait for: malipetek.dev/portal.
+
+Ali`,
     },
   ],
   cold_b: [
@@ -244,13 +275,24 @@ Ali`,
       subject: 'The smallest thing on {{business}}',
       body: `{{greeting}}
 
-{{gap}} — the kind of small thing that never gets to the top of the list because it is too small to hire for.
+I noticed this on {{site}}: {{gap}}. Jobs that size tend to wait for months, because nobody wants to hire a developer for a short job.
 
-That is what I do. I call it vibe contracting: an AI agent does the typing on a copy of your project, and I approve the job and check the result before it goes live. You pay for my minutes, by the second: a one-minute fix is $1.67. No quote, no call, no minimum.
+Short jobs are what I do. An AI agent does the typing on a copy of your site, and I approve the job and check the result before it goes live. I call it vibe contracting. You pay for my time by the second, so a one-minute fix is $1.67, and there is no call or quote first.
 
-What is the smallest thing on {{site}} you have been meaning to fix? Reply with it and I will tell you if it fits.
+Is there a small fix on {{site}} you have been putting off? Reply with it and I will tell you if it fits.
 
-Ali — malipetek.dev`,
+Ali
+malipetek.dev`,
+      plain: `{{greeting}}
+
+Most business sites carry a short list of small fixes that never get done, like old opening hours or a contact form that stopped sending. They wait because nobody wants to hire a developer for a short job.
+
+Short jobs are what I do. An AI agent does the typing on a copy of your site, and I approve the job and check the result before it goes live. I call it vibe contracting. You pay for my time by the second, so a one-minute fix is $1.67, and there is no call or quote first.
+
+Is there a small fix on {{site}} you have been putting off? Reply with it and I will tell you if it fits.
+
+Ali
+malipetek.dev`,
     },
     {
       kind: 'followup_1',
@@ -258,7 +300,7 @@ Ali — malipetek.dev`,
       subject: 'Re: The smallest thing on {{business}}',
       body: `{{greeting}}
 
-One question: what is the smallest thing on {{site}} you have been meaning to fix? Small is where this is cheapest — you pay for my minutes, not the hours it would have taken.
+What is the smallest thing on {{site}} you have been meaning to fix? Small jobs are where this costs least: you pay for the minutes I spend, and the agent's part costs cents.
 
 Ali`,
     },
@@ -268,7 +310,7 @@ Ali`,
       subject: 'Re: The smallest thing on {{business}}',
       body: `{{greeting}}
 
-I will leave it here. If a small fix ever gets annoying enough, the portal is open: malipetek.dev/portal. No call, no quote.
+I will leave it here. If a small fix ever gets annoying enough, you can send it through malipetek.dev/portal without a call or a quote.
 
 Ali`,
     },
@@ -280,11 +322,11 @@ Ali`,
       subject: 'A small experiment (and a favour)',
       body: `{{greeting}}
 
-I have turned my contracting work into what I call vibe contracting. You write what you need, I approve it, an AI agent builds it on a sealed copy of the project, and I check it before it ships. You pay for my minutes, billed by the second — a one-minute fix is $1.67. No quote, no minimum.
+I have changed how I take on small software jobs. You write what you need, I approve it, an AI agent builds it on a copy of the project, and I check the result before it ships. I call it vibe contracting. You pay for my time by the second, so a one-minute fix is $1.67, with no quote and no minimum.
 
 I am looking for the first few real jobs to put through it. Is there a small thing on {{site}} you have been putting off? I would rather it were yours than a stranger's.
 
-No pressure if not — and if you know someone with a small fix, I would take the introduction.
+No pressure if not. If you know someone with a small fix, I would take the introduction.
 
 Ali`,
     },
@@ -294,7 +336,7 @@ Ali`,
       subject: 'Re: A small experiment (and a favour)',
       body: `{{greeting}}
 
-One question: what is the smallest thing on {{site}} you have been meaning to fix? Small is where this is cheapest — you pay for my minutes, not the hours it would have taken.
+What is the smallest thing on {{site}} you have been meaning to fix? Small jobs are where this costs least: you pay for the minutes I spend, and the agent's part costs cents.
 
 Ali`,
     },
@@ -312,9 +354,9 @@ Ali`,
 };
 
 export const SEQUENCE_LABELS: Record<SequenceKind, string> = {
-  cold_a: 'Cold A — someone who built it with AI',
-  cold_b: 'Cold B — a business owner with a small list',
-  warm: 'Warm — past collaborators',
+  cold_a: 'Cold A: someone who built it with AI',
+  cold_b: 'Cold B: a business owner with a small list',
+  warm: 'Warm: past collaborators',
 };
 
 export const SEQUENCE_NEEDS_GAP: Record<SequenceKind, boolean> = { cold_a: true, cold_b: true, warm: false };
@@ -426,6 +468,60 @@ async function logEvent(
     .run();
 }
 
+/** The body a step sends: its plain version when the contact has no observation. */
+export function stepBody(step: SequenceStep, specificGap: boolean): string {
+  return specificGap || !step.plain ? step.body : step.plain;
+}
+
+/**
+ * Which sequence a queued message belongs to, from its subject: the messages
+ * table keeps the step, not the sequence.
+ */
+export function sequenceOfSubject(subject: string | null): SequenceKind | null {
+  const s = subject ?? '';
+  if (/^(Re: )?The last mile of /.test(s)) return 'cold_a';
+  if (/^(Re: )?The smallest thing on /.test(s)) return 'cold_b';
+  if (/^(Re: )?A small experiment/.test(s)) return 'warm';
+  return null;
+}
+
+/**
+ * Re-render every scheduled email from the current templates, so a wording
+ * change reaches mail that is already queued. Keeps each message's slot,
+ * recipient and step; a message whose sequence cannot be told is left alone.
+ */
+export async function rerenderScheduled(env: Env): Promise<{ updated: number; skipped: number }> {
+  const { results } = await env.DB.prepare(
+    `SELECT m.id, m.step, m.subject, c.email, c.name, c.business, c.site, c.gap
+       FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
+      WHERE m.channel = 'email' AND m.status = 'scheduled'`,
+  ).all<{ id: number; step: number; subject: string | null; email: string; name: string | null; business: string | null; site: string | null; gap: string | null }>();
+  const t = now();
+  const updates: D1PreparedStatement[] = [];
+  let skipped = 0;
+  for (const row of results ?? []) {
+    const kind = sequenceOfSubject(row.subject);
+    const step = kind ? SEQUENCES[kind][row.step] : undefined;
+    if (!step) {
+      skipped += 1;
+      continue;
+    }
+    const specific = Boolean(row.gap?.trim());
+    const fields = { ...row, gap: row.gap?.trim() || GENERIC_GAP } as unknown as ContactFields;
+    updates.push(
+      env.DB.prepare('UPDATE marketing_messages SET subject = ?, body = ?, updated_at = ? WHERE id = ? AND status = ?').bind(
+        fillTemplate(step.subject, fields),
+        fillTemplate(stepBody(step, specific), fields),
+        t,
+        row.id,
+        'scheduled',
+      ),
+    );
+  }
+  for (const batch of chunk(updates, 50)) await env.DB.batch(batch);
+  return { updated: updates.length, skipped };
+}
+
 /** A true, if generic, opener for contacts whose specific observation is not written yet. */
 export const GENERIC_GAP = 'there are a couple of small things I would fix first';
 
@@ -444,6 +540,7 @@ function sequenceStatements(
   startAt: number,
   genericGap = false,
 ): D1PreparedStatement[] {
+  const specific = Boolean(contact.gap?.trim());
   const fields = { ...contact, gap: contact.gap?.trim() || (genericGap ? GENERIC_GAP : null) };
   const t = now();
   return SEQUENCES[kind].map((step, index) =>
@@ -458,7 +555,7 @@ function sequenceStatements(
       index,
       contact.email,
       fillTemplate(step.subject, fields),
-      fillTemplate(step.body, fields),
+      fillTemplate(stepBody(step, specific), fields),
       startAt + step.day * 86400,
       t,
       t,
@@ -1557,6 +1654,13 @@ marketing.put('/admin/marketing/settings', async (c) => {
   if (!body) return out(c, { error: 'bad_json' }, 400);
   const rejected = await saveMarketingSettings(c.env, body);
   return out(c, { settings: await readMarketingSettings(c.env), rejected });
+});
+
+/** Templates changed: bring the scheduled emails in line with them. */
+marketing.post('/admin/marketing/messages/rerender', async (c) => {
+  const done = await rerenderScheduled(c.env);
+  await logEvent(c.env, { kind: 'rerendered', detail: `${done.updated} scheduled emails re-rendered, ${done.skipped} left alone` });
+  return out(c, done);
 });
 
 marketing.post('/admin/marketing/run', async (c) => {

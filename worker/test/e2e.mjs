@@ -430,6 +430,15 @@ const groups = {
       bulk.status === 200 && bulk.data.queued >= 500 && bulk.data.emails >= 1500,
       JSON.stringify(bulk.data),
     );
+    // Without a real observation, no email may claim someone looked at the site.
+    const firstOf = () =>
+      sql(`SELECT body FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
+            WHERE c.email = 'bulk7@example.test' AND m.step = 0 AND m.status = 'scheduled'`).toString();
+    const plainFirst = firstOf();
+    check('a contact without an observation gets the plain opener, not "I looked at…"', /reached the point where the tool stops helping/.test(plainFirst) && !/I looked at/.test(plainFirst), plainFirst.slice(0, 300));
+    sql(`UPDATE marketing_messages SET body = 'stale wording' WHERE status = 'scheduled' AND to_email = 'bulk7@example.test';`);
+    const rerendered = await call('/admin/marketing/messages/rerender', { method: 'POST', auth: admin });
+    check('re-render brings scheduled emails back to the current templates', rerendered.status === 200 && rerendered.data.updated >= 1500 && !/stale wording/.test(firstOf()), JSON.stringify(rerendered.data));
 
     const bad = await call('/admin/marketing/settings', { method: 'PUT', auth: admin, body: { dailyCap: 0, live: 'yes' } });
     check('a bad setting is refused and the old value stands', bad.data.rejected.length === 2 && bad.data.settings.dailyCap === 20);

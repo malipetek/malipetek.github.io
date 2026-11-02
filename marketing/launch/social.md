@@ -24,7 +24,7 @@ The reader has never heard of this. Each post is a first introduction:
 
 - LinkedIn: 3 posts a week for four weeks, then 1–2 a week. Reply to every
   comment.
-- X: one thread a week, plus short singles. Repost LinkedIn ideas, rewritten —
+- X: one thread a week, plus short singles. Repost LinkedIn ideas, rewritten,
   not copy-pasted the same hour.
 - Communities: one post each, following their rules. One is enough.
 - Directory listings: submit once, then leave them alone.
@@ -36,25 +36,23 @@ not the distribution.
 
 ## LinkedIn
 
-### Post 1 — the machine (launch, with video)
+### Post 1: the machine (launch, with video)
 
-> I turned my contracting work into a machine, then pointed it at itself.
+> I turned my contracting work into a pipeline, and I call it vibe contracting:
+> you write what you need, I approve it, an AI agent does the typing in a
+> sealed copy of the project, and I check the result before it ships. You see
+> a preview first and publish when you are happy with it.
 >
-> You write what you need. I approve it. An agent does the typing in a sealed
-> copy of the project. I check the result before it ships. You see a preview,
-> then publish.
->
-> You pay for my minutes, by the second — a one-minute fix is $1.67. No quote,
-> no call, no minimum.
+> You pay for my minutes, by the second, so a one-minute fix is $1.67. There is
+> no quote, no call and no minimum.
 >
 > 90 seconds of how it works: [video]
 >
 > The first five pilot jobs billed between $2.18 and $8.25. They were pilot
-> jobs on my own and demo projects — not clients yet. That is the part I can
-> prove today, and it is the part that matters: the bill is measured, not
-> estimated.
+> jobs on my own and demo projects, not clients yet, and each bill came from
+> the meter.
 
-### Post 2 — the pilot numbers
+### Post 2: the pilot numbers
 
 > First five jobs through the system:
 >
@@ -64,41 +62,32 @@ not the distribution.
 > - $0.56 of AI, at cost
 > - five of five runs finished; average run 37 seconds
 >
-> They were pilot jobs on my own and demo projects, not paying clients. I am
-> not going to pretend otherwise.
->
-> What it does show is the model: a small job produces a small, itemised bill.
-> Measured minutes at $100/hour, by the second, plus the AI at cost. No
-> minimum, no quote, no markup.
+> They were pilot jobs on my own and demo projects, not paying clients. Each
+> one got a small, itemised bill: my measured minutes at $100/hour, by the
+> second, plus the AI at cost, with no minimum and no markup.
 
-### Post 3 — one real change
+### Post 3: one real change
 
-> One real job through the system:
+> One real job through the system: 2 files changed, 91 lines added and 5
+> removed. It took 3m05s of my time and $0.18 of AI at cost, $5.32 in total.
 >
-> 2 files changed. 91 lines added, 5 removed.
-> 3m05s of my time. $0.18 of AI, at cost. $5.32.
->
-> Most of that 3m05s was reading the diff, not writing it. That is the product:
-> the agent does the typing, and a developer is still the one who decides what
-> ships.
+> I spent most of those three minutes reading the diff. The agent did the
+> typing, and I decided what shipped.
 
-### Post 4 — the last mile (essay, no pitch until the end)
+### Post 4: the last mile (essay, no pitch until the end)
 
-> You can vibe code most of it. The last mile is where it stalls.
+> You can vibe code most of an app. It usually stalls on the last part: a bug
+> the AI keeps bringing back, a deploy that worked yesterday, or the payments
+> integration.
 >
-> The bug it keeps bringing back. The deploy that worked yesterday. The payments
-> integration. The thing that only breaks for real customers.
+> An agency would want a call, a quote and a minimum for that. A chatbot writes
+> the code but never puts it in your project or answers for it.
 >
-> The usual options are both wrong. An agency wants a call, a quote and a
-> minimum. A chatbot writes code it never puts in your project, never runs, and
-> never answers for.
->
-> So I built the middle: you send the part that stalled. I approve the job. An
-> agent does the typing on a sealed copy of your project — it cannot touch what
-> is live. I check the result before you see it. You pay for the minutes I
-> actually spend, by the second.
->
-> A one-minute fix is $1.67. No quote, no call, no minimum.
+> I take that part as a vibe contractor. You send the piece that stalled and I
+> approve the job. An AI agent does the typing on a sealed copy of your
+> project, so it cannot touch what is live, and I check the result before you
+> see it. You pay for the minutes I spend, by the second: a one-minute fix is
+> $1.67, with no quote, call or minimum.
 >
 > malipetek.dev/portal
 
@@ -108,30 +97,32 @@ not the distribution.
 
 ### Thread
 
-> 1/ You can vibe code most of it. The last mile is where it stalls — the bug
-> that keeps coming back, the deploy, the payments.
+> 1/ You can vibe code most of an app. It stalls on the last part: the bug that
+> keeps coming back, or the payments.
 >
-> 2/ Send that part. I approve the job. An agent does the typing in a sealed
-> copy of your project. I check it before it ships.
+> 2/ I take that part. I call it vibe contracting: I approve the job, an AI
+> agent does the typing in a sealed copy of your project, and I check it
+> before it ships.
 >
 > 3/ You pay for my time at $100/hour, by the second, plus the AI at cost. A
-> one-minute fix is $1.67. No quote, no minimum.
+> one-minute fix is $1.67, with no quote and no minimum.
 >
-> 4/ First five pilot jobs: $2.18–$8.25. $0.56 of AI in total. 13m19s of my
-> time. 5/5 runs finished.
+> 4/ First five pilot jobs: $2.18 to $8.25 each, $0.56 of AI in total, 13m19s
+> of my time, and all five runs finished.
 >
-> 5/ Pilot jobs on my own and demo projects, not clients yet. That is the
-> honest version. The point is the bill is measured, not estimated.
+> 5/ Those were pilot jobs on my own and demo projects, not clients yet. Every
+> bill came from the meter.
 >
 > 6/ malipetek.dev/portal
 
 ### Singles
 
-- No quote. No call. No minimum. A one-minute fix is $1.67.
-- The agent types. I sign off.
+- A one-minute fix is $1.67, with no quote, no call and no minimum.
+- Vibe contracting: an AI agent does the typing, and I sign off on every
+  change before it ships.
 - A real job: 2 files, 91 lines, 3m05s of my time, $5.32.
 - "So AI writes my code?" It does the typing. I approve the job and check the
-  result. You choose how closely.
+  result, as closely as you ask.
 
 ---
 
@@ -141,7 +132,7 @@ Read the rules before posting. Most communities allow one "show" post and ban
 links in the body; put the link in a comment if that is the rule. One post,
 then participate like a person.
 
-### Indie Hackers — Show IH
+### Indie Hackers: Show IH
 
 > **Vibe contracting: a metered dev shop where an agent does the typing and a
 > human signs off on the work**
@@ -157,16 +148,16 @@ then participate like a person.
 > $2.18–$8.25. The interesting number is the AI: 8–18 cents a job. The rest is
 > my time.
 >
-> The hard part is not the agent. It is the queue, the leases, the preview
-> branch, and making the bill explain itself.
+> The agent was the easy part. Most of the work went into the queue, the
+> leases, the preview branch, and a bill that explains itself.
 >
 > Happy to answer questions about the pipeline. Link in the comments.
 
-### Local business group — promotion thread only
+### Local business group: promotion thread only
 
 > Small website fixes, by the minute. If something on your site has been on the
-> list for months — opening hours, a form that does not send, a page that looks
-> wrong on a phone — I can take it. You pay for my minutes, by the second; a
+> list for months, like opening hours or a form that does not send, I can take
+> it. You pay for my minutes, by the second; a
 > one-minute fix is $1.67. No quote, no call, no minimum. Happy to tell you
 > whether it fits before anything starts.
 
@@ -214,7 +205,7 @@ discovery; do not count it as a launch channel.
 > **Software help, by the minute.** Vibe contracting from a one-person dev shop:
 > you send a request, I approve it, the agent builds it on a sealed copy
 > of your project, and I check it before you see it. You pay for my minutes,
-> billed by the second — a one-minute fix is $1.67. No quote, no minimum.
+> billed by the second: a one-minute fix is $1.67, with no quote and no minimum.
 > Serverless, small jobs welcome. malipetek.dev
 
 ---
@@ -230,7 +221,7 @@ discovery; do not count it as a launch channel.
 > I do vibe contracting: an AI agent does the typing, and I sign off on every
 > change before it ships.
 >
-> You send a request — a fix, a feature, an integration that broke. I approve it
+> You send a request: a fix, a feature, an integration that broke. I approve it
 > before anything starts. The agent does the typing in a sealed copy of your
 > project, so nothing live is touched. I check the result before you see it, as
 > closely as you ask.
@@ -252,19 +243,19 @@ discovery; do not count it as a launch channel.
 ### Email signature
 
 > Ali Petek
-> Software help, by the minute · malipetek.dev/portal
+> Vibe contracting, by the minute · malipetek.dev/portal
 
 ---
 
 ## Comment and reply bank
 
-- **"What does it cost?"** — My time at $100/hour, by the second, plus the AI at
+- **"What does it cost?"** My time at $100/hour, by the second, plus the AI at
   cost. A one-minute fix is $1.67. No minimum.
-- **"Is this just ChatGPT?"** — It is a developer with an agent doing the typing.
+- **"Is this just ChatGPT?"** It is a developer with an agent doing the typing.
   I approve the job and check the diff before it ships.
-- **"How do you keep it from breaking things?"** — Sealed copy, never live.
-  Preview first. I read the result.
-- **"Do you do X?"** — Tell me what X is and I will say honestly whether it is a
+- **"How do you keep it from breaking things?"** The agent works on a sealed
+  copy, never on what is live. You see a preview first, and I read the result.
+- **"Do you do X?"** Tell me what X is and I will say honestly whether it is a
   fit.
-- **"Cool project."** — Thanks — the hard part was the queue and the bill, not
-  the agent. (Then stop. Do not pitch in the replies.)
+- **"Cool project."** Thanks. The queue and the bill took most of the work.
+  (Then stop. Do not pitch in the replies.)

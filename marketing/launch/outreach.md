@@ -4,8 +4,10 @@ Warm and cold email, LinkedIn DMs, and the replies to what people actually
 ask. Plain text. One ask per email. No attachments on the first touch. No
 tracking pixels.
 
-Replace `{site}`, `{business}`, `{gap}` and `{name}` every time. If you cannot
-fill `{gap}` with one specific, true observation, do not send the email.
+Replace `{site}`, `{business}`, `{gap}` and `{name}` every time. `{gap}` is one
+specific, true observation about their site. When a contact has none, the
+queue sends the plain version of each email instead, which makes no claim
+about the site. Never write "I looked at your site" without having looked.
 
 The opt-out line is not optional. Keep it in every cold email.
 
@@ -21,40 +23,43 @@ If the observation is not true, the whole email is spam. Check the site.
 
 ---
 
+<!-- Generated from SEQUENCES in worker/src/marketing.ts (the copy that is sent). Edit the templates there, then run `node --experimental-strip-types --no-warnings scripts/build-outreach.mjs` in worker/ and press "Re-render scheduled" in Admin → Marketing. -->
+
 ## Warm: past collaborators and people who know the work
 
 Use for Customily, TRUTH NYC, PAX Digital, Bemeir, and personal contacts.
+
+### First email
 
 **Subject:** A small experiment (and a favour)
 
 > Hi {name},
 >
-> I have turned my contracting work into what I call vibe contracting. You
-> write what you need, I approve it, an AI agent builds it on a sealed copy of the project,
-> and I check it before it ships. You pay for my minutes, billed by the second —
-> a one-minute fix is $1.67. No quote, no minimum.
+> I have changed how I take on small software jobs. You write what you need, I approve it, an AI agent builds it on a copy of the project, and I check the result before it ships. I call it vibe contracting. You pay for my time by the second, so a one-minute fix is $1.67, with no quote and no minimum.
 >
-> I am looking for the first few real jobs to put through it. Is there a small
-> thing on {site or product} you have been putting off? I would rather it were
-> yours than a stranger's.
+> I am looking for the first few real jobs to put through it. Is there a small thing on {site} you have been putting off? I would rather it were yours than a stranger's.
 >
-> No pressure if not — and if you know someone with a small fix, I would take
-> the introduction.
+> No pressure if not. If you know someone with a small fix, I would take the introduction.
 >
 > Ali
 
-**Follow-up, day 4:**
+### Follow-up, day 4
 
-> One question, {name}: what is the smallest thing on {site} you have been
-> meaning to fix? Small is where this is cheapest — you pay for my minutes, not
-> the hours it would have taken.
+**Subject:** Re: A small experiment (and a favour)
+
+> Hi {name},
+>
+> What is the smallest thing on {site} you have been meaning to fix? Small jobs are where this costs least: you pay for the minutes I spend, and the agent's part costs cents.
 >
 > Ali
 
-**Follow-up, day 10 (close the loop):**
+### Follow-up, day 10
 
-> I will stop filling your inbox. If something small comes up, the door is
-> open: malipetek.dev/portal.
+**Subject:** Re: A small experiment (and a favour)
+
+> Hi {name},
+>
+> I will stop filling your inbox. If something small comes up, the door is open: malipetek.dev/portal.
 >
 > Ali
 
@@ -66,35 +71,71 @@ For a site or app with the marks of a fast AI build: inconsistent spacing, a
 placeholder that made it live, a form that does nothing, a mobile layout that
 breaks.
 
+### First email
+
 **Subject:** The last mile of {business}
 
 > Hi {name},
 >
-> I looked at {site} — {one specific, true observation}. That is usually the
-> last mile: it works until it does not.
+> I looked at {site} and noticed this: {gap}.
 >
-> I do what I call vibe contracting: you send a request, I approve it, an AI
-> agent builds it on a sealed copy of your project, and I check it before you
-> see it. You pay for my minutes, billed by the second: a
-> one-minute fix is $1.67. No quote, no minimum.
+> If you built the site with an AI tool, this is usually where the tool stops helping. I finish that part. An AI agent does the typing on a copy of your project, and I approve the job and check the result before anything goes live. I call it vibe contracting.
 >
-> If {gap} is on your list, send it and I will tell you whether it fits.
+> You pay for my time by the second, so a one-minute fix is $1.67. There is no quote and no minimum.
 >
-> Ali — malipetek.dev
+> If you want it fixed, reply with a line and I will tell you whether it is a quick job.
 >
-> If this is not useful, reply "no" and I will not write again.
+> Ali
+> malipetek.dev
 
-**Follow-up, day 4:**
+Without a written observation, the queue sends this instead (it makes no claim about the site):
 
-> {name} — one thing only: is {gap} something you want fixed, or is it not
-> worth the trouble? Either answer is useful.
+> Hi {name},
+>
+> If you built {site} with an AI tool, you may have reached the point where the tool stops helping: a bug it keeps bringing back, or a deploy that fails.
+>
+> I finish that part. An AI agent does the typing on a copy of your project, and I approve the job and check the result before anything goes live. I call it vibe contracting.
+>
+> You pay for my time by the second, so a one-minute fix is $1.67. There is no quote and no minimum.
+>
+> If something on the site needs fixing, reply with a line and I will tell you whether it is a quick job.
+>
+> Ali
+> malipetek.dev
+
+### Follow-up, day 4
+
+**Subject:** Re: The last mile of {business}
+
+> Hi {name},
+>
+> Do you want that fixed, or is it not worth the trouble? Either answer helps me.
 >
 > Ali
 
-**Follow-up, day 10:**
+Without a written observation, the queue sends this instead (it makes no claim about the site):
 
-> Last note from me. If it becomes worth fixing, it is $1.67 a minute of my
-> time and no quote to wait for: malipetek.dev/portal.
+> Hi {name},
+>
+> Is there anything on {site} you want fixed, or is now a bad time? Either answer helps me.
+>
+> Ali
+
+### Follow-up, day 10
+
+**Subject:** Re: The last mile of {business}
+
+> Hi {name},
+>
+> Last note from me. If it becomes worth fixing, it is $1.67 a minute of my time and no quote to wait for: malipetek.dev/portal.
+>
+> Ali
+
+Without a written observation, the queue sends this instead (it makes no claim about the site):
+
+> Hi {name},
+>
+> Last note from me. If something on {site} becomes worth fixing, it is $1.67 a minute of my time and no quote to wait for: malipetek.dev/portal.
 >
 > Ali
 
@@ -102,40 +143,54 @@ breaks.
 
 ## Cold B: a business owner with a small list
 
-For a local business, a small shop, a restaurant, a studio — someone with a
+For a local business, a small shop, a restaurant or a studio: someone with a
 site that is mostly fine and a list of small things that never get done.
+
+### First email
 
 **Subject:** The smallest thing on {business}
 
 > Hi {name},
 >
-> {one specific, true observation} — the kind of small thing that never gets to
-> the top of the list because it is too small to hire for.
+> I noticed this on {site}: {gap}. Jobs that size tend to wait for months, because nobody wants to hire a developer for a short job.
 >
-> That is what I do. I call it vibe contracting: an AI agent does the typing on
-> a copy of your project, and I approve the job and check the result before it
-> goes live.
-> You pay for my minutes, by the second: a one-minute fix is $1.67. No quote, no
-> call, no minimum.
+> Short jobs are what I do. An AI agent does the typing on a copy of your site, and I approve the job and check the result before it goes live. I call it vibe contracting. You pay for my time by the second, so a one-minute fix is $1.67, and there is no call or quote first.
 >
-> What is the smallest thing on {site} you have been meaning to fix? Reply with
-> it and I will tell you if it fits.
+> Is there a small fix on {site} you have been putting off? Reply with it and I will tell you if it fits.
 >
-> Ali — malipetek.dev
->
-> If this is not useful, reply "no" and I will not write again.
+> Ali
+> malipetek.dev
 
-**Follow-up, day 4:**
+Without a written observation, the queue sends this instead (it makes no claim about the site):
 
-> One question, {name}: what is the smallest thing on {site} you have been
-> meaning to fix? Small is where this is cheapest.
+> Hi {name},
+>
+> Most business sites carry a short list of small fixes that never get done, like old opening hours or a contact form that stopped sending. They wait because nobody wants to hire a developer for a short job.
+>
+> Short jobs are what I do. An AI agent does the typing on a copy of your site, and I approve the job and check the result before it goes live. I call it vibe contracting. You pay for my time by the second, so a one-minute fix is $1.67, and there is no call or quote first.
+>
+> Is there a small fix on {site} you have been putting off? Reply with it and I will tell you if it fits.
+>
+> Ali
+> malipetek.dev
+
+### Follow-up, day 4
+
+**Subject:** Re: The smallest thing on {business}
+
+> Hi {name},
+>
+> What is the smallest thing on {site} you have been meaning to fix? Small jobs are where this costs least: you pay for the minutes I spend, and the agent's part costs cents.
 >
 > Ali
 
-**Follow-up, day 10:**
+### Follow-up, day 10
 
-> I will leave it here. If a small fix ever gets annoying enough, the portal is
-> open: malipetek.dev/portal. No call, no quote.
+**Subject:** Re: The smallest thing on {business}
+
+> Hi {name},
+>
+> I will leave it here. If a small fix ever gets annoying enough, you can send it through malipetek.dev/portal without a call or a quote.
 >
 > Ali
 

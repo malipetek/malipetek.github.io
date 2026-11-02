@@ -523,6 +523,37 @@ test('content: a post is cleaned, measured and checked before it is queued', () 
   assert.equal(cleanPost('text <<<OUTBOX', 'x').ok, false);
 });
 
+test('content: machine tells are refused, plain negation is not (marketing/style/README.md)', () => {
+  const refused = [
+    'Not what I promise, but what it will not let happen.',
+    'It is not clever. It is the boring part.',
+    'It is not about the code, it is about who answers for it.',
+    'This is not a chatbot, but a developer with an agent.',
+    'Fixes, not just code.',
+    'A one-minute fix \u2014 no quote.',
+    'Here is what changes when you send it to me.',
+    "Here's the thing: small jobs wait.",
+    'The truth is, small jobs wait.',
+    'A seamless way to ship.',
+    'We leverage agents to unlock speed.',
+    'The question I hear most from business owners: why not a chatbot?',
+  ];
+  for (const text of refused) {
+    const out = cleanPost(text, 'linkedin');
+    assert.equal(out.ok, false, text);
+    assert.match(out.ok ? '' : out.reason, /machine-written/, text);
+  }
+  const allowed = [
+    'That list is the job, not the typing.',
+    'I do not approve work I have not read, but I read fast.',
+    'You do not need a call, but you can ask for one.',
+    'Not every fix needs me: some take a minute.',
+    'It works until it does not.',
+    'Three minutes of my time. $5.32. malipetek.dev/portal',
+  ];
+  for (const text of allowed) assert.equal(cleanPost(text, 'linkedin').ok, true, text);
+});
+
 /* —— i18n: the translation bridge, locales and interface strings —— */
 
 import { mask, unmask, parseTranslation, sameLanguage, translateText, forAli } from '../src/translate.ts';

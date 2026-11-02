@@ -2163,6 +2163,14 @@ var __awPlugin = (() => {
             Object.keys(MESSAGE_TONE).map((s) => /* @__PURE__ */ jsx("option", { value: s, children: s }, s))
           ] }),
           /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "compose" }), children: "Compose" }),
+          /* @__PURE__ */ jsx(
+            Button,
+            {
+              title: "Rewrite every scheduled email from the current templates. Use it after changing the email wording.",
+              onClick: () => run(() => api("POST", "/admin/marketing/messages/rerender"), "Scheduled emails now use the current wording."),
+              children: "Re-render scheduled"
+            }
+          ),
           /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => run(() => api("POST", "/admin/marketing/cycle?force=1"), cycleMessage), children: "Draft posts" })
         ] }) : null,
         tab === "settings" ? /* @__PURE__ */ jsx(Button, { onClick: () => run(() => api("POST", "/admin/marketing/run"), "Ran the sender."), children: "Run now" }) : null

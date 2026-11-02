@@ -98,6 +98,36 @@ const BANNED = [
   { pattern: /\b(10x|100x)\b/i, reason: 'claims a multiplier' },
 ];
 
+/*
+ * Machine tells (marketing/style/README.md). Only the ones precise enough to
+ * reject on sight; everything fuzzier (fragment triads, quotable closers) is
+ * left to the rewrite pass the brief asks for. Exported for the tests.
+ */
+export const SLOP: { pattern: RegExp; reason: string }[] = [
+  { pattern: /\u2014/, reason: 'uses an em dash' },
+  {
+    // A sentence that opens with "Not ...", or "is not a/the/about ...", then
+    // pivots. Plain negation ("you do not need a call, but you can") is fine.
+    pattern:
+      /(?:^|[.!?]\s+|\n)not [^.!?\n]{1,60}?[,;:\u2013]\s*(?:but|it'?s|it is|they'?re|they are)\b|\b(?:is|are|was|were|'s|'re) not (?:a|an|the|about|only|merely)\b[^.!?\n]{1,60}?[,;:\u2013]\s*(?:but|it'?s|it is|they'?re|they are)\b/i,
+    reason: 'uses a "not X, but Y" contrast',
+  },
+  { pattern: /\b(it'?s|it is|this is|that'?s|that is) not [^.!?\n]{1,60}\.\s*(it'?s|it is|this is|that'?s|that is)\b/i, reason: 'uses an "it\'s not X. It\'s Y." contrast' },
+  { pattern: /\bnot just\b/i, reason: 'says "not just"' },
+  {
+    pattern: /\b(here'?s|here is) (what|the thing|why|how|the deal|the kicker)\b|\bthe (truth|reality|uncomfortable truth) is\b|\blet that sink in\b|\bmake no mistake\b|\bfull stop\b/i,
+    reason: 'clears its throat ("here\'s what", "the truth is"...)',
+  },
+  {
+    pattern: /\b(delve|tapestry|testament|game[- ]?changer|seamless(ly)?|leverag(e|es|ing)|unlock(s|ing)?|elevate[sd]?|empower(s|ing)?|supercharg\w*|robust|pivotal|ever[- ]evolving|in today'?s|in a world where|at its core)\b/i,
+    reason: 'uses stock AI vocabulary',
+  },
+  {
+    pattern: /\b(the question i (hear|get) (most|all the time)|people (always|often|keep) ask|clients (tell|ask) me)\b/i,
+    reason: 'invents an audience',
+  },
+];
+
 /** One post, or the reason it cannot go out as written. */
 export function cleanPost(raw: unknown, channel: 'x' | 'linkedin'): CleanPost {
   if (typeof raw !== 'string') return { ok: false, reason: 'not text' };
@@ -113,6 +143,7 @@ export function cleanPost(raw: unknown, channel: 'x' | 'linkedin'): CleanPost {
   const limit = channel === 'x' ? 280 : 3_000;
   if (text.length > limit) return { ok: false, reason: `${text.length} characters, ${channel} allows ${limit}` };
   for (const rule of BANNED) if (rule.pattern.test(text)) return { ok: false, reason: rule.reason };
+  for (const rule of SLOP) if (rule.pattern.test(text)) return { ok: false, reason: `reads as machine-written: ${rule.reason}` };
   const hashtags = text.match(/#[A-Za-z0-9_]+/g) ?? [];
   if (hashtags.length > 2) return { ok: false, reason: `${hashtags.length} hashtags` };
   return { ok: true, text };
@@ -215,6 +246,8 @@ function brief(posts: RecentPost[], offsetMinutes: number, voice: string): strin
     '- marketing/launch/social.md — voice, cadence and the ideas already used',
     '- marketing/launch/proof.md — the only numbers you may use',
     '- marketing/kit.md — what the product is, if you need the framing',
+    '- marketing/style/README.md — how to write so it does not read as machine-written,',
+    '  and the two skills it points to (humanizer, stop-slop). This is mandatory.',
     ...(voice ? ['', 'The desk adds this about voice; follow it over the kit where they disagree:', voice] : []),
     '',
     'Recent posts, oldest first. Do not repeat an angle that is already here:',
@@ -240,6 +273,14 @@ function brief(posts: RecentPost[], offsetMinutes: number, voice: string): strin
     '  there, write a different post.',
     '- Each post stands alone months from now: no “this week”, no thread references,',
     '  no numbering.',
+    '- Write each post, then rewrite it the way marketing/style/README.md says: mark',
+    '  the tells with marketing/style/humanizer/SKILL.md, rewrite the whole post, and',
+    '  score it with the stop-slop rubric. Rewrite anything under 40/50.',
+    '- These get a post refused outright: an em dash, "not X, but Y" or "not just",',
+    '  "here\'s what/why/the thing", "the truth is", stock AI words (delve, seamless,',
+    '  leverage, unlock, elevate, robust...), and invented audiences ("the question I',
+    '  hear most"). No fragment triads, no closing one-liner built to be quoted.',
+    '- In the prose before the block, give each post\'s stop-slop score in one line.',
     '- Text only. Do not change or commit any files.',
     '',
     'End your reply with this block, and nothing after it:',
