@@ -130,13 +130,13 @@ The `contact_messages` collection must accept those fields.
 pnpm --dir worker install
 pnpm --dir worker typecheck        # tsc --noEmit
 pnpm --dir worker dev              # vite dev (local workerd, reads .dev.vars)
-pnpm --dir worker deploy           # vite build && wrangler deploy
 ```
 
-Run the script, not `wrangler deploy` on its own. A bare `wrangler deploy`
-uploads whatever is already in `dist/`, so an edit to `src/` ships nothing and
-looks like a successful deploy — the version id changes and the old code keeps
-running. `typecheck` does not build either.
+Deploys run from git: merge to `master`, and `.github/workflows/deploy.yml`
+runs the tests, applies D1 migrations and deploys with `BUILD_SHA`. The old
+`pnpm --dir worker deploy` now refuses on a laptop (`scripts/require-ci.mjs`);
+a bare `wrangler deploy` would upload whatever is already in `dist/`, so it is
+no longer a supported path.
 
 ### Tests
 

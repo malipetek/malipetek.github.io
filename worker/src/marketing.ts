@@ -1472,6 +1472,7 @@ export function messageView(m: Message & { contact_email?: string | null }) {
 marketing.get('/admin/marketing/messages', async (c) => {
   const status = c.req.query('status') ?? '';
   const channel = c.req.query('channel') ?? '';
+  const campaign = c.req.query('campaign') ?? '';
   const where: string[] = [];
   const binds: unknown[] = [];
   if (status) {
@@ -1481,6 +1482,12 @@ marketing.get('/admin/marketing/messages', async (c) => {
   if (['email', 'x', 'linkedin'].includes(channel)) {
     where.push('m.channel = ?');
     binds.push(channel);
+  }
+  // The desk's own campaigns can be thousands of rows; the queue view asks for
+  // 'auto' so its posts are never pushed out of the 200-row window.
+  if (/^[a-z0-9_-]{1,40}$/.test(campaign)) {
+    where.push('m.campaign = ?');
+    binds.push(campaign);
   }
   const { results } = await c.env.DB.prepare(
     `SELECT m.*, c.email AS contact_email

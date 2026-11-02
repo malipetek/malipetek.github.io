@@ -212,7 +212,7 @@ const BRIDGE_MAX_BODY = 1_000_000;
 const bridge = { url: null, secret: randomBytes(32).toString('hex') };
 
 /** The Worker that serves the portal. Overridable with `/admin endpoint <url>`. */
-const DEFAULT_ENDPOINT = 'https://malipetek-intercom.malipetek.workers.dev';
+const DEFAULT_ENDPOINT = 'https://malipetek.dev/api';
 
 /** Mirrors `STATUSES` in the Worker; a status outside this list is rejected there. */
 const STATUSES = ['new', 'approved', 'in_progress', 'review', 'done', 'declined'];

@@ -629,7 +629,13 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
         attention: args.attention,
         budgetCents: dollars(args.budget_usd),
       });
-      return { request_id: out?.id, status: 'Waiting for Ali', note: 'Nothing starts until Ali has read it. Follow it with portal_request.' };
+      return {
+        request_id: out?.id,
+        status: out?.autoApproved ? 'Approved (Autopilot)' : 'Waiting for Ali',
+        note: out?.autoApproved
+          ? 'Autopilot with a budget: it starts without Ali, inside the client-set cap. Follow it with portal_request.'
+          : 'Nothing starts until Ali has read it. Follow it with portal_request.',
+      };
     }
     case 'portal_reply':
       await portalCall(env, ctx, token, 'POST', `/portal/tickets/${Number.isInteger(id) ? id : 0}/messages`, { body: args.text });

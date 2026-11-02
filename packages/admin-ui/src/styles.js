@@ -424,4 +424,31 @@ button.aw-file:hover { border-color: currentColor; }
 
 /* Status and the "why nothing can take this" note get their own weight. */
 .aw-details .aw-predict { font-size: 12px; line-height: 1.45; }
+
+/* Health: one row per end-to-end check, red only when something is wrong. */
+.aw-health { max-width: 1000px; }
+.aw-health__intro { margin: 0 0 14px; }
+.aw-health__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.aw-health__row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--aw-border); border-radius: 9px; background: var(--aw-bg); }
+.aw-health__row--bad { border-color: color-mix(in srgb, var(--aw-bad) 45%, var(--aw-border)); }
+.aw-health__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.aw-health__body strong { font-size: 13px; }
+.aw-health__body span { font-size: 12px; }
+.aw-health__meta { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+
+/* Pre-review: one screen instead of the diff. */
+.aw-prereview { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--aw-border); border-left: 3px solid var(--aw-border2); border-radius: 8px; background: var(--aw-bg); }
+.aw-prereview--ok { border-left-color: var(--aw-ok); }
+.aw-prereview--warn { border-left-color: var(--aw-warn); }
+.aw-prereview--bad { border-left-color: var(--aw-bad); }
+.aw-prereview header, .aw-prereview footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aw-prereview__headline { margin: 8px 0 4px; font-size: 14px; }
+.aw-prereview ul { margin: 4px 0 8px; padding-left: 20px; font-size: 13px; }
+.aw-prereview footer { margin-top: 6px; }
+
+/* Before/after preview shots: evidence, not decoration. */
+.aw-shots { display: flex; gap: 8px; margin-top: 10px; }
+.aw-shots figure { flex: 1; min-width: 0; margin: 0; }
+.aw-shots img { display: block; width: 100%; height: auto; border: 1px solid var(--aw-border); border-radius: 6px; background: var(--aw-bg2); }
+.aw-shots figcaption { margin-top: 3px; font-size: 11px; color: var(--aw-text3); text-transform: uppercase; letter-spacing: .04em; }
 `;

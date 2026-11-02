@@ -101,9 +101,20 @@ var __awPlugin = (() => {
     return [data, load];
   }
   function useTicket(api, id) {
-    const [state, setState] = useState({ loading: true, error: null, ticket: null, messages: [], runs: [], land: null });
+    const [state, setState] = useState({ loading: true, error: null, ticket: null, messages: [], runs: [], review: null, screenshots: [], land: null });
     const load = useCallback(
-      () => api("GET", `/admin/tickets/${id}`).then((d) => setState({ loading: false, error: null, ticket: d.ticket, messages: d.messages ?? [], runs: d.runs ?? [], land: d.land ?? null })).catch((error) => setState((s) => ({ ...s, loading: false, error }))),
+      () => api("GET", `/admin/tickets/${id}`).then(
+        (d) => setState({
+          loading: false,
+          error: null,
+          ticket: d.ticket,
+          messages: d.messages ?? [],
+          runs: d.runs ?? [],
+          review: d.review ?? null,
+          screenshots: d.screenshots ?? [],
+          land: d.land ?? null
+        })
+      ).catch((error) => setState((s) => ({ ...s, loading: false, error }))),
       [api, id]
     );
     useEffect(() => {
@@ -319,7 +330,7 @@ var __awPlugin = (() => {
   }
   var StatusPill = ({ status }) => /* @__PURE__ */ jsx("span", { className: `aw-pill aw-pill--${status}`, children: STATUS_LABEL[status] ?? status });
   var Dot = ({ state }) => /* @__PURE__ */ jsx("span", { className: `aw-dot aw-dot--${state}`, "aria-hidden": "true" });
-  var Tag = ({ children, tone, title }) => /* @__PURE__ */ jsx("span", { className: cx("aw-tag", tone && `aw-tag--${tone}`), title, children });
+  var Tag = ({ children, tone: tone2, title }) => /* @__PURE__ */ jsx("span", { className: cx("aw-tag", tone2 && `aw-tag--${tone2}`), title, children });
   function Resizer({ host, cssVar, def, min, max, invert = false, storage, className }) {
     const ref = useRef(null);
     useEffect(() => {
@@ -445,7 +456,8 @@ var __awPlugin = (() => {
     ticket: "M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z",
     folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
     play: "M7 5l12 7-12 7z",
-    megaphone: "M3 10v4a1 1 0 0 0 1 1h2l4 3V6L6 9H4a1 1 0 0 0-1 1zM14 8a5 5 0 0 1 0 8M17 5a9 9 0 0 1 0 14"
+    megaphone: "M3 10v4a1 1 0 0 0 1 1h2l4 3V6L6 9H4a1 1 0 0 0-1 1zM14 8a5 5 0 0 1 0 8M17 5a9 9 0 0 1 0 14",
+    pulse: "M3 12h4l2-6 4 12 2-6h6"
   };
   function Icon({ name, size = 16 }) {
     return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] }) });
@@ -884,7 +896,7 @@ var __awPlugin = (() => {
   };
   function TicketView({ id, active }) {
     const { api, act } = useAdmin();
-    const [{ ticket, messages, runs, land, error, loading }, reload] = useTicket(api, id);
+    const [{ ticket, messages, runs, review, screenshots, land, error, loading }, reload] = useTicket(api, id);
     const meter = useMeter(api, ticket, active);
     if (loading && !ticket) return /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
       "Loading #",
@@ -930,6 +942,13 @@ var __awPlugin = (() => {
             )
           ] }) : null
         ] }),
+        /* @__PURE__ */ jsx(
+          ReviewCard,
+          {
+            review,
+            screenshots: screenshots.filter((shot) => shot.runId === (review?.runId ?? runs[runs.length - 1]?.id))
+          }
+        ),
         /* @__PURE__ */ jsx(Timeline, { ticket, messages, runs }),
         /* @__PURE__ */ jsx(Composer, { ticket, onSent: reload })
       ] }),
@@ -1032,6 +1051,34 @@ var __awPlugin = (() => {
     }, [ticket.project_slug, gitRef, gitGraph, host]);
     const View2 = gitGraph.View;
     return /* @__PURE__ */ jsx(Modal, { title: `Review #${ticket.id}`, subtitle: state.text, onClose, full: true, children: /* @__PURE__ */ jsx("div", { className: "aw-review", children: state.status === "ready" ? /* @__PURE__ */ jsx(View2, { sessionId: state.sessionId }) : /* @__PURE__ */ jsx("p", { className: cx("aw-empty", state.status === "failed" && "aw-error"), children: state.text }) }) });
+  }
+  function ReviewCard({ review, screenshots = [] }) {
+    if (!review) return null;
+    const tone2 = review.verdict === "pass" ? "ok" : review.verdict === "attention" ? "warn" : "bad";
+    const label = review.verdict === "pass" ? "pass" : review.verdict === "attention" ? "check" : "fail";
+    return /* @__PURE__ */ jsxs("section", { className: cx("aw-prereview", `aw-prereview--${tone2}`), children: [
+      /* @__PURE__ */ jsxs("header", { children: [
+        /* @__PURE__ */ jsx(Dot, { state: tone2 }),
+        /* @__PURE__ */ jsx("strong", { children: "Pre-review" }),
+        /* @__PURE__ */ jsx(Tag, { tone: tone2, children: label }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+          review.model ?? "model",
+          " \xB7 ",
+          ago(review.createdAt)
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx("p", { className: "aw-prereview__headline", children: review.headline }),
+      review.points?.length ? /* @__PURE__ */ jsx("ul", { children: review.points.map((point, i) => /* @__PURE__ */ jsx("li", { children: point }, i)) }) : null,
+      screenshots.length ? /* @__PURE__ */ jsx("div", { className: "aw-shots", children: screenshots.map((shot) => /* @__PURE__ */ jsxs("figure", { children: [
+        /* @__PURE__ */ jsx("a", { href: shot.url, target: "_blank", rel: "noreferrer", children: /* @__PURE__ */ jsx("img", { src: shot.url, alt: `Preview ${shot.kind} the change`, loading: "lazy" }) }),
+        /* @__PURE__ */ jsx("figcaption", { children: shot.kind })
+      ] }, `${shot.runId}-${shot.kind}`)) }) : null,
+      /* @__PURE__ */ jsxs("footer", { children: [
+        review.buildOk === null ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "no build gate" }) : review.buildOk ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "build passed" }) : /* @__PURE__ */ jsx(Tag, { tone: "bad", children: "build failed" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "A cheap agent's read; you still decide." })
+      ] })
+    ] });
   }
   function Timeline({ ticket, messages, runs }) {
     const [diff, setDiff] = useState(null);
@@ -1989,6 +2036,7 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx(Field, { label: "Attempts before review", hint: "Node restarts do not count.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.maxAttempts ?? "", onChange: (e) => set("maxAttempts", Number(e.target.value)) }) }),
           /* @__PURE__ */ jsx(Field, { label: "Default priority", children: /* @__PURE__ */ jsx(Segmented, { value: draft.defaultPriority ?? 0, options: PRIORITIES, onChange: (v) => set("defaultPriority", v) }) }),
           /* @__PURE__ */ jsx(Field, { label: "Email me when a run finishes", children: /* @__PURE__ */ jsx(Segmented, { value: Boolean(draft.notifyRunFinished), options: [{ value: true, label: "On" }, { value: false, label: "Off" }], onChange: (v) => set("notifyRunFinished", v) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Autopilot cap (cents)", hint: "An Autopilot request with its own budget at or below this starts without you. 0 turns it off.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.autoApproveCents ?? "", onChange: (e) => set("autoApproveCents", Number(e.target.value)) }) }),
           /* @__PURE__ */ jsx(Field, { label: "Sites domain", children: /* @__PURE__ */ jsx("input", { value: draft.sitesDomain ?? "", onChange: (e) => set("sitesDomain", e.target.value) }) }),
           /* @__PURE__ */ jsx(Field, { label: "Clients may publish their site", children: /* @__PURE__ */ jsx(Segmented, { value: Boolean(draft.clientPublish), options: [{ value: true, label: "Yes" }, { value: false, label: "No" }], onChange: (v) => set("clientPublish", v) }) })
         ] }),
@@ -2315,12 +2363,12 @@ var __awPlugin = (() => {
       };
     }, [api]);
     if (!state) return null;
-    const tone = state.chat ? "ok" : state.bridge ? "warn" : "bad";
+    const tone2 = state.chat ? "ok" : state.bridge ? "warn" : "bad";
     const label = state.chat ? "DeepSeek up" : state.bridge ? "Workers AI fallback" : "both engines down";
     return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
       /* @__PURE__ */ jsx("h3", { children: "The model" }),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }, children: [
-        /* @__PURE__ */ jsx(Tag, { tone, children: label }),
+        /* @__PURE__ */ jsx(Tag, { tone: tone2, children: label }),
         /* @__PURE__ */ jsx("span", { className: "aw-muted", children: state.chat ? "The site chat and the ticket bridge both use DeepSeek." : state.bridge ? `DeepSeek is out of balance. The ticket bridge is on ${state.engine ?? "Workers AI"}; the site chat is handing visitors to email until it is topped up.` : "The site chat and the ticket bridge are both handing off." })
       ] })
     ] });
@@ -2685,6 +2733,70 @@ var __awPlugin = (() => {
         ]
       }
     );
+  }
+
+  // packages/admin-ui/src/health.jsx
+  var tone = (status) => status === "ok" ? "ok" : status === "fail" ? "bad" : "warn";
+  function HealthView() {
+    const { api, act } = useAdmin();
+    const [state, setState] = useState({ loading: true, checks: [], failing: 0, ranAt: null, error: null });
+    const [busy, setBusy] = useState(false);
+    const load = useCallback(
+      () => api("GET", "/admin/health").then((d) => setState({ loading: false, checks: d.checks ?? [], failing: d.failing ?? 0, ranAt: d.ranAt ?? null, error: null })).catch((error) => setState((s) => ({ ...s, loading: false, error }))),
+      [api]
+    );
+    useEffect(() => {
+      void load();
+      const id = setInterval(() => {
+        if (typeof document === "undefined" || document.visibilityState === "visible") void load();
+      }, 15e3);
+      return () => clearInterval(id);
+    }, [load]);
+    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-health", children: [
+      /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
+        /* @__PURE__ */ jsx("h2", { children: "Health" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        state.failing ? /* @__PURE__ */ jsxs(Tag, { tone: "bad", children: [
+          state.failing,
+          " failing"
+        ] }) : /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "all green" }),
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            disabled: busy,
+            onClick: () => {
+              setBusy(true);
+              void act(() => api("POST", "/admin/health/run"), "Checks rerun.").then(load, load).finally(() => setBusy(false));
+            },
+            children: busy ? "Running\u2026" : "Run now"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs("p", { className: "aw-muted aw-health__intro", children: [
+        "Every check runs every five minutes. A failing check mails you once, and mails again only when it recovers.",
+        state.ranAt ? ` Last run ${ago(state.ranAt)}.` : ""
+      ] }),
+      state.error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: state.error.message ?? "Could not read the checks." }) : null,
+      state.loading && !state.checks.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Running the checks\u2026" }) : null,
+      /* @__PURE__ */ jsx("ul", { className: "aw-health__list", children: state.checks.map((check) => /* @__PURE__ */ jsxs("li", { className: cx("aw-health__row", `aw-health__row--${tone(check.status)}`), children: [
+        /* @__PURE__ */ jsx(Dot, { state: tone(check.status) }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-health__body", children: [
+          /* @__PURE__ */ jsx("strong", { children: check.label }),
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: check.detail })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-health__meta", children: [
+          check.status === "skip" ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "skipped" }) : null,
+          check.failingSince ? /* @__PURE__ */ jsxs(Tag, { tone: "bad", children: [
+            "failing ",
+            ago(check.failingSince)
+          ] }) : null,
+          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            check.latencyMs !== null ? `${check.latencyMs} ms \xB7 ` : "",
+            ago(check.checkedAt)
+          ] })
+        ] })
+      ] }, check.name)) })
+    ] });
   }
 
   // packages/admin-ui/src/styles.js
@@ -3109,6 +3221,33 @@ button.aw-file:hover { border-color: currentColor; }
 
 /* Status and the "why nothing can take this" note get their own weight. */
 .aw-details .aw-predict { font-size: 12px; line-height: 1.45; }
+
+/* Health: one row per end-to-end check, red only when something is wrong. */
+.aw-health { max-width: 1000px; }
+.aw-health__intro { margin: 0 0 14px; }
+.aw-health__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.aw-health__row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--aw-border); border-radius: 9px; background: var(--aw-bg); }
+.aw-health__row--bad { border-color: color-mix(in srgb, var(--aw-bad) 45%, var(--aw-border)); }
+.aw-health__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.aw-health__body strong { font-size: 13px; }
+.aw-health__body span { font-size: 12px; }
+.aw-health__meta { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+
+/* Pre-review: one screen instead of the diff. */
+.aw-prereview { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--aw-border); border-left: 3px solid var(--aw-border2); border-radius: 8px; background: var(--aw-bg); }
+.aw-prereview--ok { border-left-color: var(--aw-ok); }
+.aw-prereview--warn { border-left-color: var(--aw-warn); }
+.aw-prereview--bad { border-left-color: var(--aw-bad); }
+.aw-prereview header, .aw-prereview footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aw-prereview__headline { margin: 8px 0 4px; font-size: 14px; }
+.aw-prereview ul { margin: 4px 0 8px; padding-left: 20px; font-size: 13px; }
+.aw-prereview footer { margin-top: 6px; }
+
+/* Before/after preview shots: evidence, not decoration. */
+.aw-shots { display: flex; gap: 8px; margin-top: 10px; }
+.aw-shots figure { flex: 1; min-width: 0; margin: 0; }
+.aw-shots img { display: block; width: 100%; height: auto; border: 1px solid var(--aw-border); border-radius: 6px; background: var(--aw-bg2); }
+.aw-shots figcaption { margin-top: 3px; font-size: 11px; color: var(--aw-text3); text-transform: uppercase; letter-spacing: .04em; }
 `;
 
   // packages/admin-ui/src/app.jsx
@@ -3117,6 +3256,7 @@ button.aw-file:hover { border-color: currentColor; }
     { key: "board", label: "Board", icon: "board" },
     { key: "list", label: "All work", icon: "list" },
     { key: "marketing", label: "Marketing", icon: "megaphone" },
+    { key: "health", label: "Health", icon: "pulse" },
     { key: "fleet", label: "Fleet", icon: "fleet" },
     { key: "clients", label: "Clients & projects", icon: "clients" },
     { key: "settings", label: "Settings", icon: "settings" }
@@ -3330,6 +3470,8 @@ button.aw-file:hover { border-color: currentColor; }
         return /* @__PURE__ */ jsx(ListView, {});
       case "marketing":
         return /* @__PURE__ */ jsx(MarketingView, {});
+      case "health":
+        return /* @__PURE__ */ jsx(HealthView, {});
       case "fleet":
         return /* @__PURE__ */ jsx(FleetView, {});
       case "clients":

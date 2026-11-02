@@ -86,11 +86,22 @@ export function useAdminData(api) {
 
 /** One ticket with its thread and runs; refreshed while an agent works on it. */
 export function useTicket(api, id) {
-  const [state, setState] = useState({ loading: true, error: null, ticket: null, messages: [], runs: [], land: null });
+  const [state, setState] = useState({ loading: true, error: null, ticket: null, messages: [], runs: [], review: null, screenshots: [], land: null });
   const load = useCallback(
     () =>
       api('GET', `/admin/tickets/${id}`)
-        .then((d) => setState({ loading: false, error: null, ticket: d.ticket, messages: d.messages ?? [], runs: d.runs ?? [], land: d.land ?? null }))
+        .then((d) =>
+          setState({
+            loading: false,
+            error: null,
+            ticket: d.ticket,
+            messages: d.messages ?? [],
+            runs: d.runs ?? [],
+            review: d.review ?? null,
+            screenshots: d.screenshots ?? [],
+            land: d.land ?? null,
+          }),
+        )
         .catch((error) => setState((s) => ({ ...s, loading: false, error }))),
     [api, id],
   );

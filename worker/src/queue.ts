@@ -52,6 +52,11 @@ export const SETTING_DEFAULTS = {
   maxAttempts: 3,
   /** Mail Ali when a run finishes. Off leaves the admin views as the only signal. */
   notifyRunFinished: true,
+  /**
+   * Autopilot approval: a client request with attention 'auto' and its own
+   * budget at or below this cap (cents) starts without Ali. 0 turns it off.
+   */
+  autoApproveCents: 2500,
   /** Priority a new system task gets when the form does not say. */
   defaultPriority: 0,
   /** The domain hosted sites live under: `<site>.<domain>`, `<site>--preview.<domain>`. */
@@ -69,6 +74,8 @@ const SETTING_RULES: { [K in keyof Settings]: (v: unknown) => Settings[K] | unde
   stallMinutes: (v) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 1440 ? v : undefined),
   maxAttempts: (v) => (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 10 ? v : undefined),
   notifyRunFinished: (v) => (typeof v === 'boolean' ? v : undefined),
+  autoApproveCents: (v) =>
+    typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 10_000_000 ? v : undefined,
   defaultPriority: (v) => (typeof v === 'number' && Number.isInteger(v) && Math.abs(v) <= 100 ? v : undefined),
   sitesDomain: (v) =>
     typeof v === 'string' && /^(?=.{3,100}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/.test(v.trim().toLowerCase())
@@ -520,6 +527,8 @@ export interface NodeClaim {
   leaseSeconds: number;
   /** The most this run may spend on AI, when the client set a budget: what is left of it. */
   maxBudgetUsd?: number;
+  /** The project's primary hosted site, when it has one: the preview to photograph. */
+  site?: { slug: string; previewUrl: string | null };
 }
 
 /**
@@ -603,6 +612,26 @@ export async function claimForNode(env: Env, nodeId: string): Promise<{ claim: N
   const previousRuns = await priorRuns(env, picked.id, runId);
   if (!ticket) return { claim: null, reason: 'vanished' };
   const left = budgetLeft(picked);
+  const site = await env.DB.prepare(
+    `SELECT s.slug, s.host, s.preview_deploy, s.cloudflare_preview_url
+       FROM sites s JOIN tickets t ON t.project_id = s.project_id
+      WHERE t.id = ? AND s.is_primary = 1 AND s.state = 'ready'`,
+  )
+    .bind(picked.id)
+    .first<{ slug: string; host: string; preview_deploy: string | null; cloudflare_preview_url: string | null }>();
+  let claimSite: NodeClaim['site'];
+  if (site) {
+    const { sitesDomain } = await getSettings(env);
+    const hasPreview = Boolean(site.preview_deploy && site.preview_deploy !== 'placeholder');
+    claimSite = {
+      slug: site.slug,
+      previewUrl: hasPreview
+        ? site.host === 'cloudflare' && site.cloudflare_preview_url
+          ? site.cloudflare_preview_url
+          : `https://${site.slug}--preview.${sitesDomain}`
+        : null,
+    };
+  }
   return {
     claim: {
       ticket,
@@ -613,6 +642,7 @@ export async function claimForNode(env: Env, nodeId: string): Promise<{ claim: N
       attempt,
       leaseSeconds: LEASE_SECONDS,
       ...(left !== null ? { maxBudgetUsd: Math.max(0.01, left / 100) } : {}),
+      ...(claimSite ? { site: claimSite } : {}),
     },
   };
 }

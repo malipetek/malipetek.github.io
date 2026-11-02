@@ -72,6 +72,8 @@ export interface Env {
   DEEPSEEK_API_BASE?: string;
   /** Workers AI: m2m100, the translation fallback (and the engine for 'cloudflare' clients). */
   AI?: Ai;
+  /** Var, set by CI at deploy time: the commit this Worker was built from (health checks it). */
+  BUILD_SHA?: string;
 }
 
 export type HonoEnv = { Bindings: Env };

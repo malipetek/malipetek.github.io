@@ -42,9 +42,9 @@
  */
 import { Hono } from 'hono';
 import { encoder, type HonoEnv } from './shared.ts';
-import { mailAli, replyAddress, siteUrl } from './portal.ts';
-import { finishRun, normalizeReport, sessionKey, sharedLine } from './runs.ts';
-import { claimForNode, cleanNodeReport, getSettings, heartbeat } from './queue.ts';
+import { mailAli, notifyRunFinished, replyAddress, siteUrl } from './portal.ts';
+import { finishRun, normalizeReport, sessionKey } from './runs.ts';
+import { claimForNode, cleanNodeReport, heartbeat } from './queue.ts';
 import { finishContentCycle } from './content.ts';
 import { createDeploy, finishDeploy, reportSiteRepo } from './sites.ts';
 import { uploadDeployBlob, DEPLOY_LIMITS } from './sites.ts';
@@ -55,6 +55,7 @@ const REPO_CLAIM_SECONDS = 15 * 60;
 import { fileResponse } from './files.ts';
 import { now } from './shared.ts';
 import { appendSteps, cleanSteps } from './steps.ts';
+import { saveScreenshots } from './screenshots.ts';
 
 export const node = new Hono<HonoEnv>();
 
@@ -584,6 +585,23 @@ node.post('/node/runs/:runId/steps', async (c) => {
   return c.json(result);
 });
 
+/**
+ * Before/after pictures of the preview, taken by the node that ran the change.
+ * Uploaded before the result, while the run is still open.
+ */
+node.post('/node/runs/:runId/screenshots', async (c) => {
+  const runId = Number(c.req.param('runId'));
+  if (!Number.isInteger(runId) || runId <= 0) return c.json({ error: 'not_found' }, 404);
+  const run = await c.env.DB.prepare("SELECT ticket_id FROM ticket_runs WHERE id = ? AND status = 'running'")
+    .bind(runId)
+    .first<{ ticket_id: number }>();
+  if (!run) return c.json({ error: 'not_running' }, 409);
+  const body = (await c.req.json().catch(() => null)) as { before?: unknown; after?: unknown } | null;
+  if (!body) return c.json({ error: 'bad_body' }, 400);
+  const saved = await saveScreenshots(c.env, run.ticket_id, runId, body);
+  return c.json({ ok: true, saved });
+});
+
 node.post('/node/runs/:runId/result', async (c) => {
   const runId = Number(c.req.param('runId'));
   if (!Number.isInteger(runId) || runId <= 0) return c.json({ error: 'not_found' }, 404);
@@ -607,15 +625,6 @@ node.post('/node/runs/:runId/result', async (c) => {
   if (!done.late) await finishContentCycle(c.env, run.ticket_id, report.summary, report.ok).catch(() => {});
 
   const id = run.ticket_id;
-  if ((await getSettings(c.env)).notifyRunFinished) c.executionCtx.waitUntil(
-    mailAli(c.env, {
-      subject: `[#${id}] ${report.executor} on ${nodeId} ${done.late ? 'stopped' : report.ok ? 'finished' : 'failed'}: ${done.title}`,
-      text:
-        `${report.summary}\n\n${report.diffStat ? `${report.diffStat}\n\n` : ''}` +
-        `${sharedLine(report, nodeId) ? `${sharedLine(report, nodeId)}\n` : ''}` +
-        `Cost: $${report.costUsd.toFixed(4)} (${report.executor}${report.model ? ` · ${report.model}` : ''})\n` +
-        `Review: ${siteUrl(c.env)}/portal/admin#ticket=${id}`,
-    }),
-  );
+  c.executionCtx.waitUntil(notifyRunFinished(c.env, id, report, done, nodeId));
   return c.json({ ok: true, runCostUsd: report.costUsd });
 });

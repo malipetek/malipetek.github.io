@@ -4,6 +4,7 @@
  *
  *   pnpm test:e2e            every group
  *   pnpm test:e2e sites      only groups whose name contains "sites"
+ *   pnpm test:e2e sites,node several groups in one run (comma-separated)
  *
  * Each run gets a throwaway state folder (its own D1, KV and rate limits, with
  * every migration applied) and its own port, so
@@ -22,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 const WORKER = dirname(dirname(fileURLToPath(import.meta.url)));
 const REPO = dirname(WORKER);
-const only = process.argv[2] ?? '';
+const only = (process.argv[2] ?? '').split(',').filter(Boolean);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ——————————————————————— harness ——————————————————————— */
@@ -919,6 +920,14 @@ const groups = {
     check('a node that holds the folder clears the failure', (await call('/admin/projects', { auth: admin })).data.projects.find((p) => p.id === other.id)?.repoStatus?.state === 'ready');
   },
 
+  async health({ admin }) {
+    const page = await call('/admin/health', { auth: admin });
+    check('the health page answers with its checks', page.status === 200 && Array.isArray(page.data.checks), JSON.stringify(page.data).slice(0, 200));
+    check('health is admin only', (await call('/admin/health')).status === 401);
+    const shot = await call('/shot/1/before?t=nope');
+    check('a screenshot URL needs a signed token', shot.status === 404);
+  },
+
   async queue({ admin }) {
     const a = account(`queue-${Date.now()}@example.com`);
     const { project, ticketId } = (await newProject(a.session, { kind: 'existing', name: 'Queue Shop', brief: OLD_BRIEF, repoKind: 'none' })).data;
@@ -1329,7 +1338,11 @@ const groups = {
     const rid = filed.value?.request_id;
     check('an assistant files a request', !filed.error && Number.isInteger(rid), filed.text);
     const read = await tool('portal_request', { request_id: rid });
-    check('…which waits for Ali, with its budget and attention', !read.error && read.value.ticket.status === 'new' && read.value.ticket.budget_cents === 2000 && read.value.ticket.attention === 'auto', read.text.slice(0, 200));
+    check(
+      '…which starts at once on Autopilot under the cap, with its budget and attention',
+      !read.error && read.value.ticket.status === 'approved' && read.value.ticket.budget_cents === 2000 && read.value.ticket.attention === 'auto',
+      read.text.slice(0, 200),
+    );
     check('it lists the account’s requests', (await tool('portal_requests', {})).value.tickets?.some((t) => t.id === rid));
     check('it lists projects with their setup', (await tool('portal_projects', {})).value.projects?.some((p) => p.id === project.id && p.setup));
     const profile = await tool('portal_profile', {});
@@ -1726,6 +1739,8 @@ async function main() {
   const vars = {
     DEV_RETURN_LINK: '1',
     RUNNER_TOKEN,
+    // CI has no .dev.vars; the suite must bring every secret it needs.
+    SESSION_SECRET: 'e2e-session-secret',
     SITE_URL: 'http://localhost:4321',
     GITHUB_WEBHOOK_SECRET: 'test-webhook-secret',
     CLOUDFLARE_OAUTH_CLIENT_ID: CF_CLIENT.id,
@@ -1773,7 +1788,7 @@ async function main() {
     const admin = (await signIn('malipetek@gmail.com')).session;
 
     for (const [name, run] of Object.entries(groups)) {
-      if (only && !name.includes(only)) continue;
+      if (only.length && !only.some((part) => name.includes(part))) continue;
       group = name;
       console.log(`${name}`);
       try {

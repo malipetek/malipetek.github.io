@@ -510,6 +510,9 @@ export function SettingsView() {
             <Field label="Email me when a run finishes">
               <Segmented value={Boolean(draft.notifyRunFinished)} options={[{ value: true, label: 'On' }, { value: false, label: 'Off' }]} onChange={(v) => set('notifyRunFinished', v)} />
             </Field>
+            <Field label="Autopilot cap (cents)" hint="An Autopilot request with its own budget at or below this starts without you. 0 turns it off.">
+              <input inputMode="numeric" value={draft.autoApproveCents ?? ''} onChange={(e) => set('autoApproveCents', Number(e.target.value))} />
+            </Field>
             <Field label="Sites domain">
               <input value={draft.sitesDomain ?? ''} onChange={(e) => set('sitesDomain', e.target.value)} />
             </Field>

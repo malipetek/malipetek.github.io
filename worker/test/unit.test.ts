@@ -8,12 +8,16 @@ import { test } from 'node:test';
 import PostalMime from 'postal-mime';
 import { verifySender } from '../src/mailauth.ts';
 import { budgetLeft, cleanExecutorPin, cleanNodeReport, CLIENT_EXECUTOR, EXECUTOR_CATALOG } from '../src/queue.ts';
-import { normalizeReport, sharedLine } from '../src/runs.ts';
+import { cleanVerify, normalizeReport, sharedLine } from '../src/runs.ts';
 import { setupFor, slugify, type SetupInput } from '../src/setup.ts';
 import { cleanDeployManifest, cleanSiteSlug, siteView, type SiteRow } from '../src/sites.ts';
 import { checkUploads, cleanFileName, fileType } from '../src/files.ts';
 import { fillTemplate, isOptOut, localClock, parseContactsCsv, parseCsv, sendWindow, SEQUENCES, siteLabel } from '../src/marketing.ts';
 import { cleanPost, nextSlots, parseOutbox, slotLabel } from '../src/content.ts';
+import { autoApproveDecision } from '../src/approve.ts';
+import { healthMail, parseFleetVersion } from '../src/health.ts';
+import { parseReview, reviewLine } from '../src/review.ts';
+import { cleanShot, shotToken, verifyShotToken } from '../src/screenshots.ts';
 
 /* —— mail: who may file a ticket by email —— */
 
@@ -681,4 +685,120 @@ test('marketing: a site reads as a domain in running text', () => {
     fillTemplate('{{greeting}} {{site}} {{business}}', { email: 'a@b.c', name: 'Ann Lee', business: null, site: 'https://www.acme.test/', gap: null } as never),
     'Hi Ann, acme.test acme.test',
   );
+});
+
+
+/* —— health: the checks and the one mail a transition sends —— */
+
+test('health: the fleet version is read from node.mjs, not guessed', () => {
+  assert.equal(parseFleetVersion("const VERSION = '2.8.0';\n"), '2.8.0');
+  assert.equal(parseFleetVersion('const VERSION = "2.8.0";'), null);
+  assert.equal(parseFleetVersion(''), null);
+});
+
+test('health: a new failure mails once; a recovery mails once; no change is silent', () => {
+  const fail = {
+    name: 'node:g500',
+    label: 'Node g500',
+    status: 'fail',
+    detail: 'last heartbeat 42h ago',
+    latencyMs: 4,
+    checkedAt: 1,
+    failingSince: 1,
+    alertedAt: null,
+    resolvedAt: null,
+  };
+  const ok = { ...fail, status: 'ok', detail: 'online 3s ago', failingSince: null, resolvedAt: 2 };
+  const fresh = healthMail({ fresh: [fail], recovered: [], failing: 1 }, 'https://x/portal/admin');
+  assert.match(fresh.subject, /Node g500 is failing/);
+  assert.match(fresh.text, /last heartbeat 42h ago/);
+  assert.match(fresh.text, /#health/);
+  const recovered = healthMail({ fresh: [], recovered: [ok], failing: 0 }, 'https://x/portal/admin');
+  assert.match(recovered.subject, /recovered/);
+  assert.equal(healthMail({ fresh: [], recovered: [], failing: 0 }, 'https://x'), null);
+});
+
+/* —— review: the cheap agent's verdict is parsed, never trusted blindly —— */
+
+test('review: JSON behind a code fence is accepted, an unknown verdict is not', () => {
+  const parsed = parseReview('```json\n{"verdict":"attention","headline":"Check the price copy","points":["price changed","no screenshots"]}\n```');
+  assert.equal(parsed.verdict, 'attention');
+  assert.equal(parsed.headline, 'Check the price copy');
+  assert.equal(parsed.points.length, 2);
+  assert.equal(parseReview('{"verdict":"ship-it","headline":"x"}'), null);
+  assert.equal(parseReview('{"verdict":"pass"}'), null);
+  assert.equal(parseReview('not json'), null);
+});
+
+test('review: the mail line names the verdict and the build', () => {
+  const line = reviewLine({
+    runId: 1,
+    verdict: 'pass',
+    headline: 'Copy updated on the pricing page',
+    points: [],
+    buildOk: true,
+    buildOutput: '',
+    model: 'deepseek-chat',
+    createdAt: 1,
+  });
+  assert.match(line, /PASS/);
+  assert.match(line, /build passed/);
+  assert.equal(reviewLine(null), '');
+});
+
+/* —— autopilot: only a capped, client-chosen request starts itself —— */
+
+test('autopilot: auto + client + a budget under the cap is approved; everything else waits', () => {
+  const base = { status: 'new', kind: 'client', attention: 'auto', budgetCents: 1500 };
+  assert.equal(autoApproveDecision(base, 2500), true);
+  assert.equal(autoApproveDecision({ ...base, budgetCents: 2500 }, 2500), true);
+  assert.equal(autoApproveDecision({ ...base, budgetCents: 2501 }, 2500), false);
+  assert.equal(autoApproveDecision({ ...base, budgetCents: null }, 2500), false);
+  assert.equal(autoApproveDecision({ ...base, attention: 'checked' }, 2500), false);
+  assert.equal(autoApproveDecision({ ...base, kind: 'system' }, 2500), false);
+  assert.equal(autoApproveDecision({ ...base, status: 'approved' }, 2500), false);
+  assert.equal(autoApproveDecision(base, 0), false);
+});
+
+/* —— run reports carry the build result the pre-review reads —— */
+
+test('runs: a structured verify report is kept, bounded, and can be absent', () => {
+  assert.deepEqual(cleanVerify({ command: 'pnpm test', ok: false, output: '1 failing' }), {
+    command: 'pnpm test',
+    ok: false,
+    output: '1 failing',
+  });
+  assert.equal(cleanVerify(null), null);
+  assert.equal(cleanVerify({}), null);
+  const report = normalizeReport({ ok: true, summary: 'done', verify: { command: 'pnpm test', ok: true, output: 'ok' } });
+  assert.equal(report.verify?.ok, true);
+  assert.equal(report.verify?.command, 'pnpm test');
+  assert.equal(normalizeReport({ ok: true, summary: 'done' }).verify, null);
+});
+
+
+/* —— screenshots: a PNG within bounds, and a token only for its own run —— */
+
+test('screenshots: only a bounded PNG is accepted', () => {
+  const png = new Uint8Array(120);
+  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const b64 = Buffer.from(png).toString('base64');
+  const shot = cleanShot({ png: b64, url: 'https://example.test/preview' });
+  assert.equal(shot?.bytes.length, 120);
+  assert.equal(shot?.url, 'https://example.test/preview');
+  assert.equal(cleanShot({ png: Buffer.from('not a png at all'.repeat(10)).toString('base64') }), null);
+  assert.equal(cleanShot({ png: 'not base64 !!!' }), null);
+  const huge = new Uint8Array(3_000_001);
+  huge.set([0x89, 0x50, 0x4e, 0x47]);
+  assert.equal(cleanShot({ png: Buffer.from(huge).toString('base64') }), null);
+  assert.equal(cleanShot(null), null);
+});
+
+test('screenshots: the signed URL is tied to one run and one side', async () => {
+  const env = { SESSION_SECRET: 'unit-test-secret' } as never;
+  const token = await shotToken(env, 7, 'before');
+  assert.equal(await verifyShotToken(env, 7, 'before', token), true);
+  assert.equal(await verifyShotToken(env, 8, 'before', token), false);
+  assert.equal(await verifyShotToken(env, 7, 'after', token), false);
+  assert.equal(await verifyShotToken(env, 7, 'before', 'nope'), false);
 });

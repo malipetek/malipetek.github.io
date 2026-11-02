@@ -1,5 +1,5 @@
 {
-  "endpoint": "https://malipetek-intercom.malipetek.workers.dev",
+  "endpoint": "https://malipetek.dev/api",
   "token": "the RUNNER_TOKEN Worker secret",
 
   "node": {
