@@ -1434,10 +1434,13 @@ portal.post('/portal/tickets/:id/change', async (c) => {
   await c.env.FILES.put(changeKey(ticket.id), JSON.stringify({ files: cleaned.files, at: t }), {
     httpMetadata: { contentType: 'application/json' },
   });
+  const who = c.get('viaAgent') ? await agentApp(c) : 'Your agent';
+  const paths = cleaned.files.map((f) => f.path);
+  const listed = paths.slice(0, 12).join(', ') + (paths.length > 12 ? `, and ${paths.length - 12} more` : '');
   await c.env.DB.batch([
     c.env.DB.prepare(`UPDATE tickets SET worked_by = 'client_agent', updated_at = ? WHERE id = ?`).bind(t, ticket.id),
     c.env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 0, ?)`)
-      .bind(ticket.id, `Your agent sent a change for this request (${cleaned.files.length} file(s)).`, t),
+      .bind(ticket.id, `${who} sent a change (${paths.length} file${paths.length === 1 ? '' : 's'}): ${listed}.`, t),
   ]);
   return reply(c, { ok: true, files: cleaned.files.length });
 });
@@ -1454,6 +1457,103 @@ portal.post('/portal/tickets/:id/build', async (c) => {
   if (!pending) return reply(c, { error: 'no_change' }, 409);
   await c.env.DB.prepare('UPDATE tickets SET build_requested_at = ?, updated_at = ? WHERE id = ?').bind(now(), now(), ticket.id).run();
   return reply(c, { ok: true, state: 'queued' });
+});
+
+/** The app an agent token came from — "ChatGPT", from its OAuth registration — or the token's label. */
+async function agentApp(c: Ctx): Promise<string> {
+  const token = (c.req.header('authorization') ?? '').slice(7);
+  const row = await c.env.DB.prepare(
+    `SELECT o.client_name AS app, a.label FROM agent_tokens a
+       LEFT JOIN oauth_clients o ON o.client_id = a.oauth_client_id WHERE a.token_hash = ?`,
+  )
+    .bind(await sha256(token))
+    .first<{ app: string | null; label: string | null }>();
+  return row?.app || row?.label || 'The client’s assistant';
+}
+
+/**
+ * The client's own assistant (ChatGPT on their subscription) changes their
+ * project itself. Each change is a request of its own, source 'assistant', so
+ * there is always a record of who changed what. No approval and no fleet run:
+ * a node claims only `approved`, and this starts `in_progress` worked by the
+ * client's agent, so it carries no AI cost. Review is the client's choice
+ * afterwards (`/finish`).
+ */
+portal.post('/portal/changes', async (c) => {
+  if (!c.get('viaAgent')) return reply(c, { error: 'agents_only' }, 403);
+  const env = c.env;
+  const user = c.get('user');
+  const body = await readJson<{ projectId?: unknown; title?: unknown; summary?: unknown }>(c);
+  const title = cleanText(body?.title, MAX_TITLE_CHARS);
+  const summary = cleanText(body?.summary, 4000);
+  if (!title || !summary) return reply(c, { error: 'bad_change' }, 400);
+  const projectId = typeof body?.projectId === 'string' ? body.projectId : '';
+  const linked = projectId
+    ? await env.DB.prepare('SELECT 1 FROM user_projects WHERE user_id = ? AND project_id = ?').bind(user.id, projectId).first()
+    : null;
+  if (!linked) return reply(c, { error: 'bad_project' }, 400);
+  if (!(await getSite(env, projectId))) return reply(c, { error: 'not_hosted' }, 400);
+  if (await isRateLimited(env, user.id, 'ticket', TICKET_LIMIT, TICKET_WINDOW_SECONDS)) {
+    return reply(c, { error: 'rate_limited' }, 429);
+  }
+  const app = await agentApp(c);
+  const t = now();
+  const ticket = await env.DB.prepare(
+    `INSERT INTO tickets (user_id, project_id, title, status, attention, kind, worked_by, source, created_at, updated_at)
+     VALUES (?, ?, ?, 'in_progress', 'auto', 'client', 'client_agent', 'assistant', ?, ?) RETURNING id`,
+  )
+    .bind(user.id, projectId, title, t, t)
+    .first<{ id: number }>();
+  if (!ticket) return reply(c, { error: 'insert_failed' }, 500);
+  await env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 0, ?)`)
+    .bind(ticket.id, `${app} is making this change itself, on the client’s own subscription, so there is no AI cost.\n\n${summary}`, t)
+    .run();
+  return reply(c, { id: ticket.id, status: 'in_progress', by: app }, 201);
+});
+
+/**
+ * The client decides about a change their assistant made: send it to Ali for
+ * review (paid, by his time), or keep it as it is (closed, nothing to bill).
+ */
+portal.post('/portal/changes/:id/finish', async (c) => {
+  const env = c.env;
+  const user = c.get('user');
+  const ticket = await env.DB.prepare(
+    `SELECT id, title, status, source, build_requested_at FROM tickets WHERE id = ? AND user_id = ? AND kind = 'client'`,
+  )
+    .bind(Number(c.req.param('id')) || -1, user.id)
+    .first<{ id: number; title: string; status: string; source: string; build_requested_at: number | null }>();
+  if (!ticket || ticket.source !== 'assistant') return reply(c, { error: 'not_found' }, 404);
+  if (ticket.status !== 'in_progress') return reply(c, { error: 'already_decided', status: ticket.status }, 409);
+  if (ticket.build_requested_at) return reply(c, { error: 'still_building' }, 409);
+  const body = await readJson<{ review?: unknown }>(c);
+  if (typeof body?.review !== 'boolean') return reply(c, { error: 'bad_choice' }, 400);
+  const t = now();
+  const app = c.get('viaAgent') ? await agentApp(c) : 'Their assistant';
+  if (body.review) {
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE tickets SET status = 'review', attention = 'checked', updated_at = ? WHERE id = ?`).bind(t, ticket.id),
+      env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 0, ?)`)
+        .bind(ticket.id, `Sent for review. Ali reads the change before it goes live; the review is billed as his time.`, t),
+    ]);
+    c.executionCtx.waitUntil(
+      mailAli(env, {
+        subject: `[#${ticket.id}] Review asked by ${user.email}: ${ticket.title}`,
+        text: ticketMail(
+          `${app} made this change for ${user.email} and they want it reviewed.`,
+          `Open: ${siteUrl(env)}/portal/admin#ticket=${ticket.id}`,
+        ),
+        replyTo: await replyAddress(env, ticket.id, 'a'),
+      }),
+    );
+    return reply(c, { ok: true, status: 'review' });
+  }
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE tickets SET status = 'done', updated_at = ? WHERE id = ?`).bind(t, ticket.id),
+    env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 0, ?)`)
+      .bind(ticket.id, `Kept without review. ${app} made this change; there is nothing to bill.`, t),
+  ]);
+  return reply(c, { ok: true, status: 'done', canPublish: (await getSettings(env)).clientPublish });
 });
 
 /** Everything an agent needs about a request it is cleared to work on. */

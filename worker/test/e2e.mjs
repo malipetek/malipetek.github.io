@@ -1082,6 +1082,34 @@ const groups = {
     check('…and the heartbeat hands it to the node', (await node(nodeId, ['preview-cafe'])).data.builds?.some((b) => b.ticketId === ticketId));
     const failed = await call(`/node/builds/${ticketId}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId, ok: false, error: 'build broke' } });
     check('a failed build is recorded and clears the flag', failed.status === 200 && (await call(`/node/builds/${ticketId}`, { auth: RUNNER_TOKEN })).status === 404);
+
+    // The client's own assistant changes the site itself: its own request, no fleet run, review optional.
+    const key = (await call('/portal/agent-tokens', { method: 'POST', auth: a.session, body: { label: 'ChatGPT' } })).data.token;
+    const start = (body) => call('/portal/changes', { method: 'POST', auth: key, body: { projectId: project.id, title: 'Make the title red', summary: 'The client wants the product title in red.', ...body } });
+    check('only an assistant starts a change, not a browser session', (await call('/portal/changes', { method: 'POST', auth: a.session, body: { projectId: project.id, title: 'x', summary: 'y' } })).status === 403);
+    check('a change on someone else’s project is refused', (await start({ projectId: 'nope' })).status === 400);
+    const own = await start({});
+    const cid = own.data?.id;
+    check('the assistant’s change is a request of its own, named for who made it', own.status === 201 && own.data.by === 'ChatGPT', JSON.stringify(own.data));
+    const ownRow = (await call(`/portal/tickets/${cid}`, { auth: a.session })).data;
+    check('…in progress, worked by the client’s agent, with no AI cost', ownRow.ticket.status === 'in_progress' && ownRow.ticket.worked_by === 'client_agent' && ownRow.ticket.source === 'assistant' && /no AI cost/.test(JSON.stringify(ownRow.messages)), JSON.stringify(ownRow.ticket));
+    check('no fleet node ever claims it', (await claim(nodeId))?.ticket?.id !== cid);
+    await call(`/portal/tickets/${cid}/change`, { method: 'POST', auth: key, body: { files: [{ path: 'src/pages/index.astro', content: '<h1 style="color:red">Bread</h1>' }] } });
+    check('the change records who made it and which files', /ChatGPT sent a change \(1 file\): src\/pages\/index\.astro/.test(JSON.stringify((await call(`/portal/tickets/${cid}`, { auth: a.session })).data.messages)));
+    await call(`/portal/tickets/${cid}/build`, { method: 'POST', auth: key, body: {} });
+    check('the client cannot decide while the preview builds', (await call(`/portal/changes/${cid}/finish`, { method: 'POST', auth: key, body: { review: false } })).data?.error === 'still_building');
+    await call(`/node/builds/${cid}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId, ok: true, previewUrl: 'https://preview-cafe--preview.malipetek.online' } });
+    check('a built preview waits for the client, not for Ali', (await call(`/portal/tickets/${cid}`, { auth: a.session })).data.ticket.status === 'in_progress');
+    const kept = await call(`/portal/changes/${cid}/finish`, { method: 'POST', auth: key, body: { review: false } });
+    check('kept without review: closed, nothing to bill', kept.data?.status === 'done' && (await call(`/portal/tickets/${cid}`, { auth: a.session })).data.ticket.status === 'done', JSON.stringify(kept.data));
+    check('…and decided once', (await call(`/portal/changes/${cid}/finish`, { method: 'POST', auth: key, body: { review: true } })).status === 409);
+    const second = (await start({ title: 'Bigger button' })).data.id;
+    const sent = await call(`/portal/changes/${second}/finish`, { method: 'POST', auth: key, body: { review: true } });
+    const secondRow = (await call(`/portal/tickets/${second}`, { auth: a.session })).data.ticket;
+    check('sent for review: in Ali’s review queue, every line read', sent.data?.status === 'review' && secondRow.status === 'review' && secondRow.attention === 'checked', JSON.stringify(secondRow));
+    const listed = (await call('/admin/tickets', { auth: admin })).data.tickets?.find((t) => t.id === second);
+    check('Ali’s board can tell the assistant made it', listed?.source === 'assistant', JSON.stringify(listed ?? {}).slice(0, 200));
+    check('finish is only for an assistant’s own change', (await call(`/portal/changes/${ticketId}/finish`, { method: 'POST', auth: key, body: { review: false } })).status === 404);
   },
 
   async budget({ admin }) {
@@ -1229,6 +1257,7 @@ const groups = {
     };
     const names = (await rpc('tools/list', {}, null)).result.tools.map((t) => t.name);
     check('anyone sees the knowledgebase and the client tools', names.includes('portal_file_request') && names.includes('search_knowledge'));
+    check('an assistant can start and finish its own changes', names.includes('start_change') && names.includes('finish_change'));
     const anonTools = (await rpc('tools/list', {}, null)).result.tools;
     const boardTool = anonTools.find((t) => t.name === 'portal_board');
     check(
@@ -1243,7 +1272,7 @@ const groups = {
       JSON.stringify(boardTool?.securitySchemes),
     );
     const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'e2e', version: '0' } }, token);
-    check('initialize explains the client tools', /portal_\* tools/.test(init.result?.instructions ?? ''));
+    check('initialize says changes cost nothing, review is optional and notices come by email', /costs nothing on malipetek/.test(init.result?.instructions ?? '') && /billed as Ali's time/.test(init.result?.instructions ?? '') && /by email/.test(init.result?.instructions ?? ''));
 
     const filed = await tool('portal_file_request', { title: 'Add opening hours', body: 'Mon–Fri 9–5 on the contact page.', project_id: project.id, attention: 'auto', budget_usd: 20 });
     const rid = filed.value?.request_id;

@@ -373,7 +373,11 @@ node.post('/node/builds/:ticketId/result', async (c) => {
   ];
   if (ok) {
     statements.push(
-      c.env.DB.prepare(`UPDATE tickets SET status = 'review' WHERE id = ? AND status IN ('approved', 'in_progress')`).bind(ticketId),
+      // A change the client's assistant made on its own waits for the client's
+      // review decision (portal /changes/:id/finish), not for Ali.
+      c.env.DB.prepare(
+        `UPDATE tickets SET status = 'review' WHERE id = ? AND status IN ('approved', 'in_progress') AND source <> 'assistant'`,
+      ).bind(ticketId),
       c.env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 0, ?)`).bind(
         ticketId,
         `The preview has this change${previewUrl ? `: ${previewUrl}` : ''}. Nothing is live until it is published.`,

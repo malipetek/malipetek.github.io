@@ -24,6 +24,7 @@ import { Hono } from 'hono';
 import { clientIp, isRateLimited, type Env, type HonoEnv } from './shared.ts';
 import { now, sessionUser } from './portal.ts';
 import { CLIENT_TOOLS, CLIENT_TOOL_NAMES, OWNER_TOOLS, OWNER_TOOL_NAMES, callClientTool } from './clientTools.ts';
+import { reviewEstimate } from '../../src/lib/pricing.js';
 import { BOARD_HTML, BOARD_MIME, BOARD_UI_URI, boardSummary, type Board } from './boardUi.ts';
 
 /* ——————————————————————— shapes ——————————————————————— */
@@ -957,7 +958,12 @@ mcp.post('/', async (c) => {
             },
             serverInfo: { name: 'malipetek-dev', title: 'malipetek.dev', version: '1.1.0' },
             instructions:
-              'malipetek.dev serves a public knowledgebase of real problems from agentic coding sessions — search and read entries without signing in. With a connected client account, the portal_* tools file and track software work requests, show project and site status, and submit changes for approved requests. Every request is approved by a human before any work starts.',
+              'malipetek.dev is a software contracting service: Ali Petek (a human) and AI agents build and change clients’ websites. It also serves a public knowledgebase of real problems from agentic coding sessions — search and read entries without signing in.\n\n' +
+              'With a connected client account there are two ways to get work done:\n' +
+              '1. You make the change yourself (start_change → workspace_files/workspace_read → submit_change → preview_build → finish_change). You are the client’s own assistant on their own subscription, so this costs nothing on malipetek: no AI cost and no approval to wait for. You may change anything in their site, and say so plainly. Every change is recorded as its own request with who made it. Changes go to the preview, never straight to production. When the preview has it, show the link and ask whether to send it to Ali for review. ' +
+              reviewEstimate() +
+              '\n2. The client asks Ali’s team to do it (portal_file_request): Ali reads and approves the request before anything starts, then an agent does the work. That is billed as his time plus the AI run at cost.\n\n' +
+              'Notifications go by email to the client’s account address: Ali’s replies, approvals, status changes and finished work all arrive in their inbox, and replying to that email answers in the request’s thread. The portal (https://malipetek.dev/portal) shows the same. The "malipetek development" card (portal_board) shows their projects, sites and requests.',
           });
         }
         case 'notifications/initialized':

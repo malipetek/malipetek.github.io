@@ -67,6 +67,17 @@ export function money(cents) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+/**
+ * What a review of a client's own change costs, in one sentence: Ali's time
+ * by the second, with the typical range from Autopilot (a glance) to Checked
+ * (every line read). Assistants quote this before a client decides.
+ */
+export function reviewEstimate() {
+  const low = ATTENTION.find((a) => a.key === 'auto').typicalSeconds;
+  const high = ATTENTION.find((a) => a.key === 'checked').typicalSeconds;
+  return `Review is billed as Ali's time, by the second at $${HOURLY_USD}/hour, with no minimum. A small change usually takes him ${Math.round(low / 60)}–${Math.round(high / 60)} minutes, about ${money(timeCents(low))}–${money(timeCents(high))}.`;
+}
+
 /** "45s", "1m 40s", "1h 05m". */
 export function clock(seconds) {
   const s = Math.max(0, Math.round(seconds));

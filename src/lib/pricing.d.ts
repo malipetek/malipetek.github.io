@@ -17,5 +17,7 @@ export function priceOf(t: { humanSeconds?: number; aiMicroUsd?: number }): {
   totalCents: number;
 };
 export function money(cents: number): string;
+/** Review of a client's own change: Ali's time by the second, with the typical range. */
+export function reviewEstimate(): string;
 export function clock(seconds: number): string;
 export function priceLine(t: { humanSeconds?: number; aiMicroUsd?: number }): string;

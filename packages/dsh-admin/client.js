@@ -529,6 +529,7 @@ var __awPlugin = (() => {
               t.id
             ] }),
             t.kind === "system" ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "mine" }) : /* @__PURE__ */ jsx(Tag, { tone: "client", children: "client" }),
+            t.source === "assistant" ? /* @__PURE__ */ jsx(Tag, { tone: "ok", title: "The client\u2019s own assistant (ChatGPT, \u2026) made this change on their subscription", children: "their AI" }) : null,
             (t.priority ?? 0) > 0 ? /* @__PURE__ */ jsx(Tag, { tone: "hot", children: priorityName(t.priority) }) : null,
             t.client_waiting_since && t.status !== "new" ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "awaiting reply" }) : null,
             /* @__PURE__ */ jsx("span", { className: "aw-card__age", children: ago(t.updated_at) })
@@ -657,7 +658,7 @@ var __awPlugin = (() => {
             /* @__PURE__ */ jsx("td", { children: t.project_name ?? "\u2014" }),
             /* @__PURE__ */ jsx("td", { children: t.kind === "system" ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "mine" }) : t.client_email }),
             /* @__PURE__ */ jsx("td", { children: priorityName(t.priority ?? 0) }),
-            /* @__PURE__ */ jsx("td", { children: t.executor ?? (t.kind === "system" ? "any" : "claude") }),
+            /* @__PURE__ */ jsx("td", { children: t.source === "assistant" ? "their assistant" : t.executor ?? (t.kind === "system" ? "any" : "claude") }),
             /* @__PURE__ */ jsx("td", { children: money(priceOf({ humanSeconds: t.human_seconds ?? 0, aiMicroUsd: t.ai_micro_usd ?? 0 }).totalCents) }),
             /* @__PURE__ */ jsxs("td", { className: "aw-muted", children: [
               ago(t.updated_at),

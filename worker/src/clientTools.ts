@@ -8,7 +8,7 @@
  * there is no second copy of any of it to drift. An agent token cannot reach
  * /admin/* or manage tokens (portal.ts), so neither can these tools.
  */
-import { ATTENTION_KEYS } from '../../src/lib/pricing.js';
+import { ATTENTION_KEYS, reviewEstimate } from '../../src/lib/pricing.js';
 import { BOARD_UI_URI } from './boardUi.ts';
 import { portal } from './portal.ts';
 import type { Env } from './shared.ts';
@@ -261,10 +261,43 @@ export const CLIENT_TOOLS: ClientTool[] = [
     readOnly: false,
   },
   {
+    name: 'start_change',
+    title: 'Start a change',
+    description:
+      'Make a change to one of the client’s hosted sites yourself. You are their own assistant on their own subscription, so your work costs nothing on malipetek: no AI cost, no approval to wait for. You may change anything in the site. This opens a request of its own, so there is a record of who changed what. Then: workspace_files and workspace_read to read the site, submit_change with the files, preview_build, and when the preview has it, ask the client whether to send it for review (finish_change).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'string', description: 'The project, from portal_projects. It must have a hosted site.' },
+        title: { type: 'string', description: 'What the change is, up to 140 characters, e.g. "Make the product title red".' },
+        summary: { type: 'string', description: 'What the client asked for and what you are going to change, in a few sentences.' },
+      },
+      required: ['project_id', 'title', 'summary'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
+    name: 'finish_change',
+    title: 'Finish a change',
+    description:
+      `Close a change you made with start_change, after its preview is built. Ask the client first: review true sends it to Ali, who reads it before it goes live and emails them when he is done; review false keeps it as it is, closed, with nothing to bill. ${reviewEstimate()}`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        request_id: REQUEST_ID,
+        review: { type: 'boolean', description: 'True: send it to Ali for review (paid). False: keep it without review (free).' },
+      },
+      required: ['request_id', 'review'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
     name: 'project_context',
     title: 'Request context',
     description:
-      'Everything about one approved request that your own agent needs to work on it: the project brief, the whole conversation, the site’s state and how it builds. Read this first.',
+      'Everything about one request you are working on (from start_change, or one Ali approved): the project brief, the whole conversation, the site’s state and how it builds. Read this first.',
     inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
     readOnly: true,
   },
@@ -291,7 +324,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'submit_change',
     title: 'Send a change',
     description:
-      'Send the files you changed for an approved request: whole contents, at most 40 files and 2 MB. They land on the request’s own branch — never production. Then call preview_build so the preview shows them.',
+      'Send the files you changed, whole contents, at most 40 files and 2 MB, for a request from start_change (or one Ali approved). They land on the request’s own branch and the preview, never production, and are recorded with your name and the file list. Then call preview_build.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -317,7 +350,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'preview_build',
     title: 'Build the preview',
     description:
-      'Apply the change you sent with submit_change and rebuild the preview site. A machine picks it up; the request’s thread gets the preview link. Send the change first.',
+      'Apply the change you sent with submit_change and rebuild the preview site. A machine picks it up, usually within a minute or two; portal_request then shows the preview link in the thread. Send the change first.',
     inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
     readOnly: false,
   },
@@ -587,6 +620,35 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
       return portalCall(env, ctx, token, 'PATCH', `/portal/sites/${encodeURIComponent(String(args.site_id ?? ''))}`, {
         projectId: args.project_id,
       });
+    case 'start_change': {
+      const out = await portalCall(env, ctx, token, 'POST', '/portal/changes', {
+        projectId: args.project_id,
+        title: args.title,
+        summary: args.summary,
+      });
+      return {
+        request_id: out?.id,
+        status: 'In progress',
+        cost: 'None on malipetek: you are doing the work on the client’s own subscription.',
+        next: 'Read the site with workspace_files and workspace_read, send the files with submit_change, then preview_build. When portal_request shows the preview link, show it to the client and ask whether to send the change for review (finish_change).',
+        review: reviewEstimate(),
+      };
+    }
+    case 'finish_change': {
+      const out = await portalCall(env, ctx, token, 'POST', `/portal/changes/${Number.isInteger(id) ? id : 0}/finish`, { review: args.review });
+      if (out?.status === 'review') {
+        return {
+          status: 'In review',
+          note: 'Ali has been emailed. He reviews it, and the client gets an email when he approves or replies; replying to that email answers him in the thread.',
+        };
+      }
+      return {
+        status: 'Done, kept without review',
+        note: out?.canPublish
+          ? 'The change is on the preview. The client can take it live with site_publish when they are ready.'
+          : 'The change is on the preview. Taking it live is Ali’s step for now: the client can ask him with portal_file_request or send the change for review instead.',
+      };
+    }
     case 'project_context':
       return portalCall(env, ctx, token, 'GET', `/portal/tickets/${Number.isInteger(id) ? id : 0}/context`);
     case 'workspace_files':

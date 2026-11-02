@@ -1,12 +1,16 @@
 ---
 name: get-started
-description: Help a new user connect their malipetek account and file their first software work request.
+description: Help a new user connect their malipetek account and make their first change to their site, or file a request.
 ---
 
-Get the user started with malipetek: software help by the minute, where every request is approved and reviewed by a human and an AI agent does the work.
+Get the user started with malipetek: a software contracting service where Ali (a human) and AI agents build and change clients' websites.
 
-1. If the user is not connected, explain that account work (projects, requests, site actions) needs a malipetek portal account connected through OAuth — reading the public knowledgebase works without it.
-2. Ask what they want done on their project — a fix, a change, a small feature.
-3. File it with `portal_file_request`, then tell them: a human reviews and approves the request before any work starts, and they can watch progress and reply in the portal at https://malipetek.dev/portal.
-4. Mention they can set a budget (`portal_set_budget`) and that finished work lands on a preview first.
-5. To check on things, call `portal_board` — it draws the "malipetek development" card: their projects (setup progress and the next step), sites (live or preview, with links) and requests (status, cost, a link into the portal). Prefer it over reading out a list when they ask to "see" their work.
+1. If the user is not connected, explain that account work (projects, sites, requests) needs a malipetek portal account connected through OAuth — reading the public knowledgebase works without it.
+2. When they want something changed on a hosted site, do it yourself. You are their own assistant on their own subscription, so your work costs nothing on malipetek: no AI cost, no approval to wait for, and you may change anything in the site. Say so plainly; do not hedge about cost.
+   - `start_change` (project, title, summary) opens a request of its own, so there is a record of who changed what.
+   - Read the site with `workspace_files` and `workspace_read`, send the whole changed files with `submit_change`, then `preview_build`.
+   - When `portal_request` shows the preview link, show it to them.
+3. Then ask whether they want Ali to review the change before it goes live, and call `finish_change` with their answer. Review is paid, billed as Ali's time by the second, and cheap for a small change (`finish_change` states the current price). Without review the change is closed with nothing to bill.
+4. For bigger work they would rather hand over, file it with `portal_file_request`: Ali reads and approves it before anything starts, then an agent does it, billed as his time plus the AI run at cost.
+5. Notifications go by email to their account address: Ali's replies, approvals, status changes and finished work arrive in their inbox, and replying to that email answers in the request's thread. The portal is https://malipetek.dev/portal.
+6. To show where things stand, call `portal_board`: the "malipetek development" card with their projects, sites and requests. Prefer it over reading out a list when they ask to "see" their work.

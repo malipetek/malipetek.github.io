@@ -88,6 +88,9 @@ export function TicketCard({ t, draggable }) {
       <div className="aw-card__top">
         <span className="aw-card__id">#{t.id}</span>
         {t.kind === 'system' ? <Tag tone="dash">mine</Tag> : <Tag tone="client">client</Tag>}
+        {t.source === 'assistant' ? (
+          <Tag tone="ok" title="The client’s own assistant (ChatGPT, …) made this change on their subscription">their AI</Tag>
+        ) : null}
         {(t.priority ?? 0) > 0 ? <Tag tone="hot">{priorityName(t.priority)}</Tag> : null}
         {t.client_waiting_since && t.status !== 'new' ? <Tag tone="warn">awaiting reply</Tag> : null}
         <span className="aw-card__age">{ago(t.updated_at)}</span>
@@ -236,7 +239,7 @@ export function ListView() {
                 <td>{t.project_name ?? '—'}</td>
                 <td>{t.kind === 'system' ? <Tag tone="dash">mine</Tag> : t.client_email}</td>
                 <td>{priorityName(t.priority ?? 0)}</td>
-                <td>{t.executor ?? (t.kind === 'system' ? 'any' : 'claude')}</td>
+                <td>{t.source === 'assistant' ? 'their assistant' : t.executor ?? (t.kind === 'system' ? 'any' : 'claude')}</td>
                 <td>{money(priceOf({ humanSeconds: t.human_seconds ?? 0, aiMicroUsd: t.ai_micro_usd ?? 0 }).totalCents)}</td>
                 <td className="aw-muted">{ago(t.updated_at)} ago</td>
               </tr>
