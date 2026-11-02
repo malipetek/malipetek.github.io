@@ -103,11 +103,19 @@ export function Overview() {
   const { data, compose } = usePortal();
   const [stage, setStage] = useState(null);
   const [hovered, setHovered] = useState(null);
+  const [project, setProject] = useState(null);
   const { tickets, projects, user } = data;
   const open = tickets.filter(isOpen);
   const shown = stage ? tickets.filter((t) => t.status === stage) : open;
+  const visible =
+    project === null ? shown : project === 'none' ? shown.filter((t) => !t.project_id) : shown.filter((t) => t.project_id === project);
+  // The board also keeps the last few shipped requests, so it gets every
+  // request (open and shipped) for the chosen project, not just `shown`.
+  const boardTickets =
+    project === null ? tickets : project === 'none' ? tickets.filter((t) => !t.project_id) : tickets.filter((t) => t.project_id === project);
   const stageEntry = STAGES.find((s) => s.key === stage);
   const stageLabel = stageEntry ? stageText(t, stageEntry) : undefined;
+  const projectName = project === null ? null : project === 'none' ? t('board.gettingSetUp') : projects.find((p) => p.id === project)?.name;
   const name = user.name || user.email.split('@')[0];
   const building = open.filter((x) => x.status === 'in_progress').length;
 
@@ -126,28 +134,46 @@ export function Overview() {
         </Button>
       </PageHead>
 
-      <Board tickets={tickets} lanes={data.lanes} stage={stage} onStage={setStage} hovered={hovered} onHover={setHovered} onOpen={(id) => go(`ticket/${id}`)} />
+      <Board
+        tickets={boardTickets}
+        lanes={data.lanes}
+        stage={stage}
+        onStage={setStage}
+        hovered={hovered}
+        onHover={setHovered}
+        onOpen={(id) => go(`ticket/${id}`)}
+        project={project}
+        onProject={setProject}
+        onOpenProject={(id) => go(`project/${id}`)}
+      />
 
       <div className="cp-overview">
         <section className="cp-card cp-card--flush">
           <header className="cp-card__head">
-            <h2 className="cp-h2">{stage ? stageLabel : t('views.overview.openRequests')}</h2>
-            {stage ? (
-              <button type="button" className="cp-linkbtn" onClick={() => setStage(null)}>
-                {t('views.overview.showAllOpen')}
-              </button>
-            ) : (
-              <a className="cp-linkbtn" href={href('requests?filter=all')}>
-                {t('views.overview.allRequests')}
-              </a>
-            )}
+            <h2 className="cp-h2">{stage ? stageLabel : projectName ?? t('views.overview.openRequests')}</h2>
+            <div className="cp-card__tools">
+              {project !== null ? (
+                <button type="button" className="cp-linkbtn" onClick={() => setProject(null)}>
+                  {t('board.allProjects')}
+                </button>
+              ) : null}
+              {stage ? (
+                <button type="button" className="cp-linkbtn" onClick={() => setStage(null)}>
+                  {t('views.overview.showAllOpen')}
+                </button>
+              ) : (
+                <a className="cp-linkbtn" href={href('requests?filter=all')}>
+                  {t('views.overview.allRequests')}
+                </a>
+              )}
+            </div>
           </header>
-          {shown.length ? (
-            !stage && projects.length ? (
-              <GroupedRequests projects={projects} tickets={shown} hovered={hovered} onHover={setHovered} />
+          {visible.length ? (
+            !stage && projects.length && project === null ? (
+              <GroupedRequests projects={projects} tickets={visible} hovered={hovered} onHover={setHovered} />
             ) : (
               <ul className="cp-rows cp-rows--compact">
-                {shown.map((x) => (
+                {visible.map((x) => (
                   <RequestRow key={x.id} t={x} hovered={hovered === x.id} onHover={setHovered} />
                 ))}
               </ul>

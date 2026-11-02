@@ -589,6 +589,11 @@
 .cp-card__head--tight {
   padding: 0;
 }
+.cp-card__tools {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 12px;
+}
 .cp-section {
   margin-top: 36px;
 }
@@ -625,10 +630,113 @@
   height: 100%;
   display: block;
 }
+/* Project and site labels ride the 3D points the scene reports each frame. */
+.cp-board__nodes {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.cp-board__node {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 230px;
+  padding: 4px 8px 4px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bone) 92%, transparent);
+  backdrop-filter: blur(5px);
+  color: var(--ink);
+  font: 500 11px/1 var(--font-mono);
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  will-change: transform, opacity;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 8%, transparent);
+  transition:
+    background 120ms,
+    color 120ms,
+    border-color 120ms,
+    opacity 180ms;
+}
+.cp-board__node:hover {
+  border-color: var(--ink-soft);
+  background: var(--bone);
+}
+.cp-board__node--project {
+  border-left: 3px solid var(--orange);
+  text-transform: none;
+}
+.cp-board__node--project.is-on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bone);
+}
+.cp-board__node-idx {
+  color: var(--orange);
+  font-weight: 700;
+  font-size: 10px;
+}
+.cp-board__node-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-board__node-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--orange);
+  color: #fff;
+  font: 700 10px/1 var(--cp-ui);
+}
+.cp-board__node--site {
+  padding: 3px 6px;
+  border-radius: 6px;
+  max-width: 190px;
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+.cp-board__node--site.is-live {
+  color: var(--ink);
+}
+.cp-board__node--site.is-ghost {
+  border-style: dashed;
+}
+.cp-board__node-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--rule-strong);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--rule-strong) 18%, transparent);
+}
+.cp-board__node-dot.is-preview {
+  background: var(--orange);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--orange) 22%, transparent);
+}
+.cp-board__node-dot.is-live {
+  background: #95bf47;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #95bf47 26%, transparent);
+}
+.cp-board__node-state {
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
 .cp-board__cap {
   position: absolute;
   top: 0;
   left: 0;
+  z-index: 3;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -679,6 +787,7 @@
   position: absolute;
   top: 0;
   left: 0;
+  z-index: 4;
   max-width: 280px;
   padding: 6px 10px;
   border-radius: 8px;
@@ -2308,27 +2417,84 @@ fieldset.cp-field {
 .cp-board__lanes {
   display: flex;
   align-items: center;
-  gap: 0.45rem 0.9rem;
+  gap: 6px;
   flex-wrap: wrap;
-  padding: 0 0.2rem 0.6rem;
-  font-size: 12px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
 }
 .cp-board__lane {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 6px;
+  padding: 4px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: transparent;
   color: var(--ink-soft);
+  font: 500 11px/1 var(--font-mono);
+  cursor: pointer;
+  transition:
+    background 120ms,
+    color 120ms,
+    border-color 120ms;
+}
+.cp-board__lane:hover {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+.cp-board__lane.is-on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bone);
 }
 .cp-board__lane em {
   font-style: normal;
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  padding: 0 0.3rem;
+  font-size: 10px;
+  padding: 0 0.28rem;
   border-radius: 999px;
-  background: var(--cp-hover);
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+}
+.cp-board__lane.is-on em {
+  background: color-mix(in srgb, var(--bone) 18%, transparent);
+}
+.cp-board__lane small {
+  font-size: 10px;
+  opacity: 0.55;
+}
+.cp-board__lane-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--orange);
 }
 .cp-board__lane--none {
   color: var(--orange);
+  border-style: dashed;
+}
+.cp-board__hint {
+  margin-left: auto;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+@media (max-width: 760px) {
+  /* The scene is small here; the project chips below are the readable map. */
+  .cp-board__nodes {
+    display: none;
+  }
+  .cp-board__node--site {
+    display: none;
+  }
+  .cp-board__node--project {
+    max-width: 46%;
+  }
+  .cp-board__hint {
+    display: none;
+  }
+  .cp-board__lane small {
+    display: none;
+  }
 }
 .cp-groups {
   display: grid;

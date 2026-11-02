@@ -83,6 +83,7 @@ import {
   getSiteById,
   getSites,
   listDeploys,
+  PLACEHOLDER_DEPLOY,
   publishSite,
   rollbackSite,
   setSiteHost,
@@ -872,7 +873,7 @@ portal.get('/portal/me', async (c) => {
             id: view?.id ?? row.id,
             name: view?.name || project.name,
             url: view?.productionUrl ?? null,
-            live: view?.state === 'ready',
+            live: Boolean(view?.productionDeploy && view.productionDeploy !== PLACEHOLDER_DEPLOY),
           };
         }),
       };

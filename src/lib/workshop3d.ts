@@ -492,13 +492,40 @@ export type BoardStage = (typeof BOARD_STAGES)[number];
 export interface BoardItem {
   id: number;
   stage: TrackStage;
-  /** Which project belt it rides; -1 is the "getting set up" hopper. */
+  /** Which project belt it rides: an index into the lanes, or the last one for "getting set up". */
   lane?: number;
+}
+
+/** One of a project's sites, as the board's dock shows it. */
+export interface BoardSite {
+  id: number;
+  name: string;
+  live?: boolean;
+}
+
+/** A project's belt: its requests, its pylon and the sites at its dock. */
+export interface BoardLane {
+  id: number;
+  name: string;
+  sites: BoardSite[];
+  /** The project's tint, as a number the scene can draw (the DOM uses its own hex). */
+  color?: number;
+  /** Requests with no project yet ride this lane. */
+  unassigned?: boolean;
+}
+
+/** A clickable node in the scene: a project pylon or a site pod. */
+export interface BoardNodeRef {
+  kind: 'project' | 'site';
+  projectId: number;
+  /** Null on a project with no site yet (its ghost pod). */
+  siteId?: number | null;
 }
 
 /** What the board reads every frame. The caller only has to change what these return. */
 interface BoardFeed {
   items: () => BoardItem[];
+  lanes: () => BoardLane[];
   hovered: () => number | null;
 }
 
@@ -514,6 +541,14 @@ interface Machine {
   anchors?: Record<BoardStage, THREE.Vector3>;
   /** Board only: the meshes a pointer can pick, each with userData.id. */
   pickable?: () => THREE.Object3D[];
+  /** Board only: project pylons and site pods a pointer can pick, each with userData.node. */
+  nodePickable?: () => THREE.Object3D[];
+  /** Board only: where each project/site label floats, in world space. */
+  nodeAnchors?: () => { key: string; position: THREE.Vector3; visible: boolean }[];
+  /** Board only: the z a project's belt runs at. */
+  laneZ?: (lane: number) => number;
+  /** Board only: mark one project's pylon as focused, or clear it. */
+  highlightLane?: (id: number | null) => void;
   /** Board only: where a ticket is now, or null when it is not on the machine. */
   ticketAt?: (id: number) => THREE.Vector3 | null;
 }
@@ -803,6 +838,439 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
           }
         : {}),
     };
+}
+
+/* ————— the client's board: a factory line per project ————— */
+
+/**
+ * The client's work as a small factory floor.
+ *
+ * One belt per project, all running through the same four stations: request,
+ * approval, build, review. A pylon at the head of each belt is the project;
+ * a dock of pods at its end is the project's sites. The line is the data
+ * model: a project pylon focuses its belt, a site pod opens its project, and
+ * every name is a DOM label riding the 3D point it names.
+ *
+ * The shared station props sit on a back deck, behind the belts, so one
+ * approver, one agent and one reviewer serve every project. A wide gantry
+ * spans the bank at each station, keeping the four steps legible however many
+ * belts there are.
+ */
+function boardMachine(ctx: Ctx, feed: BoardFeed): Machine {
+  const g = new THREE.Group();
+  const STEP_X = [-4.8, -1.6, 1.6, 4.8];
+  const BELT_Z = 0.7;
+  const PAD_Z = -4.6;
+  const FACE = -Math.PI / 4;
+  const START = -6.1;
+  const END = 7.4;
+  const BELT_CX = (START + END) / 2;
+  const BELT_LEN = END - START;
+  const LANE_W = 0.95;
+  const LIFT = 5.9;
+  const PYLON_X = -7.45;
+  const DOCK_X = 8.35;
+  const gateX = STEP_X[1];
+
+  // The back deck: one plinth per station, with the prop that stands for it.
+  const captions: [string, string][] = [
+    ['01', 'REQUEST'],
+    ['02', 'APPROVE'],
+    ['03', 'BUILD'],
+    ['04', 'SHIP'],
+  ];
+  STEP_X.forEach((x, i) => {
+    g.add(box(ctx, 2.3, 0.34, 2.0, 'fill', x, 0.17, PAD_Z));
+    g.add(box(ctx, 2.1, 0.06, 1.8, 'fill2', x, 0.37, PAD_Z));
+    const label = floorLabel(ctx, captions[i][0], captions[i][1]);
+    label.position.set(x + 0.15, 0.02, PAD_Z + 1.45);
+    g.add(label);
+  });
+
+  // 01 request — a letter and a chat bubble arriving
+  const letter = box(ctx, 1.15, 0.78, 0.08, 'fill', STEP_X[0] - 0.35, 0.85, PAD_Z);
+  letter.rotation.set(-0.25, FACE, 0);
+  const seal = cyl(ctx, 0.13, 0.05, 'orange', 0, 0, 0.06);
+  seal.rotation.x = Math.PI / 2;
+  letter.add(seal);
+  const bubble = new THREE.Group();
+  bubble.add(box(ctx, 1.05, 0.7, 0.3, 'fill'));
+  bubble.add(box(ctx, 0.22, 0.22, 0.3, 'fill', -0.3, -0.38, 0).rotateZ(Math.PI / 4));
+  for (const dx of [-0.26, 0, 0.26]) bubble.add(box(ctx, 0.12, 0.12, 0.05, 'ink', dx, 0, 0.17));
+  bubble.position.set(STEP_X[0] + 0.5, 2.0, PAD_Z - 0.2);
+  bubble.rotation.y = FACE;
+  g.add(letter, bubble);
+
+  // 02 approve — the approver behind the line; the stamp hangs from the gantry
+  const approver = person(ctx);
+  approver.position.set(gateX, 0.4, PAD_Z);
+  g.add(approver);
+  const stamp = new THREE.Group();
+  stamp.position.set(gateX, 1.5, BELT_Z);
+  stamp.add(cyl(ctx, 0.3, 0.36, 'orange', 0, 0.04, 0));
+  stamp.add(cyl(ctx, 0.33, 0.08, 'ink', 0, -0.18, 0));
+  stamp.add(cyl(ctx, 0.07, 0.16, 'ink', 0, 0.3, 0));
+  const knob = part(ctx, new THREE.SphereGeometry(0.11, 20, 14), 'ink');
+  knob.position.y = 0.42;
+  stamp.add(knob);
+  g.add(stamp);
+  const ram = cyl(ctx, 0.07, 1.2, 'ink', gateX, 2.55, BELT_Z);
+  g.add(ram);
+
+  // 03 build — the agent at a terminal
+  const term = codePanel(ctx, 2.1, 1.35);
+  term.position.set(STEP_X[2] + 0.55, 1.35, PAD_Z - 0.45);
+  term.rotation.y = FACE;
+  g.add(box(ctx, 0.12, 0.62, 0.12, 'ink', STEP_X[2] + 0.55, 0.69, PAD_Z - 0.45));
+  const foot = box(ctx, 0.7, 0.05, 0.42, 'ink', STEP_X[2] + 0.55, 0.425, PAD_Z - 0.45);
+  foot.rotation.y = FACE;
+  g.add(foot);
+  const keys = new THREE.Group();
+  keys.add(box(ctx, 0.9, 0.06, 0.32, 'fill'));
+  keys.position.set(STEP_X[2] + 0.05, 0.43, PAD_Z - 0.05);
+  keys.rotation.y = FACE;
+  g.add(keys);
+  const bot = agentBot(ctx);
+  bot.position.set(STEP_X[2] - 0.55, 0.4, PAD_Z + 0.35);
+  bot.rotation.y = FACE;
+  g.add(term, bot);
+
+  // 04 ship — the reviewer and the cloud
+  const reviewer = person(ctx);
+  reviewer.position.set(STEP_X[3] - 0.2, 0.4, PAD_Z);
+  const clipboard = box(ctx, 0.36, 0.46, 0.03, 'fill', 0.2, 0.86, 0.3);
+  clipboard.rotation.set(-0.5, FACE, 0);
+  clipboard.add(box(ctx, 0.14, 0.05, 0.03, 'ink', 0, 0.22, 0.01));
+  reviewer.add(clipboard);
+  g.add(reviewer);
+  const sky = cloud(ctx);
+  sky.position.set(7.2, 3.8, BELT_Z - 0.2);
+  sky.scale.setScalar(1.25);
+  g.add(sky);
+  const instances: THREE.Mesh[] = [];
+  for (let i = 0; i < 4; i++) {
+    const inst = box(ctx, 0.3, 0.3, 0.3, i === 1 ? 'orange' : 'ink', 6.75 + i * 0.44, 2.45, BELT_Z - 0.2);
+    instances.push(inst);
+    g.add(inst);
+  }
+
+  // The lane bank is rebuilt when the set of projects or sites changes. Tickets
+  // live outside it, so their movement is never reset by a layout change.
+  const bank = new THREE.Group();
+  g.add(bank);
+  const nodePick: THREE.Object3D[] = [];
+  const nodeWorld = new Map<string, THREE.Vector3>();
+  const laneZById = new Map<number, number>();
+  const focusRings = new Map<number, THREE.Mesh>();
+  const beacons: THREE.Mesh[] = [];
+  let zsByIndex: number[] = [BELT_Z];
+  let centerZ = BELT_Z;
+  let focusedLane: number | null = null;
+  let signature = '';
+
+  const tagNode = (obj: THREE.Object3D, node: BoardNodeRef) => {
+    obj.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.userData.node = node;
+      nodePick.push(m);
+    });
+  };
+
+  const clearGroup = (obj: THREE.Object3D) => {
+    const geos = new Set<THREE.BufferGeometry>();
+    obj.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && m.geometry) geos.add(m.geometry);
+    });
+    for (const geo of geos) geo.dispose();
+    obj.clear();
+  };
+
+  const layout = () => {
+    const raw = feed.lanes();
+    const list: BoardLane[] = raw.length ? raw : [{ id: -1, name: '', sites: [], unassigned: true }];
+    const sig = list
+      .map((lane) => `${lane.id}:${lane.unassigned ? 'u' : 'p'}:${(lane.sites ?? []).map((s) => `${s.id}:${s.live ? 1 : 0}`).join(',')}`)
+      .join('|');
+    if (sig === signature) return;
+    signature = sig;
+
+    clearGroup(bank);
+    nodePick.length = 0;
+    nodeWorld.clear();
+    laneZById.clear();
+    focusRings.clear();
+    beacons.length = 0;
+
+    const n = list.length;
+    // Keep the whole bank within a comfortable depth, however many projects.
+    const step = n <= 1 ? 0 : Math.min(1.55, 7.2 / (n - 1));
+    const zs = Array.from({ length: n }, (_, i) => BELT_Z + (i - (n - 1) / 2) * step);
+    zsByIndex = zs;
+    centerZ = zs.reduce((a, b) => a + b, 0) / n;
+    const zBack = Math.min(...zs) - 1.0;
+    const zFront = Math.max(...zs) + 1.0;
+
+    list.forEach((lane, i) => {
+      const z = zs[i];
+      const tint = lane.color ?? ORANGE;
+      laneZById.set(lane.id, z);
+
+      // The belt and its two end rollers. Only the bank's outer edges get the
+      // bright rail: one line per project would read as a picket fence.
+      bank.add(box(ctx, BELT_LEN, 0.3, LANE_W, 'fill2', BELT_CX, 0.15, z));
+      // A small tinted marker where the project's requests enter the belt.
+      bank.add(box(ctx, 0.3, 0.05, 0.14, tint, START + 0.3, 0.37, z));
+      for (const x of [START, END]) {
+        const roller = cyl(ctx, 0.17, LANE_W + 0.2, 'fill', x, 0.17, z);
+        roller.rotation.x = Math.PI / 2;
+        bank.add(roller);
+        const hub = cyl(ctx, 0.07, LANE_W + 0.26, 'ink', x, 0.17, z);
+        hub.rotation.x = Math.PI / 2;
+        bank.add(hub);
+      }
+
+      // The project pylon: a folder sign on a post, with a beacon on top.
+      const pylon = new THREE.Group();
+      pylon.add(box(ctx, 1.0, 0.16, 0.8, 'fill', PYLON_X, 0.08, z));
+      pylon.add(box(ctx, 0.12, 2.2, 0.12, 'ink', PYLON_X, 1.18, z));
+      pylon.add(box(ctx, 0.92, 0.66, 0.1, 'fill', PYLON_X, 2.32, z));
+      pylon.add(box(ctx, 0.46, 0.12, 0.12, tint, PYLON_X, 2.54, z + 0.06));
+      pylon.add(cyl(ctx, 0.13, 0.2, tint, PYLON_X, 2.82, z));
+      tagNode(pylon, { kind: 'project', projectId: lane.id });
+      bank.add(pylon);
+      // A flat ring under the pylon; the focused project wears it.
+      const ring = cyl(ctx, 0.62, 0.05, tint, PYLON_X, 0.05, z);
+      ring.visible = lane.id === focusedLane;
+      bank.add(ring);
+      focusRings.set(lane.id, ring);
+      nodeWorld.set(`p:${lane.id}`, new THREE.Vector3(PYLON_X, 3.12, z));
+
+      // The dock: the project's sites, as pods on a platform at the belt's end.
+      bank.add(box(ctx, 2.1, 0.18, 1.2, 'fill', DOCK_X, 0.09, z));
+      bank.add(box(ctx, 0.95, 0.07, 0.08, 'ink', END + 0.5, 0.27, z));
+      const sites = lane.sites ?? [];
+      if (!sites.length) {
+        const ghost = new THREE.Group();
+        ghost.add(box(ctx, 0.62, 0.4, 0.5, 'fill2', DOCK_X, 0.38, z));
+        ghost.add(box(ctx, 0.68, 0.04, 0.56, 'orange', DOCK_X, 0.6, z));
+        ghost.add(cyl(ctx, 0.06, 0.3, 'ink', DOCK_X + 0.18, 0.82, z));
+        tagNode(ghost, { kind: 'site', projectId: lane.id, siteId: null });
+        bank.add(ghost);
+        nodeWorld.set(`s:${lane.id}:0`, new THREE.Vector3(DOCK_X, 1.08, z));
+      } else {
+        const dzStep = sites.length > 1 ? Math.min(0.58, 1.1 / sites.length) : 0;
+        sites.forEach((site, j) => {
+          const podZ = z + (j - (sites.length - 1) / 2) * dzStep;
+          const pod = new THREE.Group();
+          pod.add(box(ctx, 0.58, 0.44, 0.48, 'fill', DOCK_X, 0.37, podZ));
+          pod.add(box(ctx, 0.62, 0.06, 0.52, 'fill2', DOCK_X, 0.61, podZ));
+          pod.add(box(ctx, 0.58, 0.08, 0.06, 'ink', DOCK_X, 0.49, podZ + 0.25));
+          const beacon = cyl(ctx, 0.09, 0.24, site.live ? SHOPIFY : 'orange', DOCK_X + 0.18, 0.79, podZ);
+          pod.add(beacon);
+          beacons.push(beacon);
+          tagNode(pod, { kind: 'site', projectId: lane.id, siteId: site.id });
+          bank.add(pod);
+          // Stagger the labels of a multi-site dock so they do not sit on each other.
+          nodeWorld.set(`s:${lane.id}:${site.id}`, new THREE.Vector3(DOCK_X, 1.08 + (j % 2) * 0.34, podZ));
+        });
+      }
+    });
+
+    // A gantry over the bank at each station, so the four steps read across
+    // every project's line, not just the one in front. It stays fill-coloured
+    // and thin: the belts and tickets should be the bright things.
+    for (const x of STEP_X) {
+      bank.add(box(ctx, 0.09, 3.2, 0.09, 'fill2', x, 1.6, zBack));
+      bank.add(box(ctx, 0.09, 3.2, 0.09, 'fill2', x, 1.6, zFront));
+      bank.add(box(ctx, 0.1, 0.1, zFront - zBack, 'fill2', x, 3.2, centerZ));
+      bank.add(box(ctx, 0.5, 0.18, 0.12, 'orange', x, 2.98, centerZ));
+    }
+
+    // One rail for the whole bank, not one per project: the belts are the lanes.
+    for (const z of [Math.min(...zs) - LANE_W / 2 + 0.04, Math.max(...zs) + LANE_W / 2 - 0.04]) {
+      bank.add(box(ctx, BELT_LEN, 0.12, 0.07, 'ink', BELT_CX, 0.36, z));
+    }
+
+    stamp.position.z = centerZ;
+    ram.position.z = centerZ;
+    sky.position.z = centerZ - 0.2;
+    sky.scale.setScalar(1.25 + Math.min(0.35, n * 0.05));
+    instances.forEach((inst, i) => inst.position.set(6.75 + i * 0.44, 2.45, centerZ - 0.2));
+
+    anchors.new.set(STEP_X[0] + 0.2, 3.55, centerZ);
+    anchors.approved.set(gateX + 0.2, 3.55, centerZ);
+    anchors.in_progress.set(STEP_X[2] - 0.2, 3.55, centerZ);
+    anchors.review.set(STEP_X[3] + 0.3, 3.55, centerZ);
+    anchors.done.set(8.0, 3.6, centerZ);
+  };
+
+  // Tickets riding the belts.
+  const ticketGeo = roundedBox(0.66, 0.12, 0.46);
+  type Tk = {
+    group: THREE.Group;
+    stage: THREE.Mesh[];
+    mark: THREE.Mesh;
+    x: number;
+    goal: number;
+    slot: number;
+    lift: number;
+    status: TrackStage;
+    lane: number;
+    z: number;
+    goalZ: number;
+  };
+  const makeTicket = (id = 0): Tk => {
+    const stage = (['fill', 'ink', 'orange'] as const).map((r) => {
+      const m = part(ctx, ticketGeo, r);
+      m.userData.id = id;
+      return m;
+    });
+    const t = new THREE.Group();
+    t.add(...stage);
+    const mark = cyl(ctx, 0.11, 0.03, 'orange', 0.16, 0.07, 0.08);
+    t.add(mark);
+    g.add(t);
+    return { group: t, stage, mark, x: START, goal: START, slot: 0, lift: 0, status: 'new', lane: 0, z: BELT_Z, goalZ: BELT_Z };
+  };
+
+  const STAGE_X: Record<TrackStage, number> = {
+    new: gateX - 1.25,
+    approved: gateX + 0.95,
+    in_progress: STEP_X[2] - 0.2,
+    review: STEP_X[3],
+    done: END,
+    declined: gateX - 1.25,
+  };
+
+  /** Put a ticket at belt x, `up` above it and `off` across it; light floor glow `glow`. */
+  const place = (tk: Tk, x: number, glow: number, up = 0, off = 0) => {
+    const { group, stage, mark } = tk;
+    const lift = Math.max(0, (x - LIFT) / (END - LIFT));
+    // Shipped tickets drift toward the cloud at the centre of the bank.
+    const z = tk.z + off - lift * 0.2 + (centerZ - tk.z) * lift * 0.5;
+    group.position.set(x, 0.43 + lift * lift * 2.7 + up, z);
+    group.scale.setScalar(1 - lift * 0.55);
+    const s = x > STEP_X[3] ? 2 : x > STEP_X[2] ? 1 : 0;
+    stage.forEach((m, k) => (m.visible = k === s));
+    mark.visible = x > gateX && x <= STEP_X[2];
+    const approved = THREE.MathUtils.smoothstep(x, gateX - 0.3, gateX + 0.6);
+    const enter = THREE.MathUtils.smoothstep(x, START, START + 0.8);
+    if (glow < ctx.kit.glow.length) {
+      ctx.kit.glow[glow].set(x, z + 0.7, (0.35 + 0.65 * approved) * enter * (1 - lift));
+    }
+    return Math.abs(x - gateX);
+  };
+
+  const pool = new Map<number, Tk>();
+  let primed = false;
+  let last = 0;
+
+  const follow = (time: number) => {
+    layout();
+    const dt = Math.min(0.1, Math.max(0, time - last));
+    last = time;
+    const piles = new Map<string, number>();
+    const seen = new Set<number>();
+    for (const item of feed.items()) {
+      if (item.stage === 'declined') continue;
+      seen.add(item.id);
+      let tk = pool.get(item.id);
+      if (!tk) {
+        tk = makeTicket(item.id);
+        // What is there on first paint is simply there; what arrives later rides in.
+        tk.x = primed ? START : STAGE_X[item.stage];
+        pool.set(item.id, tk);
+      }
+      const lane = item.lane ?? 0;
+      const key = `${lane}:${item.stage}`;
+      const slot = piles.get(key) ?? 0;
+      piles.set(key, slot + 1);
+      tk.goal = STAGE_X[item.stage];
+      tk.slot = slot;
+      tk.status = item.stage;
+      tk.lane = lane;
+      tk.goalZ = zsByIndex[lane] ?? BELT_Z;
+    }
+    for (const [id, tk] of pool) {
+      if (seen.has(id)) continue;
+      g.remove(tk.group);
+      pool.delete(id);
+    }
+    primed = true;
+    ctx.kit.glow.forEach((v) => v.set(0, 0, 0));
+
+    const hovered = feed.hovered();
+    let nearestGate = Infinity;
+    let working = false;
+    let waiting = false;
+    let glow = 0;
+    for (const [id, tk] of pool) {
+      tk.x += Math.sign(tk.goal - tk.x) * Math.min(Math.abs(tk.goal - tk.x), dt * 2.4);
+      tk.z += (tk.goalZ - tk.z) * Math.min(1, dt * 5);
+      const parked = Math.abs(tk.goal - tk.x) < 0.01;
+      const busy = tk.status === 'in_progress' && parked;
+      working ||= busy;
+      waiting ||= tk.status === 'new';
+      tk.lift += ((hovered === id ? 1 : 0) - tk.lift) * Math.min(1, dt * 12);
+      tk.group.visible = tk.slot < PILE;
+      const shipped = tk.status === 'done';
+      const up = (shipped ? 0 : tk.slot * 0.15) + tk.lift * 0.35;
+      const off = shipped ? ((tk.slot % 3) - 1) * 0.35 : 0;
+      const x = tk.x + (busy ? Math.sin(time * 9 + id) * 0.035 : 0);
+      const gate = place(tk, x, glow++, up, off);
+      tk.group.rotation.y = tk.lift * 0.25;
+      if (tk.status !== 'new') nearestGate = Math.min(nearestGate, gate);
+    }
+    bot.rotation.x = working ? Math.sin(time * 4.2) * 0.06 : 0;
+    stamp.position.y = 1.5 - 0.9 * Math.max(0, 1 - nearestGate / 0.45) + (waiting ? Math.sin(time * 2) * 0.05 : 0);
+  };
+
+  const anchors: Record<BoardStage, THREE.Vector3> = {
+    new: new THREE.Vector3(STEP_X[0] + 0.2, 3.55, BELT_Z),
+    approved: new THREE.Vector3(gateX + 0.2, 3.55, BELT_Z),
+    in_progress: new THREE.Vector3(STEP_X[2] - 0.2, 3.55, BELT_Z),
+    review: new THREE.Vector3(STEP_X[3] + 0.3, 3.55, BELT_Z),
+    done: new THREE.Vector3(7.15, 3.6, BELT_Z),
+  };
+
+  const tick = (time: number) => {
+    follow(time);
+    instances.forEach((inst, i) => {
+      inst.position.y = 2.45 + Math.sin(time * 1.3 + i * 1.1) * 0.07;
+    });
+    beacons.forEach((b, i) => {
+      b.scale.y = 1 + Math.sin(time * 2.2 + i) * 0.12;
+    });
+    focusRings.forEach((ring, id) => {
+      ring.visible = id === focusedLane;
+      if (ring.visible) ring.scale.setScalar(1 + Math.sin(time * 3.4) * 0.07);
+    });
+  };
+  tick(8);
+
+  const LOOK: [number, number, number] = [-0.4, 0.9, BELT_Z];
+  const D = 21;
+  return {
+    group: g,
+    cam: [LOOK[0] - D, LOOK[1] + D * 0.82, LOOK[2] + D],
+    look: LOOK,
+    animated: [bubble, sky],
+    tick,
+    anchors,
+    pickable: () => [...pool.values()].filter((tk) => tk.group.visible).flatMap((tk) => tk.stage.filter((m) => m.visible)),
+    nodePickable: () => nodePick,
+    nodeAnchors: () => [...nodeWorld.entries()].map(([key, position]) => ({ key, position, visible: true })),
+    laneZ: (id) => laneZById.get(id) ?? centerZ,
+    highlightLane: (id) => {
+      focusedLane = id;
+    },
+    ticketAt: (id: number) => {
+      const tk = pool.get(id);
+      return tk && tk.group.visible ? tk.group.getWorldPosition(new THREE.Vector3()) : null;
+    },
+  };
 }
 
 /* ————— stations ————— */
@@ -1137,15 +1605,24 @@ export interface ScreenPoint {
 export interface BoardOptions {
   /** The requests to show; read every frame. */
   items: () => BoardItem[];
+  /** The projects (their belts) and sites (their docks); read when they change. */
+  lanes: () => BoardLane[];
   /** The pointer is over a ticket (its id), or left them (null). */
   onHover?: (id: number | null) => void;
   /** A ticket was clicked. */
   onPick?: (id: number) => void;
+  /** A project pylon or site pod was clicked. */
+  onPickNode?: (node: BoardNodeRef) => void;
   /**
-   * After each drawn frame: where each station's caption goes and where the
-   * hovered ticket is, so DOM labels can ride on the scene.
+   * After each drawn frame: where each station's caption goes, where the
+   * hovered ticket is, and where each project/site label rides, so DOM labels
+   * can sit on the scene.
    */
-  onFrame?: (stations: Record<BoardStage, ScreenPoint>, hovered: (ScreenPoint & { id: number }) | null) => void;
+  onFrame?: (
+    stations: Record<BoardStage, ScreenPoint>,
+    hovered: (ScreenPoint & { id: number }) | null,
+    nodes: (ScreenPoint & { key: string; visible: boolean })[],
+  ) => void;
 }
 
 export interface Board {
@@ -1153,6 +1630,8 @@ export interface Board {
   focus: (id: number | null) => void;
   /** Move in on one station (a step picked in the legend), or back to the whole machine. */
   zoom: (stage: BoardStage | null) => void;
+  /** Lean the camera toward one project's belt (its id), or back out with null. */
+  lane: (projectId: number | null) => void;
   /** Hover a ticket from outside the scene, e.g. its row in a list. */
   hover: (id: number | null) => void;
   stop: () => void;
@@ -1183,13 +1662,13 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   floor.rotation.x = -Math.PI / 2;
   floor.renderOrder = -1;
   scene.add(floor);
-  const machine = heroMachine(ctx, { items: options.items, hovered: () => hovered ?? outside });
+  const machine = boardMachine(ctx, { items: options.items, lanes: options.lanes, hovered: () => hovered ?? outside });
   scene.add(machine.group);
   document.fonts?.ready.then(() => repaint.forEach((draw) => draw()));
 
   const home = new THREE.Vector3(...machine.look).add(new THREE.Vector3(1.0, 0.85, 0.6));
   const look = home.clone();
-  // More from the front than the homepage's isometric view: the belt runs
+  // More from the front than the homepage's isometric view: the belts run
   // across a wide board instead of climbing it, and the stations spread out.
   const base = home.clone().add(new THREE.Vector3(-4.5, 12, 21));
   const mouse = { x: 0, y: 0 };
@@ -1225,7 +1704,8 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       const stations = Object.fromEntries(BOARD_STAGES.map((s) => [s, toScreen(anchors[s])])) as Record<BoardStage, ScreenPoint>;
       const id = hovered ?? outside;
       const at = id !== null ? machine.ticketAt!(id) : null;
-      options.onFrame(stations, at && id !== null ? { id, ...toScreen(at.add(new THREE.Vector3(0, 0.3, 0))) } : null);
+      const nodes = machine.nodeAnchors?.().map((n) => ({ key: n.key, visible: n.visible, ...toScreen(n.position) })) ?? [];
+      options.onFrame(stations, at && id !== null ? { id, ...toScreen(at.add(new THREE.Vector3(0, 0.3, 0))) } : null, nodes);
     }
   };
 
@@ -1246,31 +1726,40 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     camera.aspect = size.w / size.h;
     camera.updateProjectionMatrix();
     // The machine is wide: narrower boxes pull back so all of it stays in frame.
-    fit = THREE.MathUtils.clamp(1.6 / camera.aspect, 0.62, 1.3);
+    fit = THREE.MathUtils.clamp(1.95 / camera.aspect, 0.68, 1.6);
     render();
   };
   const sizeWatch = new ResizeObserver(resize);
   sizeWatch.observe(canvas);
   resize();
 
-  // Picking: the pointer over a ticket hovers it; a click opens it.
+  // Picking: a ticket first, then a project pylon or site pod.
   const ray = new THREE.Raycaster();
-  const pick = (e: PointerEvent | MouseEvent): number | null => {
+  const cast = (e: PointerEvent | MouseEvent) => {
     const r = canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
+  };
+  const pickTicket = (e: PointerEvent | MouseEvent): number | null => {
+    cast(e);
     const hit = ray.intersectObjects(machine.pickable!(), false)[0];
     return hit ? (hit.object.userData.id as number) : null;
+  };
+  const pickNode = (e: PointerEvent | MouseEvent): BoardNodeRef | null => {
+    cast(e);
+    const hit = ray.intersectObjects(machine.nodePickable?.() ?? [], false)[0];
+    return hit ? ((hit.object.userData.node as BoardNodeRef) ?? null) : null;
   };
   const onMove = (e: PointerEvent) => {
     const r = canvas.getBoundingClientRect();
     mouse.x = THREE.MathUtils.clamp(((e.clientX - r.left) / r.width - 0.5) * 2, -1, 1);
     mouse.y = THREE.MathUtils.clamp(((e.clientY - r.top) / r.height - 0.5) * 2, -1, 1);
     if (e.target !== canvas) return;
-    const id = pick(e);
+    const id = pickTicket(e);
+    const node = id === null ? pickNode(e) : null;
+    canvas.style.cursor = id === null && !node ? '' : 'pointer';
     if (id !== hovered) {
       hovered = id;
-      canvas.style.cursor = id === null ? '' : 'pointer';
       options.onHover?.(id);
     }
   };
@@ -1281,8 +1770,13 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     options.onHover?.(null);
   };
   const onClick = (e: MouseEvent) => {
-    const id = pick(e);
-    if (id !== null) options.onPick?.(id);
+    const id = pickTicket(e);
+    if (id !== null) {
+      options.onPick?.(id);
+      return;
+    }
+    const node = pickNode(e);
+    if (node) options.onPickNode?.(node);
   };
   window.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerleave', onLeave);
@@ -1326,6 +1820,9 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     },
     zoom: (stage) => {
       stageId = stage;
+    },
+    lane: (projectId) => {
+      machine.highlightLane?.(projectId);
     },
     hover: (id) => {
       outside = id;

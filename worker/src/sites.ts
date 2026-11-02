@@ -342,7 +342,7 @@ export async function siteSlugFree(env: Env, slug: string): Promise<boolean> {
 /** Waiting this long for a node to make the repo stops the site. */
 const ALLOCATE_TIMEOUT_SECONDS = 30 * 60;
 
-const PLACEHOLDER_DEPLOY = 'placeholder';
+export const PLACEHOLDER_DEPLOY = 'placeholder';
 
 function placeholderHtml(name: string): string {
   return `<!doctype html>
