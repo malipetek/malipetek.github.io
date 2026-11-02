@@ -65,7 +65,7 @@ export function Board({
       const color = LANE_TINTS[i % LANE_TINTS.length];
       return { ...lane, sites: lane.sites ?? [], lane: i, color, tint: tintHex(color) };
     });
-    const loose = tickets.some((x) => !x.project_id) || !list.length || project === 'none';
+    const loose = items.some((x) => !x.project_id) || !list.length || project === 'none';
     if (loose) {
       list.push({
         id: -1,
@@ -78,7 +78,7 @@ export function Board({
       });
     }
     return list;
-  }, [lanes, tickets, project, t]);
+  }, [lanes, items, project, t]);
 
   const itemsRef = useRef(items);
   itemsRef.current = items;
