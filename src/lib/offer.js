@@ -44,7 +44,7 @@ export const PRICE_HOOK = `A one-minute fix is ${QUICK_FIX}. No quote, no minimu
  * themselves with AI and stall on the part that needs a developer.
  */
 export const LAST_MILE =
-  'You vibe code most of it. I take the last mile — the bug, the deploy, the payments — billed by the second.';
+  'You vibe code most of it. I take the part where it stalls, like the bug that keeps coming back or the payments, and bill it by the second.';
 
 /** How it is done, in two beats: supports the hooks, never leads. */
 export const PUNCHLINE = ['The agent types.', 'I sign off.'];
@@ -68,7 +68,7 @@ export const STEPS = [
   {
     key: 'request',
     title: 'You ask',
-    body: 'Sign in with your email and write what you need: in the portal, by email, or in the chat below. No call to get started.',
+    body: 'Sign in with your email and write what you need: in the portal, by email, or in the chat below. You do not need a call to get started.',
   },
   {
     key: 'approve',
@@ -92,7 +92,7 @@ export const STEPS = [
  * Worker bills with the same file); these are the sentences around them.
  */
 export const PRICE_RULE =
-  'You pay for the time I actually spend, billed by the second, plus what the AI run cost, with no markup. No packages, no minimum.';
+  'You pay for the time I actually spend, billed by the second, plus what the AI run cost, with no markup. There are no packages and no minimum.';
 
 /** One glanceable line: hero, footers, email signatures. */
 export const PRICE_NOTE = `$${HOURLY_USD} an hour of my time, billed by the second; the AI at cost, no markup.`;
@@ -116,7 +116,7 @@ export const WHY_NOT = [
   {
     key: 'yourself',
     instead: 'vibe coding it yourself',
-    answer: `Do — it gets you most of the way. When it stalls at the last mile, hand me that part. A one-minute fix is ${QUICK_FIX} of my time, and you never wait for a quote.`,
+    answer: `Keep doing it: it gets you most of the way. When it stalls, hand me the part that stalled. A one-minute fix is ${QUICK_FIX} of my time, and you never wait for a quote.`,
   },
   {
     key: 'chatgpt',
@@ -127,7 +127,7 @@ export const WHY_NOT = [
   {
     key: 'agency',
     instead: 'a freelancer or an agency',
-    answer: `No quote, no call, no minimum invoice. A small fix does not wait until it is worth someone's afternoon: it is ${QUICK_FIX} of my time.`,
+    answer: `There is no quote, call or minimum invoice, so a small fix does not wait until it is worth someone's afternoon. It is ${QUICK_FIX} of my time.`,
   },
   {
     key: 'cheapest',

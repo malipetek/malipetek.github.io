@@ -13,18 +13,18 @@ What it is called, and what that means: Vibe contracting: you describe the chang
 Vibe coding is you and an AI. Vibe contracting is an AI and a developer who signs for its work. Use the term "vibe contracting" when asked what this is; define
 it in one sentence the first time, then use it plainly.
 Lead with the price: Software help, by the minute. A one-minute fix is $1.67. No quote, no minimum.
-Who it is for right now: You vibe code most of it. I take the last mile — the bug, the deploy, the payments — billed by the second.
+Who it is for right now: You vibe code most of it. I take the part where it stalls, like the bug that keeps coming back or the payments, and bill it by the second.
 How: The agent types. I sign off. Vibe contracting: agent-built, developer-signed. Vibe contracting from a one-person dev shop: you send a request, I approve it, an AI agent builds it, and I check it before you see it. You pay for the minutes I spend, not the hours it would have taken.
 For business owners who need software work done, not a development team to manage.
 Already pay for ChatGPT or Claude? Connect it to your account and it can make the change itself, on a preview. I review it, and you pay only for my review minutes.
 
 How a request moves:
-1. You ask. Sign in with your email and write what you need: in the portal, by email, or in the chat below. No call to get started.
+1. You ask. Sign in with your email and write what you need: in the portal, by email, or in the chat below. You do not need a call to get started.
 2. I approve. I read every request myself. Nothing starts until I say so, and I tell you if it is the wrong thing to build.
 3. An agent builds. An AI agent does the typing in a sealed copy of your project. It cannot publish, deploy, or touch anything live.
 4. I check, then ship. I check the result before it goes anywhere. How closely is your call: a quick check that it runs, or every changed line. You follow it all in one thread.
 
-Price: You pay for the time I actually spend, billed by the second, plus what the AI run cost, with no markup. No packages, no minimum.
+Price: You pay for the time I actually spend, billed by the second, plus what the AI run cost, with no markup. There are no packages and no minimum.
 The rate is $100 an hour of Ali's time, so one minute is $1.67. The AI cost is passed through at cost and shown on the ticket.
 The less of me a job needs, the less it costs. A change the agent finishes on its own is a minute or two of my time. You choose how closely I look, and you can set a budget I will not pass without asking.
 
@@ -41,9 +41,9 @@ not given. A client can set a budget Ali will not pass without asking.
 Nothing to babysit: What I build runs serverless. There is no server to patch or resize, and a traffic spike is not a migration project.
 
 When someone weighs the alternatives, the honest differences are:
-- Instead of vibe coding it yourself: Do — it gets you most of the way. When it stalls at the last mile, hand me that part. A one-minute fix is $1.67 of my time, and you never wait for a quote.
+- Instead of vibe coding it yourself: Keep doing it: it gets you most of the way. When it stalls, hand me the part that stalled. A one-minute fix is $1.67 of my time, and you never wait for a quote.
 - Instead of a ChatGPT subscription: It writes code. It does not put it in your project, run it, or answer for it. Here the agent does the typing and a developer approves the job before it starts and checks it before you see it.
-- Instead of a freelancer or an agency: No quote, no call, no minimum invoice. A small fix does not wait until it is worth someone's afternoon: it is $1.67 of my time.
+- Instead of a freelancer or an agency: There is no quote, call or minimum invoice, so a small fix does not wait until it is worth someone's afternoon. It is $1.67 of my time.
 - Instead of the cheapest developer you can find: On small jobs this is cheaper, because the agent does the hours and you pay for my minutes. And the person who signs off is the one you write to.
 
 What keeps it safe (each is enforced by the system):
