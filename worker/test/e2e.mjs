@@ -224,6 +224,12 @@ function startFakeCloudflare() {
  * process on the same SQLite file, so a write can meet a lock the server holds;
  * retry a few times before calling it a failure.
  */
+/** Rows from the local database, for checks on what a route recorded. */
+function rows(query) {
+  const out = execFileSync('npx', ['wrangler', 'd1', 'execute', 'malipetek-portal', '--local', '--persist-to', STATE, '--json', '--command', query], { cwd: WORKER, stdio: 'pipe' });
+  return JSON.parse(String(out))[0]?.results ?? [];
+}
+
 function sql(query) {
   let last;
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -657,10 +663,13 @@ const groups = {
     check('…but production still shows the placeholder', (await call(`/portal/projects/${project.id}/site`, { auth: a.session })).data.site.previewDeploy === made.data.deployId);
 
     // Publish and rollback only move the production pointer.
-    check('client publish is off by default', (await call(`/portal/projects/${project.id}/site/publish`, { method: 'POST', auth: a.session, body: {} })).status === 403);
+    await call('/admin/settings', { method: 'PATCH', auth: admin, body: { clientPublish: false } });
+    check('Ali can switch client publishing off', (await call(`/portal/projects/${project.id}/site/publish`, { method: 'POST', auth: a.session, body: {} })).status === 403);
+    await call('/admin/settings', { method: 'PATCH', auth: admin, body: { clientPublish: true } });
     check('a bad sites domain is refused', (await call('/admin/settings', { method: 'PATCH', auth: admin, body: { sitesDomain: 'not a domain' } })).status !== 200);
     const pub = await call(`/admin/projects/${project.id}/site/publish`, { method: 'POST', auth: admin, body: {} });
     check('Ali publishes', pub.status === 200 && pub.data.productionUrl === 'https://rosa-florist.malipetek.online');
+    check('…and his publish is on record as his', rows(`SELECT role, via FROM site_publishes WHERE project_id = '${project.id}' ORDER BY id DESC LIMIT 1`)[0]?.role === 'admin');
     const deploys = (await call(`/admin/projects/${project.id}/site/deploys`, { auth: admin })).data.deploys;
     check('the deploy is in the history', deploys?.some((d) => d.id === made.data.deployId));
     const back = await call(`/admin/projects/${project.id}/site/rollback`, { method: 'POST', auth: admin, body: { deployId: 'placeholder' } });
@@ -1110,6 +1119,18 @@ const groups = {
     const listed = (await call('/admin/tickets', { auth: admin })).data.tickets?.find((t) => t.id === second);
     check('Ali’s board can tell the assistant made it', listed?.source === 'assistant', JSON.stringify(listed ?? {}).slice(0, 200));
     check('finish is only for an assistant’s own change', (await call(`/portal/changes/${ticketId}/finish`, { method: 'POST', auth: key, body: { review: false } })).status === 404);
+
+    // The client publishes, and the record says who did it and what went live unreviewed.
+    const pub = await call(`/portal/projects/${project.id}/site/publish`, { method: 'POST', auth: key, body: {} });
+    check('the client publishes through their assistant, told what was unreviewed', pub.status === 200 && pub.data.unreviewed?.map((u) => u.id).join() === String(cid), JSON.stringify(pub.data));
+    const logged = rows(`SELECT action, actor, role, via, unreviewed FROM site_publishes WHERE project_id = '${project.id}' ORDER BY id`);
+    check('the publish is on record: who, through which app, which changes were unreviewed', logged.at(-1)?.action === 'publish' && logged.at(-1).actor === a.user.email && logged.at(-1).role === 'client' && logged.at(-1).via === 'ChatGPT' && logged.at(-1).unreviewed === `[${cid}]`, JSON.stringify(logged));
+    check('the unreviewed change’s thread says it went live without review, and whose call it was', /Published to production by .* via ChatGPT, without a review/.test(JSON.stringify((await call(`/portal/tickets/${cid}`, { auth: a.session })).data.messages)));
+    check('a change is listed as unreviewed once: the next publish has none', (await call(`/portal/projects/${project.id}/site/publish`, { method: 'POST', auth: key, body: {} })).data.unreviewed?.length === 0);
+    const deployId = rows(`SELECT production_deploy FROM sites WHERE project_id = '${project.id}'`)[0]?.production_deploy;
+    await call(`/portal/projects/${project.id}/site/rollback`, { method: 'POST', auth: a.session, body: { deployId } });
+    check('a rollback from the portal is on record too', rows(`SELECT via FROM site_publishes WHERE project_id = '${project.id}' AND action = 'rollback'`)[0]?.via === 'portal');
+    check('the change knows when its preview was built and when it went live', rows(`SELECT preview_built_at IS NOT NULL AS built, published_at IS NOT NULL AS live, assistant_app FROM tickets WHERE id = ${cid}`)[0]?.assistant_app === 'ChatGPT');
   },
 
   async budget({ admin }) {

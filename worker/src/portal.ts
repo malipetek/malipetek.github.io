@@ -1320,6 +1320,79 @@ portal.get('/portal/projects/:id/site', async (c) => {
   return reply(c, { site: siteView(site, sitesDomain) });
 });
 
+type AssistantChange = { id: number; title: string; status: string; assistant_app: string | null; review_skipped_at: number | null };
+
+/**
+ * Put a publish or rollback on record: who did it, how (the portal, or the
+ * assistant app holding their token), and — for a publish — which changes the
+ * client's assistant made went live without a review. Those requests get a
+ * line in their thread saying so, and Ali is emailed when it was not him.
+ */
+async function recordPublish(
+  c: Ctx,
+  project: { id: string; name: string | null },
+  out: { productionUrl: string; siteId: string; deployId: string | null },
+  action: 'publish' | 'rollback',
+): Promise<{ unreviewed: AssistantChange[] }> {
+  const env = c.env;
+  const user = c.get('user');
+  const via = c.get('viaAgent') ? await agentApp(c) : 'portal';
+  const t = now();
+  const changes =
+    action === 'publish'
+      ? ((
+          await env.DB.prepare(
+            `SELECT id, title, status, assistant_app, review_skipped_at FROM tickets
+              WHERE project_id = ? AND source = 'assistant' AND preview_built_at IS NOT NULL
+                AND published_at IS NULL AND status <> 'declined'`,
+          )
+            .bind(project.id)
+            .all<AssistantChange>()
+        ).results ?? [])
+      : [];
+  // Reviewed means Ali closed it after review; anything else is the client's own call.
+  const unreviewed = changes.filter((ch) => ch.status !== 'done' || ch.review_skipped_at !== null);
+  const by = `${user.email}${via === 'portal' ? '' : ` via ${via}`}`;
+  const statements = [
+    env.DB.prepare(
+      `INSERT INTO site_publishes (site_id, project_id, deploy_id, action, user_id, actor, role, via, unreviewed, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(out.siteId, project.id, out.deployId, action, user.id, user.email, user.role, via, JSON.stringify(unreviewed.map((ch) => ch.id)), t),
+    ...changes.flatMap((ch) => [
+      env.DB.prepare('UPDATE tickets SET published_at = ? WHERE id = ?').bind(t, ch.id),
+      env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 0, ?)`).bind(
+        ch.id,
+        unreviewed.includes(ch)
+          ? `Published to production by ${by}, without a review. Taking it live unreviewed was the client’s decision.`
+          : `Published to production by ${by}.`,
+        t,
+      ),
+    ]),
+  ];
+  await env.DB.batch(statements);
+
+  if (user.role !== 'admin') {
+    const name = project.name ?? project.id;
+    const lines =
+      action === 'rollback'
+        ? [`${by} rolled ${name} back to deploy ${out.deployId ?? '?'}.`, out.productionUrl]
+        : [
+            `${by} published the preview of ${name} to production.`,
+            out.productionUrl,
+            ...(unreviewed.length
+              ? ['', 'Changes their assistant made that went live without your review:', ...unreviewed.map((ch) => `  #${ch.id} ${ch.title} (${ch.assistant_app ?? 'assistant'}) — ${siteUrl(env)}/portal/admin#ticket=${ch.id}`)]
+              : []),
+          ];
+    c.executionCtx.waitUntil(
+      mailAli(env, {
+        subject: `${name} ${action === 'rollback' ? 'was rolled back' : 'was published'} by ${by}${unreviewed.length ? ` (${unreviewed.length} unreviewed)` : ''}`,
+        text: lines.join('\n'),
+      }),
+    );
+  }
+  return { unreviewed };
+}
+
 /**
  * Publish the preview to production, when Ali lets clients do that (the
  * `clientPublish` setting). Off by default: then only Ali publishes.
@@ -1332,15 +1405,11 @@ portal.post('/portal/projects/:id/site/publish', async (c) => {
   try {
     const out = await publishSite(c.env, project.id, typeof body?.siteId === 'string' ? body.siteId : null);
     if ('error' in out) return siteError(c, out);
-    c.executionCtx.waitUntil(
-      mailAli(c.env, {
-        subject: `${project.name} was published by its client`,
-        text: `${c.get('user').email} published the preview of ${project.name} to production.\n${out.productionUrl ?? ''}`,
-      }),
-    );
+    const record = await recordPublish(c, { id: project.id, name: project.name }, out, 'publish');
     return reply(c, {
       ok: true,
       productionUrl: out.productionUrl,
+      unreviewed: record.unreviewed.map((t) => ({ id: t.id, title: t.title })),
       ...(out.cloudflareError ? { cloudflareError: out.cloudflareError } : {}),
     });
   } catch (error) {
@@ -1361,6 +1430,7 @@ portal.post('/portal/projects/:id/site/rollback', async (c) => {
     typeof body?.siteId === 'string' ? body.siteId : null,
   );
   if ('error' in out) return siteError(c, out);
+  await recordPublish(c, { id: project.id, name: project.name }, out, 'rollback');
   return reply(c, {
     ok: true,
     productionUrl: out.productionUrl,
@@ -1499,10 +1569,10 @@ portal.post('/portal/changes', async (c) => {
   const app = await agentApp(c);
   const t = now();
   const ticket = await env.DB.prepare(
-    `INSERT INTO tickets (user_id, project_id, title, status, attention, kind, worked_by, source, created_at, updated_at)
-     VALUES (?, ?, ?, 'in_progress', 'auto', 'client', 'client_agent', 'assistant', ?, ?) RETURNING id`,
+    `INSERT INTO tickets (user_id, project_id, title, status, attention, kind, worked_by, source, assistant_app, created_at, updated_at)
+     VALUES (?, ?, ?, 'in_progress', 'auto', 'client', 'client_agent', 'assistant', ?, ?, ?) RETURNING id`,
   )
-    .bind(user.id, projectId, title, t, t)
+    .bind(user.id, projectId, title, app, t, t)
     .first<{ id: number }>();
   if (!ticket) return reply(c, { error: 'insert_failed' }, 500);
   await env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 0, ?)`)
@@ -1549,10 +1619,20 @@ portal.post('/portal/changes/:id/finish', async (c) => {
     return reply(c, { ok: true, status: 'review' });
   }
   await env.DB.batch([
-    env.DB.prepare(`UPDATE tickets SET status = 'done', updated_at = ? WHERE id = ?`).bind(t, ticket.id),
+    env.DB.prepare(`UPDATE tickets SET status = 'done', review_skipped_at = ?, updated_at = ? WHERE id = ?`).bind(t, t, ticket.id),
     env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 0, ?)`)
       .bind(ticket.id, `Kept without review. ${app} made this change; there is nothing to bill.`, t),
   ]);
+  c.executionCtx.waitUntil(
+    mailAli(env, {
+      subject: `[#${ticket.id}] ${user.email} kept ${app}’s change without review: ${ticket.title}`,
+      text: ticketMail(
+        `${app} made this change for ${user.email}, and they chose not to have it reviewed. It is on the preview; they can publish it themselves.`,
+        `Open: ${siteUrl(env)}/portal/admin#ticket=${ticket.id}`,
+      ),
+      replyTo: await replyAddress(env, ticket.id, 'a'),
+    }),
+  );
   return reply(c, { ok: true, status: 'done', canPublish: (await getSettings(env)).clientPublish });
 });
 
@@ -2694,6 +2774,7 @@ portal.post('/admin/projects/:id/site/publish', async (c) => {
   const body = await readJson<{ siteId?: unknown }>(c);
   const out = await publishSite(c.env, c.req.param('id'), typeof body?.siteId === 'string' ? body.siteId : null);
   if ('error' in out) return siteError(c, out);
+  await recordPublish(c, { id: c.req.param('id'), name: null }, out, 'publish');
   return reply(c, {
     ok: true,
     productionUrl: out.productionUrl,
@@ -2710,6 +2791,7 @@ portal.post('/admin/projects/:id/site/rollback', async (c) => {
     typeof body?.siteId === 'string' ? body.siteId : null,
   );
   if ('error' in out) return siteError(c, out);
+  await recordPublish(c, { id: c.req.param('id'), name: null }, out, 'rollback');
   return reply(c, {
     ok: true,
     productionUrl: out.productionUrl,

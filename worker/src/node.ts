@@ -42,7 +42,7 @@
  */
 import { Hono } from 'hono';
 import { encoder, type HonoEnv } from './shared.ts';
-import { mailAli, siteUrl } from './portal.ts';
+import { mailAli, replyAddress, siteUrl } from './portal.ts';
 import { finishRun, normalizeReport, sessionKey, sharedLine } from './runs.ts';
 import { claimForNode, cleanNodeReport, getSettings, heartbeat } from './queue.ts';
 import { finishContentCycle } from './content.ts';
@@ -393,9 +393,47 @@ node.post('/node/builds/:ticketId/result', async (c) => {
       ),
     );
   }
+  if (ok) {
+    statements.push(
+      c.env.DB.prepare(`UPDATE tickets SET preview_built_at = ? WHERE id = ? AND source = 'assistant'`).bind(t, ticketId),
+    );
+  }
   await c.env.DB.batch(statements);
+  if (ok) c.executionCtx.waitUntil(mailAliOfAssistantChange(c.env, ticketId, previewUrl));
   return c.json({ ok: true });
 });
+
+/**
+ * A change the client's own assistant made is on the preview: Ali hears who
+ * made it, for whom, and which files, whether or not they ask for a review.
+ */
+async function mailAliOfAssistantChange(env: HonoEnv['Bindings'], ticketId: number, previewUrl: string) {
+  const row = await env.DB.prepare(
+    `SELECT t.title, t.assistant_app, u.email, p.name AS project
+       FROM tickets t JOIN users u ON u.id = t.user_id LEFT JOIN projects p ON p.id = t.project_id
+      WHERE t.id = ? AND t.source = 'assistant'`,
+  )
+    .bind(ticketId)
+    .first<{ title: string; assistant_app: string | null; email: string; project: string | null }>();
+  if (!row) return;
+  const change = (await (await env.FILES?.get(`changes/${ticketId}.json`))?.json().catch(() => null)) as
+    | { files?: { path: string }[] }
+    | null;
+  const paths = (change?.files ?? []).map((f) => `  ${f.path}`);
+  const app = row.assistant_app ?? 'Their assistant';
+  await mailAli(env, {
+    subject: `[#${ticketId}] ${app} changed ${row.project ?? 'a site'} for ${row.email}: ${row.title}`,
+    text: [
+      `${app} made this change for ${row.email} on their own subscription, and it is on the preview${previewUrl ? `: ${previewUrl}` : '.'}`,
+      '',
+      ...(paths.length ? ['Files:', ...paths, ''] : []),
+      'They decide next whether to send it to you for review. You will get another email either way, and one when it is published.',
+      '',
+      `Open: ${siteUrl(env)}/portal/admin#ticket=${ticketId}`,
+    ].join('\n'),
+    replyTo: await replyAddress(env, ticketId, 'a'),
+  });
+}
 
 /**
  * The outcome of a land the admin asked for: record where it went, or why it

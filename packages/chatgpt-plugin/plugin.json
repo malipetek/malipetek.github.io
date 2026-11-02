@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "malipetek",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "File and track software work requests on malipetek.dev, and search its public agentic-coding knowledgebase.",
   "author": {
     "name": "Muhammet Ali Petek",
@@ -103,7 +103,7 @@
         "commerce_description": "The plugin does not sell products or process payments. Work is billed per the service's terms, outside the plugin."
       },
       "publication": {
-        "release_notes": "ChatGPT can now change your site itself: each change is recorded as its own request, lands on the preview, and you choose whether to send it for a human review."
+        "release_notes": "ChatGPT can change your site itself and you choose whether a human reviews it; you can publish the preview yourself, and every change and publish is on record."
       }
     }
   }

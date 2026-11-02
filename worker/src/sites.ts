@@ -819,7 +819,7 @@ export async function publishSite(
   env: Env,
   projectId: string,
   siteId?: string | null,
-): Promise<{ productionUrl: string; cloudflareError?: string } | { error: string }> {
+): Promise<{ productionUrl: string; siteId: string; deployId: string | null; cloudflareError?: string } | { error: string }> {
   const site = await siteFor(env, projectId, siteId);
   if (!site) return { error: 'not_found' };
   if (site.state !== 'ready' || !site.preview_deploy) return { error: 'not_ready' };
@@ -832,6 +832,8 @@ export async function publishSite(
   const view = siteView((await getSiteById(env, site.id))!, sitesDomain);
   return {
     productionUrl: view?.productionUrl ?? `https://${site.slug}.${sitesDomain}`,
+    siteId: site.id,
+    deployId: site.preview_deploy,
     ...(view?.cloudflare?.error ? { cloudflareError: view.cloudflare.error } : {}),
   };
 }
@@ -842,7 +844,7 @@ export async function rollbackSite(
   projectId: string,
   deployId: string,
   siteId?: string | null,
-): Promise<{ productionUrl: string; cloudflareError?: string } | { error: string }> {
+): Promise<{ productionUrl: string; siteId: string; deployId: string | null; cloudflareError?: string } | { error: string }> {
   const site = await siteFor(env, projectId, siteId);
   if (!site) return { error: 'not_found' };
   const deploy = await env.DB.prepare(
@@ -860,6 +862,8 @@ export async function rollbackSite(
   const view = siteView((await getSiteById(env, site.id))!, sitesDomain);
   return {
     productionUrl: view?.productionUrl ?? `https://${site.slug}.${sitesDomain}`,
+    siteId: site.id,
+    deployId,
     ...(view?.cloudflare?.error ? { cloudflareError: view.cloudflare.error } : {}),
   };
 }

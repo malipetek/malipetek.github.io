@@ -56,8 +56,12 @@ export const SETTING_DEFAULTS = {
   defaultPriority: 0,
   /** The domain hosted sites live under: `<site>.<domain>`, `<site>--preview.<domain>`. */
   sitesDomain: 'malipetek.online',
-  /** A client may publish their own preview to production. Off = only Ali publishes. */
-  clientPublish: false,
+  /**
+   * A client may publish their own preview to production (and roll it back).
+   * They carry the responsibility: every publish is recorded with who, how,
+   * and which changes went live unreviewed (site_publishes). Off = only Ali.
+   */
+  clientPublish: true,
 };
 export type Settings = typeof SETTING_DEFAULTS;
 

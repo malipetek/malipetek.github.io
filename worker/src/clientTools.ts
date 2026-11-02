@@ -372,14 +372,14 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'site_publish',
     title: 'Publish the site',
     description:
-      'Take the preview live. Only works when Ali has turned on client publishing; until then ask him. Confirm with the client first.',
+      'Take the preview live. The client may publish their own site, and the responsibility is theirs: every publish is recorded with who did it and through which app, Ali is emailed, and any change you made that they kept without review goes live unreviewed. Say that plainly and confirm with the client before calling it. The result lists those unreviewed changes.',
     inputSchema: { type: 'object', properties: { project_id: { type: 'string' } }, required: ['project_id'], additionalProperties: false },
     readOnly: false,
   },
   {
     name: 'site_rollback',
     title: 'Roll the site back',
-    description: 'Point production at an older deploy from site_deploys. Same publishing permission as site_publish.',
+    description: 'Point production at an older deploy from site_deploys: the way back when a publish went wrong. Recorded and emailed to Ali like a publish. Confirm with the client first.',
     inputSchema: {
       type: 'object',
       properties: { project_id: { type: 'string' }, deploy_id: { type: 'string', description: 'A deploy id from site_deploys.' } },
@@ -645,8 +645,8 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
       return {
         status: 'Done, kept without review',
         note: out?.canPublish
-          ? 'The change is on the preview. The client can take it live with site_publish when they are ready.'
-          : 'The change is on the preview. Taking it live is Ali’s step for now: the client can ask him with portal_file_request or send the change for review instead.',
+          ? 'The change is on the preview, and Ali has been emailed that it was kept without review. The client can take it live with site_publish when they are ready; that publish is on record as theirs.'
+          : 'The change is on the preview, and Ali has been emailed. Client publishing is switched off right now, so taking it live is Ali’s step: the client can ask him with portal_reply.',
       };
     }
     case 'project_context':
