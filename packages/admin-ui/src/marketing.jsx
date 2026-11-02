@@ -407,6 +407,43 @@ export function MarketingView() {
   );
 }
 
+/* —— model health —— */
+
+function ModelHealth({ api }) {
+  const [state, setState] = useState(null);
+  useEffect(() => {
+    let live = true;
+    api('GET', '/admin/health/deepseek')
+      .then((out) => {
+        if (live) setState(out);
+      })
+      .catch(() => {
+        if (live) setState({ bridge: false, chat: false });
+      });
+    return () => {
+      live = false;
+    };
+  }, [api]);
+  if (!state) return null;
+  const tone = state.chat ? 'ok' : state.bridge ? 'warn' : 'bad';
+  const label = state.chat ? 'DeepSeek up' : state.bridge ? 'Workers AI fallback' : 'both engines down';
+  return (
+    <section className="aw-panel">
+      <h3>The model</h3>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Tag tone={tone}>{label}</Tag>
+        <span className="aw-muted">
+          {state.chat
+            ? 'The site chat and the ticket bridge both use DeepSeek.'
+            : state.bridge
+              ? `DeepSeek is out of balance. The ticket bridge is on ${state.engine ?? 'Workers AI'}; the site chat is handing visitors to email until it is topped up.`
+              : 'The site chat and the ticket bridge are both handing off.'}
+        </span>
+      </div>
+    </section>
+  );
+}
+
 /* —— settings —— */
 
 function SettingsTab({ overview, run, api, contactsById }) {
@@ -432,6 +469,7 @@ function SettingsTab({ overview, run, api, contactsById }) {
 
   return (
     <>
+      <ModelHealth api={api} />
       <section className="aw-panel">
         <h3>Sending</h3>
         <div className="aw-grid2">

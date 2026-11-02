@@ -2301,6 +2301,30 @@ var __awPlugin = (() => {
       modal?.kind === "edit" ? /* @__PURE__ */ jsx(EditPostModal, { message: modal.message, api, onClose: () => setModal(null), onSaved: done }) : null
     ] });
   }
+  function ModelHealth({ api }) {
+    const [state, setState] = useState(null);
+    useEffect(() => {
+      let live = true;
+      api("GET", "/admin/health/deepseek").then((out) => {
+        if (live) setState(out);
+      }).catch(() => {
+        if (live) setState({ bridge: false, chat: false });
+      });
+      return () => {
+        live = false;
+      };
+    }, [api]);
+    if (!state) return null;
+    const tone = state.chat ? "ok" : state.bridge ? "warn" : "bad";
+    const label = state.chat ? "DeepSeek up" : state.bridge ? "Workers AI fallback" : "both engines down";
+    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+      /* @__PURE__ */ jsx("h3", { children: "The model" }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }, children: [
+        /* @__PURE__ */ jsx(Tag, { tone, children: label }),
+        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: state.chat ? "The site chat and the ticket bridge both use DeepSeek." : state.bridge ? `DeepSeek is out of balance. The ticket bridge is on ${state.engine ?? "Workers AI"}; the site chat is handing visitors to email until it is topped up.` : "The site chat and the ticket bridge are both handing off." })
+      ] })
+    ] });
+  }
   function SettingsTab({ overview, run, api, contactsById }) {
     const [draft, setDraft] = useState(overview.settings);
     useEffect(() => setDraft(overview.settings), [overview.settings]);
@@ -2316,6 +2340,7 @@ var __awPlugin = (() => {
       /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !changed, onClick: save, children: "Save" })
     ] });
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx(ModelHealth, { api }),
       /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsx("h3", { children: "Sending" }),
         /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [

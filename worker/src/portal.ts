@@ -34,7 +34,7 @@ import { Hono, type Context } from 'hono';
 import { ATTENTION_KEYS, DEFAULT_ATTENTION, money, priceLine, priceOf } from '../../src/lib/pricing.js';
 import { claimTicketById, finishRun, normalizeReport, openRuns, recentRuns, sessionKey, ticketRuns } from './runs.ts';
 import { finishContentCycle } from './content.ts';
-import { bridgeMessage, bridgeTitle, forAli, forClientMail, threadFor, type Bridged } from './translate.ts';
+import { bridgeMessage, bridgeTitle, forAli, forClientMail, threadFor, translateText, type Bridged } from './translate.ts';
 import { previewStrings, tFor } from '../../src/i18n/eager.js';
 import { closestLocale, fromAcceptLanguage, TRANSLATION_ENGINES, type TranslationEngine } from '../../src/lib/locales.js';
 import { readSteps } from './steps.ts';
@@ -3094,4 +3094,44 @@ portal.delete('/admin/clients/:userId/projects/:projectId', async (c) => {
     .bind(userId, projectId)
     .run();
   return reply(c, { ok: true });
+});
+
+/**
+ * Does the model key behind the site chat and the ticket bridge still answer?
+ * It asks for DeepSeek first and falls back to Workers AI exactly as the
+ * bridge does, so the answer says which one carried the call.
+ */
+portal.get('/admin/health/deepseek', async (c) => {
+  const started = Date.now();
+  const out = await translateText(c.env, 'The quick brown fox jumps over the lazy dog.', 'tr', {
+    engine: 'deepseek',
+    sourceHint: 'en-US',
+  });
+  // The fallback matters too: if it is broken, non-English clients lose the
+  // ticket bridge as well as the chat. Report its own answer.
+  let fallback: { text: string | null; error: string | null } = { text: null, error: null };
+  try {
+    const ai = c.env.AI;
+    if (!ai) throw new Error('AI binding missing');
+    const run = (await ai.run('@cf/meta/m2m100-1.2b', {
+      text: 'Hello',
+      source_lang: 'en',
+      target_lang: 'tr',
+    })) as { translated_text?: string };
+    fallback = { text: run?.translated_text ?? null, error: null };
+  } catch (error) {
+    fallback = { text: null, error: error instanceof Error ? error.message : String(error) };
+  }
+  const deepseek = out?.engine === 'deepseek';
+  return reply(c, {
+    // The bridge is up when either engine answers; the chat is DeepSeek-only.
+    ok: Boolean(out),
+    bridge: Boolean(out),
+    chat: deepseek,
+    deepseek,
+    engine: out?.engine ?? null,
+    text: out?.text ?? null,
+    fallback,
+    ms: Date.now() - started,
+  });
 });
