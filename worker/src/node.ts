@@ -59,6 +59,38 @@ import { saveScreenshots } from './screenshots.ts';
 
 export const node = new Hono<HonoEnv>();
 
+/**
+ * A node runs outside Cloudflare, so its fetch of the public site, API and
+ * OAuth callbacks is a real request. It posts what it saw; the health cron
+ * reads the freshest answer. The Worker itself cannot probe its own zone.
+ */
+node.post('/node/probe', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!body) return c.json({ error: 'bad_probe' }, 400);
+  const answer = (key: string) => {
+    const value = body[key];
+    if (!value || typeof value !== 'object') return undefined;
+    const row = value as { status?: unknown; body?: unknown; error?: unknown };
+    return {
+      ...(typeof row.status === 'number' ? { status: row.status } : {}),
+      ...(typeof row.body === 'string' ? { body: row.body.slice(0, 5000) } : {}),
+      ...(typeof row.error === 'string' ? { error: row.error.slice(0, 500) } : {}),
+    };
+  };
+  await c.env.RATE_LIMIT.put(
+    'health:probe',
+    JSON.stringify({
+      at: now(),
+      site: answer('site'),
+      api: answer('api'),
+      github: answer('github'),
+      cloudflare: answer('cloudflare'),
+    }),
+    { expirationTtl: 900 },
+  );
+  return c.json({ ok: true });
+});
+
 /** Constant-time string compare via HMAC digests of both sides. */
 async function sameSecret(a: string, b: string): Promise<boolean> {
   const key = await crypto.subtle.importKey('raw', crypto.getRandomValues(new Uint8Array(32)), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);

@@ -1444,6 +1444,41 @@ class Node {
   }
 }
 
+/**
+ * The node sits outside Cloudflare, so it can see the public site, API and
+ * OAuth callbacks. It posts what it sees; the Worker health cron reads the
+ * freshest answer. A Worker cannot probe its own zone.
+ */
+const PROBE_EVERY_MS = 5 * 60_000;
+
+async function probeHealth(config) {
+  let origin = 'https://malipetek.dev';
+  try {
+    origin = new URL(config.endpoint).origin;
+  } catch {
+    /* keep the default */
+  }
+  const targets = {
+    site: `${origin}/`,
+    api: `${origin}/api/health`,
+    github: `${origin}/api/auth/github/callback?error=health`,
+    cloudflare: `${origin}/api/portal/cloudflare/callback?error=health`,
+  };
+  const out = {};
+  await Promise.all(
+    Object.entries(targets).map(async ([key, url]) => {
+      try {
+        const res = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(10_000) });
+        const body = key === 'site' || key === 'api' ? (await res.text()).slice(0, 5000) : '';
+        out[key] = { status: res.status, body };
+      } catch (error) {
+        out[key] = { error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+  );
+  await api(config, 'POST', '/node/probe', out).catch(() => {});
+}
+
 async function main() {
   const config = loadConfig();
   await syncProjects(config);
@@ -1473,6 +1508,9 @@ async function main() {
 
   process.on('SIGTERM', () => void node.drainAndExit());
   process.on('SIGINT', () => void node.drainAndExit());
+  // The outside pair of eyes for the health page.
+  void probeHealth(config);
+  setInterval(() => void probeHealth(config), PROBE_EVERY_MS);
   let lastSync = Date.now();
   let configStamp = statSync(CONFIG_PATH).mtimeMs;
   for (;;) {

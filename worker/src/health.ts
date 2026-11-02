@@ -58,6 +58,7 @@ export interface HealthStateRow {
 }
 
 const LABELS: Record<string, string> = {
+  probe: 'External probe answers',
   site: 'Site root answers',
   api: 'Worker API answers',
   deploy: 'Live Worker matches master',
@@ -78,7 +79,7 @@ export function healthLabel(name: string): string {
 
 /** Failures first, then by the order the work matters. */
 export function healthRank(name: string): number {
-  const order = ['deploy', 'site', 'api', 'oauth:github', 'oauth:cloudflare', 'url:github-callback', 'url:cloudflare-callback'];
+  const order = ['deploy', 'probe', 'site', 'api', 'oauth:github', 'oauth:cloudflare', 'url:github-callback', 'url:cloudflare-callback'];
   const at = order.indexOf(name);
   if (at >= 0) return at;
   if (name.startsWith('node:')) return 20;
@@ -103,6 +104,40 @@ const sameZone = (url: string, env: Env) => {
 };
 
 const oneLine = (text: string, max = 220) => text.replace(/\s+/g, ' ').trim().slice(0, max);
+
+type ExternalAnswer = { status?: number; body?: string; error?: string };
+type External = {
+  at: number;
+  site?: ExternalAnswer;
+  api?: ExternalAnswer;
+  github?: ExternalAnswer;
+  cloudflare?: ExternalAnswer;
+} | null;
+
+/**
+ * The nodes run outside Cloudflare, so their fetch of malipetek.dev is a real
+ * public request. Each node posts what it saw to /node/probe and this reads
+ * the freshest answer. A fetch from the Worker itself cannot do that: a
+ * same-zone subrequest never reaches the target Worker.
+ */
+async function externalChecks(env: Env): Promise<External> {
+  try {
+    const stored = (await env.RATE_LIMIT.get('health:probe', 'json')) as External | null;
+    if (!stored || typeof stored.at !== 'number') return null;
+    if (Math.floor(Date.now() / 1000) - stored.at > 10 * 60) return null;
+    return stored;
+  } catch {
+    return null;
+  }
+}
+
+function probeCheck(external: External) {
+  return check('probe', async () => {
+    if (!external) return { status: 'skip', detail: 'no fresh external probe from a node' };
+    const age = Math.max(0, Math.floor(Date.now() / 1000) - external.at);
+    return { status: 'ok', detail: `node probe ${age}s ago` };
+  });
+}
 
 async function fetchChecked(url: string, init: RequestInit = {}): Promise<Response> {
   return fetch(url, {
@@ -187,8 +222,15 @@ async function fleetVersion(): Promise<string | null> {
 
 /* ——————————————————————— the checks ——————————————————————— */
 
-async function siteCheck(env: Env) {
+async function siteCheck(env: Env, external: External) {
   return check('site', async () => {
+    const answer = external?.site;
+    if (answer && (answer.status !== undefined || answer.error)) {
+      if (answer.error) return { status: 'fail', detail: `probe: ${answer.error}` };
+      if (answer.status !== 200) return { status: 'fail', detail: `HTTP ${answer.status}` };
+      if (!/<html/i.test(answer.body ?? '')) return { status: 'fail', detail: 'answered, but not the site HTML' };
+      return { status: 'ok', detail: `200 · ${baseUrl(env)}` };
+    }
     const res = await fetchChecked(`${baseUrl(env)}/`);
     const html = res.ok ? await bodyText(res, 5000) : '';
     if (res.status === 404 && sameZone(`${baseUrl(env)}/`, env)) {
@@ -200,8 +242,21 @@ async function siteCheck(env: Env) {
   });
 }
 
-async function apiCheck(env: Env) {
+async function apiCheck(env: Env, external: External) {
   return check('api', async () => {
+    const answer = external?.api;
+    if (answer && (answer.status !== undefined || answer.error)) {
+      if (answer.error) return { status: 'fail', detail: `probe: ${answer.error}` };
+      if (answer.status !== 200) return { status: 'fail', detail: `HTTP ${answer.status}` };
+      let body: { ok?: unknown; sha?: unknown } | null = null;
+      try {
+        body = JSON.parse(answer.body ?? '');
+      } catch {
+        body = null;
+      }
+      if (!body || body.ok !== true) return { status: 'fail', detail: 'answered, but not the Worker health JSON' };
+      return { status: 'ok', detail: `200 · build ${String(body.sha ?? 'unknown').slice(0, 8)}` };
+    }
     const res = await fetchChecked(`${baseUrl(env)}/api/health`);
     if (res.status === 404 && sameZone(`${baseUrl(env)}/api/health`, env)) {
       return { status: 'skip', detail: 'the Worker cannot probe its own zone; verify /api/health from outside' };
@@ -285,8 +340,16 @@ async function cloudflareOauthCheck(env: Env) {
   });
 }
 
-async function callbackRouteCheck(env: Env, name: string, path: string) {
+async function callbackRouteCheck(env: Env, name: string, path: string, external: External) {
   return check(name, async () => {
+    const key = name === 'url:github-callback' ? 'github' : 'cloudflare';
+    const answer = external?.[key];
+    if (answer && (answer.status !== undefined || answer.error)) {
+      if (answer.error) return { status: 'fail', detail: `probe: ${answer.error}` };
+      if (answer.status === 404) return { status: 'fail', detail: `HTTP 404 — ${path} is not deployed` };
+      if ((answer.status ?? 0) >= 500) return { status: 'fail', detail: `HTTP ${answer.status}` };
+      return { status: 'ok', detail: `HTTP ${answer.status} · ${path}` };
+    }
     const res = await fetchChecked(`${baseUrl(env)}${path}?error=health`);
     await bodyText(res, 200);
     if (res.status === 404) {
@@ -438,14 +501,16 @@ export async function runHealthChecks(env: Env): Promise<HealthRun> {
     /* apiCheck reports the failure */
   }
 
+  const external = await externalChecks(env);
   const results = await Promise.all([
-    siteCheck(env),
-    apiCheck(env),
+    probeCheck(external),
+    siteCheck(env, external),
+    apiCheck(env, external),
     deployCheck(env, liveSha),
     githubOauthCheck(env),
     cloudflareOauthCheck(env),
-    callbackRouteCheck(env, 'url:github-callback', GITHUB_CALLBACK),
-    callbackRouteCheck(env, 'url:cloudflare-callback', CLOUDFLARE_CALLBACK),
+    callbackRouteCheck(env, 'url:github-callback', GITHUB_CALLBACK, external),
+    callbackRouteCheck(env, 'url:cloudflare-callback', CLOUDFLARE_CALLBACK, external),
     repoCheck(env),
     ticketCheck(env),
     siteSetupCheck(env),
