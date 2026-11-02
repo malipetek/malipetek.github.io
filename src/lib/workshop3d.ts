@@ -865,7 +865,7 @@ function boardMachine(ctx: Ctx, feed: BoardFeed): Machine {
   const g = new THREE.Group();
   const STEP_X = [-4.8, -1.6, 1.6, 4.8];
   const BELT_Z = 0.7;
-  const PAD_Z = -5.6;
+  const PAD_Z = -4.6;
   const FACE = -Math.PI / 4;
   const START = -6.1;
   const END = 7.4;
@@ -877,7 +877,7 @@ function boardMachine(ctx: Ctx, feed: BoardFeed): Machine {
   const YARD_X = 9.6;
   const CLOUD_X = 9.4;
   const PLOT_X0 = -8.9;
-  const PLOT_X1 = 11.6;
+  const PLOT_X1 = 11.2;
   const gateX = STEP_X[1];
 
   // The back deck: one plinth per station, with the prop that stands for it.
@@ -1055,16 +1055,14 @@ function boardMachine(ctx: Ctx, feed: BoardFeed): Machine {
 
       // The plot: a thin tinted mat, outlined, with the project's sign at its
       // head and the yard of site buildings at its tail.
-      const mat = new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.07, depthWrite: false });
+      const mat = new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.09, depthWrite: false });
       plotMats.push(mat);
       const plane = new THREE.Mesh(new THREE.PlaneGeometry(PLOT_X1 - PLOT_X0, plotD), mat);
       plane.rotation.x = -Math.PI / 2;
       plane.position.set((PLOT_X0 + PLOT_X1) / 2, 0.012, z);
       bank.add(plane);
-      for (const zz of [z - plotD / 2, z + plotD / 2]) {
-        bank.add(box(ctx, PLOT_X1 - PLOT_X0, 0.025, 0.04, tint, (PLOT_X0 + PLOT_X1) / 2, 0.02, zz));
-      }
-      bank.add(box(ctx, 0.04, 0.025, plotD, tint, PLOT_X0, 0.02, z));
+      bank.add(box(ctx, 0.05, 0.03, plotD, tint, PLOT_X0, 0.02, z));
+      bank.add(box(ctx, 0.05, 0.03, plotD, tint, PLOT_X1, 0.02, z));
 
       // The belt runs through the shared workshop between the plot's two ends.
       bank.add(box(ctx, BELT_LEN, 0.3, LANE_W, 'fill2', BELT_CX, 0.15, z));
@@ -1103,6 +1101,8 @@ function boardMachine(ctx: Ctx, feed: BoardFeed): Machine {
       bank.add(box(ctx, 3.2, 0.2, yardD, 'fill', YARD_X, 0.1, z));
       bank.add(box(ctx, 3.0, 0.04, yardD - 0.16, 'fill2', YARD_X, 0.22, z));
       bank.add(box(ctx, 0.9, 0.08, 0.5, 'fill', END + 0.45, 0.24, z));
+      // A yard label summarises the project's sites until one project is picked.
+      nodeWorld.set(`y:${lane.id}`, new THREE.Vector3(YARD_X, 0.82, z));
 
       const sites = lane.sites ?? [];
       if (!sites.length) {
@@ -1125,31 +1125,31 @@ function boardMachine(ctx: Ctx, feed: BoardFeed): Machine {
         sites.forEach((site, j) => {
           const bx = firstX + j * stepX;
           const floors = Math.max(0, Math.min(7, site.deploys ?? (site.live ? 1 : 0)));
-          const height = 0.52 + floors * 0.22;
+          const height = 0.62 + floors * 0.26;
           const b = new THREE.Group();
           b.position.set(bx, 0.26, z);
-          b.add(box(ctx, 0.68, height, 0.62, 'fill', 0, height / 2, 0));
-          b.add(box(ctx, 0.72, 0.06, 0.66, 'fill2', 0, height + 0.03, 0));
+          b.add(box(ctx, 0.82, height, 0.72, 'fill', 0, height / 2, 0));
+          b.add(box(ctx, 0.86, 0.07, 0.76, 'fill2', 0, height + 0.035, 0));
           const rows = Math.max(1, floors + 1);
           const lit = site.live ? 'orange' : 'fill2';
           for (let r = 0; r < rows; r += 1) {
-            for (const wx of [-0.17, 0.17]) {
-              b.add(box(ctx, 0.11, 0.085, 0.02, lit, wx, 0.34 + r * 0.22, 0.32));
+            for (const wx of [-0.2, 0.2]) {
+              b.add(box(ctx, 0.12, 0.1, 0.02, lit, wx, 0.38 + r * 0.26, 0.37));
             }
           }
-          b.add(box(ctx, 0.16, 0.22, 0.02, 'ink', 0, 0.11, 0.32));
-          const beacon = cyl(ctx, 0.07, 0.14, site.live ? SHOPIFY : 'orange', 0, height + 0.1, 0);
+          b.add(box(ctx, 0.2, 0.26, 0.02, 'ink', 0, 0.13, 0.37));
+          const beacon = cyl(ctx, 0.08, 0.16, site.live ? SHOPIFY : 'orange', 0, height + 0.11, 0);
           b.add(beacon);
           beacons.push(beacon);
           if (site.live) {
-            b.add(box(ctx, 0.03, 0.38, 0.03, 'ink', 0.22, height + 0.24, 0));
-            b.add(box(ctx, 0.15, 0.1, 0.02, tint, 0.22, height + 0.45, 0));
+            b.add(box(ctx, 0.04, 0.44, 0.04, 'ink', 0.26, height + 0.28, 0));
+            b.add(box(ctx, 0.17, 0.11, 0.02, tint, 0.26, height + 0.52, 0));
           }
           // A building that gained a floor grows into it, and takes a crate.
           const key = `${lane.id}:${site.id}`;
           const prev = previousFloors.get(key);
           if (prev !== undefined && floors > prev) {
-            b.scale.y = Math.max(0.35, (0.52 + prev * 0.22) / height);
+            b.scale.y = Math.max(0.35, (0.62 + prev * 0.26) / height);
             grow.push(b);
             spawnCrate(new THREE.Vector3(bx, 0.26 + height + 0.2, z));
           }
@@ -1157,7 +1157,9 @@ function boardMachine(ctx: Ctx, feed: BoardFeed): Machine {
           tagNode(b, { kind: 'site', projectId: lane.id, siteId: site.id });
           bank.add(b);
           // Stagger the labels of a multi-building yard so they do not sit on each other.
-          nodeWorld.set(`s:${lane.id}:${site.id}`, new THREE.Vector3(bx, 0.26 + height + 0.42 + (j % 2) * 0.32, z));
+          // Site labels stack above the yard so a multi-site project cannot
+          // hide one name behind another.
+          nodeWorld.set(`s:${lane.id}:${site.id}`, new THREE.Vector3(YARD_X, 0.26 + height + 0.3 + j * 0.3, z));
         });
       }
     });
@@ -1342,6 +1344,11 @@ function boardMachine(ctx: Ctx, feed: BoardFeed): Machine {
 
   const tick = (time: number) => {
     follow(time);
+    // The land tint has to work on both papers: a thin wash on ink, stronger on bone.
+    const dark = document.documentElement.dataset.theme === 'dark';
+    plotMats.forEach((mat) => {
+      mat.opacity = dark ? 0.09 : 0.14;
+    });
     grow.forEach((building) => {
       building.scale.y += (1 - building.scale.y) * 0.08;
     });
@@ -1863,7 +1870,7 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     camera.aspect = size.w / size.h;
     camera.updateProjectionMatrix();
     // The machine is wide: narrower boxes pull back so all of it stays in frame.
-    fit = THREE.MathUtils.clamp(2.2 / camera.aspect, 0.7, 1.8);
+    fit = THREE.MathUtils.clamp(2.3 / camera.aspect, 0.7, 1.85);
     render();
   };
   const sizeWatch = new ResizeObserver(resize);

@@ -114,14 +114,20 @@ export function Board({
       const count = items.filter((x) => (lane.unassigned ? !x.project_id : x.project_id === lane.id)).length;
       defs.push({ key: `p:${lane.id}`, kind: 'project', lane, count });
       if (lane.unassigned) continue;
-      if (lane.sites.length) {
-        for (const site of lane.sites) defs.push({ key: `s:${lane.id}:${site.id}`, kind: 'site', lane, site });
-      } else {
-        defs.push({ key: `s:${lane.id}:0`, kind: 'site', lane, site: null });
+      // All projects: one yard label each. One project picked: its sites, as
+      // they are the only ones that matter then.
+      if (project === null) {
+        defs.push({ key: `y:${lane.id}`, kind: 'yard', lane, count: lane.sites.length });
+      } else if (project === lane.id) {
+        if (lane.sites.length) {
+          for (const site of lane.sites) defs.push({ key: `s:${lane.id}:${site.id}`, kind: 'site', lane, site });
+        } else {
+          defs.push({ key: `s:${lane.id}:0`, kind: 'site', lane, site: null });
+        }
       }
     }
     return defs;
-  }, [sceneLanes, items]);
+  }, [sceneLanes, items, project]);
 
   const nodeRefs = useRef(new Map());
   const setNodeRef = (key) => (el) => {
@@ -285,6 +291,20 @@ export function Board({
                   <span className="cp-board__node-count" style={{ background: n.lane.tint }}>
                     {n.count}
                   </span>
+                </button>
+              ) : n.kind === 'yard' ? (
+                <button
+                  key={n.key}
+                  type="button"
+                  ref={setNodeRef(n.key)}
+                  {...dropProps(n.lane)}
+                  className={cx('cp-board__node', 'cp-board__node--yard', dropKey === `p:${n.lane.id}` && 'is-drop')}
+                  onClick={() => pickProject(n.lane.id)}
+                  title={t('board.showOnly', { name: n.lane.name })}
+                >
+                  <span className="cp-board__node-dot" style={{ background: n.lane.tint }} />
+                  <span className="cp-board__node-name">{n.lane.name}</span>
+                  <span className="cp-board__node-state">{t('views.sites.count', { n: n.count })}</span>
                 </button>
               ) : (
                 <button

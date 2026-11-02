@@ -727,6 +727,19 @@
 .cp-board__node--site.is-ghost {
   border-style: dashed;
 }
+/* A yard is the summary of a project's sites until the project is focused. */
+.cp-board__node--yard {
+  padding: 3px 8px 3px 7px;
+  border-radius: 999px;
+  border-style: dashed;
+  max-width: 210px;
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+.cp-board__node--yard:hover {
+  color: var(--ink);
+  border-style: solid;
+}
 .cp-board__node-dot {
   width: 7px;
   height: 7px;
