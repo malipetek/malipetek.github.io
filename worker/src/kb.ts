@@ -22,7 +22,7 @@
  */
 import { Hono } from 'hono';
 import { clientIp, isRateLimited, type Env, type HonoEnv } from './shared.ts';
-import { now, sessionUser } from './portal.ts';
+import { agentUser, now, sessionUser } from './portal.ts';
 import { CLIENT_TOOLS, CLIENT_TOOL_NAMES, OWNER_TOOLS, OWNER_TOOL_NAMES, callClientTool } from './clientTools.ts';
 import { reviewEstimate } from '../../src/lib/pricing.js';
 import { BOARD_HTML, BOARD_MIME, BOARD_UI_URI, boardSummary, type Board } from './boardUi.ts';
@@ -719,6 +719,38 @@ function authChallenge(env: Env) {
   };
 }
 
+/**
+ * Claude (claude.ai, Desktop, mobile, Cowork, Claude Code). Its hosted apps
+ * call from Anthropic's published outbound range, 160.79.104.0/21; Claude
+ * Code runs on the user's machine and names itself in its user agent.
+ */
+export function fromClaude(ip: string, userAgent: string): boolean {
+  const m = /^160\.79\.(\d{1,3})\.\d{1,3}$/.exec(ip.trim());
+  if (m && Number(m[1]) >= 104 && Number(m[1]) <= 111) return true;
+  return /\bclaude\b/i.test(userAgent);
+}
+
+/**
+ * Claude's half of the same contract. Claude starts sign-in only when the HTTP
+ * request itself fails with 401 and a WWW-Authenticate header (its "lazy
+ * authentication"); the 200 tool result above, which ChatGPT needs, reaches
+ * Claude as an ordinary tool error and no Connect card. After sign-in Claude
+ * retries the same call with the new token.
+ */
+function claudeChallenge(env: Env) {
+  const site = String(env.SITE_URL ?? 'https://malipetek.dev').replace(/\/+$/, '');
+  const description = 'Sign in with your malipetek.dev account to use this tool.';
+  return new Response(JSON.stringify({ error: 'invalid_token', error_description: description }), {
+    status: 401,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'www-authenticate': `Bearer error="invalid_token", error_description="${description}", resource_metadata="${site}/.well-known/oauth-protected-resource/mcp", scope="portal"`,
+      'access-control-expose-headers': 'www-authenticate, mcp-session-id, mcp-protocol-version',
+    },
+  });
+}
+
 /** Reuse the REST list logic so MCP and HTTP can never drift apart. */
 async function searchEntries(env: Env, args: Record<string, unknown>) {
   const query = typeof args.query === 'string' ? args.query : '';
@@ -940,6 +972,19 @@ mcp.post('/', async (c) => {
   const clientToken = bearer.startsWith('cat_') ? bearer : null;
   const batch = Array.isArray(payload);
   const requests: Rpc[] = Array.isArray(payload) ? payload : [payload];
+
+  // Claude: a portal tool called without a live client token is refused at
+  // the HTTP level, before any tool runs (see claudeChallenge). Every other
+  // client keeps the in-result challenge.
+  const callsPortalTool = requests.some((r) => r?.method === 'tools/call' && CLIENT_TOOL_NAMES.has(String((r.params as { name?: unknown } | undefined)?.name ?? '')));
+  if (
+    callsPortalTool &&
+    author?.kind !== 'admin' &&
+    fromClaude(c.req.header('cf-connecting-ip') ?? '', c.req.header('user-agent') ?? '') &&
+    !(clientToken && (await agentUser(c.env, clientToken)))
+  ) {
+    return claudeChallenge(c.env);
+  }
 
   // Notifications (no id) must not produce a response body.
   const isNotification = requests.every((r) => r?.id === undefined || r?.id === null);

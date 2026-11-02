@@ -529,6 +529,7 @@ import { mask, unmask, parseTranslation, sameLanguage, translateText, forAli } f
 import { closestLocale, fallbackChain, fromAcceptLanguage, LOCALES } from '../../src/lib/locales.js';
 import { createT, format } from '../../src/lib/i18n.js';
 import { shape } from '../../scripts/i18n-sync.mjs';
+import { fromClaude } from '../src/kb.ts';
 
 test('i18n: code, links, paths and refs are masked and come back unchanged', () => {
   const text = 'See `npm run build` in src/pages/index.astro, https://a.b/c?d=1 and #42.\n```js\nconst x = 1;\n```\nMail me@x.io';
@@ -626,3 +627,16 @@ test('i18n: strings fill variables and plurals, and fall back along the chain', 
   assert.notEqual(shape('Hi {name}'), shape('Hi {nom}'));
 });
 
+
+/* —— MCP: which client gets the HTTP 401 sign-in challenge —— */
+
+test('mcp: Anthropic’s outbound range and Claude user agents count as Claude', () => {
+  assert.equal(fromClaude('160.79.104.1', ''), true);
+  assert.equal(fromClaude('160.79.111.254', 'python-httpx'), true);
+  assert.equal(fromClaude('160.79.112.1', ''), false);
+  assert.equal(fromClaude('160.79.103.9', ''), false);
+  assert.equal(fromClaude('203.0.113.5', 'claude-code/2.1.0'), true);
+  assert.equal(fromClaude('203.0.113.5', 'Claude-User'), true);
+  assert.equal(fromClaude('203.0.113.5', 'openai-mcp/1.0.0'), false);
+  assert.equal(fromClaude('', ''), false);
+});

@@ -1313,6 +1313,22 @@ const groups = {
         contents?._meta?.['openai/ui']?.availableDisplayModes?.includes('fullscreen'),
     );
     const board = await rpc('tools/call', { name: 'portal_board', arguments: {} }, token);
+    // Claude starts sign-in only on an HTTP 401; ChatGPT keeps the in-result challenge.
+    const asClaude = (auth) =>
+      fetch(`${W}/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'user-agent': 'claude-code/2.1.0', ...(auth ? { authorization: `Bearer ${auth}` } : {}) },
+        body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method: 'tools/call', params: { name: 'portal_board', arguments: {} } }),
+      });
+    const refused = await asClaude(null);
+    check('Claude without a token gets a 401 pointing at the sign-in metadata', refused.status === 401 && /resource_metadata="[^"]+\/\.well-known\/oauth-protected-resource\/mcp"/.test(refused.headers.get('www-authenticate') ?? '') && /scope="portal"/.test(refused.headers.get('www-authenticate') ?? ''), refused.headers.get('www-authenticate'));
+    check('…and with a revoked or made-up token too', (await asClaude('cat_not_a_real_token')).status === 401);
+    const claudeBoard = await asClaude(token);
+    check('Claude with a live token gets the board', claudeBoard.status === 200 && (await claudeBoard.json()).result?.structuredContent?.requests !== undefined);
+    const chatgptStyle = await rpc('tools/call', { name: 'portal_board', arguments: {} }, null);
+    check('other clients still get the challenge inside a 200 result', chatgptStyle.result?.isError === true && Boolean(chatgptStyle.result?._meta?.['mcp/www_authenticate']));
+    const publicForClaude = await fetch(`${W}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'user-agent': 'Claude-User' }, body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method: 'tools/call', params: { name: 'search_knowledge', arguments: { query: 'wrangler' } } }) });
+    check('Claude calls the public tools without signing in', publicForClaude.status === 200);
     check('the board answers with structured card data and a text fallback', board.result?.structuredContent?.requests?.some((r) => r.id === rid) && /#\d+ Add opening hours/.test(board.result?.content?.[0]?.text ?? ''), JSON.stringify(board.result?.structuredContent ?? {}).slice(0, 200));
     const card = board.result?.structuredContent ?? {};
     check(
