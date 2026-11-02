@@ -16,7 +16,7 @@
 import { ALI_AVATAR } from './boardAvatar.ts';
 import { BOARD3D_JS } from './board3dBundle.ts';
 
-export const BOARD_UI_URI = 'ui://malipetek/board-v6.html';
+export const BOARD_UI_URI = 'ui://malipetek/board-v7.html';
 
 export const BOARD_MIME = 'text/html;profile=mcp-app';
 
@@ -457,6 +457,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
 
 <div class="mk-tabs" id="tabs" role="tablist" aria-label="Your work">
   <button class="mk-tab" role="tab" id="tab-overview" data-tab="overview" aria-controls="panel-overview" aria-selected="true" type="button">Overview</button>
+  <button class="mk-tab" role="tab" id="tab-projects" data-tab="projects" aria-controls="panel-projects" aria-selected="false" tabindex="-1" type="button">Projects <span class="mk-tab__n" id="n-projects">–</span></button>
   <button class="mk-tab" role="tab" id="tab-sites" data-tab="sites" aria-controls="panel-sites" aria-selected="false" tabindex="-1" type="button">Sites <span class="mk-tab__n" id="n-sites">–</span></button>
   <button class="mk-tab" role="tab" id="tab-requests" data-tab="requests" aria-controls="panel-requests" aria-selected="false" tabindex="-1" type="button">Requests <span class="mk-tab__n" id="n-requests">–</span></button>
 </div>
@@ -475,7 +476,10 @@ export const BOARD_HTML = `<!DOCTYPE html>
     <figure class="mk-chart" id="chart-projects"></figure>
   </div>
   <h2 class="mk-h">Projects</h2>
-  <div class="mk-list" id="projects"><div class="mk-skel"></div><div class="mk-skel"></div></div>
+  <div class="mk-list" id="overview-projects"><div class="mk-skel"></div><div class="mk-skel"></div></div>
+</section>
+<section class="mk-panel" role="tabpanel" id="panel-projects" aria-labelledby="tab-projects" hidden>
+  <div class="mk-list" id="projects"></div>
 </section>
 <section class="mk-panel" role="tabpanel" id="panel-sites" aria-labelledby="tab-sites" hidden>
   <div class="mk-list" id="sites"></div>
@@ -525,7 +529,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     done: { label: 'Done', tone: 'done' },
     declined: { label: 'Declined', tone: 'bad' }
   };
-  var TABS = ['overview', 'sites', 'requests'];
+  var TABS = ['overview', 'projects', 'sites', 'requests'];
 
   var host = window.parent;
   var nextId = 1;
@@ -728,15 +732,18 @@ export const BOARD_HTML = `<!DOCTYPE html>
     return card;
   }
 
+  /* The same cards in two places: the Projects tab, and under the overview's charts. */
   function renderProjects() {
-    var list = $('projects');
-    clear(list);
-    var projects = board.projects || [];
-    if (!projects.length) {
-      list.appendChild(el('div', 'mk-empty', 'No projects yet. Start one in the portal and it shows up here.'));
-      return;
-    }
-    for (var i = 0; i < projects.length; i++) list.appendChild(projectCard(projects[i]));
+    ['projects', 'overview-projects'].forEach(function (id) {
+      var list = $(id);
+      clear(list);
+      var projects = board.projects || [];
+      if (!projects.length) {
+        list.appendChild(el('div', 'mk-empty', 'No projects yet. Start one in the portal and it shows up here.'));
+        return;
+      }
+      for (var i = 0; i < projects.length; i++) list.appendChild(projectCard(projects[i]));
+    });
   }
 
   /* —— sites —— */
@@ -1465,6 +1472,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     rendered = true;
     if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
     $('who').textContent = board.account.name ? '· ' + board.account.name : '';
+    $('n-projects').textContent = board.projects.length;
     $('n-sites').textContent = board.sites.length;
     var openCount = board.requests.filter(function (r) { return r.status !== 'done' && r.status !== 'declined'; }).length;
     $('n-requests').textContent = openCount ? openCount + ' open' : board.requests.length;
@@ -1488,7 +1496,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
   function showError(message) {
     rendered = true;
     if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
-    var list = $('projects');
+    var list = $('overview-projects');
     clear(list);
     list.appendChild(el('div', 'mk-err', message || 'Your work could not load.'));
     show('overview');
