@@ -1331,6 +1331,12 @@ const groups = {
     check('Claude calls the public tools without signing in', publicForClaude.status === 200);
     check('the board answers with structured card data and a text fallback', board.result?.structuredContent?.requests?.some((r) => r.id === rid) && /#\d+ Add opening hours/.test(board.result?.content?.[0]?.text ?? ''), JSON.stringify(board.result?.structuredContent ?? {}).slice(0, 200));
     const card = board.result?.structuredContent ?? {};
+    check(
+      'the overview gets project ids for the 3D belts and the spending totals',
+      card.requests?.find((r) => r.id === rid)?.project_id === project.id &&
+        ['billed_cents', 'open_cents', 'ai_cents'].every((k) => Number.isInteger(card.spending?.[k])),
+      JSON.stringify({ spending: card.spending, req: card.requests?.find((r) => r.id === rid) }).slice(0, 300),
+    );
     const focused = (await rpc('tools/call', { name: 'portal_board', arguments: { request_id: rid } }, token)).result;
     check('the board opens on one request’s conversation when asked', focused?.structuredContent?.focus === rid && card.focus === null && /The card is open on #/.test(focused?.content?.[0]?.text ?? ''), JSON.stringify(focused?.structuredContent?.focus));
     check('…and ignores a request that is not theirs', (await rpc('tools/call', { name: 'portal_board', arguments: { request_id: 999999 } }, token)).result?.structuredContent?.focus === null);

@@ -14,8 +14,9 @@
  */
 
 import { ALI_AVATAR } from './boardAvatar.ts';
+import { BOARD3D_JS } from './board3dBundle.ts';
 
-export const BOARD_UI_URI = 'ui://malipetek/board-v5.html';
+export const BOARD_UI_URI = 'ui://malipetek/board-v6.html';
 
 export const BOARD_MIME = 'text/html;profile=mcp-app';
 
@@ -26,6 +27,7 @@ export interface BoardRequest {
   title: string | null;
   status: string | null;
   project: string | null;
+  project_id: string | null;
   site: string | null;
   updated_at: string | null;
   unread: boolean;
@@ -46,6 +48,7 @@ export interface BoardSite {
   id: string | null;
   name: string | null;
   project: string | null;
+  project_id: string | null;
   state: string | null;
   live: boolean;
   has_preview: boolean;
@@ -62,6 +65,7 @@ export interface Board {
   updated_at: string;
   /** The request whose conversation the card opens on. */
   focus?: number | null;
+  spending?: { billed_cents: number; open_cents: number; ai_cents: number };
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -149,6 +153,9 @@ export const BOARD_HTML = `<!DOCTYPE html>
     --mk-rule: var(--color-border-secondary, light-dark(#e8e4dd, #2a2622));
     --mk-tint: light-dark(#faf8f4, #1b1917);
     --mk-bubble: light-dark(#f4f4f4, #303030);
+    /* Chart marks: brand orange, one step deeper on dark (validated for each surface); grey for context. */
+    --mk-data: light-dark(#ff5a1f, #f2531a);
+    --mk-quiet: #8a857b;
     --mk-field: light-dark(#ffffff, #303030);
     --mk-paper: light-dark(#ffffff, #212121);
     --mk-orange: #ff5a1f;
@@ -288,6 +295,101 @@ export const BOARD_HTML = `<!DOCTYPE html>
   }
   .mk-link:hover { color: var(--mk-orange); }
   .mk-err { color: var(--mk-bad); font-size: 12.5px; padding: 8px 0; }
+  /* —— the workshop: the portal's 3D board, with HTML labels riding the scene —— */
+  .mk-tab[hidden] { display: none; }
+  .mk-stage {
+    position: relative; height: 300px; overflow: hidden;
+    border: 1px solid var(--mk-rule); border-radius: var(--mk-radius);
+    background: radial-gradient(120% 90% at 60% 40%, var(--mk-paper) 40%, var(--mk-tint) 100%);
+  }
+  body[data-mode="fullscreen"] .mk-stage { height: calc(100vh - 230px); }
+  .mk-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .mk-labels { position: absolute; inset: 0; pointer-events: none; }
+  .mk-node, .mk-cap, .mk-tip3d { position: absolute; top: 0; left: 0; will-change: transform, opacity; white-space: nowrap; }
+  .mk-node {
+    display: inline-flex; align-items: center; gap: 6px; max-width: 210px;
+    padding: 4px 8px 4px 6px; border: 1px solid var(--mk-rule); border-radius: 8px;
+    background: color-mix(in srgb, var(--mk-paper) 92%, transparent); backdrop-filter: blur(5px);
+    color: var(--mk-ink); font: 500 11px/1 var(--mk-mono); cursor: pointer; pointer-events: auto; opacity: 0;
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--mk-ink) 8%, transparent); transition: opacity .18s, background .12s;
+  }
+  .mk-node--project { border-left: 3px solid var(--mk-orange); }
+  .mk-node--project.is-on { background: var(--mk-ink); border-color: var(--mk-ink); color: var(--mk-paper); }
+  .mk-node__idx { font-weight: 700; font-size: 10px; }
+  .mk-node__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .mk-node__count { display: inline-grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; color: #fff; font: 700 10px/1 var(--mk-sans); }
+  .mk-node--site { padding: 3px 6px; border-radius: 6px; font-size: 10px; color: var(--mk-soft); }
+  .mk-node--site.is-live { color: var(--mk-ink); }
+  .mk-node--site.is-ghost { border-style: dashed; cursor: default; }
+  .mk-node__dot { width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--mk-ink) 25%, transparent); }
+  .mk-node__dot.is-preview { background: var(--mk-orange); }
+  .mk-node__dot.is-live { background: #95bf47; }
+  .mk-node__state { font-size: 9px; letter-spacing: .05em; text-transform: uppercase; opacity: .6; }
+  .mk-cap {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px 4px 4px; border-radius: 20px;
+    border: 1px solid var(--mk-rule); background: color-mix(in srgb, var(--mk-paper) 88%, transparent); backdrop-filter: blur(4px);
+    color: var(--mk-ink); font: 500 10.5px/1 var(--mk-mono); cursor: pointer; pointer-events: auto;
+  }
+  .mk-cap b { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 9px; background: var(--mk-orange); color: #fff; font: 700 10px/1 var(--mk-sans); }
+  .mk-cap.is-empty { opacity: .55; }
+  .mk-cap.is-empty b { background: color-mix(in srgb, var(--mk-ink) 25%, transparent); }
+  .mk-cap.is-on { background: var(--mk-ink); color: var(--mk-paper); border-color: var(--mk-ink); }
+  .mk-tip3d {
+    padding: 6px 9px; border-radius: 8px; background: var(--mk-ink); color: var(--mk-paper);
+    font: 500 12px/1.3 var(--mk-sans); max-width: 260px; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity .12s;
+  }
+  .mk-tip3d span { font-family: var(--mk-mono); opacity: .7; margin-right: 4px; }
+  .mk-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .mk-legend button {
+    display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--mk-rule); background: transparent; color: var(--mk-ink); font: 500 11.5px/1 var(--mk-sans);
+  }
+  .mk-legend button[aria-pressed="true"] { background: var(--mk-ink); color: var(--mk-paper); border-color: var(--mk-ink); }
+  .mk-legend__no { font: 600 10px/1 var(--mk-mono); color: var(--mk-soft); }
+  .mk-legend button[aria-pressed="true"] .mk-legend__no { color: inherit; opacity: .7; }
+  .mk-legend b { font: 700 11px/1 var(--mk-mono); }
+  .mk-node--yard { gap: 5px; }
+  /* —— the overview: headline numbers, two small charts —— */
+  .mk-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 14px 0 10px; }
+  .mk-kpi { border: 1px solid var(--mk-rule); border-radius: var(--mk-radius); padding: 10px 12px; min-width: 0; }
+  .mk-kpi__label { font-size: 11.5px; color: var(--mk-soft); }
+  .mk-kpi__value { font: 600 21px/1.2 var(--mk-sans); letter-spacing: -.01em; margin-top: 4px; }
+  .mk-kpi__sub { font-size: 11px; color: var(--mk-soft); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mk-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .mk-chart { margin: 0; border: 1px solid var(--mk-rule); border-radius: var(--mk-radius); padding: 12px 12px 10px; min-width: 0; position: relative; }
+  .mk-chart__title { font: 600 12.5px/1.2 var(--mk-sans); }
+  .mk-chart__sub { font-size: 11px; color: var(--mk-soft); margin-top: 3px; }
+  .mk-chart__empty { font-size: 12px; color: var(--mk-soft); padding: 26px 0 18px; text-align: center; }
+  .mk-cols { display: flex; align-items: flex-end; gap: 6px; height: 118px; margin-top: 12px; border-bottom: 1px solid var(--mk-rule); }
+  .mk-col { flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; outline: none; }
+  .mk-col__val { font: 500 10.5px/1 var(--mk-sans); color: var(--mk-soft); margin-bottom: 4px; white-space: nowrap; }
+  .mk-col__bar { width: min(24px, 70%); background: var(--mk-quiet); border-radius: 4px 4px 0 0; }
+  .mk-col.is-now .mk-col__bar { background: var(--mk-data); }
+  .mk-col:hover .mk-col__bar, .mk-col:focus-visible .mk-col__bar { filter: brightness(1.08); }
+  .mk-col:focus-visible .mk-col__bar { outline: 2px solid var(--mk-ink); outline-offset: 2px; }
+  .mk-xs { display: flex; gap: 6px; margin-top: 5px; }
+  .mk-xs span { flex: 1; text-align: center; font: 500 10.5px/1 var(--mk-sans); color: var(--mk-soft); }
+  .mk-hbars { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .mk-hbar { display: grid; grid-template-columns: minmax(0, 40%) minmax(0, 1fr); align-items: center; gap: 8px; outline: none; }
+  .mk-hbar__name { display: flex; align-items: center; gap: 6px; font-size: 12px; min-width: 0; }
+  .mk-hbar__name span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mk-hbar__dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .mk-hbar__track { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .mk-hbar__bar { height: 12px; min-width: 2px; background: var(--mk-data); border-radius: 0 4px 4px 0; }
+  .mk-hbar:focus-visible .mk-hbar__bar { outline: 2px solid var(--mk-ink); outline-offset: 2px; }
+  .mk-hbar__val { font: 500 11px/1 var(--mk-sans); color: var(--mk-soft); white-space: nowrap; }
+  .mk-h { font: 600 13px/1.2 var(--mk-sans); margin: 18px 0 8px; }
+  .mk-tooltip {
+    position: fixed; top: 0; left: 0; z-index: 20; pointer-events: none; opacity: 0;
+    padding: 6px 8px; border-radius: 6px; background: var(--mk-ink); color: var(--mk-paper);
+    font: 500 12px/1.35 var(--mk-sans); white-space: nowrap; transition: opacity .1s;
+  }
+  .mk-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  @media (max-width: 560px) {
+    .mk-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .mk-charts { grid-template-columns: minmax(0, 1fr); }
+  }
+
   /* —— one request as a conversation, laid out like a ChatGPT chat —— */
   .mk-tabs[hidden] { display: none; }
   .mk-thread-head { display: flex; align-items: center; gap: 10px; margin: 12px 0 0; padding-bottom: 10px; border-bottom: 1px solid var(--mk-rule); }
@@ -354,12 +456,25 @@ export const BOARD_HTML = `<!DOCTYPE html>
 </div>
 
 <div class="mk-tabs" id="tabs" role="tablist" aria-label="Your work">
-  <button class="mk-tab" role="tab" id="tab-projects" data-tab="projects" aria-controls="panel-projects" aria-selected="true" type="button">Projects <span class="mk-tab__n" id="n-projects">–</span></button>
+  <button class="mk-tab" role="tab" id="tab-overview" data-tab="overview" aria-controls="panel-overview" aria-selected="true" type="button">Overview</button>
   <button class="mk-tab" role="tab" id="tab-sites" data-tab="sites" aria-controls="panel-sites" aria-selected="false" tabindex="-1" type="button">Sites <span class="mk-tab__n" id="n-sites">–</span></button>
   <button class="mk-tab" role="tab" id="tab-requests" data-tab="requests" aria-controls="panel-requests" aria-selected="false" tabindex="-1" type="button">Requests <span class="mk-tab__n" id="n-requests">–</span></button>
 </div>
 
-<section class="mk-panel" role="tabpanel" id="panel-projects" aria-labelledby="tab-projects" aria-live="polite">
+<section class="mk-panel" role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" aria-live="polite">
+  <div id="workshop">
+    <div class="mk-stage" id="stage">
+      <canvas id="scene" aria-hidden="true"></canvas>
+      <div class="mk-labels" id="labels"></div>
+    </div>
+    <div class="mk-legend" id="legend" role="group" aria-label="Stations"></div>
+  </div>
+  <div class="mk-kpis" id="kpis"></div>
+  <div class="mk-charts">
+    <figure class="mk-chart" id="chart-months"></figure>
+    <figure class="mk-chart" id="chart-projects"></figure>
+  </div>
+  <h2 class="mk-h">Projects</h2>
   <div class="mk-list" id="projects"><div class="mk-skel"></div><div class="mk-skel"></div></div>
 </section>
 <section class="mk-panel" role="tabpanel" id="panel-sites" aria-labelledby="tab-sites" hidden>
@@ -389,12 +504,14 @@ export const BOARD_HTML = `<!DOCTYPE html>
   <div class="mk-compose-note">Ali gets your reply by email and answers here. <button class="mk-link" id="thread-portal" type="button">Open in the portal ↗</button></div>
 </section>
 
+<div class="mk-tooltip" id="tooltip" role="tooltip"></div>
 <div class="mk-foot">
   <span>Every request is read by a human before work starts.</span>
   <button class="mk-link" id="portal" type="button">Open the portal ↗</button>
 </div>
 </main>
 
+<script>${BOARD3D_JS}</script>
 <script>
 (function () {
   'use strict';
@@ -408,7 +525,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     done: { label: 'Done', tone: 'done' },
     declined: { label: 'Declined', tone: 'bad' }
   };
-  var TABS = ['projects', 'sites', 'requests'];
+  var TABS = ['overview', 'sites', 'requests'];
 
   var host = window.parent;
   var nextId = 1;
@@ -416,13 +533,14 @@ export const BOARD_HTML = `<!DOCTYPE html>
   var rendered = false;
   var fallbackTimer = null;
   var board = null;
-  var tab = 'projects';
+  var tab = 'overview';
   var chosen = false;
   var projectFilter = null;
   var threadId = null;
   var focusDone = false;
 
   function $(id) { return document.getElementById(id); }
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
   var refreshEl = $('refresh');
 
   function send(message) {
@@ -516,6 +634,8 @@ export const BOARD_HTML = `<!DOCTYPE html>
     if (context.theme) document.documentElement.style.colorScheme = context.theme;
     if (context.locale) document.documentElement.lang = context.locale;
     if (context.displayMode) document.body.setAttribute('data-mode', context.displayMode);
+    // The 3D scene follows data-theme, as it does on the site.
+    if (context.theme) document.documentElement.setAttribute('data-theme', context.theme);
     var vars = context.styles && context.styles.variables;
     for (var key in vars) {
       if (vars[key]) document.documentElement.style.setProperty(key, vars[key]);
@@ -536,6 +656,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     document.body.removeAttribute('data-view');
     $('panel-thread').hidden = true;
     $('tabs').hidden = false;
+    if (name === 'overview' && scene3d) scene3d.focus(null);
     for (var i = 0; i < TABS.length; i++) {
       var on = TABS[i] === name;
       var t = $('tab-' + TABS[i]);
@@ -552,7 +673,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
       $('tab-' + name).addEventListener('click', function () { chosen = true; show(name); });
     })(TABS[k]);
   }
-  $('tab-projects').parentNode.addEventListener('keydown', function (event) {
+  $('tabs').addEventListener('keydown', function (event) {
     var step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
     if (!step) return;
     event.preventDefault();
@@ -746,6 +867,384 @@ export const BOARD_HTML = `<!DOCTYPE html>
     renderRequests();
     notifySize();
   });
+
+  /* —— the overview: the portal's 3D workshop, headline numbers, two charts —— */
+
+  var STAGE_KEYS = ['new', 'approved', 'in_progress', 'review', 'done'];
+  var STAGE_NAMES = { new: 'Waiting for Ali', approved: 'Approved', in_progress: 'Being built', review: 'Being checked', done: 'Shipped' };
+  // On the scene the captions are crowded at card width: the station's own short name; the legend says it in full.
+  var STAGE_SHORT = { new: 'Request', approved: 'Approve', in_progress: 'Build', review: 'Check', done: 'Ship' };
+  // Projects get a tint, so a belt, its pylon and its label read as one thing (the portal's colours).
+  var LANE_TINTS = [0xff5a1f, 0x95bf47, 0x3b82f6, 0xa855f7, 0xeab308, 0xec4899];
+  var GREY_TINT = 0x8a857b;
+  var RECENT_MS = 14 * 86400 * 1000;
+  var scene3d = null;
+  var sceneOff = false;
+  var sceneItems = [];
+  var sceneLanes = [];
+  var sceneStage = null;
+  var sceneProject = null;
+  var capEls = {};
+  var nodeEls = new Map();
+  var tipEl = null;
+  var tooltipEl = $('tooltip');
+
+  function tintHex(n) { return '#' + ('000000' + n.toString(16)).slice(-6); }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function isOpen(r) { return r.status === 'new' || r.status === 'approved' || r.status === 'in_progress' || r.status === 'review'; }
+
+  function dollars(cents) {
+    var value = (cents || 0) / 100;
+    return '$' + value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  /* What rides the machine: everything open, plus the few most recently shipped (as the portal does). */
+  function workshopFeed() {
+    var now = Date.now();
+    var all = board.requests || [];
+    var shipped = all.filter(function (r) {
+      return r.status === 'done' && r.updated_at && now - Date.parse(r.updated_at) < RECENT_MS;
+    }).slice(0, 3);
+    sceneItems = all.filter(isOpen).concat(shipped);
+    sceneLanes = (board.projects || []).map(function (p, i) {
+      var color = LANE_TINTS[i % LANE_TINTS.length];
+      return {
+        id: p.id, name: p.name || 'Project', lane: i, color: color, tint: tintHex(color),
+        sites: (board.sites || []).filter(function (s) { return s.project_id === p.id; }).map(function (s) {
+          return { id: s.id, name: s.name || 'Site', live: !!s.live, url: s.live ? s.production_url : s.has_preview ? s.preview_url : null };
+        })
+      };
+    });
+    if (!sceneLanes.length || sceneItems.some(function (r) { return !r.project_id; })) {
+      sceneLanes.push({ id: -1, name: 'Getting set up', lane: sceneLanes.length, color: GREY_TINT, tint: tintHex(GREY_TINT), sites: [], unassigned: true });
+    }
+  }
+
+  function laneIndex(projectId) {
+    for (var i = 0; i < sceneLanes.length; i++) {
+      var lane = sceneLanes[i];
+      if (projectId ? (!lane.unassigned && lane.id === projectId) : lane.unassigned) return i;
+    }
+    return 0;
+  }
+
+  function inLane(lane) {
+    return sceneItems.filter(function (r) { return lane.unassigned ? !r.project_id : r.project_id === lane.id; }).length;
+  }
+
+  function stageCount(key) { return sceneItems.filter(function (r) { return r.status === key; }).length; }
+
+  function pickLane(id) {
+    sceneProject = sceneProject === id ? null : id;
+    if (scene3d) scene3d.lane(sceneProject);
+    buildLabels();
+  }
+
+  function zoomStage(key) {
+    sceneStage = sceneStage === key ? null : key;
+    if (scene3d) scene3d.zoom(sceneStage);
+    buildLegend();
+    for (var k in capEls) capEls[k].classList.toggle('is-on', k === sceneStage);
+  }
+
+  function openSite(site) { if (site && site.url) openLink(site.url); }
+
+  function nodeEl(key, className, title, onClick) {
+    var node = el('button', 'mk-node ' + className);
+    node.type = 'button';
+    node.title = title;
+    node.tabIndex = -1;
+    node.addEventListener('click', onClick);
+    nodeEls.set(key, node);
+    return node;
+  }
+
+  /* HTML labels that ride the scene: one per project pylon, its yard or its sites, and each station. */
+  function buildLabels() {
+    var layer = $('labels');
+    clear(layer);
+    nodeEls = new Map();
+    capEls = {};
+    sceneLanes.forEach(function (lane) {
+      var project = nodeEl('p:' + lane.id, 'mk-node--project' + (sceneProject === lane.id ? ' is-on' : ''), 'Show only ' + lane.name, function () { pickLane(lane.id); });
+      project.style.borderLeftColor = lane.tint;
+      var idx = el('span', 'mk-node__idx', lane.unassigned ? '—' : pad2(lane.lane + 1));
+      idx.style.color = lane.tint;
+      project.appendChild(idx);
+      project.appendChild(el('span', 'mk-node__name', lane.name));
+      var count = el('span', 'mk-node__count', inLane(lane));
+      count.style.background = lane.tint;
+      project.appendChild(count);
+      layer.appendChild(project);
+      if (lane.unassigned) return;
+      if (sceneProject === null) {
+        // All projects: one yard label each.
+        var yard = nodeEl('y:' + lane.id, 'mk-node--site mk-node--yard', 'Show only ' + lane.name, function () { pickLane(lane.id); });
+        var dot = el('span', 'mk-node__dot');
+        dot.style.background = lane.tint;
+        yard.appendChild(dot);
+        yard.appendChild(el('span', 'mk-node__name', lane.name));
+        yard.appendChild(el('span', 'mk-node__state', plural(lane.sites.length, 'site')));
+        layer.appendChild(yard);
+      } else if (sceneProject === lane.id) {
+        // One project picked: its sites.
+        if (!lane.sites.length) {
+          var ghost = nodeEl('s:' + lane.id + ':0', 'mk-node--site is-ghost', 'No site yet', function () {});
+          ghost.appendChild(el('span', 'mk-node__dot'));
+          ghost.appendChild(el('span', 'mk-node__name', 'No site yet'));
+          layer.appendChild(ghost);
+        }
+        lane.sites.forEach(function (site) {
+          var pod = nodeEl('s:' + lane.id + ':' + site.id, 'mk-node--site' + (site.live ? ' is-live' : ''), site.url ? 'Open ' + site.name : site.name, function () { openSite(site); });
+          pod.appendChild(el('span', 'mk-node__dot' + (site.live ? ' is-live' : ' is-preview')));
+          pod.appendChild(el('span', 'mk-node__name', site.name));
+          pod.appendChild(el('span', 'mk-node__state', site.live ? 'Live' : 'Preview'));
+          layer.appendChild(pod);
+        });
+      }
+    });
+    STAGE_KEYS.forEach(function (key) {
+      var cap = el('button', 'mk-cap' + (stageCount(key) ? '' : ' is-empty') + (sceneStage === key ? ' is-on' : ''));
+      cap.type = 'button';
+      cap.tabIndex = -1;
+      cap.appendChild(el('b', null, stageCount(key)));
+      cap.appendChild(document.createTextNode(STAGE_SHORT[key]));
+      cap.title = STAGE_NAMES[key];
+      cap.addEventListener('click', function () { zoomStage(key); });
+      capEls[key] = cap;
+      layer.appendChild(cap);
+    });
+    tipEl = el('div', 'mk-tip3d');
+    layer.appendChild(tipEl);
+  }
+
+  /* The stations as buttons too: the keyboard way into the scene, and its counts. */
+  function buildLegend() {
+    var legend = $('legend');
+    clear(legend);
+    STAGE_KEYS.forEach(function (key, i) {
+      var b = el('button');
+      b.type = 'button';
+      b.setAttribute('aria-pressed', sceneStage === key ? 'true' : 'false');
+      b.appendChild(el('span', 'mk-legend__no', pad2(i + 1)));
+      b.appendChild(el('span', null, STAGE_NAMES[key]));
+      b.appendChild(el('b', null, stageCount(key)));
+      b.addEventListener('click', function () { zoomStage(key); });
+      legend.appendChild(b);
+    });
+  }
+
+  function place(node, x, y, lift) {
+    node.style.transform = 'translate(' + x + 'px, ' + y + 'px) translate(-50%, ' + (lift ? 'calc(-100% - 10px)' : '-100%') + ')';
+  }
+
+  function mountScene() {
+    if (scene3d || sceneOff) return;
+    if (typeof window.mkInitBoard !== 'function') { dropScene(); return; }
+    try {
+      scene3d = window.mkInitBoard($('scene'), {
+        items: function () {
+          return sceneItems.map(function (r) { return { id: r.id, stage: r.status, lane: laneIndex(r.project_id) }; });
+        },
+        lanes: function () { return sceneLanes; },
+        onHover: function (id) {
+          var r = id === null || id === undefined ? null : requestById(id);
+          clear(tipEl);
+          if (r) {
+            tipEl.appendChild(el('span', null, '#' + r.id));
+            tipEl.appendChild(document.createTextNode(r.title || 'Untitled request'));
+          }
+        },
+        onPick: function (id) {
+          // Go in toward the ticket, then open its conversation.
+          scene3d.focus(id);
+          setTimeout(function () { openThread(id); }, 380);
+        },
+        onPickNode: function (node) {
+          if (node.kind === 'project') { pickLane(node.projectId); return; }
+          var lane = sceneLanes[laneIndex(node.projectId)];
+          openSite(lane && lane.sites.filter(function (s) { return s.id === node.siteId; })[0]);
+        },
+        onFrame: function (stations, hover, nodes) {
+          for (var key in stations) if (capEls[key]) place(capEls[key], stations[key].x, stations[key].y);
+          if (tipEl) {
+            tipEl.style.opacity = hover ? '1' : '0';
+            if (hover) place(tipEl, hover.x, hover.y, true);
+          }
+          var seen = {};
+          for (var i = 0; i < (nodes || []).length; i++) {
+            var n = nodes[i];
+            var label = nodeEls.get(n.key);
+            if (!label) continue;
+            seen[n.key] = true;
+            place(label, n.x, n.y);
+            label.style.opacity = n.visible === false ? '0' : '1';
+          }
+          nodeEls.forEach(function (label, k) { if (!seen[k]) label.style.opacity = '0'; });
+        }
+      });
+      if (sceneProject !== null) scene3d.lane(sceneProject);
+      if (sceneStage !== null) scene3d.zoom(sceneStage);
+    } catch (e) {
+      dropScene();
+    }
+  }
+
+  /* No WebGL here: the numbers, charts and lists carry the overview on their own. */
+  function dropScene() {
+    sceneOff = true;
+    scene3d = null;
+    $('workshop').hidden = true;
+  }
+
+  function kpi(label, value, sub) {
+    var tile = el('div', 'mk-kpi');
+    tile.appendChild(el('div', 'mk-kpi__label', label));
+    tile.appendChild(el('div', 'mk-kpi__value', value));
+    if (sub) tile.appendChild(el('div', 'mk-kpi__sub', sub));
+    return tile;
+  }
+
+  function renderKpis() {
+    var box = $('kpis');
+    clear(box);
+    var spend = board.spending;
+    var open = board.requests.filter(isOpen);
+    var waiting = open.filter(function (r) { return r.status === 'new'; }).length;
+    var live = board.sites.filter(function (s) { return s.live; }).length;
+    var previews = board.sites.filter(function (s) { return !s.live && s.has_preview; }).length;
+    box.appendChild(kpi('Spent so far', dollars(spend.billed_cents), spend.ai_cents ? 'AI at cost: ' + dollars(spend.ai_cents) : 'Finished work, billed'));
+    box.appendChild(kpi('Running on open work', dollars(spend.open_cents), plural(open.length, 'open request')));
+    box.appendChild(kpi('Open requests', String(open.length), waiting ? waiting + ' waiting for Ali' : 'None waiting for Ali'));
+    box.appendChild(kpi('Live sites', board.sites.length ? live + ' of ' + board.sites.length : '0', previews ? plural(previews, 'preview') + ' not live yet' : board.sites.length ? 'All published' : 'No hosted site yet'));
+  }
+
+  /* A hover and focus tooltip for one mark; the table under each chart says the same for screen readers. */
+  function tooltip(node, text) {
+    node.tabIndex = 0;
+    node.setAttribute('aria-label', text);
+    function showTip() {
+      tooltipEl.textContent = text;
+      var r = node.getBoundingClientRect();
+      var w = tooltipEl.offsetWidth;
+      var x = Math.max(4, Math.min(window.innerWidth - w - 4, r.left + r.width / 2 - w / 2));
+      tooltipEl.style.transform = 'translate(' + x + 'px, ' + Math.max(4, r.top - tooltipEl.offsetHeight - 6) + 'px)';
+      tooltipEl.style.opacity = '1';
+    }
+    function hideTip() { tooltipEl.style.opacity = '0'; }
+    node.addEventListener('mouseenter', showTip);
+    node.addEventListener('focus', showTip);
+    node.addEventListener('mouseleave', hideTip);
+    node.addEventListener('blur', hideTip);
+  }
+
+  function chartHead(fig, title, sub) {
+    clear(fig);
+    var cap = el('figcaption');
+    cap.appendChild(el('div', 'mk-chart__title', title));
+    if (sub) cap.appendChild(el('div', 'mk-chart__sub', sub));
+    fig.appendChild(cap);
+  }
+
+  function srTable(fig, head, rows) {
+    var table = el('table', 'mk-sr');
+    var tr = el('tr');
+    head.forEach(function (h) { tr.appendChild(el('th', null, h)); });
+    table.appendChild(tr);
+    rows.forEach(function (row) {
+      var r = el('tr');
+      row.forEach(function (c) { r.appendChild(el('td', null, c)); });
+      table.appendChild(r);
+    });
+    fig.appendChild(table);
+  }
+
+  /* Billed per month: finished requests by the month they finished, last six months, this month in orange. */
+  function renderMonths() {
+    var fig = $('chart-months');
+    chartHead(fig, 'Billed per month', 'Finished requests, last 6 months');
+    var now = new Date();
+    var months = [];
+    for (var i = 5; i >= 0; i--) {
+      var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({ y: d.getFullYear(), m: d.getMonth(), cents: 0, n: 0, label: d.toLocaleString(undefined, { month: 'short' }), long: d.toLocaleString(undefined, { month: 'long', year: 'numeric' }) });
+    }
+    board.requests.forEach(function (r) {
+      if (r.status !== 'done' || !r.price_cents || !r.updated_at) return;
+      var d = new Date(r.updated_at);
+      months.forEach(function (b) { if (b.y === d.getFullYear() && b.m === d.getMonth()) { b.cents += r.price_cents; b.n += 1; } });
+    });
+    var max = Math.max.apply(null, months.map(function (b) { return b.cents; }));
+    if (!max) {
+      fig.appendChild(el('div', 'mk-chart__empty', 'Nothing billed yet. Finished requests show up here.'));
+      return;
+    }
+    var cols = el('div', 'mk-cols');
+    var xs = el('div', 'mk-xs');
+    months.forEach(function (b, i) {
+      var now = i === months.length - 1;
+      var col = el('div', 'mk-col' + (now ? ' is-now' : ''));
+      // Selective labels: this month and the highest month carry their value; the rest are in the tooltip.
+      if (b.cents && (now || b.cents === max)) col.appendChild(el('span', 'mk-col__val', dollars(b.cents)));
+      var bar = el('div', 'mk-col__bar');
+      bar.style.height = b.cents ? Math.max(2, Math.round((b.cents / max) * 92)) + 'px' : '0';
+      col.appendChild(bar);
+      tooltip(col, b.long + ': ' + dollars(b.cents) + (b.n ? ' · ' + plural(b.n, 'request') : ''));
+      cols.appendChild(col);
+      xs.appendChild(el('span', null, b.label));
+    });
+    fig.appendChild(cols);
+    fig.appendChild(xs);
+    srTable(fig, ['Month', 'Billed', 'Requests'], months.map(function (b) { return [b.long, dollars(b.cents), String(b.n)]; }));
+  }
+
+  /* Cost by project: everything each project has cost so far, finished and open, largest first. */
+  function renderProjectCosts() {
+    var fig = $('chart-projects');
+    chartHead(fig, 'Cost by project', 'Finished and open work');
+    var rows = (board.projects || []).map(function (p, i) {
+      var cents = board.requests.filter(function (r) { return r.project_id === p.id; }).reduce(function (sum, r) { return sum + (r.price_cents || 0); }, 0);
+      return { name: p.name || 'Project', tint: tintHex(LANE_TINTS[i % LANE_TINTS.length]), cents: cents };
+    });
+    var loose = board.requests.filter(function (r) { return !r.project_id; }).reduce(function (sum, r) { return sum + (r.price_cents || 0); }, 0);
+    if (loose) rows.push({ name: 'Getting set up', tint: tintHex(GREY_TINT), cents: loose });
+    rows = rows.filter(function (r) { return r.cents > 0; }).sort(function (a, b) { return b.cents - a.cents; });
+    if (!rows.length) {
+      fig.appendChild(el('div', 'mk-chart__empty', 'No costs yet.'));
+      return;
+    }
+    var max = rows[0].cents;
+    var list = el('div', 'mk-hbars');
+    rows.slice(0, 6).forEach(function (row) {
+      var item = el('div', 'mk-hbar');
+      var name = el('div', 'mk-hbar__name');
+      var dot = el('span', 'mk-hbar__dot');
+      dot.style.background = row.tint;
+      name.appendChild(dot);
+      name.appendChild(el('span', null, row.name));
+      item.appendChild(name);
+      var track = el('div', 'mk-hbar__track');
+      var bar = el('div', 'mk-hbar__bar');
+      bar.style.width = Math.max(2, Math.round((row.cents / max) * 72)) + '%';
+      track.appendChild(bar);
+      track.appendChild(el('span', 'mk-hbar__val', dollars(row.cents)));
+      item.appendChild(track);
+      tooltip(item, row.name + ': ' + dollars(row.cents));
+      list.appendChild(item);
+    });
+    fig.appendChild(list);
+    srTable(fig, ['Project', 'Cost'], rows.map(function (r) { return [r.name, dollars(r.cents)]; }));
+  }
+
+  function renderOverview() {
+    workshopFeed();
+    buildLabels();
+    buildLegend();
+    mountScene();
+    renderKpis();
+    renderMonths();
+    renderProjectCosts();
+  }
 
   /* —— one request as a conversation —— */
 
@@ -966,13 +1465,14 @@ export const BOARD_HTML = `<!DOCTYPE html>
     rendered = true;
     if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
     $('who').textContent = board.account.name ? '· ' + board.account.name : '';
-    $('n-projects').textContent = board.projects.length;
     $('n-sites').textContent = board.sites.length;
     var openCount = board.requests.filter(function (r) { return r.status !== 'done' && r.status !== 'declined'; }).length;
     $('n-requests').textContent = openCount ? openCount + ' open' : board.requests.length;
+    board.spending = data.spending || { billed_cents: 0, open_cents: 0, ai_cents: 0 };
     renderProjects();
     renderSites();
     renderRequests();
+    renderOverview();
     if (data.focus && !focusDone && requestById(data.focus)) {
       // Opened on one request (portal_board with request_id): straight to its conversation.
       focusDone = true;
@@ -981,7 +1481,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     }
     // Something new to read beats the overview, until the person picks a tab.
     if (threadId) notifySize();
-    else if (!chosen) show(board.requests.some(function (r) { return r.unread; }) ? 'requests' : 'projects');
+    else if (!chosen) show(board.requests.some(function (r) { return r.unread; }) ? 'requests' : 'overview');
     else notifySize();
   }
 
@@ -991,7 +1491,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     var list = $('projects');
     clear(list);
     list.appendChild(el('div', 'mk-err', message || 'Your work could not load.'));
-    show('projects');
+    show('overview');
   }
 
   function handleResult(result) {

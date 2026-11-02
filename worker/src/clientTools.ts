@@ -109,6 +109,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
               id: { type: ['string', 'null'] },
               name: { type: ['string', 'null'] },
               project: { type: ['string', 'null'] },
+              project_id: { type: ['string', 'null'] },
               state: { type: ['string', 'null'] },
               live: { type: 'boolean' },
               has_preview: { type: 'boolean' },
@@ -116,7 +117,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
               production_url: { type: ['string', 'null'] },
               updated_at: { type: ['string', 'null'] },
             },
-            required: ['id', 'name', 'project', 'state', 'live', 'has_preview', 'preview_url', 'production_url', 'updated_at'],
+            required: ['id', 'name', 'project', 'project_id', 'state', 'live', 'has_preview', 'preview_url', 'production_url', 'updated_at'],
             additionalProperties: false,
           },
         },
@@ -129,20 +130,32 @@ export const CLIENT_TOOLS: ClientTool[] = [
               title: { type: ['string', 'null'] },
               status: { type: ['string', 'null'] },
               project: { type: ['string', 'null'] },
+              project_id: { type: ['string', 'null'] },
               site: { type: ['string', 'null'] },
               updated_at: { type: ['string', 'null'] },
               unread: { type: 'boolean' },
               price_cents: { type: ['integer', 'null'] },
               budget_cents: { type: ['integer', 'null'] },
             },
-            required: ['id', 'title', 'status', 'project', 'site', 'updated_at', 'unread', 'price_cents', 'budget_cents'],
+            required: ['id', 'title', 'status', 'project', 'project_id', 'site', 'updated_at', 'unread', 'price_cents', 'budget_cents'],
             additionalProperties: false,
           },
         },
         updated_at: { type: 'string' },
         focus: { type: ['integer', 'null'], description: 'The request whose conversation the card opens on, if any.' },
+        spending: {
+          type: 'object',
+          description: 'Cents: billed for finished work, running on open work, and the AI share of all of it (at cost).',
+          properties: {
+            billed_cents: { type: 'integer' },
+            open_cents: { type: 'integer' },
+            ai_cents: { type: 'integer' },
+          },
+          required: ['billed_cents', 'open_cents', 'ai_cents'],
+          additionalProperties: false,
+        },
       },
-      required: ['account', 'projects', 'sites', 'requests', 'updated_at', 'focus'],
+      required: ['account', 'projects', 'sites', 'requests', 'updated_at', 'focus', 'spending'],
       additionalProperties: false,
     },
     readOnly: true,
@@ -552,6 +565,7 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
             id: text(site.id),
             name: text(site.name) ?? text(project.name),
             project: text(project.name),
+            project_id: text(project.id),
             state: text(site.state),
             // A production pointer means something is live; a preview pointer, something to look at.
             live: site.state === 'ready' && Boolean(site.productionDeploy),
@@ -563,6 +577,8 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
         }),
       );
       const siteNames = new Map(sites.map((site) => [site.id, site.name]));
+      const usage = ((me?.usage ?? {}) as Record<string, unknown>);
+      const whole = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 0);
       return {
         account: { name: text((me?.user as Record<string, unknown> | undefined)?.name) },
         projects: projects.map((project) => {
@@ -587,6 +603,7 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
           title: text(ticket.title),
           status: text(ticket.status),
           project: text(ticket.project_name),
+          project_id: text(ticket.project_id),
           site: siteNames.get(text(ticket.site_id)) ?? null,
           updated_at: when(ticket.updated_at),
           unread: !!ticket.unread,
@@ -595,6 +612,11 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
         })),
         updated_at: new Date().toISOString(),
         focus: Number.isInteger(args.request_id) && tickets.some((ticket) => ticket.id === args.request_id) ? (args.request_id as number) : null,
+        spending: {
+          billed_cents: whole(usage.billedCents),
+          open_cents: whole(usage.openCents),
+          ai_cents: whole(usage.aiCents),
+        },
       };
     }
     case 'portal_request':
