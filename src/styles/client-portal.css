@@ -608,17 +608,33 @@
 
 .cp-board {
   position: relative;
-  border: 1px solid var(--rule);
-  border-radius: 16px;
-  background:
-    radial-gradient(120% 90% at 60% 40%, var(--bone) 40%, var(--paper) 100%);
-  box-shadow: var(--cp-shadow);
-  overflow: hidden;
-  margin-bottom: 22px;
+  margin: 0 0 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
 }
 .cp-board__stage {
   position: relative;
-  height: clamp(260px, 30vw, 410px);
+  height: clamp(280px, 32vw, 440px);
+  isolation: isolate;
+}
+/* Instead of a frame, the scene sits in a soft, out-of-focus pool of light
+   that spills past its own edges into the page. */
+.cp-board__stage::before {
+  content: '';
+  position: absolute;
+  inset: -16% -3%;
+  z-index: 0;
+  background:
+    radial-gradient(48% 55% at 50% 46%, color-mix(in srgb, var(--bone) 90%, transparent), transparent 72%),
+    radial-gradient(32% 45% at 28% 58%, color-mix(in srgb, var(--orange) 9%, transparent), transparent 72%),
+    radial-gradient(30% 42% at 74% 42%, color-mix(in srgb, var(--ink) 7%, transparent), transparent 72%);
+  filter: blur(42px);
+  opacity: 0.9;
+  pointer-events: none;
 }
 .cp-board.is-flat .cp-board__stage {
   display: none;
@@ -626,11 +642,15 @@
 .cp-board__canvas {
   position: absolute;
   inset: 0;
+  z-index: 1;
   width: 100%;
   height: 100%;
   display: block;
   cursor: grab;
   touch-action: none;
+  /* Fade the render into the page instead of ending it at a border. */
+  -webkit-mask-image: radial-gradient(122% 108% at 50% 45%, #000 56%, rgba(0, 0, 0, 0.82) 74%, transparent 100%);
+  mask-image: radial-gradient(122% 108% at 50% 45%, #000 56%, rgba(0, 0, 0, 0.82) 74%, transparent 100%);
 }
 .cp-board__canvas:active {
   cursor: grabbing;
@@ -891,8 +911,8 @@
 .cp-board__legend {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  background: var(--dash-h);
-  background-color: color-mix(in srgb, var(--paper) 70%, transparent);
+  margin-top: 4px;
+  background: none;
 }
 .cp-board__legend button {
   display: grid;
@@ -911,7 +931,7 @@
     color var(--dur) var(--ease);
 }
 .cp-board__legend button + button {
-  border-left: 1px dashed var(--rule-strong);
+  border-left: 0;
 }
 .cp-board__legend button:hover {
   color: var(--ink);
@@ -936,9 +956,19 @@
   font: 700 18px/1 var(--font-display);
   color: var(--ink);
 }
+@media (min-width: 1024px) {
+  /* Let the scene use the page's own gutter; controls stay on the text column. */
+  .cp-board {
+    margin-inline: -40px;
+  }
+}
 @media (max-width: 760px) {
   .cp-board__stage {
-    height: 200px;
+    height: 210px;
+  }
+  .cp-board__stage::before {
+    inset: -12% -2%;
+    filter: blur(32px);
   }
   .cp-board__cap {
     display: none;
@@ -950,7 +980,8 @@
     border-left: 0;
   }
   .cp-board__legend button {
-    border-top: 1px dashed var(--rule-strong);
+    border-top: 0;
+    padding: 10px 8px;
   }
 }
 
@@ -2487,13 +2518,15 @@ fieldset.cp-field {
   width: 100%;
 }
 .cp-board__lanes {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  padding: 9px 12px;
-  border-top: 1px solid var(--rule);
-  background: color-mix(in srgb, var(--paper) 70%, transparent);
+  padding: 4px 2px 2px;
+  border: 0;
+  background: none;
 }
 .cp-board__lane {
   display: inline-flex;
@@ -2502,7 +2535,8 @@ fieldset.cp-field {
   padding: 4px 9px;
   border: 1px solid var(--rule);
   border-radius: 999px;
-  background: transparent;
+  background: color-mix(in srgb, var(--paper) 55%, transparent);
+  backdrop-filter: blur(6px);
   color: var(--ink-soft);
   font: 500 11px/1 var(--font-mono);
   cursor: pointer;
@@ -2549,6 +2583,13 @@ fieldset.cp-field {
   margin-left: auto;
   color: var(--ink-soft);
   font-size: 11px;
+}
+/* The board is full-bleed, but its controls stay on the text column. */
+@media (min-width: 1024px) {
+  .cp-board__lanes,
+  .cp-board__legend {
+    padding-inline: 40px;
+  }
 }
 @media (max-width: 760px) {
   /* The scene is small here; the project chips below are the readable map. */
