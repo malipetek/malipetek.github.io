@@ -170,7 +170,8 @@ export const BOARD_HTML = `<!DOCTYPE html>
   body {
     font: 14px/1.45 var(--mk-sans);
     color: var(--mk-ink);
-    padding: 12px 14px 10px;
+    /* Clear the ChatGPT composer that floats over the bottom of the card. */
+    padding: 12px 14px 104px;
     -webkit-font-smoothing: antialiased;
   }
   .mk-app { max-width: 760px; margin: 0 auto; }

@@ -175,7 +175,7 @@ export function Board({
     onOpen,
     onNode: (node) => {
       if (node.kind === 'project') pickProject(node.projectId);
-      else if (node.projectId != null) onOpenProject?.(node.projectId);
+      else if (node.projectId != null) onOpenProject?.(node.projectId, node.siteId ?? null);
     },
   };
 
@@ -313,8 +313,8 @@ export function Board({
                   ref={setNodeRef(n.key)}
                   {...dropProps(n.lane)}
                   className={cx('cp-board__node', 'cp-board__node--yard', dropKey === `p:${n.lane.id}` && 'is-drop')}
-                  onClick={() => pickProject(n.lane.id)}
-                  title={t('board.showOnly', { name: n.lane.name })}
+                  onClick={() => onOpenProject?.(n.lane.id, null)}
+                  title={t('views.entity.openProject')}
                 >
                   <span className="cp-board__node-dot" style={{ background: n.lane.tint }} />
                   <span className="cp-board__node-name">{n.lane.name}</span>
@@ -339,7 +339,7 @@ export function Board({
                     e.dataTransfer.setData(DRAG_SITE, String(n.site.id));
                     e.dataTransfer.effectAllowed = 'move';
                   }}
-                  onClick={() => onOpenProject?.(n.lane.id)}
+                  onClick={() => onOpenProject?.(n.lane.id, n.site?.id ?? null)}
                   title={t('board.openProject', { name: n.site?.name ?? n.lane.name })}
                 >
                   <span className={cx('cp-board__node-dot', n.site?.live && 'is-live', n.site && !n.site.live && 'is-preview')} />

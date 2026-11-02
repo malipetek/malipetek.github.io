@@ -109,7 +109,11 @@ export function Overview() {
   const [stage, setStage] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [project, setProject] = useState(null);
+  const [sheet, setSheet] = useState(null);
   const { tickets, projects, user } = data;
+  const sheetProject = sheet ? projects.find((p) => p.id === sheet.projectId) ?? null : null;
+  const sheetSites = sheetProject ? (sheetProject.sites ?? (sheetProject.site ? [sheetProject.site] : [])) : [];
+  const sheetSite = sheet?.siteId ? sheetSites.find((s) => s.id === sheet.siteId) ?? null : null;
   const open = tickets.filter(isOpen);
   const shown = stage ? tickets.filter((t) => t.status === stage) : open;
   const visible =
@@ -185,7 +189,7 @@ export function Overview() {
         onOpen={(id) => go(`ticket/${id}`)}
         project={project}
         onProject={setProject}
-        onOpenProject={(id) => go(`project/${id}`)}
+        onOpenProject={(id, siteId) => setSheet({ projectId: id, siteId: siteId ?? null })}
         onMoveTicket={moveTicket}
         onMoveSite={moveSite}
       />
@@ -250,7 +254,7 @@ export function Overview() {
         {projects.length ? (
           <div className="cp-projects">
             {projects.map((p) => (
-              <ProjectCard key={p.id} project={p} tickets={tickets.filter((x) => x.project_id === p.id)} />
+              <ProjectCard key={p.id} project={p} tickets={tickets.filter((x) => x.project_id === p.id)} onOpen={(p) => setSheet({ projectId: p.id, siteId: null })} />
             ))}
           </div>
         ) : (
@@ -263,6 +267,24 @@ export function Overview() {
         )}
         </section>
       </div>
+
+      {sheetProject ? (
+        <EntitySheet
+          project={sheetProject}
+          site={sheetSite}
+          tickets={tickets}
+          onClose={() => setSheet(null)}
+          onOpenProject={(id) => {
+            setSheet(null);
+            go(`project/${id}`);
+          }}
+          onOpenSite={(siteId) => setSheet({ projectId: sheetProject.id, siteId })}
+          onNewRequest={(projectId) => {
+            setSheet(null);
+            compose(projectId);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -348,7 +370,7 @@ function siteLine(project, t) {
   return unpublished(s) ? t('views.site.ahead') : t('views.site.live');
 }
 
-function ProjectCard({ project, tickets }) {
+function ProjectCard({ project, tickets, onOpen }) {
   const t = useT();
   const open = tickets.filter(isOpen).length;
   const s = project.site;
@@ -356,7 +378,15 @@ function ProjectCard({ project, tickets }) {
   const live = s?.state === 'ready';
   const { setup } = project;
   return (
-    <a className="cp-project" href={href(`project/${project.id}`)}>
+    <a
+      className="cp-project"
+      href={href(`project/${project.id}`)}
+      onClick={(e) => {
+        if (!onOpen || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        onOpen(project);
+      }}
+    >
       <div className="cp-project__top">
         <span className={cx('cp-project__dot', live ? (unpublished(s) ? 'is-ahead' : 'is-live') : s?.state === 'failed' ? 'is-bad' : 'is-wait')} />
         <strong>{project.name}</strong>
@@ -371,6 +401,170 @@ function ProjectCard({ project, tickets }) {
         <span style={{ width: `${setup.total ? (setup.ready / setup.total) * 100 : 100}%` }} />
       </div>
     </a>
+  );
+}
+
+/**
+ * A project or site opened from the overview. A medium sheet with the facts and
+ * the few actions that used to mean "leave the board": open, preview, new request.
+ */
+function EntitySheet({ project, site, tickets, onClose, onOpenProject, onOpenSite, onNewRequest }) {
+  const t = useT();
+  const sites = project.sites ?? (project.site ? [project.site] : []);
+  const own = tickets.filter((x) => x.project_id === project.id);
+  const open = own.filter(isOpen).length;
+  const setup = project.setup ?? { ready: 0, total: 0 };
+
+  const urlOf = (s, kind) =>
+    kind === 'live'
+      ? s?.productionUrl ?? s?.cloudflare?.productionUrl ?? null
+      : s?.previewUrl ?? s?.cloudflare?.previewUrl ?? null;
+
+  const stateOf = (s) => {
+    if (!s) return { label: t('board.noSite'), cls: 'is-wait' };
+    if (s.state === 'failed') return { label: t('views.entity.failed'), cls: 'is-bad' };
+    if (unpublished(s)) return { label: t('board.preview'), cls: 'is-ahead' };
+    if (s.state === 'ready') return { label: t('board.live'), cls: 'is-live' };
+    if (urlOf(s, 'preview')) return { label: t('board.preview'), cls: 'is-ahead' };
+    return { label: t('views.entity.settingUp'), cls: 'is-wait' };
+  };
+
+  const primary = site ?? sites.find((s) => s.isPrimary) ?? sites[0] ?? null;
+  const preview = primary ? urlOf(primary, 'preview') : null;
+  const live = primary ? urlOf(primary, 'live') : null;
+
+  const actions = site ? (
+    <>
+      {preview ? (
+        <Button href={preview} target="_blank" rel="noreferrer">
+          {t('board.preview')}
+        </Button>
+      ) : null}
+      {live ? (
+        <Button href={live} target="_blank" rel="noreferrer">
+          {t('board.live')}
+        </Button>
+      ) : null}
+      <Button kind="primary" onClick={() => onOpenProject(project.id)}>
+        {t('views.entity.openProject')}
+      </Button>
+    </>
+  ) : (
+    <>
+      <Button onClick={() => onNewRequest(project.id)}>{t('views.entity.newRequest')}</Button>
+      <Button href={href(`requests?project=${project.id}&filter=open`)}>{t('views.entity.requests')}</Button>
+      <Button kind="primary" onClick={() => onOpenProject(project.id)}>
+        {t('views.entity.openProject')}
+      </Button>
+    </>
+  );
+
+  return (
+    <Modal
+      title={site ? site.name || project.name : project.name}
+      subtitle={site ? project.name : project.kind === 'new' ? t('views.project.builtByUs') : t('views.project.yourCode')}
+      onClose={onClose}
+      actions={actions}
+    >
+      <div className="cp-sheet">
+        {site ? (
+          <>
+            <div className="cp-sheet__rows">
+              <div className="cp-sheet__row">
+                <span>{t('views.entity.status')}</span>
+                <span className="cp-sheet__state">
+                  <i className={cx('cp-project__dot', stateOf(site).cls)} />
+                  {stateOf(site).label}
+                </span>
+              </div>
+              <div className="cp-sheet__row">
+                <span>{t('views.entity.host')}</span>
+                <b>{site.host === 'cloudflare' ? t('views.entity.hostCloudflare') : t('views.entity.hostOurs')}</b>
+              </div>
+              {preview ? (
+                <div className="cp-sheet__row">
+                  <span>{t('board.preview')}</span>
+                  <a className="cp-sheet__url" href={preview} target="_blank" rel="noreferrer">
+                    {preview.replace(/^https:\/\//, '')}
+                  </a>
+                </div>
+              ) : null}
+              {live ? (
+                <div className="cp-sheet__row">
+                  <span>{t('board.live')}</span>
+                  <a className="cp-sheet__url" href={live} target="_blank" rel="noreferrer">
+                    {live.replace(/^https:\/\//, '')}
+                  </a>
+                </div>
+              ) : null}
+              <div className="cp-sheet__row">
+                <span>{t('views.entity.project')}</span>
+                <b>{project.name}</b>
+              </div>
+            </div>
+            <p className="cp-sheet__hint">{t('views.entity.siteHint')}</p>
+          </>
+        ) : (
+          <>
+            <div className="cp-sheet__stats">
+              <div className="cp-sheet__stat">
+                <span>{t('views.entity.sites')}</span>
+                <b>{sites.length}</b>
+              </div>
+              <div className="cp-sheet__stat">
+                <span>{t('views.entity.openRequests')}</span>
+                <b>{open}</b>
+              </div>
+              <div className="cp-sheet__stat">
+                <span>{t('views.entity.setup')}</span>
+                <b>
+                  {setup.ready}/{setup.total}
+                </b>
+              </div>
+            </div>
+
+            <div>
+              <div className="cp-sheet__label">{t('views.entity.sites')}</div>
+              {sites.length ? (
+                <div className="cp-sheet__sites">
+                  {sites.map((s) => {
+                    const st = stateOf(s);
+                    const address = urlOf(s, st.cls === 'is-live' ? 'live' : 'preview');
+                    return (
+                      <button key={s.id} type="button" className="cp-sheet__site" onClick={() => onOpenSite(s.id)}>
+                        <i className={cx('cp-project__dot', st.cls)} />
+                        <span className="cp-sheet__site-text">
+                          <b>
+                            {s.name || project.name}
+                            {s.isPrimary ? ` · ${t('views.entity.primary')}` : ''}
+                          </b>
+                          <span>{address ? address.replace(/^https:\/\//, '') : t('views.entity.noAddress')}</span>
+                        </span>
+                        <span className="cp-sheet__state">{st.label}</span>
+                        <span className="cp-sheet__chev">›</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="cp-sheet__hint">{t('views.entity.noSiteHint')}</p>
+              )}
+            </div>
+
+            <div className="cp-sheet__rows">
+              <div className="cp-sheet__row">
+                <span>{t('views.entity.code')}</span>
+                <b>{project.repo ?? (project.kind === 'new' ? t('views.project.builtByUs') : t('views.project.yourCode'))}</b>
+              </div>
+              <div className="cp-sheet__row">
+                <span>{t('views.entity.requests')}</span>
+                <b>{t('views.project.counts', { open, total: own.length })}</b>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }
 
