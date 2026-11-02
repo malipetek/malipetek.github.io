@@ -1745,6 +1745,8 @@ export interface BoardOptions {
   input?: HTMLElement;
   /** The visible frame the camera centres on, in viewport coordinates. */
   frame?: HTMLElement;
+  /** Base fit scale; 2.3 keeps the old board framing, larger pulls back. */
+  fitBase?: number;
   /** The pointer is over a ticket (its id), or left them (null). */
   onHover?: (id: number | null) => void;
   /** A ticket was clicked. */
@@ -1788,6 +1790,7 @@ export interface Board {
 export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Board {
   const input = options.input ?? canvas;
   const frameEl = options.frame ?? input;
+  const fitBase = options.fitBase ?? 2.3;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -1826,8 +1829,15 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   let stageId: BoardStage | null = null;
   // Where the camera is heading; kept after a zoom ends, so backing out glides instead of jumping.
   const aim = home.clone();
+  // The target changes instantly when a step is picked; `aim` eases toward it,
+  // so stepping across the legend glides instead of cutting.
+  const aimTarget = home.clone();
   /** How far in a zoom goes: a ticket all the way, a station part way, so its neighbours stay in view. */
   const depth = () => (focusId !== null ? 1 : stageId !== null ? 0.7 : 0);
+  const aimStep = (dt: number) => {
+    if (reduced) aim.copy(aimTarget);
+    else aim.lerp(aimTarget, 1 - Math.exp(-dt * (focusId !== null ? 8 : 5)));
+  };
   let size = { w: 1, h: 1 };
 
   const anchors = machine.anchors!;
@@ -1842,8 +1852,9 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   const render = () => {
     const ticket = focusId !== null ? machine.ticketAt!(focusId) : null;
     // A station is looked at from its middle height, not its caption above.
-    if (ticket) aim.copy(ticket);
-    else if (stageId !== null) aim.copy(anchors[stageId]).setY(stageId === 'done' ? 2.9 : 1.1); // shipped work is up in the cloud
+    if (ticket) aimTarget.copy(ticket);
+    else if (stageId !== null) aimTarget.copy(anchors[stageId]).setY(stageId === 'done' ? 2.9 : 1.1); // shipped work is up in the cloud
+    else aimTarget.copy(home);
     look.lerpVectors(home, aim, Math.min(1, dive));
     look.x += pan.x;
     look.z += pan.y;
@@ -1891,7 +1902,7 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     );
     camera.updateProjectionMatrix();
     // The machine is wide: narrower boxes pull back so all of it stays in frame.
-    fit = THREE.MathUtils.clamp(2.8 / camera.aspect, 0.72, 2.0);
+    fit = THREE.MathUtils.clamp(fitBase / camera.aspect, 0.7, 2.0);
     render();
   };
   const sizeWatch = new ResizeObserver(resize);
@@ -1979,7 +1990,8 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   const onWheel = (e: WheelEvent) => {
     if (e.target !== input || !e.deltaY) return;
     e.preventDefault();
-    zoomGoal = THREE.MathUtils.clamp(zoomGoal * (1 - e.deltaY * 0.0012), 0.55, 2.4);
+    // Wheel up / pinch out comes closer; wheel down moves away.
+    zoomGoal = THREE.MathUtils.clamp(zoomGoal * (1 + e.deltaY * 0.0012), 0.45, 3.0);
   };
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onPointerUp);
@@ -2006,6 +2018,7 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       // No glide, no idle motion: big steps settle everything at once.
       for (let i = 0; i < 60; i += 1) machine.tick((clock += 0.1));
       dive = depth();
+      aimStep(0.1);
     } else {
       clock += dt;
       machine.tick(clock);
@@ -2015,6 +2028,7 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       });
       // Stations ease in more slowly than a click's dive: it is a look, not a jump.
       dive += (depth() - dive) * Math.min(1, dt * (focusId !== null ? 6 : 3.2));
+      aimStep(dt);
     }
     zoom += (zoomGoal - zoom) * Math.min(1, dt * 8);
     pan.lerp(panGoal, Math.min(1, dt * 8));
@@ -2036,7 +2050,7 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       outside = id;
     },
     zoomBy: (factor) => {
-      zoomGoal = THREE.MathUtils.clamp(zoomGoal * factor, 0.55, 2.4);
+      zoomGoal = THREE.MathUtils.clamp(zoomGoal * factor, 0.45, 3.0);
     },
     reset: () => {
       zoomGoal = 1;

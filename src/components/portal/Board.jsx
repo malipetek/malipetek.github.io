@@ -195,6 +195,7 @@ export function Board({
         board = initBoard(canvas, {
           input: stageElRef.current,
           frame: stageElRef.current,
+          fitBase: 2.8,
           items: () =>
             itemsRef.current.map((x) => ({
               id: x.id,
