@@ -1831,11 +1831,12 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   let size = { w: 1, h: 1 };
 
   const anchors = machine.anchors!;
+  // The frame origin is captured when the board is laid out, not every frame:
+  // the page scrolls under the fixed scene, so labels must scroll with the stage.
+  let frameOrigin = { left: 0, top: 0 };
   const toScreen = (v: THREE.Vector3): ScreenPoint => {
     const p = v.clone().project(camera);
-    // The canvas is fixed to the viewport; the labels live in the board frame.
-    const f = frameEl.getBoundingClientRect();
-    return { x: ((p.x + 1) / 2) * size.w - f.left, y: ((1 - p.y) / 2) * size.h - f.top };
+    return { x: ((p.x + 1) / 2) * size.w - frameOrigin.left, y: ((1 - p.y) / 2) * size.h - frameOrigin.top };
   };
 
   const render = () => {
@@ -1879,6 +1880,7 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     // The canvas fills the whole portal; the board frame is where the machine
     // must sit. Shift the projection centre instead of moving the canvas.
     const f = frameEl.getBoundingClientRect();
+    frameOrigin = { left: f.left, top: f.top };
     camera.setViewOffset(
       size.w,
       size.h,

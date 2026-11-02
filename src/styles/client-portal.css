@@ -1010,29 +1010,11 @@
 
 /* ————— overview ————— */
 
-/* The overview is a cockpit: the scene and its controls stay, the cards scroll. */
+/* The whole page scrolls; the scene stays fixed behind it and is interactive
+   while the board is at the top. Extra room at the ends lets the room breathe. */
 .cp-view--board {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  /* The board is wider than this column; do not clip its labels at the edge. */
-  overflow: visible;
-}
-.cp-view--board .cp-board-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding-bottom: 24px;
-}
-@media (max-width: 1023px) {
-  .cp-view--board {
-    height: auto;
-    display: block;
-    overflow: visible;
-  }
-  .cp-view--board .cp-board-scroll {
-    overflow: visible;
-  }
+  padding-top: 24px;
+  padding-bottom: clamp(260px, 55vh, 760px);
 }
 
 .cp-overview {
