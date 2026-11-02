@@ -198,6 +198,10 @@
     '.mf-stage canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}',
     '.mf-stage .mf-live{cursor:crosshair}',
     '.mf-ann-foot{display:flex;align-items:center;gap:8px;padding:10px 12px;border-top:1px solid #e2dccd;background:#fffdf8}',
+    '.mf-ann-rec{display:inline-flex;align-items:center;gap:7px;padding:4px 6px 4px 9px;border:1px solid #e8b4b1;border-radius:999px;background:#fdf1f0;color:#8a2f2b;font-size:12.5px;font-weight:600}',
+    '.mf-ann-rec .mf-time{font-variant-numeric:tabular-nums}',
+    '.mf-ann-rec .mf-dot{width:8px;height:8px}',
+    '.mf-ann-stop{padding:3px 8px;border:0;border-radius:999px;background:#d93b34;color:#fff;font:inherit;font-size:11.5px;font-weight:600;cursor:pointer}',
     '.mf-ann-foot .mf-hint{color:#7c7465;font-size:12px;flex:1}',
     '.mf-btn{padding:8px 12px;border-radius:8px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;border:1px solid #d8d0bf;background:transparent;color:#3a342a}',
     '.mf-btn:hover{background:#f1ebdd}',
@@ -286,6 +290,8 @@
   var voiceButton = $('[data-act="voice"]');
   var shotButton = $('[data-act="shot"]');
   var recorderStop = null;
+  /** The live recording, if any: shared by the panel and the annotator. */
+  var recording = null;
   var attachments = [];
   var busy = false;
 
@@ -397,7 +403,7 @@
   function setBusy(state, message) {
     busy = state;
     sendButton.disabled = state;
-    voiceButton.disabled = state;
+    voiceButton.disabled = state || !!recording;
     shotButton.disabled = state;
     if (message !== undefined) setStatus(message);
   }
@@ -427,6 +433,7 @@
   }
 
   async function startRecording() {
+    if (recording) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
       setStatus(t('noRecorder'), 'error');
       return;
@@ -452,47 +459,73 @@
 
     var chunks = [];
     var started = Date.now();
+    var resolveFinished = null;
+    var current = {
+      started: started,
+      times: [],
+      tick: null,
+      stop: null,
+      onEnd: null,
+      finished: new Promise(function (resolve) {
+        resolveFinished = resolve;
+      }),
+    };
+    recording = current;
+
     var row = el(
       'div',
       { class: 'mf-rec' },
       '<span class="mf-dot"></span><span class="mf-time">0:00</span><button class="mf-sendstop" type="button">' + t('stop') + '</button>',
     );
-    var time = row.querySelector('.mf-time');
+    current.times.push(row.querySelector('.mf-time'));
     voiceButton.parentNode.insertAdjacentElement('afterend', row);
     voiceButton.disabled = true;
-    shotButton.disabled = true;
     setStatus(t('recording'));
 
-    var tick = setInterval(function () {
-      time.textContent = formatTime(Date.now() - started);
+    current.tick = setInterval(function () {
+      var label = formatTime(Date.now() - started);
+      current.times.forEach(function (node) {
+        node.textContent = label;
+      });
     }, 250);
 
+    var settled = false;
+    function settle(ok) {
+      if (settled) return;
+      settled = true;
+      resolveFinished(ok);
+    }
+
     function cleanup() {
-      clearInterval(tick);
+      clearInterval(current.tick);
       row.remove();
-      voiceButton.disabled = false;
-      shotButton.disabled = false;
+      current.times = current.times.filter(function (node) {
+        return node.isConnected;
+      });
+      voiceButton.disabled = busy;
+      shotButton.disabled = busy;
       recorderStop = null;
       stream.getTracks().forEach(function (track) {
         track.stop();
       });
     }
 
-    recorderStop = function () {
+    function stop() {
       try {
         recorder.stop();
       } catch (e) {
         cleanup();
+        if (recording === current) recording = null;
+        if (current.onEnd) current.onEnd(false);
+        settle(false);
       }
-    };
+    }
 
-    row.querySelector('.mf-sendstop').addEventListener('click', function () {
-      recorderStop && recorderStop();
-    });
+    current.stop = stop;
+    recorderStop = stop;
+    row.querySelector('.mf-sendstop').addEventListener('click', stop);
 
-    var limit = setTimeout(function () {
-      recorderStop && recorderStop();
-    }, MAX_RECORDING_MS);
+    var limit = setTimeout(stop, MAX_RECORDING_MS);
 
     recorder.ondataavailable = function (event) {
       if (event.data && event.data.size) chunks.push(event.data);
@@ -500,8 +533,11 @@
     recorder.onstop = function () {
       clearTimeout(limit);
       cleanup();
+      if (recording === current) recording = null;
       if (!chunks.length) {
         setStatus(t('nothingRecorded'), 'error');
+        if (current.onEnd) current.onEnd(false);
+        settle(false);
         return;
       }
       var type = mime || recorder.mimeType || 'audio/webm';
@@ -510,6 +546,8 @@
       addAttachment({ kind: 'audio', blob: blob, name: name, url: URL.createObjectURL(blob), type: type });
       setStatus(t('voiceReady'));
       if (attachments.length + text.value.trim().length > 0) sendButton.disabled = false;
+      if (current.onEnd) current.onEnd(true);
+      settle(true);
     };
 
     recorder.start();
@@ -653,6 +691,24 @@
 
     header.appendChild(toolset);
     header.appendChild(colors);
+    // If a voice note is already running, keep it visible and stoppable here:
+    // the point is to talk through the change while marking it up.
+    if (recording) {
+      var recChip = el(
+        'span',
+        { class: 'mf-ann-rec' },
+        '<span class="mf-dot"></span><span class="mf-time">' + formatTime(Date.now() - recording.started) + '</span><button class="mf-ann-stop" type="button">' + t('stop') + '</button>',
+      );
+      recording.times.push(recChip.querySelector('.mf-time'));
+      recChip.querySelector('button').addEventListener('click', function () {
+        if (recording) recording.stop();
+      });
+      recording.onEnd = function (ok) {
+        if (recChip.isConnected) recChip.remove();
+        if (ok && ann && ann.hint) ann.hint.textContent = t('voiceReady');
+      };
+      header.appendChild(recChip);
+    }
     header.appendChild(el('span', { class: 'mf-spacer' }));
     header.appendChild(undo);
     header.appendChild(clear);
@@ -708,6 +764,7 @@
         input: null,
         displayWidth: displayWidth,
         overlay: null,
+        hint: foot.querySelector('.mf-hint'),
       };
 
       function point(event) {
@@ -835,6 +892,12 @@
         annotator.hidden = true;
         annotator.innerHTML = '';
         ann = null;
+        if (recording) {
+          recording.times = recording.times.filter(function (node) {
+            return node.isConnected;
+          });
+          recording.onEnd = null;
+        }
         panel.hidden = false;
         launcher.hidden = true;
       }
@@ -1009,11 +1072,23 @@
 
   async function sendFeedback() {
     if (busy) return;
+    busy = true;
+    sendButton.disabled = true;
     if (!token) {
+      setBusy(false);
       showAuth();
       return;
     }
+    // A voice note still running is part of what is being sent: finish it, wait
+    // for the audio to be attached, and only then decide whether there is
+    // anything to file.
+    if (recording) {
+      var finished = recording.finished;
+      recording.stop();
+      await finished;
+    }
     if (!text.value.trim() && !attachments.length) {
+      setBusy(false);
       setStatus(t('empty'), 'error');
       return;
     }
