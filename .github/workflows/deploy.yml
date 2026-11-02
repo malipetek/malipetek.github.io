@@ -65,7 +65,7 @@ jobs:
 
       - name: Deploy the intercom Worker
         working-directory: worker
-        run: pnpm run deploy -- --var BUILD_SHA:${{ github.sha }}
+        run: pnpm run build && npx wrangler deploy --var BUILD_SHA:${{ github.sha }}
 
       - name: Build the site
         run: pnpm run build
