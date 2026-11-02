@@ -392,6 +392,38 @@ const groups = {
     check('three steps are scheduled for the queued contact', emails.filter((m) => m.status === 'scheduled').length === 3);
     const firstEmail = emails.find((m) => m.step === 0);
     check('the first email carries the observation, not a placeholder', /menu still says summer/.test(firstEmail?.body ?? '') && !firstEmail.body.includes('{{'));
+    // A big import is one request: contacts are written in batches, then the
+    // desk can queue everyone in another. A missing observation is a choice,
+    // not a dead end.
+    const bigCsv = [
+      'email,name,business,site,gap',
+      ...Array.from({ length: 500 }, (_, i) => `bulk${i}@example.test,Bulk ${i},Bulk Co ${i},bulk${i}.example.test,`),
+    ].join('\n');
+    const bigImport = await call('/admin/marketing/contacts/import', {
+      method: 'POST',
+      auth: admin,
+      body: { csv: bigCsv, sequence: 'none', campaign: 'bulk' },
+    });
+    check(
+      '500 contacts import in one request',
+      bigImport.status === 200 && bigImport.data.added === 500 && bigImport.data.paused === 0,
+      JSON.stringify(bigImport.data).slice(0, 400),
+    );
+    const nobody = contacts.find((c) => c.email === 'nobody@example.test');
+    check(
+      'a cold sequence still refuses a contact without an observation',
+      (await call(`/admin/marketing/contacts/${nobody.id}/queue`, { method: 'POST', auth: admin, body: { sequence: 'cold_a' } })).data.error === 'gap_required',
+    );
+    const bulk = await call('/admin/marketing/contacts/queue', {
+      method: 'POST',
+      auth: admin,
+      body: { sequence: 'cold_a', campaign: 'bulk', genericGap: true },
+    });
+    check(
+      'one bulk action queues the imported contacts with a general opener',
+      bulk.status === 200 && bulk.data.queued >= 500 && bulk.data.emails >= 1500,
+      JSON.stringify(bulk.data),
+    );
 
     const bad = await call('/admin/marketing/settings', { method: 'PUT', auth: admin, body: { dailyCap: 0, live: 'yes' } });
     check('a bad setting is refused and the old value stands', bad.data.rejected.length === 2 && bad.data.settings.dailyCap === 20);

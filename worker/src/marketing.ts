@@ -426,16 +426,27 @@ async function logEvent(
     .run();
 }
 
-/** Queue a whole sequence for a contact. Caller decides whether the copy can be filled. */
-async function queueSequence(
+/** A true, if generic, opener for contacts whose specific observation is not written yet. */
+export const GENERIC_GAP = 'there are a couple of small things I would fix first';
+
+const chunk = <T>(list: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
+};
+
+/** The three message inserts for one contact. */
+function sequenceStatements(
   env: Env,
   contact: Contact,
   kind: SequenceKind,
   campaign: string,
   startAt: number,
-): Promise<number> {
+  genericGap = false,
+): D1PreparedStatement[] {
+  const fields = { ...contact, gap: contact.gap?.trim() || (genericGap ? GENERIC_GAP : null) };
   const t = now();
-  const statements = SEQUENCES[kind].map((step, index) =>
+  return SEQUENCES[kind].map((step, index) =>
     env.DB.prepare(
       `INSERT INTO marketing_messages
          (channel, kind, contact_id, campaign, step, to_email, subject, body, status, scheduled_at, created_at, updated_at)
@@ -446,21 +457,61 @@ async function queueSequence(
       campaign,
       index,
       contact.email,
-      fillTemplate(step.subject, contact),
-      fillTemplate(step.body, contact),
+      fillTemplate(step.subject, fields),
+      fillTemplate(step.body, fields),
       startAt + step.day * 86400,
       t,
       t,
     ),
   );
-  if (statements.length) await env.DB.batch(statements);
-  await env.DB.prepare(
-    `UPDATE marketing_contacts SET status = 'queued', updated_at = ?
-      WHERE id = ? AND status IN ('new', 'paused')`,
-  )
-    .bind(t, contact.id)
-    .run();
-  return statements.length;
+}
+
+/**
+ * Queue many contacts in a few D1 batches. One contact's three inserts and its
+ * status update stay together; twenty contacts per batch keeps the statement
+ * count well inside D1's limit and avoids a round trip per contact.
+ */
+async function queueContacts(
+  env: Env,
+  contacts: Contact[],
+  kind: SequenceKind,
+  campaign: string,
+  startAt: number,
+  genericGap = false,
+): Promise<{ contacts: number; messages: number }> {
+  let contactsQueued = 0;
+  let messages = 0;
+  let offset = 0;
+  for (const part of chunk(contacts, 20)) {
+    const statements: D1PreparedStatement[] = [];
+    for (const contact of part) {
+      statements.push(...sequenceStatements(env, contact, kind, campaign, startAt + offset * 120, genericGap));
+      statements.push(
+        env.DB.prepare(
+          `UPDATE marketing_contacts SET status = 'queued', updated_at = ?
+            WHERE id = ? AND status IN ('new', 'paused')`,
+        ).bind(now(), contact.id),
+      );
+      offset += 1;
+    }
+    if (statements.length) await env.DB.batch(statements);
+    contactsQueued += part.length;
+    messages += part.length * SEQUENCES[kind].length;
+  }
+  return { contacts: contactsQueued, messages };
+}
+
+/** Queue a whole sequence for one contact. */
+async function queueSequence(
+  env: Env,
+  contact: Contact,
+  kind: SequenceKind,
+  campaign: string,
+  startAt: number,
+  genericGap = false,
+): Promise<number> {
+  const out = await queueContacts(env, [contact], kind, campaign, startAt, genericGap);
+  return out.messages;
 }
 
 /* ——————————————————————— sending ——————————————————————— */
@@ -796,76 +847,123 @@ const sameText = (a: string, b: string): boolean => {
 export async function importContacts(
   env: Env,
   csv: string,
-  sequence: SequenceKind,
+  sequence: SequenceKind | null,
   campaign: string,
-): Promise<{ added: number; paused: number; skipped: { email: string; reason: string }[] }> {
+  options: { genericGap?: boolean } = {},
+): Promise<{ added: number; paused: number; queued: number; emails: number; skipped: { email: string; reason: string }[] }> {
   const parsed = parseContactsCsv(csv);
   const skipped = parsed.skipped;
-  let added = 0;
-  let paused = 0;
   const t = now();
 
+  type Seed = {
+    email: string;
+    name: string | null;
+    business: string | null;
+    site: string | null;
+    gap: string | null;
+    source_url: string | null;
+    notes: string | null;
+    consent: string;
+  };
+  const seeds: Seed[] = [];
   for (const row of parsed.rows) {
     const email = cleanEmail(row.email);
     if (!email) {
       skipped.push({ email: String(row.email ?? ''), reason: 'bad_email' });
       continue;
     }
-    const gap = text(row.gap, 300);
-    const contact = {
+    seeds.push({
       email,
       name: text(row.name, 80),
       business: text(row.business, 120),
       site: text(row.site, 200),
-      gap,
+      gap: text(row.gap, 300),
       source_url: text(row.sourceUrl, 500),
       notes: text(row.notes, 1000),
       consent: ['consent', 'existing_relationship', 'legitimate_interest'].includes(String(row.consentBasis))
         ? String(row.consentBasis)
         : 'legitimate_interest',
-    };
-
-    const inserted = await env.DB.prepare(
-      `INSERT INTO marketing_contacts
-         (email, name, business, site, source, source_url, gap, consent_basis, status, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'csv', ?, ?, ?, 'new', ?, ?, ?)
-       ON CONFLICT(email) DO NOTHING
-       RETURNING *`,
-    )
-      .bind(
-        contact.email,
-        contact.name,
-        contact.business,
-        contact.site,
-        contact.source_url,
-        contact.gap,
-        contact.consent,
-        contact.notes,
-        t,
-        t,
-      )
-      .first<Contact>();
-    if (!inserted) {
-      skipped.push({ email, reason: 'already_in_list' });
-      continue;
-    }
-    added += 1;
-
-    if (SEQUENCE_NEEDS_GAP[sequence] && !contact.gap) {
-      await env.DB.prepare('UPDATE marketing_contacts SET status = ?, updated_at = ? WHERE id = ?')
-        .bind('paused', t, inserted.id)
-        .run();
-      await logEvent(env, { contactId: inserted.id, kind: 'paused', detail: 'missing gap' });
-      paused += 1;
-      continue;
-    }
-
-    // Stagger the start so an import does not leave in one burst; the cron
-    // then sends a handful per run.
-    await queueSequence(env, inserted, sequence, campaign, t + added * 120);
+    });
   }
 
-  return { added, paused, skipped };
+  // Insert in batches, then read the batch's rows back. `meta.changes` says
+  // which addresses were new; the select gives us their ids without a query
+  // per contact.
+  const inserted: Contact[] = [];
+  for (const part of chunk(seeds, 50)) {
+    const results = await env.DB.batch(
+      part.map((seed) =>
+        env.DB.prepare(
+          `INSERT INTO marketing_contacts
+             (email, name, business, site, source, source_url, gap, consent_basis, status, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'csv', ?, ?, ?, 'new', ?, ?, ?)
+           ON CONFLICT(email) DO NOTHING`,
+        ).bind(
+          seed.email,
+          seed.name,
+          seed.business,
+          seed.site,
+          seed.source_url,
+          seed.gap,
+          seed.consent,
+          seed.notes,
+          t,
+          t,
+        ),
+      ),
+    );
+    const fresh: string[] = [];
+    results.forEach((result, index) => {
+      const changes = (result as { meta?: { changes?: number } }).meta?.changes ?? 0;
+      if (changes > 0) fresh.push(part[index].email);
+      else skipped.push({ email: part[index].email, reason: 'already_in_list' });
+    });
+    if (!fresh.length) continue;
+    const { results: rows } = await env.DB.prepare(
+      `SELECT * FROM marketing_contacts WHERE email IN (${fresh.map(() => '?').join(',')})`,
+    )
+      .bind(...fresh)
+      .all<Contact>();
+    const byEmail = new Map((rows ?? []).map((row) => [row.email, row]));
+    for (const email of fresh) {
+      const row = byEmail.get(email);
+      if (row) inserted.push(row);
+    }
+  }
+
+  if (!sequence) {
+    return { added: inserted.length, paused: 0, queued: 0, emails: 0, skipped };
+  }
+
+  const needsGap = SEQUENCE_NEEDS_GAP[sequence];
+  const hold: Contact[] = [];
+  const queueable: Contact[] = [];
+  for (const contact of inserted) {
+    if (needsGap && !contact.gap && !options.genericGap) hold.push(contact);
+    else queueable.push(contact);
+  }
+
+  for (const part of chunk(hold, 100)) {
+    await env.DB.batch([
+      ...part.map((contact) =>
+        env.DB.prepare(`UPDATE marketing_contacts SET status = 'paused', updated_at = ? WHERE id = ?`).bind(t, contact.id),
+      ),
+      ...part.map((contact) =>
+        env.DB.prepare(
+          `INSERT INTO marketing_events (message_id, contact_id, kind, detail, created_at) VALUES (NULL, ?, 'paused', ?, ?)`,
+        ).bind(contact.id, 'missing gap', t),
+      ),
+    ]);
+  }
+
+  const queued = await queueContacts(env, queueable, sequence, campaign, t, options.genericGap === true);
+  return {
+    added: inserted.length,
+    paused: hold.length,
+    queued: queued.contacts,
+    emails: queued.messages,
+    skipped,
+  };
 }
 
 /** Split CSV text into records; quoted commas and newlines survive. */
@@ -946,7 +1044,7 @@ export function parseContactsCsv(csv: string): { rows: ImportRow[]; skipped: { e
 
   const rows: ImportRow[] = [];
   for (const record of records.slice(1)) {
-    if (rows.length + skipped.length >= 1000) {
+    if (rows.length + skipped.length >= 5000) {
       skipped.push({ email: '', reason: 'too_many_rows' });
       break;
     }
@@ -1091,7 +1189,12 @@ marketing.post('/admin/marketing/contacts', async (c) => {
     .first<Contact>();
   if (!contact) return out(c, { error: 'already_in_list' }, 409);
 
-  if (sequence) await queueSequence(env, contact, sequence, text(body?.campaign, 40) ?? 'launch', t);
+  if (sequence) {
+    if (SEQUENCE_NEEDS_GAP[sequence] && !contact.gap && body?.genericGap !== true) {
+      return out(c, { error: 'gap_required' }, 400);
+    }
+    await queueSequence(env, contact, sequence, text(body?.campaign, 40) ?? 'launch', t, body?.genericGap === true);
+  }
   const fresh = (await getContact(env, contact.id)) ?? contact;
   return out(c, { contact: contactView(fresh) }, 201);
 });
@@ -1101,12 +1204,47 @@ marketing.post('/admin/marketing/contacts/import', async (c) => {
   const body = await jsonBody(c);
   const csv = typeof body?.csv === 'string' ? body.csv : '';
   if (!csv.trim()) return out(c, { error: 'empty' }, 400);
-  if (csv.length > 400_000) return out(c, { error: 'too_large' }, 413);
+  if (csv.length > 2_000_000) return out(c, { error: 'too_large' }, 413);
 
+  const sequence = body?.sequence === 'none' ? null : isSequenceKind(body?.sequence) ? body.sequence : 'cold_a';
+  const campaign = text(body?.campaign, 40) ?? 'launch';
+  const genericGap = body?.genericGap === true;
+  const result = await importContacts(env, csv, sequence, campaign, { genericGap });
+  return out(c, { ...result, sequence: sequence ?? 'none', genericGap });
+});
+
+/**
+ * Queue a sequence for every contact that can take it, in a few batches. This
+ * is the desk's bulk action: one request instead of one per contact.
+ */
+marketing.post('/admin/marketing/contacts/queue', async (c) => {
+  const env = c.env;
+  const body = await jsonBody(c);
   const sequence = isSequenceKind(body?.sequence) ? body.sequence : 'cold_a';
   const campaign = text(body?.campaign, 40) ?? 'launch';
-  const result = await importContacts(env, csv, sequence, campaign);
-  return out(c, { ...result, sequence });
+  const genericGap = body?.genericGap === true;
+  const ids = Array.isArray(body?.ids) ? body.ids.map(Number).filter((n) => Number.isInteger(n)) : null;
+  const { results } = await env.DB.prepare(
+    `SELECT c.* FROM marketing_contacts c
+      WHERE c.status IN ('new', 'paused')
+        AND NOT EXISTS (SELECT 1 FROM marketing_messages m WHERE m.contact_id = c.id AND m.status = 'scheduled')
+        ${ids?.length ? `AND c.id IN (${ids.map(() => '?').join(',')})` : ''}
+      ORDER BY c.id`,
+  )
+    .bind(...(ids ?? []))
+    .all<Contact>();
+  const contacts = results ?? [];
+  const queueable = contacts.filter((contact) => !SEQUENCE_NEEDS_GAP[sequence] || contact.gap || genericGap);
+  const queued = await queueContacts(env, queueable, sequence, campaign, now(), genericGap);
+  return out(c, {
+    ok: true,
+    queued: queued.contacts,
+    emails: queued.messages,
+    skippedNoGap: contacts.length - queueable.length,
+    total: contacts.length,
+    sequence,
+    genericGap,
+  });
 });
 
 marketing.patch('/admin/marketing/contacts/:id', async (c) => {
@@ -1161,7 +1299,8 @@ marketing.post('/admin/marketing/contacts/:id/queue', async (c) => {
   if (['opted_out', 'bounced', 'replied'].includes(contact.status)) return out(c, { error: 'contact_closed' }, 409);
 
   const sequence = isSequenceKind(body?.sequence) ? body.sequence : 'cold_a';
-  if (SEQUENCE_NEEDS_GAP[sequence] && !contact.gap) return out(c, { error: 'gap_required' }, 400);
+  const genericGap = body?.genericGap === true;
+  if (SEQUENCE_NEEDS_GAP[sequence] && !contact.gap && !genericGap) return out(c, { error: 'gap_required' }, 400);
 
   const existing = await env.DB.prepare(
     `SELECT COUNT(*) AS n FROM marketing_messages WHERE contact_id = ? AND status = 'scheduled'`,
@@ -1170,7 +1309,7 @@ marketing.post('/admin/marketing/contacts/:id/queue', async (c) => {
     .first<{ n: number }>();
   if (existing?.n) return out(c, { error: 'already_queued' }, 409);
 
-  const queued = await queueSequence(env, contact, sequence, text(body?.campaign, 40) ?? 'launch', now());
+  const queued = await queueSequence(env, contact, sequence, text(body?.campaign, 40) ?? 'launch', now(), genericGap);
   return out(c, { ok: true, queued });
 });
 

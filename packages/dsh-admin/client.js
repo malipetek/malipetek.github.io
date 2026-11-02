@@ -787,6 +787,13 @@ var __awPlugin = (() => {
     jpeg: "image/jpeg",
     gif: "image/gif",
     webp: "image/webp",
+    // Voice notes from the preview feedback widget. Media containers only: a
+    // browser plays them, nothing executes them.
+    webm: "audio/webm",
+    mp3: "audio/mpeg",
+    m4a: "audio/mp4",
+    ogg: "audio/ogg",
+    wav: "audio/wav",
     pdf: "application/pdf",
     txt: "text/plain",
     log: "text/plain",
@@ -807,7 +814,7 @@ var __awPlugin = (() => {
     if (files.length > FILE_LIMITS.perMessage) return `At most ${FILE_LIMITS.perMessage} files at a time.`;
     for (const f of files) {
       const ext = f.name.includes(".") ? f.name.split(".").pop().toLowerCase() : "";
-      if (!FILE_TYPES[ext]) return `${f.name}: that type is not accepted. Images, PDF, text, CSV, JSON, zip, Word and Excel are.`;
+      if (!FILE_TYPES[ext]) return `${f.name}: that type is not accepted. Images, voice notes, PDF, text, CSV, JSON, zip, Word and Excel are.`;
       if (f.size > FILE_LIMITS.bytes) return `${f.name} is over 10 MB.`;
     }
     return null;
@@ -2145,6 +2152,7 @@ var __awPlugin = (() => {
             Object.keys(CONTACT_TONE).map((s) => /* @__PURE__ */ jsx("option", { value: s, children: s }, s))
           ] }),
           /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "import" }), children: "Import CSV" }),
+          /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "bulkqueue" }), children: "Queue everyone" }),
           /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => setModal({ kind: "contact" }), children: "Add contact" })
         ] }) : null,
         tab === "queue" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
@@ -2259,17 +2267,8 @@ var __awPlugin = (() => {
         ] })
       ] }) : null,
       tab === "settings" ? /* @__PURE__ */ jsx(SettingsTab, { overview, run, api, contactsById }) : null,
-      modal?.kind === "import" ? /* @__PURE__ */ jsx(
-        ImportModal,
-        {
-          sequences: overview.sequences,
-          onClose: () => setModal(null),
-          onDone: (result) => done(
-            `${result.added} added${result.paused ? `, ${result.paused} held for a missing observation` : ""}${result.skipped.length ? `, ${result.skipped.length} skipped` : ""}.`
-          ),
-          api
-        }
-      ) : null,
+      modal?.kind === "import" ? /* @__PURE__ */ jsx(ImportModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
+      modal?.kind === "bulkqueue" ? /* @__PURE__ */ jsx(BulkQueueModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
       modal?.kind === "contact" ? /* @__PURE__ */ jsx(ContactModal, { contact: modal.contact, sequences: overview.sequences, api, onClose: () => setModal(null), onSaved: done }) : null,
       modal?.kind === "queue" ? /* @__PURE__ */ jsx(
         QueueModal,
@@ -2388,15 +2387,27 @@ var __awPlugin = (() => {
   }
   function ImportModal({ api, sequences, onClose, onDone }) {
     const [csv, setCsv] = useState("");
-    const [sequence, setSequence] = useState("cold_a");
+    const [file, setFile] = useState(null);
+    const [sequence, setSequence] = useState("none");
     const [campaign, setCampaign] = useState("launch");
+    const [genericGap, setGenericGap] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
+    const chosen = sequences.find((s) => s.key === sequence);
+    const needsGap = Boolean(chosen?.needsGap);
+    const pick = async (event) => {
+      const picked = event.target.files?.[0] ?? null;
+      setFile(picked);
+      setCsv(picked ? await picked.text() : "");
+    };
     const submit = async () => {
       setBusy(true);
       setError(null);
       try {
-        onDone(await api("POST", "/admin/marketing/contacts/import", { csv, sequence, campaign }));
+        const result = await api("POST", "/admin/marketing/contacts/import", { csv, sequence, campaign, genericGap });
+        onDone(
+          `${result.added} added${result.queued ? `, ${result.queued} queued (${result.emails} emails)` : ""}${result.paused ? `, ${result.paused} held for a missing observation` : ""}${result.skipped.length ? `, ${result.skipped.length} skipped` : ""}.`
+        );
       } catch (err) {
         setError(err.message ?? err.code);
       } finally {
@@ -2407,17 +2418,30 @@ var __awPlugin = (() => {
       Modal,
       {
         title: "Import contacts",
-        subtitle: "One row per address. Columns: email, name, business, site, gap, source_url, notes. The gap is the one specific, true observation the first email opens with.",
+        subtitle: "Upload a CSV. Columns: email, name, business, site, gap, source_url, notes. The gap is the one specific, true observation the first email opens with.",
         onClose,
         wide: true,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !csv.trim(), onClick: submit, children: "Import" })
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !csv.trim(), onClick: submit, children: busy ? "Importing\u2026" : "Import" })
         ] }),
         children: [
-          /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx(Segmented, { value: sequence, options: sequences.map((s) => ({ value: s.key, label: s.label })), onChange: setSequence }) }),
+          /* @__PURE__ */ jsx(Field, { label: "CSV file", hint: "A file with a header row. It is read in the browser and sent as text, so a large export does not have to be pasted.", children: /* @__PURE__ */ jsx("input", { type: "file", accept: ".csv,text/csv", onChange: pick }) }),
+          file ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+            file.name,
+            " \xB7 ",
+            Math.round(file.size / 1024),
+            " KB"
+          ] }) : null,
+          /* @__PURE__ */ jsx(Field, { label: "Sequence", hint: "Choose \u201CImport only\u201D to review the list first; the bulk Queue action can queue everyone later.", children: /* @__PURE__ */ jsxs("select", { value: sequence, onChange: (e) => setSequence(e.target.value), children: [
+            /* @__PURE__ */ jsx("option", { value: "none", children: "Import only \u2014 do not queue yet" }),
+            sequences.map((s) => /* @__PURE__ */ jsx("option", { value: s.key, children: s.label }, s.key))
+          ] }) }),
           /* @__PURE__ */ jsx(Field, { label: "Campaign", hint: "Kept on every message so a later read can tell batches apart.", children: /* @__PURE__ */ jsx("input", { value: campaign, maxLength: 40, onChange: (e) => setCampaign(e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "CSV", children: /* @__PURE__ */ jsx("textarea", { rows: 10, className: "aw-mono", value: csv, placeholder: "email,name,business,site,gap\nsara@bakery.test,Sara,Bakery Nine,bakerynine.test,the menu still says summer", onChange: (e) => setCsv(e.target.value) }) }),
+          needsGap ? /* @__PURE__ */ jsx(Field, { label: "Contacts without an observation", hint: "A cold email without one is usually spam. Leave this off to hold them; turn it on to use a general, true opener instead.", children: /* @__PURE__ */ jsxs("label", { className: "aw-inline", children: [
+            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: genericGap, onChange: (e) => setGenericGap(e.target.checked) }),
+            "Use a general opener when the gap is empty"
+          ] }) }) : null,
           error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
         ]
       }
@@ -2496,12 +2520,14 @@ var __awPlugin = (() => {
   }
   function QueueModal({ api, contact, sequences, onClose, onQueued }) {
     const [sequence, setSequence] = useState("cold_a");
+    const [genericGap, setGenericGap] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
+    const chosen = sequences.find((s) => s.key === sequence);
     const submit = async () => {
       setBusy(true);
       try {
-        const out = await api("POST", `/admin/marketing/contacts/${contact.id}/queue`, { sequence });
+        const out = await api("POST", `/admin/marketing/contacts/${contact.id}/queue`, { sequence, genericGap });
         onQueued(out.queued);
       } catch (err) {
         setError(err.message ?? err.code);
@@ -2520,23 +2546,30 @@ var __awPlugin = (() => {
         ] }),
         children: [
           /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx(Segmented, { value: sequence, options: sequences.map((s) => ({ value: s.key, label: s.label })), onChange: setSequence }) }),
+          chosen?.needsGap && !contact.gap ? /* @__PURE__ */ jsx(Field, { label: "No observation on this contact", hint: "A cold email without one is usually spam.", children: /* @__PURE__ */ jsxs("label", { className: "aw-inline", children: [
+            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: genericGap, onChange: (e) => setGenericGap(e.target.checked) }),
+            "Queue with a general opener"
+          ] }) }) : null,
           error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
         ]
       }
     );
   }
-  function EditPostModal({ api, message, onClose, onSaved }) {
-    const [body, setBody] = useState(message.body);
+  function BulkQueueModal({ api, sequences, onClose, onDone }) {
+    const [sequence, setSequence] = useState("cold_a");
+    const [campaign, setCampaign] = useState("launch");
+    const [genericGap, setGenericGap] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
-    const limit = message.channel === "x" ? 280 : 3e3;
-    const length = body.trim().length;
+    const chosen = sequences.find((s) => s.key === sequence);
     const submit = async () => {
       setBusy(true);
       setError(null);
       try {
-        await api("PATCH", `/admin/marketing/messages/${message.id}`, { body });
-        onSaved("Post updated.");
+        const result = await api("POST", "/admin/marketing/contacts/queue", { sequence, campaign, genericGap });
+        onDone(
+          `${result.queued} contacts queued (${result.emails} emails)${result.skippedNoGap ? `, ${result.skippedNoGap} skipped without an observation` : ""}.`
+        );
       } catch (err) {
         setError(err.message ?? err.code);
         setBusy(false);
@@ -2545,17 +2578,20 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsxs(
       Modal,
       {
-        title: `Edit ${message.channel === "x" ? "X" : "LinkedIn"} post`,
-        subtitle: message.status === "scheduled" ? "Scheduled. The publisher posts the text as written." : "Not queued yet.",
+        title: "Queue everyone",
+        subtitle: "Every new or paused contact without mail already queued. Contacts with an observation are queued; the rest are skipped unless you choose the general opener.",
         onClose,
-        wide: true,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !body.trim() || length > limit, onClick: submit, children: "Save" })
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy, onClick: submit, children: busy ? "Queueing\u2026" : "Queue everyone" })
         ] }),
         children: [
-          /* @__PURE__ */ jsx(Field, { label: "Text", hint: `${length} of ${limit} characters.`, children: /* @__PURE__ */ jsx("textarea", { rows: 10, value: body, maxLength: 2e4, onChange: (e) => setBody(e.target.value) }) }),
-          length > limit ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: message.channel === "x" ? "X allows 280 characters." : "LinkedIn allows 3,000 characters." }) : null,
+          /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx("select", { value: sequence, onChange: (e) => setSequence(e.target.value), children: sequences.map((s) => /* @__PURE__ */ jsx("option", { value: s.key, children: s.label }, s.key)) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Campaign", children: /* @__PURE__ */ jsx("input", { value: campaign, maxLength: 40, onChange: (e) => setCampaign(e.target.value) }) }),
+          chosen?.needsGap ? /* @__PURE__ */ jsx(Field, { label: "Contacts without an observation", hint: "Leave this off to skip them; turn it on to use a general, true opener.", children: /* @__PURE__ */ jsxs("label", { className: "aw-inline", children: [
+            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: genericGap, onChange: (e) => setGenericGap(e.target.checked) }),
+            "Queue them anyway with a general opener"
+          ] }) }) : null,
           error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
         ]
       }
