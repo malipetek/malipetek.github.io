@@ -133,49 +133,16 @@ I tell you why. Big rebuilds go by the clock, with me on them, not on autopilot.
 
 ## Email
 
-**Cold, to someone who built it with AI**
+The emails that are sent live in `worker/src/marketing.ts` (`SEQUENCES`), and
+`launch/outreach.md` is generated from them. Read them there; do not keep a
+second copy here, because copies drift.
 
-> Subject: The last mile of your app, by the minute
->
-> Hi {name},
->
-> You got {project} most of the way with AI. The last mile — the bug it keeps
-> bringing back, the deploy, the payments — is where it usually stalls.
->
-> Send me that part. I approve the job, an AI agent does the typing on a copy
-> of your project, and I check it before you see it. You pay for my minutes,
-> billed by the second: a one-minute fix is $1.67 of my time. No quote, no
-> minimum.
->
-> Ali — malipetek.dev
+Two rules for any email in our name:
 
-**Cold, to a business owner**
-
-> Subject: The agent types. I sign off.
->
-> Hi {name},
->
-> I do what I call vibe contracting. You send a
-> request — a fix on {site}, a new form, an integration — I approve it, the
-> agent builds it on a copy of your project, and I check it before you see it.
->
-> You pay for the minutes I actually spend, billed by the second, plus the AI at
-> cost. A one-minute fix is $1.67 of my time. No quote, no call, no minimum.
->
-> If something on your list has been too small to hire for, reply with it and
-> I will tell you whether it fits.
->
-> Ali — malipetek.dev
-
-**Follow-up, a week later**
-
-> Subject: Re: The agent types. I sign off.
->
-> One question, {name}: what is the smallest thing on {site} you have been
-> meaning to fix? Small is where this is cheapest — you pay for my minutes,
-> not the hours it would have taken.
->
-> Ali
+- Never write "I looked at your site" without having looked. A contact without
+  a written observation gets the plain version of each email, which makes no
+  claim about their site.
+- Run the draft through `marketing/style/README.md` before it ships.
 
 ## Bios
 
