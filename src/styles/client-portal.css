@@ -652,17 +652,7 @@
 /* Instead of a frame, the scene sits in a soft, out-of-focus pool of light
    that spills past its own edges into the page. */
 .cp-board__stage::before {
-  content: '';
-  position: absolute;
-  inset: -16% -3%;
-  z-index: 0;
-  background:
-    radial-gradient(48% 55% at 50% 46%, color-mix(in srgb, var(--bone) 90%, transparent), transparent 72%),
-    radial-gradient(32% 45% at 28% 58%, color-mix(in srgb, var(--orange) 9%, transparent), transparent 72%),
-    radial-gradient(30% 42% at 74% 42%, color-mix(in srgb, var(--ink) 7%, transparent), transparent 72%);
-  filter: blur(42px);
-  opacity: 0.9;
-  pointer-events: none;
+  display: none;
 }
 .cp-board.is-flat .cp-board__stage {
   display: none;
@@ -671,9 +661,11 @@
   position: absolute;
   inset: 0;
   z-index: 1;
-  inset: 0;
+  top: 0;
+  left: 0;
+  bottom: auto;
   width: 100%;
-  height: 100%;
+  height: calc(100% + 220px);
   display: block;
   cursor: grab;
   touch-action: none;
@@ -941,7 +933,9 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   margin-top: 4px;
-  background: none;
+  background: color-mix(in srgb, var(--paper) 48%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 .cp-board__legend button {
   display: grid;
@@ -2559,7 +2553,9 @@ fieldset.cp-field {
   flex-wrap: wrap;
   padding: 4px 2px 2px;
   border: 0;
-  background: none;
+  background: color-mix(in srgb, var(--paper) 48%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 .cp-board__lane {
   display: inline-flex;

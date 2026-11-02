@@ -1805,6 +1805,9 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   document.fonts?.ready.then(() => repaint.forEach((draw) => draw()));
 
   const home = new THREE.Vector3(...machine.look).add(new THREE.Vector3(1.0, 0.85, 0.6));
+  // The board canvas bleeds below the stage. Look a little lower so the machine
+  // stays in the top of the canvas and the extra space is floor, not a cut belt.
+  home.y -= 1.5;
   const look = home.clone();
   // More from the front than the homepage's isometric view: the belts run
   // across a wide board instead of climbing it, and the stations spread out.
