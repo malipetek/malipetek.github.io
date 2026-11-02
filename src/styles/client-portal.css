@@ -671,6 +671,7 @@
   position: absolute;
   inset: 0;
   z-index: 1;
+  inset: 0;
   width: 100%;
   height: 100%;
   display: block;
@@ -985,9 +986,13 @@
   color: var(--ink);
 }
 @media (min-width: 1024px) {
-  /* Let the scene use the page's own gutter; controls stay on the text column. */
+  /* The scene is the hero: it may be wider than the text column, while its
+     controls and the request list below stay on the column. */
   .cp-board {
-    margin-inline: -40px;
+    width: min(1920px, calc(100vw - 250px));
+    left: 50%;
+    transform: translateX(-50%);
+    margin-inline: 0;
   }
 }
 @media (max-width: 760px) {
@@ -2612,11 +2617,13 @@ fieldset.cp-field {
   color: var(--ink-soft);
   font-size: 11px;
 }
-/* The board is full-bleed, but its controls stay on the text column. */
+/* The scene is wider than the text column; its controls stay on the column. */
 @media (min-width: 1024px) {
   .cp-board__lanes,
   .cp-board__legend {
-    padding-inline: 40px;
+    max-width: 1200px;
+    margin-inline: auto;
+    padding-inline: 0;
   }
 }
 @media (max-width: 760px) {
