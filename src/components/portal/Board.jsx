@@ -230,6 +230,7 @@ export function Board({
                   ref={setNodeRef(n.key)}
                   className={cx('cp-board__node', 'cp-board__node--project', project === (n.lane.id === -1 ? 'none' : n.lane.id) && 'is-on')}
                   style={{ borderLeftColor: n.lane.tint }}
+                  aria-pressed={project === (n.lane.id === -1 ? 'none' : n.lane.id)}
                   onClick={() => pickProject(n.lane.id)}
                   title={t('board.showOnly', { name: n.lane.name })}
                 >

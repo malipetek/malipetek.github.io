@@ -1630,7 +1630,7 @@ export interface Board {
   focus: (id: number | null) => void;
   /** Move in on one station (a step picked in the legend), or back to the whole machine. */
   zoom: (stage: BoardStage | null) => void;
-  /** Lean the camera toward one project's belt (its id), or back out with null. */
+  /** Mark one project's pylon as focused, or clear it. */
   lane: (projectId: number | null) => void;
   /** Hover a ticket from outside the scene, e.g. its row in a list. */
   hover: (id: number | null) => void;
