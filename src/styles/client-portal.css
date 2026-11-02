@@ -669,9 +669,17 @@
   display: block;
   cursor: grab;
   touch-action: none;
-  /* Fade the render into the page instead of ending it at a border. */
-  -webkit-mask-image: radial-gradient(122% 108% at 50% 45%, #000 56%, rgba(0, 0, 0, 0.82) 74%, transparent 100%);
-  mask-image: radial-gradient(122% 108% at 50% 45%, #000 56%, rgba(0, 0, 0, 0.82) 74%, transparent 100%);
+  /* Fade the render into the page instead of ending it at a border. The sides
+     fade first: the scene bleeds past the text column but never ends on a hard
+     vertical cut at the sidebar. */
+  -webkit-mask-image:
+    linear-gradient(to right, transparent 0%, #000 7%, #000 93%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, #000 6%, #000 72%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent 0%, #000 7%, #000 93%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, #000 6%, #000 72%, transparent 100%);
+  mask-composite: intersect;
 }
 .cp-board__canvas:active {
   cursor: grabbing;
@@ -2619,7 +2627,8 @@ fieldset.cp-field {
   .cp-board__legend {
     max-width: 1200px;
     margin-inline: auto;
-    padding-inline: 0;
+    padding-inline: 40px;
+    box-sizing: border-box;
   }
 }
 @media (max-width: 760px) {
