@@ -32,6 +32,77 @@
   var MAX_RECORDING_MS = 3 * 60 * 1000;
   var MAX_CAPTURE_HEIGHT = 6000;
 
+  /*
+   * English is the shape and the fallback: the portal's catalog fills these in
+   * the client's own language (GET /portal/preview-feedback/config). Anything
+   * the catalog has not translated yet stays English rather than showing a key.
+   */
+  var DEFAULT_STRINGS = {
+    launcher: 'Feedback',
+    launcherLabel: 'Send feedback on this preview',
+    title: 'Send feedback',
+    subtitle: 'Goes to Ali as a request',
+    close: 'Close',
+    placeholder: 'What should change? Describe it, or record a voice note.',
+    voice: 'Voice note',
+    screenshot: 'Screenshot',
+    send: 'Send request',
+    recording: 'Recording. Say what should change.',
+    stop: 'Stop',
+    micBlocked: 'Microphone access was blocked. Allow it in the browser, or write the note instead.',
+    noRecorder: 'This browser cannot record audio.',
+    nothingRecorded: 'Nothing was recorded.',
+    voiceReady: 'Voice note ready.',
+    capturing: 'Taking the screenshot\u2026',
+    captureFailed: 'Could not capture the page. Try again, or describe it in the note.',
+    screenshotAttached: 'Screenshot attached.',
+    saveFailed: 'Could not save the marked-up screenshot.',
+    loadFailed: 'Could not load the screenshot.',
+    sending: 'Sending\u2026',
+    empty: 'Add a note, a voice note or a screenshot first.',
+    offline: 'Could not reach the portal. Check the connection and try again.',
+    failed: 'Could not send that. Try again in a moment.',
+    signedOut: 'This preview is not linked to your portal. Open it again from your portal.',
+    unknownSite: 'This preview is no longer available.',
+    rateLimited: 'Too many notes from here just now. Try again in a little while.',
+    tooLarge: 'An attachment is over the 10 MB limit. Try a smaller screenshot or a shorter note.',
+    noFiles: 'Attachments are unavailable right now. Send the note as text.',
+    openFromPortal: 'Open this preview from your portal so the request goes on the right project.',
+    openPortal: 'Open your portal',
+    done: 'Request #{id} sent',
+    replyInPortal: 'Ali will reply in your portal.',
+    transcribed: 'Voice note transcribed.',
+    openRequest: 'Open request',
+    sendAnother: 'Send another',
+    markup: 'Mark up the screenshot',
+    tools: 'Drawing tools',
+    pen: 'Pen',
+    arrow: 'Arrow',
+    box: 'Box',
+    text: 'Text',
+    hide: 'Hide',
+    undo: 'Undo',
+    clear: 'Clear',
+    cancel: 'Cancel',
+    attach: 'Attach screenshot',
+    drawHint: 'Draw on the screenshot to show what should change.',
+    typeHere: 'Type\u2026',
+    removeAttachment: 'Remove {name}',
+    colour: 'Colour {value}',
+  };
+
+  var strings = {};
+
+  /** A string in the client's language, with `{name}` variables filled. */
+  function t(key, vars) {
+    var value = strings[key] || DEFAULT_STRINGS[key] || key;
+    return vars
+      ? value.replace(/\{(\w+)\}/g, function (match, name) {
+          return vars[name] === undefined ? match : vars[name];
+        })
+      : value;
+  }
+
   /* —————————————————————— the token —————————————————————— */
 
   var token = '';
@@ -171,24 +242,28 @@
   var root = el('div', { class: 'mf-root' });
   shadow.appendChild(root);
 
-  var launcher = el('button', { class: 'mf-launcher', type: 'button', 'aria-label': 'Send feedback on this preview' }, ICON.bubble + '<span>Feedback</span>');
+  var launcher = el(
+    'button',
+    { class: 'mf-launcher', type: 'button', 'aria-label': 'Send feedback on this preview', 'data-mf-aria': 'launcherLabel' },
+    ICON.bubble + '<span data-mf="launcher">Feedback</span>',
+  );
   root.appendChild(launcher);
 
   var panel = el(
     'div',
-    { class: 'mf-panel', role: 'dialog', 'aria-label': 'Send feedback on this preview', hidden: '' },
-    '<div class="mf-head"><div><div class="mf-title">Send feedback</div><span class="mf-sub">Goes to Ali as a request</span></div><button class="mf-x" type="button" aria-label="Close">×</button></div>' +
+    { class: 'mf-panel', role: 'dialog', 'aria-label': 'Send feedback on this preview', 'data-mf-aria': 'launcherLabel', hidden: '' },
+    '<div class="mf-head"><div><div class="mf-title" data-mf="title">Send feedback</div><span class="mf-sub" data-mf="subtitle">Goes to Ali as a request</span></div><button class="mf-x" type="button" aria-label="Close" data-mf-aria="close">\u00d7</button></div>' +
       '<div class="mf-body">' +
-      '<textarea class="mf-text" maxlength="' + MAX_TEXT + '" placeholder="What should change? Describe it, or record a voice note."></textarea>' +
+      '<textarea class="mf-text" maxlength="' + MAX_TEXT + '" placeholder="What should change? Describe it, or record a voice note." data-mf-placeholder="placeholder"></textarea>' +
       '<div class="mf-tools">' +
-      '<button class="mf-tool" type="button" data-act="voice">' + ICON.mic + '<span>Voice note</span></button>' +
-      '<button class="mf-tool" type="button" data-act="shot">' + ICON.camera + '<span>Screenshot</span></button>' +
+      '<button class="mf-tool" type="button" data-act="voice">' + ICON.mic + '<span data-mf="voice">Voice note</span></button>' +
+      '<button class="mf-tool" type="button" data-act="shot">' + ICON.camera + '<span data-mf="screenshot">Screenshot</span></button>' +
       '</div>' +
       '<ul class="mf-files" hidden></ul>' +
       '<div class="mf-status" role="status" aria-live="polite"></div>' +
-      '<button class="mf-send" type="button">Send request</button>' +
+      '<button class="mf-send" type="button" data-mf="send">Send request</button>' +
       '</div>' +
-      '<div class="mf-auth" hidden><p>Open this preview from your portal so the request goes on the right project.</p><a target="_blank" rel="noopener">Open your portal</a></div>' +
+      '<div class="mf-auth" hidden><p data-mf="openFromPortal">Open this preview from your portal so the request goes on the right project.</p><a target="_blank" rel="noopener" data-mf="openPortal">Open your portal</a></div>' +
       '<div class="mf-done" hidden></div>',
   );
   root.appendChild(panel);
@@ -219,6 +294,46 @@
     body.hidden = true;
     auth.hidden = false;
   }
+
+  /** Re-apply the static copy after the client's catalog arrives. */
+  function applyStrings() {
+    root.querySelectorAll('[data-mf]').forEach(function (node) {
+      node.textContent = t(node.getAttribute('data-mf'));
+    });
+    root.querySelectorAll('[data-mf-placeholder]').forEach(function (node) {
+      node.setAttribute('placeholder', t(node.getAttribute('data-mf-placeholder')));
+    });
+    root.querySelectorAll('[data-mf-aria]').forEach(function (node) {
+      node.setAttribute('aria-label', t(node.getAttribute('data-mf-aria')));
+    });
+  }
+
+  /**
+   * The site token says which client the preview belongs to, so the portal can
+   * answer in that client's language. Any string missing from the catalog
+   * stays English; a failed request leaves the whole widget in English.
+   */
+  function loadStrings() {
+    if (!token) return;
+    fetch(API + '/portal/preview-feedback/config?token=' + encodeURIComponent(token), {
+      mode: 'cors',
+      credentials: 'omit',
+    })
+      .then(function (response) {
+        return response.ok ? response.json() : null;
+      })
+      .then(function (data) {
+        if (!data || !data.strings) return;
+        Object.keys(data.strings).forEach(function (key) {
+          if (typeof data.strings[key] === 'string') strings[key] = data.strings[key];
+        });
+        if (data.locale) root.setAttribute('lang', data.locale);
+        applyStrings();
+      })
+      .catch(function () {});
+  }
+
+  loadStrings();
 
   function setStatus(message, tone) {
     status.textContent = message || '';
@@ -263,7 +378,7 @@
         row.appendChild(el('audio', { controls: '', src: attachment.url, preload: 'metadata' }));
       }
       row.appendChild(el('span', { class: 'mf-name', title: attachment.name }, attachment.name));
-      var remove = el('button', { class: 'mf-remove', type: 'button', 'aria-label': 'Remove ' + attachment.name }, '×');
+      var remove = el('button', { class: 'mf-remove', type: 'button', 'aria-label': t('removeAttachment', { name: attachment.name }) }, '\u00d7');
       remove.addEventListener('click', function () {
         URL.revokeObjectURL(attachment.url);
         attachments.splice(index, 1);
@@ -313,14 +428,14 @@
 
   async function startRecording() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setStatus('This browser cannot record audio.', 'error');
+      setStatus(t('noRecorder'), 'error');
       return;
     }
     var stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
-      setStatus('Microphone access was blocked. Allow it in the browser, or write the note instead.', 'error');
+      setStatus(t('micBlocked'), 'error');
       return;
     }
     var mime = pickMime();
@@ -331,7 +446,7 @@
       stream.getTracks().forEach(function (track) {
         track.stop();
       });
-      setStatus('This browser cannot record audio.', 'error');
+      setStatus(t('noRecorder'), 'error');
       return;
     }
 
@@ -340,13 +455,13 @@
     var row = el(
       'div',
       { class: 'mf-rec' },
-      '<span class="mf-dot"></span><span class="mf-time">0:00</span><button class="mf-sendstop" type="button">Stop</button>',
+      '<span class="mf-dot"></span><span class="mf-time">0:00</span><button class="mf-sendstop" type="button">' + t('stop') + '</button>',
     );
     var time = row.querySelector('.mf-time');
     voiceButton.parentNode.insertAdjacentElement('afterend', row);
     voiceButton.disabled = true;
     shotButton.disabled = true;
-    setStatus('Recording. Say what should change.');
+    setStatus(t('recording'));
 
     var tick = setInterval(function () {
       time.textContent = formatTime(Date.now() - started);
@@ -386,14 +501,14 @@
       clearTimeout(limit);
       cleanup();
       if (!chunks.length) {
-        setStatus('Nothing was recorded.', 'error');
+        setStatus(t('nothingRecorded'), 'error');
         return;
       }
       var type = mime || recorder.mimeType || 'audio/webm';
       var blob = new Blob(chunks, { type: type });
       var name = 'voice-note.' + extensionFor(type);
       addAttachment({ kind: 'audio', blob: blob, name: name, url: URL.createObjectURL(blob), type: type });
-      setStatus('Voice note ready.');
+      setStatus(t('voiceReady'));
       if (attachments.length + text.value.trim().length > 0) sendButton.disabled = false;
     };
 
@@ -427,7 +542,7 @@
 
   async function takeScreenshot() {
     if (busy) return;
-    setBusy(true, 'Taking the screenshot…');
+    setBusy(true, t('capturing'));
     launcher.hidden = true;
     var dataUrl;
     try {
@@ -454,7 +569,7 @@
       });
     } catch (e) {
       setBusy(false);
-      setStatus('Could not capture the page. Try again, or describe it in the note.', 'error');
+      setStatus(t('captureFailed'), 'error');
       return;
     }
     setBusy(false, '');
@@ -488,15 +603,15 @@
     launcher.hidden = true;
 
     var tools = [
-      ['pen', 'Pen', ICON.pen],
-      ['arrow', 'Arrow', ICON.arrow],
-      ['box', 'Box', ICON.box],
-      ['text', 'Text', ICON.text],
-      ['hide', 'Hide', ICON.hide],
+      ['pen', t('pen'), ICON.pen],
+      ['arrow', t('arrow'), ICON.arrow],
+      ['box', t('box'), ICON.box],
+      ['text', t('text'), ICON.text],
+      ['hide', t('hide'), ICON.hide],
     ];
 
-    var header = el('div', { class: 'mf-ann-head' }, '<strong>Mark up the screenshot</strong>');
-    var toolset = el('div', { class: 'mf-toolset', role: 'group', 'aria-label': 'Drawing tools' });
+    var header = el('div', { class: 'mf-ann-head' }, '<strong>' + t('markup') + '</strong>');
+    var toolset = el('div', { class: 'mf-toolset', role: 'group', 'aria-label': t('tools') });
     var toolButtons = {};
     tools.forEach(function (tool) {
       var button = el('button', { class: 'mf-ann-tool', type: 'button', title: tool[1], 'aria-label': tool[1], 'aria-pressed': tool[0] === 'pen' ? 'true' : 'false' }, tool[2]);
@@ -518,7 +633,7 @@
         class: 'mf-color',
         type: 'button',
         title: color,
-        'aria-label': 'Colour ' + color,
+        'aria-label': t('colour', { value: color }),
         'aria-pressed': index === 0 ? 'true' : 'false',
       });
       button.style.background = color;
@@ -532,9 +647,9 @@
       colors.appendChild(button);
     });
 
-    var undo = el('button', { class: 'mf-linkbtn', type: 'button' }, 'Undo');
-    var clear = el('button', { class: 'mf-linkbtn', type: 'button' }, 'Clear');
-    var close = el('button', { class: 'mf-x', type: 'button', 'aria-label': 'Cancel' }, '×');
+    var undo = el('button', { class: 'mf-linkbtn', type: 'button' }, t('undo'));
+    var clear = el('button', { class: 'mf-linkbtn', type: 'button' }, t('clear'));
+    var close = el('button', { class: 'mf-x', type: 'button', 'aria-label': t('cancel') }, '\u00d7');
 
     header.appendChild(toolset);
     header.appendChild(colors);
@@ -554,9 +669,9 @@
     var foot = el(
       'div',
       { class: 'mf-ann-foot' },
-      '<span class="mf-hint">Draw on the screenshot to show what should change.</span>' +
-        '<button class="mf-btn mf-cancel" type="button">Cancel</button>' +
-        '<button class="mf-btn mf-btn--primary mf-attach" type="button">Attach screenshot</button>',
+      '<span class="mf-hint">' + t('drawHint') + '</span>' +
+        '<button class="mf-btn mf-cancel" type="button">' + t('cancel') + '</button>' +
+        '<button class="mf-btn mf-btn--primary mf-attach" type="button">' + t('attach') + '</button>',
     );
 
     var shell = el('div', { class: 'mf-ann' });
@@ -671,7 +786,7 @@
         var rect = live.getBoundingClientRect();
         var cssX = event.clientX - rect.left;
         var cssY = event.clientY - rect.top;
-        var input = el('input', { class: 'mf-textinput', type: 'text', placeholder: 'Type…', maxlength: '80' });
+        var input = el('input', { class: 'mf-textinput', type: 'text', placeholder: t('typeHere'), maxlength: '80' });
         input.style.left = cssX + 'px';
         input.style.top = cssY + 'px';
         stage.appendChild(input);
@@ -734,7 +849,7 @@
       foot.querySelector('.mf-attach').addEventListener('click', function () {
         exportScreenshot(base, source, 1800, function (blob) {
           if (!blob) {
-            setStatus('Could not save the marked-up screenshot.', 'error');
+            setStatus(t('saveFailed'), 'error');
             return;
           }
           addAttachment({
@@ -745,7 +860,7 @@
             type: 'image/png',
           });
           closeAnnotator();
-          setStatus('Screenshot attached.');
+          setStatus(t('screenshotAttached'));
         });
       });
 
@@ -753,7 +868,7 @@
     };
     image.onerror = function () {
       annotator.hidden = true;
-      setStatus('Could not load the screenshot.', 'error');
+      setStatus(t('loadFailed'), 'error');
       panel.hidden = false;
     };
     image.src = dataUrl;
@@ -854,10 +969,10 @@
     done.hidden = false;
     done.innerHTML =
       '<div class="mf-check">' + ICON.check + '</div>' +
-      '<h3>Request #' + Number(result.ticketId) + ' sent</h3>' +
-      '<p>' + (result.transcript ? 'Voice note transcribed. ' : '') + 'Ali will reply in your portal.</p>' +
-      '<a target="_blank" rel="noopener">Open request</a>' +
-      '<button type="button">Send another</button>';
+      '<h3>' + t('done', { id: Number(result.ticketId) }) + '</h3>' +
+      '<p>' + (result.transcript ? t('transcribed') + ' ' : '') + t('replyInPortal') + '</p>' +
+      '<a target="_blank" rel="noopener">' + t('openRequest') + '</a>' +
+      '<button type="button">' + t('sendAnother') + '</button>';
     done.querySelector('a').href = result.url || PORTAL + '/portal';
     done.querySelector('button').addEventListener('click', function () {
       done.hidden = true;
@@ -876,19 +991,19 @@
   function friendlyError(code) {
     switch (code) {
       case 'signed_out':
-        return 'This preview is not linked to your portal. Open it again from your portal.';
+        return t('signedOut');
       case 'unknown_site':
-        return 'This preview is no longer available.';
+        return t('unknownSite');
       case 'rate_limited':
-        return 'Too many notes from here just now. Try again in a little while.';
+        return t('rateLimited');
       case 'file_too_large':
-        return 'An attachment is over the 10 MB limit. Try a smaller screenshot or a shorter note.';
+        return t('tooLarge');
       case 'files_unavailable':
-        return 'Attachments are unavailable right now. Send the note as text.';
+        return t('noFiles');
       case 'empty':
-        return 'Add a note, a voice note or a screenshot first.';
+        return t('empty');
       default:
-        return 'Could not send that. Try again in a moment.';
+        return t('failed');
     }
   }
 
@@ -899,10 +1014,10 @@
       return;
     }
     if (!text.value.trim() && !attachments.length) {
-      setStatus('Add a note, a voice note or a screenshot first.', 'error');
+      setStatus(t('empty'), 'error');
       return;
     }
-    setBusy(true, 'Sending…');
+    setBusy(true, t('sending'));
     var form = new FormData();
     form.append('token', token);
     form.append('body', text.value.trim());
@@ -935,7 +1050,7 @@
       text.value = '';
       showDone(data || {});
     } catch (e) {
-      setBusy(false, 'Could not reach the portal. Check the connection and try again.', 'error');
+      setBusy(false, t('offline'), 'error');
     }
   }
 

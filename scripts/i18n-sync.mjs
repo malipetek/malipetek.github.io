@@ -7,9 +7,10 @@
  *   node scripts/i18n-sync.mjs --check                      report, change nothing
  *   node scripts/i18n-sync.mjs --bundle                     only rewrite src/i18n/mail.js
  *
- * The Worker cannot load JSON by glob, and only mails clients, so every run
- * also writes src/i18n/mail.js: the mail.* and status.* strings of every
- * locale, as one plain module.
+ * The Worker cannot load JSON by glob, so every run also writes
+ * src/i18n/mail.js: the mail.*, status.* and preview.* strings of every
+ * locale, as one plain module. (The preview.* strings are the feedback
+ * widget's copy, which the Worker serves to preview pages.)
  *
  * Only keys that are missing, or whose English changed since they were
  * translated, go to DeepSeek. src/i18n/meta/<locale>.json remembers the English
@@ -34,7 +35,7 @@ const BATCH = 40;
 const args = process.argv.slice(2);
 const checkOnly = args.includes('--check');
 const bundleOnly = args.includes('--bundle');
-const MAIL_PREFIXES = ['mail.', 'status.'];
+const MAIL_PREFIXES = ['mail.', 'status.', 'preview.'];
 const only = args.filter((a) => !a.startsWith('--'));
 const key = process.env.DEEPSEEK_API_KEY;
 const base = (process.env.DEEPSEEK_API_BASE || 'https://api.deepseek.com').replace(/\/+$/, '');

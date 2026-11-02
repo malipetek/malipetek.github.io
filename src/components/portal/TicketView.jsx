@@ -330,6 +330,8 @@ export function systemLine(body, t) {
   }
   const preview = /^The preview has this change(?:: (\S+?))?\. Nothing is live until it is published\.$/.exec(body);
   if (preview) return preview[1] ? t('thread.preview', { url: preview[1] }) : t('thread.previewNoUrl');
+  const filed = /^Filed from the preview of (.+?)(?: — (\S+?)(?: \(\d+x\d+\))?)?\.$/.exec(body);
+  if (filed) return filed[2] ? t('thread.previewFiled', { site: filed[1], page: filed[2] }) : t('thread.previewFiledNoPage', { site: filed[1] });
   if (body === 'The client withdrew this request.') return t('thread.withdrew');
   const change = /^Your agent sent a change for this request \((\d+) file\(s\)\)\.$/.exec(body);
   if (change) return t('thread.agentChange', { n: Number(change[1]) });

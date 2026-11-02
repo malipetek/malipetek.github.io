@@ -35,7 +35,7 @@ import { ATTENTION_KEYS, DEFAULT_ATTENTION, money, priceLine, priceOf } from '..
 import { claimTicketById, finishRun, normalizeReport, openRuns, recentRuns, sessionKey, ticketRuns } from './runs.ts';
 import { finishContentCycle } from './content.ts';
 import { bridgeMessage, bridgeTitle, forAli, forClientMail, threadFor, type Bridged } from './translate.ts';
-import { tFor } from '../../src/i18n/eager.js';
+import { previewStrings, tFor } from '../../src/i18n/eager.js';
 import { closestLocale, fromAcceptLanguage, TRANSLATION_ENGINES, type TranslationEngine } from '../../src/lib/locales.js';
 import { readSteps } from './steps.ts';
 import {
@@ -622,8 +622,8 @@ portal.use('*', async (c, next) => {
   // portal's own token-bearing routes: /kb is a public API (wildcard CORS) and
   // /mcp validates Origin itself as the MCP spec's rebinding guard requires.
   // Preview feedback is called from a preview origin, not the portal, and its
-  // site token is the credential; the route echoes its own origin.
-  const isPreviewFeedback = path === '/portal/preview-feedback';
+  // site token is the credential; these routes echo their own origin.
+  const isPreviewFeedback = path === '/portal/preview-feedback' || path === '/portal/preview-feedback/config';
   const isPortalPath =
     path.startsWith('/auth/') || path.startsWith('/portal/') || path.startsWith('/admin/');
 
@@ -795,7 +795,7 @@ portal.use('/auth/logout', requireUser, requireBrowser);
 // Two portal routes are reached without a portal session: Cloudflare's OAuth
 // redirect (its signed state says whose it is) and preview feedback (the
 // site's token is the credential).
-const PUBLIC_PORTAL_PATHS = new Set(['/portal/cloudflare/callback', '/portal/preview-feedback']);
+const PUBLIC_PORTAL_PATHS = new Set(['/portal/cloudflare/callback', '/portal/preview-feedback', '/portal/preview-feedback/config']);
 portal.use('/portal/*', (c, next) => (PUBLIC_PORTAL_PATHS.has(c.req.path) ? next() : requireUser(c, next)));
 portal.use('/portal/agent-tokens', requireBrowser);
 portal.use('/portal/agent-tokens/*', requireBrowser);
@@ -1609,6 +1609,56 @@ portal.post('/portal/tickets', async (c) => {
 const PREVIEW_FEEDBACK_LIMIT = 8;
 const PREVIEW_FEEDBACK_WINDOW_SECONDS = 60 * 60;
 
+interface FeedbackSite {
+  id: string;
+  project_id: string;
+  name: string | null;
+  state: string;
+  project_name: string;
+}
+
+interface FeedbackClient {
+  id: string;
+  email: string;
+  name: string | null;
+  locale: string | null;
+}
+
+/** The site a token belongs to and the client who owns its project. */
+async function feedbackTarget(env: Env, token: string): Promise<{ site: FeedbackSite; client: FeedbackClient } | null> {
+  const site = await env.DB.prepare(
+    `SELECT s.id, s.project_id, s.name, s.state, p.name AS project_name
+       FROM sites s JOIN projects p ON p.id = s.project_id
+      WHERE s.feedback_token = ?`,
+  )
+    .bind(token)
+    .first<FeedbackSite>();
+  if (!site || site.state !== 'ready') return null;
+  const client = await env.DB.prepare(
+    `SELECT u.id, u.email, u.name, u.locale
+       FROM user_projects up JOIN users u ON u.id = up.user_id
+      WHERE up.project_id = ? AND u.role = 'client'
+      ORDER BY u.created_at ASC LIMIT 1`,
+  )
+    .bind(site.project_id)
+    .first<FeedbackClient>();
+  return client ? { site, client } : null;
+}
+
+/**
+ * A preview route's answer: JSON with the caller's own origin echoed. The
+ * portal's `reply()` only allows malipetek.dev, and a preview is elsewhere.
+ */
+function previewReply(c: Ctx, data: unknown, status = 200): Response {
+  const requestOrigin = c.req.header('Origin') ?? null;
+  const res = json(data, status, null);
+  if (requestOrigin) {
+    res.headers.set('Access-Control-Allow-Origin', requestOrigin);
+    res.headers.set('Vary', 'Origin');
+  }
+  return res;
+}
+
 /** `pathname + search` of the page the note was made on, without the token. */
 function previewPage(value: unknown): string | null {
   if (typeof value !== 'string' || !value || value.length > 2000) return null;
@@ -1622,19 +1672,23 @@ function previewPage(value: unknown): string | null {
   }
 }
 
+/**
+ * The widget's copy, in the client's own language. It is fetched once by the
+ * preview page; the token says which client, and so which locale. A locale
+ * that has not been translated yet falls back to English string by string.
+ */
+portal.get('/portal/preview-feedback/config', async (c) => {
+  const token = c.req.query('token') ?? '';
+  if (!/^[a-f0-9]{32,64}$/.test(token)) return previewReply(c, { error: 'signed_out' }, 401);
+  const target = await feedbackTarget(c.env, token);
+  if (!target) return previewReply(c, { error: 'unknown_site' }, 404);
+  const locale = target.client.locale || 'en-US';
+  return previewReply(c, { locale, strings: previewStrings(locale) });
+});
+
 portal.post('/portal/preview-feedback', async (c) => {
   const env = c.env;
-  const requestOrigin = c.req.header('Origin') ?? null;
-  // Unlike the rest of the portal this route cannot use `reply`: the caller's
-  // origin is a preview host, which is not on ALLOWED_ORIGINS.
-  const out = (data: unknown, status = 200) => {
-    const res = json(data, status, null);
-    if (requestOrigin) {
-      res.headers.set('Access-Control-Allow-Origin', requestOrigin);
-      res.headers.set('Vary', 'Origin');
-    }
-    return res;
-  };
+  const out = (data: unknown, status = 200) => previewReply(c, data, status);
 
   const msg = await readMessage(c);
   if (msg === 'too_large') return out({ error: 'file_too_large' }, 413);
@@ -1643,24 +1697,9 @@ portal.post('/portal/preview-feedback', async (c) => {
   const token = typeof msg.fields.token === 'string' ? msg.fields.token : '';
   if (!/^[a-f0-9]{32,64}$/.test(token)) return out({ error: 'signed_out' }, 401);
 
-  const site = await env.DB.prepare(
-    `SELECT s.id, s.project_id, s.name, s.state, p.name AS project_name
-       FROM sites s JOIN projects p ON p.id = s.project_id
-      WHERE s.feedback_token = ?`,
-  )
-    .bind(token)
-    .first<{ id: string; project_id: string; name: string | null; state: string; project_name: string }>();
-  if (!site || site.state !== 'ready') return out({ error: 'unknown_site' }, 404);
-
-  const client = await env.DB.prepare(
-    `SELECT u.id, u.email, u.name, u.locale
-       FROM user_projects up JOIN users u ON u.id = up.user_id
-      WHERE up.project_id = ? AND u.role = 'client'
-      ORDER BY u.created_at ASC LIMIT 1`,
-  )
-    .bind(site.project_id)
-    .first<{ id: string; email: string; name: string | null; locale: string | null }>();
-  if (!client) return out({ error: 'unknown_site' }, 404);
+  const target = await feedbackTarget(env, token);
+  if (!target) return out({ error: 'unknown_site' }, 404);
+  const { site, client } = target;
 
   if (await isRateLimited(env, clientIp(c.req.raw), 'preview-feedback', PREVIEW_FEEDBACK_LIMIT, PREVIEW_FEEDBACK_WINDOW_SECONDS)) {
     return out({ error: 'rate_limited' }, 429);
@@ -1696,11 +1735,11 @@ portal.post('/portal/preview-feedback', async (c) => {
   const stored = await postMessage(env, ticket.id, 'client', body, false, checked.uploads, t);
   const page = previewPage(msg.fields.page);
   const viewport = typeof msg.fields.viewport === 'string' && /^\d{2,5}x\d{2,5}$/.test(msg.fields.viewport) ? msg.fields.viewport : null;
-  const where = [page ? `on ${page}` : null, viewport ? `at ${viewport}` : null].filter(Boolean).join(' ');
+  const where = page ? ` — ${page}${viewport ? ` (${viewport})` : ''}` : '';
   await env.DB.prepare(
     `INSERT INTO ticket_messages (ticket_id, author, body, created_at) VALUES (?, 'system', ?, ?)`,
   )
-    .bind(ticket.id, `Filed from the preview of ${siteName}${where ? ` ${where}` : ''}.`, t)
+    .bind(ticket.id, `Filed from the preview of ${siteName}${where}.`, t)
     .run();
 
   const ref = { id: ticket.id, title, client_email: client.email, client_locale: client.locale };

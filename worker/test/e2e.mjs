@@ -519,6 +519,28 @@ const groups = {
     );
     const token = new URL(site.feedbackUrl).searchParams.get('mf');
 
+    // The widget's own copy follows the client's locale, not English.
+    await call('/portal/me', { method: 'PATCH', auth: a.session, body: { locale: 'tr' } });
+    const configOrigin = site.previewUrl;
+    const configRes = await fetch(`${W}/portal/preview-feedback/config?token=${token}`, {
+      headers: { origin: configOrigin },
+    });
+    const config = await configRes.json();
+    check(
+      'the widget asks for its copy and gets the client’s language',
+      configRes.status === 200 && config.locale === 'tr' && config.strings?.send === 'Talep gönder',
+      JSON.stringify(config),
+    );
+    check(
+      'the config may be read from the preview origin',
+      configRes.headers.get('access-control-allow-origin') === configOrigin,
+      `${configRes.status} ${configRes.headers.get('access-control-allow-origin')}`,
+    );
+    check(
+      'an unknown site gets no copy',
+      (await fetch(`${W}/portal/preview-feedback/config?token=${'f'.repeat(36)}`)).status === 404,
+    );
+
     const form = new FormData();
     form.append('token', token);
     form.append('body', 'The hero image is cut off on mobile');
