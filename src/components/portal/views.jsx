@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, errorText, fmtTime } from '../../lib/portal';
 import { HOURLY_USD, clock, money, priceOf } from '../../lib/pricing.js';
-import { Board, STAGES, stageText } from './Board.jsx';
+import { Board, DRAG_TICKET, STAGES, stageText } from './Board.jsx';
 import { go, href, isOpen, useT, usePortal } from './store.js';
 import { Button, Icon, MiniTrack, Modal, StatusPill, ago, cx, fmtDate, totalOf } from './ui.jsx';
 
@@ -22,6 +22,11 @@ export function RequestRow({ t: ticket, hovered, onHover, showProject = true }) 
       <a
         className={cx('cp-row', !showProject && 'cp-row--bare', ticket.unread && 'is-unread', hovered && 'is-hover')}
         href={href(`ticket/${ticket.id}`)}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData(DRAG_TICKET, String(ticket.id));
+          e.dataTransfer.effectAllowed = 'move';
+        }}
         onMouseEnter={() => onHover?.(ticket.id)}
         onMouseLeave={() => onHover?.(null)}
         onFocus={() => onHover?.(ticket.id)}
@@ -100,7 +105,7 @@ function GroupedRequests({ projects, tickets, hovered, onHover }) {
 
 export function Overview() {
   const t = useT();
-  const { data, compose } = usePortal();
+  const { data, compose, notify, reload } = usePortal();
   const [stage, setStage] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [project, setProject] = useState(null);
@@ -111,8 +116,44 @@ export function Overview() {
     project === null ? shown : project === 'none' ? shown.filter((t) => !t.project_id) : shown.filter((t) => t.project_id === project);
   // The board also keeps the last few shipped requests, so it gets every
   // request (open and shipped) for the chosen project, not just `shown`.
-  const boardTickets =
-    project === null ? tickets : project === 'none' ? tickets.filter((t) => !t.project_id) : tickets.filter((t) => t.project_id === project);
+  // Why a request is not moving: the board marks the ones that have waited too
+  // long, and the tooltip says what they are waiting for.
+  const projectById = new Map(projects.map((p) => [p.id, p]));
+  const reasonFor = (ticket) => {
+    const owner = ticket.project_id ? projectById.get(ticket.project_id) : null;
+    if (ticket.client_waiting_since) return { waitingReason: t('board.reason.client'), stuck: false };
+    if (ticket.status === 'new') return { waitingReason: t('board.reason.approval'), stuck: false };
+    if (ticket.status === 'approved') {
+      if (owner?.repoError) return { waitingReason: t('board.reason.repo'), stuck: true };
+      if (owner?.repoWanted) return { waitingReason: t('board.reason.repoSoon'), stuck: false };
+      return { waitingReason: t('board.reason.queue'), stuck: Date.now() / 1000 - ticket.updated_at > 12 * 3600 };
+    }
+    if (ticket.status === 'in_progress') return { waitingReason: t('board.reason.running'), stuck: false };
+    if (ticket.status === 'review') return { waitingReason: t('board.reason.review'), stuck: false };
+    return { waitingReason: null, stuck: false };
+  };
+  const boardTickets = (
+    project === null ? tickets : project === 'none' ? tickets.filter((t) => !t.project_id) : tickets.filter((t) => t.project_id === project)
+  ).map((ticket) => ({ ...ticket, ...reasonFor(ticket) }));
+
+  const moveTicket = async (ticketId, projectId, siteId) => {
+    try {
+      await api(`/portal/tickets/${ticketId}`, { method: 'PATCH', body: { projectId, ...(siteId ? { siteId } : {}) } });
+      notify(t('board.movedTicket'));
+      await reload();
+    } catch (error) {
+      notify(errorText(error, t), 'error');
+    }
+  };
+  const moveSite = async (siteId, projectId) => {
+    try {
+      await api(`/portal/sites/${siteId}`, { method: 'PATCH', body: { projectId } });
+      notify(t('board.movedSite'));
+      await reload();
+    } catch (error) {
+      notify(errorText(error, t), 'error');
+    }
+  };
   const stageEntry = STAGES.find((s) => s.key === stage);
   const stageLabel = stageEntry ? stageText(t, stageEntry) : undefined;
   const projectName = project === null ? null : project === 'none' ? t('board.gettingSetUp') : projects.find((p) => p.id === project)?.name;
@@ -145,6 +186,8 @@ export function Overview() {
         project={project}
         onProject={setProject}
         onOpenProject={(id) => go(`project/${id}`)}
+        onMoveTicket={moveTicket}
+        onMoveSite={moveSite}
       />
 
       <div className="cp-overview">

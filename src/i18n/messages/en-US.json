@@ -668,7 +668,7 @@
   "board.preview": "Preview",
   "board.openProject": "Open {name}",
   "board.showOnly": "Show only {name}",
-  "board.hint": "Click a project to focus its line, or a site to open it.",
+  "board.hint": "Click a project to focus its line, a site to open it, or drag a request onto a project to move it.",
   "views.repo.githubPermission": "The GitHub App is missing the Administration permission, so it cannot create a repository in your account. Grant it in the GitHub App settings, or choose “Create it in our account” — work starts either way.",
   "views.site.retryCloudflare": "Retry with my Cloudflare account ({account})",
   "views.site.grantCloudflare": "Reconnect Cloudflare to grant Workers Admin",
@@ -722,5 +722,17 @@
   "preview.removeAttachment": "Remove {name}",
   "preview.colour": "Colour {value}",
   "preview.loadFailed": "Could not load the screenshot.",
-  "preview.tools": "Drawing tools"
+  "preview.tools": "Drawing tools",
+  "board.reason.approval": "Waiting for Ali to approve it.",
+  "board.reason.client": "Waiting for your reply.",
+  "board.reason.queue": "Queued for the next free machine.",
+  "board.reason.repo": "Blocked: the code repository cannot be read yet.",
+  "board.reason.repoSoon": "The code repository is being set up.",
+  "board.reason.review": "Ali is checking the result.",
+  "board.reason.running": "A machine is working on it.",
+  "board.movedTicket": "Request moved.",
+  "board.movedSite": "Site moved.",
+  "board.zoomIn": "Zoom in",
+  "board.zoomOut": "Zoom out",
+  "board.reset": "Reset the view"
 }

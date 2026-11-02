@@ -629,6 +629,11 @@
   width: 100%;
   height: 100%;
   display: block;
+  cursor: grab;
+  touch-action: none;
+}
+.cp-board__canvas:active {
+  cursor: grabbing;
 }
 /* Project and site labels ride the 3D points the scene reports each frame. */
 .cp-board__nodes {
@@ -667,6 +672,17 @@
 .cp-board__node:hover {
   border-color: var(--ink-soft);
   background: var(--bone);
+}
+.cp-board__node[draggable='true'] {
+  cursor: grab;
+}
+/* A project or site label lit up as something is dragged over it. */
+.cp-board__node.is-drop,
+.cp-board__lane.is-drop {
+  border-color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 18%, var(--bone));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--orange) 55%, transparent);
+  opacity: 1 !important;
 }
 .cp-board__node--project {
   border-left: 3px solid var(--orange);
@@ -806,6 +822,46 @@
 .cp-board__tip span {
   font-family: var(--font-mono);
   opacity: 0.6;
+}
+/* Why the hovered request is not moving, under its title. */
+.cp-board__tipnote {
+  display: block;
+  margin-top: 3px;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--cp-bad);
+  white-space: normal;
+}
+/* Zoom, pan and reset: the board is a canvas, so it gets canvas controls. */
+.cp-board__controls {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 3;
+  display: flex;
+  gap: 4px;
+}
+.cp-board__controls button {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bone) 88%, transparent);
+  backdrop-filter: blur(5px);
+  color: var(--ink);
+  font: 600 13px/1 var(--font-sans);
+  cursor: pointer;
+  transition:
+    border-color 120ms,
+    background 120ms;
+}
+.cp-board__controls button:hover {
+  border-color: var(--ink);
+  background: var(--bone);
 }
 .cp-board__empty {
   position: absolute;
@@ -1072,6 +1128,9 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--ink-soft);
+}
+.cp-row[draggable='true'] {
+  cursor: grab;
 }
 .cp-row {
   transition: background 120ms;

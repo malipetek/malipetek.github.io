@@ -828,6 +828,22 @@ portal.get('/portal/me', async (c) => {
   ]);
   const filed = new Map((counts.results ?? []).map((row) => [row.project_id, row.n]));
 
+  // How many times each site has gone live: a building gains a floor per
+  // publish, and a rollback takes one away. Older sites published before this
+  // table existed fall back to one floor when they have a real production deploy.
+  const projectIds = (projects ?? []).map((project) => project.id);
+  const publishes = projectIds.length
+    ? await env.DB.prepare(
+        `SELECT site_id, SUM(CASE WHEN action = 'publish' THEN 1 ELSE -1 END) AS floors
+           FROM site_publishes
+          WHERE project_id IN (${projectIds.map(() => '?').join(',')})
+          GROUP BY site_id`,
+      )
+        .bind(...projectIds)
+        .all<{ site_id: string; floors: number }>()
+    : { results: [] as { site_id: string; floors: number }[] };
+  const floors = new Map((publishes.results ?? []).map((row) => [row.site_id, Math.max(0, row.floors)]));
+
   return reply(c, {
     user,
     canPublish: settings.clientPublish,
@@ -869,11 +885,13 @@ portal.get('/portal/me', async (c) => {
         name: project.name,
         sites: rows.map((row) => {
           const view = siteView(row, settings.sitesDomain);
+          const live = Boolean(view?.productionDeploy && view.productionDeploy !== PLACEHOLDER_DEPLOY);
           return {
             id: view?.id ?? row.id,
             name: view?.name || project.name,
             url: view?.productionUrl ?? null,
-            live: Boolean(view?.productionDeploy && view.productionDeploy !== PLACEHOLDER_DEPLOY),
+            live,
+            deploys: Math.max(floors.get(row.id) ?? 0, live ? 1 : 0),
           };
         }),
       };

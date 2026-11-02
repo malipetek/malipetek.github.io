@@ -31,6 +31,10 @@ const LANE_TINTS = [0xff5a1f, 0x95bf47, 0x3b82f6, 0xa855f7, 0xeab308, 0xec4899];
 const GREY_TINT = 0x8a857b;
 const tintHex = (n) => `#${n.toString(16).padStart(6, '0')}`;
 
+/** What a dragged row or site label carries; the project labels accept it. */
+export const DRAG_TICKET = 'application/x-malipetek-ticket';
+export const DRAG_SITE = 'application/x-malipetek-site';
+
 /** What rides the machine: everything open, and the few most recently shipped. */
 export function boardItems(tickets) {
   const now = Date.now() / 1000;
@@ -50,6 +54,8 @@ export function Board({
   project = null,
   onProject,
   onOpenProject,
+  onMoveTicket,
+  onMoveSite,
 }) {
   const t = useT();
   const canvasRef = useRef(null);
@@ -124,6 +130,32 @@ export function Board({
   };
   const [tip, setTip] = useState(null);
   const [failed, setFailed] = useState(false);
+  const [dropKey, setDropKey] = useState(null);
+
+  // A project label, a site label or a chip is a drop target: dropping a row
+  // moves that request (and optionally onto a site), dropping a site label
+  // moves that site. The unassigned lane accepts nothing.
+  const dropProps = (lane, siteId = null) => {
+    const key = siteId ? `s:${lane.id}:${siteId}` : `p:${lane.id}`;
+    return {
+      onDragOver: (e) => {
+        if (lane.unassigned) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (dropKey !== key) setDropKey(key);
+      },
+      onDragLeave: () => setDropKey((k) => (k === key ? null : k)),
+      onDrop: (e) => {
+        if (lane.unassigned) return;
+        e.preventDefault();
+        setDropKey(null);
+        const ticket = e.dataTransfer.getData(DRAG_TICKET);
+        const site = e.dataTransfer.getData(DRAG_SITE);
+        if (ticket) onMoveTicket?.(Number(ticket), lane.id, siteId);
+        else if (site) onMoveSite?.(site, lane.id);
+      },
+    };
+  };
 
   const pickProject = (id) => {
     if (!onProject) return;
@@ -148,7 +180,13 @@ export function Board({
       .then(({ initBoard }) => {
         if (stopped || !canvasRef.current) return;
         board = initBoard(canvasRef.current, {
-          items: () => itemsRef.current.map((x) => ({ id: x.id, stage: x.status, lane: laneOf(x.project_id) })),
+          items: () =>
+            itemsRef.current.map((x) => ({
+              id: x.id,
+              stage: x.status,
+              lane: laneOf(x.project_id),
+              stuck: Boolean(x.stuck),
+            })),
           lanes: () => sceneLanesRef.current,
           onHover: (id) => {
             setTip(id);
@@ -228,7 +266,13 @@ export function Board({
                   key={n.key}
                   type="button"
                   ref={setNodeRef(n.key)}
-                  className={cx('cp-board__node', 'cp-board__node--project', project === (n.lane.id === -1 ? 'none' : n.lane.id) && 'is-on')}
+                  {...dropProps(n.lane)}
+                  className={cx(
+                    'cp-board__node',
+                    'cp-board__node--project',
+                    project === (n.lane.id === -1 ? 'none' : n.lane.id) && 'is-on',
+                    dropKey === `p:${n.lane.id}` && 'is-drop',
+                  )}
                   style={{ borderLeftColor: n.lane.tint }}
                   aria-pressed={project === (n.lane.id === -1 ? 'none' : n.lane.id)}
                   onClick={() => pickProject(n.lane.id)}
@@ -247,7 +291,20 @@ export function Board({
                   key={n.key}
                   type="button"
                   ref={setNodeRef(n.key)}
-                  className={cx('cp-board__node', 'cp-board__node--site', !n.site && 'is-ghost', n.site?.live && 'is-live')}
+                  {...dropProps(n.lane, n.site?.id ?? null)}
+                  className={cx(
+                    'cp-board__node',
+                    'cp-board__node--site',
+                    !n.site && 'is-ghost',
+                    n.site?.live && 'is-live',
+                    dropKey === `s:${n.lane.id}:${n.site?.id ?? 0}` && 'is-drop',
+                  )}
+                  draggable={Boolean(n.site)}
+                  onDragStart={(e) => {
+                    if (!n.site) return;
+                    e.dataTransfer.setData(DRAG_SITE, String(n.site.id));
+                    e.dataTransfer.effectAllowed = 'move';
+                  }}
                   onClick={() => onOpenProject?.(n.lane.id)}
                   title={t('board.openProject', { name: n.site?.name ?? n.lane.name })}
                 >
@@ -278,10 +335,24 @@ export function Board({
           {tipTicket ? (
             <>
               <span>#{tipTicket.id}</span> {tipTicket.title}
+              {tipTicket.waitingReason ? <em className="cp-board__tipnote">{tipTicket.waitingReason}</em> : null}
             </>
           ) : null}
         </div>
         {!items.length ? <p className="cp-board__empty">{t('board.empty')}</p> : null}
+        {!failed ? (
+          <div className="cp-board__controls">
+            <button type="button" onClick={() => boardRef.current?.zoomBy(0.82)} title={t('board.zoomIn')} aria-label={t('board.zoomIn')}>
+              +
+            </button>
+            <button type="button" onClick={() => boardRef.current?.zoomBy(1.22)} title={t('board.zoomOut')} aria-label={t('board.zoomOut')}>
+              −
+            </button>
+            <button type="button" onClick={() => boardRef.current?.reset()} title={t('board.reset')} aria-label={t('board.reset')}>
+              ⟲
+            </button>
+          </div>
+        ) : null}
       </div>
       <div className="cp-board__lanes" aria-label={t('board.lanes')}>
         <span className="cp-label">{t('board.lanes')}</span>
@@ -300,7 +371,8 @@ export function Board({
             <button
               key={lane.id}
               type="button"
-              className={cx('cp-board__lane', on && 'is-on')}
+              {...dropProps(lane)}
+              className={cx('cp-board__lane', on && 'is-on', dropKey === `p:${lane.id}` && 'is-drop')}
               aria-pressed={on}
               onClick={() => onProject?.(on ? null : lane.id)}
             >
