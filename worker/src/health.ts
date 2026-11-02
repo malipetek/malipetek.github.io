@@ -91,6 +91,17 @@ export function healthRank(name: string): number {
 
 const baseUrl = (env: Env) => (env.SITE_URL || 'https://malipetek.dev').replace(/\/+$/, '');
 
+/** A Worker's fetch to its own zone is not a public probe: it can answer 404
+ * (the target Worker is not invoked for same-zone subrequests). Say so rather
+ * than report a healthy site as down. */
+const sameZone = (url: string, env: Env) => {
+  try {
+    return new URL(url).host === new URL(baseUrl(env)).host;
+  } catch {
+    return false;
+  }
+};
+
 const oneLine = (text: string, max = 220) => text.replace(/\s+/g, ' ').trim().slice(0, max);
 
 async function fetchChecked(url: string, init: RequestInit = {}): Promise<Response> {
@@ -180,6 +191,9 @@ async function siteCheck(env: Env) {
   return check('site', async () => {
     const res = await fetchChecked(`${baseUrl(env)}/`);
     const html = res.ok ? await bodyText(res, 5000) : '';
+    if (res.status === 404 && sameZone(`${baseUrl(env)}/`, env)) {
+      return { status: 'skip', detail: 'the Worker cannot probe its own zone; verify the site from outside' };
+    }
     if (res.status !== 200) return { status: 'fail', detail: `HTTP ${res.status}` };
     if (!/<html/i.test(html)) return { status: 'fail', detail: 'answered, but not the site HTML' };
     return { status: 'ok', detail: `200 · ${baseUrl(env)}` };
@@ -189,6 +203,9 @@ async function siteCheck(env: Env) {
 async function apiCheck(env: Env) {
   return check('api', async () => {
     const res = await fetchChecked(`${baseUrl(env)}/api/health`);
+    if (res.status === 404 && sameZone(`${baseUrl(env)}/api/health`, env)) {
+      return { status: 'skip', detail: 'the Worker cannot probe its own zone; verify /api/health from outside' };
+    }
     if (!res.ok) return { status: 'fail', detail: `HTTP ${res.status}` };
     const body = (await res.json().catch(() => null)) as { ok?: unknown; sha?: unknown } | null;
     if (!body || body.ok !== true) return { status: 'fail', detail: 'answered, but not the Worker health JSON' };
@@ -272,7 +289,12 @@ async function callbackRouteCheck(env: Env, name: string, path: string) {
   return check(name, async () => {
     const res = await fetchChecked(`${baseUrl(env)}${path}?error=health`);
     await bodyText(res, 200);
-    if (res.status === 404) return { status: 'fail', detail: `HTTP 404 — ${path} is not deployed on malipetek.dev` };
+    if (res.status === 404) {
+      if (sameZone(`${baseUrl(env)}${path}`, env)) {
+        return { status: 'skip', detail: `the Worker cannot probe its own zone; verify ${path} from outside` };
+      }
+      return { status: 'fail', detail: `HTTP 404 — ${path} is not deployed on malipetek.dev` };
+    }
     if (res.status >= 500) return { status: 'fail', detail: `HTTP ${res.status}` };
     return { status: 'ok', detail: `HTTP ${res.status} · ${path}` };
   });
