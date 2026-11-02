@@ -148,7 +148,7 @@ site that is mostly fine and a list of small things that never get done.
 
 ### First email
 
-**Subject:** The smallest thing on {business}
+**Subject:** A small fix on {site}
 
 > Hi {name},
 >
@@ -176,7 +176,7 @@ Without a written observation, the queue sends this instead (it makes no claim a
 
 ### Follow-up, day 4
 
-**Subject:** Re: The smallest thing on {business}
+**Subject:** Re: A small fix on {site}
 
 > Hi {name},
 >
@@ -186,7 +186,7 @@ Without a written observation, the queue sends this instead (it makes no claim a
 
 ### Follow-up, day 10
 
-**Subject:** Re: The smallest thing on {business}
+**Subject:** Re: A small fix on {site}
 
 > Hi {name},
 >

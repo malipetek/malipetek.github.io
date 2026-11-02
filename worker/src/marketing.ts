@@ -272,7 +272,7 @@ Ali`,
     {
       kind: 'first',
       day: 0,
-      subject: 'The smallest thing on {{business}}',
+      subject: 'A small fix on {{site}}',
       body: `{{greeting}}
 
 I noticed this on {{site}}: {{gap}}. Jobs that size tend to wait for months, because nobody wants to hire a developer for a short job.
@@ -297,7 +297,7 @@ malipetek.dev`,
     {
       kind: 'followup_1',
       day: 4,
-      subject: 'Re: The smallest thing on {{business}}',
+      subject: 'Re: A small fix on {{site}}',
       body: `{{greeting}}
 
 What is the smallest thing on {{site}} you have been meaning to fix? Small jobs are where this costs least: you pay for the minutes I spend, and the agent's part costs cents.
@@ -307,7 +307,7 @@ Ali`,
     {
       kind: 'followup_2',
       day: 10,
-      subject: 'Re: The smallest thing on {{business}}',
+      subject: 'Re: A small fix on {{site}}',
       body: `{{greeting}}
 
 I will leave it here. If a small fix ever gets annoying enough, you can send it through malipetek.dev/portal without a call or a quote.
@@ -490,7 +490,7 @@ export function stepBody(step: SequenceStep, specificGap: boolean): string {
 export function sequenceOfSubject(subject: string | null): SequenceKind | null {
   const s = subject ?? '';
   if (/^(Re: )?The last mile of /.test(s)) return 'cold_a';
-  if (/^(Re: )?The smallest thing on /.test(s)) return 'cold_b';
+  if (/^(Re: )?(The smallest thing on |A small fix on )/.test(s)) return 'cold_b';
   if (/^(Re: )?A small experiment/.test(s)) return 'warm';
   return null;
 }

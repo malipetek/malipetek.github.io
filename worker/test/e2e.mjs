@@ -446,7 +446,7 @@ const groups = {
     const movedSeq = await call('/admin/marketing/messages/rerender', { method: 'POST', auth: admin, body: { from: 'cold_a', to: 'cold_b' } });
     check(
       'queued Cold A mail can move to Cold B, keeping its slots',
-      movedSeq.status === 200 && movedSeq.data.moved >= 1500 && /The smallest thing on/.test(subjectOf()) && /Most business sites carry/.test(firstOf()),
+      movedSeq.status === 200 && movedSeq.data.moved >= 1500 && /A small fix on bulk7\.example\.test/.test(subjectOf()) && /Most business sites carry/.test(firstOf()),
       JSON.stringify(movedSeq.data),
     );
 
