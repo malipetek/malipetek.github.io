@@ -13,7 +13,9 @@
  * URI in BOARD_UI_URI and in the tool's _meta (clientTools.ts).
  */
 
-export const BOARD_UI_URI = 'ui://malipetek/board-v4.html';
+import { ALI_AVATAR } from './boardAvatar.ts';
+
+export const BOARD_UI_URI = 'ui://malipetek/board-v5.html';
 
 export const BOARD_MIME = 'text/html;profile=mcp-app';
 
@@ -302,6 +304,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     width: 26px; height: 26px; border-radius: 999px; display: grid; place-items: center;
     font: 600 11px/1 var(--mk-sans); color: #fff; background: var(--mk-orange); margin-top: 1px;
   }
+  .mk-avatar[data-who="ali"] { background: var(--mk-tint) center / cover no-repeat url("${ALI_AVATAR}"); }
   .mk-avatar[data-who="runner"] { background: color-mix(in srgb, var(--mk-ink) 72%, transparent); color: var(--mk-paper); }
   .mk-who-line { font: 600 13px/1.2 var(--mk-sans); margin-bottom: 4px; }
   .mk-when { font: 400 11.5px/1 var(--mk-sans); color: var(--mk-soft); margin-left: 6px; }
@@ -822,7 +825,8 @@ export const BOARD_HTML = `<!DOCTYPE html>
     }
     var who = WHO[m.author] || { name: m.author || 'malipetek', mark: '•' };
     var row = el('div', 'mk-turn--other');
-    var avatar = el('span', 'mk-avatar', who.mark);
+    // Ali's photo is the background of his avatar (CSS); the others show a mark.
+    var avatar = el('span', 'mk-avatar', m.author === 'ali' ? '' : who.mark);
     avatar.setAttribute('data-who', m.author || '');
     avatar.setAttribute('aria-hidden', 'true');
     row.appendChild(avatar);
