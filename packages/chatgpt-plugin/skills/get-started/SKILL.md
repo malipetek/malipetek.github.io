@@ -9,4 +9,4 @@ Get the user started with malipetek: software help by the minute, where every re
 2. Ask what they want done on their project — a fix, a change, a small feature.
 3. File it with `portal_file_request`, then tell them: a human reviews and approves the request before any work starts, and they can watch progress and reply in the portal at https://malipetek.dev/portal.
 4. Mention they can set a budget (`portal_set_budget`) and that finished work lands on a preview first.
-5. To check on things, call `portal_board` — it draws their requests as a card with status, project and cost, and links into the portal. Prefer it over reading out a list when they ask to "see" their requests.
+5. To check on things, call `portal_board` — it draws the "malipetek development" card: their projects (setup progress and the next step), sites (live or preview, with links) and requests (status, cost, a link into the portal). Prefer it over reading out a list when they ask to "see" their work.

@@ -1264,6 +1264,15 @@ const groups = {
     );
     const board = await rpc('tools/call', { name: 'portal_board', arguments: {} }, token);
     check('the board answers with structured card data and a text fallback', board.result?.structuredContent?.requests?.some((r) => r.id === rid) && /#\d+ Add opening hours/.test(board.result?.content?.[0]?.text ?? ''), JSON.stringify(board.result?.structuredContent ?? {}).slice(0, 200));
+    const card = board.result?.structuredContent ?? {};
+    check(
+      'the board carries projects with setup, sites, and requests with real times',
+      boardTool?.title === 'malipetek development' &&
+        card.projects?.some((p) => p.id === project.id && p.open >= 1 && typeof p.setup?.total === 'number') &&
+        Array.isArray(card.sites) &&
+        !Number.isNaN(Date.parse(card.requests?.find((r) => r.id === rid)?.updated_at ?? '')),
+      JSON.stringify({ title: boardTool?.title, projects: card.projects, sites: card.sites?.length }).slice(0, 300),
+    );
     check('it replies on a request', !(await tool('portal_reply', { request_id: rid, text: 'Saturdays too.' })).error && /Saturdays too/.test(JSON.stringify((await call(`/portal/tickets/${rid}`, { auth: a.session })).data)));
     check('it raises the budget', !(await tool('portal_set_budget', { request_id: rid, budget_usd: 50 })).error && (await tool('portal_request', { request_id: rid })).value.ticket.budget_cents === 5000);
     const second = (await tool('portal_file_request', { title: 'Never mind this', body: 'Changed my mind.', project_id: project.id })).value.request_id;

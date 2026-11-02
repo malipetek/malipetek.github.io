@@ -57,9 +57,9 @@ export const CLIENT_TOOLS: ClientTool[] = [
   },
   {
     name: 'portal_board',
-    title: 'Projects & requests',
+    title: 'malipetek development',
     description:
-      'Draw this account’s requests as an interactive card in the conversation: status, project, cost so far, and a link into the portal for each one. Use it when the person wants to see their requests rather than read a list of them. Mention only what matters afterwards — the card shows the details.',
+      'Draw this account as an interactive card in the conversation, in three tabs: projects (setup progress and the next step), sites (live or preview, with links) and requests (status, cost so far, a link into the portal for each). Use it when the person wants to see their work rather than read a list. Mention only what matters afterwards — the card shows the details.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     outputSchema: {
       type: 'object',
@@ -78,8 +78,39 @@ export const CLIENT_TOOLS: ClientTool[] = [
               id: { type: ['string', 'null'] },
               name: { type: ['string', 'null'] },
               requests: { type: 'integer' },
+              open: { type: 'integer' },
+              sites: { type: 'integer' },
+              setup: {
+                type: 'object',
+                properties: {
+                  ready: { type: 'integer' },
+                  total: { type: 'integer' },
+                  next: { type: ['string', 'null'] },
+                },
+                required: ['ready', 'total', 'next'],
+                additionalProperties: false,
+              },
             },
-            required: ['id', 'name', 'requests'],
+            required: ['id', 'name', 'requests', 'open', 'sites', 'setup'],
+            additionalProperties: false,
+          },
+        },
+        sites: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: ['string', 'null'] },
+              name: { type: ['string', 'null'] },
+              project: { type: ['string', 'null'] },
+              state: { type: ['string', 'null'] },
+              live: { type: 'boolean' },
+              has_preview: { type: 'boolean' },
+              preview_url: { type: ['string', 'null'] },
+              production_url: { type: ['string', 'null'] },
+              updated_at: { type: ['string', 'null'] },
+            },
+            required: ['id', 'name', 'project', 'state', 'live', 'has_preview', 'preview_url', 'production_url', 'updated_at'],
             additionalProperties: false,
           },
         },
@@ -92,18 +123,19 @@ export const CLIENT_TOOLS: ClientTool[] = [
               title: { type: ['string', 'null'] },
               status: { type: ['string', 'null'] },
               project: { type: ['string', 'null'] },
+              site: { type: ['string', 'null'] },
               updated_at: { type: ['string', 'null'] },
               unread: { type: 'boolean' },
               price_cents: { type: ['integer', 'null'] },
               budget_cents: { type: ['integer', 'null'] },
             },
-            required: ['id', 'title', 'status', 'project', 'updated_at', 'unread', 'price_cents', 'budget_cents'],
+            required: ['id', 'title', 'status', 'project', 'site', 'updated_at', 'unread', 'price_cents', 'budget_cents'],
             additionalProperties: false,
           },
         },
         updated_at: { type: 'string' },
       },
-      required: ['account', 'projects', 'requests', 'updated_at'],
+      required: ['account', 'projects', 'sites', 'requests', 'updated_at'],
       additionalProperties: false,
     },
     readOnly: true,
@@ -111,8 +143,8 @@ export const CLIENT_TOOLS: ClientTool[] = [
       ui: { resourceUri: BOARD_UI_URI },
       // Opens from the sidebar (global) and as a tab beside a conversation (thread).
       'openai/ui': { entrypoints: [{ type: 'global' }, { type: 'thread' }] },
-      'openai/toolInvocation/invoking': 'Opening your requests…',
-      'openai/toolInvocation/invoked': 'Requests ready',
+      'openai/toolInvocation/invoking': 'Opening malipetek development…',
+      'openai/toolInvocation/invoked': 'Projects, sites and requests ready',
     },
   },
   {
@@ -470,19 +502,53 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
       const tickets = Array.isArray(list?.tickets) ? (list.tickets as Array<Record<string, unknown>>) : [];
       const cents = (value: unknown) => (typeof value === 'number' ? value : null);
       const text = (value: unknown) => (typeof value === 'string' && value ? value : null);
+      const closed = (status: unknown) => status === 'done' || status === 'declined';
+      // The database keeps Unix seconds; the card wants a time it can say "2 hours ago" about.
+      const when = (value: unknown) => (typeof value === 'number' ? new Date(value * 1000).toISOString() : text(value));
+      const sites = projects.flatMap((project) =>
+        (Array.isArray(project.sites) ? (project.sites as Array<Record<string, unknown>>) : []).map((site) => {
+          const domain = text(site.customDomain);
+          return {
+            id: text(site.id),
+            name: text(site.name) ?? text(project.name),
+            project: text(project.name),
+            state: text(site.state),
+            // A production pointer means something is live; a preview pointer, something to look at.
+            live: site.state === 'ready' && Boolean(site.productionDeploy),
+            has_preview: site.state === 'ready' && Boolean(site.previewDeploy),
+            preview_url: text(site.previewUrl),
+            production_url: domain ? `https://${domain}` : text(site.productionUrl),
+            updated_at: when(site.updatedAt),
+          };
+        }),
+      );
+      const siteNames = new Map(sites.map((site) => [site.id, site.name]));
       return {
         account: { name: text((me?.user as Record<string, unknown> | undefined)?.name) },
-        projects: projects.map((project) => ({
-          id: text(project.id),
-          name: text(project.name),
-          requests: typeof project.ticketCount === 'number' ? project.ticketCount : 0,
-        })),
+        projects: projects.map((project) => {
+          const mine = tickets.filter((ticket) => ticket.project_id === project.id);
+          const setup = (project.setup ?? {}) as Record<string, unknown>;
+          return {
+            id: text(project.id),
+            name: text(project.name),
+            requests: mine.length,
+            open: mine.filter((ticket) => !closed(ticket.status)).length,
+            sites: Array.isArray(project.sites) ? project.sites.length : 0,
+            setup: {
+              ready: typeof setup.ready === 'number' ? setup.ready : 0,
+              total: typeof setup.total === 'number' ? setup.total : 0,
+              next: text(setup.next),
+            },
+          };
+        }),
+        sites,
         requests: tickets.map((ticket) => ({
           id: ticket.id,
           title: text(ticket.title),
           status: text(ticket.status),
           project: text(ticket.project_name),
-          updated_at: text(ticket.updated_at),
+          site: siteNames.get(text(ticket.site_id)) ?? null,
+          updated_at: when(ticket.updated_at),
           unread: !!ticket.unread,
           price_cents: cents(ticket.price_cents),
           budget_cents: cents(ticket.budget_cents),
