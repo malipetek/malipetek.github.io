@@ -51,10 +51,16 @@ export function MarketingView() {
   const { api, act, notify } = useAdmin();
   const [overview, setOverview] = useState(null);
   const [contacts, setContacts] = useState([]);
+  const [paging, setPaging] = useState({ total: 0, page: 200 });
+  const [selected, setSelected] = useState(() => new Set());
   const [error, setError] = useState(null);
-  const [tab, setTab] = useState('contacts');
+  const [tab, setTab] = useState('overview');
   const [modal, setModal] = useState(null);
-  const [filters, setFilters] = useState({ status: '', q: '', source: '' });
+  const [filters, setFilters] = useState({ status: '', q: '', source: '', offset: 0 });
+  const filter = (patch) => {
+    setSelected(new Set());
+    setFilters((f) => ({ ...f, offset: 0, ...patch }));
+  };
   // Bumped after any action, so the tab that owns its own list reloads too.
   const [tick, setTick] = useState(0);
 
@@ -64,6 +70,7 @@ export function MarketingView() {
       .then(([o, c]) => {
         setOverview(o);
         setContacts(c.contacts ?? []);
+        setPaging({ total: c.total ?? (c.contacts ?? []).length, page: c.page ?? 200 });
         setError(null);
       })
       .catch(setError);
@@ -173,7 +180,8 @@ export function MarketingView() {
         <Segmented
           value={tab}
           options={[
-            { value: 'contacts', label: `Contacts (${contacts.length})` },
+            { value: 'overview', label: 'Overview' },
+            { value: 'contacts', label: `Contacts (${paging.total.toLocaleString('en-US')})` },
             { value: 'email', label: 'Email' },
             { value: 'posts', label: overview.postsAwaiting ? `Posts (${overview.postsAwaiting} to approve)` : 'Posts' },
             { value: 'sequences', label: 'Sequences' },
@@ -185,8 +193,8 @@ export function MarketingView() {
         <span className="aw-toolbar__fill" />
         {tab === 'contacts' ? (
           <>
-            <input className="aw-search" value={filters.q} placeholder="Search email, name, business…" onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} />
-            <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
+            <input className="aw-search" value={filters.q} placeholder="Search email, name, business…" onChange={(e) => filter({ q: e.target.value })} />
+            <select value={filters.status} onChange={(e) => filter({ status: e.target.value })}>
               <option value="">Every status</option>
               {Object.keys(CONTACT_TONE).map((s) => (
                 <option key={s} value={s}>
@@ -195,7 +203,7 @@ export function MarketingView() {
               ))}
             </select>
             {filters.source ? (
-              <Button size="sm" kind="ghost" onClick={() => setFilters((f) => ({ ...f, source: '' }))} title="Show every source">
+              <Button size="sm" kind="ghost" onClick={() => filter({ source: '' })} title="Show every source">
                 Source: {filters.source} ✕
               </Button>
             ) : null}
@@ -208,6 +216,9 @@ export function MarketingView() {
         ) : null}
         {tab === 'email' ? (
           <>
+            <Button kind="primary" onClick={() => setModal({ kind: 'review' })} title="Read the next first emails one by one: let each go, rewrite it, or cancel it.">
+              Review next
+            </Button>
             <Button onClick={() => setModal({ kind: 'compose', channel: 'email' })}>Compose</Button>
             <Button
               title="Rewrite every scheduled email from the current templates. Emails you edited by hand are left alone."
@@ -230,11 +241,65 @@ export function MarketingView() {
         ) : null}
       </div>
 
+      {tab === 'overview' ? (
+        <OverviewTab api={api} tick={tick} health={health} onReview={() => setModal({ kind: 'review' })} onContact={(id) => setModal({ kind: 'person', id })} />
+      ) : null}
+
       {tab === 'contacts' ? (
         <section className="aw-panel">
+          <div className="aw-inline" style={{ marginBottom: 8 }}>
+            <span className="aw-muted">
+              {paging.total
+                ? `${(filters.offset + 1).toLocaleString('en-US')}–${Math.min(filters.offset + paging.page, paging.total).toLocaleString('en-US')} of ${paging.total.toLocaleString('en-US')}`
+                : 'None'}
+            </span>
+            <Button size="sm" disabled={!filters.offset} onClick={() => setFilters((f) => ({ ...f, offset: Math.max(0, f.offset - paging.page) }))}>
+              Previous
+            </Button>
+            <Button size="sm" disabled={filters.offset + paging.page >= paging.total} onClick={() => setFilters((f) => ({ ...f, offset: f.offset + paging.page }))}>
+              Next
+            </Button>
+            <span className="aw-toolbar__fill" />
+            {selected.size ? (
+              <>
+                <span>{plural(selected.size, 'contact selected', 'contacts selected')}</span>
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    run(() => api('POST', '/admin/marketing/contacts/bulk', { action: 'pause', ids: [...selected] }), (out) => `${out.changed} paused; their queued mail was cancelled.`).then(() =>
+                      setSelected(new Set()),
+                    )
+                  }
+                >
+                  Pause
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    run(() => api('POST', '/admin/marketing/contacts/bulk', { action: 'opt_out', ids: [...selected] }), (out) => `${out.changed} opted out; their queued mail was cancelled.`).then(() =>
+                      setSelected(new Set()),
+                    )
+                  }
+                >
+                  Opt out
+                </Button>
+                <Button size="sm" kind="ghost" onClick={() => setSelected(new Set())}>
+                  Clear
+                </Button>
+              </>
+            ) : null}
+          </div>
           <table className="aw-table">
             <thead>
               <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    aria-label="Select this page"
+                    checked={contacts.length > 0 && contacts.every((c) => selected.has(c.id))}
+                    onChange={(e) => setSelected(e.target.checked ? new Set(contacts.map((c) => c.id)) : new Set())}
+                  />
+                </th>
                 <th>Contact</th>
                 <th>Business / site</th>
                 <th>Source</th>
@@ -247,7 +312,22 @@ export function MarketingView() {
             <tbody>
               {contacts.map((c) => (
                 <tr key={c.id}>
-                  <td className="aw-table__title">
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${c.email}`}
+                      checked={selected.has(c.id)}
+                      onChange={(e) =>
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(c.id);
+                          else next.delete(c.id);
+                          return next;
+                        })
+                      }
+                    />
+                  </td>
+                  <td className="aw-table__title" onClick={() => setModal({ kind: 'person', id: c.id })} style={{ cursor: 'pointer' }} title="Open the contact's history">
                     <span className="aw-mono">{c.email}</span>
                     {c.name ? <span className="aw-muted"> {c.name}</span> : null}
                     {c.gap ? <div className="aw-muted">{snippet(c.gap, 110)}</div> : null}
@@ -307,7 +387,7 @@ export function MarketingView() {
           api={api}
           tick={tick}
           onPick={(source) => {
-            setFilters((f) => ({ ...f, source }));
+            filter({ source });
             setTab('contacts');
           }}
         />
@@ -346,6 +426,18 @@ export function MarketingView() {
       {modal?.kind === 'edit' ? <EditPostModal message={modal.message} api={api} onClose={() => setModal(null)} onSaved={done} /> : null}
 
       {modal?.kind === 'message' ? <MessageModal id={modal.id} api={api} onClose={() => setModal(null)} onDone={done} /> : null}
+
+      {modal?.kind === 'review' ? <ReviewModal api={api} onClose={() => done('Review saved.')} /> : null}
+
+      {modal?.kind === 'person' ? (
+        <PersonModal
+          id={modal.id}
+          api={api}
+          onClose={() => setModal(null)}
+          onEdit={(contact) => setModal({ kind: 'contact', contact })}
+          onOpenMessage={(id) => setModal({ kind: 'message', id })}
+        />
+      ) : null}
     </div>
   );
 }
@@ -354,6 +446,354 @@ const pct = (rate) => `${(rate * 100).toFixed(rate && rate < 0.01 ? 2 : 1)}%`;
 
 const runMessage = (result) =>
   result?.reason ? (REASONS[result.reason] ?? `Nothing sent: ${result.reason}`) : `Sent ${result?.sent ?? 0}${result?.failed ? `, ${result.failed} failed` : ''}.`;
+
+/* —— overview: what left, what came back —— */
+
+const dayName = (unix, offsetMinutes) => {
+  const d = new Date((unix + offsetMinutes * 60) * 1000);
+  return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()]} ${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
+};
+
+const REPLY_TONE = { reply: 'ok', opt_out: 'warn', complaint: 'bad' };
+const REPLY_LABEL = { reply: 'replied', opt_out: 'opted out', complaint: 'spam complaint' };
+
+function OverviewTab({ api, tick, health, onReview, onContact }) {
+  const [stats, setStats] = useState(null);
+  const [replies, setReplies] = useState(null);
+  const [review, setReview] = useState(null);
+  useEffect(() => {
+    let live = true;
+    Promise.all([
+      api('GET', '/admin/marketing/stats?days=14'),
+      api('GET', '/admin/marketing/replies'),
+      api('GET', '/admin/marketing/review?limit=1'),
+    ])
+      .then(([s, r, v]) => {
+        if (!live) return;
+        setStats(s);
+        setReplies(r.replies ?? []);
+        setReview(v.nextDay);
+      })
+      .catch(() => live && setReplies([]));
+    return () => {
+      live = false;
+    };
+  }, [api, tick]);
+
+  const sum = (key) => (stats?.days ?? []).reduce((n, d) => n + d[key], 0);
+  const sent = sum('sent');
+  return (
+    <>
+      <section className="aw-panel">
+        <div className="aw-inline">
+          <h3 style={{ margin: 0 }}>Next 24 hours</h3>
+          <span className="aw-muted">
+            {review ? `${review.reviewed} of ${plural(review.total, 'first email', 'first emails')} due by this time tomorrow are reviewed.` : '…'}
+          </span>
+          <span className="aw-toolbar__fill" />
+          <Button kind="primary" onClick={onReview}>
+            Review next
+          </Button>
+        </div>
+      </section>
+
+      <section className="aw-panel">
+        <h3>Last 14 days</h3>
+        <div className="aw-tags">
+          <Tag>{sent.toLocaleString('en-US')} sent</Tag>
+          <Tag tone={sum('reply') ? 'ok' : 'dash'}>
+            {sum('reply')} replies {sent ? `(${pct(sum('reply') / sent)})` : ''}
+          </Tag>
+          <Tag tone={health?.trip === 'bounce_rate' ? 'bad' : 'dash'}>{sum('bounce')} bounces</Tag>
+          <Tag tone="dash">{sum('opt_out')} opt-outs</Tag>
+          <Tag tone={sum('complaint') ? 'bad' : 'dash'}>{sum('complaint')} complaints</Tag>
+          <Tag tone="dash">{sum('published')} posts published</Tag>
+        </div>
+        {stats ? (
+          <table className="aw-table">
+            <thead>
+              <tr>
+                <th>Day</th>
+                <th>Sent</th>
+                <th>Replies</th>
+                <th>Bounces</th>
+                <th>Opt-outs</th>
+                <th>Complaints</th>
+                <th>Posts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.days.map((d) => (
+                <tr key={d.day}>
+                  <td className="aw-muted">{dayName(d.day, stats.offsetMinutes)}</td>
+                  <td>{d.sent || '·'}</td>
+                  <td>{d.reply || '·'}</td>
+                  <td className={d.bounce ? 'aw-warn' : undefined}>{d.bounce || '·'}</td>
+                  <td>{d.opt_out || '·'}</td>
+                  <td className={d.complaint ? 'aw-warn' : undefined}>{d.complaint || '·'}</td>
+                  <td>{d.published || '·'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="aw-muted">Loading…</p>
+        )}
+      </section>
+
+      <section className="aw-panel">
+        <h3>What came back</h3>
+        <p className="aw-muted">Replies are also forwarded to your inbox; answer them from there. Opt-outs and complaints are closed already.</p>
+        {replies?.length ? (
+          <ul className="aw-rows">
+            {replies.map((r) => (
+              <li key={r.id} className="aw-row" style={{ alignItems: 'flex-start', cursor: 'pointer' }} onClick={() => onContact(r.contact.id)}>
+                <Tag tone={REPLY_TONE[r.kind]}>{REPLY_LABEL[r.kind] ?? r.kind}</Tag>
+                <span className="aw-row__title">
+                  {r.contact.business ?? r.contact.email}
+                  <div className="aw-muted" style={{ whiteSpace: 'pre-wrap', fontWeight: 'normal' }}>
+                    {snippet(r.text ?? '', 400)}
+                  </div>
+                </span>
+                <span className="aw-muted">{ago(r.at)} ago</span>
+              </li>
+            ))}
+          </ul>
+        ) : replies ? (
+          <p className="aw-muted">Nothing yet.</p>
+        ) : null}
+      </section>
+    </>
+  );
+}
+
+/* —— review: the next first emails, one at a time —— */
+
+function ReviewModal({ api, onClose }) {
+  const [queue, setQueue] = useState(null);
+  const [nextDay, setNextDay] = useState(null);
+  const [index, setIndex] = useState(0);
+  const [detail, setDetail] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [done, setDone] = useState({ ok: 0, rewritten: 0, cancelled: 0 });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const loadQueue = useCallback(
+    () =>
+      api('GET', '/admin/marketing/review?limit=50').then((out) => {
+        setQueue(out.messages ?? []);
+        setNextDay(out.nextDay);
+        setIndex(0);
+      }),
+    [api],
+  );
+  useEffect(() => {
+    void loadQueue().catch((err) => setError(err.message ?? err.code));
+  }, [loadQueue]);
+
+  const current = queue?.[index] ?? null;
+  useEffect(() => {
+    if (!current) return undefined;
+    let live = true;
+    setDetail(null);
+    setDraft(null);
+    api('GET', `/admin/marketing/messages/${current.id}`)
+      .then((out) => live && setDetail(out))
+      .catch((err) => live && setError(err.message ?? err.code));
+    return () => {
+      live = false;
+    };
+  }, [api, current]);
+
+  const step = async (fn, counter) => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (fn) await fn();
+      if (counter) setDone((d) => ({ ...d, [counter]: d[counter] + 1 }));
+      if (index + 1 < queue.length) setIndex(index + 1);
+      else await loadQueue();
+    } catch (err) {
+      setError(err.message ?? err.code);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const progress = `${done.ok} let go · ${done.rewritten} rewritten · ${done.cancelled} cancelled${nextDay ? ` · next 24h: ${nextDay.reviewed + done.ok + done.rewritten}/${nextDay.total} reviewed` : ''}`;
+
+  if (queue && !current) {
+    return (
+      <Modal title="Review" subtitle={progress} onClose={onClose} actions={<Button kind="primary" onClick={onClose}>Done</Button>}>
+        <p>Every queued first email is reviewed. Follow-ups go with their first email.</p>
+      </Modal>
+    );
+  }
+
+  const contact = detail?.contact;
+  return (
+    <Modal
+      title={current ? `${index + 1} of ${queue.length}: ${current.contactEmail}` : 'Review'}
+      subtitle={progress}
+      onClose={onClose}
+      wide
+      actions={
+        draft ? (
+          <>
+            <Button onClick={() => setDraft(null)}>Back</Button>
+            <Button
+              kind="primary"
+              disabled={busy || !draft.subject.trim() || !draft.body.trim()}
+              onClick={() => step(() => api('PATCH', `/admin/marketing/messages/${current.id}`, draft), 'rewritten')}
+            >
+              Save and next
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button kind="ghost" disabled={busy || !current} onClick={() => step(() => api('POST', `/admin/marketing/messages/${current.id}/cancel`), 'cancelled')}>
+              Cancel this email
+            </Button>
+            <Button disabled={busy || !current} onClick={() => step(null, null)}>
+              Skip
+            </Button>
+            <Button disabled={busy || !detail} onClick={() => setDraft({ subject: current.subject ?? '', body: current.body })}>
+              Rewrite
+            </Button>
+            <Button kind="primary" disabled={busy || !current} onClick={() => step(() => api('POST', `/admin/marketing/messages/${current.id}/review`), 'ok')}>
+              Looks good, next
+            </Button>
+          </>
+        )
+      }
+    >
+      {contact ? (
+        <p className="aw-muted" style={{ marginTop: 0 }}>
+          {[contact.business, contact.site, contact.sourceKind, contact.country].filter(Boolean).join(' · ')}
+          {current?.scheduledAt ? ` · goes ${when(current.scheduledAt)}` : ''}
+          {contact.site ? (
+            <>
+              {' · '}
+              <a href={/^https?:/.test(contact.site) ? contact.site : `https://${contact.site}`} target="_blank" rel="noreferrer">
+                open site
+              </a>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      {draft ? (
+        <>
+          <Field label="Subject">
+            <input value={draft.subject} maxLength={200} onChange={(e) => setDraft((d) => ({ ...d, subject: e.target.value }))} />
+          </Field>
+          <Field label="Body" hint="The footer is added when it sends.">
+            <textarea rows={16} value={draft.body} onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))} autoFocus />
+          </Field>
+        </>
+      ) : detail ? (
+        <>
+          <p style={{ fontWeight: 600, margin: '0 0 8px' }}>{detail.preview.subject}</p>
+          <pre style={{ whiteSpace: 'pre-wrap', font: 'inherit', lineHeight: 1.5, padding: 12, border: '1px solid var(--aw-line, #ddd)', borderRadius: 6, margin: 0 }}>
+            {detail.preview.text}
+          </pre>
+        </>
+      ) : (
+        <p className="aw-muted">Loading…</p>
+      )}
+      {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
+    </Modal>
+  );
+}
+
+/* —— one contact, everything that happened —— */
+
+function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    let live = true;
+    api('GET', `/admin/marketing/contacts/${id}`)
+      .then((out) => live && setData(out))
+      .catch((err) => live && setError(err.message ?? err.code));
+    return () => {
+      live = false;
+    };
+  }, [api, id]);
+  const c = data?.contact;
+  return (
+    <Modal
+      title={c?.email ?? 'Contact'}
+      subtitle={c ? [c.name, c.business, c.site].filter(Boolean).join(' · ') : undefined}
+      onClose={onClose}
+      wide
+      actions={
+        <>
+          <Button onClick={onClose}>Close</Button>
+          {c ? (
+            <Button kind="primary" onClick={() => onEdit(c)}>
+              Edit contact
+            </Button>
+          ) : null}
+        </>
+      }
+    >
+      {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
+      {c ? (
+        <>
+          <div className="aw-tags">
+            <Tag tone={CONTACT_TONE[c.status]}>{c.status}</Tag>
+            {c.sourceKind ? <Tag tone="dash">{c.sourceKind}</Tag> : null}
+            {c.country ? <Tag tone="dash">{c.country}</Tag> : null}
+            <Tag tone="dash">added {ago(c.createdAt)} ago</Tag>
+          </div>
+          {c.gap ? <p>Observation: {c.gap}</p> : <p className="aw-muted">No observation written; the plain versions are used.</p>}
+          {c.sourceUrl ? (
+            <p className="aw-muted">
+              Found on{' '}
+              <a href={c.sourceUrl} target="_blank" rel="noreferrer">
+                {c.sourceUrl}
+              </a>
+            </p>
+          ) : null}
+          {c.notes ? <p className="aw-muted">{c.notes}</p> : null}
+          <h3>Messages</h3>
+          <table className="aw-table">
+            <tbody>
+              {data.messages.map((m) => (
+                <tr key={m.id} onClick={() => onOpenMessage(m.id)} style={{ cursor: 'pointer' }}>
+                  <td className="aw-muted">{m.sentAt ? `${ago(m.sentAt)} ago` : m.scheduledAt ? when(m.scheduledAt) : '—'}</td>
+                  <td>
+                    {m.subject} {m.editedAt ? <Tag tone="ok">edited</Tag> : m.reviewedAt ? <Tag tone="ok">reviewed</Tag> : null}
+                  </td>
+                  <td>
+                    <Tag tone={MESSAGE_TONE[m.status]}>{m.status}</Tag>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!data.messages.length ? <p className="aw-muted">Nothing queued or sent.</p> : null}
+          <h3>Events</h3>
+          <ul className="aw-rows">
+            {data.events.map((e) => (
+              <li key={e.id} className="aw-row">
+                <Tag tone={EVENT_BAD.has(e.kind) ? 'bad' : EVENT_GOOD.has(e.kind) ? 'ok' : 'dash'}>{e.kind.replaceAll('_', ' ')}</Tag>
+                <span className="aw-muted" style={{ whiteSpace: 'pre-wrap' }}>
+                  {snippet(e.detail ?? '', 300)}
+                </span>
+                <span className="aw-muted">{ago(e.createdAt)} ago</span>
+              </li>
+            ))}
+          </ul>
+          {!data.events.length ? <p className="aw-muted">No events.</p> : null}
+        </>
+      ) : !error ? (
+        <p className="aw-muted">Loading…</p>
+      ) : null}
+    </Modal>
+  );
+}
 
 /* —— email: the send queue, in send order —— */
 
@@ -412,7 +852,8 @@ function EmailTab({ api, run, tick, events, onOpen }) {
                 <td className="aw-mono">{m.contactEmail ?? '—'}</td>
                 <td className="aw-table__title">
                   <div>
-                    {m.subject} {m.editedAt ? <Tag tone="ok">edited</Tag> : null} <span className="aw-muted">· step {m.step + 1}</span>
+                    {m.subject} {m.editedAt ? <Tag tone="ok">edited</Tag> : m.reviewedAt ? <Tag tone="ok">reviewed</Tag> : null}{' '}
+                    <span className="aw-muted">· step {m.step + 1}</span>
                   </div>
                   <div className="aw-muted">{snippet(m.body.replace(/\s+/g, ' '), 140)}</div>
                   {m.error ? <div className="aw-warn">{m.error}</div> : null}
@@ -909,6 +1350,19 @@ function SettingsTab({ overview, run, api, contactsById }) {
                 { value: 'ses', label: 'Amazon SES' },
               ]}
               onChange={(v) => set('provider', v)}
+            />
+          </Field>
+          <Field
+            label="Review first emails"
+            hint="On: a first email goes out only after you read it in Review next (or rewrote it). Follow-ups ride on the first. Off: everything queued goes at its time."
+          >
+            <Segmented
+              value={Boolean(draft.reviewFirst)}
+              options={[
+                { value: true, label: 'Only reviewed' },
+                { value: false, label: 'Send all' },
+              ]}
+              onChange={(v) => set('reviewFirst', v)}
             />
           </Field>
           <Field

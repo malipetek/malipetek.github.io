@@ -524,6 +524,29 @@ const groups = {
     check('approving twice is refused', (await call(`/admin/marketing/messages/${draft.data.message.id}/approve`, { method: 'POST', auth: admin })).status === 409);
     await call(`/admin/marketing/messages/${draft.data.message.id}/cancel`, { method: 'POST', auth: admin });
 
+    // Review mode: first emails in send order, and the gate on sending.
+    const review = await call('/admin/marketing/review?limit=5', { auth: admin });
+    check('the review queue lists unread first emails in send order', review.status === 200 && review.data.messages.length === 5 && review.data.messages.every((m) => m.step === 0 && !m.editedAt), JSON.stringify(review.data).slice(0, 300));
+    const firstUp = review.data.messages[0];
+    const marked = await call(`/admin/marketing/messages/${firstUp.id}/review`, { method: 'POST', auth: admin });
+    check('reading an email marks it reviewed', marked.status === 200 && marked.data.message.reviewedAt > 0);
+    const reviewAgain = await call('/admin/marketing/review?limit=5', { auth: admin });
+    check('a reviewed email leaves the queue', !reviewAgain.data.messages.some((m) => m.id === firstUp.id));
+
+    const page = await call('/admin/marketing/contacts', { auth: admin });
+    check('contacts come in pages with a total', page.data.contacts.length === 200 && page.data.total >= 502, JSON.stringify({ n: page.data.contacts.length, total: page.data.total }));
+    const page2 = await call('/admin/marketing/contacts?offset=200', { auth: admin });
+    check('the next page holds other contacts', page2.data.contacts.length > 0 && !page2.data.contacts.some((c) => page.data.contacts.some((p) => p.id === c.id)));
+    const detail = await call(`/admin/marketing/contacts/${firstUp.contactId}`, { auth: admin });
+    check('a contact opens with its messages and events', detail.status === 200 && detail.data.messages.length === 3);
+    const pick = page2.data.contacts.filter((c) => c.status === 'queued').slice(0, 3).map((c) => c.id);
+    const bulkOut = await call('/admin/marketing/contacts/bulk', { method: 'POST', auth: admin, body: { action: 'opt_out', ids: pick } });
+    const left = Number(sql(`SELECT 'left=' || COUNT(*) AS n FROM marketing_messages WHERE status = 'scheduled' AND contact_id IN (${pick.join(',')});`).toString().match(/left=(\d+)/)?.[1]);
+    check('a bulk opt-out closes the contacts and cancels their mail', bulkOut.data.changed === 3 && left === 0, JSON.stringify(bulkOut.data) + ' left ' + left);
+    const stats = await call('/admin/marketing/stats?days=7', { auth: admin });
+    check('daily stats cover the asked days', stats.status === 200 && stats.data.days.length === 7);
+    check('the replies view answers', (await call('/admin/marketing/replies', { auth: admin })).status === 200);
+
     const client = account(`desk-${Date.now()}@example.com`);
     check('a client cannot open the marketing desk', (await call('/admin/marketing', { auth: client.session })).status === 403);
   },
