@@ -1789,6 +1789,11 @@ export interface Board {
  */
 export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Board {
   const input = options.input ?? canvas;
+  // The portal's canvas fills the page and the board is a window inside it, so
+  // it passes that window as `frame` and the projection is shifted into it.
+  // The plugin card's canvas *is* the frame, so it passes no frame and labels
+  // must stay in canvas coordinates.
+  const framed = Boolean(options.frame) && options.frame !== canvas;
   const frameEl = options.frame ?? input;
   const fitBase = options.fitBase ?? 2.3;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1890,16 +1895,21 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     camera.aspect = size.w / size.h;
     // The canvas fills the whole portal; the board frame is where the machine
     // must sit. Shift the projection centre instead of moving the canvas.
-    const f = frameEl.getBoundingClientRect();
-    frameOrigin = { left: f.left, top: f.top };
-    camera.setViewOffset(
-      size.w,
-      size.h,
-      size.w / 2 - (f.left + f.width / 2),
-      size.h / 2 - (f.top + f.height / 2),
-      size.w,
-      size.h,
-    );
+    if (framed) {
+      const f = frameEl.getBoundingClientRect();
+      frameOrigin = { left: f.left, top: f.top };
+      camera.setViewOffset(
+        size.w,
+        size.h,
+        size.w / 2 - (f.left + f.width / 2),
+        size.h / 2 - (f.top + f.height / 2),
+        size.w,
+        size.h,
+      );
+    } else {
+      frameOrigin = { left: 0, top: 0 };
+      camera.clearViewOffset();
+    }
     camera.updateProjectionMatrix();
     // The machine is wide: narrower boxes pull back so all of it stays in frame.
     fit = THREE.MathUtils.clamp(fitBase / camera.aspect, 0.7, 2.0);

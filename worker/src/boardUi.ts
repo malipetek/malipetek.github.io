@@ -172,7 +172,14 @@ export const BOARD_HTML = `<!DOCTYPE html>
     color: var(--mk-ink);
     /* Clear the ChatGPT composer that floats over the bottom of the card. */
     padding: 12px 14px 104px;
+    scroll-padding-bottom: 104px;
     -webkit-font-smoothing: antialiased;
+  }
+  /* Fullscreen gives the composer more room, so the last section can scroll
+     clear of it instead of sitting behind it. */
+  body[data-mode="fullscreen"] {
+    padding-bottom: 200px;
+    scroll-padding-bottom: 200px;
   }
   .mk-app { max-width: 760px; margin: 0 auto; }
   .mk-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
