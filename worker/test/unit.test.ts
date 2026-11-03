@@ -391,7 +391,7 @@ test('executors: the Harness-hosted executors are known, client work stays on cl
   assert.ok(EXECUTOR_CATALOG.some((e) => e.id === 'dsh-opencode'));
   assert.equal(cleanExecutorPin('dsh-devin'), 'dsh-devin');
   assert.ok(EXECUTOR_CATALOG.some((e) => e.id === 'dsh-devin'));
-  assert.equal(CLIENT_EXECUTOR, 'claude');
+  assert.equal(CLIENT_EXECUTOR, 'dsh-go');
   const node = cleanNodeReport({ id: 'g500', executors: ['claude', 'dsh-claude', 'dsh-opencode', 'made-up'] });
   assert.deepEqual(node?.executors, ['claude', 'dsh-claude', 'dsh-opencode']);
 });

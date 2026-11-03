@@ -937,7 +937,7 @@ const groups = {
     check('a client cannot approve', (await call(`/admin/tickets/${ticketId}`, { method: 'PATCH', auth: a.session, body: { status: 'approved' } })).status === 403);
     await approve(admin, ticketId);
     const c = await claim(nodeId);
-    check('the node claims it after approval, sandboxed', c.ticket?.id === ticketId && c.executor === 'claude' && c.site === null);
+    check('the node claims it after approval, on an executor it runs', c.ticket?.id === ticketId && c.executor === 'claude' && c.site === null);
     check('a second node cannot report on it', (await call(`/node/runs/${c.runId}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId: 'someone-else', ok: true, summary: 'x' } })).status === 409);
     const rep = await call(`/node/runs/${c.runId}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId, ok: true, summary: 'Did it.', costUsd: 0.25 } });
     check('the claiming node reports; the ticket goes to review', rep.status === 200 && (await call(`/portal/tickets/${ticketId}`, { auth: a.session })).data.ticket.status === 'review');

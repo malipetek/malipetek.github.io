@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AdminContext, useAdmin as useAdminCtx, useAdminData, useMeter, useTicket } from './store.js';
-import { CLIENT_VISIBLE, EXECUTORS, PRIORITIES, STATUS_LABEL, errorText, needsYou, predict, slugify } from './format.js';
+import { AGENTS, CLIENT_VISIBLE, PRIORITIES, STATUS_LABEL, errorText, needsYou, predict, slugify } from './format.js';
 import { Button, Chips, Confirm, Dot, Field, Icon, Modal, Resizer, Segmented, cx } from './ui.jsx';
 import { BoardView, InboxView, ListView } from './board.jsx';
 import { TicketDetails, TicketView } from './ticket.jsx';
@@ -565,7 +565,7 @@ function TaskModal({ preset, onClose }) {
           <Segmented value={priority} options={PRIORITIES} onChange={setPriority} />
         </Field>
         <Field label="Agent">
-          <Segmented value={executor} options={[{ value: null, label: 'Any' }, ...EXECUTORS.map((e) => ({ value: e, label: e }))]} onChange={setExecutor} />
+          <Segmented value={executor} options={AGENTS} onChange={setExecutor} />
         </Field>
         <Field label="Start">
           <Segmented value={approve} options={[{ value: true, label: 'Queue now' }, { value: false, label: 'Hold in New' }]} onChange={setApprove} />

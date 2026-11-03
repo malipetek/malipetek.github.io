@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ACCOUNT, DSH_FAMILY, EXECUTORS, SYSTEM_ORDER, briefInput, claudeResult, dshAgentOverlay, fallbackChain, findSessionLog, isQuotaError, parseDshEvents, stepsOf } from './executors.mjs';
+import { ACCOUNT, DSH_FAMILY, DSH_MODELS, EXECUTORS, SYSTEM_ORDER, briefInput, claudeResult, dshAgentOverlay, dshModelOverlay, parseRoute, routeTask, fallbackChain, findSessionLog, isQuotaError, parseDshEvents, stepsOf } from './executors.mjs';
 
 const SAMPLE = `{"type":"session","sessionId":"session-db44e5d2-8897-4d5e-9a9f-b96070283d22","cwd":"/private/tmp/dshjson"}
 {"type":"status","phase":"turn_start","turn":1}
@@ -110,15 +110,38 @@ test('isQuotaError: limits read as limits, task failures do not', () => {
   assert.ok(!isQuotaError(''));
 });
 
-test('fallbackChain: system work tries the claimed executor, then Harness first', () => {
-  const all = ['claude', 'opencode', 'dsh', 'devin', 'dsh-claude', 'dsh-opencode', 'dsh-devin'];
-  assert.deepEqual(fallbackChain('dsh-claude', all, 'system'), ['dsh-claude', 'dsh', 'dsh-devin', 'dsh-opencode', 'devin', 'claude', 'opencode']);
-  assert.deepEqual(fallbackChain('opencode', ['opencode', 'dsh', 'dsh-opencode'], 'system'), ['opencode', 'dsh', 'dsh-opencode']);
-  assert.deepEqual(fallbackChain('claude', all, 'client'), ['claude', 'dsh-claude', 'dsh', 'dsh-devin', 'dsh-opencode', 'devin', 'opencode']);
+test('fallbackChain: the claimed executor, then Flash, DeepSeek, Opus — all in the Harness', () => {
+  const all = ['claude', 'opencode', 'dsh', 'devin', 'dsh-claude', 'dsh-opencode', 'dsh-devin', 'dsh-go'];
+  assert.deepEqual(fallbackChain('dsh-go', all, 'system'), ['dsh-go', 'dsh', 'dsh-claude']);
+  assert.deepEqual(fallbackChain('dsh-devin', all, 'client'), ['dsh-devin', 'dsh-go', 'dsh', 'dsh-claude']);
+  // A node without the Harness has nothing to fall back to.
+  assert.deepEqual(fallbackChain('claude', ['claude', 'opencode'], 'client'), ['claude']);
   // A quota on one form of an account covers the other.
   assert.equal(ACCOUNT['dsh-claude'], ACCOUNT.claude);
   assert.equal(ACCOUNT['dsh-devin'], ACCOUNT.devin);
+  assert.notEqual(ACCOUNT['dsh-go'], ACCOUNT.dsh);
   assert.deepEqual(SYSTEM_ORDER.filter((e) => !EXECUTORS[e]), []);
+});
+
+test('dshModelOverlay pins a native provider and model, no ACP', () => {
+  const yml = dshModelOverlay(DSH_MODELS['dsh-go']);
+  assert.match(yml, /provider: "opencode-go"/);
+  assert.match(yml, /model: "deepseek-v4\.1-flash"/);
+  assert.match(yml, /id: session-title-llm\n  disabled: true/);
+  assert.doesNotMatch(yml, /external-agents/);
+});
+
+test('dsh-go runs the Harness with the model overlay', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'dshgo-'));
+  const bin = join(tmp, 'dsh');
+  writeFileSync(bin, `#!/bin/sh\nprintf '%s\\n' "$@" > "${tmp}/argv"\necho '{"type":"session","sessionId":"s1"}'\necho '{"type":"final","text":"done"}'\n`);
+  chmodSync(bin, 0o755);
+  const res = await EXECUTORS['dsh-go']({ prompt: 'p', cwd: tmp, system: 's', config: { bin, overlayDir: tmp, ...DSH_MODELS['dsh-go'] }, signal: new AbortController().signal });
+  assert.equal(res.ok, true);
+  assert.equal(res.model, 'deepseek-v4.1-flash');
+  const argv = readFileSync(join(tmp, 'argv'), 'utf8').split('\n');
+  assert.equal(argv[argv.indexOf('--profile') + 1], 'headless');
+  assert.match(readFileSync(argv[argv.indexOf('--patch') + 1], 'utf8'), /opencode-go/);
 });
 
 test('findSessionLog scans the encoded dirs', () => {
@@ -250,4 +273,27 @@ test('claudeResult: the last result event of a stream, or a whole JSON object', 
   assert.deepEqual(claudeResult(stream), { type: 'result', result: 'done', total_cost_usd: 0.0034, num_turns: 2, is_error: false });
   assert.equal(claudeResult('{"result":"plain json","is_error":false}').result, 'plain json');
   assert.deepEqual(claudeResult('Error: not logged in'), {});
+});
+
+test('parseRoute: reads the JSON line, anything else is flash', () => {
+  assert.deepEqual(parseRoute('{"route":"opus","why":"cross-cutting auth change"}'), { route: 'opus', why: 'cross-cutting auth change' });
+  assert.deepEqual(parseRoute('Sure.\n{"route":"flash","why":"copy edit"}'), { route: 'flash', why: 'copy edit' });
+  assert.equal(parseRoute('opus, definitely').route, 'flash');
+  assert.equal(parseRoute('{"route":"gpt"}').route, 'flash');
+  assert.equal(parseRoute('').route, 'flash');
+});
+
+test('routeTask asks Flash in an empty folder; a failed router means flash', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'route-'));
+  const fake = (body) => {
+    const bin = join(tmp, `dsh-${Math.random().toString(36).slice(2)}`);
+    writeFileSync(bin, `#!/bin/sh\npwd > "${tmp}/cwd"\n${body}\n`);
+    chmodSync(bin, 0o755);
+    return { bin, overlayDir: tmp, ...DSH_MODELS['dsh-go'] };
+  };
+  const hard = await routeTask('Rewrite the auth layer', fake(`echo '{"type":"final","text":"{\\"route\\":\\"opus\\",\\"why\\":\\"auth rewrite\\"}"}'`));
+  assert.deepEqual(hard, { route: 'opus', why: 'auth rewrite' });
+  assert.match(readFileSync(join(tmp, 'cwd'), 'utf8'), /malipetek-route-/);
+  const broken = await routeTask('x', fake('exit 1'));
+  assert.equal(broken.route, 'flash');
 });

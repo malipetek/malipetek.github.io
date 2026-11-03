@@ -5,7 +5,8 @@ import { isEnglish, localeInfo } from '../../../src/lib/locales.js';
 import { useAdmin, useMeter, useTicket } from './store.js';
 import {
   ATTENTION,
-  EXECUTORS,
+  AGENTS,
+  agentOptions,
   PRIORITIES,
   STATUSES,
   STATUS_LABEL,
@@ -859,11 +860,11 @@ export function TicketDetails({ ticket, runs, land, meter, reload }) {
       <Field label="Priority">
         <Segmented value={ticket.priority ?? 0} options={PRIORITIES} onChange={(v) => void patch({ priority: v }, 'Priority saved.')} />
       </Field>
-      <Field label="Agent" hint={isClient ? 'Runs after your approval; claude is the default sandboxed agent.' : undefined}>
+      <Field label="Agent" hint="Auto lets Flash pick: Flash for everyday work, Opus for hard work.">
         <Segmented
           value={ticket.executor ?? null}
-          options={[{ value: null, label: 'Any' }, ...EXECUTORS.map((e) => ({ value: e, label: e }))]}
-          onChange={(v) => void patch({ executor: v }, `Agent: ${v ?? 'any'}.`)}
+          options={agentOptions(ticket.executor)}
+          onChange={(v) => void patch({ executor: v }, `Agent: ${AGENTS.find((a) => a.value === v)?.label ?? v ?? 'auto'}.`)}
         />
       </Field>
       {caps.length ? (
