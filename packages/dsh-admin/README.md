@@ -10,6 +10,27 @@ that decide who may file against what.
 A panel in the sidebar (**Admin**) and a page in the main slot, plus two agent
 tools over the same operations.
 
+A conversation that came from a ticket run gets two views beside Chat and
+Trajectory, registered only while that session is in front (no empty tabs
+anywhere else):
+
+- **Ticket #12** — the thread: title, the client's messages and the agent's runs,
+  the pre-review card, the composer, and the status moves that reach it
+  (approve, decline, hold, mark done, run again) under the title.
+- **Details** — the same fields the workbench keeps in a 300 px side column
+  (status, project, site, priority, agent, needs, budget, cost, runs, land,
+  Review in Git Graph), given a tab's width instead of squeezing the thread.
+
+A chip in the header still jumps to the Admin copy of the ticket.
+
+**Replies made in the conversation land on the ticket.** While a run's session is
+on screen the Client half tells the Host (`/admin follow <ticketId> <sessionId>`)
+and the Host turns each new user message in that session log into a private note
+on the ticket — so the steering reaches the thread and the next run. It starts
+at the newest message already in the log, so history is never replayed, and it
+skips what the Harness writes as a user message itself (runtime context, turn
+clock, model changes, skill and instruction reminders, subagent messages).
+
 The page is the shared admin workbench, `packages/admin-ui`: the same React app
 that `malipetek.dev/portal/admin` serves. Like an editor, it has an activity
 bar, a project explorer, tabs, a status bar and a ⌘K palette. Like a task
@@ -111,6 +132,8 @@ so instead of showing stale data.
 /admin status <id> <status>         set a ticket status
 /admin reply <id> <text>            reply to the client (emails them)
 /admin note <id> <text>             internal note
+/admin follow <id> <sessionId>     mirror that conversation's replies onto the ticket
+/admin unfollow                     stop mirroring
 /admin attach <id> {"paths":["~/Desktop/spec.pdf"],"text":"…","internal":false}
                                     post local files (a private note unless internal is false)
 /admin download /admin/tickets/<id>/files/<fileId>

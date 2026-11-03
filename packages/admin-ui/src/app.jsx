@@ -673,12 +673,52 @@ function ProjectModal({ onClose }) {
 
 
 /**
- * The ticket's details panel on its own, for a host that shows one ticket
- * outside the workbench — the Harness conversation's right pane. It renders the
- * same `TicketDetails` component the admin ticket view does, with the same data
- * and the same styles, so the two cannot drift.
+ * The AdminContext a standalone ticket host has to supply, gathered once so the
+ * details pane and the whole page cannot answer differently. `files` is how the
+ * host saves attachments (a download); `host.upload` is how it sends them, and
+ * a host without one simply gets no attach control.
  */
-export function TicketSidePanel({ api, host = null, ticketId }) {
+function ticketContext({ api, data, reload, host, files }) {
+  return {
+    api,
+    files: files ?? null,
+    data,
+    reload,
+    platform: 'dsh',
+    host,
+    open: () => {},
+    openTicket: (target) => host?.openTicket?.(target),
+    setStatus: async (target, status) => {
+      await api('PATCH', `/admin/tickets/${target.id}`, { status });
+      reload();
+    },
+    act: async (run, done) => {
+      try {
+        await run();
+        if (done) host?.notify?.(done);
+      } finally {
+        reload();
+      }
+    },
+    notify: (text) => host?.notify?.(text),
+    ask: (question) => {
+      if (typeof window !== 'undefined' && window.confirm(`${question.title}\n\n${question.text ?? ''}`)) {
+        void question.run?.();
+      }
+    },
+    setModal: () => {},
+    boardProject: 'all',
+    setBoardProject: () => {},
+  };
+}
+
+/**
+ * The ticket's details panel on its own, for a host that shows one ticket
+ * outside the workbench — a side pane. It renders the same `TicketDetails`
+ * component the admin ticket view does, with the same data and the same styles,
+ * so the two cannot drift.
+ */
+export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
   const [data, reloadData] = useAdminData(api);
   const [{ ticket, runs, land, loading }, reloadTicket] = useTicket(api, ticketId);
   const meter = useMeter(api, ticket, Boolean(ticket));
@@ -687,46 +727,18 @@ export function TicketSidePanel({ api, host = null, ticketId }) {
     void reloadTicket();
   }, [reloadData, reloadTicket]);
 
-  const value = useMemo(
-    () => ({
-      api,
-      files: null,
-      data,
-      reload,
-      platform: 'dsh',
-      host: null,
-      open: () => {},
-      openTicket: (target) => host?.openTicket?.(target),
-      setStatus: async (target, status) => {
-        await api('PATCH', `/admin/tickets/${target.id}`, { status });
-        reload();
-      },
-      act: async (run, done) => {
-        try {
-          await run();
-          if (done) host?.notify?.(done);
-        } finally {
-          reload();
-        }
-      },
-      notify: (text) => host?.notify?.(text),
-      ask: (question) => {
-        if (typeof window !== 'undefined' && window.confirm(`${question.title}\n\n${question.text ?? ''}`)) {
-          void question.run?.();
-        }
-      },
-      setModal: () => {},
-      boardProject: 'all',
-      setBoardProject: () => {},
-    }),
-    [api, data, host, reload],
-  );
+  // The host as given: the pane offers what its host can do (Git Graph, the
+  // Admin copy of the ticket) and nothing it cannot.
+  const value = useMemo(() => ticketContext({ api, data, reload, host, files: null }), [api, data, reload, host]);
 
   // The theme lives on `.aw` (every `--aw-*` variable is defined there). Without
   // it the panel renders with no accent, no panel background and the wrong ink —
   // which is exactly how it looked in the conversation's side pane. Block
-  // layout, because `.aw` is also the app shell's grid.
-  const scope = { display: 'block', height: '100%', overflowY: 'auto' };
+  // layout, because `.aw` is also the app shell's grid. As a page, the host
+  // scrolls and this only sets the frame.
+  const scope = page
+    ? { display: 'block', padding: '18px 24px 28px', maxWidth: 820, margin: '0 auto' }
+    : { display: 'block', height: '100%', overflowY: 'auto' };
   if (loading && !ticket) {
     return (
       <div className="aw" style={scope}>
@@ -747,7 +759,39 @@ export function TicketSidePanel({ api, host = null, ticketId }) {
     <div className="aw aw--dsh" style={scope}>
       <style>{STYLES}</style>
       <AdminContext.Provider value={value}>
-        <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} />
+        <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} page={page} />
+      </AdminContext.Provider>
+    </div>
+  );
+}
+
+/**
+ * The whole ticket — its thread, the composer, the review card, the runs and
+ * the details column — on its own, for a host that shows a ticket outside the
+ * workbench: the Harness conversation's Ticket view. Same `TicketView`, data
+ * hooks, provider and styles as the workbench page, so the two cannot drift.
+ */
+export function TicketPage({ api, host = null, files = null, ticketId, part = 'thread' }) {
+  // A host with a narrow conversation shows the details as a tab of their own
+  // (`part: 'details'`) rather than as a column that squeezes the thread.
+  if (part === 'details') return <TicketSidePanel api={api} host={host} ticketId={ticketId} page />;
+  return <TicketThread api={api} host={host} files={files} ticketId={ticketId} />;
+}
+
+function TicketThread({ api, host, files, ticketId }) {
+  const [data, reloadData] = useAdminData(api);
+  const reload = useCallback(() => {
+    void reloadData();
+  }, [reloadData]);
+  const value = useMemo(() => ticketContext({ api, data, reload, host, files }), [api, data, reload, host, files]);
+  // `.aw` scopes the panel's variables; block layout, because `.aw` is also the
+  // app shell's grid. The page scrolls inside the tab, not the conversation.
+  const scope = { display: 'block', height: '100%', overflowY: 'auto' };
+  return (
+    <div className="aw aw--dsh" style={scope}>
+      <style>{STYLES}</style>
+      <AdminContext.Provider value={value}>
+        <TicketView id={ticketId} active details={false} />
       </AdminContext.Provider>
     </div>
   );

@@ -894,7 +894,7 @@ var __awPlugin = (() => {
     done: [["approved", "Reopen and run", "ghost"]],
     declined: [["new", "Reopen", "ghost"]]
   };
-  function TicketView({ id, active }) {
+  function TicketView({ id, active, details = true }) {
     const { api, act } = useAdmin();
     const [{ ticket, messages, runs, review, screenshots, land, error, loading }, reload] = useTicket(api, id);
     const meter = useMeter(api, ticket, active);
@@ -905,8 +905,8 @@ var __awPlugin = (() => {
     ] });
     if (!ticket) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: errorText(error) });
     const isClient = ticket.kind !== "system";
-    return /* @__PURE__ */ jsxs("div", { className: "aw-ticket", children: [
-      /* @__PURE__ */ jsx(Resizer, { host: ".aw-ticket", cssVar: "--aw-details-w", def: 300, min: 200, max: 640, invert: true, storage: "aw.details.w", className: "aw-resize--details" }),
+    return /* @__PURE__ */ jsxs("div", { className: cx("aw-ticket", !details && "aw-ticket--solo"), children: [
+      details ? /* @__PURE__ */ jsx(Resizer, { host: ".aw-ticket", cssVar: "--aw-details-w", def: 300, min: 200, max: 640, invert: true, storage: "aw.details.w", className: "aw-resize--details" }) : null,
       /* @__PURE__ */ jsxs("div", { className: "aw-ticket__main", children: [
         /* @__PURE__ */ jsxs("header", { className: "aw-ticket__head", children: [
           /* @__PURE__ */ jsxs("div", { className: "aw-ticket__crumbs", children: [
@@ -940,7 +940,8 @@ var __awPlugin = (() => {
                 children: "No reply needed"
               }
             )
-          ] }) : null
+          ] }) : null,
+          details ? null : /* @__PURE__ */ jsx("div", { className: "aw-ticket__quick", children: /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload }) })
         ] }),
         /* @__PURE__ */ jsx(
           ReviewCard,
@@ -952,7 +953,7 @@ var __awPlugin = (() => {
         /* @__PURE__ */ jsx(Timeline, { ticket, messages, runs }),
         /* @__PURE__ */ jsx(Composer, { ticket, onSent: reload })
       ] }),
-      /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload })
+      details ? /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload }) : null
     ] });
   }
   function TicketActions({ ticket, runs, land, reload }) {
@@ -1504,7 +1505,7 @@ var __awPlugin = (() => {
       ] })
     ] });
   }
-  function TicketDetails({ ticket, runs, land, meter, reload }) {
+  function TicketDetails({ ticket, runs, land, meter, reload, page = false }) {
     const { api, data, act, setStatus } = useAdmin();
     const isClient = ticket.kind !== "system";
     const projectSites = data.projects.find((p) => p.id === ticket.project_id)?.sites ?? [];
@@ -1515,7 +1516,7 @@ var __awPlugin = (() => {
     const queued = data.queue.find((q) => q.id === ticket.id);
     const where = predict(data.nodes, { slug: ticket.project_slug, requires, executor: ticket.executor, kind: ticket.kind });
     const price = priceOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0 });
-    return /* @__PURE__ */ jsxs("aside", { className: "aw-details", "aria-label": "Details", children: [
+    return /* @__PURE__ */ jsxs("aside", { className: cx("aw-details", page && "aw-details--page"), "aria-label": "Details", children: [
       /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload }),
       /* @__PURE__ */ jsx(SitePanel, { project: data.projects.find((p) => p.id === ticket.project_id) }),
       /* @__PURE__ */ jsx(Field, { label: "Status", children: /* @__PURE__ */ jsx("select", { value: ticket.status, onChange: (e) => void setStatus(ticket, e.target.value).then(reload), children: STATUSES.map((s) => /* @__PURE__ */ jsx("option", { value: s, children: STATUS_LABEL[s] }, s)) }) }),
@@ -2999,6 +3000,11 @@ button.aw-file:hover { border-color: currentColor; }
 
 /* ticket */
 .aw-ticket { display: grid; grid-template-columns: minmax(0, 1fr) var(--aw-details-w, 300px); min-height: 100%; position: relative; }
+/* No details column: the thread gets the whole width, and the moves the column
+   used to hold sit under the title instead. */
+.aw-ticket--solo { grid-template-columns: minmax(0, 1fr); }
+.aw-ticket__quick { margin-top: 12px; }
+.aw-ticket__quick .aw-ticket__actions { padding-bottom: 0; border-bottom: 0; }
 .aw-ticket__main { padding: 18px 24px 24px; min-width: 0; display: flex; flex-direction: column; }
 .aw-ticket__head h2 { font-size: 22px; font-weight: 700; margin: 4px 0 10px; line-height: 1.25; }
 .aw-ticket__head { padding-bottom: 4px; border-bottom: 1px solid var(--aw-border); margin-bottom: 4px; }
@@ -3052,6 +3058,12 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-details .aw-ticket__actions > button { width: 100%; justify-content: center; }
 .aw-details .aw-ticket__actions > :first-child { align-self: flex-start; }
 .aw-details .aw-ticket__actions > .aw-running, .aw-details .aw-ticket__actions > .aw-muted { justify-content: center; text-align: center; }
+/* The same fields as a full page (a tab of their own): no column furniture,
+   a readable measure, and the moves in a row instead of a stack. */
+.aw-details--page { border-left: 0; background: none; padding: 0; position: static; height: auto; overflow: visible; }
+.aw-details--page .aw-ticket__actions { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.aw-details--page .aw-ticket__actions > button { width: auto; }
+.aw-details--page .aw-field { max-width: 520px; }
 .aw-details__h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); margin: 18px 0 6px !important; }
 .aw-cost { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 0; border-top: 1px solid var(--aw-border); border-bottom: 1px solid var(--aw-border); }
 .aw-cost > div { display: flex; flex-direction: column; gap: 2px; }
@@ -3799,7 +3811,45 @@ button.aw-file:hover { border-color: currentColor; }
       }
     );
   }
-  function TicketSidePanel({ api, host = null, ticketId }) {
+  function ticketContext({ api, data, reload, host, files }) {
+    return {
+      api,
+      files: files ?? null,
+      data,
+      reload,
+      platform: "dsh",
+      host,
+      open: () => {
+      },
+      openTicket: (target) => host?.openTicket?.(target),
+      setStatus: async (target, status) => {
+        await api("PATCH", `/admin/tickets/${target.id}`, { status });
+        reload();
+      },
+      act: async (run, done) => {
+        try {
+          await run();
+          if (done) host?.notify?.(done);
+        } finally {
+          reload();
+        }
+      },
+      notify: (text) => host?.notify?.(text),
+      ask: (question) => {
+        if (typeof window !== "undefined" && window.confirm(`${question.title}
+
+${question.text ?? ""}`)) {
+          void question.run?.();
+        }
+      },
+      setModal: () => {
+      },
+      boardProject: "all",
+      setBoardProject: () => {
+      }
+    };
+  }
+  function TicketSidePanel({ api, host = null, ticketId, page = false }) {
     const [data, reloadData] = useAdminData(api);
     const [{ ticket, runs, land, loading }, reloadTicket] = useTicket(api, ticketId);
     const meter = useMeter(api, ticket, Boolean(ticket));
@@ -3807,46 +3857,8 @@ button.aw-file:hover { border-color: currentColor; }
       void reloadData();
       void reloadTicket();
     }, [reloadData, reloadTicket]);
-    const value = useMemo(
-      () => ({
-        api,
-        files: null,
-        data,
-        reload,
-        platform: "dsh",
-        host: null,
-        open: () => {
-        },
-        openTicket: (target) => host?.openTicket?.(target),
-        setStatus: async (target, status) => {
-          await api("PATCH", `/admin/tickets/${target.id}`, { status });
-          reload();
-        },
-        act: async (run, done) => {
-          try {
-            await run();
-            if (done) host?.notify?.(done);
-          } finally {
-            reload();
-          }
-        },
-        notify: (text) => host?.notify?.(text),
-        ask: (question) => {
-          if (typeof window !== "undefined" && window.confirm(`${question.title}
-
-${question.text ?? ""}`)) {
-            void question.run?.();
-          }
-        },
-        setModal: () => {
-        },
-        boardProject: "all",
-        setBoardProject: () => {
-        }
-      }),
-      [api, data, host, reload]
-    );
-    const scope = { display: "block", height: "100%", overflowY: "auto" };
+    const value = useMemo(() => ticketContext({ api, data, reload, host, files: null }), [api, data, reload, host]);
+    const scope = page ? { display: "block", padding: "18px 24px 28px", maxWidth: 820, margin: "0 auto" } : { display: "block", height: "100%", overflowY: "auto" };
     if (loading && !ticket) {
       return /* @__PURE__ */ jsxs("div", { className: "aw", style: scope, children: [
         /* @__PURE__ */ jsx("style", { children: STYLES }),
@@ -3861,14 +3873,30 @@ ${question.text ?? ""}`)) {
     }
     return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: scope, children: [
       /* @__PURE__ */ jsx("style", { children: STYLES }),
-      /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload }) })
+      /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload, page }) })
+    ] });
+  }
+  function TicketPage({ api, host = null, files = null, ticketId, part = "thread" }) {
+    if (part === "details") return /* @__PURE__ */ jsx(TicketSidePanel, { api, host, ticketId, page: true });
+    return /* @__PURE__ */ jsx(TicketThread, { api, host, files, ticketId });
+  }
+  function TicketThread({ api, host, files, ticketId }) {
+    const [data, reloadData] = useAdminData(api);
+    const reload = useCallback(() => {
+      void reloadData();
+    }, [reloadData]);
+    const value = useMemo(() => ticketContext({ api, data, reload, host, files }), [api, data, reload, host, files]);
+    const scope = { display: "block", height: "100%", overflowY: "auto" };
+    return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: scope, children: [
+      /* @__PURE__ */ jsx("style", { children: STYLES }),
+      /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: /* @__PURE__ */ jsx(TicketView, { id: ticketId, active: true, details: false }) })
     ] });
   }
 
   // packages/dsh-admin/src/client.jsx
   var PANEL_ID = "admin";
   var NAMESPACE = "admin";
-  var CLIENT_VERSION = "3.5.0";
+  var CLIENT_VERSION = "3.7.0";
   var DICTIONARY = { title: "Admin" };
   var SESSION_RETRY_CODES = /* @__PURE__ */ new Set(["session/writer-held", "session/not-found", "session/agent-busy"]);
   var MAX_SESSION_TRIES = 4;
@@ -4095,7 +4123,7 @@ ${question.text ?? ""}`)) {
         "admin: archive fleet sessions"
       );
     }
-    const host = { command, json, gitGraph, conversation };
+    const host = { command, json, gitGraph, conversation, openTicket: (target) => openTicket(target) };
     const api = (method, path, body) => json(`api ${method} ${path}${body === void 0 ? "" : ` ${JSON.stringify(body)}`}`);
     const RUN_DIR_RE = /^(.+)-(task|ticket)-(\d+)(?:-run(\d+))?$/;
     const RUN_TITLE_RE = /^(Task|Ticket)?\s*#(\d+)(?: · run (\d+))?\s*(?:—|$)/;
@@ -4173,50 +4201,6 @@ ${question.text ?? ""}`)) {
         " \xB7 ",
         run.slug
       ] });
-    }
-    function tabSessionId(props) {
-      const params = props?.params ?? props?.tab?.params ?? props ?? {};
-      return typeof params.sessionId === "string" ? params.sessionId : null;
-    }
-    const actionStyle = {
-      display: "block",
-      width: "100%",
-      textAlign: "left",
-      padding: "8px 12px",
-      margin: "0 0 8px",
-      borderRadius: 6,
-      border: "1px solid var(--dsw-alias-border-l4, #333)",
-      background: "var(--dsw-alias-button-elevated-fill, transparent)",
-      color: "inherit",
-      font: "inherit",
-      cursor: "pointer"
-    };
-    function TicketTab(props) {
-      const sessionId = tabSessionId(props);
-      const run = ticketFromCwd(useSessionCwd(sessionId));
-      if (!run) return /* @__PURE__ */ jsx("div", { style: { padding: 12, fontSize: 13, opacity: 0.7 }, children: "This session did not come from a ticket run." });
-      return /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }, children: [
-        /* @__PURE__ */ jsxs("div", { style: { padding: "10px 12px 0", fontSize: 12, opacity: 0.75 }, children: [
-          run.kind === "task" ? "System task" : "Client ticket",
-          " #",
-          run.ticketId,
-          run.runId ? ` \xB7 run ${run.runId}` : "",
-          " \xB7 ",
-          run.slug
-        ] }),
-        /* @__PURE__ */ jsx("div", { style: { flex: 1, minHeight: 0, overflowY: "auto" }, children: /* @__PURE__ */ jsx(
-          TicketSidePanel,
-          {
-            api,
-            ticketId: run.ticketId,
-            host: { openTicket: (target) => openTicket(target) }
-          }
-        ) })
-      ] });
-    }
-    function TicketTabTitle(props) {
-      const run = ticketFromCwd(useSessionCwd(tabSessionId(props)));
-      return /* @__PURE__ */ jsx("span", { children: run ? `Ticket #${run.ticketId}` : "Ticket" });
     }
     const TASK_TINT = {
       new: "var(--dsw-alias-state-warning-primary, #f0a13a)",
@@ -4448,8 +4432,58 @@ ${question.text ?? ""}`)) {
         waiting > 0 ? /* @__PURE__ */ jsx("span", { style: { ...badge, background: "var(--dsw-alias-state-warning-primary, #d18f2e)" }, children: waiting > 99 ? "99+" : waiting }) : counts?.running ? /* @__PURE__ */ jsx("span", { style: { ...badge, minWidth: 7, width: 7, height: 7, top: -2, right: -3, padding: 0, background: "var(--dsw-alias-state-success-primary, #2f9e5b)" } }) : null
       ] });
     }
+    function useTicketRun(props) {
+      const sessionId = typeof props?.sessionId === "string" ? props.sessionId : props?.params?.sessionId ?? null;
+      return ticketFromCwd(useSessionCwd(sessionId));
+    }
+    function NotATicketRun() {
+      return /* @__PURE__ */ jsx("div", { style: { padding: "18px 24px", fontSize: 13, opacity: 0.7 }, children: "This session did not come from a ticket run." });
+    }
+    function TicketConversationView(props) {
+      const run = useTicketRun(props);
+      if (!run) return /* @__PURE__ */ jsx(NotATicketRun, {});
+      return /* @__PURE__ */ jsx("div", { style: { height: "100%", minHeight: 0 }, children: /* @__PURE__ */ jsx(TicketPage, { api, host, files, ticketId: run.ticketId, part: "thread" }) });
+    }
+    function TicketDetailsConversationView(props) {
+      const run = useTicketRun(props);
+      if (!run) return /* @__PURE__ */ jsx(NotATicketRun, {});
+      return /* @__PURE__ */ jsx("div", { style: { height: "100%", minHeight: 0, overflowY: "auto" }, children: /* @__PURE__ */ jsx(TicketPage, { api, host, files, ticketId: run.ticketId, part: "details" }) });
+    }
+    const ticketViews = { key: null, mounts: 0, disposers: [] };
+    function openTicketViews(ticketId, sessionId) {
+      const key = `${ticketId}:${sessionId}`;
+      if (ticketViews.key !== key) {
+        for (const dispose of ticketViews.disposers) dispose?.();
+        ticketViews.disposers = [];
+        ticketViews.key = key;
+        ticketViews.mounts = 0;
+      }
+      ticketViews.mounts += 1;
+      if (ticketViews.disposers.length === 0) {
+        const register = (id, order, label, Component) => ctx.slots.register({ name: "conversation.view", id, order, label, locale: NAMESPACE }, Component);
+        ticketViews.disposers = [
+          register("admin-ticket", 20, `Ticket #${ticketId}`, TicketConversationView),
+          register("admin-ticket-details", 21, "Details", TicketDetailsConversationView)
+        ];
+        void command(`follow ${ticketId} ${sessionId}`).catch(() => void 0);
+      }
+      return () => {
+        if (ticketViews.key !== key) return;
+        ticketViews.mounts -= 1;
+        if (ticketViews.mounts > 0) return;
+        for (const dispose of ticketViews.disposers) dispose?.();
+        ticketViews.disposers = [];
+        ticketViews.key = null;
+        void command(`unfollow ${sessionId}`).catch(() => void 0);
+      };
+    }
     function TicketHeaderChip({ sessionId }) {
       const run = ticketFromCwd(useSessionCwd(sessionId));
+      const ticketId = run?.ticketId ?? null;
+      useEffect(() => {
+        if (ticketId === null || !sessionId) return void 0;
+        return openTicketViews(ticketId, sessionId);
+      }, [ticketId, sessionId]);
       if (!run) return null;
       return /* @__PURE__ */ jsxs(
         "button",
@@ -4496,27 +4530,6 @@ ${question.text ?? ""}`)) {
     ctx.slots.inject("conversation.session.header.actions", () => ctx.slots.register({ name: "conversation.session.header.actions", id: "admin-ticket", order: 5, locale: NAMESPACE }, TicketHeaderChip));
     ctx.slots.inject("sidebar.session.row.leading", () => ctx.slots.register({ name: "sidebar.session.row.leading", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketMark));
     ctx.slots.inject("sidebar.session.row.hover", () => ctx.slots.register({ name: "sidebar.session.row.hover", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketHover));
-    ctx.effect(
-      () => ctx.sidebarRightTabs.register({
-        id: "admin-ticket",
-        kind: "ticket",
-        priority: "extension",
-        keepMounted: false,
-        title: () => "Ticket",
-        guide: [
-          {
-            id: "admin-ticket",
-            order: 14,
-            title: () => "Ticket",
-            description: () => "The ticket this run session came from: open it in Admin, or review its branch in Git Graph.",
-            icon: () => /* @__PURE__ */ jsx(TicketGlyph, {})
-          }
-        ]
-      }),
-      "admin: ticket tab type"
-    );
-    ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({ name: "sidebar.right.pane.tab", key: "admin-ticket", locale: NAMESPACE }, TicketTab));
-    ctx.slots.inject("sidebar.right.pane.tab.title", () => ctx.slots.register({ name: "sidebar.right.pane.tab.title", key: "admin-ticket", locale: NAMESPACE }, TicketTabTitle));
     ctx.effect(
       () => ctx.sidebarRightTabs.register({
         id: "admin-tasks",

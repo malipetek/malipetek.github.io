@@ -12,13 +12,13 @@
  * @module @malipetek/dsh-admin
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import { AdminApp, TicketSidePanel } from '../../admin-ui/src/index.js';
+import { AdminApp, TicketPage } from '../../admin-ui/src/index.js';
 
 /** Panel identity: one id addresses both the sidebar row and the main page. */
 const PANEL_ID = 'admin';
 const NAMESPACE = 'admin';
 /** Reported to the Host on activation, so "did the panel load?" has an answer. */
-const CLIENT_VERSION = '3.5.0';
+const CLIENT_VERSION = '3.7.0';
 const DICTIONARY = { title: 'Admin' };
 
 /**
@@ -191,8 +191,7 @@ function makeTransport(command) {
   return transport;
 }
 
-/** The sidebar glyph. */
-/** The Ticket tab's glyph in the right pane's guide: a ticket stub. */
+/** The sidebar glyph and the ticket stub: a torn ticket, for the header control. */
 function TicketGlyph({ size = 16 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -350,7 +349,7 @@ function apply(ctx) {
     );
   }
   /** One stable object so React effects that depend on it do not re-run. */
-  const host = { command, json, gitGraph, conversation };
+  const host = { command, json, gitGraph, conversation, openTicket: (target) => openTicket(target) };
   const api = (method, path, body) => json(`api ${method} ${path}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`);
 
   /* ————— Ticket runs in the session list ————— */
@@ -447,58 +446,6 @@ function apply(ctx) {
         {run.runId ? ` · run ${run.runId}` : ''} · {run.slug}
       </div>
     );
-  }
-
-  /** The session a right-pane tab is open on, whatever shape the slot gives it. */
-  function tabSessionId(props) {
-    const params = props?.params ?? props?.tab?.params ?? props ?? {};
-    return typeof params.sessionId === 'string' ? params.sessionId : null;
-  }
-
-  const actionStyle = {
-    display: 'block',
-    width: '100%',
-    textAlign: 'left',
-    padding: '8px 12px',
-    margin: '0 0 8px',
-    borderRadius: 6,
-    border: '1px solid var(--dsw-alias-border-l4, #333)',
-    background: 'var(--dsw-alias-button-elevated-fill, transparent)',
-    color: 'inherit',
-    font: 'inherit',
-    cursor: 'pointer',
-  };
-
-  /**
-   * The right-pane Ticket tab: the run's ticket info and its actions, out of
-   * the session rows. One tab kind for every session — a session that did not
-   * come from a run says so.
-   */
-  function TicketTab(props) {
-    const sessionId = tabSessionId(props);
-    const run = ticketFromCwd(useSessionCwd(sessionId));
-    if (!run) return <div style={{ padding: 12, fontSize: 13, opacity: 0.7 }}>This session did not come from a ticket run.</div>;
-    // The admin workbench's own details panel, not a copy of it.
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-        <div style={{ padding: '10px 12px 0', fontSize: 12, opacity: 0.75 }}>
-          {run.kind === 'task' ? 'System task' : 'Client ticket'} #{run.ticketId}
-          {run.runId ? ` · run ${run.runId}` : ''} · {run.slug}
-        </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-          <TicketSidePanel
-            api={api}
-            ticketId={run.ticketId}
-            host={{ openTicket: (target) => openTicket(target) }}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  function TicketTabTitle(props) {
-    const run = ticketFromCwd(useSessionCwd(tabSessionId(props)));
-    return <span>{run ? `Ticket #${run.ticketId}` : 'Ticket'}</span>;
   }
 
   /* ————— The task desk, as a right-pane tab ————— */
@@ -771,9 +718,95 @@ function apply(ctx) {
     );
   }
 
-  /** In a run's own conversation header: which ticket it came from, one click away. */
+  /* ————— The ticket, as a view of its own conversation ————— */
+
+  /**
+   * The ticket a conversation view is showing. Its Session arrives as a
+   * standard prop; `params` is the fallback for a build that hands it in there.
+   */
+  function useTicketRun(props) {
+    const sessionId = typeof props?.sessionId === 'string' ? props.sessionId : (props?.params?.sessionId ?? null);
+    return ticketFromCwd(useSessionCwd(sessionId));
+  }
+
+  function NotATicketRun() {
+    return <div style={{ padding: '18px 24px', fontSize: 13, opacity: 0.7 }}>This session did not come from a ticket run.</div>;
+  }
+
+  /** The ticket as a conversation view: its thread, runs and composer, full width. */
+  function TicketConversationView(props) {
+    const run = useTicketRun(props);
+    if (!run) return <NotATicketRun />;
+    return (
+      <div style={{ height: '100%', minHeight: 0 }}>
+        <TicketPage api={api} host={host} files={files} ticketId={run.ticketId} part="thread" />
+      </div>
+    );
+  }
+
+  /** The same ticket's details and moves, with the width a tab can give them. */
+  function TicketDetailsConversationView(props) {
+    const run = useTicketRun(props);
+    if (!run) return <NotATicketRun />;
+    return (
+      <div style={{ height: '100%', minHeight: 0, overflowY: 'auto' }}>
+        <TicketPage api={api} host={host} files={files} ticketId={run.ticketId} part="details" />
+      </div>
+    );
+  }
+
+  /**
+   * In a run's own conversation header: the ticket's name, one click to the
+   * Admin copy — and the Ticket view, registered while this conversation is the
+   * one on screen, so no other session grows a tab with nothing in it.
+   */
+  /**
+   * The views belong to the session in front, and the header can mount more
+   * than once for it (a split pane, a pop-out). Count the mounts per
+   * conversation so the first one registers and follows, and only the last one
+   * unregisters and unfollows.
+   */
+  const ticketViews = { key: null, mounts: 0, disposers: [] };
+
+  function openTicketViews(ticketId, sessionId) {
+    const key = `${ticketId}:${sessionId}`;
+    if (ticketViews.key !== key) {
+      for (const dispose of ticketViews.disposers) dispose?.();
+      ticketViews.disposers = [];
+      ticketViews.key = key;
+      ticketViews.mounts = 0;
+    }
+    ticketViews.mounts += 1;
+    if (ticketViews.disposers.length === 0) {
+      const register = (id, order, label, Component) =>
+        ctx.slots.register({ name: 'conversation.view', id, order, label, locale: NAMESPACE }, Component);
+      ticketViews.disposers = [
+        register('admin-ticket', 20, `Ticket #${ticketId}`, TicketConversationView),
+        register('admin-ticket-details', 21, 'Details', TicketDetailsConversationView),
+      ];
+      // While this conversation is on screen, what is typed in it is the
+      // ticket's: the Host turns each new message into a private note.
+      void command(`follow ${ticketId} ${sessionId}`).catch(() => undefined);
+    }
+    return () => {
+      if (ticketViews.key !== key) return;
+      ticketViews.mounts -= 1;
+      if (ticketViews.mounts > 0) return;
+      for (const dispose of ticketViews.disposers) dispose?.();
+      ticketViews.disposers = [];
+      ticketViews.key = null;
+      // Named, so a late unfollow cannot cancel the conversation now on screen.
+      void command(`unfollow ${sessionId}`).catch(() => undefined);
+    };
+  }
+
   function TicketHeaderChip({ sessionId }) {
     const run = ticketFromCwd(useSessionCwd(sessionId));
+    const ticketId = run?.ticketId ?? null;
+    useEffect(() => {
+      if (ticketId === null || !sessionId) return undefined;
+      return openTicketViews(ticketId, sessionId);
+    }, [ticketId, sessionId]);
     if (!run) return null;
     return (
       <button
@@ -818,41 +851,16 @@ function apply(ctx) {
   });
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID, locale: NAMESPACE }, AdminPage));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL_ID, order: 12, label: 'Admin' }, AdminEntryIcon));
+  // A run's ticket, as a view of its own conversation: the whole ticket page
+  // beside Chat and Trajectory, and a chip in the header that names it. The
+  // chip registers the view, because it renders for exactly the session in front.
   ctx.slots.inject('conversation.session.header.actions', () =>
     ctx.slots.register({ name: 'conversation.session.header.actions', id: 'admin-ticket', order: 5, locale: NAMESPACE }, TicketHeaderChip));
-  // Run sessions get a ticket chip on the row and a line in the hover card;
-  // the actions themselves live in the right-pane Ticket tab.
+  // Run sessions also get a ticket chip on their row and a line in the hover card.
   ctx.slots.inject('sidebar.session.row.leading', () =>
     ctx.slots.register({ name: 'sidebar.session.row.leading', id: 'admin-ticket', order: 10, locale: NAMESPACE }, TicketMark));
   ctx.slots.inject('sidebar.session.row.hover', () =>
     ctx.slots.register({ name: 'sidebar.session.row.hover', id: 'admin-ticket', order: 10, locale: NAMESPACE }, TicketHover));
-  // A right-pane tab type is only listed where a person can pick it — the
-  // pane's "+" guide — when it declares a `guide` entry; without one it exists
-  // but nothing opens it.
-  ctx.effect(
-    () =>
-      ctx.sidebarRightTabs.register({
-        id: 'admin-ticket',
-        kind: 'ticket',
-        priority: 'extension',
-        keepMounted: false,
-        title: () => 'Ticket',
-        guide: [
-          {
-            id: 'admin-ticket',
-            order: 14,
-            title: () => 'Ticket',
-            description: () => 'The ticket this run session came from: open it in Admin, or review its branch in Git Graph.',
-            icon: () => <TicketGlyph />,
-          },
-        ],
-      }),
-    'admin: ticket tab type',
-  );
-  ctx.slots.inject('sidebar.right.pane.tab', () =>
-    ctx.slots.register({ name: 'sidebar.right.pane.tab', key: 'admin-ticket', locale: NAMESPACE }, TicketTab));
-  ctx.slots.inject('sidebar.right.pane.tab.title', () =>
-    ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: 'admin-ticket', locale: NAMESPACE }, TicketTabTitle));
   // The desk itself in the right pane: the queue at a glance, beside whatever
   // conversation is open — no trip to the main panel to see what is waiting.
   ctx.effect(

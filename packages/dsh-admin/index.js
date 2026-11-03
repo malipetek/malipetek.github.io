@@ -166,6 +166,108 @@ const CONFIG_PATH = '/Users/malipetek/.dsh/admin/config.json';
  * because a thread is only worth fetching when someone looks at it.
  */
 const OPEN_PATH = '/Users/malipetek/.dsh/admin/open-ticket.json';
+
+/**
+ * The conversation being watched. A ticket run's Harness session is where the
+ * steering happens, so while it is on screen what Ali types there becomes a
+ * private note on the ticket: it reaches the thread and the next run. The
+ * Client half says which session that is (`/admin follow`) and which one left
+ * the screen (`/admin unfollow`), and the mirror starts at the newest user
+ * message already in the log — history is never replayed.
+ */
+const MIRROR_EVERY_MS = 4000;
+let mirror = null;
+
+/**
+ * What the Harness itself writes into the log as a user message: the runtime
+ * context snapshot, the turn clock, model changes, skill and instruction
+ * reminders, and what other agents send in. None of that is a reply.
+ */
+const SYNTHETIC_MESSAGE = [
+  /^Current runtime context\./,
+  /^Time sampled while/,
+  /^\[model changed:/,
+  /^<system-reminder>/,
+  /^Agent [0-9a-f-]{8,} sent a message:/,
+  /^Background subagent /,
+];
+
+/** Whitespace-insensitive identity of a note body: the thread may echo it. */
+const noteKey = (body) => String(body ?? '').trim().replace(/\s+/g, ' ');
+
+/** The text of one session user message, trimmed to something a note can hold. */
+function userMessageText(message) {
+  const blocks = Array.isArray(message?.content) ? message.content : [];
+  const text = blocks
+    .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text.trim())
+    .filter(Boolean)
+    .join('\n\n');
+  if (text.length === 0 || SYNTHETIC_MESSAGE.some((pattern) => pattern.test(text))) return '';
+  return text.slice(0, 8000);
+}
+
+/** The newest user-message seq in one session log (0 when there is none yet). */
+async function newestUserSeq(query, sessionId) {
+  const events = await query.listEvents(sessionId).catch(() => []);
+  let last = 0;
+  for (const event of Array.isArray(events) ? events : []) {
+    if (event?.type === 'user/message' && Number(event.seq) > last) last = Number(event.seq);
+  }
+  return last;
+}
+
+/**
+ * Post what has been typed in the watched conversation since the last tick as
+ * private notes. A failed post leaves its seq unread, so the next tick retries
+ * rather than dropping the message.
+ */
+async function mirrorTick(query) {
+  const state = mirror;
+  // One tick at a time: a slow read or POST must not let the next tick see the
+  // same messages unread and post them twice.
+  if (!state || state.busy) return;
+  if (typeof query?.listEvents !== 'function' || typeof query?.readEvent !== 'function') return;
+  state.busy = true;
+  try {
+    // The first tick sets the mark: everything already in the log is history.
+    if (state.lastSeq === null) {
+      state.lastSeq = await newestUserSeq(query, state.sessionId);
+      return;
+    }
+    const events = await query.listEvents(state.sessionId).catch(() => null);
+    if (!Array.isArray(events)) return;
+    const fresh = events.filter((event) => event?.type === 'user/message' && Number(event.seq) > state.lastSeq);
+    if (fresh.length === 0) return;
+    const config = await loadConfig();
+    if (config.token.length === 0) return;
+    for (const event of fresh) {
+      if (mirror !== state) return;
+      const seq = Number(event.seq);
+      const found = await query.readEvent({ sessionId: state.sessionId, seq }).catch(() => null);
+      const body = userMessageText(found?.target?.data);
+      // A slash command is not a reply, and a note this Host just posted that
+      // came back as a message is not one either.
+      if (!body || body.startsWith('/') || recentNotes.delete(noteKey(body))) {
+        state.lastSeq = seq;
+        continue;
+      }
+      try {
+        await postMessage(config, state.ticketId, body, true);
+        state.failures = 0;
+      } catch {
+        // Five in a row is not a blip: stop watching rather than retry forever.
+        state.failures = (state.failures ?? 0) + 1;
+        if (state.failures >= 5 && mirror === state) mirror = null;
+        return;
+      }
+      state.lastSeq = seq;
+    }
+  } finally {
+    state.busy = false;
+  }
+}
+
 /**
  * Written when the Client half loads. A panel that never appears and a panel
  * that is drawing an empty list look the same from here, so the Client says
@@ -623,10 +725,28 @@ async function refresh(config) {
 const setStatus = (config, ticketId, status) =>
   request(config, `/admin/tickets/${encodeURIComponent(ticketId)}`, { method: 'PATCH', body: { status } });
 
+/**
+ * Note bodies posted from this Host recently. A run's session can echo a note
+ * back as a user message (the runner steers with it, and so does the mirror),
+ * and neither may come back as a second note.
+ */
+const recentNotes = new Map();
+const RECENT_NOTE_MS = 30 * 60_000;
+
+/** Remember a private note, so its echo into a session is not mirrored back. */
+function rememberNote(body) {
+  if (typeof body !== 'string' || body.trim().length === 0) return;
+  recentNotes.set(noteKey(body), Date.now());
+  for (const [note, at] of recentNotes) if (Date.now() - at > RECENT_NOTE_MS) recentNotes.delete(note);
+}
+
 const postMessage = (config, ticketId, body, internal) =>
   request(config, `/admin/tickets/${encodeURIComponent(ticketId)}/messages`, {
     method: 'POST',
     body: { body, internal },
+  }).then((out) => {
+    if (internal) rememberNote(body);
+    return out;
   });
 
 const createProject = (config, name, slug) =>
@@ -832,6 +952,7 @@ function makeCommandHandler(ctx) {
             '  /admin status <id> <status>    set a ticket status',
             '  /admin reply <id> <text>       reply to the client (emails them)',
             '  /admin note <id> <text>        internal note (client never sees it)',
+            '  /admin follow <id> <sessionId> mirror what is typed in that conversation onto the ticket',
             '  /admin attach <id> {"paths":[…],"text"?,"internal"?}   post local files (private note unless internal is false)',
             '  /admin download </admin/tickets/<id>/files/<fileId>>  save an attachment to ~/Downloads',
             '  /admin session <runId> <sessionId> <sessionDir>   make a run\'s Harness conversation openable here (imports the uploaded log if needed)',
@@ -871,7 +992,9 @@ function makeCommandHandler(ctx) {
             return { kind: 'error', text: JSON.stringify({ code: 'bad_call', message: 'Usage: /admin api <METHOD> </admin/…> [json]' }) };
           }
           try {
-            const payload = await request(config, path, { method: verb, body: body.length ? JSON.parse(body.join(' ')) : undefined });
+            const sent = body.length ? JSON.parse(body.join(' ')) : undefined;
+            const payload = await request(config, path, { method: verb, body: sent });
+            if (verb === 'POST' && /^\/admin\/tickets\/[1-9]\d*\/messages$/.test(path) && sent?.internal) rememberNote(sent.body);
             return { kind: 'success', text: JSON.stringify(payload ?? {}) };
           } catch (error) {
             return { kind: 'error', text: JSON.stringify({ code: error.code ?? 'error', message: error.message, status: error.status }) };
@@ -1018,6 +1141,31 @@ function makeCommandHandler(ctx) {
           await setStatus(config, id, status);
           await refresh(config);
           return { kind: 'success', text: `#${id} is now ${STATUS_LABEL[status] ?? status}.` };
+        }
+
+        // `/admin follow <ticketId> <sessionId>`: this conversation's replies are
+        // the ticket's. `/admin unfollow`: the conversation left the screen.
+        case 'follow': {
+          const [id, sessionId] = rest;
+          if (!/^[1-9]\d{0,15}$/.test(id ?? '') || !SESSION_ID_RE.test(sessionId ?? '')) {
+            return { kind: 'error', text: 'Usage: /admin follow <ticketId> <sessionId>' };
+          }
+          // Mark the log now when the service is up, so nothing typed between
+          // the follow and the first tick is mistaken for history; otherwise
+          // the first tick marks it. Either way history is never replayed.
+          const query = sessionQuery ?? ctx.get('sessionQuery');
+          const lastSeq = query && typeof query.listEvents === 'function' ? await newestUserSeq(query, sessionId) : null;
+          mirror = { ticketId: Number(id), sessionId, lastSeq };
+          return { kind: 'success', text: JSON.stringify({ ticketId: mirror.ticketId, sessionId }) };
+        }
+
+        case 'unfollow': {
+          const [sessionId] = rest;
+          if (mirror && sessionId && mirror.sessionId !== sessionId) {
+            return { kind: 'success', text: 'Watching another conversation.' };
+          }
+          mirror = null;
+          return { kind: 'success', text: 'Not watching a conversation.' };
         }
 
         case 'reply':
@@ -1857,6 +2005,27 @@ export function apply(ctx) {
 
   // Keep the snapshot warm so the panel has something to render on first open,
   // and so a failure surfaces in the panel rather than waiting for a click.
+  // A run's conversation is a ticket's steering surface: while it is open, what
+  // is typed there becomes a private note on the ticket. Only where the Host can
+  // read session logs at all — an older Harness simply never mirrors.
+  let sessionQuery = null;
+  ctx.inject(['sessionQuery'], (scope) => {
+    sessionQuery = scope.sessionQuery ?? null;
+    scope.effect(
+      () => () => {
+        sessionQuery = null;
+      },
+      'admin: session query',
+    );
+    scope.effect(() => {
+      const interval = setInterval(() => {
+        void mirrorTick(scope.sessionQuery).catch(() => undefined);
+      }, MIRROR_EVERY_MS);
+      if (typeof interval.unref === 'function') interval.unref();
+      return () => clearInterval(interval);
+    }, 'admin: conversation to ticket notes');
+  });
+
   ctx.effect(() => {
     const tick = async () => {
       const config = await loadConfig();
