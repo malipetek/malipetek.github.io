@@ -137,30 +137,29 @@ export const CAPABILITY_CATALOG = [
   { id: 'sandbox', label: 'Cloud sandbox', hint: 'Cloudflare, later' },
 ];
 export const EXECUTOR_CATALOG = [
-  { id: 'claude', label: 'Claude Code', hint: 'sandboxed; the default for client work' },
-  { id: 'opencode', label: 'OpenCode', hint: 'open permissions; approved work only' },
-  { id: 'dsh', label: 'DeepSeek Harness', hint: 'the Harness in one shot' },
-  { id: 'devin', label: 'Devin', hint: 'approves its own permissions' },
-  { id: 'dsh-claude', label: 'Claude Code in the Harness', hint: 'Claude Code driven from a Harness session' },
-  { id: 'dsh-opencode', label: 'OpenCode in the Harness', hint: 'OpenCode driven from a Harness session' },
-  { id: 'dsh-devin', label: 'Devin in the Harness', hint: 'Devin (SWE-2) driven from a Harness session' },
+  { id: 'dsh-go', label: 'Flash', hint: 'the Harness on OpenCode Go, DeepSeek v4.1 flash; the default' },
+  { id: 'dsh-claude', label: 'Opus', hint: 'the Harness driving Claude Code (Opus); for hard work' },
+  { id: 'dsh', label: 'DeepSeek', hint: 'the Harness on the DeepSeek account' },
+  { id: 'dsh-devin', label: 'SWE-2', hint: 'the Harness driving Devin (SWE-2, free)' },
+  { id: 'dsh-opencode', label: 'OpenCode (ACP)', hint: 'OpenCode driven over ACP; pinned tickets only' },
+  { id: 'claude', label: 'Claude Code CLI', hint: 'outside the Harness; pinned tickets only' },
+  { id: 'opencode', label: 'OpenCode CLI', hint: 'outside the Harness; pinned tickets only' },
+  { id: 'devin', label: 'Devin CLI', hint: 'outside the Harness; pinned tickets only' },
 ];
 
-export const EXECUTORS = ['claude', 'opencode', 'dsh', 'devin', 'dsh-claude', 'dsh-opencode', 'dsh-devin'] as const;
+export const EXECUTORS = ['claude', 'opencode', 'dsh', 'devin', 'dsh-claude', 'dsh-opencode', 'dsh-devin', 'dsh-go'] as const;
 /**
- * System work with no pinned executor takes the first of these the node runs:
- * Harness executors first, so every run has a conversation to open. The node
- * falls back down the same order on a usage limit (fleet/executors.mjs).
+ * Work with no pinned executor takes the first of these the node runs, and the
+ * node falls back down the same order on a usage limit (fleet/executors.mjs).
+ * All of it goes through the Harness, so every run has a conversation: OpenCode
+ * Go's flash first, the DeepSeek account next, Opus last. Hard work is pinned
+ * to dsh-claude on the ticket.
  */
-export const SYSTEM_ORDER = ['dsh-claude', 'dsh', 'dsh-devin', 'dsh-opencode', 'devin', 'claude', 'opencode'];
-/** Client work defaults to the sandboxed executor (worktree, allow-listed tools, no MCP). */
-export const CLIENT_EXECUTOR = 'claude';
-/**
- * Client work's order: still claude first (only sandboxed executor), then the
- * rest — Ali approves every client request before it runs, so a quota limit
- * falls back like system work does (fleet/executors.mjs mirrors this).
- */
-export const CLIENT_ORDER = ['claude', ...SYSTEM_ORDER.filter((e) => e !== 'claude')];
+export const SYSTEM_ORDER = ['dsh-go', 'dsh', 'dsh-claude'];
+/** The executor a claim falls back to when a node reports none. */
+export const CLIENT_EXECUTOR = 'dsh-go';
+/** Client work takes the same order: Ali approves every request before it runs. */
+export const CLIENT_ORDER = SYSTEM_ORDER;
 
 const MAX_LIST = 32;
 const TOKEN_RE = /^[a-z0-9][a-z0-9:._-]{0,47}$/;
@@ -523,6 +522,8 @@ export interface NodeClaim {
   previousRuns: PriorRun[];
   runId: number;
   executor: string;
+  /** The ticket pins no executor: the node's router may pick Flash or Opus. */
+  auto: boolean;
   attempt: number;
   leaseSeconds: number;
   /** The most this run may spend on AI, when the client set a budget: what is left of it. */
@@ -536,8 +537,7 @@ export interface NodeClaim {
  *
  * Eligible means: its project is one the node holds a folder for, every
  * capability it requires is one the node has, its pinned executor (if any) is
- * one the node runs, and — for unpinned client work — the node runs one of the client order's
- * executor, and — when the client set a budget — some of it is left. Best
+ * one the node runs, and — when the client set a budget — some of it is left. Best
  * means highest priority, then longest waiting. The pick and the
  * flip are one statement, so two nodes can never take the same item.
  *
@@ -563,13 +563,12 @@ export async function claimForNode(env: Env, nodeId: string): Promise<{ claim: N
            AND NOT EXISTS (SELECT 1 FROM json_each(t.requires) r
                             WHERE r.value NOT IN (SELECT value FROM json_each(?3)))
            AND (t.executor IS NULL OR t.executor IN (SELECT value FROM json_each(?4)))
-           AND (t.kind <> 'client' OR t.executor IS NOT NULL OR EXISTS (
-                  SELECT 1 FROM json_each(?4) ne JOIN json_each(?5) co ON ne.value = co.value))
            AND (t.budget_cents IS NULL OR ${SPENT_CENTS_SQL} < t.budget_cents)
          ORDER BY t.priority DESC, t.updated_at LIMIT 1)
       RETURNING id, kind, executor, budget_cents, human_seconds, ai_micro_usd`,
   )
-    .bind(t, node.slugs, node.capabilities, node.executors, JSON.stringify(CLIENT_ORDER), HOURLY_USD)
+    // ?5 is unused; SPENT_CENTS_SQL reads the rate as ?6.
+    .bind(t, node.slugs, node.capabilities, node.executors, null, HOURLY_USD)
     .first<{ id: number; kind: string; executor: string | null; budget_cents: number | null; human_seconds: number; ai_micro_usd: number }>();
   if (!picked) return { claim: null, reason: 'nothing_eligible' };
 
@@ -639,6 +638,7 @@ export async function claimForNode(env: Env, nodeId: string): Promise<{ claim: N
       previousRuns,
       runId,
       executor,
+      auto: picked.executor === null,
       attempt,
       leaseSeconds: LEASE_SECONDS,
       ...(left !== null ? { maxBudgetUsd: Math.max(0.01, left / 100) } : {}),
