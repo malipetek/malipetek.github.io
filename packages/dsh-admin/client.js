@@ -2110,16 +2110,23 @@ var __awPlugin = (() => {
     const { api, act, notify } = useAdmin();
     const [overview, setOverview] = useState(null);
     const [contacts, setContacts] = useState([]);
+    const [paging, setPaging] = useState({ total: 0, page: 200 });
+    const [selected, setSelected] = useState(() => /* @__PURE__ */ new Set());
     const [error, setError] = useState(null);
-    const [tab, setTab] = useState("contacts");
+    const [tab, setTab] = useState("overview");
     const [modal, setModal] = useState(null);
-    const [filters, setFilters] = useState({ status: "", q: "", source: "" });
+    const [filters, setFilters] = useState({ status: "", q: "", source: "", offset: 0 });
+    const filter = (patch) => {
+      setSelected(/* @__PURE__ */ new Set());
+      setFilters((f) => ({ ...f, offset: 0, ...patch }));
+    };
     const [tick, setTick] = useState(0);
     const load = useCallback(() => {
       const search = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString();
       return Promise.all([api("GET", "/admin/marketing"), api("GET", `/admin/marketing/contacts${search ? `?${search}` : ""}`)]).then(([o, c]) => {
         setOverview(o);
         setContacts(c.contacts ?? []);
+        setPaging({ total: c.total ?? (c.contacts ?? []).length, page: c.page ?? 200 });
         setError(null);
       }).catch(setError);
     }, [api, filters]);
@@ -2226,7 +2233,8 @@ var __awPlugin = (() => {
           {
             value: tab,
             options: [
-              { value: "contacts", label: `Contacts (${contacts.length})` },
+              { value: "overview", label: "Overview" },
+              { value: "contacts", label: `Contacts (${paging.total.toLocaleString("en-US")})` },
               { value: "email", label: "Email" },
               { value: "posts", label: overview.postsAwaiting ? `Posts (${overview.postsAwaiting} to approve)` : "Posts" },
               { value: "sequences", label: "Sequences" },
@@ -2238,12 +2246,12 @@ var __awPlugin = (() => {
         ),
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
         tab === "contacts" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx("input", { className: "aw-search", value: filters.q, placeholder: "Search email, name, business\u2026", onChange: (e) => setFilters((f) => ({ ...f, q: e.target.value })) }),
-          /* @__PURE__ */ jsxs("select", { value: filters.status, onChange: (e) => setFilters((f) => ({ ...f, status: e.target.value })), children: [
+          /* @__PURE__ */ jsx("input", { className: "aw-search", value: filters.q, placeholder: "Search email, name, business\u2026", onChange: (e) => filter({ q: e.target.value }) }),
+          /* @__PURE__ */ jsxs("select", { value: filters.status, onChange: (e) => filter({ status: e.target.value }), children: [
             /* @__PURE__ */ jsx("option", { value: "", children: "Every status" }),
             Object.keys(CONTACT_TONE).map((s) => /* @__PURE__ */ jsx("option", { value: s, children: s }, s))
           ] }),
-          filters.source ? /* @__PURE__ */ jsxs(Button, { size: "sm", kind: "ghost", onClick: () => setFilters((f) => ({ ...f, source: "" })), title: "Show every source", children: [
+          filters.source ? /* @__PURE__ */ jsxs(Button, { size: "sm", kind: "ghost", onClick: () => filter({ source: "" }), title: "Show every source", children: [
             "Source: ",
             filters.source,
             " \u2715"
@@ -2253,6 +2261,7 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => setModal({ kind: "contact" }), children: "Add contact" })
         ] }) : null,
         tab === "email" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => setModal({ kind: "review" }), title: "Read the next first emails one by one: let each go, rewrite it, or cancel it.", children: "Review next" }),
           /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "compose", channel: "email" }), children: "Compose" }),
           /* @__PURE__ */ jsx(
             Button,
@@ -2269,9 +2278,49 @@ var __awPlugin = (() => {
         ] }) : null,
         tab === "settings" ? /* @__PURE__ */ jsx(Button, { onClick: () => run(() => api("POST", "/admin/marketing/run"), runMessage), children: "Run now" }) : null
       ] }),
+      tab === "overview" ? /* @__PURE__ */ jsx(OverviewTab, { api, tick, health, onReview: () => setModal({ kind: "review" }), onContact: (id) => setModal({ kind: "person", id }) }) : null,
       tab === "contacts" ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-inline", style: { marginBottom: 8 }, children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: paging.total ? `${(filters.offset + 1).toLocaleString("en-US")}\u2013${Math.min(filters.offset + paging.page, paging.total).toLocaleString("en-US")} of ${paging.total.toLocaleString("en-US")}` : "None" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: !filters.offset, onClick: () => setFilters((f) => ({ ...f, offset: Math.max(0, f.offset - paging.page) })), children: "Previous" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: filters.offset + paging.page >= paging.total, onClick: () => setFilters((f) => ({ ...f, offset: f.offset + paging.page })), children: "Next" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          selected.size ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx("span", { children: plural(selected.size, "contact selected", "contacts selected") }),
+            /* @__PURE__ */ jsx(
+              Button,
+              {
+                size: "sm",
+                onClick: () => run(() => api("POST", "/admin/marketing/contacts/bulk", { action: "pause", ids: [...selected] }), (out) => `${out.changed} paused; their queued mail was cancelled.`).then(
+                  () => setSelected(/* @__PURE__ */ new Set())
+                ),
+                children: "Pause"
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              Button,
+              {
+                size: "sm",
+                onClick: () => run(() => api("POST", "/admin/marketing/contacts/bulk", { action: "opt_out", ids: [...selected] }), (out) => `${out.changed} opted out; their queued mail was cancelled.`).then(
+                  () => setSelected(/* @__PURE__ */ new Set())
+                ),
+                children: "Opt out"
+              }
+            ),
+            /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setSelected(/* @__PURE__ */ new Set()), children: "Clear" })
+          ] }) : null
+        ] }),
         /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
           /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("th", { children: /* @__PURE__ */ jsx(
+              "input",
+              {
+                type: "checkbox",
+                "aria-label": "Select this page",
+                checked: contacts.length > 0 && contacts.every((c) => selected.has(c.id)),
+                onChange: (e) => setSelected(e.target.checked ? new Set(contacts.map((c) => c.id)) : /* @__PURE__ */ new Set())
+              }
+            ) }),
             /* @__PURE__ */ jsx("th", { children: "Contact" }),
             /* @__PURE__ */ jsx("th", { children: "Business / site" }),
             /* @__PURE__ */ jsx("th", { children: "Source" }),
@@ -2281,7 +2330,21 @@ var __awPlugin = (() => {
             /* @__PURE__ */ jsx("th", {})
           ] }) }),
           /* @__PURE__ */ jsx("tbody", { children: contacts.map((c) => /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
+            /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(
+              "input",
+              {
+                type: "checkbox",
+                "aria-label": `Select ${c.email}`,
+                checked: selected.has(c.id),
+                onChange: (e) => setSelected((prev) => {
+                  const next = new Set(prev);
+                  if (e.target.checked) next.add(c.id);
+                  else next.delete(c.id);
+                  return next;
+                })
+              }
+            ) }),
+            /* @__PURE__ */ jsxs("td", { className: "aw-table__title", onClick: () => setModal({ kind: "person", id: c.id }), style: { cursor: "pointer" }, title: "Open the contact's history", children: [
               /* @__PURE__ */ jsx("span", { className: "aw-mono", children: c.email }),
               c.name ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
                 " ",
@@ -2326,7 +2389,7 @@ var __awPlugin = (() => {
           api,
           tick,
           onPick: (source) => {
-            setFilters((f) => ({ ...f, source }));
+            filter({ source });
             setTab("contacts");
           }
         }
@@ -2356,11 +2419,290 @@ var __awPlugin = (() => {
         }
       ) : null,
       modal?.kind === "edit" ? /* @__PURE__ */ jsx(EditPostModal, { message: modal.message, api, onClose: () => setModal(null), onSaved: done }) : null,
-      modal?.kind === "message" ? /* @__PURE__ */ jsx(MessageModal, { id: modal.id, api, onClose: () => setModal(null), onDone: done }) : null
+      modal?.kind === "message" ? /* @__PURE__ */ jsx(MessageModal, { id: modal.id, api, onClose: () => setModal(null), onDone: done }) : null,
+      modal?.kind === "review" ? /* @__PURE__ */ jsx(ReviewModal2, { api, onClose: () => done("Review saved.") }) : null,
+      modal?.kind === "person" ? /* @__PURE__ */ jsx(
+        PersonModal,
+        {
+          id: modal.id,
+          api,
+          onClose: () => setModal(null),
+          onEdit: (contact) => setModal({ kind: "contact", contact }),
+          onOpenMessage: (id) => setModal({ kind: "message", id })
+        }
+      ) : null
     ] });
   }
   var pct2 = (rate) => `${(rate * 100).toFixed(rate && rate < 0.01 ? 2 : 1)}%`;
   var runMessage = (result) => result?.reason ? REASONS[result.reason] ?? `Nothing sent: ${result.reason}` : `Sent ${result?.sent ?? 0}${result?.failed ? `, ${result.failed} failed` : ""}.`;
+  var dayName = (unix, offsetMinutes) => {
+    const d = new Date((unix + offsetMinutes * 60) * 1e3);
+    return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()]} ${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
+  };
+  var REPLY_TONE = { reply: "ok", opt_out: "warn", complaint: "bad" };
+  var REPLY_LABEL = { reply: "replied", opt_out: "opted out", complaint: "spam complaint" };
+  function OverviewTab({ api, tick, health, onReview, onContact }) {
+    const [stats, setStats] = useState(null);
+    const [replies, setReplies] = useState(null);
+    const [review, setReview] = useState(null);
+    useEffect(() => {
+      let live = true;
+      Promise.all([
+        api("GET", "/admin/marketing/stats?days=14"),
+        api("GET", "/admin/marketing/replies"),
+        api("GET", "/admin/marketing/review?limit=1")
+      ]).then(([s, r, v]) => {
+        if (!live) return;
+        setStats(s);
+        setReplies(r.replies ?? []);
+        setReview(v.nextDay);
+      }).catch(() => live && setReplies([]));
+      return () => {
+        live = false;
+      };
+    }, [api, tick]);
+    const sum = (key) => (stats?.days ?? []).reduce((n, d) => n + d[key], 0);
+    const sent = sum("sent");
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx("section", { className: "aw-panel", children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+        /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: "Next 24 hours" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: review ? `${review.reviewed} of ${plural(review.total, "first email", "first emails")} due by this time tomorrow are reviewed.` : "\u2026" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: onReview, children: "Review next" })
+      ] }) }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Last 14 days" }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
+          /* @__PURE__ */ jsxs(Tag, { children: [
+            sent.toLocaleString("en-US"),
+            " sent"
+          ] }),
+          /* @__PURE__ */ jsxs(Tag, { tone: sum("reply") ? "ok" : "dash", children: [
+            sum("reply"),
+            " replies ",
+            sent ? `(${pct2(sum("reply") / sent)})` : ""
+          ] }),
+          /* @__PURE__ */ jsxs(Tag, { tone: health?.trip === "bounce_rate" ? "bad" : "dash", children: [
+            sum("bounce"),
+            " bounces"
+          ] }),
+          /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+            sum("opt_out"),
+            " opt-outs"
+          ] }),
+          /* @__PURE__ */ jsxs(Tag, { tone: sum("complaint") ? "bad" : "dash", children: [
+            sum("complaint"),
+            " complaints"
+          ] }),
+          /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+            sum("published"),
+            " posts published"
+          ] })
+        ] }),
+        stats ? /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("th", { children: "Day" }),
+            /* @__PURE__ */ jsx("th", { children: "Sent" }),
+            /* @__PURE__ */ jsx("th", { children: "Replies" }),
+            /* @__PURE__ */ jsx("th", { children: "Bounces" }),
+            /* @__PURE__ */ jsx("th", { children: "Opt-outs" }),
+            /* @__PURE__ */ jsx("th", { children: "Complaints" }),
+            /* @__PURE__ */ jsx("th", { children: "Posts" })
+          ] }) }),
+          /* @__PURE__ */ jsx("tbody", { children: stats.days.map((d) => /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("td", { className: "aw-muted", children: dayName(d.day, stats.offsetMinutes) }),
+            /* @__PURE__ */ jsx("td", { children: d.sent || "\xB7" }),
+            /* @__PURE__ */ jsx("td", { children: d.reply || "\xB7" }),
+            /* @__PURE__ */ jsx("td", { className: d.bounce ? "aw-warn" : void 0, children: d.bounce || "\xB7" }),
+            /* @__PURE__ */ jsx("td", { children: d.opt_out || "\xB7" }),
+            /* @__PURE__ */ jsx("td", { className: d.complaint ? "aw-warn" : void 0, children: d.complaint || "\xB7" }),
+            /* @__PURE__ */ jsx("td", { children: d.published || "\xB7" })
+          ] }, d.day)) })
+        ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "What came back" }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Replies are also forwarded to your inbox; answer them from there. Opt-outs and complaints are closed already." }),
+        replies?.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: replies.map((r) => /* @__PURE__ */ jsxs("li", { className: "aw-row", style: { alignItems: "flex-start", cursor: "pointer" }, onClick: () => onContact(r.contact.id), children: [
+          /* @__PURE__ */ jsx(Tag, { tone: REPLY_TONE[r.kind], children: REPLY_LABEL[r.kind] ?? r.kind }),
+          /* @__PURE__ */ jsxs("span", { className: "aw-row__title", children: [
+            r.contact.business ?? r.contact.email,
+            /* @__PURE__ */ jsx("div", { className: "aw-muted", style: { whiteSpace: "pre-wrap", fontWeight: "normal" }, children: snippet(r.text ?? "", 400) })
+          ] }),
+          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            ago(r.at),
+            " ago"
+          ] })
+        ] }, r.id)) }) : replies ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing yet." }) : null
+      ] })
+    ] });
+  }
+  function ReviewModal2({ api, onClose }) {
+    const [queue, setQueue] = useState(null);
+    const [nextDay, setNextDay] = useState(null);
+    const [index, setIndex] = useState(0);
+    const [detail, setDetail] = useState(null);
+    const [draft, setDraft] = useState(null);
+    const [done, setDone] = useState({ ok: 0, rewritten: 0, cancelled: 0 });
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const loadQueue = useCallback(
+      () => api("GET", "/admin/marketing/review?limit=50").then((out) => {
+        setQueue(out.messages ?? []);
+        setNextDay(out.nextDay);
+        setIndex(0);
+      }),
+      [api]
+    );
+    useEffect(() => {
+      void loadQueue().catch((err) => setError(err.message ?? err.code));
+    }, [loadQueue]);
+    const current = queue?.[index] ?? null;
+    useEffect(() => {
+      if (!current) return void 0;
+      let live = true;
+      setDetail(null);
+      setDraft(null);
+      api("GET", `/admin/marketing/messages/${current.id}`).then((out) => live && setDetail(out)).catch((err) => live && setError(err.message ?? err.code));
+      return () => {
+        live = false;
+      };
+    }, [api, current]);
+    const step = async (fn, counter) => {
+      setBusy(true);
+      setError(null);
+      try {
+        if (fn) await fn();
+        if (counter) setDone((d) => ({ ...d, [counter]: d[counter] + 1 }));
+        if (index + 1 < queue.length) setIndex(index + 1);
+        else await loadQueue();
+      } catch (err) {
+        setError(err.message ?? err.code);
+      } finally {
+        setBusy(false);
+      }
+    };
+    const progress = `${done.ok} let go \xB7 ${done.rewritten} rewritten \xB7 ${done.cancelled} cancelled${nextDay ? ` \xB7 next 24h: ${nextDay.reviewed + done.ok + done.rewritten}/${nextDay.total} reviewed` : ""}`;
+    if (queue && !current) {
+      return /* @__PURE__ */ jsx(Modal, { title: "Review", subtitle: progress, onClose, actions: /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: onClose, children: "Done" }), children: /* @__PURE__ */ jsx("p", { children: "Every queued first email is reviewed. Follow-ups go with their first email." }) });
+    }
+    const contact = detail?.contact;
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: current ? `${index + 1} of ${queue.length}: ${current.contactEmail}` : "Review",
+        subtitle: progress,
+        onClose,
+        wide: true,
+        actions: draft ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: () => setDraft(null), children: "Back" }),
+          /* @__PURE__ */ jsx(
+            Button,
+            {
+              kind: "primary",
+              disabled: busy || !draft.subject.trim() || !draft.body.trim(),
+              onClick: () => step(() => api("PATCH", `/admin/marketing/messages/${current.id}`, draft), "rewritten"),
+              children: "Save and next"
+            }
+          )
+        ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { kind: "ghost", disabled: busy || !current, onClick: () => step(() => api("POST", `/admin/marketing/messages/${current.id}/cancel`), "cancelled"), children: "Cancel this email" }),
+          /* @__PURE__ */ jsx(Button, { disabled: busy || !current, onClick: () => step(null, null), children: "Skip" }),
+          /* @__PURE__ */ jsx(Button, { disabled: busy || !detail, onClick: () => setDraft({ subject: current.subject ?? "", body: current.body }), children: "Rewrite" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !current, onClick: () => step(() => api("POST", `/admin/marketing/messages/${current.id}/review`), "ok"), children: "Looks good, next" })
+        ] }),
+        children: [
+          contact ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", style: { marginTop: 0 }, children: [
+            [contact.business, contact.site, contact.sourceKind, contact.country].filter(Boolean).join(" \xB7 "),
+            current?.scheduledAt ? ` \xB7 goes ${when(current.scheduledAt)}` : "",
+            contact.site ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+              " \xB7 ",
+              /* @__PURE__ */ jsx("a", { href: /^https?:/.test(contact.site) ? contact.site : `https://${contact.site}`, target: "_blank", rel: "noreferrer", children: "open site" })
+            ] }) : null
+          ] }) : null,
+          draft ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx(Field, { label: "Subject", children: /* @__PURE__ */ jsx("input", { value: draft.subject, maxLength: 200, onChange: (e) => setDraft((d) => ({ ...d, subject: e.target.value })) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Body", hint: "The footer is added when it sends.", children: /* @__PURE__ */ jsx("textarea", { rows: 16, value: draft.body, onChange: (e) => setDraft((d) => ({ ...d, body: e.target.value })), autoFocus: true }) })
+          ] }) : detail ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx("p", { style: { fontWeight: 600, margin: "0 0 8px" }, children: detail.preview.subject }),
+            /* @__PURE__ */ jsx("pre", { style: { whiteSpace: "pre-wrap", font: "inherit", lineHeight: 1.5, padding: 12, border: "1px solid var(--aw-line, #ddd)", borderRadius: 6, margin: 0 }, children: detail.preview.text })
+          ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" }),
+          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
+        ]
+      }
+    );
+  }
+  function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    useEffect(() => {
+      let live = true;
+      api("GET", `/admin/marketing/contacts/${id}`).then((out) => live && setData(out)).catch((err) => live && setError(err.message ?? err.code));
+      return () => {
+        live = false;
+      };
+    }, [api, id]);
+    const c = data?.contact;
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: c?.email ?? "Contact",
+        subtitle: c ? [c.name, c.business, c.site].filter(Boolean).join(" \xB7 ") : void 0,
+        onClose,
+        wide: true,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Close" }),
+          c ? /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => onEdit(c), children: "Edit contact" }) : null
+        ] }),
+        children: [
+          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null,
+          c ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
+              /* @__PURE__ */ jsx(Tag, { tone: CONTACT_TONE[c.status], children: c.status }),
+              c.sourceKind ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: c.sourceKind }) : null,
+              c.country ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: c.country }) : null,
+              /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+                "added ",
+                ago(c.createdAt),
+                " ago"
+              ] })
+            ] }),
+            c.gap ? /* @__PURE__ */ jsxs("p", { children: [
+              "Observation: ",
+              c.gap
+            ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No observation written; the plain versions are used." }),
+            c.sourceUrl ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+              "Found on",
+              " ",
+              /* @__PURE__ */ jsx("a", { href: c.sourceUrl, target: "_blank", rel: "noreferrer", children: c.sourceUrl })
+            ] }) : null,
+            c.notes ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: c.notes }) : null,
+            /* @__PURE__ */ jsx("h3", { children: "Messages" }),
+            /* @__PURE__ */ jsx("table", { className: "aw-table", children: /* @__PURE__ */ jsx("tbody", { children: data.messages.map((m) => /* @__PURE__ */ jsxs("tr", { onClick: () => onOpenMessage(m.id), style: { cursor: "pointer" }, children: [
+              /* @__PURE__ */ jsx("td", { className: "aw-muted", children: m.sentAt ? `${ago(m.sentAt)} ago` : m.scheduledAt ? when(m.scheduledAt) : "\u2014" }),
+              /* @__PURE__ */ jsxs("td", { children: [
+                m.subject,
+                " ",
+                m.editedAt ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "edited" }) : m.reviewedAt ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "reviewed" }) : null
+              ] }),
+              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: MESSAGE_TONE[m.status], children: m.status }) })
+            ] }, m.id)) }) }),
+            !data.messages.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing queued or sent." }) : null,
+            /* @__PURE__ */ jsx("h3", { children: "Events" }),
+            /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: data.events.map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
+              /* @__PURE__ */ jsx(Tag, { tone: EVENT_BAD.has(e.kind) ? "bad" : EVENT_GOOD.has(e.kind) ? "ok" : "dash", children: e.kind.replaceAll("_", " ") }),
+              /* @__PURE__ */ jsx("span", { className: "aw-muted", style: { whiteSpace: "pre-wrap" }, children: snippet(e.detail ?? "", 300) }),
+              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                ago(e.createdAt),
+                " ago"
+              ] })
+            ] }, e.id)) }),
+            !data.events.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No events." }) : null
+          ] }) : !error ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" }) : null
+        ]
+      }
+    );
+  }
   function EmailTab({ api, run, tick, events, onOpen }) {
     const [order, setOrder] = useState("next");
     const [status, setStatus] = useState("scheduled");
@@ -2407,7 +2749,7 @@ var __awPlugin = (() => {
             /* @__PURE__ */ jsxs("div", { children: [
               m.subject,
               " ",
-              m.editedAt ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "edited" }) : null,
+              m.editedAt ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "edited" }) : m.reviewedAt ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "reviewed" }) : null,
               " ",
               /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
                 "\xB7 step ",
@@ -2777,6 +3119,24 @@ var __awPlugin = (() => {
                     { value: "ses", label: "Amazon SES" }
                   ],
                   onChange: (v) => set("provider", v)
+                }
+              )
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            Field,
+            {
+              label: "Review first emails",
+              hint: "On: a first email goes out only after you read it in Review next (or rewrote it). Follow-ups ride on the first. Off: everything queued goes at its time.",
+              children: /* @__PURE__ */ jsx(
+                Segmented,
+                {
+                  value: Boolean(draft.reviewFirst),
+                  options: [
+                    { value: true, label: "Only reviewed" },
+                    { value: false, label: "Send all" }
+                  ],
+                  onChange: (v) => set("reviewFirst", v)
                 }
               )
             }

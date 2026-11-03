@@ -50,6 +50,8 @@ export interface MarketingSettings {
   provider: 'cloudflare' | 'ses';
   /** Posts the content cycle writes wait as drafts until approved in the desk. */
   postApproval: boolean;
+  /** Only first emails Ali reviewed or rewrote go out; follow-ups ride on them. */
+  reviewFirst: boolean;
 }
 
 const SETTING_DEFAULTS: MarketingSettings = {
@@ -65,6 +67,7 @@ const SETTING_DEFAULTS: MarketingSettings = {
   voiceNotes: '',
   provider: 'cloudflare',
   postApproval: true,
+  reviewFirst: false,
 };
 
 const SETTING_KEYS: Record<keyof MarketingSettings, string> = {
@@ -80,6 +83,7 @@ const SETTING_KEYS: Record<keyof MarketingSettings, string> = {
   voiceNotes: 'marketing_voice_notes',
   provider: 'marketing_provider',
   postApproval: 'marketing_post_approval',
+  reviewFirst: 'marketing_review_first',
 };
 
 const FIELD_OF_KEY = Object.fromEntries(Object.entries(SETTING_KEYS).map(([field, key]) => [key, field])) as Record<
@@ -118,6 +122,7 @@ const RULES: Record<keyof MarketingSettings, (raw: unknown) => unknown> = {
   },
   provider: (raw) => (raw === 'cloudflare' || raw === 'ses' ? raw : undefined),
   postApproval: (raw) => (typeof raw === 'boolean' ? raw : undefined),
+  reviewFirst: (raw) => (typeof raw === 'boolean' ? raw : undefined),
 };
 
 export async function readMarketingSettings(env: Env): Promise<MarketingSettings> {
@@ -635,6 +640,8 @@ export async function rerenderScheduled(
 /** A true, if generic, opener for contacts whose specific observation is not written yet. */
 export const GENERIC_GAP = 'there are a couple of small things I would fix first';
 
+const PAGE = 200;
+
 const chunk = <T>(list: T[], size: number): T[][] => {
   const out: T[][] = [];
   for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
@@ -971,6 +978,9 @@ export async function listHealth(env: Env, t = now()): Promise<ListHealth> {
 
 /* —— the run —— */
 
+/** With review on, a first email waits until Ali has read or rewritten it. */
+const REVIEWED = 'AND (m.step > 0 OR m.reviewed_at IS NOT NULL OR m.edited_at IS NOT NULL)';
+
 /** Sends in flight at once: SES allows 14 a second on this account. */
 const CONCURRENCY = 5;
 
@@ -1018,6 +1028,7 @@ export async function runMarketing(env: Env): Promise<RunSummary> {
        FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
       WHERE m.channel = 'email' AND m.status = 'scheduled' AND m.scheduled_at <= ?
         AND c.status IN ('new', 'queued', 'contacted')
+        ${settings.reviewFirst ? REVIEWED : ''}
       ORDER BY m.scheduled_at, m.id
       LIMIT ?`,
   )
@@ -1596,17 +1607,75 @@ marketing.get('/admin/marketing/contacts', async (c) => {
     const like = `%${q}%`;
     binds.push(like, like, like, like);
   }
-  const { results } = await c.env.DB.prepare(
-    `SELECT c.*,
-            (SELECT COUNT(*) FROM marketing_messages m WHERE m.contact_id = c.id AND m.status = 'sent') AS sent_count,
-            (SELECT MIN(m.scheduled_at) FROM marketing_messages m WHERE m.contact_id = c.id AND m.status = 'scheduled') AS next_at
-       FROM marketing_contacts c
-       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-      ORDER BY c.updated_at DESC LIMIT 200`,
-  )
-    .bind(...binds)
-    .all<Contact & { sent_count: number; next_at: number | null }>();
-  return out(c, { contacts: (results ?? []).map(contactView) });
+  const offset = Math.max(0, Math.min(1_000_000, Number(c.req.query('offset')) || 0));
+  const filter = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const [{ results }, total] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT c.*,
+              (SELECT COUNT(*) FROM marketing_messages m WHERE m.contact_id = c.id AND m.status = 'sent') AS sent_count,
+              (SELECT MIN(m.scheduled_at) FROM marketing_messages m WHERE m.contact_id = c.id AND m.status = 'scheduled') AS next_at
+         FROM marketing_contacts c
+         ${filter}
+        ORDER BY c.updated_at DESC, c.id DESC LIMIT ${PAGE} OFFSET ?`,
+    )
+      .bind(...binds, offset)
+      .all<Contact & { sent_count: number; next_at: number | null }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM marketing_contacts c ${filter}`)
+      .bind(...binds)
+      .first<{ n: number }>(),
+  ]);
+  return out(c, { contacts: (results ?? []).map(contactView), total: total?.n ?? 0, offset, page: PAGE });
+});
+
+/** One contact and everything that happened to them: messages in order, then events. */
+marketing.get('/admin/marketing/contacts/:id', async (c) => {
+  const env = c.env;
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id)) return out(c, { error: 'bad_id' }, 400);
+  const contact = await getContact(env, id);
+  if (!contact) return out(c, { error: 'not_found' }, 404);
+  const [messages, events] = await Promise.all([
+    env.DB.prepare('SELECT * FROM marketing_messages WHERE contact_id = ? ORDER BY COALESCE(scheduled_at, created_at), id').bind(id).all<Message>(),
+    env.DB.prepare('SELECT id, message_id, kind, detail, created_at FROM marketing_events WHERE contact_id = ? ORDER BY id DESC LIMIT 100')
+      .bind(id)
+      .all<{ id: number; message_id: number | null; kind: string; detail: string | null; created_at: number }>(),
+  ]);
+  return out(c, {
+    contact: contactView(contact),
+    messages: (messages.results ?? []).map(messageView),
+    events: (events.results ?? []).map((e) => ({ id: e.id, messageId: e.message_id, kind: e.kind, detail: e.detail, createdAt: e.created_at })),
+  });
+});
+
+/**
+ * One action on many contacts. Opting out and pausing cancel what is queued,
+ * like the same action on one contact; nothing here sends or deletes.
+ */
+marketing.post('/admin/marketing/contacts/bulk', async (c) => {
+  const env = c.env;
+  const body = await jsonBody(c);
+  const action = body?.action;
+  if (action !== 'opt_out' && action !== 'pause') return out(c, { error: 'bad_action' }, 400);
+  const ids = Array.isArray(body?.ids) ? [...new Set(body.ids.map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 1000) : [];
+  if (!ids.length) return out(c, { error: 'no_ids' }, 400);
+  const t = now();
+  let changed = 0;
+  for (const part of chunk(ids, 50)) {
+    const marks = part.map(() => '?').join(',');
+    const closed = action === 'opt_out' ? "('opted_out')" : "('opted_out', 'bounced', 'replied', 'paused')";
+    const [update] = await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE marketing_contacts SET status = ?, ${action === 'opt_out' ? 'opted_out_at = COALESCE(opted_out_at, ?),' : ''} updated_at = ?
+          WHERE id IN (${marks}) AND status NOT IN ${closed}`,
+      ).bind(...(action === 'opt_out' ? ['opted_out', t, t] : ['paused', t]), ...part),
+      env.DB.prepare(
+        `UPDATE marketing_messages SET status = 'cancelled', updated_at = ? WHERE contact_id IN (${marks}) AND status = 'scheduled'`,
+      ).bind(t, ...part),
+    ]);
+    changed += update.meta.changes ?? 0;
+  }
+  await logEvent(env, { kind: action === 'opt_out' ? 'bulk_opt_out' : 'bulk_pause', detail: `${changed} of ${ids.length} contacts` });
+  return out(c, { ok: true, changed, asked: ids.length });
 });
 
 marketing.post('/admin/marketing/contacts', async (c) => {
@@ -1793,6 +1862,7 @@ interface Message {
   created_at: number;
   updated_at: number;
   edited_at?: number | null;
+  reviewed_at?: number | null;
   provider?: string | null;
 }
 
@@ -1814,6 +1884,7 @@ export function messageView(m: Message & { contact_email?: string | null }) {
     error: m.error,
     createdAt: m.created_at,
     editedAt: m.edited_at ?? null,
+    reviewedAt: m.reviewed_at ?? null,
     provider: m.provider ?? null,
   };
 }
@@ -1916,10 +1987,10 @@ marketing.patch('/admin/marketing/messages/:id', async (c) => {
     if (!subject || !textBody) return out(c, { error: 'empty' }, 400);
     if (subject.length > 200 || textBody.length > 20_000) return out(c, { error: 'too_long' }, 400);
     const updated = await env.DB.prepare(
-      `UPDATE marketing_messages SET subject = ?, body = ?, edited_at = ?, updated_at = ?
+      `UPDATE marketing_messages SET subject = ?, body = ?, edited_at = ?, reviewed_at = ?, updated_at = ?
         WHERE id = ? AND status IN ('draft', 'scheduled', 'failed') RETURNING *`,
     )
-      .bind(subject, textBody, now(), now(), id)
+      .bind(subject, textBody, now(), now(), now(), id)
       .first<Message>();
     if (!updated) return out(c, { error: 'not_editable' }, 409);
     return out(c, { message: messageView(updated) });
@@ -2105,6 +2176,98 @@ marketing.post('/admin/marketing/messages/:id/test', async (c) => {
   }
   await logEvent(env, { messageId: id, contactId: message.contact_id, kind: 'test', detail: `to ${to} via ${settings.provider}` });
   return out(c, { ok: true, to, provider: settings.provider });
+});
+
+/**
+ * The review queue: first emails due next that nobody has read yet, in send
+ * order, with how many of the next day's are done.
+ */
+marketing.get('/admin/marketing/review', async (c) => {
+  const env = c.env;
+  const limit = Math.max(1, Math.min(100, Number(c.req.query('limit')) || 50));
+  const t = now();
+  const [list, day] = await Promise.all([
+    env.DB.prepare(
+      `SELECT m.*, c.email AS contact_email FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
+        WHERE m.channel = 'email' AND m.status = 'scheduled' AND m.step = 0
+          AND m.reviewed_at IS NULL AND m.edited_at IS NULL
+          AND c.status IN ('new', 'queued', 'contacted')
+        ORDER BY m.scheduled_at, m.id LIMIT ?`,
+    )
+      .bind(limit)
+      .all<Message & { contact_email: string | null }>(),
+    env.DB.prepare(
+      `SELECT COUNT(*) AS total, SUM(reviewed_at IS NOT NULL OR edited_at IS NOT NULL) AS done
+         FROM marketing_messages WHERE channel = 'email' AND status = 'scheduled' AND step = 0 AND scheduled_at <= ?`,
+    )
+      .bind(t + 86400)
+      .first<{ total: number; done: number | null }>(),
+  ]);
+  return out(c, {
+    messages: (list.results ?? []).map(messageView),
+    nextDay: { total: day?.total ?? 0, reviewed: day?.done ?? 0 },
+  });
+});
+
+/** Ali read it and lets it go as it is. */
+marketing.post('/admin/marketing/messages/:id/review', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id)) return out(c, { error: 'bad_id' }, 400);
+  const message = await c.env.DB.prepare(
+    `UPDATE marketing_messages SET reviewed_at = ?, updated_at = ? WHERE id = ? AND channel = 'email' AND status IN ('draft', 'scheduled', 'failed') RETURNING *`,
+  )
+    .bind(now(), now(), id)
+    .first<Message>();
+  if (!message) return out(c, { error: 'not_reviewable' }, 409);
+  return out(c, { message: messageView(message) });
+});
+
+/** Everyone who wrote back, newest first, with what they said. */
+marketing.get('/admin/marketing/replies', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT e.id, e.kind, e.detail, e.created_at, c.id AS contact_id, c.email, c.name, c.business, c.site, c.status
+       FROM marketing_events e JOIN marketing_contacts c ON c.id = e.contact_id
+      WHERE e.kind IN ('reply', 'opt_out', 'complaint')
+      ORDER BY e.id DESC LIMIT 100`,
+  ).all<{ id: number; kind: string; detail: string | null; created_at: number; contact_id: number; email: string; name: string | null; business: string | null; site: string | null; status: string }>();
+  return out(c, {
+    replies: (results ?? []).map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      text: r.detail,
+      at: r.created_at,
+      contact: { id: r.contact_id, email: r.email, name: r.name, business: r.business, site: r.site, status: r.status },
+    })),
+  });
+});
+
+/** Per local day: what left and what came back. */
+marketing.get('/admin/marketing/stats', async (c) => {
+  const env = c.env;
+  const settings = await readMarketingSettings(env);
+  const days = Math.max(1, Math.min(60, Number(c.req.query('days')) || 14));
+  const t = now();
+  const { dayStart } = localClock(settings.offsetMinutes, t);
+  const since = dayStart - (days - 1) * 86400;
+  const dayOf = `CAST((%s - ${since}) / 86400 AS INTEGER)`;
+  const [sent, events] = await Promise.all([
+    env.DB.prepare(
+      `SELECT ${dayOf.replace('%s', 'sent_at')} AS d, COUNT(*) AS n FROM marketing_messages
+        WHERE channel = 'email' AND status = 'sent' AND sent_at >= ? GROUP BY d`,
+    )
+      .bind(since)
+      .all<{ d: number; n: number }>(),
+    env.DB.prepare(
+      `SELECT ${dayOf.replace('%s', 'created_at')} AS d, kind, COUNT(*) AS n FROM marketing_events
+        WHERE created_at >= ? AND kind IN ('reply', 'bounce', 'opt_out', 'complaint', 'published') GROUP BY d, kind`,
+    )
+      .bind(since)
+      .all<{ d: number; kind: string; n: number }>(),
+  ]);
+  const rows = Array.from({ length: days }, (_, d) => ({ day: since + d * 86400, sent: 0, reply: 0, bounce: 0, opt_out: 0, complaint: 0, published: 0 }));
+  for (const r of sent.results ?? []) if (rows[r.d]) rows[r.d].sent = r.n;
+  for (const r of events.results ?? []) if (rows[r.d]) (rows[r.d] as Record<string, number>)[r.kind] = r.n;
+  return out(c, { days: rows.reverse(), offsetMinutes: settings.offsetMinutes });
 });
 
 /** A drafted post goes into its slot, or out now if the slot has passed. */
