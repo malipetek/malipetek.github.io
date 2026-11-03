@@ -12,7 +12,24 @@ import { cleanVerify, normalizeReport, sharedLine } from '../src/runs.ts';
 import { setupFor, slugify, type SetupInput } from '../src/setup.ts';
 import { cleanDeployManifest, cleanSiteSlug, siteView, type SiteRow } from '../src/sites.ts';
 import { checkUploads, cleanFileName, fileType } from '../src/files.ts';
-import { fillTemplate, isOptOut, localClock, parseContactsCsv, parseCsv, sendWindow, SEQUENCES, siteLabel } from '../src/marketing.ts';
+import {
+  cleanCountry,
+  cleanSourceKind,
+  complainedAddresses,
+  fillTemplate,
+  isBounceMessage,
+  isComplaintReport,
+  isOptOut,
+  judgeHealth,
+  localClock,
+  parseContactsCsv,
+  parseCsv,
+  sendWindow,
+  sequenceOfSubject,
+  SEQUENCES,
+  siteLabel,
+} from '../src/marketing.ts';
+import { sesBody, signV4 } from '../src/ses.ts';
 import { cleanPost, nextSlots, parseOutbox, slotLabel } from '../src/content.ts';
 import { autoApproveDecision } from '../src/approve.ts';
 import { healthMail, parseFleetVersion } from '../src/health.ts';
@@ -801,4 +818,86 @@ test('screenshots: the signed URL is tied to one run and one side', async () => 
   assert.equal(await verifyShotToken(env, 8, 'before', token), false);
   assert.equal(await verifyShotToken(env, 7, 'after', token), false);
   assert.equal(await verifyShotToken(env, 7, 'before', 'nope'), false);
+});
+
+/* —— marketing at volume: SES, list health, sources —— */
+
+test('ses: the signer reproduces the AWS documentation example', async () => {
+  const headers = await signV4({
+    method: 'GET',
+    url: 'https://iam.amazonaws.com/?Action=ListUsers&Version=2010-05-08',
+    region: 'us-east-1',
+    service: 'iam',
+    accessKeyId: 'AKIDEXAMPLE',
+    secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY',
+    body: '',
+    headers: { 'content-type': 'application/x-www-form-urlencoded; charset=utf-8' },
+    amzDate: '20150830T123600Z',
+  });
+  assert.equal(
+    headers.authorization,
+    'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/iam/aws4_request, SignedHeaders=content-type;host;x-amz-date, Signature=5d672d79c15b13162d9279b0855cfba6789a8edb4c82c400e06b5924a6f2b5d7',
+  );
+});
+
+test('ses: a send carries the list headers and the configuration set', () => {
+  const body = JSON.parse(
+    sesBody(
+      { from: '"Ali" <hello@malipetek.dev>', to: 'a@b.com', replyTo: 'hello@malipetek.dev', subject: 'S', text: 'T', headers: [{ name: 'List-Unsubscribe-Post', value: 'List-Unsubscribe=One-Click' }] },
+      'outreach',
+    ),
+  );
+  assert.deepEqual(body.Destination, { ToAddresses: ['a@b.com'] });
+  assert.equal(body.Content.Simple.Body.Text.Data, 'T');
+  assert.deepEqual(body.Content.Simple.Headers, [{ Name: 'List-Unsubscribe-Post', Value: 'List-Unsubscribe=One-Click' }]);
+  assert.equal(body.ConfigurationSetName, 'outreach');
+});
+
+test('marketing: the desk pauses on a bounce or complaint rate, not on the first one', () => {
+  assert.equal(judgeHealth(40, 5, 0).trip, null); // too few sends to call it a rate
+  assert.equal(judgeHealth(200, 8, 0).trip, null); // 4% exactly
+  assert.equal(judgeHealth(200, 9, 0).trip, 'bounce_rate');
+  assert.equal(judgeHealth(500, 0, 1).trip, null); // one complaint is not a pattern
+  assert.equal(judgeHealth(500, 0, 2).trip, 'complaint_rate'); // 0.4%
+  assert.equal(judgeHealth(2000, 0, 2).trip, null); // 0.1%
+});
+
+test('marketing: SES bounces and complaints are recognised by their report type', () => {
+  assert.equal(isBounceMessage('0100abc@amazonses.com', 'multipart/report; report-type=delivery-status; boundary="x"'), true);
+  assert.equal(isBounceMessage('mailer-daemon@googlemail.com', 'multipart/report; boundary="x"'), true);
+  assert.equal(isBounceMessage('someone@example.com', 'text/plain'), false);
+  assert.equal(isComplaintReport('multipart/report; report-type=feedback-report; boundary="b"'), true);
+  assert.equal(isComplaintReport('multipart/report; report-type=delivery-status'), false);
+});
+
+test('marketing: a complaint names its recipient, from the report or the attached original', () => {
+  const arf = (fields: string) =>
+    ['--b', 'Content-Type: message/feedback-report', '', 'Feedback-Type: abuse', fields, '', '--b', 'Content-Type: message/rfc822', '', 'From: "Ali" <hello@malipetek.dev>', 'To: Owner@Plumbing.example', 'Subject: hi', '', 'x', '--b--'].join('\n');
+  assert.deepEqual(complainedAddresses(arf('Original-Rcpt-To: <joe@acme.example>')), ['joe@acme.example']);
+  assert.deepEqual(complainedAddresses(arf('User-Agent: SES')), ['owner@plumbing.example']);
+});
+
+test('marketing: sources and countries are cleaned to labels the desk can group by', () => {
+  assert.equal(cleanSourceKind('osm-Colorado-mail-only-2026-11-04.verified.csv'), 'osm-colorado-mail-only-2026-11-04.verified');
+  assert.equal(cleanSourceKind('  '), null);
+  assert.equal(cleanCountry(' de '), 'DE');
+  assert.equal(cleanCountry('Germany'), null);
+  const { rows } = parseContactsCsv('email,source_kind,country\na@b.com,chamber-denver,us\n');
+  assert.equal(rows[0].sourceKind, 'chamber-denver');
+  assert.equal(rows[0].country, 'us');
+});
+
+test('marketing: every sequence can be told from its subject, for re-rendering', () => {
+  for (const [kind, steps] of Object.entries(SEQUENCES)) {
+    for (const step of steps) {
+      const subject = fillTemplate(step.subject, { name: null, business: 'Acme', site: 'acme.com', gap: null });
+      assert.equal(sequenceOfSubject(subject), kind, subject);
+    }
+  }
+});
+
+test('marketing: outreach copy keeps the house rules (no em dashes)', () => {
+  for (const steps of Object.values(SEQUENCES)) {
+    for (const step of steps) assert.ok(!/—/.test(step.subject + step.body + (step.plain ?? '')), step.kind);
+  }
 });

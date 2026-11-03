@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { allowed, emailsIn, parseRobots, robotsFor, titleOf, urlsFrom } from './extract.mjs';
+import { allowed, decodeCfEmail, emailsIn, parseRobots, robotsFor, titleOf, urlsFrom } from './extract.mjs';
 
 const rules = (text, agent = 'MalipetekProspector') => robotsFor(parseRobots(text), agent);
 
@@ -102,4 +102,23 @@ test('urls: comments and blanks go, a missing scheme is added', () => {
     'https://acme.com/contact',
     'https://rosas.co.uk',
   ]);
+});
+
+const cfHex = (email, key = 0x42) =>
+  key.toString(16).padStart(2, '0') + [...email].map((ch) => (ch.charCodeAt(0) ^ key).toString(16).padStart(2, '0')).join('');
+
+test('emails: Cloudflare-obfuscated addresses are decoded, in a span or a link', () => {
+  assert.equal(decodeCfEmail(cfHex('info@acme.com')), 'info@acme.com');
+  assert.equal(decodeCfEmail('zz'), '');
+  const html = `<p>Write to <span class="__cf_email__" data-cfemail="${cfHex('office@acme.com')}">[email&#160;protected]</span>
+    or <a href="/cdn-cgi/l/email-protection#${cfHex('jobs@acme.com', 0x1f)}">us</a></p>`;
+  assert.deepEqual(emailsIn(html, 'https://acme.com/'), [
+    { email: 'office@acme.com', how: 'cfemail' },
+    { email: 'jobs@acme.com', how: 'cfemail' },
+  ]);
+});
+
+test('emails: the address in JSON-LD structured data is kept', () => {
+  const html = `<script type="application/ld+json">{"@type":"LocalBusiness","name":"Acme","email":"mailto:Hello@Acme.com"}</script><p>No address in the text.</p>`;
+  assert.deepEqual(emailsIn(html, 'https://acme.com/'), [{ email: 'hello@acme.com', how: 'jsonld' }]);
 });

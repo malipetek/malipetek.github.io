@@ -17,11 +17,17 @@
  * Sending is off until `live` is on and a postal address is set: the first is
  * the kill switch, the second is what anti-spam law asks of every commercial
  * email. Once both are on, queued mail goes without per-item approval.
+ *
+ * Two senders: Cloudflare's MARKETING binding (small volume) and Amazon SES
+ * (src/ses.ts, the volume one). Either way every email carries a one-click
+ * List-Unsubscribe header, and the cron pauses the desk by itself when the
+ * bounce or complaint rate climbs towards what gets an SES account reviewed.
  */
 import { Hono, type Context } from 'hono';
 import { json, now, type Env, type HonoEnv } from './shared.ts';
 import { mailAli, requireAdmin, requireUser, siteUrl, type PortalEnv } from './portal.ts';
-import { ensureContentCycle } from './content.ts';
+import { cleanPost, ensureContentCycle } from './content.ts';
+import { sesConfigured, sesSend } from './ses.ts';
 
 /* ——————————————————————— settings ——————————————————————— */
 
@@ -40,6 +46,10 @@ export interface MarketingSettings {
   fromName: string;
   /** Added to every content-cycle brief, after the launch kit. */
   voiceNotes: string;
+  /** Which service sends outreach email: Cloudflare's binding or Amazon SES. */
+  provider: 'cloudflare' | 'ses';
+  /** Posts the content cycle writes wait as drafts until approved in the desk. */
+  postApproval: boolean;
 }
 
 const SETTING_DEFAULTS: MarketingSettings = {
@@ -53,6 +63,8 @@ const SETTING_DEFAULTS: MarketingSettings = {
   postalAddress: '',
   fromName: 'Ali Petek',
   voiceNotes: '',
+  provider: 'cloudflare',
+  postApproval: true,
 };
 
 const SETTING_KEYS: Record<keyof MarketingSettings, string> = {
@@ -66,6 +78,8 @@ const SETTING_KEYS: Record<keyof MarketingSettings, string> = {
   postalAddress: 'marketing_postal_address',
   fromName: 'marketing_from_name',
   voiceNotes: 'marketing_voice_notes',
+  provider: 'marketing_provider',
+  postApproval: 'marketing_post_approval',
 };
 
 const FIELD_OF_KEY = Object.fromEntries(Object.entries(SETTING_KEYS).map(([field, key]) => [key, field])) as Record<
@@ -80,8 +94,9 @@ const int = (min: number, max: number) => (raw: unknown) => {
 
 const RULES: Record<keyof MarketingSettings, (raw: unknown) => unknown> = {
   live: (raw) => (typeof raw === 'boolean' ? raw : raw === 'on' ? true : raw === 'off' ? false : undefined),
-  dailyCap: int(1, 200),
-  perRun: int(1, 50),
+  // SES allows 50,000 a day; the cap is ours to raise slowly (see the desk's warm-up hint).
+  dailyCap: int(1, 50_000),
+  perRun: int(1, 200),
   startHour: int(0, 23),
   endHour: int(1, 24),
   offsetMinutes: int(-720, 840),
@@ -101,6 +116,8 @@ const RULES: Record<keyof MarketingSettings, (raw: unknown) => unknown> = {
     const value = raw.trim();
     return value.length <= 800 ? value : undefined;
   },
+  provider: (raw) => (raw === 'cloudflare' || raw === 'ses' ? raw : undefined),
+  postApproval: (raw) => (typeof raw === 'boolean' ? raw : undefined),
 };
 
 export async function readMarketingSettings(env: Env): Promise<MarketingSettings> {
@@ -185,7 +202,7 @@ export function sendWindow(settings: MarketingSettings, t: number): WindowState 
 
 /* ——————————————————————— sequences ——————————————————————— */
 
-export type SequenceKind = 'cold_a' | 'cold_b' | 'warm';
+export type SequenceKind = 'cold_a' | 'cold_b' | 'nosite' | 'warm';
 
 interface SequenceStep {
   kind: string;
@@ -315,6 +332,46 @@ I will leave it here. If a small fix ever gets annoying enough, you can send it 
 Ali`,
     },
   ],
+  // For a business a mapper recorded with an email and no website
+  // (marketing/prospector/osm.mjs → the mail-only CSV). It says where we found
+  // them, because that is the honest answer to "how did you get my address".
+  nosite: [
+    {
+      kind: 'first',
+      day: 0,
+      subject: 'A website for {{business}}',
+      body: `{{greeting}}
+
+I found {{business}} on OpenStreetMap. The listing has your email but no website.
+
+I build small business sites. An AI agent does the typing, and I approve the job and check the result before anything goes live. You pay for my time by the second, at $100 an hour, with no quote and no minimum. A one-page site with your services, hours and phone number is a short job.
+
+If you want one, reply with a line about the business and I will tell you what it would take.
+
+Ali
+malipetek.dev`,
+    },
+    {
+      kind: 'followup_1',
+      day: 4,
+      subject: 'Re: A website for {{business}}',
+      body: `{{greeting}}
+
+Should I sketch a one-page site for {{business}}, or is it not worth it right now? Either answer helps me.
+
+Ali`,
+    },
+    {
+      kind: 'followup_2',
+      day: 10,
+      subject: 'Re: A website for {{business}}',
+      body: `{{greeting}}
+
+Last note from me. If you want a site later, you can ask through malipetek.dev/portal, with no call or quote first.
+
+Ali`,
+    },
+  ],
   warm: [
     {
       kind: 'first',
@@ -356,10 +413,11 @@ Ali`,
 export const SEQUENCE_LABELS: Record<SequenceKind, string> = {
   cold_a: 'Cold A: someone who built it with AI',
   cold_b: 'Cold B: a business owner with a small list',
+  nosite: 'No website: an email on the map, no site',
   warm: 'Warm: past collaborators',
 };
 
-export const SEQUENCE_NEEDS_GAP: Record<SequenceKind, boolean> = { cold_a: true, cold_b: true, warm: false };
+export const SEQUENCE_NEEDS_GAP: Record<SequenceKind, boolean> = { cold_a: true, cold_b: true, nosite: false, warm: false };
 
 export function isSequenceKind(value: unknown): value is SequenceKind {
   return typeof value === 'string' && value in SEQUENCES;
@@ -426,6 +484,35 @@ export interface Contact {
   updated_at: number;
   last_contacted_at: number | null;
   opted_out_at: number | null;
+  /** Which list or method found the address (`osm-co-mail-only`, `bulk-tranco`…), for per-source rates. */
+  source_kind: string | null;
+  /** ISO 3166-1 alpha-2, when known. Gates sending: see CONSENT_COUNTRIES. */
+  country: string | null;
+}
+
+/**
+ * Countries where unsolicited commercial email needs prior consent, business
+ * addresses included. A contact here is never mailed cold, whatever the list
+ * says; the send is cancelled at claim time with the reason on the row.
+ */
+export const CONSENT_COUNTRIES = new Set(['DE', 'AT', 'CH', 'IT', 'ES', 'PL', 'DK', 'NO', 'TR']);
+
+export function cleanCountry(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const code = value.trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(code) ? code : null;
+}
+
+export function cleanSourceKind(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const kind = value
+    .trim()
+    .toLowerCase()
+    .replace(/\.csv$/, '')
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+  return kind || null;
 }
 
 const CONTACT_STATUSES = ['new', 'queued', 'contacted', 'replied', 'opted_out', 'bounced', 'paused'] as const;
@@ -448,6 +535,8 @@ export function contactView(c: Contact & { sent_count?: number; next_at?: number
     updatedAt: c.updated_at,
     lastContactedAt: c.last_contacted_at,
     optedOutAt: c.opted_out_at,
+    sourceKind: c.source_kind ?? null,
+    country: c.country ?? null,
     sentCount: c.sent_count ?? 0,
     nextAt: c.next_at ?? null,
   };
@@ -492,6 +581,7 @@ export function sequenceOfSubject(subject: string | null): SequenceKind | null {
   if (/^(Re: )?The last mile of /.test(s)) return 'cold_a';
   if (/^(Re: )?(The smallest thing on |A small fix on )/.test(s)) return 'cold_b';
   if (/^(Re: )?A small experiment/.test(s)) return 'warm';
+  if (/^(Re: )?A website for /.test(s)) return 'nosite';
   return null;
 }
 
@@ -507,7 +597,9 @@ export async function rerenderScheduled(
   const { results } = await env.DB.prepare(
     `SELECT m.id, m.step, m.subject, c.email, c.name, c.business, c.site, c.gap
        FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
-      WHERE m.channel = 'email' AND m.status = 'scheduled'`,
+      WHERE m.channel = 'email' AND m.status = 'scheduled'
+        -- A hand-edited email is Ali's wording; a template change must not overwrite it.
+        AND m.edited_at IS NULL`,
   ).all<{ id: number; step: number; subject: string | null; email: string; name: string | null; business: string | null; site: string | null; gap: string | null }>();
   const t = now();
   const updates: D1PreparedStatement[] = [];
@@ -652,6 +744,98 @@ async function countSentToday(env: Env, dayStart: number): Promise<number> {
 const footerFor = (settings: MarketingSettings) =>
   `\n\n--\n${settings.fromName}\n${settings.postalAddress}\n\nReply "no" and I will not write again.`;
 
+/* —— unsubscribe —— */
+
+async function hmacHex(secret: string, text: string): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(text));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+const unsubSecret = (env: Env) => env.SESSION_SECRET || env.MARKETING_TOKEN || '';
+
+/** The signature in a contact's unsubscribe link: stable, so an old email's link still works. */
+export async function unsubSig(env: Env, contactId: number): Promise<string> {
+  return (await hmacHex(unsubSecret(env), `marketing-unsubscribe:${contactId}`)).slice(0, 24);
+}
+
+export async function unsubscribeUrl(env: Env, contactId: number): Promise<string> {
+  return `${siteUrl(env)}/api/marketing/u/${contactId}/${await unsubSig(env, contactId)}`;
+}
+
+/**
+ * The headers mailbox providers ask of bulk senders (RFC 2369 + RFC 8058):
+ * Gmail and Yahoo show an "Unsubscribe" button and POST to the URL.
+ */
+export async function listHeaders(env: Env, contactId: number | null): Promise<Record<string, string>> {
+  const mailto = `<mailto:${marketingFrom(env)}?subject=unsubscribe>`;
+  if (!contactId || !unsubSecret(env)) return { 'List-Unsubscribe': mailto };
+  return {
+    'List-Unsubscribe': `<${await unsubscribeUrl(env, contactId)}>, ${mailto}`,
+    'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+  };
+}
+
+/* —— the senders —— */
+
+export type Provider = MarketingSettings['provider'];
+
+/** The provider that will actually send, or why none can. */
+export function senderState(env: Env, settings: MarketingSettings): { provider: Provider; ready: boolean; reason?: string } {
+  if (settings.provider === 'ses') {
+    return sesConfigured(env) ? { provider: 'ses', ready: true } : { provider: 'ses', ready: false, reason: 'ses_unconfigured' };
+  }
+  return env.MARKETING ? { provider: 'cloudflare', ready: true } : { provider: 'cloudflare', ready: false, reason: 'sender_unbound' };
+}
+
+export interface OutgoingEmail {
+  to: string;
+  subject: string;
+  text: string;
+  headers: Record<string, string>;
+}
+
+/** Exactly what leaves for one message: the stored body plus the footer, and the list headers. */
+export async function renderOutgoing(
+  env: Env,
+  settings: MarketingSettings,
+  message: { contact_id: number | null; to_email: string | null; subject: string | null; body: string; status?: string },
+): Promise<OutgoingEmail> {
+  return {
+    to: message.to_email ?? '',
+    subject: message.subject || '(no subject)',
+    // A sent row already holds the footer it left with.
+    text: message.status === 'sent' ? message.body : `${message.body}${footerFor(settings)}`,
+    headers: await listHeaders(env, message.contact_id),
+  };
+}
+
+/** Hand one email to the chosen provider. Returns the provider's message id when it gives one. */
+async function transmit(env: Env, settings: MarketingSettings, mail: OutgoingEmail): Promise<string | null> {
+  const from = marketingFrom(env);
+  if (settings.provider === 'ses') {
+    const display = `"${settings.fromName.replace(/["\\]/g, '')}" <${from}>`;
+    return sesSend(env, {
+      from: display,
+      to: mail.to,
+      replyTo: from,
+      subject: mail.subject,
+      text: mail.text,
+      headers: Object.entries(mail.headers).map(([name, value]) => ({ name, value })),
+    });
+  }
+  if (!env.MARKETING) throw new Error('sender_unbound');
+  const result = (await env.MARKETING.send({
+    from: { email: from, name: settings.fromName },
+    to: mail.to,
+    subject: mail.subject,
+    text: mail.text,
+    replyTo: from,
+    headers: mail.headers,
+  })) as { messageId?: string } | undefined;
+  return result?.messageId ?? null;
+}
+
 interface ClaimedEmail {
   id: number;
   contact_id: number;
@@ -675,16 +859,18 @@ async function claimEmail(env: Env, id: number, t: number): Promise<ClaimedEmail
     .first<ClaimedEmail>();
   if (!message) return null;
 
-  const contact = await env.DB.prepare('SELECT id, status FROM marketing_contacts WHERE id = ?')
+  const contact = await env.DB.prepare('SELECT id, status, country FROM marketing_contacts WHERE id = ?')
     .bind(message.contact_id)
-    .first<{ id: number; status: string }>();
-  if (!contact || !['new', 'queued', 'contacted'].includes(contact.status)) {
+    .first<{ id: number; status: string; country: string | null }>();
+  const blocked = contact?.country && CONSENT_COUNTRIES.has(contact.country) ? 'country_requires_consent' : null;
+  if (!contact || !['new', 'queued', 'contacted'].includes(contact.status) || blocked) {
     await env.DB.prepare(
-      `UPDATE marketing_messages SET status = 'cancelled', updated_at = ?
+      `UPDATE marketing_messages SET status = 'cancelled', error = ?, updated_at = ?
         WHERE id = ? AND status = 'sending'`,
     )
-      .bind(t, message.id)
+      .bind(blocked, t, message.id)
       .run();
+    if (blocked) await logEvent(env, { messageId: message.id, contactId: message.contact_id, kind: 'blocked', detail: `${blocked}: ${contact?.country}` });
     return null;
   }
   return message;
@@ -701,20 +887,14 @@ async function deliverEmail(env: Env, settings: MarketingSettings, message: Clai
     return false;
   }
 
-  const sentText = `${message.body}${footerFor(settings)}`;
+  const outgoing = await renderOutgoing(env, settings, message);
+  let providerId: string | null = null;
   try {
-    if (!env.MARKETING) throw new Error('sender_unbound');
-    await env.MARKETING.send({
-      from: { email: marketingFrom(env), name: settings.fromName },
-      to,
-      subject: message.subject || '(no subject)',
-      text: sentText,
-      replyTo: marketingFrom(env),
-    });
+    providerId = await transmit(env, settings, outgoing);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    await env.DB.prepare(`UPDATE marketing_messages SET status = 'failed', error = ?, updated_at = ? WHERE id = ?`)
-      .bind(reason.slice(0, 500), t, message.id)
+    await env.DB.prepare(`UPDATE marketing_messages SET status = 'failed', error = ?, provider = ?, updated_at = ? WHERE id = ?`)
+      .bind(reason.slice(0, 500), settings.provider, t, message.id)
       .run();
     await logEvent(env, { messageId: message.id, contactId: message.contact_id, kind: 'failed', detail: reason });
     console.error('marketing_send_failed', message.id, reason);
@@ -725,8 +905,10 @@ async function deliverEmail(env: Env, settings: MarketingSettings, message: Clai
     // The row keeps exactly what left, footer included, so the audit trail
     // does not drift when a setting changes later.
     env.DB.prepare(
-      `UPDATE marketing_messages SET status = 'sent', sent_at = ?, body = ?, error = NULL, updated_at = ? WHERE id = ?`,
-    ).bind(t, sentText, t, message.id),
+      `UPDATE marketing_messages
+          SET status = 'sent', sent_at = ?, body = ?, error = NULL, provider = ?, external_id = ?, updated_at = ?
+        WHERE id = ?`,
+    ).bind(t, outgoing.text, settings.provider, providerId, t, message.id),
     env.DB.prepare(
       `UPDATE marketing_contacts
           SET status = CASE WHEN status IN ('new', 'queued') THEN 'contacted' ELSE status END,
@@ -740,6 +922,58 @@ async function deliverEmail(env: Env, settings: MarketingSettings, message: Clai
   return true;
 }
 
+/* —— list health —— */
+
+/** Pause when bounces pass this share of sends: SES reviews an account at 5%. */
+export const MAX_BOUNCE_RATE = 0.04;
+/** Pause when complaints pass this share: SES reviews at 0.1% and suspends at 0.5%. */
+export const MAX_COMPLAINT_RATE = 0.002;
+/** Rates are read over this many days of sending… */
+const HEALTH_DAYS = 14;
+/** …and only once this many emails left, so the first bounce of the day is not a rate. */
+const HEALTH_MIN_SENT = 100;
+
+export interface ListHealth {
+  sent: number;
+  bounces: number;
+  complaints: number;
+  bounceRate: number;
+  complaintRate: number;
+  /** Why the cron would pause now, or null. */
+  trip: 'bounce_rate' | 'complaint_rate' | null;
+}
+
+export function judgeHealth(sent: number, bounces: number, complaints: number): ListHealth {
+  const bounceRate = sent ? bounces / sent : 0;
+  const complaintRate = sent ? complaints / sent : 0;
+  let trip: ListHealth['trip'] = null;
+  if (sent >= HEALTH_MIN_SENT && bounceRate > MAX_BOUNCE_RATE) trip = 'bounce_rate';
+  // Two complaints, so a single angry reply does not stop a campaign at low volume.
+  else if (complaints >= 2 && complaintRate > MAX_COMPLAINT_RATE) trip = 'complaint_rate';
+  return { sent, bounces, complaints, bounceRate, complaintRate, trip };
+}
+
+export async function listHealth(env: Env, t = now()): Promise<ListHealth> {
+  const since = t - HEALTH_DAYS * 86400;
+  const [sent, events] = await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) AS n FROM marketing_messages WHERE channel = 'email' AND status = 'sent' AND sent_at >= ?`)
+      .bind(since)
+      .first<{ n: number }>(),
+    env.DB.prepare(
+      `SELECT kind, COUNT(*) AS n FROM marketing_events WHERE kind IN ('bounce', 'complaint') AND created_at >= ? GROUP BY kind`,
+    )
+      .bind(since)
+      .all<{ kind: string; n: number }>(),
+  ]);
+  const count = (kind: string) => events.results?.find((row) => row.kind === kind)?.n ?? 0;
+  return judgeHealth(sent?.n ?? 0, count('bounce'), count('complaint'));
+}
+
+/* —— the run —— */
+
+/** Sends in flight at once: SES allows 14 a second on this account. */
+const CONCURRENCY = 5;
+
 /**
  * The cron's half: send what is due, if the switch, the window, the sender and
  * the cap all allow it. Returns why it did nothing so a manual run can say.
@@ -751,9 +985,28 @@ export async function runMarketing(env: Env): Promise<RunSummary> {
   const summary: RunSummary = { live: settings.live, window, sent: 0, failed: 0, reason: null };
 
   if (!settings.live) return { ...summary, reason: 'paused' };
-  if (!env.MARKETING) return { ...summary, reason: 'sender_unbound' };
+  const sender = senderState(env, settings);
+  if (!sender.ready) return { ...summary, reason: sender.reason ?? 'sender_unbound' };
   if (!settings.postalAddress) return { ...summary, reason: 'postal_address_unset' };
   if (!window.open) return { ...summary, reason: window.reason ?? 'outside_hours' };
+
+  const health = await listHealth(env, t);
+  if (health.trip) {
+    await saveMarketingSettings(env, { live: false });
+    const detail = `bounces ${health.bounces}/${health.sent} (${(health.bounceRate * 100).toFixed(1)}%), complaints ${health.complaints} (${(health.complaintRate * 100).toFixed(2)}%) over ${HEALTH_DAYS} days`;
+    await logEvent(env, { kind: 'auto_paused', detail: `${health.trip}: ${detail}` });
+    await mailAli(env, {
+      subject: `Outreach paused: ${health.trip === 'bounce_rate' ? 'too many bounces' : 'too many complaints'}`,
+      text: [
+        `The marketing desk paused itself: ${detail}.`,
+        `Limits: bounces ${MAX_BOUNCE_RATE * 100}%, complaints ${MAX_COMPLAINT_RATE * 100}%. SES reviews an account at 5% and 0.1%.`,
+        '',
+        'Look at Sources in the desk to see which list is doing it, pause or drop that list, then switch outreach back on.',
+        `${siteUrl(env)}/portal/admin#marketing`,
+      ].join('\n'),
+    });
+    return { ...summary, live: false, reason: health.trip };
+  }
 
   const { dayStart } = localClock(settings.offsetMinutes, t);
   const sentToday = await countSentToday(env, dayStart);
@@ -771,12 +1024,13 @@ export async function runMarketing(env: Env): Promise<RunSummary> {
     .bind(t, room)
     .all<{ id: number }>();
 
-  for (const row of results ?? []) {
-    const message = await claimEmail(env, row.id, t);
-    if (!message) continue;
+  const send = async (id: number) => {
+    const message = await claimEmail(env, id, t);
+    if (!message) return;
     if (await deliverEmail(env, settings, message)) summary.sent += 1;
     else summary.failed += 1;
-  }
+  };
+  for (const part of chunk(results ?? [], CONCURRENCY)) await Promise.all(part.map((row) => send(row.id)));
   return summary;
 }
 
@@ -847,7 +1101,8 @@ export async function handleMarketingMail(env: Env, mail: InboundMarketingMail):
     return;
   }
 
-  if (isOptOut(mail.body)) {
+  // The List-Unsubscribe mailto arrives with that subject and usually no body.
+  if (isOptOut(mail.body) || /^\s*unsubscribe\s*$/i.test(mail.subject)) {
     await env.DB.prepare(
       `UPDATE marketing_contacts SET status = 'opted_out', opted_out_at = ?, updated_at = ? WHERE id = ?`,
     )
@@ -887,9 +1142,68 @@ export async function handleMarketingMail(env: Env, mail: InboundMarketingMail):
 }
 
 export function isBounceMessage(from: string, contentType: string | null): boolean {
-  if (!/^(mailer-daemon|postmaster|bounces?)@/i.test(from)) return false;
   const type = (contentType ?? '').toLowerCase();
+  // A DSN says what it is in its content type; SES forwards them from its own
+  // envelope address, so the sender alone is not a reliable sign.
+  if (type.includes('multipart/report') && type.includes('report-type=delivery-status')) return true;
+  if (!/^(mailer-daemon|postmaster|bounces?)@/i.test(from)) return false;
   return type.includes('multipart/report') || type.includes('message/delivery-status');
+}
+
+/** An ARF abuse report (RFC 5965): what SES forwards when a recipient presses "spam". */
+export function isComplaintReport(contentType: string | null): boolean {
+  const type = (contentType ?? '').toLowerCase();
+  return type.includes('multipart/report') && type.includes('report-type=feedback-report');
+}
+
+/** Who complained: the report's Original-Rcpt-To, else the To of the attached original. */
+export function complainedAddresses(raw: string): string[] {
+  const found = new Set<string>();
+  for (const match of raw.matchAll(/^Original-Rcpt-To:\s*(?:rfc822;\s*)?<?([^\s<>;]+)>?/gim)) {
+    const email = cleanEmail(match[1]);
+    if (email) found.add(email);
+  }
+  if (!found.size) {
+    const original = raw.slice(Math.max(0, raw.search(/message\/rfc822/i)));
+    const to = original.match(/^To:[^\n]*?<?([^\s<>"]+@[^\s<>"]+)>?\s*$/im)?.[1];
+    const email = cleanEmail(to);
+    if (email) found.add(email);
+  }
+  return [...found];
+}
+
+/**
+ * A spam complaint is the strongest "no" there is: opt the contact out,
+ * cancel what is left, record a complaint (the rate the cron watches) and
+ * tell Ali.
+ */
+export async function handleComplaintReport(env: Env, raw: string): Promise<number> {
+  const t = now();
+  const done: string[] = [];
+  for (const email of complainedAddresses(raw)) {
+    const contact = await env.DB.prepare('SELECT id FROM marketing_contacts WHERE email = ?').bind(email).first<{ id: number }>();
+    if (!contact) continue;
+    await env.DB.prepare(
+      `UPDATE marketing_contacts SET status = 'opted_out', opted_out_at = COALESCE(opted_out_at, ?), updated_at = ? WHERE id = ?`,
+    )
+      .bind(t, t, contact.id)
+      .run();
+    await cancelScheduled(env, contact.id);
+    await logEvent(env, { contactId: contact.id, kind: 'complaint', detail: email });
+    done.push(email);
+  }
+  if (done.length) {
+    await mailAli(env, {
+      subject: `Spam complaint: ${done.join(', ')}`,
+      text: [
+        `${done.join(', ')} marked an outreach email as spam. They are opted out and their queued mail was cancelled.`,
+        '',
+        `The desk pauses itself if complaints pass ${MAX_COMPLAINT_RATE * 100}% of the last two weeks' sends.`,
+        `Marketing desk: ${siteUrl(env)}/portal/admin#marketing`,
+      ].join('\n'),
+    });
+  }
+  return done.length;
 }
 
 /**
@@ -964,7 +1278,7 @@ export async function importContacts(
   csv: string,
   sequence: SequenceKind | null,
   campaign: string,
-  options: { genericGap?: boolean } = {},
+  options: { genericGap?: boolean; sourceKind?: string | null } = {},
 ): Promise<{ added: number; paused: number; queued: number; emails: number; skipped: { email: string; reason: string }[] }> {
   const parsed = parseContactsCsv(csv);
   const skipped = parsed.skipped;
@@ -979,6 +1293,8 @@ export async function importContacts(
     source_url: string | null;
     notes: string | null;
     consent: string;
+    source_kind: string | null;
+    country: string | null;
   };
   const seeds: Seed[] = [];
   for (const row of parsed.rows) {
@@ -998,6 +1314,9 @@ export async function importContacts(
       consent: ['consent', 'existing_relationship', 'legitimate_interest'].includes(String(row.consentBasis))
         ? String(row.consentBasis)
         : 'legitimate_interest',
+      // A column in the file wins over the label chosen for the whole import.
+      source_kind: cleanSourceKind(row.sourceKind) ?? cleanSourceKind(options.sourceKind),
+      country: cleanCountry(row.country),
     });
   }
 
@@ -1010,8 +1329,8 @@ export async function importContacts(
       part.map((seed) =>
         env.DB.prepare(
           `INSERT INTO marketing_contacts
-             (email, name, business, site, source, source_url, gap, consent_basis, status, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'csv', ?, ?, ?, 'new', ?, ?, ?)
+             (email, name, business, site, source, source_url, gap, consent_basis, status, notes, source_kind, country, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'csv', ?, ?, ?, 'new', ?, ?, ?, ?, ?)
            ON CONFLICT(email) DO NOTHING`,
         ).bind(
           seed.email,
@@ -1022,6 +1341,8 @@ export async function importContacts(
           seed.gap,
           seed.consent,
           seed.notes,
+          seed.source_kind,
+          seed.country,
           t,
           t,
         ),
@@ -1123,6 +1444,8 @@ export interface ImportRow {
   sourceUrl: string;
   notes: string;
   consentBasis: string;
+  sourceKind: string;
+  country: string;
 }
 
 const COLUMN_ALIASES: Record<string, string> = {
@@ -1145,6 +1468,10 @@ const COLUMN_ALIASES: Record<string, string> = {
   'consent basis': 'consentBasis',
   consent_basis: 'consentBasis',
   consentbasis: 'consentBasis',
+  'source kind': 'sourceKind',
+  source_kind: 'sourceKind',
+  sourcekind: 'sourceKind',
+  country: 'country',
 };
 
 /** Header + rows. Unknown columns are ignored; `email` is the only required one. */
@@ -1172,6 +1499,8 @@ export function parseContactsCsv(csv: string): { rows: ImportRow[]; skipped: { e
       sourceUrl: '',
       notes: '',
       consentBasis: '',
+      sourceKind: '',
+      country: '',
     };
     fields.forEach((field, index) => {
       if (field && !row[field]) row[field] = (record[index] ?? '').trim();
@@ -1193,7 +1522,7 @@ marketing.get('/admin/marketing', async (c) => {
   const t = now();
   const { dayStart } = localClock(settings.offsetMinutes, t);
 
-  const [contacts, messages, today, due, next, events] = await Promise.all([
+  const [contacts, messages, today, due, next, events, health, awaiting] = await Promise.all([
     env.DB.prepare('SELECT status, COUNT(*) AS n FROM marketing_contacts GROUP BY status').all<{ status: string; n: number }>(),
     env.DB.prepare('SELECT status, COUNT(*) AS n FROM marketing_messages GROUP BY status').all<{ status: string; n: number }>(),
     countSentToday(env, dayStart),
@@ -1210,6 +1539,8 @@ marketing.get('/admin/marketing', async (c) => {
          FROM marketing_events e LEFT JOIN marketing_contacts c ON c.id = e.contact_id
         ORDER BY e.id DESC LIMIT 40`,
     ).all<{ id: number; kind: string; detail: string | null; created_at: number; contact_email: string | null }>(),
+    listHealth(env, t),
+    env.DB.prepare(`SELECT COUNT(*) AS n FROM marketing_messages WHERE channel IN ('x', 'linkedin') AND status = 'draft'`).first<{ n: number }>(),
   ]);
 
   const counts = (rows: { status: string; n: number }[] | null, keys: readonly string[]) =>
@@ -1221,7 +1552,11 @@ marketing.get('/admin/marketing', async (c) => {
     settings,
     sender: marketingFrom(env),
     inbox: marketingInbox(env),
-    bound: Boolean(env.MARKETING),
+    bound: senderState(env, settings).ready,
+    senderState: senderState(env, settings),
+    providers: { cloudflare: Boolean(env.MARKETING), ses: sesConfigured(env) },
+    health: { ...health, maxBounceRate: MAX_BOUNCE_RATE, maxComplaintRate: MAX_COMPLAINT_RATE },
+    postsAwaiting: awaiting?.n ?? 0,
     window: sendWindow(settings, t),
     today,
     counts: {
@@ -1249,6 +1584,12 @@ marketing.get('/admin/marketing/contacts', async (c) => {
   if (status && (CONTACT_STATUSES as readonly string[]).includes(status)) {
     where.push('c.status = ?');
     binds.push(status);
+  }
+  const source = c.req.query('source') ?? '';
+  if (source === '(none)') where.push('c.source_kind IS NULL');
+  else if (cleanSourceKind(source)) {
+    where.push('c.source_kind = ?');
+    binds.push(cleanSourceKind(source));
   }
   if (q) {
     where.push('(c.email LIKE ? OR c.name LIKE ? OR c.business LIKE ? OR c.site LIKE ?)');
@@ -1281,8 +1622,8 @@ marketing.post('/admin/marketing/contacts', async (c) => {
   const t = now();
   const contact = await env.DB.prepare(
     `INSERT INTO marketing_contacts
-       (email, name, business, site, source, source_url, gap, consent_basis, status, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?)
+       (email, name, business, site, source, source_url, gap, consent_basis, status, notes, source_kind, country, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?)
      ON CONFLICT(email) DO NOTHING
      RETURNING *`,
   )
@@ -1298,6 +1639,8 @@ marketing.post('/admin/marketing/contacts', async (c) => {
         ? String(body?.consentBasis)
         : 'legitimate_interest',
       text(body?.notes, 1000),
+      cleanSourceKind(body?.sourceKind) ?? 'manual',
+      cleanCountry(body?.country),
       t,
       t,
     )
@@ -1324,7 +1667,7 @@ marketing.post('/admin/marketing/contacts/import', async (c) => {
   const sequence = body?.sequence === 'none' ? null : isSequenceKind(body?.sequence) ? body.sequence : 'cold_a';
   const campaign = text(body?.campaign, 40) ?? 'launch';
   const genericGap = body?.genericGap === true;
-  const result = await importContacts(env, csv, sequence, campaign, { genericGap });
+  const result = await importContacts(env, csv, sequence, campaign, { genericGap, sourceKind: text(body?.sourceKind, 80) });
   return out(c, { ...result, sequence: sequence ?? 'none', genericGap });
 });
 
@@ -1380,6 +1723,8 @@ marketing.patch('/admin/marketing/contacts/:id', async (c) => {
   if (body.site !== undefined) set('site', text(body.site, 200));
   if (body.gap !== undefined) set('gap', text(body.gap, 300));
   if (body.notes !== undefined) set('notes', text(body.notes, 1000));
+  if (body.country !== undefined) set('country', cleanCountry(body.country));
+  if (body.sourceKind !== undefined) set('source_kind', cleanSourceKind(body.sourceKind));
 
   let cancel = false;
   if (body.status !== undefined) {
@@ -1447,6 +1792,8 @@ interface Message {
   error: string | null;
   created_at: number;
   updated_at: number;
+  edited_at?: number | null;
+  provider?: string | null;
 }
 
 export function messageView(m: Message & { contact_email?: string | null }) {
@@ -1466,6 +1813,8 @@ export function messageView(m: Message & { contact_email?: string | null }) {
     url: m.external_id,
     error: m.error,
     createdAt: m.created_at,
+    editedAt: m.edited_at ?? null,
+    provider: m.provider ?? null,
   };
 }
 
@@ -1489,11 +1838,13 @@ marketing.get('/admin/marketing/messages', async (c) => {
     where.push('m.campaign = ?');
     binds.push(campaign);
   }
+  // `order=next` is the send order: what goes out first, at the top.
+  const next = c.req.query('order') === 'next';
   const { results } = await c.env.DB.prepare(
     `SELECT m.*, c.email AS contact_email
        FROM marketing_messages m LEFT JOIN marketing_contacts c ON c.id = m.contact_id
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-      ORDER BY COALESCE(m.scheduled_at, m.created_at) DESC, m.id DESC LIMIT 200`,
+      ORDER BY ${next ? 'COALESCE(m.scheduled_at, m.created_at) ASC, m.id ASC' : 'COALESCE(m.scheduled_at, m.created_at) DESC, m.id DESC'} LIMIT 200`,
   )
     .bind(...binds)
     .all<Message & { contact_email: string | null }>();
@@ -1542,9 +1893,10 @@ marketing.post('/admin/marketing/messages', async (c) => {
 });
 
 /**
- * Rewrite a social post before it goes out. The text is the whole message, so
- * it must fit the channel; a post already claimed by the publisher, or sent,
- * is the record and is not edited.
+ * Rewrite a post or an email before it goes out. A post's text is the whole
+ * message, so it must fit the channel. An edited email is marked, so
+ * "Re-render scheduled" leaves Ali's wording alone. Anything already claimed
+ * or sent is the record and is not edited.
  */
 marketing.patch('/admin/marketing/messages/:id', async (c) => {
   const env = c.env;
@@ -1556,8 +1908,22 @@ marketing.patch('/admin/marketing/messages/:id', async (c) => {
     .bind(id)
     .first<{ id: number; channel: string; status: string }>();
   if (!message) return out(c, { error: 'not_found' }, 404);
-  if (message.channel === 'email') return out(c, { error: 'not_a_post' }, 400);
   if (!['draft', 'scheduled', 'failed'].includes(message.status)) return out(c, { error: 'not_editable' }, 409);
+
+  if (message.channel === 'email') {
+    const subject = typeof body?.subject === 'string' ? body.subject.replace(/\s+/g, ' ').trim() : '';
+    const textBody = typeof body?.body === 'string' ? body.body.replace(/\r\n?/g, '\n').trim() : '';
+    if (!subject || !textBody) return out(c, { error: 'empty' }, 400);
+    if (subject.length > 200 || textBody.length > 20_000) return out(c, { error: 'too_long' }, 400);
+    const updated = await env.DB.prepare(
+      `UPDATE marketing_messages SET subject = ?, body = ?, edited_at = ?, updated_at = ?
+        WHERE id = ? AND status IN ('draft', 'scheduled', 'failed') RETURNING *`,
+    )
+      .bind(subject, textBody, now(), now(), id)
+      .first<Message>();
+    if (!updated) return out(c, { error: 'not_editable' }, 409);
+    return out(c, { message: messageView(updated) });
+  }
 
   const text = (typeof body?.body === 'string' ? body.body : '')
     .replace(/\r\n?/g, '\n')
@@ -1641,7 +2007,8 @@ marketing.post('/admin/marketing/messages/:id/send', async (c) => {
     return out(c, { error: 'contact_closed' }, 409);
   }
   const settings = await readMarketingSettings(env);
-  if (!env.MARKETING) return out(c, { error: 'sender_unbound' }, 503);
+  const sender = senderState(env, settings);
+  if (!sender.ready) return out(c, { error: sender.reason }, 503);
   if (!settings.postalAddress) return out(c, { error: 'postal_address_unset' }, 400);
 
   const claimed = await env.DB.prepare(
@@ -1670,6 +2037,172 @@ marketing.post('/admin/marketing/messages/:id/retry', async (c) => {
     .first<Message>();
   if (!message) return out(c, { error: 'not_failed' }, 409);
   return out(c, { message: messageView(message) });
+});
+
+/** One message, and exactly what would leave: headers, subject, body with the footer. */
+marketing.get('/admin/marketing/messages/:id', async (c) => {
+  const env = c.env;
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id)) return out(c, { error: 'bad_id' }, 400);
+  const message = await env.DB.prepare(
+    `SELECT m.*, c.email AS contact_email FROM marketing_messages m LEFT JOIN marketing_contacts c ON c.id = m.contact_id WHERE m.id = ?`,
+  )
+    .bind(id)
+    .first<Message & { contact_email: string | null }>();
+  if (!message) return out(c, { error: 'not_found' }, 404);
+  const [contact, events] = await Promise.all([
+    message.contact_id ? getContact(env, message.contact_id) : Promise.resolve(null),
+    env.DB.prepare('SELECT id, kind, detail, created_at FROM marketing_events WHERE message_id = ? ORDER BY id DESC LIMIT 20')
+      .bind(id)
+      .all<{ id: number; kind: string; detail: string | null; created_at: number }>(),
+  ]);
+  let preview = null;
+  if (message.channel === 'email') {
+    const settings = await readMarketingSettings(env);
+    const outgoing = await renderOutgoing(env, settings, message);
+    preview = {
+      from: `${settings.fromName} <${marketingFrom(env)}>`,
+      replyTo: marketingFrom(env),
+      to: outgoing.to,
+      subject: outgoing.subject,
+      text: outgoing.text,
+      headers: outgoing.headers,
+      provider: message.provider ?? settings.provider,
+    };
+  } else {
+    const verdict = cleanPost(message.body, message.channel);
+    preview = { checks: verdict.ok ? null : verdict.reason, length: message.body.length, max: message.channel === 'x' ? 280 : 3_000 };
+  }
+  return out(c, {
+    message: messageView(message),
+    contact: contact ? contactView(contact) : null,
+    preview,
+    events: (events.results ?? []).map((e) => ({ id: e.id, kind: e.kind, detail: e.detail, createdAt: e.created_at })),
+  });
+});
+
+/**
+ * Send one email to Ali as the recipient would get it, through the provider
+ * in use, so it can be read in a real inbox. The message itself is untouched.
+ */
+marketing.post('/admin/marketing/messages/:id/test', async (c) => {
+  const env = c.env;
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id)) return out(c, { error: 'bad_id' }, 400);
+  const message = await env.DB.prepare('SELECT * FROM marketing_messages WHERE id = ?').bind(id).first<Message>();
+  if (!message || message.channel !== 'email') return out(c, { error: 'not_found' }, 404);
+  const settings = await readMarketingSettings(env);
+  const sender = senderState(env, settings);
+  if (!sender.ready) return out(c, { error: sender.reason }, 503);
+  const to = cleanEmail((env.ADMIN_EMAIL || '').replace(/^.*<|>.*$/g, ''));
+  if (!to) return out(c, { error: 'admin_email_unset' }, 400);
+  const outgoing = await renderOutgoing(env, settings, message);
+  try {
+    // No list headers: an unsubscribe pressed on a test must not opt the real contact out.
+    await transmit(env, settings, { ...outgoing, to, subject: `[test] ${outgoing.subject}`, headers: {} });
+  } catch (error) {
+    return out(c, { error: 'send_failed', detail: error instanceof Error ? error.message : String(error) }, 502);
+  }
+  await logEvent(env, { messageId: id, contactId: message.contact_id, kind: 'test', detail: `to ${to} via ${settings.provider}` });
+  return out(c, { ok: true, to, provider: settings.provider });
+});
+
+/** A drafted post goes into its slot, or out now if the slot has passed. */
+marketing.post('/admin/marketing/messages/:id/approve', async (c) => {
+  const env = c.env;
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id)) return out(c, { error: 'bad_id' }, 400);
+  const t = now();
+  const message = await env.DB.prepare(
+    `UPDATE marketing_messages SET status = 'scheduled', scheduled_at = MAX(COALESCE(scheduled_at, ?), ?), updated_at = ?
+      WHERE id = ? AND status = 'draft' AND channel IN ('x', 'linkedin') RETURNING *`,
+  )
+    .bind(t, t, t, id)
+    .first<Message>();
+  if (!message) return out(c, { error: 'not_a_draft' }, 409);
+  await logEvent(env, { messageId: id, kind: 'approved', detail: `${message.channel}: ${message.body.slice(0, 120)}` });
+  return out(c, { message: messageView(message) });
+});
+
+/**
+ * Every step of a sequence as one contact would get it, both versions where a
+ * step has a plain one. Without a contact id, a queued contact stands in, so
+ * the preview shows real names and sites.
+ */
+marketing.get('/admin/marketing/sequences/preview', async (c) => {
+  const env = c.env;
+  const kind = c.req.query('sequence') ?? 'cold_a';
+  if (!isSequenceKind(kind)) return out(c, { error: 'bad_sequence' }, 400);
+  const id = Number(c.req.query('contactId'));
+  const contact = Number.isInteger(id) && id > 0
+    ? await getContact(env, id)
+    : await env.DB.prepare(
+        `SELECT * FROM marketing_contacts WHERE status IN ('new', 'queued', 'paused') AND business IS NOT NULL
+          ORDER BY RANDOM() LIMIT 1`,
+      ).first<Contact>();
+  const sample: ContactFields = contact ?? { name: 'Jordan Lee', business: 'Lee Plumbing', site: 'leeplumbing.com', gap: null };
+  const settings = await readMarketingSettings(env);
+  const specific = Boolean(sample.gap?.trim());
+  const fields = { ...sample, gap: sample.gap?.trim() || GENERIC_GAP };
+  return out(c, {
+    sequence: kind,
+    label: SEQUENCE_LABELS[kind],
+    contact: contact ? contactView(contact) : null,
+    footer: footerFor(settings),
+    steps: SEQUENCES[kind].map((step) => ({
+      kind: step.kind,
+      day: step.day,
+      subject: fillTemplate(step.subject, fields),
+      body: fillTemplate(stepBody(step, specific), fields),
+      // What a contact without an observation gets, when the step has a version for that.
+      plain: !specific || !step.plain ? null : fillTemplate(step.plain, fields),
+      usesPlain: !specific && Boolean(step.plain),
+    })),
+  });
+});
+
+/**
+ * How each list is doing. A source is the label an import carried; the rates
+ * are what decide which kind of list deserves the next hour of sourcing.
+ */
+marketing.get('/admin/marketing/sources', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT COALESCE(c.source_kind, '(none)') AS source,
+            COUNT(*) AS contacts,
+            SUM(c.status = 'queued') AS queued,
+            SUM(EXISTS (SELECT 1 FROM marketing_messages m WHERE m.contact_id = c.id AND m.status = 'sent')) AS reached,
+            SUM(c.status = 'replied') AS replied,
+            SUM(c.status = 'bounced') AS bounced,
+            SUM(c.status = 'opted_out') AS opted_out,
+            SUM(EXISTS (SELECT 1 FROM marketing_events e WHERE e.contact_id = c.id AND e.kind = 'complaint')) AS complaints,
+            MIN(c.created_at) AS first_at
+       FROM marketing_contacts c
+      GROUP BY COALESCE(c.source_kind, '(none)')
+      ORDER BY first_at DESC`,
+  ).all<{
+    source: string;
+    contacts: number;
+    queued: number;
+    reached: number;
+    replied: number;
+    bounced: number;
+    opted_out: number;
+    complaints: number;
+    first_at: number;
+  }>();
+  return out(c, {
+    sources: (results ?? []).map((row) => ({
+      source: row.source,
+      contacts: row.contacts,
+      queued: row.queued ?? 0,
+      reached: row.reached ?? 0,
+      replied: row.replied ?? 0,
+      bounced: row.bounced ?? 0,
+      optedOut: row.opted_out ?? 0,
+      complaints: row.complaints ?? 0,
+      firstAt: row.first_at,
+    })),
+  });
 });
 
 /* —— settings and a manual run —— */
@@ -1708,6 +2241,77 @@ marketing.post('/admin/marketing/run', async (c) => {
 marketing.post('/admin/marketing/cycle', async (c) => {
   const result = await ensureContentCycle(c.env, now(), { force: c.req.query('force') === '1' });
   return out(c, result, result.filed ? 201 : 200);
+});
+
+export function postMail(
+  env: Env,
+  post: { id: number; channel: string; body: string },
+  ok: boolean,
+  url: string | null,
+  error: string,
+): { subject: string; text: string } {
+  const where = post.channel === 'x' ? 'X' : 'LinkedIn';
+  const first = post.body.split('\n')[0].slice(0, 60);
+  return ok
+    ? {
+        subject: `Posted on ${where}: ${first}`,
+        text: [`This went out on ${where}${url ? `:\n${url}` : '.'}`, '', post.body, '', `Desk: ${siteUrl(env)}/portal/admin#marketing`].join('\n'),
+      }
+    : {
+        subject: `${where} post failed: ${first}`,
+        text: [
+          `The publisher could not post this on ${where}: ${error}`,
+          '',
+          post.body,
+          '',
+          `Retry or edit it in the desk: ${siteUrl(env)}/portal/admin#marketing`,
+        ].join('\n'),
+      };
+}
+
+/* —— router: the unsubscribe link, public and signed —— */
+
+export const unsubscribe = new Hono<HonoEnv>();
+
+const page = (title: string, body: string, status = 200) =>
+  new Response(
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>` +
+      `<body style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;color:#222">${body}</body>`,
+    { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } },
+  );
+
+async function unsubContact(env: Env, idParam: string, sig: string): Promise<Contact | null> {
+  const id = Number(idParam);
+  if (!Number.isInteger(id) || !unsubSecret(env) || !sameText(sig, await unsubSig(env, id))) return null;
+  return getContact(env, id);
+}
+
+// A GET only asks: link scanners open every URL in a message, and must not opt anyone out.
+unsubscribe.get('/marketing/u/:id/:sig', async (c) => {
+  const contact = await unsubContact(c.env, c.req.param('id'), c.req.param('sig'));
+  if (!contact) return page('Link not valid', '<p>This unsubscribe link is not valid. Reply "no" to the email and I will stop writing.</p>', 404);
+  if (contact.status === 'opted_out') return page('Unsubscribed', `<p>${contact.email} is unsubscribed. Nothing more will be sent.</p>`);
+  return page(
+    'Unsubscribe',
+    `<p>Stop emails from malipetek.dev to <b>${contact.email.replace(/[<>&"]/g, '')}</b>?</p>` +
+      `<form method="post"><button style="font:inherit;padding:.5rem 1rem">Unsubscribe</button></form>`,
+  );
+});
+
+// The button above, and the one-click POST mail clients send (RFC 8058).
+unsubscribe.post('/marketing/u/:id/:sig', async (c) => {
+  const env = c.env;
+  const contact = await unsubContact(env, c.req.param('id'), c.req.param('sig'));
+  if (!contact) return page('Link not valid', '<p>This unsubscribe link is not valid.</p>', 404);
+  if (contact.status !== 'opted_out') {
+    const t = now();
+    await env.DB.prepare(`UPDATE marketing_contacts SET status = 'opted_out', opted_out_at = ?, updated_at = ? WHERE id = ?`)
+      .bind(t, t, contact.id)
+      .run();
+    const cancelled = await cancelScheduled(env, contact.id);
+    await logEvent(env, { contactId: contact.id, kind: 'opt_out', detail: `unsubscribe link, ${cancelled} cancelled` });
+  }
+  return page('Unsubscribed', `<p>Done. ${contact.email.replace(/[<>&"]/g, '')} will not get another email from me.</p>`);
 });
 
 /* —— router: the local publisher, machine-auth only —— */
@@ -1791,10 +2395,10 @@ publisher.post('/marketing/publisher/posts/:id/result', async (c) => {
 
   const message = await env.DB.prepare(
     `UPDATE marketing_messages SET status = ?, sent_at = ?, external_id = ?, error = ?, updated_at = ?
-      WHERE id = ? AND status = 'sending' RETURNING id, contact_id`,
+      WHERE id = ? AND status = 'sending' RETURNING id, contact_id, channel, body`,
   )
     .bind(ok ? 'sent' : 'failed', ok ? t : null, url, ok ? null : error, t, id)
-    .first<{ id: number; contact_id: number | null }>();
+    .first<{ id: number; contact_id: number | null; channel: string; body: string }>();
   if (!message) return out(c, { error: 'not_claimed' }, 409);
 
   await logEvent(env, {
@@ -1803,5 +2407,7 @@ publisher.post('/marketing/publisher/posts/:id/result', async (c) => {
     kind: ok ? 'published' : 'failed',
     detail: ok ? url : error,
   });
+  // Every post that goes out in our name is mailed to Ali, word for word.
+  await mailAli(env, postMail(env, message, ok, url, error));
   return out(c, { ok: true });
 });

@@ -496,6 +496,34 @@ const groups = {
     const late = await call(`/admin/marketing/messages/${post.data.message.id}`, { method: 'PATCH', auth: admin, body: { body: 'after' } });
     check('a sent post is the record and cannot be rewritten', late.status === 409);
 
+    // Preview: exactly what leaves, footer and list headers included.
+    const preview = await call(`/admin/marketing/messages/${firstEmail.id}`, { auth: admin });
+    check(
+      'an email preview shows the footer and the unsubscribe headers',
+      preview.status === 200 && /Reply "no"/.test(preview.data.preview.text) && /mailto:hello@malipetek\.dev/.test(preview.data.preview.headers['List-Unsubscribe'] ?? ''),
+      JSON.stringify(preview.data.preview ?? preview.data).slice(0, 400),
+    );
+    const handEdit = await call(`/admin/marketing/messages/${firstEmail.id}`, {
+      method: 'PATCH',
+      auth: admin,
+      body: { subject: 'Your summer menu', body: 'Hi Sara,\n\nWritten by hand.\n\nAli' },
+    });
+    check('a queued email can be rewritten by hand', handEdit.status === 200 && handEdit.data.message.editedAt > 0, JSON.stringify(handEdit.data));
+    await call('/admin/marketing/messages/rerender', { method: 'POST', auth: admin });
+    const kept = (await call(`/admin/marketing/messages/${firstEmail.id}`, { auth: admin })).data.message;
+    check('re-render leaves a hand-edited email alone', kept.subject === 'Your summer menu' && /Written by hand/.test(kept.body));
+    const seqPreview = await call('/admin/marketing/sequences/preview?sequence=nosite', { auth: admin });
+    check('a sequence previews every step for a real contact', seqPreview.status === 200 && seqPreview.data.steps.length === 3 && !seqPreview.data.steps.some((st) => st.body.includes('{{')));
+    const sources = await call('/admin/marketing/sources', { auth: admin });
+    check('sources report per-list counts', sources.status === 200 && sources.data.sources.reduce((n, row) => n + row.contacts, 0) >= 502, JSON.stringify(sources.data).slice(0, 300));
+    check('a forged unsubscribe link is refused', (await call(`/marketing/u/${nobody.id}/000000000000000000000000`, { method: 'POST' })).status === 404);
+
+    const draft = await call('/admin/marketing/messages', { method: 'POST', auth: admin, body: { channel: 'linkedin', body: 'A post to approve.' } });
+    const approved = await call(`/admin/marketing/messages/${draft.data.message.id}/approve`, { method: 'POST', auth: admin });
+    check('approving a drafted post schedules it', approved.status === 200 && approved.data.message.status === 'scheduled', JSON.stringify(approved.data));
+    check('approving twice is refused', (await call(`/admin/marketing/messages/${draft.data.message.id}/approve`, { method: 'POST', auth: admin })).status === 409);
+    await call(`/admin/marketing/messages/${draft.data.message.id}/cancel`, { method: 'POST', auth: admin });
+
     const client = account(`desk-${Date.now()}@example.com`);
     check('a client cannot open the marketing desk', (await call('/admin/marketing', { auth: client.session })).status === 403);
   },
@@ -552,13 +580,15 @@ const groups = {
 
     // Ask per post channel: the list is capped at 200, and other groups queue
     // thousands of emails that would push the posts off it.
-    const scheduledPosts = async () =>
+    // Approval is on by default: the cycle's posts hold their slots as drafts.
+    const scheduledPosts = async (status = 'draft') =>
       (
-        await Promise.all(['x', 'linkedin'].map((ch) => call(`/admin/marketing/messages?channel=${ch}&status=scheduled`, { auth: admin })))
+        await Promise.all(['x', 'linkedin'].map((ch) => call(`/admin/marketing/messages?channel=${ch}&status=${status}`, { auth: admin })))
       ).flatMap((r) => r.data.messages.filter((m) => m.campaign === 'auto'));
     const posts = await scheduledPosts();
     const now = Math.floor(Date.now() / 1000);
-    check('three posts are scheduled in the future', posts.length === 3 && posts.every((m) => m.scheduledAt > now), JSON.stringify(posts.map((m) => [m.channel, m.scheduledAt])));
+    check('three posts wait for approval in future slots', posts.length === 3 && posts.every((m) => m.scheduledAt > now), JSON.stringify(posts.map((m) => [m.channel, m.scheduledAt])));
+    check('nothing from the cycle is scheduled before it is approved', (await scheduledPosts('scheduled')).length === 0);
     check('two go to X and one to LinkedIn', posts.filter((m) => m.channel === 'x').length === 2 && posts.filter((m) => m.channel === 'linkedin').length === 1);
     const done = (await call(`/admin/tickets/${filed.data.id}`, { auth: admin })).data.ticket;
     check('the cycle ticket closes itself as done', done.status === 'done');
