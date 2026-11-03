@@ -16,7 +16,7 @@
 import { ALI_AVATAR } from './boardAvatar.ts';
 import { BOARD3D_JS } from './board3dBundle.ts';
 
-export const BOARD_UI_URI = 'ui://malipetek/board-v8.html';
+export const BOARD_UI_URI = 'ui://malipetek/board-v9.html';
 
 export const BOARD_MIME = 'text/html;profile=mcp-app';
 
@@ -170,16 +170,8 @@ export const BOARD_HTML = `<!DOCTYPE html>
   body {
     font: 14px/1.45 var(--mk-sans);
     color: var(--mk-ink);
-    /* Clear the ChatGPT composer that floats over the bottom of the card. */
-    padding: 12px 14px 104px;
-    scroll-padding-bottom: 104px;
+    padding: 12px 14px;
     -webkit-font-smoothing: antialiased;
-  }
-  /* Fullscreen gives the composer more room, so the last section can scroll
-     clear of it instead of sitting behind it. */
-  body[data-mode="fullscreen"] {
-    padding-bottom: 200px;
-    scroll-padding-bottom: 200px;
   }
   .mk-app { max-width: 760px; margin: 0 auto; }
   .mk-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -288,6 +280,22 @@ export const BOARD_HTML = `<!DOCTYPE html>
     gap: 8px;
     font-size: 11px;
     color: var(--mk-soft);
+  }
+  /* The host's composer floats over the bottom of the card. A real empty card
+     at the end of the scroll is the space it sits over, so the last section is
+     never hidden behind it. */
+  .mk-tail {
+    height: 180px;
+    margin-top: 14px;
+    border: 1px dashed color-mix(in srgb, var(--mk-rule) 75%, transparent);
+    border-radius: var(--mk-radius);
+    background: color-mix(in srgb, var(--mk-ink) 2%, transparent);
+  }
+  body[data-mode="fullscreen"] .mk-tail {
+    height: 240px;
+  }
+  body[data-view="thread"] .mk-tail {
+    display: none;
   }
   .mk-link {
     font: 500 11px/1 var(--mk-mono);
@@ -521,6 +529,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
   <span>Every request is read by a human before work starts.</span>
   <button class="mk-link" id="portal" type="button">Open the portal ↗</button>
 </div>
+<div class="mk-tail" aria-hidden="true"></div>
 </main>
 
 <script>${BOARD3D_JS}</script>
