@@ -14,8 +14,9 @@
  * Overpass is a shared, donation-funded service: one query at a time, a
  * three-second pause between them, and a cap on what each returns.
  */
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { notBusinessHost } from './directory.mjs';
 
@@ -147,10 +148,74 @@ async function overpass(query) {
   throw lastError;
 }
 
+/* ——————————————————————— offline: one Geofabrik state file ——————————————————————— */
+
+const CATEGORY_BY_TAG = new Map(Object.entries(CATEGORIES).map(([name, [key, value]]) => [`${key}=${value}`, name]));
+
+export function categoryOf(tags) {
+  for (const [key, value] of Object.entries(tags)) {
+    const name = CATEGORY_BY_TAG.get(`${key}=${value}`);
+    if (name) return name;
+  }
+  return null;
+}
+
+// OPL wraps each escaped byte in percent signs: a space is `%20%`, a comma
+// `%2c%` (on top of the comma that separates tags), a percent `%25%`.
+// Non-ASCII text stays literal, so this is not URI escaping.
+const oplDecode = (text) =>
+  text.replace(/%([0-9a-f]{2})%/gi, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)));
+
+/** Tags from one OPL line (`n123 v2 dV c1 t… Tname=Rosa%20%Florist,website=…`). */
+export function oplTags(line) {
+  const field = line.split(' ').find((part) => part.startsWith('T'));
+  if (!field) return null;
+  const tags = {};
+  for (const pair of field.slice(1).split(',')) {
+    const at = pair.indexOf('=');
+    if (at < 0) continue;
+    tags[oplDecode(pair.slice(0, at))] = oplDecode(pair.slice(at + 1));
+  }
+  return tags;
+}
+
+export function sitesFromOpl(text, wanted = null) {
+  const out = [];
+  for (const line of text.split('\n')) {
+    if (!line) continue;
+    const tags = oplTags(line);
+    if (!tags) continue;
+    const category = categoryOf(tags);
+    if (!category || (wanted && !wanted.includes(category))) continue;
+    out.push(...sitesFrom([{ tags }], category));
+  }
+  return out;
+}
+
+function fromPbf(pbf, wanted) {
+  let text;
+  try {
+    text = execFileSync(
+      'osmium',
+      ['tags-filter', pbf, 'nwr/craft', 'nwr/shop', 'nwr/amenity', 'nwr/office', '-f', 'opl'],
+      { encoding: 'utf8', maxBuffer: 1 << 29 },
+    );
+  } catch (error) {
+    if (error?.code === 'ENOENT') throw new Error('osmium is not installed. Run: brew install osmium-tool');
+    throw error;
+  }
+  const sites = sitesFromOpl(text, wanted);
+  const counts = new Map();
+  for (const site of sites) counts.set(site.category, (counts.get(site.category) ?? 0) + 1);
+  for (const name of wanted) log(`${name.padEnd(16)} ${String(counts.get(name) ?? 0).padStart(5)} sites`);
+  return sites;
+}
+
 async function main() {
   const area = opt('area', 'US');
   const bbox = opt('bbox', '');
   const limit = Number(opt('limit', 2000));
+  const pbf = opt('pbf', '');
   const names = opt('categories', '')
     .split(',')
     .map((name) => name.trim())
@@ -163,7 +228,11 @@ async function main() {
     return;
   }
 
-  const scopeName = bbox ? bbox.replace(/[^0-9.-]+/g, '_') : area;
+  const scopeName = pbf
+    ? basename(pbf).replace(/\.osm\.pbf$/, '')
+    : bbox
+      ? bbox.replace(/[^0-9.-]+/g, '_')
+      : area;
   const domainsOut = opt('out', join(here, `osm-${scopeName}-domains-${DAY}.txt`));
   const recordsOut = domainsOut.replace(/-domains-/, '-').replace(/\.txt$/, '.jsonl');
 
@@ -172,28 +241,41 @@ async function main() {
   const records = [];
   let requestsFailed = 0;
 
-  log(`OpenStreetMap → ${chosen.length} categories in ${bbox || area}, ${limit} per category\n`);
+  log(
+    pbf
+      ? `OpenStreetMap ${pbf} → ${chosen.length} categories, offline\n`
+      : `OpenStreetMap → ${chosen.length} categories in ${bbox || area}, ${limit} per category\n`,
+  );
 
-  for (const [index, name] of chosen.entries()) {
-    if (index) await new Promise((r) => setTimeout(r, PAUSE_MS));
-    let elements;
-    try {
-      elements = await overpass(queryFor(CATEGORIES[name], { area, bbox, limit }));
-    } catch (error) {
-      requestsFailed += 1;
-      log(`${name.padEnd(16)} failed: ${error?.message ?? error}`);
-      continue;
-    }
-    const sites = sitesFrom(elements, name);
-    let added = 0;
-    for (const site of sites) {
+  if (pbf) {
+    for (const site of fromPbf(pbf, chosen)) {
       if (seen.has(site.host)) continue;
       seen.add(site.host);
       lines.push(site.host);
       records.push(site);
-      added += 1;
     }
-    log(`${name.padEnd(16)} ${String(elements.length).padStart(5)} elements, ${String(sites.length).padStart(5)} sites, ${String(added).padStart(4)} new`);
+  } else {
+    for (const [index, name] of chosen.entries()) {
+      if (index) await new Promise((r) => setTimeout(r, PAUSE_MS));
+      let elements;
+      try {
+        elements = await overpass(queryFor(CATEGORIES[name], { area, bbox, limit }));
+      } catch (error) {
+        requestsFailed += 1;
+        log(`${name.padEnd(16)} failed: ${error?.message ?? error}`);
+        continue;
+      }
+      const sites = sitesFrom(elements, name);
+      let added = 0;
+      for (const site of sites) {
+        if (seen.has(site.host)) continue;
+        seen.add(site.host);
+        lines.push(site.host);
+        records.push(site);
+        added += 1;
+      }
+      log(`${name.padEnd(16)} ${String(elements.length).padStart(5)} elements, ${String(sites.length).padStart(5)} sites, ${String(added).padStart(4)} new`);
+    }
   }
 
   if (!lines.length) {

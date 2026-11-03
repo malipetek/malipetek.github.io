@@ -187,7 +187,7 @@ export function emailsIn(html, pageUrl, { preferOwn = true } = {}) {
  * request, and only HTML bodies. Returns `{ html, url, title }` after
  * redirects, or `{ skipped }` with a short machine-readable reason.
  */
-export async function fetchPage(url, { delayMs = HOST_DELAY_MS } = {}) {
+export async function fetchPage(url, { delayMs = HOST_DELAY_MS, timeoutMs = TIMEOUT_MS } = {}) {
   const robots = await robotsForUrl(url);
   if (robots.refuse) return { skipped: 'robots_unavailable' };
   const { pathname, search } = new URL(url);
@@ -199,7 +199,7 @@ export async function fetchPage(url, { delayMs = HOST_DELAY_MS } = {}) {
     res = await fetch(url, {
       headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml' },
       redirect: 'follow',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     return { skipped: `fetch_failed: ${error?.message ?? error}` };

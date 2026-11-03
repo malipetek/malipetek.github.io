@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CATEGORIES, queryFor, sitesFrom } from './osm.mjs';
+import { CATEGORIES, categoryOf, oplTags, queryFor, sitesFrom, sitesFromOpl } from './osm.mjs';
 
 test('query: scoped to the area, only elements that carry a site or an address', () => {
   const query = queryFor(['craft', 'plumber'], { area: 'US', limit: 500 });
@@ -46,4 +46,46 @@ test('categories: every one is an OSM key/value pair of a local business', () =>
     assert.ok(pair.every((part) => /^[a-z:_]+$/.test(part)), name);
   }
   assert.deepEqual(CATEGORIES.plumber, ['craft', 'plumber']);
+});
+
+test('opl: tags come out of one export line, percent-decoded', () => {
+  assert.deepEqual(
+    oplTags('n123 v2 dV c1 t2020-01-01T00:00:00Z Tname=Rosa%20%Florist,shop=florist,website=https://rosas.co.uk'),
+    { name: 'Rosa Florist', shop: 'florist', website: 'https://rosas.co.uk' },
+  );
+  assert.equal(oplTags('n1 v2 dV c1'), null);
+});
+
+test('opl: escaped bytes arrive wrapped in percent signs, not as URI escapes', () => {
+  const line = 'n1 v1 dV c0 t i0 u Tname=King%20%Soopers%2c%%20%Inc,shop=supermarket,addr:street=Table%20%Mesa%20%Drive,name:en=100%25%';
+  assert.deepEqual(oplTags(line), {
+    name: 'King Soopers, Inc',
+    shop: 'supermarket',
+    'addr:street': 'Table Mesa Drive',
+    'name:en': '100%',
+  });
+});
+
+test('opl: only the wanted categories, and only the ones with a site', () => {
+  const text = [
+    'n1 v2 dV Tcraft=plumber,website=https://acmeplumbing.com',
+    'n2 v2 dV Tshop=florist,contact:website=rosas.co.uk',
+    'n3 v2 dV Tshop=clothes,website=https://notours.example',
+    'n4 v2 dV Tcraft=plumber',
+    '',
+  ].join('\n');
+  assert.deepEqual(
+    sitesFromOpl(text).map((site) => [site.host, site.category]),
+    [
+      ['acmeplumbing.com', 'plumber'],
+      ['rosas.co.uk', 'florist'],
+    ],
+  );
+  assert.deepEqual(sitesFromOpl(text, ['plumber']).map((site) => site.host), ['acmeplumbing.com']);
+});
+
+test('category: the first known key/value wins, unknown trades are ignored', () => {
+  assert.equal(categoryOf({ craft: 'plumber', name: 'X' }), 'plumber');
+  assert.equal(categoryOf({ shop: 'clothes' }), null);
+  assert.equal(categoryOf({}), null);
 });
