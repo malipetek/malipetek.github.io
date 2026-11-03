@@ -6,15 +6,19 @@
  *   claude    Claude Code headless. Client work's default: an
  *             allow-listed tool set, no MCP, no web, no inherited settings.
  *   opencode  `opencode run`, one subprocess per run. System work only.
- *   dsh       `dsh --profile headless`, one subprocess per run. System work
- *             only — the Harness one-shot, on whichever provider its profile
- *             is set to (DeepSeek, OpenCode Go, …). Runs with `--json`, so
+ *   dsh-go    `dsh --profile headless` on OpenCode Go's DeepSeek v4.1 flash,
+ *             the provider called directly (no ACP). The default for all
+ *             work: the plan is close to unlimited. Runs with `--json`, so
  *             the result carries the Harness `sessionId`.
- *   dsh-claude, dsh-opencode, dsh-devin
+ *   dsh       The same native run on the DeepSeek account (pay as you go).
+ *   dsh-claude, dsh-devin
  *             The same dsh run, with an overlay patch that has the Harness
- *             drive Claude Code (claude-agent-acp), OpenCode (`opencode acp`)
- *             or Devin (`devin acp`) as an external ACP agent. Still a
- *             Harness session. System only.
+ *             drive Claude Code (claude-agent-acp, Opus: hard work) or Devin
+ *             (`devin acp`, SWE-2: free) as an external ACP agent. ACP only
+ *             where the account offers nothing else. Still a Harness session.
+ *   dsh-opencode
+ *             OpenCode over ACP. Kept for pinned old tickets; dsh-go reaches
+ *             the same models as a provider instead.
  *   devin     Devin over ACP (JSON-RPC on stdio). System work only — it
  *             auto-approves its own permission prompts, as the old Slack
  *             bridge did, which is fine for Ali's repos and wrong for a client's.
@@ -391,25 +395,45 @@ export function agentProfileReady(profile = AGENT_PROFILE, dshHome = process.env
   return existsSync(join(dshHome, 'profiles', profile, 'node_modules', '@malipetek', 'dsh-external-agents', 'package.json'));
 }
 
-/** Write the overlay for `agent` next to the node config; returns its path. */
-function writeAgentOverlay(agent, config) {
+/**
+ * The overlay that pins a native Harness run to one provider and model (no
+ * ACP): `opencode-go` / `deepseek-v4.1-flash`, `deepseek-official` /
+ * `deepseek-flash`. Pure.
+ */
+export function dshModelOverlay({ provider, model }) {
+  const q = (s) => JSON.stringify(String(s));
+  const lines = [
+    '- id: agent-default-model',
+    '  name: "@deepseek-ai/dsh-agent-default-model"',
+    '  config:',
+    `    provider: ${q(provider)}`,
+  ];
+  if (model) lines.push(`    model: ${q(model)}`);
+  // A fleet run's title is its worktree name; an LLM title is a wasted call.
+  lines.push('- id: session-title-llm', '  disabled: true');
+  return lines.join('\n') + '\n';
+}
+
+/** Write an overlay next to the node config; returns its path. */
+function writeOverlay(name, text, config) {
   const dir = config.overlayDir ?? join(homedir(), '.config', 'malipetek-runner');
   mkdirSync(dir, { recursive: true });
-  const file = join(dir, `dsh-agent-${agent}.patch.yml`);
-  writeFileSync(file, dshAgentOverlay(agent, config));
+  const file = join(dir, `${name}.patch.yml`);
+  writeFileSync(file, text);
   return file;
 }
 
 /**
  * The DeepSeek Harness one-shot with `--json`: events on stdout, diagnostics
- * on stderr. The provider and its credentials come from the Harness profile on
- * this machine (DeepSeek, OpenCode Go and the rest), never from the brief —
- * or, with `agent`, an overlay that has the Harness drive Claude Code or
- * OpenCode over ACP, so the run is still a Harness session with a session id.
+ * on stderr. Credentials come from the Harness profile on this machine, never
+ * from the brief. `config.provider` (+ `model`) pins the native provider; with
+ * `agent`, an overlay has the Harness drive Claude Code or Devin over ACP. Either
+ * way the run is a Harness session with a session id.
  */
 async function dsh({ prompt, cwd, system, config, signal, onStep, resumeSessionId }, agent) {
   const args = ['--profile', config.profile ?? (agent ? AGENT_PROFILE : 'headless')];
-  if (agent) args.push('--patch', writeAgentOverlay(agent, config));
+  if (agent) args.push('--patch', writeOverlay(`dsh-agent-${agent}`, dshAgentOverlay(agent, config), config));
+  else if (config.provider) args.push('--patch', writeOverlay(`dsh-model-${config.provider}`, dshModelOverlay(config), config));
   // A rerun continues its ticket's conversation: the thread already opens with
   // the system prompt and the request, so only the follow-up goes in.
   if (resumeSessionId) args.push('--session-id', resumeSessionId);
@@ -435,12 +459,19 @@ async function dsh({ prompt, cwd, system, config, signal, onStep, resumeSessionI
   };
 }
 
+const dshGo = (opts) => dsh(opts);
 const dshClaude = (opts) => dsh(opts, 'claude');
 const dshOpencode = (opts) => dsh(opts, 'opencode');
 const dshDevin = (opts) => dsh(opts, 'devin');
 
 /** Executors whose runs are Harness sessions (their log can be uploaded). */
-export const DSH_FAMILY = ['dsh', 'dsh-claude', 'dsh-opencode', 'dsh-devin'];
+export const DSH_FAMILY = ['dsh-go', 'dsh', 'dsh-claude', 'dsh-opencode', 'dsh-devin'];
+
+/** What `dsh-go` and `dsh` run when the node config does not say otherwise. */
+export const DSH_MODELS = {
+  'dsh-go': { provider: 'opencode-go', model: 'deepseek-v4.1-flash' },
+  dsh: { provider: 'deepseek-official', model: 'deepseek-flash' },
+};
 
 /* ——————————————————————— fallback ——————————————————————— */
 
@@ -452,16 +483,18 @@ export const ACCOUNT = {
   'dsh-devin': 'devin',
   opencode: 'opencode',
   'dsh-opencode': 'opencode',
-  dsh: 'dsh',
+  'dsh-go': 'opencode-go',
+  dsh: 'deepseek',
 };
 
 /**
- * System work's order when nothing is pinned, and the fallback order after a
- * quota error: Harness executors first, so the run has a conversation to open;
- * then the cheap Harness provider, Devin SWE-2 (free) and OpenCode's free
- * DeepSeek, all inside the Harness; the plain CLIs last.
+ * The order when nothing is pinned, and the fallback order after a quota
+ * error. Everything goes through the Harness, so every run has a conversation:
+ * OpenCode Go's flash first (near unlimited), the DeepSeek account next, Opus
+ * last. Hard work is pinned to dsh-claude on the ticket. Devin, opencode over
+ * ACP and the plain CLIs run only when a ticket pins them.
  */
-export const SYSTEM_ORDER = ['dsh-claude', 'dsh', 'dsh-devin', 'dsh-opencode', 'devin', 'claude', 'opencode'];
+export const SYSTEM_ORDER = ['dsh-go', 'dsh', 'dsh-claude'];
 
 /** Whether a failed run's text reads as a spend, usage or rate limit. */
 export function isQuotaError(text) {
@@ -470,12 +503,8 @@ export function isQuotaError(text) {
   );
 }
 
-/**
- * Client work's order: claude first — the only sandboxed executor — then the
- * rest. Ali approves every client request before it runs, so a quota limit
- * falls back like system work does.
- */
-export const CLIENT_ORDER = ['claude', ...SYSTEM_ORDER.filter((e) => e !== 'claude')];
+/** Client work takes the same order: Ali approves every request before it runs. */
+export const CLIENT_ORDER = SYSTEM_ORDER;
 
 /**
  * The executors to try, in order: the claimed one, then every other one this
@@ -618,4 +647,4 @@ async function devin({ prompt, cwd, system, config, signal, onStep }) {
   }
 }
 
-export const EXECUTORS = { claude, opencode, dsh, 'dsh-claude': dshClaude, 'dsh-opencode': dshOpencode, 'dsh-devin': dshDevin, devin };
+export const EXECUTORS = { claude, opencode, 'dsh-go': dshGo, dsh, 'dsh-claude': dshClaude, 'dsh-opencode': dshOpencode, 'dsh-devin': dshDevin, devin };

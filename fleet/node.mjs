@@ -40,13 +40,13 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { homedir, hostname, platform } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { ACCOUNT, DSH_FAMILY, EXECUTORS, agentProfileReady, fallbackChain, findSessionLog, isQuotaError, run } from './executors.mjs';
+import { ACCOUNT, DSH_FAMILY, DSH_MODELS, EXECUTORS, agentProfileReady, fallbackChain, findSessionLog, isQuotaError, run } from './executors.mjs';
 import { landWork, mainBranch, pushTarget, shareWork } from './share.mjs';
 import { health } from './health.mjs';
 import { buildFollowUp, buildPrompt } from './prompt.mjs';
 import { capture } from './shot.mjs';
 
-const VERSION = '2.9.0';
+const VERSION = '2.10.0';
 const HEARTBEAT_MS = 30_000;
 const PROJECT_SYNC_MS = 10 * 60_000;
 const SHUTDOWN = 'node shutting down';
@@ -110,7 +110,10 @@ function loadConfig() {
     executors: {
       claude: { bin: 'claude', maxBudgetUsd: 5, ...(raw.claude ?? {}), ...(raw.executors?.claude ?? {}) },
       opencode: { bin: 'opencode', ...(raw.executors?.opencode ?? {}) },
-      dsh: { bin: 'dsh', ...(raw.executors?.dsh ?? {}) },
+      // The Harness on a provider it calls directly: OpenCode Go (dsh-go) and
+      // the DeepSeek account (dsh). The model overlay is written beside this file.
+      'dsh-go': { bin: 'dsh', ...DSH_MODELS['dsh-go'], ...(raw.executors?.['dsh-go'] ?? {}), overlayDir: dirname(CONFIG_PATH) },
+      dsh: { bin: 'dsh', ...DSH_MODELS.dsh, ...(raw.executors?.dsh ?? {}), overlayDir: dirname(CONFIG_PATH) },
       // The Harness driving Claude Code / OpenCode over ACP. The overlay patch
       // that sets that up is written next to this config file.
       'dsh-claude': {
@@ -1491,7 +1494,7 @@ async function main() {
     for (const [slug, p] of mapped) log(`  ${slug} → ${p.path}${p.verify ? `  (verify: ${p.verify})` : ''}`);
     return;
   }
-  if (!executors.length) throw new Error('No executor binary found on PATH (claude, opencode, dsh, dsh-claude, dsh-opencode, devin).');
+  if (!executors.length) throw new Error('No executor binary found on PATH (dsh, claude-agent-acp, devin, claude, opencode).');
 
   const node = new Node(config, executors);
   log(`node ${config.nodeId} v${VERSION} up · ${OS} · ${executors.join(', ')} · ${Object.keys(config.projects).length} project(s) · ${config.slots} slot(s) · ${config.endpoint}`);

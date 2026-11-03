@@ -236,7 +236,15 @@ var __awPlugin = (() => {
     { value: 50, label: "Urgent" }
   ];
   var priorityName = (v) => PRIORITIES.find((p) => p.value === v)?.label ?? `p${v}`;
-  var EXECUTORS = ["claude", "opencode", "dsh", "devin", "dsh-claude", "dsh-opencode"];
+  var EXECUTORS = ["dsh-go", "dsh", "dsh-claude", "dsh-devin", "dsh-opencode", "claude", "opencode", "devin"];
+  var AGENTS = [
+    { value: null, label: "Any", hint: "Flash first; DeepSeek, then Opus when a plan runs out" },
+    { value: "dsh-go", label: "Flash", hint: "OpenCode Go, DeepSeek v4.1 flash: near unlimited, the everyday choice" },
+    { value: "dsh-claude", label: "Opus", hint: "Claude Code on Opus, through the Harness: for hard work" },
+    { value: "dsh", label: "DeepSeek", hint: "The DeepSeek account, pay as you go" },
+    { value: "dsh-devin", label: "SWE-2", hint: "Devin SWE-2, free" }
+  ];
+  var agentOptions = (current) => current && !AGENTS.some((a) => a.value === current) ? [...AGENTS, { value: current, label: current, hint: "An older pin" }] : AGENTS;
   function span(seconds) {
     const s = Math.max(0, Math.floor(seconds));
     if (s < 60) return `${s}s`;
@@ -1528,12 +1536,12 @@ var __awPlugin = (() => {
         projectSites.map((s) => /* @__PURE__ */ jsx("option", { value: s.id, children: s.name || s.slug }, s.id))
       ] }) }),
       /* @__PURE__ */ jsx(Field, { label: "Priority", children: /* @__PURE__ */ jsx(Segmented, { value: ticket.priority ?? 0, options: PRIORITIES, onChange: (v) => void patch({ priority: v }, "Priority saved.") }) }),
-      /* @__PURE__ */ jsx(Field, { label: "Agent", hint: isClient ? "Runs after your approval; claude is the default sandboxed agent." : void 0, children: /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsx(Field, { label: "Agent", hint: "Flash for everyday work, Opus for hard work.", children: /* @__PURE__ */ jsx(
         Segmented,
         {
           value: ticket.executor ?? null,
-          options: [{ value: null, label: "Any" }, ...EXECUTORS.map((e) => ({ value: e, label: e }))],
-          onChange: (v) => void patch({ executor: v }, `Agent: ${v ?? "any"}.`)
+          options: agentOptions(ticket.executor),
+          onChange: (v) => void patch({ executor: v }, `Agent: ${AGENTS.find((a) => a.value === v)?.label ?? v ?? "any"}.`)
         }
       ) }),
       caps.length ? /* @__PURE__ */ jsx(Field, { label: "Needs", children: /* @__PURE__ */ jsx(Chips, { value: requires, options: caps.map((c) => ({ value: c.id, label: c.label, hint: c.hint })), onChange: (v) => void patch({ requires: v }, "Saved.") }) }) : null,
@@ -3708,7 +3716,7 @@ button.aw-file:hover { border-color: currentColor; }
               data.projects.map((p) => /* @__PURE__ */ jsx("option", { value: p.id, children: p.name }, p.id))
             ] }) }),
             /* @__PURE__ */ jsx(Field, { label: "Priority", children: /* @__PURE__ */ jsx(Segmented, { value: priority, options: PRIORITIES, onChange: setPriority }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Agent", children: /* @__PURE__ */ jsx(Segmented, { value: executor, options: [{ value: null, label: "Any" }, ...EXECUTORS.map((e) => ({ value: e, label: e }))], onChange: setExecutor }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Agent", children: /* @__PURE__ */ jsx(Segmented, { value: executor, options: AGENTS, onChange: setExecutor }) }),
             /* @__PURE__ */ jsx(Field, { label: "Start", children: /* @__PURE__ */ jsx(Segmented, { value: approve, options: [{ value: true, label: "Queue now" }, { value: false, label: "Hold in New" }], onChange: setApprove }) })
           ] }),
           caps.length ? /* @__PURE__ */ jsx(Field, { label: "Needs", hint: "Only nodes with all of these take it.", children: /* @__PURE__ */ jsx(Chips, { value: requires, options: caps.map((c) => ({ value: c.id, label: c.label, hint: c.hint })), onChange: setRequires }) }) : null

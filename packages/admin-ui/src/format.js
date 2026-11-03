@@ -31,7 +31,22 @@ export const PRIORITIES = [
   { value: 50, label: 'Urgent' },
 ];
 export const priorityName = (v) => PRIORITIES.find((p) => p.value === v)?.label ?? `p${v}`;
-export const EXECUTORS = ['claude', 'opencode', 'dsh', 'devin', 'dsh-claude', 'dsh-opencode'];
+/** Every executor a node may offer (the fleet's chips). */
+export const EXECUTORS = ['dsh-go', 'dsh', 'dsh-claude', 'dsh-devin', 'dsh-opencode', 'claude', 'opencode', 'devin'];
+/**
+ * The ticket's Agent choices. All run in the Harness, so each run has a
+ * conversation. Any = Flash, falling back to DeepSeek, then Opus.
+ */
+export const AGENTS = [
+  { value: null, label: 'Any', hint: 'Flash first; DeepSeek, then Opus when a plan runs out' },
+  { value: 'dsh-go', label: 'Flash', hint: 'OpenCode Go, DeepSeek v4.1 flash: near unlimited, the everyday choice' },
+  { value: 'dsh-claude', label: 'Opus', hint: 'Claude Code on Opus, through the Harness: for hard work' },
+  { value: 'dsh', label: 'DeepSeek', hint: 'The DeepSeek account, pay as you go' },
+  { value: 'dsh-devin', label: 'SWE-2', hint: 'Devin SWE-2, free' },
+];
+/** AGENTS, plus a ticket's older pin so it still shows as selected. */
+export const agentOptions = (current) =>
+  current && !AGENTS.some((a) => a.value === current) ? [...AGENTS, { value: current, label: current, hint: 'An older pin' }] : AGENTS;
 
 export function span(seconds) {
   const s = Math.max(0, Math.floor(seconds));
