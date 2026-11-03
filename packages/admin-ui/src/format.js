@@ -35,10 +35,10 @@ export const priorityName = (v) => PRIORITIES.find((p) => p.value === v)?.label 
 export const EXECUTORS = ['dsh-go', 'dsh', 'dsh-claude', 'dsh-devin', 'dsh-opencode', 'claude', 'opencode', 'devin'];
 /**
  * The ticket's Agent choices. All run in the Harness, so each run has a
- * conversation. Any = Flash, falling back to DeepSeek, then Opus.
+ * conversation. Auto: Flash reads the task and sends hard work to Opus.
  */
 export const AGENTS = [
-  { value: null, label: 'Any', hint: 'Flash first; DeepSeek, then Opus when a plan runs out' },
+  { value: null, label: 'Auto', hint: 'Flash reads the task and picks Flash or Opus; a spent plan falls back' },
   { value: 'dsh-go', label: 'Flash', hint: 'OpenCode Go, DeepSeek v4.1 flash: near unlimited, the everyday choice' },
   { value: 'dsh-claude', label: 'Opus', hint: 'Claude Code on Opus, through the Harness: for hard work' },
   { value: 'dsh', label: 'DeepSeek', hint: 'The DeepSeek account, pay as you go' },

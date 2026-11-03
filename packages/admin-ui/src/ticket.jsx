@@ -860,11 +860,11 @@ export function TicketDetails({ ticket, runs, land, meter, reload }) {
       <Field label="Priority">
         <Segmented value={ticket.priority ?? 0} options={PRIORITIES} onChange={(v) => void patch({ priority: v }, 'Priority saved.')} />
       </Field>
-      <Field label="Agent" hint="Flash for everyday work, Opus for hard work.">
+      <Field label="Agent" hint="Auto lets Flash pick: Flash for everyday work, Opus for hard work.">
         <Segmented
           value={ticket.executor ?? null}
           options={agentOptions(ticket.executor)}
-          onChange={(v) => void patch({ executor: v }, `Agent: ${AGENTS.find((a) => a.value === v)?.label ?? v ?? 'any'}.`)}
+          onChange={(v) => void patch({ executor: v }, `Agent: ${AGENTS.find((a) => a.value === v)?.label ?? v ?? 'auto'}.`)}
         />
       </Field>
       {caps.length ? (

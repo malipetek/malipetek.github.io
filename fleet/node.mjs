@@ -40,13 +40,13 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { homedir, hostname, platform } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { ACCOUNT, DSH_FAMILY, DSH_MODELS, EXECUTORS, agentProfileReady, fallbackChain, findSessionLog, isQuotaError, run } from './executors.mjs';
+import { ACCOUNT, DSH_FAMILY, DSH_MODELS, EXECUTORS, agentProfileReady, fallbackChain, findSessionLog, isQuotaError, routeTask, run } from './executors.mjs';
 import { landWork, mainBranch, pushTarget, shareWork } from './share.mjs';
 import { health } from './health.mjs';
 import { buildFollowUp, buildPrompt } from './prompt.mjs';
 import { capture } from './shot.mjs';
 
-const VERSION = '2.10.0';
+const VERSION = '2.11.0';
 const HEARTBEAT_MS = 30_000;
 const PROJECT_SYNC_MS = 10 * 60_000;
 const SHUTDOWN = 'node shutting down';
@@ -90,6 +90,8 @@ function loadConfig() {
     token,
     nodeId: String(node.id ?? hostname().split('.')[0]).toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 40),
     slots: node.slots ?? 1,
+    // Unpinned work: Flash reads the task and sends hard work to Opus.
+    router: raw.router !== false,
     extraCapabilities: node.capabilities ?? [],
     worktreeRoot: expand(raw.worktreeRoot ?? '~/.cache/malipetek-runner/worktrees'),
     timeoutMinutes: raw.timeoutMinutes ?? 30,
@@ -863,11 +865,21 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
   // is one thread in the sidebar rather than one per run.
   const resume = resumableSession(config, previousRuns, dir);
   if (resume) steps.push('node', `Continuing the conversation of run ${resume.runId}`);
+  // An unpinned ticket goes to Flash unless the router reads it as hard work.
+  // A rerun that continues a conversation stays with that conversation's agent.
+  let first = executor;
+  if (claim.auto && resume && available.includes(resume.executor)) first = resume.executor;
+  else if (claim.auto && config.router && available.includes('dsh-go') && available.includes('dsh-claude') && !signal.aborted) {
+    const { route, why } = await routeTask(prompt, config.executors['dsh-go'], signal);
+    first = route === 'opus' ? 'dsh-claude' : 'dsh-go';
+    steps.push('node', `Router: ${route === 'opus' ? 'Opus' : 'Flash'}${why ? ` — ${why}` : ''}`);
+    log(`#${ticket.id} routed to ${first}: ${why}`);
+  }
   const exhausted = new Set();
   const limited = [];
   let result;
-  let used = executor;
-  for (const name of fallbackChain(executor, available, ticket.kind)) {
+  let used = first;
+  for (const name of fallbackChain(first, available, ticket.kind)) {
     if (!EXECUTORS[name] || exhausted.has(ACCOUNT[name] ?? name)) continue;
     if (name !== used) log(`#${ticket.id} falling back to ${name}`);
     used = name;

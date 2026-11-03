@@ -522,6 +522,8 @@ export interface NodeClaim {
   previousRuns: PriorRun[];
   runId: number;
   executor: string;
+  /** The ticket pins no executor: the node's router may pick Flash or Opus. */
+  auto: boolean;
   attempt: number;
   leaseSeconds: number;
   /** The most this run may spend on AI, when the client set a budget: what is left of it. */
@@ -636,6 +638,7 @@ export async function claimForNode(env: Env, nodeId: string): Promise<{ claim: N
       previousRuns,
       runId,
       executor,
+      auto: picked.executor === null,
       attempt,
       leaseSeconds: LEASE_SECONDS,
       ...(left !== null ? { maxBudgetUsd: Math.max(0.01, left / 100) } : {}),

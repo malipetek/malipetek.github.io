@@ -27,8 +27,8 @@
  * cancel from the admin view, a lost lease, or the run timeout reaches it.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import readline from 'node:readline';
 
@@ -472,6 +472,59 @@ export const DSH_MODELS = {
   'dsh-go': { provider: 'opencode-go', model: 'deepseek-v4.1-flash' },
   dsh: { provider: 'deepseek-official', model: 'deepseek-flash' },
 };
+
+/* ——————————————————————— router ——————————————————————— */
+
+/** What the router is told. Flash is the default; Opus has to be earned. */
+export const ROUTER_SYSTEM = `You route coding tasks to one of two agents.
+flash: a fast, cheap model. Copy and content edits, styling, small bug fixes, one component or page, config changes, routine tasks with a clear spec.
+opus: the strongest model, scarce. Architecture or cross-cutting changes over many files, hard debugging with no obvious cause, concurrency, security, data migrations, unfamiliar or large codebases, or work an earlier run already failed at.
+Choose flash unless the task clearly needs opus.
+Do not use tools. Reply with one JSON line and nothing else: {"route":"flash"|"opus","why":"<under 15 words>"}`;
+
+/**
+ * Read the router's reply. Pure. Anything unreadable routes to flash.
+ *
+ * @returns `{ route: 'flash' | 'opus', why }`.
+ */
+export function parseRoute(text) {
+  const raw = String(text ?? '');
+  for (const match of raw.matchAll(/\{[^{}]*\}/g)) {
+    try {
+      const ev = JSON.parse(match[0]);
+      if (ev?.route === 'opus' || ev?.route === 'flash') return { route: ev.route, why: String(ev.why ?? '').trim().slice(0, 200) };
+    } catch {
+      /* keep looking */
+    }
+  }
+  return { route: 'flash', why: 'the router gave no clear answer' };
+}
+
+/**
+ * Ask Flash, in an empty folder, whether a task needs Opus. Never throws: a
+ * failed or slow router means Flash. One short Harness session per routed run.
+ *
+ * @param brief - the task as the agent would get it.
+ * @param config - the dsh-go executor's config.
+ * @returns `{ route, why }`.
+ */
+export async function routeTask(brief, config, signal) {
+  const dir = mkdtempSync(join(tmpdir(), 'malipetek-route-'));
+  try {
+    const res = await dsh({
+      prompt: String(brief).slice(0, 12000),
+      cwd: dir,
+      system: ROUTER_SYSTEM,
+      config,
+      signal: AbortSignal.any([signal ?? new AbortController().signal, AbortSignal.timeout(120_000)]),
+    });
+    return res.ok ? parseRoute(res.text) : { route: 'flash', why: `the router failed: ${res.text.split('\n').pop().slice(0, 120)}` };
+  } catch (error) {
+    return { route: 'flash', why: `the router failed: ${error.message}` };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 /* ——————————————————————— fallback ——————————————————————— */
 

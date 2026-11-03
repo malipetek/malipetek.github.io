@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ACCOUNT, DSH_FAMILY, DSH_MODELS, EXECUTORS, SYSTEM_ORDER, briefInput, claudeResult, dshAgentOverlay, dshModelOverlay, fallbackChain, findSessionLog, isQuotaError, parseDshEvents, stepsOf } from './executors.mjs';
+import { ACCOUNT, DSH_FAMILY, DSH_MODELS, EXECUTORS, SYSTEM_ORDER, briefInput, claudeResult, dshAgentOverlay, dshModelOverlay, parseRoute, routeTask, fallbackChain, findSessionLog, isQuotaError, parseDshEvents, stepsOf } from './executors.mjs';
 
 const SAMPLE = `{"type":"session","sessionId":"session-db44e5d2-8897-4d5e-9a9f-b96070283d22","cwd":"/private/tmp/dshjson"}
 {"type":"status","phase":"turn_start","turn":1}
@@ -273,4 +273,27 @@ test('claudeResult: the last result event of a stream, or a whole JSON object', 
   assert.deepEqual(claudeResult(stream), { type: 'result', result: 'done', total_cost_usd: 0.0034, num_turns: 2, is_error: false });
   assert.equal(claudeResult('{"result":"plain json","is_error":false}').result, 'plain json');
   assert.deepEqual(claudeResult('Error: not logged in'), {});
+});
+
+test('parseRoute: reads the JSON line, anything else is flash', () => {
+  assert.deepEqual(parseRoute('{"route":"opus","why":"cross-cutting auth change"}'), { route: 'opus', why: 'cross-cutting auth change' });
+  assert.deepEqual(parseRoute('Sure.\n{"route":"flash","why":"copy edit"}'), { route: 'flash', why: 'copy edit' });
+  assert.equal(parseRoute('opus, definitely').route, 'flash');
+  assert.equal(parseRoute('{"route":"gpt"}').route, 'flash');
+  assert.equal(parseRoute('').route, 'flash');
+});
+
+test('routeTask asks Flash in an empty folder; a failed router means flash', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'route-'));
+  const fake = (body) => {
+    const bin = join(tmp, `dsh-${Math.random().toString(36).slice(2)}`);
+    writeFileSync(bin, `#!/bin/sh\npwd > "${tmp}/cwd"\n${body}\n`);
+    chmodSync(bin, 0o755);
+    return { bin, overlayDir: tmp, ...DSH_MODELS['dsh-go'] };
+  };
+  const hard = await routeTask('Rewrite the auth layer', fake(`echo '{"type":"final","text":"{\\"route\\":\\"opus\\",\\"why\\":\\"auth rewrite\\"}"}'`));
+  assert.deepEqual(hard, { route: 'opus', why: 'auth rewrite' });
+  assert.match(readFileSync(join(tmp, 'cwd'), 'utf8'), /malipetek-route-/);
+  const broken = await routeTask('x', fake('exit 1'));
+  assert.equal(broken.route, 'flash');
 });

@@ -238,7 +238,7 @@ var __awPlugin = (() => {
   var priorityName = (v) => PRIORITIES.find((p) => p.value === v)?.label ?? `p${v}`;
   var EXECUTORS = ["dsh-go", "dsh", "dsh-claude", "dsh-devin", "dsh-opencode", "claude", "opencode", "devin"];
   var AGENTS = [
-    { value: null, label: "Any", hint: "Flash first; DeepSeek, then Opus when a plan runs out" },
+    { value: null, label: "Auto", hint: "Flash reads the task and picks Flash or Opus; a spent plan falls back" },
     { value: "dsh-go", label: "Flash", hint: "OpenCode Go, DeepSeek v4.1 flash: near unlimited, the everyday choice" },
     { value: "dsh-claude", label: "Opus", hint: "Claude Code on Opus, through the Harness: for hard work" },
     { value: "dsh", label: "DeepSeek", hint: "The DeepSeek account, pay as you go" },
@@ -1536,12 +1536,12 @@ var __awPlugin = (() => {
         projectSites.map((s) => /* @__PURE__ */ jsx("option", { value: s.id, children: s.name || s.slug }, s.id))
       ] }) }),
       /* @__PURE__ */ jsx(Field, { label: "Priority", children: /* @__PURE__ */ jsx(Segmented, { value: ticket.priority ?? 0, options: PRIORITIES, onChange: (v) => void patch({ priority: v }, "Priority saved.") }) }),
-      /* @__PURE__ */ jsx(Field, { label: "Agent", hint: "Flash for everyday work, Opus for hard work.", children: /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsx(Field, { label: "Agent", hint: "Auto lets Flash pick: Flash for everyday work, Opus for hard work.", children: /* @__PURE__ */ jsx(
         Segmented,
         {
           value: ticket.executor ?? null,
           options: agentOptions(ticket.executor),
-          onChange: (v) => void patch({ executor: v }, `Agent: ${AGENTS.find((a) => a.value === v)?.label ?? v ?? "any"}.`)
+          onChange: (v) => void patch({ executor: v }, `Agent: ${AGENTS.find((a) => a.value === v)?.label ?? v ?? "auto"}.`)
         }
       ) }),
       caps.length ? /* @__PURE__ */ jsx(Field, { label: "Needs", children: /* @__PURE__ */ jsx(Chips, { value: requires, options: caps.map((c) => ({ value: c.id, label: c.label, hint: c.hint })), onChange: (v) => void patch({ requires: v }, "Saved.") }) }) : null,
