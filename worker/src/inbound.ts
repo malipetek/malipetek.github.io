@@ -38,7 +38,7 @@ import {
   withAttachmentLine,
 } from './portal.ts';
 import { checkUploads, fileCount, FILE_LIMITS, type Upload } from './files.ts';
-import { handleBounceReport, handleMarketingMail, isBounceMessage, marketingInbox } from './marketing.ts';
+import { handleBounceReport, handleComplaintReport, handleMarketingMail, isBounceMessage, isComplaintReport, marketingInbox } from './marketing.ts';
 import type { Env } from './shared.ts';
 import { verifySender } from './mailauth.ts';
 
@@ -214,6 +214,17 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
     });
     console.log('inbound_bounce', JSON.stringify({ to, from, bounced }));
     return drop(bounced ? 'bounce recorded' : 'unmatched bounce');
+  }
+
+  // A spam complaint forwarded by SES is an ARF report, also machine-sent.
+  if (isComplaintReport(message.headers.get('content-type'))) {
+    const raw = await new Response(message.raw).text();
+    const complained = await handleComplaintReport(env, raw).catch((error) => {
+      console.error('complaint_parse_failed', error);
+      return 0;
+    });
+    console.log('inbound_complaint', JSON.stringify({ to, from, complained }));
+    return drop(complained ? 'complaint recorded' : 'unmatched complaint');
   }
 
   if (isAutoReply(message.headers)) return drop('auto-reply');

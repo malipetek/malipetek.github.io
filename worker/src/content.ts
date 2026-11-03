@@ -20,6 +20,7 @@
  * the agent writes, because each run starts from a fresh worktree.
  */
 import { now, type Env } from './shared.ts';
+import { mailAli, siteUrl } from './portal.ts';
 
 const DAY = 86_400;
 const MINUTE = 60;
@@ -200,6 +201,16 @@ async function readOffset(env: Env): Promise<number> {
 }
 
 /** The desk's voice notes, read the same way and for the same reason as the offset. */
+/** Desk setting: written posts wait as drafts until Ali approves them. On unless switched off. */
+async function readPostApproval(env: Env): Promise<boolean> {
+  const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'marketing_post_approval'`).first<{ value: string }>();
+  try {
+    return JSON.parse(row?.value ?? 'true') !== false;
+  } catch {
+    return true;
+  }
+}
+
 async function readVoiceNotes(env: Env): Promise<string> {
   const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'marketing_voice_notes'`)
     .first<{ value: string }>();
@@ -332,10 +343,11 @@ export async function ensureContentCycle(env: Env, t = now(), options: { force?:
 
     const stock = await env.DB.prepare(
       `SELECT COUNT(*) AS n FROM marketing_messages
-        WHERE channel IN ('x', 'linkedin') AND status = 'scheduled' AND scheduled_at > ?`,
+        WHERE channel IN ('x', 'linkedin') AND status IN ('scheduled', 'draft') AND scheduled_at > ?`,
     )
       .bind(t)
       .first<{ n: number }>();
+    // Drafts waiting for approval count as stock: an unread week must not pile up another.
     if ((stock?.n ?? 0) >= STOCK) return { filed: false, reason: 'stocked' };
   }
 
@@ -425,19 +437,21 @@ export async function finishContentCycle(env: Env, ticketId: number, summary: st
   // stack its posts on slots the first one already booked.
   const booked = await env.DB.prepare(
     `SELECT scheduled_at FROM marketing_messages
-      WHERE channel IN ('x', 'linkedin') AND status = 'scheduled' AND scheduled_at > ?`,
+      WHERE channel IN ('x', 'linkedin') AND status IN ('scheduled', 'draft') AND scheduled_at > ?`,
   )
     .bind(t)
     .all<{ scheduled_at: number }>();
   const taken = new Set(booked.results.map((row) => row.scheduled_at));
   const slots = nextSlots(t, valid.length, offset, taken);
+  // With approval on, a post holds its slot as a draft; approving it schedules it there.
+  const approval = await readPostApproval(env);
   await env.DB.batch(
     valid.map((post, index) =>
       env.DB.prepare(
         `INSERT INTO marketing_messages
            (channel, kind, contact_id, campaign, step, to_email, subject, body, status, scheduled_at, created_at, updated_at)
-         VALUES (?, 'auto', NULL, 'auto', ?, NULL, NULL, ?, 'scheduled', ?, ?, ?)`,
-      ).bind(post.channel, index, post.text, slots[index] ?? t, t, t),
+         VALUES (?, 'auto', NULL, 'auto', ?, NULL, NULL, ?, ?, ?, ?, ?)`,
+      ).bind(post.channel, index, post.text, approval ? 'draft' : 'scheduled', slots[index] ?? t, t, t),
     ),
   );
 
@@ -452,7 +466,9 @@ export async function finishContentCycle(env: Env, ticketId: number, summary: st
         `Queued ${valid.length} post${valid.length === 1 ? '' : 's'}:`,
         plan,
         '',
-        'They are in Admin → Marketing, Queue tab, and the publisher picks them up at their time.',
+        approval
+          ? 'They wait in Admin → Marketing → Posts for approval; an approved post goes out in its slot.'
+          : 'They are in Admin → Marketing → Posts, and the publisher picks them up at their time.',
         ...(skipped.length ? ['', `Left out:\n- ${skipped.join('\n- ')}`] : []),
       ].join('\n'),
       t,
@@ -463,6 +479,23 @@ export async function finishContentCycle(env: Env, ticketId: number, summary: st
       t,
     ),
   ]);
-  await event(env, 'cycle', `#${ticketId}: ${valid.length} post(s) queued`);
+  await event(env, 'cycle', `#${ticketId}: ${valid.length} post(s) ${approval ? 'drafted for approval' : 'queued'}`);
+  await mailAli(env, {
+    subject: approval
+      ? `${valid.length} post${valid.length === 1 ? '' : 's'} to approve`
+      : `${valid.length} post${valid.length === 1 ? '' : 's'} queued`,
+    text: [
+      approval
+        ? 'The content cycle wrote these. Nothing goes out until you approve it in the desk.'
+        : 'The content cycle queued these. They go out at their time unless you cancel them.',
+      '',
+      ...valid.flatMap((post, index) => [
+        `${post.channel === 'x' ? 'X' : 'LinkedIn'}, ${slotLabel(slots[index] ?? t, offset)}:`,
+        post.text,
+        '',
+      ]),
+      `${siteUrl(env)}/portal/admin#marketing`,
+    ].join('\n'),
+  });
   return { handled: true, queued: valid.length, slots };
 }

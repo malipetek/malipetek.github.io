@@ -207,3 +207,28 @@ test('row: desk column order, the address page as evidence, no gap', () => {
   assert.match(row[7], /rank 312345/);
   assert.match(row[7], /home_services/);
 });
+
+test('row: the OSM name and category stand in for a missing title', () => {
+  const record = {
+    domain: 'acme.com',
+    url: 'https://acme.com/',
+    business: '',
+    emails: [{ email: 'office@acme.com', how: 'mailto' }],
+    email_page: 'https://acme.com/',
+    osm: { name: 'Acme Plumbing', category: 'plumber', city: 'Denver' },
+  };
+  const row = rowFor(record, { smallBusiness: 0.92, usBased: 0.81, sector: 'home_services' });
+  assert.equal(row[2], 'Acme Plumbing');
+  assert.match(row[7], /OSM: plumber, Denver/);
+});
+
+test('row: the OSM name wins over any page title, and the title stands in its absence', () => {
+  const osm = { name: 'La Luz Mexican Grill', category: 'restaurant', city: 'Fort Collins' };
+  const verdict = { smallBusiness: 0.94, usBased: 0.99, sector: 'hospitality_food' };
+  const base = { domain: 'a.com', url: 'https://a.com/', emails: [{ email: 'a@a.com' }], email_page: 'https://a.com/', osm };
+  assert.equal(rowFor({ ...base, business: 'Must-Visit Restaurant in Fort Collins' }, verdict)[2], 'La Luz Mexican Grill');
+  assert.equal(rowFor({ ...base, business: 'La Luz' }, verdict)[2], 'La Luz Mexican Grill');
+  const { osm: _unnamed, ...withoutOsm } = base;
+  assert.equal(rowFor({ ...withoutOsm, business: 'La Luz' }, verdict)[2], 'La Luz');
+  assert.equal(rowFor({ ...base, osm: { category: 'restaurant' }, business: 'La Luz' }, verdict)[2], 'La Luz');
+});

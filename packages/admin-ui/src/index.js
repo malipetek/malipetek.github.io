@@ -1,1 +1,1 @@
-export { AdminApp, TicketSidePanel } from './app.jsx';
+export { AdminApp, TicketPage, TicketSidePanel } from './app.jsx';

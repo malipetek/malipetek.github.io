@@ -37,7 +37,13 @@ const PRIMARY = {
   declined: [['new', 'Reopen', 'ghost']],
 };
 
-export function TicketView({ id, active }) {
+/**
+ * The ticket page. `details` is the right-hand column: the workbench shows it
+ * beside the thread, and a host with a narrow conversation gives it a tab of
+ * its own instead — the status moves then move up into the header, because
+ * that column is where they lived.
+ */
+export function TicketView({ id, active, details = true }) {
   const { api, act } = useAdmin();
   const [{ ticket, messages, runs, review, screenshots, land, error, loading }, reload] = useTicket(api, id);
   const meter = useMeter(api, ticket, active);
@@ -45,8 +51,10 @@ export function TicketView({ id, active }) {
   if (!ticket) return <p className="aw-empty">{errorText(error)}</p>;
   const isClient = ticket.kind !== 'system';
   return (
-    <div className="aw-ticket">
-      <Resizer host=".aw-ticket" cssVar="--aw-details-w" def={300} min={200} max={640} invert storage="aw.details.w" className="aw-resize--details" />
+    <div className={cx('aw-ticket', !details && 'aw-ticket--solo')}>
+      {details ? (
+        <Resizer host=".aw-ticket" cssVar="--aw-details-w" def={300} min={200} max={640} invert storage="aw.details.w" className="aw-resize--details" />
+      ) : null}
       <div className="aw-ticket__main">
         <header className="aw-ticket__head">
           <div className="aw-ticket__crumbs">
@@ -74,6 +82,11 @@ export function TicketView({ id, active }) {
               </Button>
             </div>
           ) : null}
+          {details ? null : (
+            <div className="aw-ticket__quick">
+              <TicketActions ticket={ticket} runs={runs} land={land} reload={reload} />
+            </div>
+          )}
         </header>
 
         <ReviewCard
@@ -83,7 +96,7 @@ export function TicketView({ id, active }) {
         <Timeline ticket={ticket} messages={messages} runs={runs} />
         <Composer ticket={ticket} onSent={reload} />
       </div>
-      <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} />
+      {details ? <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} /> : null}
     </div>
   );
 }
@@ -813,7 +826,7 @@ function AdminSite({ project, site }) {
   );
 }
 
-export function TicketDetails({ ticket, runs, land, meter, reload }) {
+export function TicketDetails({ ticket, runs, land, meter, reload, page = false }) {
   const { api, data, act, setStatus } = useAdmin();
   const isClient = ticket.kind !== 'system';
   const projectSites = data.projects.find((p) => p.id === ticket.project_id)?.sites ?? [];
@@ -825,7 +838,7 @@ export function TicketDetails({ ticket, runs, land, meter, reload }) {
   const where = predict(data.nodes, { slug: ticket.project_slug, requires, executor: ticket.executor, kind: ticket.kind });
   const price = priceOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0 });
   return (
-    <aside className="aw-details" aria-label="Details">
+    <aside className={cx('aw-details', page && 'aw-details--page')} aria-label="Details">
       <TicketActions ticket={ticket} runs={runs} land={land} reload={reload} />
       <SitePanel project={data.projects.find((p) => p.id === ticket.project_id)} />
       <Field label="Status">

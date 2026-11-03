@@ -42,6 +42,13 @@ export interface Env {
   MARKETING_FROM_EMAIL?: string;
   /** Secret. Bearer for the local publisher poll (src/marketing.ts). Unset disables it. */
   MARKETING_TOKEN?: string;
+  /** Secrets — Amazon SES (src/ses.ts), the volume sender for outreach. Unset = SES is not offered. */
+  AWS_SES_ACCESS_KEY_ID?: string;
+  AWS_SES_SECRET_ACCESS_KEY?: string;
+  /** Var. SES region; us-east-1 is where the account has production access. */
+  AWS_SES_REGION?: string;
+  /** Var. Optional SES configuration set (event publishing, dedicated IPs). */
+  AWS_SES_CONFIGURATION_SET?: string;
   /** Secret. Shared with the local runner on Ali's machine; unset disables /runner/*. */
   RUNNER_TOKEN?: string;
   /** R2 — ticket attachments (src/files.ts). Unbound = uploads are refused. */

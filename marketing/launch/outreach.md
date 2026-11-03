@@ -196,6 +196,48 @@ Without a written observation, the queue sends this instead (it makes no claim a
 
 ---
 
+## No website: an email on the map, no site
+
+For a business OpenStreetMap lists with an email and no website
+(`marketing/prospector/osm.mjs` writes these to a `-mail-only-` CSV).
+
+### First email
+
+**Subject:** A website for {business}
+
+> Hi {name},
+>
+> I found {business} on OpenStreetMap. The listing has your email but no website.
+>
+> I build small business sites. An AI agent does the typing, and I approve the job and check the result before anything goes live. You pay for my time by the second, at $100 an hour, with no quote and no minimum. A one-page site with your services, hours and phone number is a short job.
+>
+> If you want one, reply with a line about the business and I will tell you what it would take.
+>
+> Ali
+> malipetek.dev
+
+### Follow-up, day 4
+
+**Subject:** Re: A website for {business}
+
+> Hi {name},
+>
+> Should I sketch a one-page site for {business}, or is it not worth it right now? Either answer helps me.
+>
+> Ali
+
+### Follow-up, day 10
+
+**Subject:** Re: A website for {business}
+
+> Hi {name},
+>
+> Last note from me. If you want a site later, you can ask through malipetek.dev/portal, with no call or quote first.
+>
+> Ali
+
+---
+
 ## LinkedIn DM
 
 Only after a real interaction — a comment, a shared group, a post reply. Do not

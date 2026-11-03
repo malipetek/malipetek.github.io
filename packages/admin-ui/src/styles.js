@@ -202,6 +202,11 @@ button.aw-file:hover { border-color: currentColor; }
 
 /* ticket */
 .aw-ticket { display: grid; grid-template-columns: minmax(0, 1fr) var(--aw-details-w, 300px); min-height: 100%; position: relative; }
+/* No details column: the thread gets the whole width, and the moves the column
+   used to hold sit under the title instead. */
+.aw-ticket--solo { grid-template-columns: minmax(0, 1fr); }
+.aw-ticket__quick { margin-top: 12px; }
+.aw-ticket__quick .aw-ticket__actions { padding-bottom: 0; border-bottom: 0; }
 .aw-ticket__main { padding: 18px 24px 24px; min-width: 0; display: flex; flex-direction: column; }
 .aw-ticket__head h2 { font-size: 22px; font-weight: 700; margin: 4px 0 10px; line-height: 1.25; }
 .aw-ticket__head { padding-bottom: 4px; border-bottom: 1px solid var(--aw-border); margin-bottom: 4px; }
@@ -255,6 +260,12 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-details .aw-ticket__actions > button { width: 100%; justify-content: center; }
 .aw-details .aw-ticket__actions > :first-child { align-self: flex-start; }
 .aw-details .aw-ticket__actions > .aw-running, .aw-details .aw-ticket__actions > .aw-muted { justify-content: center; text-align: center; }
+/* The same fields as a full page (a tab of their own): no column furniture,
+   a readable measure, and the moves in a row instead of a stack. */
+.aw-details--page { border-left: 0; background: none; padding: 0; position: static; height: auto; overflow: visible; }
+.aw-details--page .aw-ticket__actions { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.aw-details--page .aw-ticket__actions > button { width: auto; }
+.aw-details--page .aw-field { max-width: 520px; }
 .aw-details__h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); margin: 18px 0 6px !important; }
 .aw-cost { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 0; border-top: 1px solid var(--aw-border); border-bottom: 1px solid var(--aw-border); }
 .aw-cost > div { display: flex; flex-direction: column; gap: 2px; }

@@ -114,30 +114,41 @@ page run is a rounding error; the network is the expensive part.
 
 Popularity ranks nobody by trade. OSM already knows the plumber on the corner
 and, for 932 of 2,130 US plumbers, their website. `osm.mjs` turns one category
-at a time into a domain list; the bulk reader then finds the address.
+or a whole state into a domain list; the bulk reader then finds the address.
 
 ```sh
-node marketing/prospector/osm.mjs --area=US --categories=plumber,dentist,florist
-# → marketing/prospector/osm-US-domains-2026-10-29.txt   (+ a .jsonl of names)
+# One state, offline: Geofabrik publishes the extract, osmium reads it.
+brew install osmium-tool
+curl -LO https://download.geofabrik.de/north-america/us/colorado-latest.osm.pbf
+node marketing/prospector/osm.mjs --pbf=colorado-latest.osm.pbf
+# → 4,899 Colorado business sites in about eight seconds
 
-node marketing/prospector/bulk.mjs collect --domains=… --tlds=any
-TYPESAFE_API_KEY=… node marketing/prospector/bulk.mjs qualify --in=…
+node marketing/prospector/bulk.mjs collect --domains=osm-colorado-domains-….txt \
+  --names=osm-colorado-….jsonl --tlds=any
+TYPESAFE_API_KEY=… node marketing/prospector/bulk.mjs qualify --in=signals-colorado-….jsonl
 ```
 
-- `--categories=` takes names from `CATEGORIES` in `osm.mjs` (30 trades and
-  local services) and defaults to all of them; `--area=US` is an ISO 3166-1
-  code, `--bbox=south,west,north,east` works instead.
+```sh
+# One category anywhere, without a download (goes through Overpass).
+node marketing/prospector/osm.mjs --area=US --categories=plumber,dentist,florist
+```
+
+- `--pbf=` reads a Geofabrik state file with `osmium tags-filter` and never
+  touches the network: every category at once, no query budget, no queue.
+- `--categories=` takes names from `CATEGORIES` in `osm.mjs` (31 trades and
+  local services) and defaults to all; `--area=US` is an ISO 3166-1 code and
+  `--bbox=south,west,north,east` works instead.
 - Only elements with a `website`, `contact:website`, `email` or
   `contact:email` tag come back. Socials, marketplaces and site builders
   (`wixsite.com`, `square.site`, …) are dropped: one host cannot stand for
   forty businesses.
-- One query at a time, three seconds apart, 2,000 elements per category, and
-  the data is OSM's (ODbL, © OpenStreetMap contributors).
-- Overpass queues hard when it is busy. The tool tries the main instance, then
-  two mirrors, and reports a category as failed rather than half-reading it.
-
-Run fewer categories at once when it fails: the response size is the cost, and
-`restaurant` in the whole US is far heavier than `locksmith`.
+- `--names=` hands the OSM name, category and city to the bulk reader, so the
+  CSV carries "Acme Plumbing" and the notes say `OSM: plumber, Denver` even
+  when the site's own title is unhelpful.
+- Overpass queues hard when it is busy. The online mode tries the main
+  instance, then two mirrors, and reports a category as failed rather than
+  half-reading it. The state files avoid the problem entirely.
+- Data is OSM's: © OpenStreetMap contributors, ODbL.
 
 ## What comes out
 
@@ -156,6 +167,26 @@ info@rosas.co.uk,,Rosa Florist,https://rosas.co.uk,https://rosas.co.uk/contact,,
 - `consent_basis` is `legitimate_interest`: a business address, published for
   contact, and a message about that business's own site. Change it to
   `existing_relationship` for people Ali has actually worked with.
+
+## Verify
+
+```sh
+node marketing/prospector/verify.mjs --in=prospects-colorado.csv
+# → prospects-colorado.verified.csv
+```
+
+A scraped address is a claim, not a fact. This is the gate before the desk:
+
+- **MX required.** A domain with no mail exchanger is dropped as `no_mx` — the
+  most common way a scraped list turns into bounces.
+- **Disposables and bad syntax** are dropped (`mailinator`, `tempmail`, …).
+- **Role inboxes** (`info@`, `sales@`, `office@`) and **free mailboxes**
+  (`gmail`, `outlook`, …) are kept and marked in `notes`. Both are legal to
+  write to; a role inbox just answers less often than an owner.
+- It is **domain-level**. It cannot tell whether `office@acme.com` exists, only
+  that acme.com accepts mail. Mailbox-level (SMTP) checking is a paid service
+  (~$0.0005/address); buy it only if the first hundred sends say bounces are
+  the problem.
 
 Then: **Admin → Marketing → Contacts → Import**, pick the sequence, and the
 contacts queue. Read them once before importing; a wrong row is easier to fix

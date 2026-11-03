@@ -14,10 +14,12 @@
  * Overpass is a shared, donation-funded service: one query at a time, a
  * three-second pause between them, and a cap on what each returns.
  */
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { notBusinessHost } from './directory.mjs';
+import { csvOf } from './extract.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const opt = (name, fallback) => {
@@ -95,6 +97,49 @@ export function queryFor([key, value], { area = 'US', bbox = '', limit = 2_000 }
 const siteOf = (tags) => (tags.website || tags['contact:website'] || '').trim();
 const emailOf = (tags) => (tags.email || tags['contact:email'] || '').trim().toLowerCase();
 
+const OSM_TYPES = { node: 'node', way: 'way', relation: 'relation', n: 'node', w: 'way', r: 'relation' };
+
+/**
+ * Businesses a mapper gave an email but no website. bulk.mjs cannot read a
+ * site that does not exist, so these go straight to a desk CSV: the owner
+ * published the address on the map, and a business with no site is the one
+ * most likely to need one.
+ */
+export function mailOnlyFrom(elements, category) {
+  const out = [];
+  for (const element of elements ?? []) {
+    const tags = element?.tags ?? {};
+    if (siteOf(tags)) continue;
+    const email = emailOf(tags).split(/[;,\s]+/)[0];
+    if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) continue;
+    const type = OSM_TYPES[element.type];
+    out.push({
+      name: (tags.name || '').trim(),
+      category,
+      email,
+      city: (tags['addr:city'] || '').trim(),
+      state: (tags['addr:state'] || '').trim(),
+      osm: type && element.id ? `https://www.openstreetmap.org/${type}/${element.id}` : '',
+    });
+  }
+  return out;
+}
+
+/** One desk row for a business with no site: the map entry is the source. */
+export function mailOnlyRow(record) {
+  const where = [record.city, record.state].filter(Boolean).join(', ');
+  return [
+    record.email,
+    '',
+    record.name,
+    '',
+    record.osm,
+    '',
+    'legitimate_interest',
+    `OpenStreetMap ${record.category}${where ? ` in ${where}` : ''}, ${DAY}. No website on the map.`,
+  ];
+}
+
 /** One business per website host; what cannot be fetched later is dropped here. */
 export function sitesFrom(elements, category) {
   const out = [];
@@ -147,10 +192,82 @@ async function overpass(query) {
   throw lastError;
 }
 
+/* ——————————————————————— offline: one Geofabrik state file ——————————————————————— */
+
+const CATEGORY_BY_TAG = new Map(Object.entries(CATEGORIES).map(([name, [key, value]]) => [`${key}=${value}`, name]));
+
+export function categoryOf(tags) {
+  for (const [key, value] of Object.entries(tags)) {
+    const name = CATEGORY_BY_TAG.get(`${key}=${value}`);
+    if (name) return name;
+  }
+  return null;
+}
+
+// OPL wraps each escaped byte in percent signs: a space is `%20%`, a comma
+// `%2c%` (on top of the comma that separates tags), a percent `%25%`.
+// Non-ASCII text stays literal, so this is not URI escaping.
+const oplDecode = (text) =>
+  text.replace(/%([0-9a-f]{2})%/gi, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)));
+
+/** Tags from one OPL line (`n123 v2 dV c1 t… Tname=Rosa%20%Florist,website=…`). */
+export function oplTags(line) {
+  const field = line.split(' ').find((part) => part.startsWith('T'));
+  if (!field) return null;
+  const tags = {};
+  for (const pair of field.slice(1).split(',')) {
+    const at = pair.indexOf('=');
+    if (at < 0) continue;
+    tags[oplDecode(pair.slice(0, at))] = oplDecode(pair.slice(at + 1));
+  }
+  return tags;
+}
+
+export function sitesFromOpl(text, wanted = null) {
+  return fromOpl(text, wanted).sites;
+}
+
+/** Both outputs from one pass over the OPL text: sites to read, and mail-only businesses. */
+export function fromOpl(text, wanted = null) {
+  const sites = [];
+  const mailOnly = [];
+  for (const line of text.split('\n')) {
+    if (!line) continue;
+    const tags = oplTags(line);
+    if (!tags) continue;
+    const category = categoryOf(tags);
+    if (!category || (wanted && !wanted.includes(category))) continue;
+    const element = { type: line[0], id: line.slice(1).split(' ')[0], tags };
+    sites.push(...sitesFrom([element], category));
+    mailOnly.push(...mailOnlyFrom([element], category));
+  }
+  return { sites, mailOnly };
+}
+
+function fromPbf(pbf, wanted) {
+  let text;
+  try {
+    text = execFileSync(
+      'osmium',
+      ['tags-filter', pbf, 'nwr/craft', 'nwr/shop', 'nwr/amenity', 'nwr/office', '-f', 'opl'],
+      { encoding: 'utf8', maxBuffer: 1 << 29 },
+    );
+  } catch (error) {
+    if (error?.code === 'ENOENT') throw new Error('osmium is not installed. Run: brew install osmium-tool');
+    throw error;
+  }
+  const found = fromOpl(text, wanted);
+  const counts = new Map();
+  for (const site of found.sites) counts.set(site.category, (counts.get(site.category) ?? 0) + 1);
+  for (const name of wanted) log(`${name.padEnd(16)} ${String(counts.get(name) ?? 0).padStart(5)} sites`);
+  return found;
+}
+
 async function main() {
   const area = opt('area', 'US');
   const bbox = opt('bbox', '');
   const limit = Number(opt('limit', 2000));
+  const pbf = opt('pbf', '');
   const names = opt('categories', '')
     .split(',')
     .map((name) => name.trim())
@@ -163,42 +280,74 @@ async function main() {
     return;
   }
 
-  const scopeName = bbox ? bbox.replace(/[^0-9.-]+/g, '_') : area;
+  const scopeName = pbf
+    ? basename(pbf).replace(/\.osm\.pbf$/, '')
+    : bbox
+      ? bbox.replace(/[^0-9.-]+/g, '_')
+      : area;
   const domainsOut = opt('out', join(here, `osm-${scopeName}-domains-${DAY}.txt`));
   const recordsOut = domainsOut.replace(/-domains-/, '-').replace(/\.txt$/, '.jsonl');
+  const mailOnlyOut = domainsOut.replace(/-domains-/, '-mail-only-').replace(/\.txt$/, '.csv');
 
   const seen = new Set();
   const lines = [];
   const records = [];
+  const mailOnly = new Map();
+  const keepMailOnly = (list) => {
+    for (const record of list) if (!mailOnly.has(record.email)) mailOnly.set(record.email, record);
+  };
   let requestsFailed = 0;
 
-  log(`OpenStreetMap → ${chosen.length} categories in ${bbox || area}, ${limit} per category\n`);
+  log(
+    pbf
+      ? `OpenStreetMap ${pbf} → ${chosen.length} categories, offline\n`
+      : `OpenStreetMap → ${chosen.length} categories in ${bbox || area}, ${limit} per category\n`,
+  );
 
-  for (const [index, name] of chosen.entries()) {
-    if (index) await new Promise((r) => setTimeout(r, PAUSE_MS));
-    let elements;
-    try {
-      elements = await overpass(queryFor(CATEGORIES[name], { area, bbox, limit }));
-    } catch (error) {
-      requestsFailed += 1;
-      log(`${name.padEnd(16)} failed: ${error?.message ?? error}`);
-      continue;
-    }
-    const sites = sitesFrom(elements, name);
-    let added = 0;
-    for (const site of sites) {
+  if (pbf) {
+    const found = fromPbf(pbf, chosen);
+    keepMailOnly(found.mailOnly);
+    for (const site of found.sites) {
       if (seen.has(site.host)) continue;
       seen.add(site.host);
       lines.push(site.host);
       records.push(site);
-      added += 1;
     }
-    log(`${name.padEnd(16)} ${String(elements.length).padStart(5)} elements, ${String(sites.length).padStart(5)} sites, ${String(added).padStart(4)} new`);
+  } else {
+    for (const [index, name] of chosen.entries()) {
+      if (index) await new Promise((r) => setTimeout(r, PAUSE_MS));
+      let elements;
+      try {
+        elements = await overpass(queryFor(CATEGORIES[name], { area, bbox, limit }));
+      } catch (error) {
+        requestsFailed += 1;
+        log(`${name.padEnd(16)} failed: ${error?.message ?? error}`);
+        continue;
+      }
+      const sites = sitesFrom(elements, name);
+      keepMailOnly(mailOnlyFrom(elements, name));
+      let added = 0;
+      for (const site of sites) {
+        if (seen.has(site.host)) continue;
+        seen.add(site.host);
+        lines.push(site.host);
+        records.push(site);
+        added += 1;
+      }
+      log(`${name.padEnd(16)} ${String(elements.length).padStart(5)} elements, ${String(sites.length).padStart(5)} sites, ${String(added).padStart(4)} new`);
+    }
+  }
+
+  if (mailOnly.size) {
+    mkdirSync(dirname(mailOnlyOut), { recursive: true });
+    writeFileSync(mailOnlyOut, csvOf([...mailOnly.values()].map(mailOnlyRow)));
+    log(`${mailOnly.size} businesses with an email and no website → ${mailOnlyOut}`);
+    log(`  verify, then import with the "No website" sequence: node marketing/prospector/verify.mjs --in=${mailOnlyOut}`);
   }
 
   if (!lines.length) {
-    log('\nNo websites. Nothing written.');
-    process.exitCode = 1;
+    log('\nNo websites. Nothing else written.');
+    process.exitCode = mailOnly.size ? 0 : 1;
     return;
   }
 

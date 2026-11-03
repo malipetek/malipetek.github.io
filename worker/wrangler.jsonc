@@ -30,6 +30,8 @@
     "REPLY_ADDRESS": "reply@malipetek.dev",
     // Outreach mail: cold and warm email, and the inbox replies land in.
     "MARKETING_FROM_EMAIL": "hello@malipetek.dev",
+    // Amazon SES, when the desk's sender is set to it (keys are secrets).
+    "AWS_SES_REGION": "us-east-1",
   },
 
   // A path on the zone that already resolves, so nothing depends on

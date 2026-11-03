@@ -39,3 +39,4 @@ marketing/prospector/*.log
 
 # Backups the plugins and agents leave beside a file before rewriting it.
 *.bak-*
+marketing/prospector/*.osm.pbf

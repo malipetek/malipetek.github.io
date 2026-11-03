@@ -286,15 +286,19 @@ export const keep = (verdict, { minSmall, minUs }) =>
 
 /** One CSV row, in the order the desk imports. */
 export function rowFor(record, verdict, rank = null) {
+  const where = record.osm?.city ? `${record.osm.category}, ${record.osm.city}` : record.osm?.category;
   const notes = [
-    `Homepage read ${DAY}${rank ? ` (list rank ${rank})` : ''}.`,
+    `Homepage read ${DAY}${where ? ` (OSM: ${where})` : rank ? ` (list rank ${rank})` : ''}.`,
     `Jev: small ${verdict.smallBusiness.toFixed(2)}, US ${verdict.usBased.toFixed(2)}, ${verdict.sector}.`,
     'Address published for contact on the site; observation still to write.',
   ].join(' ');
+  const title = String(record.business ?? '').trim();
+  // OSM's name is the business's own; a page title is often a slogan.
+  const business = record.osm?.name || title || record.domain;
   return [
     record.emails[0].email,
     '',
-    record.business || record.domain,
+    business,
     new URL(record.url).origin,
     record.email_page,
     '',
@@ -348,6 +352,17 @@ async function collect() {
   const out = opt('out', join(here, `signals-${DAY}.jsonl`));
   mkdirSync(dirname(resolve(out)), { recursive: true });
 
+  // Optional: what OSM already knows about each domain (name, category, city).
+  const names = new Map();
+  const namesFile = opt('names', '');
+  if (namesFile) {
+    for (const line of readFileSync(namesFile, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      const meta = JSON.parse(line);
+      if (meta.host) names.set(meta.host, meta);
+    }
+  }
+
   const done = new Set();
   if (existsSync(out)) {
     for (const line of readFileSync(out, 'utf8').split('\n')) {
@@ -361,15 +376,17 @@ async function collect() {
   }
 
   const todo = picked.filter((row) => !done.has(row.domain));
-  const concurrency = Math.max(1, Math.min(16, Number(opt('concurrency', 6))));
+  const concurrency = Math.max(1, Math.min(32, Number(opt('concurrency', 6))));
+  const timeoutMs = Math.max(2_000, Number(opt('timeout', 15)) * 1_000);
+  const read = (url, options = {}) => fetchPage(url, { ...options, timeoutMs });
   const skips = new Map();
   let found = 0;
   let at = 0;
 
-  log(`Reading ${todo.length} homepages, ${concurrency} at a time → ${out}\n`);
+  log(`Reading ${todo.length} homepages, ${concurrency} at a time, ${timeoutMs / 1000}s each → ${out}\n`);
 
   await pool(todo, concurrency, async (row) => {
-    const record = await collectOne(row.domain).catch((error) => ({ skipped: `fetch_failed: ${error?.message ?? error}` }));
+    const record = await collectOne(row.domain, { read }).catch((error) => ({ skipped: `fetch_failed: ${error?.message ?? error}` }));
     at += 1;
     if (record.skipped) {
       skips.set(record.skipped, (skips.get(record.skipped) ?? 0) + 1);
@@ -377,6 +394,11 @@ async function collect() {
       return;
     }
     record.rank = row.rank;
+    const meta = names.get(row.domain);
+    if (meta) {
+      record.osm = { name: meta.name, category: meta.category, city: meta.city };
+      if (!record.business) record.business = meta.name;
+    }
     appendFileSync(out, `${JSON.stringify(record)}\n`);
     found += 1;
     progress(at - 1, todo.length, row.domain, `${record.emails.length} address${record.emails.length === 1 ? '' : 'es'}`);

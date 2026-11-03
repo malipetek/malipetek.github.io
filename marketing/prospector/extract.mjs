@@ -154,6 +154,15 @@ export function titleOf(html) {
   return decodeEntities(raw).replace(/\s+/g, ' ').split(/\s+[|–—-]\s+/)[0].trim();
 }
 
+/** `data-cfemail` hex: the first byte is the key every following byte is XORed with. */
+export function decodeCfEmail(hex) {
+  if (!hex || hex.length < 4 || hex.length % 2) return '';
+  const key = Number.parseInt(hex.slice(0, 2), 16);
+  let out = '';
+  for (let i = 2; i < hex.length; i += 2) out += String.fromCharCode(Number.parseInt(hex.slice(i, i + 2), 16) ^ key);
+  return out.includes('@') ? out : '';
+}
+
 export function emailsIn(html, pageUrl, { preferOwn = true } = {}) {
   const found = new Map();
   const add = (value, how) => {
@@ -171,6 +180,17 @@ export function emailsIn(html, pageUrl, { preferOwn = true } = {}) {
   };
 
   for (const hit of html.matchAll(/href=["']mailto:([^"'?]+)/gi)) add(hit[1], 'mailto');
+  // Cloudflare's email obfuscation replaces the address with an XOR-encoded
+  // hex string; textOf would otherwise see only "[email protected]".
+  for (const hit of html.matchAll(/data-cfemail=["']([0-9a-f]+)["']|email-protection#([0-9a-f]+)/gi)) {
+    const email = decodeCfEmail(hit[1] ?? hit[2]);
+    if (email) add(email, 'cfemail');
+  }
+  // SEO plugins publish the business's own address as structured data, inside
+  // a <script> that textOf strips.
+  for (const block of html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+    for (const hit of block[1].matchAll(/"email"\s*:\s*"([^"]+)"/gi)) add(hit[1], 'jsonld');
+  }
   for (const hit of textOf(html).matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)) add(hit[0], 'text');
 
   const all = [...found].map(([email, how]) => ({ email, how }));
@@ -187,7 +207,7 @@ export function emailsIn(html, pageUrl, { preferOwn = true } = {}) {
  * request, and only HTML bodies. Returns `{ html, url, title }` after
  * redirects, or `{ skipped }` with a short machine-readable reason.
  */
-export async function fetchPage(url, { delayMs = HOST_DELAY_MS } = {}) {
+export async function fetchPage(url, { delayMs = HOST_DELAY_MS, timeoutMs = TIMEOUT_MS } = {}) {
   const robots = await robotsForUrl(url);
   if (robots.refuse) return { skipped: 'robots_unavailable' };
   const { pathname, search } = new URL(url);
@@ -199,7 +219,7 @@ export async function fetchPage(url, { delayMs = HOST_DELAY_MS } = {}) {
     res = await fetch(url, {
       headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml' },
       redirect: 'follow',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     return { skipped: `fetch_failed: ${error?.message ?? error}` };
