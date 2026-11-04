@@ -103,12 +103,19 @@ function GroupedRequests({ projects, tickets, hovered, onHover }) {
 
 /* ————— overview ————— */
 
+/* The overview's filters survive hash navigation in this page load, so coming
+   back to the board shows it as it was left, not reset. */
+let overviewMemory = null; // { stage, project }
+
 export function Overview() {
   const t = useT();
   const { data, compose, notify, reload } = usePortal();
-  const [stage, setStage] = useState(null);
+  const [stage, setStage] = useState(() => overviewMemory?.stage ?? null);
   const [hovered, setHovered] = useState(null);
-  const [project, setProject] = useState(null);
+  const [project, setProject] = useState(() => overviewMemory?.project ?? null);
+  useEffect(() => {
+    overviewMemory = { stage, project };
+  }, [stage, project]);
   const [sheet, setSheet] = useState(null);
   const { tickets, projects, user } = data;
   const sheetProject = sheet ? projects.find((p) => p.id === sheet.projectId) ?? null : null;

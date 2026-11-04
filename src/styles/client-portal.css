@@ -883,6 +883,82 @@
   color: var(--cp-bad);
   white-space: normal;
 }
+/* A picked request's peek card: it rides the request's screen point while the
+   camera is close, and is the way into the request itself. */
+.cp-peek {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  width: 246px;
+  padding: 9px 11px 11px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bone) 94%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--cp-shadow);
+  cursor: default;
+  opacity: 0;
+  will-change: transform, opacity;
+  transition: opacity 140ms;
+}
+.cp-peek__top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.cp-peek__id {
+  font: 700 11px/1 var(--font-mono);
+  color: var(--ink-soft);
+}
+.cp-peek__top .cp-pill {
+  margin-left: auto;
+}
+.cp-peek__x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 11px;
+  cursor: pointer;
+}
+.cp-peek__x:hover {
+  background: var(--cp-hover);
+  color: var(--ink);
+}
+.cp-peek__title {
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.cp-peek__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 6px 0 0;
+  font: 500 10.5px/1.5 var(--font-mono);
+  color: var(--ink-soft);
+}
+.cp-peek__note {
+  margin: 7px 0 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--cp-bad);
+}
+.cp-peek__go {
+  margin-top: 10px;
+}
+.cp-peek__go .cp-btn {
+  width: 100%;
+  justify-content: center;
+}
 /* Zoom, pan and reset: the board is a canvas, so it gets canvas controls. */
 .cp-board__controls {
   position: absolute;

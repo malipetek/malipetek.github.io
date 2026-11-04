@@ -1801,16 +1801,30 @@ export interface BoardOptions {
   onPick?: (id: number) => void;
   /** A project pylon or site pod was clicked. */
   onPickNode?: (node: BoardNodeRef) => void;
+  /** A click that hit nothing on the board — not a ticket, not a node. */
+  onPickEmpty?: () => void;
   /**
    * After each drawn frame: where each station's caption goes, where the
    * hovered ticket is, and where each project/site label rides, so DOM labels
-   * can sit on the scene.
+   * can sit on the scene. `focus` is the ticket the camera is dived into, so
+   * a peek card can ride it.
    */
   onFrame?: (
     stations: Record<BoardStage, ScreenPoint>,
     hovered: (ScreenPoint & { id: number }) | null,
     nodes: (ScreenPoint & { key: string; visible: boolean })[],
+    focus: (ScreenPoint & { id: number }) | null,
   ) => void;
+}
+
+/** Where the camera was when the board was left; `restore` puts it back. */
+export interface BoardView {
+  /** Wheel zoom level (1 = fitted to the frame). */
+  zoom: number;
+  /** Dragged offset. */
+  pan: { x: number; y: number };
+  /** A ticket the camera was dived into; restore glides back out of it. */
+  focus: number | null;
 }
 
 export interface Board {
@@ -1826,6 +1840,14 @@ export interface Board {
   zoomBy: (factor: number) => void;
   /** Back to the whole board: no zoom, no pan, no dive. */
   reset: () => void;
+  /** The camera's current zoom, pan and dive target, for restoring later. */
+  view: () => BoardView;
+  /**
+   * Put a saved view back: the same zoom and pan, and when a ticket was being
+   * looked at, the camera starts on it and glides back out — so returning to
+   * the board reads as a zoom-out, not a reset.
+   */
+  restore: (view: BoardView | null) => void;
   stop: () => void;
 }
 
@@ -1934,7 +1956,12 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       const id = hovered ?? outside;
       const at = id !== null ? machine.ticketAt!(id) : null;
       const nodes = machine.nodeAnchors?.().map((n) => ({ key: n.key, visible: n.visible, ...toScreen(n.position) })) ?? [];
-      options.onFrame(stations, at && id !== null ? { id, ...toScreen(at.add(new THREE.Vector3(0, 0.3, 0))) } : null, nodes);
+      options.onFrame(
+        stations,
+        at && id !== null ? { id, ...toScreen(at.add(new THREE.Vector3(0, 0.3, 0))) } : null,
+        nodes,
+        ticket && focusId !== null ? { id: focusId, ...toScreen(ticket.clone().add(new THREE.Vector3(0, 0.35, 0))) } : null,
+      );
     }
   };
 
@@ -2058,6 +2085,7 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     }
     const node = pickNode(e);
     if (node) options.onPickNode?.(node);
+    else options.onPickEmpty?.();
   };
   const onWheel = (e: WheelEvent) => {
     if (e.target !== input || !e.deltaY) return;
@@ -2132,6 +2160,22 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       panGoal.set(0, 0);
       focusId = null;
       stageId = null;
+    },
+    view: () => ({ zoom: zoomGoal, pan: { x: panGoal.x, y: panGoal.y }, focus: focusId }),
+    restore: (v) => {
+      if (!v) return;
+      zoomGoal = zoom = THREE.MathUtils.clamp(v.zoom ?? 1, 0.45, 3.0);
+      panGoal.set(v.pan?.x ?? 0, v.pan?.y ?? 0);
+      pan.copy(panGoal);
+      // Start on the request the view was saved on; the loop then glides back
+      // out, so a return reads as a zoom-out rather than a fresh board.
+      if (v.focus != null) {
+        const at = machine.ticketAt?.(v.focus);
+        if (at) {
+          aim.copy(at);
+          dive = 1;
+        }
+      }
     },
     stop: () => {
       cancelAnimationFrame(frame);

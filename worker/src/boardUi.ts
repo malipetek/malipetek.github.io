@@ -16,7 +16,7 @@
 import { ALI_AVATAR } from './boardAvatar.ts';
 import { BOARD3D_JS } from './board3dBundle.ts';
 
-export const BOARD_UI_URI = 'ui://malipetek/board-v10.html';
+export const BOARD_UI_URI = 'ui://malipetek/board-v11.html';
 
 export const BOARD_MIME = 'text/html;profile=mcp-app';
 

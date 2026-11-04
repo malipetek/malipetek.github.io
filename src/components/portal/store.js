@@ -84,4 +84,11 @@ export const go = (path) => {
 };
 export const href = (path) => `#/${path}`;
 
+/**
+ * The request the client is reading right now; the board starts the camera on
+ * it and glides back out when the overview is next shown. Set by the ticket
+ * page, consumed once by the board — so a Back lands zoomed in, then settles.
+ */
+export const boardReturn = { ticket: null };
+
 export const signedIn = () => Boolean(session.get());
