@@ -54,17 +54,17 @@ it accurately is fine; calling it "Claude Code for DeepSeek" is not.
 
 ## Install
 
-From a packed tarball (what `pnpm pack` produces here):
+From npm:
 
 ```sh
-dsh plugin --profile desktop add ./malipetek-dsh-external-agents-0.2.0.tgz
+dsh plugin --profile desktop add @malipetek/dsh-external-agents
 ```
 
-From a checkout, or from npm once published:
+From a checkout, or a packed tarball:
 
 ```sh
 dsh plugin --profile desktop add link:/path/to/dsh-external-agents
-dsh plugin --profile desktop add @malipetek/dsh-external-agents
+dsh plugin --profile desktop add ./malipetek-dsh-external-agents-0.2.1.tgz
 ```
 
 Or use the **Plugins** page in the Web sidebar. Either way, **restart the app**:
