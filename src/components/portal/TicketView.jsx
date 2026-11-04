@@ -8,7 +8,7 @@ import { api, downloadFile, errorText, STATUS_LABEL } from '../../lib/portal';
 import { STEPS } from '../../lib/offer.js';
 import { checkPicked, sizeText } from '../../lib/attachments.js';
 import { ATTENTION, clock, money, priceOf } from '../../lib/pricing.js';
-import { usePortal, useT, href, isOpen } from './store.js';
+import { usePortal, useT, href, isOpen, boardReturn } from './store.js';
 import { attentionText, stepText } from './copy.js';
 import { Files } from './Composer.jsx';
 import { Button, Gauge, Icon, Modal, STEP_ICONS, StatusPill, ago, cx, fmtDate, stepOf, totalOf } from './ui.jsx';
@@ -60,6 +60,11 @@ export function TicketView({ id }) {
     setState({ ticket: null, messages: [], error: null });
     void load();
   }, [load]);
+
+  // Going back to the board glides the camera back out of this request.
+  useEffect(() => {
+    boardReturn.ticket = id;
+  }, [id]);
 
   // Status changes and Ali's replies arrive without a reload: every 10s while
   // the request is moving, every 30s otherwise.

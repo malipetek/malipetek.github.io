@@ -685,6 +685,7 @@
   "board.live": "Live",
   "board.preview": "Preview",
   "board.openProject": "Open {name}",
+  "board.peek.open": "Open request",
   "board.showOnly": "Show only {name}",
   "board.hint": "Click a project to focus its line, a site to open it, or drag a request onto a project to move it.",
   "views.repo.githubPermission": "The GitHub App is missing the Administration permission, so it cannot create a repository in your account. Grant it in the GitHub App settings, or choose “Create it in our account” — work starts either way.",
