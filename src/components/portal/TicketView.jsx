@@ -43,6 +43,14 @@ export function TicketView({ id }) {
   // The list already carries the request, so the head paints at once (and the
   // board's card has something real to morph into) while the thread loads.
   const [state, setState] = useState(() => ({ ticket: data.tickets.find((x) => x.id === id) ?? null, messages: [], error: null }));
+  // The board's peek card morphs into this head under a view transition.
+  // Read once at mount: React renders again before the browser snapshots the
+  // new page, and a flag consumed during render would be gone by then.
+  const [fromPeek] = useState(() => {
+    const yes = boardReturn.peek === id;
+    if (yes) boardReturn.peek = null;
+    return yes;
+  });
   const [deploys, setDeploys] = useState(null);
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -58,8 +66,10 @@ export function TicketView({ id }) {
     }
   }, [id]);
 
+  // No reset to "loading" here: the route keys this view by id, so a new
+  // request mounts fresh, and wiping the seeded head would leave the view
+  // transition snapshotting "Loading…" instead of the request.
   useEffect(() => {
-    setState({ ticket: null, messages: [], error: null });
     void load();
   }, [load]);
 
@@ -106,9 +116,6 @@ export function TicketView({ id }) {
   const [nowKey, nextKey] = NOW[ticket.status];
   const mine = deploys?.find((d) => d.ticket_id === ticket.id);
   const where = !mine ? null : mine.id === site?.productionDeploy ? 'live' : mine.id === site?.previewDeploy ? 'preview' : 'older';
-  // The board's peek card morphs into this head under a view transition.
-  const fromPeek = boardReturn.peek === id;
-  if (fromPeek) boardReturn.peek = null;
   // Where this page was reached from: the back button offers the way back
   // (its href only covers a fresh tab; in-app it pops history).
   const cameFrom = boardReturn.from;
