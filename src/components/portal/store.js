@@ -107,7 +107,9 @@ export const href = (path) => `#/${path}`;
  * - from: the route the current page was navigated from, for its back button.
  * - peek: the request whose board card was opened, so the card can morph into
  *   the request page under a view transition. Consumed once.
+ * - sheet: the project whose sheet was opened, so the sheet can morph into
+ *   the project page under a view transition. Consumed once.
  */
-export const boardReturn = { ticket: null, from: null, peek: null };
+export const boardReturn = { ticket: null, from: null, peek: null, sheet: null };
 
 export const signedIn = () => Boolean(session.get());
