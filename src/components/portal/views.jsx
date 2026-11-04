@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, errorText, fmtTime } from '../../lib/portal';
 import { HOURLY_USD, clock, money, priceOf } from '../../lib/pricing.js';
 import { Board, DRAG_TICKET, STAGES, stageText } from './Board.jsx';
-import { go, href, isOpen, useT, usePortal } from './store.js';
+import { boardReturn, go, href, isOpen, useT, usePortal } from './store.js';
 import { Button, Icon, MiniTrack, Modal, StatusPill, ago, cx, fmtDate, totalOf } from './ui.jsx';
 
 const unpublished = (site) => site?.state === 'ready' && site.previewDeploy && site.previewDeploy !== site.productionDeploy;
@@ -48,9 +48,9 @@ export function RequestRow({ t: ticket, hovered, onHover, showProject = true }) 
   );
 }
 
-function PageHead({ title, sub, children }) {
+function PageHead({ title, sub, children, style }) {
   return (
-    <header className="cp-head">
+    <header className="cp-head" style={style}>
       <div>
         <h1>{title}</h1>
         {sub ? <p>{sub}</p> : null}
@@ -282,7 +282,10 @@ export function Overview() {
           tickets={tickets}
           onClose={() => setSheet(null)}
           onOpenProject={(id) => {
-            setSheet(null);
+            // The sheet stays mounted through the route change — named, it
+            // morphs into the project page's head instead of popping shut.
+            boardReturn.sheet = id;
+            document.querySelector('.cp-modal')?.style.setProperty('view-transition-name', 'cp-project');
             go(`project/${id}`);
           }}
           onOpenSite={(siteId) => setSheet({ projectId: sheetProject.id, siteId })}
@@ -655,6 +658,9 @@ export function ProjectView({ id }) {
   const t = useT();
   const { data, compose } = usePortal();
   const project = data.projects.find((p) => p.id === id);
+  // A project opened through its sheet morphs the sheet into this head.
+  const fromSheet = boardReturn.sheet !== null && String(boardReturn.sheet) === String(id);
+  if (fromSheet) boardReturn.sheet = null;
   if (!project) return <p className="cp-empty">{t('views.project.notOnAccount')}</p>;
   const tickets = data.tickets.filter((x) => x.project_id === project.id);
   const known = project.setup.checks.filter((c) => c.state !== 'unknown');
@@ -664,7 +670,7 @@ export function ProjectView({ id }) {
         <a href={href('')}>{t('nav.overview')}</a>
         <span>{project.name}</span>
       </nav>
-      <PageHead title={project.name} sub={project.kind === 'new' ? t('views.project.builtSub') : t('views.project.codeSub')}>
+      <PageHead title={project.name} sub={project.kind === 'new' ? t('views.project.builtSub') : t('views.project.codeSub')} style={fromSheet ? { viewTransitionName: 'cp-project' } : undefined}>
         <Button kind="primary" onClick={() => compose(project.id)}>
           <Icon name="plus" size={15} /> {t('nav.newRequest')}
         </Button>

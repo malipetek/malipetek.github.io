@@ -478,6 +478,20 @@
 ::view-transition-old(cp-peek) {
   animation-duration: 120ms;
 }
+/* The project sheet morphs into the project page's head the same way. */
+::view-transition-group(cp-project) {
+  animation-duration: 340ms;
+  animation-timing-function: var(--ease);
+}
+::view-transition-old(cp-project),
+::view-transition-new(cp-project) {
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+}
+::view-transition-old(cp-project) {
+  animation-duration: 120ms;
+}
 
 .cp-btn {
   display: inline-flex;
