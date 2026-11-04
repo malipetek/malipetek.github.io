@@ -294,6 +294,8 @@
   "ticket.now.declined.title": "Ali declined this request",
   "ticket.now.declined.next": "The reason is in the conversation. Reply if something was misunderstood.",
   "ticket.backToAll": "← All requests",
+  "ticket.back": "Back",
+  "ticket.backTo": "Back to {name}",
   "ticket.crumbs.requests": "Requests",
   "ticket.builtByAssistant": "built by your assistant",
   "ticket.filed": "filed {date}",
