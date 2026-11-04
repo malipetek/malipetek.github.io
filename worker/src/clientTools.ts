@@ -143,6 +143,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
         },
         updated_at: { type: 'string' },
         focus: { type: ['integer', 'null'], description: 'The request whose conversation the card opens on, if any.' },
+        locale: { type: ['string', 'null'], description: 'The language the client picked in the portal, if any.' },
         spending: {
           type: 'object',
           description: 'Cents: billed for finished work, running on open work, and the AI share of all of it (at cost).',
@@ -155,7 +156,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
           additionalProperties: false,
         },
       },
-      required: ['account', 'projects', 'sites', 'requests', 'updated_at', 'focus', 'spending'],
+      required: ['account', 'projects', 'sites', 'requests', 'updated_at', 'focus', 'spending', 'locale'],
       additionalProperties: false,
     },
     readOnly: true,
@@ -612,6 +613,7 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
         })),
         updated_at: new Date().toISOString(),
         focus: Number.isInteger(args.request_id) && tickets.some((ticket) => ticket.id === args.request_id) ? (args.request_id as number) : null,
+        locale: text((me?.user as Record<string, unknown> | undefined)?.locale),
         spending: {
           billed_cents: whole(usage.billedCents),
           open_cents: whole(usage.openCents),

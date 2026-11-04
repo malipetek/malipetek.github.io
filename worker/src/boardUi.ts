@@ -15,8 +15,9 @@
 
 import { ALI_AVATAR } from './boardAvatar.ts';
 import { BOARD3D_JS } from './board3dBundle.ts';
+import { cardStrings } from '../../src/i18n/eager.js';
 
-export const BOARD_UI_URI = 'ui://malipetek/board-v11.html';
+export const BOARD_UI_URI = 'ui://malipetek/board-v12.html';
 
 export const BOARD_MIME = 'text/html;profile=mcp-app';
 
@@ -66,6 +67,8 @@ export interface Board {
   /** The request whose conversation the card opens on. */
   focus?: number | null;
   spending?: { billed_cents: number; open_cents: number; ai_cents: number };
+  /** The language the client picked in the portal. */
+  locale?: string | null;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -370,7 +373,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
   .mk-kpi { border: 1px solid var(--mk-rule); border-radius: var(--mk-radius); padding: 10px 12px; min-width: 0; }
   .mk-kpi__label { font-size: 11.5px; color: var(--mk-soft); }
   .mk-kpi__value { font: 600 21px/1.2 var(--mk-sans); letter-spacing: -.01em; margin-top: 4px; }
-  .mk-kpi__sub { font-size: 11px; color: var(--mk-soft); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mk-kpi__sub { font-size: 11px; line-height: 1.35; color: var(--mk-soft); margin-top: 3px; overflow-wrap: anywhere; }
   .mk-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .mk-chart { margin: 0; border: 1px solid var(--mk-rule); border-radius: var(--mk-radius); padding: 12px 12px 10px; min-width: 0; position: relative; }
   .mk-chart__title { font: 600 12.5px/1.2 var(--mk-sans); }
@@ -468,14 +471,14 @@ export const BOARD_HTML = `<!DOCTYPE html>
     <span class="mk-name">malipetek development</span>
     <span class="mk-who" id="who"></span>
   </div>
-  <button class="mk-btn" id="refresh" type="button">Refresh</button>
+  <button class="mk-btn" id="refresh" type="button" data-i18n="refresh">Refresh</button>
 </div>
 
-<div class="mk-tabs" id="tabs" role="tablist" aria-label="Your work">
-  <button class="mk-tab" role="tab" id="tab-overview" data-tab="overview" aria-controls="panel-overview" aria-selected="true" type="button">Overview</button>
-  <button class="mk-tab" role="tab" id="tab-projects" data-tab="projects" aria-controls="panel-projects" aria-selected="false" tabindex="-1" type="button">Projects <span class="mk-tab__n" id="n-projects">–</span></button>
-  <button class="mk-tab" role="tab" id="tab-sites" data-tab="sites" aria-controls="panel-sites" aria-selected="false" tabindex="-1" type="button">Sites <span class="mk-tab__n" id="n-sites">–</span></button>
-  <button class="mk-tab" role="tab" id="tab-requests" data-tab="requests" aria-controls="panel-requests" aria-selected="false" tabindex="-1" type="button">Requests <span class="mk-tab__n" id="n-requests">–</span></button>
+<div class="mk-tabs" id="tabs" role="tablist" aria-label="Your work" data-i18n-label="tabs.label">
+  <button class="mk-tab" role="tab" id="tab-overview" data-tab="overview" aria-controls="panel-overview" aria-selected="true" type="button"><span data-i18n="tab.overview">Overview</span></button>
+  <button class="mk-tab" role="tab" id="tab-projects" data-tab="projects" aria-controls="panel-projects" aria-selected="false" tabindex="-1" type="button"><span data-i18n="tab.projects">Projects</span> <span class="mk-tab__n" id="n-projects">–</span></button>
+  <button class="mk-tab" role="tab" id="tab-sites" data-tab="sites" aria-controls="panel-sites" aria-selected="false" tabindex="-1" type="button"><span data-i18n="tab.sites">Sites</span> <span class="mk-tab__n" id="n-sites">–</span></button>
+  <button class="mk-tab" role="tab" id="tab-requests" data-tab="requests" aria-controls="panel-requests" aria-selected="false" tabindex="-1" type="button"><span data-i18n="tab.requests">Requests</span> <span class="mk-tab__n" id="n-requests">–</span></button>
 </div>
 
 <section class="mk-panel" role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" aria-live="polite">
@@ -484,14 +487,14 @@ export const BOARD_HTML = `<!DOCTYPE html>
       <canvas id="scene" aria-hidden="true"></canvas>
       <div class="mk-labels" id="labels"></div>
     </div>
-    <div class="mk-legend" id="legend" role="group" aria-label="Stations"></div>
+    <div class="mk-legend" id="legend" role="group" aria-label="Stations" data-i18n-label="stations"></div>
   </div>
   <div class="mk-kpis" id="kpis"></div>
   <div class="mk-charts">
     <figure class="mk-chart" id="chart-months"></figure>
     <figure class="mk-chart" id="chart-projects"></figure>
   </div>
-  <h2 class="mk-h">Projects</h2>
+  <h2 class="mk-h" data-i18n="projects.heading">Projects</h2>
   <div class="mk-list" id="overview-projects"><div class="mk-skel"></div><div class="mk-skel"></div></div>
 </section>
 <section class="mk-panel" role="tabpanel" id="panel-projects" aria-labelledby="tab-projects" hidden>
@@ -502,32 +505,32 @@ export const BOARD_HTML = `<!DOCTYPE html>
 </section>
 <section class="mk-panel" role="tabpanel" id="panel-requests" aria-labelledby="tab-requests" hidden>
   <div class="mk-filter" id="filter" hidden>
-    <span>Showing <b id="filter-name"></b></span>
-    <button class="mk-link" id="filter-clear" type="button">Show all</button>
+    <span id="filter-name"></span>
+    <button class="mk-link" id="filter-clear" type="button" data-i18n="filter.all">Show all</button>
   </div>
   <div class="mk-list" id="requests"></div>
 </section>
 
-<section class="mk-panel" id="panel-thread" aria-label="Conversation" hidden>
+<section class="mk-panel" id="panel-thread" aria-label="Conversation" data-i18n-label="thread.label" hidden>
   <div class="mk-thread-head">
-    <button class="mk-btn" id="back" type="button">← Requests</button>
+    <button class="mk-btn" id="back" type="button" data-i18n="thread.back">← Requests</button>
     <div class="mk-thread-title" id="thread-title"></div>
     <span id="thread-status"></span>
   </div>
   <div class="mk-chat" id="chat" role="log" aria-live="polite"></div>
   <form class="mk-composer" id="composer">
-    <textarea id="reply" rows="1" placeholder="Reply to Ali" aria-label="Reply to Ali"></textarea>
-    <button class="mk-send" id="send" type="submit" aria-label="Send" disabled>
+    <textarea id="reply" rows="1" placeholder="Reply to Ali" aria-label="Reply to Ali" data-i18n-placeholder="reply.placeholder" data-i18n-label="reply.placeholder"></textarea>
+    <button class="mk-send" id="send" type="submit" aria-label="Send" data-i18n-label="reply.send" disabled>
       <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
   </form>
-  <div class="mk-compose-note">Ali gets your reply by email and answers here. <button class="mk-link" id="thread-portal" type="button">Open in the portal ↗</button></div>
+  <div class="mk-compose-note"><span data-i18n="reply.note">Ali gets your reply by email and answers here.</span> <button class="mk-link" id="thread-portal" type="button" data-i18n="thread.portal">Open in the portal ↗</button></div>
 </section>
 
 <div class="mk-tooltip" id="tooltip" role="tooltip"></div>
 <div class="mk-foot">
-  <span>Every request is read by a human before work starts.</span>
-  <button class="mk-link" id="portal" type="button">Open the portal ↗</button>
+  <span data-i18n="foot.note">Every request is read by a human before work starts.</span>
+  <button class="mk-link" id="portal" type="button" data-i18n="foot.portal">Open the portal ↗</button>
 </div>
 <div class="mk-tail" aria-hidden="true"></div>
 </main>
@@ -539,12 +542,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
 
   var PORTAL = 'https://malipetek.dev/portal';
   var STATUS = {
-    new: { label: 'Waiting for Ali', tone: 'wait' },
-    approved: { label: 'Approved', tone: 'active' },
-    in_progress: { label: 'In progress', tone: 'active' },
-    review: { label: 'In review', tone: 'active' },
-    done: { label: 'Done', tone: 'done' },
-    declined: { label: 'Declined', tone: 'bad' }
+    new: 'wait', approved: 'active', in_progress: 'active', review: 'active', done: 'done', declined: 'bad'
   };
   var TABS = ['overview', 'projects', 'sites', 'requests'];
 
@@ -559,6 +557,101 @@ export const BOARD_HTML = `<!DOCTYPE html>
   var projectFilter = null;
   var threadId = null;
   var focusDone = false;
+
+  /* —— the client's language: strings from the server (_meta), English baked in —— */
+
+  var EN = ${JSON.stringify(cardStrings('en-US'))};
+  var STR = EN;
+  var LOCALE = 'en-US';
+
+  function matchBrace(text, open) {
+    var depth = 0;
+    for (var j = open; j < text.length; j++) {
+      if (text[j] === '{') depth++;
+      else if (text[j] === '}' && --depth === 0) return j;
+    }
+    return -1;
+  }
+
+  function monthName(date, options) {
+    try { return date.toLocaleString(LOCALE, options); } catch (e) { return date.toLocaleString(undefined, options); }
+  }
+
+  function num(n) {
+    try { return new Intl.NumberFormat(LOCALE).format(n); } catch (e) { return String(n); }
+  }
+
+  /* The portal's format() (src/lib/i18n.js): {name}, and {n, plural, one {…} other {…}} with # for the number. */
+  function fmt(template, vars) {
+    var out = '';
+    var i = 0;
+    while (i < template.length) {
+      var open = template.indexOf('{', i);
+      if (open === -1) break;
+      out += template.slice(i, open);
+      var close = matchBrace(template, open);
+      if (close === -1) break;
+      out += field(template.slice(open + 1, close), vars);
+      i = close + 1;
+    }
+    return out + template.slice(i);
+  }
+
+  function field(body, vars) {
+    var c1 = body.indexOf(',');
+    var c2 = c1 === -1 ? -1 : body.indexOf(',', c1 + 1);
+    if (c2 === -1 || body.slice(c1 + 1, c2).trim() !== 'plural') {
+      var value = vars[body.trim()];
+      return value === undefined || value === null ? '{' + body + '}' : String(value);
+    }
+    var n = Number(vars[body.slice(0, c1).trim()] || 0);
+    var rest = body.slice(c2 + 1);
+    var branches = {};
+    var k = 0;
+    while (k < rest.length) {
+      var b = rest.indexOf('{', k);
+      if (b === -1) break;
+      var e = matchBrace(rest, b);
+      if (e === -1) break;
+      branches[rest.slice(k, b).trim()] = rest.slice(b + 1, e);
+      k = e + 1;
+    }
+    var rule = 'other';
+    try { rule = new Intl.PluralRules(LOCALE).select(n); } catch (err) { /* counts like English */ }
+    var branch = branches['=' + n] !== undefined ? branches['=' + n] : branches[rule] !== undefined ? branches[rule] : branches.other || '';
+    return fmt(branch.split('#').join(num(n)), vars);
+  }
+
+  function t(key, vars) {
+    var text = typeof STR[key] === 'string' ? STR[key] : EN[key];
+    return typeof text === 'string' ? fmt(text, vars || {}) : key;
+  }
+
+  /* The markup's fixed strings: data-i18n (text), -placeholder, -label (aria-label). */
+  function applyStatic() {
+    var nodes = document.querySelectorAll('[data-i18n],[data-i18n-placeholder],[data-i18n-label]');
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (node.getAttribute('data-i18n')) node.textContent = t(node.getAttribute('data-i18n'));
+      if (node.getAttribute('data-i18n-placeholder')) node.setAttribute('placeholder', t(node.getAttribute('data-i18n-placeholder')));
+      if (node.getAttribute('data-i18n-label')) node.setAttribute('aria-label', t(node.getAttribute('data-i18n-label')));
+    }
+  }
+
+  function useStrings(meta) {
+    if (!meta || !meta['malipetek/strings']) return;
+    STR = meta['malipetek/strings'];
+    LOCALE = meta['malipetek/locale'] || LOCALE;
+    document.documentElement.lang = LOCALE;
+    applyStatic();
+  }
+
+  function statusOf(key) {
+    return STATUS[key] ? { label: t('status.' + key), tone: STATUS[key] } : { label: key || t('request.unknown'), tone: 'active' };
+  }
+
+  /* Requests with no project, as a group key (never shown; the label is t('request.otherWork')). */
+  var OTHER = '~other';
 
   function $(id) { return document.getElementById(id); }
   if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
@@ -576,7 +669,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
       setTimeout(function () {
         if (pending[id]) {
           delete pending[id];
-          reject(new Error('The host did not answer ' + method + '.'));
+          reject(new Error(t('host.noAnswer')));
         }
       }, 25000);
     });
@@ -593,7 +686,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
   function money(cents) {
     /* No cost yet is not "$0.00" — it is nothing to say. */
     if (typeof cents !== 'number' || !cents) return '';
-    return '$' + (cents / 100).toFixed(2);
+    return dollars(cents);
   }
 
   function relative(iso) {
@@ -601,7 +694,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     var then = new Date(iso);
     if (isNaN(then.getTime())) return '';
     var seconds = Math.round((then.getTime() - Date.now()) / 1000);
-    var rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+    var rtf = new Intl.RelativeTimeFormat(LOCALE, { numeric: 'auto' });
     var steps = [[60, 'second'], [60, 'minute'], [24, 'hour'], [7, 'day'], [4.35, 'week'], [12, 'month'], [Infinity, 'year']];
     var value = seconds;
     for (var i = 0; i < steps.length; i++) {
@@ -708,8 +801,8 @@ export const BOARD_HTML = `<!DOCTYPE html>
     var card = el('button', 'mk-card');
     card.type = 'button';
     var top = el('div', 'mk-card__top');
-    top.appendChild(el('span', 'mk-card__name', project.name || 'Untitled project'));
-    top.appendChild(el('span', 'mk-card__go', project.requests ? 'Requests →' : ''));
+    top.appendChild(el('span', 'mk-card__name', project.name || t('project.untitled')));
+    top.appendChild(el('span', 'mk-card__go', project.requests ? t('project.requests') : ''));
     card.appendChild(top);
 
     var setup = project.setup || { ready: 0, total: 0, next: null };
@@ -719,7 +812,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
       bar.setAttribute('aria-valuemin', '0');
       bar.setAttribute('aria-valuemax', String(setup.total));
       bar.setAttribute('aria-valuenow', String(setup.ready));
-      bar.setAttribute('aria-label', 'Setup');
+      bar.setAttribute('aria-label', t('project.setup'));
       if (setup.ready >= setup.total) bar.setAttribute('data-done', 'true');
       var fill = el('span');
       fill.style.width = Math.round((setup.ready / setup.total) * 100) + '%';
@@ -728,14 +821,14 @@ export const BOARD_HTML = `<!DOCTYPE html>
     }
 
     var meta = el('div', 'mk-meta');
-    if (setup.total) meta.appendChild(el('span', null, 'Setup ' + setup.ready + '/' + setup.total));
-    meta.appendChild(el('span', null, project.open ? plural(project.open, 'open request') : project.requests ? 'No open requests' : 'No requests yet'));
-    meta.appendChild(el('span', null, plural(project.sites || 0, 'site')));
+    if (setup.total) meta.appendChild(el('span', null, t('project.setupCount', { ready: setup.ready, total: setup.total })));
+    meta.appendChild(el('span', null, project.open ? t('project.open', { n: project.open }) : project.requests ? t('project.noOpen') : t('project.noRequests')));
+    meta.appendChild(el('span', null, t('project.sites', { n: project.sites || 0 })));
     card.appendChild(meta);
 
     if (setup.next) {
       var next = el('div', 'mk-next');
-      next.appendChild(el('b', null, 'Next: '));
+      next.appendChild(el('b', null, t('project.next') + ' '));
       next.appendChild(document.createTextNode(setup.next));
       card.appendChild(next);
     }
@@ -756,7 +849,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
       clear(list);
       var projects = board.projects || [];
       if (!projects.length) {
-        list.appendChild(el('div', 'mk-empty', 'No projects yet. Start one in the portal and it shows up here.'));
+        list.appendChild(el('div', 'mk-empty', t('projects.empty')));
         return;
       }
       for (var i = 0; i < projects.length; i++) list.appendChild(projectCard(projects[i]));
@@ -766,17 +859,17 @@ export const BOARD_HTML = `<!DOCTYPE html>
   /* —— sites —— */
 
   function siteState(site) {
-    if (site.state === 'failed') return { label: 'Failed', tone: 'bad' };
-    if (site.state !== 'ready') return { label: 'Setting up', tone: 'wait' };
-    if (site.live) return { label: 'Live', tone: 'done' };
-    return site.has_preview ? { label: 'Preview only', tone: 'active' } : { label: 'Nothing built yet', tone: '' };
+    if (site.state === 'failed') return { label: t('site.failed'), tone: 'bad' };
+    if (site.state !== 'ready') return { label: t('site.settingUp'), tone: 'wait' };
+    if (site.live) return { label: t('site.live'), tone: 'done' };
+    return site.has_preview ? { label: t('site.previewOnly'), tone: 'active' } : { label: t('site.nothingBuilt'), tone: '' };
   }
 
   function siteRow(site) {
     var wrap = el('div', 'mk-row');
     var main = el('div');
     var title = el('div', 'mk-title');
-    title.appendChild(el('span', null, site.name || 'Site'));
+    title.appendChild(el('span', null, site.name || t('site.untitled')));
     main.appendChild(title);
 
     var meta = el('div', 'mk-meta');
@@ -786,13 +879,13 @@ export const BOARD_HTML = `<!DOCTYPE html>
     var address = site.live ? site.production_url : site.has_preview ? site.preview_url : null;
     if (address) meta.appendChild(el('span', 'mk-url', hostOf(address)));
     var when = relative(site.updated_at);
-    if (when) meta.appendChild(el('span', null, 'updated ' + when));
+    if (when) meta.appendChild(el('span', null, t('updated', { when: when })));
     main.appendChild(meta);
     wrap.appendChild(main);
 
     var actions = el('div', 'mk-btns');
-    if (site.has_preview && site.preview_url) actions.appendChild(button('Preview ↗', function () { openLink(site.preview_url); }));
-    if (site.live && site.production_url) actions.appendChild(button('Live ↗', function () { openLink(site.production_url); }));
+    if (site.has_preview && site.preview_url) actions.appendChild(button(t('site.openPreview'), function () { openLink(site.preview_url); }));
+    if (site.live && site.production_url) actions.appendChild(button(t('site.openLive'), function () { openLink(site.production_url); }));
     wrap.appendChild(actions);
     return wrap;
   }
@@ -802,7 +895,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     clear(list);
     var sites = board.sites || [];
     if (!sites.length) {
-      list.appendChild(el('div', 'mk-empty', 'No hosted sites yet. When a project gets one, its preview and live links show up here.'));
+      list.appendChild(el('div', 'mk-empty', t('sites.empty')));
       return;
     }
     var box = el('div', 'mk-boxed');
@@ -813,16 +906,16 @@ export const BOARD_HTML = `<!DOCTYPE html>
   /* —— requests —— */
 
   function requestRow(item, showProject) {
-    var status = STATUS[item.status] || { label: item.status || 'Unknown', tone: 'active' };
+    var status = statusOf(item.status);
     var wrap = el('div', 'mk-row');
     var main = el('div');
     var title = el('div', 'mk-title');
     if (item.unread) {
       var dot = el('span', 'mk-dot');
-      dot.setAttribute('title', 'New reply');
+      dot.setAttribute('title', t('request.newReply'));
       title.appendChild(dot);
     }
-    title.appendChild(el('span', null, '#' + item.id + ' ' + (item.title || 'Untitled request')));
+    title.appendChild(el('span', null, '#' + item.id + ' ' + (item.title || t('request.untitled'))));
     main.appendChild(title);
 
     var meta = el('div', 'mk-meta');
@@ -832,11 +925,11 @@ export const BOARD_HTML = `<!DOCTYPE html>
     var cost = money(item.price_cents);
     if (cost) meta.appendChild(el('span', null, cost));
     var when = relative(item.updated_at);
-    if (when) meta.appendChild(el('span', null, 'updated ' + when));
+    if (when) meta.appendChild(el('span', null, t('updated', { when: when })));
     main.appendChild(meta);
     wrap.appendChild(main);
 
-    wrap.appendChild(button('Open', function () { openThread(item.id); }));
+    wrap.appendChild(button(t('request.open'), function () { openThread(item.id); }));
     return wrap;
   }
 
@@ -845,21 +938,21 @@ export const BOARD_HTML = `<!DOCTYPE html>
     clear(list);
     var all = board.requests || [];
     var requests = projectFilter
-      ? all.filter(function (r) { return (r.project || 'Other work') === projectFilter; })
+      ? all.filter(function (r) { return (r.project || OTHER) === projectFilter; })
       : all;
     $('filter').hidden = !projectFilter;
-    $('filter-name').textContent = projectFilter || '';
+    $('filter-name').textContent = projectFilter ? t('filter.showing', { name: projectFilter === OTHER ? t('request.otherWork') : projectFilter }) : '';
 
     if (!requests.length) {
       list.appendChild(el('div', 'mk-empty', projectFilter
-        ? 'No requests on this project yet.'
-        : 'No requests yet. Describe the work you need and it lands here.'));
+        ? t('requests.emptyProject')
+        : t('requests.empty')));
       return;
     }
     var order = (board.projects || []).map(function (p) { return p.name; });
     var groups = new Map();
     for (var i = 0; i < requests.length; i++) {
-      var key = requests[i].project || 'Other work';
+      var key = requests[i].project || OTHER;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(requests[i]);
     }
@@ -877,11 +970,11 @@ export const BOARD_HTML = `<!DOCTYPE html>
       var items = groups.get(keys[g]);
       var section = el('section', 'mk-group');
       var head = el('div', 'mk-group__head');
-      head.appendChild(el('span', 'mk-group__name', keys[g]));
+      head.appendChild(el('span', 'mk-group__name', keys[g] === OTHER ? t('request.otherWork') : keys[g]));
       var open = items.filter(function (r) { return r.status !== 'done' && r.status !== 'declined'; }).length;
-      head.appendChild(el('span', 'mk-group__meta', open === items.length ? items.length + ' open' : open + ' of ' + items.length + ' open'));
+      head.appendChild(el('span', 'mk-group__meta', open === items.length ? t('group.open', { n: num(items.length) }) : t('group.openOf', { open: num(open), total: num(items.length) })));
       section.appendChild(head);
-      for (var j = 0; j < items.length; j++) section.appendChild(requestRow(items[j], keys[g] === 'Other work'));
+      for (var j = 0; j < items.length; j++) section.appendChild(requestRow(items[j], keys[g] === OTHER));
       list.appendChild(section);
     }
   }
@@ -895,9 +988,9 @@ export const BOARD_HTML = `<!DOCTYPE html>
   /* —— the overview: the portal's 3D workshop, headline numbers, two charts —— */
 
   var STAGE_KEYS = ['new', 'approved', 'in_progress', 'review', 'done'];
-  var STAGE_NAMES = { new: 'Waiting for Ali', approved: 'Approved', in_progress: 'Being built', review: 'Being checked', done: 'Shipped' };
+  function stageName(key) { return t('stage.' + key); }
   // On the scene the captions are crowded at card width: the station's own short name; the legend says it in full.
-  var STAGE_SHORT = { new: 'Request', approved: 'Approve', in_progress: 'Build', review: 'Check', done: 'Ship' };
+  function stationName(key) { return t('station.' + key); }
   // Projects get a tint, so a belt, its pylon and its label read as one thing (the portal's colours).
   var LANE_TINTS = [0xff5a1f, 0x95bf47, 0x3b82f6, 0xa855f7, 0xeab308, 0xec4899];
   var GREY_TINT = 0x8a857b;
@@ -919,7 +1012,8 @@ export const BOARD_HTML = `<!DOCTYPE html>
 
   function dollars(cents) {
     var value = (cents || 0) / 100;
-    return '$' + value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // Billing is in US dollars; the client's language decides how the amount is written.
+    try { return new Intl.NumberFormat(LOCALE, { style: 'currency', currency: 'USD' }).format(value); } catch (e) { return '$' + value.toFixed(2); }
   }
 
   /* What rides the machine: everything open, plus the few most recently shipped (as the portal does). */
@@ -933,14 +1027,14 @@ export const BOARD_HTML = `<!DOCTYPE html>
     sceneLanes = (board.projects || []).map(function (p, i) {
       var color = LANE_TINTS[i % LANE_TINTS.length];
       return {
-        id: p.id, name: p.name || 'Project', lane: i, color: color, tint: tintHex(color),
+        id: p.id, name: p.name || t('project.untitled'), lane: i, color: color, tint: tintHex(color),
         sites: (board.sites || []).filter(function (s) { return s.project_id === p.id; }).map(function (s) {
-          return { id: s.id, name: s.name || 'Site', live: !!s.live, url: s.live ? s.production_url : s.has_preview ? s.preview_url : null };
+          return { id: s.id, name: s.name || t('site.untitled'), live: !!s.live, url: s.live ? s.production_url : s.has_preview ? s.preview_url : null };
         })
       };
     });
     if (!sceneLanes.length || sceneItems.some(function (r) { return !r.project_id; })) {
-      sceneLanes.push({ id: -1, name: 'Getting set up', lane: sceneLanes.length, color: GREY_TINT, tint: tintHex(GREY_TINT), sites: [], unassigned: true });
+      sceneLanes.push({ id: -1, name: t('lane.unassigned'), lane: sceneLanes.length, color: GREY_TINT, tint: tintHex(GREY_TINT), sites: [], unassigned: true });
     }
   }
 
@@ -990,7 +1084,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     nodeEls = new Map();
     capEls = {};
     sceneLanes.forEach(function (lane) {
-      var project = nodeEl('p:' + lane.id, 'mk-node--project' + (sceneProject === lane.id ? ' is-on' : ''), 'Show only ' + lane.name, function () { pickLane(lane.id); });
+      var project = nodeEl('p:' + lane.id, 'mk-node--project' + (sceneProject === lane.id ? ' is-on' : ''), t('lane.showOnly', { name: lane.name }), function () { pickLane(lane.id); });
       project.style.borderLeftColor = lane.tint;
       var idx = el('span', 'mk-node__idx', lane.unassigned ? '—' : pad2(lane.lane + 1));
       idx.style.color = lane.tint;
@@ -1003,26 +1097,26 @@ export const BOARD_HTML = `<!DOCTYPE html>
       if (lane.unassigned) return;
       if (sceneProject === null) {
         // All projects: one yard label each.
-        var yard = nodeEl('y:' + lane.id, 'mk-node--site mk-node--yard', 'Show only ' + lane.name, function () { pickLane(lane.id); });
+        var yard = nodeEl('y:' + lane.id, 'mk-node--site mk-node--yard', t('lane.showOnly', { name: lane.name }), function () { pickLane(lane.id); });
         var dot = el('span', 'mk-node__dot');
         dot.style.background = lane.tint;
         yard.appendChild(dot);
         yard.appendChild(el('span', 'mk-node__name', lane.name));
-        yard.appendChild(el('span', 'mk-node__state', plural(lane.sites.length, 'site')));
+        yard.appendChild(el('span', 'mk-node__state', t('project.sites', { n: lane.sites.length })));
         layer.appendChild(yard);
       } else if (sceneProject === lane.id) {
         // One project picked: its sites.
         if (!lane.sites.length) {
-          var ghost = nodeEl('s:' + lane.id + ':0', 'mk-node--site is-ghost', 'No site yet', function () {});
+          var ghost = nodeEl('s:' + lane.id + ':0', 'mk-node--site is-ghost', t('site.none'), function () {});
           ghost.appendChild(el('span', 'mk-node__dot'));
-          ghost.appendChild(el('span', 'mk-node__name', 'No site yet'));
+          ghost.appendChild(el('span', 'mk-node__name', t('site.none')));
           layer.appendChild(ghost);
         }
         lane.sites.forEach(function (site) {
-          var pod = nodeEl('s:' + lane.id + ':' + site.id, 'mk-node--site' + (site.live ? ' is-live' : ''), site.url ? 'Open ' + site.name : site.name, function () { openSite(site); });
+          var pod = nodeEl('s:' + lane.id + ':' + site.id, 'mk-node--site' + (site.live ? ' is-live' : ''), site.url ? t('site.open', { name: site.name }) : site.name, function () { openSite(site); });
           pod.appendChild(el('span', 'mk-node__dot' + (site.live ? ' is-live' : ' is-preview')));
           pod.appendChild(el('span', 'mk-node__name', site.name));
-          pod.appendChild(el('span', 'mk-node__state', site.live ? 'Live' : 'Preview'));
+          pod.appendChild(el('span', 'mk-node__state', site.live ? t('site.live') : t('site.preview')));
           layer.appendChild(pod);
         });
       }
@@ -1032,8 +1126,8 @@ export const BOARD_HTML = `<!DOCTYPE html>
       cap.type = 'button';
       cap.tabIndex = -1;
       cap.appendChild(el('b', null, stageCount(key)));
-      cap.appendChild(document.createTextNode(STAGE_SHORT[key]));
-      cap.title = STAGE_NAMES[key];
+      cap.appendChild(document.createTextNode(stationName(key)));
+      cap.title = stageName(key);
       cap.addEventListener('click', function () { zoomStage(key); });
       capEls[key] = cap;
       layer.appendChild(cap);
@@ -1051,7 +1145,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
       b.type = 'button';
       b.setAttribute('aria-pressed', sceneStage === key ? 'true' : 'false');
       b.appendChild(el('span', 'mk-legend__no', pad2(i + 1)));
-      b.appendChild(el('span', null, STAGE_NAMES[key]));
+      b.appendChild(el('span', null, stageName(key)));
       b.appendChild(el('b', null, stageCount(key)));
       b.addEventListener('click', function () { zoomStage(key); });
       legend.appendChild(b);
@@ -1076,7 +1170,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
           clear(tipEl);
           if (r) {
             tipEl.appendChild(el('span', null, '#' + r.id));
-            tipEl.appendChild(document.createTextNode(r.title || 'Untitled request'));
+            tipEl.appendChild(document.createTextNode(r.title || t('request.untitled')));
           }
         },
         onPick: function (id) {
@@ -1137,10 +1231,10 @@ export const BOARD_HTML = `<!DOCTYPE html>
     var waiting = open.filter(function (r) { return r.status === 'new'; }).length;
     var live = board.sites.filter(function (s) { return s.live; }).length;
     var previews = board.sites.filter(function (s) { return !s.live && s.has_preview; }).length;
-    box.appendChild(kpi('Spent so far', dollars(spend.billed_cents), spend.ai_cents ? 'AI at cost: ' + dollars(spend.ai_cents) : 'Finished work, billed'));
-    box.appendChild(kpi('Running on open work', dollars(spend.open_cents), plural(open.length, 'open request')));
-    box.appendChild(kpi('Open requests', String(open.length), waiting ? waiting + ' waiting for Ali' : 'None waiting for Ali'));
-    box.appendChild(kpi('Live sites', board.sites.length ? live + ' of ' + board.sites.length : '0', previews ? plural(previews, 'preview') + ' not live yet' : board.sites.length ? 'All published' : 'No hosted site yet'));
+    box.appendChild(kpi(t('kpi.spent'), dollars(spend.billed_cents), spend.ai_cents ? t('kpi.ai', { amount: dollars(spend.ai_cents) }) : t('kpi.billed')));
+    box.appendChild(kpi(t('kpi.running'), dollars(spend.open_cents), t('project.open', { n: open.length })));
+    box.appendChild(kpi(t('kpi.openRequests'), num(open.length), waiting ? t('kpi.waiting', { n: num(waiting) }) : t('kpi.noneWaiting')));
+    box.appendChild(kpi(t('kpi.liveSites'), board.sites.length ? t('kpi.liveOf', { live: num(live), total: num(board.sites.length) }) : num(0), previews ? t('kpi.previews', { n: previews }) : board.sites.length ? t('kpi.allPublished') : t('kpi.noSite')));
   }
 
   /* A hover and focus tooltip for one mark; the table under each chart says the same for screen readers. */
@@ -1186,12 +1280,12 @@ export const BOARD_HTML = `<!DOCTYPE html>
   /* Billed per month: finished requests by the month they finished, last six months, this month in orange. */
   function renderMonths() {
     var fig = $('chart-months');
-    chartHead(fig, 'Billed per month', 'Finished requests, last 6 months');
+    chartHead(fig, t('chart.months'), t('chart.monthsSub'));
     var now = new Date();
     var months = [];
     for (var i = 5; i >= 0; i--) {
       var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push({ y: d.getFullYear(), m: d.getMonth(), cents: 0, n: 0, label: d.toLocaleString(undefined, { month: 'short' }), long: d.toLocaleString(undefined, { month: 'long', year: 'numeric' }) });
+      months.push({ y: d.getFullYear(), m: d.getMonth(), cents: 0, n: 0, label: monthName(d, { month: 'short' }), long: monthName(d, { month: 'long', year: 'numeric' }) });
     }
     board.requests.forEach(function (r) {
       if (r.status !== 'done' || !r.price_cents || !r.updated_at) return;
@@ -1200,7 +1294,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     });
     var max = Math.max.apply(null, months.map(function (b) { return b.cents; }));
     if (!max) {
-      fig.appendChild(el('div', 'mk-chart__empty', 'Nothing billed yet. Finished requests show up here.'));
+      fig.appendChild(el('div', 'mk-chart__empty', t('chart.monthsEmpty')));
       return;
     }
     var cols = el('div', 'mk-cols');
@@ -1213,28 +1307,28 @@ export const BOARD_HTML = `<!DOCTYPE html>
       var bar = el('div', 'mk-col__bar');
       bar.style.height = b.cents ? Math.max(2, Math.round((b.cents / max) * 92)) + 'px' : '0';
       col.appendChild(bar);
-      tooltip(col, b.long + ': ' + dollars(b.cents) + (b.n ? ' · ' + plural(b.n, 'request') : ''));
+      tooltip(col, t('chart.monthTip', { month: b.long, amount: dollars(b.cents) }) + (b.n ? ' · ' + t('chart.requestCount', { n: b.n }) : ''));
       cols.appendChild(col);
       xs.appendChild(el('span', null, b.label));
     });
     fig.appendChild(cols);
     fig.appendChild(xs);
-    srTable(fig, ['Month', 'Billed', 'Requests'], months.map(function (b) { return [b.long, dollars(b.cents), String(b.n)]; }));
+    srTable(fig, [t('chart.month'), t('chart.billed'), t('chart.requests')], months.map(function (b) { return [b.long, dollars(b.cents), num(b.n)]; }));
   }
 
   /* Cost by project: everything each project has cost so far, finished and open, largest first. */
   function renderProjectCosts() {
     var fig = $('chart-projects');
-    chartHead(fig, 'Cost by project', 'Finished and open work');
+    chartHead(fig, t('chart.projects'), t('chart.projectsSub'));
     var rows = (board.projects || []).map(function (p, i) {
       var cents = board.requests.filter(function (r) { return r.project_id === p.id; }).reduce(function (sum, r) { return sum + (r.price_cents || 0); }, 0);
-      return { name: p.name || 'Project', tint: tintHex(LANE_TINTS[i % LANE_TINTS.length]), cents: cents };
+      return { name: p.name || t('project.untitled'), tint: tintHex(LANE_TINTS[i % LANE_TINTS.length]), cents: cents };
     });
     var loose = board.requests.filter(function (r) { return !r.project_id; }).reduce(function (sum, r) { return sum + (r.price_cents || 0); }, 0);
-    if (loose) rows.push({ name: 'Getting set up', tint: tintHex(GREY_TINT), cents: loose });
+    if (loose) rows.push({ name: t('lane.unassigned'), tint: tintHex(GREY_TINT), cents: loose });
     rows = rows.filter(function (r) { return r.cents > 0; }).sort(function (a, b) { return b.cents - a.cents; });
     if (!rows.length) {
-      fig.appendChild(el('div', 'mk-chart__empty', 'No costs yet.'));
+      fig.appendChild(el('div', 'mk-chart__empty', t('chart.projectsEmpty')));
       return;
     }
     var max = rows[0].cents;
@@ -1253,11 +1347,11 @@ export const BOARD_HTML = `<!DOCTYPE html>
       track.appendChild(bar);
       track.appendChild(el('span', 'mk-hbar__val', dollars(row.cents)));
       item.appendChild(track);
-      tooltip(item, row.name + ': ' + dollars(row.cents));
+      tooltip(item, t('chart.monthTip', { month: row.name, amount: dollars(row.cents) }));
       list.appendChild(item);
     });
     fig.appendChild(list);
-    srTable(fig, ['Project', 'Cost'], rows.map(function (r) { return [r.name, dollars(r.cents)]; }));
+    srTable(fig, [t('chart.project'), t('chart.cost')], rows.map(function (r) { return [r.name, dollars(r.cents)]; }));
   }
 
   function renderOverview() {
@@ -1272,7 +1366,11 @@ export const BOARD_HTML = `<!DOCTYPE html>
 
   /* —— one request as a conversation —— */
 
-  var WHO = { ali: { name: 'Ali', mark: 'A' }, runner: { name: 'Agent', mark: '⚙' } };
+  function whoOf(author) {
+    if (author === 'ali') return { name: t('who.ali'), mark: 'A' };
+    if (author === 'runner') return { name: t('who.agent'), mark: '⚙' };
+    return null;
+  }
   var NL = String.fromCharCode(10);
   var replyEl = $('reply');
   var sendEl = $('send');
@@ -1314,7 +1412,10 @@ export const BOARD_HTML = `<!DOCTYPE html>
   function systemText(body) {
     var moved = /^Status changed to “([^”]+)”[.]?(?: Total: (.+?)[.]?)?$/.exec(String(body || ''));
     if (!moved) return body;
-    return 'Moved to ' + moved[1] + (moved[2] ? ' · total ' + moved[2] : '');
+    // The label is stored in English; show the client's word for it.
+    var label = moved[1];
+    for (var key in STATUS) if (EN['status.' + key] === label) label = t('status.' + key);
+    return moved[2] ? t('sys.movedTotal', { status: label, total: moved[2] }) : t('sys.moved', { status: label });
   }
 
   function attachments(list) {
@@ -1342,11 +1443,11 @@ export const BOARD_HTML = `<!DOCTYPE html>
       var mine = el('div', 'mk-turn--client' + (sending ? ' mk-sending' : ''));
       mine.appendChild(text(m.body));
       if (m.files && m.files.length) mine.appendChild(attachments(m.files));
-      var stamp = sending ? 'Sending…' : when;
+      var stamp = sending ? t('reply.sending') : when;
       if (stamp) mine.appendChild(el('span', 'mk-when', stamp));
       return mine;
     }
-    var who = WHO[m.author] || { name: m.author || 'malipetek', mark: '•' };
+    var who = whoOf(m.author) || { name: m.author || 'malipetek', mark: '•' };
     var row = el('div', 'mk-turn--other');
     // Ali's photo is the background of his avatar (CSS); the others show a mark.
     var avatar = el('span', 'mk-avatar', m.author === 'ali' ? '' : who.mark);
@@ -1364,11 +1465,11 @@ export const BOARD_HTML = `<!DOCTYPE html>
   }
 
   function threadHead(id, title, status) {
-    $('thread-title').textContent = '#' + id + ' ' + (title || 'Untitled request');
+    $('thread-title').textContent = '#' + id + ' ' + (title || t('request.untitled'));
     var holder = $('thread-status');
     clear(holder);
     if (status) {
-      var known = STATUS[status] || { label: status, tone: 'active' };
+      var known = statusOf(status);
       holder.appendChild(pill(known.label, known.tone));
     }
   }
@@ -1396,7 +1497,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
   function threadError(message) {
     var chat = $('chat');
     clear(chat);
-    chat.appendChild(el('div', 'mk-err', message || 'This conversation could not load.'));
+    chat.appendChild(el('div', 'mk-err', message || t('thread.error')));
     notifySize();
   }
 
@@ -1409,7 +1510,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     var chat = $('chat');
     clear(chat);
     var messages = data.messages || [];
-    if (!messages.length) chat.appendChild(el('div', 'mk-empty', 'No messages yet.'));
+    if (!messages.length) chat.appendChild(el('div', 'mk-empty', t('thread.empty')));
     for (var i = 0; i < messages.length; i++) chat.appendChild(turn(messages[i]));
     chat.scrollTop = chat.scrollHeight;
     notifySize();
@@ -1451,7 +1552,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     notifySize();
     request('tools/call', { name: 'portal_reply', arguments: { request_id: id, text: body } })
       .then(function (result) {
-        if (!result || result.isError) throw new Error(textOf(result) || 'Your reply was not sent.');
+        if (!result || result.isError) throw new Error(textOf(result) || t('reply.failed'));
         return loadThread(id);
       })
       .catch(function (error) {
@@ -1460,7 +1561,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
         replyEl.value = body;
         fit();
         sendEl.disabled = false;
-        chat.appendChild(el('div', 'mk-err', (error && error.message) || 'Your reply was not sent.'));
+        chat.appendChild(el('div', 'mk-err', (error && error.message) || t('reply.failed')));
         notifySize();
       });
   }
@@ -1492,7 +1593,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     $('n-projects').textContent = board.projects.length;
     $('n-sites').textContent = board.sites.length;
     var openCount = board.requests.filter(function (r) { return r.status !== 'done' && r.status !== 'declined'; }).length;
-    $('n-requests').textContent = openCount ? openCount + ' open' : board.requests.length;
+    $('n-requests').textContent = openCount ? t('tab.openCount', { n: num(openCount) }) : num(board.requests.length);
     board.spending = data.spending || { billed_cents: 0, open_cents: 0, ai_cents: 0 };
     renderProjects();
     renderSites();
@@ -1515,7 +1616,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
     var list = $('overview-projects');
     clear(list);
-    list.appendChild(el('div', 'mk-err', message || 'Your work could not load.'));
+    list.appendChild(el('div', 'mk-err', message || t('load.error')));
     show('overview');
   }
 
@@ -1524,8 +1625,10 @@ export const BOARD_HTML = `<!DOCTYPE html>
     if (result.isError) { showError(textOf(result)); return; }
     var data = result.structuredContent;
     if (!data) { try { data = JSON.parse(textOf(result)); } catch (e) { data = null; } }
+    // The strings first, so everything render() draws is already in the client's language.
+    useStrings(result._meta);
     if (data && data.projects && data.requests) { render(data); return; }
-    showError('Your work could not load.');
+    showError(t('load.error'));
   }
 
   function load() {
@@ -1555,7 +1658,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
     if (message.id !== undefined && pending[message.id]) {
       var waiting = pending[message.id];
       delete pending[message.id];
-      if (message.error) waiting.reject(new Error(message.error.message || 'Host error'));
+      if (message.error) waiting.reject(new Error(message.error.message || t('load.error')));
       else waiting.resolve(message.result);
       return;
     }
@@ -1565,7 +1668,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
       return;
     }
     if (message.method === 'ui/notifications/tool-cancelled') {
-      if (!rendered) showError('Loading was cancelled.');
+      if (!rendered) showError(t('load.cancelled'));
       return;
     }
     if (message.method === 'ui/resource-teardown') {

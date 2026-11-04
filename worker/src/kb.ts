@@ -25,6 +25,8 @@ import { clientIp, isRateLimited, type Env, type HonoEnv } from './shared.ts';
 import { agentUser, now, sessionUser } from './portal.ts';
 import { CLIENT_TOOLS, CLIENT_TOOL_NAMES, OWNER_TOOLS, OWNER_TOOL_NAMES, callClientTool } from './clientTools.ts';
 import { reviewEstimate } from '../../src/lib/pricing.js';
+import { cardStrings } from '../../src/i18n/eager.js';
+import { closestLocale } from '../../src/lib/locales.js';
 import { BOARD_HTML, BOARD_MIME, BOARD_UI_URI, boardSummary, type Board } from './boardUi.ts';
 
 /* ——————————————————————— shapes ——————————————————————— */
@@ -1129,9 +1131,18 @@ mcp.post('/', async (c) => {
             // payload the view renders (MCP Apps: ui/notifications/tool-result).
             const summarize = UI_TOOLS[name];
             if (summarize && (tool as { _meta?: { ui?: { resourceUri?: string } } })._meta?.ui?.resourceUri) {
+              // The card's copy in the client's language: the one they picked in the
+              // portal, else the one the host reports. users.locale defaults to
+              // en-US, so English there means "not chosen" and the host's language
+              // decides. In _meta, so the view gets it and the model's context does not.
+              const hostLocale = (request.params?._meta as Record<string, unknown> | undefined)?.['openai/locale'];
+              const picked = closestLocale((value as { locale?: unknown }).locale);
+              const host = typeof hostLocale === 'string' ? closestLocale(hostLocale) : null;
+              const locale = (picked && picked !== 'en-US' ? picked : host) ?? picked ?? 'en-US';
               return rpcResult(request.id, {
                 content: [{ type: 'text', text: summarize(value) }],
                 structuredContent: value as Record<string, unknown>,
+                _meta: { 'malipetek/locale': locale, 'malipetek/strings': cardStrings(locale) },
               });
             }
             return rpcResult(request.id, toolText(value));
