@@ -3350,5 +3350,89 @@
   "card.sys.movedTotal": {
     "en": "Moved to {status} · total {total}",
     "reviewed": false
+  },
+  "views.entity.openProject": {
+    "en": "Open project",
+    "reviewed": false
+  },
+  "views.entity.newRequest": {
+    "en": "New request",
+    "reviewed": false
+  },
+  "views.entity.requests": {
+    "en": "Requests",
+    "reviewed": false
+  },
+  "views.entity.sites": {
+    "en": "Sites",
+    "reviewed": false
+  },
+  "views.entity.openRequests": {
+    "en": "Open requests",
+    "reviewed": false
+  },
+  "views.entity.setup": {
+    "en": "Setup",
+    "reviewed": false
+  },
+  "views.entity.code": {
+    "en": "Code",
+    "reviewed": false
+  },
+  "views.entity.status": {
+    "en": "Status",
+    "reviewed": false
+  },
+  "views.entity.host": {
+    "en": "Host",
+    "reviewed": false
+  },
+  "views.entity.hostCloudflare": {
+    "en": "Cloudflare",
+    "reviewed": false
+  },
+  "views.entity.hostOurs": {
+    "en": "Ours",
+    "reviewed": false
+  },
+  "views.entity.project": {
+    "en": "Project",
+    "reviewed": false
+  },
+  "views.entity.primary": {
+    "en": "primary",
+    "reviewed": false
+  },
+  "views.entity.failed": {
+    "en": "Needs attention",
+    "reviewed": false
+  },
+  "views.entity.settingUp": {
+    "en": "Setting up",
+    "reviewed": false
+  },
+  "views.entity.noAddress": {
+    "en": "No address yet",
+    "reviewed": false
+  },
+  "views.entity.noSiteHint": {
+    "en": "No site yet. Open the project to add one.",
+    "reviewed": false
+  },
+  "views.entity.siteHint": {
+    "en": "Publishing and setup live in the project.",
+    "reviewed": false
+  },
+  "ticket.back": {
+    "en": "Back",
+    "reviewed": false
+  },
+  "ticket.backTo": {
+    "en": "Back to {name}",
+    "reviewed": false
+  },
+  "board.peek.open": {
+    "en": "Open request",
+    "reviewed": false
   }
 }
