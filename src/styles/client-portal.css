@@ -429,16 +429,54 @@
   color: var(--orange);
 }
 
-/* Route changes ride the View Transitions API: a quick cross-fade for the
-   page, and the board's peek card morphs into the request page's head
-   (both named cp-peek). Reduced-motion sessions skip it in store.js. */
+/* Route changes ride the View Transitions API (store.js; reduced-motion
+   sessions skip it). The sidebar and the room behind stay put as the root;
+   the content area is its own layer that leaves first and then rises in, so
+   the two pages never sit on top of each other half-transparent. The board's
+   peek card and the request page's head share cp-peek, so the card grows
+   into the head. */
+.cp-main {
+  view-transition-name: cp-main;
+}
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 160ms;
+  animation-duration: 180ms;
+}
+::view-transition-group(cp-main) {
+  animation: none;
+}
+::view-transition-old(cp-main) {
+  animation: cp-vt-out 110ms ease-in both;
+}
+::view-transition-new(cp-main) {
+  animation: cp-vt-in 260ms var(--ease) 70ms both;
+}
+@keyframes cp-vt-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes cp-vt-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
 }
 ::view-transition-group(cp-peek) {
-  animation-duration: 240ms;
+  animation-duration: 340ms;
   animation-timing-function: var(--ease);
+}
+/* Both snapshots keep their real size, pinned top-left inside the growing
+   box; the default stretches them to it, and the card's text balloons. */
+::view-transition-old(cp-peek),
+::view-transition-new(cp-peek) {
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+}
+::view-transition-old(cp-peek) {
+  animation-duration: 120ms;
 }
 
 .cp-btn {
