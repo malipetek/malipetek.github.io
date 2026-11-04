@@ -176,6 +176,12 @@ the config (`[{ "name": "…", "process" | "launchd" | "systemd": "…" }]`). Bo
 admin views show it per node, so a stopped process on the G500 is visible
 without a shell on it.
 
+A node whose main loop stops turning (a land, build or sync that never
+returns) would keep its process alive while its heartbeat stops, and launchd
+and systemd only restart a process that exits. So the node watches its own
+loop: after `watchdogMinutes` (default 30, `0` turns it off) without a turn it
+logs `watchdog: …` and exits, and its supervisor starts a fresh one.
+
 A node's parallel runs, capabilities, offered agents and offline email alert can
 be changed from either admin view; the change reaches the node on its next
 heartbeat and wins over its config file. Edits to the config file itself (the

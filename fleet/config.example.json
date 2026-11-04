@@ -26,6 +26,7 @@
   "autoClone": true,
   "cloneRoot": "~/.cache/malipetek-runner/projects",
   "timeoutMinutes": 30,
+  "watchdogMinutes": 30,
 
   "claude": { "bin": "claude", "maxBudgetUsd": 5 },
   "executors": {
