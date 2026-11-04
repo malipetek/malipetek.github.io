@@ -1,0 +1,143 @@
+# Bundle patch for @malipetek/dsh-external-agents: one Host row.
+#
+# The `config` block below is the plugin's whole configuration surface; every
+# field is optional and the defaults are shown. A matching override in the
+# profile's cordis.patch.yml replaces this `config` wholesale, so restate every
+# field you need when you override it.
+- insert:
+    - id: external-agents
+      name: '@malipetek/dsh-external-agents'
+      config:
+        # Ask which external agents should be offered when `agents` is empty.
+        # Only binaries actually found on PATH are offered.
+        discover: true
+        # Explicit agents. Each entry is:
+        #   id      - stable slug used by the tool and the picker
+        #   label   - human name
+        #   command - executable that speaks ACP over stdio
+        #   args    - argument list (e.g. ['acp'])
+        #   env     - extra environment variables for the child
+        #   cwd     - working directory. Omit to inherit the SESSION's workspace
+        #             (`session.meta.cwd`), which is almost always what you want:
+        #             the desktop harness is launched from its own profile
+        #             directory, so a fixed default would run every agent there.
+        #   timeoutMs - total ceiling for setup calls (default 1800000). An
+        #               explicit value on a prompt is honoured as the idle budget
+        #               below, so the older meaning still works.
+        #   idleTimeoutMs - how long a prompt may go SILENT before it is
+        #               abandoned and cancelled (default 300000). Restarted by
+        #               every update the agent sends, so a long turn that keeps
+        #               making progress is never cut off; 300000 was short enough
+        #               to kill ordinary agentic work mid-edit.
+        #   approval  - 'allow' (default) | 'ask' | 'deny' | 'cancel'
+        #               'allow' treats the external agent as a full-access
+        #               collaborator: nothing it asks to do is gated on a prompt
+        #               you did not ask for. These agents run unattended, and
+        #               Devin never asks at all, so a stricter client-side default
+        #               buys inconsistency rather than safety.
+        #               'ask' is the opposite posture, opt-in: each
+        #               session/request_permission goes to the harness's own
+        #               approval seam (ctx.approval), so it is gated like a native
+        #               tool call and audited in the session log. It FAILS CLOSED:
+        #               with no answerer, or under a harness approval policy of
+        #               `never`, the action is refused.
+        #               'deny' and 'cancel' refuse. Every policy fails closed the
+        #               same way: one that cannot find a matching option cancels
+        #               rather than selecting whatever was offered first.
+        # Agent-side modes are a separate knob, and some agents never consult the
+        # client at all. Devin ignores this setting unless its own mode asks, e.g.
+        #   env: { DEVIN_PERMISSION_MODE: 'smart' }   # auto | accept-edits | smart | dangerous
+        # Note `--permission-mode` is a top-level `devin` flag, not an `acp`
+        # subcommand flag: `devin acp --permission-mode X` is an argument error.
+        #   instructions - standing instructions sent ONCE, at the start of a
+        #                session, before the first request. This is where a
+        #                workflow rule belongs, e.g. "complete the work in this
+        #                turn; do not promise to report back later".
+        #   llmProvider - provider route the agent is exposed under in the
+        #                 composer's model picker (default 'acp-<id>')
+        #   models      - a curated list for the picker. Wins outright and needs
+        #                 no ACP session, so the picker opens instantly. Entries
+        #                 are an id or { id, name, description }. Use this to keep
+        #                 a long roster short.
+        #   modelInclude - globs an advertised model must match to be shown.
+        #   modelExclude - globs an advertised model must not match.
+        #                 `*` and `?` are supported and matching ignores case.
+        #                 Devin advertises 122 models, 62 of them `fusion-*`
+        #                 pairings, so `modelExclude: ['fusion-*', 'MODEL_*']`
+        #                 is the usual starting point.
+        #   Applied only when `models` is empty: the advertised roster is what
+        #   the include/exclude globs read.
+        #   primeMaxChars - how much transcript to hand an agent that is
+        #                 attaching to a conversation it did not start: a fork, a
+        #                 provider switch, or turns another agent answered while
+        #                 it was swapped out. Default 48000 characters; 0 disables
+        #                 the catch-up. Over budget, both ends are kept.
+        #   instructions - standing instructions sent once, before the session's
+        #                 first turn (not repeated per turn).
+        #   delegate    - let this agent hand work to harness workers: `true`,
+        #                 or { llmProvider, model } for the worker route, or
+        #                 { provider } to pick a subagent backend. The agent
+        #                 gets ONE MCP tool, `delegate`, served over loopback
+        #                 with a per-session token. It is delegation, not the
+        #                 tool registry: a bridge that invoked tools directly
+        #                 would skip the approval gate.
+        #
+        # These four entries are the shipped catalog; they are only used as a
+        # fallback when `agents` is empty and `discover` is true.
+        # agents:
+        #   - id: claude
+        #     label: Claude Code
+        #     command: claude-agent-acp
+        #     args: []
+        #   - id: devin
+        #     label: Devin
+        #     command: devin
+        #     args: ['acp']
+        #   - id: opencode
+        #     label: opencode
+        #     command: opencode
+        #     args: ['acp']
+        #   - id: dsh
+        #     label: DeepSeek Harness
+        #     command: dsh
+        #     args: ['--profile', 'acp']
+        # Give the child a minimal environment instead of inheriting this
+        # process's. On by default and deliberate: it makes it structurally
+        # impossible for DSH's own provider configuration (ANTHROPIC_BASE_URL,
+        # ANTHROPIC_AUTH_TOKEN, provider keys) to reach the external agent, so
+        # the agent can only ever use its own login. Set to 'inherit' only if
+        # you know why you need it.
+        envMode: minimal
+        # Remember which ACP session each conversation lives in, one small JSON
+        # file per agent. On by default, because the alternative is silent: an
+        # ACP session lives in the agent process, so a plugin reload or an app
+        # restart would otherwise begin a new conversation and the agent would
+        # read as though it had forgotten everything, with nothing saying why.
+        # `session/load` (or `session/resume` where the agent offers it) puts the
+        # conversation back. Set false to keep everything in memory.
+        persistSessions: true
+        # Where those ids are kept.
+        # sessionStoreDir: '~/.dsh/external-agents/sessions'
+        # How much transcript an agent gets when it attaches to a conversation it
+        # did not start (fork, provider switch, or another agent's turns). Per
+        # agent `primeMaxChars` overrides this; 0 disables the catch-up.
+        primeMaxChars: 48000
+        # When envMode is 'inherit', also pass ANTHROPIC_BASE_URL and
+        # ANTHROPIC_AUTH_TOKEN. This is the configuration that gets Claude
+        # accounts actioned; leave it false.
+        allowAnthropicRouting: false
+        # Optionally isolate an agent's XDG data/cache/state directories under
+        # this root. Off by default. Turn it on only for a throwaway or
+        # sandboxed agent: an agent's saved login lives in its XDG data
+        # directory, so redirecting it makes the agent look logged out.
+        # xdgRoot: '~/.dsh/external-agents'
+        # Which agents appear in the composer's model picker. Reading an agent's
+        # model catalogue means starting it and opening a session, so the default
+        # limits the picker to the agents listed above; 'all' also exposes agents
+        # that were merely discovered on PATH.
+        expose: explicit
+        # Fallback workspace for an external agent, used when the initiating
+        # session's own directory cannot be read.
+        # cwd: /path/to/workspace
+        # Trailing updates retained per session for the transcript.
+        maxTranscript: 400
