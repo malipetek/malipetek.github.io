@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "malipetek",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "File and track software work requests on malipetek.dev, and search its public agentic-coding knowledgebase.",
   "author": {
     "name": "Muhammet Ali Petek",
@@ -30,6 +30,7 @@
           "Read and answer a request as a chat inside the card",
           "See projects, sites and requests in one card",
           "See an overview: your projects in 3D, spending and costs per project",
+          "See the card in your own language",
           "Preview and publish your site",
           "Search the public coding knowledgebase",
           "Open malipetek development from the ChatGPT sidebar",
@@ -103,7 +104,7 @@
         "commerce_description": "The plugin does not sell products or process payments. Work is billed per the service's terms, outside the plugin."
       },
       "publication": {
-        "release_notes": "The malipetek development card opens on an overview: your projects and requests as the 3D workshop from the portal, your spending, billing per month and cost per project."
+        "release_notes": "The malipetek development card speaks your language: tabs, statuses, costs and dates follow the language you picked in the portal, or your host app's."
       }
     }
   }
