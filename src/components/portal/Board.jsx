@@ -468,7 +468,16 @@ export function Board({
             </p>
             {peekTicket.waitingReason ? <p className="cp-peek__note">{peekTicket.waitingReason}</p> : null}
             <div className="cp-peek__go">
-              <Button kind="primary" onClick={() => handlers.current.onOpen(peekTicket.id)}>
+              <Button
+                kind="primary"
+                onClick={() => {
+                  // Named for the view transition: the card morphs into the
+                  // request page's head instead of the whole page cross-fading.
+                  if (peekEl.current) peekEl.current.style.viewTransitionName = 'cp-peek';
+                  boardReturn.peek = peekTicket.id;
+                  handlers.current.onOpen(peekTicket.id);
+                }}
+              >
                 {t('board.peek.open')}
               </Button>
             </div>

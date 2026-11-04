@@ -412,6 +412,34 @@
   margin-right: 8px;
   opacity: 0.5;
 }
+/* The way back, offered when the page was reached from inside the portal. */
+.cp-ticket__back {
+  margin: 0 0 8px;
+}
+.cp-ticket__back a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+.cp-ticket__back a:hover {
+  color: var(--orange);
+}
+
+/* Route changes ride the View Transitions API: a quick cross-fade for the
+   page, and the board's peek card morphs into the request page's head
+   (both named cp-peek). Reduced-motion sessions skip it in store.js. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 160ms;
+}
+::view-transition-group(cp-peek) {
+  animation-duration: 240ms;
+  animation-timing-function: var(--ease);
+}
 
 .cp-btn {
   display: inline-flex;

@@ -4,6 +4,7 @@
  * Routes live in the hash (#/ticket/12), so the page stays one static shell.
  */
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { api, session } from '../../lib/portal';
 import { englishT } from '../../i18n/index.js';
 
@@ -66,12 +67,27 @@ function parse() {
   return { name: name || 'overview', id: decodeURIComponent(id), query: new URLSearchParams(qs ?? '') };
 }
 
+/* The route last shown, so a page can know where it was navigated from. */
+let lastRoute = parse();
+
 export function useRoute() {
-  const [route, setRoute] = useState(parse);
+  const [route, setRoute] = useState(lastRoute);
   useEffect(() => {
     const on = () => {
-      setRoute(parse());
-      document.querySelector('.cp-main')?.scrollTo({ top: 0 });
+      const next = parse();
+      boardReturn.from = lastRoute;
+      lastRoute = next;
+      const apply = () => {
+        setRoute(next);
+        document.querySelector('.cp-main')?.scrollTo({ top: 0 });
+      };
+      // The page change rides the View Transitions API when it can: a cross-fade
+      // everywhere, and named elements (the board's peek card) morph into place.
+      if (document.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.startViewTransition(() => flushSync(apply));
+      } else {
+        apply();
+      }
     };
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
@@ -85,10 +101,13 @@ export const go = (path) => {
 export const href = (path) => `#/${path}`;
 
 /**
- * The request the client is reading right now; the board starts the camera on
- * it and glides back out when the overview is next shown. Set by the ticket
- * page, consumed once by the board — so a Back lands zoomed in, then settles.
+ * Navigation memory shared across views:
+ * - ticket: the request being read right now; the board starts the camera on
+ *   it and glides back out when the overview is next shown. Consumed once.
+ * - from: the route the current page was navigated from, for its back button.
+ * - peek: the request whose board card was opened, so the card can morph into
+ *   the request page under a view transition. Consumed once.
  */
-export const boardReturn = { ticket: null };
+export const boardReturn = { ticket: null, from: null, peek: null };
 
 export const signedIn = () => Boolean(session.get());

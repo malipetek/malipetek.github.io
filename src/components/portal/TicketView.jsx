@@ -40,7 +40,9 @@ function stepTimes(ticket, messages) {
 export function TicketView({ id }) {
   const t = useT();
   const { data, reload, notify, ask } = usePortal();
-  const [state, setState] = useState({ ticket: null, messages: [], error: null });
+  // The list already carries the request, so the head paints at once (and the
+  // board's card has something real to morph into) while the thread loads.
+  const [state, setState] = useState(() => ({ ticket: data.tickets.find((x) => x.id === id) ?? null, messages: [], error: null }));
   const [deploys, setDeploys] = useState(null);
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -104,10 +106,36 @@ export function TicketView({ id }) {
   const [nowKey, nextKey] = NOW[ticket.status];
   const mine = deploys?.find((d) => d.ticket_id === ticket.id);
   const where = !mine ? null : mine.id === site?.productionDeploy ? 'live' : mine.id === site?.previewDeploy ? 'preview' : 'older';
+  // The board's peek card morphs into this head under a view transition.
+  const fromPeek = boardReturn.peek === id;
+  if (fromPeek) boardReturn.peek = null;
+  // Where this page was reached from: the back button offers the way back
+  // (its href only covers a fresh tab; in-app it pops history).
+  const cameFrom = boardReturn.from;
+  let backText = t('ticket.back');
+  if (cameFrom) {
+    const navLabel = t(`nav.${cameFrom.name}`);
+    const name = navLabel !== `nav.${cameFrom.name}` ? navLabel : cameFrom.name === 'project' ? (data.projects.find((p) => String(p.id) === cameFrom.id)?.name ?? null) : null;
+    if (name) backText = t('ticket.backTo', { name });
+  }
+  const backPath = cameFrom ? (cameFrom.name === 'overview' ? '' : cameFrom.id ? `${cameFrom.name}/${cameFrom.id}` : cameFrom.name) : null;
 
   return (
     <div className="cp-view cp-ticket">
-      <header className="cp-ticket__head">
+      {cameFrom ? (
+        <p className="cp-ticket__back">
+          <a
+            href={href(backPath ?? '')}
+            onClick={(e) => {
+              e.preventDefault();
+              window.history.back();
+            }}
+          >
+            <Icon name="back" size={14} /> {backText}
+          </a>
+        </p>
+      ) : null}
+      <header className="cp-ticket__head" style={fromPeek ? { viewTransitionName: 'cp-peek' } : undefined}>
         <nav className="cp-crumbs">
           <a href={href('requests')}>{t('ticket.crumbs.requests')}</a>
           {project ? <a href={href(`project/${project.id}`)}>{project.name}</a> : null}
