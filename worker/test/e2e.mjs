@@ -1433,6 +1433,13 @@ const groups = {
         ['billed_cents', 'open_cents', 'ai_cents'].every((k) => Number.isInteger(card.spending?.[k])),
       JSON.stringify({ spending: card.spending, req: card.requests?.find((r) => r.id === rid) }).slice(0, 300),
     );
+    check(
+      'the card gets its copy in _meta, in English by default and in the host’s language while the client keeps the default',
+      board.result?._meta?.['malipetek/strings']?.['tab.overview'] === 'Overview' &&
+        board.result._meta['malipetek/strings']['status.review'] === 'In review' &&
+        (await rpc('tools/call', { name: 'portal_board', arguments: {}, _meta: { 'openai/locale': 'tr-TR' } }, token)).result?._meta?.['malipetek/locale'] === 'tr',
+      JSON.stringify(board.result?._meta?.['malipetek/locale']),
+    );
     const focused = (await rpc('tools/call', { name: 'portal_board', arguments: { request_id: rid } }, token)).result;
     check('the board opens on one request’s conversation when asked', focused?.structuredContent?.focus === rid && card.focus === null && /The card is open on #/.test(focused?.content?.[0]?.text ?? ''), JSON.stringify(focused?.structuredContent?.focus));
     check('…and ignores a request that is not theirs', (await rpc('tools/call', { name: 'portal_board', arguments: { request_id: 999999 } }, token)).result?.structuredContent?.focus === null);
