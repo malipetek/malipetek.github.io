@@ -8,7 +8,7 @@ import { api, downloadFile, errorText, STATUS_LABEL } from '../../lib/portal';
 import { STEPS } from '../../lib/offer.js';
 import { checkPicked, sizeText } from '../../lib/attachments.js';
 import { ATTENTION, clock, money, priceOf } from '../../lib/pricing.js';
-import { usePortal, useT, href, isOpen } from './store.js';
+import { usePortal, useT, href, isOpen, boardReturn } from './store.js';
 import { attentionText, stepText } from './copy.js';
 import { Files } from './Composer.jsx';
 import { Button, Gauge, Icon, Modal, STEP_ICONS, StatusPill, ago, cx, fmtDate, stepOf, totalOf } from './ui.jsx';
@@ -40,7 +40,17 @@ function stepTimes(ticket, messages) {
 export function TicketView({ id }) {
   const t = useT();
   const { data, reload, notify, ask } = usePortal();
-  const [state, setState] = useState({ ticket: null, messages: [], error: null });
+  // The list already carries the request, so the head paints at once (and the
+  // board's card has something real to morph into) while the thread loads.
+  const [state, setState] = useState(() => ({ ticket: data.tickets.find((x) => x.id === id) ?? null, messages: [], error: null }));
+  // The board's peek card morphs into this head under a view transition.
+  // Read once at mount: React renders again before the browser snapshots the
+  // new page, and a flag consumed during render would be gone by then.
+  const [fromPeek] = useState(() => {
+    const yes = boardReturn.peek === id;
+    if (yes) boardReturn.peek = null;
+    return yes;
+  });
   const [deploys, setDeploys] = useState(null);
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -56,10 +66,17 @@ export function TicketView({ id }) {
     }
   }, [id]);
 
+  // No reset to "loading" here: the route keys this view by id, so a new
+  // request mounts fresh, and wiping the seeded head would leave the view
+  // transition snapshotting "Loading…" instead of the request.
   useEffect(() => {
-    setState({ ticket: null, messages: [], error: null });
     void load();
   }, [load]);
+
+  // Going back to the board glides the camera back out of this request.
+  useEffect(() => {
+    boardReturn.ticket = id;
+  }, [id]);
 
   // Status changes and Ali's replies arrive without a reload: every 10s while
   // the request is moving, every 30s otherwise.
@@ -99,10 +116,33 @@ export function TicketView({ id }) {
   const [nowKey, nextKey] = NOW[ticket.status];
   const mine = deploys?.find((d) => d.ticket_id === ticket.id);
   const where = !mine ? null : mine.id === site?.productionDeploy ? 'live' : mine.id === site?.previewDeploy ? 'preview' : 'older';
+  // Where this page was reached from: the back button offers the way back
+  // (its href only covers a fresh tab; in-app it pops history).
+  const cameFrom = boardReturn.from;
+  let backText = t('ticket.back');
+  if (cameFrom) {
+    const navLabel = t(`nav.${cameFrom.name}`);
+    const name = navLabel !== `nav.${cameFrom.name}` ? navLabel : cameFrom.name === 'project' ? (data.projects.find((p) => String(p.id) === cameFrom.id)?.name ?? null) : null;
+    if (name) backText = t('ticket.backTo', { name });
+  }
+  const backPath = cameFrom ? (cameFrom.name === 'overview' ? '' : cameFrom.id ? `${cameFrom.name}/${cameFrom.id}` : cameFrom.name) : null;
 
   return (
     <div className="cp-view cp-ticket">
-      <header className="cp-ticket__head">
+      {cameFrom ? (
+        <p className="cp-ticket__back">
+          <a
+            href={href(backPath ?? '')}
+            onClick={(e) => {
+              e.preventDefault();
+              window.history.back();
+            }}
+          >
+            <Icon name="back" size={14} /> {backText}
+          </a>
+        </p>
+      ) : null}
+      <header className="cp-ticket__head" style={fromPeek ? { viewTransitionName: 'cp-peek' } : undefined}>
         <nav className="cp-crumbs">
           <a href={href('requests')}>{t('ticket.crumbs.requests')}</a>
           {project ? <a href={href(`project/${project.id}`)}>{project.name}</a> : null}

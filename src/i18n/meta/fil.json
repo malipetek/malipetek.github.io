@@ -348,15 +348,15 @@
     "reviewed": false
   },
   "views.overview.addProject": {
-    "en": "Add a project →",
+    "en": "Add a project",
     "reviewed": false
   },
   "views.overview.noProject": {
-    "en": "No project yet. Three questions and there is one.",
+    "en": "No project yet. Add one and we can start.",
     "reviewed": false
   },
   "views.overview.setupFirst": {
-    "en": "Set up your first project →",
+    "en": "Add your first project",
     "reviewed": false
   },
   "views.needs.title": {
@@ -864,7 +864,7 @@
     "reviewed": false
   },
   "views.github.intro": {
-    "en": "Keep a project's code in your own GitHub account, or let us work on an existing private repo. You pick exactly which repos the app can reach, and can revoke it any time on GitHub.",
+    "en": "Connect GitHub once and new projects can keep their code in your own account: we create the repository, or use one you already have. You pick exactly which repos the app can reach, and can revoke it any time on GitHub.",
     "reviewed": false
   },
   "views.github.disconnectTitle": {
@@ -880,7 +880,7 @@
     "reviewed": false
   },
   "views.cloudflare.intro": {
-    "en": "Have your sites hosted in your own Cloudflare account instead of ours: Cloudflare bills you directly, and a small site usually fits its free plan. Connecting changes nothing by itself: no site moves to your account until you ask for it. On Cloudflare you choose which account to share, and you can revoke it there or here any time.",
+    "en": "Have your sites hosted in your own Cloudflare account instead of ours: each site is deployed as a Worker there, Cloudflare bills you directly, and a small site usually fits its free plan. You choose which account to share, and can revoke it there or here any time.",
     "reviewed": false
   },
   "views.cloudflare.connected": {
@@ -1288,7 +1288,7 @@
     "reviewed": false
   },
   "offer.step.request.body": {
-    "en": "Sign in with your email and write what you need: in the portal, by email, or in the chat below. No call to get started.",
+    "en": "Sign in with your email and write what you need: in the portal, by email, or in the chat below. You do not need a call to get started.",
     "reviewed": false
   },
   "offer.step.approve.title": {
@@ -1532,11 +1532,11 @@
     "reviewed": false
   },
   "start.pageTitle": {
-    "en": "Set up a project — malipetek",
+    "en": "Start — malipetek",
     "reviewed": false
   },
   "start.heading": {
-    "en": "Set up",
+    "en": "What do you need?",
     "reviewed": false
   },
   "start.who.requests": {
@@ -1572,7 +1572,7 @@
     "reviewed": false
   },
   "start.fork.footnote": {
-    "en": "Three questions, then your first request is filed. Nothing is charged for asking.",
+    "en": "Three short steps, then your first request is filed. Nothing is charged for asking.",
     "reviewed": false
   },
   "start.already": {
@@ -1588,7 +1588,7 @@
     "reviewed": false
   },
   "start.create": {
-    "en": "Create project →",
+    "en": "Add the project →",
     "reviewed": false
   },
   "start.creating": {
@@ -1812,11 +1812,11 @@
     "reviewed": false
   },
   "site.home.title": {
-    "en": "M. Ali Petek — software help by the minute, not by a quote",
+    "en": "M. Ali Petek — vibe contracting: software help by the minute, not by a quote",
     "reviewed": false
   },
   "site.home.description": {
-    "en": "Vibe coded most of it? Get developer help with the last mile, billed by the second. You send a request, Ali approves it, an AI agent builds it, and he checks it before anything ships.",
+    "en": "Vibe contracting: you describe the change, an AI agent builds it, and a developer signs off before it ships. Billed by the second, no quote, no minimum.",
     "reviewed": false
   },
   "site.home.cta.ticket": {
@@ -1984,7 +1984,7 @@
     "reviewed": false
   },
   "offer.kind": {
-    "en": "Self-serve software contracting",
+    "en": "Vibe contracting",
     "reviewed": false
   },
   "offer.headline.1": {
@@ -2000,7 +2000,7 @@
     "reviewed": false
   },
   "offer.tagline": {
-    "en": "You vibe code most of it. I take the last mile — the bug, the deploy, the payments — billed by the second.",
+    "en": "You vibe code most of it. I take the part where it stalls, like the bug that keeps coming back or the payments, and bill it by the second.",
     "reviewed": false
   },
   "offer.punchline.1": {
@@ -2016,7 +2016,7 @@
     "reviewed": false
   },
   "offer.priceRule": {
-    "en": "You pay for the time I actually spend, billed by the second, plus what the AI run cost, with no markup. No packages, no minimum.",
+    "en": "You pay for the time I actually spend, billed by the second, plus what the AI run cost, with no markup. There are no packages and no minimum.",
     "reviewed": false
   },
   "offer.priceWhy": {
@@ -2040,7 +2040,7 @@
     "reviewed": false
   },
   "offer.why.yourself.answer": {
-    "en": "Do — most of it. When it stalls at the last mile, send me that part. A one-minute fix is {price} of my time, and you never wait for a quote.",
+    "en": "Keep doing it: it gets you most of the way. When it stalls, hand me the part that stalled. A one-minute fix is {price} of my time, and you never wait for a quote.",
     "reviewed": false
   },
   "offer.why.chatgpt.instead": {
@@ -2056,7 +2056,7 @@
     "reviewed": false
   },
   "offer.why.agency.answer": {
-    "en": "No quote, no call, no minimum invoice. A small fix does not wait until it is worth someone's afternoon: it is {price} of my time.",
+    "en": "There is no quote, call or minimum invoice, so a small fix does not wait until it is worth someone's afternoon. It is {price} of my time.",
     "reviewed": false
   },
   "offer.why.cheapest.instead": {
@@ -2097,6 +2097,1342 @@
   },
   "site.nav.portal": {
     "en": "Portal",
+    "reviewed": false
+  },
+  "offer.byo": {
+    "en": "Already pay for ChatGPT or Claude? Connect it to your account and it can make the change itself, on a preview. I review it, and you pay only for my review minutes.",
+    "reviewed": false
+  },
+  "card.refresh": {
+    "en": "Refresh",
+    "reviewed": false
+  },
+  "card.tabs.label": {
+    "en": "Your work",
+    "reviewed": false
+  },
+  "card.tab.overview": {
+    "en": "Overview",
+    "reviewed": false
+  },
+  "card.tab.projects": {
+    "en": "Projects",
+    "reviewed": false
+  },
+  "card.tab.sites": {
+    "en": "Sites",
+    "reviewed": false
+  },
+  "card.tab.requests": {
+    "en": "Requests",
+    "reviewed": false
+  },
+  "card.tab.openCount": {
+    "en": "{n} open",
+    "reviewed": false
+  },
+  "card.stations": {
+    "en": "Stations",
+    "reviewed": false
+  },
+  "card.projects.heading": {
+    "en": "Projects",
+    "reviewed": false
+  },
+  "card.filter.showing": {
+    "en": "Showing {name}",
+    "reviewed": false
+  },
+  "card.filter.all": {
+    "en": "Show all",
+    "reviewed": false
+  },
+  "card.thread.label": {
+    "en": "Conversation",
+    "reviewed": false
+  },
+  "card.thread.back": {
+    "en": "← Requests",
+    "reviewed": false
+  },
+  "card.thread.portal": {
+    "en": "Open in the portal ↗",
+    "reviewed": false
+  },
+  "card.thread.error": {
+    "en": "This conversation could not load.",
+    "reviewed": false
+  },
+  "card.thread.empty": {
+    "en": "No messages yet.",
+    "reviewed": false
+  },
+  "card.reply.placeholder": {
+    "en": "Reply to Ali",
+    "reviewed": false
+  },
+  "card.reply.send": {
+    "en": "Send",
+    "reviewed": false
+  },
+  "card.reply.note": {
+    "en": "Ali gets your reply by email and answers here.",
+    "reviewed": false
+  },
+  "card.reply.sending": {
+    "en": "Sending…",
+    "reviewed": false
+  },
+  "card.reply.failed": {
+    "en": "Your reply was not sent.",
+    "reviewed": false
+  },
+  "card.foot.note": {
+    "en": "Every request is read by a human before work starts.",
+    "reviewed": false
+  },
+  "card.foot.portal": {
+    "en": "Open the portal ↗",
+    "reviewed": false
+  },
+  "card.load.error": {
+    "en": "Your work could not load.",
+    "reviewed": false
+  },
+  "card.load.cancelled": {
+    "en": "Loading was cancelled.",
+    "reviewed": false
+  },
+  "card.host.noAnswer": {
+    "en": "ChatGPT did not answer in time. Try Refresh.",
+    "reviewed": false
+  },
+  "card.updated": {
+    "en": "updated {when}",
+    "reviewed": false
+  },
+  "card.project.untitled": {
+    "en": "Untitled project",
+    "reviewed": false
+  },
+  "card.project.requests": {
+    "en": "Requests →",
+    "reviewed": false
+  },
+  "card.project.setup": {
+    "en": "Setup",
+    "reviewed": false
+  },
+  "card.project.setupCount": {
+    "en": "Setup {ready}/{total}",
+    "reviewed": false
+  },
+  "card.project.open": {
+    "en": "{n, plural, one {# open request} other {# open requests}}",
+    "reviewed": false
+  },
+  "card.project.noOpen": {
+    "en": "No open requests",
+    "reviewed": false
+  },
+  "card.project.noRequests": {
+    "en": "No requests yet",
+    "reviewed": false
+  },
+  "card.project.sites": {
+    "en": "{n, plural, one {# site} other {# sites}}",
+    "reviewed": false
+  },
+  "card.project.next": {
+    "en": "Next:",
+    "reviewed": false
+  },
+  "card.projects.empty": {
+    "en": "No projects yet. Start one in the portal and it shows up here.",
+    "reviewed": false
+  },
+  "card.site.untitled": {
+    "en": "Site",
+    "reviewed": false
+  },
+  "card.site.failed": {
+    "en": "Failed",
+    "reviewed": false
+  },
+  "card.site.settingUp": {
+    "en": "Setting up",
+    "reviewed": false
+  },
+  "card.site.live": {
+    "en": "Live",
+    "reviewed": false
+  },
+  "card.site.previewOnly": {
+    "en": "Preview only",
+    "reviewed": false
+  },
+  "card.site.nothingBuilt": {
+    "en": "Nothing built yet",
+    "reviewed": false
+  },
+  "card.site.openPreview": {
+    "en": "Preview ↗",
+    "reviewed": false
+  },
+  "card.site.openLive": {
+    "en": "Live ↗",
+    "reviewed": false
+  },
+  "card.site.preview": {
+    "en": "Preview",
+    "reviewed": false
+  },
+  "card.site.none": {
+    "en": "No site yet",
+    "reviewed": false
+  },
+  "card.site.open": {
+    "en": "Open {name}",
+    "reviewed": false
+  },
+  "card.sites.empty": {
+    "en": "No hosted sites yet. When a project gets one, its preview and live links show up here.",
+    "reviewed": false
+  },
+  "card.request.untitled": {
+    "en": "Untitled request",
+    "reviewed": false
+  },
+  "card.request.unknown": {
+    "en": "Unknown",
+    "reviewed": false
+  },
+  "card.request.newReply": {
+    "en": "New reply",
+    "reviewed": false
+  },
+  "card.request.open": {
+    "en": "Open",
+    "reviewed": false
+  },
+  "card.request.otherWork": {
+    "en": "Other work",
+    "reviewed": false
+  },
+  "card.requests.emptyProject": {
+    "en": "No requests on this project yet.",
+    "reviewed": false
+  },
+  "card.requests.empty": {
+    "en": "No requests yet. Describe the work you need and it lands here.",
+    "reviewed": false
+  },
+  "card.group.open": {
+    "en": "{n} open",
+    "reviewed": false
+  },
+  "card.group.openOf": {
+    "en": "{open} of {total} open",
+    "reviewed": false
+  },
+  "card.stage.new": {
+    "en": "Waiting for Ali",
+    "reviewed": false
+  },
+  "card.stage.approved": {
+    "en": "Approved",
+    "reviewed": false
+  },
+  "card.stage.in_progress": {
+    "en": "Being built",
+    "reviewed": false
+  },
+  "card.stage.review": {
+    "en": "Being checked",
+    "reviewed": false
+  },
+  "card.stage.done": {
+    "en": "Shipped",
+    "reviewed": false
+  },
+  "card.station.new": {
+    "en": "Request",
+    "reviewed": false
+  },
+  "card.station.approved": {
+    "en": "Approve",
+    "reviewed": false
+  },
+  "card.station.in_progress": {
+    "en": "Build",
+    "reviewed": false
+  },
+  "card.station.review": {
+    "en": "Check",
+    "reviewed": false
+  },
+  "card.station.done": {
+    "en": "Ship",
+    "reviewed": false
+  },
+  "card.lane.unassigned": {
+    "en": "Getting set up",
+    "reviewed": false
+  },
+  "card.lane.showOnly": {
+    "en": "Show only {name}",
+    "reviewed": false
+  },
+  "card.kpi.spent": {
+    "en": "Spent so far",
+    "reviewed": false
+  },
+  "card.kpi.ai": {
+    "en": "AI at cost: {amount}",
+    "reviewed": false
+  },
+  "card.kpi.billed": {
+    "en": "Finished work, billed",
+    "reviewed": false
+  },
+  "card.kpi.running": {
+    "en": "Running on open work",
+    "reviewed": false
+  },
+  "card.kpi.openRequests": {
+    "en": "Open requests",
+    "reviewed": false
+  },
+  "card.kpi.waiting": {
+    "en": "{n} waiting for Ali",
+    "reviewed": false
+  },
+  "card.kpi.noneWaiting": {
+    "en": "None waiting for Ali",
+    "reviewed": false
+  },
+  "card.kpi.liveSites": {
+    "en": "Live sites",
+    "reviewed": false
+  },
+  "card.kpi.liveOf": {
+    "en": "{live} of {total}",
+    "reviewed": false
+  },
+  "card.kpi.previews": {
+    "en": "{n, plural, one {# preview not live yet} other {# previews not live yet}}",
+    "reviewed": false
+  },
+  "card.kpi.allPublished": {
+    "en": "All published",
+    "reviewed": false
+  },
+  "card.kpi.noSite": {
+    "en": "No hosted site yet",
+    "reviewed": false
+  },
+  "card.chart.months": {
+    "en": "Billed per month",
+    "reviewed": false
+  },
+  "card.chart.monthsSub": {
+    "en": "Finished requests, last 6 months",
+    "reviewed": false
+  },
+  "card.chart.monthsEmpty": {
+    "en": "Nothing billed yet. Finished requests show up here.",
+    "reviewed": false
+  },
+  "card.chart.monthTip": {
+    "en": "{month}: {amount}",
+    "reviewed": false
+  },
+  "card.chart.requestCount": {
+    "en": "{n, plural, one {# request} other {# requests}}",
+    "reviewed": false
+  },
+  "card.chart.month": {
+    "en": "Month",
+    "reviewed": false
+  },
+  "card.chart.billed": {
+    "en": "Billed",
+    "reviewed": false
+  },
+  "card.chart.requests": {
+    "en": "Requests",
+    "reviewed": false
+  },
+  "card.chart.projects": {
+    "en": "Cost by project",
+    "reviewed": false
+  },
+  "card.chart.projectsSub": {
+    "en": "Finished and open work",
+    "reviewed": false
+  },
+  "card.chart.projectsEmpty": {
+    "en": "No costs yet.",
+    "reviewed": false
+  },
+  "card.chart.project": {
+    "en": "Project",
+    "reviewed": false
+  },
+  "card.chart.cost": {
+    "en": "Cost",
+    "reviewed": false
+  },
+  "card.who.ali": {
+    "en": "Ali",
+    "reviewed": false
+  },
+  "card.who.agent": {
+    "en": "Agent",
+    "reviewed": false
+  },
+  "card.sys.moved": {
+    "en": "Moved to {status}",
+    "reviewed": false
+  },
+  "card.sys.movedTotal": {
+    "en": "Moved to {status} · total {total}",
+    "reviewed": false
+  },
+  "thread.previewFiled": {
+    "en": "Filed from the preview of {site} — {page}",
+    "reviewed": false
+  },
+  "thread.previewFiledNoPage": {
+    "en": "Filed from the preview of {site}",
+    "reviewed": false
+  },
+  "views.entity.openProject": {
+    "en": "Open project",
+    "reviewed": false
+  },
+  "views.entity.newRequest": {
+    "en": "New request",
+    "reviewed": false
+  },
+  "views.entity.requests": {
+    "en": "Requests",
+    "reviewed": false
+  },
+  "views.entity.sites": {
+    "en": "Sites",
+    "reviewed": false
+  },
+  "views.entity.openRequests": {
+    "en": "Open requests",
+    "reviewed": false
+  },
+  "views.entity.setup": {
+    "en": "Setup",
+    "reviewed": false
+  },
+  "views.entity.code": {
+    "en": "Code",
+    "reviewed": false
+  },
+  "views.entity.status": {
+    "en": "Status",
+    "reviewed": false
+  },
+  "views.entity.host": {
+    "en": "Host",
+    "reviewed": false
+  },
+  "views.entity.hostCloudflare": {
+    "en": "Cloudflare",
+    "reviewed": false
+  },
+  "views.entity.hostOurs": {
+    "en": "Ours",
+    "reviewed": false
+  },
+  "views.entity.project": {
+    "en": "Project",
+    "reviewed": false
+  },
+  "views.entity.primary": {
+    "en": "primary",
+    "reviewed": false
+  },
+  "views.entity.failed": {
+    "en": "Needs attention",
+    "reviewed": false
+  },
+  "views.entity.settingUp": {
+    "en": "Setting up",
+    "reviewed": false
+  },
+  "views.entity.noAddress": {
+    "en": "No address yet",
+    "reviewed": false
+  },
+  "views.entity.noSiteHint": {
+    "en": "No site yet. Open the project to add one.",
+    "reviewed": false
+  },
+  "views.entity.siteHint": {
+    "en": "Publishing and setup live in the project.",
+    "reviewed": false
+  },
+  "ticket.back": {
+    "en": "Back",
+    "reviewed": false
+  },
+  "ticket.backTo": {
+    "en": "Back to {name}",
+    "reviewed": false
+  },
+  "start.field.name.hint": {
+    "en": "The folder and repository are named after this.",
+    "reviewed": false
+  },
+  "start.step.site.title": {
+    "en": "Name your site",
+    "reviewed": false
+  },
+  "start.step.site.new.lede": {
+    "en": "A name, the address it gets, and one sentence about what it should do.",
+    "reviewed": false
+  },
+  "start.step.site.existing.lede": {
+    "en": "A name, the address it gets, and one sentence about what it is today.",
+    "reviewed": false
+  },
+  "start.field.address.label": {
+    "en": "Address",
+    "reviewed": false
+  },
+  "start.field.address.placeholder": {
+    "en": "your-site",
+    "reviewed": false
+  },
+  "start.address.hint": {
+    "en": "Letters, numbers and hyphens. This is where the site lives.",
+    "reviewed": false
+  },
+  "start.address.checking": {
+    "en": "Checking…",
+    "reviewed": false
+  },
+  "start.address.available": {
+    "en": "Available.",
+    "reviewed": false
+  },
+  "start.address.taken": {
+    "en": "That address is taken. Try another.",
+    "reviewed": false
+  },
+  "start.step.code.title": {
+    "en": "Where does the code live?",
+    "reviewed": false
+  },
+  "start.step.code.lede": {
+    "en": "We can make a repository for you, use your GitHub account, or work from one you already have.",
+    "reviewed": false
+  },
+  "start.github.connected": {
+    "en": "Connected as {account}.",
+    "reviewed": false
+  },
+  "start.github.notConnected": {
+    "en": "GitHub is not connected. Connect it in a new tab and come back — this form is saved.",
+    "reviewed": false
+  },
+  "start.github.account": {
+    "en": "GitHub account",
+    "reviewed": false
+  },
+  "start.connection.open": {
+    "en": "Connect {label} in a new tab →",
+    "reviewed": false
+  },
+  "start.field.repoMode.label": {
+    "en": "Where should the code live?",
+    "reviewed": false
+  },
+  "start.repoMode.create.label": {
+    "en": "Create a new repository",
+    "reviewed": false
+  },
+  "start.repoMode.create.note": {
+    "en": "A private repository, made for this site.",
+    "reviewed": false
+  },
+  "start.repoMode.repo.label": {
+    "en": "Use a repository I already have",
+    "reviewed": false
+  },
+  "start.repoMode.repo.note": {
+    "en": "Paste its GitHub address.",
+    "reviewed": false
+  },
+  "start.repoMode.zip.label": {
+    "en": "I will send a zip",
+    "reviewed": false
+  },
+  "start.repoMode.zip.note": {
+    "en": "A copy of the site is enough to start.",
+    "reviewed": false
+  },
+  "start.repoMode.zip.hint": {
+    "en": "Send the zip in the first request thread after the site is created.",
+    "reviewed": false
+  },
+  "start.field.repoSource.label": {
+    "en": "Who should own it?",
+    "reviewed": false
+  },
+  "start.repoSource.github.label": {
+    "en": "My GitHub account",
+    "reviewed": false
+  },
+  "start.repoSource.github.note": {
+    "en": "Created under @{account}.",
+    "reviewed": false
+  },
+  "start.repoSource.github.missing": {
+    "en": "Connect GitHub first, or use our account.",
+    "reviewed": false
+  },
+  "start.repoSource.ours.label": {
+    "en": "malipetek's account",
+    "reviewed": false
+  },
+  "start.repoSource.ours.note": {
+    "en": "We create and keep it; you can move it later.",
+    "reviewed": false
+  },
+  "start.field.repo.hint": {
+    "en": "A private repo is fine once GitHub is connected.",
+    "reviewed": false
+  },
+  "start.step.first.title": {
+    "en": "The first request",
+    "reviewed": false
+  },
+  "start.step.first.new.lede": {
+    "en": "One request is enough to start. It becomes your first ticket.",
+    "reviewed": false
+  },
+  "start.step.first.existing.lede": {
+    "en": "One request is enough to start. It becomes your first ticket.",
+    "reviewed": false
+  },
+  "start.field.new.goal.hint": {
+    "en": "What should exist in two weeks that does not today?",
+    "reviewed": false
+  },
+  "start.field.host.label": {
+    "en": "Where should it be hosted?",
+    "reviewed": false
+  },
+  "start.host.ours.label": {
+    "en": "Host it for me",
+    "reviewed": false
+  },
+  "start.host.ours.note": {
+    "en": "At {address}. Nothing to connect.",
+    "reviewed": false
+  },
+  "start.host.cloudflare.label": {
+    "en": "My Cloudflare account",
+    "reviewed": false
+  },
+  "start.host.cloudflare.note": {
+    "en": "Deployed to {account}; Cloudflare bills you directly.",
+    "reviewed": false
+  },
+  "start.host.cloudflare.missing": {
+    "en": "Connect Cloudflare in a new tab and come back — this form is saved.",
+    "reviewed": false
+  },
+  "start.summary.title": {
+    "en": "Ready to add",
+    "reviewed": false
+  },
+  "start.summary.address": {
+    "en": "Address",
+    "reviewed": false
+  },
+  "start.summary.code": {
+    "en": "Code",
+    "reviewed": false
+  },
+  "start.summary.github": {
+    "en": "New repo in @{account}",
+    "reviewed": false
+  },
+  "start.summary.ours": {
+    "en": "New repo in our account",
+    "reviewed": false
+  },
+  "start.summary.zip": {
+    "en": "You will send a zip",
+    "reviewed": false
+  },
+  "start.summary.host": {
+    "en": "Hosting",
+    "reviewed": false
+  },
+  "start.summary.oursHost": {
+    "en": "malipetek.online",
+    "reviewed": false
+  },
+  "start.summary.cloudflare": {
+    "en": "Your Cloudflare account ({account})",
+    "reviewed": false
+  },
+  "views.repo.title": {
+    "en": "Code repository",
+    "reviewed": false
+  },
+  "views.repo.mine": {
+    "en": "In your GitHub account, @{account}.",
+    "reviewed": false
+  },
+  "views.repo.ours": {
+    "en": "We keep the code for this site.",
+    "reviewed": false
+  },
+  "views.repo.wanted": {
+    "en": "A machine will create the repository on its next sync.",
+    "reviewed": false
+  },
+  "views.repo.missing": {
+    "en": "No repository yet. Work cannot start until one exists.",
+    "reviewed": false
+  },
+  "views.repo.createGithub": {
+    "en": "Create it in @{account}’s GitHub",
+    "reviewed": false
+  },
+  "views.repo.createOurs": {
+    "en": "Create it in our account",
+    "reviewed": false
+  },
+  "views.repo.useExisting": {
+    "en": "Use a repository I already have",
+    "reviewed": false
+  },
+  "views.repo.use": {
+    "en": "Use this repository",
+    "reviewed": false
+  },
+  "views.repo.hint": {
+    "en": "A private repo is fine once GitHub is connected.",
+    "reviewed": false
+  },
+  "views.repo.connected": {
+    "en": "Connected.",
+    "reviewed": false
+  },
+  "views.repo.githubError": {
+    "en": "GitHub said: {message}",
+    "reviewed": false
+  },
+  "views.site.cloudflareHost": {
+    "en": "Hosted in your Cloudflare account",
+    "reviewed": false
+  },
+  "views.site.oursHost": {
+    "en": "Hosted by malipetek",
+    "reviewed": false
+  },
+  "views.site.cloudflareError": {
+    "en": "Cloudflare could not take the last deploy: {message}. Our copy is still up to date.",
+    "reviewed": false
+  },
+  "views.site.moveToCloudflare": {
+    "en": "Move to my Cloudflare account",
+    "reviewed": false
+  },
+  "views.site.moveToOurs": {
+    "en": "Move back to malipetek.online",
+    "reviewed": false
+  },
+  "views.site.moved": {
+    "en": "The site moved. Cloudflare may take a minute to answer at the new address.",
+    "reviewed": false
+  },
+  "views.site.connectCloudflare": {
+    "en": "Connect Cloudflare to host this site in your account.",
+    "reviewed": false
+  },
+  "views.github.noRepo": {
+    "en": "{count, plural, one {# project has no repository yet.} other {# projects have no repository yet.}} Create one in @{account}, or set it up from the project’s page.",
+    "reviewed": false
+  },
+  "views.github.createRepo": {
+    "en": "Create repo",
+    "reviewed": false
+  },
+  "start.repoMode.none.label": {
+    "en": "Not sure yet",
+    "reviewed": false
+  },
+  "start.repoMode.none.note": {
+    "en": "Say where it lives on the first thread.",
+    "reviewed": false
+  },
+  "start.summary.none": {
+    "en": "Not sure yet — say it on the first thread",
+    "reviewed": false
+  },
+  "views.site.cloudflareFallingBack": {
+    "en": "We could not reach your Cloudflare account for the last deploy, so the site is still on malipetek.online. Reconnect Cloudflare in Connections to move it back.",
+    "reviewed": false
+  },
+  "start.step.project.title": {
+    "en": "Name your project",
+    "reviewed": false
+  },
+  "start.step.project.new.lede": {
+    "en": "A name, and one sentence about what it should do.",
+    "reviewed": false
+  },
+  "start.step.project.existing.lede": {
+    "en": "A name, and one sentence about what it is today.",
+    "reviewed": false
+  },
+  "start.summary.project": {
+    "en": "Project",
+    "reviewed": false
+  },
+  "views.sites.title": {
+    "en": "Sites",
+    "reviewed": false
+  },
+  "views.sites.add": {
+    "en": "Add a site",
+    "reviewed": false
+  },
+  "views.sites.none": {
+    "en": "No site yet. Add one to get an address and a preview.",
+    "reviewed": false
+  },
+  "views.sites.main": {
+    "en": "main site",
+    "reviewed": false
+  },
+  "views.sites.addTitle": {
+    "en": "Add a site to {name}",
+    "reviewed": false
+  },
+  "views.sites.addLede": {
+    "en": "A site is an address where this project's build is published. A project can have more than one.",
+    "reviewed": false
+  },
+  "views.sites.name": {
+    "en": "Site name",
+    "reviewed": false
+  },
+  "views.sites.namePlaceholder": {
+    "en": "Docs, landing page…",
+    "reviewed": false
+  },
+  "views.sites.creating": {
+    "en": "Adding the site…",
+    "reviewed": false
+  },
+  "views.sites.created": {
+    "en": "The site is being made.",
+    "reviewed": false
+  },
+  "views.sites.failed": {
+    "en": "The site could not be added.",
+    "reviewed": false
+  },
+  "views.sites.versions": {
+    "en": "Versions",
+    "reviewed": false
+  },
+  "views.sites.untitled": {
+    "en": "Site",
+    "reviewed": false
+  },
+  "views.sites.count": {
+    "en": "{n, plural, one {# site} other {# sites}}",
+    "reviewed": false
+  },
+  "views.sites.host": {
+    "en": "Where should it be hosted?",
+    "reviewed": false
+  },
+  "views.sites.delete": {
+    "en": "Delete site",
+    "reviewed": false
+  },
+  "views.sites.deleteTitle": {
+    "en": "Delete {name}?",
+    "reviewed": false
+  },
+  "views.sites.deleteText": {
+    "en": "Its address and deploy history stop working. The project's code and requests stay.",
+    "reviewed": false
+  },
+  "views.sites.deleteConfirm": {
+    "en": "Delete site",
+    "reviewed": false
+  },
+  "views.sites.deleted": {
+    "en": "Site deleted.",
+    "reviewed": false
+  },
+  "start.intake.lede": {
+    "en": "Tell me in your own words. The setup assistant will create the project, the site and the repository, then file the first request for Ali to approve.",
+    "reviewed": false
+  },
+  "start.intake.label": {
+    "en": "Your request",
+    "reviewed": false
+  },
+  "start.intake.placeholder": {
+    "en": "I need a website for my bakery, with the menu and a way to order…",
+    "reviewed": false
+  },
+  "start.intake.send": {
+    "en": "Send →",
+    "reviewed": false
+  },
+  "start.intake.sending": {
+    "en": "Sending…",
+    "reviewed": false
+  },
+  "start.intake.empty": {
+    "en": "Write a sentence first.",
+    "reviewed": false
+  },
+  "start.intake.note": {
+    "en": "The assistant answers in the thread, usually within a minute. Nothing runs until Ali approves the work.",
+    "reviewed": false
+  },
+  "start.intake.githubNote": {
+    "en": "Optional. It lets the assistant keep the code in your account.",
+    "reviewed": false
+  },
+  "start.intake.cloudflareNote": {
+    "en": "Optional. It lets the assistant host the site in your account.",
+    "reviewed": false
+  },
+  "start.intake.connected": {
+    "en": "Connected as {account}.",
+    "reviewed": false
+  },
+  "start.intake.connect": {
+    "en": "Connect {label} in a new tab →",
+    "reviewed": false
+  },
+  "thread.assistant": {
+    "en": "Setup assistant",
+    "reviewed": false
+  },
+  "ticket.setupAssistant": {
+    "en": "Setup assistant",
+    "reviewed": false
+  },
+  "ticket.details.move": {
+    "en": "Move",
+    "reviewed": false
+  },
+  "ticket.details.site": {
+    "en": "Site",
+    "reviewed": false
+  },
+  "ticket.details.mainSite": {
+    "en": "The project's main site",
+    "reviewed": false
+  },
+  "ticket.move.title": {
+    "en": "Move this request",
+    "reviewed": false
+  },
+  "ticket.move.subtitle": {
+    "en": "Choose another project (and one of its sites) for this request.",
+    "reviewed": false
+  },
+  "ticket.move.project": {
+    "en": "Project",
+    "reviewed": false
+  },
+  "ticket.move.site": {
+    "en": "Site",
+    "reviewed": false
+  },
+  "ticket.move.noSite": {
+    "en": "The project's main site",
+    "reviewed": false
+  },
+  "ticket.move.approval": {
+    "en": "An approved request goes back to Ali for approval, because its scope changed.",
+    "reviewed": false
+  },
+  "ticket.move.running": {
+    "en": "A run is working on this request. Wait for it to finish before moving it.",
+    "reviewed": false
+  },
+  "ticket.move.confirm": {
+    "en": "Move",
+    "reviewed": false
+  },
+  "ticket.move.done": {
+    "en": "Moved.",
+    "reviewed": false
+  },
+  "ticket.move.noProjects": {
+    "en": "You have no projects yet.",
+    "reviewed": false
+  },
+  "ticket.move.addProject": {
+    "en": "Add one first",
+    "reviewed": false
+  },
+  "views.sites.move": {
+    "en": "Move",
+    "reviewed": false
+  },
+  "views.sites.moved": {
+    "en": "Site moved.",
+    "reviewed": false
+  },
+  "views.sites.moveTitle": {
+    "en": "Move {name} to another project?",
+    "reviewed": false
+  },
+  "views.sites.moveSubtitle": {
+    "en": "Its address, deploys and host stay the same; only the project it belongs to changes.",
+    "reviewed": false
+  },
+  "views.sites.moveTo": {
+    "en": "Project",
+    "reviewed": false
+  },
+  "views.sites.moveConfirm": {
+    "en": "Move site",
+    "reviewed": false
+  },
+  "views.sites.moveHint": {
+    "en": "The target project keeps one main site; this one is added alongside it.",
+    "reviewed": false
+  },
+  "views.sites.moveNone": {
+    "en": "You need another project first.",
+    "reviewed": false
+  },
+  "board.lanes": {
+    "en": "Projects",
+    "reviewed": false
+  },
+  "board.allProjects": {
+    "en": "All projects",
+    "reviewed": false
+  },
+  "board.gettingSetUp": {
+    "en": "Getting set up",
+    "reviewed": false
+  },
+  "board.noSite": {
+    "en": "No site yet",
+    "reviewed": false
+  },
+  "board.live": {
+    "en": "Live",
+    "reviewed": false
+  },
+  "board.preview": {
+    "en": "Preview",
+    "reviewed": false
+  },
+  "board.openProject": {
+    "en": "Open {name}",
+    "reviewed": false
+  },
+  "board.peek.open": {
+    "en": "Open request",
+    "reviewed": false
+  },
+  "board.showOnly": {
+    "en": "Show only {name}",
+    "reviewed": false
+  },
+  "board.hint": {
+    "en": "Click a project to focus its line, a site to open it, or drag a request onto a project to move it.",
+    "reviewed": false
+  },
+  "views.repo.githubPermission": {
+    "en": "The GitHub App is missing the Administration permission, so it cannot create a repository in your account. Grant it in the GitHub App settings, or choose “Create it in our account” — work starts either way.",
+    "reviewed": false
+  },
+  "views.site.retryCloudflare": {
+    "en": "Retry with my Cloudflare account ({account})",
+    "reviewed": false
+  },
+  "views.site.grantCloudflare": {
+    "en": "Reconnect Cloudflare to grant Workers Admin",
+    "reviewed": false
+  },
+  "preview.launcher": {
+    "en": "Feedback",
+    "reviewed": false
+  },
+  "preview.launcherLabel": {
+    "en": "Send feedback on this preview",
+    "reviewed": false
+  },
+  "preview.title": {
+    "en": "Send feedback",
+    "reviewed": false
+  },
+  "preview.subtitle": {
+    "en": "Goes to Ali as a request",
+    "reviewed": false
+  },
+  "preview.close": {
+    "en": "Close",
+    "reviewed": false
+  },
+  "preview.placeholder": {
+    "en": "What should change? Describe it, or record a voice note.",
+    "reviewed": false
+  },
+  "preview.voice": {
+    "en": "Voice note",
+    "reviewed": false
+  },
+  "preview.screenshot": {
+    "en": "Screenshot",
+    "reviewed": false
+  },
+  "preview.send": {
+    "en": "Send request",
+    "reviewed": false
+  },
+  "preview.recording": {
+    "en": "Recording. Say what should change.",
+    "reviewed": false
+  },
+  "preview.stop": {
+    "en": "Stop",
+    "reviewed": false
+  },
+  "preview.micBlocked": {
+    "en": "Microphone access was blocked. Allow it in the browser, or write the note instead.",
+    "reviewed": false
+  },
+  "preview.noRecorder": {
+    "en": "This browser cannot record audio.",
+    "reviewed": false
+  },
+  "preview.nothingRecorded": {
+    "en": "Nothing was recorded.",
+    "reviewed": false
+  },
+  "preview.voiceReady": {
+    "en": "Voice note ready.",
+    "reviewed": false
+  },
+  "preview.capturing": {
+    "en": "Taking the screenshot…",
+    "reviewed": false
+  },
+  "preview.captureFailed": {
+    "en": "Could not capture the page. Try again, or describe it in the note.",
+    "reviewed": false
+  },
+  "preview.screenshotAttached": {
+    "en": "Screenshot attached.",
+    "reviewed": false
+  },
+  "preview.saveFailed": {
+    "en": "Could not save the marked-up screenshot.",
+    "reviewed": false
+  },
+  "preview.sending": {
+    "en": "Sending…",
+    "reviewed": false
+  },
+  "preview.empty": {
+    "en": "Add a note, a voice note or a screenshot first.",
+    "reviewed": false
+  },
+  "preview.offline": {
+    "en": "Could not reach the portal. Check the connection and try again.",
+    "reviewed": false
+  },
+  "preview.failed": {
+    "en": "Could not send that. Try again in a moment.",
+    "reviewed": false
+  },
+  "preview.signedOut": {
+    "en": "This preview is not linked to your portal. Open it again from your portal.",
+    "reviewed": false
+  },
+  "preview.unknownSite": {
+    "en": "This preview is no longer available.",
+    "reviewed": false
+  },
+  "preview.rateLimited": {
+    "en": "Too many notes from here just now. Try again in a little while.",
+    "reviewed": false
+  },
+  "preview.tooLarge": {
+    "en": "An attachment is over the 10 MB limit. Try a smaller screenshot or a shorter note.",
+    "reviewed": false
+  },
+  "preview.noFiles": {
+    "en": "Attachments are unavailable right now. Send the note as text.",
+    "reviewed": false
+  },
+  "preview.openFromPortal": {
+    "en": "Open this preview from your portal so the request goes on the right project.",
+    "reviewed": false
+  },
+  "preview.openPortal": {
+    "en": "Open your portal",
+    "reviewed": false
+  },
+  "preview.done": {
+    "en": "Request #{id} sent",
+    "reviewed": false
+  },
+  "preview.replyInPortal": {
+    "en": "Ali will reply in your portal.",
+    "reviewed": false
+  },
+  "preview.transcribed": {
+    "en": "Voice note transcribed.",
+    "reviewed": false
+  },
+  "preview.openRequest": {
+    "en": "Open request",
+    "reviewed": false
+  },
+  "preview.sendAnother": {
+    "en": "Send another",
+    "reviewed": false
+  },
+  "preview.markup": {
+    "en": "Mark up the screenshot",
+    "reviewed": false
+  },
+  "preview.pen": {
+    "en": "Pen",
+    "reviewed": false
+  },
+  "preview.arrow": {
+    "en": "Arrow",
+    "reviewed": false
+  },
+  "preview.box": {
+    "en": "Box",
+    "reviewed": false
+  },
+  "preview.text": {
+    "en": "Text",
+    "reviewed": false
+  },
+  "preview.hide": {
+    "en": "Hide",
+    "reviewed": false
+  },
+  "preview.undo": {
+    "en": "Undo",
+    "reviewed": false
+  },
+  "preview.clear": {
+    "en": "Clear",
+    "reviewed": false
+  },
+  "preview.cancel": {
+    "en": "Cancel",
+    "reviewed": false
+  },
+  "preview.attach": {
+    "en": "Attach screenshot",
+    "reviewed": false
+  },
+  "preview.drawHint": {
+    "en": "Draw on the screenshot to show what should change.",
+    "reviewed": false
+  },
+  "preview.typeHere": {
+    "en": "Type…",
+    "reviewed": false
+  },
+  "preview.removeAttachment": {
+    "en": "Remove {name}",
+    "reviewed": false
+  },
+  "preview.colour": {
+    "en": "Colour {value}",
+    "reviewed": false
+  },
+  "preview.loadFailed": {
+    "en": "Could not load the screenshot.",
+    "reviewed": false
+  },
+  "preview.tools": {
+    "en": "Drawing tools",
+    "reviewed": false
+  },
+  "board.reason.approval": {
+    "en": "Waiting for Ali to approve it.",
+    "reviewed": false
+  },
+  "board.reason.client": {
+    "en": "Waiting for your reply.",
+    "reviewed": false
+  },
+  "board.reason.queue": {
+    "en": "Queued for the next free machine.",
+    "reviewed": false
+  },
+  "board.reason.repo": {
+    "en": "Blocked: the code repository cannot be read yet.",
+    "reviewed": false
+  },
+  "board.reason.repoSoon": {
+    "en": "The code repository is being set up.",
+    "reviewed": false
+  },
+  "board.reason.review": {
+    "en": "Ali is checking the result.",
+    "reviewed": false
+  },
+  "board.reason.running": {
+    "en": "A machine is working on it.",
+    "reviewed": false
+  },
+  "board.movedTicket": {
+    "en": "Request moved.",
+    "reviewed": false
+  },
+  "board.movedSite": {
+    "en": "Site moved.",
+    "reviewed": false
+  },
+  "board.zoomIn": {
+    "en": "Zoom in",
+    "reviewed": false
+  },
+  "board.zoomOut": {
+    "en": "Zoom out",
+    "reviewed": false
+  },
+  "board.reset": {
+    "en": "Reset the view",
+    "reviewed": false
+  },
+  "offer.define": {
+    "en": "Vibe contracting: you describe the change in plain words, an AI agent builds it, and a developer who answers for the result signs off before it ships. Billed by the minute, not by the project.",
+    "reviewed": false
+  },
+  "offer.contrast": {
+    "en": "Vibe coding is you and an AI. Vibe contracting is an AI and a developer who signs for its work.",
     "reviewed": false
   }
 }

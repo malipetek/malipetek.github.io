@@ -49,6 +49,15 @@ import { capture } from './shot.mjs';
 const VERSION = '2.11.0';
 const HEARTBEAT_MS = 30_000;
 const PROJECT_SYNC_MS = 10 * 60_000;
+/**
+ * The main loop must turn at least this often (minutes; `watchdogMinutes` in
+ * the config overrides it, 0 turns it off). A turn that never ends — a land,
+ * build or sync waiting forever — stops the heartbeat while the process looks
+ * alive, and launchd or systemd only restart a process that exits. So the
+ * watchdog exits, and the supervisor starts a fresh node. Long builds stay
+ * under it: a turn waits for one build at a time, and runs are not in the loop.
+ */
+const WATCHDOG_MINUTES = 30;
 const SHUTDOWN = 'node shutting down';
 
 /* ————— config ————— */
@@ -1528,7 +1537,17 @@ async function main() {
   setInterval(() => void probeHealth(config), PROBE_EVERY_MS);
   let lastSync = Date.now();
   let configStamp = statSync(CONFIG_PATH).mtimeMs;
+  let turnAt = Date.now();
+  setInterval(() => {
+    const minutes = Number(config.watchdogMinutes ?? WATCHDOG_MINUTES);
+    if (!(minutes > 0)) return;
+    const stalled = Date.now() - turnAt;
+    if (stalled <= minutes * 60_000) return;
+    log(`watchdog: the main loop has not turned for ${Math.round(stalled / 60_000)} min — exiting so the supervisor restarts the node`);
+    process.exit(1);
+  }, 60_000).unref();
   for (;;) {
+    turnAt = Date.now();
     // The Admin panel edits the config file; pick its changes up without a
     // restart, so a running agent is never killed for a settings change. The
     // node id is the one thing that needs a restart.

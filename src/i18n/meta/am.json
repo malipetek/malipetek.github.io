@@ -2954,5 +2954,485 @@
   "offer.byo": {
     "en": "Already pay for ChatGPT or Claude? Connect it to your account and it can make the change itself, on a preview. I review it, and you pay only for my review minutes.",
     "reviewed": false
+  },
+  "card.refresh": {
+    "en": "Refresh",
+    "reviewed": false
+  },
+  "card.tabs.label": {
+    "en": "Your work",
+    "reviewed": false
+  },
+  "card.tab.overview": {
+    "en": "Overview",
+    "reviewed": false
+  },
+  "card.tab.projects": {
+    "en": "Projects",
+    "reviewed": false
+  },
+  "card.tab.sites": {
+    "en": "Sites",
+    "reviewed": false
+  },
+  "card.tab.requests": {
+    "en": "Requests",
+    "reviewed": false
+  },
+  "card.tab.openCount": {
+    "en": "{n} open",
+    "reviewed": false
+  },
+  "card.stations": {
+    "en": "Stations",
+    "reviewed": false
+  },
+  "card.projects.heading": {
+    "en": "Projects",
+    "reviewed": false
+  },
+  "card.filter.showing": {
+    "en": "Showing {name}",
+    "reviewed": false
+  },
+  "card.filter.all": {
+    "en": "Show all",
+    "reviewed": false
+  },
+  "card.thread.label": {
+    "en": "Conversation",
+    "reviewed": false
+  },
+  "card.thread.back": {
+    "en": "← Requests",
+    "reviewed": false
+  },
+  "card.thread.portal": {
+    "en": "Open in the portal ↗",
+    "reviewed": false
+  },
+  "card.thread.error": {
+    "en": "This conversation could not load.",
+    "reviewed": false
+  },
+  "card.thread.empty": {
+    "en": "No messages yet.",
+    "reviewed": false
+  },
+  "card.reply.placeholder": {
+    "en": "Reply to Ali",
+    "reviewed": false
+  },
+  "card.reply.send": {
+    "en": "Send",
+    "reviewed": false
+  },
+  "card.reply.note": {
+    "en": "Ali gets your reply by email and answers here.",
+    "reviewed": false
+  },
+  "card.reply.sending": {
+    "en": "Sending…",
+    "reviewed": false
+  },
+  "card.reply.failed": {
+    "en": "Your reply was not sent.",
+    "reviewed": false
+  },
+  "card.foot.note": {
+    "en": "Every request is read by a human before work starts.",
+    "reviewed": false
+  },
+  "card.foot.portal": {
+    "en": "Open the portal ↗",
+    "reviewed": false
+  },
+  "card.load.error": {
+    "en": "Your work could not load.",
+    "reviewed": false
+  },
+  "card.load.cancelled": {
+    "en": "Loading was cancelled.",
+    "reviewed": false
+  },
+  "card.host.noAnswer": {
+    "en": "ChatGPT did not answer in time. Try Refresh.",
+    "reviewed": false
+  },
+  "card.updated": {
+    "en": "updated {when}",
+    "reviewed": false
+  },
+  "card.project.untitled": {
+    "en": "Untitled project",
+    "reviewed": false
+  },
+  "card.project.requests": {
+    "en": "Requests →",
+    "reviewed": false
+  },
+  "card.project.setup": {
+    "en": "Setup",
+    "reviewed": false
+  },
+  "card.project.setupCount": {
+    "en": "Setup {ready}/{total}",
+    "reviewed": false
+  },
+  "card.project.open": {
+    "en": "{n, plural, one {# open request} other {# open requests}}",
+    "reviewed": false
+  },
+  "card.project.noOpen": {
+    "en": "No open requests",
+    "reviewed": false
+  },
+  "card.project.noRequests": {
+    "en": "No requests yet",
+    "reviewed": false
+  },
+  "card.project.sites": {
+    "en": "{n, plural, one {# site} other {# sites}}",
+    "reviewed": false
+  },
+  "card.project.next": {
+    "en": "Next:",
+    "reviewed": false
+  },
+  "card.projects.empty": {
+    "en": "No projects yet. Start one in the portal and it shows up here.",
+    "reviewed": false
+  },
+  "card.site.untitled": {
+    "en": "Site",
+    "reviewed": false
+  },
+  "card.site.failed": {
+    "en": "Failed",
+    "reviewed": false
+  },
+  "card.site.settingUp": {
+    "en": "Setting up",
+    "reviewed": false
+  },
+  "card.site.live": {
+    "en": "Live",
+    "reviewed": false
+  },
+  "card.site.previewOnly": {
+    "en": "Preview only",
+    "reviewed": false
+  },
+  "card.site.nothingBuilt": {
+    "en": "Nothing built yet",
+    "reviewed": false
+  },
+  "card.site.openPreview": {
+    "en": "Preview ↗",
+    "reviewed": false
+  },
+  "card.site.openLive": {
+    "en": "Live ↗",
+    "reviewed": false
+  },
+  "card.site.preview": {
+    "en": "Preview",
+    "reviewed": false
+  },
+  "card.site.none": {
+    "en": "No site yet",
+    "reviewed": false
+  },
+  "card.site.open": {
+    "en": "Open {name}",
+    "reviewed": false
+  },
+  "card.sites.empty": {
+    "en": "No hosted sites yet. When a project gets one, its preview and live links show up here.",
+    "reviewed": false
+  },
+  "card.request.untitled": {
+    "en": "Untitled request",
+    "reviewed": false
+  },
+  "card.request.unknown": {
+    "en": "Unknown",
+    "reviewed": false
+  },
+  "card.request.newReply": {
+    "en": "New reply",
+    "reviewed": false
+  },
+  "card.request.open": {
+    "en": "Open",
+    "reviewed": false
+  },
+  "card.request.otherWork": {
+    "en": "Other work",
+    "reviewed": false
+  },
+  "card.requests.emptyProject": {
+    "en": "No requests on this project yet.",
+    "reviewed": false
+  },
+  "card.requests.empty": {
+    "en": "No requests yet. Describe the work you need and it lands here.",
+    "reviewed": false
+  },
+  "card.group.open": {
+    "en": "{n} open",
+    "reviewed": false
+  },
+  "card.group.openOf": {
+    "en": "{open} of {total} open",
+    "reviewed": false
+  },
+  "card.stage.new": {
+    "en": "Waiting for Ali",
+    "reviewed": false
+  },
+  "card.stage.approved": {
+    "en": "Approved",
+    "reviewed": false
+  },
+  "card.stage.in_progress": {
+    "en": "Being built",
+    "reviewed": false
+  },
+  "card.stage.review": {
+    "en": "Being checked",
+    "reviewed": false
+  },
+  "card.stage.done": {
+    "en": "Shipped",
+    "reviewed": false
+  },
+  "card.station.new": {
+    "en": "Request",
+    "reviewed": false
+  },
+  "card.station.approved": {
+    "en": "Approve",
+    "reviewed": false
+  },
+  "card.station.in_progress": {
+    "en": "Build",
+    "reviewed": false
+  },
+  "card.station.review": {
+    "en": "Check",
+    "reviewed": false
+  },
+  "card.station.done": {
+    "en": "Ship",
+    "reviewed": false
+  },
+  "card.lane.unassigned": {
+    "en": "Getting set up",
+    "reviewed": false
+  },
+  "card.lane.showOnly": {
+    "en": "Show only {name}",
+    "reviewed": false
+  },
+  "card.kpi.spent": {
+    "en": "Spent so far",
+    "reviewed": false
+  },
+  "card.kpi.ai": {
+    "en": "AI at cost: {amount}",
+    "reviewed": false
+  },
+  "card.kpi.billed": {
+    "en": "Finished work, billed",
+    "reviewed": false
+  },
+  "card.kpi.running": {
+    "en": "Running on open work",
+    "reviewed": false
+  },
+  "card.kpi.openRequests": {
+    "en": "Open requests",
+    "reviewed": false
+  },
+  "card.kpi.waiting": {
+    "en": "{n} waiting for Ali",
+    "reviewed": false
+  },
+  "card.kpi.noneWaiting": {
+    "en": "None waiting for Ali",
+    "reviewed": false
+  },
+  "card.kpi.liveSites": {
+    "en": "Live sites",
+    "reviewed": false
+  },
+  "card.kpi.liveOf": {
+    "en": "{live} of {total}",
+    "reviewed": false
+  },
+  "card.kpi.previews": {
+    "en": "{n, plural, one {# preview not live yet} other {# previews not live yet}}",
+    "reviewed": false
+  },
+  "card.kpi.allPublished": {
+    "en": "All published",
+    "reviewed": false
+  },
+  "card.kpi.noSite": {
+    "en": "No hosted site yet",
+    "reviewed": false
+  },
+  "card.chart.months": {
+    "en": "Billed per month",
+    "reviewed": false
+  },
+  "card.chart.monthsSub": {
+    "en": "Finished requests, last 6 months",
+    "reviewed": false
+  },
+  "card.chart.monthsEmpty": {
+    "en": "Nothing billed yet. Finished requests show up here.",
+    "reviewed": false
+  },
+  "card.chart.monthTip": {
+    "en": "{month}: {amount}",
+    "reviewed": false
+  },
+  "card.chart.requestCount": {
+    "en": "{n, plural, one {# request} other {# requests}}",
+    "reviewed": false
+  },
+  "card.chart.month": {
+    "en": "Month",
+    "reviewed": false
+  },
+  "card.chart.billed": {
+    "en": "Billed",
+    "reviewed": false
+  },
+  "card.chart.requests": {
+    "en": "Requests",
+    "reviewed": false
+  },
+  "card.chart.projects": {
+    "en": "Cost by project",
+    "reviewed": false
+  },
+  "card.chart.projectsSub": {
+    "en": "Finished and open work",
+    "reviewed": false
+  },
+  "card.chart.projectsEmpty": {
+    "en": "No costs yet.",
+    "reviewed": false
+  },
+  "card.chart.project": {
+    "en": "Project",
+    "reviewed": false
+  },
+  "card.chart.cost": {
+    "en": "Cost",
+    "reviewed": false
+  },
+  "card.who.ali": {
+    "en": "Ali",
+    "reviewed": false
+  },
+  "card.who.agent": {
+    "en": "Agent",
+    "reviewed": false
+  },
+  "card.sys.moved": {
+    "en": "Moved to {status}",
+    "reviewed": false
+  },
+  "card.sys.movedTotal": {
+    "en": "Moved to {status} · total {total}",
+    "reviewed": false
+  },
+  "views.entity.openProject": {
+    "en": "Open project",
+    "reviewed": false
+  },
+  "views.entity.newRequest": {
+    "en": "New request",
+    "reviewed": false
+  },
+  "views.entity.requests": {
+    "en": "Requests",
+    "reviewed": false
+  },
+  "views.entity.sites": {
+    "en": "Sites",
+    "reviewed": false
+  },
+  "views.entity.openRequests": {
+    "en": "Open requests",
+    "reviewed": false
+  },
+  "views.entity.setup": {
+    "en": "Setup",
+    "reviewed": false
+  },
+  "views.entity.code": {
+    "en": "Code",
+    "reviewed": false
+  },
+  "views.entity.status": {
+    "en": "Status",
+    "reviewed": false
+  },
+  "views.entity.host": {
+    "en": "Host",
+    "reviewed": false
+  },
+  "views.entity.hostCloudflare": {
+    "en": "Cloudflare",
+    "reviewed": false
+  },
+  "views.entity.hostOurs": {
+    "en": "Ours",
+    "reviewed": false
+  },
+  "views.entity.project": {
+    "en": "Project",
+    "reviewed": false
+  },
+  "views.entity.primary": {
+    "en": "primary",
+    "reviewed": false
+  },
+  "views.entity.failed": {
+    "en": "Needs attention",
+    "reviewed": false
+  },
+  "views.entity.settingUp": {
+    "en": "Setting up",
+    "reviewed": false
+  },
+  "views.entity.noAddress": {
+    "en": "No address yet",
+    "reviewed": false
+  },
+  "views.entity.noSiteHint": {
+    "en": "No site yet. Open the project to add one.",
+    "reviewed": false
+  },
+  "views.entity.siteHint": {
+    "en": "Publishing and setup live in the project.",
+    "reviewed": false
+  },
+  "ticket.back": {
+    "en": "Back",
+    "reviewed": false
+  },
+  "ticket.backTo": {
+    "en": "Back to {name}",
+    "reviewed": false
+  },
+  "board.peek.open": {
+    "en": "Open request",
+    "reviewed": false
   }
 }

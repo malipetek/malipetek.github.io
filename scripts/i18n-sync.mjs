@@ -8,7 +8,7 @@
  *   node scripts/i18n-sync.mjs --bundle                     only rewrite src/i18n/mail.js
  *
  * The Worker cannot load JSON by glob, so every run also writes
- * src/i18n/mail.js: the mail.*, status.* and preview.* strings of every
+ * src/i18n/mail.js: the mail.*, status.*, preview.* and card.* strings of every
  * locale, as one plain module. (The preview.* strings are the feedback
  * widget's copy, which the Worker serves to preview pages.)
  *
@@ -35,7 +35,7 @@ const BATCH = 40;
 const args = process.argv.slice(2);
 const checkOnly = args.includes('--check');
 const bundleOnly = args.includes('--bundle');
-const MAIL_PREFIXES = ['mail.', 'status.', 'preview.'];
+const MAIL_PREFIXES = ['mail.', 'status.', 'preview.', 'card.'];
 const only = args.filter((a) => !a.startsWith('--'));
 const key = process.env.DEEPSEEK_API_KEY;
 const base = (process.env.DEEPSEEK_API_BASE || 'https://api.deepseek.com').replace(/\/+$/, '');

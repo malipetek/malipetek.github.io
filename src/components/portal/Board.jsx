@@ -5,9 +5,10 @@
  * names it, clicking one opens it, and hovering a row in the list below lights
  * its ticket up on the machine. Picking a step moves the camera in on it.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { cx } from './ui.jsx';
-import { useT } from './store.js';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { money } from '../../lib/pricing.js';
+import { Button, MiniTrack, StatusPill, ago, cx, totalOf } from './ui.jsx';
+import { boardReturn, useT } from './store.js';
 
 export const STAGES = [
   { key: 'new', label: 'Waiting for Ali' },
@@ -42,6 +43,11 @@ export function boardItems(tickets) {
   const shipped = tickets.filter((t) => t.status === 'done' && now - t.updated_at < RECENT).slice(0, 3);
   return [...open, ...shipped];
 }
+
+/* The camera the last mounted board left behind. The overview unmounts on hash
+   navigation, so this lives at module level: coming back starts there and the
+   camera glides out of the request that was being read, instead of resetting. */
+let lastBoardView = null;
 
 export function Board({
   tickets,
@@ -137,6 +143,14 @@ export function Board({
   const [tip, setTip] = useState(null);
   const [failed, setFailed] = useState(false);
   const [dropKey, setDropKey] = useState(null);
+  // A picked request opens its peek card instead of leaving the board; the
+  // camera dives to it, and the card rides its screen point in onFrame.
+  const [peek, setPeek] = useState(null);
+  const peekEl = useRef(null);
+  const closePeek = useCallback(() => {
+    setPeek(null);
+    boardRef.current?.focus(null);
+  }, []);
 
   // A project label, a site label or a chip is a drop target: dropping a row
   // moves that request (and optionally onto a site), dropping a site label
@@ -166,7 +180,22 @@ export function Board({
   const pickProject = (id) => {
     if (!onProject) return;
     const value = id === -1 ? 'none' : id;
+    closePeek();
     onProject(project === value ? null : value);
+  };
+  // Any view change — a step, a lane, a project — closes the card: the camera
+  // could not move while it was still dived into the request.
+  const pickStage = (key) => {
+    closePeek();
+    onStage?.(key);
+  };
+  const openProject = (id, siteId) => {
+    closePeek();
+    onOpenProject?.(id, siteId);
+  };
+  const pickLane = (value) => {
+    closePeek();
+    onProject?.(value);
   };
 
   const handlers = useRef({});
@@ -209,18 +238,24 @@ export function Board({
             handlers.current.onHover?.(id);
           },
           onPick: (id) => {
-            // Go in toward the ticket, then open it.
+            // Dive toward the ticket and open its peek card; the page does not
+            // move until the card's Open goes to the request itself.
             board.focus(id);
-            setTimeout(() => handlers.current.onOpen(id), 380);
+            setPeek(id);
           },
-          onPickNode: (node) => handlers.current.onNode(node),
-          onFrame: (stations, hover, nodes) => {
+          onPickNode: (node) => {
+            closePeek();
+            handlers.current.onNode(node);
+          },
+          onPickEmpty: () => closePeek(),
+          onFrame: (stations, hover, nodes, focus) => {
             for (const [key, p] of Object.entries(stations)) {
               const el = capRefs.current[key];
               if (el) el.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -100%)`;
             }
             if (tipRef.current) {
-              tipRef.current.style.opacity = hover ? '1' : '0';
+              // While a request is dived into, its card carries the same text.
+              tipRef.current.style.opacity = hover && !focus ? '1' : '0';
               if (hover) tipRef.current.style.transform = `translate(${hover.x}px, ${hover.y}px) translate(-50%, calc(-100% - 10px))`;
             }
             // Project and site labels: move them; hide any the scene no longer has.
@@ -235,21 +270,62 @@ export function Board({
             for (const [key, el] of nodeRefs.current) {
               if (!seen.has(key)) el.style.opacity = '0';
             }
+            // The peek card sits under the dived ticket, flipped above it and
+            // nudged inward when the ticket is close to the stage's edges.
+            const el = peekEl.current;
+            if (el) {
+              if (focus) {
+                const stageEl = stageElRef.current;
+                const w = el.offsetWidth;
+                const h = el.offsetHeight;
+                const sw = stageEl?.clientWidth ?? 0;
+                const sh = stageEl?.clientHeight ?? 0;
+                const x = Math.max(8, Math.min(Math.max(8, sw - w - 8), focus.x - w / 2));
+                const y = focus.y + 30 + h <= sh - 8 ? focus.y + 30 : Math.max(8, focus.y - h - 30);
+                el.style.transform = `translate(${x}px, ${y}px)`;
+                el.style.opacity = '1';
+              } else {
+                el.style.opacity = '0';
+              }
+            }
           },
         });
         board.zoom(stageRef.current ?? null);
         const p = projectRef.current;
         board.lane(p === null ? null : p === 'none' ? -1 : p);
+        // The view the last board left behind: same zoom and pan, and a glide
+        // out of the request being read — saved on unmount, or set by the
+        // ticket page so coming back from a row link zooms out too.
+        const seen = boardReturn.ticket;
+        boardReturn.ticket = null;
+        board.restore(lastBoardView ? { ...lastBoardView, focus: lastBoardView.focus ?? seen } : { zoom: 1, pan: { x: 0, y: 0 }, focus: seen });
         boardRef.current = board;
       })
       .catch(() => setFailed(true)); // no WebGL: the legend and list carry it all
     return () => {
       stopped = true;
+      if (board) lastBoardView = board.view();
       board?.stop();
       boardRef.current = null;
       document.querySelector('.cp-scene canvas')?.remove();
     };
   }, []);
+
+  // Esc closes the card; opening it focuses its action so Enter continues in.
+  useEffect(() => {
+    if (peek === null) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') closePeek();
+    };
+    window.addEventListener('keydown', onKey);
+    peekEl.current?.querySelector('.cp-peek__go .cp-btn')?.focus();
+    return () => window.removeEventListener('keydown', onKey);
+  }, [peek, closePeek]);
+
+  // The request left the board (it shipped or filtered out): its card goes too.
+  useEffect(() => {
+    if (peek !== null && !items.some((x) => x.id === peek)) closePeek();
+  }, [items, peek, closePeek]);
 
   // A step picked in the legend or a caption: the camera moves in on that station.
   useEffect(() => {
@@ -269,6 +345,7 @@ export function Board({
   const count = (key) => items.filter((t) => t.status === key).length;
   const tipId = tip ?? hovered;
   const tipTicket = tipId != null ? tickets.find((t) => t.id === tipId) : null;
+  const peekTicket = peek === null ? null : (items.find((x) => x.id === peek) ?? null);
   const loose = sceneLanes.some((l) => l.unassigned);
 
   return (
@@ -313,7 +390,7 @@ export function Board({
                   ref={setNodeRef(n.key)}
                   {...dropProps(n.lane)}
                   className={cx('cp-board__node', 'cp-board__node--yard', dropKey === `p:${n.lane.id}` && 'is-drop')}
-                  onClick={() => onOpenProject?.(n.lane.id, null)}
+                  onClick={() => openProject(n.lane.id, null)}
                   title={t('views.entity.openProject')}
                 >
                   <span className="cp-board__node-dot" style={{ background: n.lane.tint }} />
@@ -339,7 +416,7 @@ export function Board({
                     e.dataTransfer.setData(DRAG_SITE, String(n.site.id));
                     e.dataTransfer.effectAllowed = 'move';
                   }}
-                  onClick={() => onOpenProject?.(n.lane.id, n.site?.id ?? null)}
+                  onClick={() => openProject(n.lane.id, n.site?.id ?? null)}
                   title={t('board.openProject', { name: n.site?.name ?? n.lane.name })}
                 >
                   <span className={cx('cp-board__node-dot', n.site?.live && 'is-live', n.site && !n.site.live && 'is-preview')} />
@@ -357,7 +434,7 @@ export function Board({
                 type="button"
                 ref={(el) => (capRefs.current[s.key] = el)}
                 className={cx('cp-board__cap', !count(s.key) && 'is-empty', stage === s.key && 'is-on')}
-                onClick={() => onStage(stage === s.key ? null : s.key)}
+                onClick={() => pickStage(stage === s.key ? null : s.key)}
                 tabIndex={-1}
                 aria-hidden="true"
               >
@@ -373,6 +450,39 @@ export function Board({
             </>
           ) : null}
         </div>
+        {peekTicket ? (
+          <div ref={peekEl} className="cp-peek" role="dialog" aria-label={peekTicket.title}>
+            <div className="cp-peek__top">
+              <span className="cp-peek__id">#{peekTicket.id}</span>
+              <MiniTrack status={peekTicket.status} />
+              <StatusPill status={peekTicket.status} />
+              <button type="button" className="cp-peek__x" onClick={closePeek} aria-label={t('ui.close')}>
+                ✕
+              </button>
+            </div>
+            <p className="cp-peek__title">{peekTicket.title}</p>
+            <p className="cp-peek__meta">
+              <span>{peekTicket.project_name ?? t('board.gettingSetUp')}</span>
+              <span>{ago(peekTicket.updated_at)}</span>
+              {totalOf(peekTicket) ? <span>{money(totalOf(peekTicket))}</span> : null}
+            </p>
+            {peekTicket.waitingReason ? <p className="cp-peek__note">{peekTicket.waitingReason}</p> : null}
+            <div className="cp-peek__go">
+              <Button
+                kind="primary"
+                onClick={() => {
+                  // Named for the view transition: the card morphs into the
+                  // request page's head instead of the whole page cross-fading.
+                  if (peekEl.current) peekEl.current.style.viewTransitionName = 'cp-peek';
+                  boardReturn.peek = peekTicket.id;
+                  handlers.current.onOpen(peekTicket.id);
+                }}
+              >
+                {t('board.peek.open')}
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {!items.length ? <p className="cp-board__empty">{t('board.empty')}</p> : null}
         {!failed ? (
           <div className="cp-board__controls">
@@ -394,7 +504,7 @@ export function Board({
           type="button"
           className={cx('cp-board__lane', project === null && 'is-on')}
           aria-pressed={project === null}
-          onClick={() => onProject?.(null)}
+          onClick={() => pickLane(null)}
         >
           {t('board.allProjects')}
         </button>
@@ -408,7 +518,7 @@ export function Board({
               {...dropProps(lane)}
               className={cx('cp-board__lane', on && 'is-on', dropKey === `p:${lane.id}` && 'is-drop')}
               aria-pressed={on}
-              onClick={() => onProject?.(on ? null : lane.id)}
+              onClick={() => pickLane(on ? null : lane.id)}
             >
               <span className="cp-board__lane-dot" style={{ background: lane.tint }} />
               {lane.name}
@@ -422,7 +532,7 @@ export function Board({
             type="button"
             className={cx('cp-board__lane', 'cp-board__lane--none', project === 'none' && 'is-on')}
             aria-pressed={project === 'none'}
-            onClick={() => onProject?.(project === 'none' ? null : 'none')}
+            onClick={() => pickLane(project === 'none' ? null : 'none')}
           >
             {t('board.gettingSetUp')}
             <em>{items.filter((x) => !x.project_id).length}</em>
@@ -432,7 +542,7 @@ export function Board({
       </div>
       <div className="cp-board__legend" role="group" aria-label={t('board.legend')}>
         {STAGES.map((s, i) => (
-          <button key={s.key} type="button" aria-pressed={stage === s.key} onClick={() => onStage(stage === s.key ? null : s.key)}>
+          <button key={s.key} type="button" aria-pressed={stage === s.key} onClick={() => pickStage(stage === s.key ? null : s.key)}>
             <span className="cp-board__no">{String(i + 1).padStart(2, '0')}</span>
             <span className="cp-board__label">{stageText(t, s)}</span>
             <b>{count(s.key)}</b>
