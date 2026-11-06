@@ -29,7 +29,7 @@ const CONTRACTING_HOSTS = new Set(['malipetek.dev', 'www.malipetek.dev']);
 const LAB_ROOTS = ['/kb', '/plugins', '/blog', '/experience', '/projects', '/pdfextractor'];
 const LAB_EXACT = ['/plugins.json'];
 
-/** Contracting paths. The locale homepages are handled separately. */
+/** Contracting paths. The localized pages are handled separately. */
 const CONTRACTING_ROOTS = ['/portal', '/api'];
 const CONTRACTING_EXACT = [
   '/agents',
@@ -51,11 +51,20 @@ function under(path: string, root: string): boolean {
   return path === root || path.startsWith(`${root}/`);
 }
 
-/** Every locale except English gets its own contracting homepage at /<code>/. */
-function isLocaleHome(path: string): boolean {
-  if (path === '/') return false;
-  const code = path.slice(1);
-  return LOCALES.some((locale) => locale.code === code);
+/** The pages the contracting site has once per locale. */
+const LOCALE_PAGES = new Set(['/', '/contact', '/agents']);
+
+/**
+ * The locale-independent path of a `/<code>/…` URL, or null when it is not a
+ * localized page: `/tr`, `/tr/`, `/tr/contact` and `/de-DE/agents` match,
+ * `/tr/portal` and `/kb` do not.
+ */
+function localizedPagePath(path: string): string | null {
+  if (path === '/') return null;
+  const [code, ...rest] = path.slice(1).split('/');
+  if (!LOCALES.some((locale) => locale.code === code)) return null;
+  const page = rest.length ? `/${rest.join('/')}` : '/';
+  return LOCALE_PAGES.has(page) ? page : null;
 }
 
 /** The host the request arrived on, lower-cased and without the port. */
@@ -98,11 +107,12 @@ export function hostRedirect(request: Request): Response | null {
     if (CONTRACTING_EXACT.includes(path)) {
       return redirect(request, CONTRACTING_ORIGIN);
     }
-    if (isLocaleHome(path)) {
-      // English lives at "/" on the contracting site, not at /en-US.
-      return path === `/${SOURCE_LOCALE}`
-        ? redirect(request, CONTRACTING_ORIGIN, '/')
-        : redirect(request, CONTRACTING_ORIGIN);
+    const page = localizedPagePath(path);
+    if (page) {
+      // English lives at "/" on the contracting site, not at /en-US, so the
+      // prefix comes off: /en-US/contact → /contact.
+      const english = path === `/${SOURCE_LOCALE}` || path.startsWith(`/${SOURCE_LOCALE}/`);
+      return redirect(request, CONTRACTING_ORIGIN, english ? page : undefined);
     }
     return null;
   }

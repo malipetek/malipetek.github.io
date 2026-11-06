@@ -1,0 +1,32 @@
+---
+import Base from "../../layouts/Base.astro";
+import ContactPage from "../../components/ContactPage.astro";
+import { siteT } from "../../lib/site.js";
+import { LOCALES } from "../../lib/locales.js";
+
+// Contact in one language: /tr/contact, /de-DE/contact, /ja-JP/contact …
+// English stays at /contact, so /en-US/contact is not a page.
+// Server-rendered for the same reason as the localized homepage: the lab host
+// has to be able to redirect these, and a prerendered page is served before
+// middleware runs.
+export const prerender = false;
+
+const code = Astro.params.locale ?? "";
+const locale = LOCALES.find((l) => l.code === code);
+
+if (!locale || locale.code === "en-US") {
+  return new Response("Not found", { status: 404 });
+}
+
+const t = siteT(locale.code);
+---
+
+<Base
+  title={t("site.contact.title")}
+  description={t("site.contact.description")}
+  path="/contact"
+  locale={locale.code}
+  languagePicker={LOCALES.map((l) => ({ code: l.code, native: l.native }))}
+>
+  <ContactPage t={t} locale={locale.code} />
+</Base>

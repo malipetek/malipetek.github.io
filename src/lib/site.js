@@ -35,6 +35,14 @@ export function copy(t, key, english, vars) {
 /** Every locale except the source, for the routes and the language picker. */
 export const OTHER_LOCALES = LOCALES.filter((l) => l.code !== SOURCE_LOCALE);
 
-/** The path of a page in a locale: `/` for English, `/tr/` for the rest. */
-export const localePath = (code, path = '/') =>
+/**
+ * The URL of a page in a locale: English keeps `/contact`, the rest get
+ * `/tr/contact`; a homepage is `/` and `/tr/`. `path` is the page's
+ * locale-independent path, so one page becomes one URL per language.
+ *
+ * Slugs stay English in every language. The server answers both `/tr/contact`
+ * and `/tr/contact/` with 200 (no redirect), so this is the one form the
+ * canonical, the hreflang set, the sitemap and the in-page links all use.
+ */
+export const localizedPath = (code, path = '/') =>
   code === SOURCE_LOCALE ? path : `/${code}${path === '/' ? '/' : path}`;

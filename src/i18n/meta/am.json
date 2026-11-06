@@ -3438,5 +3438,245 @@
   "site.nav.agents": {
     "en": "Connect your assistant",
     "reviewed": false
+  },
+  "site.contact.title": {
+    "en": "Contact · M. Ali Petek",
+    "reviewed": false
+  },
+  "site.contact.description": {
+    "en": "Work, collaborations and project questions for M. Ali Petek. Messages go straight to his inbox.",
+    "reviewed": false
+  },
+  "site.contact.heading": {
+    "en": "Contact",
+    "reviewed": false
+  },
+  "site.contact.lede": {
+    "en": "For work, collaborations and anything official. This goes straight to Ali's inbox: no CRM, no ticketing system, no assistant in between.",
+    "reviewed": false
+  },
+  "site.contact.name": {
+    "en": "Name",
+    "reviewed": false
+  },
+  "site.contact.email": {
+    "en": "Email",
+    "reviewed": false
+  },
+  "site.contact.company": {
+    "en": "Company",
+    "reviewed": false
+  },
+  "site.contact.optional": {
+    "en": "(optional)",
+    "reviewed": false
+  },
+  "site.contact.message": {
+    "en": "Message",
+    "reviewed": false
+  },
+  "site.contact.send": {
+    "en": "Send message →",
+    "reviewed": false
+  },
+  "site.contact.aside.title": {
+    "en": "Direct lines",
+    "reviewed": false
+  },
+  "site.contact.aside.github": {
+    "en": "GitHub",
+    "reviewed": false
+  },
+  "site.contact.aside.talk": {
+    "en": "Quick question?",
+    "reviewed": false
+  },
+  "site.contact.aside.talk.link": {
+    "en": "The intercom answers faster.",
+    "reviewed": false
+  },
+  "site.contact.aside.talk.note": {
+    "en": "It knows what Ali builds and when he's free.",
+    "reviewed": false
+  },
+  "site.contact.aside.note": {
+    "en": "Everything here lands in the same inbox either way. Email is fine if forms feel like paperwork.",
+    "reviewed": false
+  },
+  "site.contact.status.sent": {
+    "en": "Sent. Thanks, talk soon.",
+    "reviewed": false
+  },
+  "site.contact.status.sentAli": {
+    "en": "Sent. Thanks, Ali reads these himself.",
+    "reviewed": false
+  },
+  "site.contact.status.required": {
+    "en": "Name, email and message are required.",
+    "reviewed": false
+  },
+  "site.contact.status.email": {
+    "en": "That email does not look right.",
+    "reviewed": false
+  },
+  "site.contact.status.offline": {
+    "en": "Form is offline. Use the email link on the right.",
+    "reviewed": false
+  },
+  "site.contact.status.sending": {
+    "en": "Sending…",
+    "reviewed": false
+  },
+  "site.contact.status.rateLimited": {
+    "en": "Too many messages from this address. Try again in a bit, or email directly.",
+    "reviewed": false
+  },
+  "site.contact.status.turnstile": {
+    "en": "The spam check did not pass. Reload the page and try again, or email directly.",
+    "reviewed": false
+  },
+  "site.contact.status.failed": {
+    "en": "Could not send. Email malipetek@gmail.com directly.",
+    "reviewed": false
+  },
+  "site.contact.status.network": {
+    "en": "Network error. Email malipetek@gmail.com directly.",
+    "reviewed": false
+  },
+  "site.agents.title": {
+    "en": "Connect your assistant · M. Ali Petek",
+    "reviewed": false
+  },
+  "site.agents.description": {
+    "en": "One MCP endpoint for the client portal: file and follow website requests from ChatGPT, Claude, Cursor or any MCP client.",
+    "reviewed": false
+  },
+  "site.agents.kicker": {
+    "en": "Model Context Protocol",
+    "reviewed": false
+  },
+  "site.agents.heading": {
+    "en": "Connect your assistant.",
+    "reviewed": false
+  },
+  "site.agents.lede": {
+    "en": "The client portal over MCP: streamable HTTP, protocol 2025-06-18. An assistant with your key can file requests, reply, set a budget and follow what happens, all on your own account. Every request still goes to Ali before any work starts.",
+    "reviewed": false
+  },
+  "site.agents.connect.title": {
+    "en": "Connect, per client",
+    "reviewed": false
+  },
+  "site.agents.connect.url": {
+    "en": "One URL:",
+    "reviewed": false
+  },
+  "site.agents.connect.discovery": {
+    "en": "Discovery is also published at",
+    "reviewed": false
+  },
+  "site.agents.chatgpt.title": {
+    "en": "ChatGPT",
+    "reviewed": false
+  },
+  "site.agents.chatgpt.before": {
+    "en": "Turn on",
+    "reviewed": false
+  },
+  "site.agents.chatgpt.after": {
+    "en": ", then add a connector:",
+    "reviewed": false
+  },
+  "site.agents.claude.title": {
+    "en": "Claude, Cursor, anything else",
+    "reviewed": false
+  },
+  "site.agents.claude.before": {
+    "en": "Same URL. In Claude:",
+    "reviewed": false
+  },
+  "site.agents.claude.cursor": {
+    "en": "In Cursor,",
+    "reviewed": false
+  },
+  "site.agents.noClient.title": {
+    "en": "No client at all",
+    "reviewed": false
+  },
+  "site.agents.key.title": {
+    "en": "Your key",
+    "reviewed": false
+  },
+  "site.agents.key.signin": {
+    "en": "Sign in to the portal.",
+    "reviewed": false
+  },
+  "site.agents.key.body": {
+    "en": "Open Connect an assistant, and make a key named after the tool that will hold it (chatgpt, cursor…). It is shown once and stored hashed. Revoking it is one click.",
+    "reviewed": false
+  },
+  "site.agents.key.body2": {
+    "en": "A client's key sees exactly that client's account: the same routes the portal's own pages use. It cannot see another client, and it cannot publish or deploy anything. ChatGPT can also run the OAuth flow on its own, which ends at the same place.",
+    "reviewed": false
+  },
+  "site.agents.tools.title": {
+    "en": "What an assistant can do",
+    "reviewed": false
+  },
+  "site.agents.tools.auth": {
+    "en": "client key",
+    "reviewed": false
+  },
+  "site.agents.tool.projects": {
+    "en": "The account's projects and requests, with status and cost.",
+    "reviewed": false
+  },
+  "site.agents.tool.file": {
+    "en": "File a request for Ali. Nothing starts until he reads it.",
+    "reviewed": false
+  },
+  "site.agents.tool.reply": {
+    "en": "Add a message to a request's conversation.",
+    "reviewed": false
+  },
+  "site.agents.tool.budget": {
+    "en": "Raise, lower or remove a request's budget.",
+    "reviewed": false
+  },
+  "site.agents.tool.withdraw": {
+    "en": "Take back a request Ali has not approved yet.",
+    "reviewed": false
+  },
+  "site.agents.tools.first": {
+    "en": "The assistant can also work on a change itself, on the client's own subscription: read the project's source, send a change on the request's branch, and build it to a preview.",
+    "reviewed": false
+  },
+  "site.agents.tools.names": {
+    "en": "Those tools are",
+    "reviewed": false
+  },
+  "site.agents.tools.after": {
+    "en": "Ali still checks the result before it ships.",
+    "reviewed": false
+  },
+  "site.agents.lab.title": {
+    "en": "The knowledgebase is a separate site",
+    "reviewed": false
+  },
+  "site.agents.lab.before": {
+    "en": "Ali's agentic coding knowledgebase, the plugins and the writing live at",
+    "reviewed": false
+  },
+  "site.agents.lab.endpoint": {
+    "en": "That site has its own MCP endpoint at",
+    "reviewed": false
+  },
+  "site.agents.lab.after": {
+    "en": ", with knowledgebase tools only. Nothing there is needed to use the portal.",
+    "reviewed": false
+  },
+  "site.agents.lab.setup": {
+    "en": "Setup for that endpoint is at",
+    "reviewed": false
   }
 }
