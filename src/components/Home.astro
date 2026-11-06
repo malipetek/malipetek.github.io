@@ -13,12 +13,13 @@ import {
   BRING_YOUR_OWN,
   CONTRAST,
   DEFINITION,
+  FROM_IDEA,
   KIND as OFFER_KIND,
+  NEXT,
   PRICE_NOTE,
   PRICE_RULE,
   PRICE_WHY,
   HEADLINE,
-  LAST_MILE,
   PRICE_HOOK,
   PUNCHLINE,
   SAFEGUARDS,
@@ -36,8 +37,6 @@ const { t } = Astro.props;
 const QUICK_FIX = money(timeCents(ATTENTION.find((a) => a.key === "auto")?.typicalSeconds ?? 60));
 
 const site = (await getCollection("site"))[0]?.data;
-// The lede is the secondary hook; the price leads in the headline above it.
-const tagline = LAST_MILE;
 const intercomGreeting =
   site?.intercomGreeting ??
   "Ali's line. I'm the assistant that knows how he works. Tell me what you need built or fixed.";
@@ -67,10 +66,11 @@ const availability = site?.availability ?? "limited";
     </p>
     <h1 class="masthead-name">{copy(t, "offer.headline.1", HEADLINE[0])}<br />{copy(t, "offer.headline.2", HEADLINE[1])}</h1>
     <div class="masthead-body">
-      <p class="masthead-hook">{copy(t, "offer.priceHook", PRICE_HOOK, { price: QUICK_FIX })}</p>
-      <p class="masthead-lede">{copy(t, "offer.tagline", tagline)}</p>
+      <p class="masthead-hook">{copy(t, "offer.next", NEXT)}</p>
+      <p class="masthead-proof">{copy(t, "offer.priceHook", PRICE_HOOK, { price: QUICK_FIX })}</p>
+      <p class="masthead-from-idea"><a href="/portal/start">{copy(t, "offer.fromIdea", FROM_IDEA)}</a></p>
       <div class="masthead-actions">
-        <a class="btn btn--solid" href="/portal">{t("site.home.cta.ticket")}</a>
+        <a class="btn btn--solid" href="/portal/start">{t("site.home.cta.next")}</a>
         <a class="btn" href="#how">{t("site.home.cta.how")}</a>
       </div>
       <p class="masthead-note"><strong>{copy(t, "offer.punchline.1", PUNCHLINE[0])} {copy(t, "offer.punchline.2", PUNCHLINE[1])}</strong> {copy(t, "offer.priceNote", PRICE_NOTE, { rate: HOURLY_USD })}</p>
@@ -301,12 +301,17 @@ const availability = site?.availability ?? "limited";
     max-width: 52ch;
   }
 
+  /* The answer to the headline, directly under it. It is a full sentence, so
+     it sits at reading size and weight rather than the old tagline's shout,
+     and keeps the marker as the page's lead line. */
   .masthead-hook {
-    margin: 0 0 0.6rem;
-    font-size: clamp(1.2rem, 2vw, 1.5rem);
-    font-weight: 600;
-    letter-spacing: -0.015em;
+    margin: 0 0 0.7rem;
+    font-size: clamp(1.1rem, 1.7vw, 1.3rem);
+    font-weight: 500;
+    line-height: 1.45;
+    letter-spacing: -0.01em;
     color: var(--ink);
+    max-width: 46ch;
   }
 
   .masthead-hook::before {
@@ -319,13 +324,28 @@ const availability = site?.availability ?? "limited";
     vertical-align: 0.08em;
   }
 
-  .masthead-lede {
+  /* The price under it: the proof, one step down from the answer. */
+  .masthead-proof {
+    margin: 0 0 0.7rem;
+    font-size: clamp(1rem, 1.5vw, 1.12rem);
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+
+  /* For the reader who has only an idea. */
+  .masthead-from-idea {
     margin: 0;
-    font-size: clamp(1.05rem, 1.7vw, 1.25rem);
-    line-height: 1.45;
-    letter-spacing: -0.005em;
+    font-size: 14px;
+    line-height: 1.4;
     color: var(--ink-soft);
-    max-width: 38ch;
+  }
+
+  .masthead-from-idea a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
 
   .masthead-actions {

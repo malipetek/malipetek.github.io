@@ -33,18 +33,21 @@ export const CONTRAST = 'Vibe coding is you and an AI. Vibe contracting is an AI
 export const SHORT = 'Vibe contracting: agent-built, developer-signed.';
 
 /**
- * The primary hook is the price. The headline, in two beats so it can break
- * between them; then the fact that makes it concrete.
+ * The primary hook is the moment the reader is in: they built a project with
+ * AI, it looks good, and what comes after is the unclear part. The headline in
+ * two beats so it can break between them; NEXT answers it and the price below
+ * is the proof. LAST_MILE used to say the same thing in other words, so it
+ * lives in NEXT now.
  */
-export const HEADLINE = ['Software help,', 'by the minute.'];
+export const HEADLINE = ['You vibe coded it.', "What's next?"];
+
+export const NEXT =
+  'Next is getting it online, wiring up payments and email, fixing what breaks for real customers, and keeping it working. Describe it in your own words: an agent builds it, I check it, and you pay for my minutes.';
+
 export const PRICE_HOOK = `A one-minute fix is ${QUICK_FIX}. No quote, no minimum.`;
 
-/**
- * The secondary hook: who it is for right now. People build most of a thing
- * themselves with AI and stall on the part that needs a developer.
- */
-export const LAST_MILE =
-  'You vibe code most of it. I take the part where it stalls, like the bug that keeps coming back or the payments, and bill it by the second.';
+/** For the reader who has no project yet. */
+export const FROM_IDEA = 'Starting from an idea? That works too.';
 
 /** How it is done, in two beats: supports the hooks, never leads. */
 export const PUNCHLINE = ['The agent types.', 'I sign off.'];

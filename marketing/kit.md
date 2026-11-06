@@ -56,16 +56,16 @@ How to use it:
 
 ## The hooks, in order
 
-**1. Price (primary — leads everything):**
+**1. The moment (primary — leads everything):**
 
-> **Software help, by the minute.** A one-minute fix is $1.67. No quote, no minimum.
+> **You vibe coded it. What's next?** Next is getting it online, wiring up
+> payments and email, fixing what breaks for real customers, and keeping it
+> working. Describe it in your own words: an agent builds it, I check it, and
+> you pay for my minutes.
 
-**2. The last mile (secondary — who it is for right now):**
+**2. Price (the proof — directly under the lead):**
 
-> You can vibe code most of it. The last mile is where you need a developer:
-> the bug it keeps bringing back, the deploy, the payments, the thing that only
-> breaks for real customers. Get that help at a fraction of the price, billed
-> by the second, not by a quote.
+> A one-minute fix is $1.67. No quote, no minimum.
 
 **3. How (supports, never leads):**
 
@@ -73,9 +73,9 @@ How to use it:
 
 Short alternates:
 
+- Vibe coded it? I do the last mile.
 - Fractional help. Not a quote.
 - You pay for my minutes, not the hours it would have taken.
-- Vibe coded it? I do the last mile.
 - No quote, no call, no minimum invoice.
 
 ## After the first version
@@ -88,6 +88,8 @@ here.
 Approved lines:
 
 > AI gets your idea moving in minutes. I get it to the point where customers can use it.
+
+> Starting from an idea? That works too.
 
 > Describe it in your own words. You don't need to know how any of it works.
 

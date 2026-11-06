@@ -99,8 +99,9 @@ vibe contracting service. GitHub: github.com/malipetek. Site: malipetek.dev.
 What it is called, and what that means: ${offer.DEFINITION}
 ${offer.CONTRAST} Use the term "vibe contracting" when asked what this is; define
 it in one sentence the first time, then use it plainly.
-Lead with the price: ${offer.HEADLINE.join(' ')} ${offer.PRICE_HOOK}
-Who it is for right now: ${offer.LAST_MILE}
+Lead with the moment: ${offer.HEADLINE.join(' ')} ${offer.NEXT}
+The price is the proof under it: ${offer.PRICE_HOOK}
+If someone has only an idea: ${offer.FROM_IDEA}
 How: ${offer.PUNCHLINE.join(' ')} ${offer.SHORT} ${offer.ONE_LINE}
 ${offer.WHO}
 ${offer.BRING_YOUR_OWN}
