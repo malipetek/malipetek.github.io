@@ -1,0 +1,159 @@
+---
+// Server-rendered for the same reason as the rest of /kb: entries change
+// between deploys.
+export const prerender = false;
+
+import Base from '../../layouts/Base.astro';
+import '../../styles/kb.css';
+
+const KB_TOOLS = [
+  { name: 'search_knowledge', auth: 'public', text: 'Full-text search over every entry. Prefix matching, so `migra` finds `migration`.' },
+  { name: 'get_knowledge', auth: 'public', text: 'One entry in full (problem and solution markdown) by id or slug.' },
+  { name: 'list_knowledge', auth: 'public', text: 'Newest entries first, without bodies.' },
+  { name: 'create_knowledge', auth: 'ack_ key', text: 'Record a problem and solution pair from a session.' },
+  { name: 'update_knowledge', auth: 'ack_ key', text: 'Patch an entry this key authored.' },
+];
+---
+
+<Base
+  site="lab"
+  title="Connect an agent to the knowledgebase — M. Ali Petek's lab"
+  description="The knowledgebase over MCP: search and read every entry, and write one with an ack_ key. Streamable HTTP at https://lab.malipetek.dev/mcp."
+  current="/kb"
+>
+  <main class="wrap kb">
+    <header class="kb-head">
+      <p class="kb-kicker">Model Context Protocol</p>
+      <h1>Point an agent at the knowledgebase.</h1>
+      <p class="kb-lede">
+        <a href="/mcp"><code>https://lab.malipetek.dev/mcp</code></a> is the knowledgebase
+        server: streamable HTTP, protocol <code>2025-06-18</code>. Reading is open to
+        everyone. Writing needs an <code>ack_</code> key that Ali mints. This endpoint has
+        no portal tools; the client portal has its own at
+        <a href="https://malipetek.dev/mcp">malipetek.dev/mcp</a>.
+      </p>
+    </header>
+
+    <section class="kb-block">
+      <h2>Connect</h2>
+      <div class="kb-prose">
+        <p>
+          In Claude: <strong>Settings → Connectors → Add custom connector</strong>. In
+          ChatGPT: turn on <strong>Settings → Connectors → Advanced → Developer mode</strong>,
+          then add a connector. In Cursor, <code>mcp.json</code>:
+        </p>
+        <pre><code>&#123; "mcpServers": &#123; "malipetek-kb": &#123; "url": "https://lab.malipetek.dev/mcp" &#125; &#125; &#125;</code></pre>
+        <p>No client at all:</p>
+        <pre><code>curl -s https://lab.malipetek.dev/mcp -H 'content-type: application/json' \
+  -d '&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</code></pre>
+        <p>
+          REST works too, without MCP:
+        </p>
+        <pre><code>curl https://lab.malipetek.dev/kb/entries?q=fts5
+curl https://lab.malipetek.dev/kb/&lt;slug&gt;.json</code></pre>
+      </div>
+    </section>
+
+    <section class="kb-block">
+      <h2>Onboarding: what an agent needs, and what it does not</h2>
+      <div class="kb-prose">
+        <p>
+          <strong>Reading needs nothing.</strong> <code>search_knowledge</code>,
+          <code>get_knowledge</code>, <code>list_knowledge</code>, every
+          <code>kb://entry/…</code> resource and the whole REST API are open. No key, no
+          sign-up, no handshake.
+        </p>
+        <p>
+          <strong>Writing needs a key Ali mints.</strong> That is the point: open to read,
+          authored only by us. There is deliberately no self-serve route.
+        </p>
+        <ol>
+          <li>Ali signs in at <a href="https://malipetek.dev/portal">malipetek.dev/portal</a> and opens <a href="/kb/new">/kb/new</a>.</li>
+          <li>He mints a key named after the agent that will hold it (<code>claude-code</code>, <code>cursor</code>…).</li>
+          <li>The agent sends it as <code>Authorization: Bearer ack_…</code>. It is stored only as a SHA-256 hash and shown once.</li>
+          <li>Every use updates <code>last_used_at</code>. Revoking is one click, so a leaked key is visible and short-lived.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="kb-block">
+      <h2>Knowledgebase tools</h2>
+      <ul class="kb-tool-list">
+        {KB_TOOLS.map((tool) => (
+          <li>
+            <code>{tool.name}</code>
+            <span class="kb-tool-auth">{tool.auth}</span>
+            <span class="kb-tool-text">{tool.text}</span>
+          </li>
+        ))}
+      </ul>
+      <p class="kb-entry-foot">
+        Mint an <code>ack_</code> key at <a href="/kb/new"><code>/kb/new</code></a> (owner
+        only) and pass it as <code>Authorization: Bearer ack_…</code>.
+      </p>
+    </section>
+
+    <section class="kb-block">
+      <h2>Resources and prompts</h2>
+      <div class="kb-prose">
+        <p>
+          Tools are for calling; <strong>resources</strong> are for attaching. Every entry is
+          also a resource at <code>kb://entry/&lt;slug&gt;</code> (<code>text/markdown</code>),
+          so a client can pin the relevant entry into context instead of asking the model to
+          fetch it. <code>resources/list</code> pages at 50 with a cursor, and
+          <code>kb://entry/&#123;slug&#125;</code> is advertised as a template.
+        </p>
+        <p>
+          One <strong>prompt</strong>, <code>record_learning</code>, takes a topic and an
+          outcome and returns the instructions for turning the session that just ended into
+          an entry: search first so it updates rather than duplicates, and pick the status
+          honestly.
+        </p>
+        <p>
+          Every tool carries MCP annotations, so a connector can tell reading from writing
+          before it asks. <code>readOnlyHint</code> is true for search and listing.
+        </p>
+      </div>
+    </section>
+
+    <section class="kb-block">
+      <h2>WebMCP: the same knowledge, inside the page</h2>
+      <div class="kb-prose">
+        <p>
+          A backend MCP server is something the agent's platform reaches.
+          <strong>WebMCP</strong> (<code>document.modelContext</code>) is the other
+          direction: the page registers tools that reuse its own code and keep the visible
+          UI in sync with what the agent just did.
+        </p>
+        <p>
+          This site registers two, feature-detected. A browser without the API loads the
+          module and does nothing at all.
+        </p>
+        <ul>
+          <li>
+            <code>search_knowledge(query, status?)</code> returns entries, and updates the
+            visible results when the visitor is on <a href="/kb">/kb</a>.
+          </li>
+          <li><code>open_knowledge_entry(slug)</code> opens the entry in the visitor's own browser.</li>
+        </ul>
+        <p>
+          The contracting site has its own <code>open_intercom</code> tool, registered only
+          on pages that have an intercom. Every registered tool spends context window and
+          invites tool confusion, so the lists stay short.
+        </p>
+      </div>
+    </section>
+
+    <section class="kb-block">
+      <h2>What this is not</h2>
+      <div class="kb-prose">
+        <p>
+          This endpoint has no client portal tools. If you are a client of Ali's and want
+          your assistant to file or follow a request, use
+          <a href="https://malipetek.dev/agents">malipetek.dev/agents</a> instead. The two
+          servers are separate on purpose: a summary of one should not describe the other.
+        </p>
+      </div>
+    </section>
+  </main>
+</Base>

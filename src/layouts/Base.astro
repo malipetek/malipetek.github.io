@@ -1,6 +1,6 @@
 ---
 import "../styles/base.css";
-import { siteT, localePath } from "../lib/site.js";
+import { siteT, localePath, copy } from "../lib/site.js";
 import { SOURCE_LOCALE } from "../lib/locales.js";
 
 interface Props {
@@ -15,6 +15,12 @@ interface Props {
   locale?: string;
   /** Every language this page exists in: renders hreflang links and the picker. */
   languagePicker?: { code: string; native: string }[];
+  /**
+   * Which of the two sites this page belongs to. malipetek.dev is the client
+   * portal for vibe contracting; lab.malipetek.dev is Ali's developer lab.
+   * Each has its own navigation, canonical origin and footer.
+   */
+  site?: "contracting" | "lab";
 }
 
 const {
@@ -26,23 +32,32 @@ const {
   imageAlt = "Muhammet Ali Petek",
   locale = SOURCE_LOCALE,
   languagePicker = [],
+  site = "contracting",
 } = Astro.props;
 
 const t = siteT(locale);
 
-// Astro.site is set in astro.config.mjs, so these are absolute for crawlers.
-const canonical = new URL(Astro.url.pathname, Astro.site);
-const ogImage = new URL(image, Astro.site);
+// Each site knows its own absolute address; Astro.site is the contracting one.
+const origin =
+  site === "lab" ? "https://lab.malipetek.dev" : "https://malipetek.dev";
+const canonical = new URL(Astro.url.pathname, origin);
+const ogImage = new URL(image, origin);
 
-const nav = [
-  { href: "/", label: t("site.nav.shelf") },
-  { href: "/blog", label: t("site.nav.writing") },
-  { href: "/kb", label: t("site.nav.kb") },
-  { href: "/plugins", label: t("site.nav.plugins") },
-  { href: "/experience", label: t("site.nav.work") },
-  { href: "/contact", label: t("site.nav.contact") },
+const contractingNav = [
+  { href: "/#how", label: copy(t, "site.home.how.title", "How it works") },
   { href: "/#talk", label: t("site.nav.talk") },
+  { href: "/contact", label: t("site.nav.contact") },
+  { href: "/agents", label: copy(t, "site.nav.agents", "Connect your assistant") },
 ];
+
+const labNav = [
+  { href: "/kb", label: "Knowledgebase" },
+  { href: "/plugins", label: "Plugins" },
+  { href: "/blog", label: "Writing" },
+  { href: "/experience", label: "Work" },
+];
+
+const nav = site === "lab" ? labNav : contractingNav;
 
 const isCurrent = (href: string) =>
   href === "/" ? current === "/" : current.startsWith(href);
@@ -80,15 +95,15 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
     />
     <link rel="canonical" href={canonical.href} />
     {
-      languagePicker.length > 0 && (
+      site === "contracting" && languagePicker.length > 0 && (
         <>
           <link rel="alternate" hreflang={locale} href={canonical.href} />
           {languagePicker
             .filter((l) => l.code !== locale)
             .map((l) => (
-              <link rel="alternate" hreflang={l.code} href={new URL(localePath(l.code), Astro.site).href} />
+              <link rel="alternate" hreflang={l.code} href={new URL(localePath(l.code), origin).href} />
             ))}
-          <link rel="alternate" hreflang="x-default" href={new URL("/", Astro.site).href} />
+          <link rel="alternate" hreflang="x-default" href={new URL("/", origin).href} />
         </>
       )
     }
@@ -119,13 +134,15 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
       type="font/woff2"
       crossorigin
     />
-    <link rel="sitemap" href="/sitemap-index.xml" />
+    <link rel="sitemap" href="/sitemap.xml" />
   </head>
-  <body>
+  <body data-site={site}>
     <a class="skip-link" href="#main">{t("site.skip")}</a>
     <header class="site-head">
       <div class="wrap site-head-inner">
-        <a class="wordmark" href="/">malipetek</a>
+        <a class="wordmark" href="/">
+          malipetek{site === "lab" && <span class="wordmark-site">lab</span>}
+        </a>
         <nav class="site-nav" aria-label={t("site.nav.primary")}>
           {
             nav.map((item) => (
@@ -137,9 +154,17 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
               </a>
             ))
           }
-          <a class="nav-portal" href="/portal">{t("site.nav.portal")}</a>
           {
-            currentLanguage && (
+            site === "lab" ? (
+              <a class="nav-portal" href="https://malipetek.dev">
+                Hire: malipetek.dev
+              </a>
+            ) : (
+              <a class="nav-portal" href="/portal">{t("site.nav.portal")}</a>
+            )
+          }
+          {
+            site === "contracting" && currentLanguage && (
               <details class="lang-menu" data-lang-menu>
                 <summary aria-label={t("site.lang")}>
                   <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -217,7 +242,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
       </div>
     </header>
     {
-      languagePicker.length > 0 && (
+      site === "contracting" && languagePicker.length > 0 && (
         <div class="lang-suggest" data-lang-suggest hidden>
           <div class="wrap lang-suggest-inner">
             <a data-lang-suggest-link href="/">
@@ -245,7 +270,13 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
       <div class="wrap site-foot-inner">
         <a href="mailto:malipetek@gmail.com">malipetek@gmail.com</a>
         <a href="https://github.com/malipetek">github.com/malipetek</a>
-        <a href="/portal">{t("site.foot.portal")}</a>
+        {
+          site === "lab" ? (
+            <a href="https://malipetek.dev">Hire: malipetek.dev</a>
+          ) : (
+            <a href="/portal">{t("site.foot.portal")}</a>
+          )
+        }
         <span>{t("site.foot.built")}</span>
       </div>
     </footer>
@@ -362,10 +393,22 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
     text-decoration: none;
   }
 
+  /* The lab's own site mark: same wordmark, a small mono tag after it. */
+  .wordmark-site {
+    margin-left: 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: lowercase;
+    color: var(--orange);
+    vertical-align: super;
+  }
+
   .site-nav {
     display: flex;
     align-items: center;
-    /* Seven entries now: let them wrap onto a second line on a phone rather
+    /* Six entries at most: let them wrap onto a second line on a phone rather
        than run off the edge. */
     flex-wrap: wrap;
     gap: 0.35rem clamp(0.9rem, 2.6vw, 1.6rem);

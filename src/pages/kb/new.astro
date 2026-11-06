@@ -1,13 +1,19 @@
 ---
-// Static shell; the Worker checks the admin role on every /kb write.
-export const prerender = true;
+// Server-rendered so lab.malipetek.dev/portal can 301 before this admin
+// shell is served; the Worker still checks the admin role on every /kb write.
+export const prerender = false;
 
 import Base from '../../layouts/Base.astro';
 import '../../styles/portal.css';
 import '../../styles/kb.css';
 ---
 
-<Base title="Knowledgebase admin — malipetek" description="Write knowledgebase entries." current="/kb">
+<Base
+  site="lab"
+  title="Knowledgebase admin — M. Ali Petek's lab"
+  description="Write knowledgebase entries."
+  current="/kb"
+>
   <div class="portal">
     <div class="portal-bar">
       <h1>Knowledgebase</h1>

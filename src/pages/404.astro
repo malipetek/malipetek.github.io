@@ -1,17 +1,30 @@
 ---
 import Base from '../layouts/Base.astro';
+import { isLabRequest } from '../lib/siteHosts';
+
+// Served by both hosts; the navigation and canonical origin follow the Host.
+const site = isLabRequest(Astro.request) ? 'lab' : 'contracting';
 ---
 
-<Base title="Not found — malipetek" description="Nothing on this shelf." current="/404">
+<Base
+  site={site}
+  title="Not found — malipetek"
+  description="Nothing at this address."
+  current="/404"
+>
   <div class="notfound">
     <p class="notfound-code">404</p>
-    <h1>Nothing on this shelf.</h1>
+    <h1>Nothing at this address.</h1>
     <p class="lede">
-      Whatever was here either never existed or got deleted to prove a point about rewriting.
+      Whatever was here either never existed or moved when the site split in two.
     </p>
     <p class="notfound-actions">
-      <a class="btn btn--solid" href="/">← Back to the shelf</a>
-      <a class="btn" href="/blog">Read something instead</a>
+      <a class="btn btn--solid" href="/">← Back to the homepage</a>
+      {site === 'lab' ? (
+        <a class="btn" href="/blog">Read something instead</a>
+      ) : (
+        <a class="btn" href="/contact">Tell me what you were looking for</a>
+      )}
     </p>
   </div>
 </Base>

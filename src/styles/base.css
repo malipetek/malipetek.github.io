@@ -236,6 +236,11 @@ a:hover {
 
 /* ————— layout primitives ————— */
 
+/* The page rails and the fixed canvas position against <main>. */
+main {
+  position: relative;
+}
+
 .wrap {
   width: 100%;
   max-width: 78rem;
@@ -594,6 +599,7 @@ pre.astro-code {
 /* ————— homepage rooms ————— */
 
 .room {
+  --inset-x: clamp(1rem, 3.2vw, 2.5rem);
   min-height: 100svh;
   display: flex;
   flex-direction: column;
@@ -601,6 +607,135 @@ pre.astro-code {
   position: relative;
   z-index: 1;
 }
+
+/* Room numbers: the spec-sheet index that ties the rooms together. */
+.room-no {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+
+.room-no::after {
+  content: " /";
+  color: var(--orange);
+}
+
+.block-note {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+/* Plates: an opaque sheet the list or timeline sits on, so the scene behind
+   frames the content instead of running through it. The hairline and the
+   corner handles come from .frame; the plate spans the column, so its edges
+   land on the page rails. */
+.plate {
+  padding: clamp(1.25rem, 3.2vw, 2.25rem) var(--inset-x)
+    clamp(1.25rem, 3.2vw, 2rem);
+}
+
+/* Frosted, like the masthead's fade: the scene behind shows through, softened
+   and dimmed enough that it never competes with the words. */
+.plate.frame {
+  background: color-mix(in srgb, var(--bone) 72%, transparent);
+  -webkit-backdrop-filter: blur(2.5px);
+  backdrop-filter: blur(2.5px);
+}
+
+.room--masthead,
+.shelf-section {
+  padding-inline: var(--inset-x);
+}
+
+/* Seams: a full-bleed dashed rule where one room meets the next, with a handle
+   where it crosses each rail. */
+.room + .room::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 100vw;
+  height: 1px;
+  transform: translateX(-50%);
+  background: var(--dash-h);
+  pointer-events: none;
+}
+
+.room + .room::after {
+  content: "";
+  position: absolute;
+  top: calc((var(--handle) - 1px) / -2);
+  left: calc((var(--handle) - 1px) / -2);
+  right: calc((var(--handle) - 1px) / -2);
+  height: var(--handle);
+  --in: linear-gradient(var(--bone) 0 0);
+  --out: linear-gradient(var(--rule-strong) 0 0);
+  --i: calc(var(--handle) - 2px);
+  background:
+    var(--in) 1px 1px / var(--i) var(--i),
+    var(--in) calc(100% - 1px) 1px / var(--i) var(--i),
+    var(--out) 0 0 / var(--handle) var(--handle),
+    var(--out) 100% 0 / var(--handle) var(--handle);
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+/* Headings carry a room number above them, so align the right-hand link to the
+   heading's bottom edge rather than the number's baseline. */
+.plate .block-head {
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+/* The shelf's note reads as a caption under its heading, not a far-right link
+   slot. */
+.shelf-section .block-head {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.plate .post-list li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* The whole row is the link target; the title carries the underline cue. */
+.room--panel .post-list li {
+  position: relative;
+  transition: background var(--dur) var(--ease);
+}
+
+.post-link--row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.post-link--row:hover {
+  background: none;
+  text-decoration: underline;
+  text-decoration-color: var(--orange);
+  text-decoration-thickness: 3px;
+}
+
+.room--panel .post-list li:has(.post-link--row:hover) .post-meta {
+  color: var(--ink);
+}
+
+#how,
+#shelf,
+#writing,
+#work,
+#talk {
+  scroll-margin-top: 1rem;
+}
+
 /* ————— reduced motion ————— */
 
 @media (prefers-reduced-motion: reduce) {

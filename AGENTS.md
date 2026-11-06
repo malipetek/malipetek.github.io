@@ -1,5 +1,12 @@
 # AGENTS.md
 
+## Two sites (one Worker, two hosts)
+- **malipetek.dev** is the client portal for vibe contracting: the offer, `/portal/*`, `/agents` (connect an assistant to the portal), `/contact`, the legal pages, `/[locale]/` homepages, `/mcp`, `/.well-known/*` and `/api/*`. The lab's paths on this host 301 to the lab.
+- **lab.malipetek.dev** is the developer lab: `/kb/*`, `/plugins/*`, `/plugins.json`, `/blog/*`, `/experience/*`, `/projects/*`, `/pdfextractor/*`, and its own KB MCP at `/mcp` (proxied to `/kb-mcp` on the intercom Worker). Contracting paths 301 to malipetek.dev.
+- The rule set is `src/lib/siteHosts.ts`, called from `src/middleware.ts` for server routes and from `src/worker.ts` before the adapter serves a prerendered page. A prerendered page never reaches Astro middleware, even with `run_worker_first`, so the worker entry exists; the prerendered paths that need a redirect are listed in `run_worker_first` in `wrangler.jsonc`.
+- A new page belongs to one site. Pass `site="lab"` to `Base.astro` on the lab (it sets the nav, canonical origin and footer) and leave it off for the contracting site. Lab pages have no language picker or hreflang.
+- `llms.txt`, `robots.txt`, `sitemap.xml` and `sitemap-index.xml` are server routes and answer per Host. Do not add a static `public/robots.txt` or `public/llms.txt`; assets are served before the Worker.
+
 ## Admin workbench (one app, two hosts)
 - Source: `packages/admin-ui/src` (React, plain JSX). It talks only through `api(method, path, body)`.
 - Web: `src/pages/portal/admin.astro` mounts `src/components/AdminWorkbench.jsx` (portal session in localStorage).

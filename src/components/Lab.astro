@@ -1,0 +1,865 @@
+---
+/*
+ * lab.malipetek.dev. The developer side of the site: the agentic coding
+ * knowledgebase, the DeepSeek Harness plugins, writing, work and the shelf.
+ *
+ * These are the sections the homepage used to carry. They moved here when
+ * malipetek.dev became the client portal's site, and they read at request time
+ * because the knowledgebase and npm numbers change between deploys.
+ */
+import "../styles/kb.css";
+import { getCollection } from "astro:content";
+import { getPosts, fmtDate, readMinutes } from "../lib/posts.js";
+import { JOBS } from "../lib/experience.js";
+import { kbDb, listKbEntries, kbFacets, type KbSummary } from "../lib/kb";
+import { getPluginSummaries } from "../lib/plugins";
+
+const projects = (await getCollection("projects")).sort(
+  (a, b) =>
+    a.data.order - b.data.order || (a.data.year ?? 0) - (b.data.year ?? 0),
+);
+
+const posts = await getPosts();
+const latest = posts.slice(0, 5);
+
+// Manifest-only, so the lab index never waits on the npm registry. Versions
+// and install counts live on /plugins, which does read npm.
+const plugins = getPluginSummaries();
+
+// The knowledgebase is written by agents between deploys. A KB problem must
+// never take the lab index down with it.
+const kb = kbDb(Astro.locals);
+let kbRecent: KbSummary[] = [];
+let kbTotal = 0;
+if (kb) {
+  try {
+    const [list, facets] = await Promise.all([
+      listKbEntries(kb, { limit: 5 }),
+      kbFacets(kb),
+    ]);
+    kbRecent = list.entries;
+    kbTotal = facets.total;
+  } catch {
+    kbRecent = [];
+    kbTotal = 0;
+  }
+}
+
+const KIND = {
+  "shopify-app": { label: "Shopify app", plural: "Shopify apps", color: "#95bf47" },
+  game: { label: "Game", plural: "Games", color: "var(--orange)" },
+  "mobile-app": { label: "Mobile app", plural: "Mobile apps", color: "#2f6fb5" },
+  tool: { label: "Tool", plural: "Tools", color: "var(--ink)" },
+  experiment: { label: "Experiment", plural: "Experiments", color: "#5b574f" },
+};
+
+const FILTERS = [
+  { value: "all", label: "All" },
+  { value: "shopify-app", label: KIND["shopify-app"].plural },
+  { value: "mobile-app", label: KIND["mobile-app"].plural },
+  { value: "game", label: KIND.game.plural },
+  { value: "tool", label: KIND.tool.plural },
+  { value: "experiment", label: KIND.experiment.plural },
+];
+
+const STATUS = {
+  live: "Live",
+  beta: "Beta",
+  archived: "Archived",
+  wip: "Work in progress",
+};
+
+const initial = (title: string) =>
+  title
+    .replace(/^\[placeholder\]\s*/i, "")
+    .trim()
+    .charAt(0)
+    .toUpperCase();
+---
+
+<div class="rails" aria-hidden="true"></div>
+
+<section class="room lab-intro">
+  <div class="lab-intro-inner">
+    <p class="lab-who">
+      <img
+        class="lab-portrait"
+        src="/me.webp"
+        alt="Muhammet Ali Petek"
+        width="88"
+        height="88"
+        loading="eager"
+      />
+      <span>
+        <strong>M. Ali Petek</strong>
+        <span class="lab-kind">The lab</span>
+      </span>
+    </p>
+    <h1 class="lab-title">Notes from the work.</h1>
+    <p class="lab-lede">
+      What agents learned on real jobs, the DeepSeek Harness plugins I build for
+      myself, and the writing that comes out of it.
+    </p>
+    <p class="lab-note">
+      The client portal for website work lives at
+      <a href="https://malipetek.dev">malipetek.dev</a>.
+    </p>
+    <div class="lab-actions">
+      <a class="btn btn--solid" href="/kb">Knowledgebase</a>
+      <a class="btn" href="/plugins">Plugins</a>
+      <a class="btn" href="/blog">Writing</a>
+    </div>
+  </div>
+</section>
+
+
+<section class="room shelf-section" id="shelf" data-station="shelf">
+  <div class="block-head">
+    <h2><span class="room-no" aria-hidden="true">01</span>The shelf</h2>
+    <p class="block-note">{projects.length} projects I built and kept.</p>
+  </div>
+
+  <div class="chips" role="group" aria-label="Filter by kind">
+    {
+      FILTERS.map((f) => (
+        <button
+          type="button"
+          class="chip"
+          data-filter={f.value}
+          aria-pressed={f.value === "all" ? "true" : "false"}
+        >
+          {f.label}
+        </button>
+      ))
+    }
+  </div>
+
+  <ul class="shelf" data-shelf>
+    {
+      projects.map((p) => {
+        const kind = KIND[p.data.kind];
+        return (
+          <li
+            class="box"
+            data-kind={p.data.kind}
+            style={`--kind:${kind.color}`}
+          >
+            <span class="box-band" aria-hidden="true" />
+            <a
+              class="box-cover"
+              href={`/projects/${p.id}`}
+              tabindex="-1"
+              aria-hidden="true"
+            >
+              {p.data.cover ? (
+                <img src={p.data.cover} alt="" loading="lazy" />
+              ) : (
+                <span class="box-initial">{initial(p.data.title)}</span>
+              )}
+            </a>
+            <div class="box-face">
+              <a class="box-title" href={`/projects/${p.id}`}>
+                {p.data.title}
+              </a>
+              <p class="box-meta">
+                {kind.label}
+                {p.data.year ? ` · ${p.data.year}` : ""}
+              </p>
+              {p.data.tagline && <p class="box-tagline">{p.data.tagline}</p>}
+            </div>
+            <div class="box-foot">
+              <p class="box-status">{STATUS[p.data.status]}</p>
+              <div class="box-links">
+                {p.data.links.map((l) => (
+                  <a class="btn" href={l.url}>
+                    {l.label}
+                  </a>
+                ))}
+                <a class="btn" href={`/projects/${p.id}`}>
+                  Details
+                </a>
+              </div>
+            </div>
+          </li>
+        );
+      })
+    }
+  </ul>
+  <p class="shelf-empty" data-shelf-empty hidden>
+    Nothing in this kind.
+  </p>
+</section>
+
+<section class="room room--panel" id="knowledge" data-station="library">
+  <div class="plate frame">
+  <div class="block-head">
+    <h2><span class="room-no" aria-hidden="true">02</span>Agent knowledgebase</h2>
+    <a href="/kb">All {kbTotal} entries</a>
+  </div>
+
+  {
+    kbRecent.length > 0 ? (
+      <ul class="kb-home">
+        {kbRecent.map((entry) => (
+          <li>
+            <a href={`/kb/${entry.slug}`}>
+              <span class={`kb-home-status kb-home-status--${entry.status}`}>
+                {entry.status === "unsolvable" ? "dead end" : entry.status}
+              </span>
+              <span class="kb-home-title">{entry.title}</span>
+              <span class="kb-home-meta">
+                {[entry.language, entry.framework].filter(Boolean).join(" · ") || "general"}
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p class="block-note">The knowledgebase is empty right now.</p>
+    )
+  }
+
+  <p class="kb-home-foot">
+    Every entry is a problem and a fix from a real session. Read it in the
+    browser, over the REST API, or over MCP at
+    <a href="/mcp"><code>lab.malipetek.dev/mcp</code></a>.
+  </p>
+  </div>
+</section>
+
+<section class="room room--panel" id="plugins" data-station="library">
+  <div class="plate frame">
+  <div class="block-head">
+    <h2><span class="room-no" aria-hidden="true">03</span>DeepSeek plugins</h2>
+    <a href="/plugins">All {plugins.length} plugins</a>
+  </div>
+
+  <ul class="post-list plugin-home">
+    {
+      plugins.map((p) => (
+        <li>
+          <a class="post-link post-link--row" href={`/plugins/${p.slug}`}>
+            {p.title}
+          </a>
+          <span class="plugin-home-pkg">{p.name}</span>
+          <span class="post-summary">{p.blurb}</span>
+        </li>
+      ))
+    }
+  </ul>
+
+  <p class="kb-home-foot">
+    Plugins for DeepSeek Harness, published under the <code>@malipetek</code>
+    scope. Add one from the harness plugin manager.
+  </p>
+  </div>
+</section>
+
+<section class="room room--panel" id="writing" data-station="writing">
+  <div class="plate frame">
+  <div class="block-head">
+    <h2><span class="room-no" aria-hidden="true">04</span>Writing</h2>
+    <a href="/blog">All {posts.length} posts</a>
+  </div>
+  <ul class="post-list">
+    {
+      latest.map((p) => (
+        <li>
+          <a class="post-link post-link--row" href={`/blog/${p.id}`}>
+            {p.data.title}
+          </a>
+          <span class="post-meta">
+            {fmtDate(p.data.date)} · {p.data.category} · {readMinutes(p.body)} min
+          </span>
+        </li>
+      ))
+    }
+  </ul>
+  </div>
+</section>
+
+<section class="room room--panel" id="work" data-station="work">
+  <div class="plate frame">
+  <div class="block-head">
+    <h2><span class="room-no" aria-hidden="true">05</span>Where I've worked</h2>
+    <a href="/experience">Full history</a>
+  </div>
+
+  <ol class="timeline" data-timeline>
+    {
+      JOBS.map((j) => (
+        <li class="tl-item">
+          <span class="tl-years">{j.years}</span>
+          <span class="tl-rail" aria-hidden="true">
+            <span class="tl-dot" />
+          </span>
+          <button
+            class="tl-node"
+            type="button"
+            aria-expanded="false"
+            data-blurb={j.blurb}
+            data-tags={j.tags.join(" · ")}
+          >
+            {j.name}
+            {j.where ? <span class="tl-where">{j.where}</span> : null}
+          </button>
+        </li>
+      ))
+    }
+  </ol>
+
+  <div class="tl-readout" data-tl-readout aria-live="polite">
+    <p class="tl-readout-blurb tl-hint">
+      Pick a row to see what the job was.
+    </p>
+    <p class="tl-readout-tags"></p>
+  </div>
+  </div>
+</section>
+<script>
+  // The shelf: one box open at a time, opened by click, hover (fine pointers),
+  // or keyboard focus. aria-expanded mirrors the visual state so screen readers
+  // get the same story.
+  const shelf = document.querySelector<HTMLElement>("[data-shelf]");
+  const chips = Array.from(
+    document.querySelectorAll<HTMLButtonElement>(".chip[data-filter]"),
+  );
+  const emptyNote = document.querySelector<HTMLElement>("[data-shelf-empty]");
+
+  if (shelf) {
+    const boxes = Array.from(shelf.querySelectorAll<HTMLLIElement>(".box"));
+
+    chips.forEach((chip) => {
+      chip.addEventListener("click", () => {
+        chips.forEach((c) =>
+          c.setAttribute("aria-pressed", String(c === chip)),
+        );
+        const filter = chip.dataset.filter;
+        let visible = 0;
+        boxes.forEach((box) => {
+          const match = filter === "all" || box.dataset.kind === filter;
+          box.hidden = !match;
+          if (match) visible += 1;
+        });
+        if (emptyNote) emptyNote.hidden = visible > 0;
+      });
+    });
+  }
+
+  // The timeline: one stop expanded at a time. Readout is aria-live so the
+  // blurb arrives for screen readers too.
+  const timeline = document.querySelector<HTMLElement>("[data-timeline]");
+  const readout = document.querySelector<HTMLElement>("[data-tl-readout]");
+
+  if (timeline && readout) {
+    const items = Array.from(
+      timeline.querySelectorAll<HTMLLIElement>(".tl-item"),
+    );
+    const blurbEl = readout.querySelector<HTMLElement>(".tl-readout-blurb");
+    const tagsEl = readout.querySelector<HTMLElement>(".tl-readout-tags");
+
+    const activate = (item: HTMLLIElement) => {
+      items.forEach((other) => {
+        const node = other.querySelector<HTMLButtonElement>(".tl-node")!;
+        const on = other === item;
+        other.classList.toggle("is-open", on);
+        node.setAttribute("aria-expanded", String(on));
+      });
+      const node = item.querySelector<HTMLButtonElement>(".tl-node")!;
+      if (blurbEl) {
+        blurbEl.classList.remove("tl-hint");
+        blurbEl.textContent = node.dataset.blurb ?? "";
+      }
+      if (tagsEl) tagsEl.textContent = node.dataset.tags ?? "";
+    };
+
+    const canHover = window.matchMedia(
+      "(hover: hover) and (pointer: fine)",
+    ).matches;
+    items.forEach((item) => {
+      const node = item.querySelector<HTMLButtonElement>(".tl-node")!;
+      node.addEventListener("click", () => activate(item));
+      if (canHover) node.addEventListener("mouseenter", () => activate(item));
+      node.addEventListener("focus", () => activate(item));
+    });
+  }
+</script>
+
+<style>
+  /* Rooms fill the viewport; the layout's main padding would push the first
+     room down. */
+  :global(main) {
+    padding-block: 0;
+  }
+
+  /* ————— intro ————— */
+
+  .lab-intro-inner {
+    max-width: min(100%, 46rem);
+    padding-inline: var(--inset-x);
+    display: grid;
+    gap: clamp(0.9rem, 2vw, 1.5rem);
+  }
+
+  .lab-who {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: fit-content;
+    margin: 0;
+    padding: 5px 18px 5px 5px;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bone) 80%, transparent);
+    font-size: 15px;
+  }
+
+  .lab-portrait {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    filter: grayscale(1) contrast(1.05);
+  }
+
+  .lab-who strong {
+    display: block;
+    font-family: var(--font-display);
+    font-weight: 600;
+    line-height: 1.1;
+  }
+
+  .lab-kind {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+
+  .lab-title {
+    margin: 0;
+    font-size: clamp(2.6rem, 8vw, 5rem);
+    line-height: 0.94;
+    letter-spacing: -0.045em;
+  }
+
+  .lab-lede {
+    margin: 0;
+    max-width: 52ch;
+    font-size: clamp(1.05rem, 1.8vw, 1.3rem);
+    line-height: 1.5;
+  }
+
+  .lab-note {
+    margin: 0;
+    max-width: 52ch;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+
+  .lab-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .plugin-home-pkg {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink-soft);
+    overflow-wrap: anywhere;
+  }
+
+  .room--panel .post-list li:has(.post-link--row:hover) .plugin-home-pkg {
+    color: var(--ink);
+  }
+
+  /* ————— shelf ————— */
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.4rem 0 1.4rem;
+  }
+
+  .chip {
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--ink);
+    background: var(--bone);
+    border: 1px solid var(--rule-strong);
+    border-radius: 999px;
+    padding: 0.55em 1em;
+    cursor: pointer;
+    transition:
+      background var(--dur) var(--ease),
+      color var(--dur) var(--ease),
+      border-color var(--dur) var(--ease);
+  }
+
+  .chip:hover {
+    border-color: var(--ink);
+  }
+
+  .chip[aria-pressed="true"] {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--bone);
+  }
+
+  .shelf {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: stretch;
+    gap: 14px;
+    /* Boxes stand on the plank; it ends shortly after the last one and the
+       ::after tail is the "room for more" gap. Overflow scrolls sideways so
+       every box stays on the board. */
+    width: fit-content;
+    min-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+
+  .shelf::after {
+    content: "";
+    flex: 0 0 clamp(2.5rem, 6vw, 4.5rem);
+    height: 1px;
+    align-self: flex-end;
+  }
+
+  .box {
+    flex: 0 0 auto;
+    width: 238px;
+    min-height: 316px;
+    display: flex;
+    flex-direction: column;
+    background: var(--bone);
+    border: 1px solid var(--rule);
+    transition: border-color var(--dur) var(--ease);
+  }
+
+  .box:hover {
+    border-color: var(--rule-strong);
+  }
+
+  .box[hidden] {
+    display: none;
+  }
+
+  .box-band {
+    flex: 0 0 4px;
+    background: var(--kind);
+  }
+
+  .box-cover {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 110px;
+    overflow: hidden;
+    text-decoration: none;
+    background: var(--paper);
+  }
+
+  .box-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .box-initial {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 52px;
+    line-height: 1;
+    color: var(--kind);
+  }
+
+  .box-face {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 14px 0;
+    border-top: 1px solid var(--rule);
+  }
+
+  .box-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 17px;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    text-decoration: none;
+  }
+
+  .box-title:hover {
+    text-decoration: underline;
+    text-decoration-color: var(--orange);
+    text-decoration-thickness: 3px;
+    text-underline-offset: 3px;
+  }
+
+  .box-meta {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+  }
+
+  .box-tagline {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.4;
+    color: var(--ink);
+  }
+
+  .box-foot {
+    margin-top: auto;
+    padding: 12px 14px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .box-status {
+    margin: 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+
+  .box-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .box-links .btn {
+    font-size: 12.5px;
+    padding: 0.45em 0.7em;
+  }
+
+  .shelf-empty {
+    margin: 1rem 0 0;
+    color: var(--ink-soft);
+  }
+
+  /* ————— timeline ————— */
+
+  .timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+  }
+
+  .tl-item {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .tl-years {
+    font-size: 12px;
+    color: var(--ink-soft);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tl-rail {
+    position: relative;
+    height: 20px;
+    border-top: 1px solid var(--rule-strong);
+  }
+
+  .tl-dot {
+    position: absolute;
+    top: -4px;
+    left: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--ink);
+    border: 2px solid var(--bone);
+    transition:
+      background var(--dur) var(--ease),
+      transform var(--dur) var(--ease);
+  }
+
+  .tl-item.is-open .tl-dot {
+    background: var(--orange);
+    transform: scale(1.3);
+  }
+
+  .tl-node {
+    display: block;
+    width: 100%;
+    padding: 8px 14px 8px 0;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 15px;
+    line-height: 1.15;
+    text-align: left;
+    color: var(--ink);
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+
+  .tl-node:hover,
+  .tl-item.is-open .tl-node {
+    color: var(--ink);
+    text-decoration: underline;
+    text-decoration-color: var(--orange);
+    text-decoration-thickness: 3px;
+    text-underline-offset: 3px;
+  }
+
+  .tl-where {
+    display: block;
+    font-weight: 400;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  .tl-readout {
+    margin-top: 1rem;
+    min-height: 4rem;
+    max-width: 68ch;
+  }
+
+  .tl-readout-blurb {
+    margin: 0 0 0.35rem;
+    min-height: 1.5em;
+  }
+
+  .tl-readout-tags {
+    margin: 0;
+    font-size: 13px;
+    color: var(--ink-soft);
+    min-height: 1em;
+  }
+
+  .tl-hint {
+    color: var(--ink-soft);
+  }
+
+  #how,
+  #shelf,
+  #writing,
+  #work,
+  #talk {
+    scroll-margin-top: 1rem;
+  }
+
+
+  /* ————— tablet + mobile ————— */
+
+  @media (max-width: 760px) {
+    /* On a phone the shelf station sits right behind the heading; back the
+       text so the boxes frame it instead of running through it. */
+    .shelf-section .block-head,
+    .chips {
+      position: relative;
+      background: var(--bone);
+    }
+
+    .shelf-section .block-head {
+      margin-bottom: 0;
+      padding-block: 0.6rem 0.4rem;
+    }
+
+    .chips {
+      margin-top: 0;
+      padding-block: 0.4rem 0.6rem;
+    }
+
+    .shelf {
+      display: block;
+      width: auto;
+      border-bottom: 0;
+      overflow: visible;
+    }
+
+    .shelf::after {
+      display: none;
+    }
+
+    .box {
+      width: 100%;
+      min-height: 0;
+    }
+
+    .box-cover {
+      height: 140px;
+    }
+
+    .room--panel .post-link {
+      font-size: 19px;
+    }
+
+    .box + .box {
+      margin-top: 14px;
+    }
+
+    .timeline {
+      display: block;
+      border-left: 1px solid var(--rule-strong);
+      padding-left: 16px;
+    }
+
+    .tl-item {
+      display: block;
+      position: relative;
+      padding-bottom: 0.4rem;
+    }
+
+    .tl-item::before {
+      content: "";
+      position: absolute;
+      left: -22px;
+      top: 4px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--ink);
+      border: 2px solid var(--bone);
+    }
+
+    .tl-item.is-open::before {
+      background: var(--orange);
+    }
+
+    .tl-years {
+      font-size: 12px;
+    }
+
+    .tl-rail {
+      display: none;
+    }
+
+    .tl-node {
+      padding: 0.15rem 0 0.5rem;
+    }
+
+    .tl-node:hover,
+    .tl-item.is-open .tl-node {
+      color: var(--ink);
+      text-decoration: underline;
+      text-decoration-color: var(--orange);
+      text-decoration-thickness: 3px;
+      text-underline-offset: 3px;
+    }
+  }
+</style>

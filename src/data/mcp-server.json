@@ -1,0 +1,59 @@
+{
+  "$comment": "Discovery document for agents. Not a standardised path (WebMCP and MCP are still settling), so treat this as malipetek.dev's own manifest and prefer /llms.txt + /agents for the human-readable version. The knowledgebase has its own server at https://lab.malipetek.dev/mcp.",
+  "name": "malipetek.dev client portal",
+  "description": "The malipetek.dev client portal over MCP: file and follow website requests on a client's own account. Every request still waits for Ali before work starts.",
+  "homepage": "https://malipetek.dev",
+  "documentation": "https://malipetek.dev/agents",
+  "llms_txt": "https://malipetek.dev/llms.txt",
+  "mcp": {
+    "url": "https://malipetek.dev/mcp",
+    "transport": "streamable-http",
+    "protocolVersion": "2025-06-18",
+    "capabilities": [
+      "tools"
+    ],
+    "auth": {
+      "client": {
+        "scheme": "bearer",
+        "header": "Authorization",
+        "format": "Bearer cat_...",
+        "issued_by": "https://malipetek.dev/portal (Connect an assistant)",
+        "note": "Client agent keys are minted and revoked in the portal. OAuth is also supported at /oauth/authorize."
+      }
+    },
+    "tools_client": [
+      "portal_projects",
+      "portal_requests",
+      "portal_request",
+      "portal_file_request",
+      "portal_reply",
+      "portal_set_budget",
+      "portal_withdraw",
+      "project_context",
+      "workspace_files",
+      "workspace_read",
+      "submit_change",
+      "preview_build",
+      "site_status",
+      "site_deploys",
+      "site_publish",
+      "site_rollback"
+    ]
+  },
+  "webmcp": {
+    "note": "The contracting site registers an in-page open_intercom tool via document.modelContext when the browser implements WebMCP. The knowledgebase tools live on lab.malipetek.dev.",
+    "tools": [
+      "open_intercom (pages with an intercom)"
+    ]
+  },
+  "knowledgebase": {
+    "note": "Ali's agentic coding knowledgebase, open-source plugins and writing are a separate site. Nothing there is part of the client portal.",
+    "site": "https://lab.malipetek.dev",
+    "mcp": "https://lab.malipetek.dev/mcp",
+    "setup": "https://lab.malipetek.dev/kb/agents"
+  },
+  "contact": {
+    "email": "malipetek@gmail.com",
+    "github": "https://github.com/malipetek"
+  }
+}

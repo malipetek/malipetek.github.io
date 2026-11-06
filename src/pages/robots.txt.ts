@@ -1,4 +1,19 @@
-# As a condition of accessing this website, you agree to abide by the following
+/*
+ * /robots.txt, per host.
+ *
+ * One robots file per site: each lists only its own sitemaps, so a crawler
+ * never discovers the other host from this one.
+ */
+export const prerender = false;
+
+import type { APIRoute } from 'astro';
+import {
+  CONTRACTING_ORIGIN,
+  LAB_ORIGIN,
+  isLabRequest,
+} from '../lib/siteHosts';
+
+const SIGNALS = `# As a condition of accessing this website, you agree to abide by the following
 # content signals:
 
 # (a)  If a content-signal = yes, you may collect content for the corresponding
@@ -24,12 +39,32 @@
 # AND RELATED RIGHTS IN THE DIGITAL SINGLE MARKET.
 
 # No content signal is declared above, so the site neither grants nor restricts
-# those uses. The knowledgebase at /kb is written to be read by people and by
-# agents: it is also served over MCP at https://malipetek.dev/mcp.
+# those uses.`;
+
+const contracting = `${SIGNALS}
 
 User-agent: *
 Allow: /
 
-Sitemap: https://malipetek.dev/sitemap-index.xml
-Sitemap: https://malipetek.dev/kb/sitemap.xml
-Sitemap: https://malipetek.dev/plugins/sitemap.xml
+Sitemap: ${CONTRACTING_ORIGIN}/sitemap.xml
+`;
+
+const lab = `${SIGNALS}
+# The knowledgebase is written to be read by people and by agents. It is also
+# served over MCP at ${LAB_ORIGIN}/mcp.
+
+User-agent: *
+Allow: /
+
+Sitemap: ${LAB_ORIGIN}/sitemap.xml
+Sitemap: ${LAB_ORIGIN}/kb/sitemap.xml
+Sitemap: ${LAB_ORIGIN}/plugins/sitemap.xml
+`;
+
+export const GET: APIRoute = ({ request }) =>
+  new Response(isLabRequest(request) ? lab : contracting, {
+    headers: {
+      'content-type': 'text/plain; charset=utf-8',
+      'cache-control': 'public, max-age=300',
+    },
+  });
