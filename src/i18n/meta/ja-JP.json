@@ -1536,7 +1536,7 @@
     "reviewed": false
   },
   "start.heading": {
-    "en": "What do you need?",
+    "en": "What do you want to build or fix?",
     "reviewed": false
   },
   "start.who.requests": {
@@ -2984,7 +2984,7 @@
     "reviewed": false
   },
   "start.intake.lede": {
-    "en": "Tell me in your own words. The setup assistant will create the project, the site and the repository, then file the first request for Ali to approve.",
+    "en": "Tell me in your own words. You don't need to know how any of it works. I'll say back what I understood, set up the project, and file the first request for Ali to approve.",
     "reviewed": false
   },
   "start.intake.label": {
