@@ -160,9 +160,14 @@ export const CLIENT_TOOLS: ClientTool[] = [
       additionalProperties: false,
     },
     readOnly: true,
-    // The sidebar entry's icon (ChatGPT reads it from the entrypoint tool). The
-    // size must be the file's real one: public/plugin-icon.png is 256×256.
-    icons: [{ src: 'https://malipetek.dev/plugin-icon.png', mimeType: 'image/png', sizes: ['256x256'] }],
+    // The sidebar entry's icon (ChatGPT reads it from the entrypoint tool). Hosts
+    // draw it as a one-colour glyph: its transparency is a mask they tint, so a
+    // photo turns into a solid or inverted square. public/plugin-glyph.svg is a
+    // line mark on transparent; the photo stays the listing logo.
+    icons: [
+      { src: 'https://malipetek.dev/plugin-glyph.svg', mimeType: 'image/svg+xml', sizes: ['any'] },
+      { src: 'https://malipetek.dev/plugin-glyph.png', mimeType: 'image/png', sizes: ['256x256'] },
+    ],
     _meta: {
       ui: { resourceUri: BOARD_UI_URI },
       // Opens from the sidebar (global) and as a tab beside a conversation (thread).
