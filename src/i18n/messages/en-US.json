@@ -857,5 +857,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "Agent",
   "card.sys.moved": "Moved to {status}",
-  "card.sys.movedTotal": "Moved to {status} · total {total}"
+  "card.sys.movedTotal": "Moved to {status} · total {total}",
+  "site.foot.askAi": "Ask AI about malipetek.dev:"
 }
