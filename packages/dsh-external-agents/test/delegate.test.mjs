@@ -249,3 +249,88 @@ test('a running delegation emits progress notifications while it works', async (
     endpoint.close();
   }
 });
+
+test('two delegations run at once, not one after the other', async () => {
+  const { createServer } = await import('node:http');
+  const { spawn } = await import('node:child_process');
+  const { createInterface } = await import('node:readline');
+  const { fileURLToPath } = await import('node:url');
+  const shim = fileURLToPath(new URL('../mcp-forward.mjs', import.meta.url));
+
+  let active = 0;
+  let peak = 0;
+  const server = createServer((request, response) => {
+    active += 1;
+    peak = Math.max(peak, active);
+    let body = '';
+    request.on('data', (chunk) => { body += chunk; });
+    request.on('end', () => {
+      const message = JSON.parse(body);
+      setTimeout(() => {
+        active -= 1;
+        response.writeHead(200, { 'content-type': 'application/x-ndjson' });
+        response.end(`${JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: 'ok' }] } })}\n`);
+      }, 60);
+    });
+  });
+  await new Promise((ready) => server.listen(0, '127.0.0.1', ready));
+  const url = `http://127.0.0.1:${server.address().port}/mcp`;
+  const child = spawn(process.execPath, [shim, '--url', url, '--token', 't'], { stdio: ['pipe', 'pipe', 'inherit'] });
+
+  try {
+    const call = (id, task) => child.stdin.write(`${JSON.stringify({
+      jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'delegate', arguments: { task } },
+    })}\n`);
+    call(1, 'first');
+    call(2, 'second');
+
+    const replies = [];
+    await new Promise((done) => {
+      createInterface({ input: child.stdout }).on('line', (line) => {
+        replies.push(JSON.parse(line));
+        if (replies.length === 2) done();
+      });
+    });
+    assert.equal(replies.length, 2, 'both calls answered');
+    assert.equal(peak, 2, 'and both were in flight at the same time');
+  } finally {
+    child.kill('SIGTERM');
+    server.close();
+  }
+});
+
+test('a caller can pin the worker route, directory and depth per delegation', async () => {
+  // The configured route is a default, not a cage: without this every worker was
+  // whatever the profile chose, so "use a Codex worker" was impossible.
+  const calls = [];
+  const { endpoint, call } = await start({
+    agentOptions: { provider: 'opencode-go', model: 'deepseek-v4.1-flash' },
+    subagents: {
+      async startActivation(spec) {
+        calls.push(spec);
+        return { childId: 'c', result: Promise.resolve({ text: 'ok' }), dispose: () => {} };
+      },
+    },
+  });
+  try {
+    await call({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'delegate',
+        arguments: { task: 'review this', provider: 'openai-codex', model: 'gpt-6.1-sol', cwd: '/tmp/project', depth: 2 },
+      },
+    });
+    const spec = calls[0];
+    assert.deepEqual(spec.request.agentOptions, { provider: 'openai-codex', model: 'gpt-6.1-sol' });
+    assert.equal(spec.request.cwd, '/tmp/project');
+    assert.equal(spec.request.maxDepth, 2);
+
+    // Omitted fields still fall back to the configured route.
+    await call({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'delegate', arguments: { task: 'again' } } });
+    assert.deepEqual(calls[1].request.agentOptions, { provider: 'opencode-go', model: 'deepseek-v4.1-flash' });
+  } finally {
+    endpoint.close();
+  }
+});

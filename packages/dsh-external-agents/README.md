@@ -366,6 +366,13 @@ ctx.subagents.startActivation({
 })
 ```
 
+A caller may override the route **per delegation** — `provider`, `model`, `cwd`
+and `depth` are optional arguments on `delegate`, and the configured `delegate:`
+block is only the default. A route is a provider id, not an agent name: the Devin
+worker is `provider: "acp-devin"`, `model: "swe-2-flash-medium"`, and Codex is
+`"openai-codex"` / `"gpt-6.1-sol"`. Parallel `delegate` calls run concurrently;
+the shim relays each request independently because MCP replies are matched by id.
+
 Two knobs keep a long delegation honest: `progressEveryMs` (default 30 000)
 makes it emit an MCP progress notification while it runs, and `timeoutMs`
 (default 3 600 000, `0` disables) turns a call that outlives its deadline into a

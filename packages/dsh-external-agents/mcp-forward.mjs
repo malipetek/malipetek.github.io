@@ -114,22 +114,19 @@ process.stdin.on('data', (chunk) => {
         newline = buffer.indexOf('\n');
         continue;
       }
-      if (message.id === undefined) {
-        // Notifications are forwarded fire-and-forget.
-        relay(message).catch(() => {});
-      } else {
-        // Requests are serialised: MCP clients expect ordered replies.
-        handleSequential(message);
-      }
+      // Every relay is independent: a notification or a request, same path.
+      relay(message).catch(() => {});
     }
     newline = buffer.indexOf('\n');
   }
 });
 
-let chain = Promise.resolve();
-/** Queue one request behind the previous. @param message - the request. */
-function handleSequential(message) {
-  chain = chain.then(() => relay(message));
-}
+/*
+ * Requests are relayed **concurrently**, not queued.
+ *
+ * Each MCP request carries its own id, so replies need no ordering; chaining them
+ * made two delegated workers run one after the other for no reason. A line is
+ * written whole, so replies cannot interleave mid-line.
+ */
 
 log(`ready → ${url}`);

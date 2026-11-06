@@ -31,6 +31,29 @@ export const DELEGATE_TOOL = {
     properties: {
       task: { type: 'string', description: 'The complete task for the worker, standing on its own.' },
       label: { type: 'string', description: 'Short name for this delegation, shown in the harness.' },
+      provider: {
+        type: 'string',
+        description:
+          'Optional worker model route, e.g. "opencode-go", "deepseek-official", "acp-devin", '
+          + '"openai-codex". A route is the provider id, not the agent name: the worker for Devin '
+          + 'is provider "acp-devin" with model "swe-2-flash-medium". Defaults to the bridge\'s '
+          + 'configured route.',
+      },
+      model: {
+        type: 'string',
+        description: 'Optional worker model id for that route, e.g. "deepseek-v4.1-flash", '
+          + '"swe-2-flash-medium", "gpt-6.1-sol". Must be a model the route offers.',
+      },
+      cwd: {
+        type: 'string',
+        description: 'Optional working directory for the worker. Defaults to the parent\'s.',
+      },
+      depth: {
+        type: 'integer',
+        description:
+          'Optional delegation depth for the worker: 1 lets this worker delegate no further, '
+          + '2 lets it delegate once. Omit to inherit the harness setting.',
+      },
     },
     required: ['task'],
   },
@@ -166,17 +189,35 @@ export function createDelegateEndpoint(options) {
 
         const label = String(params?.arguments?.label ?? task.slice(0, 60));
         const progressToken = params?._meta?.progressToken ?? params?.progressToken;
-        log(`[delegate] ${sessionKey} → ${label.slice(0, 80)}`);
+        log(`[delegate] ${sessionKey} → ${label.slice(0, 80)}`
+          + (typeof params?.arguments?.provider === 'string' || typeof params?.arguments?.model === 'string'
+            ? ` [${params?.arguments?.provider ?? ''}/${params?.arguments?.model ?? ''}]`
+            : ''));
         let heartbeat;
         let settled = false;
         try {
+          // A caller may pin a different route per delegation; the configured
+          // route is only the default. Without this every worker was whatever the
+          // profile happened to choose, which made "use a Codex worker" impossible.
+          const askedProvider = typeof params?.arguments?.provider === 'string' ? params.arguments.provider.trim() : '';
+          const askedModel = typeof params?.arguments?.model === 'string' ? params.arguments.model.trim() : '';
+          const agentOptions = {
+            ...(options.agentOptions ?? {}),
+            ...(askedProvider.length === 0 ? {} : { provider: askedProvider }),
+            ...(askedModel.length === 0 ? {} : { model: askedModel }),
+          };
+          const askedCwd = typeof params?.arguments?.cwd === 'string' ? params.arguments.cwd.trim() : '';
+          const askedDepth = Number.isInteger(params?.arguments?.depth) ? params.arguments.depth : undefined;
+
           const activation = await subagents.startActivation({
             provider,
             label,
             request: {
               prompt: [{ type: 'text', text: task }],
               parent,
-              ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+              ...(askedCwd.length === 0 ? {} : { cwd: askedCwd }),
+              ...(askedDepth === undefined ? {} : { maxDepth: askedDepth }),
+              ...(Object.keys(agentOptions).length === 0 ? {} : { agentOptions }),
             },
             // `caller` awaits the child's result instead of notifying the parent,
             // which is what a tool call needs.
