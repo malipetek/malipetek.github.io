@@ -3434,5 +3434,9 @@
   "board.peek.open": {
     "en": "Open request",
     "reviewed": false
+  },
+  "site.nav.agents": {
+    "en": "Connect your assistant",
+    "reviewed": false
   }
 }

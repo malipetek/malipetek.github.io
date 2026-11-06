@@ -3434,5 +3434,9 @@
   "offer.contrast": {
     "en": "Vibe coding is you and an AI. Vibe contracting is an AI and a developer who signs for its work.",
     "reviewed": false
+  },
+  "site.nav.agents": {
+    "en": "Connect your assistant",
+    "reviewed": false
   }
 }
