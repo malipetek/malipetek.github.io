@@ -383,6 +383,11 @@ Three deliberate choices:
 - **Workers are pinned** by `agentOptions`, so a delegation runs on a native route
   rather than recursing into another Claude Code process.
 
+Verified at the transport level for **both** `claude-agent-acp` and `devin acp`:
+each accepts an MCP server handed to it in `session/new` and calls its tool
+(`node test/mcp-spike.mjs devin acp`). Anything with a working ACP `mcpServers`
+implementation can use the bridge.
+
 Verified end to end against real `claude-agent-acp` with a fake `ctx.subagents`:
 the agent called `delegate`, the endpoint built
 `{provider:'spawn', delivery:'caller', prompt:[…], agentOptions:{provider:'opencode-go',
