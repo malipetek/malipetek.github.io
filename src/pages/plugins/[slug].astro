@@ -84,6 +84,15 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
           <code class="plugin-pkg">{plugin.name}</code>
 
           <div class="plugin-links">
+            <button
+              class="btn btn--copy"
+              type="button"
+              data-copy-agent={plugin.agentInstructions}
+              data-label="Copy agent instructions"
+              title="A prompt you can hand an agent to install and configure this plugin"
+            >
+              Copy agent instructions
+            </button>
             <a class="btn" href={plugin.npmUrl}>
               npm
             </a>
@@ -134,7 +143,21 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
   )
 }
 
+<script>
+  import { initCopyAgentInstructions } from '../../scripts/copy-agent-instructions';
+  initCopyAgentInstructions();
+</script>
+
 <style>
+  .btn--copy {
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .btn--copy[data-copied='true'] {
+    border-color: var(--ink);
+  }
+
   .plugin-back {
     margin: 0 0 1.5rem;
     font-size: 15px;

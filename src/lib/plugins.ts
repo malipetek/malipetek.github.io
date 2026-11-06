@@ -112,6 +112,12 @@ export interface Plugin {
   npmUrl: string;
   repoUrl: string;
   readme: string;
+  /**
+   * A paste-ready prompt for an agent, taken from the README's
+   * "Agent instructions" section when it has one, else synthesised so every
+   * plugin has a copy button that does something real.
+   */
+  agentInstructions: string;
   npm: NpmState;
 }
 
@@ -241,6 +247,46 @@ export async function getPlugin(slug: string): Promise<Plugin | null> {
   return plugin ?? null;
 }
 
+/**
+ * The prompt a reader is meant to hand their agent.
+ *
+ * Preferred source is an `## Agent instructions` section with a fenced block, so
+ * the text a visitor copies is the text the plugin's own maintainer wrote. A
+ * plugin without one still gets a usable prompt synthesised from its manifest —
+ * the button is on every card, so it must never copy nothing.
+ *
+ * @param readme - the package README, raw.
+ * @param name - the package name.
+ * @param install - the install command.
+ * @param repoUrl - where the source lives.
+ * @returns the prompt.
+ */
+function agentInstructionsFor(
+  readme: string,
+  name: string,
+  install: string,
+  repoUrl: string,
+): string {
+  const section = readme
+    .split(/^##\s+/m)
+    .find((part) => /^Agent instructions\b/i.test(part));
+  if (section !== undefined) {
+    const body = section.replace(/^Agent instructions[^\n]*\n?/i, '');
+    const fenced = /```[a-z]*\n([\s\S]*?)```/i.exec(body);
+    const text = (fenced?.[1] ?? body).trim();
+    if (text.length > 0) return text;
+  }
+  return [
+    `Install ${name} in this DeepSeek Harness profile and configure it.`,
+    '',
+    '1. Install it:',
+    `   ${install}`,
+    '2. Restart the app, so the Host half loads.',
+    `3. Read the plugin's source and README before configuring it: ${repoUrl}`,
+    '4. Report the settings you changed, and what you verified afterwards.',
+  ].join('\n');
+}
+
 /** `only` narrows the registry work to a single package for a detail page. */
 async function build(only?: string): Promise<Plugin[]> {
   const base = fromGlob().filter(({ pkg }) => !only || slugOf(pkg.name) === only);
@@ -249,6 +295,8 @@ async function build(only?: string): Promise<Plugin[]> {
     base.map(async ({ pkg, readme }): Promise<Plugin> => {
       const slug = slugOf(pkg.name);
       const dir = `packages/${slug}`;
+      const install = `dsh plugin add ${pkg.name}`;
+      const repoUrl = `${GITHUB_BLOB}/${pkg.repository?.directory ?? dir}`;
       return {
         slug,
         name: pkg.name,
@@ -260,10 +308,11 @@ async function build(only?: string): Promise<Plugin[]> {
         clientInject: pkg.dsh?.client?.inject ?? [],
         homepage: pkg.homepage,
         repositoryDirectory: pkg.repository?.directory ?? dir,
-        install: `dsh plugin add ${pkg.name}`,
+        install,
         npmUrl: `https://www.npmjs.com/package/${pkg.name}`,
-        repoUrl: `${GITHUB_BLOB}/${pkg.repository?.directory ?? dir}`,
+        repoUrl,
         readme,
+        agentInstructions: agentInstructionsFor(readme, pkg.name, install, repoUrl),
         npm: await fetchNpm(pkg.name),
       };
     }),

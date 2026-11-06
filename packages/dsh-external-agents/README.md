@@ -109,6 +109,15 @@ Install the external-agents plugin in this harness and set up delegation.
    inherit the parent's model, which for an ACP agent means another Claude Code
    process. Add `provider` to choose a different subagent backend.
 
+   Add standing `instructions` on the same entry so the agent reaches for this
+   tool instead of its own subagents:
+
+     For any delegated or subagent work, use the `delegate` tool from the `dsh`
+     MCP server (mcp__dsh__delegate), not your built-in Agent/Task tool. Those
+     workers run inside the DeepSeek Harness on the harness's models; your own
+     subagents cannot see its tools or context. If `delegate` is unavailable,
+     say so instead of silently substituting your own subagent.
+
 5. Verify. Start a conversation on that agent and ask: "Call the delegate tool
    with task 'list the files here' and report exactly what it returned."
    Then check the plugin log for three lines:

@@ -69,6 +69,15 @@ function versionCell(p: (typeof plugins)[number]) {
               </div>
               <code class="plugin-pkg">{p.name}</code>
               <p class="plugin-blurb">{p.blurb}</p>
+              <button
+                class="btn btn--copy"
+                type="button"
+                data-copy-agent={p.agentInstructions}
+                data-label="Copy agent instructions"
+                title="A prompt you can hand an agent to install and configure this plugin"
+              >
+                Copy agent instructions
+              </button>
             </div>
 
             <dl class="plugin-meta">
@@ -103,6 +112,11 @@ function versionCell(p: (typeof plugins)[number]) {
   </section>
 </Base>
 
+<script>
+  import { initCopyAgentInstructions } from '../../scripts/copy-agent-instructions';
+  initCopyAgentInstructions();
+</script>
+
 <style>
   .intro-note {
     max-width: 62ch;
@@ -122,6 +136,16 @@ function versionCell(p: (typeof plugins)[number]) {
     overflow-x: auto;
     max-width: 100%;
     width: fit-content;
+  }
+
+  .btn--copy {
+    font: inherit;
+    cursor: pointer;
+    margin-top: 0.6rem;
+  }
+
+  .btn--copy[data-copied='true'] {
+    border-color: var(--ink);
   }
 
   .section-foot {
