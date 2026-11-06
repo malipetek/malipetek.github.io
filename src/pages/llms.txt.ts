@@ -39,6 +39,10 @@ const contracting = `# malipetek.dev: vibe contracting
 > copy of the project, Ali checks the result, and it ships. Billed by the
 > minute, with no quote and no minimum.
 
+You vibe coded it, it looks good, and this is what comes next: getting it
+online, wiring up payments and email, fixing what breaks for real customers,
+and keeping it working.
+
 ${DEFINITION}
 
 ## Who it is for
