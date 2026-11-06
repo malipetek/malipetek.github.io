@@ -30,13 +30,16 @@ const LAB_ROOTS = ['/kb', '/plugins', '/blog', '/experience', '/projects', '/pdf
 const LAB_EXACT = ['/plugins.json'];
 
 /** Contracting paths. The locale homepages are handled separately. */
-const CONTRACTING_ROOTS = ['/portal', '/api', '/.well-known'];
+const CONTRACTING_ROOTS = ['/portal', '/api'];
 const CONTRACTING_EXACT = [
   '/agents',
   '/contact',
   '/privacy-policy',
   '/terms-of-service',
   '/chat',
+  // Owner-only: it signs in with the portal session, which lives in
+  // malipetek.dev's localStorage, so it only works on that host.
+  '/kb/new',
 ];
 
 /** `/foo/` and `/foo` are the same page for this decision. */
@@ -85,6 +88,10 @@ export function hostRedirect(request: Request): Response | null {
   const path = normalize(new URL(request.url).pathname);
 
   if (host === LAB_HOST) {
+    // The lab's MCP server has no OAuth. Following a redirect to the portal's
+    // discovery documents would make a client sign in to the portal for the
+    // knowledgebase, the very mix-up this split removes.
+    if (under(path, '/.well-known')) return new Response('Not found', { status: 404 });
     if (CONTRACTING_ROOTS.some((root) => under(path, root))) {
       return redirect(request, CONTRACTING_ORIGIN);
     }
@@ -101,6 +108,7 @@ export function hostRedirect(request: Request): Response | null {
   }
 
   if (CONTRACTING_HOSTS.has(host)) {
+    if (CONTRACTING_EXACT.includes(path)) return null;
     if (LAB_ROOTS.some((root) => under(path, root)) || LAB_EXACT.includes(path)) {
       return redirect(request, LAB_ORIGIN);
     }
