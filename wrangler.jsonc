@@ -13,6 +13,20 @@
     "binding": "ASSETS",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page",
+    // Host redirects for prerendered pages have to run before the adapter
+    // serves them from ASSETS (middleware never sees an asset response). These
+    // are the only paths the split touches before Astro runs: /portal*,
+    // /.well-known/* and /chat move to malipetek.dev, /blog/* and /projects/*
+    // move to lab. Everything else is a server route and is handled by
+    // src/middleware.ts. See src/worker.ts.
+    "run_worker_first": [
+      "/portal",
+      "/portal/*",
+      "/.well-known/*",
+      "/chat",
+      "/blog/*",
+      "/projects/*",
+    ],
   },
 
   // The public agentic coding knowledgebase, read directly by the SSR /kb
@@ -27,8 +41,13 @@
   ],
 
   // Zone routes — the worker intercepts requests for proxied DNS records on
-  // the zone. (Custom domains would manage DNS for us, but they refuse to
-  // attach while the old GitHub Pages records exist.)
+  // the zone. The apex and www keep zone routes because custom domains refuse
+  // to attach while the old GitHub Pages records exist.
+  //
+  // The lab is a fresh subdomain with no old records, so it is a custom
+  // domain: the same Worker answers both hosts and tells them apart by Host
+  // (src/middleware.ts, src/worker.ts). Deploying creates the
+  // lab.malipetek.dev DNS record and certificate in the zone.
   "routes": [
     {
       "pattern": "malipetek.dev/*",
@@ -37,6 +56,10 @@
     {
       "pattern": "www.malipetek.dev/*",
       "zone_name": "malipetek.dev"
+    },
+    {
+      "pattern": "lab.malipetek.dev",
+      "custom_domain": true
     },
   ],
 

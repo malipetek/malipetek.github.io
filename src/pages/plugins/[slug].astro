@@ -41,7 +41,8 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
 {
   !plugin ? (
     <Base
-      title="Not found — malipetek"
+      site="lab"
+      title="Not found — M. Ali Petek's lab"
       description="No such plugin."
       current="/plugins"
     >
@@ -61,7 +62,8 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
     </Base>
   ) : (
     <Base
-      title={`${plugin.title} — malipetek`}
+      site="lab"
+      title={`${plugin.title} — M. Ali Petek's lab`}
       description={plugin.blurb}
       current="/plugins"
     >

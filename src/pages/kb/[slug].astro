@@ -5,6 +5,7 @@ export const prerender = false;
 import Base from '../../layouts/Base.astro';
 import '../../styles/kb.css';
 import { KB_STATUS, fmtDate, getKbEntry, kbDb, renderMarkdown } from '../../lib/kb';
+import { LAB_ORIGIN } from '../../lib/siteHosts';
 
 const slug = Astro.params.slug ?? '';
 const db = kbDb(Astro.locals);
@@ -19,7 +20,7 @@ const solution = renderMarkdown(entry.solution_md);
 // Structured data so the entry is legible to search engines and AI crawlers
 // without scraping the rendered page.
 const iso = (value: string) => (value ? `${value.replace(' ', 'T')}Z` : undefined);
-const canonical = new URL(`/kb/${entry.slug}`, Astro.site).href;
+const canonical = new URL(`/kb/${entry.slug}`, LAB_ORIGIN).href;
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'TechArticle',
@@ -33,13 +34,14 @@ const jsonLd = {
   programmingLanguage: entry.language ?? undefined,
   about: entry.framework ? { '@type': 'SoftwareApplication', name: entry.framework } : undefined,
   creativeWorkStatus: status?.label,
-  author: { '@type': 'Person', name: 'M. Ali Petek', url: 'https://malipetek.dev' },
-  publisher: { '@type': 'Person', name: 'M. Ali Petek', url: 'https://malipetek.dev' },
+  author: { '@type': 'Person', name: 'M. Ali Petek', url: LAB_ORIGIN },
+  publisher: { '@type': 'Person', name: 'M. Ali Petek', url: LAB_ORIGIN },
   isAccessibleForFree: true,
 };
 ---
 
 <Base
+  site="lab"
   title={`${entry.title} — knowledgebase`}
   description={entry.problem_md.slice(0, 180)}
   current="/kb"
@@ -84,7 +86,7 @@ const jsonLd = {
       <footer class="kb-entry-foot">
         <p>
           Machine-readable: <a href={`/kb/${entry.slug}.json`}><code>/kb/{entry.slug}.json</code></a> ·
-          ask your agent to call <code>get_knowledge</code> on <a href="/mcp"><code>/mcp</code></a>
+          ask your agent to call <code>get_knowledge</code> on <a href="/mcp"><code>lab.malipetek.dev/mcp</code></a>
         </p>
       </footer>
     </article>

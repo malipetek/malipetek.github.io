@@ -43,6 +43,7 @@ const activeFilters = [status && `status: ${status}`, language && `lang: ${langu
 ---
 
 <Base
+  site="lab"
   title="Knowledgebase — M. Ali Petek"
   description="Every problem my agents hit and how it was actually solved: solved, worked around, or ruled out with evidence. Public, searchable, and readable over MCP."
   current="/kb"
@@ -55,8 +56,9 @@ const activeFilters = [status && `status: ${status}`, language && `lang: ${langu
         Every entry is one problem and one resolution from a real session — <strong>solved</strong>,
         <strong>worked around</strong>, or <strong>ruled out with evidence</strong>. Read it in a browser, over
         the REST API, or by pointing your agent at
-        <a href="/mcp"><code>malipetek.dev/mcp</code></a> — see <a href="/agents">connect your agent</a>. Reading
-        is open to everyone; writing is ours.
+        <a href="/mcp"><code>lab.malipetek.dev/mcp</code></a>. See
+        <a href="/kb/agents">connect your agent</a>. Reading is open to everyone;
+        writing is ours.
       </p>
       <p class="kb-meta">
         {facets.total}

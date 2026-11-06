@@ -8,13 +8,15 @@
  * Everything here is feature-detected: browsers without `document.modelContext`
  * load this module, find nothing, and do nothing. Nothing is polyfilled.
  *
- * Three tools, deliberately. The spec's own guidance is that every registered
- * tool costs context window and invites tool confusion, and that tools should be
- * registered for the state the page is actually in — hence `open_intercom`
- * appearing only on pages that have an intercom.
+ * Three tools in total, deliberately, split by site. The spec's own guidance is
+ * that every registered tool costs context window and invites tool confusion,
+ * and that tools should be registered for the state the page is actually in:
+ * the knowledgebase tools exist only on lab.malipetek.dev, and `open_intercom`
+ * only on pages that have an intercom (the contracting site).
  */
 
 const ENDPOINT = String(import.meta.env.PUBLIC_CHAT_ENDPOINT || '').replace(/\/+$/, '');
+const LAB_ORIGIN = 'https://lab.malipetek.dev';
 
 /** `document.modelContext` is the specified home; older polyfills used navigator. */
 function modelContext() {
@@ -65,7 +67,7 @@ function render(entries, query) {
   return entries
     .map(
       (entry) =>
-        `- ${entry.title} [${entry.status}]${entry.language ? ` · ${entry.language}` : ''}\n  https://malipetek.dev/kb/${entry.slug}`,
+        `- ${entry.title} [${entry.status}]${entry.language ? ` · ${entry.language}` : ''}\n  ${LAB_ORIGIN}/kb/${entry.slug}`,
     )
     .join('\n');
 }
@@ -78,7 +80,12 @@ export function registerSiteTools() {
   const ctx = modelContext();
   if (!ctx) return false;
 
-  const tools = [
+  // Base.astro puts the host's site on <body data-site>. The knowledgebase is
+  // the lab's; the intercom is the contracting site's.
+  const site = document.body?.dataset.site === 'lab' ? 'lab' : 'contracting';
+  const tools = [];
+
+  if (site === 'lab') tools.push(
     {
       name: 'search_knowledge',
       description:
@@ -132,7 +139,7 @@ export function registerSiteTools() {
         return text(`Opened ${path}`);
       },
     },
-  ];
+  );
 
   // Only where there is an intercom to bring the visitor to.
   const intercom = document.querySelector('#talk');

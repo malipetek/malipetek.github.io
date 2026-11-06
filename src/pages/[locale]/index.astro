@@ -1,17 +1,21 @@
 ---
 import Base from "../../layouts/Base.astro";
 import Home from "../../components/Home.astro";
-import { siteT, OTHER_LOCALES } from "../../lib/site.js";
+import { siteT } from "../../lib/site.js";
 import { LOCALES } from "../../lib/locales.js";
 
-// One static homepage per language: /tr/, /de-DE/, /ja-JP/ … English stays at /.
-export const prerender = true;
+// One homepage per language: /tr/, /de-DE/, /ja-JP/ … English stays at /.
+// Server-rendered because the lab host has to be able to redirect these to
+// malipetek.dev; a prerendered page would be served before middleware runs.
+export const prerender = false;
 
-export function getStaticPaths() {
-  return OTHER_LOCALES.map((locale) => ({ params: { locale: locale.code }, props: { locale } }));
+const code = Astro.params.locale ?? "";
+const locale = LOCALES.find((l) => l.code === code);
+
+if (!locale || locale.code === "en-US") {
+  return new Response("Not found", { status: 404 });
 }
 
-const { locale } = Astro.props;
 const t = siteT(locale.code);
 ---
 

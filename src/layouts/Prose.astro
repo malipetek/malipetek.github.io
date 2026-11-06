@@ -6,6 +6,7 @@ const { frontmatter = {} } = Astro.props;
 
 <Base
   title={frontmatter.title ? `${frontmatter.title} — malipetek` : 'malipetek'}
+  site={frontmatter.site}
   current={frontmatter.current}
 >
   <article class="prose">

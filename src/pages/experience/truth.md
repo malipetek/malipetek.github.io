@@ -1,6 +1,7 @@
 ---
 layout: ../../layouts/Prose.astro
 title: "TRUTH NYC — the long note"
+site: lab
 current: "/experience"
 ---
 # Truth

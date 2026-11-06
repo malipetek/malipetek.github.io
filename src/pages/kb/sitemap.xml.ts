@@ -1,9 +1,9 @@
 /*
  * /kb/sitemap.xml — every knowledgebase entry.
  *
- * @astrojs/sitemap runs at build time, and entries are written by agents long
- * after the build, so the dynamic entries need their own sitemap. /kb and
- * /kb/new are already in the main one.
+ * Entries are written by agents long after a build, so they cannot live in the
+ * lab's main sitemap (/sitemap.xml); it lists /kb itself, and this one adds
+ * every entry.
  */
 export const prerender = false;
 
@@ -35,7 +35,7 @@ export async function GET({ locals }: { locals: unknown }) {
   const urls = entries.map((entry) => {
     const lastmod = entry.updated_at ? entry.updated_at.replace(' ', 'T').slice(0, 10) : '';
     return (
-      `  <url><loc>https://malipetek.dev/kb/${escapeXml(entry.slug)}</loc>` +
+      `  <url><loc>https://lab.malipetek.dev/kb/${escapeXml(entry.slug)}</loc>` +
       (lastmod ? `<lastmod>${lastmod}</lastmod>` : '') +
       `</url>`
     );
@@ -44,7 +44,7 @@ export async function GET({ locals }: { locals: unknown }) {
   const xml =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-    `  <url><loc>https://malipetek.dev/kb</loc><changefreq>daily</changefreq><priority>0.8</priority></url>\n` +
+    `  <url><loc>https://lab.malipetek.dev/kb</loc><changefreq>daily</changefreq><priority>0.8</priority></url>\n` +
     `${urls.join('\n')}\n</urlset>\n`;
 
   return new Response(xml, {

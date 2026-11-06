@@ -1,23 +1,30 @@
 import { defineConfig } from 'astro/config';
-import sitemap from '@astrojs/sitemap';
 import markdoc from '@astrojs/markdoc';
 import react from '@astrojs/react';
 import keystatic from '@keystatic/astro';
 import cloudflare from '@astrojs/cloudflare';
 import portalHeaders from './src/integrations/portalHeaders.mjs';
 
-// The site runs on Cloudflare Workers: SSR serves /keystatic (and any dynamic
-// route) while prerendered pages stay static. Keystatic edits commit straight
-// to GitHub via its OAuth flow — the secrets are Worker env vars.
+// The site runs on Cloudflare Workers: SSR serves the pages whose content is
+// read at request time (the knowledgebase, the plugins, the host split) while
+// prerendered pages stay static.
+//
+// There is no sitemap integration: the same build serves malipetek.dev and
+// lab.malipetek.dev, and each host publishes only its own URLs. See
+// src/pages/sitemap.xml.ts.
 export default defineConfig({
   site: 'https://malipetek.dev',
   output: 'server',
-  adapter: cloudflare(),
+  adapter: cloudflare({
+    // Host redirects must run before a prerendered asset is served; middleware
+    // alone cannot see those. See src/worker.ts.
+    workerEntryPoint: { path: './src/worker.ts' },
+  }),
   // The old /chat page is gone; the intercom lives at /#talk.
   redirects: {
     '/chat': '/#talk',
   },
-  integrations: [sitemap(), markdoc(), react(), keystatic(), portalHeaders()],
+  integrations: [markdoc(), react(), keystatic(), portalHeaders()],
   markdown: {
     shikiConfig: {
       theme: 'css-variables',

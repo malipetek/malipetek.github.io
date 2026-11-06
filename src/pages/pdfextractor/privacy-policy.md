@@ -1,5 +1,6 @@
 ---
 layout: ../../layouts/Legal.astro
+site: lab
 title: "PDF Extractor — Privacy Policy"
 ---
 
