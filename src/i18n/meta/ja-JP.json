@@ -3552,7 +3552,7 @@
     "reviewed": false
   },
   "site.agents.lede": {
-    "en": "The client portal over MCP: streamable HTTP, protocol 2025-06-18. An assistant with your key can file requests, reply, set a budget and follow what happens, all on your own account. Every request still goes to Ali before any work starts.",
+    "en": "The client portal over MCP: streamable HTTP, protocol 2025-06-18. An assistant with your key is a builder on your project: it reads the source, makes the change, builds the preview and keeps going with you until it is ready to go live. It can also file requests, reply, set a budget and follow what happens, all on your own account.",
     "reviewed": false
   },
   "site.agents.connect.title": {
@@ -3608,7 +3608,7 @@
     "reviewed": false
   },
   "site.agents.key.body2": {
-    "en": "A client's key sees exactly that client's account: the same routes the portal's own pages use. It cannot see another client, and it cannot publish or deploy anything. ChatGPT can also run the OAuth flow on its own, which ends at the same place.",
+    "en": "A client's key sees exactly that client's account: the same routes the portal's own pages use. It cannot see another client. Every change lands on your preview, and taking it live is recorded as your decision. ChatGPT can also run the OAuth flow on its own, which ends at the same place.",
     "reviewed": false
   },
   "site.agents.tools.title": {
@@ -3640,7 +3640,7 @@
     "reviewed": false
   },
   "site.agents.tools.first": {
-    "en": "The assistant can also work on a change itself, on the client's own subscription: read the project's source, send a change on the request's branch, and build it to a preview.",
+    "en": "The assistant works as a builder on the project, on your own subscription: it reads the source, sends a change on the request's branch, builds it to the preview, and keeps iterating with you. Every change is recorded, and Ali is emailed about each one.",
     "reviewed": false
   },
   "site.agents.tools.names": {
@@ -3648,7 +3648,7 @@
     "reviewed": false
   },
   "site.agents.tools.after": {
-    "en": "Ali still checks the result before it ships.",
+    "en": "When you are happy with the preview, send it to Ali for review (billed as his time) or publish it yourself. Both are on record.",
     "reviewed": false
   },
   "site.agents.lab.title": {
@@ -3681,6 +3681,58 @@
   },
   "offer.fromIdea": {
     "en": "Starting from an idea? That works too.",
+    "reviewed": false
+  },
+  "mail.firstPreview.subject": {
+    "en": "Your first preview is ready: {title}",
+    "reviewed": false
+  },
+  "mail.firstPreview.body": {
+    "en": "Your first preview is ready: {url}\n\nThis is a rough first version, made to show you the shape of it.\n\nTo keep going, there are two ways:\n\n1. Reply to this email and Ali approves your next request, billed as usual.\n2. Connect the ChatGPT or Claude you already pay for at {agents}. It works on this same preview, and that costs Ali nothing. He reviews when you want, and before anything goes live if you choose.",
+    "reviewed": false
+  },
+  "thread.firstPreviewStarted": {
+    "en": "First preview started: this one is free, with up to {limit} of AI, and it stops at that limit. Nothing goes live until you decide.",
+    "reviewed": false
+  },
+  "thread.firstPreviewReady": {
+    "en": "First preview ready: {url}. This is a rough first version. To keep going, reply here and Ali approves the next request, billed as usual, or connect ChatGPT or Claude at {agents} and keep building on this preview yourself, which costs Ali nothing.",
+    "reviewed": false
+  },
+  "thread.firstPreviewStopped": {
+    "en": "The first preview stopped before it reached the preview. Ali sees why, and he writes here.",
+    "reviewed": false
+  },
+  "views.row.firstPreview": {
+    "en": "first preview",
+    "reviewed": false
+  },
+  "ticket.firstPreview.chip": {
+    "en": "first preview",
+    "reviewed": false
+  },
+  "ticket.firstPreview.building.title": {
+    "en": "Building your first preview",
+    "reviewed": false
+  },
+  "ticket.firstPreview.building.next": {
+    "en": "This one is free: Ali covers up to {limit} of AI for it, and it stops at that limit. Nothing goes live until you decide.",
+    "reviewed": false
+  },
+  "ticket.firstPreview.ready.title": {
+    "en": "Your first preview is ready",
+    "reviewed": false
+  },
+  "ticket.firstPreview.ready.next": {
+    "en": "This is a rough first version. Reply to ask Ali for the next change, or connect ChatGPT or Claude and keep building on this preview.",
+    "reviewed": false
+  },
+  "ticket.firstPreview.cost": {
+    "en": "Free. This first preview is on Ali, up to {limit} of AI.",
+    "reviewed": false
+  },
+  "ticket.firstPreview.limit": {
+    "en": "AI limit {limit}",
     "reviewed": false
   }
 }
