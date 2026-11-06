@@ -1812,15 +1812,11 @@
     "reviewed": false
   },
   "site.home.title": {
-    "en": "M. Ali Petek — vibe contracting: software help by the minute, not by a quote",
+    "en": "M. Ali Petek: vibe contracting. You vibe coded it. What's next?",
     "reviewed": false
   },
   "site.home.description": {
-    "en": "Vibe contracting: you describe the change, an AI agent builds it, and a developer signs off before it ships. Billed by the second, no quote, no minimum.",
-    "reviewed": false
-  },
-  "site.home.cta.ticket": {
-    "en": "Open a ticket →",
+    "en": "You vibe coded a project and it looks good. Vibe contracting takes it the rest of the way: online, connected and kept working. An agent builds, a developer signs off, billed by the second.",
     "reviewed": false
   },
   "site.home.cta.how": {
@@ -1988,19 +1984,15 @@
     "reviewed": false
   },
   "offer.headline.1": {
-    "en": "Software help,",
+    "en": "You vibe coded it.",
     "reviewed": false
   },
   "offer.headline.2": {
-    "en": "by the minute.",
+    "en": "What's next?",
     "reviewed": false
   },
   "offer.priceHook": {
     "en": "A one-minute fix is {price}. No quote, no minimum.",
-    "reviewed": false
-  },
-  "offer.tagline": {
-    "en": "You vibe code most of it. I take the part where it stalls, like the bug that keeps coming back or the payments, and bill it by the second.",
     "reviewed": false
   },
   "offer.punchline.1": {
@@ -3677,6 +3669,18 @@
   },
   "site.agents.lab.setup": {
     "en": "Setup for that endpoint is at",
+    "reviewed": false
+  },
+  "site.home.cta.next": {
+    "en": "Start the next part →",
+    "reviewed": false
+  },
+  "offer.next": {
+    "en": "Next is getting it online, wiring up payments and email, fixing what breaks for real customers, and keeping it working. Describe it in your own words: an agent builds it, I check it, and you pay for my minutes.",
+    "reviewed": false
+  },
+  "offer.fromIdea": {
+    "en": "Starting from an idea? That works too.",
     "reviewed": false
   }
 }

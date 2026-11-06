@@ -222,6 +222,13 @@ const availability = site?.availability ?? "limited";
 
   /* ————— masthead ————— */
 
+  /* The backing below reaches past the text on purpose; on a phone that is
+     past the viewport, and the page scrolled sideways. clip, not hidden, so
+     the section does not become a scroll container. */
+  .room--masthead {
+    overflow-x: clip;
+  }
+
   .masthead-inner {
     display: grid;
     gap: clamp(0.9rem, 2vw, 1.5rem);
