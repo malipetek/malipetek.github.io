@@ -70,7 +70,7 @@ export const STARTED_LINE = (limitCents: number) =>
 
 /** The thread line when the preview is built. */
 export const READY_LINE = (previewUrl: string, connections: string) =>
-  `First preview ready: ${previewUrl}. This is a rough first version. To keep going, reply here and Ali approves the next request, billed as usual, or connect ChatGPT or Claude at ${connections} and keep building on this preview yourself, which costs Ali nothing.`;
+  `First preview ready: ${previewUrl}. This is a rough first version. To keep going, reply here and Ali approves the next request, billed as usual, or connect ChatGPT or Claude at ${connections} and keep building on this preview yourself, with no AI cost on your bill.`;
 
 /** The thread line when nothing reached the preview. */
 export const STOPPED_LINE = 'The first preview stopped before it reached the preview. Ali sees why, and he writes here.';

@@ -3688,7 +3688,7 @@
     "reviewed": false
   },
   "mail.firstPreview.body": {
-    "en": "Your first preview is ready: {url}\n\nThis is a rough first version, made to show you the shape of it.\n\nTo keep going, there are two ways:\n\n1. Reply to this email and Ali approves your next request, billed as usual.\n2. Connect the ChatGPT or Claude you already pay for at {agents}. It works on this same preview, and that costs Ali nothing. He reviews when you want, and before anything goes live if you choose.",
+    "en": "Your first preview is ready: {url}\n\nThis is a rough first version, made to show you the shape of it.\n\nTo keep going, there are two ways:\n\n1. Reply to this email and Ali approves your next request, billed as usual.\n2. Connect the ChatGPT or Claude you already pay for at {agents}. It works on this same preview on your own subscription, so it adds no AI cost to your bill. He reviews when you want, and before anything goes live if you choose.",
     "reviewed": false
   },
   "thread.firstPreviewStarted": {
@@ -3696,7 +3696,7 @@
     "reviewed": false
   },
   "thread.firstPreviewReady": {
-    "en": "First preview ready: {url}. This is a rough first version. To keep going, reply here and Ali approves the next request, billed as usual, or connect ChatGPT or Claude at {agents} and keep building on this preview yourself, which costs Ali nothing.",
+    "en": "First preview ready: {url}. This is a rough first version. To keep going, reply here and Ali approves the next request, billed as usual, or connect ChatGPT or Claude at {agents} and keep building on this preview yourself, with no AI cost on your bill.",
     "reviewed": false
   },
   "thread.firstPreviewStopped": {

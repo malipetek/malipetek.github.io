@@ -392,7 +392,7 @@ export function systemLine(body, t) {
   if (body === 'The client withdrew this request.') return t('thread.withdrew');
   const started = /^First preview started: this one is free, with up to (\$[\d.,]+) of AI, and it stops at that limit\. Nothing goes live until you decide\.$/.exec(body);
   if (started) return t('thread.firstPreviewStarted', { limit: started[1] });
-  const ready = /^First preview ready: (\S+?)\. This is a rough first version\. To keep going, reply here and Ali approves the next request, billed as usual, or connect ChatGPT or Claude at (\S+?) and keep building on this preview yourself, which costs Ali nothing\.$/.exec(body);
+  const ready = /^First preview ready: (\S+?)\. This is a rough first version\. To keep going, reply here and Ali approves the next request, billed as usual, or connect ChatGPT or Claude at (\S+?) and keep building on this preview yourself, with no AI cost on your bill\.$/.exec(body);
   if (ready) return t('thread.firstPreviewReady', { url: ready[1], agents: ready[2] });
   if (body === 'The first preview stopped before it reached the preview. Ali sees why, and he writes here.') return t('thread.firstPreviewStopped');
   const change = /^Your agent sent a change for this request \((\d+) file\(s\)\)\.$/.exec(body);
