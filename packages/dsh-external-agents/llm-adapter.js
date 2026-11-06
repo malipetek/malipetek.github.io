@@ -906,11 +906,6 @@ export class AcpModelAdapter {
           forwarded = `${PRIME_PREAMBLE}\n\n${history}\n\n---\n\n${text}`;
           this.note(`[${this.provider}] primed a new session with ${history.length} chars of history (fork, switch or lost session)`);
         }
-        // Standing instructions go once, at the start of a session, rather than
-        // on every turn: a turn is the agent's own history, so repeating them
-        // would buy nothing and cost tokens. This is where a workflow rule like
-        // "do not end your turn promising to report later" belongs.
-        if (this.instructions.length > 0) forwarded = `${this.instructions}\n\n---\n\n${forwarded}`;
       } else {
         // The session is live, so it holds every turn this agent answered — but
         // not a turn another provider answered while it was swapped out. Fill
@@ -927,6 +922,16 @@ export class AcpModelAdapter {
           forwarded = `${PRIME_DELEGATED}\n\n${since}\n\n---\n\n${text}`;
           this.note(`[${this.provider}] primed ${since.length} chars another agent handled since the last reply`);
         }
+      }
+
+      // Standing instructions go once per session, not once per turn: a turn is
+      // the agent's own history, so repeating them costs tokens and buys nothing.
+      // They are re-sent when the text itself changes, which is what makes an
+      // edited instruction reach a conversation that already started.
+      if (this.instructions.length > 0 && session.instructionsSent !== this.instructions) {
+        forwarded = `${this.instructions}\n\n---\n\n${forwarded}`;
+        session.instructionsSent = this.instructions;
+        this.note(`[${this.provider}] standing instructions sent (${this.instructions.length} chars)`);
       }
 
       // Images ride with the turn they were attached to. The ACP prompt is a list

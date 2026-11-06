@@ -330,11 +330,13 @@ test('standing instructions are sent once, at the start of a session', async () 
   // agent's session is its own history and repeating it would cost tokens for
   // nothing.
   const sent = [];
-  let primed = false;
+  // The session is one durable record, as the real connection returns it; a fresh
+  // object per call would forget that the instructions were already sent.
+  const session = { primed: false, sessionId: 's' };
   const connection = {
-    ensureSession: async () => ({ primed, sessionId: 's' }),
+    ensureSession: async () => session,
     selectOption: async () => undefined,
-    markPrimed: () => { primed = true; },
+    markPrimed: () => { session.primed = true; },
     prompt: async (text) => {
       sent.push(text);
       return { stopReason: 'end_turn', text: 'ok', updates: [], permissions: [] };
@@ -358,6 +360,18 @@ test('standing instructions are sent once, at the start of a session', async () 
     { role: 'user', content: [{ type: 'text', text: 'again' }] },
   ] })) { /* drain */ }
   assert.equal(sent[1], 'again', 'and is not repeated every turn');
+
+  // An edited instruction reaches a conversation that already started, which is
+  // what makes changing the delegation rule take effect without a new chat.
+  adapter.instructions = 'Use the delegate tool for subagent work.';
+  // eslint-disable-next-line no-unused-vars
+  for await (const chunk of adapter.stream({ provider: 'acp-mock', messages: [
+    ...messages,
+    { role: 'assistant', content: [{ type: 'text', text: 'ok' }] },
+    { role: 'user', content: [{ type: 'text', text: 'third' }] },
+  ] })) { /* drain */ }
+  assert.match(sent[2], /delegate tool/, 'a changed instruction is sent again');
+  assert.match(sent[2], /third/);
 });
 
 test('block indexes follow first-seen order, so a thinking agent still renders', async () => {
