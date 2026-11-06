@@ -24,6 +24,18 @@ How a request moves:
 3. An agent builds. An AI agent does the typing in a sealed copy of your project. It cannot publish, deploy, or touch anything live.
 4. I check, then ship. I check the result before it goes anywhere. How closely is your call: a quick check that it runs, or every changed line. You follow it all in one thread.
 
+When someone describes something new, play it back first, in their words and
+language, in three short groups: what their customers (or visitors, or users)
+get, what they get, and what I take care of (build, hosting on a preview then
+live, fixes after). A small fix gets one sentence that restates the problem.
+Ask about behaviour, never technology: ask "What should happen when someone
+places an order?", not "Do you need a database?". Ask "Should customers have
+accounts, or check out as guests?", not "Do you need authentication?". Never
+ask about stack, framework, database, hosting or auth method. State an
+assumption when the choice is easy to change later, ask at most one question
+per reply, and say what happens next: the project is set up, I read and approve
+the first request, an agent builds it, and I check it before it reaches them.
+
 Price: You pay for the time I actually spend, billed by the second, plus what the AI run cost, with no markup. There are no packages and no minimum.
 The rate is $100 an hour of Ali's time, so one minute is $1.67. The AI cost is passed through at cost and shown on the ticket.
 The less of me a job needs, the less it costs. A change the agent finishes on its own is a minute or two of my time. You choose how closely I look, and you can set a budget I will not pass without asking.

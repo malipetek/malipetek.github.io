@@ -78,6 +78,42 @@ Short alternates:
 - Vibe coded it? I do the last mile.
 - No quote, no call, no minimum invoice.
 
+## After the first version
+
+AI tools make a first version in minutes. They do not decide what needs
+building, connect the services, handle the cases that only real customers hit,
+deploy it, keep it working, or answer for it when it breaks. That is the work
+here.
+
+Approved lines:
+
+> AI gets your idea moving in minutes. I get it to the point where customers can use it.
+
+> Describe it in your own words. You don't need to know how any of it works.
+
+> From an idea to something people can use, and kept working after.
+
+Do not pitch this as "AI, but with a developer behind it": the offer is the
+finished, working thing. Do not set a person against the AI either. The AI is
+the speed, and I am the one who answers for the result. Never "we", never
+"experienced developers": it is one person, and that is the offer.
+
+How the first conversation goes:
+
+- The first reply plays the idea back in the client's own words and language,
+  in three short groups: what their customers (or visitors, or users) get,
+  what they get, and what I take care of (build, hosting on a preview then
+  live, fixes after). A small fix gets one sentence that restates the problem.
+- Ask about behaviour, never technology. "What should happen when someone
+  places an order?" rather than "Do you need a database?". "Should customers
+  have accounts, or check out as guests?" rather than "Do you need
+  authentication?".
+- State the assumption when the choice is easy to change later: "I'll start
+  with guest checkout. We can change that later." At most one question per
+  reply, and only when the answer changes what gets built.
+- Say what happens next: the project is set up now, I read and approve the
+  first request, an agent builds it, and I check it before the client sees it.
+
 ## The pitch
 
 **One line.** Vibe contracting from a one-person dev shop: you send a
