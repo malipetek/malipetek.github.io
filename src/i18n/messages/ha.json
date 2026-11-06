@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "Wakili",
   "card.sys.moved": "An matsar da shi zuwa {status}",
-  "card.sys.movedTotal": "An matsar da shi zuwa {status} · jimilla {total}"
+  "card.sys.movedTotal": "An matsar da shi zuwa {status} · jimilla {total}",
+  "site.foot.askAi": "Tambayi AI game da {site}:"
 }

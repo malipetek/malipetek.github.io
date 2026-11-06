@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "에이전트",
   "card.sys.moved": "{status}(으)로 이동",
-  "card.sys.movedTotal": "{status}(으)로 이동 · 총 {total}"
+  "card.sys.movedTotal": "{status}(으)로 이동 · 총 {total}",
+  "site.foot.askAi": "{site}에 대해 AI에게 물어보세요:"
 }

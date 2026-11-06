@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "Ajan",
   "card.sys.moved": "{status} durumuna taşındı",
-  "card.sys.movedTotal": "{status} durumuna taşındı · toplam {total}"
+  "card.sys.movedTotal": "{status} durumuna taşındı · toplam {total}",
+  "site.foot.askAi": "{site} hakkında yapay zekâya sorun:"
 }

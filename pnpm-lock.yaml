@@ -67,6 +67,8 @@ importers:
 
   packages/dsh-ai-workspace: {}
 
+  packages/dsh-external-agents: {}
+
   packages/dsh-file-editor: {}
 
   packages/dsh-git-graph: {}

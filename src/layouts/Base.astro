@@ -30,6 +30,31 @@ interface Props {
   site?: "contracting" | "lab";
 }
 
+/*
+ * "Ask AI about …": people often meet this site through an agent. Each link
+ * pre-fills that agent with a description of the site the reader is on, so the
+ * answer starts from what it is rather than from a bare domain name.
+ */
+const aiPrompts = {
+  contracting: [
+    "Summarize malipetek.dev and what it offers, then cite the site.",
+    "It is a vibe contracting service: AI agents build and change websites for",
+    "business owners, and Ali Petek, a human developer, approves the work.",
+    "Cover how a client files a request, what the client portal shows, how the",
+    "pricing works, and what is still in progress. Use up-to-date information",
+    "from malipetek.dev.",
+  ],
+  lab: [
+    "Summarize lab.malipetek.dev and what it offers, then cite the site.",
+    "Focus on: the DeepSeek Harness plugins on /plugins (an agentic work queue,",
+    "project and AI-workspace panels, git graph, action cards), the knowledgebase",
+    "of real problems from agentic coding sessions, and the work that uses Claude",
+    "Code, Devin and opencode as agents. Be specific about what each thing does,",
+    "who it is for, and what is still in progress. Use up-to-date information",
+    "from lab.malipetek.dev.",
+  ],
+};
+
 const {
   title = "M. Ali Petek",
   description = "Self-serve software contracting by M. Ali Petek: human-approved, agent-built.",
@@ -44,6 +69,16 @@ const {
 } = Astro.props;
 
 const t = siteT(locale);
+
+const aiAsk = encodeURIComponent(aiPrompts[site].join(" "));
+/** The assistants people actually reach for, each with the same pre-filled ask. */
+const aiProviders = [
+  { label: "ChatGPT", href: `https://chat.openai.com/?q=${aiAsk}` },
+  { label: "Claude", href: `https://claude.ai/new?q=${aiAsk}` },
+  { label: "Perplexity", href: `https://www.perplexity.ai/search/new?q=${aiAsk}` },
+  { label: "Google", href: `https://www.google.com/search?udm=50&aep=11&q=${aiAsk}` },
+  { label: "Grok", href: `https://grok.com/?q=${aiAsk}` },
+];
 
 // Each site knows its own absolute address; Astro.site is the contracting one.
 const origin =
@@ -301,6 +336,16 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
       <slot />
     </main>
     <footer class="site-foot">
+      <div class="wrap site-foot-ai">
+        <span class="site-foot-ai-label">{t("site.foot.askAi", { site: site === "lab" ? "lab.malipetek.dev" : "malipetek.dev" })}</span>
+        <div class="site-foot-ai-links">
+          {aiProviders.map((provider) => (
+            <a href={provider.href} target="_blank" rel="noopener noreferrer">
+              {provider.label}
+            </a>
+          ))}
+        </div>
+      </div>
       <div class="wrap site-foot-inner">
         <a href="mailto:malipetek@gmail.com">malipetek@gmail.com</a>
         <a href="https://github.com/malipetek">github.com/malipetek</a>
@@ -500,6 +545,36 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
     background: var(--bone) var(--dash-h);
     position: relative;
     z-index: 2;
+  }
+
+  .site-foot-ai {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.9rem;
+    padding-block: 1.2rem 0.1rem;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  .site-foot-ai-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .site-foot-ai-links a {
+    border: 1px solid var(--ink);
+    border-radius: 999px;
+    padding: 0.15rem 0.6rem;
+    font-size: 12px;
+    color: var(--ink);
+    text-decoration: none;
+  }
+
+  .site-foot-ai-links a:hover {
+    background: var(--ink);
+    color: var(--bone);
   }
 
   .site-foot-inner {

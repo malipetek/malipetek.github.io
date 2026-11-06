@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "Agent",
   "card.sys.moved": "Déplacé vers {status}",
-  "card.sys.movedTotal": "Déplacé vers {status} · total {total}"
+  "card.sys.movedTotal": "Déplacé vers {status} · total {total}",
+  "site.foot.askAi": "Posez une question à l’IA sur {site} :"
 }

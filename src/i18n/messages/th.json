@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "เอเจนต์",
   "card.sys.moved": "เปลี่ยนเป็น {status}",
-  "card.sys.movedTotal": "เปลี่ยนเป็น {status} · รวม {total}"
+  "card.sys.movedTotal": "เปลี่ยนเป็น {status} · รวม {total}",
+  "site.foot.askAi": "สอบถาม AI เกี่ยวกับ {site}:"
 }

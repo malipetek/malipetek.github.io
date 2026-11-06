@@ -932,5 +932,6 @@
   "card.who.ali": "అలీ",
   "card.who.agent": "ఏజెంట్",
   "card.sys.moved": "స్థితి మారింది: {status}",
-  "card.sys.movedTotal": "స్థితి మారింది: {status} · మొత్తం {total}"
+  "card.sys.movedTotal": "స్థితి మారింది: {status} · మొత్తం {total}",
+  "site.foot.askAi": "{site} గురించి AIని అడగండి:"
 }

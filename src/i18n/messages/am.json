@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "ኤጀንት",
   "card.sys.moved": "ወደ {status} ተዛውሯል",
-  "card.sys.movedTotal": "ወደ {status} ተዛውሯል · ጠቅላላ {total}"
+  "card.sys.movedTotal": "ወደ {status} ተዛውሯል · ጠቅላላ {total}",
+  "site.foot.askAi": "ስለ {site} AI ይጠይቁ፦"
 }

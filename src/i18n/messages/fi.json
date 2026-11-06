@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "Agentti",
   "card.sys.moved": "Siirretty tilaan {status}",
-  "card.sys.movedTotal": "Siirretty tilaan {status} · yhteensä {total}"
+  "card.sys.movedTotal": "Siirretty tilaan {status} · yhteensä {total}",
+  "site.foot.askAi": "Kysy tekoälyltä sivustosta {site}:"
 }

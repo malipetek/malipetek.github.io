@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "Agent",
   "card.sys.moved": "Inilipat sa {status}",
-  "card.sys.movedTotal": "Inilipat sa {status} · kabuuan {total}"
+  "card.sys.movedTotal": "Inilipat sa {status} · kabuuan {total}",
+  "site.foot.askAi": "Magtanong sa AI tungkol sa {site}:"
 }

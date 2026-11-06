@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "முகவர்",
   "card.sys.moved": "நிலை மாற்றப்பட்டது: {status}",
-  "card.sys.movedTotal": "நிலை மாற்றப்பட்டது: {status} · மொத்தம் {total}"
+  "card.sys.movedTotal": "நிலை மாற்றப்பட்டது: {status} · மொத்தம் {total}",
+  "site.foot.askAi": "{site} பற்றி AI-யிடம் கேளுங்கள்:"
 }

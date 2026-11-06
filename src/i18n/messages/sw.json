@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "Wakala",
   "card.sys.moved": "Imehamishwa hadi {status}",
-  "card.sys.movedTotal": "Imehamishwa hadi {status} · jumla {total}"
+  "card.sys.movedTotal": "Imehamishwa hadi {status} · jumla {total}",
+  "site.foot.askAi": "Muulize AI kuhusu {site}:"
 }

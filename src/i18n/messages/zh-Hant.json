@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "代理程式",
   "card.sys.moved": "已移至 {status}",
-  "card.sys.movedTotal": "已移至 {status} · 共 {total}"
+  "card.sys.movedTotal": "已移至 {status} · 共 {total}",
+  "site.foot.askAi": "向 AI 詢問關於 {site} 的資訊："
 }
