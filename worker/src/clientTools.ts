@@ -160,6 +160,9 @@ export const CLIENT_TOOLS: ClientTool[] = [
       additionalProperties: false,
     },
     readOnly: true,
+    // The sidebar entry's icon (ChatGPT reads it from the entrypoint tool). The
+    // size must be the file's real one: public/plugin-icon.png is 256×256.
+    icons: [{ src: 'https://malipetek.dev/plugin-icon.png', mimeType: 'image/png', sizes: ['256x256'] }],
     _meta: {
       ui: { resourceUri: BOARD_UI_URI },
       // Opens from the sidebar (global) and as a tab beside a conversation (thread).
