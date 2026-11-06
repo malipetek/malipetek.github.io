@@ -1,0 +1,30 @@
+---
+import Base from "../../layouts/Base.astro";
+import AgentsPage from "../../components/AgentsPage.astro";
+import { siteT } from "../../lib/site.js";
+import { LOCALES } from "../../lib/locales.js";
+
+// Assistant setup in one language: /tr/agents, /de-DE/agents … English stays
+// at /agents, so /en-US/agents is not a page. Server-rendered for the host
+// split, like the other localized routes.
+export const prerender = false;
+
+const code = Astro.params.locale ?? "";
+const locale = LOCALES.find((l) => l.code === code);
+
+if (!locale || locale.code === "en-US") {
+  return new Response("Not found", { status: 404 });
+}
+
+const t = siteT(locale.code);
+---
+
+<Base
+  title={t("site.agents.title")}
+  description={t("site.agents.description")}
+  path="/agents"
+  locale={locale.code}
+  languagePicker={LOCALES.map((l) => ({ code: l.code, native: l.native }))}
+>
+  <AgentsPage t={t} locale={locale.code} />
+</Base>

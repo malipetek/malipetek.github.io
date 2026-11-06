@@ -3,116 +3,21 @@
 export const prerender = false;
 
 import Base from '../layouts/Base.astro';
-import '../styles/kb.css';
+import AgentsPage from '../components/AgentsPage.astro';
+import { siteT } from '../lib/site.js';
+import { LOCALES, SOURCE_LOCALE } from '../lib/locales.js';
 
-const PORTAL_TOOLS = [
-  { name: "portal_projects / portal_requests / portal_request", auth: "client key", text: "The account's projects and requests, with status and cost." },
-  { name: "portal_file_request", auth: "client key", text: "File a request for Ali. Nothing starts until he reads it." },
-  { name: "portal_reply", auth: "client key", text: "Add a message to a request's conversation." },
-  { name: "portal_set_budget", auth: "client key", text: "Raise, lower or remove a request's budget." },
-  { name: "portal_withdraw", auth: "client key", text: "Take back a request Ali has not approved yet." },
-];
+// English assistant-setup page: /agents. The other 34 languages live at
+// /<code>/agents, rendered by src/pages/[locale]/agents.astro.
+const t = siteT(SOURCE_LOCALE);
 ---
 
 <Base
-  title="Connect your assistant — M. Ali Petek"
-  description="One MCP endpoint for the client portal: file and follow website requests from ChatGPT, Claude, Cursor or any MCP client."
-  current="/agents"
+  title={t('site.agents.title')}
+  description={t('site.agents.description')}
+  path="/agents"
+  locale={SOURCE_LOCALE}
+  languagePicker={LOCALES.map((l) => ({ code: l.code, native: l.native }))}
 >
-  <main class="wrap kb">
-    <header class="kb-head">
-      <p class="kb-kicker">Model Context Protocol</p>
-      <h1>Connect your assistant.</h1>
-      <p class="kb-lede">
-        <a href="/mcp"><code>https://malipetek.dev/mcp</code></a> is the client portal
-        over MCP: streamable HTTP, protocol <code>2025-06-18</code>. An assistant with
-        your key can file requests, reply, set a budget and follow what happens, all on
-        your own account. Every request still goes to Ali before any work starts.
-      </p>
-    </header>
-
-    <section class="kb-block">
-      <h2>Connect, per client</h2>
-      <div class="kb-prose">
-        <p>
-          One URL: <code>https://malipetek.dev/mcp</code>. Discovery is also published at
-          <a href="/.well-known/mcp-server.json"><code>/.well-known/mcp-server.json</code></a>.
-        </p>
-
-        <h3>ChatGPT</h3>
-        <p>
-          Turn on <strong>Settings → Connectors → Advanced → Developer mode</strong>, then
-          add a connector:
-        </p>
-        <pre><code>Name:  malipetek.dev
-URL:   https://malipetek.dev/mcp
-Auth:  Bearer cat_…   # the key from your portal</code></pre>
-
-        <h3>Claude, Cursor, anything else</h3>
-        <p>
-          Same URL. In Claude: <strong>Settings → Connectors → Add custom connector</strong>.
-          In Cursor, <code>mcp.json</code>:
-        </p>
-        <pre><code>&#123; "mcpServers": &#123; "malipetek": &#123; "url": "https://malipetek.dev/mcp" &#125; &#125; &#125;</code></pre>
-
-        <h3>No client at all</h3>
-        <pre><code>curl -s https://malipetek.dev/mcp -H 'content-type: application/json' \
-  -H "authorization: Bearer cat_…" \
-  -d '&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</code></pre>
-      </div>
-    </section>
-
-    <section class="kb-block">
-      <h2>Your key</h2>
-      <div class="kb-prose">
-        <p>
-          <a href="/portal">Sign in to the portal</a>, open <em>Connect an assistant</em>, and
-          make a key named after the tool that will hold it (<code>chatgpt</code>,
-          <code>cursor</code>…). It is shown once and stored hashed. Revoking it is one click.
-        </p>
-        <p>
-          A client's key sees exactly that client's account: the same routes the portal's
-          own pages use. It cannot see another client, and it cannot publish or deploy
-          anything. ChatGPT can also run the OAuth flow on its own, which ends at the same
-          place.
-        </p>
-      </div>
-    </section>
-
-    <section class="kb-block">
-      <h2>What an assistant can do</h2>
-      <ul class="kb-tool-list">
-        {PORTAL_TOOLS.map((tool) => (
-          <li>
-            <code>{tool.name}</code>
-            <span class="kb-tool-auth">{tool.auth}</span>
-            <span class="kb-tool-text">{tool.text}</span>
-          </li>
-        ))}
-      </ul>
-      <p class="kb-entry-foot">
-        The assistant can also work on a change itself, on the client's own subscription:
-        read the project's source, send a change on the request's branch, and build it to
-        a preview. Those tools are <code>project_context</code>, <code>workspace_files</code>,
-        <code>workspace_read</code>, <code>submit_change</code> and <code>preview_build</code>.
-        Ali still checks the result before it ships.
-      </p>
-    </section>
-
-    <section class="kb-block">
-      <h2>The knowledgebase is a separate site</h2>
-      <div class="kb-prose">
-        <p>
-          Ali's agentic coding knowledgebase, the plugins and the writing live at
-          <a href="https://lab.malipetek.dev">lab.malipetek.dev</a>. That site has its own
-          MCP endpoint at <code>https://lab.malipetek.dev/mcp</code>, with knowledgebase
-          tools only. Nothing there is needed to use the portal.
-        </p>
-        <p>
-          Setup for that endpoint is at
-          <a href="https://lab.malipetek.dev/kb/agents">lab.malipetek.dev/kb/agents</a>.
-        </p>
-      </div>
-    </section>
-  </main>
+  <AgentsPage t={t} locale={SOURCE_LOCALE} />
 </Base>

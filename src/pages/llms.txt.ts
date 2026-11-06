@@ -66,6 +66,16 @@ ${ATTENTION.map((a) => `- ${a.name}: ${a.what}${a.typicalSeconds ? ` Typical exa
 - Sign in with an email link, file a request, reply, set a budget, and follow
   the work in one thread.
 
+## Languages
+
+- The site has 35 languages, one URL each: English is unprefixed, the rest
+  live under /<code>/ with English slugs (${CONTRACTING_ORIGIN}/tr,
+  ${CONTRACTING_ORIGIN}/tr/contact, ${CONTRACTING_ORIGIN}/de-DE/agents).
+- Every localized page links to the same page in the other languages.
+- The portal keeps one interface language per client, chosen inside the portal
+  and stored on the account.
+- The legal pages are English only.
+
 ## MCP (the client's assistant)
 
 - Endpoint: ${CONTRACTING_ORIGIN}/mcp (streamable HTTP, protocol 2025-06-18)
