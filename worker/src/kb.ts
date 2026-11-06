@@ -9,16 +9,21 @@
  *   GET    /kb/keys                                               admin
  *   POST   /kb/keys                                               admin
  *   DELETE /kb/keys/:id                                           admin
- *   POST   /mcp                                                   MCP (streamable HTTP)
+ *   POST   /kb-mcp                                                MCP, knowledgebase (streamable HTTP)
+ *
+ * The MCP section also builds the portal's MCP surface (`/mcp`), so the two
+ * stay one transport implementation. See `makeMcp` below.
  *
  * Reads are fully public — the whole point is that other people's agents can
  * pull from it. Writes need either an API key minted by the admin (`ack_…`)
  * or the admin's own portal session. There is deliberately no self-serve key
  * route: anyone can read, only we author.
  *
- * The MCP endpoint speaks the streamable-HTTP transport (protocol 2025-06-18)
+ * The MCP endpoints speak the streamable-HTTP transport (protocol 2025-06-18)
  * so ChatGPT apps and other MCP clients can mount the same tools a REST client
- * gets.
+ * gets. `/mcp` is the client portal app (contracting only); `/kb-mcp` is this
+ * knowledgebase, published at https://lab.malipetek.dev. They share one
+ * implementation (`makeMcp`) but never advertise each other's tools.
  */
 import { Hono } from 'hono';
 import { clientIp, isRateLimited, type Env, type HonoEnv } from './shared.ts';
@@ -467,11 +472,21 @@ kb.delete('/keys/:id', async (c) => {
 
 const MCP_PROTOCOL = '2025-06-18';
 const MCP_SUPPORTED = ['2025-06-18', '2025-03-26', '2024-11-05'];
-// Browser origins that may call /mcp. Server-side clients send none. ChatGPT's
-// own pages are listed because its connector setup may check from the browser.
+/*
+ * One MCP server used to mix two products: the client portal for vibe
+ * contracting and the public agentic-coding knowledgebase. Assistants
+ * connecting to it could not tell which tools were which, so the surfaces are
+ * split. `/mcp` is the published portal app; `/kb-mcp` is the knowledgebase and
+ * lives at https://lab.malipetek.dev (the site proxies it here).
+ *
+ * Browser origins that may call either endpoint. Server-side clients send
+ * none. ChatGPT's own pages are listed because its connector setup may check
+ * from the browser, and lab.malipetek.dev is where the KB server is read from.
+ */
 const ALLOWED_MCP_ORIGINS = [
   'https://malipetek.dev',
   'https://www.malipetek.dev',
+  'https://lab.malipetek.dev',
   'http://localhost:4321',
   'https://chatgpt.com',
   'https://chat.openai.com',
@@ -483,7 +498,7 @@ const KB_TOOLS = [
     name: 'search_knowledge',
     title: 'Search the agentic coding knowledgebase',
     description:
-      'Full-text search over malipetek.dev entry knowledgebase. Every entry is a problem/solution pair from a real agentic coding session. Public — no key needed.',
+      'Full-text search over malipetek lab’s entry knowledgebase. Every entry is a problem/solution pair from a real agentic coding session. Public — no key needed.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -581,7 +596,8 @@ const annotate = (tool: { name: string; title: string }, readOnly: boolean, dest
  * Per-tool auth policy. ChatGPT shows its linking UI only when a tool declares
  * `oauth2` *and* the server hands back a `mcp/www_authenticate` challenge at
  * runtime — see `authChallenge`. `_meta.securitySchemes` mirrors it for clients
- * that only read `_meta`.
+ * that only read `_meta`. The knowledgebase server declares no auth at all:
+ * reads are public and writes carry an ack_ key the owner issued.
  */
 type Scheme = { type: 'noauth' } | { type: 'oauth2'; scopes: string[] };
 const OPEN: Scheme[] = [{ type: 'noauth' }];
@@ -596,25 +612,57 @@ const withAuth = <T extends object>(tool: T, schemes: Scheme[]) => ({
   },
 });
 
-const KB_AND_CLIENT = KB_TOOLS.map((tool) =>
+/** The knowledgebase tools, annotated once and handed out per surface. */
+const KB_ANNOTATED = KB_TOOLS.map((tool) =>
   withAuth({ ...tool, annotations: annotate(tool, READ_ONLY_TOOLS.has(tool.name), DESTRUCTIVE_TOOLS.has(tool.name)) }, OPEN),
 );
+const KB_READ_TOOLS = KB_ANNOTATED.filter((tool) => READ_ONLY_TOOLS.has(tool.name));
+
 const PORTAL_TOOLS = CLIENT_TOOLS.map(({ readOnly, ...tool }) =>
   withAuth({ ...tool, annotations: annotate(tool, readOnly, DESTRUCTIVE_TOOLS.has(tool.name)) }, SIGNED_IN),
 );
 const ADMIN_TOOLS = OWNER_TOOLS.map(({ readOnly, ...tool }) =>
   withAuth({ ...tool, annotations: annotate(tool, readOnly, DESTRUCTIVE_TOOLS.has(tool.name)) }, OPEN),
 );
-/** KB writes need an owner-issued ack_ key — not part of the client/plugin surface. */
-const HIDDEN_FROM_CLIENTS = new Set(['create_knowledge', 'update_knowledge']);
-const KB_WRITE_TOOLS = KB_AND_CLIENT.filter((t) => HIDDEN_FROM_CLIENTS.has(t.name));
-const MCP_TOOLS = [...KB_AND_CLIENT, ...PORTAL_TOOLS].filter((t) => !HIDDEN_FROM_CLIENTS.has(t.name));
 
-/** Clients see the knowledgebase and their portal tools; Ali's session also sees the owner tools. */
-const toolsFor = (author: Author | null) =>
-  author?.kind === 'admin' ? [...MCP_TOOLS, ...KB_WRITE_TOOLS, ...ADMIN_TOOLS] : MCP_TOOLS;
+export type McpSurface = 'portal' | 'kb';
+
+/**
+ * What a surface advertises. The split is the whole point: `/mcp` is the
+ * published client portal app and must not look like a knowledgebase, while
+ * `/kb-mcp` is the public knowledgebase and must not offer portal tools.
+ * Knowledgebase writes need an owner-issued ack_ key (or the admin session),
+ * so they are listed only when `authorFrom` resolved one.
+ */
+function toolsFor(surface: McpSurface, author: Author | null) {
+  if (surface === 'portal') return author?.kind === 'admin' ? [...PORTAL_TOOLS, ...ADMIN_TOOLS] : PORTAL_TOOLS;
+  return author ? KB_ANNOTATED : KB_READ_TOOLS;
+}
+
+/**
+ * What a `tools/call` may still reach. On the portal that is the advertised
+ * tools plus every knowledgebase tool: connectors set up before the split hold
+ * owner-issued ack_ keys and keep working even though the KB is no longer
+ * listed there. Nothing else becomes callable — an unknown name stays unknown.
+ */
+function callableToolsFor(surface: McpSurface, author: Author | null) {
+  const listed = toolsFor(surface, author);
+  return surface === 'portal' ? [...listed, ...KB_ANNOTATED] : listed;
+}
 
 const RESOURCE_PAGE = 50;
+
+/** The portal's one UI resource: the "malipetek development" card. */
+function boardResource() {
+  return {
+    uri: BOARD_UI_URI,
+    name: 'malipetek development',
+    title: 'malipetek development',
+    description:
+      'The client’s requests on malipetek.dev: status, project, cost so far, and a link into the portal.',
+    mimeType: BOARD_MIME,
+  };
+}
 
 /** Every entry is also an MCP resource, so a client can attach it as context. */
 function entryResource(row: EntryRow) {
@@ -667,7 +715,42 @@ const MCP_PROMPTS = [
   },
 ];
 
-interface Rpc {  jsonrpc?: string;
+/** The portal app: contracting only, with both ways to get work done. */
+const PORTAL_INSTRUCTIONS =
+  'malipetek.dev is a vibe contracting service: AI agents build and change clients’ websites, and Ali Petek (a human developer) signs off on the work.\n\n' +
+  'With a connected client account there are two ways to get work done:\n' +
+  '1. You make the change yourself (start_change → workspace_files/workspace_read → submit_change → preview_build → finish_change). You are the client’s own assistant on their own subscription, so this costs nothing on malipetek: no AI cost and no approval to wait for. You may change anything in their site, and say so plainly. Every change is recorded as its own request with who made it. Changes go to the preview, never straight to production. When the preview has it, show the link and ask whether to send it to Ali for review. Either way the client can take the preview live with site_publish; that is their decision and it is recorded as theirs, so confirm first and say when it includes unreviewed changes. Ali is emailed about every change, every review choice and every publish. ' +
+  reviewEstimate() +
+  '\n2. The client asks Ali’s team to do it (portal_file_request): Ali reads and approves the request before anything starts, then an agent does the work. That is billed as his time plus the AI run at cost.\n\n' +
+  'Notifications go by email to the client’s account address: Ali’s replies, approvals, status changes and finished work all arrive in their inbox, and replying to that email answers in the request’s thread. The portal (https://malipetek.dev/portal) shows the same. The "malipetek development" card (portal_board) shows their projects, sites and requests.';
+
+/** The knowledgebase server: the public half, with no client work in it. */
+const KB_INSTRUCTIONS =
+  'This is the public agentic coding knowledgebase of malipetek lab: real problems from agentic coding sessions, each one a problem/solution pair. ' +
+  'Every entry has a status — solved (the fix works), workaround (it ships, the root cause stands) or unsolvable (the session proved it cannot be fixed, and the evidence is the useful part). ' +
+  'Search before writing: search_knowledge finds entries by words, get_knowledge reads one in full, list_knowledge shows the newest. ' +
+  'If an entry already covers it, update that one instead of filing a duplicate. ' +
+  'Writing needs an ack_ API key issued by the site owner, sent in the Authorization header: create_knowledge files a new entry, update_knowledge patches one you wrote. ' +
+  'For website work done for you, the contracting service is a separate server: https://malipetek.dev/mcp.';
+
+const PORTAL_SERVER_INFO = {
+  name: 'malipetek-dev',
+  title: 'malipetek.dev client portal',
+  version: '1.2.0',
+  icons: [
+    { src: 'https://malipetek.dev/plugin-glyph.svg', mimeType: 'image/svg+xml', sizes: ['any'] },
+    { src: 'https://malipetek.dev/plugin-glyph.png', mimeType: 'image/png', sizes: ['256x256'] },
+  ],
+};
+
+const KB_SERVER_INFO = {
+  name: 'malipetek-lab-kb',
+  title: 'malipetek lab: agentic coding knowledgebase',
+  version: '1.0.0',
+};
+
+interface Rpc {
+  jsonrpc?: string;
   method?: string;
   params?: Record<string, unknown>;
   id?: string | number | null;
@@ -910,294 +993,313 @@ async function callTool(env: Env, name: string, args: Record<string, unknown>, a
   }
 }
 
-export const mcp = new Hono<HonoEnv>();
-
-mcp.options('/*', (c) => {
-  const origin = c.req.header('Origin') ?? '';
-  return new Response(null, {
-    status: 204,
-    headers: {
-      ...(ALLOWED_MCP_ORIGINS.includes(origin) ? { 'access-control-allow-origin': origin } : {}),
-      'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
-      'access-control-allow-headers': 'content-type, authorization, mcp-session-id, mcp-protocol-version',
-      'access-control-expose-headers': 'mcp-session-id',
-      'access-control-max-age': '86400',
-    },
-  });
-});
-
 /**
- * DNS-rebinding guard from the MCP spec: a browser page on an unknown origin
- * must not be able to drive a local/remote MCP server. Requests with no Origin
- * (server-to-server: ChatGPT, Claude, curl) pass.
+ * One request handler, two surfaces. The transport is identical; only what is
+ * advertised, the instructions and the auth challenges differ, so a new MCP
+ * method is implemented once rather than copied per endpoint.
  */
-function originAllowed(c: { req: { header: (n: string) => string | undefined } }): boolean {
-  const origin = c.req.header('Origin');
-  return !origin || ALLOWED_MCP_ORIGINS.includes(origin);
-}
+export function makeMcp(surface: McpSurface) {
+  const portalSurface = surface === 'portal';
+  const app = new Hono<HonoEnv>();
 
-mcp.get('/', (c) => {
-  // No unsolicited server→client stream; advertise the tool list instead so a
-  // human poking the URL in a browser sees something useful.
-  return kbJson({
-    name: 'malipetek.dev MCP server',
-    protocol: MCP_PROTOCOL,
-    transport: 'streamable-http',
-    endpoint: '/mcp',
-    tools: toolsFor(null).map((t) => t.name),
+  app.options('/*', (c) => {
+    const origin = c.req.header('Origin') ?? '';
+    return new Response(null, {
+      status: 204,
+      headers: {
+        ...(ALLOWED_MCP_ORIGINS.includes(origin) ? { 'access-control-allow-origin': origin } : {}),
+        'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
+        'access-control-allow-headers': 'content-type, authorization, mcp-session-id, mcp-protocol-version',
+        'access-control-expose-headers': 'mcp-session-id',
+        'access-control-max-age': '86400',
+      },
+    });
   });
-});
 
-mcp.delete('/', (c) => new Response(null, { status: 204 }));
+  /**
+   * DNS-rebinding guard from the MCP spec: a browser page on an unknown origin
+   * must not be able to drive a local/remote MCP server. Requests with no
+   * Origin (server-to-server: ChatGPT, Claude, curl) pass.
+   */
+  const originAllowed = (c: { req: { header: (n: string) => string | undefined } }): boolean => {
+    const origin = c.req.header('Origin');
+    return !origin || ALLOWED_MCP_ORIGINS.includes(origin);
+  };
 
-mcp.post('/', async (c) => {
-  if (!originAllowed(c)) return kbJson({ error: 'origin_not_allowed' }, 403);
+  app.get('/', (c) => {
+    // No unsolicited server→client stream; advertise the tool list instead so a
+    // human poking the URL in a browser sees something useful. The anonymous
+    // view is the honest one: who is asking decides whether writes appear.
+    return kbJson({
+      name: portalSurface ? 'malipetek.dev client portal' : 'malipetek lab: agentic coding knowledgebase',
+      protocol: MCP_PROTOCOL,
+      transport: 'streamable-http',
+      endpoint: portalSurface ? '/mcp' : '/kb-mcp',
+      tools: toolsFor(surface, null).map((t) => t.name),
+    });
+  });
 
-  const raw = await c.req.text();
-  if (raw.length > 200_000) return kbJson({ error: 'too_large' }, 413);
+  app.delete('/', () => new Response(null, { status: 204 }));
 
-  let payload: Rpc | Rpc[];
-  try {
-    payload = JSON.parse(raw);
-    // One line per call in Workers Logs: enough to see what a client such as
-    // ChatGPT asked for when it rejects the server. No arguments, no tokens.
-    const calls = (Array.isArray(payload) ? payload : [payload]).map((r) => (r.method === 'tools/call' ? `tools/call:${(r.params as { name?: string } | undefined)?.name ?? '?'}` : r.method));
-    console.log(JSON.stringify({ mcp: calls, ua: c.req.header('user-agent') ?? '', origin: c.req.header('origin') ?? '', version: c.req.header('mcp-protocol-version') ?? '', auth: Boolean(c.req.header('authorization')) }));
-  } catch {
-    return kbJson(rpcError(null, -32700, 'Parse error'), 400);
-  }
+  app.post('/', async (c) => {
+    if (!originAllowed(c)) return kbJson({ error: 'origin_not_allowed' }, 403);
 
-  const author = await authorFrom(c);
-  // A client's agent token (cat_…) drives the portal_* tools only. It is never
-  // a knowledgebase author: authorFrom() resolves it to nothing.
-  const bearer = (c.req.header('authorization') ?? '').replace(/^Bearer\s+/, '');
-  const clientToken = bearer.startsWith('cat_') ? bearer : null;
-  const batch = Array.isArray(payload);
-  const requests: Rpc[] = Array.isArray(payload) ? payload : [payload];
+    const raw = await c.req.text();
+    if (raw.length > 200_000) return kbJson({ error: 'too_large' }, 413);
 
-  // Claude: a portal tool called without a live client token is refused at
-  // the HTTP level, before any tool runs (see claudeChallenge). Every other
-  // client keeps the in-result challenge.
-  const callsPortalTool = requests.some((r) => r?.method === 'tools/call' && CLIENT_TOOL_NAMES.has(String((r.params as { name?: unknown } | undefined)?.name ?? '')));
-  if (
-    callsPortalTool &&
-    author?.kind !== 'admin' &&
-    fromClaude(c.req.header('cf-connecting-ip') ?? '', c.req.header('user-agent') ?? '') &&
-    !(clientToken && (await agentUser(c.env, clientToken)))
-  ) {
-    return claudeChallenge(c.env);
-  }
-
-  // Notifications (no id) must not produce a response body.
-  const isNotification = requests.every((r) => r?.id === undefined || r?.id === null);
-
-  const handle = async (request: Rpc): Promise<object | null> => {
+    let payload: Rpc | Rpc[];
     try {
-      switch (request?.method) {
-        case 'initialize': {
-          const requested = String((request.params?.protocolVersion as string) ?? MCP_PROTOCOL);
-          return rpcResult(request.id, {
-            protocolVersion: MCP_SUPPORTED.includes(requested) ? requested : MCP_PROTOCOL,
-            capabilities: {
-              tools: { listChanged: false },
-              resources: { listChanged: false, subscribe: false },
-              prompts: { listChanged: false },
-            },
-            serverInfo: {
-              name: 'malipetek-dev',
-              title: 'malipetek.dev',
-              version: '1.1.0',
-              icons: [
-      { src: 'https://malipetek.dev/plugin-glyph.svg', mimeType: 'image/svg+xml', sizes: ['any'] },
-      { src: 'https://malipetek.dev/plugin-glyph.png', mimeType: 'image/png', sizes: ['256x256'] },
-    ],
-            },
-            instructions:
-              'malipetek.dev is a vibe contracting service: AI agents build and change clients’ websites, and Ali Petek (a human developer) signs off on the work. It also serves a public knowledgebase of real problems from agentic coding sessions — search and read entries without signing in.\n\n' +
-              'With a connected client account there are two ways to get work done:\n' +
-              '1. You make the change yourself (start_change → workspace_files/workspace_read → submit_change → preview_build → finish_change). You are the client’s own assistant on their own subscription, so this costs nothing on malipetek: no AI cost and no approval to wait for. You may change anything in their site, and say so plainly. Every change is recorded as its own request with who made it. Changes go to the preview, never straight to production. When the preview has it, show the link and ask whether to send it to Ali for review. Either way the client can take the preview live with site_publish; that is their decision and it is recorded as theirs, so confirm first and say when it includes unreviewed changes. Ali is emailed about every change, every review choice and every publish. ' +
-              reviewEstimate() +
-              '\n2. The client asks Ali’s team to do it (portal_file_request): Ali reads and approves the request before anything starts, then an agent does the work. That is billed as his time plus the AI run at cost.\n\n' +
-              'Notifications go by email to the client’s account address: Ali’s replies, approvals, status changes and finished work all arrive in their inbox, and replying to that email answers in the request’s thread. The portal (https://malipetek.dev/portal) shows the same. The "malipetek development" card (portal_board) shows their projects, sites and requests.',
-          });
-        }
-        case 'notifications/initialized':
-        case 'notifications/cancelled':
-          return null; // notification: no response
-        case 'ping':
-          return rpcResult(request.id, {});
-        case 'tools/list':
-          return rpcResult(request.id, { tools: toolsFor(author) });
-        case 'resources/list': {
-          const cursor = Math.max(0, Number(request.params?.cursor ?? 0) || 0);
-          const [rows, total] = await Promise.all([
-            c.env.KB_DB.prepare(
-              `SELECT * FROM entries ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
-            )
-              .bind(RESOURCE_PAGE, cursor)
-              .all<EntryRow>(),
-            c.env.KB_DB.prepare('SELECT COUNT(*) AS n FROM entries').first<{ n: number }>(),
-          ]);
-          const resources = (rows.results ?? []).map(entryResource);
-          const next = cursor + resources.length;
-          return rpcResult(request.id, {
-            resources,
-            ...(next < (total?.n ?? 0) ? { nextCursor: String(next) } : {}),
-          });
-        }
-        case 'resources/templates/list':
-          return rpcResult(request.id, {
-            resourceTemplates: [
-              {
-                uriTemplate: 'kb://entry/{slug}',
-                name: 'Knowledgebase entry',
-                description: 'One entry by slug, as markdown.',
-                mimeType: 'text/markdown',
-              },
-            ],
-          });
-        case 'resources/read': {
-          const uri = String(request.params?.uri ?? '');
-          // The board's view ships with the server; it is UI, not an entry.
-          if (uri === BOARD_UI_URI) {
+      payload = JSON.parse(raw);
+      // One line per call in Workers Logs: enough to see what a client such as
+      // ChatGPT asked for when it rejects the server. No arguments, no tokens.
+      const calls = (Array.isArray(payload) ? payload : [payload]).map((r) => (r.method === 'tools/call' ? `tools/call:${(r.params as { name?: string } | undefined)?.name ?? '?'}` : r.method));
+      console.log(JSON.stringify({ mcp: calls, surface, ua: c.req.header('user-agent') ?? '', origin: c.req.header('origin') ?? '', version: c.req.header('mcp-protocol-version') ?? '', auth: Boolean(c.req.header('authorization')) }));
+    } catch {
+      return kbJson(rpcError(null, -32700, 'Parse error'), 400);
+    }
+
+    // The knowledgebase server also reads an ack_ key here: authorFrom()
+    // resolves one to its key row (and the admin session to the admin), which
+    // is exactly the pair create_knowledge/update_knowledge accept.
+    const author = await authorFrom(c);
+    // A client's agent token (cat_…) drives the portal_* tools only. It is never
+    // a knowledgebase author: authorFrom() resolves it to nothing.
+    const bearer = (c.req.header('authorization') ?? '').replace(/^Bearer\s+/, '');
+    const clientToken = bearer.startsWith('cat_') ? bearer : null;
+    const batch = Array.isArray(payload);
+    const requests: Rpc[] = Array.isArray(payload) ? payload : [payload];
+
+    // Claude: a portal tool called without a live client token is refused at
+    // the HTTP level, before any tool runs (see claudeChallenge). Every other
+    // client keeps the in-result challenge. The knowledgebase has no sign-in at
+    // all, so none of this applies to /kb-mcp.
+    const callsPortalTool =
+      portalSurface &&
+      requests.some((r) => r?.method === 'tools/call' && CLIENT_TOOL_NAMES.has(String((r.params as { name?: unknown } | undefined)?.name ?? '')));
+    if (
+      callsPortalTool &&
+      author?.kind !== 'admin' &&
+      fromClaude(c.req.header('cf-connecting-ip') ?? '', c.req.header('user-agent') ?? '') &&
+      !(clientToken && (await agentUser(c.env, clientToken)))
+    ) {
+      return claudeChallenge(c.env);
+    }
+
+    // Notifications (no id) must not produce a response body.
+    const isNotification = requests.every((r) => r?.id === undefined || r?.id === null);
+
+    const handle = async (request: Rpc): Promise<object | null> => {
+      try {
+        switch (request?.method) {
+          case 'initialize': {
+            const requested = String((request.params?.protocolVersion as string) ?? MCP_PROTOCOL);
             return rpcResult(request.id, {
-              contents: [
-                {
-                  uri,
-                  mimeType: BOARD_MIME,
-                  text: BOARD_HTML,
-                  _meta: {
-                    ui: { prefersBorder: true },
-                    // Declared before the view loads, so a fullscreen surface
-                    // (sidebar, thread tab) opens without an inline flash.
-                    'openai/ui': {
-                      availableDisplayModes: ['inline', 'fullscreen'],
-                      preferredDisplayMode: 'inline',
+              protocolVersion: MCP_SUPPORTED.includes(requested) ? requested : MCP_PROTOCOL,
+              capabilities: {
+                tools: { listChanged: false },
+                resources: { listChanged: false, subscribe: false },
+                prompts: { listChanged: false },
+              },
+              serverInfo: portalSurface ? PORTAL_SERVER_INFO : KB_SERVER_INFO,
+              instructions: portalSurface ? PORTAL_INSTRUCTIONS : KB_INSTRUCTIONS,
+            });
+          }
+          case 'notifications/initialized':
+          case 'notifications/cancelled':
+            return null; // notification: no response
+          case 'ping':
+            return rpcResult(request.id, {});
+          case 'tools/list':
+            return rpcResult(request.id, { tools: toolsFor(surface, author) });
+          case 'resources/list': {
+            // The portal advertises its card; the knowledgebase advertises its
+            // entries. Neither lists the other product's resources.
+            if (portalSurface) return rpcResult(request.id, { resources: [boardResource()] });
+            const cursor = Math.max(0, Number(request.params?.cursor ?? 0) || 0);
+            const [rows, total] = await Promise.all([
+              c.env.KB_DB.prepare(
+                `SELECT * FROM entries ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+              )
+                .bind(RESOURCE_PAGE, cursor)
+                .all<EntryRow>(),
+              c.env.KB_DB.prepare('SELECT COUNT(*) AS n FROM entries').first<{ n: number }>(),
+            ]);
+            const resources = (rows.results ?? []).map(entryResource);
+            const next = cursor + resources.length;
+            return rpcResult(request.id, {
+              resources,
+              ...(next < (total?.n ?? 0) ? { nextCursor: String(next) } : {}),
+            });
+          }
+          case 'resources/templates/list':
+            return rpcResult(request.id, {
+              resourceTemplates: portalSurface
+                ? []
+                : [
+                    {
+                      uriTemplate: 'kb://entry/{slug}',
+                      name: 'Knowledgebase entry',
+                      description: 'One entry by slug, as markdown.',
+                      mimeType: 'text/markdown',
                     },
-                    'openai/widgetDescription':
-                      'The client’s requests on malipetek.dev: status, project, cost so far, and a link into the portal.',
+                  ],
+            });
+          case 'resources/read': {
+            const uri = String(request.params?.uri ?? '');
+            // The board's view ships with the portal server; it is UI, not an
+            // entry. The knowledgebase server does not publish it.
+            if (portalSurface && uri === BOARD_UI_URI) {
+              return rpcResult(request.id, {
+                contents: [
+                  {
+                    uri,
+                    mimeType: BOARD_MIME,
+                    text: BOARD_HTML,
+                    _meta: {
+                      ui: { prefersBorder: true },
+                      // Declared before the view loads, so a fullscreen surface
+                      // (sidebar, thread tab) opens without an inline flash.
+                      'openai/ui': {
+                        availableDisplayModes: ['inline', 'fullscreen'],
+                        preferredDisplayMode: 'inline',
+                      },
+                      'openai/widgetDescription':
+                        'The client’s requests on malipetek.dev: status, project, cost so far, and a link into the portal.',
+                    },
+                  },
+                ],
+              });
+            }
+            // Reading a kb:// resource still works from the portal endpoint:
+            // connectors built before the split may hold those URIs.
+            const match = uri.match(/^kb:\/\/entry\/(.+)$/);
+            if (!match) return rpcError(request.id, -32602, `Unknown resource: ${uri}`);
+            const key = decodeURIComponent(match[1]);
+            const row = await c.env.KB_DB.prepare('SELECT * FROM entries WHERE slug = ? OR id = ?')
+              .bind(key, /^\d+$/.test(key) ? Number(key) : -1)
+              .first<EntryRow>();
+            if (!row) return rpcError(request.id, -32002, `No entry for ${uri}`);
+            return rpcResult(request.id, {
+              contents: [{ uri, mimeType: 'text/markdown', text: entryMarkdown(row) }],
+            });
+          }
+          case 'prompts/list':
+            // The portal is a contracting app, not a place to write KB entries.
+            return rpcResult(request.id, { prompts: portalSurface ? [] : MCP_PROMPTS });
+          case 'prompts/get': {
+            const name = String(request.params?.name ?? '');
+            const prompt = (portalSurface ? [] : MCP_PROMPTS).find((p) => p.name === name);
+            if (!prompt) return rpcError(request.id, -32602, `Unknown prompt: ${name}`);
+            const args = (request.params?.arguments as Record<string, string>) ?? {};
+            return rpcResult(request.id, {
+              description: prompt.description,
+              messages: [
+                {
+                  role: 'user',
+                  content: {
+                    type: 'text',
+                    text:
+                      `Record what we just learned about "${args.topic ?? 'this session'}" in the agentic coding knowledgebase.\n\n` +
+                      `Outcome: ${args.outcome ?? '(describe the fix or the dead end)'}\n\n` +
+                      'Write exactly one entry with create_knowledge: a specific title, the problem as it actually ' +
+                      'appeared (errors verbatim), and the resolution with real commands and code. Set status to ' +
+                      '"solved" when it worked, "workaround" when it ships but the root cause stands, or ' +
+                      '"unsolvable" when the session proved it cannot be fixed and the evidence is the useful part. ' +
+                      'Name the agent in author_agent, and search_knowledge first so an existing entry gets updated ' +
+                      'instead of duplicated.',
                   },
                 },
               ],
             });
           }
-          const match = uri.match(/^kb:\/\/entry\/(.+)$/);
-          if (!match) return rpcError(request.id, -32602, `Unknown resource: ${uri}`);
-          const key = decodeURIComponent(match[1]);
-          const row = await c.env.KB_DB.prepare('SELECT * FROM entries WHERE slug = ? OR id = ?')
-            .bind(key, /^\d+$/.test(key) ? Number(key) : -1)
-            .first<EntryRow>();
-          if (!row) return rpcError(request.id, -32002, `No entry for ${uri}`);
-          return rpcResult(request.id, {
-            contents: [{ uri, mimeType: 'text/markdown', text: entryMarkdown(row) }],
-          });
-        }
-        case 'prompts/list':
-          return rpcResult(request.id, { prompts: MCP_PROMPTS });
-        case 'prompts/get': {
-          const name = String(request.params?.name ?? '');
-          if (name !== 'record_learning') return rpcError(request.id, -32602, `Unknown prompt: ${name}`);
-          const args = (request.params?.arguments as Record<string, string>) ?? {};
-          return rpcResult(request.id, {
-            description: MCP_PROMPTS[0].description,
-            messages: [
-              {
-                role: 'user',
-                content: {
-                  type: 'text',
-                  text:
-                    `Record what we just learned about "${args.topic ?? 'this session'}" in the agentic coding knowledgebase.\n\n` +
-                    `Outcome: ${args.outcome ?? '(describe the fix or the dead end)'}\n\n` +
-                    'Write exactly one entry with create_knowledge: a specific title, the problem as it actually ' +
-                    'appeared (errors verbatim), and the resolution with real commands and code. Set status to ' +
-                    '"solved" when it worked, "workaround" when it ships but the root cause stands, or ' +
-                    '"unsolvable" when the session proved it cannot be fixed and the evidence is the useful part. ' +
-                    'Name the agent in author_agent, and search_knowledge first so an existing entry gets updated ' +
-                    'instead of duplicated.',
-                },
-              },
-            ],
-          });
-        }
-        case 'tools/call': {
-          const name = String(request.params?.name ?? '');
-          const args = (request.params?.arguments as Record<string, unknown>) ?? {};
-          const tool = toolsFor(author).find((t) => t.name === name);
-          if (!tool) {
-            return rpcError(request.id, -32602, `Unknown tool: ${name}`);
-          }
-          const schemes = (tool as { securitySchemes?: Array<{ type: string }> }).securitySchemes ?? [];
-          const needsSignIn = schemes.length === 1 && schemes[0].type === 'oauth2';
-          const credential = clientToken ?? (author?.kind === 'admin' ? bearer : null);
-          if (needsSignIn && !credential) return rpcResult(request.id, authChallenge(c.env));
-          try {
-            const value =
-              CLIENT_TOOL_NAMES.has(name) || (OWNER_TOOL_NAMES.has(name) && author?.kind === 'admin')
+          case 'tools/call': {
+            const name = String(request.params?.name ?? '');
+            const args = (request.params?.arguments as Record<string, unknown>) ?? {};
+            const tool = callableToolsFor(surface, author).find((t) => t.name === name);
+            if (!tool) {
+              return rpcError(request.id, -32602, `Unknown tool: ${name}`);
+            }
+            const schemes = (tool as { securitySchemes?: Array<{ type: string }> }).securitySchemes ?? [];
+            const needsSignIn = schemes.length === 1 && schemes[0].type === 'oauth2';
+            const credential = portalSurface ? clientToken ?? (author?.kind === 'admin' ? bearer : null) : null;
+            if (needsSignIn && !credential) return rpcResult(request.id, authChallenge(c.env));
+            const portalTool =
+              portalSurface && (CLIENT_TOOL_NAMES.has(name) || (OWNER_TOOL_NAMES.has(name) && author?.kind === 'admin'));
+            try {
+              const value = portalTool
                 ? await callClientTool(c.env, c.executionCtx, credential, name, args)
                 : await callTool(c.env, name, args, author);
-            // A UI tool answers twice: model-readable text and the structured
-            // payload the view renders (MCP Apps: ui/notifications/tool-result).
-            const summarize = UI_TOOLS[name];
-            if (summarize && (tool as { _meta?: { ui?: { resourceUri?: string } } })._meta?.ui?.resourceUri) {
-              // The card's copy in the client's language: the one they picked in the
-              // portal, else the one the host reports. users.locale defaults to
-              // en-US, so English there means "not chosen" and the host's language
-              // decides. In _meta, so the view gets it and the model's context does not.
-              const hostLocale = (request.params?._meta as Record<string, unknown> | undefined)?.['openai/locale'];
-              const picked = closestLocale((value as { locale?: unknown }).locale);
-              const host = typeof hostLocale === 'string' ? closestLocale(hostLocale) : null;
-              const locale = (picked && picked !== 'en-US' ? picked : host) ?? picked ?? 'en-US';
-              return rpcResult(request.id, {
-                content: [{ type: 'text', text: summarize(value) }],
-                structuredContent: value as Record<string, unknown>,
-                _meta: { 'malipetek/locale': locale, 'malipetek/strings': cardStrings(locale) },
-              });
+              // A UI tool answers twice: model-readable text and the structured
+              // payload the view renders (MCP Apps: ui/notifications/tool-result).
+              const summarize = UI_TOOLS[name];
+              if (summarize && (tool as { _meta?: { ui?: { resourceUri?: string } } })._meta?.ui?.resourceUri) {
+                // The card's copy in the client's language: the one they picked in the
+                // portal, else the one the host reports. users.locale defaults to
+                // en-US, so English there means "not chosen" and the host's language
+                // decides. In _meta, so the view gets it and the model's context does not.
+                const hostLocale = (request.params?._meta as Record<string, unknown> | undefined)?.['openai/locale'];
+                const picked = closestLocale((value as { locale?: unknown }).locale);
+                const host = typeof hostLocale === 'string' ? closestLocale(hostLocale) : null;
+                const locale = (picked && picked !== 'en-US' ? picked : host) ?? picked ?? 'en-US';
+                return rpcResult(request.id, {
+                  content: [{ type: 'text', text: summarize(value) }],
+                  structuredContent: value as Record<string, unknown>,
+                  _meta: { 'malipetek/locale': locale, 'malipetek/strings': cardStrings(locale) },
+                });
+              }
+              return rpcResult(request.id, toolText(value));
+            } catch (error) {
+              // An expired or revoked token is still "you need to sign in again":
+              // answer with the challenge, not just a message.
+              const message = (error as Error)?.message ?? 'Tool failed.';
+              if (needsSignIn && /^unauthorized/.test(message)) return rpcResult(request.id, authChallenge(c.env));
+              // Tool failures are results with isError, not protocol errors — that
+              // is what lets the model read the message and retry.
+              return rpcResult(request.id, toolText(message, true));
             }
-            return rpcResult(request.id, toolText(value));
-          } catch (error) {
-            // An expired or revoked token is still "you need to sign in again":
-            // answer with the challenge, not just a message.
-            const message = (error as Error)?.message ?? 'Tool failed.';
-            if (needsSignIn && /^unauthorized/.test(message)) return rpcResult(request.id, authChallenge(c.env));
-            // Tool failures are results with isError, not protocol errors — that
-            // is what lets the model read the message and retry.
-            return rpcResult(request.id, toolText(message, true));
           }
+          default:
+            return rpcError(request?.id, -32601, `Method not found: ${request?.method}`);
         }
-        default:
-          return rpcError(request?.id, -32601, `Method not found: ${request?.method}`);
+      } catch (error) {
+        return rpcError(request?.id, -32603, (error as Error)?.message ?? 'Internal error');
       }
-    } catch (error) {
-      return rpcError(request?.id, -32603, (error as Error)?.message ?? 'Internal error');
+    };
+
+    const results = (await Promise.all(requests.map(handle))).filter((r): r is object => r !== null);
+
+    const headers: Record<string, string> = {
+      'mcp-protocol-version': MCP_PROTOCOL,
+      // Stateless server: we mint a session id for clients that insist on one,
+      // but never require it back.
+      'mcp-session-id': c.req.header('mcp-session-id') ?? crypto.randomUUID(),
+    };
+    const origin = c.req.header('Origin') ?? '';
+    if (ALLOWED_MCP_ORIGINS.includes(origin)) headers['access-control-allow-origin'] = origin;
+    headers['access-control-expose-headers'] = 'mcp-session-id, mcp-protocol-version';
+
+    // A notification-only POST is acknowledged with 202 and no body.
+    if (isNotification && !results.length) return new Response(null, { status: 202, headers });
+
+    const accept = c.req.header('Accept') ?? '';
+    const wantsSse = accept.includes('text/event-stream') && !accept.includes('application/json');
+
+    if (wantsSse) {
+      const body = results.map((r) => `event: message\ndata: ${JSON.stringify(r)}\n\n`).join('');
+      return new Response(body, {
+        headers: { ...headers, 'content-type': 'text/event-stream', 'cache-control': 'no-store' },
+      });
     }
-  };
 
-  const results = (await Promise.all(requests.map(handle))).filter((r): r is object => r !== null);
-
-  const headers: Record<string, string> = {
-    'mcp-protocol-version': MCP_PROTOCOL,
-    // Stateless server: we mint a session id for clients that insist on one,
-    // but never require it back.
-    'mcp-session-id': c.req.header('mcp-session-id') ?? crypto.randomUUID(),
-  };
-  const origin = c.req.header('Origin') ?? '';
-  if (ALLOWED_MCP_ORIGINS.includes(origin)) headers['access-control-allow-origin'] = origin;
-  headers['access-control-expose-headers'] = 'mcp-session-id, mcp-protocol-version';
-
-  // A notification-only POST is acknowledged with 202 and no body.
-  if (isNotification && !results.length) return new Response(null, { status: 202, headers });
-
-  const accept = c.req.header('Accept') ?? '';
-  const wantsSse = accept.includes('text/event-stream') && !accept.includes('application/json');
-
-  if (wantsSse) {
-    const body = results.map((r) => `event: message\ndata: ${JSON.stringify(r)}\n\n`).join('');
-    return new Response(body, {
-      headers: { ...headers, 'content-type': 'text/event-stream', 'cache-control': 'no-store' },
+    return new Response(JSON.stringify(batch ? results : results[0]), {
+      headers: { ...headers, 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
     });
-  }
-
-  return new Response(JSON.stringify(batch ? results : results[0]), {
-    headers: { ...headers, 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   });
-});
+
+  return app;
+}
+
+/** The published portal app. OAuth, the card, portal_* and owner_* tools. */
+export const mcp = makeMcp('portal');
+/** The public knowledgebase at https://lab.malipetek.dev/mcp (proxied to /kb-mcp). */
+export const kbMcp = makeMcp('kb');

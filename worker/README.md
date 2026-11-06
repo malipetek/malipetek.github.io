@@ -20,7 +20,8 @@ newest message and polls the conversation snapshot until the turn settles.
 | GET    | `/health`  | —                                             | Returns `{ ok: true }`.                                    |
 | *      | `/auth/*`, `/portal/*`, `/admin/*` | see `src/portal.ts`     | Client portal (below).                                     |
 | *      | `/kb/*`    | see `src/kb.ts`                               | Public knowledgebase (below).                              |
-| *      | `/mcp`     | JSON-RPC 2.0                                  | MCP server — knowledgebase + GPTflare tools.               |
+| *      | `/mcp`     | JSON-RPC 2.0                                  | MCP server — client portal (contracting) only.            |
+| *      | `/kb-mcp`  | JSON-RPC 2.0                                  | MCP server — the agentic coding knowledgebase.            |
 
 `/chat` responds with `text/event-stream`. Each event is one `data:` line:
 
@@ -360,27 +361,43 @@ prefix-matched (`"migra"*` → `migration`) and ANDed. Without that, `?q=foo OR
 bar"` is a 500.
 
 Seeded entries came out of real sessions; when one of your agents solves
-something worth keeping, `create_knowledge` over MCP is the intended path.
+something worth keeping, `create_knowledge` on the knowledgebase server
+(`/kb-mcp`) is the intended path.
 
-## MCP (`src/kb.ts` + `src/platform.ts` + `src/clientTools.ts`)
+## MCP (`src/kb.ts` + `src/clientTools.ts`)
 
-`POST /mcp` speaks the **streamable HTTP** transport at protocol `2025-06-18`,
-so ChatGPT apps, Claude and any MCP client can mount the same tools: session ids
-(echoed, not required), SSE when the client asks for it, `202` for notification
-posts, batch requests, and `Origin` validation so a random web page cannot drive
-it. `https://malipetek.dev/mcp` proxies here, so the public URL is the site's.
+There are two MCP servers, built from one implementation (`makeMcp` in
+`src/kb.ts`). They share the transport and nothing else: one server used to mix
+vibe contracting with the public knowledgebase, and assistants could not tell
+which tools belonged to which product.
+
+`POST /mcp` is the published client portal app. `https://malipetek.dev/mcp`
+proxies here, so the public URL is the site's. It advertises the portal tools
+(`portal_*`, plus `owner_*` for Ali's session) and the "malipetek development"
+card; its instructions cover contracting only, and its `resources/list` is the
+card alone. Knowledgebase tools are no longer listed there, but `tools/call`
+still runs them, so a connector set up before the split (with an owner-issued
+`ack_` key) keeps working.
+
+`POST /kb-mcp` is the knowledgebase's own server, published at
+`https://lab.malipetek.dev/mcp` (the lab site proxies it here). It advertises
+`search_knowledge` / `get_knowledge` / `list_knowledge` to everyone and
+`create_knowledge` / `update_knowledge` to an `ack_` key or Ali's session.
+There are no `portal_*` tools and no OAuth. Its resources are the entries and
+the `kb://entry/{slug}` template; its one prompt is `record_learning`.
+
+Both speak the **streamable HTTP** transport at protocol `2025-06-18`, so
+ChatGPT apps, Claude and any MCP client can mount them: session ids (echoed, not
+required), SSE when the client asks for it, `202` for notification posts, batch
+requests, and `Origin` validation so a random web page cannot drive them.
 
 Tool failures come back as a result with `isError: true`, not a protocol error —
 that is what lets a model read the message and correct itself.
 
-Tools are the knowledgebase, the client's portal, and the GPTflare control-plane
-bridge. `tools/list` hides `platform_*` from everyone but Ali's session.
-
-| Group      | Auth                          | Examples                                                          |
-| ---------- | ----------------------------- | ----------------------------------------------------------------- |
-| `*_knowledge` | public read; `ack_` to write | `search_knowledge`, `get_knowledge`, `create_knowledge`           |
-| `portal_*`    | a client's agent token (`cat_`) | `portal_projects`, `portal_requests`, `portal_request`, `portal_file_request`, `portal_reply`, `portal_set_budget`, `portal_withdraw` |
-| `platform_*`  | admin session, then the platform's own sign-in | `platform_list_sites`, `platform_read_file`, `platform_edit_preview`, `platform_approve_preview` |
+| Server     | Tools                                                        | Auth                                                    |
+| ---------- | ------------------------------------------------------------ | ------------------------------------------------------- |
+| `/mcp`     | `portal_*`, `owner_*` (admin), plus KB tools by `tools/call` | OAuth or a client's agent token (`cat_`) for `portal_*` |
+| `/kb-mcp`  | `search/get/list_knowledge`; `create/update_knowledge`       | reads public; writes need `ack_` (or the admin session) |
 
 **Agent tokens.** A client makes one in the portal (*Connect an assistant*);
 it is shown once and stored as a SHA-256 (`agent_tokens`, migration 0009), at

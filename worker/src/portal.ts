@@ -677,7 +677,8 @@ portal.use('*', async (c, next) => {
   // This app is mounted at '/', so this middleware sees every request. The
   // origin allow-list and the preflight shortcut are only correct for the
   // portal's own token-bearing routes: /kb is a public API (wildcard CORS) and
-  // /mcp validates Origin itself as the MCP spec's rebinding guard requires.
+  // /mcp and /kb-mcp validate Origin themselves as the MCP spec's rebinding
+  // guard requires.
   // Preview feedback is called from a preview origin, not the portal, and its
   // site token is the credential; these routes echo their own origin.
   const isPreviewFeedback = path === '/portal/preview-feedback' || path === '/portal/preview-feedback/config';
