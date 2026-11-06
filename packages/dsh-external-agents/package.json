@@ -1,0 +1,44 @@
+{
+  "name": "@malipetek/dsh-external-agents",
+  "version": "0.3.0",
+  "description": "Host external ACP agents (Claude Code, Devin, opencode, DeepSeek Harness itself) as first-class agents inside DeepSeek Harness, with delegation: an external agent gets one MCP tool, `delegate`, and commands harness workers that run on the harness's own models.",
+  "type": "module",
+  "main": "index.js",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./llm-adapter": "./llm-adapter.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "llm-adapter.js",
+    "delegate.mjs",
+    "mcp-forward.mjs",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "meta": {
+      "title": "External Agents",
+      "description": "Run Claude Code, Devin, opencode or another DeepSeek Harness as an external ACP agent, pick which one handles a task, and let it delegate work to harness workers."
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "acp",
+    "agent-client-protocol",
+    "claude-code",
+    "devin"
+  ],
+  "author": "Muhammet Ali Petek",
+  "license": "MIT"
+}
