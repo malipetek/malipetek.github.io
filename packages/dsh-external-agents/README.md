@@ -337,6 +337,12 @@ which buried the transcript in nine identical `→ shell → completed` rows.
 The consequence remains honest: you see the agent's answer and the shape of its
 work, not its tool output.
 
+**A long run posts a status line every 30 seconds** (`statusEveryMs`, `0` disables
+it): `· 7 tools so far — last: write src/app.ts (4m 12s)`. It is built from a
+bounded ring of the tool titles already seen, never by re-reading the
+conversation — a status must not cost what the work costs. Same reasoning as
+Claude Code's own status line, and cheaper still: no model is called at all.
+
 ### Delegation: letting the agent command harness workers
 
 An external agent can be given **one** harness capability: `delegate`. Configure it

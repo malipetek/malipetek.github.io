@@ -822,3 +822,36 @@ test('a failing agent becomes a terminal error chunk, not a thrown harness error
     connection.dispose();
   }
 });
+
+test('a long run posts a status line from notes, not from the conversation', async () => {
+  // The costly way to keep a status fresh is to re-read the whole conversation on
+  // a timer. This keeps a bounded list of what the agent touched and reports from
+  // that, so a status costs arithmetic instead of tokens.
+  const chunks = [];
+  const connection = {
+    ensureSession: async () => ({ primed: true, sessionId: 's' }),
+    selectOption: async () => undefined,
+    markPrimed: () => undefined,
+    prompt: async (text, options) => {
+      options.onUpdate({ sessionUpdate: 'tool_call', title: 'shell: pnpm test' });
+      await new Promise((done) => setTimeout(done, 6));
+      options.onUpdate({ sessionUpdate: 'tool_call', title: 'write src/app.ts' });
+      return { stopReason: 'end_turn', text: 'done', updates: [], permissions: [] };
+    },
+  };
+  const adapter = new AcpModelAdapter({
+    connection, provider: 'acp-mock', label: 'Mock', approvalPolicy: 'allow',
+    resolveSessionKey: () => 'status', resolveCwd: () => scratch,
+    statusEveryMs: 1,
+  });
+  for await (const chunk of adapter.stream({
+    provider: 'acp-mock',
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'go' }] }],
+  })) {
+    chunks.push(chunk);
+  }
+  const status = chunks.find((chunk) => chunk.type === 'reasoning-delta' && /tools so far/.test(chunk.text));
+  assert.ok(status, 'a status line was posted');
+  assert.match(status.text, /write src\/app\.ts/, 'and names the most recent tool');
+  assert.match(status.text, /\ds|\dm \d+s/, 'with elapsed time');
+});

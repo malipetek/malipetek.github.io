@@ -673,6 +673,11 @@ export class AcpModelAdapter {
     this.resolveImage = typeof options.resolveImage === 'function' ? options.resolveImage : undefined;
     /** Called at the start of each turn with the live initiating agent. */
     this.onTurnStart = typeof options.onTurnStart === 'function' ? options.onTurnStart : undefined;
+    /**
+     * How often a running agent may post a status line, in milliseconds.
+     * `0` disables it; the default matches the cadence Claude Code uses.
+     */
+    this.statusEveryMs = Number.isFinite(options.statusEveryMs) ? options.statusEveryMs : 30_000;
   }
 
   /**
@@ -852,10 +857,42 @@ export class AcpModelAdapter {
     // `shell` twenty times reads as one line, because twenty identical lines
     // carry no more information and bury everything else.
     let lastToolTitle = null;
+    /*
+     * A status line built from **notes**, never from the conversation.
+     *
+     * An agent can work for many minutes and show nothing until it answers. The
+     * expensive way to fix that is to re-read its whole conversation on a timer;
+     * this keeps a bounded list of what it has touched instead, so a status line
+     * costs arithmetic rather than tokens.
+     */
+    const notes = { tools: [], startedAt: Date.now(), lastAt: Date.now() };
+    const noteStatus = () => {
+      if (!(this.statusEveryMs > 0)) return null;
+      const now = Date.now();
+      if (now - notes.lastAt < this.statusEveryMs) return null;
+      if (notes.tools.length === 0) return null;
+      notes.lastAt = now;
+      const count = notes.tools.length;
+      const last = notes.tools[count - 1];
+      const seconds = Math.round((now - notes.startedAt) / 1000);
+      const elapsed = seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+      return {
+        type: 'reasoning-delta',
+        index: indexFor('reasoning'),
+        text: `\n· ${count} tool${count === 1 ? '' : 's'} so far — last: ${last} (${elapsed})\n`,
+      };
+    };
     const onUpdate = (update) => {
       updateCount += 1;
       if (update?.sessionUpdate === 'tool_call') {
         const title = typeof update.title === 'string' ? update.title.trim() : '';
+        if (title.length > 0) {
+          // Bounded: a status needs the shape of the work, not its history.
+          notes.tools.push(title.slice(0, 80));
+          if (notes.tools.length > 20) notes.tools.shift();
+          const status = noteStatus();
+          if (status !== null) queue.push(status);
+        }
         if (title.length > 0 && title === lastToolTitle) return;
         lastToolTitle = title;
       }
