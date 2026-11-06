@@ -1003,7 +1003,12 @@ mcp.post('/', async (c) => {
               resources: { listChanged: false, subscribe: false },
               prompts: { listChanged: false },
             },
-            serverInfo: { name: 'malipetek-dev', title: 'malipetek.dev', version: '1.1.0' },
+            serverInfo: {
+              name: 'malipetek-dev',
+              title: 'malipetek.dev',
+              version: '1.1.0',
+              icons: [{ src: 'https://malipetek.dev/plugin-icon.png', mimeType: 'image/png', sizes: ['256x256'] }],
+            },
             instructions:
               'malipetek.dev is a vibe contracting service: AI agents build and change clients’ websites, and Ali Petek (a human developer) signs off on the work. It also serves a public knowledgebase of real problems from agentic coding sessions — search and read entries without signing in.\n\n' +
               'With a connected client account there are two ways to get work done:\n' +
