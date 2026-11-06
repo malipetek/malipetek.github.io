@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "Агент",
   "card.sys.moved": "Перемещено в {status}",
-  "card.sys.movedTotal": "Перемещено в {status} · всего {total}"
+  "card.sys.movedTotal": "Перемещено в {status} · всего {total}",
+  "site.foot.askAi": "Спросите ИИ о {site}:"
 }

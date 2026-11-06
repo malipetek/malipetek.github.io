@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "એજન્ટ",
   "card.sys.moved": "{status} પર ખસેડ્યું",
-  "card.sys.movedTotal": "{status} પર ખસેડ્યું · કુલ {total}"
+  "card.sys.movedTotal": "{status} પર ખસેડ્યું · કુલ {total}",
+  "site.foot.askAi": "{site} વિશે AI ને પૂછો:"
 }

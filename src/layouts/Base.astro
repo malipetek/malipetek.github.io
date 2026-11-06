@@ -31,27 +31,29 @@ interface Props {
 }
 
 /*
- * "Ask AI about malipetek.dev": the page's own audience often meets it through an
- * agent. Each link pre-fills that agent with the same description, so the answer
- * starts from what this site is rather than from a bare domain name.
+ * "Ask AI about …": people often meet this site through an agent. Each link
+ * pre-fills that agent with a description of the site the reader is on, so the
+ * answer starts from what it is rather than from a bare domain name.
  */
-const aiPrompt = [
-  "Summarize malipetek.dev and what it offers, then cite the site.",
-  "Focus on: the DeepSeek Harness plugins on /plugins (an agentic work queue,",
-  "project and AI-workspace panels, git graph, action cards), the client portal",
-  "for AI-assisted development, and the work that uses Claude Code, Devin and",
-  "opencode as agents. Be specific about what each thing does, who it is for,",
-  "and what is still in progress. Use up-to-date information from malipetek.dev.",
-].join(" ");
-const aiAsk = encodeURIComponent(aiPrompt);
-/** The assistants people actually reach for, each with the same pre-filled ask. */
-const aiProviders = [
-  { label: "ChatGPT", href: `https://chat.openai.com/?q=${aiAsk}` },
-  { label: "Claude", href: `https://claude.ai/new?q=${aiAsk}` },
-  { label: "Perplexity", href: `https://www.perplexity.ai/search/new?q=${aiAsk}` },
-  { label: "Google", href: `https://www.google.com/search?udm=50&aep=11&q=${aiAsk}` },
-  { label: "Grok", href: `https://grok.com/?q=${aiAsk}` },
-];
+const aiPrompts = {
+  contracting: [
+    "Summarize malipetek.dev and what it offers, then cite the site.",
+    "It is a vibe contracting service: AI agents build and change websites for",
+    "business owners, and Ali Petek, a human developer, approves the work.",
+    "Cover how a client files a request, what the client portal shows, how the",
+    "pricing works, and what is still in progress. Use up-to-date information",
+    "from malipetek.dev.",
+  ],
+  lab: [
+    "Summarize lab.malipetek.dev and what it offers, then cite the site.",
+    "Focus on: the DeepSeek Harness plugins on /plugins (an agentic work queue,",
+    "project and AI-workspace panels, git graph, action cards), the knowledgebase",
+    "of real problems from agentic coding sessions, and the work that uses Claude",
+    "Code, Devin and opencode as agents. Be specific about what each thing does,",
+    "who it is for, and what is still in progress. Use up-to-date information",
+    "from lab.malipetek.dev.",
+  ],
+};
 
 const {
   title = "M. Ali Petek",
@@ -67,6 +69,16 @@ const {
 } = Astro.props;
 
 const t = siteT(locale);
+
+const aiAsk = encodeURIComponent(aiPrompts[site].join(" "));
+/** The assistants people actually reach for, each with the same pre-filled ask. */
+const aiProviders = [
+  { label: "ChatGPT", href: `https://chat.openai.com/?q=${aiAsk}` },
+  { label: "Claude", href: `https://claude.ai/new?q=${aiAsk}` },
+  { label: "Perplexity", href: `https://www.perplexity.ai/search/new?q=${aiAsk}` },
+  { label: "Google", href: `https://www.google.com/search?udm=50&aep=11&q=${aiAsk}` },
+  { label: "Grok", href: `https://grok.com/?q=${aiAsk}` },
+];
 
 // Each site knows its own absolute address; Astro.site is the contracting one.
 const origin =
@@ -325,7 +337,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
     </main>
     <footer class="site-foot">
       <div class="wrap site-foot-ai">
-        <span class="site-foot-ai-label">{t("site.foot.askAi")}</span>
+        <span class="site-foot-ai-label">{t("site.foot.askAi", { site: site === "lab" ? "lab.malipetek.dev" : "malipetek.dev" })}</span>
         <div class="site-foot-ai-links">
           {aiProviders.map((provider) => (
             <a href={provider.href} target="_blank" rel="noopener noreferrer">

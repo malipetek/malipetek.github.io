@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "ഏജന്റ്",
   "card.sys.moved": "പുതിയ നില: {status}",
-  "card.sys.movedTotal": "പുതിയ നില: {status} · ആകെ {total}"
+  "card.sys.movedTotal": "പുതിയ നില: {status} · ആകെ {total}",
+  "site.foot.askAi": "{site}-നെക്കുറിച്ച് AI-യോട് ചോദിക്കൂ:"
 }

@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "ಏಜೆಂಟ್",
   "card.sys.moved": "ಸ್ಥಿತಿ ಬದಲಾಗಿದೆ: {status}",
-  "card.sys.movedTotal": "ಸ್ಥಿತಿ ಬದಲಾಗಿದೆ: {status} · ಒಟ್ಟು {total}"
+  "card.sys.movedTotal": "ಸ್ಥಿತಿ ಬದಲಾಗಿದೆ: {status} · ಒಟ್ಟು {total}",
+  "site.foot.askAi": "{site} ಬಗ್ಗೆ AI ಅನ್ನು ಕೇಳಿ:"
 }

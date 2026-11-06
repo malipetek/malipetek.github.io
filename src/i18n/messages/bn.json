@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "এজেন্ট",
   "card.sys.moved": "{status}-এ সরানো হয়েছে",
-  "card.sys.movedTotal": "{status}-এ সরানো হয়েছে · মোট {total}"
+  "card.sys.movedTotal": "{status}-এ সরানো হয়েছে · মোট {total}",
+  "site.foot.askAi": "{site} সম্পর্কে AI-কে জিজ্ঞাসা করুন:"
 }

@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "Tác nhân",
   "card.sys.moved": "Đã chuyển sang {status}",
-  "card.sys.movedTotal": "Đã chuyển sang {status} · tổng {total}"
+  "card.sys.movedTotal": "Đã chuyển sang {status} · tổng {total}",
+  "site.foot.askAi": "Hỏi AI về {site}:"
 }

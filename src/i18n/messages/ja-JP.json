@@ -932,5 +932,6 @@
   "card.who.ali": "Ali",
   "card.who.agent": "エージェント",
   "card.sys.moved": "{status}に移動しました",
-  "card.sys.movedTotal": "{status}に移動 · 合計 {total}"
+  "card.sys.movedTotal": "{status}に移動 · 合計 {total}",
+  "site.foot.askAi": "{site} について AI に質問:"
 }
