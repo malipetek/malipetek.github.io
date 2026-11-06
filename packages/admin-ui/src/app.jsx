@@ -14,7 +14,7 @@ import { AGENTS, CLIENT_VISIBLE, PRIORITIES, STATUS_LABEL, errorText, needsYou, 
 import { Button, Chips, Confirm, Dot, Field, Icon, Modal, Resizer, Segmented, cx } from './ui.jsx';
 import { BoardView, InboxView, ListView } from './board.jsx';
 import { TicketDetails, TicketView } from './ticket.jsx';
-import { ClientsView, FleetView, SettingsView } from './fleet.jsx';
+import { ClientView, ClientsView, FleetView, SettingsView } from './fleet.jsx';
 import { MarketingView } from './marketing.jsx';
 import { HealthView } from './health.jsx';
 import { STYLES } from './styles.js';
@@ -111,6 +111,8 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
       const hash = window.location.hash.slice(1);
       const id = Number(new URLSearchParams(hash).get('ticket'));
       if (Number.isInteger(id) && id > 0) openTicket(id);
+      const client = new URLSearchParams(hash).get('client');
+      if (client) open(`c:${client}`);
       // Notification mail links to #marketing; a view name is a valid target too.
       if (viewOf(hash)) open(hash);
     };
@@ -192,6 +194,10 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
       const t = ticketById.get(Number(key.slice(2)));
       return t ? `#${t.id} ${t.title}` : `#${key.slice(2)}`;
     }
+    if (key.startsWith('c:')) {
+      const c = data.clients.find((x) => x.id === key.slice(2));
+      return c ? c.name || c.email : 'Client';
+    }
     return viewOf(key)?.label ?? key;
   };
 
@@ -232,7 +238,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
                 onAuxClick={(e) => e.button === 1 && close(key)}
                 title={tabLabel(key)}
               >
-                <Icon name={key.startsWith('t:') ? 'ticket' : viewOf(key)?.icon ?? 'list'} size={14} />
+                <Icon name={key.startsWith('t:') ? 'ticket' : key.startsWith('c:') ? 'clients' : viewOf(key)?.icon ?? 'list'} size={14} />
                 <span className="aw-tab__label">{tabLabel(key)}</span>
                 <button
                   type="button"
@@ -261,7 +267,13 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
             ) : (
               tabs.map((key) => (
                 <section key={key} className="aw-pane" hidden={key !== active}>
-                  {key.startsWith('t:') ? <TicketView id={Number(key.slice(2))} active={key === active} /> : <View name={key} />}
+                  {key.startsWith('t:') ? (
+                    <TicketView id={Number(key.slice(2))} active={key === active} />
+                  ) : key.startsWith('c:') ? (
+                    <ClientView id={key.slice(2)} />
+                  ) : (
+                    <View name={key} />
+                  )}
                 </section>
               ))
             )}
@@ -776,6 +788,26 @@ export function TicketPage({ api, host = null, files = null, ticketId, part = 't
   // (`part: 'details'`) rather than as a column that squeezes the thread.
   if (part === 'details') return <TicketSidePanel api={api} host={host} ticketId={ticketId} page />;
   return <TicketThread api={api} host={host} files={files} ticketId={ticketId} />;
+}
+
+/**
+ * One client's page on its own, for a host that gives each client a place of
+ * its own (the Harness sidebar). A ticket opens through `host.openTicket`.
+ */
+export function ClientPage({ api, host = null, files = null, clientId }) {
+  const [data, reloadData] = useAdminData(api);
+  const reload = useCallback(() => {
+    void reloadData();
+  }, [reloadData]);
+  const value = useMemo(() => ticketContext({ api, data, reload, host, files }), [api, data, reload, host, files]);
+  return (
+    <div className="aw aw--dsh" style={{ display: 'block', height: '100%', overflowY: 'auto' }}>
+      <style>{STYLES}</style>
+      <AdminContext.Provider value={value}>
+        {data.error ? <p className="aw-empty">{errorText(data.error)}</p> : <ClientView id={clientId} />}
+      </AdminContext.Provider>
+    </div>
+  );
 }
 
 function TicketThread({ api, host, files, ticketId }) {

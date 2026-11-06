@@ -1861,16 +1861,108 @@ var __awPlugin = (() => {
       }
     );
   }
-  function ClientsView() {
-    const { api, act, ask, data, setModal, setBoardProject, open } = useAdmin();
-    const toggle = (client, ids) => {
-      const added = ids.filter((x) => !client.projectIds.includes(x));
-      const removed = client.projectIds.filter((x) => !ids.includes(x));
+  function ClientControls({ c }) {
+    const { api, act, data } = useAdmin();
+    const toggle = (ids) => {
+      const added = ids.filter((x) => !c.projectIds.includes(x));
+      const removed = c.projectIds.filter((x) => !ids.includes(x));
       return act(async () => {
-        for (const p of added) await api("PUT", `/admin/clients/${client.id}/projects/${p}`);
-        for (const p of removed) await api("DELETE", `/admin/clients/${client.id}/projects/${p}`);
+        for (const p of added) await api("PUT", `/admin/clients/${c.id}/projects/${p}`);
+        for (const p of removed) await api("DELETE", `/admin/clients/${c.id}/projects/${p}`);
       }, "Saved.");
     };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: usageLine(c.usage) }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+        /* @__PURE__ */ jsx(
+          "select",
+          {
+            "aria-label": "Language",
+            value: c.locale ?? "en-US",
+            onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { locale: e.target.value }), "Language saved."),
+            children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code))
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "select",
+          {
+            "aria-label": "Translation",
+            title: "Who translates this client\u2019s messages. They can change it themselves.",
+            value: c.translation ?? "deepseek",
+            onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { translation: e.target.value }), "Saved."),
+            children: [
+              /* @__PURE__ */ jsx("option", { value: "deepseek", children: "DeepSeek" }),
+              /* @__PURE__ */ jsx("option", { value: "cloudflare", children: "Workers AI" }),
+              /* @__PURE__ */ jsx("option", { value: "off", children: "no translation" })
+            ]
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsx(Chips, { value: c.projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: (ids) => void toggle(ids) })
+    ] });
+  }
+  function ClientView({ id }) {
+    const { data, openTicket } = useAdmin();
+    const c = data.clients.find((x) => x.id === id);
+    if (!c) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: data.loaded ? "No such client." : "Loading\u2026" });
+    const closed = (t) => ["done", "declined"].includes(t.status);
+    const tickets = data.tickets.filter((t) => t.kind !== "system" && t.client_email === c.email).sort((a, b) => closed(a) - closed(b) || b.updated_at - a.updated_at);
+    const open = tickets.filter((t) => !closed(t)).length;
+    return /* @__PURE__ */ jsxs("div", { className: "aw-view", children: [
+      /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
+        /* @__PURE__ */ jsx("h2", { children: c.name || c.email }),
+        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+          c.name ? `${c.email} \xB7 ` : "",
+          open,
+          " open of ",
+          tickets.length,
+          " \xB7 client for ",
+          ago(c.created_at),
+          c.handoff ? ` \xB7 hand-off: ${c.handoff}` : ""
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx("section", { className: "aw-group", children: /* @__PURE__ */ jsx(ClientControls, { c }) }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
+        /* @__PURE__ */ jsxs("h3", { children: [
+          "Requests ",
+          /* @__PURE__ */ jsx("span", { className: "aw-count", children: tickets.length })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-tablewrap", children: [
+          /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+            /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+              /* @__PURE__ */ jsx("th", { children: "#" }),
+              /* @__PURE__ */ jsx("th", { children: "Title" }),
+              /* @__PURE__ */ jsx("th", { children: "Status" }),
+              /* @__PURE__ */ jsx("th", { children: "Project" }),
+              /* @__PURE__ */ jsx("th", { children: "Cost" }),
+              /* @__PURE__ */ jsx("th", { children: "Updated" })
+            ] }) }),
+            /* @__PURE__ */ jsx("tbody", { children: tickets.map((t) => /* @__PURE__ */ jsxs("tr", { onClick: () => openTicket(t.id), tabIndex: 0, onKeyDown: (e) => e.key === "Enter" && openTicket(t.id), children: [
+              /* @__PURE__ */ jsxs("td", { className: "aw-mono", children: [
+                "#",
+                t.id
+              ] }),
+              /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
+                t.client_waiting_since && !closed(t) ? /* @__PURE__ */ jsx(Dot, { state: "warn" }) : null,
+                " ",
+                t.title
+              ] }),
+              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(StatusPill, { status: t.status }) }),
+              /* @__PURE__ */ jsx("td", { children: t.project_name ?? "\u2014" }),
+              /* @__PURE__ */ jsx("td", { children: money(priceOf({ humanSeconds: t.human_seconds ?? 0, aiMicroUsd: t.ai_micro_usd ?? 0 }).totalCents) }),
+              /* @__PURE__ */ jsxs("td", { className: "aw-muted", children: [
+                ago(t.updated_at),
+                " ago"
+              ] })
+            ] }, t.id)) })
+          ] }),
+          !tickets.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No requests yet." }) : null
+        ] })
+      ] })
+    ] });
+  }
+  function ClientsView() {
+    const { api, act, ask, data, setModal, setBoardProject, open } = useAdmin();
     return /* @__PURE__ */ jsxs("div", { className: "aw-view", children: [
       /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
         /* @__PURE__ */ jsx("h2", { children: "Clients & projects" }),
@@ -1890,38 +1982,10 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx("h3", { children: "Clients" }),
           /* @__PURE__ */ jsx("ul", { className: "aw-cards", children: data.clients.map((c) => /* @__PURE__ */ jsxs("li", { className: "aw-panel", children: [
             /* @__PURE__ */ jsxs("header", { children: [
-              /* @__PURE__ */ jsx("strong", { children: c.email }),
+              c.role === "admin" ? /* @__PURE__ */ jsx("strong", { children: c.email }) : /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", title: "Open this client\u2019s page", onClick: () => open(`c:${c.id}`), children: /* @__PURE__ */ jsx("strong", { children: c.email }) }),
               /* @__PURE__ */ jsx("span", { className: "aw-muted", children: c.role === "admin" ? "admin" : `${c.ticket_count} ticket(s)` })
             ] }),
-            c.role !== "admin" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-              /* @__PURE__ */ jsx("p", { className: "aw-muted", children: usageLine(c.usage) }),
-              /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
-                /* @__PURE__ */ jsx(
-                  "select",
-                  {
-                    "aria-label": "Language",
-                    value: c.locale ?? "en-US",
-                    onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { locale: e.target.value }), "Language saved."),
-                    children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code))
-                  }
-                ),
-                /* @__PURE__ */ jsxs(
-                  "select",
-                  {
-                    "aria-label": "Translation",
-                    title: "Who translates this client\u2019s messages. They can change it themselves.",
-                    value: c.translation ?? "deepseek",
-                    onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { translation: e.target.value }), "Saved."),
-                    children: [
-                      /* @__PURE__ */ jsx("option", { value: "deepseek", children: "DeepSeek" }),
-                      /* @__PURE__ */ jsx("option", { value: "cloudflare", children: "Workers AI" }),
-                      /* @__PURE__ */ jsx("option", { value: "off", children: "no translation" })
-                    ]
-                  }
-                )
-              ] }),
-              /* @__PURE__ */ jsx(Chips, { value: c.projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: (ids) => void toggle(c, ids) })
-            ] }) : null
+            c.role !== "admin" ? /* @__PURE__ */ jsx(ClientControls, { c }) : null
           ] }, c.id)) })
         ] }),
         /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
@@ -4150,6 +4214,8 @@ button.aw-file:hover { border-color: currentColor; }
         const hash = window.location.hash.slice(1);
         const id = Number(new URLSearchParams(hash).get("ticket"));
         if (Number.isInteger(id) && id > 0) openTicket(id);
+        const client = new URLSearchParams(hash).get("client");
+        if (client) open(`c:${client}`);
         if (viewOf(hash)) open(hash);
       };
       fromHash();
@@ -4222,6 +4288,10 @@ button.aw-file:hover { border-color: currentColor; }
         const t = ticketById.get(Number(key.slice(2)));
         return t ? `#${t.id} ${t.title}` : `#${key.slice(2)}`;
       }
+      if (key.startsWith("c:")) {
+        const c = data.clients.find((x) => x.id === key.slice(2));
+        return c ? c.name || c.email : "Client";
+      }
       return viewOf(key)?.label ?? key;
     };
     const signedOut = data.error && ["unauthorized", "signed_out", "forbidden"].includes(data.error.code);
@@ -4251,7 +4321,7 @@ button.aw-file:hover { border-color: currentColor; }
                 onAuxClick: (e) => e.button === 1 && close(key),
                 title: tabLabel(key),
                 children: [
-                  /* @__PURE__ */ jsx(Icon, { name: key.startsWith("t:") ? "ticket" : viewOf(key)?.icon ?? "list", size: 14 }),
+                  /* @__PURE__ */ jsx(Icon, { name: key.startsWith("t:") ? "ticket" : key.startsWith("c:") ? "clients" : viewOf(key)?.icon ?? "list", size: 14 }),
                   /* @__PURE__ */ jsx("span", { className: "aw-tab__label", children: tabLabel(key) }),
                   /* @__PURE__ */ jsx(
                     "button",
@@ -4273,7 +4343,7 @@ button.aw-file:hover { border-color: currentColor; }
             /* @__PURE__ */ jsx("span", { className: "aw-tabs__fill" }),
             /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "Refresh", onClick: () => void reload(), children: /* @__PURE__ */ jsx(Icon, { name: "refresh", size: 14 }) })
           ] }),
-          /* @__PURE__ */ jsx("div", { className: "aw-content", children: signedOut ? /* @__PURE__ */ jsx(SignedOut, {}) : !data.loaded ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading\u2026" }) : tabs.map((key) => /* @__PURE__ */ jsx("section", { className: "aw-pane", hidden: key !== active, children: key.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(key.slice(2)), active: key === active }) : /* @__PURE__ */ jsx(View, { name: key }) }, key)) })
+          /* @__PURE__ */ jsx("div", { className: "aw-content", children: signedOut ? /* @__PURE__ */ jsx(SignedOut, {}) : !data.loaded ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading\u2026" }) : tabs.map((key) => /* @__PURE__ */ jsx("section", { className: "aw-pane", hidden: key !== active, children: key.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(key.slice(2)), active: key === active }) : key.startsWith("c:") ? /* @__PURE__ */ jsx(ClientView, { id: key.slice(2) }) : /* @__PURE__ */ jsx(View, { name: key }) }, key)) })
         ] }),
         /* @__PURE__ */ jsx(StatusBar, {}),
         toast ? /* @__PURE__ */ jsx("div", { className: cx("aw-toast", toast.kind === "error" && "is-error"), role: "status", children: toast.text }) : null,
@@ -4693,6 +4763,17 @@ ${question.text ?? ""}`)) {
     if (part === "details") return /* @__PURE__ */ jsx(TicketSidePanel, { api, host, ticketId, page: true });
     return /* @__PURE__ */ jsx(TicketThread, { api, host, files, ticketId });
   }
+  function ClientPage({ api, host = null, files = null, clientId }) {
+    const [data, reloadData] = useAdminData(api);
+    const reload = useCallback(() => {
+      void reloadData();
+    }, [reloadData]);
+    const value = useMemo(() => ticketContext({ api, data, reload, host, files }), [api, data, reload, host, files]);
+    return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: { display: "block", height: "100%", overflowY: "auto" }, children: [
+      /* @__PURE__ */ jsx("style", { children: STYLES }),
+      /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: data.error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: errorText(data.error) }) : /* @__PURE__ */ jsx(ClientView, { id: clientId }) })
+    ] });
+  }
   function TicketThread({ api, host, files, ticketId }) {
     const [data, reloadData] = useAdminData(api);
     const reload = useCallback(() => {
@@ -4709,7 +4790,7 @@ ${question.text ?? ""}`)) {
   // packages/dsh-admin/src/client.jsx
   var PANEL_ID = "admin";
   var NAMESPACE = "admin";
-  var CLIENT_VERSION = "3.7.0";
+  var CLIENT_VERSION = "3.8.0";
   var DICTIONARY = { title: "Admin" };
   var SESSION_RETRY_CODES = /* @__PURE__ */ new Set(["session/writer-held", "session/not-found", "session/agent-busy"]);
   var MAX_SESSION_TRIES = 4;
@@ -5245,6 +5326,155 @@ ${question.text ?? ""}`)) {
         waiting > 0 ? /* @__PURE__ */ jsx("span", { style: { ...badge, background: "var(--dsw-alias-state-warning-primary, #d18f2e)" }, children: waiting > 99 ? "99+" : waiting }) : counts?.running ? /* @__PURE__ */ jsx("span", { style: { ...badge, minWidth: 7, width: 7, height: 7, top: -2, right: -3, padding: 0, background: "var(--dsw-alias-state-success-primary, #2f9e5b)" } }) : null
       ] });
     }
+    const CLIENT_ROWS_MS = 6e4;
+    const CLIENT_ROWS_MAX = 12;
+    const CLIENT_ROWS_ORDER = 13;
+    const CLIENT_TINTS = ["#4c8dff", "#d18f2e", "#2f9e5b", "#b45fd6", "#d1495b", "#1f9fb4", "#8a8f2e", "#6b6fd6"];
+    const clientBadges = /* @__PURE__ */ (() => {
+      let value = /* @__PURE__ */ new Map();
+      const subs = /* @__PURE__ */ new Set();
+      return {
+        set(next) {
+          value = next;
+          for (const notify of subs) notify();
+        },
+        subscribe(notify) {
+          subs.add(notify);
+          return () => subs.delete(notify);
+        },
+        get: () => value
+      };
+    })();
+    const initials = (c) => {
+      const words = (c.name || c.email.split("@")[0]).split(/[\s._-]+/).filter(Boolean);
+      return ((words[0]?.[0] ?? "?") + (words[1]?.[0] ?? "")).toUpperCase();
+    };
+    const tintOf = (id) => CLIENT_TINTS[[...id].reduce((h, ch) => h * 31 + ch.charCodeAt(0) >>> 0, 7) % CLIENT_TINTS.length];
+    function clientIcon(c) {
+      const letters = initials(c);
+      const tint = tintOf(c.id);
+      return function ClientRowIcon(props) {
+        const size = props?.size ?? 16;
+        const badge = useSyncExternalStore(clientBadges.subscribe, clientBadges.get, clientBadges.get).get(c.id);
+        return /* @__PURE__ */ jsxs("span", { style: { position: "relative", display: "inline-flex" }, title: badge?.text, children: [
+          /* @__PURE__ */ jsx(
+            "span",
+            {
+              "aria-hidden": "true",
+              style: {
+                width: size,
+                height: size,
+                borderRadius: "50%",
+                background: tint,
+                color: "#fff",
+                fontSize: Math.round(size * 0.5),
+                fontWeight: 700,
+                lineHeight: `${size}px`,
+                textAlign: "center",
+                letterSpacing: -0.3
+              },
+              children: letters
+            }
+          ),
+          badge?.count ? /* @__PURE__ */ jsx(
+            "span",
+            {
+              style: {
+                position: "absolute",
+                top: -4,
+                right: -5,
+                minWidth: 11,
+                height: 11,
+                padding: "0 2px",
+                borderRadius: 6,
+                fontSize: 8,
+                fontWeight: 700,
+                lineHeight: "11px",
+                textAlign: "center",
+                color: "#fff",
+                boxSizing: "border-box",
+                background: "var(--dsw-alias-state-warning-primary, #d18f2e)"
+              },
+              children: badge.count > 9 ? "9+" : badge.count
+            }
+          ) : null
+        ] });
+      };
+    }
+    function clientPage(clientId) {
+      return function ClientRowPage() {
+        return /* @__PURE__ */ jsx(ClientPage, { api, host, files, clientId });
+      };
+    }
+    function syncClientRows() {
+      const rows = /* @__PURE__ */ new Map();
+      let stopped = false;
+      const pass = async () => {
+        let clients;
+        let tickets;
+        try {
+          const [c, t] = await Promise.all([api("GET", "/admin/clients"), api("GET", "/admin/tickets")]);
+          clients = c?.clients ?? [];
+          tickets = t?.tickets ?? [];
+        } catch {
+          return;
+        }
+        if (stopped) return;
+        const latest = /* @__PURE__ */ new Map();
+        const badges = /* @__PURE__ */ new Map();
+        for (const t of tickets) {
+          if (t.kind === "system" || !t.client_email) continue;
+          latest.set(t.client_email, Math.max(latest.get(t.client_email) ?? 0, t.updated_at ?? 0));
+          const fresh = t.status === "new";
+          const waiting = Boolean(t.client_waiting_since) && !["new", "done", "declined"].includes(t.status);
+          if (!fresh && !waiting) continue;
+          const b = badges.get(t.client_email) ?? { approve: 0, answer: 0 };
+          if (fresh) b.approve += 1;
+          if (waiting) b.answer += 1;
+          badges.set(t.client_email, b);
+        }
+        const active = (c) => Math.max(latest.get(c.email) ?? 0, c.created_at ?? 0);
+        const shown = clients.filter((c) => c.role !== "admin" && typeof c.id === "string" && c.email).sort((a, b) => active(b) - active(a)).slice(0, CLIENT_ROWS_MAX);
+        const byId = /* @__PURE__ */ new Map();
+        for (const c of shown) {
+          const b = badges.get(c.email);
+          if (!b) continue;
+          const text = [b.approve && `${b.approve} to approve`, b.answer && `${b.answer} waiting for an answer`].filter(Boolean).join(" \xB7 ");
+          byId.set(c.id, { count: b.approve + b.answer, text });
+        }
+        clientBadges.set(byId);
+        const wanted = /* @__PURE__ */ new Set();
+        shown.forEach((c, i) => {
+          const id = `admin-client-${c.id}`;
+          const label = c.name || c.email;
+          const sig = `${CLIENT_ROWS_ORDER + i}|${label}|${initials(c)}`;
+          wanted.add(id);
+          if (rows.get(id)?.sig === sig) return;
+          rows.get(id)?.dispose();
+          const off = [
+            ctx.slots.register({ name: "main", key: id, locale: NAMESPACE }, clientPage(c.id)),
+            ctx.slots.register({ name: "sidebar.panellist", id, order: CLIENT_ROWS_ORDER + i, label }, clientIcon(c))
+          ];
+          rows.set(id, { sig, dispose: () => off.forEach((d) => d?.()) });
+        });
+        for (const [id, row] of rows) {
+          if (wanted.has(id)) continue;
+          row.dispose();
+          rows.delete(id);
+        }
+      };
+      void pass();
+      const timer = setInterval(() => void pass(), CLIENT_ROWS_MS);
+      const onFocus = () => void pass();
+      window.addEventListener("focus", onFocus);
+      return () => {
+        stopped = true;
+        clearInterval(timer);
+        window.removeEventListener("focus", onFocus);
+        for (const row of rows.values()) row.dispose();
+        rows.clear();
+      };
+    }
     function useTicketRun(props) {
       const sessionId = typeof props?.sessionId === "string" ? props.sessionId : props?.params?.sessionId ?? null;
       return ticketFromCwd(useSessionCwd(sessionId));
@@ -5340,6 +5570,7 @@ ${question.text ?? ""}`)) {
     });
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: PANEL_ID, locale: NAMESPACE }, AdminPage));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: PANEL_ID, order: 12, label: "Admin" }, AdminEntryIcon));
+    ctx.slots.inject("sidebar.panellist", () => syncClientRows());
     ctx.slots.inject("conversation.session.header.actions", () => ctx.slots.register({ name: "conversation.session.header.actions", id: "admin-ticket", order: 5, locale: NAMESPACE }, TicketHeaderChip));
     ctx.slots.inject("sidebar.session.row.leading", () => ctx.slots.register({ name: "sidebar.session.row.leading", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketMark));
     ctx.slots.inject("sidebar.session.row.hover", () => ctx.slots.register({ name: "sidebar.session.row.hover", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketHover));

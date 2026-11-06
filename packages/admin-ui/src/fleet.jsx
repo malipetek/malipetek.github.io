@@ -2,8 +2,8 @@
 import { useEffect, useState } from 'react';
 import { LOCALES } from '../../../src/lib/locales.js';
 import { useAdmin } from './store.js';
-import { EXECUTORS, PRIORITIES, ago, money, priorityName, span, usd } from './format.js';
-import { Button, Chips, Dot, Field, Modal, Segmented, Tag, cx } from './ui.jsx';
+import { EXECUTORS, PRIORITIES, ago, money, priceOf, priorityName, span, usd } from './format.js';
+import { Button, Chips, Dot, Field, Modal, Segmented, StatusPill, Tag, cx } from './ui.jsx';
 import { SitePanel } from './ticket.jsx';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
@@ -294,16 +294,113 @@ function RepoModal({ project, onClose }) {
   );
 }
 
-export function ClientsView() {
-  const { api, act, ask, data, setModal, setBoardProject, open } = useAdmin();
-  const toggle = (client, ids) => {
-    const added = ids.filter((x) => !client.projectIds.includes(x));
-    const removed = client.projectIds.filter((x) => !ids.includes(x));
+/** A client's bill, language, translator and projects: the card and the client page both show these. */
+function ClientControls({ c }) {
+  const { api, act, data } = useAdmin();
+  const toggle = (ids) => {
+    const added = ids.filter((x) => !c.projectIds.includes(x));
+    const removed = c.projectIds.filter((x) => !ids.includes(x));
     return act(async () => {
-      for (const p of added) await api('PUT', `/admin/clients/${client.id}/projects/${p}`);
-      for (const p of removed) await api('DELETE', `/admin/clients/${client.id}/projects/${p}`);
+      for (const p of added) await api('PUT', `/admin/clients/${c.id}/projects/${p}`);
+      for (const p of removed) await api('DELETE', `/admin/clients/${c.id}/projects/${p}`);
     }, 'Saved.');
   };
+  return (
+    <>
+      <p className="aw-muted">{usageLine(c.usage)}</p>
+      <div className="aw-toolbar">
+        <select
+          aria-label="Language"
+          value={c.locale ?? 'en-US'}
+          onChange={(e) => void act(() => api('PATCH', `/admin/clients/${c.id}`, { locale: e.target.value }), 'Language saved.')}
+        >
+          {LOCALES.map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.english}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Translation"
+          title="Who translates this client’s messages. They can change it themselves."
+          value={c.translation ?? 'deepseek'}
+          onChange={(e) => void act(() => api('PATCH', `/admin/clients/${c.id}`, { translation: e.target.value }), 'Saved.')}
+        >
+          <option value="deepseek">DeepSeek</option>
+          <option value="cloudflare">Workers AI</option>
+          <option value="off">no translation</option>
+        </select>
+      </div>
+      <Chips value={c.projectIds} options={data.projects.map((p) => ({ value: p.id, label: p.name }))} onChange={(ids) => void toggle(ids)} />
+    </>
+  );
+}
+
+/** One client: who they are, what they owe, and every request they filed, open ones first. */
+export function ClientView({ id }) {
+  const { data, openTicket } = useAdmin();
+  const c = data.clients.find((x) => x.id === id);
+  if (!c) return <p className="aw-empty">{data.loaded ? 'No such client.' : 'Loading…'}</p>;
+  const closed = (t) => ['done', 'declined'].includes(t.status);
+  const tickets = data.tickets
+    .filter((t) => t.kind !== 'system' && t.client_email === c.email)
+    .sort((a, b) => closed(a) - closed(b) || b.updated_at - a.updated_at);
+  const open = tickets.filter((t) => !closed(t)).length;
+  return (
+    <div className="aw-view">
+      <header className="aw-hero">
+        <h2>{c.name || c.email}</h2>
+        <p className="aw-muted">
+          {c.name ? `${c.email} · ` : ''}
+          {open} open of {tickets.length} · client for {ago(c.created_at)}
+          {c.handoff ? ` · hand-off: ${c.handoff}` : ''}
+        </p>
+      </header>
+      <section className="aw-group">
+        <ClientControls c={c} />
+      </section>
+      <section className="aw-group">
+        <h3>
+          Requests <span className="aw-count">{tickets.length}</span>
+        </h3>
+        <div className="aw-tablewrap">
+          <table className="aw-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Project</th>
+                <th>Cost</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tickets.map((t) => (
+                <tr key={t.id} onClick={() => openTicket(t.id)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && openTicket(t.id)}>
+                  <td className="aw-mono">#{t.id}</td>
+                  <td className="aw-table__title">
+                    {t.client_waiting_since && !closed(t) ? <Dot state="warn" /> : null} {t.title}
+                  </td>
+                  <td>
+                    <StatusPill status={t.status} />
+                  </td>
+                  <td>{t.project_name ?? '—'}</td>
+                  <td>{money(priceOf({ humanSeconds: t.human_seconds ?? 0, aiMicroUsd: t.ai_micro_usd ?? 0 }).totalCents)}</td>
+                  <td className="aw-muted">{ago(t.updated_at)} ago</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!tickets.length ? <p className="aw-empty">No requests yet.</p> : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export function ClientsView() {
+  const { api, act, ask, data, setModal, setBoardProject, open } = useAdmin();
   return (
     <div className="aw-view">
       <header className="aw-hero">
@@ -324,38 +421,16 @@ export function ClientsView() {
             {data.clients.map((c) => (
               <li key={c.id} className="aw-panel">
                 <header>
-                  <strong>{c.email}</strong>
+                  {c.role === 'admin' ? (
+                    <strong>{c.email}</strong>
+                  ) : (
+                    <button type="button" className="aw-link" title="Open this client’s page" onClick={() => open(`c:${c.id}`)}>
+                      <strong>{c.email}</strong>
+                    </button>
+                  )}
                   <span className="aw-muted">{c.role === 'admin' ? 'admin' : `${c.ticket_count} ticket(s)`}</span>
                 </header>
-                {c.role !== 'admin' ? (
-                  <>
-                    <p className="aw-muted">{usageLine(c.usage)}</p>
-                    <div className="aw-toolbar">
-                      <select
-                        aria-label="Language"
-                        value={c.locale ?? 'en-US'}
-                        onChange={(e) => void act(() => api('PATCH', `/admin/clients/${c.id}`, { locale: e.target.value }), 'Language saved.')}
-                      >
-                        {LOCALES.map((l) => (
-                          <option key={l.code} value={l.code}>
-                            {l.english}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        aria-label="Translation"
-                        title="Who translates this client’s messages. They can change it themselves."
-                        value={c.translation ?? 'deepseek'}
-                        onChange={(e) => void act(() => api('PATCH', `/admin/clients/${c.id}`, { translation: e.target.value }), 'Saved.')}
-                      >
-                        <option value="deepseek">DeepSeek</option>
-                        <option value="cloudflare">Workers AI</option>
-                        <option value="off">no translation</option>
-                      </select>
-                    </div>
-                    <Chips value={c.projectIds} options={data.projects.map((p) => ({ value: p.id, label: p.name }))} onChange={(ids) => void toggle(c, ids)} />
-                  </>
-                ) : null}
+                {c.role !== 'admin' ? <ClientControls c={c} /> : null}
               </li>
             ))}
           </ul>

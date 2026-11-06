@@ -12,13 +12,13 @@
  * @module @malipetek/dsh-admin
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import { AdminApp, TicketPage } from '../../admin-ui/src/index.js';
+import { AdminApp, ClientPage, TicketPage } from '../../admin-ui/src/index.js';
 
 /** Panel identity: one id addresses both the sidebar row and the main page. */
 const PANEL_ID = 'admin';
 const NAMESPACE = 'admin';
 /** Reported to the Host on activation, so "did the panel load?" has an answer. */
-const CLIENT_VERSION = '3.7.0';
+const CLIENT_VERSION = '3.8.0';
 const DICTIONARY = { title: 'Admin' };
 
 /**
@@ -718,6 +718,176 @@ function apply(ctx) {
     );
   }
 
+  /* ————— Clients in the sidebar ————— */
+
+  /*
+   * One sidebar row per client, under Admin, most recently active first, each
+   * opening that client's page. A row is a `sidebar.panellist` entry plus the
+   * `main` page under the same id; the set is rebuilt from `/admin/clients`
+   * and `/admin/tickets` once a minute, and only rows that changed are
+   * registered again.
+   */
+  const CLIENT_ROWS_MS = 60_000;
+  const CLIENT_ROWS_MAX = 12;
+  const CLIENT_ROWS_ORDER = 13;
+  const CLIENT_TINTS = ['#4c8dff', '#d18f2e', '#2f9e5b', '#b45fd6', '#d1495b', '#1f9fb4', '#8a8f2e', '#6b6fd6'];
+
+  /** client id → what is waiting on Ali for that client, for the row's badge. */
+  const clientBadges = (() => {
+    let value = new Map();
+    const subs = new Set();
+    return {
+      set(next) {
+        value = next;
+        for (const notify of subs) notify();
+      },
+      subscribe(notify) {
+        subs.add(notify);
+        return () => subs.delete(notify);
+      },
+      get: () => value,
+    };
+  })();
+
+  const initials = (c) => {
+    const words = (c.name || c.email.split('@')[0]).split(/[\s._-]+/).filter(Boolean);
+    return ((words[0]?.[0] ?? '?') + (words[1]?.[0] ?? '')).toUpperCase();
+  };
+  const tintOf = (id) => CLIENT_TINTS[[...id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % CLIENT_TINTS.length];
+
+  function clientIcon(c) {
+    const letters = initials(c);
+    const tint = tintOf(c.id);
+    return function ClientRowIcon(props) {
+      const size = props?.size ?? 16;
+      const badge = useSyncExternalStore(clientBadges.subscribe, clientBadges.get, clientBadges.get).get(c.id);
+      return (
+        <span style={{ position: 'relative', display: 'inline-flex' }} title={badge?.text}>
+          <span
+            aria-hidden="true"
+            style={{
+              width: size,
+              height: size,
+              borderRadius: '50%',
+              background: tint,
+              color: '#fff',
+              fontSize: Math.round(size * 0.5),
+              fontWeight: 700,
+              lineHeight: `${size}px`,
+              textAlign: 'center',
+              letterSpacing: -0.3,
+            }}
+          >
+            {letters}
+          </span>
+          {badge?.count ? (
+            <span
+              style={{
+                position: 'absolute',
+                top: -4,
+                right: -5,
+                minWidth: 11,
+                height: 11,
+                padding: '0 2px',
+                borderRadius: 6,
+                fontSize: 8,
+                fontWeight: 700,
+                lineHeight: '11px',
+                textAlign: 'center',
+                color: '#fff',
+                boxSizing: 'border-box',
+                background: 'var(--dsw-alias-state-warning-primary, #d18f2e)',
+              }}
+            >
+              {badge.count > 9 ? '9+' : badge.count}
+            </span>
+          ) : null}
+        </span>
+      );
+    };
+  }
+
+  function clientPage(clientId) {
+    return function ClientRowPage() {
+      return <ClientPage api={api} host={host} files={files} clientId={clientId} />;
+    };
+  }
+
+  /** Keep the rows in step with the client list until the returned stop runs. */
+  function syncClientRows() {
+    /** row id → { sig, dispose } */
+    const rows = new Map();
+    let stopped = false;
+    const pass = async () => {
+      let clients;
+      let tickets;
+      try {
+        const [c, t] = await Promise.all([api('GET', '/admin/clients'), api('GET', '/admin/tickets')]);
+        clients = c?.clients ?? [];
+        tickets = t?.tickets ?? [];
+      } catch {
+        return; // signed out or offline: keep what is shown
+      }
+      if (stopped) return;
+      const latest = new Map();
+      const badges = new Map();
+      for (const t of tickets) {
+        if (t.kind === 'system' || !t.client_email) continue;
+        latest.set(t.client_email, Math.max(latest.get(t.client_email) ?? 0, t.updated_at ?? 0));
+        const fresh = t.status === 'new';
+        const waiting = Boolean(t.client_waiting_since) && !['new', 'done', 'declined'].includes(t.status);
+        if (!fresh && !waiting) continue;
+        const b = badges.get(t.client_email) ?? { approve: 0, answer: 0 };
+        if (fresh) b.approve += 1;
+        if (waiting) b.answer += 1;
+        badges.set(t.client_email, b);
+      }
+      const active = (c) => Math.max(latest.get(c.email) ?? 0, c.created_at ?? 0);
+      const shown = clients
+        .filter((c) => c.role !== 'admin' && typeof c.id === 'string' && c.email)
+        .sort((a, b) => active(b) - active(a))
+        .slice(0, CLIENT_ROWS_MAX);
+      const byId = new Map();
+      for (const c of shown) {
+        const b = badges.get(c.email);
+        if (!b) continue;
+        const text = [b.approve && `${b.approve} to approve`, b.answer && `${b.answer} waiting for an answer`].filter(Boolean).join(' · ');
+        byId.set(c.id, { count: b.approve + b.answer, text });
+      }
+      clientBadges.set(byId);
+      const wanted = new Set();
+      shown.forEach((c, i) => {
+        const id = `admin-client-${c.id}`;
+        const label = c.name || c.email;
+        const sig = `${CLIENT_ROWS_ORDER + i}|${label}|${initials(c)}`;
+        wanted.add(id);
+        if (rows.get(id)?.sig === sig) return;
+        rows.get(id)?.dispose();
+        const off = [
+          ctx.slots.register({ name: 'main', key: id, locale: NAMESPACE }, clientPage(c.id)),
+          ctx.slots.register({ name: 'sidebar.panellist', id, order: CLIENT_ROWS_ORDER + i, label }, clientIcon(c)),
+        ];
+        rows.set(id, { sig, dispose: () => off.forEach((d) => d?.()) });
+      });
+      for (const [id, row] of rows) {
+        if (wanted.has(id)) continue;
+        row.dispose();
+        rows.delete(id);
+      }
+    };
+    void pass();
+    const timer = setInterval(() => void pass(), CLIENT_ROWS_MS);
+    const onFocus = () => void pass();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+      for (const row of rows.values()) row.dispose();
+      rows.clear();
+    };
+  }
+
   /* ————— The ticket, as a view of its own conversation ————— */
 
   /**
@@ -851,6 +1021,8 @@ function apply(ctx) {
   });
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID, locale: NAMESPACE }, AdminPage));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL_ID, order: 12, label: 'Admin' }, AdminEntryIcon));
+  // Each client gets a row of its own under Admin.
+  ctx.slots.inject('sidebar.panellist', () => syncClientRows());
   // A run's ticket, as a view of its own conversation: the whole ticket page
   // beside Chat and Trajectory, and a chip in the header that names it. The
   // chip registers the view, because it renders for exactly the session in front.
