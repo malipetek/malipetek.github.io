@@ -28,7 +28,7 @@ import { node } from './node.ts';
 import { github } from './github.ts';
 import { cfconnect } from './cfconnect.ts';
 import { marketing, publisher, unsubscribe } from './marketing.ts';
-import { kb, mcp } from './kb.ts';
+import { kb, kbMcp, mcp } from './kb.ts';
 import { oauth } from './oauth.ts';
 import {
   ALLOWED_ORIGINS,
@@ -128,9 +128,13 @@ app.route('/', cfconnect);
 app.route('/', marketing);
 app.route('/', publisher);
 app.route('/', unsubscribe);
-// Public knowledgebase: REST reads plus the MCP server. See src/kb.ts.
+// Public knowledgebase: REST reads, plus its own MCP server. See src/kb.ts.
 app.route('/kb', kb);
+// The published client-portal MCP app (OAuth, portal_* tools). The knowledgebase
+// moved off it when the site split: /kb-mcp is the KB's own server, proxied from
+// https://lab.malipetek.dev/mcp.
 app.route('/mcp', mcp);
+app.route('/kb-mcp', kbMcp);
 // OAuth for MCP clients that will not take a pasted key. See src/oauth.ts.
 app.route('/', oauth);
 

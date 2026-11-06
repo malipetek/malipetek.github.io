@@ -1353,14 +1353,15 @@ const groups = {
     check('Ali cannot make one (it is a client credential)', (await call('/portal/agent-tokens', { method: 'POST', auth: admin, body: { label: 'x' } })).data?.error === 'clients_only');
 
     let rpcId = 0;
-    const rpc = async (method, params, auth) => {
-      const res = await fetch(`${W}/mcp`, {
+    const rpcOn = async (base, method, params, auth) => {
+      const res = await fetch(`${W}${base}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(auth ? { authorization: `Bearer ${auth}` } : {}) },
         body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }),
       });
       return res.json();
     };
+    const rpc = (method, params, auth) => rpcOn('/mcp', method, params, auth);
     const tool = async (name, args, auth = token) => {
       const r = await rpc('tools/call', { name, arguments: args }, auth);
       const text = r.result?.content?.[0]?.text ?? '';
@@ -1369,7 +1370,7 @@ const groups = {
       return { error: r.result?.isError === true, value, text };
     };
     const names = (await rpc('tools/list', {}, null)).result.tools.map((t) => t.name);
-    check('anyone sees the knowledgebase and the client tools', names.includes('portal_file_request') && names.includes('search_knowledge'));
+    check('the portal lists its own tools and no knowledgebase tools', names.includes('portal_file_request') && !names.some((n) => n.endsWith('_knowledge')), names.join());
     check('an assistant can start and finish its own changes', names.includes('start_change') && names.includes('finish_change'));
     const anonTools = (await rpc('tools/list', {}, null)).result.tools;
     const boardTool = anonTools.find((t) => t.name === 'portal_board');
@@ -1379,13 +1380,49 @@ const groups = {
       JSON.stringify(boardTool?._meta),
     );
     check(
-      'portal tools ask for OAuth, knowledgebase tools stay open',
-      JSON.stringify(boardTool?.securitySchemes) === JSON.stringify([{ type: 'oauth2', scopes: ['portal'] }]) &&
-        JSON.stringify(anonTools.find((t) => t.name === 'search_knowledge')?.securitySchemes) === JSON.stringify([{ type: 'noauth' }]),
-      JSON.stringify(boardTool?.securitySchemes),
+      'every portal tool asks for OAuth',
+      anonTools.every((t) => JSON.stringify(t.securitySchemes) === JSON.stringify([{ type: 'oauth2', scopes: ['portal'] }])),
+      JSON.stringify(anonTools.filter((t) => t.securitySchemes?.[0]?.type !== 'oauth2').map((t) => t.name)),
     );
     const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'e2e', version: '0' } }, token);
     check('initialize says changes cost nothing, review is optional and notices come by email', /costs nothing on malipetek/.test(init.result?.instructions ?? '') && /billed as Ali's time/.test(init.result?.instructions ?? '') && /by email/.test(init.result?.instructions ?? ''));
+    check('the portal introduces itself as the client portal, version 1.2.0', init.result?.serverInfo?.title === 'malipetek.dev client portal' && init.result?.serverInfo?.version === '1.2.0', JSON.stringify(init.result?.serverInfo));
+    check('…and never mentions the knowledgebase', !/knowledgebase/i.test(init.result?.instructions ?? ''));
+    const portalResources = (await rpc('resources/list', {}, null)).result?.resources ?? [];
+    check('the portal publishes the board as its one resource', portalResources.length === 1 && /^ui:\/\//.test(portalResources[0]?.uri ?? ''), JSON.stringify(portalResources));
+    check('the portal advertises no kb:// template and no prompt', (await rpc('resources/templates/list', {}, null)).result?.resourceTemplates?.length === 0 && (await rpc('prompts/list', {}, null)).result?.prompts?.length === 0);
+
+    /* The knowledgebase has its own server now (lab.malipetek.dev/mcp → /kb-mcp). */
+    const kbNames = (await rpcOn('/kb-mcp', 'tools/list', {}, null)).result.tools.map((t) => t.name);
+    check(
+      'the knowledgebase server lists the KB read tools and no portal tools',
+      ['search_knowledge', 'get_knowledge', 'list_knowledge'].every((n) => kbNames.includes(n)) && !kbNames.some((n) => n.startsWith('portal_') || n.startsWith('owner_') || n === 'submit_change'),
+      kbNames.join(),
+    );
+    check('…and keeps its write tools for an ack_ key, not an anonymous caller', !kbNames.includes('create_knowledge') && !kbNames.includes('update_knowledge'));
+    const kbInit = await rpcOn('/kb-mcp', 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'e2e', version: '0' } }, null);
+    const kbInstructions = String(kbInit.result?.instructions ?? '').trim();
+    check(
+      'the KB server introduces itself as malipetek lab and points website work at the portal',
+      kbInit.result?.serverInfo?.name === 'malipetek-lab-kb' && /For website work done for you, the contracting service is a separate server: https:\/\/malipetek\.dev\/mcp\.$/.test(kbInstructions),
+      JSON.stringify(kbInit.result?.serverInfo),
+    );
+    check('the KB instructions mention no portal tool', !/portal_|start_change|submit_change|site_publish/.test(kbInstructions));
+    const kbRead = (await rpcOn('/kb-mcp', 'tools/call', { name: 'list_knowledge', arguments: { limit: 1 } }, null)).result;
+    check('the KB server answers a public read', kbRead?.isError !== true && kbRead?.content?.[0]?.type === 'text', JSON.stringify(kbRead).slice(0, 160));
+    check(
+      'the KB server advertises its entry template and prompt',
+      (await rpcOn('/kb-mcp', 'resources/templates/list', {}, null)).result?.resourceTemplates?.[0]?.uriTemplate === 'kb://entry/{slug}' &&
+        (await rpcOn('/kb-mcp', 'prompts/list', {}, null)).result?.prompts?.[0]?.name === 'record_learning',
+    );
+    const minted = await call('/kb/keys', { method: 'POST', auth: admin, body: { agent_name: 'e2e-kb' } });
+    const ack = minted.data?.key;
+    const authorNames = (await rpcOn('/kb-mcp', 'tools/list', {}, ack)).result.tools.map((t) => t.name);
+    check('an ack_ key unlocks the KB write tools', authorNames.includes('create_knowledge') && authorNames.includes('update_knowledge'), authorNames.join());
+    const wrote = await rpcOn('/kb-mcp', 'tools/call', { name: 'create_knowledge', arguments: { title: 'E2E split check', problem: 'p', solution: 's', status: 'solved', author_agent: 'e2e' } }, ack);
+    check('…and writes through the KB server', wrote.result?.isError !== true, JSON.stringify(wrote).slice(0, 160));
+    const legacyKb = await tool('search_knowledge', { query: 'wrangler' }, null);
+    check('a knowledgebase tool is still callable on /mcp for a connector set up before the split', !legacyKb.error && Array.isArray(legacyKb.value?.entries), legacyKb.text.slice(0, 160));
 
     const filed = await tool('portal_file_request', { title: 'Add opening hours', body: 'Mon–Fri 9–5 on the contact page.', project_id: project.id, attention: 'auto', budget_usd: 20 });
     const rid = filed.value?.request_id;
@@ -1467,7 +1504,7 @@ const groups = {
     const bad = await tool('portal_file_request', { title: 'x', body: 'y', attention: 'yolo' });
     check('a bad argument comes back as an explained error', bad.error && /bad_ticket: .*auto, checked or hands_on/.test(bad.text), bad.text);
     const kb = await rpc('tools/call', { name: 'create_knowledge', arguments: { title: 't', problem: 'p', solution: 's', status: 'solved', author_agent: 'x' } });
-    check('an agent key cannot write the knowledgebase', kb.error);
+    check('an agent key cannot write the knowledgebase', kb.result?.isError === true && /ack_ API key/.test(kb.result?.content?.[0]?.text ?? ''), JSON.stringify(kb).slice(0, 200));
     const anon = await rpc('tools/call', { name: 'portal_requests', arguments: {} }, null);
     const challenge = anon.result?._meta?.['mcp/www_authenticate']?.[0] ?? '';
     check(
@@ -1794,6 +1831,9 @@ async function main() {
 
   console.log(`state ${STATE}\nworker ${W}\n`);
   execFileSync('npx', ['wrangler', 'd1', 'migrations', 'apply', 'malipetek-portal', '--local', '--persist-to', STATE], { cwd: WORKER, stdio: 'pipe' });
+  // The knowledgebase D1 predates this repo and has no migrations folder here,
+  // so the suite creates the tables its REST and MCP paths read.
+  execFileSync('npx', ['wrangler', 'd1', 'execute', 'KB_DB', '--local', '--persist-to', STATE, '--file', join(WORKER, 'test', 'kb-schema.sql')], { cwd: WORKER, stdio: 'pipe' });
 
   await startFakeCloudflare();
   const vars = {
