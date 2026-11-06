@@ -293,7 +293,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'start_change',
     title: 'Start a change',
     description:
-      'Make a change to one of the client’s hosted sites yourself. You are their own assistant on their own subscription, so your work costs nothing on malipetek: no AI cost, no approval to wait for. You may change anything in the site. This opens a request of its own, so there is a record of who changed what. Then: workspace_files and workspace_read to read the site, submit_change with the files, preview_build, and when the preview has it, ask the client whether to send it for review (finish_change).',
+      'Make a change to one of the client’s hosted sites yourself. You are a builder on this project, with the same footing as Ali’s agents: you read the source, change it, build the preview and keep iterating with the client. This costs nothing on malipetek: no AI cost, no approval to wait for, and you may change anything in the site. It opens a request of its own, so there is a record of who changed what. Then: project_context and workspace_files to read the site, submit_change with the files, preview_build, and when the preview has it, show the link and ask what to change next.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -310,7 +310,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'finish_change',
     title: 'Finish a change',
     description:
-      `Close a change you made with start_change, after its preview is built. Ask the client first: review true sends it to Ali, who reads it before it goes live and emails them when he is done; review false keeps it as it is, closed, with nothing to bill. ${reviewEstimate()}`,
+      `Close a change you made with start_change, after its preview is built, once the client is happy with it. Two ways to go live, their choice. review true sends it to Ali for review first: he reads it before it goes live and emails them when he is done. ${reviewEstimate()} review false keeps it as it is, closed, with nothing to bill; they can publish it themselves later with site_publish. Confirm before you call it.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -326,7 +326,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'project_context',
     title: 'Request context',
     description:
-      'Everything about one request you are working on (from start_change, or one Ali approved): the project brief, the whole conversation, the site’s state and how it builds. Read this first.',
+      'Everything about one request you are working on (from start_change, or one Ali approved): the project brief, the whole conversation, the site’s state and how it builds. Read this first, and start from the preview the project already has.',
     inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
     readOnly: true,
   },
@@ -353,7 +353,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'submit_change',
     title: 'Send a change',
     description:
-      'Send the files you changed, whole contents, at most 40 files and 2 MB, for a request from start_change (or one Ali approved). They land on the request’s own branch and the preview, never production, and are recorded with your name and the file list. Then call preview_build.',
+      'Send the files you changed, whole contents, at most 40 files and 2 MB, for a request from start_change (or one Ali approved). They land on the request’s own branch and the preview, never production, and are recorded with your name and the file list. Then call preview_build, show the client the link, and ask what to change next.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -379,7 +379,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'preview_build',
     title: 'Build the preview',
     description:
-      'Apply the change you sent with submit_change and rebuild the preview site. A machine picks it up, usually within a minute or two; portal_request then shows the preview link in the thread. Send the change first.',
+      'Apply the change you sent with submit_change and rebuild the preview site. A machine picks it up, usually within a minute or two; portal_request then shows the preview link in the thread. Send the change first, then show the link and keep going with the client.',
     inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
     readOnly: false,
   },
@@ -401,7 +401,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'site_publish',
     title: 'Publish the site',
     description:
-      'Take the preview live. The client may publish their own site, and the responsibility is theirs: every publish is recorded with who did it and through which app, Ali is emailed, and any change you made that they kept without review goes live unreviewed. Say that plainly and confirm with the client before calling it. The result lists those unreviewed changes.',
+      'Take the preview live, when the client is happy with it. The client may publish their own site, and the responsibility is theirs: every publish is recorded with who did it and through which app, Ali is emailed, and any change you made that they kept without review goes live unreviewed. Say that plainly and confirm with the client before calling it. The result lists those unreviewed changes. The other way to go live is Ali’s review first (finish_change with review true).',
     inputSchema: { type: 'object', properties: { project_id: { type: 'string' } }, required: ['project_id'], additionalProperties: false },
     readOnly: false,
   },
@@ -676,7 +676,7 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
         request_id: out?.id,
         status: 'In progress',
         cost: 'None on malipetek: you are doing the work on the client’s own subscription.',
-        next: 'Read the site with workspace_files and workspace_read, send the files with submit_change, then preview_build. When portal_request shows the preview link, show it to the client and ask whether to send the change for review (finish_change).',
+        next: 'Read the site with project_context, workspace_files and workspace_read, send the files with submit_change, then preview_build. When portal_request shows the preview link, show it to the client, ask what to change next, and keep going until they are happy. Then finish_change: Ali reviews it first, or they publish it themselves with site_publish.',
         review: reviewEstimate(),
       };
     }

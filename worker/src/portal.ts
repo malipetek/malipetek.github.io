@@ -31,7 +31,7 @@
  * lives in D1, same for magic-link tokens.
  */
 import { Hono, type Context } from 'hono';
-import { ATTENTION_KEYS, DEFAULT_ATTENTION, money, priceLine, priceOf } from '../../src/lib/pricing.js';
+import { ATTENTION_KEYS, billOf, DEFAULT_ATTENTION, money, priceLine, priceOf } from '../../src/lib/pricing.js';
 import { claimTicketById, finishRun, normalizeReport, openRuns, recentRuns, sessionKey, sharedLine, ticketRuns } from './runs.ts';
 import { finishContentCycle } from './content.ts';
 import { bridgeMessage, bridgeTitle, forAli, forClientMail, threadFor, translateText, type Bridged } from './translate.ts';
@@ -41,6 +41,7 @@ import { readSteps } from './steps.ts';
 import { healthMail, healthView, markHealthAlerted, runHealthChecks } from './health.ts';
 import { latestReview, reviewLine, reviewRun } from './review.ts';
 import { maybeAutoApprove } from './approve.ts';
+import { completeFirstPreview } from './firstPreview.ts';
 import { screenshotResponse, screenshotsFor, verifyShotToken } from './screenshots.ts';
 import {
   CAPABILITY_CATALOG,
@@ -549,28 +550,46 @@ export interface Usage {
   billedCents: number;
   openCents: number;
   aiCents: number;
+  /** AI cost we carried ourselves: first previews, which the client is not charged for. */
+  ourCents: number;
   tickets: number;
 }
 
-type UsageRow = { user_id: string; status: string; human_seconds: number; ai_micro_usd: number; price_cents: number | null };
+type UsageRow = {
+  user_id: string;
+  status: string;
+  human_seconds: number;
+  ai_micro_usd: number;
+  price_cents: number | null;
+  first_preview: number;
+};
 
 function addUsage(usage: Usage, row: UsageRow): Usage {
   if (row.status === 'declined') return usage;
+  // A first preview is ours: it is on the client's account but not on their bill.
+  if (row.first_preview === 1) {
+    return {
+      ...usage,
+      ourCents: usage.ourCents + priceOf(meter(row)).aiCents,
+      tickets: usage.tickets + 1,
+    };
+  }
   const p = priceOf(meter(row));
   return {
     billedCents: usage.billedCents + (row.status === 'done' ? (row.price_cents ?? p.totalCents) : 0),
     openCents: usage.openCents + (row.status === 'done' ? 0 : p.totalCents),
     aiCents: usage.aiCents + p.aiCents,
+    ourCents: usage.ourCents,
     tickets: usage.tickets + 1,
   };
 }
 
-const NO_USAGE: Usage = { billedCents: 0, openCents: 0, aiCents: 0, tickets: 0 };
+const NO_USAGE: Usage = { billedCents: 0, openCents: 0, aiCents: 0, ourCents: 0, tickets: 0 };
 
 /** Usage per user id; one query for every account, or just one. */
 async function usageByUser(env: Env, userId?: string): Promise<Map<string, Usage>> {
   const { results } = await env.DB.prepare(
-    `SELECT user_id, status, human_seconds, ai_micro_usd, price_cents FROM tickets WHERE kind = 'client'${userId ? ' AND user_id = ?' : ''}`,
+    `SELECT user_id, status, human_seconds, ai_micro_usd, price_cents, first_preview FROM tickets WHERE kind = 'client'${userId ? ' AND user_id = ?' : ''}`,
   )
     .bind(...(userId ? [userId] : []))
     .all<UsageRow>();
@@ -612,7 +631,8 @@ export const WAITING_SQL =
 const TICKET_COLUMNS = `t.id, t.title, t.status, t.created_at, t.updated_at, t.client_waiting_since,
   t.project_id, t.site_id, p.name AS project_name, p.slug AS project_slug,
   t.attention, t.human_seconds, t.ai_micro_usd, t.budget_cents, t.price_cents,
-  t.kind, t.source, t.priority, t.requires, t.executor, t.worked_by, t.title_en`;
+  t.kind, t.source, t.priority, t.requires, t.executor, t.worked_by, t.title_en,
+  t.first_preview, t.first_preview_done_at`;
 
 /* —— pricing (src/lib/pricing.js): measured time × rate + AI at cost —— */
 
@@ -767,11 +787,13 @@ portal.post('/auth/verify', async (c) => {
   const role = email === (env.ADMIN_EMAIL || '').toLowerCase() ? 'admin' : 'client';
   // A new client starts in their browser's language; they can change it in the portal.
   const locale = role === 'client' ? fromAcceptLanguage(c.req.header('Accept-Language')) : 'en-US';
+  // A magic link reached this address, so the account is verified from here on.
+  // Only a verified account gets the free first preview.
   await env.DB.prepare(
-    `INSERT INTO users (id, email, role, locale, created_at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(email) DO UPDATE SET role = excluded.role`,
+    `INSERT INTO users (id, email, role, locale, created_at, verified_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(email) DO UPDATE SET role = excluded.role, verified_at = COALESCE(users.verified_at, excluded.verified_at)`,
   )
-    .bind(crypto.randomUUID(), email, role, locale, now())
+    .bind(crypto.randomUUID(), email, role, locale, now(), now())
     .run();
   const user = await env.DB.prepare('SELECT id, email, name, role, locale, translation FROM users WHERE email = ?')
     .bind(email)
@@ -2389,13 +2411,16 @@ portal.patch('/admin/tickets/:id', async (c) => {
     }
   }
   // Done freezes the bill at what the meter reads now; reopening unfreezes it.
+  // A first preview freezes at zero: it is ours, whatever the meter says.
   const finalMeter = { humanSeconds: humanSeconds ?? ticket.human_seconds, aiMicroUsd: ticket.ai_micro_usd };
-  const bill = statusChanged && status === 'done' ? priceLine(finalMeter) : undefined;
+  const firstPreview = ticket.first_preview === 1;
+  const finalBill = billOf({ ...finalMeter, firstPreview });
+  const bill = statusChanged && status === 'done' && !firstPreview ? priceLine(finalMeter) : undefined;
   if (statusChanged) {
     statements.push(
       // The client is mailed about it, so it answers them too.
       env.DB.prepare('UPDATE tickets SET status = ?, price_cents = ?, updated_at = ?, client_waiting_since = NULL WHERE id = ?')
-        .bind(status, status === 'done' ? priceOf(finalMeter).totalCents : null, t, ticket.id),
+        .bind(status, status === 'done' ? finalBill.totalCents : null, t, ticket.id),
       env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, created_at) VALUES (?, 'system', ?, ?)`)
         .bind(ticket.id, `Status changed to “${STATUS_LABEL[status]}”.${bill ? ` Total: ${bill}.` : ''}`, t),
     );
@@ -2496,6 +2521,7 @@ portal.post('/admin/tickets/:id/run-result', async (c) => {
   // fail the report of a run that already closed.
   if (!done.late) await finishContentCycle(c.env, id, report.summary, report.ok).catch(() => {});
 
+  if (!done.late) c.executionCtx.waitUntil(completeFirstPreview(c.env, id));
   c.executionCtx.waitUntil(notifyRunFinished(c.env, id, report, done));
   return reply(c, { ok: true, costMicroUsd: done.costMicroUsd, review: 'pending' });
 });
@@ -2707,20 +2733,29 @@ portal.get('/admin/clients', async (c) => {
   const [{ results }, usage] = await Promise.all([
     c.env.DB.prepare(
       `SELECT u.id, u.email, u.name, u.role, u.handoff, u.locale, u.translation, u.created_at,
+              u.verified_at, u.first_preview_at, u.first_preview_limit_usd,
               (SELECT group_concat(project_id) FROM user_projects WHERE user_id = u.id) AS project_ids,
               (SELECT count(*) FROM tickets WHERE user_id = u.id) AS ticket_count
          FROM users u ORDER BY u.created_at DESC`,
     ).all<Record<string, unknown> & { id: string; project_ids: string | null }>(),
     usageByUser(c.env),
   ]);
-  const clients = results.map(({ project_ids, ...rest }) => ({
+  const clients = results.map(({ project_ids, first_preview_limit_usd, ...rest }) => ({
     ...rest,
     projectIds: project_ids ? project_ids.split(',') : [],
+    // Dollars, like the setting; null means the account follows the setting.
+    firstPreviewLimitUsd: typeof first_preview_limit_usd === 'number' ? first_preview_limit_usd : null,
     usage: usage.get(rest.id) ?? NO_USAGE,
   }));
   // Everything owed across all clients, for the top of the Directory.
   const total = [...usage.values()].reduce(
-    (a, u) => ({ billedCents: a.billedCents + u.billedCents, openCents: a.openCents + u.openCents, aiCents: a.aiCents + u.aiCents, tickets: a.tickets + u.tickets }),
+    (a, u) => ({
+      billedCents: a.billedCents + u.billedCents,
+      openCents: a.openCents + u.openCents,
+      aiCents: a.aiCents + u.aiCents,
+      ourCents: a.ourCents + u.ourCents,
+      tickets: a.tickets + u.tickets,
+    }),
     NO_USAGE,
   );
   return reply(c, { clients, total });
@@ -3135,22 +3170,44 @@ portal.post('/admin/projects/:id/site', async (c) => {
 
 /** How a client's finished work reaches them: a preview link, or a PR in their repo. */
 portal.patch('/admin/clients/:userId', async (c) => {
-  const body = await readJson<{ handoff?: unknown; locale?: unknown; translation?: unknown }>(c);
+  const body = await readJson<{
+    handoff?: unknown;
+    locale?: unknown;
+    translation?: unknown;
+    firstPreviewLimitUsd?: unknown;
+    grantFirstPreview?: unknown;
+  }>(c);
   if (body?.handoff !== undefined && body.handoff !== 'preview' && body.handoff !== 'pull_request') {
     return reply(c, { error: 'bad_handoff' }, 400);
   }
   const language = cleanLanguage(body);
   if ('error' in language) return reply(c, { error: language.error }, 400);
-  const sets: [string, string][] = [];
+  const sets: [string, unknown][] = [];
   if (body?.handoff !== undefined) sets.push(['handoff', body.handoff as string]);
   if (language.locale) sets.push(['locale', language.locale]);
   if (language.translation) sets.push(['translation', language.translation]);
+  // The first preview's limit for this client, in dollars: null follows the
+  // setting, 0 turns the feature off for them.
+  if (body?.firstPreviewLimitUsd !== undefined) {
+    const usd = body.firstPreviewLimitUsd;
+    if (usd !== null && (typeof usd !== 'number' || !Number.isFinite(usd) || usd < 0 || usd > 1000)) {
+      return reply(c, { error: 'bad_first_preview_limit' }, 400);
+    }
+    sets.push(['first_preview_limit_usd', usd === null ? null : Math.round(usd * 100) / 100]);
+  }
+  // Re-grant the account's one first preview.
+  if (body?.grantFirstPreview === true) sets.push(['first_preview_at', null]);
   if (!sets.length) return reply(c, { error: 'nothing_to_change' }, 400);
   const res = await c.env.DB.prepare(`UPDATE users SET ${sets.map(([k]) => `${k} = ?`).join(', ')} WHERE id = ? AND role = 'client'`)
     .bind(...sets.map(([, v]) => v), c.req.param('userId'))
     .run();
   if (!res.meta.changes) return reply(c, { error: 'not_found' }, 404);
-  return reply(c, { ok: true, ...(body?.handoff !== undefined ? { handoff: body.handoff } : {}), ...language });
+  return reply(c, {
+    ok: true,
+    ...(body?.handoff !== undefined ? { handoff: body.handoff } : {}),
+    ...(body?.grantFirstPreview === true ? { firstPreviewGranted: true } : {}),
+    ...language,
+  });
 });
 
 portal.put('/admin/clients/:userId/projects/:projectId', async (c) => {

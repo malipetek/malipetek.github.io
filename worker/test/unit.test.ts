@@ -8,6 +8,9 @@ import { test } from 'node:test';
 import PostalMime from 'postal-mime';
 import { verifySender } from '../src/mailauth.ts';
 import { budgetLeft, cleanExecutorPin, cleanNodeReport, CLIENT_EXECUTOR, EXECUTOR_CATALOG } from '../src/queue.ts';
+import { firstPreviewDecision, limitCentsFor } from '../src/firstPreview.ts';
+import { PORTAL_INSTRUCTIONS, toolsFor } from '../src/kb.ts';
+import { billOf } from '../../src/lib/pricing.js';
 import { cleanVerify, normalizeReport, sharedLine } from '../src/runs.ts';
 import { setupFor, slugify, type SetupInput } from '../src/setup.ts';
 import { cleanDeployManifest, cleanSiteSlug, siteView, type SiteRow } from '../src/sites.ts';
@@ -900,4 +903,69 @@ test('marketing: outreach copy keeps the house rules (no em dashes)', () => {
   for (const steps of Object.values(SEQUENCES)) {
     for (const step of steps) assert.ok(!/—/.test(step.subject + step.body + (step.plain ?? '')), step.kind);
   }
+});
+
+/* —— the first preview: a new client's first request starts by itself —— */
+
+const FIRST = {
+  projectKind: 'new',
+  projectRequests: 0,
+  accountUsed: false,
+  verified: true,
+  hasSite: true,
+  limitCents: 200,
+};
+
+test('first preview: the first request of a new project starts with the account’s limit', () => {
+  assert.equal(firstPreviewDecision(FIRST), 200);
+  // The setting's dollars become the ticket's cents.
+  assert.equal(limitCentsFor(null, 2), 200);
+  assert.equal(limitCentsFor(5.5, 2), 550);
+});
+
+test('first preview: a second project, a used account, an existing codebase, no site or no sign-in get none', () => {
+  assert.equal(firstPreviewDecision({ ...FIRST, projectRequests: 1 }), null, 'a second request on the project');
+  assert.equal(firstPreviewDecision({ ...FIRST, accountUsed: true }), null, 'the account used its one');
+  assert.equal(firstPreviewDecision({ ...FIRST, projectKind: 'existing' }), null, 'a codebase the client connected');
+  assert.equal(firstPreviewDecision({ ...FIRST, hasSite: false }), null, 'nothing to preview on');
+  assert.equal(firstPreviewDecision({ ...FIRST, verified: false }), null, 'an unverified sign-in');
+});
+
+test('first preview: a limit of 0 turns it off, for the setting and for one client', () => {
+  assert.equal(firstPreviewDecision({ ...FIRST, limitCents: 0 }), null);
+  assert.equal(limitCentsFor(0, 2), 0);
+  assert.equal(limitCentsFor(null, 0), 0);
+});
+
+test('first preview: the run’s budget is the limit, and Ali’s time on it is not part of it', () => {
+  // An hour of Ali's time would eat a $2 budget on a normal ticket; on a first
+  // preview the limit is on the AI run, so all of it is left.
+  const preview = { budget_cents: 200, human_seconds: 3600, ai_micro_usd: 0, first_preview: 1 };
+  assert.equal(budgetLeft(preview), 200);
+  assert.equal(budgetLeft({ ...preview, first_preview: 0 }), 200 - 10000);
+  // What the run spends comes off it, to the cent.
+  assert.equal(budgetLeft({ ...preview, ai_micro_usd: 1_200_000 }), 200 - 120);
+});
+
+test('first preview: the client is not charged for it, and the run cost is still recorded', () => {
+  const ours = billOf({ humanSeconds: 3600, aiMicroUsd: 2_000_000, firstPreview: true });
+  assert.deepEqual(ours, { timeCents: 0, aiCents: 0, totalCents: 0 });
+  // The same meter on an ordinary request is the usual bill.
+  const normal = billOf({ humanSeconds: 3600, aiMicroUsd: 2_000_000 });
+  assert.equal(normal.timeCents, 10000);
+  assert.equal(normal.aiCents, 200);
+  assert.equal(normal.totalCents, 10200);
+});
+
+test('mcp: /mcp advertises the assistant as a builder on the project', () => {
+  const tools = toolsFor('portal', null) as { name: string; description?: string }[];
+  const start = tools.find((tool) => tool.name === 'start_change');
+  assert.ok(start, 'start_change is advertised');
+  assert.match(start.description ?? '', /builder on this project/);
+  assert.match(PORTAL_INSTRUCTIONS, /builder on this project/);
+  assert.match(PORTAL_INSTRUCTIONS, /We can keep working on it together until/);
+  assert.match(PORTAL_INSTRUCTIONS, /preview every step live/);
+  // The safety facts stay true.
+  assert.match(PORTAL_INSTRUCTIONS, /never straight to production/);
+  assert.match(PORTAL_INSTRUCTIONS, /every change, every review choice and every publish/);
 });

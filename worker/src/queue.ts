@@ -14,7 +14,7 @@
  * when an item has waited too long for a node that is not coming.
  */
 import { now, type Env } from './shared.ts';
-import { HOURLY_USD, money, priceOf } from '../../src/lib/pricing.js';
+import { aiCents, billOf, HOURLY_USD, money } from '../../src/lib/pricing.js';
 import { priorRuns, type PriorRun } from './runs.ts';
 import { withFiles, type FileMeta } from './files.ts';
 import { portalLinks } from './links.ts';
@@ -22,13 +22,28 @@ import { portalLinks } from './links.ts';
 /**
  * What a ticket has cost so far, in cents, as SQL over `t` — the same rounding
  * as `priceOf` (time and AI each rounded up to the cent). Bind HOURLY_USD as ?6.
+ *
+ * A first preview's budget caps the AI run only: its limit is `first_preview`,
+ * and Ali's time on it is not billed, so the time part is left out.
  */
-const SPENT_CENTS_SQL = `((t.human_seconds * ?6 * 100 + 3599) / 3600 + (t.ai_micro_usd + 9999) / 10000)`;
+const SPENT_CENTS_SQL = `(CASE WHEN t.first_preview = 1
+  THEN (t.ai_micro_usd + 9999) / 10000
+  ELSE (t.human_seconds * ?6 * 100 + 3599) / 3600 + (t.ai_micro_usd + 9999) / 10000 END)`;
 
 /** The budget left, in cents, or null when the client set none. */
-export function budgetLeft(item: { budget_cents: number | null; human_seconds: number; ai_micro_usd: number }): number | null {
+export function budgetLeft(item: {
+  budget_cents: number | null;
+  human_seconds: number;
+  ai_micro_usd: number;
+  first_preview?: number | boolean;
+}): number | null {
   if (item.budget_cents === null) return null;
-  return item.budget_cents - priceOf({ humanSeconds: item.human_seconds, aiMicroUsd: item.ai_micro_usd }).totalCents;
+  // A first preview's limit caps the AI run only: Ali's time is not billed, so
+  // it is not charged against the limit, but the AI spend still comes off it.
+  const spent = item.first_preview
+    ? aiCents(item.ai_micro_usd)
+    : billOf({ humanSeconds: item.human_seconds, aiMicroUsd: item.ai_micro_usd }).totalCents;
+  return item.budget_cents - spent;
 }
 
 /** A node that has not heartbeated for this long is offline. Nodes beat every 30s. */
@@ -67,6 +82,13 @@ export const SETTING_DEFAULTS = {
    * and which changes went live unreviewed (site_publishes). Off = only Ali.
    */
   clientPublish: true,
+  /**
+   * The first preview: the first request of a new project starts by itself,
+   * free to the client, with its AI run capped at this many dollars. 0 turns
+   * the whole thing off. A client's own limit (users.first_preview_limit_usd)
+   * wins over this one.
+   */
+  first_preview_limit_usd: 2,
 };
 export type Settings = typeof SETTING_DEFAULTS;
 
@@ -82,6 +104,8 @@ const SETTING_RULES: { [K in keyof Settings]: (v: unknown) => Settings[K] | unde
       ? v.trim().toLowerCase()
       : undefined,
   clientPublish: (v) => (typeof v === 'boolean' ? v : undefined),
+  first_preview_limit_usd: (v) =>
+    typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1000 ? Math.round(v * 100) / 100 : undefined,
 };
 
 export async function getSettings(env: Env): Promise<Settings> {
@@ -513,6 +537,10 @@ export interface NodeClaim {
     priority: number;
     attention: string;
     budget_cents: number | null;
+    /** This run builds the account's free first preview: its budget caps the AI, and nothing is billed. */
+    first_preview: number;
+    /** What is left of the budget in dollars, for the prompt: the agent is told its ceiling. */
+    budget_usd_left?: number | null;
     slug: string;
     project_name: string;
   };
@@ -565,11 +593,19 @@ export async function claimForNode(env: Env, nodeId: string): Promise<{ claim: N
            AND (t.executor IS NULL OR t.executor IN (SELECT value FROM json_each(?4)))
            AND (t.budget_cents IS NULL OR ${SPENT_CENTS_SQL} < t.budget_cents)
          ORDER BY t.priority DESC, t.updated_at LIMIT 1)
-      RETURNING id, kind, executor, budget_cents, human_seconds, ai_micro_usd`,
+      RETURNING id, kind, executor, budget_cents, human_seconds, ai_micro_usd, first_preview`,
   )
     // ?5 is unused; SPENT_CENTS_SQL reads the rate as ?6.
     .bind(t, node.slugs, node.capabilities, node.executors, null, HOURLY_USD)
-    .first<{ id: number; kind: string; executor: string | null; budget_cents: number | null; human_seconds: number; ai_micro_usd: number }>();
+    .first<{
+      id: number;
+      kind: string;
+      executor: string | null;
+      budget_cents: number | null;
+      human_seconds: number;
+      ai_micro_usd: number;
+      first_preview: number;
+    }>();
   if (!picked) return { claim: null, reason: 'nothing_eligible' };
 
   const executors = parseList(node.executors);
@@ -594,7 +630,8 @@ export async function claimForNode(env: Env, nodeId: string): Promise<{ claim: N
   const runId = (run.results?.[0] as { id?: number } | undefined)?.id ?? 0;
 
   const ticket = await env.DB.prepare(
-    `SELECT t.id, COALESCE(t.title_en, t.title) AS title, t.kind, t.source, t.priority, t.attention, t.budget_cents, p.slug, p.name AS project_name
+    `SELECT t.id, COALESCE(t.title_en, t.title) AS title, t.kind, t.source, t.priority, t.attention, t.budget_cents,
+            t.first_preview, p.slug, p.name AS project_name
        FROM tickets t JOIN projects p ON p.id = t.project_id WHERE t.id = ?`,
   )
     .bind(picked.id)
@@ -611,6 +648,7 @@ export async function claimForNode(env: Env, nodeId: string): Promise<{ claim: N
   const previousRuns = await priorRuns(env, picked.id, runId);
   if (!ticket) return { claim: null, reason: 'vanished' };
   const left = budgetLeft(picked);
+  ticket.budget_usd_left = left === null ? null : Math.max(0, left / 100);
   const site = await env.DB.prepare(
     `SELECT s.slug, s.host, s.preview_deploy, s.cloudflare_preview_url
        FROM sites s JOIN tickets t ON t.project_id = s.project_id
@@ -696,6 +734,7 @@ type QueueTicket = {
   budget_cents: number | null;
   human_seconds: number;
   ai_micro_usd: number;
+  first_preview: number;
 };
 
 /**
@@ -709,7 +748,7 @@ export async function queueView(env: Env) {
     nodesView(env),
     env.DB.prepare(
       `SELECT t.id, t.title, t.kind, t.source, t.priority, t.requires, t.executor, t.updated_at, p.slug, p.repo, p.repo_error, p.github_installation_id, u.email AS client_email,
-              t.budget_cents, t.human_seconds, t.ai_micro_usd
+              t.budget_cents, t.human_seconds, t.ai_micro_usd, t.first_preview
          FROM tickets t LEFT JOIN projects p ON p.id = t.project_id JOIN users u ON u.id = t.user_id
         WHERE t.status = 'approved' ORDER BY t.priority DESC, t.updated_at`,
     ).all<QueueTicket>(),
@@ -729,6 +768,7 @@ export async function queueView(env: Env) {
       slug: item.slug,
       clientEmail: item.client_email,
       budgetCents: item.budget_cents,
+      firstPreview: item.first_preview === 1,
       waitingSeconds: t - item.updated_at,
       eligible,
       reason,
@@ -753,7 +793,10 @@ function explainEligibility(env: Env, item: QueueTicket, requires: string[], nod
   if (left !== null && left <= 0) {
     return {
       eligible: [],
-      reason: `Budget spent (${money(item.budget_cents! - left)} of ${money(item.budget_cents!)}). Ask the client to raise it, or raise it yourself.`,
+      reason:
+        item.first_preview === 1
+          ? `First preview limit reached (${money(item.budget_cents!)} of AI). It is free to the client; raise the budget to let it run again.`
+          : `Budget spent (${money(item.budget_cents! - left)} of ${money(item.budget_cents!)}). Ask the client to raise it, or raise it yourself.`,
     };
   }
   if (nodes.length === 0) return { eligible: [], reason: 'No node has ever connected. Start one: fleet/install.sh.' };

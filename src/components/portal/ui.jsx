@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { STATUS_LABEL } from '../../lib/portal';
 import { STEPS } from '../../lib/offer.js';
-import { money, priceOf } from '../../lib/pricing.js';
+import { billOf, money } from '../../lib/pricing.js';
 import { useT } from './store.js';
 import { stepText } from './copy.js';
 
@@ -45,7 +45,13 @@ export function MiniTrack({ status }) {
 
 /** What a ticket costs as it stands: the frozen price once done, the meter before. */
 export function totalOf(ticket) {
-  return ticket.price_cents ?? priceOf({ humanSeconds: ticket.human_seconds, aiMicroUsd: ticket.ai_micro_usd }).totalCents;
+  if (ticket.price_cents !== null && ticket.price_cents !== undefined) return ticket.price_cents;
+  // A first preview is on Ali: it never adds to the client's bill.
+  return billOf({
+    humanSeconds: ticket.human_seconds,
+    aiMicroUsd: ticket.ai_micro_usd,
+    firstPreview: Boolean(ticket.first_preview),
+  }).totalCents;
 }
 
 /** Cost so far against the budget, as a bar. No budget reads as an open bar. */

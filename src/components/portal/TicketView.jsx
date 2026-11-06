@@ -113,7 +113,15 @@ export function TicketView({ id }) {
   const open = isOpen(ticket);
   const at = stepOf(ticket.status);
   const times = stepTimes(ticket, messages);
-  const [nowKey, nextKey] = NOW[ticket.status];
+  // A first preview says what it is, in place of the generic status lines.
+  const firstPreview = Boolean(ticket.first_preview);
+  const firstPreviewLimit = ticket.budget_cents !== null ? money(ticket.budget_cents) : null;
+  const [nowKey, nextKey] =
+    firstPreview && ['approved', 'in_progress'].includes(ticket.status)
+      ? ['ticket.firstPreview.building.title', 'ticket.firstPreview.building.next']
+      : firstPreview && ticket.status === 'review'
+        ? ['ticket.firstPreview.ready.title', 'ticket.firstPreview.ready.next']
+        : NOW[ticket.status];
   const mine = deploys?.find((d) => d.ticket_id === ticket.id);
   const where = !mine ? null : mine.id === site?.productionDeploy ? 'live' : mine.id === site?.previewDeploy ? 'preview' : 'older';
   // Where this page was reached from: the back button offers the way back
@@ -154,6 +162,7 @@ export function TicketView({ id }) {
           <span>{attentionName(t, ticket.attention)}</span>
           <span>{t('ticket.filed', { date: fmtDate(ticket.created_at) })}</span>
           {ticket.kind === 'intake' ? <span>{t('ticket.setupAssistant')}</span> : null}
+          {ticket.first_preview ? <span>{t('ticket.firstPreview.chip')}</span> : null}
           {ticket.worked_by === 'client_agent' && ticket.kind !== 'intake' ? <span>{t('ticket.builtByAssistant')}</span> : null}
         </div>
       </header>
@@ -176,7 +185,7 @@ export function TicketView({ id }) {
         <div className="cp-progress__now" role="status">
           <div>
             <strong>{t(nowKey)}</strong>
-            <p>{t(nextKey)}</p>
+            <p>{t(nextKey, firstPreview && firstPreviewLimit ? { limit: firstPreviewLimit } : undefined)}</p>
           </div>
           {site && ticket.status === 'review' ? (
             <Button kind="primary" href={site.feedbackUrl || site.previewUrl} target="_blank" rel="noopener">
@@ -200,13 +209,21 @@ export function TicketView({ id }) {
         <aside className="cp-ticket__side">
           <section className="cp-card">
             <h3 className="cp-label">{ticket.price_cents !== null ? t('ticket.cost.total') : t('ticket.cost.soFar')}</h3>
-            <Cost ticket={ticket} />
-            <Gauge ticket={ticket} />
-            {open ? (
-              <Button size="sm" onClick={() => setBudgetOpen(true)}>
-                {ticket.budget_cents === null ? t('ticket.budget.set') : t('ticket.budget.change')}
-              </Button>
-            ) : null}
+            {firstPreview ? (
+              <p className="cp-side__line">
+                {t('ticket.firstPreview.cost', { limit: firstPreviewLimit ?? money(0) })}
+              </p>
+            ) : (
+              <>
+                <Cost ticket={ticket} />
+                <Gauge ticket={ticket} />
+                {open ? (
+                  <Button size="sm" onClick={() => setBudgetOpen(true)}>
+                    {ticket.budget_cents === null ? t('ticket.budget.set') : t('ticket.budget.change')}
+                  </Button>
+                ) : null}
+              </>
+            )}
           </section>
 
           {site ? (
@@ -373,6 +390,11 @@ export function systemLine(body, t) {
   const filed = /^Filed from the preview of (.+?)(?: — (\S+?)(?: \(\d+x\d+\))?)?\.$/.exec(body);
   if (filed) return filed[2] ? t('thread.previewFiled', { site: filed[1], page: filed[2] }) : t('thread.previewFiledNoPage', { site: filed[1] });
   if (body === 'The client withdrew this request.') return t('thread.withdrew');
+  const started = /^First preview started: this one is free, with up to (\$[\d.,]+) of AI, and it stops at that limit\. Nothing goes live until you decide\.$/.exec(body);
+  if (started) return t('thread.firstPreviewStarted', { limit: started[1] });
+  const ready = /^First preview ready: (\S+?)\. This is a rough first version\. To keep going, reply here and Ali approves the next request, billed as usual, or connect ChatGPT or Claude at (\S+?) and keep building on this preview yourself, which costs Ali nothing\.$/.exec(body);
+  if (ready) return t('thread.firstPreviewReady', { url: ready[1], agents: ready[2] });
+  if (body === 'The first preview stopped before it reached the preview. Ali sees why, and he writes here.') return t('thread.firstPreviewStopped');
   const change = /^Your agent sent a change for this request \((\d+) file\(s\)\)\.$/.exec(body);
   if (change) return t('thread.agentChange', { n: Number(change[1]) });
   return body;

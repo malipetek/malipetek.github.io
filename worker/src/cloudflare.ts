@@ -7,6 +7,7 @@ import { runAndNotifyHealth } from './portal.ts';
 import { runMarketing } from './marketing.ts';
 import { ensureContentCycle } from './content.ts';
 import { reapExpired } from './queue.ts';
+import { sweepFirstPreviews } from './firstPreview.ts';
 import type { Env } from './shared.ts';
 import { advanceSites, pruneDeploys } from './sites.ts';
 
@@ -25,6 +26,8 @@ async function watchSites(env: Env) {
 
 async function watchQueue(env: Env) {
   await reapExpired(env);
+  // A first preview whose run ended (or whose limit ran out) still gets told.
+  await sweepFirstPreviews(env);
 }
 
 export default {

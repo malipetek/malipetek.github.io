@@ -62,6 +62,16 @@ export function priceOf({ humanSeconds = 0, aiMicroUsd = 0 }) {
   return { timeCents: time, aiCents: ai, totalCents: time + ai };
 }
 
+/**
+ * What the client is charged for a ticket. A first preview is on us: Ali's
+ * time is not billed and the AI run is carried by malipetek, so the client's
+ * bill is zero however much the meter shows. Everything else is priceOf.
+ */
+export function billOf({ humanSeconds = 0, aiMicroUsd = 0, firstPreview = false } = {}) {
+  if (firstPreview) return { timeCents: 0, aiCents: 0, totalCents: 0 };
+  return priceOf({ humanSeconds, aiMicroUsd });
+}
+
 /** "$1.67", "$0.04", "$120.00". */
 export function money(cents) {
   return `$${(cents / 100).toFixed(2)}`;

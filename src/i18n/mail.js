@@ -14,6 +14,8 @@ export default {
     "mail.confirm.subject": "Got it: {title}",
     "mail.confirm.body": "Your request is in. Ali reads every one himself before anything happens, and you'll get an email here when he replies or the status changes.",
     "mail.confirm.footer": "Reply to this email to add details, or open the thread: {url}",
+    "mail.firstPreview.subject": "Your first preview is ready: {title}",
+    "mail.firstPreview.body": "Your first preview is ready: {url}\n\nThis is a rough first version, made to show you the shape of it.\n\nTo keep going, there are two ways:\n\n1. Reply to this email and Ali approves your next request, billed as usual.\n2. Connect the ChatGPT or Claude you already pay for at {agents}. It works on this same preview, and that costs Ali nothing. He reviews when you want, and before anything goes live if you choose.",
     "mail.translatedNote": "Machine-translated from English. The original is in the thread.",
     "mail.signin.subject": "Your sign-in link for malipetek.dev",
     "mail.signin.body": "Here's your sign-in link for Ali's client portal:\n\n{link}\n\nIt works once and expires in 15 minutes. If you didn't ask for it, ignore this email.",

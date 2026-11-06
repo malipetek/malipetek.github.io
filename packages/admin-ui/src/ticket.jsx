@@ -11,12 +11,12 @@ import {
   STATUSES,
   STATUS_LABEL,
   ago,
+  billOf,
   clock,
   errorText,
   listOf,
   money,
   predict,
-  priceOf,
   usd,
   when,
 } from './format.js';
@@ -836,7 +836,7 @@ export function TicketDetails({ ticket, runs, land, meter, reload, page = false 
   const caps = data.catalog?.capabilities ?? [];
   const queued = data.queue.find((q) => q.id === ticket.id);
   const where = predict(data.nodes, { slug: ticket.project_slug, requires, executor: ticket.executor, kind: ticket.kind });
-  const price = priceOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0 });
+  const price = billOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0, firstPreview: Boolean(ticket.first_preview) });
   return (
     <aside className={cx('aw-details', page && 'aw-details--page')} aria-label="Details">
       <TicketActions ticket={ticket} runs={runs} land={land} reload={reload} />
@@ -919,8 +919,9 @@ export function TicketDetails({ ticket, runs, land, meter, reload, page = false 
           <strong>{usd(ticket.ai_micro_usd ?? 0)}</strong>
         </div>
         <div>
-          <span className="aw-field__label">{ticket.price_cents != null ? 'Billed' : 'So far'}</span>
-          <strong>{money(ticket.price_cents ?? price.totalCents)}</strong>
+          <span className="aw-field__label">{ticket.first_preview ? 'First preview' : ticket.price_cents != null ? 'Billed' : 'So far'}</span>
+          <strong>{ticket.first_preview ? 'on us' : money(ticket.price_cents ?? price.totalCents)}</strong>
+          {ticket.first_preview ? <small className="aw-muted">client billed {money(0)}</small> : null}
         </div>
         <button type="button" className="aw-link" onClick={() => setFixing(true)}>
           Correct time…

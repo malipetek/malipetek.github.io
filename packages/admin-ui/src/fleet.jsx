@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { LOCALES } from '../../../src/lib/locales.js';
 import { useAdmin } from './store.js';
-import { EXECUTORS, PRIORITIES, ago, money, priceOf, priorityName, span, usd } from './format.js';
+import { EXECUTORS, PRIORITIES, ago, chargeOf, money, priorityName, span, usd } from './format.js';
 import { Button, Chips, Dot, Field, Modal, Segmented, StatusPill, Tag, cx } from './ui.jsx';
 import { SitePanel } from './ticket.jsx';
 
@@ -266,7 +266,14 @@ export function FleetView() {
 
 const usageLine = (u) =>
   u
-    ? [u.billedCents && `${money(u.billedCents)} billed`, u.openCents && `${money(u.openCents)} open`, u.aiCents && `AI ${money(u.aiCents)}`].filter(Boolean).join(' · ') || 'nothing owed'
+    ? [
+        u.billedCents && `${money(u.billedCents)} billed`,
+        u.openCents && `${money(u.openCents)} open`,
+        u.aiCents && `AI ${money(u.aiCents)}`,
+        u.ourCents && `first previews ${money(u.ourCents)} on us`,
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'nothing owed'
     : '';
 
 function RepoModal({ project, onClose }) {
@@ -291,6 +298,53 @@ function RepoModal({ project, onClose }) {
         <input className="aw-mono" value={repo} maxLength={300} placeholder="https://github.com/owner/repo" onChange={(e) => setRepo(e.target.value)} />
       </Field>
     </Modal>
+  );
+}
+
+/**
+ * The account's one free first preview: its limit for this client, and the
+ * grant again when it has been used.
+ */
+function FirstPreviewControl({ c }) {
+  const { api, act, data } = useAdmin();
+  const globalLimit = data.settings?.first_preview_limit_usd;
+  const [usd, setUsd] = useState(c.firstPreviewLimitUsd ?? '');
+  useEffect(() => setUsd(c.firstPreviewLimitUsd ?? ''), [c.id, c.firstPreviewLimitUsd]);
+  const save = () => {
+    const raw = String(usd).trim();
+    const value = raw === '' ? null : Number(raw);
+    if (value !== null && (!Number.isFinite(value) || value < 0 || value > 1000)) return;
+    if (value === (c.firstPreviewLimitUsd ?? null)) return;
+    void act(() => api('PATCH', `/admin/clients/${c.id}`, { firstPreviewLimitUsd: value }), 'First preview limit saved.');
+  };
+  return (
+    <Field
+      label="First preview limit (USD)"
+      hint={`Blank follows the setting (${globalLimit ?? 2}). 0 turns the first preview off for this client.`}
+    >
+      <div className="aw-inline">
+        <input
+          inputMode="decimal"
+          value={usd}
+          placeholder={String(globalLimit ?? 2)}
+          aria-label="First preview limit in dollars"
+          onChange={(e) => setUsd(e.target.value)}
+          onBlur={save}
+        />
+        <span className="aw-muted">
+          {c.first_preview_at ? `used ${ago(c.first_preview_at)} ago` : 'not used yet'}
+        </span>
+        {c.first_preview_at ? (
+          <Button
+            size="sm"
+            title="Give this account its free first preview again"
+            onClick={() => void act(() => api('PATCH', `/admin/clients/${c.id}`, { grantFirstPreview: true }), 'First preview granted again.')}
+          >
+            Grant again
+          </Button>
+        ) : null}
+      </div>
+    </Field>
   );
 }
 
@@ -331,6 +385,7 @@ function ClientControls({ c }) {
           <option value="off">no translation</option>
         </select>
       </div>
+      {c.role !== 'admin' ? <FirstPreviewControl c={c} /> : null}
       <Chips value={c.projectIds} options={data.projects.map((p) => ({ value: p.id, label: p.name }))} onChange={(ids) => void toggle(ids)} />
     </>
   );
@@ -386,7 +441,7 @@ export function ClientView({ id }) {
                     <StatusPill status={t.status} />
                   </td>
                   <td>{t.project_name ?? '—'}</td>
-                  <td>{money(priceOf({ humanSeconds: t.human_seconds ?? 0, aiMicroUsd: t.ai_micro_usd ?? 0 }).totalCents)}</td>
+                  <td>{money(chargeOf(t).totalCents)}</td>
                   <td className="aw-muted">{ago(t.updated_at)} ago</td>
                 </tr>
               ))}
@@ -593,6 +648,16 @@ export function SettingsView() {
             </Field>
             <Field label="Clients may publish their site">
               <Segmented value={Boolean(draft.clientPublish)} options={[{ value: true, label: 'Yes' }, { value: false, label: 'No' }]} onChange={(v) => set('clientPublish', v)} />
+            </Field>
+            <Field
+              label="First preview limit (USD)"
+              hint="A new client's first request starts by itself, with its AI run capped at this many dollars. Free to the client. 0 turns it off."
+            >
+              <input
+                inputMode="decimal"
+                value={draft.first_preview_limit_usd ?? ''}
+                onChange={(e) => set('first_preview_limit_usd', e.target.value === '' ? 0 : Number(e.target.value))}
+              />
             </Field>
           </div>
           <div className="aw-inline">

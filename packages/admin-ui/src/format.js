@@ -1,7 +1,15 @@
 /* Labels, formatting and the routing rules the views share. */
-import { money, priceOf, clock, ATTENTION } from '../../../src/lib/pricing.js';
+import { billOf, money, priceOf, clock, ATTENTION } from '../../../src/lib/pricing.js';
 
-export { money, priceOf, clock, ATTENTION };
+export { billOf, money, priceOf, clock, ATTENTION };
+
+/** What the client is charged for a ticket. A first preview is on us, so this is zero for it. */
+export const chargeOf = (t) =>
+  billOf({
+    humanSeconds: t.human_seconds ?? 0,
+    aiMicroUsd: t.ai_micro_usd ?? 0,
+    firstPreview: Boolean(t.first_preview),
+  });
 
 export const STATUSES = ['new', 'approved', 'in_progress', 'review', 'done', 'declined'];
 export const STATUS_LABEL = {
