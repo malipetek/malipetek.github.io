@@ -175,3 +175,77 @@ test('the subagent service is resolved per call, not at construction', async () 
     endpoint.close();
   }
 });
+
+test('a delegation that outlives its deadline says so instead of hanging', async () => {
+  // It must not cancel: the work is real and may still finish. It must not block
+  // either — a caller held for an hour cannot tell that from a crash.
+  const endpoint = createDelegateEndpoint({
+    getSubagents: () => ({
+      async startActivation() {
+        return { childId: 'child-slow', result: new Promise(() => {}), dispose: () => {} };
+      },
+    }),
+    timeoutMs: 30,
+    progressEveryMs: 0,
+    log: () => {},
+  });
+  const url = await endpoint.listen();
+  const token = endpoint.tokenFor('s');
+  endpoint.bind('s', { id: 'agent-1' });
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'delegate', arguments: { task: 'long job' } } }),
+    });
+    const body = await response.text();
+    assert.match(body, /still running/);
+    assert.match(body, /child-slow/, 'names the child so it can be found later');
+    assert.match(body, /NOT cancelled/);
+  } finally {
+    endpoint.close();
+  }
+});
+
+test('a running delegation emits progress notifications while it works', async () => {
+  const endpoint = createDelegateEndpoint({
+    getSubagents: () => ({
+      async startActivation() {
+        return {
+          childId: 'child-1',
+          result: new Promise((resolve) => setTimeout(() => resolve({ text: 'finished' }), 60)),
+          dispose: () => {},
+        };
+      },
+    }),
+    timeoutMs: 5_000,
+    progressEveryMs: 10,
+    log: () => {},
+  });
+  const url = await endpoint.listen();
+  const token = endpoint.tokenFor('s');
+  endpoint.bind('s', { id: 'agent-1' });
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'delegate', arguments: { task: 'slow job' }, _meta: { progressToken: 'tok-1' } },
+      }),
+    });
+    const body = await response.text();
+    const lines = body.trim().split('\n').map((line) => JSON.parse(line));
+    const progress = lines.filter((line) => line.method === 'notifications/progress');
+    assert.ok(progress.length > 0, 'at least one progress notification');
+    assert.equal(progress[0].params.progressToken, 'tok-1', 'carries the caller token');
+    assert.match(progress[0].params.message, /still running/);
+    const last = lines[lines.length - 1];
+    assert.equal(last.id, 1, 'and the call still ends with its own answer');
+    assert.equal(last.result.content[0].text, 'finished');
+  } finally {
+    endpoint.close();
+  }
+});

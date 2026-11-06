@@ -75,8 +75,11 @@
         #   instructions - standing instructions sent once, before the session's
         #                 first turn (not repeated per turn).
         #   delegate    - let this agent hand work to harness workers: `true`,
-        #                 or { llmProvider, model } for the worker route, or
-        #                 { provider } to pick a subagent backend. The agent
+        #                 or { llmProvider, model } for the worker route,
+        #                 { provider } to pick a subagent backend,
+        #                 { progressEveryMs } for liveness while it runs, and
+        #                 { timeoutMs } before a call reports "still running"
+        #                 instead of blocking (default 1h, 0 = no deadline). The agent
         #                 gets ONE MCP tool, `delegate`, served over loopback
         #                 with a per-session token. It is delegation, not the
         #                 tool registry: a bridge that invoked tools directly

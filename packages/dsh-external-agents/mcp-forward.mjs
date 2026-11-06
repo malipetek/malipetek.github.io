@@ -34,8 +34,8 @@ async function relay(message) {
       },
       body: JSON.stringify(message),
     });
-    const body = await response.text();
     if (!response.ok) {
+      const body = await response.text();
       log(`endpoint ${response.status}: ${body.slice(0, 200)}`);
       if (message.id !== undefined) {
         process.stdout.write(`${JSON.stringify({
@@ -46,9 +46,45 @@ async function relay(message) {
       }
       return;
     }
-    // A notification has no reply; the endpoint still answers with `{}`.
-    if (message.id !== undefined && body.trim().length > 0) {
-      process.stdout.write(`${body.trim()}\n`);
+    if (response.body === null) return;
+
+    // The endpoint answers as a stream: progress notifications, then the result.
+    // Each line is forwarded as it arrives, so a long tool stops looking hung.
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let answered = false;
+
+    const forward = (line) => {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) return;
+      process.stdout.write(`${trimmed}\n`);
+      try {
+        if (JSON.parse(trimmed).id !== undefined) answered = true;
+      } catch {
+        // A partial line is passed on and the client's parser decides.
+      }
+    };
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline = buffer.indexOf('\n');
+      while (newline !== -1) {
+        forward(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf('\n');
+      }
+    }
+    forward(buffer);
+    if (!answered && message.id !== undefined) {
+      log('endpoint closed without answering');
+      process.stdout.write(`${JSON.stringify({
+        jsonrpc: '2.0',
+        id: message.id,
+        error: { code: -32603, message: 'the harness endpoint closed without answering' },
+      })}\n`);
     }
   } catch (error) {
     log(`relay failed: ${String(error?.message ?? error)}`);

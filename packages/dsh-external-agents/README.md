@@ -366,6 +366,13 @@ ctx.subagents.startActivation({
 })
 ```
 
+Two knobs keep a long delegation honest: `progressEveryMs` (default 30 000)
+makes it emit an MCP progress notification while it runs, and `timeoutMs`
+(default 3 600 000, `0` disables) turns a call that outlives its deadline into a
+result that says *"still running, child X, not cancelled"* rather than a silent
+wait. Neither cancels the work: a worker that has been going for an hour is more
+likely to be nearly done than hung.
+
 Three deliberate choices:
 
 - **One tool, not the registry.** Invoking a tool's `execute` directly skips

@@ -1891,6 +1891,8 @@ export function apply(ctx, config = {}) {
           delegateEndpoint = createDelegateEndpoint({
             getSubagents,
             provider: typeof delegate.provider === 'string' ? delegate.provider : 'spawn',
+            ...(Number.isFinite(delegate.timeoutMs) ? { timeoutMs: delegate.timeoutMs } : {}),
+            ...(Number.isFinite(delegate.progressEveryMs) ? { progressEveryMs: delegate.progressEveryMs } : {}),
             agentOptions: delegate.model === undefined
               ? undefined
               : {

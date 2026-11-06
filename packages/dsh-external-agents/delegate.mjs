@@ -70,6 +70,13 @@ export function resultText(result) {
  */
 export function createDelegateEndpoint(options) {
   const provider = options.provider ?? 'spawn';
+  /** How long a delegation may block before the caller is told it is still running. */
+  // An hour, not minutes: a real worker on a real task ran 48 minutes on one
+  // call. A shorter default would abandon work that was about to pay off. `0`
+  // keeps waiting indefinitely.
+  const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : 3_600_000;
+  /** How often a running delegation reports that it is alive. */
+  const progressEveryMs = Number.isFinite(options.progressEveryMs) ? options.progressEveryMs : 30_000;
   // Resolved per call, never captured: at plugin-load time the subagent service
   // may not be mounted yet, and a load-time lookup silently disables the bridge.
   const service = () => (typeof options.getSubagents === 'function'
@@ -94,6 +101,26 @@ export function createDelegateEndpoint(options) {
       response.writeHead(status, { 'content-type': 'application/json' });
       response.end(JSON.stringify(body));
     };
+    /**
+     * A streaming reply: every line is one JSON-RPC message, so a tool that runs
+     * for an hour can report progress instead of going silent until it finishes.
+     */
+    let streaming = false;
+    const openStream = () => {
+      streaming = true;
+      response.writeHead(200, {
+        'content-type': 'application/x-ndjson',
+        'cache-control': 'no-store',
+      });
+    };
+    const emit = (message) => {
+      if (!streaming) openStream();
+      response.write(JSON.stringify(message) + '\n');
+    };
+    const finish = (message) => {
+      emit(message);
+      response.end();
+    };
     if (request.method !== 'POST') return reply(405, { error: 'POST only' });
 
     const auth = String(request.headers.authorization ?? '');
@@ -111,8 +138,8 @@ export function createDelegateEndpoint(options) {
         return reply(400, { error: 'bad json' });
       }
       const { id, method, params } = message;
-      const answer = (result) => reply(200, { jsonrpc: '2.0', id, result });
-      const fail = (text) => reply(200, {
+      const answer = (result) => finish({ jsonrpc: '2.0', id, result });
+      const fail = (text) => finish({
         jsonrpc: '2.0',
         id,
         result: { content: [{ type: 'text', text }], isError: true },
@@ -138,7 +165,10 @@ export function createDelegateEndpoint(options) {
         }
 
         const label = String(params?.arguments?.label ?? task.slice(0, 60));
+        const progressToken = params?._meta?.progressToken ?? params?.progressToken;
         log(`[delegate] ${sessionKey} → ${label.slice(0, 80)}`);
+        let heartbeat;
+        let settled = false;
         try {
           const activation = await subagents.startActivation({
             provider,
@@ -156,7 +186,53 @@ export function createDelegateEndpoint(options) {
             // no cancellation channel, so this turn's own controller is enough.
             signal: new AbortController().signal,
           });
-          const result = await activation.result;
+          // Announce liveness while it runs. Without this a worker that takes
+          // most of an hour is indistinguishable from a hang, which is exactly
+          // how it looked when it was first used.
+          if (progressToken !== undefined && progressEveryMs > 0) {
+            const startedAt = Date.now();
+            heartbeat = setInterval(() => {
+              const seconds = Math.round((Date.now() - startedAt) / 1000);
+              const elapsed = seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+              emit({
+                jsonrpc: '2.0',
+                method: 'notifications/progress',
+                params: {
+                  progressToken,
+                  progress: seconds,
+                  message: `worker ${activation.childId} still running (${elapsed}): ${label.slice(0, 60)}`,
+                },
+              });
+            }, progressEveryMs);
+            heartbeat.unref?.();
+          }
+
+          const result = timeoutMs > 0
+            ? await Promise.race([
+              activation.result,
+              new Promise((resolve) => {
+                const timer = setTimeout(() => resolve(null), timeoutMs);
+                timer.unref?.();
+              }),
+            ])
+            : await activation.result;
+          if (result === null) {
+            // Not cancelled: the work is real and may still finish.
+            log(`[delegate] ${sessionKey} still running after ${Math.round(timeoutMs / 1000)}s; left alive`);
+            return finish({
+              jsonrpc: '2.0',
+              id,
+              result: {
+                content: [{
+                  type: 'text',
+                  text: `The worker is still running after ${Math.round(timeoutMs / 60_000) || 1} minute(s) `
+                    + `(child ${activation.childId}). It was NOT cancelled. Do not delegate the same task again; `
+                    + 'narrow the ask or wait and check its output.',
+                }],
+                isError: false,
+              },
+            });
+          }
           const text = resultText(result);
           log(`[delegate] ${sessionKey} done → ${text.slice(0, 80)}`);
           if (text.trim().length === 0) log(`[delegate] empty result shape: ${JSON.stringify(result).slice(0, 300)}`);
@@ -164,6 +240,9 @@ export function createDelegateEndpoint(options) {
         } catch (error) {
           log(`[delegate] ${sessionKey} failed: ${String(error?.message ?? error)}`);
           return fail(`delegation failed: ${String(error?.name ?? 'Error')}: ${String(error?.message ?? error)}`);
+        } finally {
+          if (heartbeat !== undefined) clearInterval(heartbeat);
+          settled = true;
         }
       }
       if (id === undefined) return reply(200, {});
