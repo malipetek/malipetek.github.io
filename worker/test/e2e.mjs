@@ -88,13 +88,14 @@ async function signIn(email) {
  * Real sign-ins are rate-limited per IP (as they should be), so the suite
  * spends them only where the sign-in itself is under test.
  */
-function account(email) {
+function account(email, { verified = true } = {}) {
   const id = randomUUID();
   const token = randomBytes(24).toString('hex');
   const hash = createHash('sha256').update(token).digest('hex');
   const t = Math.floor(Date.now() / 1000);
+  // A real account signs in with a magic link, which is what verifies it.
   sql(
-    `INSERT INTO users (id, email, role, created_at) VALUES ('${id}', '${email}', 'client', ${t});
+    `INSERT INTO users (id, email, role, created_at, verified_at) VALUES ('${id}', '${email}', 'client', ${t}, ${verified ? t : 'NULL'});
      INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES ('${hash}', '${id}', ${t + 86400}, ${t});`,
   );
   return { session: token, user: { id, email, role: 'client' } };
@@ -356,10 +357,26 @@ const groups = {
     check('it created a project', Boolean(project), JSON.stringify(me.projects));
     check('it added a site', project?.sites?.length === 1, JSON.stringify(project?.sites));
     const tickets = (await call('/portal/tickets', { auth: a.session })).data.tickets;
+    const filed = tickets.find((t) => t.id !== created.data.id && /Order online/.test(t.title));
+    check('it filed a real request', Boolean(filed), JSON.stringify(tickets));
+    // A new project's first request is the account's one free first preview: it
+    // starts by itself, capped in AI cost and never published.
     check(
-      'it filed a real request for approval',
-      tickets.some((t) => t.id !== created.data.id && t.status === 'new' && /Order online/.test(t.title)),
-      JSON.stringify(tickets),
+      'the first request of a new project starts as a first preview',
+      filed?.status === 'approved' && filed?.first_preview === 1 && filed?.budget_cents === 200,
+      JSON.stringify(filed),
+    );
+    const threadNow = (await call(`/portal/tickets/${filed?.id}`, { auth: a.session })).data;
+    check(
+      'the thread says the first preview started, with its limit',
+      (threadNow?.messages ?? []).some((m) => /^First preview started: this one is free, with up to \$2\.00 of AI/.test(m.body)),
+      JSON.stringify(threadNow?.messages ?? []).slice(0, 600),
+    );
+    const afterPreview = (await call('/portal/me', { auth: a.session })).data;
+    check(
+      'the first preview is not on the client’s bill',
+      afterPreview.usage.billedCents === 0 && afterPreview.usage.openCents === 0 && afterPreview.usage.aiCents === 0,
+      JSON.stringify(afterPreview.usage),
     );
     check(
       'the intake ticket moved to review',
@@ -367,6 +384,66 @@ const groups = {
     );
     const queue = (await call('/admin/queue', { auth: admin })).data.queue;
     check('an intake ticket is never in the node queue', !queue.some((q) => q.id === created.data.id));
+
+    // One per account, not per project: the second new project waits for Ali.
+    const second = await call('/portal/tickets', {
+      method: 'POST',
+      auth: a.session,
+      body: { title: 'Another site', body: 'A second site for the same business.', intake: true },
+    });
+    let secondThread = null;
+    for (let i = 0; i < 30; i += 1) {
+      await sleep(200);
+      secondThread = (await call(`/portal/tickets/${second.data.id}`, { auth: a.session })).data;
+      if (secondThread?.messages?.some((m) => m.author === 'runner')) break;
+    }
+    const secondTickets = (await call('/portal/tickets', { auth: a.session })).data.tickets;
+    const secondFiled = secondTickets.find((t) => t.id !== second.data.id && /Order online/.test(t.title) && t.first_preview === 0);
+    check(
+      'a second project does not get a first preview',
+      secondFiled?.status === 'new' && !secondTickets.some((t) => t.first_preview === 1 && t.id !== filed?.id),
+      JSON.stringify(secondTickets),
+    );
+
+    // The limit is a setting: 0 turns the whole thing off.
+    await call('/admin/settings', { method: 'PATCH', auth: admin, body: { first_preview_limit_usd: 0 } });
+    const off = account(`intake-off-${Date.now()}@example.com`);
+    const offTicket = await call('/portal/tickets', {
+      method: 'POST',
+      auth: off.session,
+      body: { title: 'Site with the limit off', body: 'A site, with the first preview switched off.', intake: true },
+    });
+    for (let i = 0; i < 30; i += 1) {
+      await sleep(200);
+      const t = (await call(`/portal/tickets/${offTicket.data.id}`, { auth: off.session })).data;
+      if (t?.messages?.some((m) => m.author === 'runner')) break;
+    }
+    const offTickets = (await call('/portal/tickets', { auth: off.session })).data.tickets;
+    check(
+      'a limit of 0 disables the first preview',
+      offTickets.some((t) => t.status === 'new' && t.first_preview === 0) && !offTickets.some((t) => t.first_preview === 1),
+      JSON.stringify(offTickets),
+    );
+    // A sign-in that was never verified gets none either.
+    await call('/admin/settings', { method: 'PATCH', auth: admin, body: { first_preview_limit_usd: 2 } });
+    const unverified = account(`intake-unverified-${Date.now()}@example.com`, { verified: false });
+    const unvTicket = await call('/portal/tickets', {
+      method: 'POST',
+      auth: unverified.session,
+      body: { title: 'Unverified site', body: 'A site from an account that never signed in by email.', intake: true },
+    });
+    for (let i = 0; i < 30; i += 1) {
+      await sleep(200);
+      const t = (await call(`/portal/tickets/${unvTicket.data.id}`, { auth: unverified.session })).data;
+      if (t?.messages?.some((m) => m.author === 'runner')) break;
+    }
+    const unvTickets = (await call('/portal/tickets', { auth: unverified.session })).data.tickets;
+    check(
+      'an unverified sign-in gets no first preview',
+      !unvTickets.some((t) => t.first_preview === 1) && unvTickets.some((t) => t.status === 'new'),
+      JSON.stringify(unvTickets),
+    );
+
     const other = account(`intake-other-${Date.now()}@example.com`);
     check('another client cannot read it', (await call(`/portal/tickets/${created.data.id}`, { auth: other.session })).status === 404);
   },

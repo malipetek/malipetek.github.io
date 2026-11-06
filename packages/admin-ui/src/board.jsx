@@ -1,7 +1,7 @@
 /* Needs you, the board, and the list: three ways to look at the same tickets. */
 import { useEffect, useMemo, useState } from 'react';
 import { useAdmin } from './store.js';
-import { STATUSES, STATUS_HINT, STATUS_LABEL, ago, listOf, money, needsYou, priceOf, priorityName, usd } from './format.js';
+import { STATUSES, STATUS_HINT, STATUS_LABEL, ago, chargeOf, listOf, money, needsYou, priorityName, usd } from './format.js';
 import { Button, Dot, Icon, Segmented, StatusPill, Tag, cx } from './ui.jsx';
 
 /** Filter bar shared by the board and the list. */
@@ -72,7 +72,7 @@ export function TicketCard({ t, draggable }) {
   const { data, openTicket } = useAdmin();
   const run = data.running.find((r) => r.ticket_id === t.id);
   const queued = data.queue.find((q) => q.id === t.id);
-  const cost = priceOf({ humanSeconds: t.human_seconds ?? 0, aiMicroUsd: t.ai_micro_usd ?? 0 }).totalCents;
+  const cost = chargeOf(t).totalCents;
   return (
     <article
       className={cx('aw-card', run && 'is-running', queued && !queued.eligible.length && 'is-stuck')}
@@ -181,7 +181,7 @@ const COLUMNS = [
   { key: 'who', label: 'For', get: (t) => (t.kind === 'system' ? '' : t.client_email ?? '') },
   { key: 'priority', label: 'Priority', get: (t) => t.priority ?? 0 },
   { key: 'agent', label: 'Agent', get: (t) => t.executor ?? '' },
-  { key: 'cost', label: 'Cost', get: (t) => priceOf({ humanSeconds: t.human_seconds ?? 0, aiMicroUsd: t.ai_micro_usd ?? 0 }).totalCents },
+  { key: 'cost', label: 'Cost', get: (t) => chargeOf(t).totalCents },
   { key: 'updated', label: 'Updated', get: (t) => t.updated_at },
 ];
 
@@ -240,7 +240,7 @@ export function ListView() {
                 <td>{t.kind === 'system' ? <Tag tone="dash">mine</Tag> : t.client_email}</td>
                 <td>{priorityName(t.priority ?? 0)}</td>
                 <td>{t.source === 'assistant' ? 'their assistant' : t.executor ?? (t.kind === 'system' ? 'any' : 'claude')}</td>
-                <td>{money(priceOf({ humanSeconds: t.human_seconds ?? 0, aiMicroUsd: t.ai_micro_usd ?? 0 }).totalCents)}</td>
+                <td>{money(chargeOf(t).totalCents)}</td>
                 <td className="aw-muted">{ago(t.updated_at)} ago</td>
               </tr>
             ))}

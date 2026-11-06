@@ -17,6 +17,8 @@ import { deleteSite, getSiteById, getSites, setSiteHost, startSite, type SiteHos
 import { grantedAccounts } from './cfaccess.ts';
 import { moveSite, moveTicket } from './move.ts';
 import { DEFAULT_ATTENTION } from '../../src/lib/pricing.js';
+import { getSettings } from './queue.ts';
+import { limitCentsFor, mailAliFirstPreview, maybeFirstPreview } from './firstPreview.ts';
 
 const MAX_ROUNDS = 6;
 const MAX_TOOLS = 20;
@@ -54,7 +56,7 @@ async function say(env: Env, ticketId: number, body: string, author: 'runner' | 
 
 /** The client's own portal state, as the model reads it. */
 async function stateFor(env: Env, userId: string) {
-  const [{ results: projects }, { results: sites }, { results: installations }, { results: cloudflare }, { results: tickets }] =
+  const [{ results: projects }, { results: sites }, { results: installations }, { results: cloudflare }, { results: tickets }, account, settings] =
     await Promise.all([
       env.DB.prepare(
         `SELECT p.id, p.slug, p.name, p.kind, p.repo, p.repo_kind, p.repo_wanted, p.repo_error, p.github_installation_id
@@ -85,9 +87,15 @@ async function stateFor(env: Env, userId: string) {
       )
         .bind(userId)
         .all<Record<string, unknown>>(),
+      env.DB.prepare('SELECT verified_at, first_preview_at, first_preview_limit_usd FROM users WHERE id = ?')
+        .bind(userId)
+        .first<{ verified_at: number | null; first_preview_at: number | null; first_preview_limit_usd: number | null }>(),
+      getSettings(env),
     ]);
 
   const links = portalLinks(env);
+  // The one free first preview: whether this account still has it, and its cap.
+  const firstPreviewLimit = limitCentsFor(account?.first_preview_limit_usd ?? null, settings.first_preview_limit_usd);
   return {
     projects: (projects ?? []).map((p) => {
       const repo = typeof p.repo === 'string' ? p.repo : null;
@@ -110,6 +118,10 @@ async function stateFor(env: Env, userId: string) {
       lapsed: !c.renewable && c.expires_at !== null && c.expires_at < now(),
     })),
     tickets: tickets ?? [],
+    firstPreview: {
+      available: firstPreviewLimit > 0 && account?.verified_at != null && account?.first_preview_at == null,
+      limitUsd: firstPreviewLimit / 100,
+    },
     links: {
       ...links,
       githubConnect: links.connections,
@@ -506,17 +518,32 @@ async function tool(ctx: ToolContext, name: string, args: Record<string, unknown
         .bind(ticket.id, body, t)
         .run();
       const link = links.ticket(ticket.id);
+      // A new project's first request starts by itself: the account's one free
+      // first preview, capped in AI cost and never published.
+      const firstPreview = await maybeFirstPreview(env, ticket.id);
       try {
-        await env.EMAIL?.send({
-          from: env.PORTAL_FROM_EMAIL || 'portal@malipetek.dev',
-          to: 'malipetek@gmail.com',
-          subject: `[#${ticket.id}] New request from ${ctx.userEmail}: ${title}`,
-          text: `${body}\n\nOpen: ${link}`,
-        });
+        if (firstPreview !== null) {
+          await mailAliFirstPreview(env, ctx.userEmail, ticket.id, title, body, firstPreview);
+        } else {
+          await env.EMAIL?.send({
+            from: env.PORTAL_FROM_EMAIL || 'portal@malipetek.dev',
+            to: 'malipetek@gmail.com',
+            subject: `[#${ticket.id}] New request from ${ctx.userEmail}: ${title}`,
+            text: `${body}\n\nOpen: ${link}`,
+          });
+        }
       } catch {
         /* the ticket is in the portal either way */
       }
-      return { result: { ok: true, ticket: { id: ticket.id, title }, link }, note: `Filed request #${ticket.id}: *${title}*.` };
+      return {
+        result: {
+          ok: true,
+          ticket: { id: ticket.id, title },
+          ...(firstPreview !== null ? { firstPreview: true, limitUsd: firstPreview / 100 } : {}),
+          link,
+        },
+        note: `Filed request #${ticket.id}: *${title}*.`,
+      };
     }
 
     case 'finish_intake': {
@@ -574,7 +601,7 @@ function systemPrompt(ticket: { user_email: string; user_locale: string | null }
 
 The client is ${ticket.user_email}${ticket.user_locale ? ` (${ticket.user_locale})` : ''}. They wrote what they need without choosing a project.
 
-You can only change this client's own portal records. You cannot approve work, publish or roll back a site, delete a project, run code, or touch another client. Real work is filed as a request and waits for Ali's approval.
+You can only change this client's own portal records. You cannot approve work, publish or roll back a site, delete a project, run code, or touch another client. Real work is filed as a request; Ali approves it, except the account's first preview, which starts by itself (see below).
 
 What to do, in order:
 1. Read the state below. If the client already has the right project/site, use it.
@@ -584,13 +611,19 @@ What to do, in order:
 5. File the real work with file_request on the right project (and site if it matters). This is what Ali sees.
 6. finish_intake when setup is done and the first request is filed.
 
+The first preview:
+- The state's firstPreview says whether this account still has its one free first preview, and its limit in dollars. It is available only while it says available: true.
+- When the client is new, the project is a new site or app, and that first request is the first on the project, file_request starts the first preview at once: an agent builds a rough first version onto the preview, inside the limit. Nothing goes live, and the client is not billed for it.
+- Say that when you file it: the first preview starts now, Ali checks the work before anything goes live, and the account gets one of these.
+- When firstPreview.available is false, or the project is an existing codebase the client connected, say instead that Ali reads and approves the first request before an agent builds it.
+
 How to talk to the client:
 - Reply in the language the client wrote in.
 - Your first reply plays their idea back in their own words, in three short groups: what their customers (or visitors, or users) get, what they get, and what Ali takes care of (build, hosting on a preview then live, fixes after). A small fix gets one sentence that restates the problem; do not force the three groups.
-  Shape for a bakery ordering site: "What I understood: your customers see the menu, order and pay; you get each order and mark it done; Ali takes care of the build, the hosting on a preview then live, and fixes after. The project is set up now. Ali reads and approves the first request, then an agent builds it and Ali checks it before you see it."
+  Shape for a bakery ordering site: "What I understood: your customers see the menu, order and pay; you get each order and mark it done; Ali takes care of the build, the hosting on a preview then live, and fixes after. The project is set up now. The first preview starts right away, and Ali checks the work before anything goes live."
 - Ask about behaviour, never technology. Ask "What should happen when someone places an order?" Do not ask "Do you need a database?". Ask "Should customers have accounts, or check out as guests?" Do not ask "Do you need authentication?". Never ask about stack, framework, database, hosting or auth method.
 - Prefer a stated assumption to a question when the choice is easy to change later: "I'll start with guest checkout. We can change that later." Ask at most one question in a reply, and only when the answer changes what gets built.
-- Say what happens next, truthfully: the project is set up now, Ali reads and approves the first request, then an agent builds it and Ali checks it before it reaches the client.
+- Say what happens next, truthfully. When the account's first preview is still available and the project is a new site or app: the project is set up now, the first preview starts right away, and Ali checks the work before anything goes live. Otherwise: Ali reads and approves the first request, then an agent builds it and Ali checks it before it reaches the client.
 
 Rules:
 - Prefer acting over asking: the conversation rules above decide what to ask and how.

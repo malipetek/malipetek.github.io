@@ -200,6 +200,10 @@ var __awPlugin = (() => {
     const ai = aiCents(aiMicroUsd);
     return { timeCents: time, aiCents: ai, totalCents: time + ai };
   }
+  function billOf({ humanSeconds = 0, aiMicroUsd = 0, firstPreview = false } = {}) {
+    if (firstPreview) return { timeCents: 0, aiCents: 0, totalCents: 0 };
+    return priceOf({ humanSeconds, aiMicroUsd });
+  }
   function money(cents) {
     return `$${(cents / 100).toFixed(2)}`;
   }
@@ -211,6 +215,11 @@ var __awPlugin = (() => {
   }
 
   // packages/admin-ui/src/format.js
+  var chargeOf = (t) => billOf({
+    humanSeconds: t.human_seconds ?? 0,
+    aiMicroUsd: t.ai_micro_usd ?? 0,
+    firstPreview: Boolean(t.first_preview)
+  });
   var STATUSES = ["new", "approved", "in_progress", "review", "done", "declined"];
   var STATUS_LABEL = {
     new: "New",
@@ -529,7 +538,7 @@ var __awPlugin = (() => {
     const { data, openTicket } = useAdmin();
     const run = data.running.find((r) => r.ticket_id === t.id);
     const queued = data.queue.find((q) => q.id === t.id);
-    const cost = priceOf({ humanSeconds: t.human_seconds ?? 0, aiMicroUsd: t.ai_micro_usd ?? 0 }).totalCents;
+    const cost = chargeOf(t).totalCents;
     return /* @__PURE__ */ jsxs(
       "article",
       {
@@ -635,7 +644,7 @@ var __awPlugin = (() => {
     { key: "who", label: "For", get: (t) => t.kind === "system" ? "" : t.client_email ?? "" },
     { key: "priority", label: "Priority", get: (t) => t.priority ?? 0 },
     { key: "agent", label: "Agent", get: (t) => t.executor ?? "" },
-    { key: "cost", label: "Cost", get: (t) => priceOf({ humanSeconds: t.human_seconds ?? 0, aiMicroUsd: t.ai_micro_usd ?? 0 }).totalCents },
+    { key: "cost", label: "Cost", get: (t) => chargeOf(t).totalCents },
     { key: "updated", label: "Updated", get: (t) => t.updated_at }
   ];
   function ListView() {
@@ -679,7 +688,7 @@ var __awPlugin = (() => {
             /* @__PURE__ */ jsx("td", { children: t.kind === "system" ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "mine" }) : t.client_email }),
             /* @__PURE__ */ jsx("td", { children: priorityName(t.priority ?? 0) }),
             /* @__PURE__ */ jsx("td", { children: t.source === "assistant" ? "their assistant" : t.executor ?? (t.kind === "system" ? "any" : "claude") }),
-            /* @__PURE__ */ jsx("td", { children: money(priceOf({ humanSeconds: t.human_seconds ?? 0, aiMicroUsd: t.ai_micro_usd ?? 0 }).totalCents) }),
+            /* @__PURE__ */ jsx("td", { children: money(chargeOf(t).totalCents) }),
             /* @__PURE__ */ jsxs("td", { className: "aw-muted", children: [
               ago(t.updated_at),
               " ago"
@@ -1523,7 +1532,7 @@ var __awPlugin = (() => {
     const caps = data.catalog?.capabilities ?? [];
     const queued = data.queue.find((q) => q.id === ticket.id);
     const where = predict(data.nodes, { slug: ticket.project_slug, requires, executor: ticket.executor, kind: ticket.kind });
-    const price = priceOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0 });
+    const price = billOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0, firstPreview: Boolean(ticket.first_preview) });
     return /* @__PURE__ */ jsxs("aside", { className: cx("aw-details", page && "aw-details--page"), "aria-label": "Details", children: [
       /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload }),
       /* @__PURE__ */ jsx(SitePanel, { project: data.projects.find((p) => p.id === ticket.project_id) }),
@@ -1566,8 +1575,12 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx("strong", { children: usd(ticket.ai_micro_usd ?? 0) })
         ] }),
         /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: ticket.price_cents != null ? "Billed" : "So far" }),
-          /* @__PURE__ */ jsx("strong", { children: money(ticket.price_cents ?? price.totalCents) })
+          /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: ticket.first_preview ? "First preview" : ticket.price_cents != null ? "Billed" : "So far" }),
+          /* @__PURE__ */ jsx("strong", { children: ticket.first_preview ? "on us" : money(ticket.price_cents ?? price.totalCents) }),
+          ticket.first_preview ? /* @__PURE__ */ jsxs("small", { className: "aw-muted", children: [
+            "client billed ",
+            money(0)
+          ] }) : null
         ] }),
         /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", onClick: () => setFixing(true), children: "Correct time\u2026" })
       ] }),
@@ -1842,7 +1855,12 @@ var __awPlugin = (() => {
       ] })
     ] });
   }
-  var usageLine = (u) => u ? [u.billedCents && `${money(u.billedCents)} billed`, u.openCents && `${money(u.openCents)} open`, u.aiCents && `AI ${money(u.aiCents)}`].filter(Boolean).join(" \xB7 ") || "nothing owed" : "";
+  var usageLine = (u) => u ? [
+    u.billedCents && `${money(u.billedCents)} billed`,
+    u.openCents && `${money(u.openCents)} open`,
+    u.aiCents && `AI ${money(u.aiCents)}`,
+    u.ourCents && `first previews ${money(u.ourCents)} on us`
+  ].filter(Boolean).join(" \xB7 ") || "nothing owed" : "";
   function RepoModal({ project, onClose }) {
     const { api, act } = useAdmin();
     const [repo, setRepo] = useState(project.repo ?? "");
@@ -1858,6 +1876,49 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !repo.trim(), onClick: submit, children: "Save" })
         ] }),
         children: /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) })
+      }
+    );
+  }
+  function FirstPreviewControl({ c }) {
+    const { api, act, data } = useAdmin();
+    const globalLimit = data.settings?.first_preview_limit_usd;
+    const [usd2, setUsd] = useState(c.firstPreviewLimitUsd ?? "");
+    useEffect(() => setUsd(c.firstPreviewLimitUsd ?? ""), [c.id, c.firstPreviewLimitUsd]);
+    const save = () => {
+      const raw = String(usd2).trim();
+      const value = raw === "" ? null : Number(raw);
+      if (value !== null && (!Number.isFinite(value) || value < 0 || value > 1e3)) return;
+      if (value === (c.firstPreviewLimitUsd ?? null)) return;
+      void act(() => api("PATCH", `/admin/clients/${c.id}`, { firstPreviewLimitUsd: value }), "First preview limit saved.");
+    };
+    return /* @__PURE__ */ jsx(
+      Field,
+      {
+        label: "First preview limit (USD)",
+        hint: `Blank follows the setting (${globalLimit ?? 2}). 0 turns the first preview off for this client.`,
+        children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              inputMode: "decimal",
+              value: usd2,
+              placeholder: String(globalLimit ?? 2),
+              "aria-label": "First preview limit in dollars",
+              onChange: (e) => setUsd(e.target.value),
+              onBlur: save
+            }
+          ),
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: c.first_preview_at ? `used ${ago(c.first_preview_at)} ago` : "not used yet" }),
+          c.first_preview_at ? /* @__PURE__ */ jsx(
+            Button,
+            {
+              size: "sm",
+              title: "Give this account its free first preview again",
+              onClick: () => void act(() => api("PATCH", `/admin/clients/${c.id}`, { grantFirstPreview: true }), "First preview granted again."),
+              children: "Grant again"
+            }
+          ) : null
+        ] })
       }
     );
   }
@@ -1898,6 +1959,7 @@ var __awPlugin = (() => {
           }
         )
       ] }),
+      c.role !== "admin" ? /* @__PURE__ */ jsx(FirstPreviewControl, { c }) : null,
       /* @__PURE__ */ jsx(Chips, { value: c.projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: (ids) => void toggle(ids) })
     ] });
   }
@@ -1949,7 +2011,7 @@ var __awPlugin = (() => {
               ] }),
               /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(StatusPill, { status: t.status }) }),
               /* @__PURE__ */ jsx("td", { children: t.project_name ?? "\u2014" }),
-              /* @__PURE__ */ jsx("td", { children: money(priceOf({ humanSeconds: t.human_seconds ?? 0, aiMicroUsd: t.ai_micro_usd ?? 0 }).totalCents) }),
+              /* @__PURE__ */ jsx("td", { children: money(chargeOf(t).totalCents) }),
               /* @__PURE__ */ jsxs("td", { className: "aw-muted", children: [
                 ago(t.updated_at),
                 " ago"
@@ -2111,7 +2173,22 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx(Field, { label: "Email me when a run finishes", children: /* @__PURE__ */ jsx(Segmented, { value: Boolean(draft.notifyRunFinished), options: [{ value: true, label: "On" }, { value: false, label: "Off" }], onChange: (v) => set("notifyRunFinished", v) }) }),
           /* @__PURE__ */ jsx(Field, { label: "Autopilot cap (cents)", hint: "An Autopilot request with its own budget at or below this starts without you. 0 turns it off.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.autoApproveCents ?? "", onChange: (e) => set("autoApproveCents", Number(e.target.value)) }) }),
           /* @__PURE__ */ jsx(Field, { label: "Sites domain", children: /* @__PURE__ */ jsx("input", { value: draft.sitesDomain ?? "", onChange: (e) => set("sitesDomain", e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Clients may publish their site", children: /* @__PURE__ */ jsx(Segmented, { value: Boolean(draft.clientPublish), options: [{ value: true, label: "Yes" }, { value: false, label: "No" }], onChange: (v) => set("clientPublish", v) }) })
+          /* @__PURE__ */ jsx(Field, { label: "Clients may publish their site", children: /* @__PURE__ */ jsx(Segmented, { value: Boolean(draft.clientPublish), options: [{ value: true, label: "Yes" }, { value: false, label: "No" }], onChange: (v) => set("clientPublish", v) }) }),
+          /* @__PURE__ */ jsx(
+            Field,
+            {
+              label: "First preview limit (USD)",
+              hint: "A new client's first request starts by itself, with its AI run capped at this many dollars. Free to the client. 0 turns it off.",
+              children: /* @__PURE__ */ jsx(
+                "input",
+                {
+                  inputMode: "decimal",
+                  value: draft.first_preview_limit_usd ?? "",
+                  onChange: (e) => set("first_preview_limit_usd", e.target.value === "" ? 0 : Number(e.target.value))
+                }
+              )
+            }
+          )
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),

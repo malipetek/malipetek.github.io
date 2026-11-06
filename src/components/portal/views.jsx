@@ -1,7 +1,7 @@
 /* The client portal's pages, other than a single request (TicketView.jsx). */
 import { useEffect, useMemo, useState } from 'react';
 import { api, errorText, fmtTime } from '../../lib/portal';
-import { HOURLY_USD, clock, money, priceOf } from '../../lib/pricing.js';
+import { billOf, HOURLY_USD, clock, money } from '../../lib/pricing.js';
 import { Board, DRAG_TICKET, STAGES, stageText } from './Board.jsx';
 import { boardReturn, go, href, isOpen, useT, usePortal } from './store.js';
 import { Button, Icon, MiniTrack, Modal, StatusPill, ago, cx, fmtDate, totalOf } from './ui.jsx';
@@ -35,6 +35,7 @@ export function RequestRow({ t: ticket, hovered, onHover, showProject = true }) 
         <span className="cp-row__id">#{ticket.id}</span>
         <span className="cp-row__title">
           <span>{ticket.title}</span>
+          {ticket.first_preview ? <span className="cp-new">{t('views.row.firstPreview')}</span> : null}
           {ticket.unread ? <span className="cp-new">{t('views.row.newReply')}</span> : null}
           {overBudget(ticket) ? <span className="cp-new cp-new--warn">{t('views.row.pausedAtBudget')}</span> : null}
         </span>
@@ -1672,7 +1673,12 @@ export function BillingView() {
             </thead>
             <tbody>
               {rows.map((ticket) => {
-                const p = priceOf({ humanSeconds: ticket.human_seconds, aiMicroUsd: ticket.ai_micro_usd });
+                // A first preview is on Ali: it shows as free, with no meter and no budget.
+                const p = billOf({
+                  humanSeconds: ticket.human_seconds,
+                  aiMicroUsd: ticket.ai_micro_usd,
+                  firstPreview: Boolean(ticket.first_preview),
+                });
                 return (
                   <tr key={ticket.id} onClick={() => go(`ticket/${ticket.id}`)}>
                     <td>
@@ -1691,7 +1697,7 @@ export function BillingView() {
                       <b>{money(totalOf(ticket))}</b>
                       {ticket.price_cents === null && isOpen(ticket) ? <em> {t('views.billing.running')}</em> : null}
                     </td>
-                    <td className="is-num">{ticket.budget_cents === null ? '—' : money(ticket.budget_cents)}</td>
+                    <td className="is-num">{ticket.first_preview || ticket.budget_cents === null ? '—' : money(ticket.budget_cents)}</td>
                   </tr>
                 );
               })}

@@ -12,6 +12,29 @@
  * all into one block (as this did before) made "now change the logo" read as
  * one more line of the original task, and every run redid the first one.
  */
+/** The dollars a run may spend on AI, as the claim knows it. */
+const usd = (value) => `$${Number(value).toFixed(2)}`;
+
+/**
+ * What the run may spend, and what a first preview is. The node caps the
+ * executor too (maxBudgetUsd); saying it in the prompt is what makes the agent
+ * aim at the ceiling instead of being cut off by it.
+ */
+function budgetLines(ticket) {
+  const lines = [];
+  if (typeof ticket.budget_usd_left === 'number') {
+    lines.push(
+      `## Budget\n\nThis run has ${usd(ticket.budget_usd_left)} of AI to spend. Work to it: do the job in the fewest steps that do it well, and stop when it is spent rather than starting something new.`,
+    );
+  }
+  if (ticket.first_preview === 1) {
+    lines.push(
+      "## First preview\n\nThis is the account's free first preview: build a rough first version that shows the shape of the thing, on the preview only. Nothing is published. Placeholders are fine where the client has not decided yet, and Ali checks the work before anything goes live.",
+    );
+  }
+  return lines;
+}
+
 export function buildPrompt(ticket, messages, previousRuns = [], checkout = {}) {
   const guard = (text) => text.replaceAll('</client_request>', '<\\/client_request>');
   const isClient = ticket.kind === 'client';
@@ -51,6 +74,7 @@ export function buildPrompt(ticket, messages, previousRuns = [], checkout = {}) 
   } else {
     parts.push(block(messages));
   }
+  parts.push(...budgetLines(ticket));
   parts.push(isClient ? 'Work in this repository, following the rules in your system prompt.' : 'Do the task in this repository.');
   return parts.join('\n\n');
 }
@@ -85,6 +109,7 @@ export function buildFollowUp(ticket, messages, previousRuns = [], checkout = {}
       ? `New since your last answer:\n\n${block(now)}\n\nDo what it asks. Do not redo earlier work unless it says to.`
       : 'Nothing new was written since your last answer. Finish the task: fix what you reported as failed or unfinished.',
   );
+  parts.push(...budgetLines(ticket));
   parts.push('The same rules apply as before: stay in this checkout, commit when your work is ready, and end with a short summary.');
   return parts.join('\n\n');
 }

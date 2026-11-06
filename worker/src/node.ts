@@ -44,6 +44,7 @@ import { Hono } from 'hono';
 import { encoder, type HonoEnv } from './shared.ts';
 import { mailAli, notifyRunFinished, replyAddress, siteUrl } from './portal.ts';
 import { finishRun, normalizeReport, sessionKey } from './runs.ts';
+import { completeFirstPreview } from './firstPreview.ts';
 import { claimForNode, cleanNodeReport, heartbeat } from './queue.ts';
 import { finishContentCycle } from './content.ts';
 import { createDeploy, finishDeploy, reportSiteRepo } from './sites.ts';
@@ -657,6 +658,8 @@ node.post('/node/runs/:runId/result', async (c) => {
   if (!done.late) await finishContentCycle(c.env, run.ticket_id, report.summary, report.ok).catch(() => {});
 
   const id = run.ticket_id;
+  // A first preview tells the client in their own language, with the link.
+  if (!done.late) c.executionCtx.waitUntil(completeFirstPreview(c.env, id));
   c.executionCtx.waitUntil(notifyRunFinished(c.env, id, report, done, nodeId));
   return c.json({ ok: true, runCostUsd: report.costUsd });
 });
