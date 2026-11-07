@@ -49,9 +49,17 @@ const activeFilters = [status && `status: ${status}`, language && `lang: ${langu
   current="/kb"
 >
   <main class="wrap kb">
+    <div class="rails" aria-hidden="true"></div>
     <header class="kb-head">
-      <p class="kb-kicker">Agentic coding knowledgebase</p>
       <h1>What our agents learned the hard way.</h1>
+      <div class="kb-spec-meta">
+        <span class="kb-kicker">Agentic coding knowledgebase</span>
+        <span class="kb-meta">
+          {facets.total}
+          {facets.total === 1 ? ' entry' : ' entries'}
+          {facets.languages.length ? ` · ${facets.languages.map((l) => l.language).join(', ')}` : ''}
+        </span>
+      </div>
       <p class="kb-lede">
         Every entry is one problem and one resolution from a real session — <strong>solved</strong>,
         <strong>worked around</strong>, or <strong>ruled out with evidence</strong>. Read it in a browser, over
@@ -60,12 +68,9 @@ const activeFilters = [status && `status: ${status}`, language && `lang: ${langu
         <a href="/kb/agents">connect your agent</a>. Reading is open to everyone;
         writing is ours.
       </p>
-      <p class="kb-meta">
-        {facets.total}
-        {facets.total === 1 ? ' entry' : ' entries'}
-        {facets.languages.length ? ` · ${facets.languages.map((l) => l.language).join(', ')}` : ''}
-      </p>
     </header>
+
+    <canvas class="signal-strip" data-signal-strip aria-hidden="true"></canvas>
 
     <form class="kb-search" method="get" action="/kb" role="search">
       <label class="kb-visually-hidden" for="kb-q">Search the knowledgebase</label>
@@ -160,3 +165,105 @@ const activeFilters = [status && `status: ${status}`, language && `lang: ${langu
     }
   </main>
 </Base>
+
+  <script>
+    document.querySelectorAll('[data-signal-strip]').forEach((strip) => {
+      const canvas = strip as HTMLCanvasElement;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      let width = 0;
+      let height = 0;
+      let dpr = 1;
+      let pointerX = 0.5;
+      let targetX = 0.5;
+
+      const draw = (time: number) => {
+        const css = getComputedStyle(canvas);
+        const rule = css.getPropertyValue('--rule-strong').trim() || '#d2ccc2';
+        const orange = css.getPropertyValue('--orange').trim() || '#ff5a1f';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+
+        const cell = 10;
+        const cols = Math.max(8, Math.floor(width / cell));
+        const rows = Math.max(4, Math.floor(height / cell));
+        const cw = width / cols;
+        const ch = height / rows;
+
+        for (let y = 0; y < rows; y += 1) {
+          for (let x = 0; x < cols; x += 1) {
+            const envelope = Math.sin((Math.PI * (x + 0.5)) / cols);
+            const wave = Math.sin(x * 0.42 + time * 0.0011 + pointerX * Math.PI * 2);
+            const drift = Math.cos(x * 0.13 - time * 0.0006) * 0.18;
+            const target = rows * 0.5 + (wave + drift) * rows * 0.24 * envelope;
+            const dist = Math.abs(y + 0.5 - target);
+            let fill = rule;
+            let alpha = 0.07 + 0.05 * Math.sin(x * 0.8 + y * 0.5 + time * 0.001);
+            let radius = Math.min(cw, ch) * 0.13;
+            if (dist < 0.85) {
+              fill = orange;
+              alpha = 0.92;
+              radius = Math.min(cw, ch) * 0.31;
+            } else if (dist < 1.7) {
+              alpha = 0.34;
+              radius = Math.min(cw, ch) * 0.18;
+            }
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = fill;
+            ctx.beginPath();
+            ctx.arc((x + 0.5) * cw, (y + 0.5) * ch, radius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.globalAlpha = 1;
+      };
+
+      const resize = () => {
+        const rect = canvas.getBoundingClientRect();
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+        width = Math.max(1, Math.round(rect.width));
+        height = Math.max(1, Math.round(rect.height));
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+        draw(reduced ? 0 : performance.now());
+      };
+
+      const loop = (now: number) => {
+        if (reduced) return;
+        pointerX += (targetX - pointerX) * 0.06;
+        draw(now);
+        requestAnimationFrame(loop);
+      };
+
+      window.addEventListener('pointermove', (event) => {
+        targetX = event.clientX / window.innerWidth;
+      }, { passive: true });
+      new ResizeObserver(resize).observe(canvas);
+      if (reduced) {
+        new MutationObserver(() => draw(0)).observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ['data-theme'],
+        });
+      }
+      resize();
+      if (!reduced) requestAnimationFrame(loop);
+    });
+  </script>
+
+  <style>
+    .signal-strip {
+      display: block;
+      width: 100%;
+      height: 74px;
+      margin-top: 0.75rem;
+      border-block: 1px solid var(--rule);
+    }
+
+    @media (max-width: 640px) {
+      .signal-strip {
+        height: 56px;
+      }
+    }
+  </style>

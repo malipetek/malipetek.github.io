@@ -26,6 +26,7 @@ const { Content } = await render(post);
   current="/blog"
   type="article"
 >
+  <div class="rails" aria-hidden="true"></div>
   <article class="entry">
     <p class="entry-back"><a href="/blog">← All writing</a></p>
     <header class="entry-head">
@@ -56,6 +57,10 @@ const { Content } = await render(post);
 </Base>
 
 <style>
+  .post-meta {
+    font-variant-numeric: tabular-nums;
+  }
+
   .entry-back {
     margin: 0 0 1.5rem;
     font-size: 15px;

@@ -46,6 +46,7 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
       description="No such plugin."
       current="/plugins"
     >
+      <div class="rails" aria-hidden="true"></div>
       <div class="notfound">
         <p class="notfound-code">404</p>
         <h1>No such plugin.</h1>
@@ -67,12 +68,14 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
       description={plugin.blurb}
       current="/plugins"
     >
+      <div class="rails" aria-hidden="true"></div>
       <article class="plugin">
         <p class="plugin-back">
           <a href="/plugins">← All plugins</a>
         </p>
 
         <header class="plugin-head">
+          <h1>{plugin.title}</h1>
           <p class="plugin-eyebrow">
             {plugin.hasClient ? 'Host + client' : 'Host'} ·{" "}
             {plugin.npm.published
@@ -81,7 +84,6 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
                 ? "unpublished"
                 : "registry unavailable"}
           </p>
-          <h1>{plugin.title}</h1>
           <p class="lede">{plugin.blurb}</p>
           <code class="plugin-pkg">{plugin.name}</code>
 
@@ -104,7 +106,7 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
           </div>
         </header>
 
-        <section class="block install">
+        <section class="block install frame">
           <div class="block-head">
             <h2>Install</h2>
           </div>
@@ -123,7 +125,7 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
             <h2>Package</h2>
             <a href={plugin.repoUrl}>Browse the source →</a>
           </div>
-          <dl class="spec">
+          <dl class="spec frame">
             {spec.map(([label, value]) => (
               <div class="spec-row">
                 <dt>{label}</dt>
@@ -170,12 +172,15 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
   }
 
   .plugin-eyebrow {
-    margin: 0 0 0.4rem;
+    margin: 0.75rem 0 1rem;
+    padding: 0.55rem 0;
+    border-block: 1px solid var(--rule);
     font-family: var(--font-mono);
     font-size: 12px;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
   }
 
   .plugin-head h1 {
@@ -196,6 +201,10 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
     flex-wrap: wrap;
     gap: 0.6rem;
     margin-top: 1.2rem;
+  }
+
+  .install.frame {
+    padding: clamp(1.25rem, 3vw, 2rem);
   }
 
   .install pre {
@@ -220,6 +229,10 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
   }
 
   /* A spec sheet: label column fixed, value column takes the rest. */
+  .spec.frame {
+    padding: clamp(1.25rem, 3vw, 2rem);
+  }
+
   .spec {
     margin: 0;
     border-top: 2px solid var(--ink);
@@ -247,6 +260,7 @@ const body = plugin ? renderReadme(plugin.readme, plugin.slug) : '';
     font-family: var(--font-mono);
     font-size: 14px;
     overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
   }
 
   .docs .prose {

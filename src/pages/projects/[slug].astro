@@ -45,6 +45,7 @@ const STATUS = {
   description={project.data.tagline}
   current="/projects"
 >
+  <div class="rails" aria-hidden="true"></div>
   <article class="project">
     <p class="project-back"><a href="/#shelf">← Back to the shelf</a></p>
 
@@ -115,6 +116,7 @@ const STATUS = {
     font-size: 14px;
     font-weight: 600;
     color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
   }
 
   .project-head h1 {

@@ -38,7 +38,32 @@
   font-size: clamp(2.1rem, 5.5vw, 3.6rem);
   line-height: 1.03;
   letter-spacing: -0.02em;
-  margin: 0.6rem 0 1rem;
+  margin: 0.6rem 0 0.8rem;
+}
+
+.kb-spec-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem 1rem;
+  margin: 0 0 1.1rem;
+  padding: 0.55rem 0;
+  border-block: 1px solid var(--rule);
+}
+
+.kb-spec-meta .kb-kicker,
+.kb-spec-meta .kb-meta {
+  margin: 0;
+}
+
+.kb-chip-n,
+.kb-item-meta,
+.kb-entry-meta,
+.kb-pager,
+.kb-home-meta,
+.kb-entry-foot,
+.kb-spec-meta {
+  font-variant-numeric: tabular-nums;
 }
 
 .kb-lede {
@@ -155,12 +180,11 @@
   padding: 1.4rem 0.25rem;
   text-decoration: none;
   color: inherit;
-  transition: background var(--dur) var(--ease), padding-left var(--dur) var(--ease);
+  transition: background var(--dur) var(--ease);
 }
 
 .kb-item-link:hover {
   background: color-mix(in srgb, var(--ink) 4%, transparent);
-  padding-left: 0.75rem;
 }
 
 .kb-item-title {
@@ -273,6 +297,10 @@ a.kb-tag:hover {
 
 .kb-block {
   margin-top: 3rem;
+}
+
+.kb-block.frame {
+  padding: clamp(1.25rem, 3vw, 2rem);
 }
 
 .kb-block h2 {
