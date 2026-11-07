@@ -86,9 +86,7 @@ export default function portalHeaders() {
         const files = htmlFiles(portalDir);
         if (!files.length) throw new Error(`portal-headers: no HTML under ${portalDir}`);
         const raw = String(publicEnv('PUBLIC_CHAT_ENDPOINT')).replace(/\/+$/, '');
-        // A root-relative API is already covered by connect-src 'self'.
-        const sameOrigin = raw.startsWith('/') && !raw.startsWith('//');
-        const endpoint = raw && !sameOrigin ? new URL(raw).origin : '';
+        const endpoint = raw ? new URL(raw).origin : '';
         const policy = portalPolicy({ hashes: inlineScriptHashes(files), endpoint });
         const text = [
           '# Written by src/integrations/portalHeaders.mjs on every build. Do not edit.',
