@@ -13,7 +13,9 @@
  * path between Workers, and it never leaves the account. LOCAL dev has no
  * bindings, so PUBLIC_CHAT_ENDPOINT stays as the fallback.
  */
-const ENDPOINT = String(import.meta.env.PUBLIC_CHAT_ENDPOINT || '').replace(/\/+$/, '');
+import { proxyOrigin } from './previewOrigin.js';
+
+const ENDPOINT = String(import.meta.env?.PUBLIC_CHAT_ENDPOINT || '').replace(/\/+$/, '');
 
 /** The pieces of an Astro context this needs; a route handler passes itself. */
 export interface ProxyContext {
@@ -44,6 +46,8 @@ export async function proxyToWorker(context: ProxyContext, path: string): Promis
   // The Worker must see its own host, and length is recomputed after buffering.
   headers.delete('host');
   headers.delete('content-length');
+  const origin = proxyOrigin(request, path, Boolean(worker));
+  if (origin !== null) headers.set('Origin', origin);
   const init: RequestInit = { method: request.method, headers, redirect: 'manual' };
   if (request.method !== 'GET' && request.method !== 'HEAD') init.body = await request.arrayBuffer();
   try {
