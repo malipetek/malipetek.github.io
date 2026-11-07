@@ -63,11 +63,24 @@ const { Content } = await render(post);
 
   .entry-back {
     margin: 0 0 1.5rem;
-    font-size: 15px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
   }
 
   .entry-head {
     margin-bottom: clamp(1.75rem, 4.5vw, 2.75rem);
+  }
+
+  /* The byline reads as a spec row, like the KB and plugin headers. */
+  .entry-head .post-meta {
+    padding: 0.55rem 0;
+    border-block: 1px solid var(--rule);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
   }
 
   .entry-head h1 {

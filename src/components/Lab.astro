@@ -573,11 +573,21 @@ const initial = (title: string) =>
     flex-direction: column;
     background: var(--bone);
     border: 1px solid var(--rule);
-    transition: border-color var(--dur) var(--ease);
+    transition:
+      border-color var(--dur) var(--ease),
+      transform var(--dur) var(--ease);
   }
 
   .box:hover {
     border-color: var(--rule-strong);
+  }
+
+  /* A two-pixel lift is enough to read the box as a thing you can pick up;
+     kept to fine pointers so a tap doesn't leave it hovering. */
+  @media (hover: hover) and (pointer: fine) {
+    .box:hover {
+      transform: translateY(-2px);
+    }
   }
 
   .box[hidden] {
