@@ -18,7 +18,7 @@ import { AdminApp, ClientPage, TicketPage } from '../../admin-ui/src/index.js';
 const PANEL_ID = 'admin';
 const NAMESPACE = 'admin';
 /** Reported to the Host on activation, so "did the panel load?" has an answer. */
-const CLIENT_VERSION = '3.8.0';
+const CLIENT_VERSION = '3.8.1';
 const DICTIONARY = { title: 'Admin' };
 
 /**
@@ -1023,6 +1023,15 @@ function apply(ctx) {
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL_ID, order: 12, label: 'Admin' }, AdminEntryIcon));
   // Each client gets a row of its own under Admin.
   ctx.slots.inject('sidebar.panellist', () => syncClientRows());
+  // Client rows make the panel list long; give it its own scroll so the
+  // workspace browser below keeps at least half the column.
+  ctx.effect(() => {
+    const style = document.createElement('style');
+    style.dataset.admin = 'panel-scroll';
+    style.textContent = '[class*="_panelList"]{max-height:45vh;overflow-y:auto;overscroll-behavior:contain;flex-shrink:0}';
+    document.head.append(style);
+    return () => style.remove();
+  }, 'admin: scrollable panel list');
   // A run's ticket, as a view of its own conversation: the whole ticket page
   // beside Chat and Trajectory, and a chip in the header that names it. The
   // chip registers the view, because it renders for exactly the session in front.
