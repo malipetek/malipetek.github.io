@@ -20,6 +20,7 @@
     // move to lab. Everything else is a server route and is handled by
     // src/middleware.ts. See src/worker.ts.
     "run_worker_first": [
+      "/api/*",
       "/portal",
       "/portal/*",
       "/.well-known/*",
@@ -74,6 +75,17 @@
       "service": "malipetek-intercom"
     }
   ],
+
+  // Review previews deliberately share the existing reviewer account/backend.
+  // Preview bindings are explicit; no credentials are copied into the frontend.
+  "previews": {
+    "services": [{ "binding": "INTERCOM", "service": "malipetek-intercom" }],
+    "d1_databases": [{
+      "binding": "KB_DB",
+      "database_name": "agentic-coding-kb",
+      "database_id": "70a1d6f4-f3b9-4b31-b372-e9bc5d78a20c"
+    }]
+  },
 
   // Keystatic admin: set these three with `wrangler secret put` (see below) —
   // KEYSTATIC_GITHUB_CLIENT_ID / KEYSTATIC_GITHUB_CLIENT_SECRET come from the
