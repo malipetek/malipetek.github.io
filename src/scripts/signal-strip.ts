@@ -2,13 +2,22 @@
  * wave drifts on its own and leans toward the pointer; the crest burns orange.
  * Decorative only — aria-hidden, and it paints a single still frame when the
  * visitor prefers reduced motion. */
-export function initSignalStrips(): void {
+let disposeSignalStrips: (() => void) | undefined;
+
+export function initSignalStrips(): () => void {
+  // Re-initialization must not leave an old loop or observer attached.
+  disposeSignalStrips?.();
+  const disposers: (() => void)[] = [];
   document.querySelectorAll('[data-signal-strip]').forEach((strip) => {
     const canvas = strip as HTMLCanvasElement;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const events = new AbortController();
+    let visible = false;
+    let suspended = false;
+    let frame: number | undefined;
     let width = 0;
     let height = 0;
     let dpr = 1;
@@ -63,27 +72,74 @@ export function initSignalStrips(): void {
       height = Math.max(1, Math.round(rect.height));
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
-      draw(reduced ? 0 : performance.now());
+      draw(motion.matches ? 0 : performance.now());
     };
 
+    const stop = () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = undefined;
+    };
+    const canAnimate = () => !motion.matches && visible && !document.hidden && !suspended;
     const loop = (now: number) => {
-      if (reduced) return;
+      frame = undefined;
+      if (!canAnimate()) return;
       pointerX += (targetX - pointerX) * 0.06;
       draw(now);
-      requestAnimationFrame(loop);
+      frame = requestAnimationFrame(loop);
+    };
+    const sync = () => {
+      stop();
+      if (motion.matches) {
+        // A deterministic still frame, independent of the last pointer position.
+        pointerX = targetX = 0.5;
+        draw(0);
+      } else if (canAnimate()) {
+        frame = requestAnimationFrame(loop);
+      }
     };
 
     window.addEventListener('pointermove', (event) => {
-      targetX = event.clientX / window.innerWidth;
-    }, { passive: true });
-    new ResizeObserver(resize).observe(canvas);
-    if (reduced) {
-      new MutationObserver(() => draw(0)).observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ['data-theme'],
-      });
-    }
+      if (canAnimate()) targetX = event.clientX / window.innerWidth;
+    }, { passive: true, signal: events.signal });
+    motion.addEventListener('change', sync, { signal: events.signal });
+    document.addEventListener('visibilitychange', sync, { signal: events.signal });
+    window.addEventListener('pagehide', () => {
+      suspended = true;
+      stop();
+    }, { signal: events.signal });
+    window.addEventListener('pageshow', () => {
+      suspended = false;
+      sync();
+    }, { signal: events.signal });
+    const sizeObserver = new ResizeObserver(resize);
+    sizeObserver.observe(canvas);
+    const visibilityObserver = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      sync();
+    });
+    visibilityObserver.observe(canvas);
+    const themeObserver = new MutationObserver(() => {
+      if (motion.matches || !canAnimate()) draw(motion.matches ? 0 : performance.now());
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+    disposers.push(() => {
+      stop();
+      events.abort();
+      sizeObserver.disconnect();
+      visibilityObserver.disconnect();
+      themeObserver.disconnect();
+    });
     resize();
-    if (!reduced) requestAnimationFrame(loop);
   });
+  const dispose = () => {
+    disposers.forEach((cleanup) => cleanup());
+    document.removeEventListener('astro:before-swap', dispose);
+    if (disposeSignalStrips === dispose) disposeSignalStrips = undefined;
+  };
+  document.addEventListener('astro:before-swap', dispose, { once: true });
+  disposeSignalStrips = dispose;
+  return dispose;
 }
