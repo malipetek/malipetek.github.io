@@ -23,7 +23,7 @@ const PORTAL_TOOLS = [
 ];
 ---
 
-<main class="wrap kb">
+<div class="kb agents-sheet">
   <div class="rails" aria-hidden="true"></div>
   <header class="kb-head">
     <h1>{t('site.agents.heading')}</h1>
@@ -115,9 +115,11 @@ Auth:  Bearer cat_…   # the key from your portal</code></pre></div>
       </p>
     </div>
   </section>
-</main>
+</div>
 
 <style>
+  .agents-sheet { padding: 0; }
+  .agents-sheet :is(p, li, h1, h2, h3, code) { overflow-wrap: anywhere; }
   .kb-head, .kb-block { position: relative; }
   .kb-meta {
     display: flex;

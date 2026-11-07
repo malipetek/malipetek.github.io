@@ -746,15 +746,8 @@ pre.astro-code {
 
 /* ————— cross-document view transitions ————— */
 
-/* Opt in to the browser's cross-document view transitions. The click handler in
-   Base.astro records whether the next page is deeper (forward), shallower
-   (back) or a sibling (lateral), and the rules below turn that into a short
-   step rather than a showreel. */
-@media (prefers-reduced-motion: no-preference) {
-  @view-transition {
-    navigation: auto;
-  }
-}
+/* Base.astro opts in and registers native navigation events before first paint.
+   Path depth selects a short forward/back/lateral step, not a showreel. */
 
 /* The header and the wordmark persist across documents: naming them keeps
    them still while the page body changes under them. */
@@ -862,6 +855,12 @@ pre.astro-code {
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 
   *,
