@@ -221,6 +221,15 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
       "[data-handoff-error]",
     );
 
+    const idle = root.querySelector<HTMLElement>('[data-idle]')!;
+    const live = root.querySelector<HTMLElement>('[data-live]')!;
+    live.inert = true;
+    const reflectPanels = () => {
+      const active = root.classList.contains('is-live') || root.dataset.state === 'live';
+      idle.inert = active;
+      live.inert = !active;
+    };
+    new MutationObserver(reflectPanels).observe(root, { attributes: true, attributeFilter: ['class', 'data-state'] });
     const greeting = root.dataset.greeting ?? "";
     const reduce = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
@@ -235,6 +244,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     const setState = (next: State) => {
       state = next;
       root.dataset.state = next;
+      reflectPanels();
     };
 
     const scrollLog = () => {
@@ -367,6 +377,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
       bell.setAttribute("aria-expanded", "true");
       bell.classList.add("is-ringing");
       root.classList.add("is-live");
+      reflectPanels();
       announce("Ringing.");
       if (!reduce) await wait(720);
       bell.classList.remove("is-ringing");
@@ -694,6 +705,7 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     font-size: 12.5px;
     font-weight: 500;
     letter-spacing: 0.08em;
+    font-variant-numeric: tabular-nums;
   }
 
   .bell {
@@ -772,10 +784,17 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     gap: clamp(1rem, 3vw, 1.6rem);
     align-self: stretch;
     padding-top: 0.35rem;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 150ms ease-in, visibility 0s;
   }
 
-  .intercom.is-live .intercom-idle {
-    display: none;
+  .intercom.is-live .intercom-idle,
+  .intercom[data-state="live"] .intercom-idle {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 150ms ease-in, visibility 0s 150ms;
   }
 
   .idle-title {
@@ -824,7 +843,8 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
       visibility 0s linear var(--dur);
   }
 
-  .intercom.is-live .intercom-live {
+  .intercom.is-live .intercom-live,
+  .intercom[data-state="live"] .intercom-live {
     grid-template-rows: 1fr;
     opacity: 1;
     visibility: visible;
@@ -1125,8 +1145,10 @@ const availabilityText = AVAILABILITY[availability] ?? AVAILABILITY.limited;
     .intercom-idle,
     .intercom-live {
       grid-column: 1;
-      grid-row: auto;
+      grid-row: 2;
     }
+
+    .intercom-lead { grid-row: 1; }
 
     .bell {
       width: 96px;

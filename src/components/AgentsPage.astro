@@ -24,9 +24,10 @@ const PORTAL_TOOLS = [
 ---
 
 <main class="wrap kb">
+  <div class="rails" aria-hidden="true"></div>
   <header class="kb-head">
-    <p class="kb-kicker">{t('site.agents.kicker')}</p>
     <h1>{t('site.agents.heading')}</h1>
+    <div class="kb-meta"><p class="kb-kicker">{t('site.agents.kicker')}</p><code>MCP / Bearer cat_…</code></div>
     <p class="kb-lede">
       <a href="/mcp"><code>https://malipetek.dev/mcp</code></a>
       <br />
@@ -48,9 +49,9 @@ const PORTAL_TOOLS = [
         {t('site.agents.chatgpt.before')}
         <strong>Settings → Connectors → Advanced → Developer mode</strong>{t('site.agents.chatgpt.after')}
       </p>
-      <pre><code>Name:  malipetek.dev
+      <div class="frame kb-code"><pre><code>Name:  malipetek.dev
 URL:   https://malipetek.dev/mcp
-Auth:  Bearer cat_…   # the key from your portal</code></pre>
+Auth:  Bearer cat_…   # the key from your portal</code></pre></div>
 
       <h3>{t('site.agents.claude.title')}</h3>
       <p>
@@ -59,12 +60,12 @@ Auth:  Bearer cat_…   # the key from your portal</code></pre>
         {t('site.agents.claude.cursor')}
         <code>mcp.json</code>:
       </p>
-      <pre><code>&#123; "mcpServers": &#123; "malipetek": &#123; "url": "https://malipetek.dev/mcp" &#125; &#125; &#125;</code></pre>
+      <div class="frame kb-code"><pre><code>&#123; "mcpServers": &#123; "malipetek": &#123; "url": "https://malipetek.dev/mcp" &#125; &#125; &#125;</code></pre></div>
 
       <h3>{t('site.agents.noClient.title')}</h3>
-      <pre><code>curl -s https://malipetek.dev/mcp -H 'content-type: application/json' \
+      <div class="frame kb-code"><pre><code>curl -s https://malipetek.dev/mcp -H 'content-type: application/json' \
   -H "authorization: Bearer cat_…" \
-  -d '&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</code></pre>
+  -d '&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</code></pre></div>
     </div>
   </section>
 
@@ -115,3 +116,23 @@ Auth:  Bearer cat_…   # the key from your portal</code></pre>
     </div>
   </section>
 </main>
+
+<style>
+  .kb-head, .kb-block { position: relative; }
+  .kb-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    align-items: baseline;
+    padding-block: 0.65rem;
+    margin-block: 1rem;
+    border-block: 1px solid var(--rule-strong);
+    color: var(--ink-soft);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  .kb-meta .kb-kicker { margin: 0; }
+  .kb-code { margin-block: 1.25rem; min-width: 0; }
+  .kb-prose .kb-code pre { margin: 0; border: 0; }
+  .kb-tool-list { font-variant-numeric: tabular-nums; }
+</style>
