@@ -4867,7 +4867,7 @@ ${question.text ?? ""}`)) {
   // packages/dsh-admin/src/client.jsx
   var PANEL_ID = "admin";
   var NAMESPACE = "admin";
-  var CLIENT_VERSION = "3.8.0";
+  var CLIENT_VERSION = "3.8.1";
   var DICTIONARY = { title: "Admin" };
   var SESSION_RETRY_CODES = /* @__PURE__ */ new Set(["session/writer-held", "session/not-found", "session/agent-busy"]);
   var MAX_SESSION_TRIES = 4;
@@ -5648,6 +5648,13 @@ ${question.text ?? ""}`)) {
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: PANEL_ID, locale: NAMESPACE }, AdminPage));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: PANEL_ID, order: 12, label: "Admin" }, AdminEntryIcon));
     ctx.slots.inject("sidebar.panellist", () => syncClientRows());
+    ctx.effect(() => {
+      const style = document.createElement("style");
+      style.dataset.admin = "panel-scroll";
+      style.textContent = '[class*="_panelList"]{max-height:45vh;overflow-y:auto;overscroll-behavior:contain;flex-shrink:0}';
+      document.head.append(style);
+      return () => style.remove();
+    }, "admin: scrollable panel list");
     ctx.slots.inject("conversation.session.header.actions", () => ctx.slots.register({ name: "conversation.session.header.actions", id: "admin-ticket", order: 5, locale: NAMESPACE }, TicketHeaderChip));
     ctx.slots.inject("sidebar.session.row.leading", () => ctx.slots.register({ name: "sidebar.session.row.leading", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketMark));
     ctx.slots.inject("sidebar.session.row.hover", () => ctx.slots.register({ name: "sidebar.session.row.hover", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketHover));
