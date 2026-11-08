@@ -58,16 +58,17 @@ export default function ClientPortal() {
 }
 
 /**
- * "malipetek" and "/portal" are separate elements: the first is the same mark
- * as the site header's, so a page load from the site moves it here and the
- * suffix draws out of it (base.css, "page transitions").
+ * "malipetek" and "/portal" are separate links: the first is the same mark as
+ * the site header's and leads back to the main site, so a page load from the
+ * site moves it here and the suffix draws out of it (base.css, "page
+ * transitions"); the suffix leads to the portal's own home.
  */
 function Brand({ href: to, className }) {
   return (
-    <a className={cx('cp-brand', className)} href={to}>
-      <span className="cp-brand__root">malipetek</span>
-      <span className="cp-brand__site">/portal</span>
-    </a>
+    <span className={cx('cp-brand', className)}>
+      <a className="cp-brand__root" href="/">malipetek</a>
+      <a className="cp-brand__site" href={to}>/portal</a>
+    </span>
   );
 }
 
@@ -328,7 +329,7 @@ function SignIn({ t }) {
     <div className="cp-signin">
       {/* Where the shell has its mark, so signing in leaves it in place. */}
       <div className="cp-signin__mark">
-        <Brand href="/" />
+        <Brand href="/portal" />
       </div>
       <div className="cp-signin__card">
         <h1>{t('signin.title')}</h1>

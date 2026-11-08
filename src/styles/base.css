@@ -215,7 +215,7 @@ a:hover {
   text-decoration-color: var(--ink);
 }
 
-.wordmark:hover,
+.wordmark-site:hover,
 .site-nav a:hover {
   text-decoration: underline;
   text-decoration-color: var(--orange);
@@ -859,6 +859,33 @@ html:active-view-transition-type(page) {
     opacity: 0;
     transform: scaleX(0);
   }
+}
+
+/* ————— the hop between sites ————— */
+
+/* malipetek.dev and lab.malipetek.dev cannot share a page transition (two
+   origins), so Base.astro plays it in halves: the page being left fades
+   everything but "malipetek"; the page arriving holds the same parts hidden
+   until its first frame, then brings them in. "/lab" draws back into the
+   mark on the way out of the lab and out of it on the way in. */
+html[data-hop='leave'] :is(main, .site-foot, .site-nav, .site-tools) {
+  animation: 150ms ease-in both page-out;
+}
+
+html[data-hop='leave'] .wordmark-site {
+  animation: 150ms ease-in both brand-site-out;
+}
+
+html[data-hop='arriving'] :is(main, .site-foot, .site-nav, .site-tools, .wordmark-site) {
+  opacity: 0;
+}
+
+html[data-hop='arrive'] :is(main, .site-foot, .site-nav, .site-tools) {
+  animation: 300ms var(--ease) 40ms both page-in;
+}
+
+html[data-hop='arrive'] .wordmark-site {
+  animation: 280ms var(--ease) 140ms both brand-site-in;
 }
 
 /* ————— reduced motion ————— */

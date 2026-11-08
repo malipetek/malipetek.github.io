@@ -158,6 +158,76 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
         }
       }
     </style>
+    {
+      /* The other site's pages are prerendered while a link to them is
+         hovered, so the hop below lands at once (Chromium; the target opts
+         in with Supports-Loading-Mode, src/worker.ts and _headers). */
+    }
+    <script
+      is:inline
+      type="speculationrules"
+      set:html={JSON.stringify({
+        prerender: [
+          {
+            where: {
+              and: [
+                { href_matches: site === "lab" ? "https://malipetek.dev/*" : "https://lab.malipetek.dev/*" },
+                { not: { href_matches: "https://malipetek.dev/portal*" } },
+              ],
+            },
+            eagerness: "moderate",
+          },
+        ],
+      })}
+    />
+    <script is:inline>
+      /*
+       * malipetek.dev and lab.malipetek.dev are two origins, and browsers run
+       * page transitions only within one. The hop between them is played in
+       * two halves instead: the page being left fades its body and draws
+       * "/lab" back into "malipetek", and the page arriving, seeing it came
+       * from the other site, does the reverse. The mark sits in the same place
+       * on both, so it reads as one move (base.css, "the hop between sites").
+       */
+      (() => {
+        const SITES = ["https://malipetek.dev", "https://lab.malipetek.dev"];
+        const other = (origin) => origin !== location.origin && SITES.includes(origin);
+        if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+        const root = document.documentElement;
+
+        let from = "";
+        try {
+          from = new URL(document.referrer).origin;
+        } catch {}
+        const entry = performance.getEntriesByType("navigation")[0];
+        if (other(from) && (!entry || entry.type === "navigate")) {
+          // Hidden until the first frame is shown; a prerendered page shows
+          // its first frame when it is opened, not while it waits.
+          root.dataset.hop = "arriving";
+          const play = () => {
+            root.dataset.hop = "arrive";
+            setTimeout(() => delete root.dataset.hop, 800);
+          };
+          if ("onpagereveal" in window) addEventListener("pagereveal", play, { once: true });
+          else play();
+        }
+
+        addEventListener("click", (e) => {
+          if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+          const a = e.target.closest?.("a[href]");
+          if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+          const url = new URL(a.href, location.href);
+          if (!other(url.origin)) return;
+          e.preventDefault();
+          root.dataset.hop = "leave";
+          setTimeout(() => location.assign(url.href), 170);
+        });
+        // Back to this page from the back/forward cache: undo the exit.
+        addEventListener("pageshow", (e) => {
+          if (e.persisted && root.dataset.hop === "leave") delete root.dataset.hop;
+        });
+      })();
+    </script>
     <script is:inline>
       /*
        * A list title and the page it opens share one name, so the title grows
@@ -302,9 +372,13 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
              portal (view-transition name "brand"); the site's suffix is a
              second one, so it can slide out of the name or back into it. */
         }
-        <a class="wordmark" href={site === "lab" ? "/" : localizedPath(locale)}>
-          <span class="wordmark-root">malipetek</span>{site === "lab" && <span class="wordmark-site">/lab</span>}
-        </a>
+        {
+          /* "malipetek" always leads to the main site; the lab's "/lab" to
+             the lab's home. */
+        }
+        <span class="wordmark">
+          <a class="wordmark-root" href={site === "lab" ? "https://malipetek.dev" : localizedPath(locale)}>malipetek</a>{site === "lab" && <a class="wordmark-site" href="/">/lab</a>}
+        </span>
         <nav class="site-nav" aria-label={t("site.nav.primary")}>
           {
             nav.map((item) => (
@@ -590,13 +664,34 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
     font-weight: 700;
     font-size: 1.4rem;
     letter-spacing: -0.03em;
+  }
+
+  .wordmark a {
+    color: var(--ink);
     text-decoration: none;
   }
 
   /* The lab's own site mark, written like the portal's: malipetek/lab. */
-  .wordmark-site {
+  .wordmark .wordmark-site {
     font-weight: 600;
     color: var(--orange);
+  }
+
+  /* "malipetek" warms up when the pointer is anywhere on the header, and
+     glows when it is on the name itself: that is the way to the main site. */
+  .wordmark-root {
+    transition: text-shadow 260ms var(--ease);
+  }
+
+  .site-head:hover .wordmark-root {
+    text-shadow: 0 0 18px color-mix(in srgb, var(--orange) 28%, transparent);
+  }
+
+  .site-head .wordmark-root:hover,
+  .wordmark-root:focus-visible {
+    text-shadow:
+      0 0 12px color-mix(in srgb, var(--orange) 55%, transparent),
+      0 0 3px color-mix(in srgb, var(--orange) 25%, transparent);
   }
 
   .site-nav {
