@@ -142,9 +142,27 @@ html[data-portal-arriving] astro-island .cp-brand > * {
   text-decoration: none;
   color: var(--ink);
 }
-.cp-brand__site {
+.cp-brand a {
+  color: inherit;
+  text-decoration: none;
+}
+.cp-brand .cp-brand__site {
   color: var(--orange);
   font-weight: 600;
+}
+/* "malipetek" is the way back to the main site: it glows under the pointer,
+   like the site header's. */
+.cp-brand__root {
+  transition: text-shadow 260ms var(--ease);
+}
+.cp-brand:hover .cp-brand__root {
+  text-shadow: 0 0 18px color-mix(in srgb, var(--orange) 28%, transparent);
+}
+.cp-brand .cp-brand__root:hover,
+.cp-brand__root:focus-visible {
+  text-shadow:
+    0 0 12px color-mix(in srgb, var(--orange) 55%, transparent),
+    0 0 3px color-mix(in srgb, var(--orange) 25%, transparent);
 }
 /* The mark is the site header's "malipetek" (base.css, "page transitions").
    Only the copy on screen carries the name: the sidebar's on a wide screen,

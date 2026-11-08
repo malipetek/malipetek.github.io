@@ -94,6 +94,8 @@ export default function portalHeaders() {
           '  X-Content-Type-Options: nosniff',
           '  Referrer-Policy: strict-origin-when-cross-origin',
           '  Strict-Transport-Security: max-age=31536000',
+          // The two sites prerender each other's pages on hover (Base.astro).
+          '  Supports-Loading-Mode: credentialed-prerender',
           '/portal',
           `  Content-Security-Policy: ${policy}`,
           '  X-Frame-Options: DENY',

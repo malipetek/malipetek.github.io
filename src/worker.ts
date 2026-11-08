@@ -28,6 +28,21 @@ type WorkerContext = {
   passThroughOnException(): void;
 };
 
+/**
+ * malipetek.dev and lab.malipetek.dev prerender each other's pages when a
+ * link between them is hovered (Base.astro), so the hop between the two sites
+ * lands at once. A browser prerenders a page on another origin of the same
+ * site only if the page opts in. Static pages get this from _headers
+ * (src/integrations/portalHeaders.mjs); this covers the rendered ones.
+ */
+function siblingPrerender(response: Response): Response {
+  if (!response.headers.get('content-type')?.startsWith('text/html')) return response;
+  if (response.headers.has('supports-loading-mode')) return response;
+  const out = new Response(response.body, response);
+  out.headers.set('Supports-Loading-Mode', 'credentialed-prerender');
+  return out;
+}
+
 export function createExports(manifest: SSRManifest) {
   const app = new App(manifest);
 
@@ -36,13 +51,14 @@ export function createExports(manifest: SSRManifest) {
       async fetch(request: Request, env: Env, ctx: WorkerContext): Promise<Response> {
         const redirect = hostRedirect(request);
         if (redirect) return redirect;
-        return handle(
+        const response = await handle(
           manifest,
           app,
           request,
           env as Parameters<typeof handle>[3],
           ctx as Parameters<typeof handle>[4],
         );
+        return siblingPrerender(response);
       },
     },
   };
