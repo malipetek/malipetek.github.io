@@ -31,7 +31,7 @@ import { marketing, publisher, unsubscribe } from './marketing.ts';
 import { kb, kbMcp, mcp } from './kb.ts';
 import { oauth } from './oauth.ts';
 import {
-  ALLOWED_ORIGINS,
+  isAllowedOrigin,
   clientIp,
   corsHeaders,
   decoder,
@@ -209,7 +209,7 @@ app.post('/chat', async (c) => {
   const origin = c.req.header('Origin') ?? null;
   const env = c.env;
 
-  if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+  if (origin && !isAllowedOrigin(origin)) {
     return json({ error: 'origin_not_allowed' }, 403, origin);
   }
   if (!env.DEEPSEEK_API_KEY) return json({ error: 'backend_not_configured' }, 503, origin);
@@ -392,7 +392,7 @@ app.post('/handoff', async (c) => {
   const origin = c.req.header('Origin') ?? null;
   const env = c.env;
 
-  if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+  if (origin && !isAllowedOrigin(origin)) {
     return json({ error: 'origin_not_allowed' }, 403, origin);
   }
 
@@ -436,7 +436,7 @@ app.post('/handoff', async (c) => {
 
 app.options('*', (c) => {
   const origin = c.req.header('Origin') ?? null;
-  if (origin && !ALLOWED_ORIGINS.includes(origin)) return new Response(null, { status: 403 });
+  if (origin && !isAllowedOrigin(origin)) return new Response(null, { status: 403 });
   return new Response(null, { status: 204, headers: corsHeaders(origin) });
 });
 

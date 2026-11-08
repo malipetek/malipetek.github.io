@@ -57,7 +57,7 @@ import {
   type NodeOverrides,
 } from './queue.ts';
 import {
-  ALLOWED_ORIGINS,
+  isAllowedOrigin,
   clientIp,
   corsHeaders,
   encoder,
@@ -706,7 +706,7 @@ portal.use('*', async (c, next) => {
     path.startsWith('/auth/') || path.startsWith('/portal/') || path.startsWith('/admin/');
 
   if (isPortalPath) {
-    if (!isPreviewFeedback && o && !ALLOWED_ORIGINS.includes(o)) return reply(c, { error: 'origin_not_allowed' }, 403);
+    if (!isPreviewFeedback && o && !isAllowedOrigin(o)) return reply(c, { error: 'origin_not_allowed' }, 403);
 
     // Preflight must be answered before the auth guards below. A 401 to OPTIONS
     // is a CORS failure, not an auth failure: the browser then refuses the real

@@ -91,6 +91,18 @@ export const ALLOWED_ORIGINS = [
   'http://127.0.0.1:4321',
 ];
 
+/**
+ * Workers Builds gives every non-master branch of the site a preview URL,
+ * `<branch>-malipetek-site.malipetek.workers.dev`. Those builds call the
+ * production API, so they are allowed by pattern instead of one entry per
+ * branch. Only this account's Workers live on malipetek.workers.dev.
+ */
+const SITE_PREVIEW_ORIGIN = /^https:\/\/[a-z0-9-]+-malipetek-site\.malipetek\.workers\.dev$/;
+
+export function isAllowedOrigin(origin: string): boolean {
+  return ALLOWED_ORIGINS.includes(origin) || SITE_PREVIEW_ORIGIN.test(origin);
+}
+
 export const encoder = new TextEncoder();
 export const decoder = new TextDecoder();
 
@@ -109,7 +121,7 @@ export function corsHeaders(origin: string | null): Record<string, string> {
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
-  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+  if (origin && isAllowedOrigin(origin)) {
     headers['Access-Control-Allow-Origin'] = origin;
   }
   return headers;
