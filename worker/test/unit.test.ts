@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import PostalMime from 'postal-mime';
 import { verifySender } from '../src/mailauth.ts';
+import { corsHeaders, isAllowedOrigin } from '../src/shared.ts';
 import { budgetLeft, cleanExecutorPin, cleanNodeReport, CLIENT_EXECUTOR, EXECUTOR_CATALOG } from '../src/queue.ts';
 import { firstPreviewDecision, limitCentsFor } from '../src/firstPreview.ts';
 import { PORTAL_INSTRUCTIONS, toolsFor } from '../src/kb.ts';
@@ -968,4 +969,16 @@ test('mcp: /mcp advertises the assistant as a builder on the project', () => {
   // The safety facts stay true.
   assert.match(PORTAL_INSTRUCTIONS, /never straight to production/);
   assert.match(PORTAL_INSTRUCTIONS, /every change, every review choice and every publish/);
+});
+
+test('cors: site preview branches on workers.dev are allowed, look-alikes are not', () => {
+  assert.equal(isAllowedOrigin('https://malipetek.dev'), true);
+  assert.equal(isAllowedOrigin('https://visual-lab-3d-and-pages-malipetek-site.malipetek.workers.dev'), true);
+  assert.equal(isAllowedOrigin('https://fix-x-malipetek-site.malipetek.workers.dev'), true);
+  assert.equal(isAllowedOrigin('http://fix-x-malipetek-site.malipetek.workers.dev'), false);
+  assert.equal(isAllowedOrigin('https://malipetek-site.malipetek.workers.dev.evil.com'), false);
+  assert.equal(isAllowedOrigin('https://x-malipetek-site.evil.workers.dev'), false);
+  assert.equal(isAllowedOrigin('https://x-malipetek-intercom.malipetek.workers.dev'), false);
+  const o = 'https://visual-lab-3d-and-pages-malipetek-site.malipetek.workers.dev';
+  assert.equal(corsHeaders(o)['Access-Control-Allow-Origin'], o);
 });

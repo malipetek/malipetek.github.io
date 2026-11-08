@@ -24,7 +24,7 @@
  */
 import { Hono, type Context } from 'hono';
 import { MAX_AGENT_TOKENS, mintAgentToken, randomToken, sessionUser, sha256, siteUrl } from './portal.ts';
-import { ALLOWED_ORIGINS, corsHeaders, isRateLimited, clientIp, now, type Env, type HonoEnv } from './shared.ts';
+import { isAllowedOrigin, corsHeaders, isRateLimited, clientIp, now, type Env, type HonoEnv } from './shared.ts';
 
 type Ctx = Context<HonoEnv>;
 
@@ -200,7 +200,7 @@ oauth.get('/oauth/client', async (c) => {
 oauth.post('/oauth/approve', async (c) => {
   const env = c.env;
   const origin = c.req.header('Origin');
-  if (origin && !ALLOWED_ORIGINS.includes(origin)) return portalReply(c, { error: 'origin_not_allowed' }, 403);
+  if (origin && !isAllowedOrigin(origin)) return portalReply(c, { error: 'origin_not_allowed' }, 403);
   // A browser session only: an agent token must never grant another agent access.
   const header = c.req.header('authorization') ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
