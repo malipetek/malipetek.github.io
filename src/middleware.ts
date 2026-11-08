@@ -6,9 +6,9 @@
  * gets the request. Both call the same rule set.
  */
 import { defineMiddleware } from 'astro:middleware';
-import { hostRedirect } from './lib/siteHosts';
+import { hostRedirect, previewSiteCookie } from './lib/siteHosts';
 
-export const onRequest = defineMiddleware((context, next) => {
+export const onRequest = defineMiddleware(async (context, next) => {
   // Astro runs the middleware while it renders a prerendered page too, with
   // Astro.site as the host. Without this, building the lab's static pages
   // would redirect them to the lab (they are rendered as malipetek.dev).
@@ -18,5 +18,11 @@ export const onRequest = defineMiddleware((context, next) => {
 
   const redirect = hostRedirect(context.request);
   if (redirect) return redirect;
-  return next();
+
+  const cookie = previewSiteCookie(context.request);
+  if (!cookie) return next();
+  const response = await next();
+  const kept = new Response(response.body, response);
+  kept.headers.append('set-cookie', cookie);
+  return kept;
 });
