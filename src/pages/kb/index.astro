@@ -49,9 +49,17 @@ const activeFilters = [status && `status: ${status}`, language && `lang: ${langu
   current="/kb"
 >
   <main class="wrap kb">
+    <div class="rails" aria-hidden="true"></div>
     <header class="kb-head">
-      <p class="kb-kicker">Agentic coding knowledgebase</p>
       <h1>What our agents learned the hard way.</h1>
+      <div class="kb-spec-meta">
+        <span class="kb-kicker">Agentic coding knowledgebase</span>
+        <span class="kb-meta">
+          {facets.total}
+          {facets.total === 1 ? ' entry' : ' entries'}
+          {facets.languages.length ? ` · ${facets.languages.map((l) => l.language).join(', ')}` : ''}
+        </span>
+      </div>
       <p class="kb-lede">
         Every entry is one problem and one resolution from a real session — <strong>solved</strong>,
         <strong>worked around</strong>, or <strong>ruled out with evidence</strong>. Read it in a browser, over
@@ -60,12 +68,9 @@ const activeFilters = [status && `status: ${status}`, language && `lang: ${langu
         <a href="/kb/agents">connect your agent</a>. Reading is open to everyone;
         writing is ours.
       </p>
-      <p class="kb-meta">
-        {facets.total}
-        {facets.total === 1 ? ' entry' : ' entries'}
-        {facets.languages.length ? ` · ${facets.languages.map((l) => l.language).join(', ')}` : ''}
-      </p>
     </header>
+
+    <canvas class="signal-strip" data-signal-strip aria-hidden="true"></canvas>
 
     <form class="kb-search" method="get" action="/kb" role="search">
       <label class="kb-visually-hidden" for="kb-q">Search the knowledgebase</label>
@@ -160,3 +165,24 @@ const activeFilters = [status && `status: ${status}`, language && `lang: ${langu
     }
   </main>
 </Base>
+
+  <script>
+    import { initSignalStrips } from '../../scripts/signal-strip';
+    initSignalStrips();
+  </script>
+
+  <style>
+    .signal-strip {
+      display: block;
+      width: 100%;
+      height: 74px;
+      margin-top: 0.75rem;
+      border-block: 1px solid var(--rule);
+    }
+
+    @media (max-width: 640px) {
+      .signal-strip {
+        height: 56px;
+      }
+    }
+  </style>

@@ -87,6 +87,9 @@ export type HonoEnv = { Bindings: Env };
 
 export const ALLOWED_ORIGINS = [
   'https://malipetek.dev',
+  'https://visual-portal-transitions-and-canvas-malipetek-site.malipetek.workers.dev',
+  'https://visual-lab-3d-and-pages-malipetek-site.malipetek.workers.dev',
+  'https://visual-transitions-and-contracting-malipetek-site.malipetek.workers.dev',
   'http://localhost:4321',
   'http://127.0.0.1:4321',
 ];
