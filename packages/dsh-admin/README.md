@@ -97,7 +97,8 @@ The panel needs a **portal session token**, not your Harness login.
 2. In that page's browser console: `localStorage.getItem('portal-session')`.
 3. Paste the value into the panel's sign-in box.
 
-It is stored Host-side at `~/.dsh/admin/config.json` (mode 600) and never
+It is stored Host-side at `$DSH_HOME/admin/config.json` (`~/.dsh` unless
+`DSH_HOME` is set; mode 600) and never
 reaches the browser page. Sessions last 30 days; when one expires the panel says
 so instead of showing stale data.
 
@@ -106,9 +107,9 @@ so instead of showing stale data.
 - The **Host half** (`index.js`) holds the token and calls the Worker with
   Node's `fetch`. No CORS allow-list has to grow to include the Harness origin,
   and the token stays out of the page.
-- **Reads** go through `~/.dsh/admin/state.json`, a snapshot the Host refreshes
+- **Reads** go through `$DSH_HOME/admin/state.json`, a snapshot the Host refreshes
   every minute and on demand, which the Client reads over the session-scoped
-  file Remote. Opening a ticket writes `~/.dsh/admin/open-ticket.json`, because
+  file Remote. Opening a ticket writes `$DSH_HOME/admin/open-ticket.json`, because
   a thread is only worth fetching when someone looks at it.
 - **Writes** travel as `/admin …` commands through `remote.commands.execute`, so
   a button press spends no model turn and never enters the conversation. The
@@ -141,7 +142,7 @@ so instead of showing stale data.
 /admin session <runId> <sessionId> <sessionDir>
                                     make a dsh run's Harness conversation openable here: found under
                                     ~/.dsh/sessions/*/<sessionId>/ (or $DSH_HOME), else the log its node
-                                    uploaded is downloaded to ~/.dsh/sessions/<sessionDir>/<sessionId>/
+                                    uploaded is downloaded to $DSH_HOME/sessions/<sessionDir>/<sessionId>/
                                     (never over an existing file). Answers {"sessionId","path","imported"};
                                     the run card's "Open conversation" uses it, then opens the session
 /admin project <name…> <slug>       create a project
