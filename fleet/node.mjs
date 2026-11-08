@@ -94,6 +94,12 @@ function loadConfig() {
   const projectsRoot = raw.projectsRoot ? expand(raw.projectsRoot) : undefined;
   const node = raw.node ?? {};
 
+  // The Harness home whose profiles and sessions this node uses. One machine
+  // can run the official app (~/.dsh) and another build (~/.dsh-admin); a node
+  // points at the one whose app should show its runs. Explicit config wins,
+  // then the node's own environment, then the Harness's default.
+  const dshHome = expand(raw.dshHome || process.env.DSH_HOME || '~/.dsh');
+
   return {
     endpoint: raw.endpoint.replace(/\/+$/, ''),
     token,
@@ -103,6 +109,8 @@ function loadConfig() {
     router: raw.router !== false,
     extraCapabilities: node.capabilities ?? [],
     worktreeRoot: expand(raw.worktreeRoot ?? '~/.cache/malipetek-runner/worktrees'),
+    // Every dsh executor and every session lookup uses this home.
+    dshHome,
     timeoutMinutes: raw.timeoutMinutes ?? 30,
     projectsRoot,
     // Where a good run's commit lands: 'none' | 'branch' | 'main'. Per project
@@ -123,8 +131,8 @@ function loadConfig() {
       opencode: { bin: 'opencode', ...(raw.executors?.opencode ?? {}) },
       // The Harness on a provider it calls directly: OpenCode Go (dsh-go) and
       // the DeepSeek account (dsh). The model overlay is written beside this file.
-      'dsh-go': { bin: 'dsh', ...DSH_MODELS['dsh-go'], ...(raw.executors?.['dsh-go'] ?? {}), overlayDir: dirname(CONFIG_PATH) },
-      dsh: { bin: 'dsh', ...DSH_MODELS.dsh, ...(raw.executors?.dsh ?? {}), overlayDir: dirname(CONFIG_PATH) },
+      'dsh-go': { bin: 'dsh', ...DSH_MODELS['dsh-go'], ...(raw.executors?.['dsh-go'] ?? {}), dshHome, overlayDir: dirname(CONFIG_PATH) },
+      dsh: { bin: 'dsh', ...DSH_MODELS.dsh, ...(raw.executors?.dsh ?? {}), dshHome, overlayDir: dirname(CONFIG_PATH) },
       // The Harness driving Claude Code / OpenCode over ACP. The overlay patch
       // that sets that up is written next to this config file.
       'dsh-claude': {
@@ -132,18 +140,21 @@ function loadConfig() {
         agentCommand: 'claude-agent-acp',
         model: 'opus',
         ...(raw.executors?.['dsh-claude'] ?? {}),
+        dshHome,
         overlayDir: dirname(CONFIG_PATH),
       },
       'dsh-opencode': {
         bin: 'dsh',
         agentCommand: raw.executors?.opencode?.bin ?? 'opencode',
         ...(raw.executors?.['dsh-opencode'] ?? {}),
+        dshHome,
         overlayDir: dirname(CONFIG_PATH),
       },
       'dsh-devin': {
         bin: 'dsh',
         agentCommand: raw.executors?.devin?.bin ?? 'devin',
         ...(raw.executors?.['dsh-devin'] ?? {}),
+        dshHome,
         overlayDir: dirname(CONFIG_PATH),
       },
       devin: { bin: 'devin', ...(raw.executors?.devin ?? {}) },
@@ -166,7 +177,7 @@ async function detectExecutors(config) {
     const ex = config.executors[name];
     if (!ex?.bin || !EXECUTORS[name]) continue;
     const bins = [ex.bin, ...(ex.agentCommand ? [ex.agentCommand] : [])];
-    let ok = !ex.agentCommand || agentProfileReady(ex.profile);
+    let ok = !ex.agentCommand || agentProfileReady(ex.profile, config.dshHome);
     for (const bin of bins) if (!(await onPath(bin))) ok = false;
     if (ok) found.push(name);
   }
@@ -187,9 +198,9 @@ const SESSION_LOG_LIMIT = 50 * 1024 * 1024;
 
 async function uploadSession(config, runId, sessionId, ticketId) {
   const fields = { sessionId, sessionLog: false };
-  const found = findSessionLog(sessionId);
+  const found = findSessionLog(sessionId, config.dshHome);
   if (!found) {
-    log(`#${ticketId} session ${sessionId}: no log found under ${process.env.DSH_HOME || '~/.dsh'}/sessions`);
+    log(`#${ticketId} session ${sessionId}: no log found under ${config.dshHome}/sessions`);
     return fields;
   }
   fields.sessionDir = found.dir;
@@ -1100,7 +1111,7 @@ function resumableSession(config, previousRuns, dir) {
   if (!last || last.node_id !== config.nodeId || !DSH_FAMILY.includes(last.executor)) return null;
   // The Harness keeps a session under its folder, spelled with '/' as '-'.
   if (last.session_dir !== `-${dir.replace(/\/+$/, '').replace(/\//g, '-')}--`) return null;
-  if (!findSessionLog(last.session_id)) return null;
+  if (!findSessionLog(last.session_id, config.dshHome)) return null;
   return { runId: last.id, sessionId: last.session_id, executor: last.executor };
 }
 
@@ -1518,7 +1529,7 @@ async function main() {
   if (!executors.length) throw new Error('No executor binary found on PATH (dsh, claude-agent-acp, devin, claude, opencode).');
 
   const node = new Node(config, executors);
-  log(`node ${config.nodeId} v${VERSION} up · ${OS} · ${executors.join(', ')} · ${Object.keys(config.projects).length} project(s) · ${config.slots} slot(s) · ${config.endpoint}`);
+  log(`node ${config.nodeId} v${VERSION} up · ${OS} · ${executors.join(', ')} · ${Object.keys(config.projects).length} project(s) · ${config.slots} slot(s) · dsh ${config.dshHome} · ${config.endpoint}`);
 
   if (process.argv.includes('--once')) {
     await node.heartbeat();

@@ -109,8 +109,9 @@ answers NO_ADAPTER), and only offers them when that profile exists. Config:
 Every `dsh`-family run reads the Harness's `--json` event stream for its
 session id, final answer and turn count. After the run, before reporting, the
 node finds the session's log at
-`$DSH_HOME/sessions/<encoded cwd>/<sessionId>/session.v4.jsonl.zstd`
-(`DSH_HOME` defaults to `~/.dsh`) and, when it is at most 50 MB, uploads it with
+`<dshHome>/sessions/<encoded cwd>/<sessionId>/session.v4.jsonl.zstd`
+(`dshHome` in the config; unset means the node's `$DSH_HOME`, else `~/.dsh`)
+and, when it is at most 50 MB, uploads it with
 `PUT /node/runs/:runId/session?nodeId=…` so the Admin panel on any machine can
 open the conversation. The result carries `sessionId`, `sessionDir` (the
 encoded directory name) and `sessionLog` (true only when the upload was
@@ -136,6 +137,12 @@ no session id (the pre-`--json` behaviour).
   branch, so the node leaves it alone. See `share.mjs`.
 - `defaultBranch` — the branch `push: 'main'` means. Unset asks the repo's
   `origin/HEAD`, then `main`.
+- `dshHome` — the Harness home the node's `dsh` runs use: its profiles,
+  credentials and `sessions/`. Unset means the node process's `DSH_HOME`, else
+  `~/.dsh` (the official app's state). Point it at `~/.dsh-admin` to have the
+  runs appear in the DSH Admin app instead; the profiles the node names
+  (`headless`, `fleet-agents`) and the existing run sessions must be copied
+  there too. See **Harness sessions**.
 
 - `autoClone` (default true) / `cloneRoot` (default
   `~/.cache/malipetek-runner/projects`) — a project the portal names a repo for,
