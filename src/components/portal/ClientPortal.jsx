@@ -17,14 +17,9 @@ import { PortalContext, go, href, isOpen, signedIn, usePortalData, useRoute } fr
 import { Button, Confirm, Icon, cx } from './ui.jsx';
 
 export default function ClientPortal() {
-  const [authed, setAuthed] = useState(() => {
-    // The old ticket address: move it onto the app's own route.
-    if (window.location.pathname.replace(/\/$/, '') === '/portal/ticket') {
-      const id = new URLSearchParams(window.location.hash.slice(1)).get('id');
-      window.history.replaceState(null, '', `/portal${id ? `#/ticket/${id}` : ''}`);
-    }
-    return signedIn();
-  });
+  // The old ticket address is moved onto the app's own route in store.js,
+  // before the first route is read.
+  const [authed, setAuthed] = useState(() => signedIn());
   const [data, reload] = usePortalData(authed);
   const lost = data.error && (data.error.status === 401 || !session.get());
   useEffect(() => {
@@ -34,16 +29,36 @@ export default function ClientPortal() {
   const t = useTranslator(data.user?.locale ?? browserLocale());
 
   if (!authed) return <SignIn t={t} />;
-  if (!data.loaded) return <p className="cp-boot">{t('common.loading')}</p>;
+  if (!data.loaded) return <Boot t={t} />;
   if (!data.user) {
     return (
-      <div className="cp-boot">
-        <p>{errorText(data.error, t)}</p>
-        <Button onClick={() => void reload()}>{t('common.tryAgain')}</Button>
-      </div>
+      <Boot t={t} error onRetry={() => void reload()}>
+        {errorText(data.error, t)}
+      </Boot>
     );
   }
   return <Shell data={data} reload={reload} t={t} onSignedOut={() => setAuthed(false)} />;
+}
+
+/** Before the workspace paints: the mark, what is happening, and the way back. */
+function Boot({ t, error = false, onRetry, children }) {
+  return (
+    <div className={cx('cp-boot', error && 'is-error')}>
+      <span className="cp-brand cp-boot__brand" aria-hidden="true">
+        malipetek<span>/portal</span>
+      </span>
+      <p className="cp-boot__line" role={error ? 'alert' : 'status'} aria-live="polite">
+        {children ?? t('common.loading')}
+      </p>
+      {error ? (
+        <Button onClick={onRetry}>{t('common.tryAgain')}</Button>
+      ) : (
+        <span className="cp-boot__bar" aria-hidden="true">
+          <i />
+        </span>
+      )}
+    </div>
+  );
 }
 
 function Shell({ data, reload, t, onSignedOut }) {

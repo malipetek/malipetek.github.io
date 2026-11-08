@@ -17,54 +17,59 @@ const endpoint = String(import.meta.env.PUBLIC_CHAT_ENDPOINT || '').replace(/\/+
 const mail = 'malipetek@gmail.com';
 ---
 
+<div class="rails" aria-hidden="true"></div>
+
 <header class="page-head">
   <h1>{t('site.contact.heading')}</h1>
   <p class="lede">{t('site.contact.lede')}</p>
 </header>
 
 <div class="contact-grid">
-  <form
-    class="contact-form"
-    id="contact-form"
-    data-endpoint={endpoint}
-    data-msg-sent={t('site.contact.status.sent')}
-    data-msg-sent-ali={t('site.contact.status.sentAli')}
-    data-msg-required={t('site.contact.status.required')}
-    data-msg-email={t('site.contact.status.email')}
-    data-msg-offline={t('site.contact.status.offline')}
-    data-msg-sending={t('site.contact.status.sending')}
-    data-msg-rate-limited={t('site.contact.status.rateLimited')}
-    data-msg-turnstile={t('site.contact.status.turnstile')}
-    data-msg-failed={t('site.contact.status.failed')}
-    data-msg-network={t('site.contact.status.network')}
-  >
-    <div class="field">
-      <label for="cf-name">{t('site.contact.name')}</label>
-      <input id="cf-name" name="name" type="text" autocomplete="name" required />
-    </div>
-    <div class="field">
-      <label for="cf-email">{t('site.contact.email')}</label>
-      <input id="cf-email" name="email" type="email" autocomplete="email" required />
-    </div>
-    <div class="field">
-      <label for="cf-org">
-        {t('site.contact.company')} <span class="opt">{t('site.contact.optional')}</span>
-      </label>
-      <input id="cf-org" name="company" type="text" autocomplete="organization" />
-    </div>
-    <div class="field">
-      <label for="cf-msg">{t('site.contact.message')}</label>
-      <textarea id="cf-msg" name="message" rows="7" required></textarea>
-    </div>
-    {/* honeypot — bots fill it, humans don't see it */}
-    <div class="cf-hp" aria-hidden="true">
-      <label>Website <input name="website" type="text" tabindex="-1" autocomplete="off" /></label>
-    </div>
-    <div class="contact-actions">
-      <button class="btn btn--solid" type="submit">{t('site.contact.send')}</button>
-      <p class="contact-status" role="status" aria-live="polite"></p>
-    </div>
-  </form>
+  <div class="plate frame contact-plate">
+    <form
+      class="contact-form"
+      id="contact-form"
+      data-endpoint={endpoint}
+      data-msg-sent={t('site.contact.status.sent')}
+      data-msg-sent-ali={t('site.contact.status.sentAli')}
+      data-msg-required={t('site.contact.status.required')}
+      data-msg-email={t('site.contact.status.email')}
+      data-msg-offline={t('site.contact.status.offline')}
+      data-msg-sending={t('site.contact.status.sending')}
+      data-msg-rate-limited={t('site.contact.status.rateLimited')}
+      data-msg-turnstile={t('site.contact.status.turnstile')}
+      data-msg-failed={t('site.contact.status.failed')}
+      data-msg-network={t('site.contact.status.network')}
+    >
+      <canvas class="contact-canvas" aria-hidden="true"></canvas>
+      <div class="field">
+        <label for="cf-name">{t('site.contact.name')}</label>
+        <input id="cf-name" name="name" type="text" autocomplete="name" required />
+      </div>
+      <div class="field">
+        <label for="cf-email">{t('site.contact.email')}</label>
+        <input id="cf-email" name="email" type="email" autocomplete="email" required />
+      </div>
+      <div class="field">
+        <label for="cf-org">
+          {t('site.contact.company')} <span class="opt">{t('site.contact.optional')}</span>
+        </label>
+        <input id="cf-org" name="company" type="text" autocomplete="organization" />
+      </div>
+      <div class="field">
+        <label for="cf-msg">{t('site.contact.message')}</label>
+        <textarea id="cf-msg" name="message" rows="7" required></textarea>
+      </div>
+      {/* honeypot — bots fill it, humans don't see it */}
+      <div class="cf-hp" aria-hidden="true">
+        <label>Website <input name="website" type="text" tabindex="-1" autocomplete="off" /></label>
+      </div>
+      <div class="contact-actions">
+        <button class="btn btn--solid" type="submit">{t('site.contact.send')}</button>
+        <p class="contact-status" role="status" aria-live="polite"></p>
+      </div>
+    </form>
+  </div>
 
   <aside class="contact-aside">
     <h2>{t('site.contact.aside.title')}</h2>
@@ -161,6 +166,138 @@ const mail = 'malipetek@gmail.com';
         if (submit instanceof HTMLButtonElement) submit.disabled = false;
       }
     });
+
+    /*
+     * The coordinate strip at the top of the form: a dot matrix drawn from the
+     * palette tokens. Dots near the pointer take the signal orange and grow;
+     * while a field is focused a soft band crosses the strip. Reduced motion
+     * keeps the grid static and ignores pointer/focus updates.
+     */
+    const strip = form.querySelector<HTMLCanvasElement>('.contact-canvas');
+    const ctx = strip?.getContext('2d');
+    if (strip && ctx) {
+      const still = window.matchMedia('(prefers-reduced-motion: reduce)');
+      const fields = Array.from(form.querySelectorAll('input, textarea'));
+      const pointer = { x: -999, y: -999, active: false };
+      let focus = 0;
+      let focusTarget = 0;
+      let frameId = 0;
+      let visible = false;
+      let width = 0;
+      let height = 0;
+
+      const draw = () => {
+        const style = getComputedStyle(document.documentElement);
+        const rule = style.getPropertyValue('--rule-strong').trim() || '#d2ccc2';
+        const hot = style.getPropertyValue('--orange').trim() || '#ff5a1f';
+        const ink = style.getPropertyValue('--ink').trim();
+        const gap = 13;
+
+        ctx.clearRect(0, 0, width, height);
+        for (let row = 0; row * gap + gap / 2 < height + gap / 2; row += 1) {
+          for (let col = 0; col * gap + gap / 2 < width + gap / 2; col += 1) {
+            const x = col * gap + gap / 2;
+            const y = row * gap + gap / 2;
+            const near = pointer.active
+              ? Math.max(0, 1 - Math.hypot(x - pointer.x, y - pointer.y) / 64)
+              : 0;
+            const band = focus * Math.max(0, 1 - Math.abs(y - height / 2) / (height / 2 + 1));
+            const heat = Math.min(1, near * near + band * 0.55);
+            ctx.globalAlpha = 0.35 + heat * 0.65;
+            ctx.fillStyle = heat > 0.12 ? hot : rule;
+            ctx.beginPath();
+            ctx.arc(x, y, 1.1 + heat * 1.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.globalAlpha = 0.18;
+        ctx.strokeStyle = ink;
+        ctx.beginPath();
+        ctx.moveTo(0, height / 2 + 0.5);
+        ctx.lineTo(width, height / 2 + 0.5);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      };
+
+      const settle = () => {
+        frameId = 0;
+        if (!visible || still.matches || document.hidden) return;
+        const delta = focusTarget - focus;
+        focus = Math.abs(delta) < 0.01 ? focusTarget : focus + delta * 0.22;
+        draw();
+        if (focus !== focusTarget) frameId = requestAnimationFrame(settle);
+      };
+
+      const repaint = () => {
+        if (visible && !still.matches && !document.hidden && !frameId) frameId = requestAnimationFrame(settle);
+      };
+
+      const resize = () => {
+        const rect = strip.getBoundingClientRect();
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        width = Math.max(1, Math.round(rect.width));
+        height = Math.max(1, Math.round(rect.height));
+        strip.width = Math.round(width * dpr);
+        strip.height = Math.round(height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        draw();
+      };
+
+      resize();
+      new ResizeObserver(resize).observe(strip);
+      const pause = () => {
+        cancelAnimationFrame(frameId);
+        frameId = 0;
+      };
+      new IntersectionObserver(([entry]) => {
+        visible = entry.isIntersecting;
+        if (visible) repaint(); else pause();
+      }).observe(strip);
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) pause(); else repaint();
+      });
+      still.addEventListener('change', () => {
+        pause();
+        pointer.active = false;
+        focus = 0;
+        focusTarget = 0;
+        draw();
+      });
+
+      // The palette tokens change with the theme; redraw from the new values.
+      new MutationObserver(draw).observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-theme'],
+      });
+
+      {
+        strip.addEventListener('pointermove', (event) => {
+          if (still.matches) return;
+          const rect = strip.getBoundingClientRect();
+          pointer.x = event.clientX - rect.left;
+          pointer.y = event.clientY - rect.top;
+          pointer.active = true;
+          repaint();
+        });
+        strip.addEventListener('pointerleave', () => {
+          pointer.active = false;
+          pointer.x = -999;
+          pointer.y = -999;
+          repaint();
+        });
+        fields.forEach((field) => {
+          field.addEventListener('focus', () => {
+            if (still.matches) return;
+            focusTarget = 1;
+            repaint();
+          });
+          field.addEventListener('blur', () => {
+            focusTarget = 0;
+            repaint();
+          });
+        });
+      }
+    }
   }
 </script>
 
@@ -172,11 +309,31 @@ const mail = 'malipetek@gmail.com';
     align-items: start;
   }
 
+  /* The form sits on a plate like the homepage lists do: the callout frame and
+     its corner handles are the form's own border, so the fields need no second
+     box around them. */
+  .contact-plate {
+    --inset-x: clamp(1.1rem, 3vw, 1.75rem);
+  }
+
+  .plate.frame.contact-plate {
+    background: var(--bone);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  /* A coordinate strip above the fields: dots on a spec-sheet grid that warm
+     towards the pointer and the focused field (see the script below). */
+  .contact-canvas {
+    display: block;
+    width: 100%;
+    height: 46px;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+
   .contact-form {
     display: grid;
     gap: 1.1rem;
-    border-top: 2px solid var(--ink);
-    padding-top: clamp(1.25rem, 3vw, 1.75rem);
   }
 
   .field {

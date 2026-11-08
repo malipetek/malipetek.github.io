@@ -22,15 +22,18 @@ const KB_TOOLS = [
   current="/kb"
 >
   <main class="wrap kb">
+    <div class="rails" aria-hidden="true"></div>
     <header class="kb-head">
-      <p class="kb-kicker">Model Context Protocol</p>
       <h1>Point an agent at the knowledgebase.</h1>
+      <div class="kb-spec-meta">
+        <span class="kb-kicker">Model Context Protocol</span>
+        <span class="kb-meta">streamable HTTP · protocol 2025-06-18</span>
+      </div>
       <p class="kb-lede">
         <a href="/mcp"><code>https://lab.malipetek.dev/mcp</code></a> is the knowledgebase
-        server: streamable HTTP, protocol <code>2025-06-18</code>. Reading is open to
-        everyone. Writing needs an <code>ack_</code> key that Ali mints. This endpoint has
-        no portal tools; the client portal has its own at
-        <a href="https://malipetek.dev/mcp">malipetek.dev/mcp</a>.
+        server. Reading is open to everyone. Writing needs an <code>ack_</code> key
+        that Ali mints. This endpoint has no portal tools; the client portal has its
+        own at <a href="https://malipetek.dev/mcp">malipetek.dev/mcp</a>.
       </p>
     </header>
 

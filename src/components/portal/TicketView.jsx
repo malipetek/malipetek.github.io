@@ -107,7 +107,28 @@ export function TicketView({ id }) {
       </div>
     );
   }
-  if (!state.ticket) return <p className="cp-empty">{t('common.loading')}</p>;
+  if (!state.ticket) {
+    // A link straight to a request: hold its shape while the thread arrives,
+    // so the page does not jump when it does.
+    return (
+      <div className="cp-view cp-ticket cp-ticket--loading" role="status" aria-busy="true" aria-label={t('common.loading')}>
+        <span className="cp-sk cp-sk--crumb" />
+        <span className="cp-sk cp-sk--title" />
+        <span className="cp-sk cp-sk--meta" />
+        <div className="cp-sk-track" aria-hidden="true" />
+        <div className="cp-ticket__cols">
+          <div className="cp-ticket__main">
+            <span className="cp-sk cp-sk--msg" />
+            <span className="cp-sk cp-sk--msg" />
+          </div>
+          <aside className="cp-ticket__side">
+            <span className="cp-sk cp-sk--card" />
+            <span className="cp-sk cp-sk--card" />
+          </aside>
+        </div>
+      </div>
+    );
+  }
 
   const { ticket, messages } = state;
   const open = isOpen(ticket);
@@ -426,8 +447,22 @@ function Thread({ ticketId, messages, intake = false }) {
   const t = useT();
   const end = useRef(null);
   const count = useRef(messages.length);
+  // The first load of the thread is not "new messages": it should not pull the
+  // page down past the request's own head. The flag clears only once a batch
+  // of messages has actually arrived.
+  const primed = useRef(messages.length > 0);
   useEffect(() => {
-    if (messages.length > count.current) end.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (!primed.current) {
+      if (messages.length) {
+        primed.current = true;
+        count.current = messages.length;
+      }
+      return;
+    }
+    if (messages.length > count.current) {
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      end.current?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'nearest' });
+    }
     count.current = messages.length;
   }, [messages.length]);
   return (
