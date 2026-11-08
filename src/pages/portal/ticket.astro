@@ -1,6 +1,7 @@
 ---
 import Base from '../../layouts/Base.astro';
 import ClientPortal from '../../components/portal/ClientPortal.jsx';
+import PortalFrame from '../../components/portal/PortalFrame.astro';
 import '../../styles/client-portal.css';
 
 // The address in notification emails (/portal/ticket#id=12). The portal app
@@ -8,6 +9,7 @@ import '../../styles/client-portal.css';
 export const prerender = true;
 ---
 
-<Base title="Request — malipetek" description="A client portal request." current="/portal">
+<Base title="Request — malipetek" description="A client portal request." current="/portal" chrome={false}>
+  <PortalFrame />
   <ClientPortal client:only="react" />
 </Base>

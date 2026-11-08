@@ -84,15 +84,24 @@
   display: none !important;
 }
 
+/* PortalFrame.astro draws both first frames; the page's inline script says
+   which one by whether a session is saved. */
+html:not([data-portal='in']) [data-portal-frame] > [data-when='in'],
+html:not([data-portal='out']) [data-portal-frame] > [data-when='out'] {
+  display: none;
+}
+html[data-portal-arriving] astro-island .cp-brand {
+  visibility: hidden;
+}
+html[data-portal-arriving] astro-island .cp-brand > * {
+  view-transition-name: none;
+}
+
 .cp-boot {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
   display: grid;
   place-content: center;
   gap: 12px;
   justify-items: center;
-  background: var(--bone);
   color: var(--ink-soft);
 }
 
@@ -129,13 +138,24 @@
 }
 .cp-brand {
   font: 700 17px/1 var(--font-display);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   text-decoration: none;
   color: var(--ink);
 }
-.cp-brand span {
+.cp-brand__site {
   color: var(--orange);
   font-weight: 600;
+}
+/* The mark is the site header's "malipetek" (base.css, "page transitions").
+   Only the copy on screen carries the name: the sidebar's on a wide screen,
+   the topbar's on a narrow one, the corner's when signed out. */
+.cp-side__brand .cp-brand__root,
+.cp-signin__mark .cp-brand__root {
+  view-transition-name: brand;
+}
+.cp-side__brand .cp-brand__site,
+.cp-signin__mark .cp-brand__site {
+  view-transition-name: brand-site;
 }
 
 .cp-side {
@@ -299,6 +319,16 @@
     padding: 0 10px;
     border-bottom: 1px solid var(--rule);
     background: var(--paper);
+  }
+  .cp-side__brand .cp-brand__root,
+  .cp-side__brand .cp-brand__site {
+    view-transition-name: none;
+  }
+  .cp-topbar .cp-brand__root {
+    view-transition-name: brand;
+  }
+  .cp-topbar .cp-brand__site {
+    view-transition-name: brand-site;
   }
   .cp-side {
     position: fixed;
@@ -2635,6 +2665,27 @@ fieldset.cp-field {
     radial-gradient(circle at 1px 1px, var(--rule-strong) 1px, transparent 0) 0 0 / 18px 18px,
     var(--bone);
 }
+/* The sidebar's padding plus its brand's, so the mark sits where the shell
+   puts it; on a narrow screen, centred in a topbar-high strip. */
+.cp-signin__mark {
+  position: absolute;
+  top: 18px;
+  left: 12px;
+  padding: 4px 10px 16px;
+}
+.cp-signin__mark .cp-brand {
+  display: block;
+}
+@media (max-width: 900px) {
+  .cp-signin__mark {
+    inset: 0 0 auto;
+    height: 52px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
 .cp-signin__card {
   width: min(420px, calc(100vw - 40px));
   display: grid;
@@ -2648,7 +2699,7 @@ fieldset.cp-field {
 .cp-signin__card h1 {
   font: 700 28px/1.1 var(--font-display);
   letter-spacing: -0.025em;
-  margin-top: 14px;
+  margin-top: 0;
 }
 .cp-signin__card form {
   margin-top: 6px;

@@ -736,6 +736,131 @@ pre.astro-code {
   scroll-margin-top: 1rem;
 }
 
+/* ————— page transitions ————— */
+
+/* Base.astro opts same-origin page loads in (type "page"; reduced-motion
+   readers are left out there). What both pages share is named and held or
+   moved; everything else is the root and cross-fades with a small rise. The
+   portal's in-app route changes are their own transitions, without the type,
+   and keep their own timing (client-portal.css). */
+.site-head {
+  view-transition-name: site-head;
+}
+
+/* The portal names its own mark, per layout (client-portal.css). */
+.wordmark-root {
+  view-transition-name: brand;
+}
+
+.wordmark-site {
+  view-transition-name: brand-site;
+}
+
+.nav-mark {
+  view-transition-name: nav-mark;
+}
+
+html:active-view-transition-type(page) {
+  &::view-transition-old(root) {
+    animation: 120ms ease-in both page-out;
+  }
+
+  /* Starts as the old page is nearly gone: a fade through, not a double
+     exposure of two pages of text. */
+  &::view-transition-new(root) {
+    animation: 280ms var(--ease) 100ms both page-in;
+  }
+
+  /* The mark and the nav mark travel; the header under them holds still. */
+  &::view-transition-group(brand),
+  &::view-transition-group(nav-mark) {
+    animation-duration: 380ms;
+    animation-timing-function: var(--ease);
+  }
+
+  /* "/portal" draws out of "malipetek" once the mark has nearly settled, and
+     back into it on the way out. */
+  &::view-transition-new(brand-site):only-child {
+    animation: 260ms var(--ease) 240ms both brand-site-in;
+  }
+
+  &::view-transition-old(brand-site):only-child {
+    animation: 160ms ease-in both brand-site-out;
+  }
+
+  /* Into the portal the site header has no partner: it leaves with the
+     page, and comes back with it. */
+  &::view-transition-old(site-head):only-child {
+    animation: 120ms ease-in both page-out;
+  }
+
+  &::view-transition-new(site-head):only-child {
+    animation: 280ms var(--ease) 100ms both page-in;
+  }
+
+  /* A list title grows into the heading it opens. The old snapshot leaves
+     early so a hover highlight never balloons along with it. */
+  &::view-transition-group(page-title) {
+    animation-duration: 380ms;
+    animation-timing-function: var(--ease);
+  }
+
+  &::view-transition-old(page-title) {
+    animation-duration: 140ms;
+  }
+
+  /* A nav mark with no partner (the page has no section in the nav) just
+     shrinks away or draws in, rather than hanging in place. */
+  &::view-transition-old(nav-mark):only-child {
+    animation: 180ms ease-in both nav-mark-out;
+  }
+
+  &::view-transition-new(nav-mark):only-child {
+    animation: 260ms var(--ease) 120ms both nav-mark-in;
+  }
+}
+
+@keyframes page-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes brand-site-in {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+}
+
+@keyframes brand-site-out {
+  to {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+}
+
+@keyframes nav-mark-out {
+  to {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+}
+
+@keyframes nav-mark-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+}
+
 /* ————— reduced motion ————— */
 
 @media (prefers-reduced-motion: reduce) {

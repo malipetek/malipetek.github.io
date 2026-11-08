@@ -28,6 +28,12 @@ interface Props {
    * Each has its own navigation, canonical origin and footer.
    */
   site?: "contracting" | "lab";
+  /**
+   * Off for a full-screen app (the client portal): no site header, footer or
+   * main wrapper, only the slot. The app draws its own "malipetek" mark, and a
+   * second one on the page would cancel the transition into it.
+   */
+  chrome?: boolean;
 }
 
 /*
@@ -66,6 +72,7 @@ const {
   path,
   languagePicker = [],
   site = "contracting",
+  chrome = true,
 } = Astro.props;
 
 const t = siteT(locale);
@@ -132,6 +139,84 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
       document.documentElement.dataset.theme =
         localStorage.getItem("theme") ||
         (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    </script>
+    {
+      /* Same-origin page loads cross-fade, with the shared parts (the
+         "malipetek" mark, the header, the nav mark, a list title and the
+         heading it opens) held or moved in place: base.css, "page
+         transitions". Browsers only do this within one origin, so a trip
+         between malipetek.dev and lab.malipetek.dev stays a plain load. The
+         opt-in is inline so it is in place before the first paint. */
+    }
+    <style is:inline>
+      @media (prefers-reduced-motion: no-preference) {
+        @view-transition {
+          navigation: auto;
+          types: page;
+        }
+      }
+    </style>
+    <script is:inline>
+      /*
+       * A list title and the page it opens share one name, so the title grows
+       * into that page's heading, and shrinks back into its row on the way
+       * back. pageswap runs in the page being left, pagereveal in the one
+       * arriving; both know the other page's address. Names are set only for
+       * the trip and cleared after, so the page holds no names a later trip
+       * could collide with.
+       */
+      (() => {
+        const TITLES = ".post-link, .plugin-name, .box-title, .kb-item-title";
+        const pathOf = (url) => {
+          const u = new URL(url, location.href);
+          return u.origin === location.origin ? u.pathname.replace(/\/+$/, "") || "/" : null;
+        };
+        // /blog/x opens from /blog and from the lab's home page.
+        const opensFrom = (detail, list) => {
+          const parts = detail.split("/").filter(Boolean);
+          return parts.length === 2 && (list === "/" || list === `/${parts[0]}`);
+        };
+        const titleFor = (other) => {
+          const here = pathOf(location.href);
+          if (!other || other === here) return null;
+          for (const el of document.querySelectorAll(TITLES)) {
+            const a = el.closest("a[href]");
+            if (a && pathOf(a.href) === other) return el;
+          }
+          return opensFrom(here, other) ? document.querySelector("main h1") : null;
+        };
+        const share = (transition, other) => {
+          const el = transition && titleFor(other);
+          if (!el) return;
+          el.style.viewTransitionName = "page-title";
+          // A block heading is as wide as the column; the morph should scale
+          // the words, not a column-wide box.
+          el.style.width = "fit-content";
+          const clear = () => {
+            el.style.removeProperty("view-transition-name");
+            el.style.removeProperty("width");
+          };
+          transition.finished.then(clear, clear);
+        };
+        // A header scrolled out of view would swoop down from above the
+        // window; for that trip it is not shared and the new one fades in.
+        const HEAD = ".site-head, .wordmark-root, .wordmark-site, .nav-mark";
+        addEventListener("pageswap", (e) => {
+          const to = e.activation?.entry?.url;
+          share(e.viewTransition, to && pathOf(to));
+          if (e.viewTransition && document.querySelector(".site-head")?.getBoundingClientRect().bottom < 0) {
+            document.querySelectorAll(HEAD).forEach((el) => (el.style.viewTransitionName = "none"));
+          }
+        });
+        // Back from the back/forward cache: the header is shared again.
+        addEventListener("pageshow", () => {
+          document.querySelectorAll(HEAD).forEach((el) => el.style.removeProperty("view-transition-name"));
+        });
+        addEventListener("pagereveal", (e) => {
+          const from = window.navigation?.activation?.from?.url;
+          share(e.viewTransition, from && pathOf(from));
+        });
+      })();
     </script>
     <title>{title}</title>
     <meta name="description" content={description} />
@@ -206,11 +291,17 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
     <link rel="sitemap" href="/sitemap.xml" />
   </head>
   <body data-site={site}>
+    {chrome && (<>
     <a class="skip-link" href="#main">{t("site.skip")}</a>
     <header class="site-head">
       <div class="wrap site-head-inner">
+        {
+          /* "malipetek" is one element on every page of both sites and in the
+             portal (view-transition name "brand"); the site's suffix is a
+             second one, so it can slide out of the name or back into it. */
+        }
         <a class="wordmark" href={site === "lab" ? "/" : localizedPath(locale)}>
-          malipetek{site === "lab" && <span class="wordmark-site">lab</span>}
+          <span class="wordmark-root">malipetek</span>{site === "lab" && <span class="wordmark-site">/lab</span>}
         </a>
         <nav class="site-nav" aria-label={t("site.nav.primary")}>
           {
@@ -220,6 +311,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
                 aria-current={isCurrent(item.href) ? "page" : undefined}
               >
                 {item.label}
+                {isCurrent(item.href) && <span class="nav-mark" aria-hidden="true" />}
               </a>
             ))
           }
@@ -310,6 +402,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
         </nav>
       </div>
     </header>
+    </>)}
     {
       site === "contracting" && languagePicker.length > 0 && (
         <div class="lang-suggest" data-lang-suggest hidden>
@@ -332,9 +425,14 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
         </div>
       )
     }
+    {chrome ? (
     <main id="main" class="wrap">
       <slot />
     </main>
+    ) : (
+      <slot />
+    )}
+    {chrome && (<>
     <footer class="site-foot">
       <div class="wrap site-foot-ai">
         <span class="site-foot-ai-label">{t("site.foot.askAi", { site: site === "lab" ? "lab.malipetek.dev" : "malipetek.dev" })}</span>
@@ -359,6 +457,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
         <span>{t("site.foot.built")}</span>
       </div>
     </footer>
+    </>)}
   </body>
 </html>
 
@@ -472,16 +571,10 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
     text-decoration: none;
   }
 
-  /* The lab's own site mark: same wordmark, a small mono tag after it. */
+  /* The lab's own site mark, written like the portal's: malipetek/lab. */
   .wordmark-site {
-    margin-left: 0.35rem;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    font-weight: 500;
-    letter-spacing: 0.08em;
-    text-transform: lowercase;
+    font-weight: 600;
     color: var(--orange);
-    vertical-align: super;
   }
 
   .site-nav {
@@ -533,7 +626,19 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
   }
 
   .site-nav a[aria-current="page"] {
+    position: relative;
     color: var(--ink);
+  }
+
+  /* The current section's mark. It is one element across pages, so going
+     from Plugins to Writing slides it along the nav. */
+  .nav-mark {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -5px;
+    height: 2px;
+    background: var(--orange);
   }
 
   main {
