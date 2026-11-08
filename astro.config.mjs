@@ -25,6 +25,9 @@ export default defineConfig({
     '/chat': '/#talk',
   },
   integrations: [markdoc(), react(), keystatic(), portalHeaders()],
+  // A link is fetched while the pointer rests on it, so the page transition
+  // starts on the click instead of waiting for the network.
+  prefetch: { prefetchAll: true, defaultStrategy: 'hover' },
   markdown: {
     shikiConfig: {
       theme: 'css-variables',
