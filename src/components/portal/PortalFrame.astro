@@ -1,0 +1,42 @@
+---
+/*
+ * The portal's first frame, drawn by the page itself. The portal is a React
+ * island that mounts after the first paint, and a page transition takes its
+ * picture of the new page at that paint: without this frame the "malipetek"
+ * mark arriving from the site would have nowhere to go. It is the same markup
+ * ClientPortal draws while it loads (BootFrame) or signs in (SignIn), so the
+ * hand-over does not move a pixel; ClientPortal removes it on mount, or when
+ * the transition into the page ends.
+ */
+---
+
+<script is:inline>
+  document.documentElement.dataset.portal = localStorage.getItem("portal-session") ? "in" : "out";
+  // A transition drops out the moment one of its elements stops rendering,
+  // so while one is bringing the mark here the frame keeps it and the app's
+  // own copy waits hidden (client-portal.css); ClientPortal swaps them when
+  // it ends.
+  addEventListener("pagereveal", (e) => {
+    // A page restored from the back/forward cache has no frame left.
+    if (!e.viewTransition || !document.querySelector("[data-portal-frame]")) return;
+    document.documentElement.dataset.portalArriving = "";
+    window.portalArrival = e.viewTransition.finished;
+  });
+</script>
+<div data-portal-frame aria-hidden="true">
+  <div class="cp" data-when="in">
+    <header class="cp-topbar">
+      <span class="cp-iconbtn"></span>
+      <a class="cp-brand" href="/portal"><span class="cp-brand__root">malipetek</span><span class="cp-brand__site">/portal</span></a>
+      <span class="cp-iconbtn"></span>
+    </header>
+    <aside class="cp-side">
+      <a class="cp-brand cp-side__brand" href="/portal"><span class="cp-brand__root">malipetek</span><span class="cp-brand__site">/portal</span></a>
+    </aside>
+  </div>
+  <div class="cp-signin" data-when="out">
+    <div class="cp-signin__mark">
+      <a class="cp-brand" href="/"><span class="cp-brand__root">malipetek</span><span class="cp-brand__site">/portal</span></a>
+    </div>
+  </div>
+</div>

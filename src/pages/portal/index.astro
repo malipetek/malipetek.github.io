@@ -1,6 +1,7 @@
 ---
 import Base from '../../layouts/Base.astro';
 import ClientPortal from '../../components/portal/ClientPortal.jsx';
+import PortalFrame from '../../components/portal/PortalFrame.astro';
 import '../../styles/client-portal.css';
 
 // A static shell; everything signed-in is fetched from the Worker in the
@@ -8,6 +9,7 @@ import '../../styles/client-portal.css';
 export const prerender = true;
 ---
 
-<Base title="Client portal — malipetek" description="Requests and projects for people Ali works with." current="/portal">
+<Base title="Client portal — malipetek" description="Requests and projects for people Ali works with." current="/portal" chrome={false}>
+  <PortalFrame />
   <ClientPortal client:only="react" />
 </Base>

@@ -4,7 +4,7 @@
  * confirmations. Routes are in the hash (store.js); /portal/ticket#id=12, the
  * address in older emails, lands on #/ticket/12.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { demoLogin, errorText, logout, requestLink, session } from '../../lib/portal';
 import { STEPS } from '../../lib/offer.js';
 import { browserLocale, useTranslator } from './useTranslator.js';
@@ -32,18 +32,66 @@ export default function ClientPortal() {
   }, [lost]);
   // Their saved language once signed in; the browser's before that.
   const t = useTranslator(data.user?.locale ?? browserLocale());
+  // The page's static first frame (PortalFrame.astro) stood in until now;
+  // this render draws the same mark in the same place, so the frame goes
+  // before the next paint, or once the transition into the page has ended.
+  useLayoutEffect(() => {
+    const handOver = () => {
+      document.querySelector('[data-portal-frame]')?.remove();
+      delete document.documentElement.dataset.portalArriving;
+    };
+    if (window.portalArrival) window.portalArrival.then(handOver, handOver);
+    else handOver();
+  }, []);
 
   if (!authed) return <SignIn t={t} />;
-  if (!data.loaded) return <p className="cp-boot">{t('common.loading')}</p>;
+  if (!data.loaded) return <BootFrame>{t('common.loading')}</BootFrame>;
   if (!data.user) {
     return (
-      <div className="cp-boot">
+      <BootFrame>
         <p>{errorText(data.error, t)}</p>
         <Button onClick={() => void reload()}>{t('common.tryAgain')}</Button>
-      </div>
+      </BootFrame>
     );
   }
   return <Shell data={data} reload={reload} t={t} onSignedOut={() => setAuthed(false)} />;
+}
+
+/**
+ * "malipetek" and "/portal" are separate elements: the first is the same mark
+ * as the site header's, so a page load from the site moves it here and the
+ * suffix draws out of it (base.css, "page transitions").
+ */
+function Brand({ href: to, className }) {
+  return (
+    <a className={cx('cp-brand', className)} href={to}>
+      <span className="cp-brand__root">malipetek</span>
+      <span className="cp-brand__site">/portal</span>
+    </a>
+  );
+}
+
+/**
+ * The workspace's frame while it loads: the shell's topbar and sidebar with
+ * the mark where the shell has it, so the mark holds still from the first
+ * frame to the loaded workspace. PortalFrame.astro is the same markup.
+ */
+function BootFrame({ children }) {
+  return (
+    <div className="cp">
+      <header className="cp-topbar">
+        <span className="cp-iconbtn" />
+        <Brand href={href('')} />
+        <span className="cp-iconbtn" />
+      </header>
+      <aside className="cp-side">
+        <Brand href={href('')} className="cp-side__brand" />
+      </aside>
+      <main className="cp-main cp-boot" role="status" aria-live="polite">
+        {children}
+      </main>
+    </div>
+  );
 }
 
 function Shell({ data, reload, t, onSignedOut }) {
@@ -98,18 +146,14 @@ function Shell({ data, reload, t, onSignedOut }) {
           <button type="button" className="cp-iconbtn" aria-label={t('nav.menu')} aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
             <Icon name="menu" size={18} />
           </button>
-          <a className="cp-brand" href={href('')}>
-            malipetek<span>/portal</span>
-          </a>
+          <Brand href={href('')} />
           <button type="button" className="cp-iconbtn" aria-label={t('nav.newRequest')} onClick={() => setComposing({})}>
             <Icon name="plus" size={18} />
           </button>
         </header>
 
         <aside className="cp-side" aria-label={t('nav.portal')}>
-          <a className="cp-brand cp-side__brand" href={href('')}>
-            malipetek<span>/portal</span>
-          </a>
+          <Brand href={href('')} className="cp-side__brand" />
           <Button kind="primary" className="cp-side__new" onClick={() => setComposing({})} title={t('nav.newRequestKey')}>
             <Icon name="plus" size={15} /> {t('nav.newRequest')} <kbd>N</kbd>
           </Button>
@@ -282,10 +326,11 @@ function SignIn({ t }) {
 
   return (
     <div className="cp-signin">
+      {/* Where the shell has its mark, so signing in leaves it in place. */}
+      <div className="cp-signin__mark">
+        <Brand href="/" />
+      </div>
       <div className="cp-signin__card">
-        <a className="cp-brand" href="/">
-          malipetek<span>/portal</span>
-        </a>
         <h1>{t('signin.title')}</h1>
         <p className="cp-muted">{t('signin.intro')}</p>
         <form onSubmit={submit}>
