@@ -72,8 +72,40 @@ export function requestHostname(request: Request): string {
   return new URL(request.url).hostname.toLowerCase();
 }
 
+/**
+ * Branch previews and local dev have one host for both sites, and a
+ * workers.dev preview cannot take a `lab.` prefix. There `?site=lab` shows the
+ * lab's version of the host-decided pages (`/`, the 404, llms.txt…) and
+ * `?site=dev` the contracting one; the choice is kept in a cookie so the
+ * relative nav links stay on the same site.
+ */
+const PREVIEW_SITE_COOKIE = 'preview_site';
+
+function isPreviewHost(host: string): boolean {
+  return host.endsWith('.workers.dev') || host === 'localhost' || host === '127.0.0.1';
+}
+
+function previewSiteAsked(request: Request): 'lab' | 'dev' | null {
+  const asked = new URL(request.url).searchParams.get('site');
+  return asked === 'lab' || asked === 'dev' ? asked : null;
+}
+
 export function isLabRequest(request: Request): boolean {
-  return requestHostname(request) === LAB_HOST;
+  const host = requestHostname(request);
+  if (host === LAB_HOST) return true;
+  if (!isPreviewHost(host)) return false;
+  const asked = previewSiteAsked(request);
+  if (asked) return asked === 'lab';
+  const cookie = request.headers.get('cookie') ?? '';
+  return new RegExp(`(?:^|;\\s*)${PREVIEW_SITE_COOKIE}=lab(?:;|$)`).test(cookie);
+}
+
+/** The Set-Cookie that keeps a preview's `?site=` choice, or null. */
+export function previewSiteCookie(request: Request): string | null {
+  if (!isPreviewHost(requestHostname(request))) return null;
+  const asked = previewSiteAsked(request);
+  if (!asked) return null;
+  return `${PREVIEW_SITE_COOKIE}=${asked}; Path=/; Max-Age=2592000; SameSite=Lax`;
 }
 
 function redirect(request: Request, origin: string, pathname?: string): Response {
