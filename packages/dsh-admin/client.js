@@ -5605,6 +5605,12 @@ ${question.text ?? ""}`)) {
       void navigator.clipboard?.writeText(link).catch(() => void 0);
     }
     async function approveTicket(ticket, changed) {
+      if (ticket.kind !== "system") {
+        const who = ticket.client_email ?? "The client";
+        if (!window.confirm(`Approve #${ticket.id}?
+
+${who} is emailed about this change.`)) return;
+      }
       try {
         await api("PATCH", `/admin/tickets/${ticket.id}`, { status: "approved" });
         changed?.();

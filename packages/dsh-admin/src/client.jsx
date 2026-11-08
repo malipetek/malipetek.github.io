@@ -958,8 +958,15 @@ function apply(ctx) {
     void navigator.clipboard?.writeText(link).catch(() => undefined);
   }
 
-  /** Approve a new ticket, then let the tree poll again. */
+  /**
+   * Approve a new ticket, then let the tree poll again. A client's ticket asks
+   * first, as the workbench does: approving it emails the client.
+   */
   async function approveTicket(ticket, changed) {
+    if (ticket.kind !== 'system') {
+      const who = ticket.client_email ?? 'The client';
+      if (!window.confirm(`Approve #${ticket.id}?\n\n${who} is emailed about this change.`)) return;
+    }
     try {
       await api('PATCH', `/admin/tickets/${ticket.id}`, { status: 'approved' });
       changed?.();
