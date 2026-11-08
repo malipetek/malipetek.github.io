@@ -429,6 +429,11 @@ function writeOverlay(name, text, config) {
  * from the brief. `config.provider` (+ `model`) pins the native provider; with
  * `agent`, an overlay has the Harness drive Claude Code or Devin over ACP. Either
  * way the run is a Harness session with a session id.
+ *
+ * `config.dshHome` is the Harness home whose profiles, credentials and sessions
+ * this run uses. It is passed explicitly as `DSH_HOME`, so one machine can keep
+ * the official app's state and the admin build's apart. Unset falls back to the
+ * node's own `DSH_HOME`, then the Harness default (~/.dsh).
  */
 async function dsh({ prompt, cwd, system, config, signal, onStep, resumeSessionId }, agent) {
   const args = ['--profile', config.profile ?? (agent ? AGENT_PROFILE : 'headless')];
@@ -438,8 +443,10 @@ async function dsh({ prompt, cwd, system, config, signal, onStep, resumeSessionI
   // the system prompt and the request, so only the follow-up goes in.
   if (resumeSessionId) args.push('--session-id', resumeSessionId);
   args.push('--json', '-');
+  const dshHome = config.dshHome || process.env.DSH_HOME || join(homedir(), '.dsh');
   const res = await run(config.bin ?? 'dsh', args, {
     cwd,
+    env: { ...process.env, DSH_HOME: dshHome },
     // `-` reads the task from stdin, so a long thread stays out of argv.
     input: resumeSessionId ? prompt : `${system}\n\n${prompt}`,
     signal,

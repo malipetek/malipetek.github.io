@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ACCOUNT, DSH_FAMILY, DSH_MODELS, EXECUTORS, SYSTEM_ORDER, briefInput, claudeResult, dshAgentOverlay, dshModelOverlay, parseRoute, routeTask, fallbackChain, findSessionLog, isQuotaError, parseDshEvents, stepsOf } from './executors.mjs';
+import { ACCOUNT, DSH_FAMILY, DSH_MODELS, EXECUTORS, SYSTEM_ORDER, agentProfileReady, briefInput, claudeResult, dshAgentOverlay, dshModelOverlay, parseRoute, routeTask, fallbackChain, findSessionLog, isQuotaError, parseDshEvents, stepsOf } from './executors.mjs';
 
 const SAMPLE = `{"type":"session","sessionId":"session-db44e5d2-8897-4d5e-9a9f-b96070283d22","cwd":"/private/tmp/dshjson"}
 {"type":"status","phase":"turn_start","turn":1}
@@ -160,6 +160,42 @@ test('findSessionLog scans the encoded dirs', () => {
     assert.equal(findSessionLog('session-abc', join(home, 'nope')), null);
   } finally {
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('agentProfileReady looks under the Harness home it is given', () => {
+  const home = mkdtempSync(join(tmpdir(), 'dshprofile-'));
+  try {
+    const pkg = join(home, 'profiles', 'fleet-agents', 'node_modules', '@malipetek', 'dsh-external-agents');
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(join(pkg, 'package.json'), '{}');
+    assert.equal(agentProfileReady('fleet-agents', home), true);
+    assert.equal(agentProfileReady('headless', home), false);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('dsh runs pass their Harness home as DSH_HOME', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'dshhome-run-'));
+  const prev = process.env.DSH_HOME;
+  try {
+    const bin = join(tmp, 'dsh');
+    writeFileSync(bin, `#!/bin/sh\nprintf '%s' "$DSH_HOME" > "${tmp}/seen-home"\necho '{"type":"session","sessionId":"s1"}'\necho '{"type":"final","text":"done"}'\n`);
+    chmodSync(bin, 0o755);
+    const dshHome = join(tmp, 'admin', '.dsh-admin');
+    const ok = await EXECUTORS.dsh({ prompt: 'p', cwd: tmp, system: 's', config: { bin, dshHome }, signal: new AbortController().signal });
+    assert.equal(ok.ok, true);
+    assert.equal(readFileSync(join(tmp, 'seen-home'), 'utf8'), dshHome);
+
+    // Without a config key the node's own DSH_HOME is what the run inherits.
+    process.env.DSH_HOME = join(tmp, 'from-env');
+    await EXECUTORS.dsh({ prompt: 'p', cwd: tmp, system: 's', config: { bin }, signal: new AbortController().signal });
+    assert.equal(readFileSync(join(tmp, 'seen-home'), 'utf8'), process.env.DSH_HOME);
+  } finally {
+    if (prev === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prev;
+    rmSync(tmp, { recursive: true, force: true });
   }
 });
 

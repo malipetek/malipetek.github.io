@@ -23,6 +23,8 @@
   "//defaultBranch": "The branch 'push: main' means. Unset asks the repo's origin/HEAD, then main.",
 
   "worktreeRoot": "~/.cache/malipetek-runner/worktrees",
+  "//dshHome": "The Harness home the node's dsh runs read profiles, credentials and sessions from. Unset: the node's $DSH_HOME, else ~/.dsh. Use ~/.dsh-admin for the DSH Admin app.",
+  "dshHome": "~/.dsh",
   "autoClone": true,
   "cloneRoot": "~/.cache/malipetek-runner/projects",
   "timeoutMinutes": 30,
