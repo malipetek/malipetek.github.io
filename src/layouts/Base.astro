@@ -107,6 +107,8 @@ const contractingNav = [
   { href: localizedPath(locale, "/#talk"), label: t("site.nav.talk") },
   { href: localizedPath(locale, "/contact"), label: t("site.nav.contact") },
   { href: localizedPath(locale, "/agents"), label: copy(t, "site.nav.agents", "Connect your assistant") },
+  // The developer lab is its own site; its name stays English everywhere.
+  { href: "https://lab.malipetek.dev", label: "Lab" },
 ];
 
 const labNav = [
@@ -315,10 +317,12 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
               </a>
             ))
           }
+        </nav>
+        <div class="site-tools">
           {
             site === "lab" ? (
               <a class="nav-portal" href="https://malipetek.dev">
-                Hire: malipetek.dev
+                Hire<span class="nav-portal__more">: malipetek.dev</span>
               </a>
             ) : (
               <a class="nav-portal" href="/portal">{t("site.nav.portal")}</a>
@@ -337,7 +341,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
                       stroke-width="1.4"
                     />
                   </svg>
-                  <span>{currentLanguage.native}</span>
+                  <span class="lang-menu__name">{currentLanguage.native}</span>
                   <span class="lang-menu__caret" aria-hidden="true">⌄</span>
                 </summary>
                 <ul aria-label={t("site.lang.other")}>
@@ -399,9 +403,20 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
                 stroke-linejoin="round"></path>
             </svg>
           </button>
-        </nav>
+        </div>
       </div>
     </header>
+    <script is:inline>
+      // On a narrow screen the sections scroll sideways; start with the
+      // current one in view, before the first paint.
+      (() => {
+        const nav = document.querySelector(".site-nav");
+        const cur = nav?.querySelector('[aria-current="page"]');
+        if (cur && nav.scrollWidth > nav.clientWidth) {
+          nav.scrollLeft = cur.offsetLeft - (nav.clientWidth - cur.offsetWidth) / 2;
+        }
+      })();
+    </script>
     </>)}
     {
       site === "contracting" && languagePicker.length > 0 && (
@@ -526,9 +541,18 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
   toggle?.addEventListener("click", () => {
     const next =
       document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem("theme", next);
-    reflect();
+    const apply = () => {
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem("theme", next);
+      reflect();
+    };
+    // One cross-fade for the whole page, instead of the parts with colour
+    // transitions easing while the rest snaps.
+    if (document.startViewTransition && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      document.startViewTransition(apply);
+    } else {
+      apply();
+    }
   });
 </script>
 
@@ -557,9 +581,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
   .site-head-inner {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
+    gap: 1rem clamp(0.9rem, 2.6vw, 1.6rem);
     padding-block: 0.9rem;
   }
 
@@ -580,12 +602,55 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
   .site-nav {
     display: flex;
     align-items: center;
-    /* Six entries at most: let them wrap onto a second line on a phone rather
-       than run off the edge. */
-    flex-wrap: wrap;
     gap: 0.35rem clamp(0.9rem, 2.6vw, 1.6rem);
+    margin-left: auto;
     font-size: 15px;
     font-weight: 500;
+  }
+
+  /* The portal (or, on the lab, the way back to hiring) stays in reach on a
+     phone too, beside the language and theme controls. */
+  .site-tools {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem clamp(0.6rem, 2vw, 1.2rem);
+    font-size: 15px;
+    font-weight: 500;
+  }
+
+  /* Narrower than the full row: the mark and the tools on top, the sections
+     on one line under them that scrolls sideways, rather than a header that
+     wraps into three rows. The fade at the right edge says there is more. */
+  @media (max-width: 60rem) {
+    .site-head-inner {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.35rem 1rem;
+      padding-block: 0.75rem 0;
+    }
+
+    .site-tools {
+      grid-area: 1 / 2;
+    }
+
+    .site-nav {
+      grid-area: 2 / 1 / 3 / -1;
+      position: relative;
+      margin-inline: calc(-1 * var(--pad));
+      padding: 0.25rem 2rem 0.7rem var(--pad);
+      overflow-x: auto;
+      white-space: nowrap;
+      scrollbar-width: none;
+      mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
+    }
+
+    .site-nav::-webkit-scrollbar {
+      display: none;
+    }
+
+    .lang-menu__name {
+      display: none;
+    }
   }
 
   .theme-toggle {
@@ -616,12 +681,14 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
     display: none;
   }
 
-  .site-nav a {
+  .site-nav a,
+  .site-tools a {
     color: var(--ink-soft);
     text-decoration: none;
   }
 
-  .site-nav a:hover {
+  .site-nav a:hover,
+  .site-tools a:hover {
     color: var(--ink);
   }
 
@@ -811,7 +878,14 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
     cursor: pointer;
   }
 
+  @media (max-width: 30rem) {
+    .nav-portal__more {
+      display: none;
+    }
+  }
+
   .nav-portal {
+    white-space: nowrap;
     border: 1px solid var(--rule-strong);
     border-radius: 999px;
     padding: 0.1rem 0.7rem;
