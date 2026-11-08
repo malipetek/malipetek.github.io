@@ -105,7 +105,7 @@ export default function Start() {
           <p className="lede">{t('start.intake.lede')}</p>
           {count > 0 ? <p className="portal-note">{t('start.already', { n: count })}</p> : null}
 
-          <div className="portal-field start-field">
+          <div className="portal-field">
             <label className="portal-label" htmlFor="f-need">
               {t('start.intake.label')}
             </label>

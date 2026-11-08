@@ -38,32 +38,7 @@
   font-size: clamp(2.1rem, 5.5vw, 3.6rem);
   line-height: 1.03;
   letter-spacing: -0.02em;
-  margin: 0.6rem 0 0.8rem;
-}
-
-.kb-spec-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.45rem 1rem;
-  margin: 0 0 1.1rem;
-  padding: 0.55rem 0;
-  border-block: 1px solid var(--rule);
-}
-
-.kb-spec-meta .kb-kicker,
-.kb-spec-meta .kb-meta {
-  margin: 0;
-}
-
-.kb-chip-n,
-.kb-item-meta,
-.kb-entry-meta,
-.kb-pager,
-.kb-home-meta,
-.kb-entry-foot,
-.kb-spec-meta {
-  font-variant-numeric: tabular-nums;
+  margin: 0.6rem 0 1rem;
 }
 
 .kb-lede {
@@ -106,7 +81,6 @@
   background: transparent;
   border: 1px solid var(--rule);
   border-radius: 4px;
-  transition: border-color var(--dur) var(--ease);
 }
 
 .kb-search input[type='search']:focus-visible {
@@ -178,21 +152,15 @@
 
 .kb-item-link {
   display: block;
-  position: relative;
   padding: 1.4rem 0.25rem;
   text-decoration: none;
   color: inherit;
-  transition:
-    background var(--dur) var(--ease),
-    box-shadow var(--dur) var(--ease);
+  transition: background var(--dur) var(--ease), padding-left var(--dur) var(--ease);
 }
 
-/* The hovered row gets the spec-sheet selection mark: a short orange tick on
-   its leading edge, the same signal the entry note uses. */
-.kb-item-link:hover,
-.kb-item:focus-within .kb-item-link {
+.kb-item-link:hover {
   background: color-mix(in srgb, var(--ink) 4%, transparent);
-  box-shadow: inset 2px 0 0 var(--orange);
+  padding-left: 0.75rem;
 }
 
 .kb-item-title {
@@ -248,9 +216,6 @@
   color: var(--ink-soft);
   text-decoration: none;
   border-bottom: 1px dotted var(--rule);
-  transition:
-    color var(--dur) var(--ease),
-    border-color var(--dur) var(--ease);
 }
 
 a.kb-tag:hover {
@@ -285,8 +250,7 @@ a.kb-tag:hover {
 
 .kb-back {
   font-family: var(--font-mono);
-  font-size: 12.5px;
-  letter-spacing: 0.04em;
+  font-size: 0.75rem;
   margin-bottom: 2rem;
 }
 
@@ -309,10 +273,6 @@ a.kb-tag:hover {
 
 .kb-block {
   margin-top: 3rem;
-}
-
-.kb-block.frame {
-  padding: clamp(1.25rem, 3vw, 2rem);
 }
 
 .kb-block h2 {
@@ -485,15 +445,11 @@ a.kb-tag:hover {
   padding: 0.85rem 0.25rem;
   text-decoration: none;
   color: inherit;
-  transition:
-    background var(--dur) var(--ease),
-    box-shadow var(--dur) var(--ease);
+  transition: background var(--dur) var(--ease);
 }
 
-.kb-home a:hover,
-.kb-home li:focus-within a {
+.kb-home a:hover {
   background: color-mix(in srgb, var(--ink) 4%, transparent);
-  box-shadow: inset 2px 0 0 var(--orange);
 }
 
 .kb-home-status {

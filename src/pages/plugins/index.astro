@@ -21,7 +21,6 @@ function versionCell(p: (typeof plugins)[number]) {
   description="Plugins for DeepSeek Harness: a projects panel, momentum tracking, managed dev processes, and action cards."
   current="/plugins"
 >
-  <div class="rails" aria-hidden="true"></div>
   <header class="page-head">
     <h1>DeepSeek plugins</h1>
     <p class="lede">
@@ -30,9 +29,7 @@ function versionCell(p: (typeof plugins)[number]) {
     </p>
   </header>
 
-  <canvas class="signal-strip" data-signal-strip aria-hidden="true"></canvas>
-
-  <section class="block intro frame">
+  <section class="block intro">
     <div class="block-head">
       <h2>Install</h2>
       <span class="label">
@@ -121,35 +118,7 @@ function versionCell(p: (typeof plugins)[number]) {
   initCopyAgentInstructions();
 </script>
 
-<script>
-  import { initSignalStrips } from '../../scripts/signal-strip';
-  initSignalStrips();
-</script>
-
 <style>
-  .signal-strip {
-    display: block;
-    width: 100%;
-    height: 74px;
-    margin: 0;
-    border-block: 1px solid var(--rule);
-  }
-
-  @media (max-width: 640px) {
-    .signal-strip {
-      height: 56px;
-    }
-  }
-
-  .intro.frame {
-    padding: clamp(1.25rem, 3vw, 2rem);
-  }
-
-  .block-head .label,
-  .plugin-meta dd {
-    font-variant-numeric: tabular-nums;
-  }
-
   .intro-note {
     max-width: 62ch;
     font-size: 16px;
@@ -201,11 +170,6 @@ function versionCell(p: (typeof plugins)[number]) {
     gap: clamp(1rem, 3vw, 3rem);
     padding: 1.4rem 0;
     border-top: 1px solid var(--rule);
-    transition: background var(--dur) var(--ease);
-  }
-
-  .plugin-list li:hover {
-    background: color-mix(in srgb, var(--ink) 4%, transparent);
   }
 
   .plugin-list li:first-child {

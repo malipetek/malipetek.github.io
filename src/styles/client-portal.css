@@ -90,59 +90,10 @@
   z-index: 50;
   display: grid;
   place-content: center;
-  gap: 14px;
+  gap: 12px;
   justify-items: center;
-  padding: 24px;
   background: var(--bone);
   color: var(--ink-soft);
-  text-align: center;
-}
-.cp-boot__brand {
-  font-size: 15px;
-  color: var(--ink);
-}
-.cp-boot__line {
-  max-width: 42ch;
-  font-size: 13.5px;
-  line-height: 1.5;
-}
-.cp-boot.is-error .cp-boot__line {
-  color: var(--ink);
-  font-weight: 600;
-}
-.cp-boot.is-error .cp-boot__line::before {
-  content: '';
-  display: inline-block;
-  width: 0.55em;
-  height: 0.55em;
-  margin-right: 0.5em;
-  background: var(--cp-bad);
-  vertical-align: 0.04em;
-}
-/* An indeterminate hairline, not a fake percentage: the page is coming, and
-   the room behind it takes a moment to draw. */
-.cp-boot__bar {
-  display: block;
-  width: 132px;
-  height: 2px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: var(--rule);
-}
-.cp-boot__bar i {
-  display: block;
-  width: 42%;
-  height: 100%;
-  background: var(--ink);
-  animation: cp-boot-slide 1.25s var(--ease) infinite;
-}
-@keyframes cp-boot-slide {
-  from {
-    transform: translateX(-110%);
-  }
-  to {
-    transform: translateX(340%);
-  }
 }
 
 /* ————— shell ————— */
@@ -308,9 +259,7 @@
   overflow-y: auto;
   min-width: 0;
   min-height: 0;
-  /* Route changes set the offset themselves (store.js), instantly: a smooth
-     scroll here would animate the new page under its transition snapshot. */
-  scroll-behavior: auto;
+  scroll-behavior: smooth;
 }
 .cp-view {
   max-width: 1200px;
@@ -431,18 +380,6 @@
   gap: 14px;
   justify-items: center;
 }
-.cp-empty > svg {
-  color: var(--ink-soft);
-}
-/* Focus sits inside the target: a flush card would clip an outer ring. */
-.cp-row:focus-visible,
-.cp-nav a:focus-visible,
-.cp-project:focus-visible,
-.cp-board__lane:focus-visible,
-.cp-board__legend button:focus-visible,
-.cp-seg button:focus-visible {
-  outline-offset: -2px;
-}
 .cp-linkbtn {
   border: 0;
   background: none;
@@ -493,84 +430,37 @@
 }
 
 /* Route changes ride the View Transitions API (store.js; reduced-motion
-   sessions skip it). The sidebar, the topbar and the room behind are a
-   constant; only the content area moves, in the direction of travel — into a
-   request or a project from the right, back out of one from the left, and a
-   plain rise between pages at the same depth. The board's peek card and the
-   request page's head share cp-peek, so the card grows into the head. */
+   sessions skip it). The sidebar and the room behind stay put as the root;
+   the content area is its own layer that leaves first and then rises in, so
+   the two pages never sit on top of each other half-transparent. The board's
+   peek card and the request page's head share cp-peek, so the card grows
+   into the head. */
 .cp-main {
   view-transition-name: cp-main;
 }
-/* Chrome stays put: a very short cross-fade, so the sidebar and the scene do
-   not wash out while the page alongside them changes. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 90ms;
+  animation-duration: 180ms;
 }
 ::view-transition-group(cp-main) {
   animation: none;
 }
 ::view-transition-old(cp-main) {
-  animation: cp-vt-out 90ms ease-in both;
+  animation: cp-vt-out 110ms ease-in both;
 }
 ::view-transition-new(cp-main) {
-  animation: cp-vt-in 200ms var(--ease) 40ms both;
-}
-html[data-cp-nav='in']::view-transition-old(cp-main) {
-  animation-name: cp-vt-exit-left;
-}
-html[data-cp-nav='in']::view-transition-new(cp-main) {
-  animation-name: cp-vt-enter-right;
-}
-html[data-cp-nav='out']::view-transition-old(cp-main) {
-  animation-name: cp-vt-exit-right;
-}
-html[data-cp-nav='out']::view-transition-new(cp-main) {
-  animation-name: cp-vt-enter-left;
-}
-/* A shared card is already moving; everything around it just arrives. */
-html[data-cp-nav='morph']::view-transition-new(cp-main) {
-  animation-name: cp-vt-in-morph;
+  animation: cp-vt-in 260ms var(--ease) 70ms both;
 }
 @keyframes cp-vt-out {
   to {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: translateY(-6px);
   }
 }
 @keyframes cp-vt-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
-  }
-}
-@keyframes cp-vt-exit-left {
-  to {
-    opacity: 0;
-    transform: translateX(-8px);
-  }
-}
-@keyframes cp-vt-enter-right {
-  from {
-    opacity: 0;
-    transform: translateX(14px);
-  }
-}
-@keyframes cp-vt-exit-right {
-  to {
-    opacity: 0;
-    transform: translateX(8px);
-  }
-}
-@keyframes cp-vt-enter-left {
-  from {
-    opacity: 0;
-    transform: translateX(-12px);
-  }
-}
-@keyframes cp-vt-in-morph {
-  from {
-    opacity: 0;
+    transform: translateY(12px);
   }
 }
 ::view-transition-group(cp-peek) {
@@ -852,7 +742,6 @@ html[data-cp-nav='morph']::view-transition-new(cp-main) {
   height: 100%;
   display: block;
   pointer-events: none;
-  animation: cp-scene-in 320ms var(--ease) both;
   /* The scene is the room: it fades at the viewport edges, never at a card. */
   -webkit-mask-image:
     linear-gradient(to right, transparent 0%, #000 4%, #000 96%, transparent 100%),
@@ -862,18 +751,6 @@ html[data-cp-nav='morph']::view-transition-new(cp-main) {
     linear-gradient(to right, transparent 0%, #000 4%, #000 96%, transparent 100%),
     linear-gradient(to bottom, transparent 0%, #000 10%, #000 91%, transparent 100%);
   mask-composite: intersect;
-}
-@keyframes cp-scene-in {
-  from {
-    opacity: 0;
-  }
-}
-/* On touch screens the page still scrolls under a finger: a vertical swipe
-   belongs to the page, a sideways drag to the machine. */
-@media (any-pointer: coarse) {
-  .cp-board__stage {
-    touch-action: pan-y;
-  }
 }
 /* Project and site labels ride the 3D points the scene reports each frame. */
 .cp-board__nodes {
@@ -1744,55 +1621,6 @@ html[data-cp-nav='morph']::view-transition-new(cp-main) {
 
 /* ————— a request ————— */
 
-/* A request opened by its link: hold its shape while the thread loads. */
-.cp-ticket--loading .cp-sk {
-  display: block;
-  border-radius: 5px;
-  background: var(--rule);
-  animation: cp-sk-pulse 1.4s var(--ease) infinite;
-}
-.cp-ticket--loading .cp-sk--crumb {
-  width: 190px;
-  height: 12px;
-  margin-bottom: 16px;
-}
-.cp-ticket--loading .cp-sk--title {
-  width: min(560px, 78%);
-  height: 34px;
-  margin-bottom: 16px;
-  border-radius: 7px;
-}
-.cp-ticket--loading .cp-sk--meta {
-  width: 300px;
-  max-width: 60%;
-  height: 14px;
-  margin-bottom: 26px;
-}
-.cp-ticket--loading .cp-sk-track {
-  height: 104px;
-  margin-bottom: 28px;
-  border: 1px solid var(--rule);
-  border-radius: 16px;
-  background: var(--bone);
-}
-.cp-ticket--loading .cp-sk--msg {
-  height: 104px;
-  border-radius: 4px 12px 12px 12px;
-  background: var(--bone);
-  border: 1px solid var(--rule);
-}
-.cp-ticket--loading .cp-sk--card {
-  height: 126px;
-  border-radius: var(--cp-radius);
-  background: var(--bone);
-  border: 1px solid var(--rule);
-}
-@keyframes cp-sk-pulse {
-  50% {
-    opacity: 0.55;
-  }
-}
-
 .cp-ticket__head {
   margin-bottom: 20px;
 }
@@ -1846,7 +1674,6 @@ html[data-cp-nav='morph']::view-transition-new(cp-main) {
   width: 100%;
   height: 2px;
   background: linear-gradient(90deg, var(--rule-strong) 50%, transparent 0) 0 0 / 8px 2px repeat-x;
-  transition: background var(--dur) var(--ease);
   z-index: 0;
 }
 .cp-step:first-child::before {
@@ -1866,10 +1693,6 @@ html[data-cp-nav='morph']::view-transition-new(cp-main) {
   border-radius: 14px;
   border: 1.5px solid var(--rule-strong);
   background: var(--bone);
-  transition:
-    background var(--dur) var(--ease),
-    border-color var(--dur) var(--ease),
-    color var(--dur) var(--ease);
 }
 .cp-step.is-done .cp-step__icon {
   border-color: var(--ink);
@@ -2877,14 +2700,9 @@ fieldset.cp-field {
 
 @media (prefers-reduced-motion: reduce) {
   .cp *,
-  .cp-signin *,
-  .cp-boot * {
+  .cp-signin * {
     animation: none !important;
     transition: none !important;
-  }
-  /* Without the moving segment the bar still says "working": a full rule. */
-  .cp-boot__bar i {
-    width: 100%;
   }
 }
 

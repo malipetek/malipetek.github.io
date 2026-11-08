@@ -13,7 +13,6 @@ import { getPosts, fmtDate, readMinutes } from "../lib/posts.js";
 import { JOBS } from "../lib/experience.js";
 import { kbDb, listKbEntries, kbFacets, type KbSummary } from "../lib/kb";
 import { getPluginSummaries } from "../lib/plugins";
-import WorkshopScene from "./WorkshopScene.astro";
 
 const projects = (await getCollection("projects")).sort(
   (a, b) =>
@@ -79,9 +78,8 @@ const initial = (title: string) =>
 ---
 
 <div class="rails" aria-hidden="true"></div>
-<WorkshopScene />
 
-<section class="room lab-intro" data-station="shelf">
+<section class="room lab-intro">
   <div class="lab-intro-inner">
     <p class="lab-who">
       <img
@@ -396,31 +394,11 @@ const initial = (title: string) =>
 
   /* ————— intro ————— */
 
-  .lab-intro {
-    overflow-x: clip;
-  }
-
   .lab-intro-inner {
-    position: relative;
-    z-index: 1;
     max-width: min(100%, 46rem);
     padding-inline: var(--inset-x);
     display: grid;
     gap: clamp(0.9rem, 2vw, 1.5rem);
-  }
-
-  .lab-intro-inner::before {
-    content: "";
-    position: absolute;
-    inset: -3.5rem -5rem -3.5rem -4rem;
-    z-index: -1;
-    background: radial-gradient(
-      closest-side,
-      color-mix(in srgb, var(--bone) 92%, transparent) 62%,
-      color-mix(in srgb, var(--bone) 60%, transparent) 80%,
-      transparent 100%
-    );
-    pointer-events: none;
   }
 
   .lab-who {
@@ -462,9 +440,9 @@ const initial = (title: string) =>
 
   .lab-title {
     margin: 0;
-    font-size: clamp(2rem, 4.5vw, 3.25rem);
-    line-height: 1.02;
-    letter-spacing: -0.03em;
+    font-size: clamp(2.6rem, 8vw, 5rem);
+    line-height: 0.94;
+    letter-spacing: -0.045em;
   }
 
   .lab-lede {
@@ -492,13 +470,6 @@ const initial = (title: string) =>
     font-size: 13px;
     color: var(--ink-soft);
     overflow-wrap: anywhere;
-  }
-
-  .box-meta,
-  .tl-years,
-  .kb-home-meta,
-  .post-meta {
-    font-variant-numeric: tabular-nums;
   }
 
   .room--panel .post-list li:has(.post-link--row:hover) .plugin-home-pkg {
@@ -573,21 +544,11 @@ const initial = (title: string) =>
     flex-direction: column;
     background: var(--bone);
     border: 1px solid var(--rule);
-    transition:
-      border-color var(--dur) var(--ease),
-      transform var(--dur) var(--ease);
+    transition: border-color var(--dur) var(--ease);
   }
 
   .box:hover {
     border-color: var(--rule-strong);
-  }
-
-  /* A two-pixel lift is enough to read the box as a thing you can pick up;
-     kept to fine pointers so a tap doesn't leave it hovering. */
-  @media (hover: hover) and (pointer: fine) {
-    .box:hover {
-      transform: translateY(-2px);
-    }
   }
 
   .box[hidden] {

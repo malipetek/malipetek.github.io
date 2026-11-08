@@ -1539,26 +1539,10 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
     stations.push({ name: 'shelf', ...orbit({ cam: [at(2) + 1, 2.6, 11], look: [at(2) + 1.5, 1.2, -1] }, [at(2) + 2.6, 1.5, -3.5], 26, -6), animated: [] });
   }
 
-  // 3 — library (knowledgebase + plugins): index cards filed in a tray
+  // 3 — writing room: papers lifting off a low plinth
   {
     const g = new THREE.Group();
     g.position.x = at(3);
-    g.add(box(ctx, 5.2, 0.5, 1.8, 'fill2', 4.4, 0.25, -3));
-    for (let i = 0; i < 11; i++) {
-      const h = 1.1 + ((i * 7) % 4) * 0.14;
-      const card = box(ctx, 0.1, h, 1.3, i === 6 ? 'orange' : 'fill', 2.3 + i * 0.42, 0.5 + h / 2, -3);
-      card.rotation.z = -0.08;
-      g.add(card);
-    }
-    scene.add(g);
-    // Along the tray: the cards stack up in perspective, like flipping through a drawer.
-    stations.push({ name: 'library', ...orbit({ cam: [at(3) + 1, 2.8, 11], look: [at(3) + 1.4, 1.5, -1] }, [at(3) + 4.4, 1.2, -3], -40, 12), animated: [] });
-  }
-
-  // 4 — writing room: papers lifting off a low plinth
-  {
-    const g = new THREE.Group();
-    g.position.x = at(4);
     g.add(box(ctx, 4.2, 0.6, 3, 'fill2', 4.6, 0.3, -2.6));
     const sheets: THREE.Object3D[] = [];
     for (let i = 0; i < 5; i++) {
@@ -1570,19 +1554,35 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
     }
     scene.add(g);
     // Over the shoulder, from above: the sheets fan out as they lift.
-    stations.push({ name: 'writing', ...orbit({ cam: [at(4) + 1, 2.8, 10.6], look: [at(4) + 1.4, 1.7, 0] }, [at(4) + 4.3, 3.2, -2.7], -24, 20), animated: sheets });
+    stations.push({ name: 'writing', ...orbit({ cam: [at(3) + 1, 2.8, 10.6], look: [at(3) + 1.4, 1.7, 0] }, [at(3) + 4.3, 3.2, -2.7], -24, 20), animated: sheets });
   }
 
-  // 5 — work room: pillars like a bar-chart timeline
+  // 4 — work room: pillars like a bar-chart timeline
   {
     const g = new THREE.Group();
-    g.position.x = at(5);
+    g.position.x = at(4);
     [1.4, 2.3, 3.1, 1.9].forEach((h, i) => {
       g.add(box(ctx, 1.4, h, 1.7, i === 2 ? 'orange' : 'fill', -2.6 + i * 1.9, h / 2, -4.5));
     });
     scene.add(g);
     // Down the row from the right: the pillars read as a timeline running into depth.
-    stations.push({ name: 'work', ...orbit({ cam: [at(5), 3.4, 12], look: [at(5), 1.1, -2] }, [at(5) + 0.25, 1.4, -4.5], 20, 12), animated: [] });
+    stations.push({ name: 'work', ...orbit({ cam: [at(4), 3.4, 12], look: [at(4), 1.1, -2] }, [at(4) + 0.25, 1.4, -4.5], 20, 12), animated: [] });
+  }
+
+  // 5 — library (knowledgebase + plugins): index cards filed in a tray
+  {
+    const g = new THREE.Group();
+    g.position.x = at(5);
+    g.add(box(ctx, 5.2, 0.5, 1.8, 'fill2', 4.4, 0.25, -3));
+    for (let i = 0; i < 11; i++) {
+      const h = 1.1 + ((i * 7) % 4) * 0.14;
+      const card = box(ctx, 0.1, h, 1.3, i === 6 ? 'orange' : 'fill', 2.3 + i * 0.42, 0.5 + h / 2, -3);
+      card.rotation.z = -0.08;
+      g.add(card);
+    }
+    scene.add(g);
+    // Along the tray: the cards stack up in perspective, like flipping through a drawer.
+    stations.push({ name: 'library', ...orbit({ cam: [at(5) + 1, 2.8, 11], look: [at(5) + 1.4, 1.5, -1] }, [at(5) + 4.4, 1.2, -3], -40, 12), animated: [] });
   }
 
   // 6 — intercom room: the orange beacon
@@ -1748,35 +1748,15 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
     return;
   }
 
-  // A hovered DOM row pulses the dot matrix under the station being read.
-  // The glow decays on its own; hovering keeps a low pulse alive instead.
-  const hoverGlow = new THREE.Vector3();
-  const HOVERABLE =
-    '.box[data-kind], .kb-home a, .plugin-home li, #writing .post-list li, .tl-item';
-  const isHoverable = (target: EventTarget | null) =>
-    target instanceof Element && target.closest(HOVERABLE) !== null;
-  let hovering = false;
-  document.addEventListener('pointerover', (e) => {
-    if (!isHoverable(e.target)) return;
-    hovering = true;
-    hoverGlow.set(look.x, look.z, 0.85);
-  });
-  document.addEventListener('pointerout', (e) => {
-    if (isHoverable(e.target) && !isHoverable(e.relatedTarget)) hovering = false;
-  });
-
   window.addEventListener('pointermove', (e) => {
     mouse.x = (e.clientX / window.innerWidth - 0.5) * 2;
     mouse.y = (e.clientY / window.innerHeight - 0.5) * 2;
   });
 
   const timer = new THREE.Timer();
-  let lastFrame = 0;
   const tick = () => {
     timer.update();
     const t = timer.getElapsed();
-    const dt = Math.min(0.1, Math.max(0, t - lastFrame));
-    lastFrame = t;
     current += (targetFor() - current) * 0.075;
     pose(current);
     kit.floor.uniforms.uTime.value = t;
@@ -1788,17 +1768,6 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
         o.rotation.z += Math.sin(t * 0.5 + oi) * 0.0004;
       });
     });
-    hoverGlow.z *= Math.exp(-dt * 2.8);
-    if (hovering) {
-      const pulse = 0.3 + 0.16 * Math.sin(t * 2.4);
-      if (hoverGlow.z < pulse) hoverGlow.set(look.x, look.z, pulse);
-      else {
-        hoverGlow.x = look.x;
-        hoverGlow.y = look.z;
-      }
-    }
-    if (hoverGlow.z > 0.002) kit.glow[0].copy(hoverGlow);
-    else hoverGlow.z = 0;
     camera.position.set(pos.x + mouse.x * 0.7, pos.y - mouse.y * 0.4, pos.z);
     camera.lookAt(look);
     renderer.render(scene, camera);
