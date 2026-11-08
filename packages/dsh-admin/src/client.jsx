@@ -721,16 +721,25 @@ function apply(ctx) {
   /* ————— Clients in the sidebar ————— */
 
   /*
-   * One sidebar row per client, under Admin, most recently active first, each
-   * opening that client's page. A row is a `sidebar.panellist` entry plus the
-   * `main` page under the same id; the set is rebuilt from `/admin/clients`
-   * and `/admin/tickets` once a minute, and only rows that changed are
-   * registered again.
+   * Two presentations of the same data. When the Harness declares the
+   * `sidebar.workspaces.section` slot — the DSH Admin build does — a "Clients"
+   * section owns the tree; otherwise the flat `sidebar.panellist` rows stay,
+   * exactly as they were. Both open a `main` page per client, so the tree's
+   * client rows can select the page the rows would have opened.
+   *
+   * A row is a `main` page under `admin-client-<id>` plus, without the
+   * section, a `sidebar.panellist` entry under the same id; the set is rebuilt
+   * from `/admin/clients` and `/admin/tickets` once a minute and on focus.
    */
   const CLIENT_ROWS_MS = 60_000;
   const CLIENT_ROWS_MAX = 12;
   const CLIENT_ROWS_ORDER = 13;
   const CLIENT_TINTS = ['#4c8dff', '#d18f2e', '#2f9e5b', '#b45fd6', '#d1495b', '#1f9fb4', '#8a8f2e', '#6b6fd6'];
+
+  /** True while the workspace browser declares the section slot. */
+  let sectionAvailable = false;
+  /** Run the client-row sync now; replaced while the rows are registered. */
+  let refreshClientRows = () => {};
 
   /** client id → what is waiting on Ali for that client, for the row's badge. */
   const clientBadges = (() => {
@@ -755,31 +764,36 @@ function apply(ctx) {
   };
   const tintOf = (id) => CLIENT_TINTS[[...id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % CLIENT_TINTS.length];
 
+  /** The round initials chip shared by the legacy row and the tree row. */
+  function clientAvatar(c, size = 16) {
+    return (
+      <span
+        aria-hidden="true"
+        style={{
+          width: size,
+          height: size,
+          borderRadius: '50%',
+          background: tintOf(c.id),
+          color: '#fff',
+          fontSize: Math.round(size * 0.5),
+          fontWeight: 700,
+          lineHeight: `${size}px`,
+          textAlign: 'center',
+          letterSpacing: -0.3,
+        }}
+      >
+        {initials(c)}
+      </span>
+    );
+  }
+
   function clientIcon(c) {
-    const letters = initials(c);
-    const tint = tintOf(c.id);
     return function ClientRowIcon(props) {
       const size = props?.size ?? 16;
       const badge = useSyncExternalStore(clientBadges.subscribe, clientBadges.get, clientBadges.get).get(c.id);
       return (
         <span style={{ position: 'relative', display: 'inline-flex' }} title={badge?.text}>
-          <span
-            aria-hidden="true"
-            style={{
-              width: size,
-              height: size,
-              borderRadius: '50%',
-              background: tint,
-              color: '#fff',
-              fontSize: Math.round(size * 0.5),
-              fontWeight: 700,
-              lineHeight: `${size}px`,
-              textAlign: 'center',
-              letterSpacing: -0.3,
-            }}
-          >
-            {letters}
-          </span>
+          {clientAvatar(c, size)}
           {badge?.count ? (
             <span
               style={{
@@ -813,9 +827,30 @@ function apply(ctx) {
     };
   }
 
-  /** Keep the rows in step with the client list until the returned stop runs. */
+  /** client id → the disposer of its `main` page. */
+  const clientPages = new Map();
+
+  /** Register a client's main page on demand, so a tree click never races the poll. */
+  function ensureClientPage(c) {
+    if (clientPages.has(c.id)) return;
+    try {
+      clientPages.set(
+        c.id,
+        ctx.slots.register({ name: 'main', key: `admin-client-${c.id}`, locale: NAMESPACE }, clientPage(c.id)),
+      );
+    } catch (error) {
+      console.warn(`admin: could not register client page ${c.id}:`, error?.message ?? error);
+    }
+  }
+
+  function releaseClientPage(id) {
+    clientPages.get(id)?.();
+    clientPages.delete(id);
+  }
+
+  /** Keep the rows and pages in step with the client list until the returned stop runs. */
   function syncClientRows() {
-    /** row id → { sig, dispose } */
+    /** panellist row id → { sig, dispose } */
     const rows = new Map();
     let stopped = false;
     const pass = async () => {
@@ -843,18 +878,31 @@ function apply(ctx) {
         badges.set(t.client_email, b);
       }
       const active = (c) => Math.max(latest.get(c.email) ?? 0, c.created_at ?? 0);
-      const shown = clients
+      const eligible = clients
         .filter((c) => c.role !== 'admin' && typeof c.id === 'string' && c.email)
-        .sort((a, b) => active(b) - active(a))
-        .slice(0, CLIENT_ROWS_MAX);
+        .sort((a, b) => active(b) - active(a));
+      // The tree shows every client; the legacy rows keep their 12-row limit.
+      const pageClients = sectionAvailable ? eligible : eligible.slice(0, CLIENT_ROWS_MAX);
+      const wantedPages = new Set(pageClients.map((c) => c.id));
+      for (const c of pageClients) ensureClientPage(c);
+      for (const id of [...clientPages.keys()]) {
+        if (!wantedPages.has(id)) releaseClientPage(id);
+      }
       const byId = new Map();
-      for (const c of shown) {
+      for (const c of eligible) {
         const b = badges.get(c.email);
         if (!b) continue;
         const text = [b.approve && `${b.approve} to approve`, b.answer && `${b.answer} waiting for an answer`].filter(Boolean).join(' · ');
         byId.set(c.id, { count: b.approve + b.answer, text });
       }
       clientBadges.set(byId);
+      // With the section, the client rows live in its tree; keep the flat list empty.
+      if (sectionAvailable) {
+        for (const row of rows.values()) row.dispose();
+        rows.clear();
+        return;
+      }
+      const shown = eligible.slice(0, CLIENT_ROWS_MAX);
       const wanted = new Set();
       shown.forEach((c, i) => {
         const id = `admin-client-${c.id}`;
@@ -863,11 +911,10 @@ function apply(ctx) {
         wanted.add(id);
         if (rows.get(id)?.sig === sig) return;
         rows.get(id)?.dispose();
-        const off = [
-          ctx.slots.register({ name: 'main', key: id, locale: NAMESPACE }, clientPage(c.id)),
-          ctx.slots.register({ name: 'sidebar.panellist', id, order: CLIENT_ROWS_ORDER + i, label }, clientIcon(c)),
-        ];
-        rows.set(id, { sig, dispose: () => off.forEach((d) => d?.()) });
+        rows.set(id, {
+          sig,
+          dispose: ctx.slots.register({ name: 'sidebar.panellist', id, order: CLIENT_ROWS_ORDER + i, label }, clientIcon(c)),
+        });
       });
       for (const [id, row] of rows) {
         if (wanted.has(id)) continue;
@@ -876,16 +923,248 @@ function apply(ctx) {
       }
     };
     void pass();
+    refreshClientRows = () => { void pass(); };
     const timer = setInterval(() => void pass(), CLIENT_ROWS_MS);
     const onFocus = () => void pass();
     window.addEventListener('focus', onFocus);
     return () => {
       stopped = true;
+      refreshClientRows = () => {};
       clearInterval(timer);
       window.removeEventListener('focus', onFocus);
       for (const row of rows.values()) row.dispose();
       rows.clear();
+      for (const id of [...clientPages.keys()]) releaseClientPage(id);
     };
+  }
+
+  /* ————— Clients → Projects → Tickets, in the workspace browser ————— */
+
+  const TICKET_DOT = {
+    new: 'var(--dsw-alias-state-warning-primary, #d18f2e)',
+    approved: 'var(--dsw-alias-state-business-primary, #4c8dff)',
+    in_progress: 'var(--dsw-alias-state-success-primary, #2f9e5b)',
+    review: 'var(--dsw-alias-state-business-primary, #4c8dff)',
+    done: 'var(--dsw-alias-label-tertiary, #8a9099)',
+    declined: 'var(--dsw-alias-label-tertiary, #8a9099)',
+  };
+  const isClosedTicket = (t) => t.status === 'done' || t.status === 'declined';
+  const openTicketCount = (tickets) => tickets.filter((t) => !isClosedTicket(t)).length;
+  /** Open first, then newest; a closed ticket never outranks an open one. */
+  const ticketOrder = (a, b) => Number(isClosedTicket(a)) - Number(isClosedTicket(b)) || (b.updated_at ?? 0) - (a.updated_at ?? 0);
+
+  function copyTicketLink(ticket) {
+    const link = `https://malipetek.dev/portal/admin#ticket=${ticket.id}`;
+    void navigator.clipboard?.writeText(link).catch(() => undefined);
+  }
+
+  /** Approve a new ticket, then let the tree poll again. */
+  async function approveTicket(ticket, changed) {
+    try {
+      await api('PATCH', `/admin/tickets/${ticket.id}`, { status: 'approved' });
+      changed?.();
+    } catch (error) {
+      console.warn(`admin: could not approve ticket ${ticket.id}:`, error?.message ?? error);
+    }
+  }
+
+  /**
+   * Open a ticket's latest run conversation when it has one; otherwise (or on
+   * any failure) open the ticket in Admin. The run fields are the same ones
+   * the Tasks tab hands `host.conversation.open`.
+   */
+  async function openTicketRun(ticket) {
+    try {
+      const detail = await api('GET', `/admin/tickets/${ticket.id}`);
+      const runs = Array.isArray(detail?.runs) ? detail.runs : [];
+      for (let i = runs.length - 1; i >= 0; i -= 1) {
+        const run = runs[i];
+        if (!run?.session_id || !run?.session_dir) continue;
+        if (!conversation.available()) break;
+        await conversation.open({ runId: run.id, sessionId: run.session_id, sessionDir: run.session_dir });
+        return;
+      }
+    } catch (error) {
+      console.warn(`admin: could not open a run for ticket ${ticket.id}:`, error?.message ?? error);
+    }
+    openTicket({ ticketId: ticket.id });
+  }
+
+  /** Open a client's main page, registering it first if the poll has not run yet. */
+  function openClientPage(client, selectPanel) {
+    ensureClientPage(client);
+    try {
+      selectPanel(`admin-client-${client.id}`);
+    } catch (error) {
+      console.warn(`admin: could not select the page for client ${client.id}:`, error?.message ?? error);
+    }
+  }
+
+  /** The ticket rows of one project (or of Mine), with done/declined behind one row. */
+  function TicketList({ Row, tickets, changed }) {
+    const [showClosed, setShowClosed] = useState(false);
+    const open = tickets.filter((t) => !isClosedTicket(t));
+    const closed = tickets.filter((t) => isClosedTicket(t));
+    const shown = showClosed ? [...open, ...closed] : open;
+    const menu = (ticket) => {
+      const items = [{ id: 'open', label: 'Open in Admin', onSelect: () => openTicket({ ticketId: ticket.id }) }];
+      if (ticket.status === 'new') items.push({ id: 'approve', label: 'Approve', onSelect: () => void approveTicket(ticket, changed) });
+      items.push({ id: 'copy', label: 'Copy ticket link', separatorBefore: true, onSelect: () => copyTicketLink(ticket) });
+      return items;
+    };
+    return (
+      <>
+        {shown.map((ticket) => (
+          <Row
+            key={ticket.id}
+            dot={TICKET_DOT[ticket.status] ?? TICKET_DOT.done}
+            label={`#${ticket.id} ${ticket.title || ticket.title_en || '(untitled)'}`}
+            trailing={ago(ticket.updated_at)}
+            menuItems={menu(ticket)}
+            onClick={() => void openTicketRun(ticket)}
+          />
+        ))}
+        {closed.length > 0 && (
+          <Row
+            label={showClosed ? `Hide closed` : `Show closed · ${closed.length}`}
+            onClick={() => setShowClosed((value) => !value)}
+          />
+        )}
+      </>
+    );
+  }
+
+  /** Shape clients, projects and tickets into the tree rows the section renders. */
+  function buildClientTree(clients, projects, tickets) {
+    const projectById = new Map(projects.map((p) => [String(p.id), p]));
+    const latest = new Map();
+    for (const t of tickets) {
+      if (t.kind === 'system' || !t.client_email) continue;
+      latest.set(t.client_email, Math.max(latest.get(t.client_email) ?? 0, t.updated_at ?? 0));
+    }
+    const active = (c) => Math.max(latest.get(c.email) ?? 0, c.created_at ?? 0);
+    const eligible = clients
+      .filter((c) => c.role !== 'admin' && typeof c.id === 'string' && c.email)
+      .sort((a, b) => active(b) - active(a));
+    return eligible.map((client) => {
+      const own = tickets.filter((t) => t.kind !== 'system' && t.client_email === client.email);
+      const byProject = new Map();
+      const noProject = [];
+      for (const t of own) {
+        if (t.project_id === null || t.project_id === undefined) {
+          noProject.push(t);
+          continue;
+        }
+        const pid = String(t.project_id);
+        if (!byProject.has(pid)) byProject.set(pid, []);
+        byProject.get(pid).push(t);
+      }
+      const ids = [...new Set((Array.isArray(client.projectIds) ? client.projectIds : []).map(String))];
+      for (const pid of byProject.keys()) if (!ids.includes(pid)) ids.push(pid);
+      const groups = ids.map((pid) => ({
+        id: pid,
+        name: projectById.get(pid)?.name ?? pid,
+        tickets: [...(byProject.get(pid) ?? [])].sort(ticketOrder),
+      }));
+      groups.sort((a, b) => openTicketCount(b.tickets) - openTicketCount(a.tickets) || a.name.localeCompare(b.name));
+      if (noProject.length > 0) {
+        groups.push({ id: '__none__', name: 'No project', tickets: [...noProject].sort(ticketOrder) });
+      }
+      const approve = own.filter((t) => t.status === 'new').length;
+      const answer = own.filter((t) => Boolean(t.client_waiting_since) && !['new', 'done', 'declined'].includes(t.status)).length;
+      return { client, approve, answer, badge: approve + answer, projects: groups };
+    });
+  }
+
+  /**
+   * The Clients section: clients, their projects and their tickets, refreshed
+   * like the flat rows (once a minute and on window focus). `Section` and
+   * `Row` come from the ui-workspace section slot, so this file imports no
+   * Harness internals.
+   */
+  function ClientsSection({ Section, TreeRow, selectPanel }) {
+    const [state, setState] = useState({ clients: [], projects: [], tickets: [], loading: true, error: '' });
+    const [round, setRound] = useState(0);
+    const reload = useCallback(() => setRound((value) => value + 1), []);
+    useEffect(() => {
+      let alive = true;
+      const load = async () => {
+        try {
+          const [c, p, t] = await Promise.all([
+            api('GET', '/admin/clients'),
+            api('GET', '/admin/projects'),
+            api('GET', '/admin/tickets'),
+          ]);
+          if (!alive) return;
+          setState({
+            clients: Array.isArray(c?.clients) ? c.clients : [],
+            projects: Array.isArray(p?.projects) ? p.projects : [],
+            tickets: Array.isArray(t?.tickets) ? t.tickets : [],
+            loading: false,
+            error: '',
+          });
+        } catch (error) {
+          if (alive) setState((prev) => ({ ...prev, loading: false, error: error?.message ?? 'Could not load clients' }));
+        }
+      };
+      void load();
+      const timer = setInterval(() => void load(), CLIENT_ROWS_MS);
+      const onFocus = () => void load();
+      window.addEventListener('focus', onFocus);
+      return () => {
+        alive = false;
+        clearInterval(timer);
+        window.removeEventListener('focus', onFocus);
+      };
+    }, [round]);
+
+    const tree = buildClientTree(state.clients, state.projects, state.tickets);
+    const mine = state.tickets.filter((t) => t.kind === 'system').sort(ticketOrder);
+    const refresh = (
+      <button
+        type="button"
+        aria-label="Refresh clients"
+        title="Refresh clients"
+        onClick={reload}
+        style={{ width: 24, height: 24, border: 0, borderRadius: 4, background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}
+      >
+        ↻
+      </button>
+    );
+    return (
+      <Section id="admin-clients" title="Clients" count={tree.length || undefined} actions={refresh}>
+        {state.loading && <TreeRow label="Loading clients…" />}
+        {state.error !== '' && <TreeRow label={`${state.error} — click to retry`} onClick={reload} />}
+        {tree.map(({ client, badge, projects }, index) => (
+          <TreeRow
+            key={client.id}
+            icon={clientAvatar(client)}
+            label={client.name || client.email}
+            badge={badge || undefined}
+            defaultExpanded={index === 0}
+            onClick={() => openClientPage(client, selectPanel)}
+            menuItems={[{ id: 'open-client', label: 'Open client page', onSelect: () => openClientPage(client, selectPanel) }]}
+            children={projects.length > 0 ? projects.map((project, projectIndex) => (
+              <TreeRow
+                key={`${client.id}:${project.id}`}
+                label={project.name}
+                badge={openTicketCount(project.tickets) || undefined}
+                defaultExpanded={index === 0 && projectIndex === 0 && project.tickets.length > 0}
+                children={project.tickets.length > 0
+                  ? <TicketList Row={TreeRow} tickets={project.tickets} changed={reload} />
+                  : undefined}
+              />
+            )) : undefined}
+          />
+        ))}
+        {!state.loading && state.error === '' && tree.length === 0 && <TreeRow label="No clients yet" />}
+        {mine.length > 0 && (
+          <TreeRow label="Mine" badge={openTicketCount(mine) || undefined}>
+            <TicketList Row={TreeRow} tickets={mine} changed={reload} />
+          </TreeRow>
+        )}
+      </Section>
+    );
   }
 
   /* ————— The ticket, as a view of its own conversation ————— */
@@ -1023,6 +1302,22 @@ function apply(ctx) {
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL_ID, order: 12, label: 'Admin' }, AdminEntryIcon));
   // Each client gets a row of its own under Admin.
   ctx.slots.inject('sidebar.panellist', () => syncClientRows());
+  // The DSH Admin workspace browser declares `sidebar.workspaces.section`.
+  // There the tree replaces the flat client rows; an upstream Harness never
+  // fires this and keeps the rows.
+  ctx.slots.inject('sidebar.workspaces.section', () => {
+    sectionAvailable = true;
+    const dispose = ctx.slots.register(
+      { name: 'sidebar.workspaces.section', id: 'admin-clients', order: 10 },
+      ClientsSection,
+    );
+    refreshClientRows();
+    return () => {
+      sectionAvailable = false;
+      dispose();
+      refreshClientRows();
+    };
+  });
   // Client rows make the panel list long; give it its own scroll so the
   // workspace browser below keeps at least half the column.
   ctx.effect(() => {
