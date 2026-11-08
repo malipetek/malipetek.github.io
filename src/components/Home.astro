@@ -79,7 +79,7 @@ const availability = site?.availability ?? "limited";
 </section>
 
 <section class="room room--panel" id="how" data-station="how">
-  <div class="plate">
+  <div class="plate frame">
     <div class="block-head">
       <h2><span class="room-no" aria-hidden="true">01</span>{t("site.home.how.title")}</h2>
       <p class="block-note">{copy(t, "offer.who", WHO)}</p>
@@ -104,7 +104,7 @@ const availability = site?.availability ?? "limited";
 
     <p class="byo">{copy(t, "offer.byo", BRING_YOUR_OWN)}</p>
 
-    <div class="price frame">
+    <div class="price">
       <div class="price-head">
         <h3>{t("site.home.price.title")}</h3>
         <p>{copy(t, "offer.priceRule", PRICE_RULE)}</p>
@@ -339,7 +339,6 @@ const availability = site?.availability ?? "limited";
     line-height: 1.4;
     letter-spacing: -0.01em;
     color: var(--ink);
-    font-variant-numeric: tabular-nums;
   }
 
   /* For the reader who has only an idea. */
@@ -367,7 +366,6 @@ const availability = site?.availability ?? "limited";
     margin: 0.9rem 0 0;
     font-size: 14px;
     color: var(--ink-soft);
-    font-variant-numeric: tabular-nums;
   }
 
   /* ————— how it works ————— */
@@ -396,27 +394,6 @@ const availability = site?.availability ?? "limited";
     border-left: 1px solid var(--rule);
   }
 
-  /* The rows answer the pointer like records on a spec sheet: the ground
-     warms a touch, the hairline sharpens and the number goes to ink. */
-  .step,
-  .term {
-    transition: background var(--dur) var(--ease);
-  }
-
-  .step:hover,
-  .term:hover {
-    background: color-mix(in srgb, var(--ink) 3%, transparent);
-  }
-
-  .step:hover .step-no {
-    border-color: var(--ink);
-  }
-
-  .step:hover .step-no,
-  .term:hover h3 span {
-    color: var(--ink);
-  }
-
   .step-no {
     display: inline-flex;
     align-items: center;
@@ -427,7 +404,6 @@ const availability = site?.availability ?? "limited";
     font-family: var(--font-mono);
     font-size: 12.5px;
     font-weight: 500;
-    font-variant-numeric: tabular-nums;
     border: 1px solid var(--rule-strong);
     border-radius: 50%;
   }
@@ -456,26 +432,8 @@ const availability = site?.availability ?? "limited";
     color: var(--ink-soft);
   }
 
-  /* Pricing is the decision, so it reads as a spec-sheet callout inside the
-     plate — heavier rules, its own ground and a signal tick on the top edge —
-     not another card. */
   .price {
-    position: relative;
-    margin-top: clamp(1.4rem, 3vw, 2rem);
-    padding: 0 clamp(0.85rem, 2.2vw, 1.35rem) 1rem;
-    background: color-mix(in srgb, var(--paper) 84%, transparent);
-    border-color: var(--rule-strong);
-    border-top: 3px solid var(--ink);
-  }
-
-  .price::after {
-    content: '';
-    position: absolute;
-    top: -3px;
-    left: 0;
-    width: clamp(2.5rem, 12%, 5.5rem);
-    height: 3px;
-    background: var(--orange);
+    border-top: 2px solid var(--ink);
   }
 
   .price-head {
@@ -534,7 +492,6 @@ const availability = site?.availability ?? "limited";
     font-family: var(--font-mono);
     font-size: 12px;
     font-weight: 500;
-    font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
     color: var(--ink-soft);
   }

@@ -1,7 +1,7 @@
 ---
 import "../styles/base.css";
 import { siteT, localizedPath, copy } from "../lib/site.js";
-import { SOURCE_LOCALE, LOCALES } from "../lib/locales.js";
+import { SOURCE_LOCALE } from "../lib/locales.js";
 
 interface Props {
   title?: string;
@@ -132,82 +132,6 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
       document.documentElement.dataset.theme =
         localStorage.getItem("theme") ||
         (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    </script>
-    <!-- Opt in before stylesheets load; a late opt-in misses fresh arrivals. -->
-    <style is:inline>
-      @media (prefers-reduced-motion: no-preference) {
-        @view-transition { navigation: auto; }
-      }
-    </style>
-    <script is:inline define:vars={{ navigationLocales: LOCALES.map((l) => l.code.toLowerCase()) }}>
-      /*
-       * Cross-document navigation, direction-aware.
-       *
-       * The depth of the path says whether the reader is going deeper into the
-       * site (forward), back out of it (back) or sideways (lateral). The direction
-       * goes on <html data-nav-dir> and base.css turns it into the page-main view
-       * transition. A clicked post/plugin/box/KB title is named shared-title so it
-       * morphs into the heading of the page it opens.
-       *
-       * pageswap runs in the document being left, pagereveal in the one being
-       * entered. Never intercept clicks, forms, hashes or authentication redirects.
-       * Register before first paint: pagereveal can precede deferred modules.
-       * Only same-origin, browser-provided transitions receive a direction/name;
-       * cross-origin trips (including the lab) keep native navigation and fallback.
-       */
-      const TITLE_SELECTOR = ".post-link, .plugin-name, .box-title, .kb-item-title";
-      const localeCodes = new Set(navigationLocales);
-      const pathOf = (url) => new URL(url, location.href).pathname.replace(/\/+$/, "") || "/";
-      const depthOf = (path) => {
-        const parts = pathOf(path).split("/").filter(Boolean);
-        return parts.length - (localeCodes.has(parts[0]?.toLowerCase()) ? 1 : 0);
-      };
-      const motion = matchMedia('(prefers-reduced-motion: reduce)');
-      const direction = (from, to) => {
-        const delta = depthOf(to) - depthOf(from);
-        document.documentElement.dataset.navDir = delta > 0 ? "forward" : delta < 0 ? "back" : "lateral";
-      };
-      const titleFor = (path) => Array.from(document.querySelectorAll(TITLE_SELECTOR))
-        .find((title) => {
-          const anchor = title.closest("a[href]") ?? title.querySelector("a[href]");
-          return anchor && anchor.origin === location.origin && pathOf(anchor.href) === pathOf(path);
-        });
-      const clearTitles = () => document.querySelectorAll('[style*="view-transition-name"]')
-        .forEach((title) => {
-          if (title.style.viewTransitionName === "shared-title") title.style.removeProperty("view-transition-name");
-        });
-      const sameOriginPage = (target) => {
-        if (!target) return null;
-        const url = new URL(target, location.href);
-        return url.origin === location.origin && pathOf(url.href) !== pathOf(location.href) ? url : null;
-      };
-      window.addEventListener("pageswap", (raw) => {
-        const event = raw;
-        clearTitles();
-        const next = sameOriginPage(event.activation?.entry?.url);
-        if (!event.viewTransition || motion.matches || !next) return;
-        direction(location.href, next.href);
-        const title = titleFor(next.href);
-        // A detail-to-list return names the heading; the arriving list finds its link.
-        const shared = title ?? (depthOf(next.href) < depthOf(location.href)
-          ? document.querySelector("main h1") : null);
-        if (shared) shared.style.viewTransitionName = "shared-title";
-        // Clear names in the frozen document too, so a later bfcache restore is clean.
-        event.viewTransition.finished.finally(clearTitles).catch(() => {});
-      });
-      window.addEventListener("pagereveal", (raw) => {
-        const event = raw;
-        clearTitles();
-        const navigation = window.navigation;
-        const previous = sameOriginPage(navigation?.activation?.from?.url);
-        if (!event.viewTransition || motion.matches || !previous) return;
-        direction(previous.href, location.href);
-        const link = titleFor(previous.href);
-        const title = link ?? (depthOf(previous.href) < depthOf(location.href)
-          ? document.querySelector("main h1") : null);
-        if (title) title.style.viewTransitionName = "shared-title";
-        event.viewTransition.finished.finally(clearTitles).catch(() => {});
-      });
     </script>
     <title>{title}</title>
     <meta name="description" content={description} />

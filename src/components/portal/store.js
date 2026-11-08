@@ -67,83 +67,25 @@ function parse() {
   return { name: name || 'overview', id: decodeURIComponent(id), query: new URLSearchParams(qs ?? '') };
 }
 
-/* The old ticket address (/portal/ticket#id=12), the one in earlier emails,
-   becomes #/ticket/12 before the first route is read — otherwise the app would
-   show the overview for it. */
-if (window.location.pathname.replace(/\/$/, '') === '/portal/ticket') {
-  const id = new URLSearchParams(window.location.hash.slice(1)).get('id');
-  window.history.replaceState(null, '', `/portal${id ? `#/ticket/${id}` : ''}`);
-}
-
 /* The route last shown, so a page can know where it was navigated from. */
 let lastRoute = parse();
-
-/* How deep a page sits, so a move in or out of it can be read as one. The
-   overview is the room; a list or a project is one door in; a request is the
-   leaf you open from either. */
-const DEPTH = { overview: 0, requests: 1, billing: 1, connections: 1, project: 1, ticket: 2 };
-const direction = (from, to) => {
-  const fromDepth = DEPTH[from.name] ?? 0;
-  const toDepth = DEPTH[to.name] ?? 0;
-  return toDepth > fromDepth ? 'in' : toDepth < fromDepth ? 'out' : 'side';
-};
-
-/* Where the reader was in each page, kept for the session. Going back to a page
-   returns to the line they left, instead of the top of a long list. */
-const scrollMemory = new Map();
-const routeKey = (route) => `${route.name}${route.id ? `/${route.id}` : ''}`;
-const mainEl = () => document.querySelector('.cp-main');
-/* Set the offset instantly: the route change must not animate the page under
-   the snapshot the transition is about to take. */
-const jump = (main, top) => {
-  const previous = main.style.scrollBehavior;
-  main.style.scrollBehavior = 'auto';
-  main.scrollTop = top;
-  main.style.scrollBehavior = previous;
-};
-
-/* Newer navigation wins: a fast second click must not clear the direction the
-   running transition is still using. */
-let navSeq = 0;
 
 export function useRoute() {
   const [route, setRoute] = useState(lastRoute);
   useEffect(() => {
     const on = () => {
       const next = parse();
-      const dir = direction(lastRoute, next);
-      const scroller = mainEl();
-      if (scroller) scrollMemory.set(routeKey(lastRoute), scroller.scrollTop);
       boardReturn.from = lastRoute;
       lastRoute = next;
       const apply = () => {
         setRoute(next);
-        const main = mainEl();
-        if (!main) return;
-        // Back returns to where that page was read; a step in starts at its top.
-        jump(main, (dir === 'out' ? scrollMemory.get(routeKey(next)) : 0) ?? 0);
+        document.querySelector('.cp-main')?.scrollTo({ top: 0 });
       };
-      // The page change rides the View Transitions API when it can: the chrome
-      // and the room stay put, the content moves in the direction of travel,
-      // and named elements (the board's peek card) morph into place.
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (!document.startViewTransition || reduced) {
-        apply();
-        return;
-      }
-      const root = document.documentElement;
-      const seq = ++navSeq;
-      // A card that morphs into the page carries the move by itself; the rest
-      // of the content only fades in behind it.
-      const morph = boardReturn.peek !== null || boardReturn.sheet !== null;
-      root.dataset.cpNav = morph ? 'morph' : dir;
-      const settle = () => {
-        if (seq === navSeq) delete root.dataset.cpNav;
-      };
-      try {
-        document.startViewTransition(() => flushSync(apply)).finished.then(settle, settle);
-      } catch {
-        settle();
+      // The page change rides the View Transitions API when it can: a cross-fade
+      // everywhere, and named elements (the board's peek card) morph into place.
+      if (document.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.startViewTransition(() => flushSync(apply));
+      } else {
         apply();
       }
     };

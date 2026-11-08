@@ -646,22 +646,7 @@ export function RequestsView({ query }) {
             ))}
           </ul>
         ) : (
-          <div className="cp-empty">
-            <Icon name="list" size={22} />
-            <p>{t('views.requests.noMatch')}</p>
-            {filter !== 'open' || project || text ? (
-              <Button
-                size="sm"
-                onClick={() => {
-                  setFilter('open');
-                  setProject('');
-                  setText('');
-                }}
-              >
-                {t('views.requests.clear')}
-              </Button>
-            ) : null}
-          </div>
+          <p className="cp-empty">{t('views.requests.noMatch')}</p>
         )}
       </section>
     </div>

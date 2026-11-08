@@ -48,7 +48,6 @@ const jsonLd = {
   type="article"
 >
   <main class="wrap kb kb--entry">
-    <div class="rails" aria-hidden="true"></div>
     <p class="kb-back"><a href="/kb">← Knowledgebase</a></p>
 
     <article>
@@ -79,7 +78,7 @@ const jsonLd = {
         <div class="kb-prose" set:html={problem} />
       </section>
 
-      <section class="kb-block kb-block--solution frame">
+      <section class="kb-block kb-block--solution">
         <h2>{entry.status === 'unsolvable' ? 'Why it cannot be solved' : 'The fix'}</h2>
         <div class="kb-prose" set:html={solution} />
       </section>

@@ -45,7 +45,6 @@ const STATUS = {
   description={project.data.tagline}
   current="/projects"
 >
-  <div class="rails" aria-hidden="true"></div>
   <article class="project">
     <p class="project-back"><a href="/#shelf">← Back to the shelf</a></p>
 
@@ -104,26 +103,18 @@ const STATUS = {
 <style>
   .project-back {
     margin: 0 0 1.5rem;
-    font-family: var(--font-mono);
-    font-size: 12.5px;
-    letter-spacing: 0.04em;
+    font-size: 15px;
   }
 
   .project-head {
     margin-bottom: clamp(1.5rem, 4vw, 2.5rem);
   }
 
-  /* Kind · year · status as a spec row, matching the other lab headers. */
   .project-meta {
-    margin: 0 0 0.9rem;
-    padding: 0.55rem 0;
-    border-block: 1px solid var(--rule);
-    font-family: var(--font-mono);
-    font-size: 0.74rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
+    margin: 0 0 0.4rem;
+    font-size: 14px;
+    font-weight: 600;
     color: var(--ink-soft);
-    font-variant-numeric: tabular-nums;
   }
 
   .project-head h1 {

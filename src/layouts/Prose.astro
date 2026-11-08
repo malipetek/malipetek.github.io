@@ -1,6 +1,5 @@
 ---
 import Base from './Base.astro';
-import '../styles/lab-reading.css';
 
 const { frontmatter = {} } = Astro.props;
 ---
@@ -10,7 +9,7 @@ const { frontmatter = {} } = Astro.props;
   site={frontmatter.site}
   current={frontmatter.current}
 >
-  <article class:list={['prose', { 'lab-reading': frontmatter.site === 'lab' }]}>
+  <article class="prose">
     <slot />
   </article>
 </Base>

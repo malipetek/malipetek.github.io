@@ -81,21 +81,14 @@ export function Modal({ title, subtitle, onClose, children, actions, wide }) {
   const t = useT();
   const ref = useRef(null);
   useEffect(() => {
-    // Round-trip the focus: the dialog takes it, and the control that opened
-    // it gets it back when the dialog closes.
-    const previous = document.activeElement;
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
-    const first = ref.current?.querySelector('[data-autofocus], input, textarea, select');
-    (first ?? ref.current)?.focus();
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true });
-    };
+    ref.current?.querySelector('[data-autofocus], input, textarea, select')?.focus();
+    return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
   return (
     <div className="cp-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={cx('cp-modal', wide && 'cp-modal--wide')} role="dialog" aria-modal="true" aria-label={title} ref={ref} tabIndex={-1}>
+      <div className={cx('cp-modal', wide && 'cp-modal--wide')} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
         <header className="cp-modal__head">
           <div>
             <h2>{title}</h2>

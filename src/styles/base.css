@@ -236,17 +236,9 @@ a:hover {
 
 /* ————— layout primitives ————— */
 
-/* The page rails and the fixed canvas position against <main>. The same
-   element carries the page's cross-document view-transition name. */
+/* The page rails and the fixed canvas position against <main>. */
 main {
   position: relative;
-  view-transition-name: page-main;
-}
-
-/* The KB shell nests its own <main> inside the layout's; a name claimed twice
-   voids the whole transition, so only the layout's main keeps it. */
-main main {
-  view-transition-name: none;
 }
 
 .wrap {
@@ -744,123 +736,11 @@ pre.astro-code {
   scroll-margin-top: 1rem;
 }
 
-/* ————— cross-document view transitions ————— */
-
-/* Base.astro opts in and registers native navigation events before first paint.
-   Path depth selects a short forward/back/lateral step, not a showreel. */
-
-/* The header and the wordmark persist across documents: naming them keeps
-   them still while the page body changes under them. */
-.site-head {
-  view-transition-name: site-head;
-}
-
-.wordmark {
-  view-transition-name: site-wordmark;
-}
-
-/* The page body is the moving part: a cross-fade plus a few pixels of travel
-   in the direction the reader went. Forward is the default, so a document
-   without data-nav-dir still moves like a page opening. */
-::view-transition-group(page-main) {
-  animation-duration: 240ms;
-  animation-timing-function: var(--ease);
-}
-
-::view-transition-old(page-main) {
-  animation: 150ms ease-in both nav-out-forward;
-}
-
-::view-transition-new(page-main) {
-  animation: 240ms var(--ease) both nav-in-forward;
-}
-
-:root[data-nav-dir='forward']::view-transition-old(page-main) {
-  animation: 150ms ease-in both nav-out-forward;
-}
-
-:root[data-nav-dir='forward']::view-transition-new(page-main) {
-  animation: 240ms var(--ease) both nav-in-forward;
-}
-
-@keyframes nav-out-forward {
-  to {
-    opacity: 0;
-    transform: translateX(-12px);
-  }
-}
-
-@keyframes nav-in-forward {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
-}
-
-/* Going back out: the same gesture, mirrored. */
-:root[data-nav-dir='back']::view-transition-old(page-main) {
-  animation-name: nav-out-back;
-}
-
-:root[data-nav-dir='back']::view-transition-new(page-main) {
-  animation-name: nav-in-back;
-}
-
-@keyframes nav-out-back {
-  to {
-    opacity: 0;
-    transform: translateX(12px);
-  }
-}
-
-@keyframes nav-in-back {
-  from {
-    opacity: 0;
-    transform: translateX(-16px);
-  }
-}
-
-/* A sibling page: the content settles rather than slides. */
-:root[data-nav-dir='lateral']::view-transition-old(page-main) {
-  animation-name: nav-out-lateral;
-}
-
-:root[data-nav-dir='lateral']::view-transition-new(page-main) {
-  animation-name: nav-in-lateral;
-}
-
-@keyframes nav-out-lateral {
-  to {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-}
-
-@keyframes nav-in-lateral {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-}
-
-/* A title that exists on both pages — the link the reader chose and the
-   heading it opens — morphs between the two instead of cross-fading. */
-::view-transition-group(shared-title) {
-  animation-duration: 260ms;
-  animation-timing-function: var(--ease);
-}
-
 /* ————— reduced motion ————— */
 
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
-  }
-
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation: none !important;
   }
 
   *,

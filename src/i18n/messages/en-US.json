@@ -171,7 +171,6 @@
   "views.requests.allProjects": "All projects",
   "views.requests.search": "Search requests",
   "views.requests.noMatch": "No requests match.",
-  "views.requests.clear": "Clear filters",
   "views.col.request": "Request",
   "views.col.project": "Project",
   "views.col.steps": "Steps",
