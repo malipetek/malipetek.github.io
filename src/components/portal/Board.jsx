@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { money } from '../../lib/pricing.js';
 import { Button, MiniTrack, StatusPill, ago, cx, totalOf } from './ui.jsx';
-import { boardReturn, useT } from './store.js';
+import { afterTransition, boardReturn, useT } from './store.js';
 
 export const STAGES = [
   { key: 'new', label: 'Waiting for Ali' },
@@ -143,9 +143,22 @@ export function Board({
   const [tip, setTip] = useState(null);
   const [failed, setFailed] = useState(false);
   const [dropKey, setDropKey] = useState(null);
+  // Back from a request that was opened from its card: the card is open again
+  // where it was, so the request's head can shrink back into it. Only when
+  // this board is reached from that request; a stale one is dropped.
+  const [reopen] = useState(() => {
+    const r = boardReturn.reopen;
+    boardReturn.reopen = null;
+    const from = boardReturn.from;
+    return r && from?.name === 'ticket' && from.id === String(r.id) ? r : null;
+  });
+  const [named, setNamed] = useState(Boolean(reopen));
+  useEffect(() => {
+    if (reopen) afterTransition(() => setNamed(false));
+  }, [reopen]);
   // A picked request opens its peek card instead of leaving the board; the
   // camera dives to it, and the card rides its screen point in onFrame.
-  const [peek, setPeek] = useState(null);
+  const [peek, setPeek] = useState(reopen?.id ?? null);
   const peekEl = useRef(null);
   const closePeek = useCallback(() => {
     setPeek(null);
@@ -299,6 +312,8 @@ export function Board({
         const seen = boardReturn.ticket;
         boardReturn.ticket = null;
         board.restore(lastBoardView ? { ...lastBoardView, focus: lastBoardView.focus ?? seen } : { zoom: 1, pan: { x: 0, y: 0 }, focus: seen });
+        // A reopened card keeps the camera on its request instead of gliding out.
+        if (reopen) board.focus(reopen.id);
         boardRef.current = board;
       })
       .catch(() => setFailed(true)); // no WebGL: the legend and list carry it all
@@ -451,7 +466,19 @@ export function Board({
           ) : null}
         </div>
         {peekTicket ? (
-          <div ref={peekEl} className="cp-peek" role="dialog" aria-label={peekTicket.title}>
+          <div
+            ref={peekEl}
+            className="cp-peek"
+            role="dialog"
+            aria-label={peekTicket.title}
+            // Reopened: in place from the first frame, before the 3D board
+            // has loaded and starts placing it.
+            style={
+              reopen?.id === peekTicket.id
+                ? { transform: reopen.transform, opacity: 1, ...(named ? { viewTransitionName: 'cp-peek' } : {}) }
+                : undefined
+            }
+          >
             <div className="cp-peek__top">
               <span className="cp-peek__id">#{peekTicket.id}</span>
               <MiniTrack status={peekTicket.status} />
@@ -460,7 +487,9 @@ export function Board({
                 ✕
               </button>
             </div>
-            <p className="cp-peek__title">{peekTicket.title}</p>
+            <p className="cp-peek__title" style={named && reopen?.id === peekTicket.id ? { viewTransitionName: 'cp-peek-title' } : undefined}>
+              {peekTicket.title}
+            </p>
             <p className="cp-peek__meta">
               <span>{peekTicket.project_name ?? t('board.gettingSetUp')}</span>
               <span>{ago(peekTicket.updated_at)}</span>
@@ -473,7 +502,15 @@ export function Board({
                 onClick={() => {
                   // Named for the view transition: the card morphs into the
                   // request page's head instead of the whole page cross-fading.
-                  if (peekEl.current) peekEl.current.style.viewTransitionName = 'cp-peek';
+                  const el = peekEl.current;
+                  if (el) {
+                    el.style.viewTransitionName = 'cp-peek';
+                    el.querySelector('.cp-peek__title')?.style.setProperty('view-transition-name', 'cp-peek-title');
+                    // Where it is: the page zooms into it, and the board puts
+                    // it back here on the way back.
+                    const r = el.getBoundingClientRect();
+                    boardReturn.peekAt = { transform: el.style.transform, center: { x: r.left + r.width / 2, y: r.top + r.height / 2 } };
+                  }
                   boardReturn.peek = peekTicket.id;
                   handlers.current.onOpen(peekTicket.id);
                 }}

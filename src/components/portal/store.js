@@ -75,7 +75,8 @@ export function useRoute() {
   useEffect(() => {
     const on = () => {
       const next = parse();
-      boardReturn.from = lastRoute;
+      const prev = lastRoute;
+      boardReturn.from = prev;
       lastRoute = next;
       const apply = () => {
         setRoute(next);
@@ -84,7 +85,60 @@ export function useRoute() {
       // The page change rides the View Transitions API when it can: a cross-fade
       // everywhere, and named elements (the board's peek card) morph into place.
       if (document.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        document.startViewTransition(() => flushSync(apply));
+        const zoom = zoomFor(prev, next);
+        const root = document.documentElement;
+        // Nothing an earlier zoom left may survive into this one, whether it
+        // ended or was replaced half way.
+        clearZoom(root);
+        // A second change while one is running replaces it; only the newest
+        // may clear the state the other is still animating with.
+        const mine = ++generation;
+        if (zoom) {
+          // Opening a request from its board card zooms the page into the
+          // card while the card grows into the request's head; going back to
+          // the board zooms out of it again, into the reopened card.
+          const main = document.querySelector('.cp-main')?.getBoundingClientRect();
+          root.dataset.cpNav = `zoom-${zoom.way}`;
+          root.style.setProperty('--cp-zoom-vx', `${zoom.at.x}px`);
+          root.style.setProperty('--cp-zoom-vy', `${zoom.at.y}px`);
+          root.style.setProperty('--cp-zoom-mx', `${zoom.at.x - (main?.left ?? 0)}px`);
+          root.style.setProperty('--cp-zoom-my', `${zoom.at.y - (main?.top ?? 0)}px`);
+        }
+        let ride;
+        try {
+          ride = document.startViewTransition(() => flushSync(apply));
+        } catch {
+          // A browser that will not start one (busy, or a document that is
+          // going away) must still get the page it asked for.
+          clearZoom(root);
+          current = null;
+          apply();
+          return;
+        }
+        const settle = () => {
+          if (mine !== generation) return;
+          current = null;
+          clearZoom(root);
+        };
+        const slow = slowFactor();
+        current = { finished: ride.finished, slow };
+        // Chrome abandons a transition it replaces, and an abandoned one does
+        // not always settle: the page must not keep the zoom state, or a view
+        // waiting to act after it, for a transition that will never report back.
+        const guard = setTimeout(settle, WATCHDOG * slow);
+        ride.finished.then(
+          () => {
+            clearTimeout(guard);
+            settle();
+          },
+          () => {
+            clearTimeout(guard);
+            settle();
+          },
+        );
+        // Expected when one change replaces another; nothing awaits either.
+        ride.ready?.catch(() => {});
+        ride.updateCallbackDone?.catch(() => {});
       } else {
         apply();
       }
@@ -93,6 +147,73 @@ export function useRoute() {
     return () => window.removeEventListener('hashchange', on);
   }, []);
   return route;
+}
+
+/* The point a zoom travels from or to, in window and content coordinates
+   (client-portal.css, "cp-zoom-*"). Cleared with the attribute that uses them. */
+const ZOOM_PROPS = ['--cp-zoom-vx', '--cp-zoom-vy', '--cp-zoom-mx', '--cp-zoom-my'];
+/** How long a transition may take to report back, at --vt-slow 1 (ms). */
+const WATCHDOG = 2200;
+
+const clearZoom = (root) => {
+  delete root.dataset.cpNav;
+  for (const name of ZOOM_PROPS) root.style.removeProperty(name);
+};
+
+/** The slow-motion factor the transition durations use (base.css). */
+const slowFactor = () => {
+  const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--vt-slow'));
+  return Number.isFinite(value) && value > 0 ? value : 1;
+};
+
+const once = (fn) => {
+  let run = false;
+  return () => {
+    if (run) return;
+    run = true;
+    fn();
+  };
+};
+
+/* The route change being animated, so a view can act once it has ended. A
+   newer one bumps `generation`: the older run is then only a fallback. */
+let current = null;
+let generation = 0;
+
+/**
+ * Run `fn` when the route change in flight has ended, or when its watchdog
+ * says it never will. Calls before any transition run at once.
+ */
+export const afterTransition = (fn) => {
+  if (!current) return fn();
+  const run = once(fn);
+  const guard = setTimeout(run, WATCHDOG * current.slow);
+  current.finished.then(
+    () => {
+      clearTimeout(guard);
+      run();
+    },
+    () => {
+      clearTimeout(guard);
+      run();
+    },
+  );
+};
+
+/**
+ * A zoom between the board and a request: in, when the request is opened
+ * from its peek card; out, when the board is reached back from a request that
+ * was opened that way (the board reopens the card, see Board.jsx).
+ */
+function zoomFor(prev, next) {
+  if (next.name === 'ticket' && boardReturn.peek !== null && String(boardReturn.peek) === next.id && boardReturn.peekAt) {
+    return { way: 'in', at: boardReturn.peekAt.center };
+  }
+  const r = boardReturn.reopen;
+  if (next.name === 'overview' && prev.name === 'ticket' && r && String(r.id) === prev.id) {
+    return { way: 'out', at: r.center };
+  }
+  return null;
 }
 
 export const go = (path) => {
@@ -107,9 +228,14 @@ export const href = (path) => `#/${path}`;
  * - from: the route the current page was navigated from, for its back button.
  * - peek: the request whose board card was opened, so the card can morph into
  *   the request page under a view transition. Consumed once.
+ * - peekAt: where that card was on screen ({ transform, center }), so the
+ *   page can zoom into it and the board can put it back.
+ * - reopen: the request opened from its card ({ id, transform, center }); the
+ *   board reopens the card when it is reached back from that request, so the
+ *   head can shrink back into it.
  * - sheet: the project whose sheet was opened, so the sheet can morph into
  *   the project page under a view transition. Consumed once.
  */
-export const boardReturn = { ticket: null, from: null, peek: null, sheet: null };
+export const boardReturn = { ticket: null, from: null, peek: null, peekAt: null, reopen: null, sheet: null };
 
 export const signedIn = () => Boolean(session.get());

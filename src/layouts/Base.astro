@@ -34,6 +34,13 @@ interface Props {
    * second one on the page would cancel the transition into it.
    */
   chrome?: boolean;
+  /**
+   * What the page must not paint without, as a CSS selector. The browser holds
+   * the first frame until it is parsed, so a page transition into this page has
+   * a real page to move into rather than an empty body. Defaults to the main
+   * element Base draws; a full-screen app passes its own first frame.
+   */
+  expect?: string;
 }
 
 /*
@@ -73,6 +80,7 @@ const {
   languagePicker = [],
   site = "contracting",
   chrome = true,
+  expect = chrome ? "#main" : undefined,
 } = Astro.props;
 
 const t = siteT(locale);
@@ -150,6 +158,13 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
          between malipetek.dev and lab.malipetek.dev stays a plain load. The
          opt-in is inline so it is in place before the first paint. */
     }
+    {
+      /* The page is not shown until its main part is parsed. A page arrives
+         in pieces, and the browser may paint as soon as the head is in; a
+         page transition takes its picture of the new page at that paint, and
+         with an empty body it has nothing to move into. */
+    }
+    {expect && <link rel="expect" href={expect} blocking="render" />}
     <style is:inline>
       @media (prefers-reduced-motion: no-preference) {
         @view-transition {
@@ -194,20 +209,27 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
         const other = (origin) => origin !== location.origin && SITES.includes(origin);
         if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
         const root = document.documentElement;
+        // The slow-motion factor the CSS durations use (base.css --vt-slow).
+        const slow = () => parseFloat(getComputedStyle(root).getPropertyValue("--vt-slow")) || 1;
+        const play = () => {
+          root.dataset.hop = "arrive";
+          setTimeout(() => delete root.dataset.hop, 900 * slow());
+        };
+        // The page this tab left for the other site; coming back to it with
+        // Back plays the entrance too.
+        const LEFT = "hop-left";
+        const cameBack = sessionStorage.getItem(LEFT) === location.href;
+        sessionStorage.removeItem(LEFT);
 
         let from = "";
         try {
           from = new URL(document.referrer).origin;
         } catch {}
-        const entry = performance.getEntriesByType("navigation")[0];
-        if (other(from) && (!entry || entry.type === "navigate")) {
+        const type = performance.getEntriesByType("navigation")[0]?.type;
+        if ((other(from) && type === "navigate") || (cameBack && type === "back_forward")) {
           // Hidden until the first frame is shown; a prerendered page shows
           // its first frame when it is opened, not while it waits.
           root.dataset.hop = "arriving";
-          const play = () => {
-            root.dataset.hop = "arrive";
-            setTimeout(() => delete root.dataset.hop, 800);
-          };
           if ("onpagereveal" in window) addEventListener("pagereveal", play, { once: true });
           else play();
         }
@@ -220,11 +242,16 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
           if (!other(url.origin)) return;
           e.preventDefault();
           root.dataset.hop = "leave";
-          setTimeout(() => location.assign(url.href), 170);
+          sessionStorage.setItem(LEFT, location.href);
+          setTimeout(() => location.assign(url.href), 170 * slow());
         });
-        // Back to this page from the back/forward cache: undo the exit.
+        // Back to this page from the back/forward cache, where it is still
+        // faded out from leaving: bring it back in.
         addEventListener("pageshow", (e) => {
-          if (e.persisted && root.dataset.hop === "leave") delete root.dataset.hop;
+          if (e.persisted && root.dataset.hop === "leave") {
+            sessionStorage.removeItem(LEFT);
+            play();
+          }
         });
       })();
     </script>
