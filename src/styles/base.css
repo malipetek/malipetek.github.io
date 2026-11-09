@@ -56,6 +56,10 @@
 
   /* motion */
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Page transitions run this many times slower. The one knob: every page and
+     portal transition multiplies its durations by it. 2.5 while they are being
+     tuned; 1 is the speed they are meant to ship at. */
+  --vt-slow: 2.5;
   --dur: 200ms;
 
   /* layout */
@@ -762,61 +766,61 @@ pre.astro-code {
 
 html:active-view-transition-type(page) {
   &::view-transition-old(root) {
-    animation: 120ms ease-in both page-out;
+    animation: calc(120ms * var(--vt-slow)) ease-in both page-out;
   }
 
   /* Starts as the old page is nearly gone: a fade through, not a double
      exposure of two pages of text. */
   &::view-transition-new(root) {
-    animation: 280ms var(--ease) 100ms both page-in;
+    animation: calc(280ms * var(--vt-slow)) var(--ease) calc(100ms * var(--vt-slow)) both page-in;
   }
 
   /* The mark and the nav mark travel; the header under them holds still. */
   &::view-transition-group(brand),
   &::view-transition-group(nav-mark) {
-    animation-duration: 380ms;
+    animation-duration: calc(380ms * var(--vt-slow));
     animation-timing-function: var(--ease);
   }
 
   /* "/portal" draws out of "malipetek" once the mark has nearly settled, and
      back into it on the way out. */
   &::view-transition-new(brand-site):only-child {
-    animation: 260ms var(--ease) 240ms both brand-site-in;
+    animation: calc(260ms * var(--vt-slow)) var(--ease) calc(240ms * var(--vt-slow)) both brand-site-in;
   }
 
   &::view-transition-old(brand-site):only-child {
-    animation: 160ms ease-in both brand-site-out;
+    animation: calc(160ms * var(--vt-slow)) ease-in both brand-site-out;
   }
 
   /* Into the portal the site header has no partner: it leaves with the
      page, and comes back with it. */
   &::view-transition-old(site-head):only-child {
-    animation: 120ms ease-in both page-out;
+    animation: calc(120ms * var(--vt-slow)) ease-in both page-out;
   }
 
   &::view-transition-new(site-head):only-child {
-    animation: 280ms var(--ease) 100ms both page-in;
+    animation: calc(280ms * var(--vt-slow)) var(--ease) calc(100ms * var(--vt-slow)) both page-in;
   }
 
   /* A list title grows into the heading it opens. The old snapshot leaves
      early so a hover highlight never balloons along with it. */
   &::view-transition-group(page-title) {
-    animation-duration: 380ms;
+    animation-duration: calc(380ms * var(--vt-slow));
     animation-timing-function: var(--ease);
   }
 
   &::view-transition-old(page-title) {
-    animation-duration: 140ms;
+    animation-duration: calc(140ms * var(--vt-slow));
   }
 
   /* A nav mark with no partner (the page has no section in the nav) just
      shrinks away or draws in, rather than hanging in place. */
   &::view-transition-old(nav-mark):only-child {
-    animation: 180ms ease-in both nav-mark-out;
+    animation: calc(180ms * var(--vt-slow)) ease-in both nav-mark-out;
   }
 
   &::view-transition-new(nav-mark):only-child {
-    animation: 260ms var(--ease) 120ms both nav-mark-in;
+    animation: calc(260ms * var(--vt-slow)) var(--ease) calc(120ms * var(--vt-slow)) both nav-mark-in;
   }
 }
 
@@ -869,11 +873,11 @@ html:active-view-transition-type(page) {
    until its first frame, then brings them in. "/lab" draws back into the
    mark on the way out of the lab and out of it on the way in. */
 html[data-hop='leave'] :is(main, .site-foot, .site-nav, .site-tools) {
-  animation: 150ms ease-in both page-out;
+  animation: calc(150ms * var(--vt-slow)) ease-in both page-out;
 }
 
 html[data-hop='leave'] .wordmark-site {
-  animation: 150ms ease-in both brand-site-out;
+  animation: calc(150ms * var(--vt-slow)) ease-in both brand-site-out;
 }
 
 html[data-hop='arriving'] :is(main, .site-foot, .site-nav, .site-tools, .wordmark-site) {
@@ -881,11 +885,11 @@ html[data-hop='arriving'] :is(main, .site-foot, .site-nav, .site-tools, .wordmar
 }
 
 html[data-hop='arrive'] :is(main, .site-foot, .site-nav, .site-tools) {
-  animation: 300ms var(--ease) 40ms both page-in;
+  animation: calc(300ms * var(--vt-slow)) var(--ease) calc(40ms * var(--vt-slow)) both page-in;
 }
 
 html[data-hop='arrive'] .wordmark-site {
-  animation: 280ms var(--ease) 140ms both brand-site-in;
+  animation: calc(280ms * var(--vt-slow)) var(--ease) calc(140ms * var(--vt-slow)) both brand-site-in;
 }
 
 /* ————— reduced motion ————— */

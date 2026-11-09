@@ -9,7 +9,7 @@ import '../../styles/client-portal.css';
 export const prerender = true;
 ---
 
-<Base title="Request — malipetek" description="A client portal request." current="/portal" chrome={false}>
+<Base title="Request — malipetek" description="A client portal request." current="/portal" chrome={false} expect="#portal-frame">
   <PortalFrame />
   <ClientPortal client:only="react" />
 </Base>

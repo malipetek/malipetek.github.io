@@ -46,9 +46,20 @@ export function TicketView({ id }) {
   // The board's peek card morphs into this head under a view transition.
   // Read once at mount: React renders again before the browser snapshots the
   // new page, and a flag consumed during render would be gone by then.
+  // It keeps the name, so going back to the board shrinks it into the card
+  // again (the board reopens it from boardReturn.reopen).
   const [fromPeek] = useState(() => {
     const yes = boardReturn.peek === id;
-    if (yes) boardReturn.peek = null;
+    if (yes) {
+      boardReturn.peek = null;
+      // Where the card sat, so the board puts it back for the way home.
+      boardReturn.reopen = boardReturn.peekAt ? { id, ...boardReturn.peekAt } : null;
+    } else {
+      // Opened from a list, not from the board's card: there is no card of
+      // this request to shrink back into.
+      boardReturn.reopen = null;
+    }
+    boardReturn.peekAt = null;
     return yes;
   });
   const [deploys, setDeploys] = useState(null);
@@ -156,7 +167,7 @@ export function TicketView({ id }) {
           {project ? <a href={href(`project/${project.id}`)}>{project.name}</a> : null}
           <span>#{ticket.id}</span>
         </nav>
-        <h1>{ticket.title}</h1>
+        <h1 style={fromPeek ? { viewTransitionName: 'cp-peek-title' } : undefined}>{ticket.title}</h1>
         <div className="cp-ticket__meta">
           <StatusPill status={ticket.status} />
           <span>{attentionName(t, ticket.attention)}</span>

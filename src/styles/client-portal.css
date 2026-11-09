@@ -480,24 +480,23 @@ html[data-portal-arriving] astro-island .cp-brand > * {
 /* Route changes ride the View Transitions API (store.js; reduced-motion
    sessions skip it). The sidebar and the room behind stay put as the root;
    the content area is its own layer that leaves first and then rises in, so
-   the two pages never sit on top of each other half-transparent. The board's
-   peek card and the request page's head share cp-peek, so the card grows
-   into the head. */
+   the two pages never sit on top of each other half-transparent. Durations
+   are scaled by --vt-slow (base.css). */
 .cp-main {
   view-transition-name: cp-main;
 }
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 180ms;
+  animation-duration: calc(180ms * var(--vt-slow, 1));
 }
 ::view-transition-group(cp-main) {
   animation: none;
 }
 ::view-transition-old(cp-main) {
-  animation: cp-vt-out 110ms ease-in both;
+  animation: cp-vt-out calc(110ms * var(--vt-slow, 1)) ease-in both;
 }
 ::view-transition-new(cp-main) {
-  animation: cp-vt-in 260ms var(--ease) 70ms both;
+  animation: cp-vt-in calc(260ms * var(--vt-slow, 1)) var(--ease) calc(70ms * var(--vt-slow, 1)) both;
 }
 @keyframes cp-vt-out {
   to {
@@ -511,24 +510,96 @@ html[data-portal-arriving] astro-island .cp-brand > * {
     transform: translateY(12px);
   }
 }
-::view-transition-group(cp-peek) {
-  animation-duration: 340ms;
+
+/* The board's peek card and the request's head share cp-peek, and the
+   card's title and the request's heading share cp-peek-title: the card grows
+   into the head while its title grows into the heading. Going back, the
+   board reopens the card and both shrink back into it. */
+::view-transition-group(cp-peek),
+::view-transition-group(cp-peek-title) {
+  animation-duration: calc(420ms * var(--vt-slow, 1));
   animation-timing-function: var(--ease);
 }
-/* Both snapshots keep their real size, pinned top-left inside the growing
-   box; the default stretches them to it, and the card's text balloons. */
+/* The box keeps its contents' real size, pinned top-left inside the growing
+   box; the default stretches them to it, and the card's text balloons. The
+   title is the one part that is meant to scale. */
 ::view-transition-old(cp-peek),
 ::view-transition-new(cp-peek) {
   height: 100%;
   object-fit: none;
   object-position: left top;
 }
-::view-transition-old(cp-peek) {
-  animation-duration: 120ms;
+::view-transition-old(cp-peek),
+::view-transition-old(cp-peek-title) {
+  animation-duration: calc(160ms * var(--vt-slow, 1));
 }
+
+/* Into a request from its card the page zooms in on the card, the 3D room
+   with it; back to the board it zooms out of it. --cp-zoom-* is the card's
+   centre, set by store.js for the transition (m: in the content area,
+   v: in the window). */
+html[data-cp-nav^='zoom'] .cp-scene {
+  view-transition-name: cp-scene;
+}
+html[data-cp-nav^='zoom']::view-transition-group(cp-scene) {
+  animation: none;
+}
+html[data-cp-nav='zoom-in']::view-transition-old(cp-main) {
+  transform-origin: var(--cp-zoom-mx) var(--cp-zoom-my);
+  animation: cp-zoom-past calc(380ms * var(--vt-slow, 1)) cubic-bezier(0.5, 0, 0.75, 0) both;
+}
+html[data-cp-nav='zoom-in']::view-transition-old(cp-scene) {
+  transform-origin: var(--cp-zoom-vx) var(--cp-zoom-vy);
+  animation: cp-zoom-past calc(420ms * var(--vt-slow, 1)) cubic-bezier(0.5, 0, 0.75, 0) both;
+}
+html[data-cp-nav='zoom-in']::view-transition-new(cp-main) {
+  transform-origin: var(--cp-zoom-mx) var(--cp-zoom-my);
+  animation: cp-zoom-arrive calc(360ms * var(--vt-slow, 1)) var(--ease) calc(160ms * var(--vt-slow, 1)) both;
+}
+html[data-cp-nav='zoom-out']::view-transition-old(cp-main) {
+  transform-origin: var(--cp-zoom-mx) var(--cp-zoom-my);
+  animation: cp-zoom-leave calc(260ms * var(--vt-slow, 1)) ease-in both;
+}
+html[data-cp-nav='zoom-out']::view-transition-new(cp-main),
+html[data-cp-nav='zoom-out']::view-transition-new(cp-scene) {
+  animation: cp-zoom-return calc(460ms * var(--vt-slow, 1)) var(--ease) calc(60ms * var(--vt-slow, 1)) both;
+}
+html[data-cp-nav='zoom-out']::view-transition-new(cp-main) {
+  transform-origin: var(--cp-zoom-mx) var(--cp-zoom-my);
+}
+html[data-cp-nav='zoom-out']::view-transition-new(cp-scene) {
+  transform-origin: var(--cp-zoom-vx) var(--cp-zoom-vy);
+}
+/* In: the board rushes past toward the card, the request settles in. */
+@keyframes cp-zoom-past {
+  to {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+@keyframes cp-zoom-arrive {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+/* Out: the request falls back, the board comes back from close up. */
+@keyframes cp-zoom-leave {
+  to {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+@keyframes cp-zoom-return {
+  from {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
 /* The project sheet morphs into the project page's head the same way. */
 ::view-transition-group(cp-project) {
-  animation-duration: 340ms;
+  animation-duration: calc(340ms * var(--vt-slow, 1));
   animation-timing-function: var(--ease);
 }
 ::view-transition-old(cp-project),
@@ -538,7 +609,7 @@ html[data-portal-arriving] astro-island .cp-brand > * {
   object-position: left top;
 }
 ::view-transition-old(cp-project) {
-  animation-duration: 120ms;
+  animation-duration: calc(120ms * var(--vt-slow, 1));
 }
 
 .cp-btn {
