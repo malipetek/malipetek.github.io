@@ -212,8 +212,11 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
         // The slow-motion factor the CSS durations use (base.css --vt-slow).
         const slow = () => parseFloat(getComputedStyle(root).getPropertyValue("--vt-slow")) || 1;
         const play = () => {
+          if (root.dataset.hop === "arrive") return;
           root.dataset.hop = "arrive";
-          setTimeout(() => delete root.dataset.hop, 900 * slow());
+          setTimeout(() => {
+            if (root.dataset.hop === "arrive") delete root.dataset.hop;
+          }, 900 * slow());
         };
         // The page this tab left for the other site; coming back to it with
         // Back plays the entrance too.
@@ -232,6 +235,12 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
           root.dataset.hop = "arriving";
           if ("onpagereveal" in window) addEventListener("pagereveal", play, { once: true });
           else play();
+          // pagereveal nearly always fires, but if it does not (a prerender
+          // activated without one, a navigation that skipped it) the parts
+          // would stay invisible forever — bring them in regardless.
+          setTimeout(() => {
+            if (root.dataset.hop === "arriving") play();
+          }, 1000 * slow());
         }
 
         addEventListener("click", (e) => {
@@ -243,12 +252,29 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
           e.preventDefault();
           root.dataset.hop = "leave";
           sessionStorage.setItem(LEFT, location.href);
+          const leftAt = performance.now();
           setTimeout(() => location.assign(url.href), 170 * slow());
+          // A navigation that starts and is then aborted (a stopped load, a
+          // beforeunload prompt, a prerender that never activates) leaves the
+          // page faded forever — timers may never run once a navigation has
+          // started. The way back is a real event: a gesture on a page that is
+          // still here means the hop did not happen.
+          const revive = (ev) => {
+            if (root.dataset.hop !== "leave" || performance.now() - leftAt < 400) return;
+            delete root.dataset.hop;
+            for (const name of ["pointerdown", "keydown", "wheel", "touchstart"]) {
+              removeEventListener(name, revive, true);
+            }
+          };
+          for (const name of ["pointerdown", "keydown", "wheel", "touchstart"]) {
+            addEventListener(name, revive, true);
+          }
         });
         // Back to this page from the back/forward cache, where it is still
-        // faded out from leaving: bring it back in.
+        // faded out from leaving, or frozen before its entrance played:
+        // bring it back in.
         addEventListener("pageshow", (e) => {
-          if (e.persisted && root.dataset.hop === "leave") {
+          if (e.persisted && (root.dataset.hop === "leave" || root.dataset.hop === "arriving")) {
             sessionStorage.removeItem(LEFT);
             play();
           }
