@@ -390,6 +390,17 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
         addEventListener("pagereveal", (e) => {
           const from = window.navigation?.activation?.from?.url;
           share(e.viewTransition, from && pathOf(from));
+          // In from the portal, which has no site header: a layer only the new
+          // page has is stacked above every layer the old page had, so the
+          // header's opaque background would fade in over "malipetek" while
+          // it travels, and the mark would pop back when the transition ends.
+          // For this trip the header comes in with the page, under the mark.
+          const head = document.querySelector(".site-head");
+          if (e.viewTransition && head && /^\/portal(\/|$)/.test(pathOf(from ?? "") ?? "")) {
+            head.style.viewTransitionName = "none";
+            const back = () => head.style.removeProperty("view-transition-name");
+            e.viewTransition.finished.then(back, back);
+          }
         });
       })();
     </script>
