@@ -1611,14 +1611,15 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
 export interface WorkshopOptions {
   /**
    * Where the machine is on screen, in canvas pixels, every frame: the
-   * projected box of its stage anchors. The portal's board reports the same
-   * five points, so a hop between the two pages can map one onto the other
-   * exactly instead of guessing (Base.astro, "the machine arrives").
+   * projected box of its stage anchors. The signed-out portal runs this same
+   * workshop, so a hop between the two pages maps one box onto the other
+   * (Base.astro, "the machine arrives"; Guest.jsx placeScene).
    */
   onFrame?: (box: { x: number; y: number; width: number; height: number }) => void;
 }
 
-export function initWorkshop(canvas: HTMLCanvasElement, options: WorkshopOptions = {}): void {
+/** Starts the workshop in `canvas`; the function it returns stops it. */
+export function initWorkshop(canvas: HTMLCanvasElement, options: WorkshopOptions = {}): () => void {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // Transparent canvas: the page background and rails sit behind it, and
@@ -1657,7 +1658,8 @@ export function initWorkshop(canvas: HTMLCanvasElement, options: WorkshopOptions
     if (reduced) renderer.render(scene, camera);
   };
   applyTheme();
-  new MutationObserver(applyTheme).observe(document.documentElement, {
+  const themeWatch = new MutationObserver(applyTheme);
+  themeWatch.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ['data-theme'],
   });
@@ -1785,13 +1787,19 @@ export function initWorkshop(canvas: HTMLCanvasElement, options: WorkshopOptions
     };
     render();
     window.addEventListener('scroll', render, { passive: true });
-    return;
+    return () => {
+      themeWatch.disconnect();
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('scroll', render);
+      renderer.dispose();
+    };
   }
 
-  window.addEventListener('pointermove', (e) => {
+  const onPointer = (e: PointerEvent) => {
     mouse.x = (e.clientX / window.innerWidth - 0.5) * 2;
     mouse.y = (e.clientY / window.innerHeight - 0.5) * 2;
-  });
+  };
+  window.addEventListener('pointermove', onPointer);
 
   const timer = new THREE.Timer();
   const tick = () => {
@@ -1812,9 +1820,17 @@ export function initWorkshop(canvas: HTMLCanvasElement, options: WorkshopOptions
     camera.lookAt(look);
     renderer.render(scene, camera);
     report();
-    requestAnimationFrame(tick);
+    frameId = requestAnimationFrame(tick);
   };
+  let frameId = 0;
   tick();
+  return () => {
+    cancelAnimationFrame(frameId);
+    themeWatch.disconnect();
+    window.removeEventListener('resize', resize);
+    window.removeEventListener('pointermove', onPointer);
+    renderer.dispose();
+  };
 }
 
 /* ————— board: a client's requests, in its own canvas ————— */

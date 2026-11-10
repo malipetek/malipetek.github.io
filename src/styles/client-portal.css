@@ -2764,11 +2764,19 @@ fieldset.cp-field {
 /* ————— signed out: the workspace, with the way in in it ————— */
 
 /* The guest sees the shell they will work in, so the hop from the site lands
-   in a room rather than on a card. The board is the site's own machine with
-   nothing on it yet, a little shorter than the live one so the way in is
-   visible without scrolling. */
+   in a room rather than on a card. The room is the homepage's workshop, drawn
+   the way the homepage draws it (WorkshopScene.astro): the whole window, with
+   the stage only keeping its place in the layout. */
 .cp--guest .cp-board__stage {
   height: clamp(220px, 26vw, 340px);
+  cursor: default;
+}
+.cp-workshop {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 .cp--guest .cp-side__note {
   margin: 14px 6px 0;
