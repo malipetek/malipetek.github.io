@@ -255,7 +255,7 @@ export function Overview() {
       <section className="cp-section">
         <header className="cp-section__head">
           <h2 className="cp-h2">{t('views.overview.projects')}</h2>
-          <a className="cp-linkbtn" href="/portal/start">
+          <a className="cp-linkbtn" href={href('new')}>
             {t('views.overview.addProject')}
           </a>
         </header>
@@ -268,7 +268,7 @@ export function Overview() {
         ) : (
           <div className="cp-card cp-empty">
             <p>{t('views.overview.noProject')}</p>
-            <Button kind="primary" href="/portal/start">
+            <Button kind="primary" href={href('new')}>
               {t('views.overview.setupFirst')}
             </Button>
           </div>
@@ -305,7 +305,7 @@ function NeedsYou() {
   const t = useT();
   const { data } = usePortal();
   const items = [];
-  if (!data.projects.length) items.push({ key: 'setup', href: '/portal/start', title: t('views.needs.setupTitle'), text: t('views.needs.setupText') });
+  if (!data.projects.length) items.push({ key: 'setup', href: href('new'), title: t('views.needs.setupTitle'), text: t('views.needs.setupText') });
   for (const ticket of data.tickets) {
     if (ticket.unread) items.push({ key: `r${ticket.id}`, href: href(`ticket/${ticket.id}`), title: t('views.needs.replyTitle', { id: ticket.id }), text: ticket.title });
     if (overBudget(ticket)) items.push({ key: `b${ticket.id}`, href: href(`ticket/${ticket.id}`), title: t('views.needs.pausedTitle', { id: ticket.id }), text: t('views.needs.pausedText') });

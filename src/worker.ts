@@ -17,7 +17,7 @@
 import type { SSRManifest } from 'astro';
 import { App } from 'astro/app';
 import { handle } from '@astrojs/cloudflare/handler';
-import { hostRedirect } from './lib/siteHosts';
+import { hostRedirect, movedPage } from './lib/siteHosts';
 
 type Env = Record<string, unknown> & {
   ASSETS: { fetch: (request: Request | string) => Promise<Response> };
@@ -49,7 +49,7 @@ export function createExports(manifest: SSRManifest) {
   return {
     default: {
       async fetch(request: Request, env: Env, ctx: WorkerContext): Promise<Response> {
-        const redirect = hostRedirect(request);
+        const redirect = hostRedirect(request) ?? movedPage(request);
         if (redirect) return redirect;
         const response = await handle(
           manifest,

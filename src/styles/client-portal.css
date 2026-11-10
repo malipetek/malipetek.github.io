@@ -2424,6 +2424,50 @@ html[data-vt-scene] .cp-overview--guest {
 .cp-connect .cp-card > .cp-btn {
   justify-self: start;
 }
+
+/* #/new (Intake.jsx): the box, the two optional connections, the send. */
+.cp-intake {
+  max-width: 760px;
+}
+.cp-intake .cp-card {
+  display: grid;
+  gap: 16px;
+}
+.cp-intake__connections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.cp-intake__connection {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 8px;
+  font-size: 13.5px;
+}
+.cp-intake__connection.is-connected {
+  border-style: solid;
+}
+.cp-intake__connection strong {
+  font: 500 11px/1.4 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.cp-intake__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.cp-intake__status {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 13px;
+}
+.cp-intake__status.is-error {
+  color: var(--cp-bad);
+}
 .cp-keys {
   list-style: none;
   margin: 0;

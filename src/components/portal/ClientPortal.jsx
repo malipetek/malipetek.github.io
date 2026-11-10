@@ -1,6 +1,6 @@
 /*
  * /portal: the client's workspace. A sidebar (overview, requests, projects,
- * billing, connections), the page, and dialogs for a new request and for
+ * billing, connections, and #/new to add a project), the page, and dialogs for a new request and for
  * confirmations. Routes are in the hash (store.js); /portal/ticket#id=12, the
  * address in older emails, lands on #/ticket/12.
  */
@@ -14,6 +14,7 @@ import { BillingView, ConnectionsView, Overview, ProjectView, RequestsView } fro
 import { PortalContext, go, href, isOpen, signedIn, usePortalData, useRoute } from './store.js';
 import { Brand, Button, Confirm, Icon, cx } from './ui.jsx';
 import { GuestShell } from './Guest.jsx';
+import { IntakeView } from './Intake.jsx';
 
 export default function ClientPortal() {
   const [authed, setAuthed] = useState(() => {
@@ -165,7 +166,7 @@ function Shell({ data, reload, t, onSignedOut }) {
                 </a>
               );
             })}
-            <a href="/portal/start" className="cp-nav__add">
+            <a href={href('new')} className="cp-nav__add" aria-current={route.name === 'new' ? 'page' : undefined}>
               <Icon name="plus" size={15} />
               <span>{t('nav.addProject')}</span>
             </a>
@@ -254,6 +255,8 @@ function Route({ route }) {
       return <BillingView />;
     case 'connections':
       return <ConnectionsView />;
+    case 'new':
+      return <IntakeView />;
     default:
       return <Overview />;
   }

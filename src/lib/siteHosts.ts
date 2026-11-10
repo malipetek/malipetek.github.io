@@ -119,6 +119,24 @@ function redirect(request: Request, origin: string, pathname?: string): Response
 }
 
 /**
+ * Pages that moved into the portal app, old path → new address on the same
+ * host. The new address can carry the app's hash route; old links in emails
+ * and bookmarks keep working.
+ */
+const MOVED: Record<string, string> = {
+  // The intake box is the portal's own page now (Intake.jsx).
+  '/portal/start': '/portal#/new',
+};
+
+/** A 301 from a page that moved, or null. Runs on every host. */
+export function movedPage(request: Request): Response | null {
+  const url = new URL(request.url);
+  const to = MOVED[normalize(url.pathname)];
+  if (!to) return null;
+  return new Response(null, { status: 301, headers: { location: new URL(to, url.origin).href } });
+}
+
+/**
  * A 301 across the split, or null when this host already owns the path.
  *
  * Unknown hosts (localhost, workers.dev previews) get null, so local dev
