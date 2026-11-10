@@ -28,6 +28,7 @@ import { node } from './node.ts';
 import { github } from './github.ts';
 import { cfconnect } from './cfconnect.ts';
 import { marketing, publisher, unsubscribe } from './marketing.ts';
+import { seo } from './seo.ts';
 import { kb, kbMcp, mcp } from './kb.ts';
 import { oauth } from './oauth.ts';
 import {
@@ -126,6 +127,8 @@ app.route('/', github);
 app.route('/', cfconnect);
 // Marketing: admin views behind the portal session, publisher behind a token.
 app.route('/', marketing);
+// The SEO desk: audit, GEO probe, citations and the fix cycle. See src/seo.ts.
+app.route('/', seo);
 app.route('/', publisher);
 app.route('/', unsubscribe);
 // Public knowledgebase: REST reads, plus its own MCP server. See src/kb.ts.

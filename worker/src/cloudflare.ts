@@ -6,6 +6,7 @@ import { handleInbound } from './inbound.ts';
 import { runAndNotifyHealth } from './portal.ts';
 import { runMarketing } from './marketing.ts';
 import { ensureContentCycle } from './content.ts';
+import { ensureSeoCycle, runSeo } from './seo.ts';
 import { reapExpired } from './queue.ts';
 import { sweepFirstPreviews } from './firstPreview.ts';
 import type { Env } from './shared.ts';
@@ -36,7 +37,17 @@ export default {
   },
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(
-      Promise.all([watchQueue(env), watchSites(env), runAndNotifyHealth(env), runMarketing(env), ensureContentCycle(env)]),
+      Promise.all([
+        watchQueue(env),
+        watchSites(env),
+        runAndNotifyHealth(env),
+        runMarketing(env),
+        ensureContentCycle(env),
+        // The SEO desk: the audit is daily, the probe and the citation check
+        // weekly, and the cycle files itself when there is something to fix.
+        runSeo(env),
+        ensureSeoCycle(env),
+      ]),
     );
   },
 };

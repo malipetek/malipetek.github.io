@@ -34,6 +34,7 @@ import { Hono, type Context } from 'hono';
 import { ATTENTION_KEYS, billOf, DEFAULT_ATTENTION, money, priceLine, priceOf } from '../../src/lib/pricing.js';
 import { claimTicketById, finishRun, normalizeReport, openRuns, recentRuns, sessionKey, sharedLine, ticketRuns } from './runs.ts';
 import { finishContentCycle } from './content.ts';
+import { finishSeoCycle } from './seo.ts';
 import { bridgeMessage, bridgeTitle, forAli, forClientMail, threadFor, translateText, type Bridged } from './translate.ts';
 import { previewStrings, tFor } from '../../src/i18n/eager.js';
 import { closestLocale, fromAcceptLanguage, TRANSLATION_ENGINES, type TranslationEngine } from '../../src/lib/locales.js';
@@ -2520,6 +2521,8 @@ portal.post('/admin/tickets/:id/run-result', async (c) => {
   // A content cycle reads its outbox from the summary; nothing about it may
   // fail the report of a run that already closed.
   if (!done.late) await finishContentCycle(c.env, id, report.summary, report.ok).catch(() => {});
+  // An SEO cycle ticket reads the same block, keyed on its own ticket column.
+  if (!done.late) await finishSeoCycle(c.env, id, report.summary, report.ok).catch(() => {});
 
   if (!done.late) c.executionCtx.waitUntil(completeFirstPreview(c.env, id));
   c.executionCtx.waitUntil(notifyRunFinished(c.env, id, report, done));

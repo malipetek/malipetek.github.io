@@ -34,6 +34,28 @@ import {
   siteLabel,
 } from '../src/marketing.ts';
 import { sesBody, signV4 } from '../src/ses.ts';
+import {
+  cleanDraft,
+  dayKey,
+  dedupeIssues,
+  geoMentions,
+  llmsPaths,
+  newlyOpen,
+  parseGeoReply,
+  parsePage,
+  parseRobots,
+  parseSeoOutbox,
+  parseSitemap,
+  reviewPage,
+  robotsIssues,
+  seoBrief,
+  staleFindingIds,
+  volatilityHold,
+  weekStart,
+  type FindingHint,
+  type FindingRow,
+  type PageFacts,
+} from '../src/seo.ts';
 import { cleanPost, nextSlots, parseOutbox, slotLabel } from '../src/content.ts';
 import { autoApproveDecision } from '../src/approve.ts';
 import { healthMail, parseFleetVersion } from '../src/health.ts';
@@ -981,4 +1003,264 @@ test('cors: site preview branches on workers.dev are allowed, look-alikes are no
   assert.equal(isAllowedOrigin('https://x-malipetek-intercom.malipetek.workers.dev'), false);
   const o = 'https://visual-lab-3d-and-pages-malipetek-site.malipetek.workers.dev';
   assert.equal(corsHeaders(o)['Access-Control-Allow-Origin'], o);
+});
+
+/* —— SEO desk: the audit reads pages, scores them, and holds during a core update —— */
+
+test('seo: a page is read for the head it ships, in any attribute order', () => {
+  const html = [
+    '<!doctype html><html><head>',
+    '<title>Vibe contracting: a website change, built &amp; reviewed</title>',
+    '<meta content="Send a change; an agent builds it, Ali checks it." name="description">',
+    '<link href="https://malipetek.dev/contact" rel="canonical">',
+    '<link rel="alternate" hreflang="tr" href="https://malipetek.dev/tr/contact">',
+    "<link rel='alternate' hreflang='de-DE' href='https://malipetek.dev/de-DE/contact'>",
+    '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite"},{"@type":["Organization","ProfessionalService"]}]}</script>',
+    '<script>var x = 1;</script>',
+    '</head><body><h1>One</h1><h1>Two</h1>',
+    '<a href="/contact">contact</a>',
+    '<a href="https://lab.malipetek.dev/kb/x">kb</a>',
+    '<a href="https://example.com/x">elsewhere</a>',
+    '<a href="#top">top</a>',
+    '</body></html>',
+  ].join('\n');
+
+  const page = parsePage(html);
+  assert.equal(page.title, 'Vibe contracting: a website change, built & reviewed');
+  assert.equal(page.titleLen, [...page.title].length);
+  assert.equal(page.description, 'Send a change; an agent builds it, Ali checks it.');
+  assert.equal(page.canonical, 'https://malipetek.dev/contact');
+  assert.equal(page.hreflangCount, 2);
+  assert.deepEqual(page.hreflang.map((link) => link.hreflang), ['tr', 'de-de']);
+  assert.deepEqual(page.jsonldTypes, ['Organization', 'ProfessionalService', 'WebSite']);
+  assert.equal(page.h1Count, 2);
+  // Both hosts are ours; example.com and the fragment are not internal links.
+  assert.equal(page.internalLinks, 2);
+});
+
+test('seo: a page with nothing in its head parses as empty, not as an error', () => {
+  const page = parsePage('<html><body><p>no head</p></body></html>');
+  assert.equal(page.title, null);
+  assert.equal(page.titleLen, 0);
+  assert.equal(page.description, null);
+  assert.equal(page.canonical, null);
+  assert.equal(page.hreflangCount, 0);
+  assert.deepEqual(page.jsonldTypes, []);
+  assert.equal(page.h1Count, 0);
+  // A broken JSON-LD block is not structured data we can count.
+  assert.deepEqual(parsePage('<script type="application/ld+json">{oops</script>').jsonldTypes, []);
+});
+
+test('seo: a clean page scores 100 and each rule takes its weight', () => {
+  const base: PageFacts = {
+    title: 'Vibe contracting: small website changes built by an agent',
+    titleLen: 59,
+    description: 'Send a change in plain words, an agent builds it, Ali checks the result, and it ships.',
+    descLen: 86,
+    canonical: 'https://malipetek.dev/contact',
+    hreflang: [],
+    hreflangCount: 0,
+    jsonldTypes: ['WebSite'],
+    h1Count: 1,
+    internalLinks: 6,
+    host: 'malipetek.dev',
+    path: '/contact',
+    status: 200,
+    ms: 240,
+    inSitemap: true,
+    inLlms: true,
+  };
+  const facts = (patch: Partial<PageFacts>): PageFacts => ({ ...base, ...patch });
+
+  assert.deepEqual(reviewPage(base), { score: 100, issues: [] });
+
+  const noTitle = reviewPage(facts({ title: null, titleLen: 0 }));
+  assert.equal(noTitle.score, 80);
+  assert.equal(noTitle.issues[0].code, 'missing_title');
+  assert.equal(noTitle.issues[0].severity, 'high');
+
+  assert.equal(reviewPage(facts({ description: null, descLen: 0 })).score, 85);
+  assert.equal(reviewPage(facts({ canonical: null })).score, 90);
+  // A canonical for the same page on the other host is still wrong.
+  assert.equal(reviewPage(facts({ canonical: 'https://malipetek.dev/' })).score, 90);
+  assert.equal(reviewPage(facts({ jsonldTypes: [] })).score, 92);
+  assert.equal(reviewPage(facts({ h1Count: 0 })).score, 94);
+  assert.equal(reviewPage(facts({ h1Count: 2 })).score, 94);
+  assert.equal(reviewPage(facts({ ms: 2_400 })).score, 93);
+  assert.equal(reviewPage(facts({ inSitemap: false })).score, 90);
+  assert.equal(reviewPage(facts({ inLlms: false })).score, 95);
+  assert.equal(reviewPage(facts({ titleLen: 92 })).score, 95);
+  assert.equal(reviewPage(facts({ descLen: 240 })).score, 96);
+  assert.equal(
+    reviewPage(facts({ hreflang: [{ rel: 'alternate', href: '', hreflang: 'tr' }], hreflangCount: 1 })).score,
+    95,
+  );
+
+  // A page that did not answer is not scored rule by rule.
+  const dead = reviewPage(facts({ status: 503 }));
+  assert.equal(dead.score, 0);
+  assert.deepEqual(dead.issues.map((issue) => issue.code), ['bad_status']);
+});
+
+test('seo: findings dedupe by code, and only an audited page is resolved', () => {
+  const hints: FindingHint[] = [
+    { host: 'malipetek.dev', path: '/a', code: 'missing_title', severity: 'low', detail: 'low' },
+    { host: 'malipetek.dev', path: '/a', code: 'missing_title', severity: 'high', detail: 'high' },
+    { host: 'malipetek.dev', path: '/a', code: 'slow', severity: 'medium', detail: 'slow' },
+  ];
+  const deduped = dedupeIssues(hints);
+  assert.deepEqual(deduped.map((issue) => issue.code), ['missing_title', 'slow']);
+  assert.equal(deduped[0].severity, 'high');
+
+  const existing: FindingRow[] = [
+    { id: 1, host: 'malipetek.dev', path: '/a', code: 'slow', resolved_at: null }, // still seen
+    { id: 2, host: 'malipetek.dev', path: '/a', code: 'no_jsonld', resolved_at: null }, // fixed
+    { id: 3, host: 'malipetek.dev', path: '/b', code: 'no_jsonld', resolved_at: null }, // audited, gone
+    { id: 4, host: 'malipetek.dev', path: '/c', code: 'no_jsonld', resolved_at: null }, // not audited
+    { id: 5, host: 'malipetek.dev', path: '/a', code: 'slow', resolved_at: 12 }, // already closed
+    { id: 6, host: 'lab.malipetek.dev', path: '/a', code: 'slow', resolved_at: null }, // other host
+  ];
+  assert.deepEqual(staleFindingIds(existing, hints, { host: 'malipetek.dev', paths: ['/a', '/b'] }), [2, 3]);
+
+  // What is new is what was not open; a closed one that came back counts again.
+  assert.deepEqual(newlyOpen(existing, deduped).map((hint) => hint.code), ['missing_title']);
+  assert.deepEqual(
+    newlyOpen([{ id: 7, host: 'malipetek.dev', path: '/a', code: 'slow', resolved_at: 12 }], deduped).map((hint) => hint.code),
+    ['missing_title', 'slow'],
+  );
+});
+
+test('seo: the outbox block is the last one, and a half-read fix list is refused', () => {
+  const summary = [
+    'Fixed the two missing descriptions and opened a PR.',
+    '',
+    '<<<OUTBOX',
+    '```json',
+    '{"fixed":[{"finding_id":4,"files":["src/pages/index.astro"],"note":"added the description"},{"finding_id":"7"}],"skipped":[{"finding_id":4,"reason":"duplicate"}],"drafts":[{"citation_id":2,"bio":"I build small website changes.","link_text":"malipetek.dev"}],"pr":"https://github.com/malipetek/malipetek.github.io/pull/9"}',
+    '```',
+    'OUTBOX>>>',
+    '— dsh on macbook · $0.42',
+  ].join('\n');
+  const outbox = parseSeoOutbox(summary);
+  assert.ok(outbox);
+  assert.deepEqual(outbox.fixed, [
+    { findingId: 4, files: ['src/pages/index.astro'], note: 'added the description' },
+    { findingId: 7, files: [], note: '' },
+  ]);
+  // A finding already listed as fixed is not also a skip.
+  assert.deepEqual(outbox.skipped, []);
+  assert.deepEqual(outbox.drafts, [{ citationId: 2, bio: 'I build small website changes.', linkText: 'malipetek.dev' }]);
+  assert.equal(outbox.pr, 'https://github.com/malipetek/malipetek.github.io/pull/9');
+
+  assert.equal(parseSeoOutbox('no block here'), null);
+  assert.equal(parseSeoOutbox('<<<OUTBOX\nnot json\nOUTBOX>>>'), null);
+  // A pr that is not an http URL is dropped, not stored.
+  assert.equal(parseSeoOutbox('<<<OUTBOX\n{"pr":"javascript:alert(1)"}\nOUTBOX>>>')?.pr, null);
+});
+
+test('seo: a draft in our name passes the same voice checks as a post', () => {
+  assert.equal(cleanDraft('  I build small website changes, one at a time.  ').ok, true);
+  const refused = [
+    'A one-minute fix \u2014 no quote.',
+    'It is not just code, it is a service.',
+    'Seamless delivery, elevated for you.',
+  ];
+  for (const draft of refused) assert.equal(cleanDraft(draft).ok, false, draft);
+  assert.equal(cleanDraft('   ').ok, false);
+});
+
+test('seo: the hold lifts two weeks after a core update, and only with the switch on', () => {
+  const today = '2026-06-01';
+  const recent = volatilityHold({ hold: true, events: [{ kind: 'core_update', day: '2026-05-25' }], today });
+  assert.deepEqual(recent, { held: true, since: '2026-05-25', until: '2026-06-08' });
+  // The newest core update inside the window is the one the hold reads.
+  const two = volatilityHold({
+    hold: true,
+    events: [
+      { kind: 'core_update', day: '2026-05-19' },
+      { kind: 'core_update', day: '2026-05-28' },
+    ],
+    today,
+  });
+  assert.equal(two.since, '2026-05-28');
+
+  assert.equal(volatilityHold({ hold: true, events: [{ kind: 'core_update', day: '2026-05-01' }], today }).held, false);
+  assert.equal(volatilityHold({ hold: false, events: [{ kind: 'core_update', day: '2026-05-25' }], today }).held, false);
+  // A dated-in-the-future row, or a fix, is not a core update.
+  assert.equal(volatilityHold({ hold: true, events: [{ kind: 'core_update', day: '2026-06-04' }], today }).held, false);
+  assert.equal(volatilityHold({ hold: true, events: [{ kind: 'fix', day: '2026-05-30' }], today }).held, false);
+});
+
+test('seo: the sitemap, robots and llms files are read the way the sites write them', () => {
+  const index = parseSitemap(
+    '<?xml version="1.0"?><sitemapindex><sitemap><loc>https://lab.malipetek.dev/kb/sitemap.xml</loc></sitemap></sitemapindex>',
+  );
+  assert.equal(index.index, true);
+  assert.deepEqual(index.urls, ['https://lab.malipetek.dev/kb/sitemap.xml']);
+
+  const urlset = parseSitemap(
+    '<urlset><url><loc>https://malipetek.dev/contact</loc></url><url><loc>https://malipetek.dev/tr/?a=1&amp;b=2</loc></url></urlset>',
+  );
+  assert.equal(urlset.index, false);
+  assert.deepEqual(urlset.urls, ['https://malipetek.dev/contact', 'https://malipetek.dev/tr/?a=1&b=2']);
+
+  const groups = parseRobots('User-agent: *\nDisallow: /private\n\nUser-agent: GPTBot\nUser-agent: CCBot\nDisallow: /\n');
+  assert.deepEqual(groups.map((group) => group.agents), [['*'], ['gptbot', 'ccbot']]);
+  assert.deepEqual(robotsIssues('User-agent: *\nDisallow: /\n').map((issue) => issue.code), ['robots_blocked', 'robots_no_sitemap']);
+  assert.deepEqual(robotsIssues('User-agent: *\nDisallow:\nSitemap: https://malipetek.dev/sitemap.xml'), []);
+  // Blocking one crawler on purpose is a choice, not a finding.
+  assert.deepEqual(robotsIssues('User-agent: GPTBot\nDisallow: /\nSitemap: https://malipetek.dev/sitemap.xml'), []);
+  assert.deepEqual(robotsIssues(null), []);
+
+  const paths = llmsPaths('[contact](https://malipetek.dev/contact) and [kb](https://lab.malipetek.dev/kb/x)', 'malipetek.dev');
+  assert.equal(paths.has('/'), true);
+  assert.equal(paths.has('/contact'), true);
+  assert.equal(paths.has('/kb/x'), false); // the other host
+});
+
+test('seo: the GEO answer keeps its URLs and the companies it named', () => {
+  const reply = [
+    '```json',
+    '{"answer":"Vibe contracting is self-serve software contracting.","sources":["https://malipetek.dev/agents"],"companies":["malipetek.dev","Acme Studio"]}',
+    '```',
+  ].join('\n');
+  const answer = parseGeoReply(reply);
+  assert.ok(answer);
+  assert.deepEqual(answer.sources, ['https://malipetek.dev/agents']);
+  assert.deepEqual(answer.companies, ['malipetek.dev', 'Acme Studio']);
+  assert.equal(geoMentions(answer.answer), true);
+  assert.equal(geoMentions('They pointed at lab.malipetek.dev'), true);
+  assert.equal(geoMentions('the vibe contracting category'), true);
+  assert.equal(geoMentions('They recommended acme.com and Contoso'), false);
+  assert.equal(parseGeoReply('not json'), null);
+  assert.equal(parseGeoReply('{"sources":[]}'), null);
+});
+
+test('seo: days and weeks are UTC days, so a series groups the same everywhere', () => {
+  assert.equal(dayKey(0), '1970-01-01');
+  assert.equal(weekStart('2026-11-11'), '2026-11-09'); // a Wednesday's Monday
+  assert.equal(weekStart('2026-11-09'), '2026-11-09');
+  assert.equal(weekStart('nonsense'), 'nonsense');
+});
+
+test('seo: the brief carries the rules, the findings and the hold', () => {
+  const brief = seoBrief({
+    findings: [
+      { id: 12, host: 'malipetek.dev', path: '/contact', code: 'missing_description', severity: 'high', detail: 'No meta description.' },
+    ],
+    drafts: [{ id: 3, platform: 'DEV', domain: 'dev.to', dr: 90 }],
+    held: { held: true, since: '2026-05-25', until: '2026-06-08' },
+    total: 9,
+  });
+  assert.match(brief, /finding_id 12 — malipetek\.dev\/contact — missing_description \(high\)/);
+  assert.match(brief, /site="lab"/);
+  assert.match(brief, /robots\.txt, sitemap\.xml and sitemap-index\.xml are server routes/);
+  assert.match(brief, /Never push to/);
+  assert.match(brief, /pnpm --dir worker test/);
+  assert.match(brief, /Volatility hold/);
+  assert.match(brief, /technical fixes only/);
+  assert.match(brief, /citation_id 3: DEV \(dev\.to, DR 90\)/);
+  assert.match(brief, /<<<OUTBOX/);
+  assert.match(brief, /OUTBOX>>>/);
+  assert.match(brief, /There are 9 open findings/);
 });

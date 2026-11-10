@@ -47,6 +47,7 @@ import { finishRun, normalizeReport, sessionKey } from './runs.ts';
 import { completeFirstPreview } from './firstPreview.ts';
 import { claimForNode, cleanNodeReport, heartbeat } from './queue.ts';
 import { finishContentCycle } from './content.ts';
+import { finishSeoCycle } from './seo.ts';
 import { createDeploy, finishDeploy, reportSiteRepo } from './sites.ts';
 import { uploadDeployBlob, DEPLOY_LIMITS } from './sites.ts';
 import { cleanRepo, parseBrief } from './setup.ts';
@@ -656,6 +657,8 @@ node.post('/node/runs/:runId/result', async (c) => {
   // A content cycle reads its outbox from the summary. A failure here is not
   // worth failing the report: the run is already closed.
   if (!done.late) await finishContentCycle(c.env, run.ticket_id, report.summary, report.ok).catch(() => {});
+  // An SEO cycle ticket reads the same block with findings instead of posts.
+  if (!done.late) await finishSeoCycle(c.env, run.ticket_id, report.summary, report.ok).catch(() => {});
 
   const id = run.ticket_id;
   // A first preview tells the client in their own language, with the link.
