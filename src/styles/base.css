@@ -837,6 +837,12 @@ html:active-view-transition-type(page) {
   }
 }
 
+@keyframes hop-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
 @keyframes brand-site-in {
   from {
     opacity: 0;
@@ -884,8 +890,16 @@ html[data-hop='arriving'] :is(main, .site-foot, .site-nav, .site-tools, .wordmar
   opacity: 0;
 }
 
-html[data-hop='arrive'] :is(main, .site-foot, .site-nav, .site-tools) {
+html[data-hop='arrive'] :is(.site-foot, .site-nav, .site-tools) {
   animation: calc(300ms * var(--vt-slow)) var(--ease) calc(40ms * var(--vt-slow)) both page-in;
+}
+
+/* main only fades. A transform on it, even an animated one, makes it the
+   containing block of every position: fixed element inside: the homepage's
+   workshop canvas then took main's full height and the 3D picture stretched
+   down the page until the entrance ended. */
+html[data-hop='arrive'] main {
+  animation: calc(300ms * var(--vt-slow)) var(--ease) calc(40ms * var(--vt-slow)) both hop-fade-in;
 }
 
 html[data-hop='arrive'] .wordmark-site {
