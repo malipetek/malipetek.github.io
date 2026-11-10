@@ -10,7 +10,7 @@ import { money } from '../../lib/pricing.js';
 import { Button, MiniTrack, StatusPill, ago, cx, totalOf } from './ui.jsx';
 import { afterTransition, boardReturn, useT } from './store.js';
 import { arrivingBox, placeScene, slowFactor, whenLanded } from './sceneHandover.js';
-import { adoptRoom, dropRoom, hasRoom } from './room.js';
+import { adoptRoom, dropRoom, handOver, hasRoom } from './room.js';
 
 export const STAGES = [
   { key: 'new', label: 'Waiting for Ali' },
@@ -265,9 +265,16 @@ export function Board({
         host.appendChild(canvas);
         view = canvas;
         viewRef.current = canvas;
-        // Back from another page: the room stood in for the board until now,
-        // and goes once the way back has ended.
-        if (hasRoom()) afterTransition(dropRoom);
+        // Back from another page: the room stands in for the board until it
+        // has opened back out and the way back has ended; this board stays out
+        // of sight until then, so the two never show at once.
+        if (hasRoom()) {
+          canvas.style.opacity = '0';
+          handOver(() => {
+            dropRoom();
+            canvas.style.removeProperty('opacity');
+          });
+        }
         // Out of sight, labels and all, until the workshop gives way. The
         // board's camera holds on its own copy of the homepage's machine
         // meanwhile, drawing the same frame as the workshop.

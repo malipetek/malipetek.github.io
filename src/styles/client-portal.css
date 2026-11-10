@@ -920,9 +920,9 @@ html[data-vt-scene]:not([data-vt-scene-ready='same']) .cp-overview--guest {
 }
 
 /* Pages without the room behind them see it through a small window at the
-   top (room.js places the canvas over the box; the page leaves the box clear
-   and the box leads back to the board). Going there and back, the room morphs
-   between the whole window and the box. */
+   top (room.js shows the board inside the box; the page leaves the box clear
+   and the box leads back to the board). Going there and back, the board
+   shrinks into the box and grows back out of it. */
 .cp-roombar {
   max-width: 1200px;
   margin: 0 auto;
@@ -941,26 +941,19 @@ html[data-vt-scene]:not([data-vt-scene-ready='same']) .cp-overview--guest {
   outline: 2px solid var(--orange);
   outline-offset: 2px;
 }
-.cp-board__canvas.is-mini {
-  inset: auto;
-  border-radius: 14px;
-  -webkit-mask-image: none;
-  mask-image: none;
-}
+/* The room's canvas moves itself between the whole window and the box
+   (room.js: a live clip and zoom), so the page transition leaves it alone:
+   named for the trip, it is shown live and still, never as a picture. */
 html[data-room-morph] .cp-room {
   view-transition-name: cp-room;
 }
-html[data-room-morph]::view-transition-group(cp-room) {
-  animation-duration: calc(420ms * var(--vt-slow, 1));
-  animation-timing-function: var(--ease);
-  overflow: hidden;
-  border-radius: 14px;
-}
-html[data-room-morph]::view-transition-old(cp-room),
+html[data-room-morph]::view-transition-group(cp-room),
 html[data-room-morph]::view-transition-new(cp-room) {
-  height: 100%;
-  object-fit: cover;
-  animation-duration: calc(420ms * var(--vt-slow, 1));
+  animation: none;
+}
+html[data-room-morph]::view-transition-old(cp-room) {
+  animation: none;
+  opacity: 0;
 }
 @media (max-width: 900px) {
   .cp-roombar {

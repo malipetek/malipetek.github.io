@@ -106,7 +106,8 @@ overview = the board itself, a request or a project = faded backdrop, any other 
 - To change the role for a page, change `roomModeOf`.
 - A new 3D effect goes through the `Board` API in `workshop3d.ts` (`focus`, `focusNode`, `lane`, `zoomView`, `reframe`, `arrive`). Do not reach into the scene from React.
 - To swap one canvas for another invisibly, the second must draw the same frame: same camera, same lens shift (`setViewOffset`), same pointer lean, same animation clock. `initWorkshop`'s `start` and `initBoard`'s `arrival` carry these across.
-- To end a live 3D view on the last frame of a 2D zoom of its own picture, use `zoomView({ cx, cy, hx, hy, s })`. It draws a sub-window of the picture, which equals the 2D zoom.
+- To end a live 3D view on the last frame of a 2D zoom of its own picture, use `zoomView({ cx, cy, hx, hy, s })`. It draws a sub-window of the picture, which equals the 2D zoom. `s` below 1 zooms out.
+- Do not morph a 3D canvas between two places with a CSS view transition when the two places show different framings. The browser can only cross-fade two pictures, and they do not line up. Move the live canvas instead: keep it full-window, and animate a clip (`clip-path: inset(...)`) and a `zoomView` lens in JavaScript. During the page transition, show the canvas live and still (name it, hide its old picture, no animation on its group). `room.js` does this for the small window; copy that.
 
 ## 5. Traps (each one was a real bug)
 
@@ -123,6 +124,8 @@ overview = the board itself, a request or a project = faded backdrop, any other 
 | T9 | State from an earlier transition breaks later ones | A replaced transition never finished, so its attributes stayed on `<html>` | Clear state at the start of each change and keep a watchdog (see `clearZoom` and `WATCHDOG` in `store.js`) |
 | T10 | `ReferenceError: Cannot access 'x' before initialization` during setup | A function used by the first render is declared lower down with `const` | Declare it before the first call (`initBoard` draws during setup) |
 | T11 | Stale names after Back | The back/forward cache restored the page with trip names on it | Clear names on `pageshow` |
+| T12 | A morphing canvas slides away and fades instead of landing in its new place | Two pictures with different framings cross-fade; they never line up | Animate the live canvas (clip + lens), see recipe B4 |
+| T13 | A morph is cut off by something appearing on top | The next page's own element (a new board) showed before the morph ended | Keep it hidden until the moving one says it has finished (`handOver` in `room.js`) |
 
 ## 6. How to check your work
 

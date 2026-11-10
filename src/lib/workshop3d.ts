@@ -1960,6 +1960,11 @@ export interface Board {
   zoomView: (z: BoardZoom | null) => void;
   /** Centre on another element of the page, or on the whole canvas (null). */
   reframe: (frame: HTMLElement | null) => void;
+  /**
+   * The area the board is centred in, in canvas pixels: its frame (the last
+   * place it was, once the frame has left the page), or the whole canvas.
+   */
+  frameRect: () => { left: number; top: number; width: number; height: number };
   /** Move in part way on a project's pylon or a site (a node key), or back out. */
   focusNode: (key: string | null) => void;
   stop: () => void;
@@ -2087,10 +2092,12 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
    * Declared before render: the first frame is drawn during setup. A frame
    * that has left the page (the board kept as a backdrop) keeps the last. */
   let lastShift: [number, number] = [0, 0];
+  let lastFrame = { left: 0, top: 0, width: 0, height: 0 };
   const boardShift = (): [number, number] => {
     if (!framed) return [0, 0];
     const f = frameEl.getBoundingClientRect();
     if (!f.width || !f.height) return lastShift;
+    lastFrame = { left: f.left, top: f.top, width: f.width, height: f.height };
     lastShift = [size.w / 2 - (f.left + f.width / 2), size.h / 2 - (f.top + f.height / 2)];
     return lastShift;
   };
@@ -2384,6 +2391,10 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     },
     focusNode: (key) => {
       nodeKey = key;
+    },
+    frameRect: () => {
+      if (framed) boardShift();
+      return framed && lastFrame.width ? { ...lastFrame } : { left: 0, top: 0, width: size.w, height: size.h };
     },
     zoomView: (z) => {
       zoomed = z && z.s > 0 ? { ...z } : null;
