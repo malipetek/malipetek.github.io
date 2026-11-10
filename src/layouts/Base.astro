@@ -297,7 +297,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
           const from = sessionStorage.getItem(FROM);
           const box = sessionStorage.getItem(BOX);
           sessionStorage.removeItem(FROM);
-          if (!from || !box || !e.viewTransition) {
+          if (!from || !e.viewTransition) {
             sessionStorage.removeItem(BOX);
             return;
           }
@@ -311,6 +311,9 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
             root.style.setProperty("--vt-scene-cy", `${win.top + win.height / 2}px`);
           }
           root.dataset.vtScene = "in";
+          // No measurement from the site: the page still pushes in, the
+          // machine just stays where it was instead of landing.
+          if (!box) root.dataset.vtSceneReady = "1";
           const clear = () => {
             clearTimeout(guard);
             delete root.dataset.vtScene;

@@ -846,16 +846,18 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
       look: LOOK,
       animated: [bubble, sky],
       tick,
+      // Each caption floats over the prop that stands for its step. The
+      // homepage has no captions but measures the same five points, so a hop
+      // to the portal can land its machine on the board's.
+      anchors: {
+        new: new THREE.Vector3(STEP_X[0] + 0.3, 2.9, PAD_Z),
+        approved: new THREE.Vector3(gateX + 0.2, 2.75, BELT_Z),
+        in_progress: new THREE.Vector3(STEP_X[2] - 0.2, 2.3, PAD_Z - 0.45),
+        review: new THREE.Vector3(STEP_X[3] + 0.4, 1.85, PAD_Z),
+        done: new THREE.Vector3(7.0, 2.2, BELT_Z + 0.6),
+      },
       ...(board
         ? {
-            // Each caption floats over the prop that stands for its step.
-            anchors: {
-              new: new THREE.Vector3(STEP_X[0] + 0.3, 2.9, PAD_Z),
-              approved: new THREE.Vector3(gateX + 0.2, 2.75, BELT_Z),
-              in_progress: new THREE.Vector3(STEP_X[2] - 0.2, 2.3, PAD_Z - 0.45),
-              review: new THREE.Vector3(STEP_X[3] + 0.4, 1.85, PAD_Z),
-              done: new THREE.Vector3(7.0, 2.2, BELT_Z + 0.6),
-            },
             pickable: () => [...pool.values()].filter((tk) => tk.group.visible).flatMap((tk) => tk.stage.filter((m) => m.visible)),
             ticketAt: (id: number) => {
               const tk = pool.get(id);
@@ -1505,7 +1507,9 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
     const hero = heroMachine(ctx);
     hero.group.position.x = at(0);
     scene.add(hero.group);
-    stations.push({ name: 'hero', cam: hero.cam, look: hero.look, animated: hero.animated, fov: HERO_FOV, tick: hero.tick, anchors: hero.anchors });
+    // The anchors are the machine's own; measured here, they move with it.
+    const anchors = hero.anchors && Object.fromEntries(Object.entries(hero.anchors).map(([k, v]) => [k, v.clone().add(hero.group.position)]));
+    stations.push({ name: 'hero', cam: hero.cam, look: hero.look, animated: hero.animated, fov: HERO_FOV, tick: hero.tick, anchors });
   }
 
   // 1 — how it works: the queue itself, tickets in a stack with one approved
