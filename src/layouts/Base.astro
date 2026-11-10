@@ -285,7 +285,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
             el.style.viewTransitionName = "scene";
             sessionStorage.setItem(FROM, "1");
             // Where the machine is, so the portal can land its own on it.
-            const box = (window as unknown as { __workshopBox?: unknown }).__workshopBox;
+            const box = window.__workshopBox;
             if (box) sessionStorage.setItem(BOX, JSON.stringify(box));
             // A click that goes nowhere must not leave the name behind.
             setTimeout(() => el.style.removeProperty("view-transition-name"), 4000);
