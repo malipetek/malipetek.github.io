@@ -1467,6 +1467,8 @@ interface Station {
   fov?: number;
   /** Per-frame motion beyond the idle float (the hero belt). */
   tick?: (t: number) => void;
+  /** The machine's stage anchors, for measuring where it is on screen. */
+  anchors?: Record<string, THREE.Vector3>;
 }
 
 const DEFAULT_FOV = 38;
@@ -1503,7 +1505,7 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
     const hero = heroMachine(ctx);
     hero.group.position.x = at(0);
     scene.add(hero.group);
-    stations.push({ name: 'hero', cam: hero.cam, look: hero.look, animated: hero.animated, fov: HERO_FOV, tick: hero.tick });
+    stations.push({ name: 'hero', cam: hero.cam, look: hero.look, animated: hero.animated, fov: HERO_FOV, tick: hero.tick, anchors: hero.anchors });
   }
 
   // 1 — how it works: the queue itself, tickets in a stack with one approved
@@ -1602,7 +1604,17 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
 
 /* ————— driver ————— */
 
-export function initWorkshop(canvas: HTMLCanvasElement): void {
+export interface WorkshopOptions {
+  /**
+   * Where the machine is on screen, in canvas pixels, every frame: the
+   * projected box of its stage anchors. The portal's board reports the same
+   * five points, so a hop between the two pages can map one onto the other
+   * exactly instead of guessing (Base.astro, "the machine arrives").
+   */
+  onFrame?: (box: { x: number; y: number; width: number; height: number }) => void;
+}
+
+export function initWorkshop(canvas: HTMLCanvasElement, options: WorkshopOptions = {}): void {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // Transparent canvas: the page background and rails sit behind it, and
@@ -1714,6 +1726,28 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
     else camera.clearViewOffset();
   };
 
+  // Where the machine is on screen: the same five anchors the board reports,
+  // projected with this camera. Both pages can then map one box onto the other.
+  const anchorStation = stations.find((st) => st.anchors);
+  const boxMin = new THREE.Vector2();
+  const boxMax = new THREE.Vector2();
+  const at = new THREE.Vector3();
+  const report = () => {
+    if (!options.onFrame || !anchorStation?.anchors) return;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    boxMin.set(Infinity, Infinity);
+    boxMax.set(-Infinity, -Infinity);
+    for (const v of Object.values(anchorStation.anchors)) {
+      at.copy(v).project(camera);
+      const x = ((at.x + 1) / 2) * w;
+      const y = ((1 - at.y) / 2) * h;
+      boxMin.set(Math.min(boxMin.x, x), Math.min(boxMin.y, y));
+      boxMax.set(Math.max(boxMax.x, x), Math.max(boxMax.y, y));
+    }
+    options.onFrame({ x: boxMin.x, y: boxMin.y, width: boxMax.x - boxMin.x, height: boxMax.y - boxMin.y });
+  };
+
   const resize = () => {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -1728,6 +1762,7 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
       camera.position.copy(pos);
       camera.lookAt(look);
       renderer.render(scene, camera);
+      report();
     }
     measure();
   };
@@ -1742,6 +1777,7 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
       camera.position.copy(pos);
       camera.lookAt(look);
       renderer.render(scene, camera);
+      report();
     };
     render();
     window.addEventListener('scroll', render, { passive: true });
@@ -1771,6 +1807,7 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
     camera.position.set(pos.x + mouse.x * 0.7, pos.y - mouse.y * 0.4, pos.z);
     camera.lookAt(look);
     renderer.render(scene, camera);
+    report();
     requestAnimationFrame(tick);
   };
   tick();

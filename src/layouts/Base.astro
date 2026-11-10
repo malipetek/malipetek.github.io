@@ -268,6 +268,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
        */
       (() => {
         const FROM = "scene-from";
+        const BOX = "scene-box";
         const canvas = () => document.querySelector("[data-workshop]");
         addEventListener(
           "click",
@@ -283,6 +284,9 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
             // Out of the root snapshot, so the page can fly out around it.
             el.style.viewTransitionName = "scene";
             sessionStorage.setItem(FROM, "1");
+            // Where the machine is, so the portal can land its own on it.
+            const box = (window as unknown as { __workshopBox?: unknown }).__workshopBox;
+            if (box) sessionStorage.setItem(BOX, JSON.stringify(box));
             // A click that goes nowhere must not leave the name behind.
             setTimeout(() => el.style.removeProperty("view-transition-name"), 4000);
           },
@@ -291,26 +295,35 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
 
         addEventListener("pagereveal", (e) => {
           const from = sessionStorage.getItem(FROM);
+          const box = sessionStorage.getItem(BOX);
           sessionStorage.removeItem(FROM);
-          if (!from || !e.viewTransition) return;
-          const box = document.querySelector("[data-board-window]")?.getBoundingClientRect();
-          if (!box || !box.width || !box.height) return;
+          if (!from || !box || !e.viewTransition) {
+            sessionStorage.removeItem(BOX);
+            return;
+          }
           const root = document.documentElement;
-          // The machine does not shrink: it slides to where the board draws it
-          // and keeps its size, while the rest of the page pushes past the
-          // edges. The board's window is the point both moves are measured
-          // from, so they land together.
-          const cx = box.left + box.width / 2;
-          const cy = box.top + box.height / 2;
+          const win = document.querySelector("[data-board-window]")?.getBoundingClientRect();
+          // The page pushes past the edges around the board's window; the
+          // machine itself is held still until the board says where its own
+          // machine is (Guest.jsx), then lands on it exactly.
+          if (win) {
+            root.style.setProperty("--vt-scene-cx", `${win.left + win.width / 2}px`);
+            root.style.setProperty("--vt-scene-cy", `${win.top + win.height / 2}px`);
+          }
           root.dataset.vtScene = "in";
-          root.style.setProperty("--vt-scene-cx", `${cx}px`);
-          root.style.setProperty("--vt-scene-cy", `${cy}px`);
-          root.style.setProperty("--vt-scene-tx", `${cx - innerWidth / 2}px`);
-          root.style.setProperty("--vt-scene-ty", `${cy - innerHeight / 2}px`);
           const clear = () => {
+            clearTimeout(guard);
             delete root.dataset.vtScene;
-            for (const name of ["--vt-scene-cx", "--vt-scene-cy", "--vt-scene-tx", "--vt-scene-ty"]) root.style.removeProperty(name);
+            delete root.dataset.vtSceneReady;
+            for (const name of ["--vt-scene-cx", "--vt-scene-cy", "--vt-scene-tx", "--vt-scene-ty", "--vt-scene-s"]) {
+              root.style.removeProperty(name);
+            }
           };
+          // No WebGL, or a board that never draws: let the transition end.
+          const slow = parseFloat(getComputedStyle(root).getPropertyValue("--vt-slow")) || 1;
+          const guard = setTimeout(() => {
+            if (!root.dataset.vtSceneReady) clear();
+          }, 1400 * slow);
           e.viewTransition.finished.then(clear, clear);
         });
       })();

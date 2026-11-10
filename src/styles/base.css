@@ -893,17 +893,25 @@ html[data-hop='arrive'] .wordmark-site {
 }
 
 /* The machine stays and the page pushes in around it: leaving the homepage for
-   the portal, the scene's snapshot slides to the board's window without
-   shrinking, while everything else on the page scales past the edges. Both
-   moves are measured from the board's window (Base.astro), so they land
-   together. */
+   the portal, everything written over the scene scales past the edges, while
+   the scene itself is held still until the board says where its own machine is
+   (Guest.jsx). One scale-and-translate then maps the two exactly, so the
+   machine lands on the board's machine rather than near it. */
 html[data-vt-scene='in']::view-transition-old(root) {
   transform-origin: var(--vt-scene-cx, 50%) var(--vt-scene-cy, 50%);
   animation: calc(560ms * var(--vt-slow)) var(--ease) both hop-push;
 }
 
 html[data-vt-scene='in']::view-transition-old(scene) {
-  animation: calc(760ms * var(--vt-slow)) var(--ease) both hop-hold;
+  transform-origin: 0 0;
+  animation: calc(360ms * var(--vt-slow)) var(--ease) both hop-land;
+  /* Held until the box is known; a paused animation still holds the
+     transition open, so nothing ends before it has landed. */
+  animation-play-state: paused;
+}
+
+html[data-vt-scene='in'][data-vt-scene-ready]::view-transition-old(scene) {
+  animation-play-state: running;
 }
 
 @keyframes hop-push {
@@ -913,13 +921,9 @@ html[data-vt-scene='in']::view-transition-old(scene) {
   }
 }
 
-@keyframes hop-hold {
-  65% {
-    opacity: 1;
-  }
+@keyframes hop-land {
   to {
-    opacity: 0;
-    transform: translate(var(--vt-scene-tx, 0px), var(--vt-scene-ty, 0px));
+    transform: translate(var(--vt-scene-tx, 0px), var(--vt-scene-ty, 0px)) scale(var(--vt-scene-s, 1));
   }
 }
 

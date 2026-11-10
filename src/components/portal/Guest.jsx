@@ -71,6 +71,7 @@ export function GuestShell({ t }) {
 function GuestBoard({ t }) {
   const stage = useRef(null);
   const caps = useRef({});
+  const placed = useRef(false);
   const [drawn, setDrawn] = useState(false);
 
   useEffect(() => {
@@ -100,6 +101,8 @@ function GuestBoard({ t }) {
               const el = caps.current[key];
               if (el) el.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -100%)`;
             }
+            // The machine that left the site lands on this one (once).
+            if (!placed.current) placed.current = placeScene(stations, stage.current);
           },
           onPickEmpty: () => {},
         });
@@ -194,4 +197,31 @@ function SignInCard({ t }) {
       ) : null}
     </div>
   );
+}
+
+/**
+ * Land the machine coming from the site on the board's own machine: one
+ * scale-and-translate mapping the five stage anchors from where the homepage
+ * had them (Base.astro carries that box across) onto where this board draws
+ * them. Same five points on both sides, so the hand-over is exact rather than
+ * approximate. Returns true once there is nothing left to do.
+ */
+function placeScene(stations, stage) {
+  const root = document.documentElement;
+  if (root.dataset.vtScene !== 'in') return true;
+  const from = JSON.parse(sessionStorage.getItem('scene-box') || 'null');
+  const rect = stage?.getBoundingClientRect();
+  const points = Object.values(stations ?? {});
+  if (!from || !rect || points.length < 2) return false;
+  const xs = points.map((p) => p.x + rect.left);
+  const ys = points.map((p) => p.y + rect.top);
+  const width = Math.max(...xs) - Math.min(...xs);
+  if (!(from.width > 0) || !(width > 0)) return false;
+  const s = width / from.width;
+  root.style.setProperty('--vt-scene-s', String(s));
+  root.style.setProperty('--vt-scene-tx', `${Math.min(...xs) - from.x * s}px`);
+  root.style.setProperty('--vt-scene-ty', `${Math.min(...ys) - from.y * s}px`);
+  root.dataset.vtSceneReady = '1';
+  sessionStorage.removeItem('scene-box');
+  return true;
 }

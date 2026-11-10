@@ -845,6 +845,11 @@ html[data-cp-nav='zoom-out']::view-transition-new(cp-scene) {
 .cp-board.is-flat .cp-board__stage {
   display: none;
 }
+/* While the machine is flying in from the site, the board's own copy stays
+   out of the way: two machines at once is the thing that looked wrong. */
+html[data-vt-scene] .cp-scene canvas {
+  visibility: hidden;
+}
 .cp-board__canvas {
   position: absolute;
   inset: 0;
