@@ -126,6 +126,7 @@ overview = the board itself, a request or a project = faded backdrop, any other 
 | T11 | Stale names after Back | The back/forward cache restored the page with trip names on it | Clear names on `pageshow` |
 | T12 | A morphing canvas slides away and fades instead of landing in its new place | Two pictures with different framings cross-fade; they never line up | Animate the live canvas (clip + lens), see recipe B4 |
 | T13 | A morph is cut off by something appearing on top | The next page's own element (a new board) showed before the morph ended | Keep it hidden until the moving one says it has finished (`handOver` in `room.js`) |
+| T14 | The homepage's 3D picture stretches down the page while an entrance plays (after the hop from the lab) | A `transform` (or `filter`) on `main`, even an animated one, makes `main` the containing block of the `position: fixed` workshop canvas, so the canvas takes `main`'s height | Animate only `opacity` on `main` or any element with fixed descendants (`hop-fade-in` in `base.css`); move children, not the container |
 
 ## 6. How to check your work
 
