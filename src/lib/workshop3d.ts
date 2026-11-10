@@ -1932,6 +1932,13 @@ export interface Board {
    * the board reads as a zoom-out, not a reset.
    */
   restore: (view: BoardView | null) => void;
+  /**
+   * Start from the homepage's camera and glide to this board's over `ms`:
+   * the homepage's isometric angle, from further out, easing into the
+   * board's own framing. The hop from the site uses it once the homepage's
+   * workshop has handed over (Board.jsx).
+   */
+  introduce: (ms: number) => void;
   stop: () => void;
 }
 
@@ -1989,6 +1996,13 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   // More from the front than the homepage's isometric view: the rows run
   // across a wide board instead of climbing it, and the columns spread out.
   const OFFSET = new THREE.Vector3(-4.5, 12, 21);
+  // The homepage's camera direction (heroMachine's isometric view) and how
+  // much further out than the board's an introduction starts.
+  const INTRO_DIR = new THREE.Vector3(-1, 0.82, 1).normalize();
+  const INTRO_PULL = 1.35;
+  let intro: { at: number; ms: number } | null = null;
+  const camOffset = new THREE.Vector3();
+  const introFrom = new THREE.Vector3();
   const mouse = { x: 0, y: 0 };
   let fit = 1;
   let zoom = 1;
@@ -2029,7 +2043,16 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     look.lerpVectors(home, aim, Math.min(1, dive));
     look.x += pan.x;
     look.z += pan.y;
-    camera.position.copy(OFFSET).multiplyScalar(fit * span * zoom * (1 - dive * 0.55)).add(look);
+    camOffset.copy(OFFSET).multiplyScalar(fit * span * zoom * (1 - dive * 0.55));
+    if (intro) {
+      const k = THREE.MathUtils.smootherstep((performance.now() - intro.at) / intro.ms, 0, 1);
+      if (k >= 1) intro = null;
+      else {
+        introFrom.copy(INTRO_DIR).multiplyScalar(camOffset.length() * INTRO_PULL);
+        camOffset.lerpVectors(introFrom, camOffset.clone(), k);
+      }
+    }
+    camera.position.copy(camOffset).add(look);
     camera.position.x += mouse.x * 0.5;
     camera.position.y -= mouse.y * 0.3;
     camera.lookAt(look);
@@ -2246,6 +2269,9 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       stageId = null;
     },
     view: () => ({ zoom: zoomGoal, pan: { x: panGoal.x, y: panGoal.y }, focus: focusId }),
+    introduce: (ms) => {
+      intro = reduced ? null : { at: performance.now(), ms: Math.max(1, ms) };
+    },
     restore: (v) => {
       if (!v) return;
       zoomGoal = zoom = THREE.MathUtils.clamp(v.zoom ?? 1, 0.45, 3.0);

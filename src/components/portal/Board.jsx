@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { money } from '../../lib/pricing.js';
 import { Button, MiniTrack, StatusPill, ago, cx, totalOf } from './ui.jsx';
 import { afterTransition, boardReturn, useT } from './store.js';
+import { arrivingBox, placeScene, slowFactor, whenLanded } from './sceneHandover.js';
 
 export const STAGES = [
   { key: 'new', label: 'Waiting for Ali' },
@@ -48,6 +49,12 @@ export function boardItems(tickets) {
    navigation, so this lives at module level: coming back starts there and the
    camera glides out of the request that was being read, instead of resetting. */
 let lastBoardView = null;
+
+/* Arriving from the homepage: how long the homepage's workshop takes to give
+   way to the board, and the board's camera to glide from the homepage's angle
+   to its own (ms, at --vt-slow 1). */
+const HANDOVER_FADE = 520;
+const HANDOVER_GLIDE = 1300;
 
 export function Board({
   tickets,
@@ -223,17 +230,43 @@ export function Board({
 
   useEffect(() => {
     let board = null;
+    let view = null;
     let stopped = false;
+    // Reached by the hop from the homepage: the homepage's own workshop takes
+    // the flying machine first, at the very frame it left on, then gives way
+    // to the board (handOver below).
+    const left = arrivingBox();
+    let room = null;
+    let unwatch = () => {};
+    let settle = null;
     import('../../lib/workshop3d')
-      .then(({ initBoard }) => {
+      .then(({ initBoard, initWorkshop }) => {
         const host = document.querySelector('.cp-scene');
         if (stopped || !host || !stageElRef.current) return;
+        if (left) {
+          const canvas = document.createElement('canvas');
+          canvas.className = 'cp-workshop';
+          canvas.setAttribute('aria-hidden', 'true');
+          host.appendChild(canvas);
+          let placed = false;
+          const stop = initWorkshop(canvas, {
+            start: { mouse: left.mouse, time: left.time },
+            onFrame: (box) => {
+              if (!placed) placed = placeScene(box);
+            },
+          });
+          room = { canvas, stop };
+        }
         // The renderer lives in the page shell, behind the portal; the stage is
         // only the transparent input surface and the labels.
         const canvas = document.createElement('canvas');
         canvas.className = 'cp-board__canvas';
         canvas.setAttribute('aria-hidden', 'true');
         host.appendChild(canvas);
+        view = canvas;
+        // Out of sight, labels and all, until the workshop gives way.
+        const stage = stageElRef.current;
+        if (room) for (const el of [canvas, stage]) el.style.opacity = '0';
         board = initBoard(canvas, {
           input: stageElRef.current,
           frame: stageElRef.current,
@@ -315,14 +348,43 @@ export function Board({
         // A reopened card keeps the camera on its request instead of gliding out.
         if (reopen) board.focus(reopen.id);
         boardRef.current = board;
+        if (room) {
+          // Once the machine has landed on the workshop, the board fades in
+          // over it while its camera glides from the homepage's angle to its
+          // own, and the workshop fades out under it and stops.
+          unwatch = whenLanded(() => {
+            const slow = slowFactor();
+            const fade = HANDOVER_FADE * slow;
+            board.introduce(HANDOVER_GLIDE * slow);
+            for (const el of [canvas, stage]) {
+              el.style.transition = `opacity ${fade}ms ease`;
+              el.style.opacity = '1';
+            }
+            room.canvas.style.transition = `opacity ${fade}ms ease ${fade * 0.35}ms`;
+            room.canvas.style.opacity = '0';
+            settle = setTimeout(() => {
+              room?.stop();
+              room?.canvas.remove();
+              room = null;
+              for (const el of [canvas, stage]) {
+                el.style.removeProperty('transition');
+                el.style.removeProperty('opacity');
+              }
+            }, fade * 1.35 + 50);
+          });
+        }
       })
       .catch(() => setFailed(true)); // no WebGL: the legend and list carry it all
     return () => {
       stopped = true;
+      unwatch();
+      clearTimeout(settle);
+      room?.stop();
+      room?.canvas.remove();
       if (board) lastBoardView = board.view();
       board?.stop();
       boardRef.current = null;
-      document.querySelector('.cp-scene canvas')?.remove();
+      view?.remove();
     };
   }, []);
 
