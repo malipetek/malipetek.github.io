@@ -115,6 +115,10 @@ const FLOOR_VERT = /* glsl */ `
     gl_Position = projectionMatrix * viewMatrix * w;
   }
 `;
+/** The floor's dot pitch (FLOOR_FRAG `S`), in world units. */
+const FLOOR_DOT = 0.42;
+/** The floor's brightness wave (FLOOR_FRAG): its direction and speed. */
+const FLOOR_WAVE = { x: 0.55, z: 0.35, speed: 0.7 };
 const FLOOR_FRAG = /* glsl */ `
   uniform vec3 uDot;
   uniform vec3 uAccent;
@@ -123,7 +127,7 @@ const FLOOR_FRAG = /* glsl */ `
   uniform vec3 uGlow[12];
   varying vec2 vP;
   void main() {
-    const float S = 0.42;
+    const float S = ${FLOOR_DOT.toFixed(2)};
     vec2 cell = (fract(vP / S) - 0.5) * S;
     float d = length(cell);
     float aa = fwidth(d) * 1.2;
@@ -145,7 +149,7 @@ const FLOOR_FRAG = /* glsl */ `
     dotMask *= 1.0 - smoothstep(r * 0.6, r * 1.2, max(fw.x, fw.y));
 
     float far = 1.0 - smoothstep(7.0, 24.0, length(vP - uFocus));
-    float wave = 0.72 + 0.28 * sin(dot(vP, vec2(0.55, 0.35)) - uTime * 0.7);
+    float wave = 0.72 + 0.28 * sin(dot(vP, vec2(${FLOOR_WAVE.x.toFixed(2)}, ${FLOOR_WAVE.z.toFixed(2)})) - uTime * ${FLOOR_WAVE.speed.toFixed(2)});
 
     // The floor is see-through: only the dots and the faint orange wash under
     // the tickets have alpha, so the page (and its rails) shows between them.
@@ -1899,6 +1903,14 @@ export interface BoardOptions {
     nodes: (ScreenPoint & { key: string; visible: boolean })[],
     focus: (ScreenPoint & { id: number }) | null,
   ) => void;
+  /**
+   * Arriving from the homepage: the homepage's machine stands in this world
+   * too, off to the side of the board, and the camera starts exactly where
+   * the homepage's camera was (its pointer and clock), so this canvas draws
+   * the frame the homepage left on. `arrive(ms)` then flies the camera from
+   * there to the board. Ignored under reduced motion.
+   */
+  arrival?: { time: number; mouse: { x: number; y: number } };
 }
 
 /** Where the camera was when the board was left; `restore` puts it back. */
@@ -1933,12 +1945,11 @@ export interface Board {
    */
   restore: (view: BoardView | null) => void;
   /**
-   * Start from the homepage's camera and glide to this board's over `ms`:
-   * the homepage's isometric angle, from further out, easing into the
-   * board's own framing. The hop from the site uses it once the homepage's
-   * workshop has handed over (Board.jsx).
+   * With `arrival`: fly the camera over `ms` from the homepage's machine to
+   * the board, through the one world they share. Before it is called the
+   * camera holds on the homepage's machine.
    */
-  introduce: (ms: number) => void;
+  arrive: (ms: number) => void;
   stop: () => void;
 }
 
@@ -1971,12 +1982,27 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
 
   let hovered: number | null = null;
   let outside: number | null = null;
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 60), kit.floor);
+  // Wide enough for the homepage's machine to stand beside the board on it.
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(240, 160), kit.floor);
   floor.rotation.x = -Math.PI / 2;
   floor.renderOrder = -1;
   scene.add(floor);
   const machine = boardMachine(ctx, { items: options.items, lanes: options.lanes, hovered: () => hovered ?? outside });
   scene.add(machine.group);
+  // The homepage's machine, for the flight in from the site. It stands to the
+  // left of the board, far enough out that neither view sees the other (the
+  // homepage's looks diagonally toward the board), on the floor's dot grid so
+  // the dots sit where the homepage drew them.
+  const arrival = reduced ? null : (options.arrival ?? null);
+  const hero = arrival ? heroMachine(ctx) : null;
+  const heroAt = new THREE.Vector3();
+  if (hero) {
+    const e = machine.extent!();
+    const grid = (v: number) => Math.round(v / FLOOR_DOT) * FLOOR_DOT;
+    heroAt.set(grid(e.x0 - 36), 0, grid((e.z0 + e.z1) / 2));
+    hero.group.position.copy(heroAt);
+    scene.add(hero.group);
+  }
   document.fonts?.ready.then(() => repaint.forEach((draw) => draw()));
 
   // The camera frames whatever ground the board covers: one project or many.
@@ -1996,14 +2022,14 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   // More from the front than the homepage's isometric view: the rows run
   // across a wide board instead of climbing it, and the columns spread out.
   const OFFSET = new THREE.Vector3(-4.5, 12, 21);
-  // The homepage's camera direction (heroMachine's isometric view) and how
-  // much further out than the board's an introduction starts.
-  const INTRO_DIR = new THREE.Vector3(-1, 0.82, 1).normalize();
-  const INTRO_PULL = 1.35;
-  let intro: { at: number; ms: number } | null = null;
   const camOffset = new THREE.Vector3();
-  const introFrom = new THREE.Vector3();
-  const mouse = { x: 0, y: 0 };
+  // The flight in from the homepage: 'hold' on its machine until arrive(),
+  // then 'fly' to the board, then null for good.
+  let flight: { phase: 'hold' } | { phase: 'fly'; at: number; ms: number } | null = hero ? { phase: 'hold' } : null;
+  const heroLook = new THREE.Vector3();
+  const heroPos = new THREE.Vector3();
+  const boardPos = new THREE.Vector3();
+  const mouse = { x: arrival?.mouse.x ?? 0, y: arrival?.mouse.y ?? 0 };
   let fit = 1;
   let zoom = 1;
   let zoomGoal = 1;
@@ -2044,17 +2070,35 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     look.x += pan.x;
     look.z += pan.y;
     camOffset.copy(OFFSET).multiplyScalar(fit * span * zoom * (1 - dive * 0.55));
-    if (intro) {
-      const k = THREE.MathUtils.smootherstep((performance.now() - intro.at) / intro.ms, 0, 1);
-      if (k >= 1) intro = null;
-      else {
-        introFrom.copy(INTRO_DIR).multiplyScalar(camOffset.length() * INTRO_PULL);
-        camOffset.lerpVectors(introFrom, camOffset.clone(), k);
-      }
-    }
     camera.position.copy(camOffset).add(look);
     camera.position.x += mouse.x * 0.5;
     camera.position.y -= mouse.y * 0.3;
+    if (flight && hero) {
+      // The homepage's camera on its machine (initWorkshop's hero pose: the
+      // station's offset pulled back for narrow screens, its pointer lean),
+      // and the homepage's lens shift; the board's are where it flies to.
+      const k = flight.phase === 'hold' ? 0 : THREE.MathUtils.smootherstep((performance.now() - flight.at) / flight.ms, 0, 1);
+      const aspect = size.w / size.h;
+      const reach = THREE.MathUtils.clamp(0.95 / aspect, 1, 2.2);
+      heroLook.set(...hero.look).add(heroAt);
+      heroPos.set(...hero.cam).add(heroAt).sub(heroLook).multiplyScalar(reach).add(heroLook);
+      heroPos.x += mouse.x * 0.7;
+      heroPos.y -= mouse.y * 0.4;
+      boardPos.copy(camera.position);
+      camera.position.lerpVectors(heroPos, boardPos, k);
+      look.lerpVectors(heroLook, look.clone(), k);
+      const hx = aspect >= 1.25 ? -size.w * THREE.MathUtils.clamp((aspect - 1.25) * 0.6, 0, 0.22) : 0;
+      const hy = aspect < 0.9 ? size.h * 0.12 : 0;
+      const [bx, by] = boardShift();
+      camera.setViewOffset(size.w, size.h, hx + (bx - hx) * k, hy + (by - hy) * k, size.w, size.h);
+      camera.updateProjectionMatrix();
+      if (k >= 1) {
+        // Landed on the board: the homepage's machine is out of view now.
+        flight = null;
+        scene.remove(hero.group);
+        resize();
+      }
+    }
     camera.lookAt(look);
     kit.floor.uniforms.uFocus.value.set(look.x, look.z);
     renderer.render(scene, camera);
@@ -2082,6 +2126,12 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   const themeWatch = new MutationObserver(applyTheme);
   themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
+  /** The lens shift that centres the board in its frame (none unframed). */
+  const boardShift = (): [number, number] => {
+    if (!framed) return [0, 0];
+    const f = frameEl.getBoundingClientRect();
+    return [size.w / 2 - (f.left + f.width / 2), size.h / 2 - (f.top + f.height / 2)];
+  };
   const resize = () => {
     size = { w: Math.max(1, canvas.clientWidth), h: Math.max(1, canvas.clientHeight) };
     renderer.setSize(size.w, size.h, false);
@@ -2092,14 +2142,8 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     if (framed) {
       const f = frameEl.getBoundingClientRect();
       frameOrigin = { left: f.left, top: f.top };
-      camera.setViewOffset(
-        size.w,
-        size.h,
-        size.w / 2 - (f.left + f.width / 2),
-        size.h / 2 - (f.top + f.height / 2),
-        size.w,
-        size.h,
-      );
+      const [bx, by] = boardShift();
+      camera.setViewOffset(size.w, size.h, bx, by, size.w, size.h);
     } else {
       frameOrigin = { left: 0, top: 0 };
       camera.clearViewOffset();
@@ -2216,6 +2260,8 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   const timer = new THREE.Timer();
   let frame = 0;
   let clock = 8;
+  let heroClock = arrival?.time ?? 0;
+  let heroGlow: THREE.Vector3[] = [];
   const loop = () => {
     frame = requestAnimationFrame(loop);
     if (!visible || document.hidden) return;
@@ -2228,8 +2274,31 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       aimStep(0.1);
     } else {
       clock += dt;
+      if (hero && flight) {
+        // The homepage's machine runs on the homepage's clock, as
+        // initWorkshop runs it (real time, not the capped step); its floor
+        // glows are kept for after the board has written (and cleared) its own.
+        const t = (heroClock = (arrival?.time ?? 0) + timer.getElapsed());
+        hero.tick(t);
+        hero.animated.forEach((o, i) => {
+          o.position.y += Math.sin(t * 0.9 + i) * 0.0016;
+          o.rotation.z += Math.sin(t * 0.5 + i) * 0.0004;
+        });
+        heroGlow = kit.glow.filter((g) => g.z > 0).map((g) => g.clone().add(new THREE.Vector3(heroAt.x, heroAt.z, 0)));
+      }
       machine.tick(clock);
-      kit.floor.uniforms.uTime.value = clock;
+      if (heroGlow.length) {
+        for (const g of kit.glow) {
+          if (g.z > 0) continue;
+          const next = heroGlow.shift();
+          if (!next) break;
+          g.copy(next);
+        }
+        heroGlow = [];
+      }
+      // The floor's wave, phase-shifted while the homepage's machine is in
+      // view so it ripples across it exactly as it did on the homepage.
+      kit.floor.uniforms.uTime.value = hero && flight ? heroClock + (heroAt.x * FLOOR_WAVE.x + heroAt.z * FLOOR_WAVE.z) / FLOOR_WAVE.speed : clock;
       machine.animated.forEach((o, i) => {
         o.position.y += Math.sin(clock * 0.9 + i) * 0.0016;
       });
@@ -2269,8 +2338,8 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       stageId = null;
     },
     view: () => ({ zoom: zoomGoal, pan: { x: panGoal.x, y: panGoal.y }, focus: focusId }),
-    introduce: (ms) => {
-      intro = reduced ? null : { at: performance.now(), ms: Math.max(1, ms) };
+    arrive: (ms) => {
+      if (flight?.phase === 'hold') flight = { phase: 'fly', at: performance.now(), ms: Math.max(1, ms) };
     },
     restore: (v) => {
       if (!v) return;
