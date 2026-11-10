@@ -50,11 +50,9 @@ export function boardItems(tickets) {
    camera glides out of the request that was being read, instead of resetting. */
 let lastBoardView = null;
 
-/* Arriving from the homepage: how long the homepage's workshop takes to give
-   way to the board, and the board's camera to glide from the homepage's angle
-   to its own (ms, at --vt-slow 1). */
-const HANDOVER_FADE = 520;
-const HANDOVER_GLIDE = 1300;
+/* Arriving from the homepage: how long the camera takes to fly from the
+   homepage's machine to the board (ms, at --vt-slow 1). */
+const ARRIVAL_FLIGHT = 1600;
 
 export function Board({
   tickets,
@@ -264,10 +262,13 @@ export function Board({
         canvas.setAttribute('aria-hidden', 'true');
         host.appendChild(canvas);
         view = canvas;
-        // Out of sight, labels and all, until the workshop gives way.
+        // Out of sight, labels and all, until the workshop gives way. The
+        // board's camera holds on its own copy of the homepage's machine
+        // meanwhile, drawing the same frame as the workshop.
         const stage = stageElRef.current;
         if (room) for (const el of [canvas, stage]) el.style.opacity = '0';
         board = initBoard(canvas, {
+          arrival: room ? { time: left.time, mouse: left.mouse } : undefined,
           input: stageElRef.current,
           frame: stageElRef.current,
           fitBase: 2.8,
@@ -349,28 +350,23 @@ export function Board({
         if (reopen) board.focus(reopen.id);
         boardRef.current = board;
         if (room) {
-          // Once the machine has landed on the workshop, the board fades in
-          // over it while its camera glides from the homepage's angle to its
-          // own, and the workshop fades out under it and stops.
+          // Once the machine has landed on the workshop, the board's canvas,
+          // already drawing the same frame, takes its place, and the camera
+          // flies through the one world from the homepage's machine to the
+          // board. The labels come in on the way.
           unwatch = whenLanded(() => {
-            const slow = slowFactor();
-            const fade = HANDOVER_FADE * slow;
-            board.introduce(HANDOVER_GLIDE * slow);
-            for (const el of [canvas, stage]) {
-              el.style.transition = `opacity ${fade}ms ease`;
-              el.style.opacity = '1';
-            }
-            room.canvas.style.transition = `opacity ${fade}ms ease ${fade * 0.35}ms`;
-            room.canvas.style.opacity = '0';
+            const flight = ARRIVAL_FLIGHT * slowFactor();
+            canvas.style.removeProperty('opacity');
+            room.stop();
+            room.canvas.remove();
+            room = null;
+            board.arrive(flight);
+            stage.style.transition = `opacity ${flight * 0.4}ms ease ${flight * 0.6}ms`;
+            stage.style.opacity = '1';
             settle = setTimeout(() => {
-              room?.stop();
-              room?.canvas.remove();
-              room = null;
-              for (const el of [canvas, stage]) {
-                el.style.removeProperty('transition');
-                el.style.removeProperty('opacity');
-              }
-            }, fade * 1.35 + 50);
+              stage.style.removeProperty('transition');
+              stage.style.removeProperty('opacity');
+            }, flight + 50);
           });
         }
       })
