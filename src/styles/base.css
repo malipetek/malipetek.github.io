@@ -892,22 +892,34 @@ html[data-hop='arrive'] .wordmark-site {
   animation: calc(280ms * var(--vt-slow)) var(--ease) calc(140ms * var(--vt-slow)) both brand-site-in;
 }
 
-/* The machine arrives: from the homepage to the portal, the scene's snapshot
-   shrinks and slides into the board's window, measured by the portal's first
-   frame (Base.astro). One transform does both, so the machine lands where the
-   window is instead of fading somewhere near it. */
-html[data-vt-scene='in']::view-transition-old(scene) {
-  transform-origin: 0 0;
-  animation: calc(760ms * var(--vt-slow)) var(--ease) both scene-into-board;
+/* The machine stays and the page pushes in around it: leaving the homepage for
+   the portal, the scene's snapshot slides to the board's window without
+   shrinking, while everything else on the page scales past the edges. Both
+   moves are measured from the board's window (Base.astro), so they land
+   together. */
+html[data-vt-scene='in']::view-transition-old(root) {
+  transform-origin: var(--vt-scene-cx, 50%) var(--vt-scene-cy, 50%);
+  animation: calc(560ms * var(--vt-slow)) var(--ease) both hop-push;
 }
 
-@keyframes scene-into-board {
-  70% {
+html[data-vt-scene='in']::view-transition-old(scene) {
+  animation: calc(760ms * var(--vt-slow)) var(--ease) both hop-hold;
+}
+
+@keyframes hop-push {
+  to {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+
+@keyframes hop-hold {
+  65% {
     opacity: 1;
   }
   to {
     opacity: 0;
-    transform: translate(var(--vt-scene-x, 0px), var(--vt-scene-y, 0px)) scale(var(--vt-scene-s, 1));
+    transform: translate(var(--vt-scene-tx, 0px), var(--vt-scene-ty, 0px));
   }
 }
 

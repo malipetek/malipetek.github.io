@@ -2750,6 +2750,12 @@ fieldset.cp-field {
 .cp-overview--guest {
   align-items: start;
 }
+/* Two columns need room; below that the way in and the steps stack. */
+@media (max-width: 1100px) {
+  .cp-overview--guest {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 /* The sign-in as a card in the workspace, not a page of its own: the fixed
    full-screen layout it used to have is gone, the form styling is not. */
@@ -2763,6 +2769,7 @@ fieldset.cp-field {
 }
 .cp-signin--panel .cp-signin__card {
   width: 100%;
+  max-width: 520px;
 }
 .cp-signin--panel .cp-signin__steps {
   display: grid;

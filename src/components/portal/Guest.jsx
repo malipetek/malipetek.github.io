@@ -75,6 +75,7 @@ function GuestBoard({ t }) {
 
   useEffect(() => {
     let board = null;
+    let view = null;
     let stopped = false;
     import('../../lib/workshop3d')
       .then(({ initBoard }) => {
@@ -83,7 +84,10 @@ function GuestBoard({ t }) {
         const canvas = document.createElement('canvas');
         canvas.className = 'cp-board__canvas';
         canvas.setAttribute('aria-hidden', 'true');
-        host.appendChild(canvas);
+        // One room at a time: a second mount (a hot reload, an effect run
+        // twice) must not leave the first renderer drawing under this one.
+        host.replaceChildren(canvas);
+        view = canvas;
         board = initBoard(canvas, {
           input: stage.current,
           frame: stage.current,
@@ -104,7 +108,7 @@ function GuestBoard({ t }) {
     return () => {
       stopped = true;
       board?.stop();
-      document.querySelector('.cp--guest .cp-scene canvas')?.remove();
+      view?.remove();
     };
     // The scene is started once for the life of the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
