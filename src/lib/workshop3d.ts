@@ -1615,7 +1615,25 @@ export interface WorkshopOptions {
    * workshop, so a hop between the two pages maps one box onto the other
    * (Base.astro, "the machine arrives"; Guest.jsx placeScene).
    */
-  onFrame?: (box: { x: number; y: number; width: number; height: number }) => void;
+  onFrame?: (box: WorkshopBox) => void;
+  /**
+   * The frame to start from: another page's pointer and clock (its box's
+   * `mouse` and `time`), so this canvas draws the very frame that page left
+   * on and a hop between the two can hand over without a jump.
+   */
+  start?: { mouse?: { x: number; y: number }; time?: number };
+}
+
+/** Where the workshop's machine is on screen, and what drew that frame. */
+export interface WorkshopBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** The pointer the camera leans toward, -1..1 on each axis. */
+  mouse: { x: number; y: number };
+  /** The animation clock, in seconds. */
+  time: number;
 }
 
 /** Starts the workshop in `canvas`; the function it returns stops it. */
@@ -1692,7 +1710,9 @@ export function initWorkshop(canvas: HTMLCanvasElement, options: WorkshopOptions
   let current = targetFor();
   const pos = new THREE.Vector3();
   const look = new THREE.Vector3();
-  const mouse = { x: 0, y: 0 };
+  const mouse = { x: options.start?.mouse?.x ?? 0, y: options.start?.mouse?.y ?? 0 };
+  const clockFrom = options.start?.time ?? 0;
+  let clock = clockFrom;
   // Narrow viewports see less horizontally — pull the camera back so the
   // stations read at a similar size and don't crowd the DOM text.
   let zoom = 1;
@@ -1751,7 +1771,14 @@ export function initWorkshop(canvas: HTMLCanvasElement, options: WorkshopOptions
       boxMin.set(Math.min(boxMin.x, x), Math.min(boxMin.y, y));
       boxMax.set(Math.max(boxMax.x, x), Math.max(boxMax.y, y));
     }
-    options.onFrame({ x: boxMin.x, y: boxMin.y, width: boxMax.x - boxMin.x, height: boxMax.y - boxMin.y });
+    options.onFrame({
+      x: boxMin.x,
+      y: boxMin.y,
+      width: boxMax.x - boxMin.x,
+      height: boxMax.y - boxMin.y,
+      mouse: { x: mouse.x, y: mouse.y },
+      time: clock,
+    });
   };
 
   const resize = () => {
@@ -1804,7 +1831,7 @@ export function initWorkshop(canvas: HTMLCanvasElement, options: WorkshopOptions
   const timer = new THREE.Timer();
   const tick = () => {
     timer.update();
-    const t = timer.getElapsed();
+    const t = (clock = clockFrom + timer.getElapsed());
     current += (targetFor() - current) * 0.075;
     pose(current);
     kit.floor.uniforms.uTime.value = t;

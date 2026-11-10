@@ -74,6 +74,9 @@ function GuestBoard() {
     let view = null;
     let stopped = false;
     let placed = false;
+    // Arriving from the homepage: start from the frame it left on (its
+    // pointer and clock), so the hand-over to this canvas is invisible.
+    const left = JSON.parse(sessionStorage.getItem('scene-box') || 'null');
     import('../../lib/workshop3d')
       .then(({ initWorkshop }) => {
         const host = document.querySelector('.cp--guest .cp-scene');
@@ -86,6 +89,7 @@ function GuestBoard() {
         host.replaceChildren(canvas);
         view = canvas;
         stop = initWorkshop(canvas, {
+          start: left ? { mouse: left.mouse, time: left.time } : undefined,
           // The machine that left the site lands on this one (once).
           onFrame: (box) => {
             if (!placed) placed = placeScene(box);

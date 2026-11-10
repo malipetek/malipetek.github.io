@@ -878,14 +878,15 @@ html[data-vt-scene]:not([data-vt-scene-ready='same']) .cp-scene canvas {
 }
 /* The way in and the steps mount after the new page was captured, so during
    the hop they are painted under the flying machine whatever they are named.
-   They wait out the hop instead and rise in once it has ended (Base.astro
-   clears data-vt-scene when the transition finishes). */
+   They wait until the machine is out of the way: as soon as it has landed in
+   place (this page's own canvas takes over, Guest.jsx), or else when the hop
+   has ended (Base.astro clears data-vt-scene when the transition finishes). */
 .cp-overview--guest {
   transition:
     opacity calc(320ms * var(--vt-slow, 1)) var(--ease),
     transform calc(320ms * var(--vt-slow, 1)) var(--ease);
 }
-html[data-vt-scene] .cp-overview--guest {
+html[data-vt-scene]:not([data-vt-scene-ready='same']) .cp-overview--guest {
   opacity: 0;
   transform: translateY(14px);
   transition: none;
