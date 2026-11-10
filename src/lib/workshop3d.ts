@@ -2060,6 +2060,14 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     return { x: ((p.x + 1) / 2) * size.w - frameOrigin.left, y: ((1 - p.y) / 2) * size.h - frameOrigin.top };
   };
 
+  /** The lens shift that centres the board in its frame (none unframed).
+   * Declared before render: the first frame is drawn during setup. */
+  const boardShift = (): [number, number] => {
+    if (!framed) return [0, 0];
+    const f = frameEl.getBoundingClientRect();
+    return [size.w / 2 - (f.left + f.width / 2), size.h / 2 - (f.top + f.height / 2)];
+  };
+
   const render = () => {
     const ticket = focusId !== null ? machine.ticketAt!(focusId) : null;
     // A station is looked at from its middle height, not its caption above.
@@ -2126,12 +2134,6 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   const themeWatch = new MutationObserver(applyTheme);
   themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
-  /** The lens shift that centres the board in its frame (none unframed). */
-  const boardShift = (): [number, number] => {
-    if (!framed) return [0, 0];
-    const f = frameEl.getBoundingClientRect();
-    return [size.w / 2 - (f.left + f.width / 2), size.h / 2 - (f.top + f.height / 2)];
-  };
   const resize = () => {
     size = { w: Math.max(1, canvas.clientWidth), h: Math.max(1, canvas.clientHeight) };
     renderer.setSize(size.w, size.h, false);

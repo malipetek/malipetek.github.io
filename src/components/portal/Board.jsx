@@ -370,7 +370,14 @@ export function Board({
           });
         }
       })
-      .catch(() => setFailed(true)); // no WebGL: the legend and list carry it all
+      .catch(() => {
+        // No WebGL: the legend and list carry it all. Nor is the homepage's
+        // workshop left standing in for a board that never came.
+        room?.stop();
+        room?.canvas.remove();
+        room = null;
+        setFailed(true);
+      });
     return () => {
       stopped = true;
       unwatch();
