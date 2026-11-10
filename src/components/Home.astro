@@ -68,9 +68,9 @@ const availability = site?.availability ?? "limited";
     <div class="masthead-body">
       <p class="masthead-hook">{copy(t, "offer.next", NEXT)}</p>
       <p class="masthead-proof">{copy(t, "offer.priceHook", PRICE_HOOK, { price: QUICK_FIX })}</p>
-      <p class="masthead-from-idea"><a href="/portal/start">{copy(t, "offer.fromIdea", FROM_IDEA)}</a></p>
+      <p class="masthead-from-idea"><a href="/portal#/new">{copy(t, "offer.fromIdea", FROM_IDEA)}</a></p>
       <div class="masthead-actions">
-        <a class="btn btn--solid" href="/portal/start">{t("site.home.cta.next")}</a>
+        <a class="btn btn--solid" href="/portal#/new">{t("site.home.cta.next")}</a>
         <a class="btn" href="#how">{t("site.home.cta.how")}</a>
       </div>
       <p class="masthead-note"><strong>{copy(t, "offer.punchline.1", PUNCHLINE[0])} {copy(t, "offer.punchline.2", PUNCHLINE[1])}</strong> {copy(t, "offer.priceNote", PRICE_NOTE, { rate: HOURLY_USD })}</p>

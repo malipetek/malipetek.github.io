@@ -84,12 +84,6 @@
   display: none !important;
 }
 
-/* PortalFrame.astro draws both first frames; the page's inline script says
-   which one by whether a session is saved. */
-html:not([data-portal='in']) [data-portal-frame] > [data-when='in'],
-html:not([data-portal='out']) [data-portal-frame] > [data-when='out'] {
-  display: none;
-}
 html[data-portal-arriving] astro-island .cp-brand {
   visibility: hidden;
 }
@@ -167,12 +161,10 @@ html[data-portal-arriving] astro-island .cp-brand > * {
 /* The mark is the site header's "malipetek" (base.css, "page transitions").
    Only the copy on screen carries the name: the sidebar's on a wide screen,
    the topbar's on a narrow one, the corner's when signed out. */
-.cp-side__brand .cp-brand__root,
-.cp-signin__mark .cp-brand__root {
+.cp-side__brand .cp-brand__root {
   view-transition-name: brand;
 }
-.cp-side__brand .cp-brand__site,
-.cp-signin__mark .cp-brand__site {
+.cp-side__brand .cp-brand__site {
   view-transition-name: brand-site;
 }
 
@@ -534,66 +526,91 @@ html[data-portal-arriving] astro-island .cp-brand > * {
   animation-duration: calc(160ms * var(--vt-slow, 1));
 }
 
-/* Into a request from its card the page zooms in on the card, the 3D room
-   with it; back to the board it zooms out of it. --cp-zoom-* is the card's
-   centre, set by store.js for the transition (m: in the content area,
-   v: in the window). */
+/* Into a request from its card the page moves like a camera into the card,
+   the 3D room with it; back to the board it moves out again. The camera is
+   the move that carries the card's box onto the request head's (store.js
+   setCamera: --cp-zoom-dx/dy and -s, from the card's top-left corner), the
+   same one the cp-peek group morphs along, so board, room and card travel as
+   one piece. The request rides the inverse, from the card's box out to its
+   own, around the head's corner. m: content-area coordinates, v: window. All
+   four use one duration and curve as the cp-peek group, or the pieces drift
+   apart mid-flight. */
 html[data-cp-nav^='zoom'] .cp-scene {
   view-transition-name: cp-scene;
 }
 html[data-cp-nav^='zoom']::view-transition-group(cp-scene) {
   animation: none;
 }
+html[data-cp-nav^='zoom']::view-transition-old(cp-main),
+html[data-cp-nav^='zoom']::view-transition-new(cp-main),
+html[data-cp-nav^='zoom']::view-transition-old(cp-scene),
+html[data-cp-nav^='zoom']::view-transition-new(cp-scene) {
+  animation-duration: calc(420ms * var(--vt-slow, 1));
+  animation-timing-function: var(--ease);
+  animation-fill-mode: both;
+}
+/* In: the board and the room carry on through the card, the request grows
+   out of it. */
 html[data-cp-nav='zoom-in']::view-transition-old(cp-main) {
   transform-origin: var(--cp-zoom-mx) var(--cp-zoom-my);
-  animation: cp-zoom-past calc(380ms * var(--vt-slow, 1)) cubic-bezier(0.5, 0, 0.75, 0) both;
+  animation-name: cp-zoom-through;
 }
 html[data-cp-nav='zoom-in']::view-transition-old(cp-scene) {
   transform-origin: var(--cp-zoom-vx) var(--cp-zoom-vy);
-  animation: cp-zoom-past calc(420ms * var(--vt-slow, 1)) cubic-bezier(0.5, 0, 0.75, 0) both;
+  animation-name: cp-zoom-through;
 }
 html[data-cp-nav='zoom-in']::view-transition-new(cp-main) {
-  transform-origin: var(--cp-zoom-mx) var(--cp-zoom-my);
-  animation: cp-zoom-arrive calc(360ms * var(--vt-slow, 1)) var(--ease) calc(160ms * var(--vt-slow, 1)) both;
+  transform-origin: var(--cp-zoom-hmx) var(--cp-zoom-hmy);
+  animation-name: cp-zoom-from-card;
 }
+/* Out: the request shrinks back into the card, the board and the room come
+   back from beyond it. */
 html[data-cp-nav='zoom-out']::view-transition-old(cp-main) {
-  transform-origin: var(--cp-zoom-mx) var(--cp-zoom-my);
-  animation: cp-zoom-leave calc(260ms * var(--vt-slow, 1)) ease-in both;
-}
-html[data-cp-nav='zoom-out']::view-transition-new(cp-main),
-html[data-cp-nav='zoom-out']::view-transition-new(cp-scene) {
-  animation: cp-zoom-return calc(460ms * var(--vt-slow, 1)) var(--ease) calc(60ms * var(--vt-slow, 1)) both;
+  transform-origin: var(--cp-zoom-hmx) var(--cp-zoom-hmy);
+  animation-name: cp-zoom-into-card;
 }
 html[data-cp-nav='zoom-out']::view-transition-new(cp-main) {
   transform-origin: var(--cp-zoom-mx) var(--cp-zoom-my);
+  animation-name: cp-zoom-back;
 }
 html[data-cp-nav='zoom-out']::view-transition-new(cp-scene) {
   transform-origin: var(--cp-zoom-vx) var(--cp-zoom-vy);
+  animation-name: cp-zoom-back;
 }
-/* In: the board rushes past toward the card, the request settles in. */
-@keyframes cp-zoom-past {
+@keyframes cp-zoom-through {
+  60% {
+    opacity: 0.35;
+  }
   to {
     opacity: 0;
-    transform: scale(1.6);
+    transform: translate(var(--cp-zoom-dx), var(--cp-zoom-dy)) scale(var(--cp-zoom-s));
   }
 }
-@keyframes cp-zoom-arrive {
+@keyframes cp-zoom-from-card {
   from {
     opacity: 0;
-    transform: scale(0.94);
+    transform: translate(calc(var(--cp-zoom-dx) * -1), calc(var(--cp-zoom-dy) * -1)) scale(var(--cp-zoom-is));
+  }
+  40% {
+    opacity: 1;
   }
 }
-/* Out: the request falls back, the board comes back from close up. */
-@keyframes cp-zoom-leave {
+@keyframes cp-zoom-into-card {
+  60% {
+    opacity: 0.35;
+  }
   to {
     opacity: 0;
-    transform: scale(0.94);
+    transform: translate(calc(var(--cp-zoom-dx) * -1), calc(var(--cp-zoom-dy) * -1)) scale(var(--cp-zoom-is));
   }
 }
-@keyframes cp-zoom-return {
+@keyframes cp-zoom-back {
   from {
     opacity: 0;
-    transform: scale(1.6);
+    transform: translate(var(--cp-zoom-dx), var(--cp-zoom-dy)) scale(var(--cp-zoom-s));
+  }
+  40% {
+    opacity: 1;
   }
 }
 
@@ -852,6 +869,27 @@ html[data-cp-nav='zoom-out']::view-transition-new(cp-scene) {
 }
 .cp-board.is-flat .cp-board__stage {
   display: none;
+}
+/* While the machine is flying in from the site, the board's own copy stays
+   out of the way: two machines at once is the thing that looked wrong.
+   When it lands in place it shows at once instead (base.css). */
+html[data-vt-scene]:not([data-vt-scene-ready='same']) .cp-scene canvas {
+  visibility: hidden;
+}
+/* The way in and the steps mount after the new page was captured, so during
+   the hop they are painted under the flying machine whatever they are named.
+   They wait until the machine is out of the way: as soon as it has landed in
+   place (this page's own canvas takes over, Guest.jsx), or else when the hop
+   has ended (Base.astro clears data-vt-scene when the transition finishes). */
+.cp-overview--guest {
+  transition:
+    opacity calc(320ms * var(--vt-slow, 1)) var(--ease),
+    transform calc(320ms * var(--vt-slow, 1)) var(--ease);
+}
+html[data-vt-scene]:not([data-vt-scene-ready='same']) .cp-overview--guest {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: none;
 }
 .cp-board__canvas {
   position: absolute;
@@ -2387,6 +2425,50 @@ html[data-cp-nav='zoom-out']::view-transition-new(cp-scene) {
 .cp-connect .cp-card > .cp-btn {
   justify-self: start;
 }
+
+/* #/new (Intake.jsx): the box, the two optional connections, the send. */
+.cp-intake {
+  max-width: 760px;
+}
+.cp-intake .cp-card {
+  display: grid;
+  gap: 16px;
+}
+.cp-intake__connections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.cp-intake__connection {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 8px;
+  font-size: 13.5px;
+}
+.cp-intake__connection.is-connected {
+  border-style: solid;
+}
+.cp-intake__connection strong {
+  font: 500 11px/1.4 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.cp-intake__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.cp-intake__status {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 13px;
+}
+.cp-intake__status.is-error {
+  color: var(--cp-bad);
+}
 .cp-keys {
   list-style: none;
   margin: 0;
@@ -2739,42 +2821,61 @@ fieldset.cp-field {
   color: #fff;
 }
 
-/* ————— signed out ————— */
+/* ————— signed out: the workspace, with the way in in it ————— */
 
-.cp-signin {
+/* The guest sees the shell they will work in, so the hop from the site lands
+   in a room rather than on a card. The room is the homepage's workshop, drawn
+   the way the homepage draws it (WorkshopScene.astro): the whole window, with
+   the stage only keeping its place in the layout. */
+.cp--guest .cp-board__stage {
+  height: clamp(220px, 26vw, 340px);
+  cursor: default;
+}
+.cp-workshop {
   position: fixed;
   inset: 0;
-  z-index: 50;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 28px;
-  padding: 20px;
-  background:
-    radial-gradient(circle at 1px 1px, var(--rule-strong) 1px, transparent 0) 0 0 / 18px 18px,
-    var(--bone);
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
-/* The sidebar's padding plus its brand's, so the mark sits where the shell
-   puts it; on a narrow screen, centred in a topbar-high strip. */
-.cp-signin__mark {
-  position: absolute;
-  top: 18px;
-  left: 12px;
-  padding: 4px 10px 16px;
+.cp--guest .cp-side__note {
+  margin: 14px 6px 0;
+  max-width: 26ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-soft);
 }
-.cp-signin__mark .cp-brand {
-  display: block;
+.cp-overview--guest {
+  align-items: start;
 }
-@media (max-width: 900px) {
-  .cp-signin__mark {
-    inset: 0 0 auto;
-    height: 52px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+/* Two columns need room; below that the way in and the steps stack. */
+@media (max-width: 1100px) {
+  .cp-overview--guest {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* The sign-in as a card in the workspace, not a page of its own: the fixed
+   full-screen layout it used to have is gone, the form styling is not. */
+.cp-signin--panel {
+  position: static;
+  inset: auto;
+  display: block;
+  padding: 0;
+  background: none;
+  z-index: auto;
+}
+.cp-signin--panel .cp-signin__card {
+  width: 100%;
+  max-width: 520px;
+}
+.cp-signin--panel .cp-signin__steps {
+  display: grid;
+  justify-content: start;
+  gap: 10px;
+  margin: 4px 0 0;
+}
+
 .cp-signin__card {
   width: min(420px, calc(100vw - 40px));
   display: grid;

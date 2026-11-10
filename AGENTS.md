@@ -14,7 +14,7 @@
 - Local web dev against production data: `PUBLIC_CHAT_ENDPOINT=https://malipetek-intercom.malipetek.workers.dev npx astro dev --port 4321 --host 127.0.0.1` (the Worker's CORS allows only :4321).
 
 ## Client portal
-- `/portal` (and `/portal/ticket`, the address in emails) mount `src/components/portal/ClientPortal.jsx`: React, hash routes (`#/ticket/12`), styles in `src/styles/client-portal.css`. The overview's 3D board is `initBoard` in `src/lib/workshop3d.ts` (the homepage machine with the client's own requests on it). Onboarding (`/portal/start`) is `src/components/portal/Start.jsx`, mounted in a static Astro shell like the portal itself.
+- `/portal` (and `/portal/ticket`, the address in emails) mount `src/components/portal/ClientPortal.jsx`: React, hash routes (`#/ticket/12`), styles in `src/styles/client-portal.css`. The overview's 3D board is `initBoard` in `src/lib/workshop3d.ts` (the homepage machine with the client's own requests on it). Signed out, `/portal` is the same workspace with the homepage's own 3D workshop and the sign-in card in it (`src/components/portal/Guest.jsx`). Adding a project is the portal route `#/new` (`src/components/portal/Intake.jsx`); the old `/portal/start` 301s there (`MOVED` in `src/lib/siteHosts.ts`).
 
 ## Intercom (the talk section)
 - `src/components/Intercom.astro` streams from `PUBLIC_CHAT_ENDPOINT` (`/api` in production) through `src/lib/chatBackend.js`. The site Worker owns `malipetek.dev/*`, so it proxies `/api/*` to `malipetek-intercom` over the `INTERCOM` service binding (`src/pages/api/[...path].ts`); `/mcp` and `/.well-known/*` take the same hop.

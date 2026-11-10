@@ -1,20 +1,20 @@
 /*
  * /portal: the client's workspace. A sidebar (overview, requests, projects,
- * billing, connections), the page, and dialogs for a new request and for
+ * billing, connections, and #/new to add a project), the page, and dialogs for a new request and for
  * confirmations. Routes are in the hash (store.js); /portal/ticket#id=12, the
  * address in older emails, lands on #/ticket/12.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { demoLogin, errorText, logout, requestLink, session } from '../../lib/portal';
-import { STEPS } from '../../lib/offer.js';
+import { errorText, logout, session } from '../../lib/portal';
 import { browserLocale, useTranslator } from './useTranslator.js';
 import { Composer } from './Composer.jsx';
 import { LanguageDialog } from './Language.jsx';
-import { stepText } from './copy.js';
 import { TicketView } from './TicketView.jsx';
 import { BillingView, ConnectionsView, Overview, ProjectView, RequestsView } from './views.jsx';
 import { PortalContext, go, href, isOpen, signedIn, usePortalData, useRoute } from './store.js';
-import { Button, Confirm, Icon, cx } from './ui.jsx';
+import { Brand, Button, Confirm, Icon, cx } from './ui.jsx';
+import { GuestShell } from './Guest.jsx';
+import { IntakeView } from './Intake.jsx';
 
 export default function ClientPortal() {
   const [authed, setAuthed] = useState(() => {
@@ -44,7 +44,7 @@ export default function ClientPortal() {
     else handOver();
   }, []);
 
-  if (!authed) return <SignIn t={t} />;
+  if (!authed) return <GuestShell t={t} />;
   if (!data.loaded) return <BootFrame>{t('common.loading')}</BootFrame>;
   if (!data.user) {
     return (
@@ -55,21 +55,6 @@ export default function ClientPortal() {
     );
   }
   return <Shell data={data} reload={reload} t={t} onSignedOut={() => setAuthed(false)} />;
-}
-
-/**
- * "malipetek" and "/portal" are separate links: the first is the same mark as
- * the site header's and leads back to the main site, so a page load from the
- * site moves it here and the suffix draws out of it (base.css, "page
- * transitions"); the suffix leads to the portal's own home.
- */
-function Brand({ href: to, className }) {
-  return (
-    <span className={cx('cp-brand', className)}>
-      <a className="cp-brand__root" href="/">malipetek</a>
-      <a className="cp-brand__site" href={to}>/portal</a>
-    </span>
-  );
 }
 
 /**
@@ -181,7 +166,7 @@ function Shell({ data, reload, t, onSignedOut }) {
                 </a>
               );
             })}
-            <a href="/portal/start" className="cp-nav__add">
+            <a href={href('new')} className="cp-nav__add" aria-current={route.name === 'new' ? 'page' : undefined}>
               <Icon name="plus" size={15} />
               <span>{t('nav.addProject')}</span>
             </a>
@@ -270,6 +255,8 @@ function Route({ route }) {
       return <BillingView />;
     case 'connections':
       return <ConnectionsView />;
+    case 'new':
+      return <IntakeView />;
     default:
       return <Overview />;
   }
@@ -292,79 +279,5 @@ function ThemeButton({ t }) {
     >
       <Icon name={dark ? 'sun' : 'moon'} size={16} />
     </button>
-  );
-}
-
-/* ————— signed out ————— */
-
-function SignIn({ t }) {
-  const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [withCode, setWithCode] = useState(false);
-  const [note, setNote] = useState({ text: '', error: false, dev: null });
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    setNote({ text: t('common.sending'), error: false, dev: null });
-    try {
-      if (code.trim()) {
-        const res = await demoLogin(email.trim(), code.trim());
-        session.set(res.session);
-        window.location.reload();
-        return;
-      }
-      const res = await requestLink(email.trim());
-      // Local dev only: the Worker hands the link back instead of emailing it.
-      setNote({ text: t('signin.checkInbox', { email: email.trim() }), error: false, dev: res.devLink ?? null });
-    } catch (error) {
-      setNote({ text: errorText(error, t), error: true, dev: null });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="cp-signin">
-      {/* Where the shell has its mark, so signing in leaves it in place. */}
-      <div className="cp-signin__mark">
-        <Brand href="/portal" />
-      </div>
-      <div className="cp-signin__card">
-        <h1>{t('signin.title')}</h1>
-        <p className="cp-muted">{t('signin.intro')}</p>
-        <form onSubmit={submit}>
-          <label className="cp-field">
-            <span className="cp-label">{t('signin.email')}</span>
-            <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-          </label>
-          {withCode ? (
-            <label className="cp-field">
-              <span className="cp-label">{t('signin.reviewerCode')}</span>
-              <input type="text" autoComplete="off" value={code} onChange={(e) => setCode(e.target.value)} />
-            </label>
-          ) : null}
-          <Button kind="primary" disabled={busy} type="submit" className="cp-signin__go">
-            {code.trim() ? t('signin.withCode') : t('signin.emailLink')}
-          </Button>
-          <p className={cx('cp-signin__note', note.error && 'is-error')} role="status" aria-live="polite">
-            {note.text} {note.dev ? <a href={note.dev}>{t('signin.devLink')}</a> : null}
-          </p>
-        </form>
-        {!withCode ? (
-          <button type="button" className="cp-linkbtn" onClick={() => setWithCode(true)}>
-            {t('signin.haveCode')}
-          </button>
-        ) : null}
-      </div>
-      <ol className="cp-signin__steps">
-        {STEPS.map((step, i) => (
-          <li key={step.key}>
-            <b>{String(i + 1).padStart(2, '0')}</b> {stepText(t, step, 'title')}
-          </li>
-        ))}
-      </ol>
-    </div>
   );
 }

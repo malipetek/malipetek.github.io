@@ -6,7 +6,7 @@
  * gets the request. Both call the same rule set.
  */
 import { defineMiddleware } from 'astro:middleware';
-import { hostRedirect, previewSiteCookie } from './lib/siteHosts';
+import { hostRedirect, movedPage, previewSiteCookie } from './lib/siteHosts';
 
 export const onRequest = defineMiddleware(async (context, next) => {
   // Astro runs the middleware while it renders a prerendered page too, with
@@ -16,7 +16,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   // by src/worker.ts.
   if (context.isPrerendered) return next();
 
-  const redirect = hostRedirect(context.request);
+  const redirect = hostRedirect(context.request) ?? movedPage(context.request);
   if (redirect) return redirect;
 
   const cookie = previewSiteCookie(context.request);

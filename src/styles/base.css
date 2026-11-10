@@ -892,6 +892,48 @@ html[data-hop='arrive'] .wordmark-site {
   animation: calc(280ms * var(--vt-slow)) var(--ease) calc(140ms * var(--vt-slow)) both brand-site-in;
 }
 
+/* The machine stays and the page pushes in around it: leaving the homepage for
+   the portal, everything written over the scene scales past the edges, while
+   the scene itself is held still until the board says where its own machine is
+   (Guest.jsx). One scale-and-translate then maps the two exactly, so the
+   machine lands on the board's machine rather than near it. */
+html[data-vt-scene='in']::view-transition-old(root) {
+  transform-origin: var(--vt-scene-cx, 50%) var(--vt-scene-cy, 50%);
+  animation: calc(560ms * var(--vt-slow)) var(--ease) both hop-push;
+}
+
+html[data-vt-scene='in']::view-transition-old(scene) {
+  transform-origin: 0 0;
+  animation: calc(360ms * var(--vt-slow)) var(--ease) both hop-land;
+  /* Held until the box is known; a paused animation still holds the
+     transition open, so nothing ends before it has landed. */
+  animation-play-state: paused;
+}
+
+html[data-vt-scene='in'][data-vt-scene-ready]::view-transition-old(scene) {
+  animation-play-state: running;
+}
+
+/* Landing in place: the portal's live machine is already drawn at the same
+   pixels behind its cards, so the snapshot, which paints over them, goes. */
+html[data-vt-scene='in'][data-vt-scene-ready='same']::view-transition-old(scene) {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes hop-push {
+  to {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+
+@keyframes hop-land {
+  to {
+    transform: translate(var(--vt-scene-tx, 0px), var(--vt-scene-ty, 0px)) scale(var(--vt-scene-s, 1));
+  }
+}
+
 /* ————— reduced motion ————— */
 
 @media (prefers-reduced-motion: reduce) {

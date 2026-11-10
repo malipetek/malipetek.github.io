@@ -61,7 +61,7 @@ Record at 1440×900 in a clean browser profile, then crop the chrome.
 | 2 | Last mile | demo project | Phone-width view; broken form, stale price, 404 | Use the demo bakery, never a client |
 | 3 | Price card | — | Static card | Bone/cobalt/orange, no logo animation |
 | 4 | Sign in | `/portal` | Enter demo email, continue | Blur the email field before the code is sent |
-| 5 | New request | `/portal/start` | Type a real pilot request; choose Checked; leave budget empty | Type at human speed; do not paste |
+| 5 | New request | `/portal#/new` | Type a real pilot request; choose Checked; leave budget empty | Type at human speed; do not paste |
 | 6 | Approval | `/portal/admin` | Request appears in **new**; click **Approve** | Blur every other row, name, email |
 | 7 | Run | admin run card | Status running → done; show elapsed time | Crop executor names; no model names |
 | 8 | Diff | ticket page | Scroll the changed lines slowly | Blur file paths if they identify a client |

@@ -93,20 +93,22 @@ export function useRoute() {
         // A second change while one is running replaces it; only the newest
         // may clear the state the other is still animating with.
         const mine = ++generation;
+        // Opening a request from its board card moves the page like a camera
+        // into the card while the card grows into the request's head; going
+        // back to the board moves it out again, into the reopened card. The
+        // head is measured on whichever side has it: now on the way out, after
+        // the update on the way in.
         if (zoom) {
-          // Opening a request from its board card zooms the page into the
-          // card while the card grows into the request's head; going back to
-          // the board zooms out of it again, into the reopened card.
-          const main = document.querySelector('.cp-main')?.getBoundingClientRect();
           root.dataset.cpNav = `zoom-${zoom.way}`;
-          root.style.setProperty('--cp-zoom-vx', `${zoom.at.x}px`);
-          root.style.setProperty('--cp-zoom-vy', `${zoom.at.y}px`);
-          root.style.setProperty('--cp-zoom-mx', `${zoom.at.x - (main?.left ?? 0)}px`);
-          root.style.setProperty('--cp-zoom-my', `${zoom.at.y - (main?.top ?? 0)}px`);
+          if (zoom.way === 'out') setCamera(root, zoom.card, headBox());
         }
+        const update = () => {
+          flushSync(apply);
+          if (zoom?.way === 'in' && mine === generation) setCamera(root, zoom.card, headBox());
+        };
         let ride;
         try {
-          ride = document.startViewTransition(() => flushSync(apply));
+          ride = document.startViewTransition(update);
         } catch {
           // A browser that will not start one (busy, or a document that is
           // going away) must still get the page it asked for.
@@ -149,9 +151,47 @@ export function useRoute() {
   return route;
 }
 
-/* The point a zoom travels from or to, in window and content coordinates
-   (client-portal.css, "cp-zoom-*"). Cleared with the attribute that uses them. */
-const ZOOM_PROPS = ['--cp-zoom-vx', '--cp-zoom-vy', '--cp-zoom-mx', '--cp-zoom-my'];
+/* The camera a zoom moves along (client-portal.css, "cp-zoom-*"): the
+   card's and the head's top-left corners in window (v) and content (m)
+   coordinates, the move between them and the scale. Cleared with the
+   attribute that uses them. */
+const ZOOM_PROPS = [
+  '--cp-zoom-vx', '--cp-zoom-vy', '--cp-zoom-mx', '--cp-zoom-my',
+  '--cp-zoom-hvx', '--cp-zoom-hvy', '--cp-zoom-hmx', '--cp-zoom-hmy',
+  '--cp-zoom-dx', '--cp-zoom-dy', '--cp-zoom-s', '--cp-zoom-is',
+];
+/** The camera's scale stays in this range, whatever the two boxes measure. */
+const ZOOM_SCALE = [1.2, 3];
+
+/** The request head's box, the card's other end. */
+const headBox = () => document.querySelector('.cp-ticket__head')?.getBoundingClientRect() ?? null;
+
+/**
+ * The move that carries the card's box onto the head's: the whole page and
+ * the room ride it, so they travel with the card as one piece instead of
+ * scaling in place around it. Without a head it is a plain push into the card.
+ */
+function setCamera(root, card, head) {
+  const main = document.querySelector('.cp-main')?.getBoundingClientRect();
+  const ml = main?.left ?? 0;
+  const mt = main?.top ?? 0;
+  const [lo, hi] = ZOOM_SCALE;
+  const s = head ? Math.min(hi, Math.max(lo, head.width / card.width)) : 1.6;
+  const h = head ?? card;
+  const px = (name, value) => root.style.setProperty(name, `${value}px`);
+  px('--cp-zoom-vx', card.left);
+  px('--cp-zoom-vy', card.top);
+  px('--cp-zoom-mx', card.left - ml);
+  px('--cp-zoom-my', card.top - mt);
+  px('--cp-zoom-hvx', h.left);
+  px('--cp-zoom-hvy', h.top);
+  px('--cp-zoom-hmx', h.left - ml);
+  px('--cp-zoom-hmy', h.top - mt);
+  px('--cp-zoom-dx', h.left - card.left);
+  px('--cp-zoom-dy', h.top - card.top);
+  root.style.setProperty('--cp-zoom-s', String(s));
+  root.style.setProperty('--cp-zoom-is', String(1 / s));
+}
 /** How long a transition may take to report back, at --vt-slow 1 (ms). */
 const WATCHDOG = 2200;
 
@@ -207,11 +247,11 @@ export const afterTransition = (fn) => {
  */
 function zoomFor(prev, next) {
   if (next.name === 'ticket' && boardReturn.peek !== null && String(boardReturn.peek) === next.id && boardReturn.peekAt) {
-    return { way: 'in', at: boardReturn.peekAt.center };
+    return { way: 'in', card: boardReturn.peekAt.box };
   }
   const r = boardReturn.reopen;
   if (next.name === 'overview' && prev.name === 'ticket' && r && String(r.id) === prev.id) {
-    return { way: 'out', at: r.center };
+    return { way: 'out', card: r.box };
   }
   return null;
 }
@@ -228,9 +268,9 @@ export const href = (path) => `#/${path}`;
  * - from: the route the current page was navigated from, for its back button.
  * - peek: the request whose board card was opened, so the card can morph into
  *   the request page under a view transition. Consumed once.
- * - peekAt: where that card was on screen ({ transform, center }), so the
+ * - peekAt: where that card was on screen ({ transform, box }), so the
  *   page can zoom into it and the board can put it back.
- * - reopen: the request opened from its card ({ id, transform, center }); the
+ * - reopen: the request opened from its card ({ id, transform, box }); the
  *   board reopens the card when it is reached back from that request, so the
  *   head can shrink back into it.
  * - sheet: the project whose sheet was opened, so the sheet can morph into

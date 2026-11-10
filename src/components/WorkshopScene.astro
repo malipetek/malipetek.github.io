@@ -10,7 +10,12 @@
   const canvas = document.querySelector<HTMLCanvasElement>('[data-workshop]');
   if (canvas) {
     try {
-      initWorkshop(canvas);
+      initWorkshop(canvas, {
+        // Where the machine is, so a hop to the portal can land on it exactly.
+        onFrame: (box) => {
+          (window as unknown as { __workshopBox?: unknown }).__workshopBox = box;
+        },
+      });
     } catch {
       // No WebGL (or a driver hiccup): the page is fully usable without it.
       canvas.remove();

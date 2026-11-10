@@ -668,7 +668,7 @@ function MoveDialog({ ticket, projects, onClose, onSaved }) {
         </div>
       ) : (
         <p className="cp-hint">
-          {t('ticket.move.noProjects')} <a href="/portal/start">{t('ticket.move.addProject')}</a>
+          {t('ticket.move.noProjects')} <a href={href('new')}>{t('ticket.move.addProject')}</a>
         </p>
       )}
     </Modal>

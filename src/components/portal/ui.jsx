@@ -8,6 +8,21 @@ import { stepText } from './copy.js';
 
 export const cx = (...parts) => parts.filter(Boolean).join(' ');
 
+/**
+ * "malipetek" and "/portal" are separate links: the first is the same mark as
+ * the site header's and leads back to the main site, so a page load from the
+ * site moves it here and the suffix draws out of it (base.css, "page
+ * transitions"); the suffix leads to the portal's own home.
+ */
+export function Brand({ href: to, className }) {
+  return (
+    <span className={cx('cp-brand', className)}>
+      <a className="cp-brand__root" href="/">malipetek</a>
+      <a className="cp-brand__site" href={to}>/portal</a>
+    </span>
+  );
+}
+
 export function Button({ kind = 'default', size, className, href, ...props }) {
   const cls = cx('cp-btn', `cp-btn--${kind}`, size && `cp-btn--${size}`, className);
   if (href) return <a className={cls} href={href} {...props} />;

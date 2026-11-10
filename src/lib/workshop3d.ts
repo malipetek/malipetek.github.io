@@ -846,16 +846,18 @@ function heroMachine(ctx: Ctx, board?: BoardFeed): Machine {
       look: LOOK,
       animated: [bubble, sky],
       tick,
+      // Each caption floats over the prop that stands for its step. The
+      // homepage has no captions but measures the same five points, so a hop
+      // to the portal can land its machine on the board's.
+      anchors: {
+        new: new THREE.Vector3(STEP_X[0] + 0.3, 2.9, PAD_Z),
+        approved: new THREE.Vector3(gateX + 0.2, 2.75, BELT_Z),
+        in_progress: new THREE.Vector3(STEP_X[2] - 0.2, 2.3, PAD_Z - 0.45),
+        review: new THREE.Vector3(STEP_X[3] + 0.4, 1.85, PAD_Z),
+        done: new THREE.Vector3(7.0, 2.2, BELT_Z + 0.6),
+      },
       ...(board
         ? {
-            // Each caption floats over the prop that stands for its step.
-            anchors: {
-              new: new THREE.Vector3(STEP_X[0] + 0.3, 2.9, PAD_Z),
-              approved: new THREE.Vector3(gateX + 0.2, 2.75, BELT_Z),
-              in_progress: new THREE.Vector3(STEP_X[2] - 0.2, 2.3, PAD_Z - 0.45),
-              review: new THREE.Vector3(STEP_X[3] + 0.4, 1.85, PAD_Z),
-              done: new THREE.Vector3(7.0, 2.2, BELT_Z + 0.6),
-            },
             pickable: () => [...pool.values()].filter((tk) => tk.group.visible).flatMap((tk) => tk.stage.filter((m) => m.visible)),
             ticketAt: (id: number) => {
               const tk = pool.get(id);
@@ -1467,6 +1469,8 @@ interface Station {
   fov?: number;
   /** Per-frame motion beyond the idle float (the hero belt). */
   tick?: (t: number) => void;
+  /** The machine's stage anchors, for measuring where it is on screen. */
+  anchors?: Record<string, THREE.Vector3>;
 }
 
 const DEFAULT_FOV = 38;
@@ -1503,7 +1507,9 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
     const hero = heroMachine(ctx);
     hero.group.position.x = at(0);
     scene.add(hero.group);
-    stations.push({ name: 'hero', cam: hero.cam, look: hero.look, animated: hero.animated, fov: HERO_FOV, tick: hero.tick });
+    // The anchors are the machine's own; measured here, they move with it.
+    const anchors = hero.anchors && Object.fromEntries(Object.entries(hero.anchors).map(([k, v]) => [k, v.clone().add(hero.group.position)]));
+    stations.push({ name: 'hero', cam: hero.cam, look: hero.look, animated: hero.animated, fov: HERO_FOV, tick: hero.tick, anchors });
   }
 
   // 1 — how it works: the queue itself, tickets in a stack with one approved
@@ -1602,7 +1608,36 @@ function buildStations(scene: THREE.Scene, ctx: Ctx): Station[] {
 
 /* ————— driver ————— */
 
-export function initWorkshop(canvas: HTMLCanvasElement): void {
+export interface WorkshopOptions {
+  /**
+   * Where the machine is on screen, in canvas pixels, every frame: the
+   * projected box of its stage anchors. The signed-out portal runs this same
+   * workshop, so a hop between the two pages maps one box onto the other
+   * (Base.astro, "the machine arrives"; Guest.jsx placeScene).
+   */
+  onFrame?: (box: WorkshopBox) => void;
+  /**
+   * The frame to start from: another page's pointer and clock (its box's
+   * `mouse` and `time`), so this canvas draws the very frame that page left
+   * on and a hop between the two can hand over without a jump.
+   */
+  start?: { mouse?: { x: number; y: number }; time?: number };
+}
+
+/** Where the workshop's machine is on screen, and what drew that frame. */
+export interface WorkshopBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** The pointer the camera leans toward, -1..1 on each axis. */
+  mouse: { x: number; y: number };
+  /** The animation clock, in seconds. */
+  time: number;
+}
+
+/** Starts the workshop in `canvas`; the function it returns stops it. */
+export function initWorkshop(canvas: HTMLCanvasElement, options: WorkshopOptions = {}): () => void {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // Transparent canvas: the page background and rails sit behind it, and
@@ -1641,7 +1676,8 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
     if (reduced) renderer.render(scene, camera);
   };
   applyTheme();
-  new MutationObserver(applyTheme).observe(document.documentElement, {
+  const themeWatch = new MutationObserver(applyTheme);
+  themeWatch.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ['data-theme'],
   });
@@ -1674,7 +1710,9 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
   let current = targetFor();
   const pos = new THREE.Vector3();
   const look = new THREE.Vector3();
-  const mouse = { x: 0, y: 0 };
+  const mouse = { x: options.start?.mouse?.x ?? 0, y: options.start?.mouse?.y ?? 0 };
+  const clockFrom = options.start?.time ?? 0;
+  let clock = clockFrom;
   // Narrow viewports see less horizontally — pull the camera back so the
   // stations read at a similar size and don't crowd the DOM text.
   let zoom = 1;
@@ -1714,6 +1752,35 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
     else camera.clearViewOffset();
   };
 
+  // Where the machine is on screen: the same five anchors the board reports,
+  // projected with this camera. Both pages can then map one box onto the other.
+  const anchorStation = stations.find((st) => st.anchors);
+  const boxMin = new THREE.Vector2();
+  const boxMax = new THREE.Vector2();
+  const at = new THREE.Vector3();
+  const report = () => {
+    if (!options.onFrame || !anchorStation?.anchors) return;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    boxMin.set(Infinity, Infinity);
+    boxMax.set(-Infinity, -Infinity);
+    for (const v of Object.values(anchorStation.anchors)) {
+      at.copy(v).project(camera);
+      const x = ((at.x + 1) / 2) * w;
+      const y = ((1 - at.y) / 2) * h;
+      boxMin.set(Math.min(boxMin.x, x), Math.min(boxMin.y, y));
+      boxMax.set(Math.max(boxMax.x, x), Math.max(boxMax.y, y));
+    }
+    options.onFrame({
+      x: boxMin.x,
+      y: boxMin.y,
+      width: boxMax.x - boxMin.x,
+      height: boxMax.y - boxMin.y,
+      mouse: { x: mouse.x, y: mouse.y },
+      time: clock,
+    });
+  };
+
   const resize = () => {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -1728,6 +1795,7 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
       camera.position.copy(pos);
       camera.lookAt(look);
       renderer.render(scene, camera);
+      report();
     }
     measure();
   };
@@ -1742,21 +1810,28 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
       camera.position.copy(pos);
       camera.lookAt(look);
       renderer.render(scene, camera);
+      report();
     };
     render();
     window.addEventListener('scroll', render, { passive: true });
-    return;
+    return () => {
+      themeWatch.disconnect();
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('scroll', render);
+      renderer.dispose();
+    };
   }
 
-  window.addEventListener('pointermove', (e) => {
+  const onPointer = (e: PointerEvent) => {
     mouse.x = (e.clientX / window.innerWidth - 0.5) * 2;
     mouse.y = (e.clientY / window.innerHeight - 0.5) * 2;
-  });
+  };
+  window.addEventListener('pointermove', onPointer);
 
   const timer = new THREE.Timer();
   const tick = () => {
     timer.update();
-    const t = timer.getElapsed();
+    const t = (clock = clockFrom + timer.getElapsed());
     current += (targetFor() - current) * 0.075;
     pose(current);
     kit.floor.uniforms.uTime.value = t;
@@ -1771,9 +1846,18 @@ export function initWorkshop(canvas: HTMLCanvasElement): void {
     camera.position.set(pos.x + mouse.x * 0.7, pos.y - mouse.y * 0.4, pos.z);
     camera.lookAt(look);
     renderer.render(scene, camera);
-    requestAnimationFrame(tick);
+    report();
+    frameId = requestAnimationFrame(tick);
   };
+  let frameId = 0;
   tick();
+  return () => {
+    cancelAnimationFrame(frameId);
+    themeWatch.disconnect();
+    window.removeEventListener('resize', resize);
+    window.removeEventListener('pointermove', onPointer);
+    renderer.dispose();
+  };
 }
 
 /* ————— board: a client's requests, in its own canvas ————— */
