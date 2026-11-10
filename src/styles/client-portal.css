@@ -891,6 +891,12 @@ html[data-vt-scene]:not([data-vt-scene-ready='same']) .cp-overview--guest {
   transform: translateY(14px);
   transition: none;
 }
+/* Behind a request opened from its card, the board keeps running, dived in
+   on that request, and steps back (Board.jsx, keepAsBackdrop). */
+.cp-board__canvas.is-backdrop {
+  opacity: 0.4;
+  transition: opacity calc(420ms * var(--vt-slow, 1)) var(--ease);
+}
 .cp-board__canvas {
   position: absolute;
   inset: 0;

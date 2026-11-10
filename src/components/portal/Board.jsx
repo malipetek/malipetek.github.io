@@ -50,6 +50,35 @@ export function boardItems(tickets) {
    camera glides out of the request that was being read, instead of resetting. */
 let lastBoardView = null;
 
+/* A request opened from its card keeps the board running behind it, dived
+   in on that request and faded (client-portal.css, "is-backdrop"): the room
+   the zoom went into stays. Dropped when the next board takes over, or when
+   the page goes anywhere but that request or back to the board. */
+let backdrop = null;
+
+const dropBackdrop = () => {
+  if (!backdrop) return;
+  window.removeEventListener('hashchange', backdrop.watch);
+  backdrop.board.stop();
+  backdrop.canvas.remove();
+  backdrop = null;
+};
+
+function keepAsBackdrop(board, canvas, id) {
+  dropBackdrop();
+  canvas.classList.add('is-backdrop');
+  board.focus(id);
+  // Back to the board: the board that mounts drops it once it has taken
+  // over. Anywhere else: it goes once that page's transition has ended.
+  const watch = () => {
+    const path = window.location.hash.replace(/^#\/?/, '').split('?')[0];
+    if (path === `ticket/${id}` || path === '' || path === 'overview') return;
+    afterTransition(dropBackdrop);
+  };
+  window.addEventListener('hashchange', watch);
+  backdrop = { board, canvas, watch };
+}
+
 /* Arriving from the homepage: how long the camera takes to fly from the
    homepage's machine to the board (ms, at --vt-slow 1). */
 const ARRIVAL_FLIGHT = 1000;
@@ -262,6 +291,9 @@ export function Board({
         canvas.setAttribute('aria-hidden', 'true');
         host.appendChild(canvas);
         view = canvas;
+        // Back from a request opened from its card: its backdrop stood in for
+        // the board until now, and goes once the way back has ended.
+        if (backdrop) afterTransition(dropBackdrop);
         // Out of sight, labels and all, until the workshop gives way. The
         // board's camera holds on its own copy of the homepage's machine
         // meanwhile, drawing the same frame as the workshop.
@@ -385,9 +417,15 @@ export function Board({
       room?.stop();
       room?.canvas.remove();
       if (board) lastBoardView = board.view();
-      board?.stop();
       boardRef.current = null;
-      view?.remove();
+      // Into a request from its card (TicketView set reopen as it mounted):
+      // the board stays behind it as the backdrop instead of stopping.
+      const into = boardReturn.reopen;
+      if (board && view && into) keepAsBackdrop(board, view, into.id);
+      else {
+        board?.stop();
+        view?.remove();
+      }
     };
   }, []);
 
