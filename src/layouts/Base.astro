@@ -257,6 +257,61 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
     </script>
     <script is:inline>
       /*
+       * The machine arrives. The site's homepage and the portal's board are the
+       * same scene (src/lib/workshop3d.ts): the homepage draws the workshop,
+       * the board draws it with the client's requests on it. Going from the
+       * homepage to the portal, the canvas is named for that one navigation,
+       * and the portal's first frame — which already has the board's window —
+       * measures the window so the machine can shrink and slide into it while
+       * the rest of the page cross-fades. Scale and translation are the same
+       * one transform, so the machine and the window stay one picture.
+       */
+      (() => {
+        const FROM = "scene-from";
+        const canvas = () => document.querySelector("[data-workshop]");
+        addEventListener(
+          "click",
+          (e) => {
+            if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            const a = e.target.closest?.("a[href]");
+            if (!a) return;
+            const url = new URL(a.href, location.href);
+            if (url.origin !== location.origin) return;
+            if (url.pathname.replace(/\/+$/, "") !== "/portal") return;
+            const el = canvas();
+            if (!el) return;
+            el.style.viewTransitionName = "scene";
+            sessionStorage.setItem(FROM, "1");
+            // A click that goes nowhere must not leave the name behind.
+            setTimeout(() => el.style.removeProperty("view-transition-name"), 4000);
+          },
+          true,
+        );
+
+        addEventListener("pagereveal", (e) => {
+          const from = sessionStorage.getItem(FROM);
+          sessionStorage.removeItem(FROM);
+          if (!from || !e.viewTransition) return;
+          const box = document.querySelector("[data-board-window]")?.getBoundingClientRect();
+          if (!box || !box.width || !box.height) return;
+          const root = document.documentElement;
+          // One scale for both axes keeps the machine's shape; what is left
+          // over centres it in the window.
+          const s = Math.min(box.width / innerWidth, box.height / innerHeight);
+          root.dataset.vtScene = "in";
+          root.style.setProperty("--vt-scene-x", `${box.left + (box.width - innerWidth * s) / 2}px`);
+          root.style.setProperty("--vt-scene-y", `${box.top + (box.height - innerHeight * s) / 2}px`);
+          root.style.setProperty("--vt-scene-s", String(s));
+          const clear = () => {
+            delete root.dataset.vtScene;
+            for (const name of ["--vt-scene-x", "--vt-scene-y", "--vt-scene-s"]) root.style.removeProperty(name);
+          };
+          e.viewTransition.finished.then(clear, clear);
+        });
+      })();
+    </script>
+    <script is:inline>
+      /*
        * A list title and the page it opens share one name, so the title grows
        * into that page's heading, and shrinks back into its row on the way
        * back. pageswap runs in the page being left, pagereveal in the one

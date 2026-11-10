@@ -84,12 +84,6 @@
   display: none !important;
 }
 
-/* PortalFrame.astro draws both first frames; the page's inline script says
-   which one by whether a session is saved. */
-html:not([data-portal='in']) [data-portal-frame] > [data-when='in'],
-html:not([data-portal='out']) [data-portal-frame] > [data-when='out'] {
-  display: none;
-}
 html[data-portal-arriving] astro-island .cp-brand {
   visibility: hidden;
 }
@@ -167,12 +161,10 @@ html[data-portal-arriving] astro-island .cp-brand > * {
 /* The mark is the site header's "malipetek" (base.css, "page transitions").
    Only the copy on screen carries the name: the sidebar's on a wide screen,
    the topbar's on a narrow one, the corner's when signed out. */
-.cp-side__brand .cp-brand__root,
-.cp-signin__mark .cp-brand__root {
+.cp-side__brand .cp-brand__root {
   view-transition-name: brand;
 }
-.cp-side__brand .cp-brand__site,
-.cp-signin__mark .cp-brand__site {
+.cp-side__brand .cp-brand__site {
   view-transition-name: brand-site;
 }
 
@@ -2739,42 +2731,46 @@ fieldset.cp-field {
   color: #fff;
 }
 
-/* ————— signed out ————— */
+/* ————— signed out: the workspace, with the way in in it ————— */
 
-.cp-signin {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 28px;
-  padding: 20px;
-  background:
-    radial-gradient(circle at 1px 1px, var(--rule-strong) 1px, transparent 0) 0 0 / 18px 18px,
-    var(--bone);
+/* The guest sees the shell they will work in, so the hop from the site lands
+   in a room rather than on a card. The board is the site's own machine with
+   nothing on it yet, a little shorter than the live one so the way in is
+   visible without scrolling. */
+.cp--guest .cp-board__stage {
+  height: clamp(220px, 26vw, 340px);
 }
-/* The sidebar's padding plus its brand's, so the mark sits where the shell
-   puts it; on a narrow screen, centred in a topbar-high strip. */
-.cp-signin__mark {
-  position: absolute;
-  top: 18px;
-  left: 12px;
-  padding: 4px 10px 16px;
+.cp--guest .cp-side__note {
+  margin: 14px 6px 0;
+  max-width: 26ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-soft);
 }
-.cp-signin__mark .cp-brand {
+.cp-overview--guest {
+  align-items: start;
+}
+
+/* The sign-in as a card in the workspace, not a page of its own: the fixed
+   full-screen layout it used to have is gone, the form styling is not. */
+.cp-signin--panel {
+  position: static;
+  inset: auto;
   display: block;
+  padding: 0;
+  background: none;
+  z-index: auto;
 }
-@media (max-width: 900px) {
-  .cp-signin__mark {
-    inset: 0 0 auto;
-    height: 52px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
+.cp-signin--panel .cp-signin__card {
+  width: 100%;
 }
+.cp-signin--panel .cp-signin__steps {
+  display: grid;
+  justify-content: start;
+  gap: 10px;
+  margin: 4px 0 0;
+}
+
 .cp-signin__card {
   width: min(420px, calc(100vw - 40px));
   display: grid;
