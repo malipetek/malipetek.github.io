@@ -52,7 +52,7 @@ let lastBoardView = null;
 
 /* Arriving from the homepage: how long the camera takes to fly from the
    homepage's machine to the board (ms, at --vt-slow 1). */
-const ARRIVAL_FLIGHT = 1600;
+const ARRIVAL_FLIGHT = 1000;
 
 export function Board({
   tickets,
