@@ -875,6 +875,13 @@ html[data-cp-nav='zoom-out']::view-transition-new(cp-scene) {
 html[data-vt-scene] .cp-scene canvas {
   visibility: hidden;
 }
+/* The flying machine is this page's room, not a layer over it. A name that
+   only the old page has is painted above everything the new page has, so the
+   cards sat behind the machine and jumped in front of it when the hop ended.
+   Named here too, it is stacked where the room is: under the content. */
+html[data-vt-scene='in'] .cp-scene {
+  view-transition-name: scene;
+}
 .cp-board__canvas {
   position: absolute;
   inset: 0;
