@@ -10,13 +10,13 @@ import Intercom from "./Intercom.astro";
 import WorkshopScene from "./WorkshopScene.astro";
 import { getCollection } from "astro:content";
 import {
+  BRING_YOUR_OWN,
   CONTRAST,
   KIND as OFFER_KIND,
   HEADLINE,
   PRICE_HOOK,
   PRICE_NOTE,
   PUNCHLINE,
-  STEPS,
   WHO,
 } from "../lib/offer.js";
 import { ATTENTION, HOURLY_USD, money, timeCents } from "../lib/pricing.js";
@@ -26,9 +26,6 @@ const { t } = Astro.props;
 
 /** What the quickest kind of job costs, the same arithmetic as offer.js. */
 const QUICK_FIX = money(timeCents(ATTENTION.find((a) => a.key === "auto")?.typicalSeconds ?? 60));
-
-/** The pipeline's four steps, in this language: the flow picture's labels. */
-const steps = STEPS.map((step) => copy(t, `offer.step.${step.key}.title`, step.title));
 
 const site = (await getCollection("site"))[0]?.data;
 const intercomGreeting =
@@ -79,95 +76,114 @@ const availability = site?.availability ?? "limited";
 
     <p class="value">{copy(t, "offer.contrast", CONTRAST)}</p>
 
-    {/* Me between you, the agents and your live site: the request comes to me,
-        the agents build it, and nothing ships until I have checked it. The
-        labels are the pipeline's own steps (offer.js STEPS), so the picture
-        and the portal say the same thing in every language. */}
-    <figure class="flow" role="img" aria-label={steps.map((s, i) => `${i + 1}. ${s}`).join(" ")}>
-      <svg class="flow-wide" viewBox="0 0 880 340" aria-hidden="true">
+    {/* How it runs: you build with your own AI, on a preview, and go live when
+        you like. I am beside it, not in the way: you ask me when you want
+        help, a review, or a push to production. */}
+    <figure class="flow" role="img" aria-label={t("site.home.flow.alt")}>
+      <svg class="flow-wide" viewBox="0 0 880 350" aria-hidden="true">
         <defs>
-          <clipPath id="flow-me-wide"><circle cx="440" cy="168" r="58" /></clipPath>
+          <clipPath id="flow-me-wide"><circle cx="540" cy="268" r="50" /></clipPath>
           <marker id="flow-tip-wide" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0 0 L10 5 L0 10 z" class="flow-tip" />
           </marker>
         </defs>
-        <path class="flow-line" d="M158 168 L372 168" marker-end="url(#flow-tip-wide)" />
-        <path class="flow-line" d="M494 136 C 572 88, 626 78, 690 78" marker-end="url(#flow-tip-wide)" />
-        <path class="flow-line flow-line--back" d="M700 108 C 630 124, 572 150, 502 168" marker-end="url(#flow-tip-wide)" />
-        <path class="flow-line flow-line--ship" d="M494 202 C 572 252, 626 262, 690 262" marker-end="url(#flow-tip-wide)" />
+        <path class="flow-line" d="M122 124 L232 124" marker-end="url(#flow-tip-wide)" />
+        <path class="flow-line" d="M366 124 L472 124" marker-end="url(#flow-tip-wide)" />
+        <path class="flow-line" d="M608 124 L722 124" marker-end="url(#flow-tip-wide)" />
+        <path class="flow-line flow-line--ask" d="M92 166 C 140 270, 360 276, 482 270" marker-end="url(#flow-tip-wide)" />
+        <path class="flow-line flow-line--back" d="M540 214 L540 168" marker-end="url(#flow-tip-wide)" />
+        <path class="flow-line flow-line--ship" d="M588 252 C 690 246, 770 214, 790 168" marker-end="url(#flow-tip-wide)" />
 
         <g class="flow-node">
-          <circle cx="110" cy="168" r="44" class="flow-disc" />
-          <circle cx="110" cy="156" r="11" class="flow-glyph" />
-          <path d="M88 194 a22 19 0 0 1 44 0" class="flow-glyph" />
+          <circle cx="80" cy="124" r="40" class="flow-disc" />
+          <circle cx="80" cy="113" r="10" class="flow-glyph" />
+          <path d="M60 148 a20 17 0 0 1 40 0" class="flow-glyph" />
         </g>
-        <circle cx="440" cy="168" r="62" class="flow-ring" />
-        <image href="/me.webp" x="382" y="110" width="116" height="116" clip-path="url(#flow-me-wide)" preserveAspectRatio="xMidYMid slice" />
         <g class="flow-node">
-          <rect x="698" y="46" width="124" height="64" rx="12" class="flow-disc" />
-          {[712, 748, 784].map((x) => (
+          <rect x="238" y="92" width="124" height="64" rx="12" class="flow-disc" />
+          {[252, 288, 324].map((x) => (
             <g>
-              <rect x={x} y="64" width="26" height="22" rx="5" class="flow-glyph" />
-              <circle cx={x + 8} cy="75" r="2.4" class="flow-eye" />
-              <circle cx={x + 18} cy="75" r="2.4" class="flow-eye" />
+              <rect x={x} y="110" width="26" height="22" rx="5" class="flow-glyph" />
+              <circle cx={x + 8} cy="121" r="2.4" class="flow-eye" />
+              <circle cx={x + 18} cy="121" r="2.4" class="flow-eye" />
             </g>
           ))}
         </g>
         <g class="flow-node">
-          <rect x="698" y="226" width="124" height="74" rx="8" class="flow-disc" />
-          <path d="M698 242 H822" class="flow-glyph" />
-          <circle cx="710" cy="234" r="2.4" class="flow-eye" />
-          <circle cx="719" cy="234" r="2.4" class="flow-eye" />
-          <path d="M744 270 l12 11 l22 -24" class="flow-check" />
+          <rect x="478" y="88" width="124" height="74" rx="8" class="flow-disc flow-disc--draft" />
+          <path d="M478 104 H602" class="flow-glyph" />
+          <circle cx="490" cy="96" r="2.4" class="flow-eye" />
+          <circle cx="499" cy="96" r="2.4" class="flow-eye" />
+          <path d="M500 124 H580 M500 138 H560" class="flow-glyph" />
         </g>
+        <g class="flow-node">
+          <rect x="728" y="88" width="124" height="74" rx="8" class="flow-disc" />
+          <path d="M728 104 H852" class="flow-glyph" />
+          <circle cx="740" cy="96" r="2.4" class="flow-eye" />
+          <circle cx="749" cy="96" r="2.4" class="flow-eye" />
+          <path d="M774 132 l12 11 l22 -24" class="flow-check" />
+        </g>
+        <circle cx="540" cy="268" r="54" class="flow-ring" />
+        <image href="/me.webp" x="490" y="218" width="100" height="100" clip-path="url(#flow-me-wide)" preserveAspectRatio="xMidYMid slice" />
 
-        <text x="110" y="240" class="flow-label"><tspan class="flow-no">1</tspan> {steps[0]}</text>
-        <text x="440" y="262" class="flow-label"><tspan class="flow-no">2</tspan> {steps[1]}</text>
-        <text x="760" y="140" class="flow-label"><tspan class="flow-no">3</tspan> {steps[2]}</text>
-        <text x="760" y="326" class="flow-label"><tspan class="flow-no">4</tspan> {steps[3]}</text>
+        <text x="80" y="62" class="flow-label">{t("site.home.flow.you")}</text>
+        <text x="300" y="70" class="flow-label">{t("site.home.flow.ai")}</text>
+        <text x="540" y="70" class="flow-label">{t("site.home.flow.preview")}</text>
+        <text x="790" y="70" class="flow-label">{t("site.home.flow.live")}</text>
+        <text x="652" y="300" class="flow-label flow-label--start">{t("site.home.flow.me")}</text>
+        <text x="652" y="322" class="flow-label flow-label--start flow-label--soft">{t("site.home.flow.when")}</text>
       </svg>
 
-      <svg class="flow-tall" viewBox="0 0 360 560" aria-hidden="true">
+      <svg class="flow-tall" viewBox="0 0 360 520" aria-hidden="true">
         <defs>
-          <clipPath id="flow-me-tall"><circle cx="180" cy="236" r="52" /></clipPath>
+          <clipPath id="flow-me-tall"><circle cx="64" cy="350" r="40" /></clipPath>
           <marker id="flow-tip-tall" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0 0 L10 5 L0 10 z" class="flow-tip" />
           </marker>
         </defs>
-        <path class="flow-line" d="M180 142 L180 172" marker-end="url(#flow-tip-tall)" />
-        <path class="flow-line" d="M146 280 L104 374" marker-end="url(#flow-tip-tall)" />
-        <path class="flow-line flow-line--ship" d="M214 280 L256 374" marker-end="url(#flow-tip-tall)" />
+        <path class="flow-line" d="M180 98 L180 128" marker-end="url(#flow-tip-tall)" />
+        <path class="flow-line" d="M180 192 L180 226" marker-end="url(#flow-tip-tall)" />
+        <path class="flow-line" d="M180 294 L180 330" marker-end="url(#flow-tip-tall)" />
+        <path class="flow-line flow-line--ask" d="M146 60 C 70 70, 50 200, 60 300" marker-end="url(#flow-tip-tall)" />
+        <path class="flow-line flow-line--back" d="M100 334 L128 290" marker-end="url(#flow-tip-tall)" />
+        <path class="flow-line flow-line--ship" d="M100 368 L128 380" marker-end="url(#flow-tip-tall)" />
 
         <g class="flow-node">
-          <circle cx="180" cy="62" r="38" class="flow-disc" />
-          <circle cx="180" cy="52" r="10" class="flow-glyph" />
-          <path d="M161 86 a19 16 0 0 1 38 0" class="flow-glyph" />
+          <circle cx="180" cy="62" r="34" class="flow-disc" />
+          <circle cx="180" cy="53" r="9" class="flow-glyph" />
+          <path d="M163 83 a17 15 0 0 1 34 0" class="flow-glyph" />
         </g>
-        <circle cx="180" cy="236" r="56" class="flow-ring" />
-        <image href="/me.webp" x="128" y="184" width="104" height="104" clip-path="url(#flow-me-tall)" preserveAspectRatio="xMidYMid slice" />
         <g class="flow-node">
-          <rect x="34" y="384" width="112" height="58" rx="11" class="flow-disc" />
-          {[46, 77, 108].map((x) => (
+          <rect x="132" y="134" width="96" height="54" rx="10" class="flow-disc" />
+          {[142, 167, 192].map((x) => (
             <g>
-              <rect x={x} y="400" width="26" height="22" rx="5" class="flow-glyph" />
-              <circle cx={x + 8} cy="411" r="2.4" class="flow-eye" />
-              <circle cx={x + 18} cy="411" r="2.4" class="flow-eye" />
+              <rect x={x} y="150" width="20" height="18" rx="4" class="flow-glyph" />
+              <circle cx={x + 6} cy="159" r="2" class="flow-eye" />
+              <circle cx={x + 14} cy="159" r="2" class="flow-eye" />
             </g>
           ))}
         </g>
         <g class="flow-node">
-          <rect x="214" y="384" width="112" height="66" rx="8" class="flow-disc" />
-          <path d="M214 398 H326" class="flow-glyph" />
-          <circle cx="225" cy="391" r="2.2" class="flow-eye" />
-          <circle cx="233" cy="391" r="2.2" class="flow-eye" />
-          <path d="M254 424 l10 9 l20 -22" class="flow-check" />
+          <rect x="132" y="232" width="96" height="60" rx="8" class="flow-disc flow-disc--draft" />
+          <path d="M132 246 H228" class="flow-glyph" />
+          <path d="M148 262 H210 M148 276 H194" class="flow-glyph" />
         </g>
+        <g class="flow-node">
+          <rect x="132" y="336" width="96" height="60" rx="8" class="flow-disc" />
+          <path d="M132 350 H228" class="flow-glyph" />
+          <path d="M160 372 l10 9 l20 -22" class="flow-check" />
+        </g>
+        <circle cx="64" cy="350" r="44" class="flow-ring" />
+        <image href="/me.webp" x="24" y="310" width="80" height="80" clip-path="url(#flow-me-tall)" preserveAspectRatio="xMidYMid slice" />
 
-        <text x="180" y="132" class="flow-label"><tspan class="flow-no">1</tspan> {steps[0]}</text>
-        <text x="180" y="326" class="flow-label"><tspan class="flow-no">2</tspan> {steps[1]}</text>
-        <text x="90" y="478" class="flow-label"><tspan class="flow-no">3</tspan> {steps[2]}</text>
-        <text x="270" y="486" class="flow-label"><tspan class="flow-no">4</tspan> {steps[3]}</text>
+        <text x="236" y="68" class="flow-label flow-label--start">{t("site.home.flow.you")}</text>
+        <text x="236" y="166" class="flow-label flow-label--start">{t("site.home.flow.ai")}</text>
+        <text x="236" y="267" class="flow-label flow-label--start">{t("site.home.flow.preview")}</text>
+        <text x="236" y="371" class="flow-label flow-label--start">{t("site.home.flow.live")}</text>
+        <text x="64" y="418" class="flow-label">{t("site.home.flow.me")}</text>
+        <text x="64" y="438" class="flow-label flow-label--soft">{t("site.home.flow.when")}</text>
       </svg>
+      <figcaption class="flow-caption">{copy(t, "offer.byo", BRING_YOUR_OWN)}</figcaption>
     </figure>
 
     <p class="value-price">{copy(t, "offer.priceNote", PRICE_NOTE, { rate: HOURLY_USD })}</p>
@@ -421,7 +437,7 @@ const availability = site?.availability ?? "limited";
     stroke-linejoin: round;
   }
 
-  /* I am the ring in the middle: the one part in the signal colour. */
+  /* I am the orange ring, beside the line rather than on it. */
   .flow-ring {
     fill: var(--bone);
     stroke: var(--orange);
@@ -461,6 +477,34 @@ const availability = site?.availability ?? "limited";
 
   .flow-tall .flow-label {
     font-size: 15px;
+  }
+
+  .flow-label--start {
+    text-anchor: start;
+  }
+
+  .flow-label--soft {
+    font-weight: 500;
+    fill: var(--ink-soft);
+  }
+
+  /* The preview is a draft: drawn dashed, where the live site is solid. */
+  .flow-disc--draft {
+    stroke-dasharray: 5 4;
+  }
+
+  /* Asking me is optional: the faintest line in the picture. */
+  .flow-line--ask {
+    stroke: var(--ink-soft);
+    stroke-dasharray: 2 6;
+  }
+
+  .flow-caption {
+    margin: clamp(0.8rem, 2vw, 1.2rem) 0 0;
+    max-width: 62ch;
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--ink);
   }
 
   .flow-no {
