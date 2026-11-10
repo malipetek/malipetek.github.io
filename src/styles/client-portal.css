@@ -876,14 +876,19 @@ html[data-cp-nav='zoom-out']::view-transition-new(cp-scene) {
 html[data-vt-scene]:not([data-vt-scene-ready='same']) .cp-scene canvas {
   visibility: hidden;
 }
-/* The sidebar and the phone's top bar of the first frame (PortalFrame.astro)
-   get names of their own for the hop, as the content area always has, so they
-   stay above the flying machine rather than in the page snapshot under it. */
-html[data-vt-scene='in'] .cp-side {
-  view-transition-name: cp-side;
+/* The way in and the steps mount after the new page was captured, so during
+   the hop they are painted under the flying machine whatever they are named.
+   They wait out the hop instead and rise in once it has ended (Base.astro
+   clears data-vt-scene when the transition finishes). */
+.cp-overview--guest {
+  transition:
+    opacity calc(320ms * var(--vt-slow, 1)) var(--ease),
+    transform calc(320ms * var(--vt-slow, 1)) var(--ease);
 }
-html[data-vt-scene='in'] .cp-topbar {
-  view-transition-name: cp-topbar;
+html[data-vt-scene] .cp-overview--guest {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: none;
 }
 .cp-board__canvas {
   position: absolute;
