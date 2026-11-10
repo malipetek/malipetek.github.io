@@ -7,6 +7,9 @@
 - A new page belongs to one site. Pass `site="lab"` to `Base.astro` on the lab (it sets the nav, canonical origin and footer) and leave it off for the contracting site. Lab pages have no language picker or hreflang.
 - `llms.txt`, `robots.txt`, `sitemap.xml` and `sitemap-index.xml` are server routes and answer per Host. Do not add a static `public/robots.txt` or `public/llms.txt`; assets are served before the Worker.
 
+## Transitions
+- Any change that makes something move between two pages or two portal routes (view transitions, the zoom into a card, the 3D room): read `.claude/skills/site-transitions/SKILL.md` first and follow it. It lists where the code is, the recipes, and the traps that caused real bugs.
+
 ## Admin workbench (one app, two hosts)
 - Source: `packages/admin-ui/src` (React, plain JSX). It talks only through `api(method, path, body)`.
 - Web: `src/pages/portal/admin.astro` mounts `src/components/AdminWorkbench.jsx` (portal session in localStorage).
