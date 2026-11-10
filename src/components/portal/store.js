@@ -98,9 +98,14 @@ export function useRoute() {
         // back to the board moves it out again, into the reopened card. The
         // head is measured on whichever side has it: now on the way out, after
         // the update on the way in.
+        // Into or out of the small window: the room morphs between the whole
+        // window and the box (client-portal.css, "cp-room").
+        const from = roomModeOf(prev);
+        const to = roomModeOf(next);
+        if (from !== to && (from === 'mini' || to === 'mini')) root.dataset.roomMorph = '';
         if (zoom) {
           root.dataset.cpNav = `zoom-${zoom.way}`;
-          if (zoom.way === 'out') setCamera(root, zoom.card, headBox());
+          if (zoom.way === 'out') setCamera(root, zoom.card, headBox(zoom.head));
         }
         // The zoom in, for the board that stays behind the request as its
         // backdrop (Board.jsx): it ends on the frame the page zoom ends on.
@@ -108,7 +113,7 @@ export function useRoute() {
         const update = () => {
           flushSync(apply);
           if (zoom?.way === 'in' && mine === generation) {
-            boardReturn.zoomCam = setCamera(root, zoom.card, headBox());
+            boardReturn.zoomCam = setCamera(root, zoom.card, headBox(zoom.head));
             boardReturn.onZoomCam?.(boardReturn.zoomCam);
           }
         };
@@ -169,8 +174,8 @@ const ZOOM_PROPS = [
 /** The camera's scale stays in this range, whatever the two boxes measure. */
 const ZOOM_SCALE = [1.2, 3];
 
-/** The request head's box, the card's other end. */
-const headBox = () => document.querySelector('.cp-ticket__head')?.getBoundingClientRect() ?? null;
+/** The page head's box, the card's other end (a request's or a project's). */
+const headBox = (selector) => document.querySelector(selector)?.getBoundingClientRect() ?? null;
 
 /**
  * The move that carries the card's box onto the head's: the whole page and
@@ -205,6 +210,7 @@ const WATCHDOG = 2200;
 
 const clearZoom = (root) => {
   delete root.dataset.cpNav;
+  delete root.dataset.roomMorph;
   for (const name of ZOOM_PROPS) root.style.removeProperty(name);
 };
 
@@ -255,14 +261,27 @@ export const afterTransition = (fn) => {
  */
 function zoomFor(prev, next) {
   if (next.name === 'ticket' && boardReturn.peek !== null && String(boardReturn.peek) === next.id && boardReturn.peekAt) {
-    return { way: 'in', card: boardReturn.peekAt.box };
+    return { way: 'in', card: boardReturn.peekAt.box, head: '.cp-ticket__head' };
+  }
+  // A project opened from its sheet: the sheet is the card, the project
+  // page's head the other end (views.jsx names both cp-project).
+  if (next.name === 'project' && boardReturn.sheet !== null && String(boardReturn.sheet) === next.id) {
+    const r = document.querySelector('.cp-modal')?.getBoundingClientRect();
+    if (r) return { way: 'in', card: { left: r.left, top: r.top, width: r.width }, head: '.cp-main .cp-head' };
   }
   const r = boardReturn.reopen;
   if (next.name === 'overview' && prev.name === 'ticket' && r && String(r.id) === prev.id) {
-    return { way: 'out', card: r.box };
+    return { way: 'out', card: r.box, head: '.cp-ticket__head' };
   }
   return null;
 }
+
+/**
+ * What the 3D room is on a page (room.js): the board itself on the overview,
+ * the backdrop behind a request or a project, a small window anywhere else.
+ */
+export const roomModeOf = (route) =>
+  route.name === 'overview' ? 'board' : route.name === 'ticket' || route.name === 'project' ? 'backdrop' : 'mini';
 
 export const go = (path) => {
   window.location.hash = `#/${path}`;

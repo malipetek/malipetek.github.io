@@ -5,11 +5,12 @@
  * names it, clicking one opens it, and hovering a row in the list below lights
  * its ticket up on the machine. Picking a step moves the camera in on it.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { money } from '../../lib/pricing.js';
 import { Button, MiniTrack, StatusPill, ago, cx, totalOf } from './ui.jsx';
 import { afterTransition, boardReturn, useT } from './store.js';
 import { arrivingBox, placeScene, slowFactor, whenLanded } from './sceneHandover.js';
+import { adoptRoom, dropRoom, hasRoom } from './room.js';
 
 export const STAGES = [
   { key: 'new', label: 'Waiting for Ali' },
@@ -37,7 +38,7 @@ const tintHex = (n) => `#${n.toString(16).padStart(6, '0')}`;
  * The scene's lanes: a belt per project, and the "getting set up" lane at the
  * end for requests with no project (or every request, before any project).
  */
-function sceneLanesFor(lanes, items, project, label) {
+export function sceneLanesFor(lanes, items, project, label) {
   const list = lanes.map((lane, i) => {
     const color = LANE_TINTS[i % LANE_TINTS.length];
     return { ...lane, sites: lane.sites ?? [], lane: i, color, tint: tintHex(color) };
@@ -56,7 +57,7 @@ function laneIndex(list, projectId) {
 }
 
 /** A request as the scene draws it. */
-const sceneItem = (list) => (x) => ({ id: x.id, stage: x.status, lane: laneIndex(list, x.project_id), stuck: Boolean(x.stuck) });
+export const sceneItem = (list) => (x) => ({ id: x.id, stage: x.status, lane: laneIndex(list, x.project_id), stuck: Boolean(x.stuck) });
 
 /** What a dragged row or site label carries; the project labels accept it. */
 export const DRAG_TICKET = 'application/x-malipetek-ticket';
@@ -74,96 +75,6 @@ export function boardItems(tickets) {
    navigation, so this lives at module level: coming back starts there and the
    camera glides out of the request that was being read, instead of resetting. */
 let lastBoardView = null;
-
-/* Behind a request the board keeps running, dived in on that request and
-   faded (client-portal.css, "is-backdrop"). Opened from its card, it is the
-   board the zoom went into, ending on the zoom's own frame; opened any other
-   way, one is started (showBackdrop). Dropped when the next board takes over,
-   or when the page goes anywhere but a request or back to the board. */
-let backdrop = null;
-
-const dropBackdrop = () => {
-  if (!backdrop) return;
-  window.removeEventListener('hashchange', backdrop.watch);
-  backdrop.board.stop();
-  backdrop.canvas.remove();
-  backdrop = null;
-};
-
-/**
- * Make `board` the backdrop; `data` feeds a board started for it. `instant`
- * skips the fade: under the zoom the live board is hidden until the end, and
- * must be at the backdrop's level by then.
- */
-function adoptBackdrop(board, canvas, data = null, instant = false) {
-  dropBackdrop();
-  if (instant) {
-    canvas.style.transition = 'none';
-    canvas.classList.add('is-backdrop');
-    void canvas.offsetWidth;
-    canvas.style.removeProperty('transition');
-  } else canvas.classList.add('is-backdrop');
-  // Back to the board: the board that mounts drops it once it has taken
-  // over. Another request: it stays and turns to that one. Anywhere else: it
-  // goes once that page's transition has ended.
-  const watch = () => {
-    const path = window.location.hash.replace(/^#\/?/, '').split('?')[0];
-    if (path.startsWith('ticket/') || path === '' || path === 'overview') return;
-    afterTransition(dropBackdrop);
-  };
-  window.addEventListener('hashchange', watch);
-  backdrop = { board, canvas, watch, data };
-}
-
-/**
- * Into a request from its card: the board stays as the backdrop, on the
- * frame the page zoom ends on (store.js measures it during the change; this
- * can run before or after that).
- */
-function keepAsBackdrop(board, canvas, id) {
-  adoptBackdrop(board, canvas, null, true);
-  board.focus(id);
-  const zoom = (cam) => {
-    boardReturn.onZoomCam = null;
-    if (backdrop?.board === board && cam) board.zoomView(cam);
-  };
-  if (boardReturn.zoomCam) zoom(boardReturn.zoomCam);
-  else boardReturn.onZoomCam = zoom;
-}
-
-/**
- * The backdrop for a request page reached any other way (a list, a link, a
- * reload): a board of the client's requests, started behind the page and
- * gliding in on this one. One already there turns to it instead. Called
- * again as the data changes, so the backdrop's requests stay current.
- */
-export function showBackdrop({ tickets, lanes, label }, id) {
-  const items = boardItems(tickets);
-  const list = sceneLanesFor(lanes ?? [], items, null, label);
-  const data = { items: items.map(sceneItem(list)), lanes: list };
-  if (backdrop) {
-    if (backdrop.data) backdrop.data = data;
-    backdrop.board.focus(id);
-    return;
-  }
-  import('../../lib/workshop3d')
-    .then(({ initBoard }) => {
-      const host = document.querySelector('.cp-scene');
-      const here = window.location.hash.replace(/^#\/?/, '').split('?')[0] === `ticket/${id}`;
-      if (backdrop || !host || !here) return;
-      const canvas = document.createElement('canvas');
-      canvas.className = 'cp-board__canvas is-arriving';
-      canvas.setAttribute('aria-hidden', 'true');
-      host.appendChild(canvas);
-      const box = { items: data.items, lanes: data.lanes };
-      const board = initBoard(canvas, { fitBase: 2.8, items: () => backdrop?.data?.items ?? box.items, lanes: () => backdrop?.data?.lanes ?? box.lanes });
-      adoptBackdrop(board, canvas, data);
-      board.focus(id);
-      // Fades in to the backdrop's level rather than appearing.
-      requestAnimationFrame(() => requestAnimationFrame(() => canvas.classList.remove('is-arriving')));
-    })
-    .catch(() => {}); // no WebGL: the request page stands on its own
-}
 
 /* Arriving from the homepage: how long the camera takes to fly from the
    homepage's machine to the board (ms, at --vt-slow 1). */
@@ -188,6 +99,7 @@ export function Board({
   const capRefs = useRef({});
   const tipRef = useRef(null);
   const boardRef = useRef(null);
+  const viewRef = useRef(null);
   const items = boardItems(tickets);
 
   // Each project gets a belt; requests with no project (or every request, when
@@ -323,7 +235,7 @@ export function Board({
     // the flying machine first, at the very frame it left on, then gives way
     // to the board (handOver below).
     const left = arrivingBox();
-    let room = null;
+    let workshop = null;
     let unwatch = () => {};
     let settle = null;
     import('../../lib/workshop3d')
@@ -342,25 +254,27 @@ export function Board({
               if (!placed) placed = placeScene(box);
             },
           });
-          room = { canvas, stop };
+          workshop = { canvas, stop };
         }
         // The renderer lives in the page shell, behind the portal; the stage is
         // only the transparent input surface and the labels.
         const canvas = document.createElement('canvas');
-        canvas.className = 'cp-board__canvas';
+        // The room (room.js): when the overview goes, this board carries on.
+        canvas.className = 'cp-board__canvas cp-room';
         canvas.setAttribute('aria-hidden', 'true');
         host.appendChild(canvas);
         view = canvas;
-        // Back from a request opened from its card: its backdrop stood in for
-        // the board until now, and goes once the way back has ended.
-        if (backdrop) afterTransition(dropBackdrop);
+        viewRef.current = canvas;
+        // Back from another page: the room stood in for the board until now,
+        // and goes once the way back has ended.
+        if (hasRoom()) afterTransition(dropRoom);
         // Out of sight, labels and all, until the workshop gives way. The
         // board's camera holds on its own copy of the homepage's machine
         // meanwhile, drawing the same frame as the workshop.
         const stage = stageElRef.current;
-        if (room) for (const el of [canvas, stage]) el.style.opacity = '0';
+        if (workshop) for (const el of [canvas, stage]) el.style.opacity = '0';
         board = initBoard(canvas, {
-          arrival: room ? { time: left.time, mouse: left.mouse } : undefined,
+          arrival: workshop ? { time: left.time, mouse: left.mouse } : undefined,
           input: stageElRef.current,
           frame: stageElRef.current,
           fitBase: 2.8,
@@ -441,7 +355,7 @@ export function Board({
         // A reopened card keeps the camera on its request instead of gliding out.
         if (reopen) board.focus(reopen.id);
         boardRef.current = board;
-        if (room) {
+        if (workshop) {
           // Once the machine has landed on the workshop, the board's canvas,
           // already drawing the same frame, takes its place, and the camera
           // flies through the one world from the homepage's machine to the
@@ -449,9 +363,9 @@ export function Board({
           unwatch = whenLanded(() => {
             const flight = ARRIVAL_FLIGHT * slowFactor();
             canvas.style.removeProperty('opacity');
-            room.stop();
-            room.canvas.remove();
-            room = null;
+            workshop.stop();
+            workshop.canvas.remove();
+            workshop = null;
             board.arrive(flight);
             stage.style.transition = `opacity ${flight * 0.4}ms ease ${flight * 0.6}ms`;
             stage.style.opacity = '1';
@@ -465,29 +379,42 @@ export function Board({
       .catch(() => {
         // No WebGL: the legend and list carry it all. Nor is the homepage's
         // workshop left standing in for a board that never came.
-        room?.stop();
-        room?.canvas.remove();
-        room = null;
+        workshop?.stop();
+        workshop?.canvas.remove();
+        workshop = null;
         setFailed(true);
       });
     return () => {
       stopped = true;
       unwatch();
       clearTimeout(settle);
-      room?.stop();
-      room?.canvas.remove();
-      if (board) lastBoardView = board.view();
-      boardRef.current = null;
-      // Into a request from its card (TicketView set reopen as it mounted):
-      // the board stays behind it as the backdrop instead of stopping.
-      const into = boardReturn.reopen;
-      if (board && view && into) keepAsBackdrop(board, view, into.id);
-      else {
-        board?.stop();
+      workshop?.stop();
+      workshop?.canvas.remove();
+      // A board that never got handed over (it came up after the overview
+      // had gone) is stopped here; a handed-over one is the room's now.
+      if (board && boardRef.current === board) {
+        board.stop();
         view?.remove();
       }
+      boardRef.current = null;
     };
   }, []);
+
+  // Leaving the overview, the board carries on as the room (room.js) rather
+  // than stopping. A layout cleanup, so it is handed over before the shell
+  // gives the room its role on the next page.
+  useLayoutEffect(
+    () => () => {
+      const board = boardRef.current;
+      const view = viewRef.current;
+      if (!board || !view) return;
+      lastBoardView = board.view();
+      boardRef.current = null;
+      viewRef.current = null;
+      adoptRoom(board, view);
+    },
+    [],
+  );
 
   // Esc closes the card; opening it focuses its action so Enter continues in.
   useEffect(() => {

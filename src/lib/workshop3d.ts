@@ -1958,6 +1958,10 @@ export interface Board {
    * Null goes back to the whole picture.
    */
   zoomView: (z: BoardZoom | null) => void;
+  /** Centre on another element of the page, or on the whole canvas (null). */
+  reframe: (frame: HTMLElement | null) => void;
+  /** Move in part way on a project's pylon or a site (a node key), or back out. */
+  focusNode: (key: string | null) => void;
   stop: () => void;
 }
 
@@ -1982,8 +1986,8 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   // it passes that window as `frame` and the projection is shifted into it.
   // The plugin card's canvas *is* the frame, so it passes no frame and labels
   // must stay in canvas coordinates.
-  const framed = Boolean(options.frame) && options.frame !== canvas;
-  const frameEl = options.frame ?? input;
+  let framed = Boolean(options.frame) && options.frame !== canvas;
+  let frameEl = options.frame ?? input;
   const fitBase = options.fitBase ?? 2.3;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -2055,13 +2059,15 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   let dive = 0; // 0 = the whole machine, 1 = close on the focused ticket
   let focusId: number | null = null;
   let stageId: BoardStage | null = null;
+  let nodeKey: string | null = null;
+  const nodeAt = (key: string) => machine.nodeAnchors?.().find((n) => n.key === key)?.position ?? null;
   // Where the camera is heading; kept after a zoom ends, so backing out glides instead of jumping.
   const aim = home.clone();
   // The target changes instantly when a step is picked; `aim` eases toward it,
   // so stepping across the legend glides instead of cutting.
   const aimTarget = home.clone();
   /** How far in a zoom goes: a ticket all the way, a station part way, so its neighbours stay in view. */
-  const depth = () => (focusId !== null ? 1 : stageId !== null ? 0.7 : 0);
+  const depth = () => (focusId !== null ? 1 : stageId !== null ? 0.7 : nodeKey !== null && nodeAt(nodeKey) ? 0.6 : 0);
   const aimStep = (dt: number) => {
     if (reduced) aim.copy(aimTarget);
     else aim.lerp(aimTarget, 1 - Math.exp(-dt * (focusId !== null ? 8 : 5)));
@@ -2105,8 +2111,10 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   const render = () => {
     const ticket = focusId !== null ? machine.ticketAt!(focusId) : null;
     // A station is looked at from its middle height, not its caption above.
+    const node = nodeKey !== null ? nodeAt(nodeKey) : null;
     if (ticket) aimTarget.copy(ticket);
     else if (stageId !== null) aimTarget.copy(machine.stageFocus!(stageId));
+    else if (node) aimTarget.set(node.x, 0.6, node.z);
     else aimTarget.copy(home);
     look.lerpVectors(home, aim, Math.min(1, dive));
     look.x += pan.x;
@@ -2369,6 +2377,14 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       stageId = null;
     },
     view: () => ({ zoom: zoomGoal, pan: { x: panGoal.x, y: panGoal.y }, focus: focusId }),
+    reframe: (frame) => {
+      framed = Boolean(frame) && frame !== canvas;
+      frameEl = frame ?? input;
+      resize();
+    },
+    focusNode: (key) => {
+      nodeKey = key;
+    },
     zoomView: (z) => {
       zoomed = z && z.s > 0 ? { ...z } : null;
       applyLens();

@@ -11,7 +11,6 @@ import { ATTENTION, clock, money, priceOf } from '../../lib/pricing.js';
 import { usePortal, useT, href, isOpen, boardReturn } from './store.js';
 import { attentionText, stepText } from './copy.js';
 import { Files } from './Composer.jsx';
-import { showBackdrop } from './Board.jsx';
 import { Button, Gauge, Icon, Modal, STEP_ICONS, StatusPill, ago, cx, fmtDate, stepOf, totalOf } from './ui.jsx';
 
 /** Status → [headline key, explanation key], looked up with t inside the component. */
@@ -63,11 +62,6 @@ export function TicketView({ id }) {
     boardReturn.peekAt = null;
     return yes;
   });
-  // The room stays behind the request: the board dived in on it, faded. From
-  // its card it is the board the zoom went into; otherwise one is started.
-  useEffect(() => {
-    showBackdrop({ tickets: data.tickets, lanes: data.lanes, label: t('board.gettingSetUp') }, id);
-  }, [id, data.tickets, data.lanes, t]);
   const [deploys, setDeploys] = useState(null);
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);

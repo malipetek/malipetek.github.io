@@ -11,7 +11,8 @@ import { Composer } from './Composer.jsx';
 import { LanguageDialog } from './Language.jsx';
 import { TicketView } from './TicketView.jsx';
 import { BillingView, ConnectionsView, Overview, ProjectView, RequestsView } from './views.jsx';
-import { PortalContext, go, href, isOpen, signedIn, usePortalData, useRoute } from './store.js';
+import { PortalContext, go, href, isOpen, roomModeOf, signedIn, usePortalData, useRoute } from './store.js';
+import { dropRoom, roomData, syncRoom } from './room.js';
 import { Brand, Button, Confirm, Icon, cx } from './ui.jsx';
 import { GuestShell } from './Guest.jsx';
 import { IntakeView } from './Intake.jsx';
@@ -95,6 +96,16 @@ function Shell({ data, reload, t, onSignedOut }) {
     return () => clearTimeout(t);
   }, [toast]);
   useEffect(() => setMenu(false), [route]);
+
+  // The 3D room follows the page (room.js): the board, the backdrop behind a
+  // request or project, or the small window at the top of other pages. A
+  // layout effect, so its new place is in the page the transition captures.
+  useEffect(() => {
+    roomData({ tickets: data.tickets, lanes: data.lanes, label: t('board.gettingSetUp') });
+  }, [data.tickets, data.lanes, t]);
+  useLayoutEffect(() => syncRoom(route), [route]);
+  useEffect(() => dropRoom, []);
+  const mini = roomModeOf(route) === 'mini';
 
   // N: a new request, from anywhere but a text field.
   useEffect(() => {
@@ -206,6 +217,12 @@ function Shell({ data, reload, t, onSignedOut }) {
         <button type="button" className="cp-sidescrim" aria-label={t('nav.closeMenu')} onClick={() => setMenu(false)} tabIndex={-1} />
 
         <main className="cp-main">
+          {mini ? (
+            <div className="cp-roombar">
+              {/* The room seen through a small window; it leads back to the board. */}
+              <a className="cp-roombox" href={href('')} data-room-box aria-label={t('nav.overview')} />
+            </div>
+          ) : null}
           <Route route={route} />
         </main>
 
