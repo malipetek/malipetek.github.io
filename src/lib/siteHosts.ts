@@ -33,6 +33,7 @@ const LAB_EXACT = ['/plugins.json'];
 const CONTRACTING_ROOTS = ['/portal', '/api'];
 const CONTRACTING_EXACT = [
   '/agents',
+  '/agents.md',
   '/contact',
   '/privacy-policy',
   '/terms-of-service',

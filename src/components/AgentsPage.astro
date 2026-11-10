@@ -1,10 +1,13 @@
 ---
 /*
- * The assistant-setup page, shared by /agents and /<locale>/agents. Tool
- * names, URLs, the protocol version and the `cat_` key prefix stay as they
- * are in every language; the prose around them comes from the page catalog.
+ * The assistant page, shared by /agents and /<locale>/agents: how a client
+ * lets their own AI assistant work in their account. One action: copy the
+ * agent instructions (src/lib/agentInstructions.js) and paste them into the
+ * assistant. ChatGPT and Claude get a plugin each, coming; other assistants
+ * open the same instructions from a link, like the footer's "Ask AI".
  */
 import '../styles/kb.css';
+import { AGENT_INSTRUCTIONS, AGENT_INSTRUCTIONS_URL } from '../lib/agentInstructions.js';
 
 interface Props {
   t: (key: string, vars?: Record<string, string | number>) => string;
@@ -14,104 +17,123 @@ interface Props {
 
 const { t } = Astro.props;
 
-const PORTAL_TOOLS = [
-  { name: 'portal_projects / portal_requests / portal_request', text: t('site.agents.tool.projects') },
-  { name: 'portal_file_request', text: t('site.agents.tool.file') },
-  { name: 'portal_reply', text: t('site.agents.tool.reply') },
-  { name: 'portal_set_budget', text: t('site.agents.tool.budget') },
-  { name: 'portal_withdraw', text: t('site.agents.tool.withdraw') },
+/** The ask the other assistants open with: read the instructions, then help. */
+const ask = encodeURIComponent(
+  `Read ${AGENT_INSTRUCTIONS_URL} and help me connect my AI assistant to my malipetek.dev account.`,
+);
+const OTHERS = [
+  { label: 'Perplexity', href: `https://www.perplexity.ai/search/new?q=${ask}` },
+  { label: 'Google', href: `https://www.google.com/search?udm=50&aep=11&q=${ask}` },
+  { label: 'Grok', href: `https://grok.com/?q=${ask}` },
 ];
 ---
 
-<main class="wrap kb">
+<main class="wrap kb assistant">
   <header class="kb-head">
-    <p class="kb-kicker">{t('site.agents.kicker')}</p>
-    <h1>{t('site.agents.heading')}</h1>
-    <p class="kb-lede">
-      <a href="/mcp"><code>https://malipetek.dev/mcp</code></a>
-      <br />
-      {t('site.agents.lede')}
-    </p>
+    <p class="kb-kicker">{t('site.assistant.kicker')}</p>
+    <h1>{t('site.assistant.heading')}</h1>
+    <p class="kb-lede">{t('site.assistant.lede')}</p>
+    <div class="assistant-copy">
+      <button
+        class="btn btn--solid"
+        type="button"
+        data-copy-agent={AGENT_INSTRUCTIONS}
+        data-label={t('site.assistant.copy')}
+      >
+        {t('site.assistant.copy')}
+      </button>
+      <p class="assistant-note">
+        {t('site.assistant.copyNote')}
+        <a href="/agents.md">agents.md</a>
+      </p>
+    </div>
   </header>
 
   <section class="kb-block">
-    <h2>{t('site.agents.connect.title')}</h2>
-    <div class="kb-prose">
-      <p>
-        {t('site.agents.connect.url')} <code>https://malipetek.dev/mcp</code>.
-        {t('site.agents.connect.discovery')}
-        <a href="/.well-known/mcp-server.json"><code>/.well-known/mcp-server.json</code></a>.
-      </p>
-
-      <h3>{t('site.agents.chatgpt.title')}</h3>
-      <p>
-        {t('site.agents.chatgpt.before')}
-        <strong>Settings → Connectors → Advanced → Developer mode</strong>{t('site.agents.chatgpt.after')}
-      </p>
-      <pre><code>Name:  malipetek.dev
-URL:   https://malipetek.dev/mcp
-Auth:  Bearer cat_…   # the key from your portal</code></pre>
-
-      <h3>{t('site.agents.claude.title')}</h3>
-      <p>
-        {t('site.agents.claude.before')}
-        <strong>Settings → Connectors → Add custom connector</strong>.
-        {t('site.agents.claude.cursor')}
-        <code>mcp.json</code>:
-      </p>
-      <pre><code>&#123; "mcpServers": &#123; "malipetek": &#123; "url": "https://malipetek.dev/mcp" &#125; &#125; &#125;</code></pre>
-
-      <h3>{t('site.agents.noClient.title')}</h3>
-      <pre><code>curl -s https://malipetek.dev/mcp -H 'content-type: application/json' \
-  -H "authorization: Bearer cat_…" \
-  -d '&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</code></pre>
-    </div>
-  </section>
-
-  <section class="kb-block">
-    <h2>{t('site.agents.key.title')}</h2>
-    <div class="kb-prose">
-      <p>
-        <a href="/portal">{t('site.agents.key.signin')}</a>
-        {t('site.agents.key.body')}
-      </p>
-      <p>{t('site.agents.key.body2')}</p>
-    </div>
-  </section>
-
-  <section class="kb-block">
-    <h2>{t('site.agents.tools.title')}</h2>
-    <ul class="kb-tool-list">
-      {PORTAL_TOOLS.map((tool) => (
+    <h2>{t('site.assistant.plugins.title')}</h2>
+    <ul class="assistant-plugins">
+      {['ChatGPT', 'Claude'].map((name) => (
         <li>
-          <code>{tool.name}</code>
-          <span class="kb-tool-auth">{t('site.agents.tools.auth')}</span>
-          <span class="kb-tool-text">{tool.text}</span>
+          <strong>{name}</strong>
+          <span class="assistant-soon">{t('site.assistant.plugins.soon')}</span>
         </li>
       ))}
     </ul>
-    <p class="kb-entry-foot">
-      {t('site.agents.tools.first')}
-      {t('site.agents.tools.names')}
-      <code>start_change</code>, <code>project_context</code>, <code>workspace_files</code>,
-      <code>workspace_read</code>, <code>submit_change</code>,
-      <code>preview_build</code>, <code>finish_change</code>, <code>site_publish</code>. {t('site.agents.tools.after')}
-    </p>
+    <p class="assistant-note assistant-after">{t('site.assistant.plugins.body')}</p>
   </section>
 
   <section class="kb-block">
-    <h2>{t('site.agents.lab.title')}</h2>
-    <div class="kb-prose">
-      <p>
-        {t('site.agents.lab.before')}
-        <a href="https://lab.malipetek.dev">lab.malipetek.dev</a>.
-        {t('site.agents.lab.endpoint')}
-        <code>https://lab.malipetek.dev/mcp</code>{t('site.agents.lab.after')}
-      </p>
-      <p>
-        {t('site.agents.lab.setup')}
-        <a href="https://lab.malipetek.dev/kb/agents">lab.malipetek.dev/kb/agents</a>.
-      </p>
-    </div>
+    <h2>{t('site.assistant.others.title')}</h2>
+    <p class="assistant-others">
+      <span>{t('site.assistant.others.body')}</span>
+      {OTHERS.map((o) => (
+        <a href={o.href} target="_blank" rel="noopener noreferrer">{o.label}</a>
+      ))}
+    </p>
   </section>
 </main>
+
+<script>
+  import { initCopyAgentInstructions } from '../scripts/copy-agent-instructions';
+  initCopyAgentInstructions();
+</script>
+
+<style>
+  .assistant-copy {
+    display: grid;
+    gap: 0.6rem;
+    justify-items: start;
+    margin-top: 1.4rem;
+  }
+
+  .assistant-copy .btn {
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .assistant-note {
+    margin: 0;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+
+  .assistant-after {
+    margin-top: 0.9rem;
+  }
+
+  .assistant-plugins {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .assistant-plugins li {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.9rem;
+    border: 1px dashed var(--rule-strong);
+    border-radius: 10px;
+  }
+
+  .assistant-soon {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  .assistant-others {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    margin: 0;
+    font-size: 15px;
+  }
+
+  .assistant-others span {
+    color: var(--ink-soft);
+  }
+</style>

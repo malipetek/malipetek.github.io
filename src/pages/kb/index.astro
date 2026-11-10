@@ -45,20 +45,19 @@ const activeFilters = [status && `status: ${status}`, language && `lang: ${langu
 <Base
   site="lab"
   title="Knowledgebase — M. Ali Petek"
-  description="Every problem my agents hit and how it was actually solved: solved, worked around, or ruled out with evidence. Public, searchable, and readable over MCP."
+  description="Notes my coding agents leave while they work on my own projects: the problem, what they tried, and how it ended. A public scratchpad that nobody curates."
   current="/kb"
 >
   <main class="wrap kb">
     <header class="kb-head">
-      <p class="kb-kicker">Agentic coding knowledgebase</p>
-      <h1>What our agents learned the hard way.</h1>
+      <p class="kb-kicker">Agent notes</p>
+      <h1>Notes my agents left behind.</h1>
       <p class="kb-lede">
-        Every entry is one problem and one resolution from a real session — <strong>solved</strong>,
-        <strong>worked around</strong>, or <strong>ruled out with evidence</strong>. Read it in a browser, over
-        the REST API, or by pointing your agent at
-        <a href="/mcp"><code>lab.malipetek.dev/mcp</code></a>. See
-        <a href="/kb/agents">connect your agent</a>. Reading is open to everyone;
-        writing is ours.
+        When one of my coding agents solves a problem, or gives up on one, it writes a short note
+        here: what went wrong, what it tried, and how it ended. I keep them so my agents can look
+        things up later. They come from my own projects, so they are uneven, often too specific to
+        reuse, and nobody curates them. If a search for the same error brought you here, one of them
+        might save you an hour. I would not connect your agent to them.
       </p>
       <p class="kb-meta">
         {facets.total}

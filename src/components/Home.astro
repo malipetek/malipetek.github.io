@@ -10,31 +10,25 @@ import Intercom from "./Intercom.astro";
 import WorkshopScene from "./WorkshopScene.astro";
 import { getCollection } from "astro:content";
 import {
-  BRING_YOUR_OWN,
   CONTRAST,
-  DEFINITION,
-  FROM_IDEA,
   KIND as OFFER_KIND,
-  NEXT,
-  PRICE_NOTE,
-  PRICE_RULE,
-  PRICE_WHY,
   HEADLINE,
   PRICE_HOOK,
+  PRICE_NOTE,
   PUNCHLINE,
-  SAFEGUARDS,
-  SERVERLESS,
   STEPS,
   WHO,
-  WHY_NOT,
 } from "../lib/offer.js";
-import { ATTENTION, HOURLY_USD, clock, money, timeCents } from "../lib/pricing.js";
+import { ATTENTION, HOURLY_USD, money, timeCents } from "../lib/pricing.js";
 import { copy } from "../lib/site.js";
 
 const { t } = Astro.props;
 
 /** What the quickest kind of job costs, the same arithmetic as offer.js. */
 const QUICK_FIX = money(timeCents(ATTENTION.find((a) => a.key === "auto")?.typicalSeconds ?? 60));
+
+/** The pipeline's four steps, in this language: the flow picture's labels. */
+const steps = STEPS.map((step) => copy(t, `offer.step.${step.key}.title`, step.title));
 
 const site = (await getCollection("site"))[0]?.data;
 const intercomGreeting =
@@ -66,14 +60,12 @@ const availability = site?.availability ?? "limited";
     </p>
     <h1 class="masthead-name">{copy(t, "offer.headline.1", HEADLINE[0])}<br />{copy(t, "offer.headline.2", HEADLINE[1])}</h1>
     <div class="masthead-body">
-      <p class="masthead-hook">{copy(t, "offer.next", NEXT)}</p>
+      <p class="masthead-hook">{copy(t, "offer.punchline.1", PUNCHLINE[0])} {copy(t, "offer.punchline.2", PUNCHLINE[1])}</p>
       <p class="masthead-proof">{copy(t, "offer.priceHook", PRICE_HOOK, { price: QUICK_FIX })}</p>
-      <p class="masthead-from-idea"><a href="/portal#/new">{copy(t, "offer.fromIdea", FROM_IDEA)}</a></p>
       <div class="masthead-actions">
         <a class="btn btn--solid" href="/portal#/new">{t("site.home.cta.next")}</a>
         <a class="btn" href="#how">{t("site.home.cta.how")}</a>
       </div>
-      <p class="masthead-note"><strong>{copy(t, "offer.punchline.1", PUNCHLINE[0])} {copy(t, "offer.punchline.2", PUNCHLINE[1])}</strong> {copy(t, "offer.priceNote", PRICE_NOTE, { rate: HOURLY_USD })}</p>
     </div>
   </div>
 </section>
@@ -85,73 +77,100 @@ const availability = site?.availability ?? "limited";
       <p class="block-note">{copy(t, "offer.who", WHO)}</p>
     </div>
 
-    <p class="define">
-      {copy(t, "offer.define", DEFINITION)}
-      <span class="define-contrast">{copy(t, "offer.contrast", CONTRAST)}</span>
-    </p>
+    <p class="value">{copy(t, "offer.contrast", CONTRAST)}</p>
 
-    <ol class="steps">
-      {
-        STEPS.map((step, i) => (
-          <li class="step">
-            <span class="step-no" aria-hidden="true">{i + 1}</span>
-            <h3>{copy(t, `offer.step.${step.key}.title`, step.title)}</h3>
-            <p>{copy(t, `offer.step.${step.key}.body`, step.body)}</p>
-          </li>
-        ))
-      }
-    </ol>
+    {/* Me between you, the agents and your live site: the request comes to me,
+        the agents build it, and nothing ships until I have checked it. The
+        labels are the pipeline's own steps (offer.js STEPS), so the picture
+        and the portal say the same thing in every language. */}
+    <figure class="flow" role="img" aria-label={steps.map((s, i) => `${i + 1}. ${s}`).join(" ")}>
+      <svg class="flow-wide" viewBox="0 0 880 340" aria-hidden="true">
+        <defs>
+          <clipPath id="flow-me-wide"><circle cx="440" cy="168" r="58" /></clipPath>
+          <marker id="flow-tip-wide" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="flow-tip" />
+          </marker>
+        </defs>
+        <path class="flow-line" d="M158 168 L372 168" marker-end="url(#flow-tip-wide)" />
+        <path class="flow-line" d="M494 136 C 572 88, 626 78, 690 78" marker-end="url(#flow-tip-wide)" />
+        <path class="flow-line flow-line--back" d="M700 108 C 630 124, 572 150, 502 168" marker-end="url(#flow-tip-wide)" />
+        <path class="flow-line flow-line--ship" d="M494 202 C 572 252, 626 262, 690 262" marker-end="url(#flow-tip-wide)" />
 
-    <p class="byo">{copy(t, "offer.byo", BRING_YOUR_OWN)}</p>
+        <g class="flow-node">
+          <circle cx="110" cy="168" r="44" class="flow-disc" />
+          <circle cx="110" cy="156" r="11" class="flow-glyph" />
+          <path d="M88 194 a22 19 0 0 1 44 0" class="flow-glyph" />
+        </g>
+        <circle cx="440" cy="168" r="62" class="flow-ring" />
+        <image href="/me.webp" x="382" y="110" width="116" height="116" clip-path="url(#flow-me-wide)" preserveAspectRatio="xMidYMid slice" />
+        <g class="flow-node">
+          <rect x="698" y="46" width="124" height="64" rx="12" class="flow-disc" />
+          {[712, 748, 784].map((x) => (
+            <g>
+              <rect x={x} y="64" width="26" height="22" rx="5" class="flow-glyph" />
+              <circle cx={x + 8} cy="75" r="2.4" class="flow-eye" />
+              <circle cx={x + 18} cy="75" r="2.4" class="flow-eye" />
+            </g>
+          ))}
+        </g>
+        <g class="flow-node">
+          <rect x="698" y="226" width="124" height="74" rx="8" class="flow-disc" />
+          <path d="M698 242 H822" class="flow-glyph" />
+          <circle cx="710" cy="234" r="2.4" class="flow-eye" />
+          <circle cx="719" cy="234" r="2.4" class="flow-eye" />
+          <path d="M744 270 l12 11 l22 -24" class="flow-check" />
+        </g>
 
-    <div class="price">
-      <div class="price-head">
-        <h3>{t("site.home.price.title")}</h3>
-        <p>{copy(t, "offer.priceRule", PRICE_RULE)}</p>
-        <p>{copy(t, "offer.priceWhy", PRICE_WHY)}</p>
-      </div>
-      <div class="terms">
-        {
-          ATTENTION.map((a) => (
-            <div class="term">
-              <h3>
-                {copy(t, `pricing.attention.${a.key}.name`, a.name)}
-                <span>
-                  {a.typicalSeconds
-                    ? t("site.home.term.example", {
-                        time: clock(a.typicalSeconds),
-                        price: money(timeCents(a.typicalSeconds)),
-                      })
-                    : t("site.home.term.hourly", { price: money(timeCents(3600)) })}
-                </span>
-              </h3>
-              <p>{copy(t, `pricing.attention.${a.key}.what`, a.what)}</p>
-            </div>
-          ))
-        }
-      </div>
-      <p class="price-foot">
-        <strong>{copy(t, "offer.serverless.title", SERVERLESS.title)}.</strong>
-        {copy(t, "offer.serverless.body", SERVERLESS.body)}
-      </p>
-    </div>
+        <text x="110" y="240" class="flow-label"><tspan class="flow-no">1</tspan> {steps[0]}</text>
+        <text x="440" y="262" class="flow-label"><tspan class="flow-no">2</tspan> {steps[1]}</text>
+        <text x="760" y="140" class="flow-label"><tspan class="flow-no">3</tspan> {steps[2]}</text>
+        <text x="760" y="326" class="flow-label"><tspan class="flow-no">4</tspan> {steps[3]}</text>
+      </svg>
 
-    <div class="why">
-      <h3 class="why-title">{t("site.home.why.title")}</h3>
-      <div class="terms whys">
-        {
-          WHY_NOT.map((w) => (
-            <div class="term">
-              <h3>…{copy(t, `offer.why.${w.key}.instead`, w.instead)}?</h3>
-              <p>{copy(t, `offer.why.${w.key}.answer`, w.answer, { price: QUICK_FIX })}</p>
-            </div>
-          ))
-        }
-      </div>
-      <ul class="safeguards" aria-label={t("site.home.safeguards.label")}>
-        {SAFEGUARDS.map((line, i) => <li>{copy(t, `offer.safeguard.${i + 1}`, line)}</li>)}
-      </ul>
-    </div>
+      <svg class="flow-tall" viewBox="0 0 360 560" aria-hidden="true">
+        <defs>
+          <clipPath id="flow-me-tall"><circle cx="180" cy="236" r="52" /></clipPath>
+          <marker id="flow-tip-tall" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="flow-tip" />
+          </marker>
+        </defs>
+        <path class="flow-line" d="M180 142 L180 172" marker-end="url(#flow-tip-tall)" />
+        <path class="flow-line" d="M146 280 L104 374" marker-end="url(#flow-tip-tall)" />
+        <path class="flow-line flow-line--ship" d="M214 280 L256 374" marker-end="url(#flow-tip-tall)" />
+
+        <g class="flow-node">
+          <circle cx="180" cy="62" r="38" class="flow-disc" />
+          <circle cx="180" cy="52" r="10" class="flow-glyph" />
+          <path d="M161 86 a19 16 0 0 1 38 0" class="flow-glyph" />
+        </g>
+        <circle cx="180" cy="236" r="56" class="flow-ring" />
+        <image href="/me.webp" x="128" y="184" width="104" height="104" clip-path="url(#flow-me-tall)" preserveAspectRatio="xMidYMid slice" />
+        <g class="flow-node">
+          <rect x="34" y="384" width="112" height="58" rx="11" class="flow-disc" />
+          {[46, 77, 108].map((x) => (
+            <g>
+              <rect x={x} y="400" width="26" height="22" rx="5" class="flow-glyph" />
+              <circle cx={x + 8} cy="411" r="2.4" class="flow-eye" />
+              <circle cx={x + 18} cy="411" r="2.4" class="flow-eye" />
+            </g>
+          ))}
+        </g>
+        <g class="flow-node">
+          <rect x="214" y="384" width="112" height="66" rx="8" class="flow-disc" />
+          <path d="M214 398 H326" class="flow-glyph" />
+          <circle cx="225" cy="391" r="2.2" class="flow-eye" />
+          <circle cx="233" cy="391" r="2.2" class="flow-eye" />
+          <path d="M254 424 l10 9 l20 -22" class="flow-check" />
+        </g>
+
+        <text x="180" y="132" class="flow-label"><tspan class="flow-no">1</tspan> {steps[0]}</text>
+        <text x="180" y="326" class="flow-label"><tspan class="flow-no">2</tspan> {steps[1]}</text>
+        <text x="90" y="478" class="flow-label"><tspan class="flow-no">3</tspan> {steps[2]}</text>
+        <text x="270" y="486" class="flow-label"><tspan class="flow-no">4</tspan> {steps[3]}</text>
+      </svg>
+    </figure>
+
+    <p class="value-price">{copy(t, "offer.priceNote", PRICE_NOTE, { rate: HOURLY_USD })}</p>
   </div>
 </section>
 
@@ -199,25 +218,6 @@ const availability = site?.availability ?? "limited";
     min-height: 100svh;
     display: flex;
     align-items: center;
-  }
-
-  /* The category, defined where the reader first meets it. */
-  .define {
-    margin: 0 0 1.25rem;
-    max-width: 64ch;
-    font-size: 17px;
-    line-height: 1.55;
-  }
-  .define-contrast {
-    display: block;
-    margin-top: 0.4rem;
-    color: var(--ink-soft);
-  }
-  .byo {
-    margin: 1rem 0 1.5rem;
-    max-width: 64ch;
-    font-size: 14px;
-    color: var(--ink-soft);
   }
 
   /* ————— masthead ————— */
@@ -341,31 +341,11 @@ const availability = site?.availability ?? "limited";
     color: var(--ink);
   }
 
-  /* For the reader who has only an idea. */
-  .masthead-from-idea {
-    margin: 0;
-    font-size: 14px;
-    line-height: 1.4;
-    color: var(--ink-soft);
-  }
-
-  .masthead-from-idea a {
-    color: inherit;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-
   .masthead-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 0.7rem;
     margin-top: clamp(1rem, 2.5vw, 1.6rem);
-  }
-
-  .masthead-note {
-    margin: 0.9rem 0 0;
-    font-size: 14px;
-    color: var(--ink-soft);
   }
 
   /* ————— how it works ————— */
@@ -376,193 +356,136 @@ const availability = site?.availability ?? "limited";
     gap: 0.35rem;
   }
 
-  .steps {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    border-top: 1px solid var(--rule);
-  }
-
-  .step {
-    padding: 1.25rem 1.25rem 1.4rem 0;
-  }
-
-  .step + .step {
-    padding-left: 1.25rem;
-    border-left: 1px solid var(--rule);
-  }
-
-  .step-no {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.75rem;
-    height: 1.75rem;
-    margin-bottom: 0.85rem;
-    font-family: var(--font-mono);
-    font-size: 12.5px;
-    font-weight: 500;
-    border: 1px solid var(--rule-strong);
-    border-radius: 50%;
-  }
-
-  /* The two steps a person does are the ones that carry the signal colour. */
-  .step:nth-child(2) .step-no,
-  .step:nth-child(4) .step-no {
-    background: var(--orange);
-    border-color: var(--orange);
-    color: var(--ink);
-  }
-
-  .step h3,
-  .term h3 {
-    margin: 0 0 0.35rem;
-    font-size: 1.15rem;
+  /* The value, in one sentence, above the picture of it. */
+  .value {
+    margin: 0 0 clamp(1rem, 2.5vw, 1.75rem);
+    max-width: 40ch;
+    font-family: var(--font-display);
+    font-size: clamp(1.35rem, 2.6vw, 2rem);
     font-weight: 600;
-    letter-spacing: -0.02em;
+    line-height: 1.15;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
   }
 
-  .step p,
-  .term p {
+  .flow {
     margin: 0;
+  }
+
+  .flow svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  /* Wide picture on wide screens, a tall one on a phone. */
+  .flow-tall {
+    display: none !important;
+  }
+
+  @media (max-width: 640px) {
+    .flow-wide {
+      display: none !important;
+    }
+    .flow-tall {
+      display: block !important;
+      max-width: 360px;
+      margin-inline: auto;
+    }
+  }
+
+  .flow-disc {
+    fill: var(--bone);
+    stroke: var(--ink);
+    stroke-width: 1.5;
+  }
+
+  .flow-glyph {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .flow-eye {
+    fill: var(--orange);
+  }
+
+  .flow-check {
+    fill: none;
+    stroke: var(--orange);
+    stroke-width: 3.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* I am the ring in the middle: the one part in the signal colour. */
+  .flow-ring {
+    fill: var(--bone);
+    stroke: var(--orange);
+    stroke-width: 3;
+  }
+
+  .flow-line {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 1.6;
+    stroke-dasharray: 5 7;
+    animation: flow-run 1.4s linear infinite;
+  }
+
+  /* The agents' work comes back to me before anything ships. */
+  .flow-line--back {
+    stroke: var(--ink-soft);
+  }
+
+  .flow-line--ship {
+    stroke: var(--orange);
+    stroke-width: 2;
+  }
+
+  .flow-tip {
+    fill: var(--ink);
+  }
+
+  .flow-label {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 600;
+    fill: var(--ink);
+    text-anchor: middle;
+    letter-spacing: -0.01em;
+  }
+
+  .flow-tall .flow-label {
     font-size: 15px;
-    line-height: 1.45;
-    color: var(--ink-soft);
   }
 
-  .price {
-    border-top: 2px solid var(--ink);
+  .flow-no {
+    font-family: var(--font-mono);
+    font-size: 0.8em;
+    fill: var(--orange);
   }
 
-  .price-head {
-    display: grid;
-    grid-template-columns: minmax(0, 0.6fr) minmax(0, 1fr) minmax(0, 1fr);
-    gap: 0.4rem 1.5rem;
-    padding: 1rem 0;
+  @keyframes flow-run {
+    to {
+      stroke-dashoffset: -24;
+    }
   }
 
-  .price-head h3 {
-    margin: 0;
-    font-size: 1.15rem;
-    letter-spacing: -0.02em;
+  @media (prefers-reduced-motion: reduce) {
+    .flow-line {
+      animation: none;
+    }
   }
 
-  .price-head p {
-    margin: 0;
-    font-size: 15px;
-    line-height: 1.45;
-  }
-
-  .price-head p + p {
-    color: var(--ink-soft);
-  }
-
-  .price-foot {
-    margin: 0.9rem 0 0;
+  .value-price {
+    margin: clamp(1rem, 2.5vw, 1.5rem) 0 0;
     padding-top: 0.8rem;
     border-top: 1px solid var(--rule);
-    font-size: 14px;
+    font-size: 15px;
     color: var(--ink-soft);
-  }
-
-  .price-foot strong {
-    color: var(--ink);
-  }
-
-  .terms {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    border-top: 1px solid var(--rule);
-  }
-
-  .term {
-    padding: 1.25rem 1.25rem 0 0;
-  }
-
-  .term + .term {
-    padding-left: 1.25rem;
-    border-left: 1px solid var(--rule);
-  }
-
-  .term h3 span {
-    display: block;
-    margin-top: 0.15rem;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    color: var(--ink-soft);
-  }
-
-  /* ————— why not just… ————— */
-
-  .why {
-    margin-top: 1.6rem;
-    border-top: 2px solid var(--ink);
-  }
-
-  .why-title {
-    margin: 0;
-    padding: 1rem 0;
-    font-size: 1.15rem;
-    letter-spacing: -0.02em;
-  }
-
-  .whys {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .safeguards {
-    list-style: none;
-    margin: 1.1rem 0 0;
-    padding: 0.8rem 0 0;
-    border-top: 1px solid var(--rule);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem 1.6rem;
-    font-size: 14px;
-    color: var(--ink-soft);
-  }
-
-  .safeguards li::before {
-    content: '✓ ';
-    color: var(--orange);
-    font-weight: 700;
-  }
-
-
-  /* ————— tablet + mobile ————— */
-
-  @media (max-width: 760px) {
-    .steps,
-    .terms,
-    .price-head {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    .step,
-    .step + .step,
-    .term,
-    .term + .term {
-      padding: 0.9rem 0;
-      border-left: 0;
-    }
-
-    .step + .step,
-    .term + .term {
-      border-top: 1px solid var(--rule);
-    }
-
-    .step {
-      display: grid;
-      grid-template-columns: 2.4rem minmax(0, 1fr);
-    }
-
-    .step-no {
-      grid-row: span 2;
-      margin: 0;
-    }
   }
 </style>
