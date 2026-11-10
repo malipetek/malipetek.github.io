@@ -12,6 +12,7 @@ import { demoLogin, errorText, requestLink, session } from '../../lib/portal';
 import { STEPS } from '../../lib/offer.js';
 import { stepText } from './copy.js';
 import { Brand, Button, cx } from './ui.jsx';
+import { arrivingBox, placeScene } from './sceneHandover.js';
 
 export function GuestShell({ t }) {
   return (
@@ -76,7 +77,7 @@ function GuestBoard() {
     let placed = false;
     // Arriving from the homepage: start from the frame it left on (its
     // pointer and clock), so the hand-over to this canvas is invisible.
-    const left = JSON.parse(sessionStorage.getItem('scene-box') || 'null');
+    const left = arrivingBox();
     import('../../lib/workshop3d')
       .then(({ initWorkshop }) => {
         const host = document.querySelector('.cp--guest .cp-scene');
@@ -169,39 +170,4 @@ function SignInCard({ t }) {
       ) : null}
     </div>
   );
-}
-
-/** The narrowest the machine can be drawn and still be a real frame (px). */
-const MIN_LANDING_WIDTH = 40;
-
-/**
- * Land the machine coming from the site on this page's: one scale-and-
- * translate mapping the box the homepage measured (Base.astro carries it
- * across) onto the box this page's workshop measures. Both are the same scene
- * with the same camera, so at the same window size the move is nothing at
- * all; it only does work when the window changed on the way. Returns true
- * once there is nothing left to do.
- */
-function placeScene(box) {
-  const root = document.documentElement;
-  if (root.dataset.vtScene !== 'in') return true;
-  const from = JSON.parse(sessionStorage.getItem('scene-box') || 'null');
-  if (!from) return false;
-  // A frame before the canvas has a size projects the machine into a pixel;
-  // landing on that shrinks the site's machine to nothing.
-  if (!(from.width > 0) || !(box.width >= MIN_LANDING_WIDTH)) return false;
-  const s = box.width / from.width;
-  const tx = box.x - from.x * s;
-  const ty = box.y - from.y * s;
-  root.style.setProperty('--vt-scene-s', String(s));
-  root.style.setProperty('--vt-scene-tx', `${tx}px`);
-  root.style.setProperty('--vt-scene-ty', `${ty}px`);
-  // Nothing to move (same window): this page's own machine takes over at
-  // once. The flying snapshot is a layer above the whole new page, cards
-  // included, because the cards mount after the page was captured; the live
-  // canvas sits behind them, where the room belongs (base.css).
-  const still = Math.abs(s - 1) < 0.01 && Math.abs(tx) < 1 && Math.abs(ty) < 1;
-  root.dataset.vtSceneReady = still ? 'same' : '1';
-  sessionStorage.removeItem('scene-box');
-  return true;
 }
