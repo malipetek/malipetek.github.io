@@ -1950,7 +1950,24 @@ export interface Board {
    * camera holds on the homepage's machine.
    */
   arrive: (ms: number) => void;
+  /**
+   * Show part of the picture enlarged, exactly as a 2D zoom of the canvas
+   * would: the point (cx, cy) lands on (hx, hy) and everything scales by `s`
+   * around it, in canvas pixels. The page zoom into a request does that to a
+   * snapshot of the board; this lets the live board end on the same frame.
+   * Null goes back to the whole picture.
+   */
+  zoomView: (z: BoardZoom | null) => void;
   stop: () => void;
+}
+
+/** A 2D zoom of the board's picture: (cx, cy) → (hx, hy), scaled by s. */
+export interface BoardZoom {
+  cx: number;
+  cy: number;
+  hx: number;
+  hy: number;
+  s: number;
 }
 
 /**
@@ -2061,11 +2078,28 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
   };
 
   /** The lens shift that centres the board in its frame (none unframed).
-   * Declared before render: the first frame is drawn during setup. */
+   * Declared before render: the first frame is drawn during setup. A frame
+   * that has left the page (the board kept as a backdrop) keeps the last. */
+  let lastShift: [number, number] = [0, 0];
   const boardShift = (): [number, number] => {
     if (!framed) return [0, 0];
     const f = frameEl.getBoundingClientRect();
-    return [size.w / 2 - (f.left + f.width / 2), size.h / 2 - (f.top + f.height / 2)];
+    if (!f.width || !f.height) return lastShift;
+    lastShift = [size.w / 2 - (f.left + f.width / 2), size.h / 2 - (f.top + f.height / 2)];
+    return lastShift;
+  };
+  let zoomed: BoardZoom | null = null;
+  /** The projection's window onto the picture: the lens shift, then any zoom. */
+  const applyLens = () => {
+    const [bx, by] = boardShift();
+    if (zoomed) {
+      // A sub-window of the picture, 1/s of its size, placed so that (cx, cy)
+      // is drawn at (hx, hy): the same picture a 2D zoom would give.
+      const { cx, cy, hx, hy, s } = zoomed;
+      camera.setViewOffset(size.w, size.h, bx + cx - hx / s, by + cy - hy / s, size.w / s, size.h / s);
+    } else if (framed) camera.setViewOffset(size.w, size.h, bx, by, size.w, size.h);
+    else camera.clearViewOffset();
+    camera.updateProjectionMatrix();
   };
 
   const render = () => {
@@ -2143,14 +2177,9 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
     // must sit. Shift the projection centre instead of moving the canvas.
     if (framed) {
       const f = frameEl.getBoundingClientRect();
-      frameOrigin = { left: f.left, top: f.top };
-      const [bx, by] = boardShift();
-      camera.setViewOffset(size.w, size.h, bx, by, size.w, size.h);
-    } else {
-      frameOrigin = { left: 0, top: 0 };
-      camera.clearViewOffset();
-    }
-    camera.updateProjectionMatrix();
+      if (f.width && f.height) frameOrigin = { left: f.left, top: f.top };
+    } else frameOrigin = { left: 0, top: 0 };
+    applyLens();
     // The machine is wide: narrower boxes pull back so all of it stays in frame.
     fit = THREE.MathUtils.clamp(fitBase / camera.aspect, 0.7, 2.0);
     render();
@@ -2340,6 +2369,11 @@ export function initBoard(canvas: HTMLCanvasElement, options: BoardOptions): Boa
       stageId = null;
     },
     view: () => ({ zoom: zoomGoal, pan: { x: panGoal.x, y: panGoal.y }, focus: focusId }),
+    zoomView: (z) => {
+      zoomed = z && z.s > 0 ? { ...z } : null;
+      applyLens();
+      render();
+    },
     arrive: (ms) => {
       if (flight?.phase === 'hold') flight = { phase: 'fly', at: performance.now(), ms: Math.max(1, ms) };
     },

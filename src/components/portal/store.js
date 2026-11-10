@@ -102,9 +102,15 @@ export function useRoute() {
           root.dataset.cpNav = `zoom-${zoom.way}`;
           if (zoom.way === 'out') setCamera(root, zoom.card, headBox());
         }
+        // The zoom in, for the board that stays behind the request as its
+        // backdrop (Board.jsx): it ends on the frame the page zoom ends on.
+        boardReturn.zoomCam = null;
         const update = () => {
           flushSync(apply);
-          if (zoom?.way === 'in' && mine === generation) setCamera(root, zoom.card, headBox());
+          if (zoom?.way === 'in' && mine === generation) {
+            boardReturn.zoomCam = setCamera(root, zoom.card, headBox());
+            boardReturn.onZoomCam?.(boardReturn.zoomCam);
+          }
         };
         let ride;
         try {
@@ -170,6 +176,7 @@ const headBox = () => document.querySelector('.cp-ticket__head')?.getBoundingCli
  * The move that carries the card's box onto the head's: the whole page and
  * the room ride it, so they travel with the card as one piece instead of
  * scaling in place around it. Without a head it is a plain push into the card.
+ * Returns the same move in window pixels ({ cx, cy, hx, hy, s }).
  */
 function setCamera(root, card, head) {
   const main = document.querySelector('.cp-main')?.getBoundingClientRect();
@@ -191,6 +198,7 @@ function setCamera(root, card, head) {
   px('--cp-zoom-dy', h.top - card.top);
   root.style.setProperty('--cp-zoom-s', String(s));
   root.style.setProperty('--cp-zoom-is', String(1 / s));
+  return { cx: card.left, cy: card.top, hx: h.left, hy: h.top, s };
 }
 /** How long a transition may take to report back, at --vt-slow 1 (ms). */
 const WATCHDOG = 2200;
@@ -275,7 +283,9 @@ export const href = (path) => `#/${path}`;
  *   head can shrink back into it.
  * - sheet: the project whose sheet was opened, so the sheet can morph into
  *   the project page under a view transition. Consumed once.
+ * - zoomCam: the zoom into a request, in window pixels, once it is measured;
+ *   onZoomCam, if set, is called with it (the board kept as the backdrop).
  */
-export const boardReturn = { ticket: null, from: null, peek: null, peekAt: null, reopen: null, sheet: null };
+export const boardReturn = { ticket: null, from: null, peek: null, peekAt: null, reopen: null, sheet: null, zoomCam: null, onZoomCam: null };
 
 export const signedIn = () => Boolean(session.get());

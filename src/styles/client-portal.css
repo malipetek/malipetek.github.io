@@ -557,7 +557,14 @@ html[data-cp-nav='zoom-in']::view-transition-old(cp-main) {
 }
 html[data-cp-nav='zoom-in']::view-transition-old(cp-scene) {
   transform-origin: var(--cp-zoom-vx) var(--cp-zoom-vy);
-  animation-name: cp-zoom-through;
+  animation-name: cp-zoom-room;
+}
+/* The room behind the request is the same board, zoomed the same way
+   (Board.jsx, keepAsBackdrop): the snapshot ends on its frame and level, and
+   the live one shows when the transition ends, not under it. */
+html[data-cp-nav='zoom-in']::view-transition-new(cp-scene) {
+  animation: none;
+  opacity: 0;
 }
 html[data-cp-nav='zoom-in']::view-transition-new(cp-main) {
   transform-origin: var(--cp-zoom-hmx) var(--cp-zoom-hmy);
@@ -583,6 +590,12 @@ html[data-cp-nav='zoom-out']::view-transition-new(cp-scene) {
   }
   to {
     opacity: 0;
+    transform: translate(var(--cp-zoom-dx), var(--cp-zoom-dy)) scale(var(--cp-zoom-s));
+  }
+}
+@keyframes cp-zoom-room {
+  to {
+    opacity: var(--cp-backdrop, 0.4);
     transform: translate(var(--cp-zoom-dx), var(--cp-zoom-dy)) scale(var(--cp-zoom-s));
   }
 }
@@ -891,11 +904,19 @@ html[data-vt-scene]:not([data-vt-scene-ready='same']) .cp-overview--guest {
   transform: translateY(14px);
   transition: none;
 }
-/* Behind a request opened from its card, the board keeps running, dived in
-   on that request, and steps back (Board.jsx, keepAsBackdrop). */
+/* Behind a request the board keeps running, dived in on it, and steps back
+   (Board.jsx, "backdrop"). From its card, the zoom's snapshot fades to this
+   same level as it ends, so the live board takes over on the same frame; a
+   backdrop started for a request reached another way fades in to it. */
+:root {
+  --cp-backdrop: 0.4;
+}
 .cp-board__canvas.is-backdrop {
-  opacity: 0.4;
-  transition: opacity calc(420ms * var(--vt-slow, 1)) var(--ease);
+  opacity: var(--cp-backdrop);
+  transition: opacity calc(600ms * var(--vt-slow, 1)) var(--ease);
+}
+.cp-board__canvas.is-backdrop.is-arriving {
+  opacity: 0;
 }
 .cp-board__canvas {
   position: absolute;

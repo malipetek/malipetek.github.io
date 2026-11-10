@@ -33,6 +33,31 @@ const LANE_TINTS = [0xff5a1f, 0x95bf47, 0x3b82f6, 0xa855f7, 0xeab308, 0xec4899];
 const GREY_TINT = 0x8a857b;
 const tintHex = (n) => `#${n.toString(16).padStart(6, '0')}`;
 
+/**
+ * The scene's lanes: a belt per project, and the "getting set up" lane at the
+ * end for requests with no project (or every request, before any project).
+ */
+function sceneLanesFor(lanes, items, project, label) {
+  const list = lanes.map((lane, i) => {
+    const color = LANE_TINTS[i % LANE_TINTS.length];
+    return { ...lane, sites: lane.sites ?? [], lane: i, color, tint: tintHex(color) };
+  });
+  const loose = items.some((x) => !x.project_id) || !list.length || project === 'none';
+  if (loose) {
+    list.push({ id: -1, name: label, sites: [], unassigned: true, lane: list.length, color: GREY_TINT, tint: tintHex(GREY_TINT) });
+  }
+  return list;
+}
+
+/** Which of `list`'s lanes a request of `projectId` rides. */
+function laneIndex(list, projectId) {
+  const at = projectId ? list.findIndex((l) => !l.unassigned && l.id === projectId) : list.findIndex((l) => l.unassigned);
+  return at >= 0 ? at : 0;
+}
+
+/** A request as the scene draws it. */
+const sceneItem = (list) => (x) => ({ id: x.id, stage: x.status, lane: laneIndex(list, x.project_id), stuck: Boolean(x.stuck) });
+
 /** What a dragged row or site label carries; the project labels accept it. */
 export const DRAG_TICKET = 'application/x-malipetek-ticket';
 export const DRAG_SITE = 'application/x-malipetek-site';
@@ -50,10 +75,11 @@ export function boardItems(tickets) {
    camera glides out of the request that was being read, instead of resetting. */
 let lastBoardView = null;
 
-/* A request opened from its card keeps the board running behind it, dived
-   in on that request and faded (client-portal.css, "is-backdrop"): the room
-   the zoom went into stays. Dropped when the next board takes over, or when
-   the page goes anywhere but that request or back to the board. */
+/* Behind a request the board keeps running, dived in on that request and
+   faded (client-portal.css, "is-backdrop"). Opened from its card, it is the
+   board the zoom went into, ending on the zoom's own frame; opened any other
+   way, one is started (showBackdrop). Dropped when the next board takes over,
+   or when the page goes anywhere but a request or back to the board. */
 let backdrop = null;
 
 const dropBackdrop = () => {
@@ -64,19 +90,79 @@ const dropBackdrop = () => {
   backdrop = null;
 };
 
-function keepAsBackdrop(board, canvas, id) {
+/**
+ * Make `board` the backdrop; `data` feeds a board started for it. `instant`
+ * skips the fade: under the zoom the live board is hidden until the end, and
+ * must be at the backdrop's level by then.
+ */
+function adoptBackdrop(board, canvas, data = null, instant = false) {
   dropBackdrop();
-  canvas.classList.add('is-backdrop');
-  board.focus(id);
+  if (instant) {
+    canvas.style.transition = 'none';
+    canvas.classList.add('is-backdrop');
+    void canvas.offsetWidth;
+    canvas.style.removeProperty('transition');
+  } else canvas.classList.add('is-backdrop');
   // Back to the board: the board that mounts drops it once it has taken
-  // over. Anywhere else: it goes once that page's transition has ended.
+  // over. Another request: it stays and turns to that one. Anywhere else: it
+  // goes once that page's transition has ended.
   const watch = () => {
     const path = window.location.hash.replace(/^#\/?/, '').split('?')[0];
-    if (path === `ticket/${id}` || path === '' || path === 'overview') return;
+    if (path.startsWith('ticket/') || path === '' || path === 'overview') return;
     afterTransition(dropBackdrop);
   };
   window.addEventListener('hashchange', watch);
-  backdrop = { board, canvas, watch };
+  backdrop = { board, canvas, watch, data };
+}
+
+/**
+ * Into a request from its card: the board stays as the backdrop, on the
+ * frame the page zoom ends on (store.js measures it during the change; this
+ * can run before or after that).
+ */
+function keepAsBackdrop(board, canvas, id) {
+  adoptBackdrop(board, canvas, null, true);
+  board.focus(id);
+  const zoom = (cam) => {
+    boardReturn.onZoomCam = null;
+    if (backdrop?.board === board && cam) board.zoomView(cam);
+  };
+  if (boardReturn.zoomCam) zoom(boardReturn.zoomCam);
+  else boardReturn.onZoomCam = zoom;
+}
+
+/**
+ * The backdrop for a request page reached any other way (a list, a link, a
+ * reload): a board of the client's requests, started behind the page and
+ * gliding in on this one. One already there turns to it instead. Called
+ * again as the data changes, so the backdrop's requests stay current.
+ */
+export function showBackdrop({ tickets, lanes, label }, id) {
+  const items = boardItems(tickets);
+  const list = sceneLanesFor(lanes ?? [], items, null, label);
+  const data = { items: items.map(sceneItem(list)), lanes: list };
+  if (backdrop) {
+    if (backdrop.data) backdrop.data = data;
+    backdrop.board.focus(id);
+    return;
+  }
+  import('../../lib/workshop3d')
+    .then(({ initBoard }) => {
+      const host = document.querySelector('.cp-scene');
+      const here = window.location.hash.replace(/^#\/?/, '').split('?')[0] === `ticket/${id}`;
+      if (backdrop || !host || !here) return;
+      const canvas = document.createElement('canvas');
+      canvas.className = 'cp-board__canvas is-arriving';
+      canvas.setAttribute('aria-hidden', 'true');
+      host.appendChild(canvas);
+      const box = { items: data.items, lanes: data.lanes };
+      const board = initBoard(canvas, { fitBase: 2.8, items: () => backdrop?.data?.items ?? box.items, lanes: () => backdrop?.data?.lanes ?? box.lanes });
+      adoptBackdrop(board, canvas, data);
+      board.focus(id);
+      // Fades in to the backdrop's level rather than appearing.
+      requestAnimationFrame(() => requestAnimationFrame(() => canvas.classList.remove('is-arriving')));
+    })
+    .catch(() => {}); // no WebGL: the request page stands on its own
 }
 
 /* Arriving from the homepage: how long the camera takes to fly from the
@@ -106,25 +192,7 @@ export function Board({
 
   // Each project gets a belt; requests with no project (or every request, when
   // there is no project yet) get the "getting set up" lane at the end.
-  const sceneLanes = useMemo(() => {
-    const list = lanes.map((lane, i) => {
-      const color = LANE_TINTS[i % LANE_TINTS.length];
-      return { ...lane, sites: lane.sites ?? [], lane: i, color, tint: tintHex(color) };
-    });
-    const loose = items.some((x) => !x.project_id) || !list.length || project === 'none';
-    if (loose) {
-      list.push({
-        id: -1,
-        name: t('board.gettingSetUp'),
-        sites: [],
-        unassigned: true,
-        lane: list.length,
-        color: GREY_TINT,
-        tint: tintHex(GREY_TINT),
-      });
-    }
-    return list;
-  }, [lanes, items, project, t]);
+  const sceneLanes = useMemo(() => sceneLanesFor(lanes, items, project, t('board.gettingSetUp')), [lanes, items, project, t]);
 
   const itemsRef = useRef(items);
   itemsRef.current = items;
@@ -135,15 +203,7 @@ export function Board({
   const stageRef = useRef(stage);
   stageRef.current = stage;
 
-  const laneOf = (projectId) => {
-    const list = sceneLanesRef.current;
-    if (!projectId) {
-      const at = list.findIndex((l) => l.unassigned);
-      return at >= 0 ? at : 0;
-    }
-    const at = list.findIndex((l) => !l.unassigned && l.id === projectId);
-    return at >= 0 ? at : 0;
-  };
+  const laneOf = (projectId) => laneIndex(sceneLanesRef.current, projectId);
 
   // The labels are DOM, one per project pylon and site pod. Their positions
   // are written straight to the elements every frame; React only rebuilds the
