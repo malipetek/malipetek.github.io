@@ -199,6 +199,9 @@ function SignInCard({ t }) {
   );
 }
 
+/** The narrowest the board's machine can be drawn and still be a real frame (px). */
+const MIN_LANDING_WIDTH = 40;
+
 /**
  * Land the machine coming from the site on the board's own machine: one
  * scale-and-translate mapping the five stage anchors from where the homepage
@@ -216,7 +219,10 @@ function placeScene(stations, stage) {
   const xs = points.map((p) => p.x + rect.left);
   const ys = points.map((p) => p.y + rect.top);
   const width = Math.max(...xs) - Math.min(...xs);
-  if (!(from.width > 0) || !(width > 0)) return false;
+  // The board's first frames can come before its canvas has a size, with the
+  // whole machine projected into a pixel; landing on that shrinks the site's
+  // machine to nothing. Wait for a frame that draws it at a real size.
+  if (!(from.width > 0) || !(width >= MIN_LANDING_WIDTH)) return false;
   const s = width / from.width;
   root.style.setProperty('--vt-scene-s', String(s));
   root.style.setProperty('--vt-scene-tx', `${Math.min(...xs) - from.x * s}px`);
