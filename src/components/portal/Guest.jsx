@@ -187,10 +187,17 @@ function placeScene(box) {
   // landing on that shrinks the site's machine to nothing.
   if (!(from.width > 0) || !(box.width >= MIN_LANDING_WIDTH)) return false;
   const s = box.width / from.width;
+  const tx = box.x - from.x * s;
+  const ty = box.y - from.y * s;
   root.style.setProperty('--vt-scene-s', String(s));
-  root.style.setProperty('--vt-scene-tx', `${box.x - from.x * s}px`);
-  root.style.setProperty('--vt-scene-ty', `${box.y - from.y * s}px`);
-  root.dataset.vtSceneReady = '1';
+  root.style.setProperty('--vt-scene-tx', `${tx}px`);
+  root.style.setProperty('--vt-scene-ty', `${ty}px`);
+  // Nothing to move (same window): this page's own machine takes over at
+  // once. The flying snapshot is a layer above the whole new page, cards
+  // included, because the cards mount after the page was captured; the live
+  // canvas sits behind them, where the room belongs (base.css).
+  const still = Math.abs(s - 1) < 0.01 && Math.abs(tx) < 1 && Math.abs(ty) < 1;
+  root.dataset.vtSceneReady = still ? 'same' : '1';
   sessionStorage.removeItem('scene-box');
   return true;
 }
