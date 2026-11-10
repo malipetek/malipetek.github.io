@@ -199,6 +199,7 @@ export const STYLES = `
 .aw-file { font: inherit; font-size: 12px; display: inline-flex; gap: 6px; align-items: baseline; padding: 3px 8px; border: 1px solid var(--aw-border2); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; max-width: 100%; overflow-wrap: anywhere; }
 button.aw-file:hover { border-color: currentColor; }
 .aw-banner--warn { background: color-mix(in srgb, var(--aw-warn) 12%, transparent); }
+.aw-banner--ok { background: color-mix(in srgb, var(--aw-ok) 12%, transparent); }
 
 /* ticket */
 .aw-ticket { display: grid; grid-template-columns: minmax(0, 1fr) var(--aw-details-w, 300px); min-height: 100%; position: relative; }
@@ -462,4 +463,17 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-shots figure { flex: 1; min-width: 0; margin: 0; }
 .aw-shots img { display: block; width: 100%; height: auto; border: 1px solid var(--aw-border); border-radius: 6px; background: var(--aw-bg2); }
 .aw-shots figcaption { margin-top: 3px; font-size: 11px; color: var(--aw-text3); text-transform: uppercase; letter-spacing: .04em; }
+
+/* SEO: small inline charts, wide tables that scroll, drafts that stay readable. */
+.aw-seo-chart { margin: 8px 0 4px; }
+.aw-seo-chart svg { display: block; width: 100%; height: auto; max-height: 190px; }
+.aw-seo-chart__legend { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--aw-text2); }
+.aw-seo-chart__dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.aw-seo-pages td.aw-seo-types, .aw-seo-citations td { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.aw-seo-path { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.aw-seo-citations textarea { min-width: 240px; }
+.aw-seo-citations input { min-width: 200px; }
+.aw-seo-issues { display: grid; gap: 4px; padding: 2px 0; }
+.aw-seo-issue { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.aw-seo-issue span:last-child { color: var(--aw-text2); }
 `;

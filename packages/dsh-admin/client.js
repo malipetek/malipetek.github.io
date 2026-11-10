@@ -474,6 +474,7 @@ var __awPlugin = (() => {
     folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
     play: "M7 5l12 7-12 7z",
     megaphone: "M3 10v4a1 1 0 0 0 1 1h2l4 3V6L6 9H4a1 1 0 0 0-1 1zM14 8a5 5 0 0 1 0 8M17 5a9 9 0 0 1 0 14",
+    seo: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.5 4 5.7 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.7-4-9s1.5-6.5 4-9z",
     pulse: "M3 12h4l2-6 4 12 2-6h6"
   };
   function Icon({ name, size = 16 }) {
@@ -3690,6 +3691,981 @@ var __awPlugin = (() => {
     );
   }
 
+  // packages/admin-ui/src/seo.jsx
+  var DAY = 864e5;
+  var SEVERITY_TONE = { high: "bad", medium: "warn", low: "dash" };
+  var SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
+  var CITATION_STATUSES = ["todo", "drafted", "live", "verified", "skipped"];
+  var CITATION_RANK = { todo: 0, drafted: 1, live: 2, verified: 3, skipped: 4 };
+  var EVENT_KINDS = [
+    { value: "core_update", label: "Core update" },
+    { value: "algorithm_update", label: "Algorithm update" },
+    { value: "fix", label: "Fix" },
+    { value: "note", label: "Note" }
+  ];
+  var EVENT_TONE = { core_update: "warn", algorithm_update: "warn", fix: "ok", note: "dash" };
+  var EVENT_LABEL = { core_update: "core update", algorithm_update: "algorithm update", fix: "fix", note: "note" };
+  var CYCLE_REASON = {
+    auto_off: "automatic cycles are off",
+    open_cycle: "a cycle ticket is already open",
+    no_findings: "there are no open findings at medium or above",
+    recent_cycle: "a cycle was filed in the last day",
+    no_project: "the malipetek-dev-site project is missing",
+    no_admin: "there is no admin account to file it for",
+    insert_failed: "the ticket could not be written"
+  };
+  var RUN_LABEL = { audit: "Run audit", geo: "Run GEO probe", citations: "Check citations", cycle: "Run cycle now" };
+  var plural2 = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  var pct3 = (rate) => `${Math.round((rate ?? 0) * 100)}%`;
+  var dayNumber = (day) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day ?? "");
+    return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / DAY : NaN;
+  };
+  var dayOfNumber = (n) => new Date(n * DAY).toISOString().slice(0, 10);
+  var shortDay = (day) => {
+    const n = dayNumber(day);
+    if (!Number.isFinite(n)) return day ?? "";
+    return new Date(n * DAY).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+  };
+  var longDay = (day) => {
+    const n = dayNumber(day);
+    if (!Number.isFinite(n)) return day ?? "";
+    return new Date(n * DAY).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  };
+  var instantDay = (unix) => unix ? new Date(unix * 1e3).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "-";
+  var scoreTone = (score) => score >= 90 ? "ok" : score >= 70 ? "warn" : "bad";
+  var errorText2 = (error) => error?.message ?? error?.code ?? "Something went wrong.";
+  function TicketLink({ id, openTicket }) {
+    if (!id) return /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "-" });
+    return /* @__PURE__ */ jsxs(
+      "a",
+      {
+        href: `#ticket=${id}`,
+        className: "aw-link",
+        onClick: (event) => {
+          event.preventDefault();
+          openTicket?.(id);
+        },
+        children: [
+          "#",
+          id
+        ]
+      }
+    );
+  }
+  function SeoView() {
+    const { api, openTicket, notify } = useAdmin();
+    const [overview, setOverview] = useState(null);
+    const [error, setError] = useState(null);
+    const [tab, setTab] = useState("overview");
+    const [tick, setTick] = useState(0);
+    const load = useCallback(
+      () => api("GET", "/admin/seo/overview").then((data) => {
+        setOverview(data);
+        setError(null);
+      }).catch(setError),
+      [api]
+    );
+    useEffect(() => {
+      void load();
+    }, [load]);
+    usePoll(load, 6e4, [load]);
+    const refresh = useCallback(() => {
+      setTick((n) => n + 1);
+      return load();
+    }, [load]);
+    if (error && !overview) return /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
+      "Could not load the SEO desk: ",
+      errorText2(error)
+    ] });
+    if (!overview) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading\u2026" });
+    const hosts = overview.hostsAvailable ?? overview.hosts.map((h) => h.host);
+    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-seo", children: [
+      /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
+        /* @__PURE__ */ jsx("h2", { children: "SEO" }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Our own two hosts, checked daily. Scores, open fixes, the questions buyers ask assistants, and the profiles that link back." }),
+        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+          "Last audit ",
+          overview.state?.lastAuditAt ? `${ago(overview.state.lastAuditAt)} ago` : "not yet",
+          " \xB7 last GEO probe",
+          " ",
+          overview.state?.lastGeoAt ? `${ago(overview.state.lastGeoAt)} ago` : "not yet",
+          " \xB7 last citation check",
+          " ",
+          overview.state?.lastCitationsAt ? `${ago(overview.state.lastCitationsAt)} ago` : "not yet"
+        ] })
+      ] }),
+      error && overview ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--bad", children: [
+        "Could not refresh: ",
+        errorText2(error)
+      ] }) : null,
+      /* @__PURE__ */ jsx("div", { className: "aw-toolbar", children: /* @__PURE__ */ jsx(
+        Segmented,
+        {
+          value: tab,
+          options: [
+            { value: "overview", label: "Overview" },
+            { value: "pages", label: "Pages" },
+            { value: "findings", label: `Findings (${overview.hosts.reduce((sum, h) => sum + h.findings.open, 0)})` },
+            { value: "geo", label: "GEO" },
+            { value: "citations", label: "Citations" },
+            { value: "settings", label: "Settings" }
+          ],
+          onChange: setTab
+        }
+      ) }),
+      tab === "overview" ? /* @__PURE__ */ jsx(OverviewTab2, { overview, api, refresh, openTicket }) : null,
+      tab === "pages" ? /* @__PURE__ */ jsx(PagesTab, { api, hosts, tick }) : null,
+      tab === "findings" ? /* @__PURE__ */ jsx(FindingsTab, { api, hosts, tick, openTicket, refresh }) : null,
+      tab === "geo" ? /* @__PURE__ */ jsx(GeoTab, { api, tick }) : null,
+      tab === "citations" ? /* @__PURE__ */ jsx(CitationsTab, { api, tick, notify }) : null,
+      tab === "settings" ? /* @__PURE__ */ jsx(SettingsTab2, { api, overview, refresh, notify }) : null
+    ] });
+  }
+  function runText(result) {
+    if (!result || typeof result !== "object") return "Done.";
+    if (result.what === "audit") {
+      const hosts = result.hosts ?? [];
+      if (!hosts.length) return "The audit ran but no host answered.";
+      return hosts.map((h) => `${h.host}: ${h.pages ?? 0} pages, average ${h.averageScore ?? 0}, ${h.opened ?? 0} opened, ${h.resolved ?? 0} resolved`).join(". ").concat(".");
+    }
+    if (result.what === "geo") {
+      if (result.skipped === "no_key") return "Skipped: the Worker has no DEEPSEEK_API_KEY.";
+      return `Asked ${result.questions ?? 0} questions, kept ${result.runs ?? 0} answers, ${result.mentions ?? 0} named us.`;
+    }
+    if (result.what === "citations") {
+      return `Checked ${result.checked ?? 0} profiles: ${result.verified ?? 0} verified, ${result.dropped ?? 0} dropped.`;
+    }
+    if (result.what === "cycle") {
+      if (result.filed) return `Filed #${result.id}. An agent takes the worst findings next.`;
+      const reason = CYCLE_REASON[result.reason] ?? result.reason ?? "unknown reason";
+      return `Nothing filed: ${reason}${result.id ? ` (#${result.id})` : ""}.`;
+    }
+    return "Done.";
+  }
+  function OverviewTab2({ overview, api, refresh, openTicket }) {
+    const [busy, setBusy] = useState(null);
+    const [result, setResult] = useState(null);
+    const held = overview.cycle?.held;
+    const run = async (what) => {
+      setBusy(what);
+      setResult(null);
+      try {
+        const out = await api("POST", "/admin/seo/run", { what });
+        setResult({ ok: true, text: runText(out) });
+        await refresh();
+      } catch (error) {
+        setResult({ ok: false, text: errorText2(error) });
+      } finally {
+        setBusy(null);
+      }
+    };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      held?.held ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
+        "Google core update in progress: content rewrites paused until ",
+        longDay(held.until),
+        ".",
+        held.since ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+          " Started ",
+          longDay(held.since),
+          "."
+        ] }) : null
+      ] }) : null,
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+        ["audit", "geo", "citations", "cycle"].map((what) => /* @__PURE__ */ jsx(Button, { kind: what === "audit" ? "primary" : "default", disabled: Boolean(busy), onClick: () => run(what), children: busy === what ? "Running\u2026" : RUN_LABEL[what] }, what)),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsxs(Tag, { tone: overview.settings?.autoCycle ? "ok" : "dash", children: [
+          "auto cycle ",
+          overview.settings?.autoCycle ? "on" : "off"
+        ] }),
+        /* @__PURE__ */ jsx(Tag, { tone: held?.held ? "warn" : "dash", children: held?.held ? "held" : "not held" })
+      ] }),
+      result ? /* @__PURE__ */ jsx("div", { className: cx("aw-banner", result.ok ? "aw-banner--ok" : "aw-banner--bad"), role: "status", children: result.text }) : null,
+      /* @__PURE__ */ jsx("div", { className: "aw-grid2", children: overview.hosts.map((host) => /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsxs("header", { children: [
+          /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: host.host }),
+          /* @__PURE__ */ jsxs(Tag, { tone: scoreTone(host.averageScore), children: [
+            host.averageScore,
+            " average"
+          ] }),
+          /* @__PURE__ */ jsx(Tag, { tone: "dash", children: plural2(host.pages, "page", "pages") }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: host.day ? shortDay(host.day) : "no audit yet" })
+        ] }),
+        /* @__PURE__ */ jsx(ScoreChart, { series: host.series ?? [], events: overview.events ?? [], today: overview.day }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-tags", style: { marginTop: 8 }, children: [
+          /* @__PURE__ */ jsxs(Tag, { tone: host.findings.high ? "bad" : "dash", children: [
+            host.findings.high,
+            " high"
+          ] }),
+          /* @__PURE__ */ jsxs(Tag, { tone: host.findings.medium ? "warn" : "dash", children: [
+            host.findings.medium,
+            " medium"
+          ] }),
+          /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+            host.findings.low,
+            " low"
+          ] }),
+          /* @__PURE__ */ jsxs(Tag, { tone: host.findings.open ? "warn" : "ok", children: [
+            host.findings.open,
+            " open"
+          ] })
+        ] })
+      ] }, host.host)) }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
+        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+          /* @__PURE__ */ jsxs("header", { children: [
+            /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: "Assistant mentions" }),
+            /* @__PURE__ */ jsxs(Tag, { tone: overview.geo.rate ? "ok" : "dash", children: [
+              pct3(overview.geo.rate),
+              " overall"
+            ] }),
+            /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+            /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+              plural2(overview.geo.mentions, "mention", "mentions"),
+              " in ",
+              plural2(overview.geo.runs, "answer", "answers")
+            ] })
+          ] }),
+          /* @__PURE__ */ jsx(GeoChart, { weeks: overview.geo.weeks ?? [] })
+        ] }),
+        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+          /* @__PURE__ */ jsx("h3", { children: "Citations" }),
+          /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
+            /* @__PURE__ */ jsxs(Tag, { tone: overview.citations.todo ? "warn" : "dash", children: [
+              overview.citations.todo,
+              " to do"
+            ] }),
+            /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+              overview.citations.drafted,
+              " drafted"
+            ] }),
+            /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+              overview.citations.live,
+              " live"
+            ] }),
+            /* @__PURE__ */ jsxs(Tag, { tone: overview.citations.verified ? "ok" : "dash", children: [
+              overview.citations.verified,
+              " verified"
+            ] }),
+            /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+              overview.citations.skipped,
+              " skipped"
+            ] })
+          ] }),
+          /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Profile and directory placements that can link back. A weekly check keeps the verified ones honest." })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Fix cycle" }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
+          /* @__PURE__ */ jsxs(Tag, { tone: overview.cycle.auto ? "ok" : "dash", children: [
+            "auto ",
+            overview.cycle.auto ? "on" : "off"
+          ] }),
+          /* @__PURE__ */ jsxs(Tag, { tone: overview.cycle.openFindings ? "warn" : "ok", children: [
+            plural2(overview.cycle.openFindings, "open finding", "open findings"),
+            " at medium or above"
+          ] }),
+          /* @__PURE__ */ jsx(Tag, { tone: overview.cycle.wouldFile ? "warn" : "dash", children: overview.cycle.wouldFile ? "a cycle would file now" : "no cycle due" })
+        ] }),
+        /* @__PURE__ */ jsxs("p", { children: [
+          "Open ticket:",
+          " ",
+          overview.cycle.openTicketId ? /* @__PURE__ */ jsx(TicketLink, { id: overview.cycle.openTicketId, openTicket }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "none" }),
+          held?.held ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            " \xB7 rewrites pause until ",
+            longDay(held.until)
+          ] }) : null
+        ] })
+      ] })
+    ] });
+  }
+  function ScoreChart({ series, events, today }) {
+    const end = today ?? series.at(-1)?.day;
+    const endNumber = dayNumber(end);
+    if (!series.length || !Number.isFinite(endNumber)) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No audit series yet." });
+    const width = 560;
+    const height = 170;
+    const left = 30;
+    const right = 8;
+    const top = 10;
+    const bottom = 24;
+    const innerW = width - left - right;
+    const innerH = height - top - bottom;
+    const start = endNumber - 29;
+    const xOf = (n) => left + (n - start) / 29 * innerW;
+    const yOf = (score) => top + (1 - Math.max(0, Math.min(100, score)) / 100) * innerH;
+    const points = series.map((point) => ({ ...point, n: dayNumber(point.day) })).filter((point) => Number.isFinite(point.n) && point.n >= start && point.n <= endNumber).sort((a, b) => a.n - b.n);
+    const path = points.map((point, index) => `${index ? "L" : "M"}${xOf(point.n).toFixed(1)},${yOf(point.averageScore).toFixed(1)}`).join(" ");
+    const marks = (events ?? []).map((event) => ({ ...event, n: dayNumber(event.day) })).filter((event) => Number.isFinite(event.n) && event.n >= start && event.n <= endNumber);
+    const markColour = (kind) => kind === "fix" ? "var(--aw-ok)" : kind === "note" ? "var(--aw-text2)" : "var(--aw-warn)";
+    return /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart", children: [
+      /* @__PURE__ */ jsxs("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Average score, last 30 days", children: [
+        [0, 50, 100].map((value) => /* @__PURE__ */ jsxs("g", { children: [
+          /* @__PURE__ */ jsx("line", { x1: left, x2: width - right, y1: yOf(value), y2: yOf(value), stroke: "var(--aw-border)", strokeWidth: "1" }),
+          /* @__PURE__ */ jsx("text", { x: left - 5, y: yOf(value) + 3, textAnchor: "end", fontSize: "9", fill: "var(--aw-text2)", children: value })
+        ] }, value)),
+        [0, 7, 14, 21, 29].map((offset) => {
+          const n = start + offset;
+          return /* @__PURE__ */ jsx("text", { x: xOf(n), y: height - 6, textAnchor: offset === 0 ? "start" : offset === 29 ? "end" : "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay(dayOfNumber(n)) }, offset);
+        }),
+        marks.map((event) => /* @__PURE__ */ jsxs("g", { children: [
+          /* @__PURE__ */ jsx("title", { children: `${event.label} (${EVENT_LABEL[event.kind] ?? event.kind}) on ${longDay(event.day)}` }),
+          /* @__PURE__ */ jsx("line", { x1: xOf(event.n), x2: xOf(event.n), y1: top, y2: height - bottom, stroke: markColour(event.kind), strokeWidth: "1", strokeDasharray: "3 3", opacity: "0.65" }),
+          /* @__PURE__ */ jsx("circle", { cx: xOf(event.n), cy: height - bottom - 4, r: "3", fill: markColour(event.kind) })
+        ] }, event.id)),
+        path ? /* @__PURE__ */ jsx("path", { d: path, fill: "none", stroke: "var(--aw-accent)", strokeWidth: "2", strokeLinejoin: "round", strokeLinecap: "round" }) : null,
+        points.map((point) => /* @__PURE__ */ jsx("circle", { cx: xOf(point.n), cy: yOf(point.averageScore), r: "2.6", fill: "var(--aw-accent)", children: /* @__PURE__ */ jsx("title", { children: `${longDay(point.day)}: ${point.averageScore} average over ${point.pages} pages` }) }, point.day))
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart__legend", children: [
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot", style: { background: "var(--aw-accent)" } }),
+          " score"
+        ] }),
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot", style: { background: "var(--aw-warn)" } }),
+          " core or algorithm update"
+        ] }),
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot", style: { background: "var(--aw-ok)" } }),
+          " our fix"
+        ] })
+      ] })
+    ] });
+  }
+  function GeoChart({ weeks }) {
+    if (!weeks.length) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No probe answers yet. Run the GEO probe after the next audit." });
+    const width = 520;
+    const height = 150;
+    const left = 12;
+    const right = 12;
+    const top = 10;
+    const bottom = 24;
+    const innerW = width - left - right;
+    const innerH = height - top - bottom;
+    const gap = 5;
+    const barW = Math.max(6, (innerW - gap * (weeks.length - 1)) / weeks.length);
+    return /* @__PURE__ */ jsx("div", { className: "aw-seo-chart", children: /* @__PURE__ */ jsxs("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Mention rate per week, last 12 weeks", children: [
+      /* @__PURE__ */ jsx("line", { x1: left, x2: width - right, y1: top + innerH, y2: top + innerH, stroke: "var(--aw-border2)", strokeWidth: "1" }),
+      [0, 0.5, 1].map((value) => /* @__PURE__ */ jsx("line", { x1: left, x2: width - right, y1: top + innerH * (1 - value), y2: top + innerH * (1 - value), stroke: "var(--aw-border)", strokeWidth: "1", strokeDasharray: "2 4" }, value)),
+      weeks.map((week, index) => {
+        const x = left + index * (barW + gap);
+        const barH = Math.max(1, innerH * Math.max(0, Math.min(1, week.rate ?? 0)));
+        return /* @__PURE__ */ jsxs("g", { children: [
+          /* @__PURE__ */ jsx("title", { children: `Week of ${longDay(week.week)}: ${week.mentions} of ${week.runs} answers named us (${pct3(week.rate)})` }),
+          /* @__PURE__ */ jsx("rect", { x, y: top + innerH - barH, width: barW, height: barH, rx: "2", fill: "var(--aw-accent)", opacity: week.runs ? 0.85 : 0.25 }),
+          index % 3 === 0 || index === weeks.length - 1 ? /* @__PURE__ */ jsx("text", { x: x + barW / 2, y: height - 6, textAnchor: "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay(week.week) }) : null
+        ] }, week.week);
+      }),
+      /* @__PURE__ */ jsx("text", { x: left, y: top - 1, fontSize: "9", fill: "var(--aw-text2)", children: "100%" }),
+      /* @__PURE__ */ jsx("text", { x: left, y: top + innerH + 9, fontSize: "9", fill: "var(--aw-text2)", children: "0%" })
+    ] }) });
+  }
+  var canonicalOk = (page) => {
+    if (!page.canonical) return false;
+    const expected = `https://${page.host}${page.path}`.replace(/\/$/, "");
+    return page.canonical.replace(/\/$/, "") === expected;
+  };
+  function PagesTab({ api, hosts, tick }) {
+    const [host, setHost] = useState(hosts[0] ?? "malipetek.dev");
+    const [day, setDay] = useState("");
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    const [expanded, setExpanded] = useState(null);
+    const load = useCallback(
+      () => api("GET", `/admin/seo/pages?host=${encodeURIComponent(host)}${day ? `&day=${encodeURIComponent(day)}` : ""}`).then((out) => {
+        setData(out);
+        setError(null);
+      }).catch((err) => setError(err)),
+      [api, host, day]
+    );
+    useEffect(() => {
+      void load();
+    }, [load, tick]);
+    const selectedDay = day || data?.day || "";
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+        /* @__PURE__ */ jsx(
+          "select",
+          {
+            value: host,
+            "aria-label": "Host",
+            onChange: (event) => {
+              setHost(event.target.value);
+              setDay("");
+              setExpanded(null);
+            },
+            children: hosts.map((name) => /* @__PURE__ */ jsx("option", { value: name, children: name }, name))
+          }
+        ),
+        /* @__PURE__ */ jsxs("select", { value: selectedDay, "aria-label": "Day", onChange: (event) => setDay(event.target.value), children: [
+          (data?.days ?? []).map((value) => /* @__PURE__ */ jsx("option", { value, children: longDay(value) }, value)),
+          data && !(data.days ?? []).includes(data.day) ? /* @__PURE__ */ jsx("option", { value: data.day, children: longDay(data.day) }) : null
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        data ? /* @__PURE__ */ jsxs(Tag, { tone: scoreTone(data.averageScore), children: [
+          data.averageScore,
+          " average"
+        ] }) : null,
+        data ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: plural2(data.pages?.length ?? 0, "page", "pages") }) : null
+      ] }),
+      error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: errorText2(error) }) : null,
+      !data && !error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading pages\u2026" }) : null,
+      data && !data.pages.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No audit for this host on this day. Pick another day or run an audit." }) : null,
+      data && data.pages.length ? /* @__PURE__ */ jsx("section", { className: "aw-panel", children: /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-seo-pages", children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Path" }),
+          /* @__PURE__ */ jsx("th", { children: "Score" }),
+          /* @__PURE__ */ jsx("th", { children: "Title" }),
+          /* @__PURE__ */ jsx("th", { children: "Desc" }),
+          /* @__PURE__ */ jsx("th", { children: "Canonical" }),
+          /* @__PURE__ */ jsx("th", { children: "Hreflang" }),
+          /* @__PURE__ */ jsx("th", { children: "JSON-LD" }),
+          /* @__PURE__ */ jsx("th", { children: "H1" }),
+          /* @__PURE__ */ jsx("th", { children: "ms" }),
+          /* @__PURE__ */ jsx("th", { children: "Sitemap" }),
+          /* @__PURE__ */ jsx("th", { children: "llms" })
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: data.pages.map((page) => {
+          const open = expanded === page.id;
+          return /* @__PURE__ */ jsxs(Fragment, { children: [
+            /* @__PURE__ */ jsxs("tr", { onClick: () => setExpanded(open ? null : page.id), "aria-expanded": open, title: open ? "Hide issues" : "Show issues", children: [
+              /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
+                /* @__PURE__ */ jsx(
+                  "a",
+                  {
+                    href: `https://${page.host}${page.path}`,
+                    target: "_blank",
+                    rel: "noreferrer",
+                    className: "aw-link",
+                    onClick: (event) => event.stopPropagation(),
+                    children: page.path
+                  }
+                ),
+                page.status !== 200 ? /* @__PURE__ */ jsx(Tag, { tone: "bad", children: page.status }) : null
+              ] }),
+              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: scoreTone(page.score), children: page.score }) }),
+              /* @__PURE__ */ jsx("td", { className: page.titleLen > 65 || page.titleLen < 15 ? "aw-warn" : void 0, title: page.title ?? "", children: page.titleLen }),
+              /* @__PURE__ */ jsx("td", { className: page.descLen > 160 ? "aw-warn" : void 0, title: page.description ?? "", children: page.descLen }),
+              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: canonicalOk(page) ? "ok" : "bad", title: page.canonical ?? "No canonical link", children: canonicalOk(page) ? "ok" : "no" }) }),
+              /* @__PURE__ */ jsx("td", { children: page.hreflangCount }),
+              /* @__PURE__ */ jsx("td", { className: "aw-seo-types", title: (page.jsonldTypes ?? []).join(", ") || "none", children: (page.jsonldTypes ?? []).length ? page.jsonldTypes.join(", ") : "none" }),
+              /* @__PURE__ */ jsx("td", { className: page.h1Count === 1 ? void 0 : "aw-warn", children: page.h1Count }),
+              /* @__PURE__ */ jsx("td", { className: page.ms > 1500 ? "aw-warn" : void 0, children: page.ms }),
+              /* @__PURE__ */ jsx("td", { children: page.inSitemap ? "yes" : "no" }),
+              /* @__PURE__ */ jsx("td", { children: page.inLlms ? "yes" : "no" })
+            ] }),
+            open ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: 11, style: { whiteSpace: "normal" }, children: /* @__PURE__ */ jsx("div", { className: "aw-seo-issues", children: (page.issues ?? []).length ? page.issues.map((issue) => /* @__PURE__ */ jsxs("div", { className: "aw-seo-issue", children: [
+              /* @__PURE__ */ jsx(Tag, { tone: SEVERITY_TONE[issue.severity] ?? "dash", children: issue.severity }),
+              /* @__PURE__ */ jsx("span", { className: "aw-mono", children: issue.code }),
+              /* @__PURE__ */ jsx("span", { children: issue.detail })
+            ] }, issue.code)) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "No issues on this page." }) }) }) }) : null
+          ] }, page.id);
+        }) })
+      ] }) }) }) : null
+    ] });
+  }
+  function FindingsTab({ api, hosts, tick, openTicket, refresh }) {
+    const [status, setStatus] = useState("open");
+    const [host, setHost] = useState("");
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    const [busy, setBusy] = useState(null);
+    const load = useCallback(
+      () => api("GET", `/admin/seo/findings?status=${status}${host ? `&host=${encodeURIComponent(host)}` : ""}`).then((out) => {
+        setData(out);
+        setError(null);
+      }).catch((err) => setError(err)),
+      [api, status, host]
+    );
+    useEffect(() => {
+      void load();
+    }, [load, tick]);
+    const dismiss = async (finding) => {
+      setBusy(finding.id);
+      try {
+        await api("POST", `/admin/seo/findings/${finding.id}/dismiss`);
+        await load();
+        await refresh();
+      } catch (err) {
+        setError(err);
+      } finally {
+        setBusy(null);
+      }
+    };
+    const counts = data?.counts ?? { high: 0, medium: 0, low: 0, open: 0, resolved: 0 };
+    const resolved = status === "resolved";
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+        /* @__PURE__ */ jsx(
+          Segmented,
+          {
+            value: status,
+            options: [
+              { value: "open", label: "Open" },
+              { value: "resolved", label: "Resolved" }
+            ],
+            onChange: (value) => {
+              setStatus(value);
+              setError(null);
+            }
+          }
+        ),
+        /* @__PURE__ */ jsxs("select", { value: host, "aria-label": "Host", onChange: (event) => setHost(event.target.value), children: [
+          /* @__PURE__ */ jsx("option", { value: "", children: "Both hosts" }),
+          hosts.map((name) => /* @__PURE__ */ jsx("option", { value: name, children: name }, name))
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsxs(Tag, { tone: counts.high ? "bad" : "dash", children: [
+          counts.high,
+          " high"
+        ] }),
+        /* @__PURE__ */ jsxs(Tag, { tone: counts.medium ? "warn" : "dash", children: [
+          counts.medium,
+          " medium"
+        ] }),
+        /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+          counts.low,
+          " low"
+        ] }),
+        /* @__PURE__ */ jsxs(Tag, { tone: counts.open ? "warn" : "ok", children: [
+          counts.open,
+          " open"
+        ] }),
+        /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+          counts.resolved,
+          " resolved"
+        ] })
+      ] }),
+      error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: errorText2(error) }) : null,
+      !data && !error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading findings\u2026" }) : null,
+      data && !data.findings.length ? /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
+        "No ",
+        resolved ? "resolved" : "open",
+        " findings for this filter."
+      ] }) : null,
+      data && data.findings.length ? /* @__PURE__ */ jsx("section", { className: "aw-panel", children: /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Severity" }),
+          /* @__PURE__ */ jsx("th", { children: "Host" }),
+          /* @__PURE__ */ jsx("th", { children: "Path" }),
+          /* @__PURE__ */ jsx("th", { children: "Code" }),
+          /* @__PURE__ */ jsx("th", { children: "Detail" }),
+          /* @__PURE__ */ jsx("th", { children: "First seen" }),
+          resolved ? /* @__PURE__ */ jsx("th", { children: "Resolved" }) : null,
+          /* @__PURE__ */ jsx("th", { children: "Ticket" }),
+          !resolved ? /* @__PURE__ */ jsx("th", {}) : null
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: (data.findings ?? []).slice().sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9) || (b.lastSeen ?? 0) - (a.lastSeen ?? 0)).map((finding) => /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: SEVERITY_TONE[finding.severity] ?? "dash", children: finding.severity }) }),
+          /* @__PURE__ */ jsx("td", { className: "aw-muted", children: finding.host }),
+          /* @__PURE__ */ jsx("td", { className: "aw-seo-path", title: finding.path, children: /* @__PURE__ */ jsx(
+            "a",
+            {
+              href: `https://${finding.host}${finding.path}`,
+              target: "_blank",
+              rel: "noreferrer",
+              className: "aw-link",
+              onClick: (event) => event.stopPropagation(),
+              children: finding.path
+            }
+          ) }),
+          /* @__PURE__ */ jsx("td", { className: "aw-mono", children: finding.code }),
+          /* @__PURE__ */ jsx("td", { className: "aw-table__title", style: { minWidth: 200 }, children: finding.detail }),
+          /* @__PURE__ */ jsxs("td", { className: "aw-muted", title: when(finding.firstSeen), children: [
+            ago(finding.firstSeen),
+            " ago"
+          ] }),
+          resolved ? /* @__PURE__ */ jsx("td", { className: "aw-muted", children: finding.resolvedAt ? `${ago(finding.resolvedAt)} ago` : "-" }) : null,
+          /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(TicketLink, { id: finding.ticketId, openTicket }) }),
+          !resolved ? /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", disabled: busy === finding.id, onClick: () => dismiss(finding), children: busy === finding.id ? "Dismissing\u2026" : "Dismiss" }) }) : null
+        ] }, finding.id)) })
+      ] }) }) }) : null
+    ] });
+  }
+  function GeoTab({ api, tick }) {
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    const [expanded, setExpanded] = useState(null);
+    useEffect(() => {
+      let live = true;
+      api("GET", "/admin/seo/geo").then((out) => {
+        if (!live) return;
+        setData(out);
+        setError(null);
+      }).catch((err) => live && setError(err));
+      return () => {
+        live = false;
+      };
+    }, [api, tick]);
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: errorText2(error) }) : null,
+      !data && !error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading the probe answers\u2026" }) : null,
+      data ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        data.engineReady === false ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--warn", children: "The probe is off: the Worker has no DEEPSEEK_API_KEY. The desk keeps the questions, and the probe runs once the key is set." }) : null,
+        /* @__PURE__ */ jsxs("div", { className: "aw-tags", style: { marginBottom: 12 }, children: [
+          /* @__PURE__ */ jsxs(Tag, { tone: data.summary.rate ? "ok" : "dash", children: [
+            pct3(data.summary.rate),
+            " mention rate"
+          ] }),
+          /* @__PURE__ */ jsx(Tag, { tone: "dash", children: plural2(data.summary.mentions, "mention", "mentions") }),
+          /* @__PURE__ */ jsx(Tag, { tone: "dash", children: plural2(data.summary.runs, "answer", "answers") }),
+          /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+            plural2(data.questions.length, "question", "questions"),
+            " asked weekly"
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+          /* @__PURE__ */ jsx("h3", { children: "Last 12 weeks" }),
+          /* @__PURE__ */ jsx(GeoChart, { weeks: data.weeks ?? [] })
+        ] }),
+        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+          /* @__PURE__ */ jsx("h3", { children: "Questions" }),
+          data.questions.length ? /* @__PURE__ */ jsx("div", { className: "aw-tags", children: data.questions.map((question) => /* @__PURE__ */ jsx(Tag, { tone: "dash", title: question, children: question }, question)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No questions set. Add them in Settings." }),
+          /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { marginBottom: 0 }, children: "Each weekly probe asks every question once and keeps whether the answer named us, the URLs it cited and the companies it named instead." })
+        ] }),
+        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+          /* @__PURE__ */ jsx("h3", { children: "Runs" }),
+          (data.runs ?? []).length ? /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+            /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+              /* @__PURE__ */ jsx("th", { children: "Day" }),
+              /* @__PURE__ */ jsx("th", { children: "Question" }),
+              /* @__PURE__ */ jsx("th", { children: "Us" }),
+              /* @__PURE__ */ jsx("th", { children: "Competitors" }),
+              /* @__PURE__ */ jsx("th", { children: "Cited URLs" })
+            ] }) }),
+            /* @__PURE__ */ jsx("tbody", { children: data.runs.map((run) => {
+              const open = expanded === run.id;
+              return /* @__PURE__ */ jsxs(Fragment, { children: [
+                /* @__PURE__ */ jsxs("tr", { onClick: () => setExpanded(open ? null : run.id), "aria-expanded": open, title: open ? "Hide the answer" : "Show the answer", children: [
+                  /* @__PURE__ */ jsx("td", { className: "aw-muted", children: shortDay(run.day) }),
+                  /* @__PURE__ */ jsx("td", { className: "aw-table__title", style: { minWidth: 240 }, children: run.question }),
+                  /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: run.mentionsUs ? "ok" : "bad", children: run.mentionsUs ? "yes" : "no" }) }),
+                  /* @__PURE__ */ jsx("td", { className: "aw-seo-types", title: (run.competitors ?? []).join(", "), children: (run.competitors ?? []).length ? run.competitors.join(", ") : "none" }),
+                  /* @__PURE__ */ jsx("td", { className: "aw-seo-types", style: { whiteSpace: "normal" }, children: (run.citedUrls ?? []).length ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                    run.citedUrls.slice(0, 2).map((url) => /* @__PURE__ */ jsx("a", { href: url, target: "_blank", rel: "noreferrer", className: "aw-link", onClick: (event) => event.stopPropagation(), style: { display: "block" }, children: url }, url)),
+                    run.citedUrls.length > 2 ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                      "+",
+                      run.citedUrls.length - 2,
+                      " more"
+                    ] }) : null
+                  ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "none" }) })
+                ] }),
+                open ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsxs("td", { colSpan: 5, style: { whiteSpace: "normal" }, children: [
+                  /* @__PURE__ */ jsxs("p", { className: "aw-muted", style: { margin: 0 }, children: [
+                    run.engine ?? "engine",
+                    " answer"
+                  ] }),
+                  /* @__PURE__ */ jsx("p", { style: { whiteSpace: "pre-wrap", margin: "4px 0 0" }, children: run.answerExcerpt || "No answer kept." })
+                ] }) }) : null
+              ] }, run.id);
+            }) })
+          ] }) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No runs yet. Run the GEO probe from the Overview." })
+        ] })
+      ] }) : null
+    ] });
+  }
+  function CitationsTab({ api, tick, notify }) {
+    const [data, setData] = useState(null);
+    const [drafts, setDrafts] = useState({});
+    const [error, setError] = useState(null);
+    const [saving, setSaving] = useState(null);
+    const load = useCallback(
+      () => api("GET", "/admin/seo/citations").then((out) => {
+        setData(out);
+        setError(null);
+      }).catch((err) => setError(err)),
+      [api]
+    );
+    useEffect(() => {
+      void load();
+    }, [load, tick]);
+    const draftFor = (citation) => drafts[citation.id] ?? { status: citation.status, profile_url: citation.profileUrl ?? "", note: citation.note ?? "" };
+    const edit = (citation, patch) => setDrafts((prev) => ({ ...prev, [citation.id]: { ...draftFor(citation), ...patch } }));
+    const dirty = (citation) => {
+      const draft = draftFor(citation);
+      return draft.status !== citation.status || draft.profile_url !== (citation.profileUrl ?? "") || draft.note !== (citation.note ?? "");
+    };
+    const save = async (citation) => {
+      const draft = draftFor(citation);
+      setSaving(citation.id);
+      try {
+        await api("POST", `/admin/seo/citations/${citation.id}`, {
+          status: draft.status,
+          profile_url: draft.profile_url,
+          note: draft.note
+        });
+        setDrafts((prev) => {
+          const next = { ...prev };
+          delete next[citation.id];
+          return next;
+        });
+        await load();
+        notify?.(`${citation.platform} saved.`);
+      } catch (err) {
+        setError(err);
+      } finally {
+        setSaving(null);
+      }
+    };
+    const copy = async (text) => {
+      if (!text) return notify?.("Nothing to copy yet.");
+      try {
+        await navigator.clipboard.writeText(text);
+        notify?.("Draft copied.");
+      } catch {
+        notify?.("Could not copy. Select the text and copy it by hand.", "error");
+      }
+    };
+    const ordered = useMemo(() => {
+      const list = [...data?.citations ?? []];
+      return list.sort(
+        (a, b) => (CITATION_RANK[a.status] ?? 9) - (CITATION_RANK[b.status] ?? 9) || (b.dr ?? -1) - (a.dr ?? -1) || a.platform.localeCompare(b.platform)
+      );
+    }, [data]);
+    const counts = data?.counts ?? { todo: 0, drafted: 0, live: 0, verified: 0, skipped: 0, total: 0 };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+        /* @__PURE__ */ jsxs(Tag, { tone: counts.todo ? "warn" : "dash", children: [
+          counts.todo,
+          " to do"
+        ] }),
+        /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+          counts.drafted,
+          " drafted"
+        ] }),
+        /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+          counts.live,
+          " live"
+        ] }),
+        /* @__PURE__ */ jsxs(Tag, { tone: counts.verified ? "ok" : "dash", children: [
+          counts.verified,
+          " verified"
+        ] }),
+        /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+          counts.skipped,
+          " skipped"
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: plural2(counts.total ?? ordered.length, "placement", "placements") })
+      ] }),
+      error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: errorText2(error) }) : null,
+      !data && !error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading citations\u2026" }) : null,
+      data && !ordered.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No placements seeded." }) : null,
+      ordered.length ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-seo-citations", children: [
+          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("th", { children: "Platform" }),
+            /* @__PURE__ */ jsx("th", { children: "DR" }),
+            /* @__PURE__ */ jsx("th", { children: "Status" }),
+            /* @__PURE__ */ jsx("th", { children: "Profile URL" }),
+            /* @__PURE__ */ jsx("th", { children: "Link verified" }),
+            /* @__PURE__ */ jsx("th", { children: "Note or draft" }),
+            /* @__PURE__ */ jsx("th", {})
+          ] }) }),
+          /* @__PURE__ */ jsx("tbody", { children: ordered.map((citation) => {
+            const draft = draftFor(citation);
+            const changed = dirty(citation);
+            return /* @__PURE__ */ jsxs("tr", { style: { cursor: "default" }, children: [
+              /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
+                citation.platform,
+                /* @__PURE__ */ jsx("div", { className: "aw-muted", children: citation.domain })
+              ] }),
+              /* @__PURE__ */ jsx("td", { children: citation.dr ?? "-" }),
+              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx("select", { value: draft.status, "aria-label": `Status for ${citation.platform}`, onChange: (event) => edit(citation, { status: event.target.value }), children: (data.statuses ?? CITATION_STATUSES).map((status) => /* @__PURE__ */ jsx("option", { value: status, children: status }, status)) }) }),
+              /* @__PURE__ */ jsx("td", { style: { minWidth: 220 }, children: /* @__PURE__ */ jsx(
+                "input",
+                {
+                  type: "url",
+                  value: draft.profile_url,
+                  placeholder: "https://\u2026",
+                  "aria-label": `Profile URL for ${citation.platform}`,
+                  onChange: (event) => edit(citation, { profile_url: event.target.value })
+                }
+              ) }),
+              /* @__PURE__ */ jsx("td", { className: "aw-muted", title: citation.lastChecked ? `Last checked ${when(citation.lastChecked)}` : "Not checked yet", children: citation.linkVerifiedAt ? instantDay(citation.linkVerifiedAt) : "-" }),
+              /* @__PURE__ */ jsx("td", { style: { minWidth: 280, whiteSpace: "normal" }, children: /* @__PURE__ */ jsx(
+                "textarea",
+                {
+                  rows: 3,
+                  value: draft.note,
+                  placeholder: "Draft bio or link text",
+                  "aria-label": `Note or draft for ${citation.platform}`,
+                  onChange: (event) => edit(citation, { note: event.target.value })
+                }
+              ) }),
+              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+                /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => copy(draft.note), children: "Copy" }),
+                /* @__PURE__ */ jsx(Button, { size: "sm", kind: changed ? "primary" : "default", disabled: !changed || saving === citation.id, onClick: () => save(citation), children: saving === citation.id ? "Saving\u2026" : "Save" })
+              ] }) })
+            ] }, citation.id);
+          }) })
+        ] }) }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { marginBottom: 0 }, children: "To do and drafted rows come first, then the higher DR. The weekly check reads each profile URL; a page that no longer links back loses its verified date, a page that cannot be read keeps it." })
+      ] }) : null
+    ] });
+  }
+  function SettingsTab2({ api, overview, refresh, notify }) {
+    const [draft, setDraft] = useState(overview.settings);
+    const [touched, setTouched] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [message, setMessage] = useState(null);
+    const [eventForm, setEventForm] = useState({ kind: "core_update", label: "", day: "" });
+    const [eventBusy, setEventBusy] = useState(false);
+    useEffect(() => {
+      if (!touched) setDraft(overview.settings);
+    }, [overview.settings, touched]);
+    const set = (key, value) => {
+      setTouched(true);
+      setDraft((current) => ({ ...current, [key]: value }));
+    };
+    const questions = draft.geoQuestions ?? [];
+    const usedQuestions = questions.filter((question) => question.trim()).length;
+    const changed = draft.autoCycle !== overview.settings.autoCycle || draft.volatilityHold !== overview.settings.volatilityHold || (draft.geoQuestions ?? []).join("\n") !== (overview.settings.geoQuestions ?? []).join("\n");
+    const save = async () => {
+      setSaving(true);
+      setMessage(null);
+      try {
+        const out = await api("POST", "/admin/seo/settings", {
+          autoCycle: draft.autoCycle,
+          volatilityHold: draft.volatilityHold,
+          geoQuestions: draft.geoQuestions
+        });
+        setDraft(out.settings);
+        setTouched(false);
+        if (out.rejected?.length) setMessage({ tone: "warn", text: `Saved, but these fields were rejected: ${out.rejected.join(", ")}.` });
+        else setMessage({ tone: "ok", text: "Settings saved." });
+        await refresh();
+        notify?.("SEO settings saved.");
+      } catch (error) {
+        setMessage({ tone: "bad", text: errorText2(error) });
+      } finally {
+        setSaving(false);
+      }
+    };
+    const addEvent = async () => {
+      if (!eventForm.label.trim()) {
+        setMessage({ tone: "bad", text: "Write a label for the event first." });
+        return;
+      }
+      setEventBusy(true);
+      try {
+        const body = { kind: eventForm.kind, label: eventForm.label.trim() };
+        if (eventForm.day) body.day = eventForm.day;
+        await api("POST", "/admin/seo/events", body);
+        setEventForm({ kind: "core_update", label: "", day: "" });
+        setMessage({ tone: "ok", text: "Event added." });
+        await refresh();
+      } catch (error) {
+        setMessage({ tone: "bad", text: errorText2(error) });
+      } finally {
+        setEventBusy(false);
+      }
+    };
+    const removeEvent = async (event) => {
+      try {
+        await api("DELETE", `/admin/seo/events/${event.id}`);
+        setMessage({ tone: "ok", text: "Event deleted." });
+        await refresh();
+      } catch (error) {
+        setMessage({ tone: "bad", text: errorText2(error) });
+      }
+    };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Cycle" }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Automatic cycles", hint: "On: the desk files a ticket for the worst open findings when none is open.", children: /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              value: Boolean(draft.autoCycle),
+              options: [
+                { value: true, label: "On" },
+                { value: false, label: "Off" }
+              ],
+              onChange: (value) => set("autoCycle", value)
+            }
+          ) }),
+          /* @__PURE__ */ jsx(
+            Field,
+            {
+              label: "Volatility hold",
+              hint: "On: after a Google core update the agent only does technical fixes, because rankings swing during the update and a rewrite hides what worked.",
+              children: /* @__PURE__ */ jsx(
+                Segmented,
+                {
+                  value: Boolean(draft.volatilityHold),
+                  options: [
+                    { value: true, label: "On" },
+                    { value: false, label: "Off" }
+                  ],
+                  onChange: (value) => set("volatilityHold", value)
+                }
+              )
+            }
+          )
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Buyer questions" }),
+        /* @__PURE__ */ jsx(Field, { label: "Questions for the weekly GEO probe", hint: `One per line, at most 20. ${usedQuestions} used.`, children: /* @__PURE__ */ jsx(
+          "textarea",
+          {
+            rows: 10,
+            value: questions.join("\n"),
+            onChange: (event) => set("geoQuestions", event.target.value.split("\n").slice(0, 20))
+          }
+        ) }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx(
+            Button,
+            {
+              disabled: !changed || saving,
+              onClick: () => {
+                setDraft(overview.settings);
+                setTouched(false);
+                setMessage(null);
+              },
+              children: "Reset"
+            }
+          ),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !changed || saving, onClick: save, children: saving ? "Saving\u2026" : "Save settings" })
+        ] }),
+        message ? /* @__PURE__ */ jsx("div", { className: cx("aw-banner", message.tone === "bad" ? "aw-banner--bad" : message.tone === "ok" ? "aw-banner--ok" : "aw-banner--warn"), children: message.text }) : null
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Events" }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Core updates, algorithm updates, fixes and notes. The score line marks them, and a core update in the last 14 days holds content rewrites." }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-inline", style: { marginBottom: 10 }, children: [
+          /* @__PURE__ */ jsx("select", { value: eventForm.kind, "aria-label": "Event kind", onChange: (event) => setEventForm((form) => ({ ...form, kind: event.target.value })), children: EVENT_KINDS.map((kind) => /* @__PURE__ */ jsx("option", { value: kind.value, children: kind.label }, kind.value)) }),
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              value: eventForm.label,
+              placeholder: "Label, for example Google core update started",
+              "aria-label": "Event label",
+              onChange: (event) => setEventForm((form) => ({ ...form, label: event.target.value }))
+            }
+          ),
+          /* @__PURE__ */ jsx("input", { type: "date", value: eventForm.day, "aria-label": "Event day", onChange: (event) => setEventForm((form) => ({ ...form, day: event.target.value })) }),
+          /* @__PURE__ */ jsx(Button, { disabled: eventBusy, onClick: addEvent, children: eventBusy ? "Adding\u2026" : "Add event" })
+        ] }),
+        (overview.events ?? []).length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: overview.events.map((event) => /* @__PURE__ */ jsxs("li", { className: "aw-row", style: { cursor: "default" }, children: [
+          /* @__PURE__ */ jsx(Tag, { tone: EVENT_TONE[event.kind] ?? "dash", children: EVENT_LABEL[event.kind] ?? event.kind }),
+          /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: event.label }),
+          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            longDay(event.day),
+            event.source ? ` \xB7 ${event.source}` : ""
+          ] }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => removeEvent(event), children: "Delete" })
+        ] }, event.id)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No events yet." })
+      ] })
+    ] });
+  }
+
   // packages/admin-ui/src/health.jsx
   var tone = (status) => status === "ok" ? "ok" : status === "fail" ? "bad" : "warn";
   function HealthView() {
@@ -3951,6 +4927,7 @@ var __awPlugin = (() => {
 .aw-file { font: inherit; font-size: 12px; display: inline-flex; gap: 6px; align-items: baseline; padding: 3px 8px; border: 1px solid var(--aw-border2); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; max-width: 100%; overflow-wrap: anywhere; }
 button.aw-file:hover { border-color: currentColor; }
 .aw-banner--warn { background: color-mix(in srgb, var(--aw-warn) 12%, transparent); }
+.aw-banner--ok { background: color-mix(in srgb, var(--aw-ok) 12%, transparent); }
 
 /* ticket */
 .aw-ticket { display: grid; grid-template-columns: minmax(0, 1fr) var(--aw-details-w, 300px); min-height: 100%; position: relative; }
@@ -4214,6 +5191,19 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-shots figure { flex: 1; min-width: 0; margin: 0; }
 .aw-shots img { display: block; width: 100%; height: auto; border: 1px solid var(--aw-border); border-radius: 6px; background: var(--aw-bg2); }
 .aw-shots figcaption { margin-top: 3px; font-size: 11px; color: var(--aw-text3); text-transform: uppercase; letter-spacing: .04em; }
+
+/* SEO: small inline charts, wide tables that scroll, drafts that stay readable. */
+.aw-seo-chart { margin: 8px 0 4px; }
+.aw-seo-chart svg { display: block; width: 100%; height: auto; max-height: 190px; }
+.aw-seo-chart__legend { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--aw-text2); }
+.aw-seo-chart__dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.aw-seo-pages td.aw-seo-types, .aw-seo-citations td { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.aw-seo-path { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.aw-seo-citations textarea { min-width: 240px; }
+.aw-seo-citations input { min-width: 200px; }
+.aw-seo-issues { display: grid; gap: 4px; padding: 2px 0; }
+.aw-seo-issue { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.aw-seo-issue span:last-child { color: var(--aw-text2); }
 `;
 
   // packages/admin-ui/src/app.jsx
@@ -4222,6 +5212,7 @@ button.aw-file:hover { border-color: currentColor; }
     { key: "board", label: "Board", icon: "board" },
     { key: "list", label: "All work", icon: "list" },
     { key: "marketing", label: "Marketing", icon: "megaphone" },
+    { key: "seo", label: "SEO", icon: "seo" },
     { key: "health", label: "Health", icon: "pulse" },
     { key: "fleet", label: "Fleet", icon: "fleet" },
     { key: "clients", label: "Clients & projects", icon: "clients" },
@@ -4442,6 +5433,8 @@ button.aw-file:hover { border-color: currentColor; }
         return /* @__PURE__ */ jsx(ListView, {});
       case "marketing":
         return /* @__PURE__ */ jsx(MarketingView, {});
+      case "seo":
+        return /* @__PURE__ */ jsx(SeoView, {});
       case "health":
         return /* @__PURE__ */ jsx(HealthView, {});
       case "fleet":

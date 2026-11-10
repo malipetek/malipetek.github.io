@@ -16,6 +16,7 @@ import { BoardView, InboxView, ListView } from './board.jsx';
 import { TicketDetails, TicketView } from './ticket.jsx';
 import { ClientView, ClientsView, FleetView, SettingsView } from './fleet.jsx';
 import { MarketingView } from './marketing.jsx';
+import { SeoView } from './seo.jsx';
 import { HealthView } from './health.jsx';
 import { STYLES } from './styles.js';
 
@@ -24,6 +25,7 @@ const VIEWS = [
   { key: 'board', label: 'Board', icon: 'board' },
   { key: 'list', label: 'All work', icon: 'list' },
   { key: 'marketing', label: 'Marketing', icon: 'megaphone' },
+  { key: 'seo', label: 'SEO', icon: 'seo' },
   { key: 'health', label: 'Health', icon: 'pulse' },
   { key: 'fleet', label: 'Fleet', icon: 'fleet' },
   { key: 'clients', label: 'Clients & projects', icon: 'clients' },
@@ -307,6 +309,8 @@ function View({ name }) {
       return <ListView />;
     case 'marketing':
       return <MarketingView />;
+    case 'seo':
+      return <SeoView />;
     case 'health':
       return <HealthView />;
     case 'fleet':
