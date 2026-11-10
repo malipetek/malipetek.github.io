@@ -526,66 +526,91 @@ html[data-portal-arriving] astro-island .cp-brand > * {
   animation-duration: calc(160ms * var(--vt-slow, 1));
 }
 
-/* Into a request from its card the page zooms in on the card, the 3D room
-   with it; back to the board it zooms out of it. --cp-zoom-* is the card's
-   centre, set by store.js for the transition (m: in the content area,
-   v: in the window). */
+/* Into a request from its card the page moves like a camera into the card,
+   the 3D room with it; back to the board it moves out again. The camera is
+   the move that carries the card's box onto the request head's (store.js
+   setCamera: --cp-zoom-dx/dy and -s, from the card's top-left corner), the
+   same one the cp-peek group morphs along, so board, room and card travel as
+   one piece. The request rides the inverse, from the card's box out to its
+   own, around the head's corner. m: content-area coordinates, v: window. All
+   four use one duration and curve as the cp-peek group, or the pieces drift
+   apart mid-flight. */
 html[data-cp-nav^='zoom'] .cp-scene {
   view-transition-name: cp-scene;
 }
 html[data-cp-nav^='zoom']::view-transition-group(cp-scene) {
   animation: none;
 }
+html[data-cp-nav^='zoom']::view-transition-old(cp-main),
+html[data-cp-nav^='zoom']::view-transition-new(cp-main),
+html[data-cp-nav^='zoom']::view-transition-old(cp-scene),
+html[data-cp-nav^='zoom']::view-transition-new(cp-scene) {
+  animation-duration: calc(420ms * var(--vt-slow, 1));
+  animation-timing-function: var(--ease);
+  animation-fill-mode: both;
+}
+/* In: the board and the room carry on through the card, the request grows
+   out of it. */
 html[data-cp-nav='zoom-in']::view-transition-old(cp-main) {
   transform-origin: var(--cp-zoom-mx) var(--cp-zoom-my);
-  animation: cp-zoom-past calc(380ms * var(--vt-slow, 1)) cubic-bezier(0.5, 0, 0.75, 0) both;
+  animation-name: cp-zoom-through;
 }
 html[data-cp-nav='zoom-in']::view-transition-old(cp-scene) {
   transform-origin: var(--cp-zoom-vx) var(--cp-zoom-vy);
-  animation: cp-zoom-past calc(420ms * var(--vt-slow, 1)) cubic-bezier(0.5, 0, 0.75, 0) both;
+  animation-name: cp-zoom-through;
 }
 html[data-cp-nav='zoom-in']::view-transition-new(cp-main) {
-  transform-origin: var(--cp-zoom-mx) var(--cp-zoom-my);
-  animation: cp-zoom-arrive calc(360ms * var(--vt-slow, 1)) var(--ease) calc(160ms * var(--vt-slow, 1)) both;
+  transform-origin: var(--cp-zoom-hmx) var(--cp-zoom-hmy);
+  animation-name: cp-zoom-from-card;
 }
+/* Out: the request shrinks back into the card, the board and the room come
+   back from beyond it. */
 html[data-cp-nav='zoom-out']::view-transition-old(cp-main) {
-  transform-origin: var(--cp-zoom-mx) var(--cp-zoom-my);
-  animation: cp-zoom-leave calc(260ms * var(--vt-slow, 1)) ease-in both;
-}
-html[data-cp-nav='zoom-out']::view-transition-new(cp-main),
-html[data-cp-nav='zoom-out']::view-transition-new(cp-scene) {
-  animation: cp-zoom-return calc(460ms * var(--vt-slow, 1)) var(--ease) calc(60ms * var(--vt-slow, 1)) both;
+  transform-origin: var(--cp-zoom-hmx) var(--cp-zoom-hmy);
+  animation-name: cp-zoom-into-card;
 }
 html[data-cp-nav='zoom-out']::view-transition-new(cp-main) {
   transform-origin: var(--cp-zoom-mx) var(--cp-zoom-my);
+  animation-name: cp-zoom-back;
 }
 html[data-cp-nav='zoom-out']::view-transition-new(cp-scene) {
   transform-origin: var(--cp-zoom-vx) var(--cp-zoom-vy);
+  animation-name: cp-zoom-back;
 }
-/* In: the board rushes past toward the card, the request settles in. */
-@keyframes cp-zoom-past {
+@keyframes cp-zoom-through {
+  60% {
+    opacity: 0.35;
+  }
   to {
     opacity: 0;
-    transform: scale(1.6);
+    transform: translate(var(--cp-zoom-dx), var(--cp-zoom-dy)) scale(var(--cp-zoom-s));
   }
 }
-@keyframes cp-zoom-arrive {
+@keyframes cp-zoom-from-card {
   from {
     opacity: 0;
-    transform: scale(0.94);
+    transform: translate(calc(var(--cp-zoom-dx) * -1), calc(var(--cp-zoom-dy) * -1)) scale(var(--cp-zoom-is));
+  }
+  40% {
+    opacity: 1;
   }
 }
-/* Out: the request falls back, the board comes back from close up. */
-@keyframes cp-zoom-leave {
+@keyframes cp-zoom-into-card {
+  60% {
+    opacity: 0.35;
+  }
   to {
     opacity: 0;
-    transform: scale(0.94);
+    transform: translate(calc(var(--cp-zoom-dx) * -1), calc(var(--cp-zoom-dy) * -1)) scale(var(--cp-zoom-is));
   }
 }
-@keyframes cp-zoom-return {
+@keyframes cp-zoom-back {
   from {
     opacity: 0;
-    transform: scale(1.6);
+    transform: translate(var(--cp-zoom-dx), var(--cp-zoom-dy)) scale(var(--cp-zoom-s));
+  }
+  40% {
+    opacity: 1;
   }
 }
 

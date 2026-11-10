@@ -509,7 +509,7 @@ export function Board({
                     // Where it is: the page zooms into it, and the board puts
                     // it back here on the way back.
                     const r = el.getBoundingClientRect();
-                    boardReturn.peekAt = { transform: el.style.transform, center: { x: r.left + r.width / 2, y: r.top + r.height / 2 } };
+                    boardReturn.peekAt = { transform: el.style.transform, box: { left: r.left, top: r.top, width: r.width } };
                   }
                   boardReturn.peek = peekTicket.id;
                   handlers.current.onOpen(peekTicket.id);
