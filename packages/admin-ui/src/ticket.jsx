@@ -21,6 +21,7 @@ import {
   when,
 } from './format.js';
 import { Button, Chips, Dot, Field, Modal, Resizer, Segmented, StatusPill, Tag, cx } from './ui.jsx';
+import { ReviewButton } from './review.jsx';
 
 /** The obvious next moves for each status; anything else is in the Status select. */
 const PRIMARY = {
@@ -170,74 +171,6 @@ function TicketActions({ ticket, runs, land, reload }) {
         </span>
       ) : null}
     </div>
-  );
-}
-
-/**
- * The branch a review should open: the newest run's pushed ref, else its
- * local branch. Null when no run has left work anywhere.
- */
-function reviewRef(runs) {
-  for (const run of [...runs].sort((a, b) => b.id - a.id)) {
-    if (run.shared_to === 'origin' && run.shared_ref) return run.shared_ref;
-    if (run.branch) return run.branch;
-  }
-  return null;
-}
-
-/**
- * Review the ticket's work in Git Graph — the real extension, with every git
- * action on its right-click menus — opened on the project's repository at the
- * ticket's branch. The Harness only, and only when the Git Graph plugin is
- * installed (it publishes `host.gitGraph`).
- */
-function ReviewButton({ ticket, runs }) {
-  const { host } = useAdmin();
-  const [open, setOpen] = useState(false);
-  const gitGraph = host?.gitGraph;
-  if (!gitGraph?.available() || !ticket.project_slug) return null;
-  const ref = reviewRef(runs);
-  return (
-    <>
-      <Button size="sm" kind="ghost" title="Open the project's repository in Git Graph at this ticket's branch" onClick={() => setOpen(true)}>
-        Review in Git Graph
-      </Button>
-      {open ? <ReviewModal ticket={ticket} gitRef={ref} gitGraph={gitGraph} onClose={() => setOpen(false)} /> : null}
-    </>
-  );
-}
-
-function ReviewModal({ ticket, gitRef, gitGraph, onClose }) {
-  const { host } = useAdmin();
-  const [state, setState] = useState({ status: 'loading', text: 'Finding the repository…', sessionId: null });
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      try {
-        const where = await host.json(`review ${ticket.project_slug}`);
-        if (!where?.found) throw new Error(`No repository for ${ticket.project_slug} on this machine (looked in ${(where?.looked ?? []).join(', ')}).`);
-        const sessionId = gitGraph.sessionId();
-        if (!sessionId) throw new Error('Git Graph needs an open session. Open one, then try again.');
-        if (alive) setState({ status: 'loading', text: `Fetching and opening ${gitRef ?? 'the repository'}…`, sessionId: null });
-        const focused = await gitGraph.focus({ sessionId, repo: where.repo, ref: gitRef });
-        if (!alive) return;
-        const missing = gitRef && !focused.commit ? ` ${gitRef} is not in this clone yet.` : '';
-        setState({ status: 'ready', text: `${focused.repo}${focused.commit ? ` · ${gitRef} at ${focused.commit.slice(0, 8)}` : ''}.${missing}`, sessionId });
-      } catch (error) {
-        if (alive) setState({ status: 'failed', text: error?.message ?? String(error), sessionId: null });
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [ticket.project_slug, gitRef, gitGraph, host]);
-  const View = gitGraph.View;
-  return (
-    <Modal title={`Review #${ticket.id}`} subtitle={state.text} onClose={onClose} full>
-      <div className="aw-review">
-        {state.status === 'ready' ? <View sessionId={state.sessionId} /> : <p className={cx('aw-empty', state.status === 'failed' && 'aw-error')}>{state.text}</p>}
-      </div>
-    </Modal>
   );
 }
 

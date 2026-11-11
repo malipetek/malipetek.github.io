@@ -45,6 +45,67 @@ and the workbench polls, so one session grew to 10,000 commands and 430 MB.
 If the bridge is unreachable the panel falls back to commands; the Harness build adds *This machine* to Fleet
 and the token field to Settings.
 
+### Live in DSH Admin
+
+The plugin is a first-class citizen of the DSH Admin fork, not a page inside
+it.
+
+- **Clients is a sidebar section, not a blind poll.** The fork's
+  `sidebar.workspaces.section` slot renders Clients → projects → open tickets,
+  with a status dot on each ticket and project, a count badge on clients and
+  projects, and **Unsorted** for tickets with no client the portal still lists.
+  It reads the three lists once, then reloads only when something changed: the
+  Host's 15-second `/admin/attention` count diff (four counts, one query), an
+  event from the Host's own 60-second poll, window focus, or the ↻ button. A
+  reload that returns the same data does not re-render, and a five-minute
+  safety pass catches anything the cursors missed.
+- **Notifications.** When the Host's poll sees a new ticket, a ticket waiting
+  for approval, a client reply, or a finished/failed run, it shows an in-app
+  toast (`shell.overlay`, so it survives panel switches) and a macOS
+  notification through `osascript` — title "DSH Admin", body like
+  `#12 Acme: new request`. The Host diffs the snapshot against the last state
+  it accounted for, so an event is shown once; the seen state lives in
+  `$DSH_HOME/admin/notify-state.json` (mode 600) and the first run after
+  install marks everything existing as seen instead of flooding. The switch is
+  **Settings → Admin → Notify me about new work**, which is the same
+  `/admin notify on|off` command. Bursts are spaced out; more than three
+  changes in one pass become one summary banner.
+- **A ticket opens as a conversation when it has one.** A ticket row opens the
+  latest run's Harness session (`ctx.uiWorkspace.openSession`), importing the
+  node's uploaded log through `/admin session` when this machine does not have
+  it; only a ticket with no session at all falls back to the **Ticket #N** view
+  in Admin. A ticket-linked session's header carries **Approve**, **Reply** and
+  **Open in portal** beside the ticket chip.
+- **Review.** `packages/admin-ui/src/review.jsx` is the one seam. In the
+  Harness with the Git Graph plugin it opens the native view at the ticket's
+  branch; without it (or on the web) the newest run's recorded comparison is
+  shown; with neither, a link to the portal. The Git Graph plugin publishes its
+  view and `focus(repo, ref)` on `globalThis.__dshGitGraphNative`, and the
+  Client half adapts that global into the `host.gitGraph` face. A fork-side
+  review service addressed by repo/ref — or a way to mount
+  `changes-review` for an arbitrary comparison — would remove the global.
+
+### `dsh-admin://` links
+
+The plugin registers `globalThis.__dshAdminOpenLink(url)` and listens for a
+`window` event `dsh-admin:open-link` whose `detail.url` is the link, so the
+fork's URL scheme can hand links over without either side importing the other:
+
+| Link | Opens |
+| --- | --- |
+| `dsh-admin://ticket/12` | ticket #12 in the Admin panel |
+| `dsh-admin://client/<id>` | that client's page |
+| `dsh-admin://seo` | the SEO desk |
+| `dsh-admin://health` | the health desk |
+
+```js
+globalThis.__dshAdminOpenLink('dsh-admin://ticket/12');
+window.dispatchEvent(new CustomEvent('dsh-admin:open-link', { detail: { url: 'dsh-admin://seo' } }));
+```
+
+`openAdminLink` returns `false` for anything it does not know, so the caller
+can fall back to the browser.
+
 `client.js` is generated: edit `src/client.jsx` or `packages/admin-ui`, then run
 `node packages/dsh-admin/build.mjs`.
 
@@ -131,8 +192,11 @@ so instead of showing stale data.
 /admin endpoint <url>               point at another portal Worker
 /admin logout                       forget the token
 /admin status <id> <status>         set a ticket status
+/admin approve <id>                 approve a ticket (emails the client)
 /admin reply <id> <text>            reply to the client (emails them)
 /admin note <id> <text>             internal note
+/admin notify [on|off]              macOS and in-app notifications (no argument reads it)
+/admin events [since]               the Client's event feed: changes after a sequence, for toasts
 /admin follow <id> <sessionId>     mirror that conversation's replies onto the ticket
 /admin unfollow                     stop mirroring
 /admin attach <id> {"paths":["~/Desktop/spec.pdf"],"text":"…","internal":false}
@@ -159,6 +223,11 @@ so instead of showing stale data.
 /admin local {"nodeId"?,"slots"?,"timeoutMinutes"?,"maxBudgetUsd"?,"claudeModel"?,…}
 /admin projectlocal <slug> {"path"?,"verify"?,"baseRef"?}
 ```
+
+The three everyday moves also have their own command names, so they appear in
+the composer's `/` menu without knowing the subcommand grammar:
+`/admin-approve <id>`, `/admin-reply <id> <text>` and `/admin-open <id>`. They
+call the same handler as `/admin approve`, `/admin reply` and `/admin open`.
 
 - **Settings** — the queue settings every node shares (stuck-work alert, give-up
   count, run-finished email, default priority), this machine's node config
@@ -189,8 +258,10 @@ so instead of showing stale data.
 
 ## Limits worth knowing
 
-- The snapshot is polled every 15 seconds while the panel is open; there is no
-  push stream yet, so a change made elsewhere appears within that window.
+- The Host polls the portal every 60 seconds; the sidebar is not a blind
+  poller any more — it follows the cheap attention diff and the Host's event
+  feed — but a change still takes up to that minute to reach the Host. A
+  mutation made in the panel refreshes immediately.
 - Status changes and public replies email the client. That is the portal's
   behaviour, not the panel's.
 - The panel shows the Worker's own status labels, so it cannot drift from what

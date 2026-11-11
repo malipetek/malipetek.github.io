@@ -299,7 +299,7 @@ const NODE_INSTALL = '/Users/malipetek/Documents/Documents/Projects/malipetek.gi
  * changed package needs a Harness restart to load a fresh module generation,
  * and this is how that shows up.
  */
-const VERSION = '2.5.0';
+const VERSION = '2.6.0';
 
 /**
  * The panel's transport. The Harness writes every `/admin …` command into the
@@ -519,18 +519,20 @@ async function loadConfig() {
   return {
     endpoint: typeof stored.endpoint === 'string' && stored.endpoint.length > 0 ? stored.endpoint : DEFAULT_ENDPOINT,
     token: typeof stored.token === 'string' ? stored.token : '',
+    // Notifications are on unless Ali turned them off (`/admin notify off`).
+    notify: stored.notify !== false,
   };
 }
 
 /**
  * Persist the connection settings. The token is a credential, so the file is
  * owner-only.
- * @param config - `{ endpoint, token }`.
+ * @param config - `{ endpoint, token, notify? }`.
  */
 async function saveConfig(config) {
   await writeText(
     CONFIG_PATH,
-    JSON.stringify({ endpoint: config.endpoint, token: config.token }, null, 2) + '\n',
+    JSON.stringify({ endpoint: config.endpoint, token: config.token, notify: config.notify !== false }, null, 2) + '\n',
     0o600,
   );
 }
@@ -718,7 +720,216 @@ async function refresh(config) {
     localConfig: localConfigView(runner),
   };
   await writeSnapshot(snapshot);
+  await publishEvents(config, snapshot).catch((error) => {
+    ctxLogger?.warn?.(`admin: notifications: ${error?.message ?? String(error)}`);
+  });
   return snapshot;
+}
+
+/* ——————————————————————— notifications ——————————————————————— */
+
+/*
+ * One poll, two audiences. The Host already pulls the whole portal queue every
+ * minute, so it is the only place that can tell what changed. Each pass diffs
+ * the snapshot against the last one it accounted for and appends what changed
+ * to a small event feed the Client half polls over the panel route (no
+ * Session, nothing logged). The same events go to macOS through `osascript`,
+ * so a ticket that lands while the window is behind another app still
+ * announces itself.
+ *
+ * The seen state is a file under the Harness home (owner-only, like the
+ * config) so a restart does not replay history, and the first run after
+ * install records everything as seen instead of flooding Ali with 40 old
+ * tickets and every run of the past day.
+ */
+const NOTIFY_PATH = join(ADMIN_DIR, 'notify-state.json');
+const EVENTS_PATH = join(ADMIN_DIR, 'events.json');
+/** Events kept for the Client's toast feed. Older ones are already old news. */
+const EVENTS_KEEP = 40;
+/** One macOS banner per second and a half at most: a burst should not become a wall. */
+const NOTIFY_GAP_MS = 1500;
+/** More changes than this in one pass become one summary banner. */
+const NOTIFY_MAX_PER_PASS = 3;
+const RUN_TERMINAL = new Set(['ok', 'failed']);
+
+/** Host logger, set by `apply`, so background work can report without a ctx argument. */
+let ctxLogger = null;
+
+/** The part of a ticket the notification diff compares. */
+const ticketSeenState = (ticket) => ({
+  status: typeof ticket?.status === 'string' ? ticket.status : '',
+  waitingSince: Number(ticket?.client_waiting_since ?? 0) || 0,
+});
+
+/** The part of a run the notification diff compares. */
+const runSeenState = (run) => (typeof run?.status === 'string' ? run.status : 'running');
+
+/** The shortest name for a ticket in a banner: project, then client, then its title. */
+function ticketBannerName(ticket) {
+  const name = ticket?.project_name || ticket?.client_name || String(ticket?.client_email ?? '').split('@')[0];
+  return name || ticket?.title || 'a ticket';
+}
+
+/** One event as the Client and macOS see it. */
+function makeEvent(kind, ticketId, ticket, phrase) {
+  const label = ticketBannerName(ticket);
+  return {
+    kind,
+    ticketId: Number(ticketId),
+    ticket: { id: Number(ticketId), title: ticket?.title ?? '', project: ticket?.project_name ?? '', status: ticket?.status ?? '' },
+    body: `#${ticketId} ${label}: ${phrase}`,
+  };
+}
+
+/**
+ * What changed between the last accounted-for snapshot and this one: a new
+ * ticket, a ticket that came back for approval, a client reply, and a run that
+ * finished or failed. Pure, so the diff is testable without a portal.
+ * @param previous - the last seen state, or null on the first run after install.
+ * @param snapshot - the snapshot `refresh` just built.
+ * @returns the events, oldest first.
+ */
+export function detectEvents(previous, snapshot) {
+  const events = [];
+  const tickets = Array.isArray(snapshot?.tickets) ? snapshot.tickets : [];
+  const byId = new Map(tickets.map((ticket) => [Number(ticket?.id), ticket]));
+  for (const ticket of tickets) {
+    const id = Number(ticket?.id);
+    if (!Number.isFinite(id)) continue;
+    const before = previous?.tickets?.[id];
+    // On the first run every ticket is already seen: only changes after that
+    // point are events. A later refresh sees an unseen id as a new ticket —
+    // including one autopilot approved before the first poll saw it, which is
+    // exactly the case Ali would otherwise miss. His own system tasks wait for
+    // their run instead of announcing themselves.
+    if (!previous) continue;
+    if (!before) {
+      if (ticket.kind !== 'system' && ['new', 'approved', 'in_progress', 'review'].includes(ticket.status)) {
+        const phrase = ticket.status === 'approved' ? 'new request (auto-approved)' : 'new request';
+        events.push(makeEvent('ticket.new', id, ticket, phrase));
+      }
+      continue;
+    }
+    const next = ticketSeenState(ticket);
+    if (before.status !== 'new' && next.status === 'new') {
+      events.push(makeEvent('ticket.approval', id, ticket, 'waiting for approval'));
+    } else if (next.waitingSince > (before.waitingSince ?? 0) && !['new', 'done', 'declined'].includes(next.status)) {
+      // A brand-new ticket is already its own event, and a closed one cannot
+      // be waiting on an answer; the portal's own attention count agrees.
+      events.push(makeEvent('ticket.reply', id, ticket, 'client replied'));
+    }
+  }
+  const runs = [...(snapshot?.runs?.recent ?? []), ...(snapshot?.runs?.running ?? [])];
+  for (const run of runs) {
+    const id = Number(run?.id);
+    const ticketId = Number(run?.ticket_id);
+    if (!Number.isFinite(id) || !Number.isFinite(ticketId) || ticketId <= 0 || !previous) continue;
+    const before = previous?.runs?.[id];
+    const status = runSeenState(run);
+    // Only a completion that this pass has not seen before: a run that was
+    // already terminal stays quiet, however often it is still in `recent`.
+    if (!RUN_TERMINAL.has(status) || (before !== undefined && RUN_TERMINAL.has(before))) continue;
+    const ticket = byId.get(ticketId);
+    const kind = status === 'failed' ? 'run.failed' : 'run.finished';
+    const phrase = status === 'failed' ? 'run failed' : 'run finished';
+    events.push(makeEvent(kind, ticketId, ticket ?? { title: run?.title }, phrase));
+  }
+  return events;
+}
+
+/** The state this pass accounts for. */
+function seenState(snapshot) {
+  const tickets = {};
+  for (const ticket of snapshot?.tickets ?? []) {
+    const id = Number(ticket?.id);
+    if (Number.isFinite(id)) tickets[id] = ticketSeenState(ticket);
+  }
+  const runs = {};
+  for (const run of [...(snapshot?.runs?.recent ?? []), ...(snapshot?.runs?.running ?? [])]) {
+    const id = Number(run?.id);
+    if (Number.isFinite(id)) runs[id] = runSeenState(run);
+  }
+  return { version: 1, at: Date.now(), tickets, runs };
+}
+
+/** Read the event feed the Client polls. */
+async function readEventStore() {
+  const stored = await readJson(EVENTS_PATH, {});
+  const seq = Number.isInteger(stored?.seq) ? stored.seq : 0;
+  const events = Array.isArray(stored?.events) ? stored.events.filter((event) => typeof event?.body === 'string') : [];
+  return { seq, events };
+}
+
+/**
+ * Append events to the feed, stamped with a monotonic sequence number the
+ * Client passes back as its cursor.
+ * @param events - the events from one pass.
+ * @returns the stamped events.
+ */
+async function appendEvents(events) {
+  const store = await readEventStore();
+  let seq = store.seq;
+  const stamped = events.map((event) => ({ ...event, seq: (seq += 1), at: Date.now() }));
+  await writeText(
+    EVENTS_PATH,
+    JSON.stringify({ version: 1, seq, events: [...store.events, ...stamped].slice(-EVENTS_KEEP) }, null, 2) + '\n',
+    0o600,
+  );
+  return stamped;
+}
+
+/** Escape text for one double-quoted AppleScript literal. */
+const appleScriptText = (text) => String(text ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\r\n]+/g, ' ').slice(0, 180);
+
+/**
+ * A macOS banner, one at a time and spaced out. The Host has no notification
+ * entitlement of its own, so this is `osascript`'s own notification, titled
+ * with the plugin's name. Non-macOS hosts simply skip it.
+ */
+function showMacNotification(body) {
+  if (process.platform !== 'darwin') return Promise.resolve();
+  const script = `display notification "${appleScriptText(body)}" with title "DSH Admin"`;
+  return execFileP('osascript', ['-e', script], { timeout: 5000 }).then(
+    () => undefined,
+    () => undefined,
+  );
+}
+
+/** Serialize the banners so a burst arrives one after the other, never on top. */
+let notifyQueue = Promise.resolve();
+function queueMacNotification(body) {
+  notifyQueue = notifyQueue
+    .then(() => showMacNotification(body))
+    .then(() => new Promise((resolve) => setTimeout(resolve, NOTIFY_GAP_MS)));
+}
+
+/**
+ * Account for one snapshot and announce what changed.
+ *
+ * Detection always runs, even with notifications off, so turning them back on
+ * does not dump the previous hour of history on Ali. Delivery — the feed and
+ * macOS — only runs while they are on.
+ * @param config - `{ notify }`.
+ * @param snapshot - the snapshot `refresh` just built.
+ */
+let notifyChain = Promise.resolve();
+function publishEvents(config, snapshot) {
+  notifyChain = notifyChain.then(async () => {
+    const previous = await readJson(NOTIFY_PATH, null);
+    // Two refreshes can overlap (a button and the minute loop). A snapshot
+    // older than what has already been accounted for must not roll the seen
+    // state back, which would replay events on the next pass.
+    if (previous && Number(previous.at) > Number(snapshot?.fetchedAt ?? 0)) return;
+    const events = detectEvents(previous, snapshot);
+    await writeText(NOTIFY_PATH, JSON.stringify(seenState(snapshot), null, 2) + '\n', 0o600);
+    if (!previous || config?.notify === false || events.length === 0) return;
+    const stamped = await appendEvents(events);
+    for (const event of stamped.slice(0, NOTIFY_MAX_PER_PASS)) queueMacNotification(event.body);
+    if (stamped.length > NOTIFY_MAX_PER_PASS) {
+      queueMacNotification(`${stamped.length - NOTIFY_MAX_PER_PASS} more in Admin`);
+    }
+  });
+  return notifyChain;
 }
 
 /* ——————————————————————— mutations, shared by both callers ——————————————————————— */
@@ -951,8 +1162,10 @@ function makeCommandHandler(ctx) {
             '  /admin endpoint <url>          point at another portal Worker',
             '  /admin logout                  forget the token',
             '  /admin status <id> <status>    set a ticket status',
+            '  /admin approve <id>            approve a ticket (emails the client)',
             '  /admin reply <id> <text>       reply to the client (emails them)',
             '  /admin note <id> <text>        internal note (client never sees it)',
+            '  /admin notify on|off           macOS and in-app notifications for new work',
             '  /admin follow <id> <sessionId> mirror what is typed in that conversation onto the ticket',
             '  /admin attach <id> {"paths":[…],"text"?,"internal"?}   post local files (private note unless internal is false)',
             '  /admin download </admin/tickets/<id>/files/<fileId>>  save an attachment to ~/Downloads',
@@ -1109,8 +1322,8 @@ function makeCommandHandler(ctx) {
         case 'login': {
           const token = rest.join(' ').trim();
           if (token.length === 0) return { kind: 'error', text: 'Give the token: /admin login <token>' };
-          await saveConfig({ endpoint: config.endpoint, token });
-          const snapshot = await refresh({ endpoint: config.endpoint, token });
+          await saveConfig({ ...config, token });
+          const snapshot = await refresh({ ...config, token });
           ctx.logger?.info?.('admin: session token stored');
           return {
             kind: 'success',
@@ -1121,12 +1334,12 @@ function makeCommandHandler(ctx) {
         case 'endpoint': {
           const endpoint = rest.join(' ').trim();
           if (!/^https?:\/\//.test(endpoint)) return { kind: 'error', text: 'Give an http(s) URL.' };
-          await saveConfig({ endpoint, token: config.token });
+          await saveConfig({ ...config, endpoint });
           return { kind: 'success', text: `Now pointed at ${endpoint}.` };
         }
 
         case 'logout': {
-          await saveConfig({ endpoint: config.endpoint, token: '' });
+          await saveConfig({ ...config, token: '' });
           await writeFailure(config.endpoint, 'Signed out.');
           return { kind: 'success', text: 'Forgot the token.' };
         }
@@ -1142,6 +1355,44 @@ function makeCommandHandler(ctx) {
           await setStatus(config, id, status);
           await refresh(config);
           return { kind: 'success', text: `#${id} is now ${STATUS_LABEL[status] ?? status}.` };
+        }
+
+        // The one-tap move from the tree, a conversation header, or a script:
+        // `/admin approve 12`. A client ticket's approval emails the client.
+        case 'approve': {
+          const [id] = rest;
+          if (!/^[1-9]\d{0,15}$/.test(id ?? '')) return { kind: 'error', text: 'Usage: /admin approve <id>' };
+          await setStatus(config, id, 'approved');
+          await refresh(config);
+          return { kind: 'success', text: `Approved #${id}; the client was emailed if it is a client ticket.` };
+        }
+
+        // The feed the Client half toasts from. Bare `events` is the initial
+        // cursor: it answers the current sequence and replays nothing, so a
+        // freshly loaded panel never shows yesterday's queue.
+        case 'events': {
+          const [sinceText] = rest;
+          const store = await readEventStore();
+          const since = Number.parseInt(sinceText ?? '', 10);
+          if (!Number.isFinite(since) || since < 0) {
+            return { kind: 'success', text: JSON.stringify({ seq: store.seq, events: [] }) };
+          }
+          const events = store.events.filter((event) => Number(event?.seq) > since);
+          return { kind: 'success', text: JSON.stringify({ seq: store.seq, events }) };
+        }
+
+        // `/admin notify` reads the switch; `on`/`off` writes it. The setting
+        // lives in config.json with the token, so it survives restarts.
+        case 'notify': {
+          const [value] = rest;
+          if (value === undefined) {
+            return { kind: 'success', text: JSON.stringify({ notify: config.notify !== false }) };
+          }
+          if (value !== 'on' && value !== 'off') {
+            return { kind: 'error', text: 'Usage: /admin notify [on|off]' };
+          }
+          await saveConfig({ ...config, notify: value === 'on' });
+          return { kind: 'success', text: value === 'on' ? 'Notifications are on.' : 'Notifications are off.' };
         }
 
         // `/admin follow <ticketId> <sessionId>`: this conversation's replies are
@@ -1476,19 +1727,58 @@ export function groupFleetRuns(registry) {
 }
 
 export function apply(ctx) {
+  ctxLogger = ctx.logger ?? null;
   const handleAdmin = makeCommandHandler(ctx);
   ctx.effect(
     () => {
       const dispose = ctx.commands.register({
         name: 'admin',
         description: 'Manage the malipetek.dev portal and its fleet: tickets, the work queue, nodes, clients and projects.',
-        input: { hint: '[refresh|status|reply|note|task|route|cancel|drain|node|project|folder|link|unlink]' },
+        input: { hint: '[refresh|status|approve|reply|note|notify|task|route|cancel|drain|node|project|folder|link|unlink]' },
         handler: handleAdmin,
       });
       return dispose;
     },
     'admin: /admin command',
   );
+
+  // The composer's slash menu lists one command per entry, so the three
+  // everyday moves also get their own names. They are literal aliases of the
+  // `/admin …` lines above, with the same handler, and exist so typing "/"
+  // surfaces Approve, Reply and Open without knowing the subcommand grammar.
+  ctx.effect(() => {
+    const shortcuts = [
+      {
+        name: 'admin-approve',
+        description: 'Approve a portal ticket (emails the client)',
+        hint: '<ticketId>',
+        line: (input) => `approve ${input}`,
+      },
+      {
+        name: 'admin-reply',
+        description: 'Reply to a client ticket (emails the client)',
+        hint: '<ticketId> <text>',
+        line: (input) => `reply ${input}`,
+      },
+      {
+        name: 'admin-open',
+        description: 'Open a ticket in the Admin panel',
+        hint: '<ticketId>',
+        line: (input) => `open ${input}`,
+      },
+    ];
+    const disposers = shortcuts.map((shortcut) =>
+      ctx.commands.register({
+        name: shortcut.name,
+        description: shortcut.description,
+        input: { hint: shortcut.hint },
+        handler: ({ rawInput }) => handleAdmin({ rawInput: shortcut.line(String(rawInput ?? '').trim()) }),
+      }),
+    );
+    return () => {
+      for (const dispose of disposers) dispose?.();
+    };
+  }, 'admin: shortcut commands');
 
   ctx.effect(() => {
     const server = startBridge(ctx, handleAdmin);
