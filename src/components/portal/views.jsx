@@ -1,6 +1,6 @@
 /* The client portal's pages, other than a single request (TicketView.jsx). */
 import { useEffect, useMemo, useState } from 'react';
-import { api, errorText, fmtTime } from '../../lib/portal';
+import { api, errorText, fmtTime, session } from '../../lib/portal';
 import { billOf, HOURLY_USD, clock, money } from '../../lib/pricing.js';
 import { Board, DRAG_TICKET, STAGES, stageText } from './Board.jsx';
 import { boardReturn, go, href, isOpen, useT, usePortal } from './store.js';
@@ -1263,6 +1263,84 @@ function HostSwitch({ project, site }) {
   );
 }
 
+/* ————— access: the session token and the assistant keys ————— */
+
+export function AccessView() {
+  const t = useT();
+  const { data } = usePortal();
+  return (
+    <div className="cp-view">
+      <PageHead title={t('nav.access')} sub={t('views.access.sub')} />
+      <div className="cp-connect">
+        <SessionKey />
+        {data.user.role === 'client' ? (
+          <AssistantAccess />
+        ) : (
+          <section className="cp-card">
+            <h2 className="cp-h2">{t('views.assistants.title')}</h2>
+            <p className="cp-muted">{t('views.access.clientsOnly')}</p>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The browser's own session: Harness and other machines ask for it, and the
+ * Admin workbench on this origin already signs with it. Hidden until asked
+ * for, but Copy always takes the whole token.
+ */
+function SessionKey() {
+  const t = useT();
+  const { data } = usePortal();
+  const [shown, setShown] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const token = session.get() ?? '';
+  const masked = token.length > 12 ? `${token.slice(0, 6)}…${token.slice(-4)}` : '—';
+  return (
+    <section className="cp-card">
+      <h2 className="cp-h2">{t('views.access.session')}</h2>
+      <p className="cp-muted">{t('views.access.sessionIntro')}</p>
+      <div className="cp-secret">
+        <code>{shown ? token : masked}</code>
+        <div className="cp-secret__actions">
+          <Button size="sm" aria-pressed={shown} onClick={() => setShown((s) => !s)}>
+            {shown ? t('views.access.hide') : t('views.access.reveal')}
+          </Button>
+          <Button
+            size="sm"
+            onClick={() =>
+              navigator.clipboard.writeText(token).then(
+                () => setCopied(true),
+                () => {},
+              )
+            }
+          >
+            {copied ? t('views.copy.copied') : t('views.copy.copy')}
+          </Button>
+        </div>
+      </div>
+      {data.user.role === 'admin' ? <p className="cp-hint">{t('views.access.adminHint')}</p> : null}
+      <p className="cp-hint">{t('views.access.sessionWarn')}</p>
+    </section>
+  );
+}
+
+/** One list of assistant keys feeds two cards: ChatGPT's own, and everything else. */
+function AssistantAccess() {
+  const [tokens, setTokens] = useState(null);
+  const load = () => api('/portal/agent-tokens').then(({ tokens }) => setTokens(tokens), () => setTokens([]));
+  useEffect(() => void load(), []);
+  const isChatGPT = (x) => x.via === 'ChatGPT';
+  return (
+    <>
+      <ChatGPT tokens={(tokens ?? []).filter(isChatGPT)} reload={load} />
+      <Assistants tokens={(tokens ?? []).filter((x) => !isChatGPT(x))} reload={load} />
+    </>
+  );
+}
+
 /* ————— connections ————— */
 
 export function ConnectionsView() {
@@ -1279,19 +1357,18 @@ export function ConnectionsView() {
   return <Connections />;
 }
 
-/** One list of assistant keys feeds two cards: ChatGPT's own, and everything else. */
+/** GitHub and Cloudflare accounts. The assistant keys moved to Access. */
 function Connections() {
   const t = useT();
-  const [tokens, setTokens] = useState(null);
-  const load = () => api('/portal/agent-tokens').then(({ tokens }) => setTokens(tokens), () => setTokens([]));
-  useEffect(() => void load(), []);
-  const isChatGPT = (x) => x.via === 'ChatGPT';
   return (
     <div className="cp-view">
       <PageHead title={t('nav.connections')} sub={t('views.connections.sub')} />
       <div className="cp-connect">
-        <ChatGPT tokens={(tokens ?? []).filter(isChatGPT)} reload={load} />
-        <Assistants tokens={(tokens ?? []).filter((x) => !isChatGPT(x))} reload={load} />
+        <section className="cp-card">
+          <h2 className="cp-h2">{t('views.connections.aiTitle')}</h2>
+          <p className="cp-muted">{t('views.connections.keysMoved')}</p>
+          <Button href={href('access')}>{t('nav.access')} →</Button>
+        </section>
         <Github />
         <Cloudflare />
       </div>
@@ -1384,6 +1461,11 @@ function Assistants({ tokens, reload }) {
     <section className="cp-card">
       <h2 className="cp-h2">{t('views.assistants.title')}</h2>
       <p className="cp-muted">{t('views.assistants.intro')}</p>
+      <div className="cp-keyfields">
+        <span className="cp-label">{t('views.showKey.server')}</span>
+        <code>{MCP_URL}</code>
+        <CopyButton text={MCP_URL} />
+      </div>
       <ul className="cp-keys">
         {tokens.map((x) => (
           <KeyRow key={x.id} t={x} reload={reload} />

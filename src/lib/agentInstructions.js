@@ -13,7 +13,7 @@ malipetek.dev is a service where AI agents build and change websites and a devel
 
 1. Add this MCP server to your client (streamable HTTP): https://malipetek.dev/mcp
    Discovery: https://malipetek.dev/.well-known/mcp-server.json
-2. Sign in when your client asks (OAuth). If your client cannot sign in, ask me for a key. I make one in the portal under Connections (https://malipetek.dev/portal#/connections). It starts with cat_. Send it as the header "Authorization: Bearer cat_...".
+2. Sign in when your client asks (OAuth). If your client cannot sign in, ask me for a key. I make one in the portal under Access (https://malipetek.dev/portal#/access). It starts with cat_. Send it as the header "Authorization: Bearer cat_...".
 3. Check the connection with portal_projects.
 
 What you can do for me:
