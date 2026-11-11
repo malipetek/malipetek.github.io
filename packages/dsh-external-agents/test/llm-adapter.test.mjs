@@ -868,8 +868,10 @@ test('curated models declare the context window the harness needs to compact', a
   const list = await adapter.listModels('acp-claude');
   assert.equal(list[0].contextWindow, 200_000, 'the list carries the window');
   const resolved = await adapter.resolveModel('acp-claude', 'opus');
-  assert.equal(resolved.contextWindow, 200_000, 'and so does the exact model');
-  assert.equal(resolved.maxTokens, 32_000);
+  // Nested exactly as `normalizeModelInfo` reads it; a top-level `contextWindow`
+  // is ignored, which is what made the first fix ineffective.
+  assert.equal(resolved.context.contextWindow, 200_000, 'and so does the exact model');
+  assert.equal(resolved.defaultMaxTokens, 32_000);
 
   // A per-model entry wins over the agent default.
   const override = new AcpModelAdapter({
@@ -877,5 +879,5 @@ test('curated models declare the context window the harness needs to compact', a
     models: [{ id: 'opus', name: 'Opus 5.5', contextWindow: 1_000_000 }], approvalPolicy: 'allow',
     contextWindow: 200_000,
   });
-  assert.equal((await override.resolveModel('acp-claude', 'opus')).contextWindow, 1_000_000);
+  assert.equal((await override.resolveModel('acp-claude', 'opus')).context.contextWindow, 1_000_000);
 });

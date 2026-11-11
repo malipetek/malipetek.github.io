@@ -823,8 +823,11 @@ export class AcpModelAdapter {
       provider,
       id: model,
       name: this.#displayName(model),
-      ...(contextWindow === undefined ? {} : { contextWindow }),
-      ...(maxTokens === undefined ? {} : { maxTokens }),
+      // Nested, and named exactly as the harness reads it: compaction looks at
+      // `resolved.context.contextWindow`, and a top-level `contextWindow` is
+      // silently ignored — which is why the first attempt still failed.
+      ...(contextWindow === undefined ? {} : { context: { contextWindow } }),
+      ...(maxTokens === undefined ? {} : { defaultMaxTokens: maxTokens }),
       // Only claimed when attachments can actually be read: the harness uses
       // this to decide whether to send images or a text placeholder, and a
       // false claim silently loses them.

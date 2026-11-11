@@ -92,7 +92,7 @@ const CATALOGUE_KEY = 'catalogue';
  * every one of them failed silently — so the first question on the next report
  * has to be "which build is this?", and it has to be answerable without guessing.
  */
-export const PLUGIN_BUILD = '2026-11-12a-context-window';
+export const PLUGIN_BUILD = '2026-11-12b-nested-context';
 
 /** Where the plugin records what it decided, for exactly this kind of question. */
 export const DIAGNOSTICS_FILE = '~/.dsh/external-agents/diagnostics.log';
