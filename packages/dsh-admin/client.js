@@ -2005,8 +2005,78 @@ var __awPlugin = (() => {
         )
       ] }),
       c.role !== "admin" ? /* @__PURE__ */ jsx(FirstPreviewControl, { c }) : null,
+      /* @__PURE__ */ jsx(InviteControls, { c }),
       /* @__PURE__ */ jsx(Chips, { value: c.projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: (ids) => void toggle(ids) })
     ] });
+  }
+  function InviteControls({ c }) {
+    const { api, act } = useAdmin();
+    if (!c.pending && !c.inviteExpiresAt) return null;
+    const left = c.inviteExpiresAt ? Math.max(0, c.inviteExpiresAt - Date.now() / 1e3) : 0;
+    return /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+      /* @__PURE__ */ jsx(Tag, { tone: c.pending ? "warn" : void 0, title: c.email, children: c.pending ? "Invited, not signed in yet" : "Invite link live" }),
+      left > 0 ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+        "link expires in ",
+        span(left)
+      ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "link expired" }),
+      /* @__PURE__ */ jsx(
+        Button,
+        {
+          size: "sm",
+          title: "Send a fresh link. The old unused links stop working.",
+          onClick: () => void act(() => api("POST", `/admin/clients/${c.id}/invite`, {}), `Invite resent to ${c.email}.`),
+          children: "Resend"
+        }
+      ),
+      /* @__PURE__ */ jsx(
+        Button,
+        {
+          size: "sm",
+          kind: "ghost",
+          title: "Every unused invite link stops working. A signed-in session is not touched.",
+          onClick: () => void act(() => api("DELETE", `/admin/clients/${c.id}/invite`), "Invite link revoked."),
+          children: "Revoke"
+        }
+      )
+    ] });
+  }
+  function InviteClientModal({ onClose }) {
+    const { api, act, data } = useAdmin();
+    const [email, setEmail] = useState("");
+    const [name, setName] = useState("");
+    const [locale, setLocale] = useState("en-US");
+    const [projectIds, setProjectIds] = useState(data.projects.length === 1 ? [data.projects[0].id] : []);
+    const [note, setNote] = useState("");
+    const ready = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && projectIds.length > 0;
+    const send = () => act(
+      () => api("POST", "/admin/clients", {
+        email: email.trim(),
+        name: name.trim() || void 0,
+        locale,
+        projectIds,
+        note: note.trim() || void 0
+      }),
+      (out) => out.invite?.sent === false ? `Added ${email.trim()}, but the email could not be sent. Use Resend on their card.` : out.user?.verified_at ? `${email.trim()} now has ${projectIds.length} more project${projectIds.length === 1 ? "" : "s"} and a new link.` : `Invited ${email.trim()}.`
+    ).then(onClose, () => void 0);
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: "Invite a client",
+        subtitle: "They get a link that signs them in for the projects you pick. No sign-up needed; the link works once and lasts 7 days.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !ready, onClick: send, children: "Send invite" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Email", children: /* @__PURE__ */ jsx("input", { type: "email", value: email, maxLength: 254, placeholder: "client@example.com", onChange: (e) => setEmail(e.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Name", hint: "Optional. The account keeps its own name if it already exists.", children: /* @__PURE__ */ jsx("input", { value: name, maxLength: 80, placeholder: "Their name", onChange: (e) => setName(e.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Language", hint: "The language of the invite email and the portal. They can change it.", children: /* @__PURE__ */ jsx("select", { value: locale, onChange: (e) => setLocale(e.target.value), children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code)) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Projects", hint: "At least one. An existing account gains these and keeps the rest. They see every request on them.", children: data.projects.length ? /* @__PURE__ */ jsx(Chips, { value: projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: setProjectIds }) : /* @__PURE__ */ jsx("span", { className: "aw-warn", children: "No projects yet. Make one first." }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Note", hint: "Optional. Your own words, added under the link. Not translated.", children: /* @__PURE__ */ jsx("textarea", { rows: 3, value: note, maxLength: 1e3, placeholder: "Anything you want them to read first", onChange: (e) => setNote(e.target.value) }) })
+        ]
+      }
+    );
   }
   function ClientView({ id }) {
     const { data, openTicket } = useAdmin();
@@ -2078,6 +2148,15 @@ var __awPlugin = (() => {
           Button,
           {
             size: "sm",
+            kind: "primary",
+            onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(InviteClientModal, { onClose: close }) }),
+            children: "Invite client"
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
             title: "List the GitHub App\u2019s installations from GitHub and record any the callback missed",
             onClick: () => void act(() => api("POST", "/admin/github/reconcile", {}), "GitHub installations reconciled."),
             children: "Reconcile GitHub"
@@ -2132,7 +2211,11 @@ var __awPlugin = (() => {
                   p.sites.length,
                   " site",
                   p.sites.length === 1 ? "" : "s"
-                ] }) : null
+                ] }) : null,
+                (p.clients ?? []).map((client) => /* @__PURE__ */ jsxs(Tag, { tone: "client", title: client.pending ? `Invited, not signed in yet: ${client.email}` : client.email, children: [
+                  client.name || client.email,
+                  client.pending ? " (invited)" : ""
+                ] }, client.id))
               ] }),
               /* @__PURE__ */ jsx(SitePanel, { project: p }),
               /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
