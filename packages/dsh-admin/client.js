@@ -898,6 +898,95 @@ var __awPlugin = (() => {
     return typeof code === "string" && /^en(-|$)/i.test(code);
   }
 
+  // packages/admin-ui/src/review.jsx
+  var portalTicketUrl = (id) => `https://malipetek.dev/portal/admin#ticket=${id}`;
+  function reviewRef(runs) {
+    for (const run of [...runs ?? []].sort((a, b) => b.id - a.id)) {
+      if (run.shared_to === "origin" && run.shared_ref) return run.shared_ref;
+      if (run.branch) return run.branch;
+    }
+    return null;
+  }
+  function newestDiff(runs) {
+    return [...runs ?? []].sort((a, b) => b.id - a.id).find((run) => run.diff || run.diff_stat) ?? null;
+  }
+  function reviewPlan(host, ticket, runs) {
+    if (!ticket) return null;
+    const gitGraph = host?.gitGraph;
+    if (ticket.project_slug && typeof gitGraph?.available === "function" && gitGraph.available()) {
+      return { kind: "git-graph", gitGraph };
+    }
+    const run = newestDiff(runs);
+    if (run) return { kind: "diff", run };
+    if (ticket.id) return { kind: "portal", url: portalTicketUrl(ticket.id) };
+    return null;
+  }
+  function ReviewButton({ ticket, runs }) {
+    const { host } = useAdmin();
+    const plan = reviewPlan(host, ticket, runs);
+    const [open, setOpen] = useState(false);
+    if (!plan) return null;
+    if (plan.kind === "portal") {
+      return /* @__PURE__ */ jsx(
+        Button,
+        {
+          size: "sm",
+          kind: "ghost",
+          title: "Open this ticket in the web workbench to review its work",
+          onClick: () => window.open(plan.url, "_blank", "noopener,noreferrer"),
+          children: "Review on the web"
+        }
+      );
+    }
+    const label = plan.kind === "git-graph" ? "Review in Git Graph" : "Review changes";
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx(
+        Button,
+        {
+          size: "sm",
+          kind: "ghost",
+          title: plan.kind === "git-graph" ? "Open the project's repository in Git Graph at this ticket's branch" : "The newest run's recorded comparison",
+          onClick: () => setOpen(true),
+          children: label
+        }
+      ),
+      open ? plan.kind === "git-graph" ? /* @__PURE__ */ jsx(GitGraphReview, { ticket, gitRef: reviewRef(runs), gitGraph: plan.gitGraph, onClose: () => setOpen(false) }) : /* @__PURE__ */ jsx(Modal, { title: `Run ${plan.run.id}: changes`, subtitle: plan.run.branch ? `Branch ${plan.run.branch}` : void 0, onClose: () => setOpen(false), wide: true, children: /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: plan.run.diff ?? plan.run.diff_stat ?? "No diff recorded." }) }) : null
+    ] });
+  }
+  function GitGraphReview({ ticket, gitRef, gitGraph, onClose }) {
+    const { host } = useAdmin();
+    const [state, setState] = useState({ status: "loading", text: "Finding the repository\u2026", sessionId: null });
+    useEffect(() => {
+      let alive = true;
+      void (async () => {
+        try {
+          const where = await host.json(`review ${ticket.project_slug}`);
+          if (!where?.found) {
+            throw new Error(`No repository for ${ticket.project_slug} on this machine (looked in ${(where?.looked ?? []).join(", ")}).`);
+          }
+          const sessionId = gitGraph.sessionId();
+          if (!sessionId) throw new Error("Git Graph needs an open session. Open one, then try again.");
+          if (alive) setState({ status: "loading", text: `Fetching and opening ${gitRef ?? "the repository"}\u2026`, sessionId: null });
+          const focused = await gitGraph.focus({ sessionId, repo: where.repo, ref: gitRef });
+          if (!alive) return;
+          const missing = gitRef && !focused.commit ? ` ${gitRef} is not in this clone yet.` : "";
+          setState({
+            status: "ready",
+            text: `${focused.repo}${focused.commit ? ` \xB7 ${gitRef} at ${focused.commit.slice(0, 8)}` : ""}.${missing}`,
+            sessionId
+          });
+        } catch (error) {
+          if (alive) setState({ status: "failed", text: error?.message ?? String(error), sessionId: null });
+        }
+      })();
+      return () => {
+        alive = false;
+      };
+    }, [ticket.project_slug, gitRef, gitGraph, host]);
+    const View2 = gitGraph.View;
+    return /* @__PURE__ */ jsx(Modal, { title: `Review #${ticket.id}`, subtitle: state.text, onClose, full: true, children: /* @__PURE__ */ jsx("div", { className: "aw-review", children: state.status === "ready" ? /* @__PURE__ */ jsx(View2, { sessionId: state.sessionId }) : /* @__PURE__ */ jsx("p", { className: cx("aw-empty", state.status === "failed" && "aw-error"), children: state.text }) }) });
+  }
+
   // packages/admin-ui/src/ticket.jsx
   var PRIMARY = {
     new: [
@@ -1025,51 +1114,6 @@ var __awPlugin = (() => {
         land.sha ? ` (${String(land.sha).slice(0, 8)})` : ""
       ] }) : null
     ] });
-  }
-  function reviewRef(runs) {
-    for (const run of [...runs].sort((a, b) => b.id - a.id)) {
-      if (run.shared_to === "origin" && run.shared_ref) return run.shared_ref;
-      if (run.branch) return run.branch;
-    }
-    return null;
-  }
-  function ReviewButton({ ticket, runs }) {
-    const { host } = useAdmin();
-    const [open, setOpen] = useState(false);
-    const gitGraph = host?.gitGraph;
-    if (!gitGraph?.available() || !ticket.project_slug) return null;
-    const ref = reviewRef(runs);
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", title: "Open the project's repository in Git Graph at this ticket's branch", onClick: () => setOpen(true), children: "Review in Git Graph" }),
-      open ? /* @__PURE__ */ jsx(ReviewModal, { ticket, gitRef: ref, gitGraph, onClose: () => setOpen(false) }) : null
-    ] });
-  }
-  function ReviewModal({ ticket, gitRef, gitGraph, onClose }) {
-    const { host } = useAdmin();
-    const [state, setState] = useState({ status: "loading", text: "Finding the repository\u2026", sessionId: null });
-    useEffect(() => {
-      let alive = true;
-      void (async () => {
-        try {
-          const where = await host.json(`review ${ticket.project_slug}`);
-          if (!where?.found) throw new Error(`No repository for ${ticket.project_slug} on this machine (looked in ${(where?.looked ?? []).join(", ")}).`);
-          const sessionId = gitGraph.sessionId();
-          if (!sessionId) throw new Error("Git Graph needs an open session. Open one, then try again.");
-          if (alive) setState({ status: "loading", text: `Fetching and opening ${gitRef ?? "the repository"}\u2026`, sessionId: null });
-          const focused = await gitGraph.focus({ sessionId, repo: where.repo, ref: gitRef });
-          if (!alive) return;
-          const missing = gitRef && !focused.commit ? ` ${gitRef} is not in this clone yet.` : "";
-          setState({ status: "ready", text: `${focused.repo}${focused.commit ? ` \xB7 ${gitRef} at ${focused.commit.slice(0, 8)}` : ""}.${missing}`, sessionId });
-        } catch (error) {
-          if (alive) setState({ status: "failed", text: error?.message ?? String(error), sessionId: null });
-        }
-      })();
-      return () => {
-        alive = false;
-      };
-    }, [ticket.project_slug, gitRef, gitGraph, host]);
-    const View2 = gitGraph.View;
-    return /* @__PURE__ */ jsx(Modal, { title: `Review #${ticket.id}`, subtitle: state.text, onClose, full: true, children: /* @__PURE__ */ jsx("div", { className: "aw-review", children: state.status === "ready" ? /* @__PURE__ */ jsx(View2, { sessionId: state.sessionId }) : /* @__PURE__ */ jsx("p", { className: cx("aw-empty", state.status === "failed" && "aw-error"), children: state.text }) }) });
   }
   function ReviewCard({ review, screenshots = [] }) {
     if (!review) return null;
@@ -2562,7 +2606,7 @@ var __awPlugin = (() => {
       ) : null,
       modal?.kind === "edit" ? /* @__PURE__ */ jsx(EditPostModal, { message: modal.message, api, onClose: () => setModal(null), onSaved: done }) : null,
       modal?.kind === "message" ? /* @__PURE__ */ jsx(MessageModal, { id: modal.id, api, onClose: () => setModal(null), onDone: done }) : null,
-      modal?.kind === "review" ? /* @__PURE__ */ jsx(ReviewModal2, { api, onClose: () => done("Review saved.") }) : null,
+      modal?.kind === "review" ? /* @__PURE__ */ jsx(ReviewModal, { api, onClose: () => done("Review saved.") }) : null,
       modal?.kind === "person" ? /* @__PURE__ */ jsx(
         PersonModal,
         {
@@ -2679,7 +2723,7 @@ var __awPlugin = (() => {
       ] })
     ] });
   }
-  function ReviewModal2({ api, onClose }) {
+  function ReviewModal({ api, onClose }) {
     const [queue, setQueue] = useState(null);
     const [nextDay, setNextDay] = useState(null);
     const [index, setIndex] = useState(0);
@@ -6151,7 +6195,7 @@ ${question.text ?? ""}`)) {
   // packages/dsh-admin/src/client.jsx
   var PANEL_ID = "admin";
   var NAMESPACE = "admin";
-  var CLIENT_VERSION = "3.8.1";
+  var CLIENT_VERSION = "3.9.0";
   var DICTIONARY = { title: "Admin" };
   var SESSION_RETRY_CODES = /* @__PURE__ */ new Set(["session/writer-held", "session/not-found", "session/agent-busy"]);
   var MAX_SESSION_TRIES = 4;
@@ -6624,17 +6668,23 @@ ${question.text ?? ""}`)) {
     function TasksTabTitle() {
       return /* @__PURE__ */ jsx("span", { children: "Tasks" });
     }
-    const ATTENTION_MS = 6e4;
+    const ATTENTION_MS = 15e3;
     const attention = /* @__PURE__ */ (() => {
       let value = null;
+      let signature = null;
       let timer = null;
       const subs = /* @__PURE__ */ new Set();
       const pull = async () => {
+        let next = null;
         try {
-          value = await api("GET", "/admin/attention");
+          next = await api("GET", "/admin/attention");
         } catch {
-          value = null;
+          next = null;
         }
+        const nextSignature = JSON.stringify(next);
+        if (nextSignature === signature) return;
+        signature = nextSignature;
+        value = next;
         for (const notify of subs) notify();
       };
       const onFocus = () => void pull();
@@ -6655,9 +6705,228 @@ ${question.text ?? ""}`)) {
             }
           };
         },
-        get: () => value
+        get: () => value,
+        pull
       };
     })();
+    const NOTIFY_POLL_MS = 1e4;
+    const notificationFeed = /* @__PURE__ */ (() => {
+      let cursor = null;
+      let timer = null;
+      let running = false;
+      const subs = /* @__PURE__ */ new Set();
+      const pull = async () => {
+        if (running) return;
+        running = true;
+        try {
+          const value = cursor === null ? await json("events") : await json(`events ${cursor}`);
+          if (cursor === null) {
+            cursor = Number(value?.seq) || 0;
+            return;
+          }
+          const events = Array.isArray(value?.events) ? value.events : [];
+          cursor = Math.max(cursor, Number(value?.seq) || cursor);
+          for (const event of events) {
+            for (const notify of subs) notify(event);
+            window.dispatchEvent(new CustomEvent("admin:changed", { detail: event }));
+          }
+        } catch {
+        } finally {
+          running = false;
+        }
+      };
+      return {
+        subscribe(notify) {
+          subs.add(notify);
+          if (timer === null) {
+            void pull();
+            timer = setInterval(() => void pull(), NOTIFY_POLL_MS);
+          }
+          return () => {
+            subs.delete(notify);
+            if (subs.size === 0) {
+              clearInterval(timer);
+              timer = null;
+            }
+          };
+        },
+        pull
+      };
+    })();
+    const TOAST_TINT = {
+      "ticket.new": "var(--dsw-alias-state-warning-primary, #d18f2e)",
+      "ticket.approval": "var(--dsw-alias-state-warning-primary, #d18f2e)",
+      "ticket.reply": "var(--dsw-alias-state-business-primary, #4c8dff)",
+      "run.finished": "var(--dsw-alias-state-success-primary, #2f9e5b)",
+      "run.failed": "var(--dsw-alias-state-danger-primary, #e5534b)"
+    };
+    const TOAST_MS = 7e3;
+    function NotificationToast({ toast, onOpen, onClose }) {
+      const tint = TOAST_TINT[toast.kind] ?? "var(--dsw-alias-label-tertiary, #8a9099)";
+      return /* @__PURE__ */ jsxs(
+        "div",
+        {
+          role: "status",
+          style: {
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 8,
+            width: "100%",
+            maxWidth: 360,
+            boxSizing: "border-box",
+            padding: "10px 12px 10px 10px",
+            borderRadius: 10,
+            border: "1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.28))",
+            borderLeft: `3px solid ${tint}`,
+            background: "var(--dsw-alias-bg-elevated, #23252a)",
+            color: "var(--dsw-alias-label-primary, inherit)",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.28)",
+            font: "inherit",
+            fontSize: 12.5,
+            cursor: toast.ticketId ? "pointer" : "default"
+          },
+          onClick: () => toast.ticketId && onOpen(toast),
+          children: [
+            /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
+              /* @__PURE__ */ jsx("span", { style: { display: "block", fontWeight: 600, fontSize: 11, letterSpacing: "0.04em", textTransform: "uppercase", opacity: 0.65 }, children: "DSH Admin" }),
+              /* @__PURE__ */ jsx("span", { style: { display: "block", lineHeight: 1.35, marginTop: 2 }, children: toast.body })
+            ] }),
+            /* @__PURE__ */ jsx(
+              "button",
+              {
+                type: "button",
+                "aria-label": "Dismiss",
+                onClick: (event) => {
+                  event.stopPropagation();
+                  onClose(toast);
+                },
+                style: { border: 0, background: "transparent", color: "inherit", opacity: 0.55, cursor: "pointer", fontSize: 15, lineHeight: 1, padding: 0 },
+                children: "\xD7"
+              }
+            )
+          ]
+        }
+      );
+    }
+    function NotificationHost() {
+      const [toasts, setToasts] = useState([]);
+      const timers = useRef(/* @__PURE__ */ new Map());
+      const remove = (key) => {
+        clearTimeout(timers.current.get(key));
+        timers.current.delete(key);
+        setToasts((prev) => prev.filter((item) => item.key !== key));
+      };
+      useEffect(() => {
+        const add = (event) => {
+          const key = `${event.seq ?? Date.now()}-${Math.random().toString(36).slice(2)}`;
+          setToasts((prev) => [...prev.slice(-2), { ...event, key }]);
+          timers.current.set(key, setTimeout(() => {
+            timers.current.delete(key);
+            setToasts((prev) => prev.filter((item) => item.key !== key));
+          }, TOAST_MS));
+        };
+        const stop = notificationFeed.subscribe(add);
+        return () => {
+          stop();
+          for (const timer of timers.current.values()) clearTimeout(timer);
+          timers.current.clear();
+        };
+      }, []);
+      if (toasts.length === 0) return null;
+      return /* @__PURE__ */ jsx(
+        "div",
+        {
+          style: {
+            position: "fixed",
+            top: 48,
+            right: 18,
+            zIndex: 2147483e3,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: 8,
+            pointerEvents: "auto"
+          },
+          children: toasts.map((toast) => /* @__PURE__ */ jsx(
+            NotificationToast,
+            {
+              toast,
+              onOpen: (item) => {
+                openTicket({ ticketId: item.ticketId });
+                remove(item.key);
+              },
+              onClose: (item) => remove(item.key)
+            },
+            toast.key
+          ))
+        }
+      );
+    }
+    function AdminSettingsSection() {
+      const [state, setState] = useState({ loaded: false, notify: true, busy: false, error: "" });
+      useEffect(() => {
+        let alive = true;
+        json("notify").then(
+          (value) => {
+            if (alive) setState({ loaded: true, notify: value?.notify !== false, busy: false, error: "" });
+          },
+          (error) => {
+            if (alive) setState((prev) => ({ ...prev, loaded: true, error: error?.message ?? "Could not read the setting." }));
+          }
+        );
+        return () => {
+          alive = false;
+        };
+      }, []);
+      const toggle = async () => {
+        const next = !state.notify;
+        setState((prev) => ({ ...prev, busy: true, error: "" }));
+        try {
+          await command(`notify ${next ? "on" : "off"}`);
+          setState({ loaded: true, notify: next, busy: false, error: "" });
+        } catch (error) {
+          setState((prev) => ({ ...prev, busy: false, error: error?.message ?? "Could not save the setting." }));
+        }
+      };
+      const rowStyle = { display: "flex", alignItems: "center", gap: 16, padding: "14px 0", borderTop: "1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.22))" };
+      const switchStyle = {
+        width: 38,
+        height: 22,
+        padding: 2,
+        borderRadius: 11,
+        border: 0,
+        cursor: state.busy ? "wait" : "pointer",
+        background: state.notify ? "var(--dsw-alias-state-success-primary, #2f9e5b)" : "var(--dsw-alias-bg-secondary, rgba(127,127,127,0.35))",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: state.notify ? "flex-end" : "flex-start",
+        boxSizing: "border-box"
+      };
+      return /* @__PURE__ */ jsxs("div", { style: { padding: "20px 24px", maxWidth: 680 }, children: [
+        /* @__PURE__ */ jsx("h2", { style: { margin: "0 0 4px", fontSize: 17 }, children: "Admin" }),
+        /* @__PURE__ */ jsx("p", { style: { margin: "0 0 14px", fontSize: 12.5, opacity: 0.65, lineHeight: 1.45 }, children: "The malipetek.dev portal inside the Harness: tickets, the work queue and its fleet, clients and projects. The Host refreshes every minute and notifies you about new work in the window and on this Mac." }),
+        /* @__PURE__ */ jsxs("div", { style: rowStyle, children: [
+          /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
+            /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 13 }, children: "Notify me about new work" }),
+            /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 12, opacity: 0.6, marginTop: 2 }, children: "A new ticket, one waiting for approval, a client reply, or a finished or failed run \u2014 in-app and as a macOS notification, never twice." })
+          ] }),
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              type: "button",
+              role: "switch",
+              "aria-checked": state.notify,
+              "aria-label": "Notify me about new work",
+              disabled: !state.loaded || state.busy,
+              onClick: () => void toggle(),
+              style: switchStyle,
+              children: /* @__PURE__ */ jsx("span", { style: { width: 18, height: 18, borderRadius: 9, background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,0.3)" } })
+            }
+          )
+        ] }),
+        state.error ? /* @__PURE__ */ jsx("p", { style: { margin: "10px 0 0", fontSize: 12, color: "var(--dsw-alias-state-danger-primary, #e5534b)" }, children: state.error }) : null
+      ] });
+    }
     function AdminEntryIcon(props) {
       const counts = useSyncExternalStore(attention.subscribe, attention.get);
       const waiting = counts ? counts.approve + counts.review + counts.waiting : 0;
@@ -6791,6 +7060,11 @@ ${question.text ?? ""}`)) {
       const rows = /* @__PURE__ */ new Map();
       let stopped = false;
       const pass = async () => {
+        if (sectionAvailable) {
+          for (const row of rows.values()) row.dispose();
+          rows.clear();
+          return;
+        }
         let clients;
         let tickets;
         try {
@@ -6958,6 +7232,13 @@ ${who} is emailed about this change.`)) return;
         )
       ] });
     }
+    function projectTint(tickets) {
+      const open = tickets.filter((ticket) => !isClosedTicket(ticket));
+      if (open.some((ticket) => ticket.status === "new")) return TICKET_DOT.new;
+      if (open.some((ticket) => ticket.status === "review")) return TICKET_DOT.review;
+      if (open.some((ticket) => ticket.status === "in_progress")) return TICKET_DOT.in_progress;
+      return open.length > 0 ? TICKET_DOT.approved : void 0;
+    }
     function buildClientTree(clients, projects, tickets) {
       const projectById = new Map(projects.map((p) => [String(p.id), p]));
       const latest = /* @__PURE__ */ new Map();
@@ -6967,8 +7248,10 @@ ${who} is emailed about this change.`)) return;
       }
       const active = (c) => Math.max(latest.get(c.email) ?? 0, c.created_at ?? 0);
       const eligible = clients.filter((c) => c.role !== "admin" && typeof c.id === "string" && c.email).sort((a, b) => active(b) - active(a));
-      return eligible.map((client) => {
+      const placed = /* @__PURE__ */ new Set();
+      const tree = eligible.map((client) => {
         const own = tickets.filter((t) => t.kind !== "system" && t.client_email === client.email);
+        for (const t of own) placed.add(t.id);
         const byProject = /* @__PURE__ */ new Map();
         const noProject = [];
         for (const t of own) {
@@ -6995,58 +7278,78 @@ ${who} is emailed about this change.`)) return;
         const answer = own.filter((t) => Boolean(t.client_waiting_since) && !["new", "done", "declined"].includes(t.status)).length;
         return { client, approve, answer, badge: approve + answer, projects: groups };
       });
+      const unsorted = tickets.filter((t) => t.kind !== "system" && !placed.has(t.id)).sort(ticketOrder);
+      return { tree, unsorted };
     }
+    const SECTION_REFRESH_MS = 5 * 6e4;
+    const SECTION_DEBOUNCE_MS = 300;
     function ClientsSection({ Section, TreeRow, selectPanel }) {
       const [state, setState] = useState({ clients: [], projects: [], tickets: [], loading: true, error: "" });
-      const [round, setRound] = useState(0);
-      const reload = useCallback(() => setRound((value) => value + 1), []);
-      useEffect(() => {
-        let alive = true;
-        const load = async () => {
-          try {
-            const [c, p, t] = await Promise.all([
-              api("GET", "/admin/clients"),
-              api("GET", "/admin/projects"),
-              api("GET", "/admin/tickets")
-            ]);
-            if (!alive) return;
-            setState({
-              clients: Array.isArray(c?.clients) ? c.clients : [],
-              projects: Array.isArray(p?.projects) ? p.projects : [],
-              tickets: Array.isArray(t?.tickets) ? t.tickets : [],
-              loading: false,
-              error: ""
-            });
-          } catch (error) {
-            if (alive) setState((prev) => ({ ...prev, loading: false, error: error?.message ?? "Could not load clients" }));
+      const signature = useRef("");
+      const mounted = useRef(true);
+      const load = useCallback(async () => {
+        try {
+          const [c, p, t] = await Promise.all([
+            api("GET", "/admin/clients"),
+            api("GET", "/admin/projects"),
+            api("GET", "/admin/tickets")
+          ]);
+          if (!mounted.current) return;
+          const next = {
+            clients: Array.isArray(c?.clients) ? c.clients : [],
+            projects: Array.isArray(p?.projects) ? p.projects : [],
+            tickets: Array.isArray(t?.tickets) ? t.tickets : [],
+            loading: false,
+            error: ""
+          };
+          const sig = JSON.stringify([next.clients, next.projects, next.tickets]);
+          if (sig === signature.current) return;
+          signature.current = sig;
+          setState(next);
+        } catch (error) {
+          if (mounted.current) {
+            setState((prev) => ({ ...prev, loading: false, error: error?.message ?? "Could not load clients" }));
           }
-        };
+        }
+      }, []);
+      useEffect(() => {
+        mounted.current = true;
         void load();
-        const timer = setInterval(() => void load(), CLIENT_ROWS_MS);
-        const onFocus = () => void load();
-        window.addEventListener("focus", onFocus);
-        return () => {
-          alive = false;
-          clearInterval(timer);
-          window.removeEventListener("focus", onFocus);
+        let pending = null;
+        const soon = () => {
+          clearTimeout(pending);
+          pending = setTimeout(() => void load(), SECTION_DEBOUNCE_MS);
         };
-      }, [round]);
-      const tree = buildClientTree(state.clients, state.projects, state.tickets);
+        const stopAttention = attention.subscribe(soon);
+        window.addEventListener("admin:changed", soon);
+        window.addEventListener("focus", soon);
+        const every = setInterval(() => void load(), SECTION_REFRESH_MS);
+        return () => {
+          mounted.current = false;
+          stopAttention();
+          clearTimeout(pending);
+          clearInterval(every);
+          window.removeEventListener("admin:changed", soon);
+          window.removeEventListener("focus", soon);
+        };
+      }, [load]);
+      const { tree, unsorted } = buildClientTree(state.clients, state.projects, state.tickets);
       const mine = state.tickets.filter((t) => t.kind === "system").sort(ticketOrder);
+      const openTotal = tree.reduce((sum, client) => sum + client.projects.reduce((inner, project) => inner + openTicketCount(project.tickets), 0), 0) + openTicketCount(unsorted) + openTicketCount(mine);
       const refresh = /* @__PURE__ */ jsx(
         "button",
         {
           type: "button",
           "aria-label": "Refresh clients",
           title: "Refresh clients",
-          onClick: reload,
+          onClick: () => void load(),
           style: { width: 24, height: 24, border: 0, borderRadius: 4, background: "transparent", color: "inherit", cursor: "pointer", fontSize: 14, lineHeight: 1 },
           children: "\u21BB"
         }
       );
-      return /* @__PURE__ */ jsxs(Section, { id: "admin-clients", title: "Clients", count: tree.length || void 0, actions: refresh, children: [
+      return /* @__PURE__ */ jsxs(Section, { id: "admin-clients", title: "Clients", count: openTotal || void 0, actions: refresh, children: [
         state.loading && /* @__PURE__ */ jsx(TreeRow, { label: "Loading clients\u2026" }),
-        state.error !== "" && /* @__PURE__ */ jsx(TreeRow, { label: `${state.error} \u2014 click to retry`, onClick: reload }),
+        state.error !== "" && /* @__PURE__ */ jsx(TreeRow, { label: `${state.error} \u2014 click to retry`, onClick: () => void load() }),
         tree.map(({ client, badge, projects }, index) => /* @__PURE__ */ jsx(
           TreeRow,
           {
@@ -7059,10 +7362,11 @@ ${who} is emailed about this change.`)) return;
             children: projects.length > 0 ? projects.map((project, projectIndex) => /* @__PURE__ */ jsx(
               TreeRow,
               {
+                dot: projectTint(project.tickets),
                 label: project.name,
                 badge: openTicketCount(project.tickets) || void 0,
                 defaultExpanded: index === 0 && projectIndex === 0 && project.tickets.length > 0,
-                children: project.tickets.length > 0 ? /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: project.tickets, changed: reload }) : void 0
+                children: project.tickets.length > 0 ? /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: project.tickets, changed: () => void load() }) : void 0
               },
               `${client.id}:${project.id}`
             )) : void 0
@@ -7070,7 +7374,8 @@ ${who} is emailed about this change.`)) return;
           client.id
         )),
         !state.loading && state.error === "" && tree.length === 0 && /* @__PURE__ */ jsx(TreeRow, { label: "No clients yet" }),
-        mine.length > 0 && /* @__PURE__ */ jsx(TreeRow, { label: "Mine", badge: openTicketCount(mine) || void 0, children: /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: mine, changed: reload }) })
+        unsorted.length > 0 && /* @__PURE__ */ jsx(TreeRow, { label: "Unsorted", badge: openTicketCount(unsorted) || void 0, defaultExpanded: true, children: /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: unsorted, changed: () => void load() }) }),
+        mine.length > 0 && /* @__PURE__ */ jsx(TreeRow, { label: "Mine", badge: openTicketCount(mine) || void 0, children: /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: mine, changed: () => void load() }) })
       ] });
     }
     function useTicketRun(props) {
@@ -7118,51 +7423,265 @@ ${who} is emailed about this change.`)) return;
         void command(`unfollow ${sessionId}`).catch(() => void 0);
       };
     }
+    const ticketBriefs = /* @__PURE__ */ new Map();
+    const TICKET_BRIEF_MS = 3e4;
+    function useTicketBrief(ticketId) {
+      const [brief, setBrief] = useState(() => ticketId === null ? null : ticketBriefs.get(ticketId)?.ticket ?? null);
+      useEffect(() => {
+        if (ticketId === null) return void 0;
+        const hit = ticketBriefs.get(ticketId);
+        if (hit && Date.now() - hit.at < TICKET_BRIEF_MS) {
+          setBrief(hit.ticket);
+          return void 0;
+        }
+        setBrief(null);
+        let alive = true;
+        api("GET", `/admin/tickets/${ticketId}`).then(
+          (detail) => {
+            if (!alive) return;
+            const ticket = detail?.ticket ?? null;
+            if (ticket) ticketBriefs.set(ticketId, { at: Date.now(), ticket });
+            setBrief(ticket);
+          },
+          () => void 0
+        );
+        return () => {
+          alive = false;
+        };
+      }, [ticketId]);
+      return brief;
+    }
+    const headerActionStyle = {
+      height: 24,
+      padding: "0 8px",
+      borderRadius: 6,
+      border: "1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.35))",
+      background: "transparent",
+      color: "inherit",
+      font: "inherit",
+      fontSize: 12,
+      cursor: "pointer",
+      whiteSpace: "nowrap"
+    };
     function TicketHeaderChip({ sessionId }) {
       const run = ticketFromCwd(useSessionCwd(sessionId));
       const ticketId = run?.ticketId ?? null;
+      const brief = useTicketBrief(ticketId);
+      const [status, setStatus] = useState(null);
+      const [replyOpen, setReplyOpen] = useState(false);
+      const [text, setText] = useState("");
+      const [busy, setBusy] = useState("");
+      const [note, setNote] = useState("");
+      useEffect(() => {
+        setStatus(null);
+        setReplyOpen(false);
+        setText("");
+        setNote("");
+      }, [ticketId]);
       useEffect(() => {
         if (ticketId === null || !sessionId) return void 0;
         return openTicketViews(ticketId, sessionId);
       }, [ticketId, sessionId]);
       if (!run) return null;
-      return /* @__PURE__ */ jsxs(
-        "button",
-        {
-          type: "button",
-          onClick: () => openTicket(run),
-          title: `Open ${run.kind === "task" ? "system task" : "client ticket"} #${run.ticketId} in Admin`,
-          style: {
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            height: 24,
-            padding: "0 8px",
-            borderRadius: 6,
-            border: `1px solid ${TICKET_COLORS[run.kind]}`,
-            background: "transparent",
-            color: "inherit",
-            font: "inherit",
-            fontSize: 12,
-            cursor: "pointer",
-            whiteSpace: "nowrap"
-          },
-          children: [
-            /* @__PURE__ */ jsx(TicketGlyph, { size: 13 }),
-            /* @__PURE__ */ jsxs("span", { children: [
-              run.kind === "task" ? "Task" : "Ticket",
-              " #",
-              run.ticketId,
-              run.runId ? ` \xB7 run ${run.runId}` : ""
-            ] })
-          ]
+      const currentStatus = status ?? brief?.status ?? "";
+      const approve = async () => {
+        if (!brief) return;
+        const who = brief.client_email || brief.client_name || "The client";
+        if (brief.kind !== "system" && !window.confirm(`Approve #${brief.id}?
+
+${who} is emailed about this change.`)) return;
+        setBusy("approve");
+        setNote("");
+        try {
+          await api("PATCH", `/admin/tickets/${brief.id}`, { status: "approved" });
+          ticketBriefs.delete(brief.id);
+          setStatus("approved");
+          window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "ticket.approval", ticketId: brief.id } }));
+          setNote("Approved");
+        } catch (error) {
+          setNote(error?.message ?? "Could not approve");
+        } finally {
+          setBusy("");
         }
-      );
+      };
+      const send = async () => {
+        const body = text.trim();
+        if (!brief || body.length === 0) return;
+        setBusy("reply");
+        setNote("");
+        try {
+          await api("POST", `/admin/tickets/${brief.id}/messages`, { body, internal: false });
+          setText("");
+          setReplyOpen(false);
+          setNote("Reply sent");
+          window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "ticket.reply", ticketId: brief.id } }));
+        } catch (error) {
+          setNote(error?.message ?? "Could not send the reply");
+        } finally {
+          setBusy("");
+        }
+      };
+      const openInPortal = () => {
+        const id = brief?.id ?? run.ticketId;
+        window.open(`https://malipetek.dev/portal/admin#ticket=${id}`, "_blank", "noopener,noreferrer");
+      };
+      return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 6, position: "relative" }, children: [
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            type: "button",
+            onClick: () => openTicket(run),
+            title: `Open ${run.kind === "task" ? "system task" : "client ticket"} #${run.ticketId} in Admin`,
+            style: {
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              height: 24,
+              padding: "0 8px",
+              borderRadius: 6,
+              border: `1px solid ${TICKET_COLORS[run.kind]}`,
+              background: "transparent",
+              color: "inherit",
+              font: "inherit",
+              fontSize: 12,
+              cursor: "pointer",
+              whiteSpace: "nowrap"
+            },
+            children: [
+              /* @__PURE__ */ jsx(TicketGlyph, { size: 13 }),
+              /* @__PURE__ */ jsxs("span", { children: [
+                run.kind === "task" ? "Task" : "Ticket",
+                " #",
+                run.ticketId
+              ] })
+            ]
+          }
+        ),
+        currentStatus === "new" ? /* @__PURE__ */ jsx("button", { type: "button", style: headerActionStyle, disabled: busy === "approve", title: "Approve this ticket (emails the client)", onClick: () => void approve(), children: busy === "approve" ? "Approving\u2026" : "Approve" }) : null,
+        brief && brief.kind !== "system" ? /* @__PURE__ */ jsx("button", { type: "button", style: { ...headerActionStyle, borderColor: replyOpen ? "var(--dsw-alias-state-business-primary, #4c8dff)" : void 0 }, onClick: () => setReplyOpen((value) => !value), title: "Reply to the client (emails them)", children: "Reply" }) : null,
+        /* @__PURE__ */ jsx("button", { type: "button", style: headerActionStyle, onClick: openInPortal, title: "Open this ticket in the portal", children: "Open in portal" }),
+        note ? /* @__PURE__ */ jsx("span", { title: note, style: { fontSize: 11, opacity: 0.65, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: note }) : null,
+        replyOpen && brief ? /* @__PURE__ */ jsxs(
+          "div",
+          {
+            style: {
+              position: "absolute",
+              top: 30,
+              right: 0,
+              zIndex: 60,
+              width: 320,
+              boxSizing: "border-box",
+              padding: 10,
+              borderRadius: 8,
+              border: "1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.32))",
+              background: "var(--dsw-alias-bg-elevated, #23252a)",
+              boxShadow: "0 12px 32px rgba(0,0,0,0.32)"
+            },
+            children: [
+              /* @__PURE__ */ jsxs("div", { style: { fontSize: 11, opacity: 0.65, marginBottom: 6 }, children: [
+                "To ",
+                brief.client_email || brief.client_name || "the client",
+                " \u2014 this emails them."
+              ] }),
+              /* @__PURE__ */ jsx(
+                "textarea",
+                {
+                  autoFocus: true,
+                  rows: 3,
+                  value: text,
+                  placeholder: "Write to the client\u2026",
+                  onChange: (event) => setText(event.target.value),
+                  onKeyDown: (event) => (event.metaKey || event.ctrlKey) && event.key === "Enter" && void send(),
+                  style: {
+                    width: "100%",
+                    boxSizing: "border-box",
+                    resize: "vertical",
+                    minHeight: 64,
+                    padding: "6px 8px",
+                    borderRadius: 6,
+                    border: "1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.32))",
+                    background: "var(--dsw-alias-bg-secondary, rgba(127,127,127,0.12))",
+                    color: "inherit",
+                    font: "inherit",
+                    fontSize: 12.5
+                  }
+                }
+              ),
+              /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 8 }, children: [
+                /* @__PURE__ */ jsx("button", { type: "button", style: headerActionStyle, onClick: () => setReplyOpen(false), children: "Cancel" }),
+                /* @__PURE__ */ jsx(
+                  "button",
+                  {
+                    type: "button",
+                    style: { ...headerActionStyle, borderColor: "transparent", background: "var(--dsw-alias-state-business-primary, #4c8dff)", color: "#fff" },
+                    disabled: busy === "reply" || text.trim().length === 0,
+                    onClick: () => void send(),
+                    children: busy === "reply" ? "Sending\u2026" : "Send reply"
+                  }
+                )
+              ] })
+            ]
+          }
+        ) : null
+      ] });
     }
     const files = { download: (path) => json(`download ${path}`) };
     function AdminPage() {
       return /* @__PURE__ */ jsx(AdminApp, { api, host, files, platform: "dsh" });
     }
+    function openAdminLink(url) {
+      let parsed;
+      try {
+        parsed = new URL(String(url));
+      } catch {
+        return false;
+      }
+      if (parsed.protocol !== "dsh-admin:") return false;
+      const parts = [parsed.hostname, ...parsed.pathname.split("/")].filter((part) => typeof part === "string" && part.length > 0).map((part) => {
+        try {
+          return decodeURIComponent(part);
+        } catch {
+          return part;
+        }
+      });
+      const route = (parts.shift() ?? "").toLowerCase();
+      const target = parts.join("/");
+      const openHash = (hash) => {
+        ctx.layout?.selectPanel?.(PANEL_ID);
+        const wanted = `#${hash}`;
+        if (window.location.hash === wanted) window.dispatchEvent(new HashChangeEvent("hashchange"));
+        else window.location.hash = wanted;
+      };
+      if (route === "ticket") {
+        const id = Number.parseInt(target, 10);
+        if (!Number.isInteger(id) || id <= 0) return false;
+        openTicket({ ticketId: id });
+        return true;
+      }
+      if (route === "client") {
+        if (target.length === 0) return false;
+        openHash(`client=${encodeURIComponent(target)}`);
+        return true;
+      }
+      if (route === "seo" || route === "health") {
+        openHash(route);
+        return true;
+      }
+      return false;
+    }
+    const onAdminLink = (event) => {
+      const url = typeof event?.detail === "string" ? event.detail : event?.detail?.url;
+      if (typeof url === "string") openAdminLink(url);
+    };
+    globalThis.__dshAdminOpenLink = openAdminLink;
+    window.addEventListener("dsh-admin:open-link", onAdminLink);
+    ctx.effect(
+      () => () => {
+        window.removeEventListener("dsh-admin:open-link", onAdminLink);
+        if (globalThis.__dshAdminOpenLink === openAdminLink) delete globalThis.__dshAdminOpenLink;
+      },
+      "admin: dsh-admin links"
+    );
     ctx.inject(["locale"], (localeCtx) => {
       localeCtx.effect(() => localeCtx.locale.register(NAMESPACE, { en: DICTIONARY }), "admin: locale namespace");
     });
@@ -7192,6 +7711,8 @@ ${who} is emailed about this change.`)) return;
     ctx.slots.inject("conversation.session.header.actions", () => ctx.slots.register({ name: "conversation.session.header.actions", id: "admin-ticket", order: 5, locale: NAMESPACE }, TicketHeaderChip));
     ctx.slots.inject("sidebar.session.row.leading", () => ctx.slots.register({ name: "sidebar.session.row.leading", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketMark));
     ctx.slots.inject("sidebar.session.row.hover", () => ctx.slots.register({ name: "sidebar.session.row.hover", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketHover));
+    ctx.slots.inject("shell.overlay", () => ctx.slots.register({ name: "shell.overlay", id: "admin-notifications", order: 40 }, NotificationHost));
+    ctx.slots.inject("settings.section", () => ctx.slots.register({ name: "settings.section", id: "admin", order: 60, label: "Admin" }, AdminSettingsSection));
     ctx.effect(
       () => ctx.sidebarRightTabs.register({
         id: "admin-tasks",

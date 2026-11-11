@@ -11,14 +11,14 @@
  *
  * @module @malipetek/dsh-admin
  */
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AdminApp, ClientPage, TicketPage } from '../../admin-ui/src/index.js';
 
 /** Panel identity: one id addresses both the sidebar row and the main page. */
 const PANEL_ID = 'admin';
 const NAMESPACE = 'admin';
 /** Reported to the Host on activation, so "did the panel load?" has an answer. */
-const CLIENT_VERSION = '3.8.1';
+const CLIENT_VERSION = '3.9.0';
 const DICTIONARY = { title: 'Admin' };
 
 /**
@@ -634,23 +634,32 @@ function apply(ctx) {
 
   /* ————— What needs Ali, on the Admin entry ————— */
 
-  const ATTENTION_MS = 60_000;
+  const ATTENTION_MS = 15_000;
 
   /**
-   * One poller for `/admin/attention`, shared by everything that shows it, and
-   * running only while something does. It goes over the panel route, so a
-   * poll never lands in a session log. Signed out or offline reads as null.
+   * One poller for `/admin/attention` — the cheapest portal read there is, four
+   * counts from one query — shared by everything that shows it and running only
+   * while something does. It goes over the panel route, so a poll never lands
+   * in a session log. Subscribers are told only when the counts actually
+   * change, so a quiet minute re-renders nothing. Signed out or offline reads
+   * as null.
    */
   const attention = (() => {
     let value = null;
+    let signature = null;
     let timer = null;
     const subs = new Set();
     const pull = async () => {
+      let next = null;
       try {
-        value = await api('GET', '/admin/attention');
+        next = await api('GET', '/admin/attention');
       } catch {
-        value = null;
+        next = null;
       }
+      const nextSignature = JSON.stringify(next);
+      if (nextSignature === signature) return;
+      signature = nextSignature;
+      value = next;
       for (const notify of subs) notify();
     };
     const onFocus = () => void pull();
@@ -672,8 +681,254 @@ function apply(ctx) {
         };
       },
       get: () => value,
+      pull,
     };
   })();
+
+  /* ————— New work reaches the window ————— */
+
+  /**
+   * The Host's event feed, polled over the panel route (no Session, nothing
+   * logged). The Host already diffs each 60-second portal poll, so this is a
+   * two-word answer when nothing happened: `{ seq, events: [] }`.
+   *
+   * The first call is the cursor only. It answers the current sequence with no
+   * events, so a panel that has just loaded never toasts a queue from an hour
+   * ago; from then on every event after the cursor is shown once. Each event
+   * is also broadcast on `window` as `admin:changed`, which is what the
+   * Clients tree reloads on — no second timer, no blind 15-second poll.
+   */
+  const NOTIFY_POLL_MS = 10_000;
+  const notificationFeed = (() => {
+    let cursor = null;
+    let timer = null;
+    let running = false;
+    const subs = new Set();
+    const pull = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const value = cursor === null ? await json('events') : await json(`events ${cursor}`);
+        if (cursor === null) {
+          cursor = Number(value?.seq) || 0;
+          return;
+        }
+        const events = Array.isArray(value?.events) ? value.events : [];
+        cursor = Math.max(cursor, Number(value?.seq) || cursor);
+        for (const event of events) {
+          for (const notify of subs) notify(event);
+          window.dispatchEvent(new CustomEvent('admin:changed', { detail: event }));
+        }
+      } catch {
+        // Signed out, offline, or a Host from before the feed: nothing to show.
+      } finally {
+        running = false;
+      }
+    };
+    return {
+      subscribe(notify) {
+        subs.add(notify);
+        if (timer === null) {
+          void pull();
+          timer = setInterval(() => void pull(), NOTIFY_POLL_MS);
+        }
+        return () => {
+          subs.delete(notify);
+          if (subs.size === 0) {
+            clearInterval(timer);
+            timer = null;
+          }
+        };
+      },
+      pull,
+    };
+  })();
+
+  const TOAST_TINT = {
+    'ticket.new': 'var(--dsw-alias-state-warning-primary, #d18f2e)',
+    'ticket.approval': 'var(--dsw-alias-state-warning-primary, #d18f2e)',
+    'ticket.reply': 'var(--dsw-alias-state-business-primary, #4c8dff)',
+    'run.finished': 'var(--dsw-alias-state-success-primary, #2f9e5b)',
+    'run.failed': 'var(--dsw-alias-state-danger-primary, #e5534b)',
+  };
+  const TOAST_MS = 7000;
+
+  /** One in-app notice: the same event macOS got, with a click through to the ticket. */
+  function NotificationToast({ toast, onOpen, onClose }) {
+    const tint = TOAST_TINT[toast.kind] ?? 'var(--dsw-alias-label-tertiary, #8a9099)';
+    return (
+      <div
+        role="status"
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 8,
+          width: '100%',
+          maxWidth: 360,
+          boxSizing: 'border-box',
+          padding: '10px 12px 10px 10px',
+          borderRadius: 10,
+          border: '1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.28))',
+          borderLeft: `3px solid ${tint}`,
+          background: 'var(--dsw-alias-bg-elevated, #23252a)',
+          color: 'var(--dsw-alias-label-primary, inherit)',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.28)',
+          font: 'inherit',
+          fontSize: 12.5,
+          cursor: toast.ticketId ? 'pointer' : 'default',
+        }}
+        onClick={() => toast.ticketId && onOpen(toast)}
+      >
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontWeight: 600, fontSize: 11, letterSpacing: '0.04em', textTransform: 'uppercase', opacity: 0.65 }}>
+            DSH Admin
+          </span>
+          <span style={{ display: 'block', lineHeight: 1.35, marginTop: 2 }}>{toast.body}</span>
+        </span>
+        <button
+          type="button"
+          aria-label="Dismiss"
+          onClick={(event) => {
+            event.stopPropagation();
+            onClose(toast);
+          }}
+          style={{ border: 0, background: 'transparent', color: 'inherit', opacity: 0.55, cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 0 }}
+        >
+          ×
+        </button>
+      </div>
+    );
+  }
+
+  /**
+   * The frame-wide toast stack. It lives in `shell.overlay`, the Harness's own
+   * click-through layer, so a notice survives switching panels and pages.
+   */
+  function NotificationHost() {
+    const [toasts, setToasts] = useState([]);
+    /** key → its auto-dismiss timer, shared by the effect and the close button. */
+    const timers = useRef(new Map());
+    const remove = (key) => {
+      clearTimeout(timers.current.get(key));
+      timers.current.delete(key);
+      setToasts((prev) => prev.filter((item) => item.key !== key));
+    };
+    useEffect(() => {
+      const add = (event) => {
+        const key = `${event.seq ?? Date.now()}-${Math.random().toString(36).slice(2)}`;
+        setToasts((prev) => [...prev.slice(-2), { ...event, key }]);
+        timers.current.set(key, setTimeout(() => {
+          timers.current.delete(key);
+          setToasts((prev) => prev.filter((item) => item.key !== key));
+        }, TOAST_MS));
+      };
+      const stop = notificationFeed.subscribe(add);
+      return () => {
+        stop();
+        for (const timer of timers.current.values()) clearTimeout(timer);
+        timers.current.clear();
+      };
+    }, []);
+    if (toasts.length === 0) return null;
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          top: 48,
+          right: 18,
+          zIndex: 2147483000,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-end',
+          gap: 8,
+          pointerEvents: 'auto',
+        }}
+      >
+        {toasts.map((toast) => (
+          <NotificationToast
+            key={toast.key}
+            toast={toast}
+            onOpen={(item) => {
+              openTicket({ ticketId: item.ticketId });
+              remove(item.key);
+            }}
+            onClose={(item) => remove(item.key)}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  /**
+   * The Admin settings page: the notification switch, and where to sign in.
+   * The switch is the `/admin notify` command, so the panel and the slash
+   * command never disagree.
+   */
+  function AdminSettingsSection() {
+    const [state, setState] = useState({ loaded: false, notify: true, busy: false, error: '' });
+    useEffect(() => {
+      let alive = true;
+      json('notify').then(
+        (value) => { if (alive) setState({ loaded: true, notify: value?.notify !== false, busy: false, error: '' }); },
+        (error) => { if (alive) setState((prev) => ({ ...prev, loaded: true, error: error?.message ?? 'Could not read the setting.' })); },
+      );
+      return () => { alive = false; };
+    }, []);
+    const toggle = async () => {
+      const next = !state.notify;
+      setState((prev) => ({ ...prev, busy: true, error: '' }));
+      try {
+        await command(`notify ${next ? 'on' : 'off'}`);
+        setState({ loaded: true, notify: next, busy: false, error: '' });
+      } catch (error) {
+        setState((prev) => ({ ...prev, busy: false, error: error?.message ?? 'Could not save the setting.' }));
+      }
+    };
+    const rowStyle = { display: 'flex', alignItems: 'center', gap: 16, padding: '14px 0', borderTop: '1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.22))' };
+    const switchStyle = {
+      width: 38,
+      height: 22,
+      padding: 2,
+      borderRadius: 11,
+      border: 0,
+      cursor: state.busy ? 'wait' : 'pointer',
+      background: state.notify ? 'var(--dsw-alias-state-success-primary, #2f9e5b)' : 'var(--dsw-alias-bg-secondary, rgba(127,127,127,0.35))',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: state.notify ? 'flex-end' : 'flex-start',
+      boxSizing: 'border-box',
+    };
+    return (
+      <div style={{ padding: '20px 24px', maxWidth: 680 }}>
+        <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Admin</h2>
+        <p style={{ margin: '0 0 14px', fontSize: 12.5, opacity: 0.65, lineHeight: 1.45 }}>
+          The malipetek.dev portal inside the Harness: tickets, the work queue and its fleet, clients and projects.
+          The Host refreshes every minute and notifies you about new work in the window and on this Mac.
+        </p>
+        <div style={rowStyle}>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 13 }}>Notify me about new work</span>
+            <span style={{ display: 'block', fontSize: 12, opacity: 0.6, marginTop: 2 }}>
+              A new ticket, one waiting for approval, a client reply, or a finished or failed run — in-app and as a
+              macOS notification, never twice.
+            </span>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={state.notify}
+            aria-label="Notify me about new work"
+            disabled={!state.loaded || state.busy}
+            onClick={() => void toggle()}
+            style={switchStyle}
+          >
+            <span style={{ width: 18, height: 18, borderRadius: 9, background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.3)' }} />
+          </button>
+        </div>
+        {state.error ? <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--dsw-alias-state-danger-primary, #e5534b)' }}>{state.error}</p> : null}
+      </div>
+    );
+  }
 
   /**
    * The Admin entry's icon, with a count of what is waiting on Ali — tickets
@@ -854,6 +1109,14 @@ function apply(ctx) {
     const rows = new Map();
     let stopped = false;
     const pass = async () => {
+      // With the workspace section, the tree above owns the lists and is the
+      // only poller; the flat rows are empty, so this legacy pass stays out of
+      // the network instead of fetching the same three endpoints every minute.
+      if (sectionAvailable) {
+        for (const row of rows.values()) row.dispose();
+        rows.clear();
+        return;
+      }
       let clients;
       let tickets;
       try {
@@ -1041,7 +1304,21 @@ function apply(ctx) {
     );
   }
 
-  /** Shape clients, projects and tickets into the tree rows the section renders. */
+  /** The status dot of a project row: its most urgent open ticket, if any. */
+  function projectTint(tickets) {
+    const open = tickets.filter((ticket) => !isClosedTicket(ticket));
+    if (open.some((ticket) => ticket.status === 'new')) return TICKET_DOT.new;
+    if (open.some((ticket) => ticket.status === 'review')) return TICKET_DOT.review;
+    if (open.some((ticket) => ticket.status === 'in_progress')) return TICKET_DOT.in_progress;
+    return open.length > 0 ? TICKET_DOT.approved : undefined;
+  }
+
+  /**
+   * Shape clients, projects and tickets into the tree rows the section renders.
+   * A ticket the tree cannot place — no client on it, or a client the portal no
+   * longer lists — is returned separately as `unsorted`, so it is still
+   * reachable instead of silently missing from the sidebar.
+   */
   function buildClientTree(clients, projects, tickets) {
     const projectById = new Map(projects.map((p) => [String(p.id), p]));
     const latest = new Map();
@@ -1053,8 +1330,11 @@ function apply(ctx) {
     const eligible = clients
       .filter((c) => c.role !== 'admin' && typeof c.id === 'string' && c.email)
       .sort((a, b) => active(b) - active(a));
-    return eligible.map((client) => {
+    /** Ticket ids already shown under their client and project. */
+    const placed = new Set();
+    const tree = eligible.map((client) => {
       const own = tickets.filter((t) => t.kind !== 'system' && t.client_email === client.email);
+      for (const t of own) placed.add(t.id);
       const byProject = new Map();
       const noProject = [];
       for (const t of own) {
@@ -1081,67 +1361,99 @@ function apply(ctx) {
       const answer = own.filter((t) => Boolean(t.client_waiting_since) && !['new', 'done', 'declined'].includes(t.status)).length;
       return { client, approve, answer, badge: approve + answer, projects: groups };
     });
+    const unsorted = tickets
+      .filter((t) => t.kind !== 'system' && !placed.has(t.id))
+      .sort(ticketOrder);
+    return { tree, unsorted };
   }
 
+  /** A section reload can be asked for by three watchers at once; run one. */
+  const SECTION_REFRESH_MS = 5 * 60_000;
+  const SECTION_DEBOUNCE_MS = 300;
+
   /**
-   * The Clients section: clients, their projects and their tickets, refreshed
-   * like the flat rows (once a minute and on window focus). `Section` and
-   * `Row` come from the ui-workspace section slot, so this file imports no
-   * Harness internals.
+   * The Clients section: clients, their projects and their open tickets, live.
+   *
+   * The tree reads the three lists once and then reloads only when something
+   * says they changed: the 15-second `/admin/attention` count diff, an event
+   * from the Host's own poll, window focus, or the refresh button. A reload
+   * that returns the same data does not re-render (`sig`), and a five-minute
+   * safety pass catches anything the cursors missed. `Section` and `Row` come
+   * from the ui-workspace section slot, so this file imports no Harness
+   * internals.
    */
   function ClientsSection({ Section, TreeRow, selectPanel }) {
     const [state, setState] = useState({ clients: [], projects: [], tickets: [], loading: true, error: '' });
-    const [round, setRound] = useState(0);
-    const reload = useCallback(() => setRound((value) => value + 1), []);
-    useEffect(() => {
-      let alive = true;
-      const load = async () => {
-        try {
-          const [c, p, t] = await Promise.all([
-            api('GET', '/admin/clients'),
-            api('GET', '/admin/projects'),
-            api('GET', '/admin/tickets'),
-          ]);
-          if (!alive) return;
-          setState({
-            clients: Array.isArray(c?.clients) ? c.clients : [],
-            projects: Array.isArray(p?.projects) ? p.projects : [],
-            tickets: Array.isArray(t?.tickets) ? t.tickets : [],
-            loading: false,
-            error: '',
-          });
-        } catch (error) {
-          if (alive) setState((prev) => ({ ...prev, loading: false, error: error?.message ?? 'Could not load clients' }));
+    const signature = useRef('');
+    const mounted = useRef(true);
+    const load = useCallback(async () => {
+      try {
+        const [c, p, t] = await Promise.all([
+          api('GET', '/admin/clients'),
+          api('GET', '/admin/projects'),
+          api('GET', '/admin/tickets'),
+        ]);
+        if (!mounted.current) return;
+        const next = {
+          clients: Array.isArray(c?.clients) ? c.clients : [],
+          projects: Array.isArray(p?.projects) ? p.projects : [],
+          tickets: Array.isArray(t?.tickets) ? t.tickets : [],
+          loading: false,
+          error: '',
+        };
+        const sig = JSON.stringify([next.clients, next.projects, next.tickets]);
+        if (sig === signature.current) return;
+        signature.current = sig;
+        setState(next);
+      } catch (error) {
+        if (mounted.current) {
+          setState((prev) => ({ ...prev, loading: false, error: error?.message ?? 'Could not load clients' }));
         }
-      };
+      }
+    }, []);
+    useEffect(() => {
+      mounted.current = true;
       void load();
-      const timer = setInterval(() => void load(), CLIENT_ROWS_MS);
-      const onFocus = () => void load();
-      window.addEventListener('focus', onFocus);
-      return () => {
-        alive = false;
-        clearInterval(timer);
-        window.removeEventListener('focus', onFocus);
+      let pending = null;
+      const soon = () => {
+        clearTimeout(pending);
+        pending = setTimeout(() => void load(), SECTION_DEBOUNCE_MS);
       };
-    }, [round]);
+      const stopAttention = attention.subscribe(soon);
+      window.addEventListener('admin:changed', soon);
+      window.addEventListener('focus', soon);
+      const every = setInterval(() => void load(), SECTION_REFRESH_MS);
+      return () => {
+        mounted.current = false;
+        stopAttention();
+        clearTimeout(pending);
+        clearInterval(every);
+        window.removeEventListener('admin:changed', soon);
+        window.removeEventListener('focus', soon);
+      };
+    }, [load]);
 
-    const tree = buildClientTree(state.clients, state.projects, state.tickets);
+    const { tree, unsorted } = buildClientTree(state.clients, state.projects, state.tickets);
     const mine = state.tickets.filter((t) => t.kind === 'system').sort(ticketOrder);
+    const openTotal =
+      tree.reduce((sum, client) => sum + client.projects.reduce((inner, project) => inner + openTicketCount(project.tickets), 0), 0) +
+      openTicketCount(unsorted) +
+      openTicketCount(mine);
     const refresh = (
       <button
         type="button"
         aria-label="Refresh clients"
         title="Refresh clients"
-        onClick={reload}
+        onClick={() => void load()}
         style={{ width: 24, height: 24, border: 0, borderRadius: 4, background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}
       >
         ↻
       </button>
     );
     return (
-      <Section id="admin-clients" title="Clients" count={tree.length || undefined} actions={refresh}>
+      <Section id="admin-clients" title="Clients" count={openTotal || undefined} actions={refresh}>
         {state.loading && <TreeRow label="Loading clients…" />}
-        {state.error !== '' && <TreeRow label={`${state.error} — click to retry`} onClick={reload} />}
+        {state.error !== '' && <TreeRow label={`${state.error} — click to retry`} onClick={() => void load()} />}
         {tree.map(({ client, badge, projects }, index) => (
           <TreeRow
             key={client.id}
@@ -1154,20 +1466,26 @@ function apply(ctx) {
             children={projects.length > 0 ? projects.map((project, projectIndex) => (
               <TreeRow
                 key={`${client.id}:${project.id}`}
+                dot={projectTint(project.tickets)}
                 label={project.name}
                 badge={openTicketCount(project.tickets) || undefined}
                 defaultExpanded={index === 0 && projectIndex === 0 && project.tickets.length > 0}
                 children={project.tickets.length > 0
-                  ? <TicketList Row={TreeRow} tickets={project.tickets} changed={reload} />
+                  ? <TicketList Row={TreeRow} tickets={project.tickets} changed={() => void load()} />
                   : undefined}
               />
             )) : undefined}
           />
         ))}
         {!state.loading && state.error === '' && tree.length === 0 && <TreeRow label="No clients yet" />}
+        {unsorted.length > 0 && (
+          <TreeRow label="Unsorted" badge={openTicketCount(unsorted) || undefined} defaultExpanded>
+            <TicketList Row={TreeRow} tickets={unsorted} changed={() => void load()} />
+          </TreeRow>
+        )}
         {mine.length > 0 && (
           <TreeRow label="Mine" badge={openTicketCount(mine) || undefined}>
-            <TicketList Row={TreeRow} tickets={mine} changed={reload} />
+            <TicketList Row={TreeRow} tickets={mine} changed={() => void load()} />
           </TreeRow>
         )}
       </Section>
@@ -1256,41 +1574,220 @@ function apply(ctx) {
     };
   }
 
+  /** Ticket summaries for the conversation header, kept briefly across mounts. */
+  const ticketBriefs = new Map();
+  const TICKET_BRIEF_MS = 30_000;
+
+  /**
+   * The ticket behind a run session, for the header's actions. One read when
+   * the header mounts (and after a minute), not a poll: the header only needs
+   * the status to decide whether Approve is offered.
+   */
+  function useTicketBrief(ticketId) {
+    const [brief, setBrief] = useState(() => (ticketId === null ? null : ticketBriefs.get(ticketId)?.ticket ?? null));
+    useEffect(() => {
+      if (ticketId === null) return undefined;
+      const hit = ticketBriefs.get(ticketId);
+      if (hit && Date.now() - hit.at < TICKET_BRIEF_MS) {
+        setBrief(hit.ticket);
+        return undefined;
+      }
+      // Another ticket's summary would offer the wrong moves while this read runs.
+      setBrief(null);
+      let alive = true;
+      api('GET', `/admin/tickets/${ticketId}`).then(
+        (detail) => {
+          if (!alive) return;
+          const ticket = detail?.ticket ?? null;
+          if (ticket) ticketBriefs.set(ticketId, { at: Date.now(), ticket });
+          setBrief(ticket);
+        },
+        () => undefined,
+      );
+      return () => { alive = false; };
+    }, [ticketId]);
+    return brief;
+  }
+
+  const headerActionStyle = {
+    height: 24,
+    padding: '0 8px',
+    borderRadius: 6,
+    border: '1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.35))',
+    background: 'transparent',
+    color: 'inherit',
+    font: 'inherit',
+    fontSize: 12,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  };
+
+  /**
+   * In a run's own conversation header: the ticket's name, one click to the
+   * Admin copy — plus the three moves that belong to the ticket rather than
+   * the conversation: Approve, Reply to the client, and Open in portal. The
+   * ticket views register while this conversation is the one on screen, so no
+   * other session grows a tab with nothing in it.
+   */
   function TicketHeaderChip({ sessionId }) {
     const run = ticketFromCwd(useSessionCwd(sessionId));
     const ticketId = run?.ticketId ?? null;
+    const brief = useTicketBrief(ticketId);
+    const [status, setStatus] = useState(null);
+    const [replyOpen, setReplyOpen] = useState(false);
+    const [text, setText] = useState('');
+    const [busy, setBusy] = useState('');
+    const [note, setNote] = useState('');
+    useEffect(() => {
+      setStatus(null);
+      setReplyOpen(false);
+      setText('');
+      setNote('');
+    }, [ticketId]);
     useEffect(() => {
       if (ticketId === null || !sessionId) return undefined;
       return openTicketViews(ticketId, sessionId);
     }, [ticketId, sessionId]);
     if (!run) return null;
+    const currentStatus = status ?? brief?.status ?? '';
+    const approve = async () => {
+      if (!brief) return;
+      const who = brief.client_email || brief.client_name || 'The client';
+      if (brief.kind !== 'system' && !window.confirm(`Approve #${brief.id}?\n\n${who} is emailed about this change.`)) return;
+      setBusy('approve');
+      setNote('');
+      try {
+        await api('PATCH', `/admin/tickets/${brief.id}`, { status: 'approved' });
+        ticketBriefs.delete(brief.id);
+        setStatus('approved');
+        // The Admin tab, the tree and the notifications all read the same
+        // portal; a short event wakes them instead of waiting for the poll.
+        window.dispatchEvent(new CustomEvent('admin:changed', { detail: { kind: 'ticket.approval', ticketId: brief.id } }));
+        setNote('Approved');
+      } catch (error) {
+        setNote(error?.message ?? 'Could not approve');
+      } finally {
+        setBusy('');
+      }
+    };
+    const send = async () => {
+      const body = text.trim();
+      if (!brief || body.length === 0) return;
+      setBusy('reply');
+      setNote('');
+      try {
+        await api('POST', `/admin/tickets/${brief.id}/messages`, { body, internal: false });
+        setText('');
+        setReplyOpen(false);
+        setNote('Reply sent');
+        window.dispatchEvent(new CustomEvent('admin:changed', { detail: { kind: 'ticket.reply', ticketId: brief.id } }));
+      } catch (error) {
+        setNote(error?.message ?? 'Could not send the reply');
+      } finally {
+        setBusy('');
+      }
+    };
+    const openInPortal = () => {
+      const id = brief?.id ?? run.ticketId;
+      window.open(`https://malipetek.dev/portal/admin#ticket=${id}`, '_blank', 'noopener,noreferrer');
+    };
     return (
-      <button
-        type="button"
-        onClick={() => openTicket(run)}
-        title={`Open ${run.kind === 'task' ? 'system task' : 'client ticket'} #${run.ticketId} in Admin`}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 5,
-          height: 24,
-          padding: '0 8px',
-          borderRadius: 6,
-          border: `1px solid ${TICKET_COLORS[run.kind]}`,
-          background: 'transparent',
-          color: 'inherit',
-          font: 'inherit',
-          fontSize: 12,
-          cursor: 'pointer',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        <TicketGlyph size={13} />
-        <span>
-          {run.kind === 'task' ? 'Task' : 'Ticket'} #{run.ticketId}
-          {run.runId ? ` · run ${run.runId}` : ''}
-        </span>
-      </button>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, position: 'relative' }}>
+        <button
+          type="button"
+          onClick={() => openTicket(run)}
+          title={`Open ${run.kind === 'task' ? 'system task' : 'client ticket'} #${run.ticketId} in Admin`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            height: 24,
+            padding: '0 8px',
+            borderRadius: 6,
+            border: `1px solid ${TICKET_COLORS[run.kind]}`,
+            background: 'transparent',
+            color: 'inherit',
+            font: 'inherit',
+            fontSize: 12,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <TicketGlyph size={13} />
+          <span>
+            {run.kind === 'task' ? 'Task' : 'Ticket'} #{run.ticketId}
+          </span>
+        </button>
+        {currentStatus === 'new' ? (
+          <button type="button" style={headerActionStyle} disabled={busy === 'approve'} title="Approve this ticket (emails the client)" onClick={() => void approve()}>
+            {busy === 'approve' ? 'Approving…' : 'Approve'}
+          </button>
+        ) : null}
+        {brief && brief.kind !== 'system' ? (
+          <button type="button" style={{ ...headerActionStyle, borderColor: replyOpen ? 'var(--dsw-alias-state-business-primary, #4c8dff)' : undefined }} onClick={() => setReplyOpen((value) => !value)} title="Reply to the client (emails them)">
+            Reply
+          </button>
+        ) : null}
+        <button type="button" style={headerActionStyle} onClick={openInPortal} title="Open this ticket in the portal">
+          Open in portal
+        </button>
+        {note ? (
+          <span title={note} style={{ fontSize: 11, opacity: 0.65, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {note}
+          </span>
+        ) : null}
+        {replyOpen && brief ? (
+          <div
+            style={{
+              position: 'absolute',
+              top: 30,
+              right: 0,
+              zIndex: 60,
+              width: 320,
+              boxSizing: 'border-box',
+              padding: 10,
+              borderRadius: 8,
+              border: '1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.32))',
+              background: 'var(--dsw-alias-bg-elevated, #23252a)',
+              boxShadow: '0 12px 32px rgba(0,0,0,0.32)',
+            }}
+          >
+            <div style={{ fontSize: 11, opacity: 0.65, marginBottom: 6 }}>To {brief.client_email || brief.client_name || 'the client'} — this emails them.</div>
+            <textarea
+              autoFocus
+              rows={3}
+              value={text}
+              placeholder="Write to the client…"
+              onChange={(event) => setText(event.target.value)}
+              onKeyDown={(event) => (event.metaKey || event.ctrlKey) && event.key === 'Enter' && void send()}
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                resize: 'vertical',
+                minHeight: 64,
+                padding: '6px 8px',
+                borderRadius: 6,
+                border: '1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.32))',
+                background: 'var(--dsw-alias-bg-secondary, rgba(127,127,127,0.12))',
+                color: 'inherit',
+                font: 'inherit',
+                fontSize: 12.5,
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 8 }}>
+              <button type="button" style={headerActionStyle} onClick={() => setReplyOpen(false)}>Cancel</button>
+              <button
+                type="button"
+                style={{ ...headerActionStyle, borderColor: 'transparent', background: 'var(--dsw-alias-state-business-primary, #4c8dff)', color: '#fff' }}
+                disabled={busy === 'reply' || text.trim().length === 0}
+                onClick={() => void send()}
+              >
+                {busy === 'reply' ? 'Sending…' : 'Send reply'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </span>
     );
   }
 
@@ -1301,6 +1798,83 @@ function apply(ctx) {
   function AdminPage() {
     return <AdminApp api={api} host={host} files={files} platform="dsh" />;
   }
+
+  /* ————— dsh-admin:// links ————— */
+
+  /**
+   * Open a `dsh-admin://` link: the plugin half of the desktop URL scheme.
+   *
+   *   dsh-admin://ticket/12   the ticket, in the Admin panel
+   *   dsh-admin://client/<id> that client's page
+   *   dsh-admin://seo         the SEO desk
+   *   dsh-admin://health      the health desk
+   *
+   * The fork's URL handler calls `globalThis.__dshAdminOpenLink(url)` (or
+   * dispatches `window`'s `dsh-admin:open-link` CustomEvent with `{url}`); both
+   * land here, so one function owns the routing. Returns false for an unknown
+   * route rather than guessing, so the caller can fall back.
+   */
+  function openAdminLink(url) {
+    let parsed;
+    try {
+      parsed = new URL(String(url));
+    } catch {
+      return false;
+    }
+    if (parsed.protocol !== 'dsh-admin:') return false;
+    const parts = [parsed.hostname, ...parsed.pathname.split('/')]
+      .filter((part) => typeof part === 'string' && part.length > 0)
+      .map((part) => {
+        try {
+          return decodeURIComponent(part);
+        } catch {
+          return part;
+        }
+      });
+    const route = (parts.shift() ?? '').toLowerCase();
+    const target = parts.join('/');
+    /**
+     * Select the Admin panel and put a route in its hash. A hash that is
+     * already current still dispatches `hashchange`, because the workbench
+     * only reads the hash on mount and on that event.
+     */
+    const openHash = (hash) => {
+      ctx.layout?.selectPanel?.(PANEL_ID);
+      const wanted = `#${hash}`;
+      if (window.location.hash === wanted) window.dispatchEvent(new HashChangeEvent('hashchange'));
+      else window.location.hash = wanted;
+    };
+    if (route === 'ticket') {
+      const id = Number.parseInt(target, 10);
+      if (!Number.isInteger(id) || id <= 0) return false;
+      openTicket({ ticketId: id });
+      return true;
+    }
+    if (route === 'client') {
+      if (target.length === 0) return false;
+      openHash(`client=${encodeURIComponent(target)}`);
+      return true;
+    }
+    if (route === 'seo' || route === 'health') {
+      openHash(route);
+      return true;
+    }
+    return false;
+  }
+
+  const onAdminLink = (event) => {
+    const url = typeof event?.detail === 'string' ? event.detail : event?.detail?.url;
+    if (typeof url === 'string') openAdminLink(url);
+  };
+  globalThis.__dshAdminOpenLink = openAdminLink;
+  window.addEventListener('dsh-admin:open-link', onAdminLink);
+  ctx.effect(
+    () => () => {
+      window.removeEventListener('dsh-admin:open-link', onAdminLink);
+      if (globalThis.__dshAdminOpenLink === openAdminLink) delete globalThis.__dshAdminOpenLink;
+    },
+    'admin: dsh-admin links',
+  );
 
   ctx.inject(['locale'], (localeCtx) => {
     localeCtx.effect(() => localeCtx.locale.register(NAMESPACE, { en: DICTIONARY }), 'admin: locale namespace');
@@ -1344,6 +1918,13 @@ function apply(ctx) {
     ctx.slots.register({ name: 'sidebar.session.row.leading', id: 'admin-ticket', order: 10, locale: NAMESPACE }, TicketMark));
   ctx.slots.inject('sidebar.session.row.hover', () =>
     ctx.slots.register({ name: 'sidebar.session.row.hover', id: 'admin-ticket', order: 10, locale: NAMESPACE }, TicketHover));
+  // Notifications live in the frame-wide overlay, so a toast survives switching
+  // panels and pages and never sits inside a column's scroll container.
+  ctx.slots.inject('shell.overlay', () =>
+    ctx.slots.register({ name: 'shell.overlay', id: 'admin-notifications', order: 40 }, NotificationHost));
+  // One page in Settings for the switch the /admin notify command reads.
+  ctx.slots.inject('settings.section', () =>
+    ctx.slots.register({ name: 'settings.section', id: 'admin', order: 60, label: 'Admin' }, AdminSettingsSection));
   // The desk itself in the right pane: the queue at a glance, beside whatever
   // conversation is open — no trip to the main panel to see what is waiting.
   ctx.effect(
