@@ -52,6 +52,8 @@ export interface MarketingSettings {
   postApproval: boolean;
   /** Only first emails Ali reviewed or rewrote go out; follow-ups ride on them. */
   reviewFirst: boolean;
+  /** Which emails carry the workshop GIF (EMAIL_IMAGE) above the signature. */
+  image: 'off' | 'first' | 'all';
 }
 
 const SETTING_DEFAULTS: MarketingSettings = {
@@ -68,6 +70,7 @@ const SETTING_DEFAULTS: MarketingSettings = {
   provider: 'cloudflare',
   postApproval: true,
   reviewFirst: false,
+  image: 'first',
 };
 
 const SETTING_KEYS: Record<keyof MarketingSettings, string> = {
@@ -84,6 +87,7 @@ const SETTING_KEYS: Record<keyof MarketingSettings, string> = {
   provider: 'marketing_provider',
   postApproval: 'marketing_post_approval',
   reviewFirst: 'marketing_review_first',
+  image: 'marketing_image',
 };
 
 const FIELD_OF_KEY = Object.fromEntries(Object.entries(SETTING_KEYS).map(([field, key]) => [key, field])) as Record<
@@ -123,6 +127,7 @@ const RULES: Record<keyof MarketingSettings, (raw: unknown) => unknown> = {
   provider: (raw) => (raw === 'cloudflare' || raw === 'ses' ? raw : undefined),
   postApproval: (raw) => (typeof raw === 'boolean' ? raw : undefined),
   reviewFirst: (raw) => (typeof raw === 'boolean' ? raw : undefined),
+  image: (raw) => (raw === 'off' || raw === 'first' || raw === 'all' ? raw : undefined),
 };
 
 export async function readMarketingSettings(env: Env): Promise<MarketingSettings> {
@@ -799,20 +804,63 @@ export interface OutgoingEmail {
   to: string;
   subject: string;
   text: string;
+  /** The same words as `text`, with the workshop GIF above the signature. */
+  html?: string;
   headers: Record<string, string>;
+}
+
+/**
+ * The homepage workshop as a looping GIF (scripts/email-gif.mjs records it).
+ * It is linked, not attached: the email stays a few KB and the site serves it.
+ */
+export const EMAIL_IMAGE = {
+  path: '/email/conveyor.gif',
+  width: 560,
+  height: 458,
+  alt: 'Request, approve, build, ship: how a change moves through malipetek',
+};
+
+export function wantsImage(settings: MarketingSettings, step: number | undefined): boolean {
+  return settings.image === 'all' || (settings.image === 'first' && (step ?? 0) === 0);
+}
+
+const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** Plain text as HTML: escaped, links clickable, line breaks kept. */
+function textHtml(text: string): string {
+  return escapeHtml(text)
+    .replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)]/g, (url) => `<a href="${url}" style="color:#16140f">${url}</a>`)
+    .replace(/\n/g, '<br>\n');
+}
+
+/** A plain-looking HTML email: the body, the GIF, then the footer. */
+export function emailHtml(siteBase: string, body: string, footer: string): string {
+  const img = `${siteBase}${EMAIL_IMAGE.path}`;
+  return [
+    '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>',
+    '<body style="margin:0;padding:0">',
+    `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;color:#16140f;max-width:${EMAIL_IMAGE.width}px">`,
+    `<div>${textHtml(body)}</div>`,
+    `<p style="margin:20px 0"><a href="${siteBase}/"><img src="${img}" width="${EMAIL_IMAGE.width}" height="${EMAIL_IMAGE.height}" alt="${escapeHtml(EMAIL_IMAGE.alt)}" style="display:block;width:100%;max-width:${EMAIL_IMAGE.width}px;height:auto;border:0"></a></p>`,
+    `<div style="color:#6b665d;font-size:13px">${textHtml(footer.replace(/^\n+/, ''))}</div>`,
+    '</div></body></html>',
+  ].join('\n');
 }
 
 /** Exactly what leaves for one message: the stored body plus the footer, and the list headers. */
 export async function renderOutgoing(
   env: Env,
   settings: MarketingSettings,
-  message: { contact_id: number | null; to_email: string | null; subject: string | null; body: string; status?: string },
+  message: { contact_id: number | null; to_email: string | null; subject: string | null; body: string; status?: string; step?: number },
 ): Promise<OutgoingEmail> {
+  // A sent row already holds the footer it left with.
+  const sent = message.status === 'sent';
+  const footer = footerFor(settings);
   return {
     to: message.to_email ?? '',
     subject: message.subject || '(no subject)',
-    // A sent row already holds the footer it left with.
-    text: message.status === 'sent' ? message.body : `${message.body}${footerFor(settings)}`,
+    text: sent ? message.body : `${message.body}${footer}`,
+    html: !sent && wantsImage(settings, message.step) ? emailHtml(siteUrl(env), message.body, footer) : undefined,
     headers: await listHeaders(env, message.contact_id),
   };
 }
@@ -828,6 +876,7 @@ async function transmit(env: Env, settings: MarketingSettings, mail: OutgoingEma
       replyTo: from,
       subject: mail.subject,
       text: mail.text,
+      html: mail.html,
       headers: Object.entries(mail.headers).map(([name, value]) => ({ name, value })),
     });
   }
@@ -837,6 +886,7 @@ async function transmit(env: Env, settings: MarketingSettings, mail: OutgoingEma
     to: mail.to,
     subject: mail.subject,
     text: mail.text,
+    ...(mail.html ? { html: mail.html } : {}),
     replyTo: from,
     headers: mail.headers,
   })) as { messageId?: string } | undefined;
@@ -846,6 +896,7 @@ async function transmit(env: Env, settings: MarketingSettings, mail: OutgoingEma
 interface ClaimedEmail {
   id: number;
   contact_id: number;
+  step: number;
   to_email: string | null;
   subject: string | null;
   body: string;
@@ -860,7 +911,7 @@ async function claimEmail(env: Env, id: number, t: number): Promise<ClaimedEmail
   const message = await env.DB.prepare(
     `UPDATE marketing_messages SET status = 'sending', updated_at = ?
       WHERE id = ? AND status = 'scheduled'
-      RETURNING id, contact_id, to_email, subject, body`,
+      RETURNING id, contact_id, step, to_email, subject, body`,
   )
     .bind(t, id)
     .first<ClaimedEmail>();
@@ -924,7 +975,7 @@ async function deliverEmail(env: Env, settings: MarketingSettings, message: Clai
     ).bind(t, t, message.contact_id),
     env.DB.prepare(
       `INSERT INTO marketing_events (message_id, contact_id, kind, detail, created_at) VALUES (?, ?, 'sent', ?, ?)`,
-    ).bind(message.id, message.contact_id, message.subject ?? '', t),
+    ).bind(message.id, message.contact_id, `${message.subject ?? ''}${outgoing.html ? ' (with GIF)' : ''}`, t),
   ]);
   return true;
 }
@@ -2137,6 +2188,7 @@ marketing.get('/admin/marketing/messages/:id', async (c) => {
       to: outgoing.to,
       subject: outgoing.subject,
       text: outgoing.text,
+      image: outgoing.html ? `${siteUrl(env)}${EMAIL_IMAGE.path}` : null,
       headers: outgoing.headers,
       provider: message.provider ?? settings.provider,
     };

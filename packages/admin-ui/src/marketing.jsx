@@ -1009,6 +1009,14 @@ function MessageModal({ id, api, onClose, onDone }) {
           <pre style={{ whiteSpace: 'pre-wrap', font: 'inherit', lineHeight: 1.5, padding: 12, border: '1px solid var(--aw-line, #ddd)', borderRadius: 6, marginTop: 12 }}>
             {preview.text}
           </pre>
+          {preview.image ? (
+            <figure style={{ margin: '0 0 12px' }}>
+              <img src={preview.image} alt="" width={280} style={{ display: 'block', height: 'auto', border: '1px solid var(--aw-line, #ddd)', borderRadius: 6 }} />
+              <figcaption className="aw-muted" style={{ fontSize: 12 }}>
+                Sent as HTML with this GIF above the signature; the text above is the plain-text part.
+              </figcaption>
+            </figure>
+          ) : null}
           {contact ? (
             <p className="aw-muted">
               {contact.site ? `Site ${contact.site}. ` : ''}
@@ -1363,6 +1371,20 @@ function SettingsTab({ overview, run, api, contactsById }) {
                 { value: false, label: 'Send all' },
               ]}
               onChange={(v) => set('reviewFirst', v)}
+            />
+          </Field>
+          <Field
+            label="Workshop GIF"
+            hint="The homepage conveyor as a looping GIF above the signature (malipetek.dev/email/conveyor.gif, linked, about 470 KB). Emails without it go as plain text only."
+          >
+            <Segmented
+              value={draft.image ?? 'first'}
+              options={[
+                { value: 'off', label: 'Off' },
+                { value: 'first', label: 'First emails' },
+                { value: 'all', label: 'Every email' },
+              ]}
+              onChange={(v) => set('image', v)}
             />
           </Field>
           <Field
