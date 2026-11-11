@@ -122,6 +122,9 @@ export function TicketView({ id }) {
 
   const { ticket, messages } = state;
   const open = isOpen(ticket);
+  // Another client's request on a shared project is read-only: the thread is
+  // theirs to read, the cost, budget, replies and withdrawal are the author's.
+  const isMine = ticket.mine !== false;
   const at = stepOf(ticket.status);
   const times = stepTimes(ticket, messages);
   // A first preview says what it is, in place of the generic status lines.
@@ -213,29 +216,31 @@ export function TicketView({ id }) {
       <div className="cp-ticket__cols">
         <div className="cp-ticket__main">
           <h2 className="cp-h2">{t('ticket.conversation')}</h2>
-          <Thread ticketId={ticket.id} messages={messages} intake={ticket.kind === 'intake'} />
-          <Reply ticketId={ticket.id} onSent={load} reopen={ticket.status === 'done' || ticket.status === 'declined'} />
+          <Thread ticketId={ticket.id} messages={messages} intake={ticket.kind === 'intake'} mine={isMine} />
+          {isMine ? <Reply ticketId={ticket.id} onSent={load} reopen={ticket.status === 'done' || ticket.status === 'declined'} /> : null}
         </div>
 
         <aside className="cp-ticket__side">
-          <section className="cp-card">
-            <h3 className="cp-label">{ticket.price_cents !== null ? t('ticket.cost.total') : t('ticket.cost.soFar')}</h3>
-            {firstPreview ? (
-              <p className="cp-side__line">
-                {t('ticket.firstPreview.cost', { limit: firstPreviewLimit ?? money(0) })}
-              </p>
-            ) : (
-              <>
-                <Cost ticket={ticket} />
-                <Gauge ticket={ticket} />
-                {open ? (
-                  <Button size="sm" onClick={() => setBudgetOpen(true)}>
-                    {ticket.budget_cents === null ? t('ticket.budget.set') : t('ticket.budget.change')}
-                  </Button>
-                ) : null}
-              </>
-            )}
-          </section>
+          {isMine ? (
+            <section className="cp-card">
+              <h3 className="cp-label">{ticket.price_cents !== null ? t('ticket.cost.total') : t('ticket.cost.soFar')}</h3>
+              {firstPreview ? (
+                <p className="cp-side__line">
+                  {t('ticket.firstPreview.cost', { limit: firstPreviewLimit ?? money(0) })}
+                </p>
+              ) : (
+                <>
+                  <Cost ticket={ticket} />
+                  <Gauge ticket={ticket} />
+                  {open ? (
+                    <Button size="sm" onClick={() => setBudgetOpen(true)}>
+                      {ticket.budget_cents === null ? t('ticket.budget.set') : t('ticket.budget.change')}
+                    </Button>
+                  ) : null}
+                </>
+              )}
+            </section>
+          ) : null}
 
           {site ? (
             <section className="cp-card">
@@ -288,7 +293,7 @@ export function TicketView({ id }) {
               <dt>{t('ticket.details.project')}</dt>
               <dd>
                 {project ? <a href={href(`project/${project.id}`)}>{project.name}</a> : t('ticket.details.none')}{' '}
-                {data.projects.length ? (
+                {isMine && data.projects.length ? (
                   <button type="button" className="cp-linkbtn" onClick={() => setMoveOpen(true)}>
                     {t('ticket.details.move')}
                   </button>
@@ -305,7 +310,7 @@ export function TicketView({ id }) {
             </dl>
           </section>
 
-          {ticket.status === 'new' ? (
+          {isMine && ticket.status === 'new' ? (
             <Button
               kind="ghost"
               className="cp-side__withdraw"
@@ -433,7 +438,7 @@ function MessageBody({ m }) {
 }
 
 /** The conversation; status changes read as small events between messages. */
-function Thread({ ticketId, messages, intake = false }) {
+function Thread({ ticketId, messages, intake = false, mine = true }) {
   const t = useT();
   const end = useRef(null);
   const count = useRef(messages.length);
@@ -453,12 +458,18 @@ function Thread({ ticketId, messages, intake = false }) {
         ) : (
           <li key={m.id} className={`cp-msg cp-msg--${m.author}`}>
             <span className="cp-msg__avatar" aria-hidden="true">
-              {m.author === 'ali' ? 'A' : m.author === 'runner' ? '⚙' : 'Y'}
+              {m.author === 'ali' ? 'A' : m.author === 'runner' ? '⚙' : mine ? 'Y' : 'C'}
             </span>
             <div className="cp-msg__box">
               <p className="cp-msg__who">
                 <strong>
-                  {m.author === 'runner' && intake ? t('thread.assistant') : WHO[m.author] ? t(WHO[m.author]) : m.author}
+                  {m.author === 'runner' && intake
+                    ? t('thread.assistant')
+                    : m.author === 'client' && !mine
+                      ? t('thread.client')
+                      : WHO[m.author]
+                        ? t(WHO[m.author])
+                        : m.author}
                 </strong>
                 <time>{fmtDate(m.created_at)}</time>
               </p>

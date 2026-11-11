@@ -23,6 +23,9 @@
  *   GET   /admin/tickets/:id/files/:fileId
  *   GET   /admin/runs/:id/session        a run's Harness session log (zstd JSONL)
  *   GET   /admin/clients
+ *   POST  /admin/clients                  { email, name?, locale?, projectIds[], note? } → invite
+ *   POST  /admin/clients/:userId/invite   send a fresh link, killing the unused ones
+ *   DELETE /admin/clients/:userId/invite  revoke the unused links
  *   GET   /admin/projects   POST /admin/projects { name, slug }
  *   PUT / DELETE /admin/clients/:userId/projects/:projectId
  *
@@ -36,6 +39,7 @@ import { claimTicketById, finishRun, normalizeReport, openRuns, recentRuns, sess
 import { finishContentCycle } from './content.ts';
 import { finishSeoCycle } from './seo.ts';
 import { bridgeMessage, bridgeTitle, forAli, forClientMail, threadFor, translateText, type Bridged } from './translate.ts';
+import { inviteMail, INVITE_TTL_SECONDS, joinProjectNames } from './invites.ts';
 import { previewStrings, tFor } from '../../src/i18n/eager.js';
 import { closestLocale, fromAcceptLanguage, TRANSLATION_ENGINES, type TranslationEngine } from '../../src/lib/locales.js';
 import { readSteps } from './steps.ts';
@@ -635,6 +639,24 @@ const TICKET_COLUMNS = `t.id, t.title, t.status, t.created_at, t.updated_at, t.c
   t.kind, t.source, t.priority, t.requires, t.executor, t.worked_by, t.title_en,
   t.first_preview, t.first_preview_done_at`;
 
+/**
+ * What a client may see of a ticket: their own requests, plus the client
+ * requests on the projects Ali attached them to (an invite to a project is
+ * access to its history). System work stays Ali's, and a request with no
+ * project is private to whoever filed it. Binds: user id, user id.
+ */
+const VISIBLE_TICKETS = `(t.user_id = ?
+  OR (t.kind = 'client' AND t.project_id IN (SELECT project_id FROM user_projects WHERE user_id = ?)))`;
+
+/**
+ * Someone else's request on a shared project: the thread is shared, the money
+ * is not. Price, time, AI cost and the author's own budget never leave the
+ * account that owns the work.
+ */
+function sharedTicket<T extends Record<string, unknown>>(row: T): T {
+  return { ...row, price_cents: null, human_seconds: 0, ai_micro_usd: 0, budget_cents: null };
+}
+
 /* —— pricing (src/lib/pricing.js): measured time × rate + AI at cost —— */
 
 const MAX_BUDGET_CENTS = 10_000_00;
@@ -773,7 +795,8 @@ portal.post('/auth/verify', async (c) => {
   const token = typeof body?.token === 'string' ? body.token : '';
   if (!token || token.length > 100) return reply(c, { error: 'bad_token' }, 400);
 
-  // Single use: claim the token atomically, then read who it was for.
+  // Single use: claim the token atomically, then read who it was for. An invite
+  // token (purpose 'invite', a week long) is claimed exactly the same way.
   const hash = await sha256(token);
   const claimed = await env.DB.prepare(
     `UPDATE login_tokens SET used_at = ?
@@ -790,9 +813,15 @@ portal.post('/auth/verify', async (c) => {
   const locale = role === 'client' ? fromAcceptLanguage(c.req.header('Accept-Language')) : 'en-US';
   // A magic link reached this address, so the account is verified from here on.
   // Only a verified account gets the free first preview.
+  //
+  // The role is only ever raised to admin for ADMIN_EMAIL and is never changed
+  // for an account that already exists: a magic link proves the address, not
+  // the right to promote or demote an account.
   await env.DB.prepare(
     `INSERT INTO users (id, email, role, locale, created_at, verified_at) VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(email) DO UPDATE SET role = excluded.role, verified_at = COALESCE(users.verified_at, excluded.verified_at)`,
+       ON CONFLICT(email) DO UPDATE SET
+         role = CASE WHEN excluded.role = 'admin' THEN 'admin' ELSE users.role END,
+         verified_at = COALESCE(users.verified_at, excluded.verified_at)`,
   )
     .bind(crypto.randomUUID(), email, role, locale, now(), now())
     .run();
@@ -897,10 +926,12 @@ portal.get('/portal/me', async (c) => {
     userProjects(env, user.id),
     onlineSlugs(env),
     env.DB.prepare(
-      `SELECT project_id, count(*) AS n FROM tickets
-        WHERE user_id = ? AND project_id IS NOT NULL GROUP BY project_id`,
+      // Every request on the project the account can see, not only the ones it
+      // filed: a project's history is shared with everyone attached to it.
+      `SELECT t.project_id, count(*) AS n FROM tickets t
+        WHERE t.project_id IS NOT NULL AND ${VISIBLE_TICKETS} GROUP BY t.project_id`,
     )
-      .bind(user.id)
+      .bind(user.id, user.id)
       .all<{ project_id: string; n: number }>(),
     sitesByProject(env),
     getSettings(env),
@@ -1779,19 +1810,26 @@ portal.get('/portal/tickets/:id/workspace/file', async (c) => {
 });
 
 portal.get('/portal/tickets', async (c) => {
-  // `unread`: Ali (or a status change) said something the client has not opened yet.
+  const user = c.get('user');
+  // `unread`: Ali (or a status change) said something the client has not opened
+  // yet. It is a per-ticket mark, so it only means anything on their own rows.
+  // `mine`: the caller filed it; another client's request on a shared project
+  // is visible, but read-only and without its bill.
   const { results } = await c.env.DB.prepare(
     `SELECT ${TICKET_COLUMNS},
-            EXISTS (SELECT 1 FROM ticket_messages m
+            (t.user_id = ?) AS mine,
+            (t.user_id = ? AND EXISTS (SELECT 1 FROM ticket_messages m
                      WHERE m.ticket_id = t.id AND m.internal = 0
                        AND (m.author IN ('ali', 'system') OR (t.kind = 'intake' AND m.author = 'runner'))
-                       AND m.created_at > COALESCE(t.client_seen_at, t.created_at)) AS unread
+                       AND m.created_at > COALESCE(t.client_seen_at, t.created_at))) AS unread
        FROM tickets t LEFT JOIN projects p ON p.id = t.project_id
-      WHERE t.user_id = ? ORDER BY t.updated_at DESC`,
+      WHERE ${VISIBLE_TICKETS} ORDER BY t.updated_at DESC`,
   )
-    .bind(c.get('user').id)
-    .all();
-  return reply(c, { tickets: results });
+    .bind(user.id, user.id, user.id, user.id)
+    .all<Record<string, unknown> & { mine: number }>();
+  return reply(c, {
+    tickets: (results ?? []).map((row) => (row.mine ? { ...row, mine: true } : { ...sharedTicket(row), mine: false })),
+  });
 });
 
 portal.post('/portal/tickets', async (c) => {
@@ -2033,7 +2071,11 @@ portal.post('/portal/preview-feedback', async (c) => {
   return out({ ticketId: ticket.id, url: `${siteUrl(env)}/portal/ticket#id=${ticket.id}`, transcript }, 201);
 });
 
-/** Load a ticket the caller may see: their own, or any ticket for the admin. */
+/**
+ * Load a ticket the caller may see: their own, any ticket for the admin, or a
+ * client request on a project they are attached to. Only the author may act on
+ * it (write, withdraw, set a budget); every caller checks `user_id` for that.
+ */
 async function loadTicket(c: Ctx, admin: boolean) {
   const id = Number(c.req.param('id'));
   if (!Number.isInteger(id) || id <= 0) return null;
@@ -2045,21 +2087,32 @@ async function loadTicket(c: Ctx, admin: boolean) {
       WHERE t.id = ?`,
   )
     .bind(id)
-    .first<Record<string, unknown> & Meter & { id: number; user_id: string; client_email: string; client_locale: string | null; title_en: string | null; title: string; status: Status; attention: string; kind: string }>();
+    .first<Record<string, unknown> & Meter & { id: number; user_id: string; client_email: string; client_locale: string | null; title_en: string | null; title: string; status: Status; attention: string; kind: string; project_id: string | null }>();
   if (!ticket) return null;
-  if (!admin && ticket.user_id !== c.get('user').id) return null;
-  return ticket;
+  if (admin) return ticket;
+  if (ticket.user_id === c.get('user').id) return ticket;
+  // Another client's request is readable when it is a client request on a
+  // project they share. Nothing else is.
+  if (ticket.kind !== 'client' || !ticket.project_id) return null;
+  const linked = await c.env.DB.prepare('SELECT 1 FROM user_projects WHERE user_id = ? AND project_id = ?')
+    .bind(c.get('user').id, ticket.project_id)
+    .first();
+  return linked ? ticket : null;
 }
 
 portal.get('/portal/tickets/:id', async (c) => {
   const ticket = await loadTicket(c, false);
   if (!ticket) return reply(c, { error: 'not_found' }, 404);
-  const { user_id: _, client_email: __, client_locale: ___, ...visible } = ticket;
+  const { user_id, client_email: __, client_locale: ___, ...rest } = ticket;
+  const mine = user_id === c.get('user').id;
+  // Another client's request: the thread is visible, its bill is not.
+  const visible = mine ? rest : sharedTicket(rest);
   const messages = await threadFor(c.env, ticket.id, await ticketMessages(c.env, ticket.id, false), 'client', (p) =>
     c.executionCtx.waitUntil(p),
   );
-  c.executionCtx.waitUntil(c.env.DB.prepare('UPDATE tickets SET client_seen_at = ? WHERE id = ?').bind(now(), ticket.id).run());
-  return reply(c, { ticket: visible, messages: await withFiles(c.env, ticket.id, messages, false) });
+  // The unread mark belongs to the author, so another reader leaves it alone.
+  if (mine) c.executionCtx.waitUntil(c.env.DB.prepare('UPDATE tickets SET client_seen_at = ? WHERE id = ?').bind(now(), ticket.id).run());
+  return reply(c, { ticket: { ...visible, mine }, messages: await withFiles(c.env, ticket.id, messages, false) });
 });
 
 /* A file from the thread. Only files on messages the caller can see. */
@@ -2073,6 +2126,8 @@ portal.post('/portal/tickets/:id/messages', async (c) => {
   const env = c.env;
   const ticket = await loadTicket(c, false);
   if (!ticket) return reply(c, { error: 'not_found' }, 404);
+  // A shared project shows the thread; only the client who filed it writes in it.
+  if (ticket.user_id !== c.get('user').id) return reply(c, { error: 'not_author' }, 403);
   const msg = await readMessage(c);
   if (msg === 'too_large') return reply(c, { error: 'file_too_large' }, 413);
   if (!msg || msg.text.length > MAX_BODY_CHARS || (!msg.text && !msg.files.length)) return reply(c, { error: 'bad_message' }, 400);
@@ -2104,6 +2159,8 @@ portal.post('/portal/tickets/:id/withdraw', async (c) => {
   const env = c.env;
   const ticket = await loadTicket(c, false);
   if (!ticket) return reply(c, { error: 'not_found' }, 404);
+  // Withdrawing is the author's call, never a project-mate's.
+  if (ticket.user_id !== c.get('user').id) return reply(c, { error: 'not_author' }, 403);
   const t = now();
   const row = await env.DB.prepare(
     `UPDATE tickets SET status = 'declined', updated_at = ?, client_waiting_since = NULL
@@ -2166,6 +2223,8 @@ portal.patch('/portal/tickets/:id/budget', async (c) => {
   const env = c.env;
   const ticket = await loadTicket(c, false);
   if (!ticket) return reply(c, { error: 'not_found' }, 404);
+  // The budget is the author's, and its meter is private to them.
+  if (ticket.user_id !== c.get('user').id) return reply(c, { error: 'not_author' }, 403);
   if (ticket.status === 'done' || ticket.status === 'declined') return reply(c, { error: 'closed' }, 409);
   const body = await readJson<{ budgetCents?: unknown }>(c);
   const budget = cleanBudget(body?.budgetCents);
@@ -2732,22 +2791,80 @@ portal.post('/admin/work', async (c) => {
   return reply(c, { id: row.id, status }, 201);
 });
 
+/* —— invites: add a client to existing projects before they sign up —— */
+
+/** The admin's name as the invite mail says it; Ali unless he has set another. */
+async function inviterName(env: Env): Promise<string> {
+  const email = (env.ADMIN_EMAIL || '').toLowerCase();
+  const row = email ? await env.DB.prepare('SELECT name FROM users WHERE email = ?').bind(email).first<{ name: string | null }>() : null;
+  return row?.name?.trim() || 'Ali';
+}
+
+/** The projects an account is attached to, cheapest form. */
+async function inviteProjects(env: Env, userId: string): Promise<{ id: string; name: string }[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT p.id, p.name FROM user_projects up JOIN projects p ON p.id = up.project_id
+      WHERE up.user_id = ? ORDER BY p.name`,
+  )
+    .bind(userId)
+    .all<{ id: string; name: string }>();
+  return results ?? [];
+}
+
+/**
+ * Mint an invite token (SHA-256 stored, raw token only in the mailed fragment)
+ * and mail it. The caller keeps the account and the project links even when
+ * the send fails, so the UI can offer a resend.
+ */
+async function sendInvite(
+  env: Env,
+  to: { email: string; locale: string | null; added: boolean; projectNames: string[]; note?: string | null },
+  invitedBy: string,
+): Promise<{ expiresAt: number; sent: boolean; link: string }> {
+  const token = randomToken();
+  const expiresAt = now() + INVITE_TTL_SECONDS;
+  await env.DB.prepare(
+    `INSERT INTO login_tokens (token_hash, email, expires_at, purpose, invited_by) VALUES (?, ?, ?, 'invite', ?)`,
+  )
+    .bind(await sha256(token), to.email, expiresAt, invitedBy)
+    .run();
+  // Fragment, not query: the token never reaches a server log or a Referer.
+  const link = `${siteUrl(env)}/portal/verify#token=${token}`;
+  const mail = inviteMail(to.locale, {
+    name: await inviterName(env),
+    project: joinProjectNames(to.projectNames),
+    link,
+    added: to.added,
+    note: to.note ?? null,
+  });
+  const sent = await mailClient(env, to.email, mail);
+  return { expiresAt, sent, link };
+}
+
 portal.get('/admin/clients', async (c) => {
   const [{ results }, usage] = await Promise.all([
     c.env.DB.prepare(
       `SELECT u.id, u.email, u.name, u.role, u.handoff, u.locale, u.translation, u.created_at,
-              u.verified_at, u.first_preview_at, u.first_preview_limit_usd,
+              u.verified_at, u.first_preview_at, u.first_preview_limit_usd, u.invited_at, u.invited_by,
+              (SELECT max(expires_at) FROM login_tokens lt
+                WHERE lt.email = u.email AND lt.purpose = 'invite' AND lt.used_at IS NULL) AS invite_expires_at,
               (SELECT group_concat(project_id) FROM user_projects WHERE user_id = u.id) AS project_ids,
               (SELECT count(*) FROM tickets WHERE user_id = u.id) AS ticket_count
          FROM users u ORDER BY u.created_at DESC`,
-    ).all<Record<string, unknown> & { id: string; project_ids: string | null }>(),
+    ).all<Record<string, unknown> & { id: string; project_ids: string | null; verified_at: number | null; invited_at: number | null }>(),
     usageByUser(c.env),
   ]);
-  const clients = results.map(({ project_ids, first_preview_limit_usd, ...rest }) => ({
+  const clients = results.map(({ project_ids, first_preview_limit_usd, invite_expires_at, invited_at, ...rest }) => ({
     ...rest,
     projectIds: project_ids ? project_ids.split(',') : [],
     // Dollars, like the setting; null means the account follows the setting.
     firstPreviewLimitUsd: typeof first_preview_limit_usd === 'number' ? first_preview_limit_usd : null,
+    // An invite is pending until the account is first verified; its link may
+    // still be live after that (until it is used or expires), which is why the
+    // expiry is reported separately.
+    invitedAt: invited_at,
+    pending: invited_at !== null && rest.verified_at === null,
+    inviteExpiresAt: typeof invite_expires_at === 'number' ? invite_expires_at : null,
     usage: usage.get(rest.id) ?? NO_USAGE,
   }));
   // Everything owed across all clients, for the top of the Directory.
@@ -2762,6 +2879,136 @@ portal.get('/admin/clients', async (c) => {
     NO_USAGE,
   );
   return reply(c, { clients, total });
+});
+
+/** What the admin UI needs about an invite, without the token. */
+function inviteView(env: Env, invite: { expiresAt: number; sent: boolean; link: string }) {
+  return {
+    expiresAt: invite.expiresAt,
+    sent: invite.sent,
+    // Local dev and the e2e suite read the link the mail would carry.
+    ...(env.DEV_RETURN_LINK === '1' ? { devLink: invite.link } : {}),
+  };
+}
+
+/**
+ * Invite a client to existing projects. The account is made if the address is
+ * new (role client, the language Ali picked); an existing account keeps its
+ * role, name and language and only gains the projects. Either way it gets a
+ * week-long link, and the links stay even if the mail cannot be sent.
+ */
+portal.post('/admin/clients', async (c) => {
+  const env = c.env;
+  const body = await readJson<{ email?: unknown; name?: unknown; locale?: unknown; projectIds?: unknown; note?: unknown }>(c);
+  const email = cleanEmail(body?.email);
+  if (!email) return reply(c, { error: 'bad_email' }, 400);
+  if (email === (env.ADMIN_EMAIL || '').toLowerCase()) return reply(c, { error: 'admin_email' }, 400);
+
+  const name = body?.name === undefined || body.name === '' ? null : cleanText(body.name, MAX_NAME_CHARS);
+  if (name === null && body?.name !== undefined && body.name !== '') return reply(c, { error: 'bad_name' }, 400);
+  const language = cleanLanguage({ locale: body?.locale });
+  if ('error' in language) return reply(c, { error: language.error }, 400);
+  const note = body?.note === undefined || body.note === '' ? null : cleanText(body.note, 1000);
+  if (note === null && body?.note !== undefined && body.note !== '') return reply(c, { error: 'bad_note' }, 400);
+
+  // One or more existing projects: an invite with nothing behind it is a bug.
+  const ids = Array.isArray(body?.projectIds)
+    ? [...new Set(body.projectIds.filter((id): id is string => typeof id === 'string' && id !== ''))]
+    : [];
+  if (!ids.length) return reply(c, { error: 'bad_projects' }, 400);
+  const found = await env.DB.prepare(`SELECT id, name FROM projects WHERE id IN (${ids.map(() => '?').join(',')})`)
+    .bind(...ids)
+    .all<{ id: string; name: string }>();
+  const byId = new Map((found.results ?? []).map((project) => [project.id, project.name]));
+  if (byId.size !== ids.length) return reply(c, { error: 'bad_project' }, 400);
+  const projectNames = ids.map((id) => byId.get(id) ?? '');
+
+  const t = now();
+  const inserted = await env.DB.prepare(
+    `INSERT INTO users (id, email, name, role, locale, created_at, invited_at, invited_by)
+     VALUES (?, ?, ?, 'client', ?, ?, ?, ?)
+     ON CONFLICT(email) DO NOTHING`,
+  )
+    .bind(crypto.randomUUID(), email, name, language.locale ?? 'en-US', t, t, c.get('user').id)
+    .run();
+
+  const user = await env.DB.prepare(
+    'SELECT id, email, name, role, locale, verified_at, invited_at, invited_by FROM users WHERE email = ?',
+  )
+    .bind(email)
+    .first<{ id: string; email: string; name: string | null; role: string; locale: string | null; verified_at: number | null; invited_at: number | null; invited_by: string | null }>();
+  if (!user) return reply(c, { error: 'user_missing' }, 500);
+  // Never grant admin, and never touch an existing account's role, name or
+  // language: only the project links and the invite bookkeeping change.
+  if (user.role === 'admin') return reply(c, { error: 'admin_email' }, 400);
+
+  await env.DB.batch([
+    env.DB.prepare('UPDATE users SET invited_at = COALESCE(invited_at, ?), invited_by = COALESCE(invited_by, ?) WHERE id = ?')
+      .bind(t, c.get('user').id, user.id),
+    ...ids.map((projectId) =>
+      env.DB.prepare('INSERT OR IGNORE INTO user_projects (user_id, project_id) VALUES (?, ?)').bind(user.id, projectId),
+    ),
+  ]);
+
+  const invite = await sendInvite(
+    env,
+    {
+      email: user.email,
+      locale: user.locale,
+      added: user.verified_at !== null,
+      projectNames,
+      note,
+    },
+    c.get('user').id,
+  );
+  const fresh = await env.DB.prepare(
+    'SELECT id, email, name, role, locale, verified_at, invited_at, invited_by FROM users WHERE id = ?',
+  )
+    .bind(user.id)
+    .first();
+  return reply(
+    c,
+    { user: fresh, projects: await inviteProjects(env, user.id), invite: inviteView(env, invite) },
+    (inserted.meta.changes ?? 0) > 0 ? 201 : 200,
+  );
+});
+
+/** Send the invite again: the old unused links stop working first. */
+portal.post('/admin/clients/:userId/invite', async (c) => {
+  const env = c.env;
+  const user = await env.DB.prepare('SELECT id, email, name, role, locale, verified_at FROM users WHERE id = ?')
+    .bind(c.req.param('userId'))
+    .first<{ id: string; email: string; name: string | null; role: string; locale: string | null; verified_at: number | null }>();
+  if (!user || user.role !== 'client') return reply(c, { error: 'not_found' }, 404);
+  const projects = await inviteProjects(env, user.id);
+  if (!projects.length) return reply(c, { error: 'no_projects' }, 409);
+  await env.DB.prepare(`DELETE FROM login_tokens WHERE email = ? AND purpose = 'invite' AND used_at IS NULL`)
+    .bind(user.email)
+    .run();
+  const invite = await sendInvite(
+    env,
+    {
+      email: user.email,
+      locale: user.locale,
+      added: user.verified_at !== null,
+      projectNames: projects.map((project) => project.name),
+    },
+    c.get('user').id,
+  );
+  return reply(c, { ok: true, invite: inviteView(env, invite) });
+});
+
+/** Revoke every unused invite link. A live session is not touched. */
+portal.delete('/admin/clients/:userId/invite', async (c) => {
+  const env = c.env;
+  const user = await env.DB.prepare('SELECT id, email, role FROM users WHERE id = ?')
+    .bind(c.req.param('userId'))
+    .first<{ id: string; email: string; role: string }>();
+  if (!user || user.role !== 'client') return reply(c, { error: 'not_found' }, 404);
+  const res = await env.DB.prepare(`DELETE FROM login_tokens WHERE email = ? AND purpose = 'invite' AND used_at IS NULL`)
+    .bind(user.email)
+    .run();
+  return reply(c, { ok: true, revoked: res.meta.changes ?? 0 });
 });
 
 /** Where a project's repo has got to, in the words the admin card shows. */
@@ -2802,7 +3049,10 @@ portal.get('/admin/projects', async (c) => {
       user_id: string | null;
       account_login: string;
     }>(),
-    c.env.DB.prepare('SELECT project_id, user_id FROM user_projects').all<{ project_id: string; user_id: string }>(),
+    c.env.DB.prepare(
+      `SELECT up.project_id, u.id, u.email, u.name, u.invited_at, u.verified_at
+         FROM user_projects up JOIN users u ON u.id = up.user_id ORDER BY u.email`,
+    ).all<{ project_id: string; id: string; email: string; name: string | null; invited_at: number | null; verified_at: number | null }>(),
   ]);
   const filed = new Map((counts.results ?? []).map((row) => [row.project_id, row.n]));
   const installationsById = new Map((installations.results ?? []).map((row) => [row.id, row]));
@@ -2810,8 +3060,13 @@ portal.get('/admin/projects', async (c) => {
     (installations.results ?? []).filter((row) => row.user_id).map((row) => [row.user_id as string, row]),
   );
   const usersByProject = new Map<string, string[]>();
+  const clientsByProject = new Map<string, { id: string; email: string; name: string | null; pending: boolean }[]>();
   for (const link of links.results ?? []) {
-    usersByProject.set(link.project_id, [...(usersByProject.get(link.project_id) ?? []), link.user_id]);
+    usersByProject.set(link.project_id, [...(usersByProject.get(link.project_id) ?? []), link.id]);
+    clientsByProject.set(link.project_id, [
+      ...(clientsByProject.get(link.project_id) ?? []),
+      { id: link.id, email: link.email, name: link.name, pending: link.invited_at !== null && link.verified_at === null },
+    ]);
   }
 
   // The same setup the client sees, so the admin view is not guessing at it.
@@ -2839,6 +3094,8 @@ portal.get('/admin/projects', async (c) => {
         sites: rows.map((row) => siteView(row, sitesDomain)),
         githubAccount: installation?.account_login ?? null,
         githubInstallationId: project.github_installation_id ?? clientInstallation?.id ?? null,
+        // Who can see this project: the clients Ali linked to it.
+        clients: clientsByProject.get(project.id) ?? [],
         repoStatus: repoStatus(project),
         setup: setupFor({
           kind,

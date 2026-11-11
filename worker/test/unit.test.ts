@@ -67,6 +67,7 @@ import { autoApproveDecision } from '../src/approve.ts';
 import { healthMail, parseFleetVersion } from '../src/health.ts';
 import { parseReview, reviewLine } from '../src/review.ts';
 import { cleanShot, shotToken, verifyShotToken } from '../src/screenshots.ts';
+import { inviteMail, INVITE_TTL_SECONDS, joinProjectNames } from '../src/invites.ts';
 
 /* —— mail: who may file a ticket by email —— */
 
@@ -1337,4 +1338,38 @@ test('seo: without DATAFORSEO_API_KEY the rank check is skipped, not attempted',
   assert.equal(result.posted, 0);
   assert.equal(result.collected, 0);
   assert.equal(result.day, '2027-01-15');
+});
+
+/* —— invites: a client Ali adds before they ever sign in —— */
+
+test('invites: a link lasts a week and names every project in plain words', () => {
+  assert.equal(INVITE_TTL_SECONDS, 7 * 24 * 60 * 60);
+  assert.equal(joinProjectNames(['Acme']), 'Acme');
+  assert.equal(joinProjectNames(['Acme', 'Beta']), 'Acme and Beta');
+  assert.equal(joinProjectNames(['Acme', 'Beta', 'Gamma']), 'Acme, Beta and Gamma');
+  assert.equal(joinProjectNames([' Acme ', '', 'Beta']), 'Acme and Beta');
+  assert.equal(joinProjectNames([]), '');
+});
+
+test('invites: the new-account mail says what was set up and how long the link works', () => {
+  const mail = inviteMail('en-US', { name: 'Ali', project: 'Acme Bakery', link: 'https://malipetek.dev/portal/verify#token=t', added: false });
+  assert.equal(mail.subject, 'Ali set up Acme Bakery for you on malipetek.dev');
+  assert.match(mail.text, /Ali set up Acme Bakery for you on malipetek\.dev\./);
+  assert.match(mail.text, /https:\/\/malipetek\.dev\/portal\/verify#token=t/);
+  assert.match(mail.text, /works once and expires in 7 days/);
+  assert.doesNotMatch(mail.subject + mail.text, /—/);
+});
+
+test('invites: an account that already exists is told it was added, and Ali’s note stays as written', () => {
+  const mail = inviteMail('en-US', {
+    name: 'Ali',
+    project: 'Acme and Beta',
+    link: 'https://malipetek.dev/portal/verify#token=t',
+    added: true,
+    note: 'Start with the checkout page.',
+  });
+  assert.equal(mail.subject, "You've been added to Acme and Beta on malipetek.dev");
+  assert.match(mail.text, /Ali added you to Acme and Beta on malipetek\.dev\./);
+  assert.match(mail.text, /Start with the checkout page\.$/);
+  assert.doesNotMatch(mail.subject + mail.text, /—/);
 });

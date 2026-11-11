@@ -386,8 +386,110 @@ function ClientControls({ c }) {
         </select>
       </div>
       {c.role !== 'admin' ? <FirstPreviewControl c={c} /> : null}
+      <InviteControls c={c} />
       <Chips value={c.projectIds} options={data.projects.map((p) => ({ value: p.id, label: p.name }))} onChange={(ids) => void toggle(ids)} />
     </>
+  );
+}
+
+/** Where an invite got to, and the two things Ali can do about it. */
+function InviteControls({ c }) {
+  const { api, act } = useAdmin();
+  // Once they have signed in, the invite row stops mattering: the normal
+  // controls and their live session cover the account.
+  if (!c.pending && !c.inviteExpiresAt) return null;
+  const left = c.inviteExpiresAt ? Math.max(0, c.inviteExpiresAt - Date.now() / 1000) : 0;
+  return (
+    <div className="aw-inline">
+      <Tag tone={c.pending ? 'warn' : undefined} title={c.email}>
+        {c.pending ? 'Invited, not signed in yet' : 'Invite link live'}
+      </Tag>
+      {left > 0 ? <span className="aw-muted">link expires in {span(left)}</span> : <span className="aw-muted">link expired</span>}
+      <Button
+        size="sm"
+        title="Send a fresh link. The old unused links stop working."
+        onClick={() => void act(() => api('POST', `/admin/clients/${c.id}/invite`, {}), `Invite resent to ${c.email}.`)}
+      >
+        Resend
+      </Button>
+      <Button
+        size="sm"
+        kind="ghost"
+        title="Every unused invite link stops working. A signed-in session is not touched."
+        onClick={() => void act(() => api('DELETE', `/admin/clients/${c.id}/invite`), 'Invite link revoked.')}
+      >
+        Revoke
+      </Button>
+    </div>
+  );
+}
+
+/** Invite a client to existing projects: email, who, language, which projects, a note. */
+function InviteClientModal({ onClose }) {
+  const { api, act, data } = useAdmin();
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [locale, setLocale] = useState('en-US');
+  const [projectIds, setProjectIds] = useState(data.projects.length === 1 ? [data.projects[0].id] : []);
+  const [note, setNote] = useState('');
+  const ready = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && projectIds.length > 0;
+  const send = () =>
+    act(
+      () =>
+        api('POST', '/admin/clients', {
+          email: email.trim(),
+          name: name.trim() || undefined,
+          locale,
+          projectIds,
+          note: note.trim() || undefined,
+        }),
+      (out) =>
+        out.invite?.sent === false
+          ? `Added ${email.trim()}, but the email could not be sent. Use Resend on their card.`
+          : out.user?.verified_at
+            ? `${email.trim()} now has ${projectIds.length} more project${projectIds.length === 1 ? '' : 's'} and a new link.`
+            : `Invited ${email.trim()}.`,
+    ).then(onClose, () => undefined);
+  return (
+    <Modal
+      title="Invite a client"
+      subtitle="They get a link that signs them in for the projects you pick. No sign-up needed; the link works once and lasts 7 days."
+      onClose={onClose}
+      actions={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button kind="primary" disabled={!ready} onClick={send}>
+            Send invite
+          </Button>
+        </>
+      }
+    >
+      <Field label="Email">
+        <input type="email" value={email} maxLength={254} placeholder="client@example.com" onChange={(e) => setEmail(e.target.value)} />
+      </Field>
+      <Field label="Name" hint="Optional. The account keeps its own name if it already exists.">
+        <input value={name} maxLength={80} placeholder="Their name" onChange={(e) => setName(e.target.value)} />
+      </Field>
+      <Field label="Language" hint="The language of the invite email and the portal. They can change it.">
+        <select value={locale} onChange={(e) => setLocale(e.target.value)}>
+          {LOCALES.map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.english}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Projects" hint="At least one. An existing account gains these and keeps the rest. They see every request on them.">
+        {data.projects.length ? (
+          <Chips value={projectIds} options={data.projects.map((p) => ({ value: p.id, label: p.name }))} onChange={setProjectIds} />
+        ) : (
+          <span className="aw-warn">No projects yet. Make one first.</span>
+        )}
+      </Field>
+      <Field label="Note" hint="Optional. Your own words, added under the link. Not translated.">
+        <textarea rows={3} value={note} maxLength={1000} placeholder="Anything you want them to read first" onChange={(e) => setNote(e.target.value)} />
+      </Field>
+    </Modal>
   );
 }
 
@@ -463,6 +565,13 @@ export function ClientsView() {
         <p className="aw-muted">{data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : ''}</p>
         <Button
           size="sm"
+          kind="primary"
+          onClick={() => setModal({ kind: 'custom', render: (close) => <InviteClientModal onClose={close} /> })}
+        >
+          Invite client
+        </Button>
+        <Button
+          size="sm"
           title="List the GitHub App’s installations from GitHub and record any the callback missed"
           onClick={() => void act(() => api('POST', '/admin/github/reconcile', {}), 'GitHub installations reconciled.')}
         >
@@ -525,6 +634,12 @@ export function ClientsView() {
                   <div className="aw-tags">
                     {holders.length ? holders.map((n) => <Tag key={n.id} tone={n.online ? undefined : 'bad'}>{n.id}</Tag>) : <span className="aw-warn">No node has it yet.</span>}
                     {p.sites?.length ? <Tag tone="dash">{p.sites.length} site{p.sites.length === 1 ? '' : 's'}</Tag> : null}
+                    {(p.clients ?? []).map((client) => (
+                      <Tag key={client.id} tone="client" title={client.pending ? `Invited, not signed in yet: ${client.email}` : client.email}>
+                        {client.name || client.email}
+                        {client.pending ? ' (invited)' : ''}
+                      </Tag>
+                    ))}
                   </div>
                   <SitePanel project={p} />
                   <div className="aw-inline">

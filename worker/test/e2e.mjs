@@ -1894,6 +1894,165 @@ const groups = {
     }
   },
 
+  async invites({ admin }) {
+    const stamp = Date.now();
+    const owner = account(`invite-owner-${stamp}@example.com`);
+    const shop = (await newProject(owner.session, { kind: 'existing', name: `Invite Shop ${stamp}`, brief: OLD_BRIEF, repoKind: 'none' })).data;
+    const other = (await newProject(owner.session, { kind: 'existing', name: `Invite Other ${stamp}`, brief: OLD_BRIEF, repoKind: 'none' })).data;
+    const onShop = (await call('/portal/tickets', { method: 'POST', auth: owner.session, body: { title: 'Shop request', body: 'x', projectId: shop.project.id } })).data.id;
+    const onOther = (await call('/portal/tickets', { method: 'POST', auth: owner.session, body: { title: 'Other request', body: 'x', projectId: other.project.id } })).data.id;
+    const loose = (await call('/portal/tickets', { method: 'POST', auth: owner.session, body: { title: 'Loose request', body: 'x' } })).data.id;
+    // A bill on the shared request, so its privacy can be checked.
+    sql(`UPDATE tickets SET human_seconds = 3600, ai_micro_usd = 500000, price_cents = 1234, budget_cents = 9999 WHERE id = ${onShop}`);
+
+    const tokenOf = (link) => new URL(link).hash.match(/token=([^&]+)/)[1];
+    const now = Math.floor(Date.now() / 1000);
+
+    // A new address: the account is made with the invite, then the link signs them in.
+    const email = `invite-new-${stamp}@example.com`;
+    const made = await call('/admin/clients', {
+      method: 'POST',
+      auth: admin,
+      body: { email, name: 'Invited Person', locale: 'de-DE', projectIds: [shop.project.id], note: 'Start with the checkout page.' },
+    });
+    check(
+      'an invite makes a client account and links the project',
+      made.status === 201 &&
+        made.data.user?.role === 'client' &&
+        made.data.user.locale === 'de-DE' &&
+        made.data.projects.map((p) => p.id).join() === shop.project.id &&
+        typeof made.data.invite?.sent === 'boolean',
+      JSON.stringify(made.data),
+    );
+    check(
+      '…with a link that lasts a week',
+      /#token=/.test(made.data.invite?.devLink ?? '') && Math.abs(made.data.invite.expiresAt - (now + 7 * 86400)) < 120,
+      JSON.stringify(made.data.invite),
+    );
+    const pendingRow = (await call('/admin/clients', { auth: admin })).data.clients.find((c) => c.email === email);
+    check(
+      'the directory shows it pending until they sign in',
+      pendingRow?.pending === true && pendingRow.invitedAt > 0 && pendingRow.verified_at === null && pendingRow.inviteExpiresAt === made.data.invite.expiresAt,
+      JSON.stringify(pendingRow),
+    );
+    const card = (await call('/admin/projects', { auth: admin })).data.projects.find((p) => p.id === shop.project.id);
+    check(
+      'the project card lists the client who holds it',
+      card?.clients?.some((c) => c.email === email && c.pending === true),
+      JSON.stringify(card?.clients),
+    );
+
+    const invitedToken = tokenOf(made.data.invite.devLink);
+    const verified = await call('/auth/verify', { method: 'POST', body: { token: invitedToken } });
+    check(
+      'the invite link lands them signed in as a client',
+      verified.status === 200 && verified.data.user?.email === email && verified.data.user.role === 'client' && typeof verified.data.session === 'string',
+      JSON.stringify(verified.data),
+    );
+    check('the invite link works once', (await call('/auth/verify', { method: 'POST', body: { token: invitedToken } })).status === 401);
+    const after = (await call('/admin/clients', { auth: admin })).data.clients.find((c) => c.email === email);
+    check('signing in clears pending and spends the link', after?.pending === false && after.verified_at !== null && after.inviteExpiresAt === null, JSON.stringify(after));
+
+    // The point of the invite: the project's whole history, nothing else.
+    const me = (await call('/portal/me', { auth: verified.data.session })).data;
+    check(
+      'they land on their project and not on the other one',
+      me.projects.some((p) => p.id === shop.project.id) && !me.projects.some((p) => p.id === other.project.id),
+      JSON.stringify(me.projects.map((p) => p.id)),
+    );
+    const listed = (await call('/portal/tickets', { auth: verified.data.session })).data.tickets;
+    check(
+      'they see every request on their project, and no others',
+      listed.some((t) => t.id === onShop) && !listed.some((t) => t.id === onOther) && !listed.some((t) => t.id === loose),
+      JSON.stringify(listed.map((t) => t.id)),
+    );
+    check('another client’s request is marked as theirs', listed.find((t) => t.id === onShop)?.mine === false, JSON.stringify(listed.find((t) => t.id === onShop)));
+    const detail = await call(`/portal/tickets/${onShop}`, { auth: verified.data.session });
+    check(
+      'the thread opens for the project member',
+      detail.status === 200 && detail.data.ticket?.id === onShop && detail.data.messages?.length >= 1,
+      JSON.stringify(detail.data).slice(0, 300),
+    );
+    check(
+      '…without its price, time, AI cost or budget',
+      detail.data.ticket.price_cents === null && detail.data.ticket.human_seconds === 0 && detail.data.ticket.ai_micro_usd === 0 && detail.data.ticket.budget_cents === null,
+      JSON.stringify(detail.data.ticket),
+    );
+    check('a request on a project they are not on stays invisible', (await call(`/portal/tickets/${onOther}`, { auth: verified.data.session })).status === 404);
+    check('a request with no project stays private', (await call(`/portal/tickets/${loose}`, { auth: verified.data.session })).status === 404);
+    check(
+      'they cannot reply on someone else’s request',
+      (await call(`/portal/tickets/${onShop}/messages`, { method: 'POST', auth: verified.data.session, body: { body: 'hi' } })).status === 403,
+    );
+    check(
+      'the author still sees their own request with its bill',
+      (await call(`/portal/tickets/${onShop}`, { auth: owner.session })).data.ticket.price_cents === 1234,
+    );
+
+    // An address that already has an account keeps everything but gains the projects.
+    const existing = account(`invite-existing-${stamp}@example.com`);
+    const again = await call('/admin/clients', {
+      method: 'POST',
+      auth: admin,
+      body: { email: existing.user.email, name: 'A New Name', locale: 'tr', projectIds: [other.project.id, shop.project.id] },
+    });
+    check(
+      'inviting an existing address attaches the projects',
+      again.status === 200 && again.data.user?.id === existing.user.id && again.data.projects.length === 2,
+      JSON.stringify(again.data),
+    );
+    const kept = (await call('/admin/clients', { auth: admin })).data.clients.find((c) => c.id === existing.user.id);
+    check(
+      '…and never changes its role, name or language',
+      kept?.role === 'client' && kept.name === null && kept.locale === 'en-US' && kept.pending === false,
+      JSON.stringify(kept),
+    );
+    const inbox = (await call('/portal/tickets', { auth: existing.session })).data.tickets.map((t) => t.id);
+    check('…and its history now covers both projects', inbox.includes(onShop) && inbox.includes(onOther) && !inbox.includes(loose));
+
+    const adminInvite = await call('/admin/clients', { method: 'POST', auth: admin, body: { email: 'malipetek@gmail.com', projectIds: [shop.project.id] } });
+    check('the admin address cannot be invited', adminInvite.status === 400 && adminInvite.data.error === 'admin_email', JSON.stringify(adminInvite.data));
+
+    // Expiry is the token's own; an old invite is refused like an old sign-in link.
+    const expiredToken = `expired-${stamp}`;
+    sql(
+      `INSERT INTO login_tokens (token_hash, email, expires_at, purpose) VALUES ('${createHash('sha256').update(expiredToken).digest('hex')}', 'late-${stamp}@example.com', ${now - 60}, 'invite');`,
+    );
+    check('an expired invite is refused', (await call('/auth/verify', { method: 'POST', body: { token: expiredToken } })).status === 401);
+
+    // Resend: a new link, and the old one stops working.
+    const resendEmail = `invite-resend-${stamp}@example.com`;
+    const first = await call('/admin/clients', { method: 'POST', auth: admin, body: { email: resendEmail, projectIds: [shop.project.id] } });
+    const resent = await call(`/admin/clients/${first.data.user.id}/invite`, { method: 'POST', auth: admin });
+    check(
+      'a resend mints a fresh link',
+      resent.status === 200 && /#token=/.test(resent.data.invite?.devLink ?? '') && resent.data.invite.devLink !== first.data.invite.devLink,
+      JSON.stringify(resent.data),
+    );
+    check('the resent link works', (await call('/auth/verify', { method: 'POST', body: { token: tokenOf(resent.data.invite.devLink) } })).status === 200);
+    check('the old link is dead', (await call('/auth/verify', { method: 'POST', body: { token: tokenOf(first.data.invite.devLink) } })).status === 401);
+
+    // Revoke: every unused link stops working.
+    const revokeEmail = `invite-revoke-${stamp}@example.com`;
+    const toRevoke = await call('/admin/clients', { method: 'POST', auth: admin, body: { email: revokeEmail, projectIds: [shop.project.id] } });
+    const revoked = await call(`/admin/clients/${toRevoke.data.user.id}/invite`, { method: 'DELETE', auth: admin });
+    check('revoking takes away the unused link', revoked.status === 200 && revoked.data.revoked >= 1, JSON.stringify(revoked.data));
+    check('the revoked link no longer signs in', (await call('/auth/verify', { method: 'POST', body: { token: tokenOf(toRevoke.data.invite.devLink) } })).status === 401);
+
+    // A magic link proves the address, not the right to change an account's role.
+    const keeper = account(`invite-keeper-${stamp}@example.com`);
+    sql(`UPDATE users SET role = 'admin' WHERE id = '${keeper.user.id}'`);
+    const keeperToken = `keeper-${stamp}`;
+    sql(
+      `INSERT INTO login_tokens (token_hash, email, expires_at, purpose) VALUES ('${createHash('sha256').update(keeperToken).digest('hex')}', '${keeper.user.email}', ${now + 600}, 'signin');`,
+    );
+    const keeperIn = await call('/auth/verify', { method: 'POST', body: { token: keeperToken } });
+    check('verifying a link never changes an existing role', keeperIn.status === 200 && keeperIn.data.user?.role === 'admin', JSON.stringify(keeperIn.data));
+
+    const denied = await call('/admin/clients', { method: 'POST', auth: owner.session, body: { email: `nope-${stamp}@example.com`, projectIds: [shop.project.id] } });
+    check('only Ali can invite', denied.status === 403, String(denied.status));
+  },
+
   async seo({ admin }) {
     const ranks = await call('/admin/seo/ranks', { auth: admin });
     check(
