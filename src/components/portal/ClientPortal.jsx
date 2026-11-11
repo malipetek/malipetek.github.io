@@ -10,7 +10,7 @@ import { browserLocale, useTranslator } from './useTranslator.js';
 import { Composer } from './Composer.jsx';
 import { LanguageDialog } from './Language.jsx';
 import { TicketView } from './TicketView.jsx';
-import { BillingView, ConnectionsView, Overview, ProjectView, RequestsView } from './views.jsx';
+import { AccessView, BillingView, ConnectionsView, Overview, ProjectView, RequestsView } from './views.jsx';
 import { PortalContext, go, href, isOpen, roomModeOf, signedIn, usePortalData, useRoute } from './store.js';
 import { dropRoom, roomData, syncRoom } from './room.js';
 import { Brand, Button, Confirm, Icon, cx } from './ui.jsx';
@@ -131,6 +131,7 @@ function Shell({ data, reload, t, onSignedOut }) {
     { key: 'requests', path: 'requests', label: t('nav.requests'), icon: 'list', count: open, alert: attention },
     { key: 'billing', path: 'billing', label: t('nav.billing'), icon: 'receipt' },
     { key: 'connections', path: 'connections', label: t('nav.connections'), icon: 'plug' },
+    { key: 'access', path: 'access', label: t('nav.access'), icon: 'key' },
   ];
   const ticketProject = route.name === 'ticket' ? data.tickets.find((t) => String(t.id) === route.id)?.project_id : null;
 
@@ -272,6 +273,8 @@ function Route({ route }) {
       return <BillingView />;
     case 'connections':
       return <ConnectionsView />;
+    case 'access':
+      return <AccessView />;
     case 'new':
       return <IntakeView />;
     default:

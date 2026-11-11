@@ -2488,6 +2488,26 @@ html[data-room-morph]::view-transition-old(cp-room) {
 
 /* ————— connections and billing ————— */
 
+/* #/access: the session token block, masked until Reveal. */
+.cp-secret {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper);
+}
+.cp-secret code {
+  font: 12.5px/1.6 var(--font-mono);
+  overflow-wrap: anywhere;
+  min-height: 1.6em;
+}
+.cp-secret__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .cp-connect {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
