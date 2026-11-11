@@ -471,6 +471,8 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-seo-chart__dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 .aw-seo-pages td.aw-seo-types, .aw-seo-citations td { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
 .aw-seo-path { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.aw-seo-ranks td { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.aw-seo-ranks__url { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aw-seo-citations textarea { min-width: 240px; }
 .aw-seo-citations input { min-width: 200px; }
 .aw-seo-issues { display: grid; gap: 4px; padding: 2px 0; }

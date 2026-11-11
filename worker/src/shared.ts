@@ -71,6 +71,12 @@ export interface Env {
   DEV_RETURN_LINK?: string;
   /** Secret. DeepSeek API key: the ticket translation bridge (src/translate.ts). */
   DEEPSEEK_API_KEY?: string;
+  /**
+   * Secret. DataForSEO API key — base64 of `login:password`, sent as
+   * `Authorization: Basic <key>` by the SEO desk's Google rank check
+   * (src/seo.ts). Unset = rank tracking is skipped and the desk says so.
+   */
+  DATAFORSEO_API_KEY?: string;
   /** Only a session-secret fallback now that the intercom runs on DeepSeek. */
   OPENROUTER_API_KEY?: string;
   /** Var, optional. DeepSeek model for translation; default deepseek-chat. */

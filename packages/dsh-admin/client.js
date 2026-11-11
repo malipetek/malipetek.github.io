@@ -3714,7 +3714,7 @@ var __awPlugin = (() => {
     no_admin: "there is no admin account to file it for",
     insert_failed: "the ticket could not be written"
   };
-  var RUN_LABEL = { audit: "Run audit", geo: "Run GEO probe", citations: "Check citations", cycle: "Run cycle now" };
+  var RUN_LABEL = { audit: "Run audit", geo: "Run GEO probe", citations: "Check citations", ranks: "Check rankings now", cycle: "Run cycle now" };
   var plural2 = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   var pct3 = (rate) => `${Math.round((rate ?? 0) * 100)}%`;
   var dayNumber = (day) => {
@@ -3734,6 +3734,9 @@ var __awPlugin = (() => {
   };
   var instantDay = (unix) => unix ? new Date(unix * 1e3).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "-";
   var scoreTone = (score) => score >= 90 ? "ok" : score >= 70 ? "warn" : "bad";
+  var positionTone = (position) => position === null || position === void 0 ? "dash" : position <= 10 ? "ok" : position <= 30 ? "warn" : "dash";
+  var swingTone = (swing) => swing === null || swing === void 0 ? "dash" : swing >= 8 ? "bad" : swing >= 3 ? "warn" : "ok";
+  var swingText = (swing) => swing === null || swing === void 0 ? "no swing yet" : `\xB1${swing} position${swing === 1 ? "" : "s"} week over week`;
   var errorText2 = (error) => error?.message ?? error?.code ?? "Something went wrong.";
   function TicketLink({ id, openTicket }) {
     if (!id) return /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "-" });
@@ -3792,7 +3795,10 @@ var __awPlugin = (() => {
           overview.state?.lastGeoAt ? `${ago(overview.state.lastGeoAt)} ago` : "not yet",
           " \xB7 last citation check",
           " ",
-          overview.state?.lastCitationsAt ? `${ago(overview.state.lastCitationsAt)} ago` : "not yet"
+          overview.state?.lastCitationsAt ? `${ago(overview.state.lastCitationsAt)} ago` : "not yet",
+          " \xB7 last rank check",
+          " ",
+          overview.state?.lastRanksAt ? `${ago(overview.state.lastRanksAt)} ago` : "not yet"
         ] })
       ] }),
       error && overview ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--bad", children: [
@@ -3808,6 +3814,7 @@ var __awPlugin = (() => {
             { value: "pages", label: "Pages" },
             { value: "findings", label: `Findings (${overview.hosts.reduce((sum, h) => sum + h.findings.open, 0)})` },
             { value: "geo", label: "GEO" },
+            { value: "ranks", label: "Rankings" },
             { value: "citations", label: "Citations" },
             { value: "settings", label: "Settings" }
           ],
@@ -3818,6 +3825,7 @@ var __awPlugin = (() => {
       tab === "pages" ? /* @__PURE__ */ jsx(PagesTab, { api, hosts, tick }) : null,
       tab === "findings" ? /* @__PURE__ */ jsx(FindingsTab, { api, hosts, tick, openTicket, refresh }) : null,
       tab === "geo" ? /* @__PURE__ */ jsx(GeoTab, { api, tick }) : null,
+      tab === "ranks" ? /* @__PURE__ */ jsx(RankingsTab, { api, overview, refresh, tick }) : null,
       tab === "citations" ? /* @__PURE__ */ jsx(CitationsTab, { api, tick, notify }) : null,
       tab === "settings" ? /* @__PURE__ */ jsx(SettingsTab2, { api, overview, refresh, notify }) : null
     ] });
@@ -3835,6 +3843,15 @@ var __awPlugin = (() => {
     }
     if (result.what === "citations") {
       return `Checked ${result.checked ?? 0} profiles: ${result.verified ?? 0} verified, ${result.dropped ?? 0} dropped.`;
+    }
+    if (result.what === "ranks") {
+      if (result.skipped === "no_key") return "Skipped: the Worker has no DATAFORSEO_API_KEY.";
+      if (result.skipped === "no_keywords") return "No keywords tracked. Add some in Settings first.";
+      if (result.skipped === "api_failed") return "DataForSEO did not answer; nothing was queued or charged.";
+      if (result.posted) {
+        return `Queued ${plural2(result.posted, "keyword", "keywords")} on the standard queue (~$${(result.cost ?? 0).toFixed(4)}). Results land on later cron ticks.`;
+      }
+      return `Collected ${plural2(result.collected ?? 0, "keyword", "keywords")}; ${result.pending ?? 0} still queued.`;
     }
     if (result.what === "cycle") {
       if (result.filed) return `Filed #${result.id}. An agent takes the worst findings next.`;
@@ -3957,6 +3974,32 @@ var __awPlugin = (() => {
         ] })
       ] }),
       /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsxs("header", { children: [
+          /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: "Google rankings" }),
+          /* @__PURE__ */ jsx(Tag, { tone: overview.rank?.rankReady ? "ok" : "bad", children: overview.rank?.rankReady ? "tracking on" : "no API key" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: overview.rank?.latestDay ? `checked ${shortDay(overview.rank.latestDay)}` : "not checked yet" })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
+          /* @__PURE__ */ jsx(Tag, { tone: overview.rank?.avgPosition === null || overview.rank?.avgPosition === void 0 ? "dash" : overview.rank.avgPosition <= 20 ? "ok" : "warn", children: overview.rank?.avgPosition === null || overview.rank?.avgPosition === void 0 ? "no average yet" : `${overview.rank.avgPosition} average position` }),
+          /* @__PURE__ */ jsxs(Tag, { tone: overview.rank?.inTop10 ? "ok" : "dash", children: [
+            overview.rank?.inTop10 ?? 0,
+            " in the top 10"
+          ] }),
+          /* @__PURE__ */ jsxs(Tag, { tone: overview.rank?.inTop100 ? "dash" : "warn", children: [
+            overview.rank?.inTop100 ?? 0,
+            " in the top 100"
+          ] }),
+          /* @__PURE__ */ jsx(Tag, { tone: swingTone(overview.rank?.swing), children: swingText(overview.rank?.swing) }),
+          /* @__PURE__ */ jsx(Tag, { tone: "dash", children: plural2(overview.rank?.keywords ?? 0, "keyword", "keywords") }),
+          overview.rank?.pending ? /* @__PURE__ */ jsxs(Tag, { tone: "warn", children: [
+            plural2(overview.rank.pending, "task", "tasks"),
+            " queued"
+          ] }) : null
+        ] }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { marginBottom: 0 }, children: overview.rank?.rankReady ? "Weekly Google positions for the keywords we sell against, read against core updates." : "Add the DATAFORSEO_API_KEY secret to the intercom Worker to turn rank tracking on." })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsx("h3", { children: "Fix cycle" }),
         /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
           /* @__PURE__ */ jsxs(Tag, { tone: overview.cycle.auto ? "ok" : "dash", children: [
@@ -4061,6 +4104,186 @@ var __awPlugin = (() => {
       /* @__PURE__ */ jsx("text", { x: left, y: top - 1, fontSize: "9", fill: "var(--aw-text2)", children: "100%" }),
       /* @__PURE__ */ jsx("text", { x: left, y: top + innerH + 9, fontSize: "9", fill: "var(--aw-text2)", children: "0%" })
     ] }) });
+  }
+  function RankingsTab({ api, overview, refresh, tick }) {
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const [result, setResult] = useState(null);
+    const [expanded, setExpanded] = useState(null);
+    const load = useCallback(
+      () => api("GET", "/admin/seo/ranks").then((out) => {
+        setData(out);
+        setError(null);
+      }).catch(setError),
+      [api]
+    );
+    useEffect(() => {
+      void load();
+    }, [load, tick]);
+    const check = async () => {
+      setBusy(true);
+      setResult(null);
+      try {
+        const out = await api("POST", "/admin/seo/run", { what: "ranks" });
+        setResult({ ok: true, text: runText(out) });
+        await load();
+        await refresh();
+      } catch (err) {
+        setResult({ ok: false, text: errorText2(err) });
+      } finally {
+        setBusy(false);
+      }
+    };
+    if (error && !data) return /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
+      "Could not load rankings: ",
+      errorText2(error)
+    ] });
+    if (!data) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading rankings\u2026" });
+    const rows = data.rows ?? [];
+    const location = data.location ?? { locationCode: 2840, languageCode: "en" };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      !data.rankReady ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
+        "Rank tracking is off. Add the DATAFORSEO_API_KEY secret to the intercom Worker (",
+        /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "npx wrangler secret put DATAFORSEO_API_KEY" }),
+        ", run in ",
+        /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "worker/" }),
+        ") and the weekly check starts on the next cron tick."
+      ] }) : null,
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+        /* @__PURE__ */ jsx(Tag, { tone: data.avgPosition === null ? "dash" : data.avgPosition <= 20 ? "ok" : "warn", children: data.avgPosition === null ? "no average yet" : `${data.avgPosition} average position` }),
+        /* @__PURE__ */ jsxs(Tag, { tone: data.inTop10 ? "ok" : "dash", children: [
+          data.inTop10 ?? 0,
+          " in the top 10"
+        ] }),
+        /* @__PURE__ */ jsxs(Tag, { tone: data.inTop100 ? "dash" : "warn", children: [
+          data.inTop100 ?? 0,
+          " in the top 100"
+        ] }),
+        /* @__PURE__ */ jsx(Tag, { tone: swingTone(data.swing), children: swingText(data.swing) }),
+        /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
+          plural2((data.keywords ?? []).length, "keyword", "keywords"),
+          " \xB7 location ",
+          location.locationCode,
+          "/",
+          location.languageCode
+        ] }),
+        data.pending ? /* @__PURE__ */ jsxs(Tag, { tone: "warn", children: [
+          plural2(data.pending, "task", "tasks"),
+          " queued"
+        ] }) : null,
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: data.latestDay ? `checked ${longDay(data.latestDay)}` : "not checked yet" }),
+        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy, onClick: check, children: busy ? "Checking\u2026" : "Check rankings now" })
+      ] }),
+      result ? /* @__PURE__ */ jsx("div", { className: cx("aw-banner", result.ok ? "aw-banner--ok" : "aw-banner--bad"), role: "status", children: result.text }) : null,
+      error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: errorText2(error) }) : null,
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsxs("header", { children: [
+          /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: "Average position" }),
+          /* @__PURE__ */ jsx(Tag, { tone: swingTone(data.swing), children: swingText(data.swing) }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "last 90 days, lower is better" })
+        ] }),
+        /* @__PURE__ */ jsx(RankChart, { series: data.series ?? [], events: overview.events ?? [], today: overview.day })
+      ] }),
+      !rows.length ? /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
+        "No rank check yet. ",
+        data.rankReady ? 'Press "Check rankings now" or wait for the weekly cron.' : "Add the secret first."
+      ] }) : /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-seo-ranks", children: [
+          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("th", { children: "Keyword" }),
+            /* @__PURE__ */ jsx("th", { children: "Position" }),
+            /* @__PURE__ */ jsx("th", { children: "Change" }),
+            /* @__PURE__ */ jsx("th", { children: "Ranking URL" }),
+            /* @__PURE__ */ jsx("th", { children: "Top competitors" })
+          ] }) }),
+          /* @__PURE__ */ jsx("tbody", { children: rows.map((row) => {
+            const open = expanded === row.keyword;
+            const top = row.topDomains ?? [];
+            return /* @__PURE__ */ jsxs(Fragment, { children: [
+              /* @__PURE__ */ jsxs("tr", { onClick: () => setExpanded(open ? null : row.keyword), "aria-expanded": open, title: open ? "Hide competitors" : "Show competitors", children: [
+                /* @__PURE__ */ jsx("td", { className: "aw-table__title", children: row.keyword }),
+                /* @__PURE__ */ jsx("td", { children: row.position === null ? /* @__PURE__ */ jsx(Tag, { tone: "dash", title: "Not in the top 100", children: "not in top 100" }) : /* @__PURE__ */ jsxs(Tag, { tone: positionTone(row.position), children: [
+                  "#",
+                  row.position
+                ] }) }),
+                /* @__PURE__ */ jsx("td", { title: row.prevPosition === null ? "No check last week" : `Was #${row.prevPosition} last week`, children: row.change === null ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "\u2013" }) : row.change > 0 ? /* @__PURE__ */ jsxs(Tag, { tone: "ok", children: [
+                  "\u25B2 ",
+                  row.change
+                ] }) : row.change < 0 ? /* @__PURE__ */ jsxs(Tag, { tone: "bad", children: [
+                  "\u25BC ",
+                  Math.abs(row.change)
+                ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "no change" }) }),
+                /* @__PURE__ */ jsx("td", { className: "aw-seo-ranks__url", children: row.url ? /* @__PURE__ */ jsx("a", { href: row.url, target: "_blank", rel: "noreferrer", className: "aw-link", onClick: (event) => event.stopPropagation(), children: row.url }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "\u2014" }) }),
+                /* @__PURE__ */ jsx("td", { className: "aw-seo-types", title: top.join(", ") || "no organic results", children: top.length ? `${top.slice(0, 3).join(", ")}${top.length > 3 ? ` +${top.length - 3}` : ""}` : "\u2014" })
+              ] }),
+              open ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: 5, style: { whiteSpace: "normal" }, children: /* @__PURE__ */ jsx("div", { className: "aw-seo-issues", children: top.length ? top.map((domain, index) => /* @__PURE__ */ jsxs("div", { className: "aw-seo-issue", children: [
+                /* @__PURE__ */ jsx(Tag, { tone: "dash", children: index + 1 }),
+                /* @__PURE__ */ jsx("span", { className: "aw-mono", children: domain }),
+                domain === "malipetek.dev" || domain.endsWith(".malipetek.dev") ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "us" }) : null
+              ] }, domain)) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "No organic results were in the top 100." }) }) }) }) : null
+            ] }, row.keyword);
+          }) })
+        ] }) }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { marginBottom: 0 }, children: "The weekly check asks Google Organic for every tracked keyword (United States, English, top 100). A keyword we are not in the top 100 for is kept as a row with no position, so the swing stays honest." })
+      ] })
+    ] });
+  }
+  function RankChart({ series, events, today }) {
+    const end = today ?? series.at(-1)?.day;
+    const endNumber = dayNumber(end);
+    if (!series.length || !Number.isFinite(endNumber)) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No rank checks yet." });
+    const width = 560;
+    const height = 170;
+    const left = 30;
+    const right = 8;
+    const top = 10;
+    const bottom = 24;
+    const innerW = width - left - right;
+    const innerH = height - top - bottom;
+    const span2 = 89;
+    const start = endNumber - span2;
+    const xOf = (n) => left + (n - start) / span2 * innerW;
+    const yOf = (position) => top + (Math.max(1, Math.min(100, position ?? 100)) - 1) / 99 * innerH;
+    const points = series.map((point) => ({ ...point, n: dayNumber(point.day) })).filter((point) => Number.isFinite(point.n) && point.n >= start && point.n <= endNumber).sort((a, b) => a.n - b.n);
+    const path = points.map((point, index) => `${index ? "L" : "M"}${xOf(point.n).toFixed(1)},${yOf(point.avgPosition).toFixed(1)}`).join(" ");
+    const marks = (events ?? []).map((event) => ({ ...event, n: dayNumber(event.day) })).filter((event) => Number.isFinite(event.n) && event.n >= start && event.n <= endNumber);
+    const markColour = (kind) => kind === "fix" ? "var(--aw-ok)" : kind === "note" ? "var(--aw-text2)" : "var(--aw-warn)";
+    return /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart", children: [
+      /* @__PURE__ */ jsxs("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Average Google position, last 90 days", children: [
+        [1, 50, 100].map((value) => /* @__PURE__ */ jsxs("g", { children: [
+          /* @__PURE__ */ jsx("line", { x1: left, x2: width - right, y1: yOf(value), y2: yOf(value), stroke: "var(--aw-border)", strokeWidth: "1" }),
+          /* @__PURE__ */ jsx("text", { x: left - 5, y: yOf(value) + 3, textAnchor: "end", fontSize: "9", fill: "var(--aw-text2)", children: value })
+        ] }, value)),
+        [0, 30, 60, 89].map((offset) => {
+          const n = start + offset;
+          return /* @__PURE__ */ jsx("text", { x: xOf(n), y: height - 6, textAnchor: offset === 0 ? "start" : offset === 89 ? "end" : "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay(dayOfNumber(n)) }, offset);
+        }),
+        marks.map((event) => /* @__PURE__ */ jsxs("g", { children: [
+          /* @__PURE__ */ jsx("title", { children: `${event.label} (${EVENT_LABEL[event.kind] ?? event.kind}) on ${longDay(event.day)}` }),
+          /* @__PURE__ */ jsx("line", { x1: xOf(event.n), x2: xOf(event.n), y1: top, y2: height - bottom, stroke: markColour(event.kind), strokeWidth: "1", strokeDasharray: "3 3", opacity: "0.65" }),
+          /* @__PURE__ */ jsx("circle", { cx: xOf(event.n), cy: height - bottom - 4, r: "3", fill: markColour(event.kind) })
+        ] }, event.id)),
+        path ? /* @__PURE__ */ jsx("path", { d: path, fill: "none", stroke: "var(--aw-accent)", strokeWidth: "2", strokeLinejoin: "round", strokeLinecap: "round" }) : null,
+        points.map((point) => /* @__PURE__ */ jsx("circle", { cx: xOf(point.n), cy: yOf(point.avgPosition), r: "2.6", fill: "var(--aw-accent)", children: /* @__PURE__ */ jsx("title", { children: `${longDay(point.day)}: ${point.avgPosition} average (${point.inTop10} in the top 10, ${point.inTop100} in the top 100)` }) }, point.day))
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart__legend", children: [
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot", style: { background: "var(--aw-accent)" } }),
+          " average position"
+        ] }),
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot", style: { background: "var(--aw-warn)" } }),
+          " core or algorithm update"
+        ] }),
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot", style: { background: "var(--aw-ok)" } }),
+          " our fix"
+        ] })
+      ] })
+    ] });
   }
   var canonicalOk = (page) => {
     if (!page.canonical) return false;
@@ -4522,7 +4745,9 @@ var __awPlugin = (() => {
     };
     const questions = draft.geoQuestions ?? [];
     const usedQuestions = questions.filter((question) => question.trim()).length;
-    const changed = draft.autoCycle !== overview.settings.autoCycle || draft.volatilityHold !== overview.settings.volatilityHold || (draft.geoQuestions ?? []).join("\n") !== (overview.settings.geoQuestions ?? []).join("\n");
+    const keywords = draft.rankKeywords ?? [];
+    const location = draft.rankLocation ?? { locationCode: 2840, languageCode: "en" };
+    const changed = draft.autoCycle !== overview.settings.autoCycle || draft.volatilityHold !== overview.settings.volatilityHold || (draft.geoQuestions ?? []).join("\n") !== (overview.settings.geoQuestions ?? []).join("\n") || keywords.join("\n") !== (overview.settings.rankKeywords ?? []).join("\n") || location.locationCode !== overview.settings.rankLocation?.locationCode || location.languageCode !== overview.settings.rankLocation?.languageCode;
     const save = async () => {
       setSaving(true);
       setMessage(null);
@@ -4530,7 +4755,9 @@ var __awPlugin = (() => {
         const out = await api("POST", "/admin/seo/settings", {
           autoCycle: draft.autoCycle,
           volatilityHold: draft.volatilityHold,
-          geoQuestions: draft.geoQuestions
+          geoQuestions: draft.geoQuestions,
+          rankKeywords: draft.rankKeywords,
+          rankLocation: draft.rankLocation
         });
         setDraft(out.settings);
         setTouched(false);
@@ -4634,6 +4861,68 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !changed || saving, onClick: save, children: saving ? "Saving\u2026" : "Save settings" })
         ] }),
         message ? /* @__PURE__ */ jsx("div", { className: cx("aw-banner", message.tone === "bad" ? "aw-banner--bad" : message.tone === "ok" ? "aw-banner--ok" : "aw-banner--warn"), children: message.text }) : null
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsxs("header", { children: [
+          /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: "Google ranks" }),
+          /* @__PURE__ */ jsx(Tag, { tone: overview.rank?.rankReady ? "ok" : "bad", children: overview.rank?.rankReady ? "tracking on" : "no API key" })
+        ] }),
+        !overview.rank?.rankReady ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+          "Rank tracking is off. Add the DATAFORSEO_API_KEY secret to the intercom Worker (",
+          /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "npx wrangler secret put DATAFORSEO_API_KEY" }),
+          ", run in ",
+          /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "worker/" }),
+          ")."
+        ] }) : null,
+        /* @__PURE__ */ jsx(
+          Field,
+          {
+            label: "Keywords to track on Google",
+            hint: `One per line, at most 25. ${keywords.filter((keyword) => keyword.trim()).length} used. DataForSEO charges about $0.006 per keyword at depth 100.`,
+            children: /* @__PURE__ */ jsx(
+              "textarea",
+              {
+                rows: 10,
+                value: keywords.join("\n"),
+                onChange: (event) => set("rankKeywords", event.target.value.split("\n").slice(0, 25))
+              }
+            )
+          }
+        ),
+        /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Location code", hint: "DataForSEO's Google location: 2840 is the United States.", children: /* @__PURE__ */ jsx(
+            "input",
+            {
+              type: "number",
+              min: "1",
+              value: location.locationCode ?? 2840,
+              onChange: (event) => set("rankLocation", { ...location, locationCode: Number(event.target.value) })
+            }
+          ) }),
+          /* @__PURE__ */ jsx(Field, { label: "Language code", hint: "The search language, for example en.", children: /* @__PURE__ */ jsx(
+            "input",
+            {
+              value: location.languageCode ?? "en",
+              onChange: (event) => set("rankLocation", { ...location, languageCode: event.target.value })
+            }
+          ) })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx(
+            Button,
+            {
+              disabled: !changed || saving,
+              onClick: () => {
+                setDraft(overview.settings);
+                setTouched(false);
+                setMessage(null);
+              },
+              children: "Reset"
+            }
+          ),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !changed || saving, onClick: save, children: saving ? "Saving\u2026" : "Save settings" })
+        ] })
       ] }),
       /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsx("h3", { children: "Events" }),
@@ -5199,6 +5488,8 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-seo-chart__dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 .aw-seo-pages td.aw-seo-types, .aw-seo-citations td { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
 .aw-seo-path { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.aw-seo-ranks td { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.aw-seo-ranks__url { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aw-seo-citations textarea { min-width: 240px; }
 .aw-seo-citations input { min-width: 200px; }
 .aw-seo-issues { display: grid; gap: 4px; padding: 2px 0; }

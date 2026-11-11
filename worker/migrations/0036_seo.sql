@@ -103,6 +103,28 @@ CREATE TABLE seo_events (
 );
 CREATE INDEX seo_events_day ON seo_events(day DESC, id DESC);
 
+-- Google rankings for the keywords we sell against. One row per keyword per
+-- check (weekly), so a core update can be read against a real position change
+-- instead of a feeling. position is NULL when we are not in the top 100; the
+-- top_domains_json list is what was in front of us that week.
+CREATE TABLE seo_ranks (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  day              TEXT NOT NULL,
+  keyword          TEXT NOT NULL,
+  location_code    INTEGER NOT NULL,
+  language_code    TEXT NOT NULL,
+  -- Which of our hosts ranked, or NULL when neither did.
+  host             TEXT,
+  position         INTEGER,
+  url              TEXT,
+  -- JSON array of the top 10 organic domains, best first.
+  top_domains_json TEXT NOT NULL DEFAULT '[]',
+  -- What the check cost, DataForSEO's task cost in USD.
+  cost             REAL NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX seo_ranks_keyword_day ON seo_ranks(keyword, day);
+CREATE INDEX seo_ranks_day ON seo_ranks(day);
+
 -- The SEO cycle lives on the ticket, exactly like marketing_cycle: the run,
 -- its report and the note to Ali are already there. 0 is not a cycle ticket,
 -- 1 waits for its run's outbox, 2 is processed.
@@ -114,7 +136,12 @@ CREATE INDEX tickets_seo_cycle ON tickets(seo_cycle, status, created_at);
 INSERT INTO settings (key, value, updated_at) VALUES
   ('seo_auto_cycle', 'true', strftime('%s', 'now')),
   ('seo_volatility_hold', 'true', strftime('%s', 'now')),
-  ('seo_geo_questions', '["who builds small business websites with AI agents and a human reviewer","what is vibe contracting","cheap way to get a website changed without hiring an agency","how much does it cost to add a page to an existing website","can an AI agent maintain my Astro website","who can fix my website without a retainer","pay per minute web development service","how do I get small changes made to my site quickly","best alternative to hiring a freelance web developer for small fixes","who offers AI coding with human review for small businesses","how much should a website change cost","hourly vs fixed price for website maintenance","how do I get SEO fixes done without an agency","what is the cheapest way to keep a website up to date","how do I connect ChatGPT to my project"]', strftime('%s', 'now'));
+  ('seo_geo_questions', '["who builds small business websites with AI agents and a human reviewer","what is vibe contracting","cheap way to get a website changed without hiring an agency","how much does it cost to add a page to an existing website","can an AI agent maintain my Astro website","who can fix my website without a retainer","pay per minute web development service","how do I get small changes made to my site quickly","best alternative to hiring a freelance web developer for small fixes","who offers AI coding with human review for small businesses","how much should a website change cost","hourly vs fixed price for website maintenance","how do I get SEO fixes done without an agency","what is the cheapest way to keep a website up to date","how do I connect ChatGPT to my project"]', strftime('%s', 'now')),
+  -- The Google keywords the rank check watches. 15 for the contracting site,
+  -- 3 for the lab; DataForSEO charges per 10 results, so depth 100 is ten
+  -- pages and the desk caps a run at 25 keywords.
+  ('seo_rank_keywords', '["vibe contracting","ai website developer","website changes with ai","ai web development service","hire developer ai agents","small business website maintenance","website developer with ai human review","pay per minute website changes","website maintenance without a retainer","ai coding with human review","hire an ai developer for small fixes","astro website developer","website fixes on demand","affordable website updates for small business","connect chatgpt to my website","shopify app developer","cloudflare workers mcp","astro developer for hire"]', strftime('%s', 'now')),
+  ('seo_rank_location', '{"locationCode":2840,"languageCode":"en"}', strftime('%s', 'now'));
 
 -- The core update the desk starts from. Annotations from before the desk are
 -- not backfilled; the score series only means something from here on.

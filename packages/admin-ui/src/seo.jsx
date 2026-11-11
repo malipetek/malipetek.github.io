@@ -33,7 +33,7 @@ const CYCLE_REASON = {
   no_admin: 'there is no admin account to file it for',
   insert_failed: 'the ticket could not be written',
 };
-const RUN_LABEL = { audit: 'Run audit', geo: 'Run GEO probe', citations: 'Check citations', cycle: 'Run cycle now' };
+const RUN_LABEL = { audit: 'Run audit', geo: 'Run GEO probe', citations: 'Check citations', ranks: 'Check rankings now', cycle: 'Run cycle now' };
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const pct = (rate) => `${Math.round((rate ?? 0) * 100)}%`;
@@ -54,6 +54,11 @@ const longDay = (day) => {
 };
 const instantDay = (unix) => (unix ? new Date(unix * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-');
 const scoreTone = (score) => (score >= 90 ? 'ok' : score >= 70 ? 'warn' : 'bad');
+const positionTone = (position) => (position === null || position === undefined ? 'dash' : position <= 10 ? 'ok' : position <= 30 ? 'warn' : 'dash');
+/** A swing of a few positions is normal; 8+ means the SERP itself is moving. */
+const swingTone = (swing) => (swing === null || swing === undefined ? 'dash' : swing >= 8 ? 'bad' : swing >= 3 ? 'warn' : 'ok');
+const swingText = (swing) =>
+  swing === null || swing === undefined ? 'no swing yet' : `±${swing} position${swing === 1 ? '' : 's'} week over week`;
 const errorText = (error) => error?.message ?? error?.code ?? 'Something went wrong.';
 
 /** A ticket opens in the workbench the same way every other view opens one. */
@@ -116,7 +121,8 @@ export function SeoView() {
         <p className="aw-muted">
           Last audit {overview.state?.lastAuditAt ? `${ago(overview.state.lastAuditAt)} ago` : 'not yet'} · last GEO probe{' '}
           {overview.state?.lastGeoAt ? `${ago(overview.state.lastGeoAt)} ago` : 'not yet'} · last citation check{' '}
-          {overview.state?.lastCitationsAt ? `${ago(overview.state.lastCitationsAt)} ago` : 'not yet'}
+          {overview.state?.lastCitationsAt ? `${ago(overview.state.lastCitationsAt)} ago` : 'not yet'} · last rank check{' '}
+          {overview.state?.lastRanksAt ? `${ago(overview.state.lastRanksAt)} ago` : 'not yet'}
         </p>
       </header>
 
@@ -130,6 +136,7 @@ export function SeoView() {
             { value: 'pages', label: 'Pages' },
             { value: 'findings', label: `Findings (${overview.hosts.reduce((sum, h) => sum + h.findings.open, 0)})` },
             { value: 'geo', label: 'GEO' },
+            { value: 'ranks', label: 'Rankings' },
             { value: 'citations', label: 'Citations' },
             { value: 'settings', label: 'Settings' },
           ]}
@@ -143,6 +150,7 @@ export function SeoView() {
       {tab === 'pages' ? <PagesTab api={api} hosts={hosts} tick={tick} /> : null}
       {tab === 'findings' ? <FindingsTab api={api} hosts={hosts} tick={tick} openTicket={openTicket} refresh={refresh} /> : null}
       {tab === 'geo' ? <GeoTab api={api} tick={tick} /> : null}
+      {tab === 'ranks' ? <RankingsTab api={api} overview={overview} refresh={refresh} tick={tick} /> : null}
       {tab === 'citations' ? <CitationsTab api={api} tick={tick} notify={notify} /> : null}
       {tab === 'settings' ? <SettingsTab api={api} overview={overview} refresh={refresh} notify={notify} /> : null}
     </div>
@@ -167,6 +175,15 @@ function runText(result) {
   }
   if (result.what === 'citations') {
     return `Checked ${result.checked ?? 0} profiles: ${result.verified ?? 0} verified, ${result.dropped ?? 0} dropped.`;
+  }
+  if (result.what === 'ranks') {
+    if (result.skipped === 'no_key') return 'Skipped: the Worker has no DATAFORSEO_API_KEY.';
+    if (result.skipped === 'no_keywords') return 'No keywords tracked. Add some in Settings first.';
+    if (result.skipped === 'api_failed') return 'DataForSEO did not answer; nothing was queued or charged.';
+    if (result.posted) {
+      return `Queued ${plural(result.posted, 'keyword', 'keywords')} on the standard queue (~$${(result.cost ?? 0).toFixed(4)}). Results land on later cron ticks.`;
+    }
+    return `Collected ${plural(result.collected ?? 0, 'keyword', 'keywords')}; ${result.pending ?? 0} still queued.`;
   }
   if (result.what === 'cycle') {
     if (result.filed) return `Filed #${result.id}. An agent takes the worst findings next.`;
@@ -269,6 +286,32 @@ function OverviewTab({ overview, api, refresh, openTicket }) {
           </p>
         </section>
       </div>
+
+      <section className="aw-panel">
+        <header>
+          <h3 style={{ margin: 0 }}>Google rankings</h3>
+          <Tag tone={overview.rank?.rankReady ? 'ok' : 'bad'}>{overview.rank?.rankReady ? 'tracking on' : 'no API key'}</Tag>
+          <span className="aw-toolbar__fill" />
+          <span className="aw-muted">{overview.rank?.latestDay ? `checked ${shortDay(overview.rank.latestDay)}` : 'not checked yet'}</span>
+        </header>
+        <div className="aw-tags">
+          <Tag tone={overview.rank?.avgPosition === null || overview.rank?.avgPosition === undefined ? 'dash' : overview.rank.avgPosition <= 20 ? 'ok' : 'warn'}>
+            {overview.rank?.avgPosition === null || overview.rank?.avgPosition === undefined
+              ? 'no average yet'
+              : `${overview.rank.avgPosition} average position`}
+          </Tag>
+          <Tag tone={overview.rank?.inTop10 ? 'ok' : 'dash'}>{overview.rank?.inTop10 ?? 0} in the top 10</Tag>
+          <Tag tone={overview.rank?.inTop100 ? 'dash' : 'warn'}>{overview.rank?.inTop100 ?? 0} in the top 100</Tag>
+          <Tag tone={swingTone(overview.rank?.swing)}>{swingText(overview.rank?.swing)}</Tag>
+          <Tag tone="dash">{plural(overview.rank?.keywords ?? 0, 'keyword', 'keywords')}</Tag>
+          {overview.rank?.pending ? <Tag tone="warn">{plural(overview.rank.pending, 'task', 'tasks')} queued</Tag> : null}
+        </div>
+        <p className="aw-muted" style={{ marginBottom: 0 }}>
+          {overview.rank?.rankReady
+            ? 'Weekly Google positions for the keywords we sell against, read against core updates.'
+            : 'Add the DATAFORSEO_API_KEY secret to the intercom Worker to turn rank tracking on.'}
+        </p>
+      </section>
 
       <section className="aw-panel">
         <h3>Fix cycle</h3>
@@ -408,6 +451,265 @@ function GeoChart({ weeks }) {
           0%
         </text>
       </svg>
+    </div>
+  );
+}
+
+/* ——————————————————————— rankings ——————————————————————— */
+
+function RankingsTab({ api, overview, refresh, tick }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [expanded, setExpanded] = useState(null);
+
+  const load = useCallback(
+    () =>
+      api('GET', '/admin/seo/ranks')
+        .then((out) => {
+          setData(out);
+          setError(null);
+        })
+        .catch(setError),
+    [api],
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load, tick]);
+
+  const check = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const out = await api('POST', '/admin/seo/run', { what: 'ranks' });
+      setResult({ ok: true, text: runText(out) });
+      await load();
+      await refresh();
+    } catch (err) {
+      setResult({ ok: false, text: errorText(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (error && !data) return <p className="aw-empty">Could not load rankings: {errorText(error)}</p>;
+  if (!data) return <p className="aw-empty">Loading rankings…</p>;
+
+  const rows = data.rows ?? [];
+  const location = data.location ?? { locationCode: 2840, languageCode: 'en' };
+
+  return (
+    <>
+      {!data.rankReady ? (
+        <div className="aw-banner aw-banner--warn">
+          Rank tracking is off. Add the DATAFORSEO_API_KEY secret to the intercom Worker (
+          <span className="aw-mono">npx wrangler secret put DATAFORSEO_API_KEY</span>, run in <span className="aw-mono">worker/</span>) and the
+          weekly check starts on the next cron tick.
+        </div>
+      ) : null}
+
+      <div className="aw-toolbar">
+        <Tag tone={data.avgPosition === null ? 'dash' : data.avgPosition <= 20 ? 'ok' : 'warn'}>
+          {data.avgPosition === null ? 'no average yet' : `${data.avgPosition} average position`}
+        </Tag>
+        <Tag tone={data.inTop10 ? 'ok' : 'dash'}>{data.inTop10 ?? 0} in the top 10</Tag>
+        <Tag tone={data.inTop100 ? 'dash' : 'warn'}>{data.inTop100 ?? 0} in the top 100</Tag>
+        <Tag tone={swingTone(data.swing)}>{swingText(data.swing)}</Tag>
+        <Tag tone="dash">
+          {plural((data.keywords ?? []).length, 'keyword', 'keywords')} · location {location.locationCode}/{location.languageCode}
+        </Tag>
+        {data.pending ? <Tag tone="warn">{plural(data.pending, 'task', 'tasks')} queued</Tag> : null}
+        <span className="aw-toolbar__fill" />
+        <span className="aw-muted">{data.latestDay ? `checked ${longDay(data.latestDay)}` : 'not checked yet'}</span>
+        <Button kind="primary" disabled={busy} onClick={check}>
+          {busy ? 'Checking…' : 'Check rankings now'}
+        </Button>
+      </div>
+
+      {result ? (
+        <div className={cx('aw-banner', result.ok ? 'aw-banner--ok' : 'aw-banner--bad')} role="status">
+          {result.text}
+        </div>
+      ) : null}
+      {error ? <div className="aw-banner aw-banner--bad">{errorText(error)}</div> : null}
+
+      <section className="aw-panel">
+        <header>
+          <h3 style={{ margin: 0 }}>Average position</h3>
+          <Tag tone={swingTone(data.swing)}>{swingText(data.swing)}</Tag>
+          <span className="aw-toolbar__fill" />
+          <span className="aw-muted">last 90 days, lower is better</span>
+        </header>
+        <RankChart series={data.series ?? []} events={overview.events ?? []} today={overview.day} />
+      </section>
+
+      {!rows.length ? (
+        <p className="aw-empty">
+          No rank check yet. {data.rankReady ? 'Press "Check rankings now" or wait for the weekly cron.' : 'Add the secret first.'}
+        </p>
+      ) : (
+        <section className="aw-panel">
+          <div className="aw-tablewrap">
+            <table className="aw-table aw-seo-ranks">
+              <thead>
+                <tr>
+                  <th>Keyword</th>
+                  <th>Position</th>
+                  <th>Change</th>
+                  <th>Ranking URL</th>
+                  <th>Top competitors</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const open = expanded === row.keyword;
+                  const top = row.topDomains ?? [];
+                  return (
+                    <Fragment key={row.keyword}>
+                      <tr onClick={() => setExpanded(open ? null : row.keyword)} aria-expanded={open} title={open ? 'Hide competitors' : 'Show competitors'}>
+                        <td className="aw-table__title">{row.keyword}</td>
+                        <td>
+                          {row.position === null ? (
+                            <Tag tone="dash" title="Not in the top 100">
+                              not in top 100
+                            </Tag>
+                          ) : (
+                            <Tag tone={positionTone(row.position)}>#{row.position}</Tag>
+                          )}
+                        </td>
+                        <td title={row.prevPosition === null ? 'No check last week' : `Was #${row.prevPosition} last week`}>
+                          {row.change === null ? (
+                            <span className="aw-muted">–</span>
+                          ) : row.change > 0 ? (
+                            <Tag tone="ok">▲ {row.change}</Tag>
+                          ) : row.change < 0 ? (
+                            <Tag tone="bad">▼ {Math.abs(row.change)}</Tag>
+                          ) : (
+                            <span className="aw-muted">no change</span>
+                          )}
+                        </td>
+                        <td className="aw-seo-ranks__url">
+                          {row.url ? (
+                            <a href={row.url} target="_blank" rel="noreferrer" className="aw-link" onClick={(event) => event.stopPropagation()}>
+                              {row.url}
+                            </a>
+                          ) : (
+                            <span className="aw-muted">—</span>
+                          )}
+                        </td>
+                        <td className="aw-seo-types" title={top.join(', ') || 'no organic results'}>
+                          {top.length ? `${top.slice(0, 3).join(', ')}${top.length > 3 ? ` +${top.length - 3}` : ''}` : '—'}
+                        </td>
+                      </tr>
+                      {open ? (
+                        <tr>
+                          <td colSpan={5} style={{ whiteSpace: 'normal' }}>
+                            <div className="aw-seo-issues">
+                              {top.length ? (
+                                top.map((domain, index) => (
+                                  <div className="aw-seo-issue" key={domain}>
+                                    <Tag tone="dash">{index + 1}</Tag>
+                                    <span className="aw-mono">{domain}</span>
+                                    {domain === 'malipetek.dev' || domain.endsWith('.malipetek.dev') ? <Tag tone="ok">us</Tag> : null}
+                                  </div>
+                                ))
+                              ) : (
+                                <span className="aw-muted">No organic results were in the top 100.</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="aw-muted" style={{ marginBottom: 0 }}>
+            The weekly check asks Google Organic for every tracked keyword (United States, English, top 100). A keyword we are not in the top 100 for
+            is kept as a row with no position, so the swing stays honest.
+          </p>
+        </section>
+      )}
+    </>
+  );
+}
+
+function RankChart({ series, events, today }) {
+  const end = today ?? series.at(-1)?.day;
+  const endNumber = dayNumber(end);
+  if (!series.length || !Number.isFinite(endNumber)) return <p className="aw-muted">No rank checks yet.</p>;
+
+  const width = 560;
+  const height = 170;
+  const left = 30;
+  const right = 8;
+  const top = 10;
+  const bottom = 24;
+  const innerW = width - left - right;
+  const innerH = height - top - bottom;
+  const span = 89;
+  const start = endNumber - span;
+  const xOf = (n) => left + ((n - start) / span) * innerW;
+  // Position 1 is at the top; anything outside the top 100 is drawn at 100.
+  const yOf = (position) => top + ((Math.max(1, Math.min(100, position ?? 100)) - 1) / 99) * innerH;
+  const points = series
+    .map((point) => ({ ...point, n: dayNumber(point.day) }))
+    .filter((point) => Number.isFinite(point.n) && point.n >= start && point.n <= endNumber)
+    .sort((a, b) => a.n - b.n);
+  const path = points.map((point, index) => `${index ? 'L' : 'M'}${xOf(point.n).toFixed(1)},${yOf(point.avgPosition).toFixed(1)}`).join(' ');
+  const marks = (events ?? [])
+    .map((event) => ({ ...event, n: dayNumber(event.day) }))
+    .filter((event) => Number.isFinite(event.n) && event.n >= start && event.n <= endNumber);
+  const markColour = (kind) => (kind === 'fix' ? 'var(--aw-ok)' : kind === 'note' ? 'var(--aw-text2)' : 'var(--aw-warn)');
+
+  return (
+    <div className="aw-seo-chart">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Average Google position, last 90 days">
+        {[1, 50, 100].map((value) => (
+          <g key={value}>
+            <line x1={left} x2={width - right} y1={yOf(value)} y2={yOf(value)} stroke="var(--aw-border)" strokeWidth="1" />
+            <text x={left - 5} y={yOf(value) + 3} textAnchor="end" fontSize="9" fill="var(--aw-text2)">
+              {value}
+            </text>
+          </g>
+        ))}
+        {[0, 30, 60, 89].map((offset) => {
+          const n = start + offset;
+          return (
+            <text key={offset} x={xOf(n)} y={height - 6} textAnchor={offset === 0 ? 'start' : offset === 89 ? 'end' : 'middle'} fontSize="9" fill="var(--aw-text2)">
+              {shortDay(dayOfNumber(n))}
+            </text>
+          );
+        })}
+        {marks.map((event) => (
+          <g key={event.id}>
+            <title>{`${event.label} (${EVENT_LABEL[event.kind] ?? event.kind}) on ${longDay(event.day)}`}</title>
+            <line x1={xOf(event.n)} x2={xOf(event.n)} y1={top} y2={height - bottom} stroke={markColour(event.kind)} strokeWidth="1" strokeDasharray="3 3" opacity="0.65" />
+            <circle cx={xOf(event.n)} cy={height - bottom - 4} r="3" fill={markColour(event.kind)} />
+          </g>
+        ))}
+        {path ? <path d={path} fill="none" stroke="var(--aw-accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {points.map((point) => (
+          <circle key={point.day} cx={xOf(point.n)} cy={yOf(point.avgPosition)} r="2.6" fill="var(--aw-accent)">
+            <title>{`${longDay(point.day)}: ${point.avgPosition} average (${point.inTop10} in the top 10, ${point.inTop100} in the top 100)`}</title>
+          </circle>
+        ))}
+      </svg>
+      <div className="aw-seo-chart__legend">
+        <span>
+          <i className="aw-seo-chart__dot" style={{ background: 'var(--aw-accent)' }} /> average position
+        </span>
+        <span>
+          <i className="aw-seo-chart__dot" style={{ background: 'var(--aw-warn)' }} /> core or algorithm update
+        </span>
+        <span>
+          <i className="aw-seo-chart__dot" style={{ background: 'var(--aw-ok)' }} /> our fix
+        </span>
+      </div>
     </div>
   );
 }
@@ -1040,10 +1342,15 @@ function SettingsTab({ api, overview, refresh, notify }) {
   };
   const questions = draft.geoQuestions ?? [];
   const usedQuestions = questions.filter((question) => question.trim()).length;
+  const keywords = draft.rankKeywords ?? [];
+  const location = draft.rankLocation ?? { locationCode: 2840, languageCode: 'en' };
   const changed =
     draft.autoCycle !== overview.settings.autoCycle ||
     draft.volatilityHold !== overview.settings.volatilityHold ||
-    (draft.geoQuestions ?? []).join('\n') !== (overview.settings.geoQuestions ?? []).join('\n');
+    (draft.geoQuestions ?? []).join('\n') !== (overview.settings.geoQuestions ?? []).join('\n') ||
+    keywords.join('\n') !== (overview.settings.rankKeywords ?? []).join('\n') ||
+    location.locationCode !== overview.settings.rankLocation?.locationCode ||
+    location.languageCode !== overview.settings.rankLocation?.languageCode;
 
   const save = async () => {
     setSaving(true);
@@ -1053,6 +1360,8 @@ function SettingsTab({ api, overview, refresh, notify }) {
         autoCycle: draft.autoCycle,
         volatilityHold: draft.volatilityHold,
         geoQuestions: draft.geoQuestions,
+        rankKeywords: draft.rankKeywords,
+        rankLocation: draft.rankLocation,
       });
       setDraft(out.settings);
       setTouched(false);
@@ -1158,6 +1467,61 @@ function SettingsTab({ api, overview, refresh, notify }) {
             {message.text}
           </div>
         ) : null}
+      </section>
+
+      <section className="aw-panel">
+        <header>
+          <h3 style={{ margin: 0 }}>Google ranks</h3>
+          <Tag tone={overview.rank?.rankReady ? 'ok' : 'bad'}>{overview.rank?.rankReady ? 'tracking on' : 'no API key'}</Tag>
+        </header>
+        {!overview.rank?.rankReady ? (
+          <p className="aw-muted">
+            Rank tracking is off. Add the DATAFORSEO_API_KEY secret to the intercom Worker (
+            <span className="aw-mono">npx wrangler secret put DATAFORSEO_API_KEY</span>, run in <span className="aw-mono">worker/</span>).
+          </p>
+        ) : null}
+        <Field
+          label="Keywords to track on Google"
+          hint={`One per line, at most 25. ${keywords.filter((keyword) => keyword.trim()).length} used. DataForSEO charges about $0.006 per keyword at depth 100.`}
+        >
+          <textarea
+            rows={10}
+            value={keywords.join('\n')}
+            onChange={(event) => set('rankKeywords', event.target.value.split('\n').slice(0, 25))}
+          />
+        </Field>
+        <div className="aw-grid2">
+          <Field label="Location code" hint="DataForSEO's Google location: 2840 is the United States.">
+            <input
+              type="number"
+              min="1"
+              value={location.locationCode ?? 2840}
+              onChange={(event) => set('rankLocation', { ...location, locationCode: Number(event.target.value) })}
+            />
+          </Field>
+          <Field label="Language code" hint="The search language, for example en.">
+            <input
+              value={location.languageCode ?? 'en'}
+              onChange={(event) => set('rankLocation', { ...location, languageCode: event.target.value })}
+            />
+          </Field>
+        </div>
+        <div className="aw-inline">
+          <span className="aw-toolbar__fill" />
+          <Button
+            disabled={!changed || saving}
+            onClick={() => {
+              setDraft(overview.settings);
+              setTouched(false);
+              setMessage(null);
+            }}
+          >
+            Reset
+          </Button>
+          <Button kind="primary" disabled={!changed || saving} onClick={save}>
+            {saving ? 'Saving…' : 'Save settings'}
+          </Button>
+        </div>
       </section>
 
       <section className="aw-panel">

@@ -1,0 +1,178 @@
+{
+  "version": "0.1.20261030",
+  "status_code": 20000,
+  "status_message": "Ok.",
+  "time": "0.2065 sec.",
+  "cost": 0,
+  "tasks_count": 1,
+  "tasks_error": 0,
+  "tasks": [
+    {
+      "id": "11110000-0000-0066-0000-000000000001",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "time": "0.0871 sec.",
+      "cost": 0.006,
+      "result_count": 1,
+      "path": [
+        "v3",
+        "serp",
+        "google",
+        "organic",
+        "task_get",
+        "regular",
+        "11110000-0000-0066-0000-000000000001"
+      ],
+      "data": {
+        "api": "serp",
+        "function": "task_get",
+        "se": "google",
+        "se_type": "organic",
+        "language_code": "en",
+        "location_code": 2840,
+        "keyword": "vibe contracting",
+        "depth": 100,
+        "device": "desktop",
+        "os": "windows"
+      },
+      "result": [
+        {
+          "keyword": "vibe contracting",
+          "type": "organic",
+          "se_domain": "google.com",
+          "location_code": 2840,
+          "language_code": "en",
+          "check_url": "https://www.google.com/search?q=vibe%20contracting&num=100&hl=en&gl=US",
+          "datetime": "2026-11-11 00:42:19 +00:00",
+          "spell": null,
+          "item_types": ["organic", "paid"],
+          "se_results_count": 1820000,
+          "pages_count": 1,
+          "items_count": 12,
+          "items": [
+            {
+              "type": "paid",
+              "rank_group": 1,
+              "rank_absolute": 1,
+              "page": 1,
+              "domain": "www.ads-example.com",
+              "title": "Vibe Contracting — Compare Quotes",
+              "url": "https://www.ads-example.com/",
+              "breadcrumb": "www.ads-example.com"
+            },
+            {
+              "type": "organic",
+              "rank_group": 1,
+              "rank_absolute": 2,
+              "page": 1,
+              "domain": "www.upwork.com",
+              "title": "Freelance developers for short projects",
+              "url": "https://www.upwork.com/hire/developers/",
+              "breadcrumb": "www.upwork.com/hire/developers"
+            },
+            {
+              "type": "organic",
+              "rank_group": 2,
+              "rank_absolute": 3,
+              "page": 1,
+              "domain": "www.fiverr.com",
+              "title": "Hire a developer for a small fix",
+              "url": "https://www.fiverr.com/categories/programming-tech",
+              "breadcrumb": "www.fiverr.com/categories"
+            },
+            {
+              "type": "organic",
+              "rank_group": 3,
+              "rank_absolute": 4,
+              "page": 1,
+              "domain": "www.toptal.com",
+              "title": "Vibe contracting, explained",
+              "url": "https://www.toptal.com/freelance/vibe-contracting",
+              "breadcrumb": "www.toptal.com/freelance"
+            },
+            {
+              "type": "organic",
+              "rank_group": 4,
+              "rank_absolute": 5,
+              "page": 1,
+              "domain": "www.smashingmagazine.com",
+              "title": "The rise of the AI-assisted developer",
+              "url": "https://www.smashingmagazine.com/2026/01/ai-assisted-developer/",
+              "breadcrumb": "www.smashingmagazine.com"
+            },
+            {
+              "type": "organic",
+              "rank_group": 5,
+              "rank_absolute": 6,
+              "page": 1,
+              "domain": "www.fastcompany.com",
+              "title": "What vibe contracting means for small business",
+              "url": "https://www.fastcompany.com/91123456/vibe-contracting",
+              "breadcrumb": "www.fastcompany.com"
+            },
+            {
+              "type": "organic",
+              "rank_group": 6,
+              "rank_absolute": 7,
+              "page": 1,
+              "domain": "www.reddit.com",
+              "title": "Anyone tried vibe contracting? : r/freelance",
+              "url": "https://www.reddit.com/r/freelance/comments/abc123/vibe_contracting/",
+              "breadcrumb": "www.reddit.com/r/freelance"
+            },
+            {
+              "type": "organic",
+              "rank_group": 7,
+              "rank_absolute": 8,
+              "page": 1,
+              "domain": "www.malipetek.dev",
+              "title": "Vibe contracting — the human-reviewed AI developer",
+              "url": "https://malipetek.dev/",
+              "breadcrumb": "malipetek.dev"
+            },
+            {
+              "type": "organic",
+              "rank_group": 8,
+              "rank_absolute": 9,
+              "page": 1,
+              "domain": "news.ycombinator.com",
+              "title": "Show HN: I rent out an AI developer by the minute",
+              "url": "https://news.ycombinator.com/item?id=41000000",
+              "breadcrumb": "news.ycombinator.com"
+            },
+            {
+              "type": "organic",
+              "rank_group": 9,
+              "rank_absolute": 10,
+              "page": 1,
+              "domain": "www.indiehackers.com",
+              "title": "Vibe contracting as a business model",
+              "url": "https://www.indiehackers.com/post/vibe-contracting",
+              "breadcrumb": "www.indiehackers.com"
+            },
+            {
+              "type": "organic",
+              "rank_group": 10,
+              "rank_absolute": 11,
+              "page": 1,
+              "domain": "lab.malipetek.dev",
+              "title": "Notes on running an AI dev lab",
+              "url": "https://lab.malipetek.dev/blog/vibe-contracting-notes",
+              "breadcrumb": "lab.malipetek.dev/blog"
+            },
+            {
+              "type": "organic",
+              "rank_group": 11,
+              "rank_absolute": 12,
+              "page": 1,
+              "domain": "www.entrepreneur.com",
+              "title": "The new freelance economy",
+              "url": "https://www.entrepreneur.com/business-news/new-freelance-economy/",
+              "breadcrumb": "www.entrepreneur.com"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -11,6 +11,9 @@
  *                URLs it gave, which companies it named instead.
  *   citations  — once a week it reads the profile URLs we claimed and checks
  *                that the link to us is still there.
+ *   ranks      — once a week it asks DataForSEO's Google Organic SERP API where
+ *                our keywords actually rank, so a score change can be read
+ *                against the rankings a core update moved.
  *
  * The fix cycle mirrors the content cycle (src/content.ts): when there are
  * findings worth an agent's time, an approved system ticket is filed on the
@@ -56,6 +59,17 @@ const MAX_GEO_QUESTIONS = 20;
 const MAX_CITATIONS_CHECKED = 30;
 /** A core update holds content rewrites for two weeks. */
 export const HOLD_DAYS = 14;
+
+/** The DataForSEO API root; rank checks are the only caller. */
+const DATAFORSEO_BASE = 'https://api.dataforseo.com/v3';
+/** Ten pages of results, so "not in the top 100" is a real answer. */
+const RANK_DEPTH = 100;
+/** DataForSEO bills per keyword; the desk never posts more than this in one run. */
+export const MAX_RANK_KEYWORDS = 25;
+/** A queued task older than this is dropped, so a lost task cannot block the desk. */
+const RANK_PENDING_MAX = 3 * DAY;
+/** Ranked both weeks or not: a keyword missing from the top 100 counts as 101. */
+export const NOT_RANKED = 101;
 
 const UA = 'malipetek-seo-audit/1.0 (+https://malipetek.dev)';
 
@@ -572,6 +586,11 @@ export function volatilityHold(options: {
 
 /* ——————————————————————— settings ——————————————————————— */
 
+export interface RankLocation {
+  locationCode: number;
+  languageCode: string;
+}
+
 export interface SeoSettings {
   /** The agent cycle files itself while there are findings worth fixing. */
   autoCycle: boolean;
@@ -579,6 +598,10 @@ export interface SeoSettings {
   geoQuestions: string[];
   /** No content rewrites for two weeks after a core update. */
   volatilityHold: boolean;
+  /** The Google keywords the weekly rank check watches. */
+  rankKeywords: string[];
+  /** Where the rank check asks Google: the SERP API's location and language. */
+  rankLocation: RankLocation;
 }
 
 /** The seed in 0036_seo.sql, repeated so a missing row reads the same as the desk. */
@@ -600,16 +623,45 @@ export const GEO_QUESTION_SEED: string[] = [
   'how do I connect ChatGPT to my project',
 ];
 
+/** The seed in 0036_seo.sql, repeated so a missing row reads the same as the desk. */
+export const RANK_KEYWORD_SEED: string[] = [
+  'vibe contracting',
+  'ai website developer',
+  'website changes with ai',
+  'ai web development service',
+  'hire developer ai agents',
+  'small business website maintenance',
+  'website developer with ai human review',
+  'pay per minute website changes',
+  'website maintenance without a retainer',
+  'ai coding with human review',
+  'hire an ai developer for small fixes',
+  'astro website developer',
+  'website fixes on demand',
+  'affordable website updates for small business',
+  'connect chatgpt to my website',
+  'shopify app developer',
+  'cloudflare workers mcp',
+  'astro developer for hire',
+];
+
+/** United States, English — the market the offer is written for. */
+export const RANK_LOCATION_SEED: RankLocation = { locationCode: 2840, languageCode: 'en' };
+
 const SETTING_DEFAULTS: SeoSettings = {
   autoCycle: true,
   geoQuestions: GEO_QUESTION_SEED,
   volatilityHold: true,
+  rankKeywords: RANK_KEYWORD_SEED,
+  rankLocation: RANK_LOCATION_SEED,
 };
 
 const SETTING_KEYS: Record<keyof SeoSettings, string> = {
   autoCycle: 'seo_auto_cycle',
   geoQuestions: 'seo_geo_questions',
   volatilityHold: 'seo_volatility_hold',
+  rankKeywords: 'seo_rank_keywords',
+  rankLocation: 'seo_rank_location',
 };
 
 const FIELD_OF_KEY: Record<string, keyof SeoSettings> = Object.fromEntries(
@@ -619,20 +671,34 @@ const FIELD_OF_KEY: Record<string, keyof SeoSettings> = Object.fromEntries(
 const bool = (raw: unknown): unknown =>
   typeof raw === 'boolean' ? raw : raw === 'on' ? true : raw === 'off' ? false : undefined;
 
+/** A list of short strings, deduped, capped. Shared by questions and keywords. */
+function cleanList(raw: unknown, max: number, maxLength: number): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const list: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') return undefined;
+    const value = item.trim().replace(/\s+/g, ' ').slice(0, maxLength);
+    if (!value) continue;
+    if (!list.includes(value)) list.push(value);
+    if (list.length >= max) break;
+  }
+  return list.length ? list : undefined;
+}
+
 const RULES: Record<keyof SeoSettings, (raw: unknown) => unknown> = {
   autoCycle: bool,
   volatilityHold: bool,
-  geoQuestions: (raw) => {
-    if (!Array.isArray(raw)) return undefined;
-    const list: string[] = [];
-    for (const item of raw) {
-      if (typeof item !== 'string') return undefined;
-      const question = item.trim().replace(/\s+/g, ' ').slice(0, 200);
-      if (!question) continue;
-      if (!list.includes(question)) list.push(question);
-      if (list.length >= MAX_GEO_QUESTIONS) break;
-    }
-    return list.length ? list : undefined;
+  geoQuestions: (raw) => cleanList(raw, MAX_GEO_QUESTIONS, 200),
+  rankKeywords: (raw) => cleanList(raw, MAX_RANK_KEYWORDS, 120),
+  rankLocation: (raw) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+    const value = raw as Record<string, unknown>;
+    // The API's own names are accepted too, so a copy from the docs works.
+    const code = Number(value.locationCode ?? value.location_code);
+    const lang = String(value.languageCode ?? value.language_code ?? '').trim().toLowerCase();
+    if (!Number.isInteger(code) || code <= 0 || code > 999_999) return undefined;
+    if (!/^[a-z]{2}(?:-[a-z0-9]{2,8})?$/.test(lang)) return undefined;
+    return { locationCode: code, languageCode: lang };
   },
 };
 
@@ -683,19 +749,21 @@ export interface SeoState {
   lastAuditAt: number | null;
   lastGeoAt: number | null;
   lastCitationsAt: number | null;
+  lastRanksAt: number | null;
 }
 
 const STATE_KEYS = {
   lastAuditAt: 'seo_last_audit_at',
   lastGeoAt: 'seo_last_geo_at',
   lastCitationsAt: 'seo_last_citations_at',
+  lastRanksAt: 'seo_last_ranks_at',
 } as const;
 
 export async function readSeoState(env: Env): Promise<SeoState> {
   const { results } = await env.DB.prepare(
-    "SELECT key, value FROM settings WHERE key IN ('seo_last_audit_at', 'seo_last_geo_at', 'seo_last_citations_at')",
+    "SELECT key, value FROM settings WHERE key IN ('seo_last_audit_at', 'seo_last_geo_at', 'seo_last_citations_at', 'seo_last_ranks_at')",
   ).all<{ key: string; value: string }>();
-  const out: SeoState = { lastAuditAt: null, lastGeoAt: null, lastCitationsAt: null };
+  const out: SeoState = { lastAuditAt: null, lastGeoAt: null, lastCitationsAt: null, lastRanksAt: null };
   for (const row of results ?? []) {
     const field = (Object.keys(STATE_KEYS) as (keyof SeoState)[]).find((name) => STATE_KEYS[name] === row.key);
     if (!field) continue;
@@ -1177,18 +1245,438 @@ export async function checkCitations(env: Env, t = now()): Promise<CitationCheck
   return { checked, verified, dropped };
 }
 
+/* ——————————————————————— Google rankings ——————————————————————— */
+
+const record = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
+/** Which of our two hosts a SERP domain belongs to; any subdomain counts. */
+export function seoHostOf(domain: string): SeoHost | null {
+  const name = domain.trim().toLowerCase().replace(/\.$/, '');
+  if (!name) return null;
+  if (name === 'lab.malipetek.dev' || name.endsWith('.lab.malipetek.dev')) return 'lab.malipetek.dev';
+  if (name === 'malipetek.dev' || name.endsWith('.malipetek.dev')) return 'malipetek.dev';
+  return null;
+}
+
+export interface RankTaskResult {
+  keyword: string;
+  host: SeoHost | null;
+  /** NULL when neither host is in the top 100. */
+  position: number | null;
+  url: string | null;
+  topDomains: string[];
+  /** The task's own cost in USD, as DataForSEO reports it. */
+  cost: number;
+}
+
+/**
+ * One task_get task into the row the desk keeps: our best organic position,
+ * the URL that ranked, and the domains ahead of us. A task still in the queue
+ * has no `result` yet and returns null, so the caller keeps it pending.
+ */
+export function parseRankTask(value: unknown): RankTaskResult | null {
+  const task = record(value);
+  if (!task) return null;
+  const data = record(task.data) ?? {};
+  const keyword = typeof data.keyword === 'string' ? data.keyword.trim() : '';
+  const results = list(task.result);
+  if (!keyword || !results.length) return null;
+  const serp = record(results[0]);
+  if (!serp) return null;
+
+  let best: number | null = null;
+  let url: string | null = null;
+  let host: SeoHost | null = null;
+  const domains: string[] = [];
+  for (const value of list(serp.items)) {
+    const item = record(value);
+    if (!item || item.type !== 'organic') continue;
+    const domain = typeof item.domain === 'string' ? item.domain : '';
+    if (domain && !domains.includes(domain)) domains.push(domain);
+    const matched = seoHostOf(domain);
+    if (!matched) continue;
+    // rank_group is the position among organic results; rank_absolute counts
+    // the SERP features above us too. Prefer the organic position.
+    const group = Number(item.rank_group);
+    const absolute = Number(item.rank_absolute);
+    const position = Number.isFinite(group) && group > 0 ? group : Number.isFinite(absolute) && absolute > 0 ? absolute : null;
+    if (position === null) continue;
+    if (best === null || position < best) {
+      best = position;
+      url = typeof item.url === 'string' ? item.url : null;
+      host = matched;
+    }
+  }
+  return { keyword, host, position: best, url, topDomains: domains.slice(0, 10), cost: Number(task.cost) || 0 };
+}
+
+/** Every finished task in a task_get response. Queued or failed tasks are skipped. */
+export function parseRankTasks(payload: unknown): RankTaskResult[] {
+  const body = record(payload);
+  if (!body) return [];
+  return list(body.tasks)
+    .map(parseRankTask)
+    .filter((task): task is RankTaskResult => task !== null);
+}
+
+export interface RankPoint {
+  keyword: string;
+  position: number | null;
+}
+
+/**
+ * Week-over-week turbulence: the mean absolute position change over keywords
+ * tracked in both checks, with "not in the top 100" counted as 101. A big
+ * number during a core update means the SERP is moving, not that we did.
+ */
+export function rankSwing(previous: readonly RankPoint[], current: readonly RankPoint[]): number | null {
+  const before = new Map(previous.map((row) => [row.keyword, row.position]));
+  let total = 0;
+  let counted = 0;
+  for (const row of current) {
+    if (!before.has(row.keyword)) continue;
+    total += Math.abs((row.position ?? NOT_RANKED) - (before.get(row.keyword) ?? NOT_RANKED));
+    counted += 1;
+  }
+  return counted ? Math.round((total / counted) * 10) / 10 : null;
+}
+
+interface RankPendingTask {
+  id: string;
+  keyword: string;
+  cost: number;
+}
+
+interface RankPending {
+  day: string;
+  postedAt: number;
+  location: RankLocation;
+  tasks: RankPendingTask[];
+}
+
+/** The queued DataForSEO tasks, in settings under seo_rank_pending. */
+async function readRankPending(env: Env): Promise<RankPending | null> {
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'seo_rank_pending'").first<{ value: string }>();
+  if (!row) return null;
+  try {
+    const parsed = record(JSON.parse(row.value));
+    if (!parsed) return null;
+    const day = typeof parsed.day === 'string' ? parsed.day : '';
+    const location = record(parsed.location);
+    const tasks = list(parsed.tasks)
+      .map((task) => record(task))
+      .filter((task): task is Record<string, unknown> => task !== null)
+      .map((task) => ({
+        id: typeof task.id === 'string' ? task.id : '',
+        keyword: typeof task.keyword === 'string' ? task.keyword : '',
+        cost: Number(task.cost) || 0,
+      }))
+      .filter((task) => task.id && task.keyword);
+    if (!day || !Number.isFinite(dayNumber(day)) || !location || !tasks.length) return null;
+    const locationCode = Number(location.locationCode);
+    const languageCode = typeof location.languageCode === 'string' ? location.languageCode : '';
+    if (!Number.isInteger(locationCode) || !languageCode) return null;
+    return {
+      day,
+      postedAt: Number(parsed.postedAt) || 0,
+      location: { locationCode, languageCode },
+      tasks,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function writeRankPending(env: Env, pending: RankPending | null): Promise<void> {
+  if (!pending) {
+    await env.DB.prepare("DELETE FROM settings WHERE key = 'seo_rank_pending'").run();
+    return;
+  }
+  await env.DB.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('seo_rank_pending', ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  )
+    .bind(JSON.stringify(pending), now())
+    .run();
+}
+
+/**
+ * One DataForSEO call. The key is the account's base64 `login:password`; the
+ * API wants it as `Authorization: Basic <key>`. A failed call is logged and
+ * read as "nothing this tick": a cron retry is cheaper than a thrown error.
+ */
+async function dataforseo(env: Env, path: string, body?: unknown): Promise<Record<string, unknown> | null> {
+  const key = env.DATAFORSEO_API_KEY;
+  if (!key) return null;
+  try {
+    const response = await fetch(`${DATAFORSEO_BASE}${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: {
+        authorization: `Basic ${key}`,
+        accept: 'application/json',
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    if (!response.ok) {
+      console.warn('seo_ranks_http', path, response.status);
+      return null;
+    }
+    const envelope = record((await response.json()) as unknown);
+    const status = Number(envelope?.status_code);
+    if (status !== 20000) {
+      console.warn('seo_ranks_api', path, status, envelope?.status_message);
+      return null;
+    }
+    return envelope;
+  } catch (error) {
+    console.warn('seo_ranks_error', path, String(error));
+    return null;
+  }
+}
+
+/** Queue one standard-queue task per keyword, all in a single POST. */
+async function postRankTasks(env: Env, keywords: readonly string[], location: RankLocation, t: number): Promise<RankPending | null> {
+  const payload = await dataforseo(
+    env,
+    '/serp/google/organic/task_post',
+    keywords.map((keyword) => ({
+      keyword,
+      location_code: location.locationCode,
+      language_code: location.languageCode,
+      depth: RANK_DEPTH,
+    })),
+  );
+  if (!payload) return null;
+  const tasks: RankPendingTask[] = [];
+  list(payload.tasks).forEach((value, index) => {
+    const task = record(value);
+    if (!task) return;
+    const id = typeof task.id === 'string' ? task.id : '';
+    if (!id) return;
+    const data = record(task.data) ?? {};
+    const keyword = typeof data.keyword === 'string' && data.keyword ? data.keyword : (keywords[index] ?? '');
+    if (!keyword) return;
+    tasks.push({ id, keyword, cost: Number(task.cost) || 0 });
+  });
+  if (!tasks.length) return null;
+  return { day: dayKey(t), postedAt: t, location, tasks };
+}
+
+export interface RankRun {
+  day: string;
+  posted: number;
+  collected: number;
+  pending: number;
+  cost: number;
+  skipped?: 'no_key' | 'no_keywords' | 'api_failed';
+}
+
+/**
+ * Read the tasks that are ready and keep the rest queued. The standard queue
+ * can take minutes, so a check spans one or more five-minute cron ticks; the
+ * pending list in settings is the state between them.
+ */
+async function collectRankTasks(env: Env, pending: RankPending, t: number): Promise<RankRun> {
+  const readyPayload = await dataforseo(env, '/serp/google/organic/tasks_ready');
+  const ready = new Set<string>();
+  for (const value of list(readyPayload?.tasks)) {
+    const task = record(value);
+    for (const item of list(task?.result)) {
+      const entry = record(item);
+      if (entry && typeof entry.id === 'string') ready.add(entry.id);
+    }
+  }
+  // A tasks_ready that failed proves nothing; try every task and let task_get
+  // report the queued ones. Otherwise only the ids it listed are fetched.
+  const stale = t - pending.postedAt > RANK_PENDING_MAX;
+  const due = pending.tasks.filter((task) => (readyPayload ? ready.has(task.id) : true) && !(stale && !ready.has(task.id)));
+
+  const statements: D1PreparedStatement[] = [];
+  const done = new Set<string>();
+  let cost = 0;
+  let collected = 0;
+  for (const task of due) {
+    const payload = await dataforseo(env, `/serp/google/organic/task_get/regular/${encodeURIComponent(task.id)}`);
+    if (!payload) continue;
+    const results = parseRankTasks(payload);
+    if (!results.length) continue; // still queued, or the task failed
+    const result = results[0];
+    const taskCost = task.cost || result.cost;
+    cost += taskCost;
+    collected += 1;
+    done.add(task.id);
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO seo_ranks (day, keyword, location_code, language_code, host, position, url, top_domains_json, cost)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(keyword, day) DO UPDATE SET
+           location_code = excluded.location_code, language_code = excluded.language_code,
+           host = excluded.host, position = excluded.position, url = excluded.url,
+           top_domains_json = excluded.top_domains_json, cost = excluded.cost`,
+      ).bind(
+        pending.day,
+        result.keyword || task.keyword,
+        pending.location.locationCode,
+        pending.location.languageCode,
+        result.host,
+        result.position,
+        result.url,
+        JSON.stringify(result.topDomains),
+        taskCost,
+      ),
+    );
+  }
+  await writeInChunks(env, statements);
+
+  const remaining = pending.tasks.filter((task) => !done.has(task.id) && !(stale && !ready.has(task.id)));
+  await writeRankPending(env, remaining.length ? { ...pending, tasks: remaining } : null);
+  return { day: pending.day, posted: 0, collected, pending: remaining.length, cost };
+}
+
+/**
+ * The weekly check. With tasks already queued it only collects; otherwise it
+ * posts this week's keywords and marks the week. Without the secret it does
+ * nothing and says why, so the desk can explain itself.
+ */
+export async function runRanks(env: Env, t = now()): Promise<RankRun> {
+  const day = dayKey(t);
+  if (!env.DATAFORSEO_API_KEY) return { day, posted: 0, collected: 0, pending: 0, cost: 0, skipped: 'no_key' };
+
+  const pending = await readRankPending(env);
+  if (pending) return collectRankTasks(env, pending, t);
+
+  const { rankKeywords, rankLocation } = await readSeoSettings(env);
+  const keywords = rankKeywords.slice(0, MAX_RANK_KEYWORDS);
+  if (!keywords.length) return { day, posted: 0, collected: 0, pending: 0, cost: 0, skipped: 'no_keywords' };
+
+  const queued = await postRankTasks(env, keywords, rankLocation, t);
+  if (!queued) return { day, posted: 0, collected: 0, pending: 0, cost: 0, skipped: 'api_failed' };
+  await writeRankPending(env, queued);
+  await markState(env, 'lastRanksAt', t);
+  const cost = queued.tasks.reduce((sum, task) => sum + task.cost, 0);
+  return { day: queued.day, posted: queued.tasks.length, collected: 0, pending: queued.tasks.length, cost: Math.round(cost * 1_000_000) / 1_000_000 };
+}
+
+interface RankRow {
+  keyword: string;
+  location_code: number;
+  language_code: string;
+  host: string | null;
+  position: number | null;
+  url: string | null;
+  top_domains_json: string;
+  cost: number;
+}
+
+export interface RankSeriesPoint {
+  day: string;
+  avgPosition: number;
+  inTop10: number;
+  inTop100: number;
+  tracked: number;
+}
+
+/**
+ * Everything the Rankings tab and the overview card read: this check's rows
+ * against last week's, the series, the swing and whether the key is set.
+ */
+export async function rankSnapshot(env: Env, t = now()) {
+  const [settings, pending] = await Promise.all([readSeoSettings(env), readRankPending(env)]);
+  const latest = await env.DB.prepare('SELECT MAX(day) AS day FROM seo_ranks').first<{ day: string | null }>();
+  const latestDay = latest?.day ?? null;
+
+  let rows: RankRow[] = [];
+  let previous: RankRow[] = [];
+  if (latestDay) {
+    const current = await env.DB.prepare(
+      `SELECT keyword, location_code, language_code, host, position, url, top_domains_json, cost
+         FROM seo_ranks WHERE day = ?
+        ORDER BY CASE WHEN position IS NULL THEN 1 ELSE 0 END, position, keyword`,
+    )
+      .bind(latestDay)
+      .all<RankRow>();
+    rows = current.results ?? [];
+    const previousDay = await env.DB.prepare('SELECT day FROM seo_ranks WHERE day < ? ORDER BY day DESC LIMIT 1')
+      .bind(latestDay)
+      .first<{ day: string }>();
+    if (previousDay) {
+      const before = await env.DB.prepare(
+        `SELECT keyword, location_code, language_code, host, position, url, top_domains_json, cost
+           FROM seo_ranks WHERE day = ?`,
+      )
+        .bind(previousDay.day)
+        .all<RankRow>();
+      previous = before.results ?? [];
+    }
+  }
+
+  const since = dayKey(t - 120 * DAY);
+  const { results } = await env.DB.prepare(
+    `SELECT day, COUNT(*) AS tracked,
+            AVG(CASE WHEN position IS NULL THEN ? ELSE position END) AS average,
+            SUM(CASE WHEN position IS NOT NULL AND position <= 10 THEN 1 ELSE 0 END) AS top10,
+            SUM(CASE WHEN position IS NOT NULL AND position <= 100 THEN 1 ELSE 0 END) AS top100
+       FROM seo_ranks WHERE day >= ? GROUP BY day ORDER BY day`,
+  )
+    .bind(NOT_RANKED, since)
+    .all<{ day: string; tracked: number; average: number; top10: number; top100: number }>();
+
+  const series: RankSeriesPoint[] = (results ?? []).map((row) => ({
+    day: row.day,
+    avgPosition: Math.round(row.average * 10) / 10,
+    inTop10: row.top10,
+    inTop100: row.top100,
+    tracked: row.tracked,
+  }));
+
+  const before = new Map(previous.map((row) => [row.keyword, row.position]));
+  const latestPoint = series.at(-1) ?? null;
+
+  return {
+    rankReady: Boolean(env.DATAFORSEO_API_KEY),
+    pending: pending?.tasks.length ?? 0,
+    pendingDay: pending?.day ?? null,
+    latestDay,
+    location: settings.rankLocation,
+    keywords: settings.rankKeywords,
+    swing: rankSwing(previous, rows),
+    series,
+    avgPosition: latestPoint?.avgPosition ?? null,
+    inTop10: latestPoint?.inTop10 ?? 0,
+    inTop100: latestPoint?.inTop100 ?? 0,
+    rows: rows.map((row) => {
+      const previousPosition = before.has(row.keyword) ? (before.get(row.keyword) ?? null) : null;
+      return {
+        keyword: row.keyword,
+        host: row.host,
+        position: row.position,
+        url: row.url,
+        prevPosition: previousPosition,
+        change: row.position !== null && previousPosition !== null ? previousPosition - row.position : null,
+        topDomains: parseJsonArray(row.top_domains_json),
+        cost: row.cost,
+      };
+    }),
+  };
+}
+
 /* ——————————————————————— the cron ——————————————————————— */
 
 export interface SeoRun {
   audit?: AuditSummary | { skipped: string };
   geo?: GeoSummary | { skipped: string };
   citations?: CitationCheck | { skipped: string };
+  ranks?: RankRun;
 }
 
 /**
- * The five-minute cron's SEO work: at most one audit a day, one probe and one
- * citation pass a week. The attempt is recorded before the work so a failing
- * host cannot make the cron read sixty pages every five minutes.
+ * The five-minute cron's SEO work: at most one audit a day, one probe, one
+ * citation pass and one rank check a week. The attempt is recorded before the
+ * work so a failing host cannot make the cron read sixty pages every five
+ * minutes. Queued rank tasks are collected on every tick until they land.
  */
 export async function runSeo(env: Env, t = now()): Promise<SeoRun> {
   const state = await readSeoState(env);
@@ -1226,6 +1714,22 @@ export async function runSeo(env: Env, t = now()): Promise<SeoRun> {
       out.citations = { skipped: 'failed' };
     }
   }
+
+  // A queued rank task is collected even when the week is not up: the standard
+  // queue can take several cron ticks, and the pending list is the state.
+  const rankPending = await readRankPending(env);
+  if (rankPending || state.lastRanksAt === null || t - state.lastRanksAt >= WEEKLY) {
+    if (!env.DATAFORSEO_API_KEY) {
+      if (!rankPending) out.ranks = { day: dayKey(t), posted: 0, collected: 0, pending: 0, cost: 0, skipped: 'no_key' };
+    } else {
+      try {
+        out.ranks = await runRanks(env, t);
+      } catch (error) {
+        console.error('seo_ranks_failed', String(error));
+        out.ranks = { day: dayKey(t), posted: 0, collected: 0, pending: 0, cost: 0, skipped: 'api_failed' };
+      }
+    }
+  }
   return out;
 }
 
@@ -1261,6 +1765,15 @@ export interface DraftCandidate {
   dr: number | null;
 }
 
+export interface RankBrief {
+  keyword: string;
+  position: number | null;
+  url: string | null;
+  host: string | null;
+  /** false until the first rank check has run. */
+  checked: boolean;
+}
+
 /** The five worst open findings the agent should fix, worst first. */
 async function topFindings(env: Env, limit = CYCLE_FINDINGS): Promise<FindingBrief[]> {
   const { results } = await env.DB.prepare(
@@ -1279,6 +1792,25 @@ async function openFindingCount(env: Env): Promise<number> {
     `SELECT COUNT(*) AS n FROM seo_findings WHERE resolved_at IS NULL AND severity IN ('high', 'medium')`,
   ).first<{ n: number }>();
   return row?.n ?? 0;
+}
+
+/** The tracked keywords with the position the last check saw, none left out. */
+async function rankBriefs(env: Env, keywords: readonly string[]): Promise<RankBrief[]> {
+  const latest = await env.DB.prepare('SELECT MAX(day) AS day FROM seo_ranks').first<{ day: string | null }>();
+  const rows = latest?.day
+    ? (
+        await env.DB.prepare('SELECT keyword, position, url, host FROM seo_ranks WHERE day = ?')
+          .bind(latest.day)
+          .all<{ keyword: string; position: number | null; url: string | null; host: string | null }>()
+      ).results ?? []
+    : [];
+  const seen = new Map(rows.map((row) => [row.keyword, row]));
+  return keywords.map((keyword) => {
+    const row = seen.get(keyword);
+    return row
+      ? { keyword, position: row.position, url: row.url, host: row.host, checked: true }
+      : { keyword, position: null, url: null, host: null, checked: false };
+  });
 }
 
 /** The profile rows a cycle may draft copy for: the ones not written yet. */
@@ -1301,8 +1833,9 @@ export function seoBrief(options: {
   drafts: DraftCandidate[];
   held: VolatilityState;
   total: number;
+  ranks?: RankBrief[];
 }): string {
-  const { findings, drafts, held, total } = options;
+  const { findings, drafts, held, total, ranks } = options;
   const lines = [
     'Fix the search and assistant visibility issues below on our own two hosts.',
     '',
@@ -1326,6 +1859,25 @@ export function seoBrief(options: {
         `${index + 1}. finding_id ${finding.id} — ${finding.host}${finding.path} — ${finding.code} (${finding.severity})\n   ${finding.detail}`,
     ),
     '',
+    ...(ranks && ranks.length
+      ? [
+          'Keywords & rankings. These are the Google searches we sell against, with the',
+          'position the weekly check last saw (United States, English). A keyword ranking',
+          'low tells you which page to strengthen; one outside the top 100 needs a page',
+          'that answers it, not a tweak:',
+          ...ranks.map((rank) =>
+            rank.checked
+              ? rank.position !== null
+                ? `- ${rank.keyword}: #${rank.position}${rank.url ? ` — ${rank.url}` : ''}`
+                : `- ${rank.keyword}: not in the top 100`
+              : `- ${rank.keyword}: not checked yet`,
+          ),
+          ...(held.held
+            ? ['The volatility hold is on: only the technical fixes below are allowed, and no copy rewrite for a ranking while Google is still moving.']
+            : []),
+          '',
+        ]
+      : []),
     ...(held.held
       ? [
           `Volatility hold: a Google core update started ${held.since} (within the last ${HOLD_DAYS} days).`,
@@ -1417,6 +1969,7 @@ export async function ensureSeoCycle(env: Env, t = now(), options: { force?: boo
 
   const drafts = await draftCandidates(env);
   const total = await openFindingCount(env);
+  const ranks = await rankBriefs(env, settings.rankKeywords);
   const title = `SEO fixes: ${findings.length} finding${findings.length === 1 ? '' : 's'}, ${dayLabelOf(today)}`;
 
   const ticket = await env.DB.prepare(
@@ -1428,7 +1981,7 @@ export async function ensureSeoCycle(env: Env, t = now(), options: { force?: boo
   if (!ticket) return { filed: false, reason: 'insert_failed' };
 
   await env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'ali', ?, 1, ?)`)
-    .bind(ticket.id, seoBrief({ findings, drafts, held, total }), t)
+    .bind(ticket.id, seoBrief({ findings, drafts, held, total, ranks }), t)
     .run();
   return { filed: true, id: ticket.id };
 }
@@ -1865,7 +2418,7 @@ export const seo = new Hono<PortalEnv>();
 seo.get('/admin/seo/overview', async (c) => {
   const env = c.env;
   const t = now();
-  const [settings, state, cycleTicket, events, geo, citations] = await Promise.all([
+  const [settings, state, cycleTicket, events, geo, citations, ranks] = await Promise.all([
     readSeoSettings(env),
     readSeoState(env),
     env.DB.prepare(`SELECT id FROM tickets WHERE seo_cycle = 1 AND status IN ('approved', 'in_progress') ORDER BY id DESC LIMIT 1`).first<{
@@ -1874,6 +2427,7 @@ seo.get('/admin/seo/overview', async (c) => {
     env.DB.prepare(`SELECT id, day, kind, label, source FROM seo_events ORDER BY day DESC, id DESC LIMIT 40`).all<SeoEventRow>(),
     geoWeeks(env, t),
     env.DB.prepare('SELECT status, COUNT(*) AS n FROM seo_citations GROUP BY status').all<{ status: string; n: number }>(),
+    rankSnapshot(env, t),
   ]);
 
   const since = dayKey(t - 30 * DAY);
@@ -1930,6 +2484,17 @@ seo.get('/admin/seo/overview', async (c) => {
       rate: geoRuns ? Math.round((geoMentions / geoRuns) * 1000) / 1000 : 0,
     },
     citations: citationCounts,
+    rank: {
+      rankReady: ranks.rankReady,
+      latestDay: ranks.latestDay,
+      avgPosition: ranks.avgPosition,
+      inTop10: ranks.inTop10,
+      inTop100: ranks.inTop100,
+      swing: ranks.swing,
+      pending: ranks.pending,
+      keywords: ranks.keywords.length,
+      location: ranks.location,
+    },
     events: eventRows.map((event) => ({
       id: event.id,
       day: event.day,
@@ -1949,6 +2514,7 @@ seo.get('/admin/seo/overview', async (c) => {
       lastAuditAt: state.lastAuditAt,
       lastGeoAt: state.lastGeoAt,
       lastCitationsAt: state.lastCitationsAt,
+      lastRanksAt: state.lastRanksAt,
     },
     hostsAvailable: SEO_HOSTS,
   });
@@ -2055,6 +2621,12 @@ seo.get('/admin/seo/geo', async (c) => {
     summary: { runs, mentions, rate: runs ? Math.round((mentions / runs) * 1000) / 1000 : 0 },
     engineReady: Boolean(env.DEEPSEEK_API_KEY),
   });
+});
+
+/** Where our keywords rank on Google, this check against last week's. */
+seo.get('/admin/seo/ranks', async (c) => {
+  const snapshot = await rankSnapshot(c.env, now());
+  return out(c, snapshot);
 });
 
 seo.get('/admin/seo/settings', async (c) => {
@@ -2198,9 +2770,13 @@ seo.post('/admin/seo/run', async (c) => {
     await markState(c.env, 'lastCitationsAt', t);
     return out(c, { what, ...summary });
   }
+  if (what === 'ranks') {
+    const summary = await runRanks(c.env, t);
+    return out(c, { what, ...summary });
+  }
   if (what === 'cycle') {
     const result = await ensureSeoCycle(c.env, t, { force: true });
     return out(c, { what, ...result }, result.filed ? 201 : 200);
   }
-  return out(c, { error: 'bad_what', allowed: ['audit', 'geo', 'citations', 'cycle'] }, 400);
+  return out(c, { error: 'bad_what', allowed: ['audit', 'geo', 'citations', 'ranks', 'cycle'] }, 400);
 });

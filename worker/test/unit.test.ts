@@ -4,10 +4,11 @@
  *   pnpm test:unit
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import PostalMime from 'postal-mime';
 import { verifySender } from '../src/mailauth.ts';
-import { corsHeaders, isAllowedOrigin } from '../src/shared.ts';
+import { corsHeaders, isAllowedOrigin, type Env } from '../src/shared.ts';
 import { budgetLeft, cleanExecutorPin, cleanNodeReport, CLIENT_EXECUTOR, EXECUTOR_CATALOG } from '../src/queue.ts';
 import { firstPreviewDecision, limitCentsFor } from '../src/firstPreview.ts';
 import { PORTAL_INSTRUCTIONS, toolsFor } from '../src/kb.ts';
@@ -43,12 +44,17 @@ import {
   newlyOpen,
   parseGeoReply,
   parsePage,
+  parseRankTask,
+  parseRankTasks,
   parseRobots,
   parseSeoOutbox,
   parseSitemap,
+  rankSwing,
   reviewPage,
   robotsIssues,
+  runRanks,
   seoBrief,
+  seoHostOf,
   staleFindingIds,
   volatilityHold,
   weekStart,
@@ -1263,4 +1269,72 @@ test('seo: the brief carries the rules, the findings and the hold', () => {
   assert.match(brief, /<<<OUTBOX/);
   assert.match(brief, /OUTBOX>>>/);
   assert.match(brief, /There are 9 open findings/);
+});
+
+/* —— seo: Google ranks from a real-shaped DataForSEO task_get —— */
+
+const taskGet = JSON.parse(
+  readFileSync(new URL('./fixtures/dataforseo-task-get.json', import.meta.url), 'utf8'),
+) as unknown;
+
+test('seo: a task_get is read for our best position, its URL and the domains ahead', () => {
+  const tasks = parseRankTasks(taskGet);
+  assert.equal(tasks.length, 1);
+  const [task] = tasks;
+  assert.equal(task.keyword, 'vibe contracting');
+  assert.equal(task.position, 7); // the paid ad at rank 1 is not an organic result
+  assert.equal(task.url, 'https://malipetek.dev/');
+  assert.equal(task.host, 'malipetek.dev');
+  assert.equal(task.topDomains.length, 10);
+  assert.equal(task.topDomains[0], 'www.upwork.com');
+  assert.equal(task.topDomains.includes('www.ads-example.com'), false);
+  assert.equal(task.cost, 0.006);
+});
+
+test('seo: a keyword we do not rank for is a row with no position, not a missing row', () => {
+  const task = parseRankTask({
+    data: { keyword: 'ai website developer' },
+    result: [{ keyword: 'ai website developer', type: 'organic', items: [{ type: 'organic', rank_group: 1, domain: 'example.com', url: 'https://example.com/' }] }],
+  });
+  assert.equal(task?.keyword, 'ai website developer');
+  assert.equal(task?.position, null);
+  assert.equal(task?.url, null);
+  assert.equal(task?.host, null);
+  assert.deepEqual(task?.topDomains, ['example.com']);
+});
+
+test('seo: a queued task has no result and is not mistaken for "not ranked"', () => {
+  assert.equal(parseRankTask({ id: 'x', data: { keyword: 'vibe contracting' }, result: null }), null);
+  assert.deepEqual(parseRankTasks({ tasks: [{ id: 'x', data: { keyword: 'vibe contracting' }, result: null }] }), []);
+  assert.equal(seoHostOf('malipetek.dev'), 'malipetek.dev');
+  assert.equal(seoHostOf('www.malipetek.dev'), 'malipetek.dev');
+  assert.equal(seoHostOf('blog.lab.malipetek.dev'), 'lab.malipetek.dev');
+  assert.equal(seoHostOf('notmalipetek.dev'), null);
+});
+
+test('seo: the rank swing counts a keyword outside the top 100 as 101', () => {
+  const previous = [
+    { keyword: 'vibe contracting', position: 10 },
+    { keyword: 'ai website developer', position: null },
+    { keyword: 'website changes with ai', position: 5 },
+    { keyword: 'astro developer for hire', position: null },
+  ];
+  const current = [
+    { keyword: 'vibe contracting', position: 12 },
+    { keyword: 'ai website developer', position: 50 },
+    { keyword: 'website changes with ai', position: null },
+    { keyword: 'astro developer for hire', position: null },
+  ];
+  // |12-10| + |50-101| + |101-5| + |101-101| = 149, over four keywords.
+  assert.equal(rankSwing(previous, current), 37.3);
+  assert.equal(rankSwing([], current), null);
+  assert.equal(rankSwing([{ keyword: 'gone', position: 3 }], current), null);
+});
+
+test('seo: without DATAFORSEO_API_KEY the rank check is skipped, not attempted', async () => {
+  const result = await runRanks({} as Env, 1_800_000_000);
+  assert.equal(result.skipped, 'no_key');
+  assert.equal(result.posted, 0);
+  assert.equal(result.collected, 0);
+  assert.equal(result.day, '2027-01-15');
 });

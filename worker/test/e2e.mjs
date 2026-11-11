@@ -1893,6 +1893,77 @@ const groups = {
       rmSync(dir, { recursive: true, force: true });
     }
   },
+
+  async seo({ admin }) {
+    const ranks = await call('/admin/seo/ranks', { auth: admin });
+    check(
+      'the rankings endpoint answers without a DataForSEO key',
+      ranks.status === 200 && ranks.data.rankReady === false && Array.isArray(ranks.data.rows) && ranks.data.location?.locationCode === 2840,
+      JSON.stringify(ranks.data).slice(0, 300),
+    );
+    const overview = await call('/admin/seo/overview', { auth: admin });
+    check(
+      'the overview carries a rank summary',
+      overview.data.rank?.rankReady === false && overview.data.rank.keywords > 0 && overview.data.rank.swing === null,
+      JSON.stringify(overview.data.rank),
+    );
+    const saved = await call('/admin/seo/settings', {
+      method: 'POST',
+      auth: admin,
+      body: { rankKeywords: ['vibe contracting', 'shopify app developer'], rankLocation: { locationCode: 2840, languageCode: 'en' } },
+    });
+    check(
+      'rank keywords and location save',
+      saved.data.settings?.rankKeywords?.length === 2 && saved.data.settings.rankLocation?.locationCode === 2840 && !saved.data.rejected?.length,
+      JSON.stringify(saved.data).slice(0, 300),
+    );
+    const capped = await call('/admin/seo/settings', {
+      method: 'POST',
+      auth: admin,
+      body: { rankKeywords: Array.from({ length: 30 }, (_, i) => `keyword ${i}`), rankLocation: { locationCode: 0, languageCode: '' } },
+    });
+    check(
+      'the keyword cap and a bad location are enforced',
+      capped.data.settings?.rankKeywords?.length === 25 && capped.data.rejected?.includes('rankLocation'),
+      JSON.stringify(capped.data).slice(0, 300),
+    );
+    const ran = await call('/admin/seo/run', { method: 'POST', auth: admin, body: { what: 'ranks' } });
+    check('a rank check without the key is skipped, not failed', ran.data.what === 'ranks' && ran.data.skipped === 'no_key');
+
+    // Two weekly checks: one keyword improved into the top 10, one appeared.
+    const day = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+    const before = day(-7);
+    const latest = day(0);
+    sql(`INSERT INTO seo_ranks (day, keyword, location_code, language_code, host, position, url, top_domains_json, cost) VALUES
+      ('${before}', 'vibe contracting', 2840, 'en', 'malipetek.dev', 12, 'https://malipetek.dev/', '["upwork.com","fiverr.com"]', 0.006),
+      ('${before}', 'shopify app developer', 2840, 'en', NULL, NULL, NULL, '["shopify.dev"]', 0.006),
+      ('${latest}', 'vibe contracting', 2840, 'en', 'malipetek.dev', 7, 'https://malipetek.dev/', '["upwork.com","fiverr.com"]', 0.006),
+      ('${latest}', 'shopify app developer', 2840, 'en', 'lab.malipetek.dev', 40, 'https://lab.malipetek.dev/shopify', '["shopify.dev"]', 0.006);`);
+    const checked = await call('/admin/seo/ranks', { auth: admin });
+    const vibe = checked.data.rows?.find((row) => row.keyword === 'vibe contracting');
+    const shopify = checked.data.rows?.find((row) => row.keyword === 'shopify app developer');
+    check(
+      'a check reads its positions against last week',
+      checked.data.latestDay === latest && vibe?.position === 7 && vibe?.prevPosition === 12 && vibe?.change === 5 && shopify?.change === null,
+      JSON.stringify(checked.data.rows),
+    );
+    check(
+      'the series averages positions and counts the top 100',
+      checked.data.series?.length === 2 && checked.data.series.at(-1).avgPosition === 23.5 && checked.data.series.at(-1).inTop100 === 2,
+      JSON.stringify(checked.data.series),
+    );
+    check('the swing treats a keyword outside the top 100 as 101', checked.data.swing === 33, JSON.stringify(checked.data.swing));
+    const withRanks = await call('/admin/seo/overview', { auth: admin });
+    check(
+      'the overview shows the newest average and swing',
+      withRanks.data.rank.avgPosition === 23.5 && withRanks.data.rank.inTop10 === 1 && withRanks.data.rank.swing === 33,
+      JSON.stringify(withRanks.data.rank),
+    );
+
+    const client = account(`seo-client-${Date.now()}@example.com`);
+    const denied = await call('/admin/seo/ranks', { auth: client.session });
+    check('a client cannot read the rankings', denied.status === 401 || denied.status === 403, String(denied.status));
+  },
 };
 
 /* ——————————————————————— run ——————————————————————— */
