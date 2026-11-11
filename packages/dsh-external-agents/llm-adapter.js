@@ -678,6 +678,15 @@ export class AcpModelAdapter {
      * `0` disables it; the default matches the cadence Claude Code uses.
      */
     this.statusEveryMs = Number.isFinite(options.statusEveryMs) ? options.statusEveryMs : 30_000;
+    /**
+     * Context window and output cap to declare for this agent's models.
+     *
+     * ACP carries neither, and the harness needs the window to compact a
+     * conversation at all: switching to a model with no capacity fails with
+     * "no context capacity … configure contextWindow on that adapter model".
+     */
+    this.contextWindow = Number.isFinite(options.contextWindow) ? options.contextWindow : undefined;
+    this.maxTokens = Number.isFinite(options.maxTokens) ? options.maxTokens : undefined;
   }
 
   /**
@@ -714,7 +723,13 @@ export class AcpModelAdapter {
       // A curated list wins outright: it is what the user asked to see, and
       // because it needs no ACP session the picker opens without starting the
       // agent at all.
-      if (this.models.length > 0) return this.#curated(provider);
+      if (this.models.length > 0) {
+        // Logged because a curated list is invisible: the agent never starts, so
+        // there is no other evidence that the picker asked and what it got.
+        this.note(`[${this.provider}] catalogue: ${this.models.length} curated model(s) (${this.models.map((m) => m.id).join(', ')})`);
+        return this.#curated(provider);
+      }
+      this.note(`[${this.provider}] catalogue: reading ${provider} from the agent`);
 
       const options = await this.connection.catalogueModels(this.resolveCwd());
       // The harness validates every entry and rejects the WHOLE provider on one
@@ -741,6 +756,8 @@ export class AcpModelAdapter {
           ...(typeof option.description === 'string' && option.description.length > 0
             ? { description: option.description }
             : {}),
+          ...(this.contextWindow === undefined ? {} : { contextWindow: this.contextWindow }),
+          ...(this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens }),
         });
       }
       return models;
@@ -773,7 +790,16 @@ export class AcpModelAdapter {
       const description = typeof entry === 'object' && typeof entry?.description === 'string' && entry.description.length > 0
         ? entry.description
         : undefined;
-      models.push({ provider, id, name, ...(description === undefined ? {} : { description }) });
+      const contextWindow = Number.isFinite(entry?.contextWindow) ? entry.contextWindow : this.contextWindow;
+      const maxTokens = Number.isFinite(entry?.maxTokens) ? entry.maxTokens : this.maxTokens;
+      models.push({
+        provider,
+        id,
+        name,
+        ...(description === undefined ? {} : { description }),
+        ...(contextWindow === undefined ? {} : { contextWindow }),
+        ...(maxTokens === undefined ? {} : { maxTokens }),
+      });
     }
     return models;
   }
@@ -789,10 +815,16 @@ export class AcpModelAdapter {
    * @returns identity metadata.
    */
   resolveModel(provider, model) {
+    // The curated entry may override the agent's default window per model.
+    const entry = this.models.find((candidate) => (typeof candidate === 'string' ? candidate : candidate?.id) === model);
+    const contextWindow = Number.isFinite(entry?.contextWindow) ? entry.contextWindow : this.contextWindow;
+    const maxTokens = Number.isFinite(entry?.maxTokens) ? entry.maxTokens : this.maxTokens;
     return Promise.resolve({
       provider,
       id: model,
       name: this.#displayName(model),
+      ...(contextWindow === undefined ? {} : { contextWindow }),
+      ...(maxTokens === undefined ? {} : { maxTokens }),
       // Only claimed when attachments can actually be read: the harness uses
       // this to decide whether to send images or a text placeholder, and a
       // false claim silently loses them.
