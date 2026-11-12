@@ -24,7 +24,7 @@ Other parts you will meet:
 - `--vt-slow` in `src/styles/base.css`: one multiplier for every duration. It can be above 1 for review.
 - The portal's first frame: `src/components/portal/PortalFrame.astro`. It is static HTML that stands in until React mounts.
 - The 3D scene: `src/lib/workshop3d.ts` (`initWorkshop` = homepage, `initBoard` = portal board).
-- The 3D room across portal pages: `src/components/portal/room.js`. The hop from the homepage into the portal: `src/components/portal/sceneHandover.js`.
+- The 3D room across portal pages: `src/components/portal/room.js`. The hop from the homepage into the portal: `src/components/portal/sceneHandover.js` (`arrivingBox` = the machine the site sent, spent once; `placeScene` = land it on the page's own machine; `landInWindow` = land it in the room's small window).
 - The zoom into a card (camera move): `setCamera` and `zoomFor` in `store.js`, keyframes `cp-zoom-*` in `client-portal.css`.
 
 ## 2. How a view transition works (the parts that matter here)
@@ -95,6 +95,7 @@ The element is drawn under the named groups and jumps in front when the transiti
 
 - **Hold it back, then bring it in.** Hide it while the transition runs and let a CSS transition bring it in after. Example: `.cp-overview--guest` waits while `html[data-vt-scene]` is set and rises in when it is removed.
 - **Hand over early.** If the moving picture lands exactly on the live element, remove the picture as soon as the live element is ready. Example: `data-vt-scene-ready='same'` in `sceneHandover.js` and `base.css`.
+- **Land it somewhere.** A page reached by a hop that has no board of its own (a portal page whose room is the small window, room.js) must give the picture a destination before the guard runs out, or it stands in front of the page and the machine then appears at the top. `landInWindow` maps the whole picture onto the frame the room draws there (its own `boxLens`), so the live canvas takes over on the same pixels.
 
 Do not try to fix it by adding a `view-transition-name` to the late element. It does nothing (section 2).
 
@@ -127,6 +128,8 @@ overview = the board itself, a request or a project = faded backdrop, any other 
 | T12 | A morphing canvas slides away and fades instead of landing in its new place | Two pictures with different framings cross-fade; they never line up | Animate the live canvas (clip + lens), see recipe B4 |
 | T13 | A morph is cut off by something appearing on top | The next page's own element (a new board) showed before the morph ended | Keep it hidden until the moving one says it has finished (`handOver` in `room.js`) |
 | T14 | The homepage's 3D picture stretches down the page while an entrance plays (after the hop from the lab) | A `transform` (or `filter`) on `main`, even an animated one, makes `main` the containing block of the `position: fixed` workshop canvas, so the canvas takes `main`'s height | Animate only `opacity` on `main` or any element with fixed descendants (`hop-fade-in` in `base.css`); move children, not the container |
+| T15 | The camera flies in from the homepage's machine to the board every time the overview is reached again, in a load that did not come from the site | The hop's measurement (`sessionStorage.scene-box`) was read fresh by every mount, and only a landing ever cleared it; the overview remounts on each hash change | Spend it once per page load (`arrivingBox` in `sceneHandover.js` reads and removes it for good) and only use it while `data-vt-scene='in'` |
+| T16 | The machine hangs at full size in front of a portal page, then the little window at the top gets it | A hop into a page with no board (room mode `mini`) leaves the paused old(scene) picture waiting for a landing nobody makes; Base.astro's guard clears it after `1400ms * --vt-slow` | `landInWindow` from room.js: land it on the frame the room draws, then set `data-vt-scene-ready` |
 
 ## 6. How to check your work
 
