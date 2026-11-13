@@ -1894,6 +1894,64 @@ const groups = {
     }
   },
 
+  async projectPeople({ admin }) {
+    const stamp = Date.now();
+    const owner = account(`people-owner-${stamp}@example.com`);
+    const shop = (await newProject(owner.session, { kind: 'existing', name: `People Shop ${stamp}`, brief: OLD_BRIEF, repoKind: 'none' })).data;
+    const id = shop.project.id;
+    const row = async (email) =>
+      (await call('/admin/projects', { auth: admin })).data.projects.find((p) => p.id === id)?.clients.find((c) => c.email === email);
+
+    // Hand edits: name and kind, never the slug.
+    const edited = await call(`/admin/projects/${id}`, { method: 'PATCH', auth: admin, body: { name: `Renamed ${stamp}`, kind: 'new', slug: 'nope' } });
+    check(
+      'Ali can rename a project and change its kind',
+      edited.status === 200 && edited.data.project?.name === `Renamed ${stamp}` && edited.data.project.kind === 'new' && edited.data.project.slug === shop.project.slug,
+      JSON.stringify(edited.data),
+    );
+    check('a bad kind is refused', (await call(`/admin/projects/${id}`, { method: 'PATCH', auth: admin, body: { kind: 'castle' } })).status === 400);
+    check('an empty edit is refused', (await call(`/admin/projects/${id}`, { method: 'PATCH', auth: admin, body: {} })).status === 400);
+    check('a client cannot edit projects', (await call(`/admin/projects/${id}`, { method: 'PATCH', auth: owner.session, body: { name: 'x' } })).status === 403);
+
+    // Several addresses on one project, one of them with copies.
+    const a = `people-a-${stamp}@example.com`;
+    const b = `people-b-${stamp}@example.com`;
+    const addA = await call('/admin/clients', { method: 'POST', auth: admin, body: { email: a, projectIds: [id], copy: true } });
+    const addB = await call('/admin/clients', { method: 'POST', auth: admin, body: { email: b, projectIds: [id] } });
+    check('two more addresses join the project', addA.status === 201 && addB.status === 201, JSON.stringify([addA.data, addB.data]));
+    const ra = await row(a);
+    const rb = await row(b);
+    check('copies are on only where asked', ra?.copy === true && rb?.copy === false, JSON.stringify([ra, rb]));
+
+    const userB = addB.data.user.id;
+    const on = await call(`/admin/clients/${userB}/projects/${id}`, { method: 'PUT', auth: admin, body: { copy: true } });
+    check('the copies switch turns on', on.status === 200 && on.data.copy === true && (await row(b))?.copy === true, JSON.stringify(on.data));
+    const keep = await call(`/admin/clients/${userB}/projects/${id}`, { method: 'PUT', auth: admin });
+    check('relinking without it keeps the setting', keep.data.copy === true);
+    const off = await call(`/admin/clients/${userB}/projects/${id}`, { method: 'PUT', auth: admin, body: { copy: false } });
+    check('…and turns off', off.data.copy === false && (await row(b))?.copy === false);
+    check('a non-boolean copy is refused', (await call(`/admin/clients/${userB}/projects/${id}`, { method: 'PUT', auth: admin, body: { copy: 'yes' } })).status === 400);
+
+    // Re-inviting without copy never turns copies off.
+    await call('/admin/clients', { method: 'POST', auth: admin, body: { email: a, projectIds: [id] } });
+    check('a second invite leaves copies on', (await row(a))?.copy === true);
+
+    // Who a request's emails are copied to: the same query as copyRecipients in portal.ts.
+    const ticket = (await call('/portal/tickets', { method: 'POST', auth: owner.session, body: { title: 'Copied request', body: 'x', projectId: id } })).data.id;
+    await call(`/admin/clients/${userB}/projects/${id}`, { method: 'PUT', auth: admin, body: { copy: true } });
+    sql(`UPDATE user_projects SET copy_mail = 1 WHERE project_id = '${id}' AND user_id = '${owner.user.id}'`);
+    const copied = String(
+      sql(`SELECT u.email FROM tickets t JOIN projects p ON p.id = t.project_id
+             JOIN user_projects up ON up.project_id = t.project_id AND up.copy_mail = 1
+             JOIN users u ON u.id = up.user_id
+            WHERE t.id = ${ticket} AND t.kind = 'client' AND u.role = 'client' AND u.id <> t.user_id`),
+    );
+    check('copies go to the others with copies on, never the author', copied.includes(a) && copied.includes(b) && !copied.includes(owner.user.email), copied);
+
+    await call(`/admin/clients/${userB}/projects/${id}`, { method: 'DELETE', auth: admin });
+    check('removing an address takes it off the project', (await row(b)) === undefined);
+  },
+
   async invites({ admin }) {
     const stamp = Date.now();
     const owner = account(`invite-owner-${stamp}@example.com`);

@@ -122,6 +122,13 @@ export const STYLES = `
 .aw-field__hint { font-size: 12px; color: var(--aw-text2); }
 .aw-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 18px; }
 .aw-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aw-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.aw-check input { flex: none; width: auto; min-width: 0; margin: 0; }
+.aw-people { margin: 6px 0; }
+.aw-people ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
+.aw-people li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.aw-people__who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.aw-people .aw-check { font-size: 12px; color: var(--aw-text2); white-space: nowrap; }
 .aw-inline input { flex: 1; min-width: 120px; }
 .aw-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .aw-search { width: 200px; }

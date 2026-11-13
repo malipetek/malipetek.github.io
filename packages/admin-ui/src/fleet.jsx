@@ -493,6 +493,209 @@ function InviteClientModal({ onClose }) {
   );
 }
 
+/** Ali's hand edits to a project: its name and what it is. The slug stays (nodes and sites hang off it). */
+function ProjectEditModal({ project, onClose }) {
+  const { api, act } = useAdmin();
+  const [name, setName] = useState(project.name);
+  const [kind, setKind] = useState(project.kind ?? 'existing');
+  const changed = name.trim() !== project.name || kind !== (project.kind ?? 'existing');
+  const save = () =>
+    act(
+      () =>
+        api('PATCH', `/admin/projects/${project.id}`, {
+          ...(name.trim() !== project.name ? { name: name.trim() } : {}),
+          ...(kind !== (project.kind ?? 'existing') ? { kind } : {}),
+        }),
+      'Project saved.',
+    ).then(onClose, () => undefined);
+  return (
+    <Modal
+      title={`Edit ${project.name}`}
+      subtitle={`Slug ${project.slug} stays: nodes keep its folder under that name, and its first site is named after it.`}
+      onClose={onClose}
+      actions={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button kind="primary" disabled={!name.trim() || !changed} onClick={save}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      <Field label="Name" hint="What the client sees in the portal and in their emails.">
+        <input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
+      </Field>
+      <Field label="What it is">
+        <Segmented
+          value={kind}
+          options={[
+            { value: 'existing', label: 'Existing code or system' },
+            { value: 'new', label: 'New website' },
+          ]}
+          onChange={setKind}
+        />
+      </Field>
+    </Modal>
+  );
+}
+
+const EMAIL = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+const emailsIn = (text) => [...new Set(text.split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter(Boolean))];
+
+/**
+ * Add one or more addresses to a project. Each one is an ordinary invite: a new
+ * address gets an account, an existing one gains the project. With copies on,
+ * they are also mailed about every request on it, not only their own.
+ */
+function AddPeopleModal({ project, onClose }) {
+  const { api, act, notify } = useAdmin();
+  const [text, setText] = useState('');
+  const [copy, setCopy] = useState(true);
+  const [locale, setLocale] = useState('en-US');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const emails = emailsIn(text);
+  const bad = emails.filter((e) => !EMAIL.test(e));
+  const already = new Set((project.clients ?? []).map((c) => c.email.toLowerCase()));
+  const fresh = emails.filter((e) => EMAIL.test(e) && !already.has(e));
+  const send = async () => {
+    setBusy(true);
+    const failed = [];
+    let unsent = 0;
+    try {
+      await act(async () => {
+        for (const email of fresh) {
+          try {
+            const out = await api('POST', '/admin/clients', {
+              email,
+              locale,
+              projectIds: [project.id],
+              copy,
+              note: note.trim() || undefined,
+            });
+            if (out?.invite?.sent === false) unsent += 1;
+          } catch {
+            failed.push(email);
+          }
+        }
+      });
+      const added = fresh.length - failed.length;
+      if (failed.length) notify(`Added ${added} of ${fresh.length}. Not added: ${failed.join(', ')}`, 'error');
+      else notify(`Added ${added} to ${project.name}.${unsent ? ` ${unsent} email${unsent === 1 ? '' : 's'} not sent; use Resend on their card.` : ''}`);
+      if (!failed.length) onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      title={`Add people to ${project.name}`}
+      subtitle="Each address gets a link that signs them in (one use, 7 days). They see every request on this project; prices stay with whoever filed."
+      onClose={onClose}
+      actions={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button kind="primary" disabled={busy || !fresh.length || bad.length > 0} onClick={() => void send()}>
+            {busy ? 'Adding…' : `Add ${fresh.length || ''}`.trim()}
+          </Button>
+        </>
+      }
+    >
+      <Field
+        label="Emails"
+        hint={
+          bad.length
+            ? `Not an address: ${bad.join(', ')}`
+            : emails.length > fresh.length
+              ? `${emails.length - fresh.length} already on the project.`
+              : 'One or more, separated by commas, spaces or new lines.'
+        }
+      >
+        <textarea rows={3} value={text} placeholder="owner@example.com, office@example.com" onChange={(e) => setText(e.target.value)} />
+      </Field>
+      <Field label="Emails about requests">
+        <label className="aw-check">
+          <input type="checkbox" checked={copy} onChange={(e) => setCopy(e.target.checked)} />
+          Send them a copy of every request on this project (new requests, Ali’s replies, status changes)
+        </label>
+      </Field>
+      <Field label="Language" hint="For new accounts: the invite email and the portal. Existing accounts keep theirs.">
+        <select value={locale} onChange={(e) => setLocale(e.target.value)}>
+          {LOCALES.map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.english}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Note" hint="Optional. Added under the link. Not translated.">
+        <textarea rows={2} value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} />
+      </Field>
+    </Modal>
+  );
+}
+
+/** Everyone on a project: their copies switch, and taking them off it. */
+function ProjectPeople({ project: p }) {
+  const { api, act, ask, setModal, open } = useAdmin();
+  const people = p.clients ?? [];
+  return (
+    <div className="aw-people">
+      <div className="aw-row-h">
+        <span className="aw-muted">People {people.length ? `(${people.length})` : ''}</span>
+        <span className="aw-toolbar__fill" />
+        <Button size="sm" onClick={() => setModal({ kind: 'custom', render: (close) => <AddPeopleModal project={p} onClose={close} /> })}>
+          Add people
+        </Button>
+      </div>
+      {people.length ? (
+        <ul>
+          {people.map((person) => (
+            <li key={person.id}>
+              <button type="button" className="aw-link aw-people__who" title={person.email} onClick={() => open(`c:${person.id}`)}>
+                {person.name ? `${person.name} · ` : ''}
+                {person.email}
+              </button>
+              {person.pending ? <Tag tone="warn">invited</Tag> : null}
+              <label className="aw-check" title="Mail them about every request on this project, not only the ones they filed">
+                <input
+                  type="checkbox"
+                  checked={person.copy}
+                  onChange={(e) =>
+                    void act(
+                      () => api('PUT', `/admin/clients/${person.id}/projects/${p.id}`, { copy: e.target.checked }),
+                      e.target.checked ? `${person.email} gets every request on ${p.name}.` : `${person.email} gets only their own requests.`,
+                    )
+                  }
+                />
+                all emails
+              </label>
+              <Button
+                size="sm"
+                kind="ghost"
+                title="Take them off this project"
+                onClick={() =>
+                  ask({
+                    title: `Remove ${person.email} from ${p.name}?`,
+                    text: 'They stop seeing its requests and stop getting its emails. Their account and their own requests stay.',
+                    confirm: 'Remove',
+                    danger: true,
+                    run: () => act(() => api('DELETE', `/admin/clients/${person.id}/projects/${p.id}`), `Removed ${person.email}.`).catch(() => undefined),
+                  })
+                }
+              >
+                ✕
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="aw-muted">Nobody yet. Only you see it.</p>
+      )}
+    </div>
+  );
+}
+
 /** One client: who they are, what they owe, and every request they filed, open ones first. */
 export function ClientView({ id }) {
   const { data, openTicket } = useAdmin();
@@ -615,7 +818,16 @@ export function ClientsView() {
                   <header>
                     <strong>{p.name}</strong>
                     <span className="aw-mono aw-muted">{p.slug}</span>
+                    {p.kind === 'new' ? <Tag>new site</Tag> : null}
                     <span className="aw-toolbar__fill" />
+                    <Button
+                      size="sm"
+                      kind="ghost"
+                      title="Rename it or change what it is"
+                      onClick={() => setModal({ kind: 'custom', render: (close) => <ProjectEditModal project={p} onClose={close} /> })}
+                    >
+                      Edit
+                    </Button>
                     <Button
                       size="sm"
                       kind="ghost"
@@ -634,13 +846,8 @@ export function ClientsView() {
                   <div className="aw-tags">
                     {holders.length ? holders.map((n) => <Tag key={n.id} tone={n.online ? undefined : 'bad'}>{n.id}</Tag>) : <span className="aw-warn">No node has it yet.</span>}
                     {p.sites?.length ? <Tag tone="dash">{p.sites.length} site{p.sites.length === 1 ? '' : 's'}</Tag> : null}
-                    {(p.clients ?? []).map((client) => (
-                      <Tag key={client.id} tone="client" title={client.pending ? `Invited, not signed in yet: ${client.email}` : client.email}>
-                        {client.name || client.email}
-                        {client.pending ? ' (invited)' : ''}
-                      </Tag>
-                    ))}
                   </div>
+                  <ProjectPeople project={p} />
                   <SitePanel project={p} />
                   <div className="aw-inline">
                     {!p.repo ? (
