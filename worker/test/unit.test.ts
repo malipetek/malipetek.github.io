@@ -34,6 +34,8 @@ import {
   sequenceOfSubject,
   SEQUENCES,
   siteLabel,
+  emailHtml,
+  wantsImage,
 } from '../src/marketing.ts';
 import { sesBody, signV4 } from '../src/ses.ts';
 import {
@@ -885,6 +887,41 @@ test('ses: a send carries the list headers and the configuration set', () => {
   assert.equal(body.Content.Simple.Body.Text.Data, 'T');
   assert.deepEqual(body.Content.Simple.Headers, [{ Name: 'List-Unsubscribe-Post', Value: 'List-Unsubscribe=One-Click' }]);
   assert.equal(body.ConfigurationSetName, 'outreach');
+});
+
+test('content: a post that announces its own style is refused', () => {
+  for (const t of ["I'm a developer and I'm bad at sales emails, so here it is.", "To be honest, most fixes are small.", "I'll just say it plainly: it costs $1.67.", "I'm not a marketer."]) {
+    const r = cleanPost(t, 'x');
+    assert.equal(r.ok, false, t);
+  }
+  assert.equal(cleanPost('I check what the agent did before it goes live.', 'x').ok, true);
+});
+
+test('ses: an HTML part rides next to the text part', () => {
+  const body = JSON.parse(sesBody({ from: 'a@b.com', to: 'c@d.com', subject: 'S', text: 'T', html: '<p>T</p>' }));
+  assert.equal(body.Content.Simple.Body.Text.Data, 'T');
+  assert.equal(body.Content.Simple.Body.Html.Data, '<p>T</p>');
+  assert.equal(JSON.parse(sesBody({ from: 'a@b.com', to: 'c@d.com', subject: 'S', text: 'T' })).Content.Simple.Body.Html, undefined);
+});
+
+test('marketing: the workshop GIF sits between the body and the footer, text escaped', () => {
+  const html = emailHtml('https://malipetek.dev', 'Hi <Bob> & co,\nsee https://example.com.', '\n\n--\nAli\nReply "no"');
+  assert.ok(html.includes('Hi &lt;Bob&gt; &amp; co,<br>'));
+  assert.ok(html.includes('<a href="https://example.com" style="color:#16140f">https://example.com</a>.'));
+  const img = html.indexOf('https://malipetek.dev/email/conveyor.gif');
+  assert.ok(img > html.indexOf('Hi &lt;Bob') && img < html.indexOf('--<br>'));
+  assert.ok(html.includes('Reply &quot;no&quot;'));
+  // The homepage's how diagram comes first, above the body.
+  const head = html.indexOf('https://malipetek.dev/email/how.png');
+  assert.ok(head > 0 && head < html.indexOf('Hi &lt;Bob'));
+});
+
+test('marketing: the GIF setting picks first emails or all of them', () => {
+  const base = { image: 'first' } as Parameters<typeof wantsImage>[0];
+  assert.equal(wantsImage(base, 0), true);
+  assert.equal(wantsImage(base, 2), false);
+  assert.equal(wantsImage({ ...base, image: 'all' }, 2), true);
+  assert.equal(wantsImage({ ...base, image: 'off' }, 0), false);
 });
 
 test('marketing: the desk pauses on a bounce or complaint rate, not on the first one', () => {

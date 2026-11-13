@@ -7,6 +7,11 @@ come from `src/lib/pricing.js` — if the rate changes, change the numbers here.
 Rules: no model names, no "AI-powered", no "revolutionary", no invented results
 or testimonials. Plain words a business owner does not have to look up.
 
+**Voice:** everything here is said the way Ali says it: see
+`style/voice.md` (his own samples, what makes them his, and the only stories
+that may be told). Where this kit's wording sounds more polished than that,
+follow `voice.md`.
+
 Launch assets live in `launch/`: plan, proof, one-pager, outreach, social and
 video. The only approved results are in `launch/proof.md` — pilot jobs on my own
 and demo projects, not clients. Do not call them clients.
@@ -53,6 +58,16 @@ How to use it:
 - The factory is the picture, not the name: the portal and the site show a
   workshop where requests move along a belt. Say "workshop" or "the belt" when
   describing that picture; do not call the service a factory.
+
+## The offer as Ali frames it
+
+`style/voice.md` → "What he offers" lists it as facts: the reader does as much
+as they can with their own agent and sends Ali the part it couldn't finish;
+most of what people think AI can't do is possible once a few things are set
+up, and that setup is his job; he checks the agent's work before it goes live
+and points to the cheapest option; no course; billed by the second. Say these
+in fresh words that fit the piece. This framing leads as well as the hooks
+below, especially with people who already use ChatGPT or another assistant.
 
 ## The hooks, in order
 
@@ -177,6 +192,9 @@ second copy here, because copies drift.
 
 Two rules for any email in our name:
 
+- Plain and short: what it is, what it costs, one question
+  (`style/voice.md`, "The offer comes first"). No example tasks, nothing about
+  how their site was built. Signed Muhammet.
 - Never write "I looked at your site" without having looked. A contact without
   a written observation gets the plain version of each email, which makes no
   claim about their site.

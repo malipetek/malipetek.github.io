@@ -18,6 +18,8 @@ export interface SesMail {
   replyTo?: string;
   subject: string;
   text: string;
+  /** Sent as the HTML part next to the text one. */
+  html?: string;
   headers?: { name: string; value: string }[];
 }
 
@@ -99,7 +101,10 @@ export function sesBody(mail: SesMail, configurationSet?: string): string {
     Content: {
       Simple: {
         Subject: { Data: mail.subject, Charset: 'UTF-8' },
-        Body: { Text: { Data: mail.text, Charset: 'UTF-8' } },
+        Body: {
+          Text: { Data: mail.text, Charset: 'UTF-8' },
+          ...(mail.html ? { Html: { Data: mail.html, Charset: 'UTF-8' } } : {}),
+        },
         ...(mail.headers?.length ? { Headers: mail.headers.map((h) => ({ Name: h.name, Value: h.value })) } : {}),
       },
     },

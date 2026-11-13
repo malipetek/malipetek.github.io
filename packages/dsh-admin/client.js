@@ -3378,6 +3378,10 @@ var __awPlugin = (() => {
               /* @__PURE__ */ jsx("dd", { style: { margin: 0 }, children: preview.subject })
             ] }),
             /* @__PURE__ */ jsx("pre", { style: { whiteSpace: "pre-wrap", font: "inherit", lineHeight: 1.5, padding: 12, border: "1px solid var(--aw-line, #ddd)", borderRadius: 6, marginTop: 12 }, children: preview.text }),
+            preview.image ? /* @__PURE__ */ jsxs("figure", { style: { margin: "0 0 12px" }, children: [
+              /* @__PURE__ */ jsx("img", { src: preview.image, alt: "", width: 280, style: { display: "block", height: "auto", border: "1px solid var(--aw-line, #ddd)", borderRadius: 6 } }),
+              /* @__PURE__ */ jsx("figcaption", { className: "aw-muted", style: { fontSize: 12 }, children: "Sent as HTML with this GIF above the signature; the text above is the plain-text part." })
+            ] }) : null,
             contact ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
               contact.site ? `Site ${contact.site}. ` : "",
               contact.sourceKind ? `Source ${contact.sourceKind}. ` : "",
@@ -3655,6 +3659,25 @@ var __awPlugin = (() => {
                     { value: false, label: "Send all" }
                   ],
                   onChange: (v) => set("reviewFirst", v)
+                }
+              )
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            Field,
+            {
+              label: "Workshop GIF",
+              hint: "HTML emails: the homepage how diagram at the top and the conveyor as a looping GIF above the signature (both linked from malipetek.dev/email/, the GIF about 470 KB). Emails without it go as plain text only.",
+              children: /* @__PURE__ */ jsx(
+                Segmented,
+                {
+                  value: draft.image ?? "first",
+                  options: [
+                    { value: "off", label: "Off" },
+                    { value: "first", label: "First emails" },
+                    { value: "all", label: "Every email" }
+                  ],
+                  onChange: (v) => set("image", v)
                 }
               )
             }

@@ -127,6 +127,12 @@ export const SLOP: { pattern: RegExp; reason: string }[] = [
     pattern: /\b(the question i (hear|get) (most|all the time)|people (always|often|keep) ask|clients (tell|ask) me)\b/i,
     reason: 'invents an audience',
   },
+  {
+    // The voice is shown, never announced (marketing/style/voice.md).
+    pattern:
+      /\b(?:i'?m|i am) (?:(?:really|just|not) )?(?:bad|terrible|awful|not good|no good) at (?:sales|selling|marketing|writing|this)\b|\bi'?m not (?:a|much of a) (?:marketer|salesman|sales ?person|writer)\b|\bto be (?:honest|frank|blunt)\b|\bi'?ll (?:just )?(?:say it|be) (?:plainly|straight|blunt|honest|frank)\b|\bthis (?:isn'?t|is not) a (?:sales )?pitch\b/i,
+    reason: 'announces its own style ("I\'m bad at sales", "to be honest")',
+  },
 ];
 
 /** One post, or the reason it cannot go out as written. */
@@ -254,7 +260,9 @@ function brief(posts: RecentPost[], offsetMinutes: number, voice: string): strin
     "Write next week's X and LinkedIn posts — two for X, one for LinkedIn.",
     '',
     'Read these first, in this folder:',
-    '- marketing/launch/social.md — voice, cadence and the ideas already used',
+    '- marketing/style/voice.md — how Ali writes, as rules. Write as him. This file wins',
+    '  over any other wording about voice.',
+    '- marketing/launch/social.md — cadence and the ideas already used',
     '- marketing/launch/proof.md — the only numbers you may use',
     '- marketing/kit.md — what the product is, if you need the framing',
     '- marketing/style/README.md — how to write so it does not read as machine-written,',
@@ -278,8 +286,19 @@ function brief(posts: RecentPost[], offsetMinutes: number, voice: string): strin
     '  has the definition and the rules. Not every post must lead with it.',
     '- Pricing is not the subject. At most one plain sentence, not on every post,',
     '  and never as the opening line.',
-    '- Dry voice, first person, the same as the launch kit. No “AI-powered”, no model or',
-    '  provider names, no more than two hashtags, no invented results.',
+    '- Plain and short (voice.md, "The offer comes first"): what vibe contracting is (you',
+    '  connect to the service and a veteran programmer helps you use AI and deploy your',
+    '  projects), what it costs ($100 an hour billed by the second, most jobs under $10),',
+    '  and a question. No example tasks, nothing about how the reader\'s site was built,',
+    '  never knock their tools.',
+    '- First person, in Ali\'s voice (voice.md): literal, no social smoothing, no',
+    '  persuasion devices, the reasoning visible, and the things a marketer would hide',
+    '  said plainly. Show the style; never describe it. Nothing about how he writes or',
+    '  sells, no "to be honest", nothing about the post itself. Spell correctly.',
+    '- Never invent a friend, a client, a conversation or a result. A personal story only',
+    '  if the desk\'s voice notes below give one.',
+    '- No “AI-powered”, no names of the models or providers behind our agents (the',
+    '  reader\'s own ChatGPT or Claude may be named), no more than two hashtags.',
     '- Every number must appear in proof.md. If a post needs a number that is not',
     '  there, write a different post.',
     '- Each post stands alone months from now: no “this week”, no thread references,',

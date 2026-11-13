@@ -126,3 +126,9 @@ Run with `CLOUDFLARE_ACCOUNT_ID=a60af2542282e283101650bebed42dcf` from
 ```sh
 npx wrangler d1 execute malipetek-portal --remote --json --command "…"
 ```
+
+## Approved summary line
+
+> $100 an hour, billed by the second, so most jobs come to less than $10.
+
+Every billed job so far came in under $10 (the five above: $2.18 to $8.25).

@@ -52,6 +52,8 @@ export interface MarketingSettings {
   postApproval: boolean;
   /** Only first emails Ali reviewed or rewrote go out; follow-ups ride on them. */
   reviewFirst: boolean;
+  /** Which emails carry the workshop GIF (EMAIL_IMAGE) above the signature. */
+  image: 'off' | 'first' | 'all';
 }
 
 const SETTING_DEFAULTS: MarketingSettings = {
@@ -68,6 +70,7 @@ const SETTING_DEFAULTS: MarketingSettings = {
   provider: 'cloudflare',
   postApproval: true,
   reviewFirst: false,
+  image: 'first',
 };
 
 const SETTING_KEYS: Record<keyof MarketingSettings, string> = {
@@ -84,6 +87,7 @@ const SETTING_KEYS: Record<keyof MarketingSettings, string> = {
   provider: 'marketing_provider',
   postApproval: 'marketing_post_approval',
   reviewFirst: 'marketing_review_first',
+  image: 'marketing_image',
 };
 
 const FIELD_OF_KEY = Object.fromEntries(Object.entries(SETTING_KEYS).map(([field, key]) => [key, field])) as Record<
@@ -123,6 +127,7 @@ const RULES: Record<keyof MarketingSettings, (raw: unknown) => unknown> = {
   provider: (raw) => (raw === 'cloudflare' || raw === 'ses' ? raw : undefined),
   postApproval: (raw) => (typeof raw === 'boolean' ? raw : undefined),
   reviewFirst: (raw) => (typeof raw === 'boolean' ? raw : undefined),
+  image: (raw) => (raw === 'off' || raw === 'first' || raw === 'all' ? raw : undefined),
 };
 
 export async function readMarketingSettings(env: Env): Promise<MarketingSettings> {
@@ -233,108 +238,112 @@ export const SEQUENCES: Record<SequenceKind, SequenceStep[]> = {
     {
       kind: 'first',
       day: 0,
-      subject: 'The last mile of {{business}}',
+      subject: 'Vibe contracting',
       body: `{{greeting}}
 
-I looked at {{site}} and noticed this: {{gap}}.
+Do you want help using AI on your business and getting your projects online?
 
-If you built the site with an AI tool, this is usually where the tool stops helping. I finish that part. An AI agent does the typing on a copy of your project, and I approve the job and check the result before anything goes live. I call it vibe contracting.
+It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
 
-You pay for my time by the second, so a one-minute fix is $1.67. There is no quote and no minimum.
+It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 
-If you want it fixed, reply with a line and I will tell you whether it is a quick job.
+Reply with what you're working on and I'll tell you how I'd help.
 
-Ali
+Muhammet
 malipetek.dev`,
       plain: `{{greeting}}
 
-If you built {{site}} with an AI tool, you may have reached the point where the tool stops helping: a bug it keeps bringing back, or a deploy that fails.
+Do you want help using AI on your business and getting your projects online?
 
-I finish that part. An AI agent does the typing on a copy of your project, and I approve the job and check the result before anything goes live. I call it vibe contracting.
+It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
 
-You pay for my time by the second, so a one-minute fix is $1.67. There is no quote and no minimum.
+It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 
-If something on the site needs fixing, reply with a line and I will tell you whether it is a quick job.
+Reply with what you're working on and I'll tell you how I'd help.
 
-Ali
+Muhammet
 malipetek.dev`,
     },
     {
       kind: 'followup_1',
       day: 4,
-      subject: 'Re: The last mile of {{business}}',
+      subject: 'Re: Vibe contracting',
       body: `{{greeting}}
 
-Do you want that fixed, or is it not worth the trouble? Either answer helps me.
+Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
 
-Ali`,
+Muhammet`,
       plain: `{{greeting}}
 
-Is there anything on {{site}} you want fixed, or is now a bad time? Either answer helps me.
+Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
 
-Ali`,
+Muhammet`,
     },
     {
       kind: 'followup_2',
       day: 10,
-      subject: 'Re: The last mile of {{business}}',
+      subject: 'Re: Vibe contracting',
       body: `{{greeting}}
 
-Last note from me. If it becomes worth fixing, it is $1.67 a minute of my time and no quote to wait for: malipetek.dev/portal.
+Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
 
-Ali`,
+Muhammet`,
       plain: `{{greeting}}
 
-Last note from me. If something on {{site}} becomes worth fixing, it is $1.67 a minute of my time and no quote to wait for: malipetek.dev/portal.
+Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
 
-Ali`,
+Muhammet`,
     },
   ],
   cold_b: [
     {
       kind: 'first',
       day: 0,
-      subject: 'A small fix on {{site}}',
+      subject: 'Vibe contracting for {{site}}',
       body: `{{greeting}}
 
-I noticed this on {{site}}: {{gap}}. Jobs that size tend to wait for months, because nobody wants to hire a developer for a short job.
+Do you want help using AI on your business and getting your projects online?
 
-Short jobs are what I do. An AI agent does the typing on a copy of your site, and I approve the job and check the result before it goes live. I call it vibe contracting. You pay for my time by the second, so a one-minute fix is $1.67, and there is no call or quote first.
+It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
 
-Is there a small fix on {{site}} you have been putting off? Reply with it and I will tell you if it fits.
+It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 
-Ali
+Reply with what you're working on and I'll tell you how I'd help.
+
+Muhammet
 malipetek.dev`,
       plain: `{{greeting}}
 
-Most business sites carry a short list of small fixes that never get done, like old opening hours or a contact form that stopped sending. They wait because nobody wants to hire a developer for a short job.
+Do you want help using AI on your business and getting your projects online?
 
-Short jobs are what I do. An AI agent does the typing on a copy of your site, and I approve the job and check the result before it goes live. I call it vibe contracting. You pay for my time by the second, so a one-minute fix is $1.67, and there is no call or quote first.
+It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
 
-Is there a small fix on {{site}} you have been putting off? Reply with it and I will tell you if it fits.
+It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 
-Ali
+Reply with what you're working on and I'll tell you how I'd help.
+
+Muhammet
 malipetek.dev`,
     },
     {
       kind: 'followup_1',
       day: 4,
-      subject: 'Re: A small fix on {{site}}',
+      subject: 'Re: Vibe contracting for {{site}}',
       body: `{{greeting}}
 
-What is the smallest thing on {{site}} you have been meaning to fix? Small jobs are where this costs least: you pay for the minutes I spend, and the agent's part costs cents.
+Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
 
-Ali`,
+Muhammet`,
     },
     {
       kind: 'followup_2',
       day: 10,
-      subject: 'Re: A small fix on {{site}}',
+      subject: 'Re: Vibe contracting for {{site}}',
       body: `{{greeting}}
 
-I will leave it here. If a small fix ever gets annoying enough, you can send it through malipetek.dev/portal without a call or a quote.
+Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
 
-Ali`,
+Muhammet`,
     },
   ],
   // For a business a mapper recorded with an email and no website
@@ -353,7 +362,7 @@ I build small business sites. An AI agent does the typing, and I approve the job
 
 If you want one, reply with a line about the business and I will tell you what it would take.
 
-Ali
+Muhammet
 malipetek.dev`,
     },
     {
@@ -364,7 +373,7 @@ malipetek.dev`,
 
 Should I sketch a one-page site for {{business}}, or is it not worth it right now? Either answer helps me.
 
-Ali`,
+Muhammet`,
     },
     {
       kind: 'followup_2',
@@ -374,7 +383,7 @@ Ali`,
 
 Last note from me. If you want a site later, you can ask through malipetek.dev/portal, with no call or quote first.
 
-Ali`,
+Muhammet`,
     },
   ],
   warm: [
@@ -384,13 +393,13 @@ Ali`,
       subject: 'A small experiment (and a favour)',
       body: `{{greeting}}
 
-I have changed how I take on small software jobs. You write what you need, I approve it, an AI agent builds it on a copy of the project, and I check the result before it ships. I call it vibe contracting. You pay for my time by the second, so a one-minute fix is $1.67, with no quote and no minimum.
+I've started something I call vibe contracting: you connect to my service, and I help you use AI and deploy what you build.
 
-I am looking for the first few real jobs to put through it. Is there a small thing on {{site}} you have been putting off? I would rather it were yours than a stranger's.
+It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 
-No pressure if not. If you know someone with a small fix, I would take the introduction.
+I'm looking for the first few jobs to put through it. Is there something on {{site}} you have been putting off? If not, an introduction to someone who could use it would help just as much.
 
-Ali`,
+Muhammet`,
     },
     {
       kind: 'followup_1',
@@ -400,7 +409,7 @@ Ali`,
 
 What is the smallest thing on {{site}} you have been meaning to fix? Small jobs are where this costs least: you pay for the minutes I spend, and the agent's part costs cents.
 
-Ali`,
+Muhammet`,
     },
     {
       kind: 'followup_2',
@@ -410,7 +419,7 @@ Ali`,
 
 I will stop filling your inbox. If something small comes up, the door is open: malipetek.dev/portal.
 
-Ali`,
+Muhammet`,
     },
   ],
 };
@@ -583,8 +592,9 @@ export function stepBody(step: SequenceStep, specificGap: boolean): string {
  */
 export function sequenceOfSubject(subject: string | null): SequenceKind | null {
   const s = subject ?? '';
-  if (/^(Re: )?The last mile of /.test(s)) return 'cold_a';
-  if (/^(Re: )?(The smallest thing on |A small fix on )/.test(s)) return 'cold_b';
+  // Old subjects stay listed: mail queued under them must still re-render.
+  if (/^(Re: )?(The last mile of |Vibe contracting$)/.test(s)) return 'cold_a';
+  if (/^(Re: )?(The smallest thing on |A small fix on |Vibe contracting for )/.test(s)) return 'cold_b';
   if (/^(Re: )?A small experiment/.test(s)) return 'warm';
   if (/^(Re: )?A website for /.test(s)) return 'nosite';
   return null;
@@ -799,20 +809,73 @@ export interface OutgoingEmail {
   to: string;
   subject: string;
   text: string;
+  /** The same words as `text`, with the workshop GIF above the signature. */
+  html?: string;
   headers: Record<string, string>;
+}
+
+/**
+ * The homepage workshop as a looping GIF (scripts/email-gif.mjs records it).
+ * It is linked, not attached: the email stays a few KB and the site serves it.
+ */
+export const EMAIL_IMAGE = {
+  path: '/email/conveyor.gif',
+  width: 560,
+  height: 458,
+  alt: 'Request, approve, build, ship: how a change moves through malipetek',
+};
+
+export function wantsImage(settings: MarketingSettings, step: number | undefined): boolean {
+  return settings.image === 'all' || (settings.image === 'first' && (step ?? 0) === 0);
+}
+
+const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** Plain text as HTML: escaped, links clickable, line breaks kept. */
+function textHtml(text: string): string {
+  return escapeHtml(text)
+    .replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)]/g, (url) => `<a href="${url}" style="color:#16140f">${url}</a>`)
+    .replace(/\n/g, '<br>\n');
+}
+
+/** The homepage's "how" diagram (you, your AI, preview, live, and Ali when you ask), for the top of an HTML email. */
+export const EMAIL_HEADER = {
+  path: '/email/how.png',
+  width: 560,
+  height: 224,
+  alt: 'You and your AI build it, it goes to a preview, then live; I step in when you ask',
+};
+
+/** A plain-looking HTML email: the how diagram, the body, the GIF, then the footer. */
+export function emailHtml(siteBase: string, body: string, footer: string): string {
+  const img = `${siteBase}${EMAIL_IMAGE.path}`;
+  const head = `${siteBase}${EMAIL_HEADER.path}`;
+  return [
+    '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>',
+    '<body style="margin:0;padding:0">',
+    `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;color:#16140f;max-width:${EMAIL_IMAGE.width}px">`,
+    `<p style="margin:0 0 16px"><img src="${head}" width="${EMAIL_HEADER.width}" height="${EMAIL_HEADER.height}" alt="${escapeHtml(EMAIL_HEADER.alt)}" style="display:block;width:100%;max-width:${EMAIL_HEADER.width}px;height:auto;border:0"></p>`,
+    `<div>${textHtml(body)}</div>`,
+    `<p style="margin:20px 0"><a href="${siteBase}/"><img src="${img}" width="${EMAIL_IMAGE.width}" height="${EMAIL_IMAGE.height}" alt="${escapeHtml(EMAIL_IMAGE.alt)}" style="display:block;width:100%;max-width:${EMAIL_IMAGE.width}px;height:auto;border:0"></a></p>`,
+    `<div style="color:#6b665d;font-size:13px">${textHtml(footer.replace(/^\n+/, ''))}</div>`,
+    '</div></body></html>',
+  ].join('\n');
 }
 
 /** Exactly what leaves for one message: the stored body plus the footer, and the list headers. */
 export async function renderOutgoing(
   env: Env,
   settings: MarketingSettings,
-  message: { contact_id: number | null; to_email: string | null; subject: string | null; body: string; status?: string },
+  message: { contact_id: number | null; to_email: string | null; subject: string | null; body: string; status?: string; step?: number },
 ): Promise<OutgoingEmail> {
+  // A sent row already holds the footer it left with.
+  const sent = message.status === 'sent';
+  const footer = footerFor(settings);
   return {
     to: message.to_email ?? '',
     subject: message.subject || '(no subject)',
-    // A sent row already holds the footer it left with.
-    text: message.status === 'sent' ? message.body : `${message.body}${footerFor(settings)}`,
+    text: sent ? message.body : `${message.body}${footer}`,
+    html: !sent && wantsImage(settings, message.step) ? emailHtml(siteUrl(env), message.body, footer) : undefined,
     headers: await listHeaders(env, message.contact_id),
   };
 }
@@ -828,6 +891,7 @@ async function transmit(env: Env, settings: MarketingSettings, mail: OutgoingEma
       replyTo: from,
       subject: mail.subject,
       text: mail.text,
+      html: mail.html,
       headers: Object.entries(mail.headers).map(([name, value]) => ({ name, value })),
     });
   }
@@ -837,6 +901,7 @@ async function transmit(env: Env, settings: MarketingSettings, mail: OutgoingEma
     to: mail.to,
     subject: mail.subject,
     text: mail.text,
+    ...(mail.html ? { html: mail.html } : {}),
     replyTo: from,
     headers: mail.headers,
   })) as { messageId?: string } | undefined;
@@ -846,6 +911,7 @@ async function transmit(env: Env, settings: MarketingSettings, mail: OutgoingEma
 interface ClaimedEmail {
   id: number;
   contact_id: number;
+  step: number;
   to_email: string | null;
   subject: string | null;
   body: string;
@@ -860,7 +926,7 @@ async function claimEmail(env: Env, id: number, t: number): Promise<ClaimedEmail
   const message = await env.DB.prepare(
     `UPDATE marketing_messages SET status = 'sending', updated_at = ?
       WHERE id = ? AND status = 'scheduled'
-      RETURNING id, contact_id, to_email, subject, body`,
+      RETURNING id, contact_id, step, to_email, subject, body`,
   )
     .bind(t, id)
     .first<ClaimedEmail>();
@@ -924,7 +990,7 @@ async function deliverEmail(env: Env, settings: MarketingSettings, message: Clai
     ).bind(t, t, message.contact_id),
     env.DB.prepare(
       `INSERT INTO marketing_events (message_id, contact_id, kind, detail, created_at) VALUES (?, ?, 'sent', ?, ?)`,
-    ).bind(message.id, message.contact_id, message.subject ?? '', t),
+    ).bind(message.id, message.contact_id, `${message.subject ?? ''}${outgoing.html ? ' (with GIF)' : ''}`, t),
   ]);
   return true;
 }
@@ -2137,6 +2203,7 @@ marketing.get('/admin/marketing/messages/:id', async (c) => {
       to: outgoing.to,
       subject: outgoing.subject,
       text: outgoing.text,
+      image: outgoing.html ? `${siteUrl(env)}${EMAIL_IMAGE.path}` : null,
       headers: outgoing.headers,
       provider: message.provider ?? settings.provider,
     };
