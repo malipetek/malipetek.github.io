@@ -23,22 +23,48 @@ export const prerender = true;
   // Drop the token from the address bar and history straight away.
   history.replaceState(null, '', location.pathname);
 
+  /** Asks the consent page (authorize.astro) whether it is open in another tab. */
+  function consentWindowWaiting(): Promise<boolean> {
+    if (!('BroadcastChannel' in window)) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const channel = new BroadcastChannel('portal-oauth');
+      const end = (answer: boolean) => {
+        clearTimeout(timer);
+        channel.close();
+        resolve(answer);
+      };
+      const timer = setTimeout(() => end(false), 700);
+      channel.onmessage = (e) => {
+        if (e.data?.type === 'waiting') end(true);
+      };
+      channel.postMessage({ type: 'who-waits' });
+    });
+  }
+
   (async () => {
     if (!token) {
       status.textContent = 'This link is missing its token.';
       document.querySelector<HTMLElement>('[data-retry]')!.hidden = false;
       return;
     }
+    // Read before signing in: the waiting consent window clears it once it has a session.
+    const back = localStorage.getItem('portal-return');
     try {
       const { session: s, user } = await api<{ session: string; user: User }>('/auth/verify', {
         body: { token },
       });
       session.set(s);
-      // Signed in from an assistant's consent page: go back there to decide.
-      const back = localStorage.getItem('portal-return');
       localStorage.removeItem('portal-return');
       // Same origin, the consent page only (the host may add a trailing slash).
       if (back && /^\/portal\/authorize\/?\?/.test(back.slice(location.origin.length)) && back.startsWith(location.origin)) {
+        // The consent window the assistant opened is still open in this
+        // browser: it picked the session up and carries on there. Finishing
+        // here instead would hand the code to a tab the assistant never sees.
+        if (await consentWindowWaiting()) {
+          document.querySelector('h1')!.textContent = 'You are signed in';
+          status.textContent = 'Go back to the window where you were connecting your assistant. It carries on from there, and you can close this tab.';
+          return;
+        }
         return location.replace(back);
       }
       location.replace(user.role === 'admin' ? '/portal/admin' : '/portal');

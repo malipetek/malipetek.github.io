@@ -21,9 +21,34 @@ export const prerender = true;
       <h1>Sign in first</h1>
       <p class="lede">
         <strong data-client-name></strong> wants to connect to your malipetek.dev
-        account. Sign in, and you come straight back here to decide.
+        account. Sign in here, in this window, and decide straight after. New
+        here? The same email makes your account.
       </p>
-      <p class="portal-actions"><a class="btn btn--solid" href="/portal" data-signin-link>Sign in →</a></p>
+      <form class="portal-form" data-email-form>
+        <label class="portal-field">
+          <span class="portal-label">Your email</span>
+          <input type="email" name="email" autocomplete="email" required />
+        </label>
+        <div class="portal-actions">
+          <button type="submit" class="btn btn--solid">Email me a code</button>
+        </div>
+      </form>
+      <form class="portal-form" data-code-form hidden>
+        <p class="portal-note">
+          We sent a six-digit code to <strong data-sent-to></strong>. Type it
+          here. Opening the email’s link in this browser works too: this window
+          carries on by itself.
+        </p>
+        <label class="portal-field">
+          <span class="portal-label">Code</span>
+          <input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required />
+        </label>
+        <div class="portal-actions">
+          <button type="submit" class="btn btn--solid">Sign in</button>
+          <button type="button" class="btn" data-other-email>Use another address</button>
+        </div>
+      </form>
+      <p class="portal-note" data-signin-status role="status" aria-live="polite"></p>
     </section>
 
     <section class="consent" data-ask hidden>
@@ -55,7 +80,7 @@ export const prerender = true;
 </Base>
 
 <script>
-  import { api, errorText, session, type User } from '../../lib/portal';
+  import { api, codeLogin, errorText, requestLink, session, type User } from '../../lib/portal';
 
   const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
   const q = new URLSearchParams(location.search);
@@ -81,6 +106,94 @@ export const prerender = true;
     location.href = back.toString();
   }
 
+  let me: User | null = null;
+
+  async function signedIn() {
+    if (!session.get()) return false;
+    try {
+      ({ user: me } = await api<{ user: User }>('/portal/me'));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Resolves once this window has a session: from the code form, or from another tab's sign-in link. */
+  function waitForSignIn() {
+    return new Promise<void>((resolve) => {
+      const status = $('[data-signin-status]');
+      const emailForm = $<HTMLFormElement>('[data-email-form]');
+      const codeForm = $<HTMLFormElement>('[data-code-form]');
+      const channel = 'BroadcastChannel' in window ? new BroadcastChannel('portal-oauth') : null;
+      let done = false;
+      let email = '';
+      const finish = async () => {
+        if (done || !(await signedIn())) return;
+        done = true;
+        localStorage.removeItem('portal-return');
+        window.removeEventListener('storage', onStorage);
+        resolve();
+      };
+      const onStorage = (e: StorageEvent) => {
+        if (e.key === 'portal-session' && e.newValue) void finish();
+      };
+      window.addEventListener('storage', onStorage);
+      // The link's tab asks whether a consent window is waiting, so it can
+      // send the person back here instead of finishing in a tab no one watches.
+      channel?.addEventListener('message', (e) => {
+        // It keeps answering after sign-in: this window shows the consent next.
+        if (e.data?.type === 'who-waits') channel.postMessage({ type: 'waiting' });
+      });
+      const say = (text: string, error = false) => {
+        status.textContent = text;
+        status.classList.toggle('is-error', error);
+      };
+
+      emailForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const button = emailForm.querySelector('button')!;
+        email = String(new FormData(emailForm).get('email') ?? '').trim();
+        button.disabled = true;
+        say('Sending…');
+        try {
+          const res = await requestLink(email);
+          $('[data-sent-to]').textContent = email;
+          emailForm.hidden = true;
+          codeForm.hidden = false;
+          say(res.devCode ? `Local dev: the code is ${res.devCode}.` : '');
+          codeForm.querySelector('input')!.focus();
+        } catch (error) {
+          say(errorText(error), true);
+        } finally {
+          button.disabled = false;
+        }
+      });
+      codeForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const button = codeForm.querySelector<HTMLButtonElement>('button[type=submit]')!;
+        const code = String(new FormData(codeForm).get('code') ?? '').replace(/\s+/g, '');
+        button.disabled = true;
+        say('Signing in…');
+        try {
+          const res = await codeLogin(email, code);
+          session.set(res.session);
+          say('');
+          await finish();
+        } catch (error) {
+          say(errorText(error), true);
+          button.disabled = false;
+        }
+      });
+      $('[data-other-email]').addEventListener('click', () => {
+        codeForm.reset();
+        codeForm.hidden = true;
+        emailForm.hidden = false;
+        say('');
+        emailForm.querySelector('input')!.focus();
+      });
+    });
+  }
+
   (async () => {
     if (q.get('response_type') !== 'code') return show('bad', 'It does not ask for an authorization code.');
     if (params.code_challenge_method !== 'S256' || !params.code_challenge) {
@@ -97,17 +210,15 @@ export const prerender = true;
     document.querySelectorAll('[data-client-name]').forEach((el) => (el.textContent = client.name));
     $('[data-host]').textContent = client.redirectHost;
 
-    if (!session.get()) {
+    if (!(await signedIn())) {
+      // The sign-in email may be opened anywhere. A code typed here, or a link
+      // opened in another tab of this browser, both bring the session back to
+      // this window, the one the assistant is waiting on.
       localStorage.setItem('portal-return', location.href);
-      return show('signin');
+      show('signin');
+      await waitForSignIn();
     }
-    let user: User;
-    try {
-      ({ user } = await api<{ user: User }>('/portal/me'));
-    } catch {
-      localStorage.setItem('portal-return', location.href);
-      return show('signin');
-    }
+    const user = me!;
     if (user.role !== 'client') return show('bad', 'Only a client account can connect an assistant.');
     $('[data-email]').textContent = user.email;
     show('ask');

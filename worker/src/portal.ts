@@ -3,6 +3,7 @@
  *
  *   POST /auth/request   { email, turnstileToken }  → emails a magic link
  *   POST /auth/verify    { token }                   → { session, user }
+ *   POST /auth/code      { email, code }             → { session, user }  (the code in the same email)
  *   POST /auth/logout
  *
  *   Signed in (Authorization: Bearer <session>):
@@ -828,8 +829,12 @@ portal.post('/auth/request', async (c) => {
   }
 
   const token = randomToken();
-  await env.DB.prepare('INSERT INTO login_tokens (token_hash, email, expires_at) VALUES (?, ?, ?)')
-    .bind(await sha256(token), email, now() + LINK_TTL_SECONDS)
+  // The same email also carries a code, typed into the window that asked
+  // (POST /auth/code). The link opens wherever the mail app decides; an
+  // assistant's OAuth window can only finish if the person signs in there.
+  const code = signinCode();
+  await env.DB.prepare('INSERT INTO login_tokens (token_hash, email, expires_at, code_hash) VALUES (?, ?, ?, ?)')
+    .bind(await sha256(token), email, now() + LINK_TTL_SECONDS, await sha256(`${email}:${code}`))
     .run();
 
   // Fragment, not query: the token never reaches a server log or a Referer.
@@ -839,11 +844,11 @@ portal.post('/auth/request', async (c) => {
   const tr = tFor(known?.locale ?? fromAcceptLanguage(c.req.header('Accept-Language')));
   const sent = await mailClient(env, email, {
     subject: tr('mail.signin.subject'),
-    text: tr('mail.signin.body', { link }),
+    text: `${tr('mail.signin.body', { link })}\n\n${tr('mail.signin.code', { code })}`,
   });
 
   // Same answer whether or not the address has an account — no enumeration.
-  if (env.DEV_RETURN_LINK === '1') return reply(c, { ok: true, sent, devLink: link });
+  if (env.DEV_RETURN_LINK === '1') return reply(c, { ok: true, sent, devLink: link, devCode: code });
   if (!sent) return reply(c, { error: 'mail_failed' }, 502);
   return reply(c, { ok: true });
 });
@@ -866,7 +871,26 @@ portal.post('/auth/verify', async (c) => {
     .first<{ email: string }>();
   if (!claimed) return reply(c, { error: 'link_expired' }, 401);
 
-  const email = claimed.email;
+  return signInAs(c, claimed.email);
+});
+
+/** Six digits, uniform (rejection sampling keeps 0–999999 unbiased). */
+function signinCode(): string {
+  const buf = new Uint32Array(1);
+  for (;;) {
+    crypto.getRandomValues(buf);
+    if (buf[0] < 4_294_000_000) return String(buf[0] % 1_000_000).padStart(6, '0');
+  }
+}
+
+const CODE_TRIES = 5; // wrong codes per address before its live codes die
+
+/**
+ * The address is proven (a link or a code from its inbox): make or find the
+ * account and start a session. Shared by /auth/verify and /auth/code.
+ */
+async function signInAs(c: Ctx, email: string) {
+  const env = c.env;
   const role = email === (env.ADMIN_EMAIL || '').toLowerCase() ? 'admin' : 'client';
   // A new client starts in their browser's language; they can change it in the portal.
   const locale = role === 'client' ? fromAcceptLanguage(c.req.header('Accept-Language')) : 'en-US';
@@ -899,6 +923,55 @@ portal.post('/auth/verify', async (c) => {
   ]);
 
   return reply(c, { session, user });
+}
+
+/*
+ * Sign in with the code from the email instead of its link, in the window that
+ * asked. Each wrong code counts against every live code for the address; at
+ * CODE_TRIES they stop working and only the link (or a new email) is left.
+ */
+portal.post('/auth/code', async (c) => {
+  const env = c.env;
+  const body = await readJson<{ email?: unknown; code?: unknown }>(c);
+  const email = cleanEmail(body?.email);
+  const code = typeof body?.code === 'string' ? body.code.replace(/\s+/g, '') : '';
+  if (!email || !/^\d{6}$/.test(code)) return reply(c, { error: 'bad_code' }, 400);
+
+  const ip = clientIp(c.req.raw);
+  if (
+    (await isRateLimited(env, ip, 'auth-code-ip', 20, AUTH_WINDOW_SECONDS)) ||
+    (await isRateLimited(env, email, 'auth-code-email', 10, AUTH_WINDOW_SECONDS))
+  ) {
+    return reply(c, { error: 'rate_limited' }, 429);
+  }
+
+  const live = await env.DB.prepare(
+    `SELECT token_hash, code_hash FROM login_tokens
+      WHERE email = ? AND purpose = 'signin' AND used_at IS NULL AND expires_at > ?
+        AND code_hash IS NOT NULL AND code_tries < ?`,
+  )
+    .bind(email, now(), CODE_TRIES)
+    .all<{ token_hash: string; code_hash: string }>();
+  const hash = await sha256(`${email}:${code}`);
+  const match = (live.results ?? []).find((row) => row.code_hash === hash);
+  if (!match) {
+    await env.DB.prepare(
+      `UPDATE login_tokens SET code_tries = code_tries + 1
+        WHERE email = ? AND used_at IS NULL AND code_hash IS NOT NULL`,
+    )
+      .bind(email)
+      .run();
+    return reply(c, { error: (live.results ?? []).length ? 'bad_code' : 'code_expired' }, 401);
+  }
+
+  // Single use, like the link: the code and its link are the same token.
+  const claimed = await env.DB.prepare(
+    'UPDATE login_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL RETURNING email',
+  )
+    .bind(now(), match.token_hash)
+    .first<{ email: string }>();
+  if (!claimed) return reply(c, { error: 'code_expired' }, 401);
+  return signInAs(c, claimed.email);
 });
 
 /*
