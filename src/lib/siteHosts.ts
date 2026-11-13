@@ -1,10 +1,13 @@
 /*
- * Two sites, one Worker.
+ * Two sites, one Worker — plus the portal's new home on a third host.
  *
  * malipetek.dev is the client portal for vibe contracting: the offer, the
  * portal, the assistant connection and the legal pages. lab.malipetek.dev is
  * Ali's developer lab: the agentic coding knowledgebase, the DeepSeek Harness
- * plugins, writing, work and projects.
+ * plugins, writing, work and projects. ptechsolutions.net serves the PTech
+ * homepage and proxies the portal paths (/portal*, /api/*, /mcp,
+ * /.well-known/*, /_astro/*, /fonts/*) to this Worker, so /portal and its
+ * backing API live there; malipetek.dev/portal* 301s to it.
  *
  * The split is by Host, not by path, so the same paths exist on both hosts and
  * each host owns its half:
@@ -21,9 +24,18 @@ import { LOCALES, SOURCE_LOCALE } from './locales.js';
 
 export const CONTRACTING_ORIGIN = 'https://malipetek.dev';
 export const LAB_ORIGIN = 'https://lab.malipetek.dev';
+/**
+ * The client portal's public home. ptechsolutions.net serves the PTech
+ * homepage at /; its Worker (a separate project) proxies the portal paths
+ * (/portal*, /api/*, /mcp, /.well-known/*, /_astro/*, /fonts/*) here, so the
+ * portal system lives on that host while the offer, contact, legal and
+ * localized pages stay on malipetek.dev.
+ */
+export const PORTAL_ORIGIN = 'https://ptechsolutions.net';
 
 const LAB_HOST = 'lab.malipetek.dev';
 const CONTRACTING_HOSTS = new Set(['malipetek.dev', 'www.malipetek.dev']);
+const PORTAL_HOSTS = new Set(['ptechsolutions.net', 'www.ptechsolutions.net']);
 
 /** Lab paths, as prefixes: the page itself and everything under it. */
 const LAB_ROOTS = ['/kb', '/plugins', '/blog', '/experience', '/projects', '/pdfextractor'];
@@ -31,6 +43,8 @@ const LAB_EXACT = ['/plugins.json'];
 
 /** Contracting paths. The localized pages are handled separately. */
 const CONTRACTING_ROOTS = ['/portal', '/api'];
+/** The portal app moved to ptechsolutions.net; the rest stays on malipetek.dev. */
+const PORTAL_ROOTS = ['/portal'];
 const CONTRACTING_EXACT = [
   '/agents',
   '/agents.md',
@@ -120,6 +134,18 @@ function redirect(request: Request, origin: string, pathname?: string): Response
 }
 
 /**
+ * 301 to the portal's new home. The query string always survives: magic
+ * links (/portal/verify?token=…) and ticket deep links carry their state
+ * there.
+ */
+function redirectToPortal(request: Request): Response {
+  const url = new URL(request.url);
+  const target = new URL(url.pathname, PORTAL_ORIGIN);
+  target.search = url.search;
+  return new Response(null, { status: 301, headers: { location: target.href } });
+}
+
+/**
  * Pages that moved into the portal app, old path → new address on the same
  * host. The new address can carry the app's hash route; old links in emails
  * and bookmarks keep working.
@@ -147,11 +173,24 @@ export function hostRedirect(request: Request): Response | null {
   const host = requestHostname(request);
   const path = normalize(new URL(request.url).pathname);
 
+  // ptechsolutions.net is the portal's home. Its Worker only sends the portal
+  // paths here, so this host gets the contracting site's answer; www folds to
+  // the apex in case a request ever arrives on it directly.
+  if (host === 'www.ptechsolutions.net') {
+    return redirect(request, PORTAL_ORIGIN);
+  }
+  if (PORTAL_HOSTS.has(host)) return null;
+
   if (host === LAB_HOST) {
     // The lab's MCP server has no OAuth. Following a redirect to the portal's
     // discovery documents would make a client sign in to the portal for the
     // knowledgebase, the very mix-up this split removes.
     if (under(path, '/.well-known')) return new Response('Not found', { status: 404 });
+    // The portal app answers on ptechsolutions.net now; send it straight there
+    // instead of bouncing through malipetek.dev first.
+    if (PORTAL_ROOTS.some((root) => under(path, root))) {
+      return redirectToPortal(request);
+    }
     if (CONTRACTING_ROOTS.some((root) => under(path, root))) {
       return redirect(request, CONTRACTING_ORIGIN);
     }
@@ -169,6 +208,11 @@ export function hostRedirect(request: Request): Response | null {
   }
 
   if (CONTRACTING_HOSTS.has(host)) {
+    // The portal moved to ptechsolutions.net; old links (emails, bookmarks)
+    // land here first and are forwarded with their query intact.
+    if (PORTAL_ROOTS.some((root) => under(path, root))) {
+      return redirectToPortal(request);
+    }
     if (CONTRACTING_EXACT.includes(path)) return null;
     if (LAB_ROOTS.some((root) => under(path, root)) || LAB_EXACT.includes(path)) {
       return redirect(request, LAB_ORIGIN);
