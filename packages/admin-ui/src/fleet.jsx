@@ -1,7 +1,7 @@
 /* The fleet (nodes, queue, runs), the directory (clients, projects), and settings. */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { LOCALES } from '../../../src/lib/locales.js';
-import { useAdmin } from './store.js';
+import { useAdmin, usePoll } from './store.js';
 import { EXECUTORS, PRIORITIES, ago, chargeOf, money, priorityName, span, usd } from './format.js';
 import { Button, Chips, Dot, Field, Modal, Segmented, StatusPill, Tag, cx } from './ui.jsx';
 import { SitePanel } from './ticket.jsx';
@@ -909,6 +909,61 @@ export function ClientsView() {
   );
 }
 
+/**
+ * The interface translations. The Worker translates with its own DeepSeek key
+ * and commits the catalogs to master; nobody runs a script. It runs by itself
+ * when the English changes; the button asks for a run now.
+ */
+function TranslationsPanel() {
+  const { api, act } = useAdmin();
+  const [status, setStatus] = useState(null);
+  const load = useCallback(() => api('GET', '/admin/i18n').then(setStatus, () => undefined), [api]);
+  usePoll(load, status?.requestedAt || status?.runningSince ? 15_000 : 120_000, [load, status?.requestedAt, status?.runningSince]);
+  useEffect(() => void load(), [load]);
+  const last = status?.last;
+  const rejected = last ? Object.entries(last.rejected ?? {}) : [];
+  const failed = last ? Object.entries(last.failed ?? {}) : [];
+  const busy = Boolean(status?.requestedAt || status?.runningSince);
+  return (
+    <section className="aw-panel">
+      <h3 className="aw-row-h">
+        Translations
+        <span className="aw-toolbar__fill" />
+        <Button
+          size="sm"
+          kind="primary"
+          disabled={!status?.ready || busy}
+          title="Translate every interface and email string that is missing or out of date, in all languages, and commit it to master"
+          onClick={() => void act(() => api('POST', '/admin/i18n/sync', {}), 'Translation starts within 5 minutes.').then(setStatus, () => undefined)}
+        >
+          {status?.runningSince ? 'Translating…' : status?.requestedAt ? 'Queued' : 'Translate now'}
+        </Button>
+      </h3>
+      <p className="aw-muted">
+        Runs by itself when the English strings change on master. It translates with DeepSeek and commits the catalogs to {status?.repo ?? 'the repo'}, which deploys like any push.
+      </p>
+      {status && !status.ready ? <p className="aw-warn">Needs DEEPSEEK_API_KEY and the GitHub App secrets on the Worker.</p> : null}
+      {status?.runningSince ? <p>Translating since {ago(status.runningSince)} ago.</p> : status?.requestedAt ? <p>Queued {ago(status.requestedAt)} ago; the next five-minute tick runs it.</p> : null}
+      {last ? (
+        <p className={last.ok ? 'aw-muted' : 'aw-warn'}>
+          Last run {ago(last.at)} ago ({last.trigger === 'manual' ? 'by hand' : 'English changed'}):{' '}
+          {last.error
+            ? last.error
+            : last.keys || last.removed
+              ? `${last.keys} string${last.keys === 1 ? '' : 's'} in ${last.locales} language${last.locales === 1 ? '' : 's'}${last.removed ? `, ${last.removed} old removed` : ''}${last.commit ? `, commit ${last.commit.slice(0, 7)}` : ''}.`
+              : 'everything was already translated.'}
+        </p>
+      ) : status ? (
+        <p className="aw-muted">No run yet.</p>
+      ) : null}
+      {failed.length ? <p className="aw-warn">Failed: {failed.map(([code, why]) => `${code} (${why})`).join('; ')}</p> : null}
+      {rejected.length ? (
+        <p className="aw-muted">Kept in English (the placeholders did not survive): {rejected.map(([code, keys]) => `${code}: ${keys.join(', ')}`).join('; ')}</p>
+      ) : null}
+    </section>
+  );
+}
+
 export function SettingsView() {
   const { api, act, data, platform, host, notify, reload } = useAdmin();
   const [draft, setDraft] = useState(data.settings ?? {});
@@ -1000,6 +1055,7 @@ export function SettingsView() {
           </div>
         </section>
       ) : null}
+      <TranslationsPanel />
     </div>
   );
 }

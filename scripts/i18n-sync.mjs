@@ -26,6 +26,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LOCALES, SOURCE_LOCALE } from '../src/lib/locales.js';
+import { acceptTranslations, catalogWork, mailBundleSource, orderedCatalog, shape, translatePrompt } from '../src/lib/i18nSync.js';
+
+export { shape };
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const MESSAGES = join(ROOT, 'src/i18n/messages');
@@ -35,7 +38,6 @@ const BATCH = 40;
 const args = process.argv.slice(2);
 const checkOnly = args.includes('--check');
 const bundleOnly = args.includes('--bundle');
-const MAIL_PREFIXES = ['mail.', 'status.', 'preview.', 'card.'];
 const only = args.filter((a) => !a.startsWith('--'));
 const key = process.env.DEEPSEEK_API_KEY;
 const base = (process.env.DEEPSEEK_API_BASE || 'https://api.deepseek.com').replace(/\/+$/, '');
@@ -43,43 +45,6 @@ const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
 
 const readJson = (file, fallback) => (existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : fallback);
 const writeJson = (file, data) => writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
-
-/** The variables and plural blocks a string uses, as a comparable signature. */
-export function shape(text) {
-  const found = new Set();
-  const close = (s, open) => {
-    let depth = 0;
-    for (let j = open; j < s.length; j++) {
-      if (s[j] === '{') depth++;
-      else if (s[j] === '}' && --depth === 0) return j;
-    }
-    return -1;
-  };
-  const scan = (s) => {
-    for (let i = s.indexOf('{'); i !== -1; ) {
-      const end = close(s, i);
-      if (end === -1) return found.add('!unbalanced');
-      const body = s.slice(i + 1, end);
-      const plural = /^\s*(\w+)\s*,\s*plural\s*,([\s\S]*)$/.exec(body);
-      if (plural) {
-        found.add(`${plural[1]}:plural`);
-        // Each branch is `key {text}`; only what is inside the text can hold variables.
-        const branches = plural[2];
-        for (let b = branches.indexOf('{'); b !== -1; ) {
-          const e = close(branches, b);
-          if (e === -1) return found.add('!unbalanced');
-          scan(branches.slice(b + 1, e));
-          b = branches.indexOf('{', e + 1);
-        }
-      } else {
-        found.add(body.trim());
-      }
-      i = s.indexOf('{', end + 1);
-    }
-  };
-  scan(text);
-  return [...found].sort().join('|');
-}
 
 async function deepseek(system, payload, attempt = 0) {
   const res = await fetch(`${base}/chat/completions`, {
@@ -107,16 +72,7 @@ async function deepseek(system, payload, attempt = 0) {
   }
 }
 
-const prompt = (locale) =>
-  [
-    `Translate the values of this JSON object from English into ${locale.english} (${locale.code}).`,
-    'They are interface strings and emails of a client portal: clients file requests ("tickets") with Ali, a web developer at malipetek.dev, and AI agents build them after he approves.',
-    'Return a JSON object with exactly the same keys.',
-    'Keep {variables} exactly as they are. Keep ICU plural blocks like {n, plural, one {…} other {…}}: translate only the text inside the branches, keep # and the variable name, and use the plural categories this language needs.',
-    'Do not add or remove plural blocks: if the English has a plain {variable}, the translation keeps it plain.',
-    'Keep names as they are: malipetek.dev, Ali, DeepSeek, Cloudflare, Workers AI, GitHub. Keep ⌘, ↵, →, ←, “ ” and line breaks.',
-    'Use the polite form of address the language normally uses with customers, and short, plain wording.',
-  ].join('\n');
+const prompt = translatePrompt;
 
 const backPrompt =
   'Translate the values of this JSON object into English, literally. Return a JSON object with the same keys. Keep {variables}.';
@@ -132,8 +88,7 @@ async function syncLocale(locale, english) {
   const catalog = readJson(file, {});
   const meta = readJson(metaFile, {});
 
-  const stale = Object.keys(english).filter((k) => catalog[k] === undefined || meta[k]?.en !== english[k]);
-  const removed = Object.keys(catalog).filter((k) => english[k] === undefined);
+  const { stale, removed } = catalogWork(english, catalog, meta);
   if (checkOnly || !stale.length) return { code: locale.code, stale: stale.length, removed: removed.length, written: 0, rejected: [], drift: [] };
 
   const rejected = [];
@@ -142,18 +97,10 @@ async function syncLocale(locale, english) {
   for (let i = 0; i < stale.length; i += BATCH) {
     const keys = stale.slice(i, i + BATCH);
     const out = await deepseek(prompt(locale), Object.fromEntries(keys.map((k) => [k, english[k]])));
-    const fresh = {};
-    for (const k of keys) {
-      const value = out[k];
-      if (typeof value !== 'string' || !value.trim() || shape(value) !== shape(english[k])) {
-        rejected.push(k);
-        continue;
-      }
-      catalog[k] = value;
-      meta[k] = { en: english[k], reviewed: false };
-      fresh[k] = value;
-      written++;
-    }
+    const got = acceptTranslations(english, catalog, meta, keys, out);
+    rejected.push(...got.rejected);
+    written += got.written.length;
+    const fresh = Object.fromEntries(got.written.map((k) => [k, catalog[k]]));
     if (locale.beta && Object.keys(fresh).length) {
       const back = await deepseek(backPrompt, fresh);
       const verdict = await deepseek(
@@ -163,11 +110,7 @@ async function syncLocale(locale, english) {
       for (const k of Object.keys(fresh)) if (verdict[k] === false) drift.push(k);
     }
   }
-  for (const k of removed) {
-    delete catalog[k];
-    delete meta[k];
-  }
-  const ordered = Object.fromEntries(Object.keys(english).filter((k) => catalog[k] !== undefined).map((k) => [k, catalog[k]]));
+  const ordered = orderedCatalog(english, catalog, meta, removed);
   writeJson(file, ordered);
   writeJson(metaFile, meta);
   return { code: locale.code, stale: stale.length, removed: removed.length, written, rejected, drift };
@@ -175,17 +118,13 @@ async function syncLocale(locale, english) {
 
 /** src/i18n/mail.js: what the Worker needs from every catalog. */
 export function writeMailBundle() {
-  const bundle = {};
+  const catalogs = {};
   for (const locale of LOCALES) {
     const catalog = readJson(join(MESSAGES, `${locale.code}.json`), null);
-    if (!catalog) continue;
-    bundle[locale.code] = Object.fromEntries(Object.entries(catalog).filter(([k]) => MAIL_PREFIXES.some((p) => k.startsWith(p))));
+    if (catalog) catalogs[locale.code] = catalog;
   }
-  writeFileSync(
-    join(ROOT, 'src/i18n/mail.js'),
-    `// Generated by scripts/i18n-sync.mjs from src/i18n/messages/*.json. Do not edit.\nexport default ${JSON.stringify(bundle, null, 2)};\n`,
-  );
-  return Object.keys(bundle).length;
+  writeFileSync(join(ROOT, 'src/i18n/mail.js'), mailBundleSource(catalogs));
+  return Object.keys(catalogs).length;
 }
 
 async function main() {

@@ -1894,6 +1894,19 @@ const groups = {
     }
   },
 
+  async translations({ admin }) {
+    const status = await call('/admin/i18n', { auth: admin });
+    check('the translation status answers', status.status === 200 && typeof status.data.ready === 'boolean' && 'last' in status.data, JSON.stringify(status.data));
+    const asked = await call('/admin/i18n/sync', { method: 'POST', auth: admin, body: {} });
+    check(
+      'Translate now queues a run, or says what is missing',
+      status.data.ready ? asked.status === 200 && asked.data.requestedAt > 0 : asked.status === 409 && asked.data.error === 'not_configured',
+      JSON.stringify(asked.data),
+    );
+    const someone = account(`i18n-${Date.now()}@example.com`);
+    check('only Ali can ask', (await call('/admin/i18n/sync', { method: 'POST', auth: someone.session, body: {} })).status === 403);
+  },
+
   async projectPeople({ admin }) {
     const stamp = Date.now();
     const owner = account(`people-owner-${stamp}@example.com`);

@@ -44,6 +44,7 @@ import { inviteMail, INVITE_TTL_SECONDS, joinProjectNames } from './invites.ts';
 import { previewStrings, tFor } from '../../src/i18n/eager.js';
 import { closestLocale, fromAcceptLanguage, TRANSLATION_ENGINES, type TranslationEngine } from '../../src/lib/locales.js';
 import { readSteps } from './steps.ts';
+import { i18nStatus, requestI18nSync } from './i18nSync.ts';
 import { healthMail, healthView, markHealthAlerted, runHealthChecks } from './health.ts';
 import { latestReview, reviewLine, reviewRun } from './review.ts';
 import { maybeAutoApprove } from './approve.ts';
@@ -3181,6 +3182,17 @@ portal.get('/admin/projects', async (c) => {
       };
     }),
   });
+});
+
+/** The interface translations: the last run, and whether one is asked for or under way. */
+portal.get('/admin/i18n', async (c) => reply(c, await i18nStatus(c.env)));
+
+/** Translate now: the next five-minute tick translates what is missing and commits it to master. */
+portal.post('/admin/i18n/sync', async (c) => {
+  const status = await i18nStatus(c.env);
+  if (!status.ready) return reply(c, { error: 'not_configured' }, 409);
+  await requestI18nSync(c.env);
+  return reply(c, await i18nStatus(c.env));
 });
 
 /** Move any site to another project (Ali's view). */

@@ -9,6 +9,7 @@ import { ensureContentCycle } from './content.ts';
 import { ensureSeoCycle, runSeo } from './seo.ts';
 import { reapExpired } from './queue.ts';
 import { sweepFirstPreviews } from './firstPreview.ts';
+import { runI18nSync } from './i18nSync.ts';
 import type { Env } from './shared.ts';
 import { advanceSites, pruneDeploys } from './sites.ts';
 
@@ -47,6 +48,8 @@ export default {
         // weekly, and the cycle files itself when there is something to fix.
         runSeo(env),
         ensureSeoCycle(env),
+        // The interface catalogs: translated and committed when English changes, or when Ali asks.
+        runI18nSync(env).catch((error) => console.error('i18n_sync_failed', error)),
       ]),
     );
   },

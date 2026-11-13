@@ -2431,6 +2431,66 @@ var __awPlugin = (() => {
       ] })
     ] });
   }
+  function TranslationsPanel() {
+    const { api, act } = useAdmin();
+    const [status, setStatus] = useState(null);
+    const load = useCallback(() => api("GET", "/admin/i18n").then(setStatus, () => void 0), [api]);
+    usePoll(load, status?.requestedAt || status?.runningSince ? 15e3 : 12e4, [load, status?.requestedAt, status?.runningSince]);
+    useEffect(() => void load(), [load]);
+    const last = status?.last;
+    const rejected = last ? Object.entries(last.rejected ?? {}) : [];
+    const failed = last ? Object.entries(last.failed ?? {}) : [];
+    const busy = Boolean(status?.requestedAt || status?.runningSince);
+    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+      /* @__PURE__ */ jsxs("h3", { className: "aw-row-h", children: [
+        "Translations",
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
+            kind: "primary",
+            disabled: !status?.ready || busy,
+            title: "Translate every interface and email string that is missing or out of date, in all languages, and commit it to master",
+            onClick: () => void act(() => api("POST", "/admin/i18n/sync", {}), "Translation starts within 5 minutes.").then(setStatus, () => void 0),
+            children: status?.runningSince ? "Translating\u2026" : status?.requestedAt ? "Queued" : "Translate now"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "Runs by itself when the English strings change on master. It translates with DeepSeek and commits the catalogs to ",
+        status?.repo ?? "the repo",
+        ", which deploys like any push."
+      ] }),
+      status && !status.ready ? /* @__PURE__ */ jsx("p", { className: "aw-warn", children: "Needs DEEPSEEK_API_KEY and the GitHub App secrets on the Worker." }) : null,
+      status?.runningSince ? /* @__PURE__ */ jsxs("p", { children: [
+        "Translating since ",
+        ago(status.runningSince),
+        " ago."
+      ] }) : status?.requestedAt ? /* @__PURE__ */ jsxs("p", { children: [
+        "Queued ",
+        ago(status.requestedAt),
+        " ago; the next five-minute tick runs it."
+      ] }) : null,
+      last ? /* @__PURE__ */ jsxs("p", { className: last.ok ? "aw-muted" : "aw-warn", children: [
+        "Last run ",
+        ago(last.at),
+        " ago (",
+        last.trigger === "manual" ? "by hand" : "English changed",
+        "):",
+        " ",
+        last.error ? last.error : last.keys || last.removed ? `${last.keys} string${last.keys === 1 ? "" : "s"} in ${last.locales} language${last.locales === 1 ? "" : "s"}${last.removed ? `, ${last.removed} old removed` : ""}${last.commit ? `, commit ${last.commit.slice(0, 7)}` : ""}.` : "everything was already translated."
+      ] }) : status ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No run yet." }) : null,
+      failed.length ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        "Failed: ",
+        failed.map(([code, why]) => `${code} (${why})`).join("; ")
+      ] }) : null,
+      rejected.length ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "Kept in English (the placeholders did not survive): ",
+        rejected.map(([code, keys]) => `${code}: ${keys.join(", ")}`).join("; ")
+      ] }) : null
+    ] });
+  }
   function SettingsView() {
     const { api, act, data, platform, host, notify, reload } = useAdmin();
     const [draft, setDraft] = useState(data.settings ?? {});
@@ -2503,7 +2563,8 @@ var __awPlugin = (() => {
             }
           )
         ] })
-      ] }) : null
+      ] }) : null,
+      /* @__PURE__ */ jsx(TranslationsPanel, {})
     ] });
   }
 
