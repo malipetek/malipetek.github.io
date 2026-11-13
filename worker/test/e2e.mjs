@@ -266,6 +266,25 @@ const groups = {
   async onboarding({ admin }) {
     const a = await signIn(`onb-${Date.now()}@example.com`);
     check('a real magic-link sign-in creates the account', a.user?.role === 'client' && typeof a.session === 'string');
+    // The code in the same email signs in where it is typed (an assistant's OAuth window).
+    const codeMail = `code-${Date.now()}@example.com`;
+    const asked = await call('/auth/request', { method: 'POST', body: { email: codeMail, turnstileToken: DUMMY_TURNSTILE } });
+    check('a sign-in email carries a six-digit code', /^\d{6}$/.test(asked.data?.devCode ?? ''), JSON.stringify(asked.data));
+    const wrongCode = asked.data.devCode === '000000' ? '000001' : '000000';
+    check('a wrong code is refused', (await call('/auth/code', { method: 'POST', body: { email: codeMail, code: wrongCode } })).data?.error === 'bad_code');
+    const byCode = await call('/auth/code', { method: 'POST', body: { email: codeMail, code: asked.data.devCode } });
+    check('the right code signs in and makes the account', byCode.status === 200 && byCode.data.user?.role === 'client' && typeof byCode.data.session === 'string', JSON.stringify(byCode.data));
+    check('the code works once', (await call('/auth/code', { method: 'POST', body: { email: codeMail, code: asked.data.devCode } })).status === 401);
+    const linkOfCode = new URL(asked.data.devLink).hash.match(/token=([^&]+)/)[1];
+    check('…and its link dies with it', (await call('/auth/verify', { method: 'POST', body: { token: linkOfCode } })).status === 401);
+    const guessed = `guess-${Date.now()}@example.com`;
+    const g = await call('/auth/request', { method: 'POST', body: { email: guessed, turnstileToken: DUMMY_TURNSTILE } });
+    const notIt = g.data.devCode === '000000' ? '000001' : '000000';
+    for (let i = 0; i < 5; i += 1) await call('/auth/code', { method: 'POST', body: { email: guessed, code: notIt } });
+    check('five wrong codes kill the right one', (await call('/auth/code', { method: 'POST', body: { email: guessed, code: g.data.devCode } })).data?.error === 'code_expired');
+    const guessedLink = new URL(g.data.devLink).hash.match(/token=([^&]+)/)[1];
+    check('…while the link still signs in', (await call('/auth/verify', { method: 'POST', body: { token: guessedLink } })).status === 200);
+
     const created = await newProject(a.session, { kind: 'new', name: 'Acme Bakery', brief: NEW_BRIEF });
     check('client creates a project from the interview', created.status === 201 && created.data.project.slug === 'acme-bakery');
     const again = await newProject(a.session, { kind: 'new', name: 'Acme Bakery', brief: NEW_BRIEF });

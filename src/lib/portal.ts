@@ -243,7 +243,12 @@ export async function requestLink(email: string) {
   } catch {
     turnstileToken = '';
   }
-  return api<{ ok: true; devLink?: string }>('/auth/request', { body: { email, turnstileToken } });
+  return api<{ ok: true; devLink?: string; devCode?: string }>('/auth/request', { body: { email, turnstileToken } });
+}
+
+/** Sign in with the six-digit code from the sign-in email, in this window. */
+export async function codeLogin(email: string, code: string) {
+  return api<{ session: string; user: User }>('/auth/code', { body: { email, code } });
 }
 
 /** Reviewer demo sign-in: fixed account + shared code instead of a magic link. */
@@ -305,6 +310,8 @@ export function errorText(error: unknown, t?: ((key: string, vars?: Record<strin
     bad_email: 'That email does not look right.',
     mail_failed: 'Could not send the email. Try again, or email malipetek@gmail.com.',
     link_expired: 'This sign-in link has expired or was already used.',
+    bad_code: 'That code is not right. Check the newest email and try again.',
+    code_expired: 'That code has expired or was used up. Send a new email.',
     unauthorized: 'Your session expired. Sign in again.',
     not_found: 'Not found.',
     bad_ticket: 'Add a title and a description.',
