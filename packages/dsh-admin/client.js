@@ -2458,10 +2458,29 @@ var __awPlugin = (() => {
         )
       ] }),
       /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-        "Runs by itself when the English strings change on master. It translates with DeepSeek and commits the catalogs to ",
+        "Translates every interface and email string that is new or re-worded, in all languages, with DeepSeek, and commits it to ",
         status?.repo ?? "the repo",
-        ", which deploys like any push."
+        ". That push deploys like any other. Until then, untranslated strings show in English."
       ] }),
+      status?.englishChanged && !busy ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        "English changed on master since the last translation",
+        status.checkedAt ? ` (checked ${ago(status.checkedAt)} ago)` : "",
+        "."
+      ] }) : null,
+      status ? /* @__PURE__ */ jsxs("label", { className: "aw-check", children: [
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "checkbox",
+            checked: Boolean(status.auto),
+            onChange: (e) => void act(
+              () => api("PUT", "/admin/i18n", { auto: e.target.checked }),
+              e.target.checked ? "Translations now follow every English change." : "Translations run only from the button."
+            ).then(setStatus, () => void 0)
+          }
+        ),
+        "Translate automatically whenever English changes"
+      ] }) : null,
       status && !status.ready ? /* @__PURE__ */ jsx("p", { className: "aw-warn", children: "Needs DEEPSEEK_API_KEY and the GitHub App secrets on the Worker." }) : null,
       status?.runningSince ? /* @__PURE__ */ jsxs("p", { children: [
         "Translating since ",

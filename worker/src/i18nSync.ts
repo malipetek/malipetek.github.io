@@ -9,9 +9,12 @@
  * catalogs, their meta and the regenerated src/i18n/mail.js to master in one
  * commit. That push deploys the site and the Worker like any other.
  *
- * When: the five-minute cron checks master's en-US.json every 15 minutes and
- * runs when it changed since the last run; Admin → Settings → Translate now
- * asks for a run on the next tick. One run at a time (a lock in settings).
+ * When: by hand. Admin → Settings → Translations → Translate now asks for a
+ * run on the next five-minute tick. The cron only looks at master's
+ * en-US.json every 15 minutes so the panel can say English changed since the
+ * last translation; it translates by itself only with the panel's
+ * "Translate automatically" switch on (off by default, so copy can change
+ * many times before it is translated once). One run at a time (a lock).
  */
 import { LOCALES, SOURCE_LOCALE } from '../../src/lib/locales.js';
 import {
@@ -39,6 +42,8 @@ const KEY = {
   running: 'i18n_sync_running_at',
   checked: 'i18n_sync_checked_at',
   englishSha: 'i18n_sync_en_sha',
+  headSha: 'i18n_sync_head_en_sha',
+  auto: 'i18n_sync_auto',
   last: 'i18n_sync_last',
 } as const;
 
@@ -89,8 +94,16 @@ export async function i18nStatus(env: Env) {
     requestedAt: s[KEY.requested] ? Number(s[KEY.requested]) : null,
     runningSince: running && now() - running < LOCK_TTL ? running : null,
     checkedAt: s[KEY.checked] ? Number(s[KEY.checked]) : null,
+    auto: s[KEY.auto] === '1',
+    // master's English differs from what was last translated (as of checkedAt).
+    englishChanged: Boolean(s[KEY.headSha] && s[KEY.headSha] !== s[KEY.englishSha]),
     last: s[KEY.last] ? (JSON.parse(s[KEY.last] as string) as SyncResult) : null,
   };
+}
+
+/** The panel's switch: translate by itself whenever English changes on master. */
+export async function setI18nAuto(env: Env, auto: boolean) {
+  await put(env, KEY.auto, auto ? '1' : '0');
 }
 
 /** Admin → Translate now: the next cron tick runs, whatever English did. */
@@ -255,13 +268,16 @@ async function runSync(env: Env, trigger: SyncResult['trigger']): Promise<SyncRe
     result.commit = made.sha;
   }
   result.ok = !Object.keys(result.failed).length;
-  if (result.ok) await put(env, KEY.englishSha, englishSha);
+  if (result.ok) {
+    await put(env, KEY.englishSha, englishSha);
+    await put(env, KEY.headSha, englishSha);
+  }
   return result;
 }
 
 /**
- * The cron's part. Runs when Ali asked, or when master's English changed since
- * the last good run (looked at every 15 minutes). Never two at once.
+ * The cron's part. Runs when Ali asked, or (with the auto switch on) when
+ * master's English changed since the last good run. Never two at once.
  */
 export async function runI18nSync(env: Env, opts: { force?: boolean } = {}) {
   if (!env.DEEPSEEK_API_KEY || !env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return { skipped: 'not_configured' };
@@ -278,7 +294,9 @@ export async function runI18nSync(env: Env, opts: { force?: boolean } = {}) {
       const gh = new GitHub(await repoToken(env));
       const head = await gh.call<{ object: { sha: string } }>('GET', `/git/ref/heads/${BRANCH}`);
       const sha = (await gh.folder(MESSAGES, head.object.sha)).get(`${SOURCE_LOCALE}.json`);
+      if (sha && sha !== s[KEY.headSha]) await put(env, KEY.headSha, sha);
       if (!sha || sha === s[KEY.englishSha]) return { skipped: 'unchanged' };
+      if (s[KEY.auto] !== '1') return { skipped: 'manual' };
     } catch (error) {
       console.error('i18n_check_failed', error);
       return { skipped: 'check_failed' };

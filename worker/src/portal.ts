@@ -44,7 +44,7 @@ import { inviteMail, INVITE_TTL_SECONDS, joinProjectNames } from './invites.ts';
 import { previewStrings, tFor } from '../../src/i18n/eager.js';
 import { closestLocale, fromAcceptLanguage, TRANSLATION_ENGINES, type TranslationEngine } from '../../src/lib/locales.js';
 import { readSteps } from './steps.ts';
-import { i18nStatus, requestI18nSync } from './i18nSync.ts';
+import { i18nStatus, requestI18nSync, setI18nAuto } from './i18nSync.ts';
 import { healthMail, healthView, markHealthAlerted, runHealthChecks } from './health.ts';
 import { latestReview, reviewLine, reviewRun } from './review.ts';
 import { maybeAutoApprove } from './approve.ts';
@@ -3186,6 +3186,14 @@ portal.get('/admin/projects', async (c) => {
 
 /** The interface translations: the last run, and whether one is asked for or under way. */
 portal.get('/admin/i18n', async (c) => reply(c, await i18nStatus(c.env)));
+
+/** The auto switch: off (the default) means translations only run from the button. */
+portal.put('/admin/i18n', async (c) => {
+  const body = await readJson<{ auto?: unknown }>(c);
+  if (typeof body?.auto !== 'boolean') return reply(c, { error: 'bad_auto' }, 400);
+  await setI18nAuto(c.env, body.auto);
+  return reply(c, await i18nStatus(c.env));
+});
 
 /** Translate now: the next five-minute tick translates what is missing and commits it to master. */
 portal.post('/admin/i18n/sync', async (c) => {

@@ -911,8 +911,8 @@ export function ClientsView() {
 
 /**
  * The interface translations. The Worker translates with its own DeepSeek key
- * and commits the catalogs to master; nobody runs a script. It runs by itself
- * when the English changes; the button asks for a run now.
+ * and commits the catalogs to master; nobody runs a script. Translate now is
+ * the normal way; the switch makes it follow every English change by itself.
  */
 function TranslationsPanel() {
   const { api, act } = useAdmin();
@@ -940,8 +940,26 @@ function TranslationsPanel() {
         </Button>
       </h3>
       <p className="aw-muted">
-        Runs by itself when the English strings change on master. It translates with DeepSeek and commits the catalogs to {status?.repo ?? 'the repo'}, which deploys like any push.
+        Translates every interface and email string that is new or re-worded, in all languages, with DeepSeek, and commits it to {status?.repo ?? 'the repo'}. That push deploys like any other. Until then, untranslated strings show in English.
       </p>
+      {status?.englishChanged && !busy ? (
+        <p className="aw-warn">English changed on master since the last translation{status.checkedAt ? ` (checked ${ago(status.checkedAt)} ago)` : ''}.</p>
+      ) : null}
+      {status ? (
+        <label className="aw-check">
+          <input
+            type="checkbox"
+            checked={Boolean(status.auto)}
+            onChange={(e) =>
+              void act(
+                () => api('PUT', '/admin/i18n', { auto: e.target.checked }),
+                e.target.checked ? 'Translations now follow every English change.' : 'Translations run only from the button.',
+              ).then(setStatus, () => undefined)
+            }
+          />
+          Translate automatically whenever English changes
+        </label>
+      ) : null}
       {status && !status.ready ? <p className="aw-warn">Needs DEEPSEEK_API_KEY and the GitHub App secrets on the Worker.</p> : null}
       {status?.runningSince ? <p>Translating since {ago(status.runningSince)} ago.</p> : status?.requestedAt ? <p>Queued {ago(status.requestedAt)} ago; the next five-minute tick runs it.</p> : null}
       {last ? (

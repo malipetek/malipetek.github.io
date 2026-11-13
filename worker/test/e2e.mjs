@@ -1903,6 +1903,11 @@ const groups = {
       status.data.ready ? asked.status === 200 && asked.data.requestedAt > 0 : asked.status === 409 && asked.data.error === 'not_configured',
       JSON.stringify(asked.data),
     );
+    check('translation is by hand unless switched on', status.data.auto === false, JSON.stringify(status.data));
+    const on = await call('/admin/i18n', { method: 'PUT', auth: admin, body: { auto: true } });
+    const off = await call('/admin/i18n', { method: 'PUT', auth: admin, body: { auto: false } });
+    check('the auto switch turns on and off', on.data.auto === true && off.data.auto === false, JSON.stringify([on.data, off.data]));
+    check('a bad switch value is refused', (await call('/admin/i18n', { method: 'PUT', auth: admin, body: { auto: 'yes' } })).status === 400);
     const someone = account(`i18n-${Date.now()}@example.com`);
     check('only Ali can ask', (await call('/admin/i18n/sync', { method: 'POST', auth: someone.session, body: {} })).status === 403);
   },
