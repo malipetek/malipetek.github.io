@@ -475,7 +475,7 @@ const groups = {
     const emails = (await call('/admin/marketing/messages?channel=email', { auth: admin })).data.messages;
     check('three steps are scheduled for the queued contact', emails.filter((m) => m.status === 'scheduled').length === 3);
     const firstEmail = emails.find((m) => m.step === 0);
-    check('the first email carries the observation, not a placeholder', /menu still says summer/.test(firstEmail?.body ?? '') && !firstEmail.body.includes('{{'));
+    check('the first email is the plain pitch, every placeholder filled', /billed by the second/.test(firstEmail?.body ?? '') && !firstEmail.body.includes('{{'));
     // A big import is one request: contacts are written in batches, then the
     // desk can queue everyone in another. A missing observation is a choice,
     // not a dead end.
@@ -513,7 +513,7 @@ const groups = {
       sql(`SELECT body FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
             WHERE c.email = 'bulk7@example.test' AND m.step = 0 AND m.status = 'scheduled'`).toString();
     const plainFirst = firstOf();
-    check('a contact without an observation gets the plain opener, not "I looked at…"', /hit something it can't finish on its own/.test(plainFirst) && !/I looked at/.test(plainFirst), plainFirst.slice(0, 300));
+    check('a contact without an observation gets the plain opener, not "I looked at…"', /help you use AI and deploy what you build/.test(plainFirst) && !/I looked at/.test(plainFirst), plainFirst.slice(0, 300));
     sql(`UPDATE marketing_messages SET body = 'stale wording' WHERE status = 'scheduled' AND to_email = 'bulk7@example.test';`);
     const rerendered = await call('/admin/marketing/messages/rerender', { method: 'POST', auth: admin });
     check('re-render brings scheduled emails back to the current templates', rerendered.status === 200 && rerendered.data.updated >= 1500 && !/stale wording/.test(firstOf()), JSON.stringify(rerendered.data));
@@ -524,7 +524,7 @@ const groups = {
     const movedSeq = await call('/admin/marketing/messages/rerender', { method: 'POST', auth: admin, body: { from: 'cold_a', to: 'cold_b' } });
     check(
       'queued Cold A mail can move to Cold B, keeping its slots',
-      movedSeq.status === 200 && movedSeq.data.moved >= 1500 && /A small fix on bulk7\.example\.test/.test(subjectOf()) && /I fix and build small things on business websites/.test(firstOf()),
+      movedSeq.status === 200 && movedSeq.data.moved >= 1500 && /Vibe contracting for bulk7\.example\.test/.test(subjectOf()) && /billed by the second/.test(firstOf()),
       JSON.stringify(movedSeq.data),
     );
 

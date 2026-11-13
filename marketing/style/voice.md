@@ -7,21 +7,27 @@ Where it disagrees with the older "dry voice" wording in `kit.md` or
 
 ## The offer comes first, and it is one thing
 
-Style never costs clarity. A reader who stops after two sentences must already
-know what Ali does, for whom, and what it costs. In a cold email that means:
+Plain and short. The whole pitch is three answers, in this order:
 
-1. The first sentence about us says what he does for this reader ("I fix and
-   build small things on business websites") and the price.
-2. Then how it works, in order: they write what they want, an agent does the
-   work on a copy, Ali checks it, it goes live.
-3. One extra idea at most (for example: if they use ChatGPT, they can send
-   only the part it gets stuck on). A second side idea is cut.
-4. One question they can answer in a line.
+1. **What is it?** Vibe contracting: you connect to the service, and a veteran
+   programmer (Muhammet) helps you use AI and deploy your projects.
+2. **What does it cost?** $100 an hour, billed by the second, so most jobs come
+   to less than $10.
+3. **A question** they can answer in a line ("Reply with what you're working
+   on.").
 
-"Vibe contracting" is a name, not an explanation. Use it only after the offer
-is already clear, and leave it out of a cold email when it would be the
-reader's first unexplained word. Read the draft as a busy shop owner: if any
-sentence needs a second read, rewrite it.
+The approved first email in `worker/src/marketing.ts` (`SEQUENCES`, `cold_a`)
+is the model: an opening question ("Do you want help using AI on your business
+and getting your projects online?"), then the three answers. Nothing else.
+
+- **No example tasks.** Opening hours, contact forms, menus and the like were
+  pilot jobs, not what the service is. Do not list tasks to explain the offer.
+- **Never assume how their site was built, and never knock their tools.** It
+  may be hand-made, a builder site or vibe coded; it does not matter. No "your
+  AI probably has bugs", no "where the tool stops helping".
+- One idea per piece. If a sentence explains a second thing, cut it.
+- Read it as a busy shop owner: if any sentence needs a second read, rewrite it.
+- Email is signed **Muhammet**.
 
 ## Show the style, never announce it
 

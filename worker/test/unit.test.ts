@@ -911,10 +911,9 @@ test('marketing: the workshop GIF sits between the body and the footer, text esc
   const img = html.indexOf('https://malipetek.dev/email/conveyor.gif');
   assert.ok(img > html.indexOf('Hi &lt;Bob') && img < html.indexOf('--<br>'));
   assert.ok(html.includes('Reply &quot;no&quot;'));
-  // Ali's photo and name come first, above the body.
-  const photo = html.indexOf('https://malipetek.dev/email/ali.jpg');
-  assert.ok(photo > 0 && photo < html.indexOf('Hi &lt;Bob'));
-  assert.ok(html.includes('>Ali Petek</div>'));
+  // The homepage's how diagram comes first, above the body.
+  const head = html.indexOf('https://malipetek.dev/email/how.png');
+  assert.ok(head > 0 && head < html.indexOf('Hi &lt;Bob'));
 });
 
 test('marketing: the GIF setting picks first emails or all of them', () => {

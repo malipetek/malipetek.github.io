@@ -238,110 +238,112 @@ export const SEQUENCES: Record<SequenceKind, SequenceStep[]> = {
     {
       kind: 'first',
       day: 0,
-      subject: 'The last mile of {{business}}',
+      subject: 'Vibe contracting',
       body: `{{greeting}}
 
-I looked at {{site}} and noticed this: {{gap}}.
+Do you want help using AI on your business and getting your projects online?
 
-If you built the site with an AI tool, this is the kind of thing it often can't finish on its own. I'm a developer and I help with exactly those parts: you keep doing what you can with your AI tool, and you send me what it gets stuck on.
+It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
 
-An AI agent does the work on a copy of your project, I check it, and then it goes live. You pay only for my minutes, $1.67 a minute, with no quote and no minimum.
+It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 
-Want me to fix this one? Reply with a line and I'll tell you if it's a quick job.
+Reply with what you're working on and I'll tell you how I'd help.
 
-Ali
+Muhammet
 malipetek.dev`,
       plain: `{{greeting}}
 
-If you built {{site}} with an AI tool, you have probably hit something it can't finish on its own, like a bug that keeps coming back or a deploy that fails.
+Do you want help using AI on your business and getting your projects online?
 
-I'm a developer and I help with exactly those parts: you keep doing what you can with your AI tool, and you send me what it gets stuck on. An AI agent does the work on a copy of your project, I check it, and then it goes live.
+It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
 
-You pay only for my minutes, $1.67 a minute, with no quote and no minimum.
+It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 
-Is something on the site stuck right now? Reply with a line and I'll tell you if it's a quick job.
+Reply with what you're working on and I'll tell you how I'd help.
 
-Ali
+Muhammet
 malipetek.dev`,
     },
     {
       kind: 'followup_1',
       day: 4,
-      subject: 'Re: The last mile of {{business}}',
+      subject: 'Re: Vibe contracting',
       body: `{{greeting}}
 
-Do you want that fixed, or is it not worth the trouble? Either answer helps me.
+Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
 
-Ali`,
+Muhammet`,
       plain: `{{greeting}}
 
-Is there anything on {{site}} you want fixed, or is now a bad time? Either answer helps me.
+Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
 
-Ali`,
+Muhammet`,
     },
     {
       kind: 'followup_2',
       day: 10,
-      subject: 'Re: The last mile of {{business}}',
+      subject: 'Re: Vibe contracting',
       body: `{{greeting}}
 
-Last note from me. If it becomes worth fixing, it is $1.67 a minute of my time and no quote to wait for: malipetek.dev/portal.
+Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
 
-Ali`,
+Muhammet`,
       plain: `{{greeting}}
 
-Last note from me. If something on {{site}} becomes worth fixing, it is $1.67 a minute of my time and no quote to wait for: malipetek.dev/portal.
+Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
 
-Ali`,
+Muhammet`,
     },
   ],
   cold_b: [
     {
       kind: 'first',
       day: 0,
-      subject: 'A small fix on {{site}}',
+      subject: 'Vibe contracting for {{site}}',
       body: `{{greeting}}
 
-I noticed this on {{site}}: {{gap}}.
+Do you want help using AI on your business and getting your projects online?
 
-I fix small things like that on business websites, and I charge only for the minutes I spend: $1.67 a minute, with no quote and no minimum.
+It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
 
-You tell me what you want changed, in plain words. An AI agent makes the change on a copy of your site, I check it, and then it goes live. Because the agent does most of the work, a fix like this usually costs a few dollars.
+It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 
-Want me to fix it? Reply with a line and I'll tell you what it would take.
+Reply with what you're working on and I'll tell you how I'd help.
 
-Ali
+Muhammet
 malipetek.dev`,
       plain: `{{greeting}}
 
-I fix and build small things on business websites, and I charge only for the minutes I spend: $1.67 a minute, with no quote and no minimum.
+Do you want help using AI on your business and getting your projects online?
 
-You write me what you want changed, in plain words: new opening hours, a contact form that stopped working, a new page. An AI agent makes the change on a copy of your site, I check it, and then it goes live. Because the agent does most of the work, a small fix usually costs a few dollars.
+It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
 
-Is there something on {{site}} you have been meaning to change? Reply with it and I'll tell you what it would take.
+It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 
-Ali
+Reply with what you're working on and I'll tell you how I'd help.
+
+Muhammet
 malipetek.dev`,
     },
     {
       kind: 'followup_1',
       day: 4,
-      subject: 'Re: A small fix on {{site}}',
+      subject: 'Re: Vibe contracting for {{site}}',
       body: `{{greeting}}
 
-What is the smallest thing on {{site}} you have been meaning to fix? Small jobs are where this costs least: you pay for the minutes I spend, and the agent's part costs cents.
+Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
 
-Ali`,
+Muhammet`,
     },
     {
       kind: 'followup_2',
       day: 10,
-      subject: 'Re: A small fix on {{site}}',
+      subject: 'Re: Vibe contracting for {{site}}',
       body: `{{greeting}}
 
-I will leave it here. If a small fix ever gets annoying enough, you can send it through malipetek.dev/portal without a call or a quote.
+Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
 
-Ali`,
+Muhammet`,
     },
   ],
   // For a business a mapper recorded with an email and no website
@@ -360,7 +362,7 @@ I build small business sites. An AI agent does the typing, and I approve the job
 
 If you want one, reply with a line about the business and I will tell you what it would take.
 
-Ali
+Muhammet
 malipetek.dev`,
     },
     {
@@ -371,7 +373,7 @@ malipetek.dev`,
 
 Should I sketch a one-page site for {{business}}, or is it not worth it right now? Either answer helps me.
 
-Ali`,
+Muhammet`,
     },
     {
       kind: 'followup_2',
@@ -381,7 +383,7 @@ Ali`,
 
 Last note from me. If you want a site later, you can ask through malipetek.dev/portal, with no call or quote first.
 
-Ali`,
+Muhammet`,
     },
   ],
   warm: [
@@ -391,13 +393,13 @@ Ali`,
       subject: 'A small experiment (and a favour)',
       body: `{{greeting}}
 
-I've started taking small software jobs in a new way, and I'm looking for the first few to put through it.
+I've started something I call vibe contracting: you connect to my service, and I help you use AI and deploy what you build.
 
-You send me what you need, in plain words. An AI agent does the work on a copy of the project, I check it, and then it ships. You pay only for my minutes, $1.67 a minute, with no quote and no minimum. If you already use ChatGPT or a similar tool, you can do what you can there and send me the part it gets stuck on.
+It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 
-Is there a small thing on {{site}} you have been putting off? I'd rather it were yours than a stranger's. If not, an introduction to someone with a small fix would help just as much.
+I'm looking for the first few jobs to put through it. Is there something on {{site}} you have been putting off? If not, an introduction to someone who could use it would help just as much.
 
-Ali`,
+Muhammet`,
     },
     {
       kind: 'followup_1',
@@ -407,7 +409,7 @@ Ali`,
 
 What is the smallest thing on {{site}} you have been meaning to fix? Small jobs are where this costs least: you pay for the minutes I spend, and the agent's part costs cents.
 
-Ali`,
+Muhammet`,
     },
     {
       kind: 'followup_2',
@@ -417,7 +419,7 @@ Ali`,
 
 I will stop filling your inbox. If something small comes up, the door is open: malipetek.dev/portal.
 
-Ali`,
+Muhammet`,
     },
   ],
 };
@@ -590,8 +592,9 @@ export function stepBody(step: SequenceStep, specificGap: boolean): string {
  */
 export function sequenceOfSubject(subject: string | null): SequenceKind | null {
   const s = subject ?? '';
-  if (/^(Re: )?The last mile of /.test(s)) return 'cold_a';
-  if (/^(Re: )?(The smallest thing on |A small fix on )/.test(s)) return 'cold_b';
+  // Old subjects stay listed: mail queued under them must still re-render.
+  if (/^(Re: )?(The last mile of |Vibe contracting$)/.test(s)) return 'cold_a';
+  if (/^(Re: )?(The smallest thing on |A small fix on |Vibe contracting for )/.test(s)) return 'cold_b';
   if (/^(Re: )?A small experiment/.test(s)) return 'warm';
   if (/^(Re: )?A website for /.test(s)) return 'nosite';
   return null;
@@ -835,23 +838,23 @@ function textHtml(text: string): string {
     .replace(/\n/g, '<br>\n');
 }
 
-/** Ali's photo for the top of an HTML email (public/me.webp, cropped square, as JPEG for Outlook). */
-export const EMAIL_AVATAR = { path: '/email/ali.jpg', size: 48 };
+/** The homepage's "how" diagram (you, your AI, preview, live, and Ali when you ask), for the top of an HTML email. */
+export const EMAIL_HEADER = {
+  path: '/email/how.png',
+  width: 560,
+  height: 224,
+  alt: 'You and your AI build it, it goes to a preview, then live; I step in when you ask',
+};
 
-/** A plain-looking HTML email: who it is from, the body, the GIF, then the footer. */
-export function emailHtml(siteBase: string, body: string, footer: string, fromName = 'Ali Petek'): string {
+/** A plain-looking HTML email: the how diagram, the body, the GIF, then the footer. */
+export function emailHtml(siteBase: string, body: string, footer: string): string {
   const img = `${siteBase}${EMAIL_IMAGE.path}`;
-  const avatar = `${siteBase}${EMAIL_AVATAR.path}`;
-  const px = EMAIL_AVATAR.size;
+  const head = `${siteBase}${EMAIL_HEADER.path}`;
   return [
     '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>',
     '<body style="margin:0;padding:0">',
     `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;color:#16140f;max-width:${EMAIL_IMAGE.width}px">`,
-    // A table, because Outlook ignores flex; the photo is round where border-radius works and square elsewhere.
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px"><tr>`,
-    `<td style="padding:0 12px 0 0;vertical-align:middle"><img src="${avatar}" width="${px}" height="${px}" alt="${escapeHtml(fromName)}" style="display:block;width:${px}px;height:${px}px;border-radius:50%;border:0"></td>`,
-    `<td style="vertical-align:middle;line-height:1.3"><div style="font-weight:600">${escapeHtml(fromName)}</div><div style="color:#6b665d;font-size:13px"><a href="${siteBase}/" style="color:#6b665d;text-decoration:none">${siteBase.replace(/^https?:\/\//, '')}</a></div></td>`,
-    `</tr></table>`,
+    `<p style="margin:0 0 16px"><img src="${head}" width="${EMAIL_HEADER.width}" height="${EMAIL_HEADER.height}" alt="${escapeHtml(EMAIL_HEADER.alt)}" style="display:block;width:100%;max-width:${EMAIL_HEADER.width}px;height:auto;border:0"></p>`,
     `<div>${textHtml(body)}</div>`,
     `<p style="margin:20px 0"><a href="${siteBase}/"><img src="${img}" width="${EMAIL_IMAGE.width}" height="${EMAIL_IMAGE.height}" alt="${escapeHtml(EMAIL_IMAGE.alt)}" style="display:block;width:100%;max-width:${EMAIL_IMAGE.width}px;height:auto;border:0"></a></p>`,
     `<div style="color:#6b665d;font-size:13px">${textHtml(footer.replace(/^\n+/, ''))}</div>`,
@@ -872,7 +875,7 @@ export async function renderOutgoing(
     to: message.to_email ?? '',
     subject: message.subject || '(no subject)',
     text: sent ? message.body : `${message.body}${footer}`,
-    html: !sent && wantsImage(settings, message.step) ? emailHtml(siteUrl(env), message.body, footer, settings.fromName) : undefined,
+    html: !sent && wantsImage(settings, message.step) ? emailHtml(siteUrl(env), message.body, footer) : undefined,
     headers: await listHeaders(env, message.contact_id),
   };
 }

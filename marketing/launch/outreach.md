@@ -35,13 +35,13 @@ Use for Customily, TRUTH NYC, PAX Digital, Bemeir, and personal contacts.
 
 > Hi {name},
 >
-> I've started taking small software jobs in a new way, and I'm looking for the first few to put through it.
+> I've started something I call vibe contracting: you connect to my service, and I help you use AI and deploy what you build.
 >
-> You send me what you need, in plain words. An AI agent does the work on a copy of the project, I check it, and then it ships. You pay only for my minutes, $1.67 a minute, with no quote and no minimum. If you already use ChatGPT or a similar tool, you can do what you can there and send me the part it gets stuck on.
+> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 >
-> Is there a small thing on {site} you have been putting off? I'd rather it were yours than a stranger's. If not, an introduction to someone with a small fix would help just as much.
+> I'm looking for the first few jobs to put through it. Is there something on {site} you have been putting off? If not, an introduction to someone who could use it would help just as much.
 >
-> Ali
+> Muhammet
 
 ### Follow-up, day 4
 
@@ -51,7 +51,7 @@ Use for Customily, TRUTH NYC, PAX Digital, Bemeir, and personal contacts.
 >
 > What is the smallest thing on {site} you have been meaning to fix? Small jobs are where this costs least: you pay for the minutes I spend, and the agent's part costs cents.
 >
-> Ali
+> Muhammet
 
 ### Follow-up, day 10
 
@@ -61,7 +61,7 @@ Use for Customily, TRUTH NYC, PAX Digital, Bemeir, and personal contacts.
 >
 > I will stop filling your inbox. If something small comes up, the door is open: malipetek.dev/portal.
 >
-> Ali
+> Muhammet
 
 ---
 
@@ -73,71 +73,71 @@ breaks.
 
 ### First email
 
-**Subject:** The last mile of {business}
+**Subject:** Vibe contracting
 
 > Hi {name},
 >
-> I looked at {site} and noticed this: {gap}.
+> Do you want help using AI on your business and getting your projects online?
 >
-> If you built the site with an AI tool, this is the kind of thing it often can't finish on its own. I'm a developer and I help with exactly those parts: you keep doing what you can with your AI tool, and you send me what it gets stuck on.
+> It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
 >
-> An AI agent does the work on a copy of your project, I check it, and then it goes live. You pay only for my minutes, $1.67 a minute, with no quote and no minimum.
+> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 >
-> Want me to fix this one? Reply with a line and I'll tell you if it's a quick job.
+> Reply with what you're working on and I'll tell you how I'd help.
 >
-> Ali
+> Muhammet
 > malipetek.dev
 
 Without a written observation, the queue sends this instead (it makes no claim about the site):
 
 > Hi {name},
 >
-> If you built {site} with an AI tool, you have probably hit something it can't finish on its own, like a bug that keeps coming back or a deploy that fails.
+> Do you want help using AI on your business and getting your projects online?
 >
-> I'm a developer and I help with exactly those parts: you keep doing what you can with your AI tool, and you send me what it gets stuck on. An AI agent does the work on a copy of your project, I check it, and then it goes live.
+> It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
 >
-> You pay only for my minutes, $1.67 a minute, with no quote and no minimum.
+> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 >
-> Is something on the site stuck right now? Reply with a line and I'll tell you if it's a quick job.
+> Reply with what you're working on and I'll tell you how I'd help.
 >
-> Ali
+> Muhammet
 > malipetek.dev
 
 ### Follow-up, day 4
 
-**Subject:** Re: The last mile of {business}
+**Subject:** Re: Vibe contracting
 
 > Hi {name},
 >
-> Do you want that fixed, or is it not worth the trouble? Either answer helps me.
+> Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
 >
-> Ali
+> Muhammet
 
 Without a written observation, the queue sends this instead (it makes no claim about the site):
 
 > Hi {name},
 >
-> Is there anything on {site} you want fixed, or is now a bad time? Either answer helps me.
+> Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
 >
-> Ali
+> Muhammet
 
 ### Follow-up, day 10
 
-**Subject:** Re: The last mile of {business}
+**Subject:** Re: Vibe contracting
 
 > Hi {name},
 >
-> Last note from me. If it becomes worth fixing, it is $1.67 a minute of my time and no quote to wait for: malipetek.dev/portal.
+> Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
 >
-> Ali
+> Muhammet
 
 Without a written observation, the queue sends this instead (it makes no claim about the site):
 
 > Hi {name},
 >
-> Last note from me. If something on {site} becomes worth fixing, it is $1.67 a minute of my time and no quote to wait for: malipetek.dev/portal.
+> Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
 >
-> Ali
+> Muhammet
 
 ---
 
@@ -148,53 +148,55 @@ site that is mostly fine and a list of small things that never get done.
 
 ### First email
 
-**Subject:** A small fix on {site}
+**Subject:** Vibe contracting for {site}
 
 > Hi {name},
 >
-> I noticed this on {site}: {gap}.
+> Do you want help using AI on your business and getting your projects online?
 >
-> I fix small things like that on business websites, and I charge only for the minutes I spend: $1.67 a minute, with no quote and no minimum.
+> It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
 >
-> You tell me what you want changed, in plain words. An AI agent makes the change on a copy of your site, I check it, and then it goes live. Because the agent does most of the work, a fix like this usually costs a few dollars.
+> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 >
-> Want me to fix it? Reply with a line and I'll tell you what it would take.
+> Reply with what you're working on and I'll tell you how I'd help.
 >
-> Ali
+> Muhammet
 > malipetek.dev
 
 Without a written observation, the queue sends this instead (it makes no claim about the site):
 
 > Hi {name},
 >
-> I fix and build small things on business websites, and I charge only for the minutes I spend: $1.67 a minute, with no quote and no minimum.
+> Do you want help using AI on your business and getting your projects online?
 >
-> You write me what you want changed, in plain words: new opening hours, a contact form that stopped working, a new page. An AI agent makes the change on a copy of your site, I check it, and then it goes live. Because the agent does most of the work, a small fix usually costs a few dollars.
+> It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
 >
-> Is there something on {site} you have been meaning to change? Reply with it and I'll tell you what it would take.
+> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 >
-> Ali
+> Reply with what you're working on and I'll tell you how I'd help.
+>
+> Muhammet
 > malipetek.dev
 
 ### Follow-up, day 4
 
-**Subject:** Re: A small fix on {site}
+**Subject:** Re: Vibe contracting for {site}
 
 > Hi {name},
 >
-> What is the smallest thing on {site} you have been meaning to fix? Small jobs are where this costs least: you pay for the minutes I spend, and the agent's part costs cents.
+> Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
 >
-> Ali
+> Muhammet
 
 ### Follow-up, day 10
 
-**Subject:** Re: A small fix on {site}
+**Subject:** Re: Vibe contracting for {site}
 
 > Hi {name},
 >
-> I will leave it here. If a small fix ever gets annoying enough, you can send it through malipetek.dev/portal without a call or a quote.
+> Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
 >
-> Ali
+> Muhammet
 
 ---
 
@@ -215,7 +217,7 @@ For a business OpenStreetMap lists with an email and no website
 >
 > If you want one, reply with a line about the business and I will tell you what it would take.
 >
-> Ali
+> Muhammet
 > malipetek.dev
 
 ### Follow-up, day 4
@@ -226,7 +228,7 @@ For a business OpenStreetMap lists with an email and no website
 >
 > Should I sketch a one-page site for {business}, or is it not worth it right now? Either answer helps me.
 >
-> Ali
+> Muhammet
 
 ### Follow-up, day 10
 
@@ -236,7 +238,7 @@ For a business OpenStreetMap lists with an email and no website
 >
 > Last note from me. If you want a site later, you can ask through malipetek.dev/portal, with no call or quote first.
 >
-> Ali
+> Muhammet
 
 ---
 
