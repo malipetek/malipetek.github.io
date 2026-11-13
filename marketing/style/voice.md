@@ -5,6 +5,24 @@ read the way he talks. This file says how, as rules about the writing itself.
 Where it disagrees with the older "dry voice" wording in `kit.md` or
 `launch/social.md`, this file wins.
 
+## The offer comes first, and it is one thing
+
+Style never costs clarity. A reader who stops after two sentences must already
+know what Ali does, for whom, and what it costs. In a cold email that means:
+
+1. The first sentence about us says what he does for this reader ("I fix and
+   build small things on business websites") and the price.
+2. Then how it works, in order: they write what they want, an agent does the
+   work on a copy, Ali checks it, it goes live.
+3. One extra idea at most (for example: if they use ChatGPT, they can send
+   only the part it gets stuck on). A second side idea is cut.
+4. One question they can answer in a line.
+
+"Vibe contracting" is a name, not an explanation. Use it only after the offer
+is already clear, and leave it out of a cold email when it would be the
+reader's first unexplained word. Read the draft as a busy shop owner: if any
+sentence needs a second read, rewrite it.
+
 ## Show the style, never announce it
 
 The style is in how the sentences work. It is never a thing the text says

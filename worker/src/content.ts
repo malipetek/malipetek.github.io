@@ -286,6 +286,8 @@ function brief(posts: RecentPost[], offsetMinutes: number, voice: string): strin
     '  has the definition and the rules. Not every post must lead with it.',
     '- Pricing is not the subject. At most one plain sentence, not on every post,',
     '  and never as the opening line.',
+    '- Clarity first (voice.md, "The offer comes first"): by the second sentence a reader',
+    '  who has never heard of this knows what Ali does, for whom, and what it costs.',
     '- First person, in Ali\'s voice (voice.md): literal, no social smoothing, no',
     '  persuasion devices, the reasoning visible, and the things a marketer would hide',
     '  said plainly. Show the style; never describe it. Nothing about how he writes or',

@@ -192,6 +192,9 @@ second copy here, because copies drift.
 
 Two rules for any email in our name:
 
+- The offer must be clear by the second sentence (`style/voice.md`, "The
+  offer comes first"). In cold email, "vibe contracting" is optional and never
+  comes before the plain explanation.
 - Never write "I looked at your site" without having looked. A contact without
   a written observation gets the plain version of each email, which makes no
   claim about their site.
