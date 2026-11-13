@@ -35,9 +35,7 @@ Use for Customily, TRUTH NYC, PAX Digital, Bemeir, and personal contacts.
 
 > Hi {name},
 >
-> A friend who uses ChatGPT in his business asked me a while ago whether it can do a thing he needed, expecting "no". I went quiet for a second. I didn't want to sound like an AI fan, but most of what he thought it couldn't do, it can do now with a few things set up. And I was fully booked, so I couldn't take him on properly.
->
-> So I changed how I take small jobs, and I call it vibe contracting: you do as much as you can with your own agent, and I help when you need help. An agent does the typing on a copy of the project and I check it before it ships. You pay for my time by the second, so a one-minute fix is $1.67. That's it.
+> I changed how I take small software jobs. You do as much as you can with your own AI agent, and when it gets stuck you send me that part; most of what people think AI can't do, it can do once a few things are set up, and that setup is usually the part I do. An agent does the typing on a copy of the project and I check it before it ships. I call it vibe contracting, and I bill by the second, so a one-minute fix is $1.67.
 >
 > I'm looking for the first few real jobs to put through it. Is there a small thing on {site} you have been putting off? I would rather it were yours than a stranger's.
 >
@@ -81,9 +79,9 @@ breaks.
 >
 > I looked at {site} and noticed this: {gap}.
 >
-> If you built the site with an AI tool, this is usually the spot where the tool stops helping and you start going in circles. I'm a programmer and I didn't want to sound like an AI fan, but most of what people think AI can't do, it can do now; it just needs a few things set up the right way. That part is what I do.
+> If you built the site with an AI tool, this is usually where the tool stops helping and you go in circles with it. It can most likely still be done with AI; it needs a few things set up the right way, and setting those up is what I do.
 >
-> I call it vibe contracting: you do as much as you can with your own agent, and when you get stuck you send it to me. An agent does the typing on a copy of your project and I check it before anything goes live. You pay for my time by the second, so a one-minute fix is $1.67. That's about it.
+> I call it vibe contracting: you do as much as you can with your own agent, and when you get stuck you send me that part. An agent does the typing on a copy of your project and I check it before anything goes live. You pay for my time by the second, so a one-minute fix is $1.67. That's about it.
 >
 > If you want this one fixed, reply with a line and I'll tell you if it's a quick job.
 >
@@ -96,7 +94,7 @@ Without a written observation, the queue sends this instead (it makes no claim a
 >
 > If you built {site} with an AI tool, you have probably hit the spot where the tool stops helping, like a bug it keeps bringing back or a deploy that keeps failing. Most of the time it can be done; it just needs a few things set up the right way, and that part is what I do.
 >
-> I call it vibe contracting: you do as much as you can with your own agent, and when you get stuck you send it to me. An agent does the typing on a copy of your project and I check it before anything goes live. You pay for my time by the second, so a one-minute fix is $1.67. That's about it.
+> I call it vibe contracting: you do as much as you can with your own agent, and when you get stuck you send me that part. An agent does the typing on a copy of your project and I check it before anything goes live. You pay for my time by the second, so a one-minute fix is $1.67. That's about it.
 >
 > If something on the site needs fixing, reply with a line and I'll tell you if it's a quick job.
 >
@@ -152,9 +150,9 @@ site that is mostly fine and a list of small things that never get done.
 
 > Hi {name},
 >
-> I noticed this on {site}: {gap}. I'm a developer and I'm bad at sales emails, so I'll just say it plainly: jobs that size wait for months, because nobody wants to hire someone for ten minutes of work.
+> I noticed this on {site}: {gap}. A fix that size usually waits for months, because hiring someone for ten minutes of work is more trouble than the fix.
 >
-> Ten minutes of work is fine with me. An AI agent does the typing on a copy of your site and I check it before it goes live. I call it vibe contracting. If you already use ChatGPT or something like it, keep doing what you can with it, and send me the parts it can't finish. You pay for my time by the second, so a one-minute fix is $1.67, with no call, no quote and no course to sit through.
+> I take those. An AI agent does the typing on a copy of your site, I check what it did, and then it goes live; I call this vibe contracting. If you already use ChatGPT or something like it, you can keep doing what you can with it and send me only the part it couldn't finish. I bill by the second, so a one-minute fix is $1.67, with no call or quote first.
 >
 > Is there a small fix on {site} you keep putting off? Reply with it and I'll tell you if it fits.
 >
@@ -165,9 +163,9 @@ Without a written observation, the queue sends this instead (it makes no claim a
 
 > Hi {name},
 >
-> I'm a developer and I'm bad at sales emails, so I'll just say it plainly. Most business sites have a few small fixes that never get done, like old opening hours or a contact form that stopped sending, because nobody wants to hire someone for ten minutes of work.
+> Most business sites have a few small fixes that never get done, like old opening hours or a contact form that stopped sending. They wait because hiring someone for ten minutes of work is more trouble than the fix.
 >
-> Ten minutes of work is fine with me. An AI agent does the typing on a copy of your site and I check it before it goes live. I call it vibe contracting. If you already use ChatGPT or something like it, keep doing what you can with it, and send me the parts it can't finish. You pay for my time by the second, so a one-minute fix is $1.67, with no call, no quote and no course to sit through.
+> I take those. An AI agent does the typing on a copy of your site, I check what it did, and then it goes live; I call this vibe contracting. If you already use ChatGPT or something like it, you can keep doing what you can with it and send me only the part it couldn't finish. I bill by the second, so a one-minute fix is $1.67, with no call or quote first.
 >
 > Is there a small fix on {site} you keep putting off? Reply with it and I'll tell you if it fits.
 >

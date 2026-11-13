@@ -889,6 +889,14 @@ test('ses: a send carries the list headers and the configuration set', () => {
   assert.equal(body.ConfigurationSetName, 'outreach');
 });
 
+test('content: a post that announces its own style is refused', () => {
+  for (const t of ["I'm a developer and I'm bad at sales emails, so here it is.", "To be honest, most fixes are small.", "I'll just say it plainly: it costs $1.67.", "I'm not a marketer."]) {
+    const r = cleanPost(t, 'x');
+    assert.equal(r.ok, false, t);
+  }
+  assert.equal(cleanPost('I check what the agent did before it goes live.', 'x').ok, true);
+});
+
 test('ses: an HTML part rides next to the text part', () => {
   const body = JSON.parse(sesBody({ from: 'a@b.com', to: 'c@d.com', subject: 'S', text: 'T', html: '<p>T</p>' }));
   assert.equal(body.Content.Simple.Body.Text.Data, 'T');

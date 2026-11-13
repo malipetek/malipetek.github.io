@@ -127,6 +127,12 @@ export const SLOP: { pattern: RegExp; reason: string }[] = [
     pattern: /\b(the question i (hear|get) (most|all the time)|people (always|often|keep) ask|clients (tell|ask) me)\b/i,
     reason: 'invents an audience',
   },
+  {
+    // The voice is shown, never announced (marketing/style/voice.md).
+    pattern:
+      /\b(?:i'?m|i am) (?:(?:really|just|not) )?(?:bad|terrible|awful|not good|no good) at (?:sales|selling|marketing|writing|this)\b|\bi'?m not (?:a|much of a) (?:marketer|salesman|sales ?person|writer)\b|\bto be (?:honest|frank|blunt)\b|\bi'?ll (?:just )?(?:say it|be) (?:plainly|straight|blunt|honest|frank)\b|\bthis (?:isn'?t|is not) a (?:sales )?pitch\b/i,
+    reason: 'announces its own style ("I\'m bad at sales", "to be honest")',
+  },
 ];
 
 /** One post, or the reason it cannot go out as written. */
@@ -254,8 +260,8 @@ function brief(posts: RecentPost[], offsetMinutes: number, voice: string): strin
     "Write next week's X and LinkedIn posts — two for X, one for LinkedIn.",
     '',
     'Read these first, in this folder:',
-    '- marketing/style/voice.md — Ali\'s own words and how he sounds. Write as him. This',
-    '  file wins over any other wording about voice, and only its stories may be told.',
+    '- marketing/style/voice.md — how Ali writes, as rules. Write as him. This file wins',
+    '  over any other wording about voice.',
     '- marketing/launch/social.md — cadence and the ideas already used',
     '- marketing/launch/proof.md — the only numbers you may use',
     '- marketing/kit.md — what the product is, if you need the framing',
@@ -280,12 +286,12 @@ function brief(posts: RecentPost[], offsetMinutes: number, voice: string): strin
     '  has the definition and the rules. Not every post must lead with it.',
     '- Pricing is not the subject. At most one plain sentence, not on every post,',
     '  and never as the opening line.',
-    '- First person, in Ali\'s voice (voice.md): start from something that happened or',
-    '  something he feels, say the awkward part out loud, say the offer literally, and',
-    '  stop flat ("that\'s it") instead of selling. A programmer who is bad at marketing,',
-    '  never a marketer. Spell correctly and use a capital I.',
-    '- Never invent a friend, a client, a conversation or a result. The only stories are',
-    '  the ones in voice.md.',
+    '- First person, in Ali\'s voice (voice.md): literal, no social smoothing, no',
+    '  persuasion devices, the reasoning visible, and the things a marketer would hide',
+    '  said plainly. Show the style; never describe it. Nothing about how he writes or',
+    '  sells, no "to be honest", nothing about the post itself. Spell correctly.',
+    '- Never invent a friend, a client, a conversation or a result. A personal story only',
+    '  if the desk\'s voice notes below give one.',
     '- No “AI-powered”, no names of the models or providers behind our agents (the',
     '  reader\'s own ChatGPT or Claude may be named), no more than two hashtags.',
     '- Every number must appear in proof.md. If a post needs a number that is not',
@@ -294,8 +300,7 @@ function brief(posts: RecentPost[], offsetMinutes: number, voice: string): strin
     '  no numbering.',
     '- Write each post, then rewrite it the way marketing/style/README.md says: mark',
     '  the tells with marketing/style/humanizer/SKILL.md, rewrite the whole post, and',
-    '  score it with the stop-slop rubric. Rewrite anything under 40/50, and score',
-    '  Authenticity against the samples in voice.md: would Ali have written this?',
+    '  score it with the stop-slop rubric. Rewrite anything under 40/50.',
     '- These get a post refused outright: an em dash, "not X, but Y" or "not just",',
     '  "here\'s what/why/the thing", "the truth is", stock AI words (delve, seamless,',
     '  leverage, unlock, elevate, robust...), and invented audiences ("the question I',

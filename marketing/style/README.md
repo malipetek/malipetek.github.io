@@ -4,8 +4,8 @@ Everything public in our voice (posts, emails, site copy, bios, replies) goes
 through this before it ships. It exists because our generated posts were
 accurate and still read as machine-written.
 
-**Start with [`voice.md`](voice.md)**: Ali's own words, what makes them sound
-like him, and the only stories that may be told in his name. This file and the
+**Start with [`voice.md`](voice.md)**: how Ali writes, as rules (show the
+style, never announce it), what he offers, and the rule on stories. This file and the
 two skills below are the pass that comes after it: they remove machine tells,
 and `voice.md` says what should be left.
 
@@ -34,8 +34,8 @@ files sit next to them.
   beats any sentence about what that number proves.
 - **No invented audience.** No "the question I hear most", "people always ask",
   "clients tell me". There are no clients yet; `proof.md` says so. Write what
-  you did or what the reader can do. Real moments Ali lived are allowed, and
-  only the ones listed in `voice.md`.
+  you did or what the reader can do. A personal story only when Ali wrote it
+  for that purpose (`voice.md`, "Stories and claims").
 - **End on a fact, a question, the link, or a flat "that's it".** Never on a
   punchline, a moral, or a one-line paragraph built to be quoted. Ali's way of
   stopping is to let the air out, not to land a line.
@@ -64,6 +64,8 @@ we tried. A refused post is not scheduled, and the cycle note says why.
   ever-evolving, "in today's", "in a world where", "at its core"
 - invented audience: "the question I hear most", "people always ask", "clients
   tell me"
+- a self-label about style: "I'm bad at sales", "I'm not a marketer", "to be
+  honest", "I'll say it plainly"
 
 Everything else in the two skills is judgement, and the score in step 4 is
 where it gets applied.

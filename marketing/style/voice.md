@@ -1,103 +1,94 @@
 # Ali's voice
 
 Everything we publish in Ali's name (posts, cold email, replies, bios) should
-sound like him: a programmer who is honest to a fault and not good at
-marketing. Read the three samples below before writing anything. They are his
-own words and the reference for every rule in this file. Where this file and
-the older "dry voice" wording in `kit.md` or `launch/social.md` disagree, this
-file wins.
+read the way he talks. This file says how, as rules about the writing itself.
+Where it disagrees with the older "dry voice" wording in `kit.md` or
+`launch/social.md`, this file wins.
 
-## The samples (his words, unedited)
+## Show the style, never announce it
 
-> my friend was using chatgpt in his business, he thinks it is useful but can
-> not do some of the stuff, told me "it can't right?", there was a brief
-> silence and i didn't want to seem like an ai praiser as a programmer myself
-> but truth had to be told; almost %90 of things you think can not be done
-> with ai can be done easily now, you just need a few mechanisms set up. The
-> silence was because i was hesitating because i was fully booked and could
-> not fully take on a new client to help at that time. Now I have an answer
-> for this exact situation; "vibe contracting" you achieve as much as you can
-> with your agent, i help you when you need help, thats it. Our connector
-> lives in your chatgpt agent and you send as much as you want.
+The style is in how the sentences work. It is never a thing the text says
+about itself or about Ali. A sentence like "I'm bad at sales emails, so I'll
+say it plainly" is a sales move pretending not to be one, which is the exact
+opposite of this voice. Never write:
 
-> Here is a solo contractors answer to ai era, "vibe contracting" i am helping
-> you set up your ai workflows by the second thats about it.
+- anything about Ali's writing, selling or marketing ability ("I'm not a
+  marketer", "I'm bad at this", "I'm just a programmer")
+- anything announcing honesty or directness ("to be honest", "honestly",
+  "I'll be blunt", "I'll just say it", "plainly")
+- anything describing the email or post itself ("a quick note", "this isn't a
+  sales pitch", "short email")
 
-> Do you hate attending a course to learn to use ai? i hate curriculums too, i
-> can't focus 2 weeks until i try something. Lets contract with me and i help
-> you and keep your vibe coding stuff in check, offer you the cheapest things
-> and help you whenever you want.
+If the reader can tell what kind of person wrote it, it worked. If the text
+has to tell them, rewrite it.
 
-## What makes it his
+## How he writes
 
-1. **It starts from something that happened, or something he feels.** A
-   friend's question and the silence after it. Hating courses. Not from a
-   claim about the market and not from a statistic.
-2. **He says the awkward part out loud.** He did not want to look like an AI
-   fan. He hesitated because he was fully booked. He cannot focus for two
-   weeks on a course. The reason behind a feeling is part of the story; say it.
-3. **He says the offer literally, in one breath.** "You do as much as you can
-   with your agent, I help you when you need help." No metaphor, no slogan,
-   no build-up.
-4. **The ending lets the air out.** "That's it." "That's about it." He stops
-   when the point is made; he never closes on a line built to be quoted, and
-   never on a hard sell.
-5. **Long sentences joined with commas and semicolons, then a short one.** It
-   reads like someone talking, a little run-on. Do not tidy that into neat
-   three-beat paragraphs.
-6. **He takes the reader's side against the usual way.** Courses, curricula,
-   overpriced help: he would rather point you to the cheapest thing that works.
-7. **Opinion is stated flat, as his.** "Most of what you think AI can't do, it
-   can do now." No hedging pile ("arguably", "in many cases"), and no
-   pretending it is a measurement.
+Inferred from how he talks. Apply them; do not quote them.
 
-## What he offers, in his words
+1. **Literal.** Say exactly what happens, in the order it happens: who does
+   what, on what, and what it costs. Concrete nouns. No metaphors, slogans or
+   taglines, no "journey", "partner", "solution".
+2. **No social smoothing.** No compliments on the reader's business, no "hope
+   you're well", no rapport lines, no flattery about their site. Start with the
+   thing itself.
+3. **No persuasion devices.** No urgency, scarcity, fear of missing out,
+   rhetorical questions stacked up, objection-handling, or social proof. Make
+   the offer once and leave the decision to the reader.
+4. **The reasoning is visible.** He explains why, as a chain: this happens
+   because of that, so this. Give the real reason even when a marketer would
+   leave it out (for example that a job is small, or that the reader can do
+   most of it themselves).
+5. **Things a marketer would hide, he says.** That most of the work can be done
+   by the reader's own AI tool. That he only needs the part it couldn't do.
+   That the cheapest option is usually the right one. Saying these is the
+   point; do not soften them.
+6. **Uneven rhythm.** Longer sentences joined with commas or semicolons, the
+   way someone talks while thinking, then a short one. Do not tidy it into
+   three neat paragraphs of equal length, and do not build lists of three.
+7. **Stops when done.** When the point is made, end. A flat close ("That's
+   it.", a plain question, the link) is fine; a closing line built to be
+   remembered is not.
+8. **Opinions as his, flatly.** "Most of what you think AI can't do, it can do
+   now." No hedging stack ("arguably", "in many cases"), no pretending an
+   opinion is a measurement.
 
-Use these ideas; reword them for the piece, keep them literal:
+## What he offers (the content, in any words)
 
-- You do as much as you can with your own agent (ChatGPT, Claude, whatever you
-  use). When you get stuck, you send it to me. That's it.
-- Most things people think AI cannot do for their business can be done now; it
-  takes a few mechanisms set up the right way. Setting those up is my job.
-- I keep your vibe-coded stuff in check: I look at what the agent did before
-  it goes live.
-- I offer you the cheapest thing that does the job.
-- No course, no curriculum. You try the thing; I help when it breaks.
-- Our connector puts the portal inside your own assistant, so you can send
-  work to me from the chat you already use (`/agents` on the site).
-- A solo contractor's answer to the AI era. Billed by the second.
+These are facts about the service as Ali frames it. Say them in fresh words
+that fit the piece:
 
-## Real moments you may tell
+- The reader does as much as they can with their own AI agent (ChatGPT,
+  Claude, whatever they use) and sends Ali the part it couldn't finish.
+- Most of what people think AI can't do for their business can be done now
+  with a few things set up the right way; setting those up is Ali's job.
+- Ali checks what an agent did before it goes live, so the reader's
+  vibe-coded work stays in check.
+- He points the reader to the cheapest thing that does the job.
+- No course or curriculum: the reader tries things, and Ali helps when they
+  break.
+- The connector puts the portal inside the reader's own assistant, so they
+  send work from the chat they already use (`/agents` on the site).
+- Billed by the second, by one person.
 
-Only these. A post or email in his name must never invent a friend, a client,
-a conversation or a number. If a piece needs a story that is not on this list,
-write a different piece, or ask Ali for one and add it here.
+## Stories and claims
 
-- **The friend and the silence.** A friend uses ChatGPT in his business and
-  asked "it can't do that, right?". Ali paused: he did not want to sound like
-  an AI fan, and he was fully booked, so he could not take him on. Vibe
-  contracting is his answer to that moment: the friend does what he can with
-  his agent, and Ali helps when he needs help.
-- **Courses.** Ali hates curricula. He cannot focus for two weeks before trying
-  something, so he learns by trying, and he assumes plenty of business owners
-  are the same.
+Never invent a friend, a client, a conversation, a feeling or a result. A
+personal story only goes into a piece if Ali wrote it for that purpose (for
+example in the desk's Marketing → Settings → Voice notes). The samples Ali gave
+to describe this voice are not material to retell.
 
 ## Rules that still hold
 
-- Correct spelling, a capital "I", straight quotes. The roughness is in the
-  sentence shapes and the honesty, not in typos. (His samples above keep their
-  typos because they are quotes.)
-- No em dashes. `worker/src/content.ts` (`SLOP`) still refuses them, along with
-  "not X, but Y", "the truth is", stock AI words and invented audiences.
-- Numbers: prices and results only from `launch/proof.md` and
-  `src/lib/offer.js`. His "almost 90%" is his opinion, not a measurement: say
-  it in words ("most of what you think it can't do") or, if you use the
-  number, mark it as his guess ("I'd say almost 90%").
+- Correct spelling, a capital "I", straight quotes. The voice is in sentence
+  shape and what gets said, not in typos.
+- No em dashes. `worker/src/content.ts` (`SLOP`) refuses them, along with
+  "not X, but Y", "the truth is", stock AI words, invented audiences, and
+  self-labels about style ("I'm bad at sales", "to be honest").
+- Prices and results only from `launch/proof.md` and `src/lib/offer.js`.
 - Name the category once, plainly: vibe contracting (`kit.md`, "The name").
-  He puts it in quotes when he introduces it; that is fine the first time.
-- Product names the reader uses (ChatGPT, Claude) are fine when you are
-  talking about the reader's own tool. Never name the models or providers that
-  run our agents.
-- Run the draft through `README.md` in this folder (humanizer, stop-slop)
-  afterwards. A stop-slop score under 40/50 means rewrite. Judge "Authenticity"
-  against the samples above: does it sound like the man who wrote them?
+- The reader's own tools (ChatGPT, Claude) may be named. Never name the models
+  or providers that run our agents.
+- Afterwards run the draft through `README.md` in this folder (humanizer,
+  stop-slop). Under 40/50 means rewrite. Score Authenticity by asking whether
+  the text would still sound like Ali with his name taken off.
