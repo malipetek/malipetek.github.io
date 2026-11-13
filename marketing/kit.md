@@ -7,6 +7,11 @@ come from `src/lib/pricing.js` — if the rate changes, change the numbers here.
 Rules: no model names, no "AI-powered", no "revolutionary", no invented results
 or testimonials. Plain words a business owner does not have to look up.
 
+**Voice:** everything here is said the way Ali says it: see
+`style/voice.md` (his own samples, what makes them his, and the only stories
+that may be told). Where this kit's wording sounds more polished than that,
+follow `voice.md`.
+
 Launch assets live in `launch/`: plan, proof, one-pager, outreach, social and
 video. The only approved results are in `launch/proof.md` — pilot jobs on my own
 and demo projects, not clients. Do not call them clients.
@@ -53,6 +58,24 @@ How to use it:
 - The factory is the picture, not the name: the portal and the site show a
   workshop where requests move along a belt. Say "workshop" or "the belt" when
   describing that picture; do not call the service a factory.
+
+## In his own words
+
+The way Ali explains the offer himself (from `style/voice.md`). These lead as
+well as the hooks below do, especially with people who already use ChatGPT or
+another assistant:
+
+> You do as much as you can with your agent, I help you when you need help.
+> That's it.
+
+> A solo contractor's answer to the AI era: I help you set up your AI
+> workflows, by the second. That's about it.
+
+> Most of what you think AI can't do for your business, it can do now. It
+> needs a few things set up the right way, and that is the part I do.
+
+> No course to sit through. You try it, and when it breaks I help, keep your
+> vibe-coded stuff in check, and point you to the cheapest thing that works.
 
 ## The hooks, in order
 

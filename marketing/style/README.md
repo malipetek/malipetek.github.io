@@ -4,6 +4,11 @@ Everything public in our voice (posts, emails, site copy, bios, replies) goes
 through this before it ships. It exists because our generated posts were
 accurate and still read as machine-written.
 
+**Start with [`voice.md`](voice.md)**: Ali's own words, what makes them sound
+like him, and the only stories that may be told in his name. This file and the
+two skills below are the pass that comes after it: they remove machine tells,
+and `voice.md` says what should be left.
+
 Two vendored skills do the heavy lifting. Both are MIT-licensed; their licence
 files sit next to them.
 
@@ -14,7 +19,8 @@ files sit next to them.
 
 ## How to use them
 
-1. Write the draft from the facts (`marketing/launch/proof.md`, `src/lib/offer.js`).
+1. Read `voice.md`, then write the draft in that voice from the facts
+   (`marketing/launch/proof.md`, `src/lib/offer.js`).
 2. Mark every tell in it, using humanizer's catalogue. Strongest first.
 3. Rewrite the whole piece around its point. Do not patch phrase by phrase.
 4. Score it with stop-slop's five dimensions (Directness, Rhythm, Trust,
@@ -28,9 +34,11 @@ files sit next to them.
   beats any sentence about what that number proves.
 - **No invented audience.** No "the question I hear most", "people always ask",
   "clients tell me". There are no clients yet; `proof.md` says so. Write what
-  you did or what the reader can do.
-- **End on a fact, a question or the link.** Never on a punchline, a moral, or
-  a one-line paragraph built to be quoted.
+  you did or what the reader can do. Real moments Ali lived are allowed, and
+  only the ones listed in `voice.md`.
+- **End on a fact, a question, the link, or a flat "that's it".** Never on a
+  punchline, a moral, or a one-line paragraph built to be quoted. Ali's way of
+  stopping is to let the air out, not to land a line.
 - **No staged fragments.** "Wrong opening hours. A broken form. A page that
   fails on a phone." is a slide, not a sentence. Write one sentence with the
   examples in it, and use two examples, not three.

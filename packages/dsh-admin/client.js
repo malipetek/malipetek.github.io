@@ -3667,7 +3667,7 @@ var __awPlugin = (() => {
             Field,
             {
               label: "Workshop GIF",
-              hint: "The homepage conveyor as a looping GIF above the signature (malipetek.dev/email/conveyor.gif, linked, about 470 KB). Emails without it go as plain text only.",
+              hint: "HTML emails: your photo and name at the top, and the homepage conveyor as a looping GIF above the signature (both linked from malipetek.dev/email/, the GIF about 470 KB). Emails without it go as plain text only.",
               children: /* @__PURE__ */ jsx(
                 Segmented,
                 {

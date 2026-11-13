@@ -1,7 +1,8 @@
 # Social, listings and bios
 
 Posts for LinkedIn, X and communities; directory blurbs; the bios that should
-match. Dry voice, no "AI-powered", no model names, no invented results.
+match. Ali's voice (`../style/voice.md`: his own samples come first), no
+"AI-powered", no model names, no invented results.
 
 Every number here comes from `proof.md`. If a post needs a number that is not
 there, do not write the post.
