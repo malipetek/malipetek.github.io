@@ -855,3 +855,29 @@ test('a long run posts a status line from notes, not from the conversation', asy
   assert.match(status.text, /write src\/app\.ts/, 'and names the most recent tool');
   assert.match(status.text, /\ds|\dm \d+s/, 'with elapsed time');
 });
+
+test('curated models declare the context window the harness needs to compact', async () => {
+  // Without it, switching models fails with "no context capacity for
+  // acp-claude/opus; configure contextWindow on that adapter model" — ACP itself
+  // carries no window, so the adapter has to supply one.
+  const models = [{ id: 'opus', name: 'Opus 5.5' }, { id: 'claude-fable-5-2', name: 'Fable 5.2' }];
+  const adapter = new AcpModelAdapter({
+    connection: { modelName: () => null }, provider: 'acp-claude', label: 'Claude Code',
+    models, approvalPolicy: 'allow', contextWindow: 200_000, maxTokens: 32_000,
+  });
+  const list = await adapter.listModels('acp-claude');
+  assert.equal(list[0].contextWindow, 200_000, 'the list carries the window');
+  const resolved = await adapter.resolveModel('acp-claude', 'opus');
+  // Nested exactly as `normalizeModelInfo` reads it; a top-level `contextWindow`
+  // is ignored, which is what made the first fix ineffective.
+  assert.equal(resolved.context.contextWindow, 200_000, 'and so does the exact model');
+  assert.equal(resolved.defaultMaxTokens, 32_000);
+
+  // A per-model entry wins over the agent default.
+  const override = new AcpModelAdapter({
+    connection: { modelName: () => null }, provider: 'acp-claude', label: 'Claude Code',
+    models: [{ id: 'opus', name: 'Opus 5.5', contextWindow: 1_000_000 }], approvalPolicy: 'allow',
+    contextWindow: 200_000,
+  });
+  assert.equal((await override.resolveModel('acp-claude', 'opus')).context.contextWindow, 1_000_000);
+});

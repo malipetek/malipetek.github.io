@@ -26,8 +26,9 @@
  *   POST  /admin/clients                  { email, name?, locale?, projectIds[], note? } → invite
  *   POST  /admin/clients/:userId/invite   send a fresh link, killing the unused ones
  *   DELETE /admin/clients/:userId/invite  revoke the unused links
- *   GET   /admin/projects   POST /admin/projects { name, slug }
- *   PUT / DELETE /admin/clients/:userId/projects/:projectId
+ *   GET   /admin/projects   POST /admin/projects { name, slug }   PATCH /admin/projects/:id { name?, kind? }
+ *   PUT   /admin/clients/:userId/projects/:projectId { copy? }   (copy: mail them every request on it)
+ *   DELETE /admin/clients/:userId/projects/:projectId
  *
  * Approval is a status change only Ali can make; nothing in this file runs
  * work on a ticket. Sessions are opaque random tokens; only their SHA-256
@@ -43,6 +44,7 @@ import { inviteMail, INVITE_TTL_SECONDS, joinProjectNames } from './invites.ts';
 import { previewStrings, tFor } from '../../src/i18n/eager.js';
 import { closestLocale, fromAcceptLanguage, TRANSLATION_ENGINES, type TranslationEngine } from '../../src/lib/locales.js';
 import { readSteps } from './steps.ts';
+import { i18nStatus, requestI18nSync, setI18nAuto } from './i18nSync.ts';
 import { healthMail, healthView, markHealthAlerted, runHealthChecks } from './health.ts';
 import { latestReview, reviewLine, reviewRun } from './review.ts';
 import { maybeAutoApprove } from './approve.ts';
@@ -457,6 +459,8 @@ export async function notifyClientOfReply(env: Env, t: TicketRef, text: string) 
     text: ticketMail(text, threadFooter(env, t)),
     replyTo: await replyAddress(env, t.id, 'c'),
   });
+  // The body is already in the author's language; a copy keeps it as it is.
+  await mailCopies(env, t, (cr) => ({ subject: `[#${t.id}] ${cr('mail.reply.subject', { title: t.title })}`, body: text }));
 }
 
 async function notifyClientOfStatus(env: Env, t: TicketRef, status: Status, bill?: string) {
@@ -470,6 +474,11 @@ async function notifyClientOfStatus(env: Env, t: TicketRef, status: Status, bill
     ),
     replyTo: await replyAddress(env, t.id, 'c'),
   });
+  // The bill is the author's: a project-mate never sees the money (sharedTicket).
+  await mailCopies(env, t, (cr) => ({
+    subject: `[#${t.id}] ${cr(`status.${status}`)}: ${t.title}`,
+    body: cr('mail.status.body', { title: t.title, status: cr(`status.${status}`) }),
+  }));
 }
 
 export async function confirmTicketToClient(env: Env, t: TicketRef) {
@@ -479,6 +488,56 @@ export async function confirmTicketToClient(env: Env, t: TicketRef) {
     text: ticketMail(tr('mail.confirm.body'), threadFooter(env, t, 'mail.confirm.footer')),
     replyTo: await replyAddress(env, t.id, 'c'),
   });
+  await mailCopies(env, t, (cr, project) => ({
+    subject: `[#${t.id}] ${cr('mail.copy.new.subject', { project, title: t.title })}`,
+    body: cr('mail.copy.new.body', { author: t.client_email, project, title: t.title }),
+  }));
+}
+
+/**
+ * The other people on a client request's project who asked for copies
+ * (`user_projects.copy_mail`), never the author, an admin or a system task.
+ */
+export async function copyRecipients(env: Env, ticketId: number) {
+  const rows = await env.DB.prepare(
+    `SELECT u.email, u.locale, p.name AS project
+       FROM tickets t
+       JOIN projects p ON p.id = t.project_id
+       JOIN user_projects up ON up.project_id = t.project_id AND up.copy_mail = 1
+       JOIN users u ON u.id = up.user_id
+      WHERE t.id = ? AND t.kind = 'client' AND u.role = 'client' AND u.id <> t.user_id
+      ORDER BY u.email`,
+  )
+    .bind(ticketId)
+    .all<{ email: string; locale: string | null; project: string }>();
+  return rows.results ?? [];
+}
+
+/**
+ * A copy of one client email to each of those people, in their own language.
+ * No Reply-To: inbound mail only files the author's replies, and someone
+ * else's request is read-only for them in the portal too.
+ */
+async function mailCopies(
+  env: Env,
+  t: TicketRef,
+  build: (tr: ReturnType<typeof tFor>, project: string) => { subject: string; body: string },
+) {
+  let people: Awaited<ReturnType<typeof copyRecipients>> = [];
+  try {
+    people = await copyRecipients(env, t.id);
+  } catch (error) {
+    console.error('copy_recipients_failed', error);
+    return;
+  }
+  for (const person of people) {
+    const cr = tFor(person.locale);
+    const { subject, body } = build(cr, person.project);
+    await mailClient(env, person.email, {
+      subject,
+      text: `${body}\n\n-- \n${cr('mail.copy.footer', { project: person.project, url: `${siteUrl(env)}/portal/ticket#id=${t.id}` })}`,
+    });
+  }
 }
 
 /* ——————————————————————— queries ——————————————————————— */
@@ -2899,7 +2958,7 @@ function inviteView(env: Env, invite: { expiresAt: number; sent: boolean; link: 
  */
 portal.post('/admin/clients', async (c) => {
   const env = c.env;
-  const body = await readJson<{ email?: unknown; name?: unknown; locale?: unknown; projectIds?: unknown; note?: unknown }>(c);
+  const body = await readJson<{ email?: unknown; name?: unknown; locale?: unknown; projectIds?: unknown; note?: unknown; copy?: unknown }>(c);
   const email = cleanEmail(body?.email);
   if (!email) return reply(c, { error: 'bad_email' }, 400);
   if (email === (env.ADMIN_EMAIL || '').toLowerCase()) return reply(c, { error: 'admin_email' }, 400);
@@ -2948,6 +3007,12 @@ portal.post('/admin/clients', async (c) => {
     ...ids.map((projectId) =>
       env.DB.prepare('INSERT OR IGNORE INTO user_projects (user_id, project_id) VALUES (?, ?)').bind(user.id, projectId),
     ),
+    // Copies only ever turn on here; turning them off is the link's own switch.
+    ...(body?.copy === true
+      ? ids.map((projectId) =>
+          env.DB.prepare('UPDATE user_projects SET copy_mail = 1 WHERE user_id = ? AND project_id = ?').bind(user.id, projectId),
+        )
+      : []),
   ]);
 
   const invite = await sendInvite(
@@ -3050,9 +3115,9 @@ portal.get('/admin/projects', async (c) => {
       account_login: string;
     }>(),
     c.env.DB.prepare(
-      `SELECT up.project_id, u.id, u.email, u.name, u.invited_at, u.verified_at
+      `SELECT up.project_id, up.copy_mail, u.id, u.email, u.name, u.invited_at, u.verified_at
          FROM user_projects up JOIN users u ON u.id = up.user_id ORDER BY u.email`,
-    ).all<{ project_id: string; id: string; email: string; name: string | null; invited_at: number | null; verified_at: number | null }>(),
+    ).all<{ project_id: string; copy_mail: number; id: string; email: string; name: string | null; invited_at: number | null; verified_at: number | null }>(),
   ]);
   const filed = new Map((counts.results ?? []).map((row) => [row.project_id, row.n]));
   const installationsById = new Map((installations.results ?? []).map((row) => [row.id, row]));
@@ -3060,12 +3125,18 @@ portal.get('/admin/projects', async (c) => {
     (installations.results ?? []).filter((row) => row.user_id).map((row) => [row.user_id as string, row]),
   );
   const usersByProject = new Map<string, string[]>();
-  const clientsByProject = new Map<string, { id: string; email: string; name: string | null; pending: boolean }[]>();
+  const clientsByProject = new Map<string, { id: string; email: string; name: string | null; pending: boolean; copy: boolean }[]>();
   for (const link of links.results ?? []) {
     usersByProject.set(link.project_id, [...(usersByProject.get(link.project_id) ?? []), link.id]);
     clientsByProject.set(link.project_id, [
       ...(clientsByProject.get(link.project_id) ?? []),
-      { id: link.id, email: link.email, name: link.name, pending: link.invited_at !== null && link.verified_at === null },
+      {
+        id: link.id,
+        email: link.email,
+        name: link.name,
+        pending: link.invited_at !== null && link.verified_at === null,
+        copy: link.copy_mail === 1,
+      },
     ]);
   }
 
@@ -3111,6 +3182,25 @@ portal.get('/admin/projects', async (c) => {
       };
     }),
   });
+});
+
+/** The interface translations: the last run, and whether one is asked for or under way. */
+portal.get('/admin/i18n', async (c) => reply(c, await i18nStatus(c.env)));
+
+/** The auto switch: off (the default) means translations only run from the button. */
+portal.put('/admin/i18n', async (c) => {
+  const body = await readJson<{ auto?: unknown }>(c);
+  if (typeof body?.auto !== 'boolean') return reply(c, { error: 'bad_auto' }, 400);
+  await setI18nAuto(c.env, body.auto);
+  return reply(c, await i18nStatus(c.env));
+});
+
+/** Translate now: the next five-minute tick translates what is missing and commits it to master. */
+portal.post('/admin/i18n/sync', async (c) => {
+  const status = await i18nStatus(c.env);
+  if (!status.ready) return reply(c, { error: 'not_configured' }, 409);
+  await requestI18nSync(c.env);
+  return reply(c, await i18nStatus(c.env));
 });
 
 /** Move any site to another project (Ali's view). */
@@ -3217,6 +3307,31 @@ portal.post('/admin/projects', async (c) => {
     return reply(c, { error: 'slug_taken' }, 409);
   }
   return reply(c, { id, slug, name }, 201);
+});
+
+/**
+ * Ali's hand edits to a project: its name and whether it is new or existing.
+ * The slug stays: nodes map it to a folder and the first site is named after it.
+ */
+portal.patch('/admin/projects/:id', async (c) => {
+  const body = await readJson<{ name?: unknown; kind?: unknown }>(c);
+  const sets: [string, unknown][] = [];
+  if (body?.name !== undefined) {
+    const name = cleanText(body.name, MAX_NAME_CHARS);
+    if (!name) return reply(c, { error: 'bad_name' }, 400);
+    sets.push(['name', name]);
+  }
+  if (body?.kind !== undefined) {
+    if (!isProjectKind(body.kind)) return reply(c, { error: 'bad_kind' }, 400);
+    sets.push(['kind', body.kind]);
+  }
+  if (!sets.length) return reply(c, { error: 'nothing_to_change' }, 400);
+  const res = await c.env.DB.prepare(`UPDATE projects SET ${sets.map(([k]) => `${k} = ?`).join(', ')} WHERE id = ?`)
+    .bind(...sets.map(([, v]) => v), c.req.param('id'))
+    .run();
+  if (!res.meta.changes) return reply(c, { error: 'not_found' }, 404);
+  const project = await c.env.DB.prepare('SELECT id, slug, name, kind FROM projects WHERE id = ?').bind(c.req.param('id')).first();
+  return reply(c, { ok: true, project });
 });
 
 /** Name the project's repo. Replaces whatever was there, and stops any pending creation. */
@@ -3470,8 +3585,14 @@ portal.patch('/admin/clients/:userId', async (c) => {
   });
 });
 
+/**
+ * Link a client to a project. `{ copy }` sets whether they get copies of the
+ * project's request emails; without it an existing link keeps its setting.
+ */
 portal.put('/admin/clients/:userId/projects/:projectId', async (c) => {
   const { userId, projectId } = c.req.param();
+  const body = await readJson<{ copy?: unknown }>(c);
+  if (body?.copy !== undefined && typeof body.copy !== 'boolean') return reply(c, { error: 'bad_copy' }, 400);
   try {
     await c.env.DB.prepare('INSERT OR IGNORE INTO user_projects (user_id, project_id) VALUES (?, ?)')
       .bind(userId, projectId)
@@ -3479,7 +3600,15 @@ portal.put('/admin/clients/:userId/projects/:projectId', async (c) => {
   } catch {
     return reply(c, { error: 'not_found' }, 404); // FK violation: unknown user or project
   }
-  return reply(c, { ok: true });
+  if (typeof body?.copy === 'boolean') {
+    await c.env.DB.prepare('UPDATE user_projects SET copy_mail = ? WHERE user_id = ? AND project_id = ?')
+      .bind(body.copy ? 1 : 0, userId, projectId)
+      .run();
+  }
+  const link = await c.env.DB.prepare('SELECT copy_mail FROM user_projects WHERE user_id = ? AND project_id = ?')
+    .bind(userId, projectId)
+    .first<{ copy_mail: number }>();
+  return reply(c, { ok: true, copy: link?.copy_mail === 1 });
 });
 
 portal.delete('/admin/clients/:userId/projects/:projectId', async (c) => {

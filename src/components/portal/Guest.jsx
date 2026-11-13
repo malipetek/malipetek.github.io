@@ -76,8 +76,10 @@ function GuestBoard() {
     let stopped = false;
     let placed = false;
     // Arriving from the homepage: start from the frame it left on (its
-    // pointer and clock), so the hand-over to this canvas is invisible.
-    const left = arrivingBox();
+    // pointer and clock), so the hand-over to this canvas is invisible. Only a
+    // hop that is playing now carries a machine (sceneHandover.js spends it).
+    const arrived = arrivingBox();
+    const left = document.documentElement.dataset.vtScene === 'in' ? arrived : null;
     import('../../lib/workshop3d')
       .then(({ initWorkshop }) => {
         const host = document.querySelector('.cp--guest .cp-scene');
@@ -93,7 +95,7 @@ function GuestBoard() {
           start: left ? { mouse: left.mouse, time: left.time } : undefined,
           // The machine that left the site lands on this one (once).
           onFrame: (box) => {
-            if (!placed) placed = placeScene(box);
+            if (!placed) placed = placeScene(box, left);
           },
         });
       })

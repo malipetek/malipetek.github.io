@@ -2078,6 +2078,167 @@ var __awPlugin = (() => {
       }
     );
   }
+  function ProjectEditModal({ project, onClose }) {
+    const { api, act } = useAdmin();
+    const [name, setName] = useState(project.name);
+    const [kind, setKind] = useState(project.kind ?? "existing");
+    const changed = name.trim() !== project.name || kind !== (project.kind ?? "existing");
+    const save = () => act(
+      () => api("PATCH", `/admin/projects/${project.id}`, {
+        ...name.trim() !== project.name ? { name: name.trim() } : {},
+        ...kind !== (project.kind ?? "existing") ? { kind } : {}
+      }),
+      "Project saved."
+    ).then(onClose, () => void 0);
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: `Edit ${project.name}`,
+        subtitle: `Slug ${project.slug} stays: nodes keep its folder under that name, and its first site is named after it.`,
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !name.trim() || !changed, onClick: save, children: "Save" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Name", hint: "What the client sees in the portal and in their emails.", children: /* @__PURE__ */ jsx("input", { value: name, maxLength: 80, onChange: (e) => setName(e.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              value: kind,
+              options: [
+                { value: "existing", label: "Existing code or system" },
+                { value: "new", label: "New website" }
+              ],
+              onChange: setKind
+            }
+          ) })
+        ]
+      }
+    );
+  }
+  var EMAIL = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+  var emailsIn = (text) => [...new Set(text.split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter(Boolean))];
+  function AddPeopleModal({ project, onClose }) {
+    const { api, act, notify } = useAdmin();
+    const [text, setText] = useState("");
+    const [copy, setCopy] = useState(true);
+    const [locale, setLocale] = useState("en-US");
+    const [note, setNote] = useState("");
+    const [busy, setBusy] = useState(false);
+    const emails = emailsIn(text);
+    const bad = emails.filter((e) => !EMAIL.test(e));
+    const already = new Set((project.clients ?? []).map((c) => c.email.toLowerCase()));
+    const fresh = emails.filter((e) => EMAIL.test(e) && !already.has(e));
+    const send = async () => {
+      setBusy(true);
+      const failed = [];
+      let unsent = 0;
+      try {
+        await act(async () => {
+          for (const email of fresh) {
+            try {
+              const out = await api("POST", "/admin/clients", {
+                email,
+                locale,
+                projectIds: [project.id],
+                copy,
+                note: note.trim() || void 0
+              });
+              if (out?.invite?.sent === false) unsent += 1;
+            } catch {
+              failed.push(email);
+            }
+          }
+        });
+        const added = fresh.length - failed.length;
+        if (failed.length) notify(`Added ${added} of ${fresh.length}. Not added: ${failed.join(", ")}`, "error");
+        else notify(`Added ${added} to ${project.name}.${unsent ? ` ${unsent} email${unsent === 1 ? "" : "s"} not sent; use Resend on their card.` : ""}`);
+        if (!failed.length) onClose();
+      } finally {
+        setBusy(false);
+      }
+    };
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: `Add people to ${project.name}`,
+        subtitle: "Each address gets a link that signs them in (one use, 7 days). They see every request on this project; prices stay with whoever filed.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !fresh.length || bad.length > 0, onClick: () => void send(), children: busy ? "Adding\u2026" : `Add ${fresh.length || ""}`.trim() })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(
+            Field,
+            {
+              label: "Emails",
+              hint: bad.length ? `Not an address: ${bad.join(", ")}` : emails.length > fresh.length ? `${emails.length - fresh.length} already on the project.` : "One or more, separated by commas, spaces or new lines.",
+              children: /* @__PURE__ */ jsx("textarea", { rows: 3, value: text, placeholder: "owner@example.com, office@example.com", onChange: (e) => setText(e.target.value) })
+            }
+          ),
+          /* @__PURE__ */ jsx(Field, { label: "Emails about requests", children: /* @__PURE__ */ jsxs("label", { className: "aw-check", children: [
+            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: copy, onChange: (e) => setCopy(e.target.checked) }),
+            "Send them a copy of every request on this project (new requests, Ali\u2019s replies, status changes)"
+          ] }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Language", hint: "For new accounts: the invite email and the portal. Existing accounts keep theirs.", children: /* @__PURE__ */ jsx("select", { value: locale, onChange: (e) => setLocale(e.target.value), children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code)) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Note", hint: "Optional. Added under the link. Not translated.", children: /* @__PURE__ */ jsx("textarea", { rows: 2, value: note, maxLength: 1e3, onChange: (e) => setNote(e.target.value) }) })
+        ]
+      }
+    );
+  }
+  function ProjectPeople({ project: p }) {
+    const { api, act, ask, setModal, open } = useAdmin();
+    const people = p.clients ?? [];
+    return /* @__PURE__ */ jsxs("div", { className: "aw-people", children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+          "People ",
+          people.length ? `(${people.length})` : ""
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(AddPeopleModal, { project: p, onClose: close }) }), children: "Add people" })
+      ] }),
+      people.length ? /* @__PURE__ */ jsx("ul", { children: people.map((person) => /* @__PURE__ */ jsxs("li", { children: [
+        /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-link aw-people__who", title: person.email, onClick: () => open(`c:${person.id}`), children: [
+          person.name ? `${person.name} \xB7 ` : "",
+          person.email
+        ] }),
+        person.pending ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "invited" }) : null,
+        /* @__PURE__ */ jsxs("label", { className: "aw-check", title: "Mail them about every request on this project, not only the ones they filed", children: [
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              type: "checkbox",
+              checked: person.copy,
+              onChange: (e) => void act(
+                () => api("PUT", `/admin/clients/${person.id}/projects/${p.id}`, { copy: e.target.checked }),
+                e.target.checked ? `${person.email} gets every request on ${p.name}.` : `${person.email} gets only their own requests.`
+              )
+            }
+          ),
+          "all emails"
+        ] }),
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
+            kind: "ghost",
+            title: "Take them off this project",
+            onClick: () => ask({
+              title: `Remove ${person.email} from ${p.name}?`,
+              text: "They stop seeing its requests and stop getting its emails. Their account and their own requests stay.",
+              confirm: "Remove",
+              danger: true,
+              run: () => act(() => api("DELETE", `/admin/clients/${person.id}/projects/${p.id}`), `Removed ${person.email}.`).catch(() => void 0)
+            }),
+            children: "\u2715"
+          }
+        )
+      ] }, person.id)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nobody yet. Only you see it." })
+    ] });
+  }
   function ClientView({ id }) {
     const { data, openTicket } = useAdmin();
     const c = data.clients.find((x) => x.id === id);
@@ -2186,7 +2347,18 @@ var __awPlugin = (() => {
               /* @__PURE__ */ jsxs("header", { children: [
                 /* @__PURE__ */ jsx("strong", { children: p.name }),
                 /* @__PURE__ */ jsx("span", { className: "aw-mono aw-muted", children: p.slug }),
+                p.kind === "new" ? /* @__PURE__ */ jsx(Tag, { children: "new site" }) : null,
                 /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+                /* @__PURE__ */ jsx(
+                  Button,
+                  {
+                    size: "sm",
+                    kind: "ghost",
+                    title: "Rename it or change what it is",
+                    onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(ProjectEditModal, { project: p, onClose: close }) }),
+                    children: "Edit"
+                  }
+                ),
                 /* @__PURE__ */ jsx(
                   Button,
                   {
@@ -2211,12 +2383,9 @@ var __awPlugin = (() => {
                   p.sites.length,
                   " site",
                   p.sites.length === 1 ? "" : "s"
-                ] }) : null,
-                (p.clients ?? []).map((client) => /* @__PURE__ */ jsxs(Tag, { tone: "client", title: client.pending ? `Invited, not signed in yet: ${client.email}` : client.email, children: [
-                  client.name || client.email,
-                  client.pending ? " (invited)" : ""
-                ] }, client.id))
+                ] }) : null
               ] }),
+              /* @__PURE__ */ jsx(ProjectPeople, { project: p }),
               /* @__PURE__ */ jsx(SitePanel, { project: p }),
               /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
                 !p.repo ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => void act(() => api("POST", `/admin/projects/${p.id}/repo/create`), `Creating a repo for ${p.name}.`), children: p.repoStatus?.state === "failed" ? "Retry repo" : "Create repo" }) : null,
@@ -2260,6 +2429,85 @@ var __awPlugin = (() => {
           }) })
         ] })
       ] })
+    ] });
+  }
+  function TranslationsPanel() {
+    const { api, act } = useAdmin();
+    const [status, setStatus] = useState(null);
+    const load = useCallback(() => api("GET", "/admin/i18n").then(setStatus, () => void 0), [api]);
+    usePoll(load, status?.requestedAt || status?.runningSince ? 15e3 : 12e4, [load, status?.requestedAt, status?.runningSince]);
+    useEffect(() => void load(), [load]);
+    const last = status?.last;
+    const rejected = last ? Object.entries(last.rejected ?? {}) : [];
+    const failed = last ? Object.entries(last.failed ?? {}) : [];
+    const busy = Boolean(status?.requestedAt || status?.runningSince);
+    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+      /* @__PURE__ */ jsxs("h3", { className: "aw-row-h", children: [
+        "Translations",
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
+            kind: "primary",
+            disabled: !status?.ready || busy,
+            title: "Translate every interface and email string that is missing or out of date, in all languages, and commit it to master",
+            onClick: () => void act(() => api("POST", "/admin/i18n/sync", {}), "Translation starts within 5 minutes.").then(setStatus, () => void 0),
+            children: status?.runningSince ? "Translating\u2026" : status?.requestedAt ? "Queued" : "Translate now"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "Translates every interface and email string that is new or re-worded, in all languages, with DeepSeek, and commits it to ",
+        status?.repo ?? "the repo",
+        ". That push deploys like any other. Until then, untranslated strings show in English."
+      ] }),
+      status?.englishChanged && !busy ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        "English changed on master since the last translation",
+        status.checkedAt ? ` (checked ${ago(status.checkedAt)} ago)` : "",
+        "."
+      ] }) : null,
+      status ? /* @__PURE__ */ jsxs("label", { className: "aw-check", children: [
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "checkbox",
+            checked: Boolean(status.auto),
+            onChange: (e) => void act(
+              () => api("PUT", "/admin/i18n", { auto: e.target.checked }),
+              e.target.checked ? "Translations now follow every English change." : "Translations run only from the button."
+            ).then(setStatus, () => void 0)
+          }
+        ),
+        "Translate automatically whenever English changes"
+      ] }) : null,
+      status && !status.ready ? /* @__PURE__ */ jsx("p", { className: "aw-warn", children: "Needs DEEPSEEK_API_KEY and the GitHub App secrets on the Worker." }) : null,
+      status?.runningSince ? /* @__PURE__ */ jsxs("p", { children: [
+        "Translating since ",
+        ago(status.runningSince),
+        " ago."
+      ] }) : status?.requestedAt ? /* @__PURE__ */ jsxs("p", { children: [
+        "Queued ",
+        ago(status.requestedAt),
+        " ago; the next five-minute tick runs it."
+      ] }) : null,
+      last ? /* @__PURE__ */ jsxs("p", { className: last.ok ? "aw-muted" : "aw-warn", children: [
+        "Last run ",
+        ago(last.at),
+        " ago (",
+        last.trigger === "manual" ? "by hand" : "English changed",
+        "):",
+        " ",
+        last.error ? last.error : last.keys || last.removed ? `${last.keys} string${last.keys === 1 ? "" : "s"} in ${last.locales} language${last.locales === 1 ? "" : "s"}${last.removed ? `, ${last.removed} old removed` : ""}${last.commit ? `, commit ${last.commit.slice(0, 7)}` : ""}.` : "everything was already translated."
+      ] }) : status ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No run yet." }) : null,
+      failed.length ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        "Failed: ",
+        failed.map(([code, why]) => `${code} (${why})`).join("; ")
+      ] }) : null,
+      rejected.length ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "Kept in English (the placeholders did not survive): ",
+        rejected.map(([code, keys]) => `${code}: ${keys.join(", ")}`).join("; ")
+      ] }) : null
     ] });
   }
   function SettingsView() {
@@ -2334,7 +2582,8 @@ var __awPlugin = (() => {
             }
           )
         ] })
-      ] }) : null
+      ] }) : null,
+      /* @__PURE__ */ jsx(TranslationsPanel, {})
     ] });
   }
 
@@ -5289,6 +5538,13 @@ var __awPlugin = (() => {
 .aw-field__hint { font-size: 12px; color: var(--aw-text2); }
 .aw-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 18px; }
 .aw-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aw-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.aw-check input { flex: none; width: auto; min-width: 0; margin: 0; }
+.aw-people { margin: 6px 0; }
+.aw-people ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
+.aw-people li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.aw-people__who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.aw-people .aw-check { font-size: 12px; color: var(--aw-text2); white-space: nowrap; }
 .aw-inline input { flex: 1; min-width: 120px; }
 .aw-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .aw-search { width: 200px; }

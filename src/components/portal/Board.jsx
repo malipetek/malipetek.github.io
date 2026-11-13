@@ -233,8 +233,12 @@ export function Board({
     let stopped = false;
     // Reached by the hop from the homepage: the homepage's own workshop takes
     // the flying machine first, at the very frame it left on, then gives way
-    // to the board (handOver below).
-    const left = arrivingBox();
+    // to the board (handOver below). Only a hop that is playing now counts:
+    // the board is also reached again from the portal's own pages, and a
+    // measurement left behind must not fly the camera in from the homepage
+    // there (sceneHandover.js spends it).
+    const arrived = arrivingBox();
+    const left = document.documentElement.dataset.vtScene === 'in' ? arrived : null;
     let workshop = null;
     let unwatch = () => {};
     let settle = null;
@@ -251,7 +255,7 @@ export function Board({
           const stop = initWorkshop(canvas, {
             start: { mouse: left.mouse, time: left.time },
             onFrame: (box) => {
-              if (!placed) placed = placeScene(box);
+              if (!placed) placed = placeScene(box, left);
             },
           });
           workshop = { canvas, stop };
@@ -279,9 +283,9 @@ export function Board({
         // board's camera holds on its own copy of the homepage's machine
         // meanwhile, drawing the same frame as the workshop.
         const stage = stageElRef.current;
-        if (workshop) for (const el of [canvas, stage]) el.style.opacity = '0';
+        if (left) for (const el of [canvas, stage]) el.style.opacity = '0';
         board = initBoard(canvas, {
-          arrival: workshop ? { time: left.time, mouse: left.mouse } : undefined,
+          arrival: left ? { time: left.time, mouse: left.mouse } : undefined,
           input: stageElRef.current,
           frame: stageElRef.current,
           fitBase: 2.8,

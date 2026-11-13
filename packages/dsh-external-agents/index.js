@@ -92,7 +92,7 @@ const CATALOGUE_KEY = 'catalogue';
  * every one of them failed silently — so the first question on the next report
  * has to be "which build is this?", and it has to be answerable without guessing.
  */
-export const PLUGIN_BUILD = '2026-11-07a-delegate-routes';
+export const PLUGIN_BUILD = '2026-11-12b-nested-context';
 
 /** Where the plugin records what it decided, for exactly this kind of question. */
 export const DIAGNOSTICS_FILE = '~/.dsh/external-agents/diagnostics.log';
@@ -1459,6 +1459,9 @@ export function resolveAgents(config) {
         instructions: typeof agent.instructions === 'string' ? agent.instructions : undefined,
         // How much transcript to hand a newly attached agent session.
         primeMaxChars: Number.isFinite(agent.primeMaxChars) ? agent.primeMaxChars : undefined,
+        // ACP reports neither, and the harness needs the window to compact.
+        contextWindow: Number.isFinite(agent.contextWindow) ? agent.contextWindow : undefined,
+        maxTokens: Number.isFinite(agent.maxTokens) ? agent.maxTokens : undefined,
         // Delegation bridge for this agent: `true`, or `{ provider, llmProvider, model }`.
         delegate: agent.delegate === true || (typeof agent.delegate === 'object' && agent.delegate !== null)
           ? agent.delegate
@@ -1932,6 +1935,8 @@ export function apply(ctx, config = {}) {
           // the adapter does not advertise image input.
           resolveImage,
           onTurnStart: delegateTurnStart,
+          contextWindow: entry.contextWindow,
+          maxTokens: entry.maxTokens,
           // `ask` (the default) routes the decision to that seam; `allow`,
           // `deny` and `cancel` answer directly for unattended runs.
           approvalPolicy: entry.approval,

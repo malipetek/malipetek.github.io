@@ -16,10 +16,15 @@
  * board itself shrinks into the box and grows back out of it, aligned all the
  * way. The page transition leaves the canvas alone meanwhile (client-portal
  * css, "cp-room").
+ *
+ * A page reached from the homepage (sceneHandover.js) takes the hop's picture
+ * too: it lands in the box, on the frame this canvas is drawing there, so the
+ * machine moves into the window instead of hanging in front of the page and
+ * then appearing at the top.
  */
 import { afterTransition, boardReturn, roomModeOf } from './store.js';
 import { boardItems, sceneItem, sceneLanesFor } from './Board.jsx';
-import { slowFactor } from './sceneHandover.js';
+import { arrivingBox, landInWindow, sceneInPlace, slowFactor } from './sceneHandover.js';
 
 /** The room: { board, canvas, key, own } — `own` when started here. */
 let room = null;
@@ -256,6 +261,12 @@ function stopFollowing() {
 function start() {
   if (starting) return;
   starting = true;
+  // The machine the site sent over, if this load came from the homepage: this
+  // page has no board of its own, so the hop's picture has to be taken
+  // somewhere, or it would stand in front of the page until the guard gives up
+  // (Base.astro) and then vanish, the room appearing at the top out of nothing.
+  const left = arrivingBox();
+  const boxRect = () => document.querySelector('[data-room-box]')?.getBoundingClientRect() ?? null;
   import('../../lib/workshop3d')
     .then(({ initBoard }) => {
       starting = false;
@@ -263,7 +274,10 @@ function start() {
       const route = currentRoute();
       if (room || !host || roomModeOf(route) === 'board') return;
       const canvas = document.createElement('canvas');
-      canvas.className = 'cp-board__canvas cp-room is-arriving';
+      // A page reached by the hop's picture hands over to a canvas that is
+      // already at full strength: the hop keeps it hidden until the picture has
+      // landed, and a fade there would blink the window empty.
+      canvas.className = `cp-board__canvas cp-room${left ? '' : ' is-arriving'}`;
       canvas.setAttribute('aria-hidden', 'true');
       host.appendChild(canvas);
       const board = initBoard(canvas, {
@@ -280,11 +294,23 @@ function start() {
         room.anim = 0;
         const lens = boxLens();
         if (lens) setLens(lens);
+        // The picture from the site flies into this window and ends on the
+        // frame this canvas draws there (landInWindow), so the room takes over
+        // from the same pixels instead of the machine jumping to the top.
+        if (left) landInWindow(boxRect());
+      } else if (left) {
+        // The room behind the page is the whole window, where the picture
+        // already is: it goes and this one shows.
+        sceneInPlace();
       }
-      requestAnimationFrame(() => requestAnimationFrame(() => canvas.classList.remove('is-arriving')));
+      if (!left) requestAnimationFrame(() => requestAnimationFrame(() => canvas.classList.remove('is-arriving')));
     })
     .catch(() => {
       starting = false; // no WebGL: the pages stand on their own
+      // The picture from the site is still the machine: it still goes into the
+      // window when the page has one, and out of the way at once when it was
+      // only to stand behind the page.
+      if (left && !landInWindow(boxRect())) sceneInPlace();
     });
 }
 
