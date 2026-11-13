@@ -2,6 +2,7 @@
 import "../styles/base.css";
 import { siteT, localizedPath, copy } from "../lib/site.js";
 import { SOURCE_LOCALE } from "../lib/locales.js";
+import { contractingStructuredData } from "../lib/structuredData.js";
 
 interface Props {
   title?: string;
@@ -106,6 +107,21 @@ const selfPath = path ? localizedPath(locale, path) : Astro.url.pathname;
 const canonical = new URL(selfPath, origin);
 const ogImage = new URL(image, origin);
 const currentPath = current ?? selfPath;
+
+// The contracting site's graph goes on every page; the homepage adds the
+// service itself. The lab has its own structured data on the KB entries.
+const jsonLd =
+  site === "contracting"
+    ? contractingStructuredData({
+        canonical: canonical.href,
+        title,
+        description,
+        locale,
+        image: ogImage.href,
+        t,
+        home: path === "/",
+      })
+    : null;
 
 // Where the picker and the alternates point: the same page, not the homepage.
 const pickerPath = path ?? "/";
@@ -443,6 +459,15 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
       content="#0f0e0c"
     />
     <link rel="canonical" href={canonical.href} />
+    {
+      jsonLd && (
+        <script
+          type="application/ld+json"
+          set:html={JSON.stringify(jsonLd).replace(/</g, "\\u003c")}
+          is:inline
+        />
+      )
+    }
     {
       /* One alternate per language, the page's own included, as Google asks,
          plus x-default for the English URL. The codes in locales.js are all
