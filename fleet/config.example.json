@@ -1,5 +1,5 @@
 {
-  "endpoint": "https://malipetek.dev/api",
+  "endpoint": "https://ptechsolutions.net/api",
   "token": "the RUNNER_TOKEN Worker secret",
 
   "node": {
