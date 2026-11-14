@@ -1,10 +1,10 @@
 /**
  * Host half of the Admin panel bundle.
  *
- * Manages the malipetek.dev portal from inside the Harness. The Host holds the
- * portal session token and talks to the Worker with Node's `fetch`, so the
- * token never enters the browser page and no CORS allow-list has to grow to
- * include the Harness origin.
+ * Manages the PTech client portal (ptechsolutions.net) from inside the Harness.
+ * The Host holds the portal session token and talks to the Worker with Node's
+ * `fetch`, so the token never enters the browser page and no CORS allow-list
+ * has to grow to include the Harness origin.
  *
  * Reads: `refresh()` pulls tickets, clients and projects and writes one snapshot
  * file that the Client half reads through the session-scoped file Remote.
@@ -299,7 +299,7 @@ const NODE_INSTALL = '/Users/malipetek/Documents/Documents/Projects/malipetek.gi
  * changed package needs a Harness restart to load a fresh module generation,
  * and this is how that shows up.
  */
-const VERSION = '2.6.0';
+const VERSION = '2.7.0';
 
 /**
  * The panel's transport. The Harness writes every `/admin …` command into the
@@ -315,7 +315,7 @@ const BRIDGE_MAX_BODY = 1_000_000;
 const bridge = { url: null, secret: randomBytes(32).toString('hex') };
 
 /** The Worker that serves the portal. Overridable with `/admin endpoint <url>`. */
-const DEFAULT_ENDPOINT = 'https://malipetek.dev/api';
+const DEFAULT_ENDPOINT = 'https://ptechsolutions.net/api';
 
 /** Mirrors `STATUSES` in the Worker; a status outside this list is rejected there. */
 const STATUSES = ['new', 'approved', 'in_progress', 'review', 'done', 'declined'];
@@ -511,13 +511,39 @@ async function setLocalConfig(patch) {
 }
 
 /**
+ * Where the portal API used to live. The portal moved to ptechsolutions.net and
+ * the same Worker still answers `malipetek.dev/api` as a legacy alias, so an
+ * endpoint on one of these hosts is the old default rather than a deliberate
+ * choice: map it to DEFAULT_ENDPOINT and existing installs follow the move
+ * without anyone re-entering a token. Any other custom endpoint is kept.
+ */
+const LEGACY_ENDPOINTS = new Set([
+  'https://malipetek.dev/api',
+  'https://lab.malipetek.dev/api',
+  'https://www.malipetek.dev/api',
+]);
+
+/**
+ * The endpoint to talk to: a stored one, unless it is empty or a legacy portal
+ * host.
+ * @param stored - the `endpoint` value from the config file.
+ * @returns the base URL of the portal API.
+ */
+function resolveEndpoint(stored) {
+  if (typeof stored !== 'string') return DEFAULT_ENDPOINT;
+  const bare = stored.trim().replace(/\/+$/, '');
+  if (!bare) return DEFAULT_ENDPOINT;
+  return LEGACY_ENDPOINTS.has(bare.toLowerCase()) ? DEFAULT_ENDPOINT : stored;
+}
+
+/**
  * The stored connection settings.
  * @returns `{ endpoint, token }`; `token` is empty when signed out.
  */
 async function loadConfig() {
   const stored = await readJson(CONFIG_PATH, {});
   return {
-    endpoint: typeof stored.endpoint === 'string' && stored.endpoint.length > 0 ? stored.endpoint : DEFAULT_ENDPOINT,
+    endpoint: resolveEndpoint(stored.endpoint),
     token: typeof stored.token === 'string' ? stored.token : '',
     // Notifications are on unless Ali turned them off (`/admin notify off`).
     notify: stored.notify !== false,
@@ -1733,7 +1759,7 @@ export function apply(ctx) {
     () => {
       const dispose = ctx.commands.register({
         name: 'admin',
-        description: 'Manage the malipetek.dev portal and its fleet: tickets, the work queue, nodes, clients and projects.',
+        description: 'Manage the PTech client portal (ptechsolutions.net) and its fleet: tickets, the work queue, nodes, clients and projects.',
         input: { hint: '[refresh|status|approve|reply|note|notify|task|route|cancel|drain|node|project|folder|link|unlink]' },
         handler: handleAdmin,
       });
@@ -1835,7 +1861,7 @@ export function apply(ctx) {
       dispose = ctx.tools.register({
         name: 'admin_tickets',
         description: [
-          'Work the malipetek.dev client portal: list tickets, read one with its thread, reply to the client, change its status, or fetch an attachment (action "file" with a fileId from get).',
+          'Work the PTech client portal (ptechsolutions.net): list tickets, read one with its thread, reply to the client, change its status, or fetch an attachment (action "file" with a fileId from get).',
           'Approve, decline and every status change are visible to the client, and a public reply emails them — say what you did.',
           'Use action "note" for a private note the client never sees.',
         ].join(' '),
@@ -1934,7 +1960,7 @@ export function apply(ctx) {
       dispose = ctx.tools.register({
         name: 'admin_directory',
         description: [
-          'The malipetek.dev portal directory: clients, projects, and which projects a client may file against.',
+          'The PTech client portal directory (ptechsolutions.net): clients, projects, and which projects a client may file against.',
           'A project slug is what the local runner maps to a folder on disk, so a ticket is only workable once its project exists and the runner knows the slug.',
           'Action "set_folder" writes that slug → folder mapping into the local runner config; without an entry the runner falls back to <projectsRoot>/<slug>.',
         ].join(' '),
@@ -2180,7 +2206,7 @@ export function apply(ctx) {
       dispose = ctx.tools.register({
         name: 'admin_fleet',
         description: [
-          'Run the malipetek.dev work queue: the machines (nodes) that do agent work, what is waiting and why, and Ali\'s own system tasks.',
+          'Run the PTech work queue: the machines (nodes) that do agent work, what is waiting and why, and Ali\'s own system tasks.',
           'Action "queue" lists approved items in claim order with the node that will take each, or the reason none can (no folder, node offline, missing capability).',
           'Action "nodes" lists every node: online or offline, draining, busy slots, executors, capabilities, projects. "local" shows this machine\'s node: launchd state, its status file, the log tail.',
           'Action "file_task" files a system task on one of Ali\'s projects (title, brief, slug; optional priority, requires such as ["os:macos"], executor claude|opencode|dsh|devin). Filing approves it, so only file what Ali asked for.',

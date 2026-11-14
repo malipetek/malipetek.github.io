@@ -17,7 +17,7 @@ import { useAdmin } from './store.js';
 import { Button, Modal, cx } from './ui.jsx';
 
 /** The portal page for a ticket, when nothing can review in place. */
-export const portalTicketUrl = (id) => `https://malipetek.dev/portal/admin#ticket=${id}`;
+export const portalTicketUrl = (id) => `https://ptechsolutions.net/portal/admin#ticket=${id}`;
 
 /**
  * The branch a review should open: the newest run's pushed ref, else its

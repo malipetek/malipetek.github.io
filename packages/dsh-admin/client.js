@@ -899,7 +899,7 @@ var __awPlugin = (() => {
   }
 
   // packages/admin-ui/src/review.jsx
-  var portalTicketUrl = (id) => `https://malipetek.dev/portal/admin#ticket=${id}`;
+  var portalTicketUrl = (id) => `https://ptechsolutions.net/portal/admin#ticket=${id}`;
   function reviewRef(runs) {
     for (const run of [...runs ?? []].sort((a, b) => b.id - a.id)) {
       if (run.shared_to === "origin" && run.shared_ref) return run.shared_ref;
@@ -2521,7 +2521,7 @@ var __awPlugin = (() => {
       /* @__PURE__ */ jsx("header", { className: "aw-hero", children: /* @__PURE__ */ jsx("h2", { children: "Settings" }) }),
       platform === "dsh" && host ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsx("h3", { children: "Portal connection" }),
-        /* @__PURE__ */ jsx(Field, { label: "Session token", hint: "Sign in on malipetek.dev/portal, then paste the session token here. It stays on this machine.", children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+        /* @__PURE__ */ jsx(Field, { label: "Session token", hint: "Sign in on ptechsolutions.net/portal, then paste the session token here. It stays on this machine.", children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
           /* @__PURE__ */ jsx("input", { type: "password", value: token, placeholder: "paste token", onChange: (e) => setToken(e.target.value) }),
           /* @__PURE__ */ jsx(
             Button,
@@ -4115,6 +4115,8 @@ var __awPlugin = (() => {
   };
   var RUN_LABEL = { audit: "Run audit", geo: "Run GEO probe", citations: "Check citations", ranks: "Check rankings now", cycle: "Run cycle now" };
   var plural2 = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  var OUR_DOMAINS = ["malipetek.dev", "ptechsolutions.net"];
+  var isOurDomain = (domain) => OUR_DOMAINS.some((host) => domain === host || domain.endsWith(`.${host}`));
   var pct3 = (rate) => `${Math.round((rate ?? 0) * 100)}%`;
   var dayNumber = (day) => {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day ?? "");
@@ -4621,7 +4623,7 @@ var __awPlugin = (() => {
               open ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: 5, style: { whiteSpace: "normal" }, children: /* @__PURE__ */ jsx("div", { className: "aw-seo-issues", children: top.length ? top.map((domain, index) => /* @__PURE__ */ jsxs("div", { className: "aw-seo-issue", children: [
                 /* @__PURE__ */ jsx(Tag, { tone: "dash", children: index + 1 }),
                 /* @__PURE__ */ jsx("span", { className: "aw-mono", children: domain }),
-                domain === "malipetek.dev" || domain.endsWith(".malipetek.dev") ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "us" }) : null
+                isOurDomain(domain) ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "us" }) : null
               ] }, domain)) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "No organic results were in the top 100." }) }) }) }) : null
             ] }, row.keyword);
           }) })
@@ -7266,7 +7268,7 @@ ${question.text ?? ""}`)) {
       };
       return /* @__PURE__ */ jsxs("div", { style: { padding: "20px 24px", maxWidth: 680 }, children: [
         /* @__PURE__ */ jsx("h2", { style: { margin: "0 0 4px", fontSize: 17 }, children: "Admin" }),
-        /* @__PURE__ */ jsx("p", { style: { margin: "0 0 14px", fontSize: 12.5, opacity: 0.65, lineHeight: 1.45 }, children: "The malipetek.dev portal inside the Harness: tickets, the work queue and its fleet, clients and projects. The Host refreshes every minute and notifies you about new work in the window and on this Mac." }),
+        /* @__PURE__ */ jsx("p", { style: { margin: "0 0 14px", fontSize: 12.5, opacity: 0.65, lineHeight: 1.45 }, children: "The PTech client portal (ptechsolutions.net) inside the Harness: tickets, the work queue and its fleet, clients and projects. The Host refreshes every minute and notifies you about new work in the window and on this Mac." }),
         /* @__PURE__ */ jsxs("div", { style: rowStyle, children: [
           /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
             /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 13 }, children: "Notify me about new work" }),
@@ -7521,7 +7523,7 @@ ${question.text ?? ""}`)) {
     const openTicketCount = (tickets) => tickets.filter((t) => !isClosedTicket(t)).length;
     const ticketOrder = (a, b) => Number(isClosedTicket(a)) - Number(isClosedTicket(b)) || (b.updated_at ?? 0) - (a.updated_at ?? 0);
     function copyTicketLink(ticket) {
-      const link = `https://malipetek.dev/portal/admin#ticket=${ticket.id}`;
+      const link = `https://ptechsolutions.net/portal/admin#ticket=${ticket.id}`;
       void navigator.clipboard?.writeText(link).catch(() => void 0);
     }
     async function approveTicket(ticket, changed) {
@@ -7885,7 +7887,7 @@ ${who} is emailed about this change.`)) return;
       };
       const openInPortal = () => {
         const id = brief?.id ?? run.ticketId;
-        window.open(`https://malipetek.dev/portal/admin#ticket=${id}`, "_blank", "noopener,noreferrer");
+        window.open(`https://ptechsolutions.net/portal/admin#ticket=${id}`, "_blank", "noopener,noreferrer");
       };
       return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 6, position: "relative" }, children: [
         /* @__PURE__ */ jsxs(

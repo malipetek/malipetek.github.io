@@ -997,7 +997,7 @@ export function SettingsView() {
       {platform === 'dsh' && host ? (
         <section className="aw-panel">
           <h3>Portal connection</h3>
-          <Field label="Session token" hint="Sign in on malipetek.dev/portal, then paste the session token here. It stays on this machine.">
+          <Field label="Session token" hint="Sign in on ptechsolutions.net/portal, then paste the session token here. It stays on this machine.">
             <div className="aw-inline">
               <input type="password" value={token} placeholder="paste token" onChange={(e) => setToken(e.target.value)} />
               <Button

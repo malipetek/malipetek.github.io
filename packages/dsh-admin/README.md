@@ -1,9 +1,9 @@
 # Admin
 
-The management portal for malipetek.dev, inside the Harness: the ticket queue
-with approve, reply and private notes; the work queue and the fleet of machines
-that run agents on it; Ali's own system tasks; and the clients and projects
-that decide who may file against what.
+The management panel for the PTech client portal (ptechsolutions.net), inside
+the Harness: the ticket queue with approve, reply and private notes; the work
+queue and the fleet of machines that run agents on it; Ali's own system tasks;
+and the clients and projects that decide who may file against what.
 
 ## What it is
 
@@ -32,7 +32,7 @@ skips what the Harness writes as a user message itself (runtime context, turn
 clock, model changes, skill and instruction reminders, subagent messages).
 
 The page is the shared admin workbench, `packages/admin-ui`: the same React app
-that `malipetek.dev/portal/admin` serves. Like an editor, it has an activity
+that `ptechsolutions.net/portal/admin` serves. Like an editor, it has an activity
 bar, a project explorer, tabs, a status bar and a ⌘K palette. Like a task
 tracker, it has **Needs you**, a drag-and-drop **Board**, a sortable **All work**
 list, and ticket pages with the thread, the agent's runs, a composer for client
@@ -154,7 +154,7 @@ first.
 
 The panel needs a **portal session token**, not your Harness login.
 
-1. Sign in at <https://malipetek.dev/portal> with a magic link.
+1. Sign in at <https://ptechsolutions.net/portal> with a magic link.
 2. In that page's browser console: `localStorage.getItem('portal-session')`.
 3. Paste the value into the panel's sign-in box.
 
@@ -236,6 +236,10 @@ call the same handler as `/admin approve`, `/admin reply` and `/admin open`.
   base branch are in Directory → the project.
 
 ## Endpoints it uses
+
+The default API base is `https://ptechsolutions.net/api`; `/admin endpoint <url>`
+points it anywhere else. `https://malipetek.dev/api` is the same Worker under its
+legacy alias, so a config saved against it is read as the default.
 
 | Method | Path | Purpose |
 | --- | --- | --- |

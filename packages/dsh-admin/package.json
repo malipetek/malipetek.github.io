@@ -1,7 +1,7 @@
 {
   "name": "@malipetek/dsh-admin",
-  "version": "1.0.0",
-  "description": "Management portal for malipetek.dev: tickets, the agent work queue and its fleet of nodes, system tasks, clients and projects \u2014 with tools so an agent can run it too.",
+  "version": "1.1.0",
+  "description": "Management panel for the PTech client portal (ptechsolutions.net): tickets, the agent work queue and its fleet of nodes, system tasks, clients and projects \u2014 with tools so an agent can run it too.",
   "type": "module",
   "main": "index.js",
   "icon": "./icon.svg",
@@ -34,7 +34,7 @@
     },
     "meta": {
       "title": "Admin",
-      "description": "The malipetek.dev management portal: tickets, the work queue and its nodes, system tasks, clients and projects."
+      "description": "The PTech client portal management panel (ptechsolutions.net): tickets, the work queue and its nodes, system tasks, clients and projects."
     }
   },
   "keywords": [
