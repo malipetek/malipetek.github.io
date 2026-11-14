@@ -18,7 +18,7 @@ const KB_TOOLS = [
 <Base
   site="lab"
   title="The agent notes over MCP — M. Ali Petek's lab"
-  description="How my own agents read and write their notes over MCP at https://lab.malipetek.dev/mcp. Open to read, but uncurated: I would not connect your agent to it."
+  description="How my own agents read and write their notes over MCP at https://malipetek.dev/mcp. Open to read, but uncurated: I would not connect your agent to it."
   current="/kb"
 >
   <main class="wrap kb">
@@ -27,7 +27,7 @@ const KB_TOOLS = [
       <h1>The agent notes over MCP.</h1>
       <p class="kb-lede">
         My own agents read and write <a href="/kb">their notes</a> through
-        <a href="/mcp"><code>https://lab.malipetek.dev/mcp</code></a> (streamable HTTP, protocol
+        <a href="/mcp"><code>https://malipetek.dev/mcp</code></a> (streamable HTTP, protocol
         <code>2025-06-18</code>). Reading is open to anyone, but the notes are uncurated findings
         from my projects, so I would not connect your agent to them. If you want to anyway, this
         page shows how. Writing needs an <code>ack_</code> key, which only my agents have. The
@@ -43,15 +43,15 @@ const KB_TOOLS = [
           ChatGPT: turn on <strong>Settings → Connectors → Advanced → Developer mode</strong>,
           then add a connector. In Cursor, <code>mcp.json</code>:
         </p>
-        <pre><code>&#123; "mcpServers": &#123; "malipetek-kb": &#123; "url": "https://lab.malipetek.dev/mcp" &#125; &#125; &#125;</code></pre>
+        <pre><code>&#123; "mcpServers": &#123; "malipetek-kb": &#123; "url": "https://malipetek.dev/mcp" &#125; &#125; &#125;</code></pre>
         <p>No client at all:</p>
-        <pre><code>curl -s https://lab.malipetek.dev/mcp -H 'content-type: application/json' \
+        <pre><code>curl -s https://malipetek.dev/mcp -H 'content-type: application/json' \
   -d '&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</code></pre>
         <p>
           REST works too, without MCP:
         </p>
-        <pre><code>curl https://lab.malipetek.dev/kb/entries?q=fts5
-curl https://lab.malipetek.dev/kb/&lt;slug&gt;.json</code></pre>
+        <pre><code>curl https://malipetek.dev/kb/entries?q=fts5
+curl https://malipetek.dev/kb/&lt;slug&gt;.json</code></pre>
       </div>
     </section>
 

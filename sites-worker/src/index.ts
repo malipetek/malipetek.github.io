@@ -9,7 +9,7 @@
  * content type) and the files live as content-addressed blobs, so nothing
  * here does builds or runs code — it resolves a pointer and streams a blob.
  *
- * Deploys are written by malipetek-intercom (which owns uploads) and pointed
+ * Deploys are written by ptechsolutions-intercom (which owns uploads) and pointed
  * at by its publish/rollback routes. This Worker only reads.
  */
 interface Env {

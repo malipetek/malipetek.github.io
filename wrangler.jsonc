@@ -36,7 +36,7 @@
   },
 
   // The public agentic coding knowledgebase, read directly by the SSR /kb
-  // pages. Writes go through malipetek-intercom (which owns the API keys), so
+  // pages. Writes go through ptechsolutions-intercom (which owns the API keys), so
   // this Worker only ever reads it.
   "d1_databases": [
     {
@@ -77,7 +77,7 @@
   "services": [
     {
       "binding": "INTERCOM",
-      "service": "malipetek-intercom"
+      "service": "ptechsolutions-intercom"
     }
   ],
 

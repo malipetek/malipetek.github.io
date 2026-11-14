@@ -286,7 +286,7 @@ const origin = (c: Ctx) => c.req.header('Origin') ?? null;
 const reply = (c: Ctx, data: unknown, status = 200) => json(data, status, origin(c));
 
 export function siteUrl(env: Env): string {
-  return (env.SITE_URL || 'https://malipetek.dev').replace(/\/+$/, '');
+  return (env.PORTAL_URL || env.SITE_URL || 'https://ptechsolutions.net').replace(/\/+$/, '');
 }
 
 /* ——————————————————————— mail ——————————————————————— */
@@ -321,11 +321,11 @@ export async function replySig(env: Env, ticketId: number, role: ReplyRole): Pro
 }
 
 export function replyDomain(env: Env): string {
-  return (env.REPLY_ADDRESS || 'reply@malipetek.dev').split('@')[1];
+  return (env.REPLY_ADDRESS || 'reply@ptechsolutions.net').split('@')[1];
 }
 
 export async function replyAddress(env: Env, ticketId: number, role: ReplyRole): Promise<string> {
-  const [local, domain] = (env.REPLY_ADDRESS || 'reply@malipetek.dev').split('@');
+  const [local, domain] = (env.REPLY_ADDRESS || 'reply@ptechsolutions.net').split('@');
   return `${local}+${ticketId}.${role}.${await replySig(env, ticketId, role)}@${domain}`;
 }
 
@@ -348,7 +348,7 @@ export async function mailClient(env: Env, to: string, mail: Mail): Promise<bool
   }
   try {
     await env.MAILER.send({
-      from: { email: env.PORTAL_FROM_EMAIL || 'portal@malipetek.dev', name: 'malipetek.dev' },
+      from: { email: env.PORTAL_FROM_EMAIL || 'portal@ptechsolutions.net', name: 'PTech Solutions' },
       to,
       ...mail,
     });
@@ -367,7 +367,7 @@ export async function mailAli(env: Env, mail: Mail): Promise<boolean> {
   }
   try {
     await env.EMAIL.send({
-      from: env.PORTAL_FROM_EMAIL || env.CONTACT_FROM_EMAIL || 'portal@malipetek.dev',
+      from: env.PORTAL_FROM_EMAIL || env.CONTACT_FROM_EMAIL || 'portal@ptechsolutions.net',
       to: 'malipetek@gmail.com', // pinned by the binding's destination_address
       ...mail,
     });

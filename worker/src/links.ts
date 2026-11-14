@@ -6,7 +6,7 @@
 import type { Env } from './shared.ts';
 
 export function portalLinks(env: Env) {
-  const base = (env.SITE_URL || 'https://malipetek.dev').replace(/\/+$/, '');
+  const base = (env.PORTAL_URL || env.SITE_URL || 'https://ptechsolutions.net').replace(/\/+$/, '');
   return {
     connections: `${base}/portal/#/connections`,
     requests: `${base}/portal/#/requests`,

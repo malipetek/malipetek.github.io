@@ -135,7 +135,7 @@ app.route('/', unsubscribe);
 app.route('/kb', kb);
 // The published client-portal MCP app (OAuth, portal_* tools). The knowledgebase
 // moved off it when the site split: /kb-mcp is the KB's own server, proxied from
-// https://lab.malipetek.dev/mcp.
+// https://malipetek.dev/mcp.
 app.route('/mcp', mcp);
 app.route('/kb-mcp', kbMcp);
 // OAuth for MCP clients that will not take a pasted key. See src/oauth.ts.
@@ -143,7 +143,7 @@ app.route('/', oauth);
 
 app.get('/health', (c) =>
   json(
-    { ok: true, sha: c.env.BUILD_SHA || null, service: 'malipetek-intercom' },
+    { ok: true, sha: c.env.BUILD_SHA || null, service: 'ptechsolutions-intercom' },
     200,
     c.req.header('Origin') ?? null,
   ),
@@ -379,7 +379,7 @@ async function emailViaEmailService(
   if (!env.EMAIL) return false;
   try {
     await env.EMAIL.send({
-      from: env.CONTACT_FROM_EMAIL || 'intercom@malipetek.dev',
+      from: env.CONTACT_FROM_EMAIL || 'intercom@ptechsolutions.net',
       to: 'malipetek@gmail.com', // pinned by the binding's destination_address
       subject: `${source === 'contact' ? 'Contact form' : 'Intercom note'} from ${email}`,
       text: `From: ${email}\n\n${message || summary}\n\n---\n${summary}`,

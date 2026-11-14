@@ -32,8 +32,10 @@ export interface Env {
   DEMO_EMAIL?: string;
   /** Secret. The code /auth/demo requires alongside DEMO_EMAIL. */
   DEMO_LOGIN_CODE?: string;
-  /** Var. Public site origin, used to build magic links. */
+  /** Var. Public site origin, used for OAuth/KB links. malipetek.dev. */
   SITE_URL?: string;
+  /** Var. Portal origin, used to build portal links. ptechsolutions.net. */
+  PORTAL_URL?: string;
   /** Var. Email Routing address (with subaddressing) that feeds src/inbound.ts. */
   REPLY_ADDRESS?: string;
   /** Unpinned Email Service binding for outreach (src/marketing.ts). Unbound = no sends. */

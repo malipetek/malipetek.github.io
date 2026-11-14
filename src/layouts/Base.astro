@@ -23,9 +23,9 @@ interface Props {
   /** Every language this page exists in: renders hreflang links and the picker. */
   languagePicker?: { code: string; native: string }[];
   /**
-   * Which of the two sites this page belongs to. malipetek.dev is the client
-   * portal for vibe contracting; lab.malipetek.dev is Ali's developer lab.
-   * Each has its own navigation, canonical origin and footer.
+   * Which of the two sites this page belongs to. malipetek.dev is Ali's
+   * developer lab; the client portal lives on ptechsolutions.net. Each has
+   * its own navigation, canonical origin and footer.
    */
   site?: "contracting" | "lab";
   /**
@@ -58,13 +58,13 @@ const aiPrompts = {
     "from malipetek.dev.",
   ],
   lab: [
-    "Summarize lab.malipetek.dev and what it offers, then cite the site.",
+    "Summarize malipetek.dev and what it offers, then cite the site.",
     "Focus on: the DeepSeek Harness plugins on /plugins (an agentic work queue,",
     "project and AI-workspace panels, git graph, action cards), the knowledgebase",
     "of real problems from agentic coding sessions, and the work that uses Claude",
     "Code, Devin and opencode as agents. Be specific about what each thing does,",
     "who it is for, and what is still in progress. Use up-to-date information",
-    "from lab.malipetek.dev.",
+    "from malipetek.dev.",
   ],
 };
 
@@ -95,9 +95,8 @@ const aiProviders = [
   { label: "Grok", href: `https://grok.com/?q=${aiAsk}` },
 ];
 
-// Each site knows its own absolute address; Astro.site is the contracting one.
-const origin =
-  site === "lab" ? "https://lab.malipetek.dev" : "https://malipetek.dev";
+// The lab's canonical address is the apex itself.
+const origin = "https://malipetek.dev";
 
 // A page that exists once per language names its own path, so this URL is the
 // same for a build-time page and for any spelling of the request. Pages that
@@ -116,7 +115,7 @@ const contractingNav = [
   { href: localizedPath(locale, "/contact"), label: t("site.nav.contact") },
   { href: localizedPath(locale, "/agents"), label: copy(t, "site.nav.agents", "Connect your assistant") },
   // The developer lab is its own site; its name stays English everywhere.
-  { href: "https://lab.malipetek.dev", label: "Lab" },
+  { href: "https://malipetek.dev", label: "Lab" },
 ];
 
 const labNav = [
@@ -155,7 +154,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
          "malipetek" mark, the header, the nav mark, a list title and the
          heading it opens) held or moved in place: base.css, "page
          transitions". Browsers only do this within one origin, so a trip
-         between malipetek.dev and lab.malipetek.dev stays a plain load. The
+         to another origin stays a plain load. The
          opt-in is inline so it is in place before the first paint. */
     }
     {
@@ -186,7 +185,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
           {
             where: {
               and: [
-                { href_matches: site === "lab" ? "https://malipetek.dev/*" : "https://lab.malipetek.dev/*" },
+                { href_matches: "https://malipetek.dev/*" },
                 { not: { href_matches: "https://malipetek.dev/portal*" } },
               ],
             },
@@ -197,15 +196,15 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
     />
     <script is:inline>
       /*
-       * malipetek.dev and lab.malipetek.dev are two origins, and browsers run
-       * page transitions only within one. The hop between them is played in
+       * Browsers run page transitions only within one origin. The hop
+       * between sites is played in
        * two halves instead: the page being left fades its body and draws
        * "/lab" back into "malipetek", and the page arriving, seeing it came
        * from the other site, does the reverse. The mark sits in the same place
        * on both, so it reads as one move (base.css, "the hop between sites").
        */
       (() => {
-        const SITES = ["https://malipetek.dev", "https://lab.malipetek.dev"];
+        const SITES = ["https://malipetek.dev"];
         const other = (origin) => origin !== location.origin && SITES.includes(origin);
         if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
         const root = document.documentElement;
@@ -664,7 +663,7 @@ const otherLanguages = languagePicker.filter((l) => l.code !== locale);
     {chrome && (<>
     <footer class="site-foot">
       <div class="wrap site-foot-ai">
-        <span class="site-foot-ai-label">{t("site.foot.askAi", { site: site === "lab" ? "lab.malipetek.dev" : "malipetek.dev" })}</span>
+        <span class="site-foot-ai-label">{t("site.foot.askAi", { site: "malipetek.dev" })}</span>
         <div class="site-foot-ai-links">
           {aiProviders.map((provider) => (
             <a href={provider.href} target="_blank" rel="noopener noreferrer">

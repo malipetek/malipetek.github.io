@@ -1066,7 +1066,7 @@ test('seo: a page is read for the head it ships, in any attribute order', () => 
     '<script>var x = 1;</script>',
     '</head><body><h1>One</h1><h1>Two</h1>',
     '<a href="/contact">contact</a>',
-    '<a href="https://lab.malipetek.dev/kb/x">kb</a>',
+    '<a href="https://malipetek.dev/kb/x">kb</a>',
     '<a href="https://example.com/x">elsewhere</a>',
     '<a href="#top">top</a>',
     '</body></html>',
@@ -1081,7 +1081,7 @@ test('seo: a page is read for the head it ships, in any attribute order', () => 
   assert.deepEqual(page.hreflang.map((link) => link.hreflang), ['tr', 'de-de']);
   assert.deepEqual(page.jsonldTypes, ['Organization', 'ProfessionalService', 'WebSite']);
   assert.equal(page.h1Count, 2);
-  // Both hosts are ours; example.com and the fragment are not internal links.
+  // Our host counts twice; example.com and the fragment are not internal links.
   assert.equal(page.internalLinks, 2);
 });
 
@@ -1349,7 +1349,7 @@ test('seo: a queued task has no result and is not mistaken for "not ranked"', ()
   assert.deepEqual(parseRankTasks({ tasks: [{ id: 'x', data: { keyword: 'vibe contracting' }, result: null }] }), []);
   assert.equal(seoHostOf('malipetek.dev'), 'malipetek.dev');
   assert.equal(seoHostOf('www.malipetek.dev'), 'malipetek.dev');
-  assert.equal(seoHostOf('blog.lab.malipetek.dev'), 'lab.malipetek.dev');
+  assert.equal(seoHostOf('blog.lab.malipetek.dev'), 'malipetek.dev');
   assert.equal(seoHostOf('notmalipetek.dev'), null);
 });
 

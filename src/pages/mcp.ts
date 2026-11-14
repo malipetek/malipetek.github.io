@@ -5,7 +5,7 @@
  *                                 intercom Worker): portal_* tools, the
  *                                 assistant a client connects to file and
  *                                 follow requests.
- *   https://lab.malipetek.dev/mcp → the knowledgebase server (/kb-mcp on the
+ *   https://malipetek.dev/mcp → the knowledgebase server (/kb-mcp on the
  *                                 intercom Worker): search and read entries,
  *                                 write them with an ack_ key.
  *

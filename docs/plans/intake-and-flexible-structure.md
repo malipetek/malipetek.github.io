@@ -12,7 +12,7 @@ ships a stale `vite build`).
   (`worker/src/cfconnect.ts:49`, `callbackUrl = siteUrl + /api/portal/cloudflare/callback`).
 - Probing `dash.cloudflare.com/oauth2/auth` with client
   `ec178fe1350572efdadc6a872ee2f817` shows the **only registered redirect** is
-  `https://malipetek-intercom.malipetek.workers.dev/portal/cloudflare/callback`
+  `https://ptechsolutions-intercom.malipetek.workers.dev/portal/cloudflare/callback`
   (that one goes to the login page; the malipetek.dev one goes to `oauth/error`).
 - Our side of the malipetek.dev callback works: `GET /api/portal/cloudflare/callback?error=access_denied`
   → 302 `/portal/?cloudflare=declined#/connections`.

@@ -526,7 +526,7 @@ async function tool(ctx: ToolContext, name: string, args: Record<string, unknown
           await mailAliFirstPreview(env, ctx.userEmail, ticket.id, title, body, firstPreview);
         } else {
           await env.EMAIL?.send({
-            from: env.PORTAL_FROM_EMAIL || 'portal@malipetek.dev',
+            from: env.PORTAL_FROM_EMAIL || 'portal@ptechsolutions.net',
             to: 'malipetek@gmail.com',
             subject: `[#${ticket.id}] New request from ${ctx.userEmail}: ${title}`,
             text: `${body}\n\nOpen: ${link}`,

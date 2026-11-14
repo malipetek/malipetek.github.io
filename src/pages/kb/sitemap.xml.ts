@@ -35,7 +35,7 @@ export async function GET({ locals }: { locals: unknown }) {
   const urls = entries.map((entry) => {
     const lastmod = entry.updated_at ? entry.updated_at.replace(' ', 'T').slice(0, 10) : '';
     return (
-      `  <url><loc>https://lab.malipetek.dev/kb/${escapeXml(entry.slug)}</loc>` +
+      `  <url><loc>https://malipetek.dev/kb/${escapeXml(entry.slug)}</loc>` +
       (lastmod ? `<lastmod>${lastmod}</lastmod>` : '') +
       `</url>`
     );
@@ -44,7 +44,7 @@ export async function GET({ locals }: { locals: unknown }) {
   const xml =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-    `  <url><loc>https://lab.malipetek.dev/kb</loc><changefreq>daily</changefreq><priority>0.8</priority></url>\n` +
+    `  <url><loc>https://malipetek.dev/kb</loc><changefreq>daily</changefreq><priority>0.8</priority></url>\n` +
     `${urls.join('\n')}\n</urlset>\n`;
 
   return new Response(xml, {

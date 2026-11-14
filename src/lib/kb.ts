@@ -2,7 +2,7 @@
  * Knowledgebase reads for the SSR /kb pages.
  *
  * The site Worker holds KB_DB read-only (see wrangler.jsonc); every write goes
- * through malipetek-intercom, which owns the API keys. Keeping reads direct
+ * through ptechsolutions-intercom, which owns the API keys. Keeping reads direct
  * means a browse page is one D1 query, not an HTTP hop.
  */
 import { Marked } from 'marked';
