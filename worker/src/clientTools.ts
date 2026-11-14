@@ -35,7 +35,7 @@ export interface ClientTool {
 const ATTENTION = {
   type: 'string',
   enum: ATTENTION_KEYS,
-  description: 'How much of Ali’s time: auto (Autopilot, cheapest), checked (the default: he reads every change), hands_on (Hands-on, by the clock).',
+  description: 'How much developer time: auto (Autopilot, cheapest), checked (the default: a developer reads every change), hands_on (Hands-on, by the clock).',
 };
 const REQUEST_ID = { type: 'integer', description: 'The request number, from portal_requests.' };
 
@@ -57,9 +57,9 @@ export const CLIENT_TOOLS: ClientTool[] = [
   },
   {
     name: 'portal_board',
-    title: 'malipetek development',
+    title: 'PTech portal',
     description:
-      'Draw this account as an interactive card in the conversation, in three tabs: projects (setup progress and the next step), sites (live or preview, with links) and requests (status, cost so far). Any request opens as a chat with Ali inside the card, where the person can read the thread and reply. Pass request_id to open that request’s conversation straight away, e.g. when they ask to see or answer request 12. Use it when the person wants to see their work rather than read a list. Mention only what matters afterwards — the card shows the details.',
+      'Draw this account as an interactive card in the conversation, in three tabs: projects (setup progress and the next step), sites (live or preview, with links) and requests (status, cost so far). Any request opens as a chat with your developer inside the card, where the person can read the thread and reply. Pass request_id to open that request’s conversation straight away, e.g. when they ask to see or answer request 12. Use it when the person wants to see their work rather than read a list. Mention only what matters afterwards — the card shows the details.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -172,13 +172,13 @@ export const CLIENT_TOOLS: ClientTool[] = [
       ui: { resourceUri: BOARD_UI_URI },
       // Opens from the sidebar (global) and as a tab beside a conversation (thread).
       'openai/ui': { entrypoints: [{ type: 'global' }, { type: 'thread' }] },
-      'openai/toolInvocation/invoking': 'Opening malipetek development…',
+      'openai/toolInvocation/invoking': 'Opening PTech portal…',
       'openai/toolInvocation/invoked': 'Projects, sites and requests ready',
     },
   },
   {
     name: 'portal_profile',
-    title: 'My malipetek profile',
+    title: 'My PTech profile',
     description:
       'The account this connection belongs to: a stable opaque id plus the name and email to show. Use it to tell several connected accounts apart.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -199,7 +199,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
   {
     name: 'portal_request',
     title: 'Read a request',
-    description: 'One request: its status, its cost and budget, and the whole conversation with Ali.',
+    description: 'One request: its status, its cost and budget, and the whole conversation with your developer.',
     inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
     readOnly: true,
   },
@@ -207,7 +207,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'portal_file_request',
     title: 'File a request',
     description:
-      'Ask for a change or a new piece of work. Write it the way you would to a person: what you want and why. Nothing starts until Ali has read it. Pass project_id from portal_projects when it is about one of them.',
+      'Ask for a change or a new piece of work. Write it the way you would to a person: what you want and why. Nothing starts until a developer has read it. Pass project_id from portal_projects when it is about one of them.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -225,7 +225,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
   {
     name: 'portal_reply',
     title: 'Reply on a request',
-    description: 'Add a message to a request’s conversation. Ali is emailed.',
+    description: 'Add a message to a request’s conversation. A developer is emailed.',
     inputSchema: {
       type: 'object',
       properties: { request_id: REQUEST_ID, text: { type: 'string', description: 'The message.' } },
@@ -253,7 +253,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'portal_withdraw',
     title: 'Withdraw a request',
     description:
-      'Take back a request Ali has not approved yet; it is closed and costs nothing. Once he has approved it, ask him with portal_reply instead.',
+      'Take back a request that has not been approved yet; it is closed and costs nothing. Once it is approved, ask with portal_reply instead.',
     inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
     readOnly: false,
   },
@@ -261,7 +261,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'portal_move_request',
     title: 'Move a request',
     description:
-      'Move one of this account’s requests to another of its projects, and optionally to one of that project’s sites. An approved request goes back to Ali for approval.',
+      'Move one of this account’s requests to another of its projects, and optionally to one of that project’s sites. An approved request goes back to a developer for approval.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -293,7 +293,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'start_change',
     title: 'Start a change',
     description:
-      'Make a change to one of the client’s hosted sites yourself. You are a builder on this project, with the same footing as Ali’s agents: you read the source, change it, build the preview and keep iterating with the client. This costs nothing on malipetek: no AI cost, no approval to wait for, and you may change anything in the site. It opens a request of its own, so there is a record of who changed what. Then: project_context and workspace_files to read the site, submit_change with the files, preview_build, and when the preview has it, show the link and ask what to change next.',
+      'Make a change to one of the client’s hosted sites yourself. You are a builder on this project, with the same footing as our agents: you read the source, change it, build the preview and keep iterating with the client. This costs nothing on PTech: no AI cost, no approval to wait for, and you may change anything in the site. It opens a request of its own, so there is a record of who changed what. Then: project_context and workspace_files to read the site, submit_change with the files, preview_build, and when the preview has it, show the link and ask what to change next.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -310,12 +310,12 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'finish_change',
     title: 'Finish a change',
     description:
-      `Close a change you made with start_change, after its preview is built, once the client is happy with it. Two ways to go live, their choice. review true sends it to Ali for review first: he reads it before it goes live and emails them when he is done. ${reviewEstimate()} review false keeps it as it is, closed, with nothing to bill; they can publish it themselves later with site_publish. Confirm before you call it.`,
+      `Close a change you made with start_change, after its preview is built, once the client is happy with it. Two ways to go live, their choice. review true sends it to a developer for review first: they read it before it goes live and email the client when they are done. ${reviewEstimate()} review false keeps it as it is, closed, with nothing to bill; they can publish it themselves later with site_publish. Confirm before you call it.`,
     inputSchema: {
       type: 'object',
       properties: {
         request_id: REQUEST_ID,
-        review: { type: 'boolean', description: 'True: send it to Ali for review (paid). False: keep it without review (free).' },
+        review: { type: 'boolean', description: 'True: send it to a developer for review (paid). False: keep it without review (free).' },
       },
       required: ['request_id', 'review'],
       additionalProperties: false,
@@ -326,7 +326,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'project_context',
     title: 'Request context',
     description:
-      'Everything about one request you are working on (from start_change, or one Ali approved): the project brief, the whole conversation, the site’s state and how it builds. Read this first, and start from the preview the project already has.',
+      'Everything about one request you are working on (from start_change, or one a developer approved): the project brief, the whole conversation, the site’s state and how it builds. Read this first, and start from the preview the project already has.',
     inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
     readOnly: true,
   },
@@ -353,7 +353,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'submit_change',
     title: 'Send a change',
     description:
-      'Send the files you changed, whole contents, at most 40 files and 2 MB, for a request from start_change (or one Ali approved). They land on the request’s own branch and the preview, never production, and are recorded with your name and the file list. Then call preview_build, show the client the link, and ask what to change next.',
+      'Send the files you changed, whole contents, at most 40 files and 2 MB, for a request from start_change (or one a developer approved). They land on the request’s own branch and the preview, never production, and are recorded with your name and the file list. Then call preview_build, show the client the link, and ask what to change next.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -401,14 +401,14 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'site_publish',
     title: 'Publish the site',
     description:
-      'Take the preview live, when the client is happy with it. The client may publish their own site, and the responsibility is theirs: every publish is recorded with who did it and through which app, Ali is emailed, and any change you made that they kept without review goes live unreviewed. Say that plainly and confirm with the client before calling it. The result lists those unreviewed changes. The other way to go live is Ali’s review first (finish_change with review true).',
+      'Take the preview live, when the client is happy with it. The client may publish their own site, and the responsibility is theirs: every publish is recorded with who did it and through which app, a developer is emailed, and any change you made that they kept without review goes live unreviewed. Say that plainly and confirm with the client before calling it. The result lists those unreviewed changes. The other way to go live is a developer’s review first (finish_change with review true).',
     inputSchema: { type: 'object', properties: { project_id: { type: 'string' } }, required: ['project_id'], additionalProperties: false },
     readOnly: false,
   },
   {
     name: 'site_rollback',
     title: 'Roll the site back',
-    description: 'Point production at an older deploy from site_deploys: the way back when a publish went wrong. Recorded and emailed to Ali like a publish. Confirm with the client first.',
+    description: 'Point production at an older deploy from site_deploys: the way back when a publish went wrong. Recorded and emailed to a developer like a publish. Confirm with the client first.',
     inputSchema: {
       type: 'object',
       properties: { project_id: { type: 'string' }, deploy_id: { type: 'string', description: 'A deploy id from site_deploys.' } },
@@ -518,7 +518,7 @@ async function portalCall(env: Env, ctx: Ctx, token: string, method: string, pat
       bad_ticket: 'The title (up to 140 characters) and the body are both required; attention must be auto, checked or hands_on; a budget is 1–10000 whole dollars.',
       bad_budget: 'A budget is a whole number of dollars from 1 to 10000, or null for none.',
       closed: 'That request is closed.',
-      not_withdrawable: 'Only a request Ali has not approved yet can be withdrawn. Ask him with portal_reply.',
+      not_withdrawable: 'Only a request that has not been approved yet can be withdrawn. Ask with portal_reply.',
       bad_project: 'That project is not on this account. Use an id from portal_projects.',
     };
     throw new Error(`${code}${hint[code] ? `: ${hint[code]}` : ''}`);
@@ -531,7 +531,7 @@ const dollars = (usd: unknown) => (typeof usd === 'number' ? Math.round(usd * 10
 export async function callClientTool(env: Env, ctx: Ctx, token: string | null, name: string, args: Record<string, unknown>) {
   if (!token) {
     throw new Error(
-      'This tool works for a malipetek.dev client. Make an agent token in the portal (Connect an assistant) and send it as "Authorization: Bearer cat_…".',
+      'This tool works for a ptechsolutions.net client. Make an agent token in the portal (Connect an assistant) and send it as "Authorization: Bearer cat_…".',
     );
   }
   const id = Number(args.request_id);
@@ -641,10 +641,10 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
       });
       return {
         request_id: out?.id,
-        status: out?.autoApproved ? 'Approved (Autopilot)' : 'Waiting for Ali',
+        status: out?.autoApproved ? 'Approved (Autopilot)' : 'Waiting for a developer',
         note: out?.autoApproved
-          ? 'Autopilot with a budget: it starts without Ali, inside the client-set cap. Follow it with portal_request.'
-          : 'Nothing starts until Ali has read it. Follow it with portal_request.',
+          ? 'Autopilot with a budget: it starts without waiting for a developer, inside the client-set cap. Follow it with portal_request.'
+          : 'Nothing starts until a developer has read it. Follow it with portal_request.',
       };
     }
     case 'portal_reply':
@@ -675,8 +675,8 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
       return {
         request_id: out?.id,
         status: 'In progress',
-        cost: 'None on malipetek: you are doing the work on the client’s own subscription.',
-        next: 'Read the site with project_context, workspace_files and workspace_read, send the files with submit_change, then preview_build. When portal_request shows the preview link, show it to the client, ask what to change next, and keep going until they are happy. Then finish_change: Ali reviews it first, or they publish it themselves with site_publish.',
+        cost: 'None on PTech: you are doing the work on the client’s own subscription.',
+        next: 'Read the site with project_context, workspace_files and workspace_read, send the files with submit_change, then preview_build. When portal_request shows the preview link, show it to the client, ask what to change next, and keep going until they are happy. Then finish_change: a developer reviews it first, or they publish it themselves with site_publish.',
         review: reviewEstimate(),
       };
     }
@@ -685,14 +685,14 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
       if (out?.status === 'review') {
         return {
           status: 'In review',
-          note: 'Ali has been emailed. He reviews it, and the client gets an email when he approves or replies; replying to that email answers him in the thread.',
+          note: 'A developer has been emailed. They review it, and the client gets an email when it is approved or answered; replying to that email answers in the thread.',
         };
       }
       return {
         status: 'Done, kept without review',
         note: out?.canPublish
-          ? 'The change is on the preview, and Ali has been emailed that it was kept without review. The client can take it live with site_publish when they are ready; that publish is on record as theirs.'
-          : 'The change is on the preview, and Ali has been emailed. Client publishing is switched off right now, so taking it live is Ali’s step: the client can ask him with portal_reply.',
+          ? 'The change is on the preview, and a developer has been emailed that it was kept without review. The client can take it live with site_publish when they are ready; that publish is on record as theirs.'
+          : 'The change is on the preview, and a developer has been emailed. Client publishing is switched off right now, so taking it live is a developer’s step: the client can ask with portal_reply.',
       };
     }
     case 'project_context':

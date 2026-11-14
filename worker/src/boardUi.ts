@@ -21,7 +21,7 @@ export const BOARD_UI_URI = 'ui://malipetek/board-v12.html';
 
 export const BOARD_MIME = 'text/html;profile=mcp-app';
 
-export const BOARD_PORTAL = 'https://malipetek.dev/portal';
+export const BOARD_PORTAL = 'https://ptechsolutions.net/portal';
 
 export interface BoardRequest {
   id: number;
@@ -72,7 +72,7 @@ export interface Board {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  new: 'Waiting for Ali',
+  new: 'Waiting for a developer',
   approved: 'Approved',
   in_progress: 'In progress',
   review: 'In review',
@@ -102,7 +102,7 @@ export function boardSummary(board: Board): string {
   const sites = board.sites ?? [];
   const requests = board.requests ?? [];
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-  const out = [`malipetek development${who}: ${plural(projects.length, 'project')}, ${plural(sites.length, 'site')}, ${plural(requests.length, 'request')}.`];
+  const out = [`PTech portal${who}: ${plural(projects.length, 'project')}, ${plural(sites.length, 'site')}, ${plural(requests.length, 'request')}.`];
   if (projects.length) {
     out.push('', 'Projects:');
     for (const project of projects) {
@@ -131,7 +131,7 @@ export function boardSummary(board: Board): string {
     out.push('', 'No requests yet.');
   }
   const focused = board.focus ? requests.find((request) => request.id === board.focus) : null;
-  if (focused) out.push('', `The card is open on #${focused.id} ${focused.title ?? 'Untitled request'}: its conversation with Ali, where the client can reply.`);
+  if (focused) out.push('', `The card is open on #${focused.id} ${focused.title ?? 'Untitled request'}: its conversation with your developer, where the client can reply.`);
   out.push('', `The same in the portal: ${BOARD_PORTAL}`);
   return out.join('\n');
 }
@@ -146,7 +146,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>malipetek development</title>
+<title>PTech portal</title>
 <style>
   :root {
     color-scheme: light;
@@ -468,7 +468,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
 <div class="mk-top">
   <div class="mk-brand">
     <span class="mk-mark" aria-hidden="true"></span>
-    <span class="mk-name">malipetek development</span>
+    <span class="mk-name">PTech portal</span>
     <span class="mk-who" id="who"></span>
   </div>
   <button class="mk-btn" id="refresh" type="button" data-i18n="refresh">Refresh</button>
@@ -519,12 +519,12 @@ export const BOARD_HTML = `<!DOCTYPE html>
   </div>
   <div class="mk-chat" id="chat" role="log" aria-live="polite"></div>
   <form class="mk-composer" id="composer">
-    <textarea id="reply" rows="1" placeholder="Reply to Ali" aria-label="Reply to Ali" data-i18n-placeholder="reply.placeholder" data-i18n-label="reply.placeholder"></textarea>
+    <textarea id="reply" rows="1" placeholder="Reply to your developer" aria-label="Reply to your developer" data-i18n-placeholder="reply.placeholder" data-i18n-label="reply.placeholder"></textarea>
     <button class="mk-send" id="send" type="submit" aria-label="Send" data-i18n-label="reply.send" disabled>
       <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
   </form>
-  <div class="mk-compose-note"><span data-i18n="reply.note">Ali gets your reply by email and answers here.</span> <button class="mk-link" id="thread-portal" type="button" data-i18n="thread.portal">Open in the portal ↗</button></div>
+  <div class="mk-compose-note"><span data-i18n="reply.note">Your developer gets your reply by email and answers here.</span> <button class="mk-link" id="thread-portal" type="button" data-i18n="thread.portal">Open in the portal ↗</button></div>
 </section>
 
 <div class="mk-tooltip" id="tooltip" role="tooltip"></div>
@@ -540,7 +540,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
 (function () {
   'use strict';
 
-  var PORTAL = 'https://malipetek.dev/portal';
+  var PORTAL = 'https://ptechsolutions.net/portal';
   var STATUS = {
     new: 'wait', approved: 'active', in_progress: 'active', review: 'active', done: 'done', declined: 'bad'
   };
@@ -1447,7 +1447,7 @@ export const BOARD_HTML = `<!DOCTYPE html>
       if (stamp) mine.appendChild(el('span', 'mk-when', stamp));
       return mine;
     }
-    var who = whoOf(m.author) || { name: m.author || 'malipetek', mark: '•' };
+    var who = whoOf(m.author) || { name: m.author || 'PTech', mark: '•' };
     var row = el('div', 'mk-turn--other');
     // Ali's photo is the background of his avatar (CSS); the others show a mark.
     var avatar = el('span', 'mk-avatar', m.author === 'ali' ? '' : who.mark);

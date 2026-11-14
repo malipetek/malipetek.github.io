@@ -1,6 +1,6 @@
 {
   "status.new": {
-    "en": "Waiting for Ali",
+    "en": "Waiting for a developer",
     "reviewed": false
   },
   "status.approved": {
@@ -28,7 +28,7 @@
     "reviewed": false
   },
   "mail.reply.subject": {
-    "en": "Ali replied: {title}",
+    "en": "Your developer replied: {title}",
     "reviewed": false
   },
   "mail.status.body": {
@@ -44,7 +44,7 @@
     "reviewed": false
   },
   "mail.confirm.body": {
-    "en": "Your request is in. Ali reads every one himself before anything happens, and you'll get an email here when he replies or the status changes.",
+    "en": "Your request is in. A developer reads every one before anything happens, and you'll get an email here when we reply or the status changes.",
     "reviewed": false
   },
   "mail.confirm.footer": {
@@ -60,7 +60,7 @@
     "reviewed": false
   },
   "mail.signin.body": {
-    "en": "Here's your sign-in link for Ali's client portal:\n\n{link}\n\nIt works once and expires in 15 minutes. If you didn't ask for it, ignore this email.",
+    "en": "Here's your sign-in link for the PTech client portal:\n\n{link}\n\nIt works once and expires in 15 minutes. If you didn't ask for it, ignore this email.",
     "reviewed": false
   },
   "common.loading": {
@@ -156,7 +156,7 @@
     "reviewed": false
   },
   "toast.requestSent": {
-    "en": "Request #{id} sent. Ali reads it before anything starts.",
+    "en": "Request #{id} sent. A developer reads it before anything starts.",
     "reviewed": false
   },
   "signin.title": {
@@ -200,7 +200,7 @@
     "reviewed": false
   },
   "lang.subtitle": {
-    "en": "The portal, your emails and Ali's replies come to you in this language. Ali and his agents read your messages in English.",
+    "en": "The portal, your emails and our replies come to you in this language. Our developers and agents read your messages in English.",
     "reviewed": false
   },
   "lang.pick": {
@@ -224,7 +224,7 @@
     "reviewed": false
   },
   "thread.ali": {
-    "en": "Ali",
+    "en": "Developer",
     "reviewed": false
   },
   "thread.log": {
@@ -276,7 +276,7 @@
     "reviewed": false
   },
   "reply.placeholder": {
-    "en": "Write to Ali…",
+    "en": "Write to your developer…",
     "reviewed": false
   },
   "reply.placeholderReopen": {
@@ -292,7 +292,7 @@
     "reviewed": false
   },
   "reply.anyLanguage": {
-    "en": "Write in your own language. Ali reads it in English.",
+    "en": "Write in your own language. We read it in English.",
     "reviewed": false
   },
   "views.greeting.morning": {
@@ -368,7 +368,7 @@
     "reviewed": false
   },
   "views.needs.setupText": {
-    "en": "Three questions, and Ali knows what you need.",
+    "en": "Three questions, and we know what you need.",
     "reviewed": false
   },
   "views.needs.replyTitle": {
@@ -392,7 +392,7 @@
     "reviewed": false
   },
   "views.needs.previewTell": {
-    "en": "Look them over; tell Ali when they are right.",
+    "en": "Look them over; tell us when they are right.",
     "reviewed": false
   },
   "views.needs.siteTitle": {
@@ -404,7 +404,7 @@
     "reviewed": false
   },
   "views.needs.clear": {
-    "en": "Nothing. Ali has what he needs.",
+    "en": "Nothing. We have what we need.",
     "reviewed": false
   },
   "views.spend.title": {
@@ -556,7 +556,7 @@
     "reviewed": false
   },
   "views.site.aheadHint": {
-    "en": "The preview has changes that are not live yet. Ali publishes them when you say they look right.",
+    "en": "The preview has changes that are not live yet. We publish them when you say they look right.",
     "reviewed": false
   },
   "views.site.versions": {
@@ -680,7 +680,7 @@
     "reviewed": false
   },
   "views.col.time": {
-    "en": "Ali's time",
+    "en": "Developer time",
     "reviewed": false
   },
   "views.col.ai": {
@@ -788,7 +788,7 @@
     "reviewed": false
   },
   "views.chatgpt.intro": {
-    "en": "Ask for work in a ChatGPT chat: “file a request to change my opening hours”, “how is my site request doing?”. It uses your own ChatGPT plan, and it can do what you can do here, nothing more. What it files waits for Ali like any other request.",
+    "en": "Ask for work in a ChatGPT chat: “file a request to change my opening hours”, “how is my site request doing?”. It uses your own ChatGPT plan, and it can do what you can do here, nothing more. What it files waits for a developer like any other request.",
     "reviewed": false
   },
   "views.chatgpt.step1": {
@@ -812,7 +812,7 @@
     "reviewed": false
   },
   "views.assistants.intro": {
-    "en": "Claude, Cursor, or any assistant that speaks MCP. It sees your projects, files requests, replies and sets budgets: the same things you can do here, nothing more. Its requests wait for Ali like any other.",
+    "en": "Claude, Cursor, or any assistant that speaks MCP. It sees your projects, files requests, replies and sets budgets: the same things you can do here, nothing more. Its requests wait for a developer like any other.",
     "reviewed": false
   },
   "views.assistants.connect": {
@@ -924,7 +924,7 @@
     "reviewed": false
   },
   "views.billing.sub": {
-    "en": "Ali's time at {rate} an hour, billed by the second, plus what the AI cost, with no markup.",
+    "en": "Developer time at {rate} an hour, billed by the second, plus what the AI cost, with no markup.",
     "reviewed": false
   },
   "views.billing.finished": {
@@ -944,7 +944,7 @@
     "reviewed": false
   },
   "views.billing.empty": {
-    "en": "Nothing billed yet. The meter starts when Ali or an agent works on a request.",
+    "en": "Nothing billed yet. The meter starts when a developer or an agent works on a request.",
     "reviewed": false
   },
   "composer.title": {
@@ -952,7 +952,7 @@
     "reviewed": false
   },
   "composer.subtitle": {
-    "en": "Write it the way you would say it. Nothing starts until Ali has read it.",
+    "en": "Write it the way you would say it. Nothing starts until a developer has read it.",
     "reviewed": false
   },
   "composer.send": {
@@ -1012,7 +1012,7 @@
     "reviewed": false
   },
   "composer.attention.label": {
-    "en": "How much of Ali",
+    "en": "How much developer time",
     "reviewed": false
   },
   "composer.attention.about": {
@@ -1032,11 +1032,11 @@
     "reviewed": false
   },
   "composer.estimate.typical": {
-    "en": "Typically {time} of Ali's time ({cost}), plus AI at cost. You pay what the meter shows, by the second.",
+    "en": "Typically {time} of developer time ({cost}), plus AI at cost. You pay what the meter shows, by the second.",
     "reviewed": false
   },
   "composer.estimate.typicalCapped": {
-    "en": "Typically {time} of Ali's time ({cost}), plus AI at cost. You pay what the meter shows, by the second, and work pauses at {cap}.",
+    "en": "Typically {time} of developer time ({cost}), plus AI at cost. You pay what the meter shows, by the second, and work pauses at {cap}.",
     "reviewed": false
   },
   "composer.estimate.clock": {
@@ -1048,11 +1048,11 @@
     "reviewed": false
   },
   "ticket.now.new.title": {
-    "en": "Waiting for Ali to read it",
+    "en": "Waiting for a developer to read it",
     "reviewed": false
   },
   "ticket.now.new.next": {
-    "en": "Nothing starts until he approves it. Add details or files while you wait, or withdraw it at no cost.",
+    "en": "Nothing starts until it is approved. Add details or files while you wait, or withdraw it at no cost.",
     "reviewed": false
   },
   "ticket.now.approved.title": {
@@ -1072,11 +1072,11 @@
     "reviewed": false
   },
   "ticket.now.review.title": {
-    "en": "Ali is checking the result",
+    "en": "A developer is checking the result",
     "reviewed": false
   },
   "ticket.now.review.next": {
-    "en": "He writes here when it is ready, or asks you something.",
+    "en": "We write here when it is ready, or ask you something.",
     "reviewed": false
   },
   "ticket.now.done.title": {
@@ -1088,7 +1088,7 @@
     "reviewed": false
   },
   "ticket.now.declined.title": {
-    "en": "Ali declined this request",
+    "en": "We declined this request",
     "reviewed": false
   },
   "ticket.now.declined.next": {
@@ -1140,7 +1140,7 @@
     "reviewed": false
   },
   "ticket.cost.time": {
-    "en": "{time} of Ali's time",
+    "en": "{time} of developer time",
     "reviewed": false
   },
   "ticket.cost.ai": {
@@ -1160,7 +1160,7 @@
     "reviewed": false
   },
   "ticket.budget.subtitle": {
-    "en": "Work pauses when the cost reaches it, until you or Ali raise it.",
+    "en": "Work pauses when the cost reaches it, until you or your developer raise it.",
     "reviewed": false
   },
   "ticket.budget.save": {
@@ -1268,7 +1268,7 @@
     "reviewed": false
   },
   "ticket.withdraw.text": {
-    "en": "Ali has not started on it, so it costs nothing. It closes, and he is told.",
+    "en": "Nobody has started on it, so it costs nothing. It closes, and your developer is told.",
     "reviewed": false
   },
   "ticket.withdraw.confirm": {
@@ -1376,7 +1376,7 @@
     "reviewed": false
   },
   "board.stage.new": {
-    "en": "Waiting for Ali",
+    "en": "Waiting for a developer",
     "reviewed": false
   },
   "board.stage.approved": {
@@ -1520,7 +1520,7 @@
     "reviewed": false
   },
   "error.not_withdrawable": {
-    "en": "Ali has already approved this one. Write to him below to stop it.",
+    "en": "This one is already approved. Write to us below to stop it.",
     "reviewed": false
   },
   "error.forbidden": {
@@ -1528,7 +1528,7 @@
     "reviewed": false
   },
   "views.github.waitingOnConnection": {
-    "en": "{count, plural, one {# project names a repo we cannot read yet.} other {# projects name a repo we cannot read yet.}} Connect GitHub and I will create it in your account if it is missing — until then that work waits.",
+    "en": "{count, plural, one {# project names a repo we cannot read yet.} other {# projects name a repo we cannot read yet.}} Connect GitHub and we will create it in your account if it is missing — until then that work waits.",
     "reviewed": false
   },
   "start.pageTitle": {
@@ -2160,7 +2160,7 @@
     "reviewed": false
   },
   "card.reply.placeholder": {
-    "en": "Reply to Ali",
+    "en": "Reply to your developer",
     "reviewed": false
   },
   "card.reply.send": {
@@ -2168,7 +2168,7 @@
     "reviewed": false
   },
   "card.reply.note": {
-    "en": "Ali gets your reply by email and answers here.",
+    "en": "Your developer gets your reply by email and answers here.",
     "reviewed": false
   },
   "card.reply.sending": {
@@ -2328,7 +2328,7 @@
     "reviewed": false
   },
   "card.stage.new": {
-    "en": "Waiting for Ali",
+    "en": "Waiting for a developer",
     "reviewed": false
   },
   "card.stage.approved": {
@@ -2396,11 +2396,11 @@
     "reviewed": false
   },
   "card.kpi.waiting": {
-    "en": "{n} waiting for Ali",
+    "en": "{n} waiting for a developer",
     "reviewed": false
   },
   "card.kpi.noneWaiting": {
-    "en": "None waiting for Ali",
+    "en": "None waiting for a developer",
     "reviewed": false
   },
   "card.kpi.liveSites": {
@@ -2476,7 +2476,7 @@
     "reviewed": false
   },
   "card.who.ali": {
-    "en": "Ali",
+    "en": "Developer",
     "reviewed": false
   },
   "card.who.agent": {
@@ -2976,7 +2976,7 @@
     "reviewed": false
   },
   "start.intake.lede": {
-    "en": "Tell me in your own words. You don't need to know how any of it works. I'll say back what I understood, set up the project, and file the first request for Ali to approve.",
+    "en": "Tell me in your own words. You don't need to know how any of it works. I'll say back what I understood, set up the project, and file the first request for a developer to approve.",
     "reviewed": false
   },
   "start.intake.label": {
@@ -3000,7 +3000,7 @@
     "reviewed": false
   },
   "start.intake.note": {
-    "en": "The assistant answers in the thread, usually within a minute. Nothing runs until Ali approves the work.",
+    "en": "The assistant answers in the thread, usually within a minute. Nothing runs until a developer approves the work.",
     "reviewed": false
   },
   "start.intake.githubNote": {
@@ -3060,7 +3060,7 @@
     "reviewed": false
   },
   "ticket.move.approval": {
-    "en": "An approved request goes back to Ali for approval, because its scope changed.",
+    "en": "An approved request goes back to a developer for approval, because its scope changed.",
     "reviewed": false
   },
   "ticket.move.running": {
@@ -3180,7 +3180,7 @@
     "reviewed": false
   },
   "preview.subtitle": {
-    "en": "Goes to Ali as a request",
+    "en": "Goes to your developer as a request",
     "reviewed": false
   },
   "preview.close": {
@@ -3292,7 +3292,7 @@
     "reviewed": false
   },
   "preview.replyInPortal": {
-    "en": "Ali will reply in your portal.",
+    "en": "We will reply in your portal.",
     "reviewed": false
   },
   "preview.transcribed": {
@@ -3372,7 +3372,7 @@
     "reviewed": false
   },
   "board.reason.approval": {
-    "en": "Waiting for Ali to approve it.",
+    "en": "Waiting for a developer to approve it.",
     "reviewed": false
   },
   "board.reason.client": {
@@ -3392,7 +3392,7 @@
     "reviewed": false
   },
   "board.reason.review": {
-    "en": "Ali is checking the result.",
+    "en": "A developer is checking the result.",
     "reviewed": false
   },
   "board.reason.running": {
@@ -3552,7 +3552,7 @@
     "reviewed": false
   },
   "mail.firstPreview.body": {
-    "en": "Your first preview is ready: {url}\n\nThis is a rough first version, made to show you the shape of it.\n\nTo keep going, there are two ways:\n\n1. Reply to this email and Ali approves your next request, billed as usual.\n2. Connect the ChatGPT or Claude you already pay for at {agents}. It works on this same preview on your own subscription, so it adds no AI cost to your bill. He reviews when you want, and before anything goes live if you choose.",
+    "en": "Your first preview is ready: {url}\n\nThis is a rough first version, made to show you the shape of it.\n\nTo keep going, there are two ways:\n\n1. Reply to this email and we approve your next request, billed as usual.\n2. Connect the ChatGPT or Claude you already pay for at {agents}. It works on this same preview on your own subscription, so it adds no AI cost to your bill. A developer reviews when you want, and before anything goes live if you choose.",
     "reviewed": false
   },
   "thread.firstPreviewStarted": {
@@ -3560,11 +3560,11 @@
     "reviewed": false
   },
   "thread.firstPreviewReady": {
-    "en": "First preview ready: {url}. This is a rough first version. To keep going, reply here and Ali approves the next request, billed as usual, or connect ChatGPT or Claude at {agents} and keep building on this preview yourself, with no AI cost on your bill.",
+    "en": "First preview ready: {url}. This is a rough first version. To keep going, reply here and we approve the next request, billed as usual, or connect ChatGPT or Claude at {agents} and keep building on this preview yourself, with no AI cost on your bill.",
     "reviewed": false
   },
   "thread.firstPreviewStopped": {
-    "en": "The first preview stopped before it reached the preview. Ali sees why, and he writes here.",
+    "en": "The first preview stopped before it reached the preview. A developer sees why and writes here.",
     "reviewed": false
   },
   "views.row.firstPreview": {
@@ -3580,7 +3580,7 @@
     "reviewed": false
   },
   "ticket.firstPreview.building.next": {
-    "en": "This one is free: Ali covers up to {limit} of AI for it, and it stops at that limit. Nothing goes live until you decide.",
+    "en": "This one is free: we cover up to {limit} of AI for it, and it stops at that limit. Nothing goes live until you decide.",
     "reviewed": false
   },
   "ticket.firstPreview.ready.title": {
@@ -3588,11 +3588,11 @@
     "reviewed": false
   },
   "ticket.firstPreview.ready.next": {
-    "en": "This is a rough first version. Reply to ask Ali for the next change, or connect ChatGPT or Claude and keep building on this preview.",
+    "en": "This is a rough first version. Reply to ask us for the next change, or connect ChatGPT or Claude and keep building on this preview.",
     "reviewed": false
   },
   "ticket.firstPreview.cost": {
-    "en": "Free. This first preview is on Ali, up to {limit} of AI.",
+    "en": "Free. This first preview is on us, up to {limit} of AI.",
     "reviewed": false
   },
   "ticket.firstPreview.limit": {

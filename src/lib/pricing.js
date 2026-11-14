@@ -85,7 +85,7 @@ export function money(cents) {
 export function reviewEstimate() {
   const low = ATTENTION.find((a) => a.key === 'auto').typicalSeconds;
   const high = ATTENTION.find((a) => a.key === 'checked').typicalSeconds;
-  return `Review is billed as Ali's time, by the second at $${HOURLY_USD}/hour, with no minimum. A small change usually takes him ${Math.round(low / 60)}–${Math.round(high / 60)} minutes, about ${money(timeCents(low))}–${money(timeCents(high))}.`;
+  return `Review is billed as developer time, by the second at $${HOURLY_USD}/hour, with no minimum. A small change usually takes ${Math.round(low / 60)}–${Math.round(high / 60)} minutes, about ${money(timeCents(low))}–${money(timeCents(high))}.`;
 }
 
 /** "45s", "1m 40s", "1h 05m". */

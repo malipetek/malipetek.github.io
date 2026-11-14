@@ -136,7 +136,7 @@ const STATUSES = ['new', 'approved', 'in_progress', 'review', 'done', 'declined'
 type Status = (typeof STATUSES)[number];
 
 const STATUS_LABEL: Record<Status, string> = {
-  new: 'Waiting for Ali',
+  new: 'Waiting for a developer',
   approved: 'Approved',
   in_progress: 'In progress',
   review: 'In review',
