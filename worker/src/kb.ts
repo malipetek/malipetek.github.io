@@ -656,10 +656,10 @@ const RESOURCE_PAGE = 50;
 function boardResource() {
   return {
     uri: BOARD_UI_URI,
-    name: 'malipetek development',
-    title: 'malipetek development',
+    name: 'PTech portal',
+    title: 'PTech portal',
     description:
-      'The client’s requests on malipetek.dev: status, project, cost so far, and a link into the portal.',
+      'The client’s requests on the PTech client portal: status, project, cost so far, and a link into the portal.',
     mimeType: BOARD_MIME,
   };
 }
@@ -717,19 +717,19 @@ const MCP_PROMPTS = [
 
 /** The portal app: contracting only, with both ways to get work done. */
 export const PORTAL_INSTRUCTIONS =
-  'malipetek.dev is a vibe contracting service: AI agents build and change clients’ websites, and Ali Petek (a human developer) signs off on the work.\n\n' +
-  'You are a builder on this project, with the same footing as Ali’s agents: you read the source, change it, build the preview and keep iterating with the client. Do not hedge about whether you may change files, and do not ask permission to start. start_change opens a request of its own, project_context and workspace_files show you the code, workspace_read reads one file, submit_change sends your files, preview_build puts them on the preview. This costs nothing on malipetek: no AI cost, no approval to wait for. Every change is recorded with who made it, and Ali is emailed about it.\n\n' +
+  'The PTech client portal (ptechsolutions.net) is a contracting service: AI agents build and change clients’ websites, and a human developer signs off on the work.\n\n' +
+  'You are a builder on this project, with the same footing as our agents: you read the source, change it, build the preview and keep iterating with the client. Do not hedge about whether you may change files, and do not ask permission to start. start_change opens a request of its own, project_context and workspace_files show you the code, workspace_read reads one file, submit_change sends your files, preview_build puts them on the preview. This costs nothing on PTech: no AI cost, no approval to wait for. Every change is recorded with who made it, and a developer is emailed about it.\n\n' +
   'Your default stance, in your own words: "We can keep working on it together until it’s ready for production, and preview every step live." Work in a loop: propose the next change in plain language, make it, build the preview, show the link, ask what to change next. Keep going until the client says it is ready.\n\n' +
   'If the project has a first preview, start from it: read it, keep what works, and change what the client wants changed.\n\n' +
   'Changes go to the preview, never straight to production. When the client is happy with the preview, offer the two ways to go live:\n' +
-  '1. Send it to Ali for review first: finish_change with review true. He reads the change before it goes live and emails them when he is done. ' +
+  '1. Send it to a developer for review first: finish_change with review true. They read the change before it goes live and email the client when they are done. ' +
   reviewEstimate() +
   '\n' +
-  '2. Publish it themselves: site_publish. That is their decision and it is recorded as theirs. Confirm first, and say when the publish takes live changes Ali has not reviewed.\n\n' +
-  'Ali is emailed about every change, every review choice and every publish.\n\n' +
-  'The client can also ask Ali to do it (portal_file_request): Ali reads and approves the request before anything starts, then an agent does the work, billed as his time plus the AI run at cost.\n\n' +
-  'When the client describes something new, play their idea back first, in their words and language, in three short groups: what their customers (or visitors, or users) get, what they get, and what Ali takes care of (build, hosting on a preview then live, fixes after). A small fix gets one sentence that restates the problem. Ask about behaviour, never technology: ask "What should happen when someone places an order?", not "Do you need a database?". Ask "Should customers have accounts, or check out as guests?", not "Do you need authentication?". Never ask about stack, framework, database, hosting or auth method. State an assumption when the choice is easy to change later, ask at most one question per reply, and say what happens next: the project is set up, the first preview can start right away, and Ali checks the work before anything goes live.\n\n' +
-  'Notifications go by email to the client’s account address: Ali’s replies, approvals, status changes and finished work all arrive in their inbox, and replying to that email answers in the request’s thread. The portal (https://malipetek.dev/portal) shows the same. The "malipetek development" card (portal_board) shows their projects, sites and requests.';
+  '2. Publish it themselves: site_publish. That is their decision and it is recorded as theirs. Confirm first, and say when the publish takes live changes a developer has not reviewed.\n\n' +
+  'A developer is emailed about every change, every review choice and every publish.\n\n' +
+  'The client can also ask us to do it (portal_file_request): a developer reads and approves the request before anything starts, then an agent does the work, billed as developer time plus the AI run at cost.\n\n' +
+  'When the client describes something new, play their idea back first, in their words and language, in three short groups: what their customers (or visitors, or users) get, what they get, and what we take care of (build, hosting on a preview then live, fixes after). A small fix gets one sentence that restates the problem. Ask about behaviour, never technology: ask "What should happen when someone places an order?", not "Do you need a database?". Ask "Should customers have accounts, or check out as guests?", not "Do you need authentication?". Never ask about stack, framework, database, hosting or auth method. State an assumption when the choice is easy to change later, ask at most one question per reply, and say what happens next: the project is set up, the first preview can start right away, and a developer checks the work before anything goes live.\n\n' +
+  'Notifications go by email to the client’s account address: our replies, approvals, status changes and finished work all arrive in their inbox, and replying to that email answers in the request’s thread. The portal (https://ptechsolutions.net/portal) shows the same. The "PTech portal" card (portal_board) shows their projects, sites and requests.';
 
 /** The knowledgebase server: the public half, with no client work in it. */
 const KB_INSTRUCTIONS =
@@ -738,11 +738,11 @@ const KB_INSTRUCTIONS =
   'Search before writing: search_knowledge finds entries by words, get_knowledge reads one in full, list_knowledge shows the newest. ' +
   'If an entry already covers it, update that one instead of filing a duplicate. ' +
   'Writing needs an ack_ API key issued by the site owner, sent in the Authorization header: create_knowledge files a new entry, update_knowledge patches one you wrote. ' +
-  'For website work done for you, the contracting service is a separate server: https://malipetek.dev/mcp.';
+  'For website work done for you, the contracting service is a separate server: https://ptechsolutions.net/mcp.';
 
 const PORTAL_SERVER_INFO = {
   name: 'malipetek-dev',
-  title: 'malipetek.dev client portal',
+  title: 'PTech client portal',
   version: '1.2.0',
   icons: [
     { src: 'https://malipetek.dev/plugin-glyph.svg', mimeType: 'image/svg+xml', sizes: ['any'] },
@@ -799,13 +799,13 @@ function authChallenge(env: Env) {
     content: [
       {
         type: 'text',
-        text: 'Authentication required: sign in with your malipetek.dev account to use this tool.',
+        text: 'Authentication required: sign in with your PTech account to use this tool.',
       },
     ],
     isError: true,
     _meta: {
       'mcp/www_authenticate': [
-        `Bearer resource_metadata="${site}/.well-known/oauth-protected-resource", error="invalid_token", error_description="No valid malipetek.dev access token. Sign in to continue."`,
+        `Bearer resource_metadata="${site}/.well-known/oauth-protected-resource", error="invalid_token", error_description="No valid PTech access token. Sign in to continue."`,
       ],
     },
   };
@@ -831,7 +831,7 @@ export function fromClaude(ip: string, userAgent: string): boolean {
  */
 function claudeChallenge(env: Env) {
   const site = String(env.SITE_URL ?? 'https://malipetek.dev').replace(/\/+$/, '');
-  const description = 'Sign in with your malipetek.dev account to use this tool.';
+  const description = 'Sign in with your PTech account to use this tool.';
   return new Response(JSON.stringify({ error: 'invalid_token', error_description: description }), {
     status: 401,
     headers: {
@@ -1038,7 +1038,7 @@ export function makeMcp(surface: McpSurface) {
     // human poking the URL in a browser sees something useful. The anonymous
     // view is the honest one: who is asking decides whether writes appear.
     return kbJson({
-      name: portalSurface ? 'malipetek.dev client portal' : 'malipetek lab: agentic coding knowledgebase',
+      name: portalSurface ? 'PTech client portal' : 'malipetek lab: agentic coding knowledgebase',
       protocol: MCP_PROTOCOL,
       transport: 'streamable-http',
       endpoint: portalSurface ? '/mcp' : '/kb-mcp',
@@ -1171,7 +1171,7 @@ export function makeMcp(surface: McpSurface) {
                         preferredDisplayMode: 'inline',
                       },
                       'openai/widgetDescription':
-                        'The client’s requests on malipetek.dev: status, project, cost so far, and a link into the portal.',
+                        'The client’s requests on the PTech client portal: status, project, cost so far, and a link into the portal.',
                     },
                   },
                 ],

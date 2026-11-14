@@ -1481,8 +1481,8 @@ const groups = {
       JSON.stringify(anonTools.filter((t) => t.securitySchemes?.[0]?.type !== 'oauth2').map((t) => t.name)),
     );
     const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'e2e', version: '0' } }, token);
-    check('initialize says changes cost nothing, review is optional and notices come by email', /costs nothing on malipetek/.test(init.result?.instructions ?? '') && /billed as Ali's time/.test(init.result?.instructions ?? '') && /by email/.test(init.result?.instructions ?? ''));
-    check('the portal introduces itself as the client portal, version 1.2.0', init.result?.serverInfo?.title === 'malipetek.dev client portal' && init.result?.serverInfo?.version === '1.2.0', JSON.stringify(init.result?.serverInfo));
+    check('initialize says changes cost nothing, review is optional and notices come by email', /costs nothing on PTech/.test(init.result?.instructions ?? '') && /billed as developer time/.test(init.result?.instructions ?? '') && /by email/.test(init.result?.instructions ?? ''));
+    check('the portal introduces itself as the client portal, version 1.2.0', init.result?.serverInfo?.title === 'PTech client portal' && init.result?.serverInfo?.version === '1.2.0', JSON.stringify(init.result?.serverInfo));
     check('…and never mentions the knowledgebase', !/knowledgebase/i.test(init.result?.instructions ?? ''));
     const portalResources = (await rpc('resources/list', {}, null)).result?.resources ?? [];
     check('the portal publishes the board as its one resource', portalResources.length === 1 && /^ui:\/\//.test(portalResources[0]?.uri ?? ''), JSON.stringify(portalResources));
@@ -1500,7 +1500,7 @@ const groups = {
     const kbInstructions = String(kbInit.result?.instructions ?? '').trim();
     check(
       'the KB server introduces itself as malipetek lab and points website work at the portal',
-      kbInit.result?.serverInfo?.name === 'malipetek-lab-kb' && /For website work done for you, the contracting service is a separate server: https:\/\/malipetek\.dev\/mcp\.$/.test(kbInstructions),
+      kbInit.result?.serverInfo?.name === 'malipetek-lab-kb' && /For website work done for you, the contracting service is a separate server: https:\/\/ptechsolutions\.net\/mcp\.$/.test(kbInstructions),
       JSON.stringify(kbInit.result?.serverInfo),
     );
     check('the KB instructions mention no portal tool', !/portal_|start_change|submit_change|site_publish/.test(kbInstructions));
@@ -1578,7 +1578,7 @@ const groups = {
     check('…and ignores a request that is not theirs', (await rpc('tools/call', { name: 'portal_board', arguments: { request_id: 999999 } }, token)).result?.structuredContent?.focus === null);
     check(
       'the board carries projects with setup, sites, and requests with real times',
-      boardTool?.title === 'malipetek development' &&
+      boardTool?.title === 'PTech portal' &&
         card.projects?.some((p) => p.id === project.id && p.open >= 1 && typeof p.setup?.total === 'number') &&
         Array.isArray(card.sites) &&
         !Number.isNaN(Date.parse(card.requests?.find((r) => r.id === rid)?.updated_at ?? '')),
@@ -1588,12 +1588,12 @@ const groups = {
     check('it raises the budget', !(await tool('portal_set_budget', { request_id: rid, budget_usd: 50 })).error && (await tool('portal_request', { request_id: rid })).value.ticket.budget_cents === 5000);
     const second = (await tool('portal_file_request', { title: 'Never mind this', body: 'Changed my mind.', project_id: project.id })).value.request_id;
     const withdrawn = await tool('portal_withdraw', { request_id: second });
-    check('it withdraws a request Ali has not approved', !withdrawn.error && (await tool('portal_request', { request_id: second })).value.ticket.status === 'declined', withdrawn.text);
+    check('it withdraws a request a developer has not approved', !withdrawn.error && (await tool('portal_request', { request_id: second })).value.ticket.status === 'declined', withdrawn.text);
     const again = await tool('portal_withdraw', { request_id: second });
     check('…once', again.error && /not_withdrawable/.test(again.text));
     await call(`/admin/tickets/${rid}`, { method: 'PATCH', auth: admin, body: { status: 'approved' } });
     const late = await tool('portal_withdraw', { request_id: rid });
-    check('an approved request cannot be withdrawn, and it says what to do', late.error && /Ask him with portal_reply/.test(late.text), late.text);
+    check('an approved request cannot be withdrawn, and it says what to do', late.error && /Ask with portal_reply/.test(late.text), late.text);
     check('another client cannot withdraw it', (await call(`/portal/tickets/${rid}/withdraw`, { method: 'POST', auth: account(`w-${Date.now()}@example.com`).session })).status === 404);
     const peek = await tool('portal_request', { request_id: theirs });
     check('another client’s request is invisible to it', peek.error && /not_found/.test(peek.text));
