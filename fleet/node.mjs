@@ -1487,7 +1487,7 @@ class Node {
 const PROBE_EVERY_MS = 5 * 60_000;
 
 async function probeHealth(config) {
-  let origin = 'https://malipetek.dev';
+  let origin = 'https://ptechsolutions.net';
   try {
     origin = new URL(config.endpoint).origin;
   } catch {
