@@ -902,7 +902,7 @@ function apply(ctx) {
       <div style={{ padding: '20px 24px', maxWidth: 680 }}>
         <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Admin</h2>
         <p style={{ margin: '0 0 14px', fontSize: 12.5, opacity: 0.65, lineHeight: 1.45 }}>
-          The malipetek.dev portal inside the Harness: tickets, the work queue and its fleet, clients and projects.
+          The PTech client portal (ptechsolutions.net) inside the Harness: tickets, the work queue and its fleet, clients and projects.
           The Host refreshes every minute and notifies you about new work in the window and on this Mac.
         </p>
         <div style={rowStyle}>
@@ -1217,7 +1217,7 @@ function apply(ctx) {
   const ticketOrder = (a, b) => Number(isClosedTicket(a)) - Number(isClosedTicket(b)) || (b.updated_at ?? 0) - (a.updated_at ?? 0);
 
   function copyTicketLink(ticket) {
-    const link = `https://malipetek.dev/portal/admin#ticket=${ticket.id}`;
+    const link = `https://ptechsolutions.net/portal/admin#ticket=${ticket.id}`;
     void navigator.clipboard?.writeText(link).catch(() => undefined);
   }
 
@@ -1689,7 +1689,7 @@ function apply(ctx) {
     };
     const openInPortal = () => {
       const id = brief?.id ?? run.ticketId;
-      window.open(`https://malipetek.dev/portal/admin#ticket=${id}`, '_blank', 'noopener,noreferrer');
+      window.open(`https://ptechsolutions.net/portal/admin#ticket=${id}`, '_blank', 'noopener,noreferrer');
     };
     return (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, position: 'relative' }}>

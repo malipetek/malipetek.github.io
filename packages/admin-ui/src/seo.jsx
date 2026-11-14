@@ -36,6 +36,11 @@ const CYCLE_REASON = {
 const RUN_LABEL = { audit: 'Run audit', geo: 'Run GEO probe', citations: 'Check citations', ranks: 'Check rankings now', cycle: 'Run cycle now' };
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+/** Our own hosts: the lab and the PTech portal. */
+const OUR_DOMAINS = ['malipetek.dev', 'ptechsolutions.net'];
+/** True for one of our own hosts or a subdomain of one. */
+const isOurDomain = (domain) => OUR_DOMAINS.some((host) => domain === host || domain.endsWith(`.${host}`));
+
 const pct = (rate) => `${Math.round((rate ?? 0) * 100)}%`;
 const dayNumber = (day) => {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day ?? '');
@@ -612,7 +617,7 @@ function RankingsTab({ api, overview, refresh, tick }) {
                                   <div className="aw-seo-issue" key={domain}>
                                     <Tag tone="dash">{index + 1}</Tag>
                                     <span className="aw-mono">{domain}</span>
-                                    {domain === 'malipetek.dev' || domain.endsWith('.malipetek.dev') ? <Tag tone="ok">us</Tag> : null}
+                                    {isOurDomain(domain) ? <Tag tone="ok">us</Tag> : null}
                                   </div>
                                 ))
                               ) : (
