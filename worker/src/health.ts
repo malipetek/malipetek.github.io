@@ -293,7 +293,9 @@ const CLOUDFLARE_CALLBACK = '/api/portal/cloudflare/callback';
 async function githubOauthCheck(env: Env) {
   return check('oauth:github', async () => {
     if (!env.GITHUB_APP_CLIENT_ID) return { status: 'fail', detail: 'GITHUB_APP_CLIENT_ID is not set' };
-    const redirect = `${oauthCallbackBase(env)}${GITHUB_CALLBACK}`;
+    // The GitHub App registers its callback on SITE_URL, not the Cloudflare
+    // client's origin, and the live flow sends no redirect_uri at all.
+    const redirect = `${(env.SITE_URL || 'https://malipetek.dev').replace(/\/+$/, '')}${GITHUB_CALLBACK}`;
     const res = await fetchChecked(
       `https://github.com/login/oauth/authorize?${new URLSearchParams({
         client_id: env.GITHUB_APP_CLIENT_ID,
