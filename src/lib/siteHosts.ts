@@ -1,26 +1,29 @@
 /*
- * Two sites, one Worker — plus the portal's new home on a third host.
+ * One site, one Worker — plus the portal's home on a third host.
  *
- * malipetek.dev is the client portal for vibe contracting: the offer, the
- * portal, the assistant connection and the legal pages. lab.malipetek.dev is
- * Ali's developer lab: the agentic coding knowledgebase, the DeepSeek Harness
- * plugins, writing, work and projects. ptechsolutions.net serves the PTech
- * homepage and proxies the portal paths (/portal*, /api/*, /mcp,
- * /.well-known/*, /_astro/*, /fonts/*) to this Worker, so /portal and its
- * backing API live there; malipetek.dev/portal* 301s to it.
+ * lab.malipetek.dev is Ali's developer lab: the agentic coding knowledgebase,
+ * the DeepSeek Harness plugins, writing, work and projects. malipetek.dev is
+ * the lab's front door now: every path that is not the lab's or the portal's
+ * surface 301s there. ptechsolutions.net serves the PTech homepage and
+ * proxies the portal paths (/portal*, /api/*, /mcp, /.well-known/*, /_astro/*,
+ * /fonts/*) to this Worker, so /portal and its backing API live there;
+ * malipetek.dev/portal* 301s to it. The old contracting pages (the offer,
+ * contact, agents, legal, localized homepages) 301 to the company homepage —
+ * the portal they fed is the only piece that moved with its code.
  *
  * The split is by Host, not by path, so the same paths exist on both hosts and
  * each host owns its half:
  *
  *   malipetek.dev/kb        → 301 → lab.malipetek.dev/kb
- *   lab.malipetek.dev/portal → 301 → malipetek.dev/portal
+ *   lab.malipetek.dev/portal → 301 → ptechsolutions.net/portal
+ *   malipetek.dev/contact   → 301 → ptechsolutions.net/
  *
  * One canonical address per page, so a summary of either site never mixes the
  * two products up. The redirects live here because they run in two places:
  * `src/middleware.ts` for server-rendered routes, and `src/worker.ts` before
  * the Cloudflare adapter serves a prerendered page from the assets binding.
  */
-import { LOCALES, SOURCE_LOCALE } from './locales.js';
+import { LOCALES } from './locales.js';
 
 export const CONTRACTING_ORIGIN = 'https://malipetek.dev';
 export const LAB_ORIGIN = 'https://lab.malipetek.dev';
@@ -41,10 +44,13 @@ const PORTAL_HOSTS = new Set(['ptechsolutions.net', 'www.ptechsolutions.net']);
 const LAB_ROOTS = ['/kb', '/plugins', '/blog', '/experience', '/projects', '/pdfextractor'];
 const LAB_EXACT = ['/plugins.json'];
 
-/** Contracting paths. The localized pages are handled separately. */
-const CONTRACTING_ROOTS = ['/portal', '/api'];
-/** The portal app moved to ptechsolutions.net; the rest stays on malipetek.dev. */
+/** The portal app moved to ptechsolutions.net; the rest of the old site is gone. */
 const PORTAL_ROOTS = ['/portal'];
+/**
+ * Pages of the retired contracting site. They all 301 to the company
+ * homepage — /kb/new is not here on purpose: it lives under /kb, which is
+ * the lab's, and its portal-session sign-in no longer works on this host.
+ */
 const CONTRACTING_EXACT = [
   '/agents',
   '/agents.md',
@@ -52,9 +58,6 @@ const CONTRACTING_EXACT = [
   '/privacy-policy',
   '/terms-of-service',
   '/chat',
-  // Owner-only: it signs in with the portal session, which lives in
-  // malipetek.dev's localStorage, so it only works on that host.
-  '/kb/new',
 ];
 
 /** `/foo/` and `/foo` are the same page for this decision. */
@@ -66,7 +69,7 @@ function under(path: string, root: string): boolean {
   return path === root || path.startsWith(`${root}/`);
 }
 
-/** The pages the contracting site has once per locale. */
+/** The pages the retired contracting site had once per locale. */
 const LOCALE_PAGES = new Set(['/', '/contact', '/agents']);
 
 /**
@@ -164,18 +167,32 @@ export function movedPage(request: Request): Response | null {
 }
 
 /**
+ * A path that only the retired contracting site ever served: a localized
+ * page (/tr, /de-DE/contact, …) or one of the old exact paths. These 301 to
+ * the company homepage on ptechsolutions.net.
+ */
+function isContractingPath(path: string): boolean {
+  return localizedPagePath(path) !== null || CONTRACTING_EXACT.includes(path);
+}
+
+/** The portal's page surface and its OAuth discovery documents. */
+function isPortalSurface(path: string): boolean {
+  return PORTAL_ROOTS.some((root) => under(path, root)) || under(path, '/.well-known');
+}
+
+/**
  * A 301 across the split, or null when this host already owns the path.
  *
  * Unknown hosts (localhost, workers.dev previews) get null, so local dev
- * behaves like the contracting site.
+ * behaves like the lab.
  */
 export function hostRedirect(request: Request): Response | null {
   const host = requestHostname(request);
   const path = normalize(new URL(request.url).pathname);
 
   // ptechsolutions.net is the portal's home. Its Worker only sends the portal
-  // paths here, so this host gets the contracting site's answer; www folds to
-  // the apex in case a request ever arrives on it directly.
+  // paths here, so this host gets the lab's answer; www folds to the apex in
+  // case a request ever arrives on it directly.
   if (host === 'www.ptechsolutions.net') {
     return redirect(request, PORTAL_ORIGIN);
   }
@@ -187,37 +204,39 @@ export function hostRedirect(request: Request): Response | null {
     // knowledgebase, the very mix-up this split removes.
     if (under(path, '/.well-known')) return new Response('Not found', { status: 404 });
     // The portal app answers on ptechsolutions.net now; send it straight there
-    // instead of bouncing through malipetek.dev first.
-    if (PORTAL_ROOTS.some((root) => under(path, root))) {
+    // instead of bouncing through malipetek.dev first. /mcp stays: on this
+    // host it is the knowledgebase MCP (src/pages/mcp.ts), not the portal's.
+    if (isPortalSurface(path)) {
       return redirectToPortal(request);
     }
-    if (CONTRACTING_ROOTS.some((root) => under(path, root))) {
-      return redirect(request, CONTRACTING_ORIGIN);
-    }
-    if (CONTRACTING_EXACT.includes(path)) {
-      return redirect(request, CONTRACTING_ORIGIN);
-    }
-    const page = localizedPagePath(path);
-    if (page) {
-      // English lives at "/" on the contracting site, not at /en-US, so the
-      // prefix comes off: /en-US/contact → /contact.
-      const english = path === `/${SOURCE_LOCALE}` || path.startsWith(`/${SOURCE_LOCALE}/`);
-      return redirect(request, CONTRACTING_ORIGIN, english ? page : undefined);
+    // The contracting site's pages are gone; its old addresses land on the
+    // company homepage. /kb/new is lab content and falls through to null.
+    if (isContractingPath(path)) {
+      return redirect(request, PORTAL_ORIGIN, '/');
     }
     return null;
   }
 
   if (CONTRACTING_HOSTS.has(host)) {
-    // The portal moved to ptechsolutions.net; old links (emails, bookmarks)
-    // land here first and are forwarded with their query intact.
-    if (PORTAL_ROOTS.some((root) => under(path, root))) {
+    // /api/* is the intercom backend proxied by this Worker — never a page,
+    // never redirected (OAuth callbacks and portal calls live here).
+    if (under(path, '/api')) return null;
+    // The portal moved to ptechsolutions.net; old links (emails, bookmarks,
+    // MCP clients' discovery) land here first and are forwarded with their
+    // query intact. /mcp joins them: on this host it was the portal's MCP.
+    if (isPortalSurface(path) || path === '/mcp') {
       return redirectToPortal(request);
     }
-    if (CONTRACTING_EXACT.includes(path)) return null;
     if (LAB_ROOTS.some((root) => under(path, root)) || LAB_EXACT.includes(path)) {
       return redirect(request, LAB_ORIGIN);
     }
-    return null;
+    // The retired contracting pages go to the company homepage.
+    if (isContractingPath(path)) {
+      return redirect(request, PORTAL_ORIGIN, '/');
+    }
+    // Everything else — the old homepage and any unknown path — is the lab's
+    // now: malipetek.dev is the lab's front door.
+    return redirect(request, LAB_ORIGIN);
   }
 
   return null;
