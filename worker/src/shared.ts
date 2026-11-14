@@ -37,10 +37,9 @@ export interface Env {
   /** Var. Portal origin, used to build portal links. ptechsolutions.net. */
   PORTAL_URL?: string;
   /**
-   * Var. Origin of the OAuth redirect_uri we send to Cloudflare (and probe for
-   * GitHub): it must be a callback the OAuth client has registered. The API
-   * answers on both hosts, so this can lag PORTAL_URL until the client lists
-   * the new one. malipetek.dev today.
+   * Var. Origin of the OAuth redirect_uri we send to Cloudflare: it must be a
+   * callback the OAuth client has registered. ptechsolutions.net, on the PTech
+   * OAuth client. The GitHub App keeps its callback on SITE_URL.
    */
   OAUTH_CALLBACK_BASE?: string;
   /** Var. Email Routing address (with subaddressing) that feeds src/inbound.ts. */
