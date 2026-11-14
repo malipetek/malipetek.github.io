@@ -16,7 +16,7 @@
 import { Hono, type Context } from 'hono';
 import { now, sessionUser, siteUrl } from './portal.ts';
 import { retryCloudflareSites } from './sites.ts';
-import { corsHeaders, type Env, type HonoEnv } from './shared.ts';
+import { corsHeaders, oauthCallbackBase, type Env, type HonoEnv } from './shared.ts';
 import {
   apiBase,
   oauthBase,
@@ -52,12 +52,12 @@ export const CLOUDFLARE_SCOPES = [
 // binding that is `https://intercom`, on the zone the `/api` prefix is already
 // stripped, and workers.dev is switched off. Cloudflare matches this exactly
 // against the redirect URL registered on our OAuth client.
-const callbackUrl = (c: Context<HonoEnv>) => `${siteUrl(c.env)}/api/portal/cloudflare/callback`;
+const callbackUrl = (c: Context<HonoEnv>) => `${oauthCallbackBase(c.env)}/api/portal/cloudflare/callback`;
 const STATE_SECONDS = 15 * 60;
 
 /** The signed consent link, shared by the route and the intake agent. */
 export async function cloudflareConnectUrl(env: Env, userId: string): Promise<string> {
-  const redirect = `${siteUrl(env)}/api/portal/cloudflare/callback`;
+  const redirect = `${oauthCallbackBase(env)}/api/portal/cloudflare/callback`;
   return `${oauthBase(env)}/oauth2/auth?${new URLSearchParams({
     response_type: 'code',
     client_id: env.CLOUDFLARE_OAUTH_CLIENT_ID ?? '',

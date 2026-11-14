@@ -16,7 +16,7 @@
  * This module stays free of imports from portal.ts so the unit suite can load
  * it (the mail itself lives in portal.ts, with the other mail).
  */
-import { now, type Env } from './shared.ts';
+import { now, oauthCallbackBase, type Env } from './shared.ts';
 import { getSettings, nodesView, queueView } from './queue.ts';
 
 export type HealthStatus = 'ok' | 'fail' | 'skip';
@@ -293,7 +293,7 @@ const CLOUDFLARE_CALLBACK = '/api/portal/cloudflare/callback';
 async function githubOauthCheck(env: Env) {
   return check('oauth:github', async () => {
     if (!env.GITHUB_APP_CLIENT_ID) return { status: 'fail', detail: 'GITHUB_APP_CLIENT_ID is not set' };
-    const redirect = `${baseUrl(env)}${GITHUB_CALLBACK}`;
+    const redirect = `${oauthCallbackBase(env)}${GITHUB_CALLBACK}`;
     const res = await fetchChecked(
       `https://github.com/login/oauth/authorize?${new URLSearchParams({
         client_id: env.GITHUB_APP_CLIENT_ID,
@@ -317,7 +317,7 @@ async function githubOauthCheck(env: Env) {
 async function cloudflareOauthCheck(env: Env) {
   return check('oauth:cloudflare', async () => {
     if (!env.CLOUDFLARE_OAUTH_CLIENT_ID) return { status: 'fail', detail: 'CLOUDFLARE_OAUTH_CLIENT_ID is not set' };
-    const redirect = `${baseUrl(env)}${CLOUDFLARE_CALLBACK}`;
+    const redirect = `${oauthCallbackBase(env)}${CLOUDFLARE_CALLBACK}`;
     const oauthBase = (env.CLOUDFLARE_OAUTH_BASE || 'https://dash.cloudflare.com').replace(/\/+$/, '');
     const res = await fetchChecked(
       `${oauthBase}/oauth2/auth?${new URLSearchParams({

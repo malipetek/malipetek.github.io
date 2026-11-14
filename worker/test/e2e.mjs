@@ -2245,6 +2245,7 @@ async function main() {
     SESSION_SECRET: 'e2e-session-secret',
     SITE_URL: 'http://localhost:4321',
     PORTAL_URL: 'http://localhost:4321',
+    OAUTH_CALLBACK_BASE: 'http://localhost:4321',
     GITHUB_WEBHOOK_SECRET: 'test-webhook-secret',
     CLOUDFLARE_OAUTH_CLIENT_ID: CF_CLIENT.id,
     CLOUDFLARE_OAUTH_CLIENT_SECRET: CF_CLIENT.secret,

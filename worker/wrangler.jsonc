@@ -27,6 +27,10 @@
     "ADMIN_EMAIL": "malipetek@gmail.com",
     "SITE_URL": "https://malipetek.dev",
     "PORTAL_URL": "https://ptechsolutions.net",
+    // The redirect_uri origin for Cloudflare/GitHub OAuth. Must be a callback
+    // the OAuth client lists; switch to https://ptechsolutions.net after adding
+    // https://ptechsolutions.net/api/portal/cloudflare/callback to it.
+    "OAUTH_CALLBACK_BASE": "https://malipetek.dev",
     // Email Routing: send reply@ (subaddressing on) and new@ to this Worker.
     "REPLY_ADDRESS": "reply@ptechsolutions.net",
     // Outreach mail: cold and warm email, and the inbox replies land in.

@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import PostalMime from 'postal-mime';
 import { verifySender } from '../src/mailauth.ts';
-import { corsHeaders, isAllowedOrigin, type Env } from '../src/shared.ts';
+import { corsHeaders, isAllowedOrigin, oauthCallbackBase, type Env } from '../src/shared.ts';
 import { budgetLeft, cleanExecutorPin, cleanNodeReport, CLIENT_EXECUTOR, EXECUTOR_CATALOG } from '../src/queue.ts';
 import { firstPreviewDecision, limitCentsFor } from '../src/firstPreview.ts';
 import { PORTAL_INSTRUCTIONS, toolsFor } from '../src/kb.ts';
@@ -1445,4 +1445,19 @@ test('catalog sync: the committed mail.js is exactly what the shared builder mak
     LOCALES.map((l) => [l.code, JSON.parse(readFileSync(new URL(`messages/${l.code}.json`, root), 'utf8'))]),
   );
   assert.equal(mailBundleSource(catalogs), readFileSync(new URL('mail.js', root), 'utf8'));
+});
+
+test('oauth: the callback origin is the registered one, not the portal host', () => {
+  const env = (vars: Partial<Env>) => vars as Env;
+  // Cloudflare only lists the malipetek.dev callback: the portal moving to
+  // ptechsolutions.net must not change the redirect_uri until it lists that one.
+  assert.equal(
+    oauthCallbackBase(env({ SITE_URL: 'https://malipetek.dev', PORTAL_URL: 'https://ptechsolutions.net' })),
+    'https://malipetek.dev',
+  );
+  assert.equal(
+    oauthCallbackBase(env({ OAUTH_CALLBACK_BASE: 'https://ptechsolutions.net/', SITE_URL: 'https://malipetek.dev' })),
+    'https://ptechsolutions.net',
+  );
+  assert.equal(oauthCallbackBase(env({})), 'https://malipetek.dev');
 });

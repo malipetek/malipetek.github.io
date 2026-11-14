@@ -36,6 +36,13 @@ export interface Env {
   SITE_URL?: string;
   /** Var. Portal origin, used to build portal links. ptechsolutions.net. */
   PORTAL_URL?: string;
+  /**
+   * Var. Origin of the OAuth redirect_uri we send to Cloudflare (and probe for
+   * GitHub): it must be a callback the OAuth client has registered. The API
+   * answers on both hosts, so this can lag PORTAL_URL until the client lists
+   * the new one. malipetek.dev today.
+   */
+  OAUTH_CALLBACK_BASE?: string;
   /** Var. Email Routing address (with subaddressing) that feeds src/inbound.ts. */
   REPLY_ADDRESS?: string;
   /** Unpinned Email Service binding for outreach (src/marketing.ts). Unbound = no sends. */
@@ -211,4 +218,12 @@ export async function verifyTurnstile(env: Env, token: string | undefined, ip: s
   }
 }
 
-
+/**
+ * Where third-party OAuth sends the browser back to. A redirect_uri the OAuth
+ * client has not registered fails before the user sees a consent screen, so
+ * this follows OAUTH_CALLBACK_BASE (a registered host), not PORTAL_URL. The
+ * callback then hands the browser on to the portal (siteUrl).
+ */
+export function oauthCallbackBase(env: Env): string {
+  return (env.OAUTH_CALLBACK_BASE || env.SITE_URL || 'https://malipetek.dev').replace(/\/+$/, '');
+}

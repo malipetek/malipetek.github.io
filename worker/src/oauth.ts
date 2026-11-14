@@ -122,7 +122,7 @@ const protectedResource = (c: Ctx) =>
     authorization_servers: [issuer(c.env)],
     bearer_methods_supported: ['header'],
     scopes_supported: [SCOPE],
-    resource_name: 'malipetek.dev',
+    resource_name: 'PTech client portal',
     resource_documentation: `${siteUrl(c.env)}/portal`,
   });
 oauth.get('/.well-known/oauth-protected-resource', protectedResource);
