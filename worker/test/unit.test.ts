@@ -1392,10 +1392,10 @@ test('invites: a link lasts a week and names every project in plain words', () =
 });
 
 test('invites: the new-account mail says what was set up and how long the link works', () => {
-  const mail = inviteMail('en-US', { name: 'Ali', project: 'Acme Bakery', link: 'https://malipetek.dev/portal/verify#token=t', added: false });
-  assert.equal(mail.subject, 'Ali set up Acme Bakery for you on malipetek.dev');
-  assert.match(mail.text, /Ali set up Acme Bakery for you on malipetek\.dev\./);
-  assert.match(mail.text, /https:\/\/malipetek\.dev\/portal\/verify#token=t/);
+  const mail = inviteMail('en-US', { name: 'Ali', project: 'Acme Bakery', link: 'https://ptechsolutions.net/portal/verify#token=t', added: false });
+  assert.equal(mail.subject, 'Ali set up Acme Bakery for you on ptechsolutions.net');
+  assert.match(mail.text, /Ali set up Acme Bakery for you on ptechsolutions\.net\./);
+  assert.match(mail.text, /https:\/\/ptechsolutions\.net\/portal\/verify#token=t/);
   assert.match(mail.text, /works once and expires in 7 days/);
   assert.doesNotMatch(mail.subject + mail.text, /—/);
 });
@@ -1404,12 +1404,12 @@ test('invites: an account that already exists is told it was added, and Ali’s 
   const mail = inviteMail('en-US', {
     name: 'Ali',
     project: 'Acme and Beta',
-    link: 'https://malipetek.dev/portal/verify#token=t',
+    link: 'https://ptechsolutions.net/portal/verify#token=t',
     added: true,
     note: 'Start with the checkout page.',
   });
-  assert.equal(mail.subject, "You've been added to Acme and Beta on malipetek.dev");
-  assert.match(mail.text, /Ali added you to Acme and Beta on malipetek\.dev\./);
+  assert.equal(mail.subject, "You've been added to Acme and Beta on ptechsolutions.net");
+  assert.match(mail.text, /Ali added you to Acme and Beta on ptechsolutions\.net\./);
   assert.match(mail.text, /Start with the checkout page\.$/);
   assert.doesNotMatch(mail.subject + mail.text, /—/);
 });
