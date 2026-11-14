@@ -22,7 +22,7 @@
  * The MCP endpoints speak the streamable-HTTP transport (protocol 2025-06-18)
  * so ChatGPT apps and other MCP clients can mount the same tools a REST client
  * gets. `/mcp` is the client portal app (contracting only); `/kb-mcp` is this
- * knowledgebase, published at https://lab.malipetek.dev. They share one
+ * knowledgebase, published at https://malipetek.dev. They share one
  * implementation (`makeMcp`) but never advertise each other's tools.
  */
 import { Hono } from 'hono';
@@ -477,11 +477,11 @@ const MCP_SUPPORTED = ['2025-06-18', '2025-03-26', '2024-11-05'];
  * contracting and the public agentic-coding knowledgebase. Assistants
  * connecting to it could not tell which tools were which, so the surfaces are
  * split. `/mcp` is the published portal app; `/kb-mcp` is the knowledgebase and
- * lives at https://lab.malipetek.dev (the site proxies it here).
+ * lives at https://malipetek.dev/mcp (the site proxies it here).
  *
  * Browser origins that may call either endpoint. Server-side clients send
  * none. ChatGPT's own pages are listed because its connector setup may check
- * from the browser, and lab.malipetek.dev is where the KB server is read from.
+ * from the browser, and malipetek.dev is where the KB server is read from.
  */
 const ALLOWED_MCP_ORIGINS = [
   'https://malipetek.dev',
@@ -1308,5 +1308,5 @@ export function makeMcp(surface: McpSurface) {
 
 /** The published portal app. OAuth, the card, portal_* and owner_* tools. */
 export const mcp = makeMcp('portal');
-/** The public knowledgebase at https://lab.malipetek.dev/mcp (proxied to /kb-mcp). */
+/** The public knowledgebase at https://malipetek.dev/mcp (proxied to /kb-mcp). */
 export const kbMcp = makeMcp('kb');

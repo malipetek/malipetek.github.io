@@ -1,22 +1,22 @@
 /*
  * One site, one Worker — plus the portal's home on a third host.
  *
- * lab.malipetek.dev is Ali's developer lab: the agentic coding knowledgebase,
- * the DeepSeek Harness plugins, writing, work and projects. malipetek.dev is
- * the lab's front door now: every path that is not the lab's or the portal's
- * surface 301s there. ptechsolutions.net serves the PTech homepage and
- * proxies the portal paths (/portal*, /api/*, /mcp, /.well-known/*, /_astro/*,
- * /fonts/*) to this Worker, so /portal and its backing API live there;
- * malipetek.dev/portal* 301s to it. The old contracting pages (the offer,
- * contact, agents, legal, localized homepages) 301 to the company homepage —
- * the portal they fed is the only piece that moved with its code.
+ * malipetek.dev IS the lab now: the agentic coding knowledgebase, the DeepSeek
+ * Harness plugins, writing, work and projects all answer on the apex. The old
+ * lab.malipetek.dev subdomain 301s here so there is one canonical address.
+ * ptechsolutions.net serves the PTech homepage and proxies the portal paths
+ * (/portal*, /api/*, /mcp, /.well-known/*, /_astro/*, /fonts/*) to this
+ * Worker, so /portal and its backing API live there; malipetek.dev/portal*
+ * 301s to it. The retired contracting pages (the offer, contact, agents,
+ * legal, localized homepages) 301 to the company homepage.
  *
  * The split is by Host, not by path, so the same paths exist on both hosts and
  * each host owns its half:
  *
- *   malipetek.dev/kb        → 301 → lab.malipetek.dev/kb
- *   lab.malipetek.dev/portal → 301 → ptechsolutions.net/portal
- *   malipetek.dev/contact   → 301 → ptechsolutions.net/
+ *   malipetek.dev/kb          → the lab's knowledgebase
+ *   lab.malipetek.dev/kb      → 301 → malipetek.dev/kb
+ *   malipetek.dev/portal      → 301 → ptechsolutions.net/portal
+ *   malipetek.dev/contact     → 301 → ptechsolutions.net/
  *
  * One canonical address per page, so a summary of either site never mixes the
  * two products up. The redirects live here because they run in two places:
@@ -25,24 +25,26 @@
  */
 import { LOCALES } from './locales.js';
 
+/** The lab's canonical origin: the apex itself. */
+export const LAB_ORIGIN = 'https://malipetek.dev';
+/**
+ * Kept for the routes that were written against the old contracting host —
+ * it is the same origin as LAB_ORIGIN now. The portal they point at lives on
+ * PORTAL_ORIGIN.
+ */
 export const CONTRACTING_ORIGIN = 'https://malipetek.dev';
-export const LAB_ORIGIN = 'https://lab.malipetek.dev';
 /**
  * The client portal's public home. ptechsolutions.net serves the PTech
  * homepage at /; its Worker (a separate project) proxies the portal paths
  * (/portal*, /api/*, /mcp, /.well-known/*, /_astro/*, /fonts/*) here, so the
- * portal system lives on that host while the offer, contact, legal and
- * localized pages stay on malipetek.dev.
+ * portal system lives on that host.
  */
 export const PORTAL_ORIGIN = 'https://ptechsolutions.net';
 
+/** The retired lab subdomain: every path 301s to the apex. */
 const LAB_HOST = 'lab.malipetek.dev';
-const CONTRACTING_HOSTS = new Set(['malipetek.dev', 'www.malipetek.dev']);
+const APEX_HOSTS = new Set(['malipetek.dev']);
 const PORTAL_HOSTS = new Set(['ptechsolutions.net', 'www.ptechsolutions.net']);
-
-/** Lab paths, as prefixes: the page itself and everything under it. */
-const LAB_ROOTS = ['/kb', '/plugins', '/blog', '/experience', '/projects', '/pdfextractor'];
-const LAB_EXACT = ['/plugins.json'];
 
 /** The portal app moved to ptechsolutions.net; the rest of the old site is gone. */
 const PORTAL_ROOTS = ['/portal'];
@@ -110,7 +112,9 @@ function previewSiteAsked(request: Request): 'lab' | 'dev' | null {
 
 export function isLabRequest(request: Request): boolean {
   const host = requestHostname(request);
-  if (host === LAB_HOST) return true;
+  // The apex serves the lab; the retired subdomain still counts so a request
+  // that slips past the redirect renders the right chrome.
+  if (host === 'malipetek.dev' || host === 'www.malipetek.dev' || host === LAB_HOST) return true;
   if (!isPreviewHost(host)) return false;
   const asked = previewSiteAsked(request);
   if (asked) return asked === 'lab';
@@ -198,45 +202,43 @@ export function hostRedirect(request: Request): Response | null {
   }
   if (PORTAL_HOSTS.has(host)) return null;
 
+  // www folds to the apex.
+  if (host === 'www.malipetek.dev') {
+    return redirect(request, LAB_ORIGIN);
+  }
+
+  // The retired lab subdomain: every page moves to the apex, query intact.
+  // /api stays — it is the intercom backend proxied by this Worker, not a
+  // page, and POSTs must not eat a 301.
   if (host === LAB_HOST) {
-    // The lab's MCP server has no OAuth. Following a redirect to the portal's
-    // discovery documents would make a client sign in to the portal for the
-    // knowledgebase, the very mix-up this split removes.
-    if (under(path, '/.well-known')) return new Response('Not found', { status: 404 });
-    // The portal app answers on ptechsolutions.net now; send it straight there
-    // instead of bouncing through malipetek.dev first. /mcp stays: on this
-    // host it is the knowledgebase MCP (src/pages/mcp.ts), not the portal's.
+    if (under(path, '/api')) return null;
+    return redirect(request, LAB_ORIGIN);
+  }
+
+  if (APEX_HOSTS.has(host)) {
+    // /api/* is the intercom backend proxied by this Worker — never a page,
+    // never redirected (OAuth callbacks and portal calls live here).
+    if (under(path, '/api')) return null;
+    // A portal page that moved inside the portal app goes straight to its new
+    // address on ptechsolutions.net; the rest of the portal surface 301s to
+    // the portal home. The query string always survives: magic links
+    // (/portal/verify?token=…) and ticket deep links carry their state there.
+    const moved = MOVED[path];
+    if (moved) {
+      return new Response(null, { status: 301, headers: { location: `${PORTAL_ORIGIN}${moved}` } });
+    }
     if (isPortalSurface(path)) {
       return redirectToPortal(request);
     }
-    // The contracting site's pages are gone; its old addresses land on the
+    // The contracting site's pages are gone; their old addresses land on the
     // company homepage. /kb/new is lab content and falls through to null.
     if (isContractingPath(path)) {
       return redirect(request, PORTAL_ORIGIN, '/');
     }
+    // Everything else is the lab's and the apex serves it directly — including
+    // /mcp, which here is the knowledgebase MCP (src/pages/mcp.ts), not the
+    // portal's.
     return null;
-  }
-
-  if (CONTRACTING_HOSTS.has(host)) {
-    // /api/* is the intercom backend proxied by this Worker — never a page,
-    // never redirected (OAuth callbacks and portal calls live here).
-    if (under(path, '/api')) return null;
-    // The portal moved to ptechsolutions.net; old links (emails, bookmarks,
-    // MCP clients' discovery) land here first and are forwarded with their
-    // query intact. /mcp joins them: on this host it was the portal's MCP.
-    if (isPortalSurface(path) || path === '/mcp') {
-      return redirectToPortal(request);
-    }
-    if (LAB_ROOTS.some((root) => under(path, root)) || LAB_EXACT.includes(path)) {
-      return redirect(request, LAB_ORIGIN);
-    }
-    // The retired contracting pages go to the company homepage.
-    if (isContractingPath(path)) {
-      return redirect(request, PORTAL_ORIGIN, '/');
-    }
-    // Everything else — the old homepage and any unknown path — is the lab's
-    // now: malipetek.dev is the lab's front door.
-    return redirect(request, LAB_ORIGIN);
   }
 
   return null;

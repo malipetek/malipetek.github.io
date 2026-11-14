@@ -873,8 +873,8 @@ html:active-view-transition-type(page) {
 
 /* ————— the hop between sites ————— */
 
-/* malipetek.dev and lab.malipetek.dev cannot share a page transition (two
-   origins), so Base.astro plays it in halves: the page being left fades
+/* A hop between origins cannot share a page transition, so Base.astro
+   plays it in halves (kept for the portal hop): the page being left fades
    everything but "malipetek"; the page arriving holds the same parts hidden
    until its first frame, then brings them in. "/lab" draws back into the
    mark on the way out of the lab and out of it on the way in. */

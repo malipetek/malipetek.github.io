@@ -6,8 +6,8 @@ import { siteT } from "../lib/site.js";
 import { LOCALES, SOURCE_LOCALE } from "../lib/locales.js";
 import { isLabRequest } from "../lib/siteHosts";
 
-// One URL, two sites: the Host decides. malipetek.dev stays the contracting
-// homepage; lab.malipetek.dev gets the lab index.
+// The Host decides the site; malipetek.dev is the lab now, and the retired
+// lab.malipetek.dev 301s here (src/lib/siteHosts.ts).
 export const prerender = false;
 
 const lab = isLabRequest(Astro.request);

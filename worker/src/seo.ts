@@ -32,8 +32,8 @@ import { SLOP } from './content.ts';
 
 const DAY = 86_400;
 
-/** Our two hosts, the only pages this desk ever reads. */
-export const SEO_HOSTS = ['malipetek.dev', 'lab.malipetek.dev'] as const;
+/** Our host, the only pages this desk ever reads. The lab subdomain 301s here. */
+export const SEO_HOSTS = ['malipetek.dev'] as const;
 export type SeoHost = (typeof SEO_HOSTS)[number];
 
 /**
@@ -1255,7 +1255,6 @@ const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 export function seoHostOf(domain: string): SeoHost | null {
   const name = domain.trim().toLowerCase().replace(/\.$/, '');
   if (!name) return null;
-  if (name === 'lab.malipetek.dev' || name.endsWith('.lab.malipetek.dev')) return 'lab.malipetek.dev';
   if (name === 'malipetek.dev' || name.endsWith('.malipetek.dev')) return 'malipetek.dev';
   return null;
 }
@@ -1837,16 +1836,13 @@ export function seoBrief(options: {
 }): string {
   const { findings, drafts, held, total, ranks } = options;
   const lines = [
-    'Fix the search and assistant visibility issues below on our own two hosts.',
+    'Fix the search and assistant visibility issues below on our own host.',
     '',
-    'The sites, from AGENTS.md:',
-    '- malipetek.dev is the client portal: the offer, /portal/*, /agents, /contact,',
-    '  /<code>/contact, the legal pages, the /[locale]/ homepages, /mcp,',
-    '  /.well-known/* and /api/*.',
-    '- lab.malipetek.dev is the developer lab: /kb/*, /plugins/*, /plugins.json,',
+    'The site, from AGENTS.md:',
+    '- malipetek.dev is the developer lab: /kb/*, /plugins/*, /plugins.json,',
     '  /blog/*, /experience/*, /projects/*, /pdfextractor/*, and its own /mcp.',
-    '- A page belongs to one site. On the lab pass site="lab" to Base.astro (it sets',
-    '  the nav, canonical origin and footer); leave it off for the contracting site.',
+    '  The portal lives on ptechsolutions.net; its paths here 301.',
+    '- Pass site="lab" to Base.astro (it sets the nav, canonical origin and footer).',
     '- llms.txt, robots.txt, sitemap.xml and sitemap-index.xml are server routes and',
     '  answer per Host. Do not add a static public/robots.txt or public/llms.txt;',
     '  assets are served before the Worker.',

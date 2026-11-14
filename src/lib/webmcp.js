@@ -11,12 +11,12 @@
  * Three tools in total, deliberately, split by site. The spec's own guidance is
  * that every registered tool costs context window and invites tool confusion,
  * and that tools should be registered for the state the page is actually in:
- * the knowledgebase tools exist only on lab.malipetek.dev, and `open_intercom`
+ * the knowledgebase tools exist only on malipetek.dev, and `open_intercom`
  * only on pages that have an intercom (the contracting site).
  */
 
 const ENDPOINT = String(import.meta.env.PUBLIC_CHAT_ENDPOINT || '').replace(/\/+$/, '');
-const LAB_ORIGIN = 'https://lab.malipetek.dev';
+const LAB_ORIGIN = 'https://malipetek.dev';
 
 /** `document.modelContext` is the specified home; older polyfills used navigator. */
 function modelContext() {

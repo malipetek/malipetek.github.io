@@ -1,7 +1,7 @@
 /*
  * /sitemap.xml, per host.
  *
- * The same Worker answers malipetek.dev and lab.malipetek.dev, so a build-time
+ * The same Worker answers malipetek.dev and malipetek.dev, so a build-time
  * sitemap would list both sites at once. This one is written per request and
  * lists only the host it was asked on. The knowledgebase entries and the
  * plugin pages change between deploys and have their own sitemaps

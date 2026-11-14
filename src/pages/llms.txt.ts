@@ -4,7 +4,7 @@
  * malipetek.dev describes the client portal only: who it is for, how the work
  * runs, what it costs, and the MCP tools a client's assistant gets.
  *
- * lab.malipetek.dev describes the lab: the knowledgebase, its own MCP server,
+ * malipetek.dev describes the lab: the knowledgebase, its own MCP server,
  * the plugins, writing and work. The two summaries must not borrow from each
  * other; assistants that read one should not describe the other.
  */
@@ -102,7 +102,7 @@ the change itself. They pay only for the review minutes.
 
 The coding agents and internal tools used to do the work are not part of what clients use or need to know about.
 
-Ali's knowledgebase, open-source plugins and writing are a separate site: https://lab.malipetek.dev (not part of this service).
+Ali's knowledgebase, open-source plugins and writing are a separate site: https://malipetek.dev (not part of this service).
 
 ## Contact
 
@@ -110,7 +110,7 @@ Ali's knowledgebase, open-source plugins and writing are a separate site: https:
 - https://github.com/malipetek
 `;
 
-const lab = `# lab.malipetek.dev: M. Ali Petek's lab
+const lab = `# malipetek.dev: M. Ali Petek's lab
 
 > The developer side of malipetek.dev: an agentic coding knowledgebase from
 > real sessions, DeepSeek Harness plugins Ali builds for himself, writing, work

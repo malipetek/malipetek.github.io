@@ -1,5 +1,5 @@
 {
-  "$comment": "Discovery document for agents. Not a standardised path (WebMCP and MCP are still settling), so treat this as malipetek.dev's own manifest and prefer /llms.txt + /agents for the human-readable version. The knowledgebase has its own server at https://lab.malipetek.dev/mcp.",
+  "$comment": "Discovery document for agents. Not a standardised path (WebMCP and MCP are still settling), so treat this as malipetek.dev's own manifest and prefer /llms.txt + /agents for the human-readable version. The knowledgebase has its own server at https://malipetek.dev/mcp.",
   "name": "malipetek.dev client portal",
   "description": "The malipetek.dev client portal over MCP: file and follow website requests on a client's own account. Every request still waits for Ali before work starts.",
   "homepage": "https://malipetek.dev",
@@ -41,16 +41,16 @@
     ]
   },
   "webmcp": {
-    "note": "The contracting site registers an in-page open_intercom tool via document.modelContext when the browser implements WebMCP. The knowledgebase tools live on lab.malipetek.dev.",
+    "note": "The contracting site registers an in-page open_intercom tool via document.modelContext when the browser implements WebMCP. The knowledgebase tools live on malipetek.dev.",
     "tools": [
       "open_intercom (pages with an intercom)"
     ]
   },
   "knowledgebase": {
     "note": "Ali's agentic coding knowledgebase, open-source plugins and writing are a separate site. Nothing there is part of the client portal.",
-    "site": "https://lab.malipetek.dev",
-    "mcp": "https://lab.malipetek.dev/mcp",
-    "setup": "https://lab.malipetek.dev/kb/agents"
+    "site": "https://malipetek.dev",
+    "mcp": "https://malipetek.dev/mcp",
+    "setup": "https://malipetek.dev/kb/agents"
   },
   "contact": {
     "email": "malipetek@gmail.com",

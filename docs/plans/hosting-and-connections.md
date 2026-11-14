@@ -155,7 +155,7 @@ site routes, reserved slugs refused. Serving Worker: host parsing, index /
 **App created 2026-10-27** (github.com/settings/apps/malipetek-dev):
 slug `malipetek-dev`, App ID 5495973, Client ID `Iv23liVCtH8c4lhyKCrH`,
 installable on any account. Redirect URI
-`https://malipetek-intercom.malipetek.workers.dev/auth/github/callback`,
+`https://ptechsolutions-intercom.malipetek.workers.dev/auth/github/callback`,
 webhook `…/hooks/github`, "Request user authorization during installation"
 on, device flow off. Secrets already on the Worker: `GITHUB_APP_ID`,
 `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`,
@@ -335,7 +335,7 @@ at `GET https://api.cloudflare.com/client/v4/oauth/scopes`.
   DNS scopes all exist. OAuth client `malipetek` registered under Ali's
   account, client ID `ec178fe1350572efdadc6a872ee2f817` (private for now;
   needs a logo + the TXT-verified domain to go public — the verification TXT
-  is already live on `malipetek.dev`, verification is polling). Client ID/secret live in the `malipetek-intercom` Worker secrets
+  is already live on `malipetek.dev`, verification is polling). Client ID/secret live in the `ptechsolutions-intercom` Worker secrets
   `CLOUDFLARE_OAUTH_CLIENT_ID` / `CLOUDFLARE_OAUTH_CLIENT_SECRET`; redirect
   URL `https://malipetek.dev/api/portal/cloudflare/callback` (was the workers.dev
   address until 2026-11-01; workers.dev is switched off);

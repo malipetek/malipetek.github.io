@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "malipetek-intercom",
+  "name": "ptechsolutions-intercom",
   "account_id": "a60af2542282e283101650bebed42dcf",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -22,12 +22,13 @@
   // Non-secret configuration. Secrets (API keys, tokens) are NEVER listed
   // here — set them with `wrangler secret put NAME` (see README.md).
   "vars": {
-    "CONTACT_FROM_EMAIL": "intercom@malipetek.dev",
-    "PORTAL_FROM_EMAIL": "portal@malipetek.dev",
+    "CONTACT_FROM_EMAIL": "intercom@ptechsolutions.net",
+    "PORTAL_FROM_EMAIL": "portal@ptechsolutions.net",
     "ADMIN_EMAIL": "malipetek@gmail.com",
     "SITE_URL": "https://malipetek.dev",
+    "PORTAL_URL": "https://ptechsolutions.net",
     // Email Routing: send reply@ (subaddressing on) and new@ to this Worker.
-    "REPLY_ADDRESS": "reply@malipetek.dev",
+    "REPLY_ADDRESS": "reply@ptechsolutions.net",
     // Outreach mail: cold and warm email, and the inbox replies land in.
     "MARKETING_FROM_EMAIL": "hello@malipetek.dev",
     // Amazon SES, when the desk's sender is set to it (keys are secrets).
@@ -81,14 +82,15 @@
   // DeepSeek is the main one: `wrangler secret put DEEPSEEK_API_KEY`.
   "ai": { "binding": "AI" },
 
-  // Cloudflare Email Service. Requires malipetek.dev to be onboarded to Email
-  // Sending (see README.md) — the sender address must live on that domain.
+  // Cloudflare Email Service. Requires ptechsolutions.net (portal mail) and
+  // malipetek.dev (outreach) to be onboarded to Email Sending — the sender
+  // address must live on an onboarded domain.
   // destination_address pins every send to Ali's inbox.
   "send_email": [
     { "name": "EMAIL", "destination_address": "malipetek@gmail.com" },
     // Portal mail to clients (magic links, replies, status changes). No
     // destination pin, so the sender is pinned instead.
-    { "name": "MAILER", "allowed_sender_addresses": ["portal@malipetek.dev"] },
+    { "name": "MAILER", "allowed_sender_addresses": ["portal@ptechsolutions.net"] },
     // Outreach (src/marketing.ts). A separate sender so a cold-email problem
     // cannot damage the portal's reputation, and so the admin views can tell
     // the two streams apart.

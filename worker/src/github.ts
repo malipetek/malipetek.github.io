@@ -133,7 +133,7 @@ async function bearerUser(env: Env, c: { req: { header: (n: string) => string | 
  * proves the GitHub person behind it.
  */
 github.get('/auth/github/callback', async (c) => {
-  const siteUrl = c.env.SITE_URL ?? 'https://malipetek.dev';
+  const siteUrl = c.env.PORTAL_URL ?? c.env.SITE_URL ?? 'https://ptechsolutions.net';
   const userId = await userFromState(c.env, c.req.query('state') ?? '');
   const user = userId ? await c.env.DB.prepare(`SELECT id, role FROM users WHERE id = ? AND role = 'client'`).bind(userId).first<{ id: string; role: string }>() : null;
   if (!user) return c.redirect(`${siteUrl}/portal/?github=signin`);

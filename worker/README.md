@@ -380,7 +380,7 @@ still runs them, so a connector set up before the split (with an owner-issued
 `ack_` key) keeps working.
 
 `POST /kb-mcp` is the knowledgebase's own server, published at
-`https://lab.malipetek.dev/mcp` (the lab site proxies it here). It advertises
+`https://malipetek.dev/mcp` (the site proxies it here). It advertises
 `search_knowledge` / `get_knowledge` / `list_knowledge` to everyone and
 `create_knowledge` / `update_knowledge` to an `ack_` key or Ali's session.
 There are no `portal_*` tools and no OAuth. Its resources are the entries and

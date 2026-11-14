@@ -32,7 +32,7 @@ cd worker && npx wrangler secret put MARKETING_TOKEN && cd ..
 Two dashboard steps that no command covers:
 
 - **Email Routing** (Email → Email Routing → Routes): `hello@malipetek.dev` →
-  **Send to a Worker** → `malipetek-intercom`. The existing `reply@` and `new@`
+  **Send to a Worker** → `ptechsolutions-intercom`. The existing `reply@` and `new@`
   rules stay. Do not also forward `hello@` somewhere: the Worker forwards the
   mail Ali should read, so a second rule would double it.
 - **Sending**: `hello@malipetek.dev` is on the already-onboarded
@@ -144,7 +144,7 @@ Nothing is lost by pausing, and resuming picks up whatever is still due.
 
 - **Desk → Marketing**: sent today, next due, the last events, and every failure
   with the provider's reason. Retry from the Queue tab.
-- `npx wrangler tail malipetek-intercom --format pretty` for `marketing_send`,
+- `npx wrangler tail ptechsolutions-intercom --format pretty` for `marketing_send`,
   `inbound_marketing`, `inbound_bounce`.
 - `marketing/publisher/publish.log` for posts.
 

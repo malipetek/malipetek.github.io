@@ -29,9 +29,8 @@ type WorkerContext = {
 };
 
 /**
- * malipetek.dev and lab.malipetek.dev prerender each other's pages when a
- * link between them is hovered (Base.astro), so the hop between the two sites
- * lands at once. A browser prerenders a page on another origin of the same
+ * Pages prerender each other when a link between origins is hovered
+ * (Base.astro), so a hop lands at once. A browser prerenders a page on another origin of the same
  * site only if the page opts in. Static pages get this from _headers
  * (src/integrations/portalHeaders.mjs); this covers the rendered ones.
  */
