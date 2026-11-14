@@ -1040,6 +1040,8 @@ test('mcp: /mcp advertises the assistant as a builder on the project', () => {
 
 test('cors: site preview branches on workers.dev are allowed, look-alikes are not', () => {
   assert.equal(isAllowedOrigin('https://malipetek.dev'), true);
+  assert.equal(isAllowedOrigin('https://ptechsolutions.net'), true);
+  assert.equal(isAllowedOrigin('https://www.ptechsolutions.net'), true);
   assert.equal(isAllowedOrigin('https://visual-lab-3d-and-pages-malipetek-site.malipetek.workers.dev'), true);
   assert.equal(isAllowedOrigin('https://fix-x-malipetek-site.malipetek.workers.dev'), true);
   assert.equal(isAllowedOrigin('http://fix-x-malipetek-site.malipetek.workers.dev'), false);

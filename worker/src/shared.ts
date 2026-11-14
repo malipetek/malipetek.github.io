@@ -93,6 +93,9 @@ export type HonoEnv = { Bindings: Env };
 
 export const ALLOWED_ORIGINS = [
   'https://malipetek.dev',
+  // The portal lives on ptechsolutions.net; its pages call /api cross-origin.
+  'https://ptechsolutions.net',
+  'https://www.ptechsolutions.net',
   'http://localhost:4321',
   'http://127.0.0.1:4321',
 ];
