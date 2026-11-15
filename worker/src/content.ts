@@ -26,7 +26,7 @@ const DAY = 86_400;
 const MINUTE = 60;
 
 /** The repo whose worktree the agent works in. */
-export const CYCLE_PROJECT = 'malipetek-dev-site';
+export const CYCLE_PROJECT = 'ptechsolutions';
 /** How many posts one cycle writes. */
 export const CYCLE_POSTS = 3;
 /** A cycle ticket younger than this is not joined by another. */
