@@ -8,7 +8,31 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import PostalMime from 'postal-mime';
 import { verifySender } from '../src/mailauth.ts';
-import { corsHeaders, isAllowedOrigin, oauthCallbackBase, type Env } from '../src/shared.ts';
+import {
+  adminEmails,
+  corsHeaders,
+  isAdminEmail,
+  isAllowedOrigin,
+  now,
+  oauthCallbackBase,
+  primaryAdminEmail,
+  sha256,
+  toBase64Url,
+  type Env,
+} from '../src/shared.ts';
+import {
+  approveDevice,
+  cleanChallenge,
+  cleanDeviceLabel,
+  cleanDeviceState,
+  cleanVerifier,
+  deviceInfo,
+  deviceRedirect,
+  exchangeDevice,
+  startDevice,
+} from '../src/device.ts';
+import { createSession, SESSION_TTL_SECONDS } from '../src/sessions.ts';
+import { portal } from '../src/portal.ts';
 import { budgetLeft, cleanExecutorPin, cleanNodeReport, CLIENT_EXECUTOR, EXECUTOR_CATALOG } from '../src/queue.ts';
 import { firstPreviewDecision, limitCentsFor } from '../src/firstPreview.ts';
 import { PORTAL_INSTRUCTIONS, toolsFor } from '../src/kb.ts';
@@ -1460,4 +1484,338 @@ test('oauth: the callback origin is the registered one, not the portal host', ()
     'https://ptechsolutions.net',
   );
   assert.equal(oauthCallbackBase(env({})), 'https://malipetek.dev');
+});
+
+/* —— portal admins: ADMIN_EMAILS next to the legacy ADMIN_EMAIL —— */
+
+test('admins: ADMIN_EMAILS is trimmed, case-insensitive, and ADMIN_EMAIL still works', () => {
+  const env = (vars: Partial<Env>) => vars as Env;
+  assert.deepEqual(
+    adminEmails(env({ ADMIN_EMAIL: ' Ali@Example.com ', ADMIN_EMAILS: 'boB@Example.com, ali@example.com,, ' })),
+    ['ali@example.com', 'bob@example.com'],
+  );
+  assert.equal(isAdminEmail(env({ ADMIN_EMAILS: 'B@Example.com' }), ' b@example.COM '), true);
+  assert.equal(isAdminEmail(env({ ADMIN_EMAIL: 'old@example.com' }), 'OLD@example.com'), true);
+  assert.equal(isAdminEmail(env({ ADMIN_EMAIL: 'old@example.com', ADMIN_EMAILS: 'new@example.com' }), 'new@example.com'), true);
+  assert.equal(isAdminEmail(env({}), 'nobody@example.com'), false);
+  assert.equal(isAdminEmail(env({ ADMIN_EMAILS: ' , ' }), ''), false);
+  // The legacy address stays the primary (desk mail, invite names), even when
+  // the new list also names admins.
+  assert.equal(primaryAdminEmail(env({ ADMIN_EMAIL: 'old@example.com', ADMIN_EMAILS: 'new@example.com' })), 'old@example.com');
+  assert.equal(primaryAdminEmail(env({ ADMIN_EMAILS: 'new@example.com' })), 'new@example.com');
+  assert.equal(primaryAdminEmail(env({})), null);
+});
+
+/* —— PTech Admin device sign-in (custom-scheme PKCE) —— */
+
+type FakeRow = Record<string, unknown>;
+
+/**
+ * The smallest D1 the device flow and createSession touch. It is a test double,
+ * not SQLite: each statement is recognized by its leading SQL. A statement the
+ * flow starts using without being taught here fails loudly.
+ */
+function fakeDb() {
+  const devices = new Map<string, FakeRow>();
+  const users = new Map<string, FakeRow>();
+  const sessions: FakeRow[] = [];
+  const agents = new Map<string, FakeRow>();
+
+  function run(sql: string, args: unknown[]): { rows: FakeRow[]; changes: number } {
+    const text = sql.replace(/\s+/g, ' ').trim();
+
+    if (text.startsWith('INSERT INTO device_authorizations')) {
+      const [device_hash, challenge_hash, label, state, created_at, expires_at] = args as string[];
+      devices.set(device_hash, {
+        device_hash,
+        challenge_hash,
+        label,
+        state,
+        created_at,
+        expires_at,
+        code_hash: null,
+        user_id: null,
+        code_expires_at: null,
+        used_at: null,
+      });
+      return { rows: [], changes: 1 };
+    }
+    if (text.startsWith('DELETE FROM device_authorizations')) {
+      let changes = 0;
+      for (const [key, row] of devices) {
+        if (Number(row.expires_at) < Number(args[0])) {
+          devices.delete(key);
+          changes += 1;
+        }
+      }
+      return { rows: [], changes };
+    }
+    if (text.startsWith('UPDATE device_authorizations SET code_hash')) {
+      const [code_hash, user_id, code_expires_at, device_hash, at] = args as [string, string, number, string, number];
+      const row = devices.get(device_hash);
+      if (!row || row.used_at !== null || row.code_hash !== null || Number(row.expires_at) <= at) {
+        return { rows: [], changes: 0 };
+      }
+      row.code_hash = code_hash;
+      row.user_id = user_id;
+      row.code_expires_at = code_expires_at;
+      return { rows: [{ state: row.state }], changes: 1 };
+    }
+    if (text.startsWith('UPDATE device_authorizations SET used_at')) {
+      const [used_at, code_hash, at, challenge_hash] = args as [number, string, number, string];
+      const row = [...devices.values()].find((candidate) => candidate.code_hash === code_hash);
+      if (
+        !row ||
+        row.used_at !== null ||
+        row.user_id === null ||
+        Number(row.code_expires_at) <= at ||
+        row.challenge_hash !== challenge_hash
+      ) {
+        return { rows: [], changes: 0 };
+      }
+      row.used_at = used_at;
+      return { rows: [{ user_id: row.user_id }], changes: 1 };
+    }
+    if (text.startsWith('SELECT label, expires_at FROM device_authorizations')) {
+      const [device_hash, at] = args as [string, number];
+      const row = devices.get(device_hash);
+      return {
+        rows: row && row.used_at === null && Number(row.expires_at) > at ? [{ label: row.label, expires_at: row.expires_at }] : [],
+        changes: 0,
+      };
+    }
+    if (text.startsWith('SELECT id, email, name, role, locale FROM users')) {
+      const row = users.get(String(args[0]));
+      return { rows: row ? [row] : [], changes: 0 };
+    }
+    if (text.startsWith('SELECT u.id, u.email, u.name, u.role, u.handoff, u.locale, u.translation FROM sessions')) {
+      const session = sessions.find((item) => item.token_hash === args[0] && Number(item.expires_at) > Number(args[1]));
+      const row = session ? users.get(String(session.user_id)) : undefined;
+      return { rows: row ? [row] : [], changes: 0 };
+    }
+    if (text.startsWith('SELECT u.id, u.email, u.name, u.role, u.handoff, u.locale, u.translation FROM agent_tokens')) {
+      const agent = agents.get(String(args[0]));
+      const row = agent && agent.revoked_at === null ? users.get(String(agent.user_id)) : undefined;
+      return { rows: row && row.role === 'client' ? [row] : [], changes: 0 };
+    }
+    if (text.startsWith('UPDATE agent_tokens SET last_used_at')) return { rows: [], changes: 1 };
+    if (text.startsWith('INSERT INTO sessions')) {
+      const [token_hash, user_id, expires_at, created_at] = args as [string, string, number, number];
+      sessions.push({ token_hash, user_id, expires_at, created_at });
+      return { rows: [], changes: 1 };
+    }
+    if (text.startsWith('DELETE FROM sessions')) {
+      let changes = 0;
+      for (let i = sessions.length - 1; i >= 0; i -= 1) {
+        if (Number(sessions[i].expires_at) < Number(args[0])) {
+          sessions.splice(i, 1);
+          changes += 1;
+        }
+      }
+      return { rows: [], changes };
+    }
+    if (text.startsWith('DELETE FROM login_tokens')) return { rows: [], changes: 0 };
+    throw new Error(`fake D1: unhandled SQL: ${text}`);
+  }
+
+  const statement = (sql: string, args: unknown[] = []) => ({
+    bind: (...bound: unknown[]) => statement(sql, bound),
+    first: async <T>() => (run(sql, args).rows[0] as T | undefined) ?? null,
+    run: async () => {
+      const { changes } = run(sql, args);
+      return { success: true, meta: { changes } };
+    },
+    all: async <T>() => ({ results: run(sql, args).rows as T[], success: true, meta: {} }),
+  });
+
+  const DB = {
+    prepare: (sql: string) => statement(sql),
+    batch: async (statements: { run: () => Promise<unknown> }[]) => Promise.all(statements.map((item) => item.run())),
+  };
+  return { DB, devices, users, sessions, agents };
+}
+
+const deviceEnv = (db: ReturnType<typeof fakeDb>, vars: Partial<Env> = {}) =>
+  ({ DB: db.DB, RATE_LIMIT: { get: async () => null, put: async () => undefined }, ...vars }) as unknown as Env;
+
+async function challengeFor(verifier: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return toBase64Url(new Uint8Array(digest));
+}
+
+const ADMIN = { id: 'admin-1', email: 'ali@example.com', name: 'Ali', role: 'admin' as const, locale: 'en-US' };
+const CLIENT = { id: 'client-1', email: 'client@example.com', name: 'Client', role: 'client' as const, locale: 'tr' };
+const VERIFIER = 'A1b2C3d4'.repeat(8); // 64 unreserved characters
+const OTHER_VERIFIER = 'Z9y8X7w6'.repeat(8);
+
+test('device: challenge/verifier/label/state validation matches the contract', () => {
+  const padded = `${'A'.repeat(42)}=`;
+  assert.equal(cleanChallenge(padded), null);
+  assert.equal(cleanChallenge('x'), null);
+  assert.equal(cleanChallenge('!'.repeat(43)), null);
+  assert.equal(cleanVerifier(VERIFIER), VERIFIER);
+  assert.equal(cleanVerifier('short'), null);
+  assert.equal(cleanVerifier('A'.repeat(129)), null);
+  assert.equal(cleanVerifier(`${'A'.repeat(50)}!`), null);
+  assert.equal(cleanDeviceLabel(undefined), null);
+  assert.equal(cleanDeviceLabel('  '), null);
+  assert.equal(cleanDeviceLabel(42), undefined);
+  assert.equal(cleanDeviceLabel(' PTech Admin '), 'PTech Admin');
+  assert.equal(cleanDeviceLabel('x'.repeat(200))?.length, 80);
+  assert.equal(cleanDeviceState(undefined), null);
+  assert.equal(cleanDeviceState(42), undefined);
+  assert.equal(cleanDeviceState('x'.repeat(201)), undefined);
+  assert.equal(cleanDeviceState('state-1'), 'state-1');
+  assert.equal(deviceRedirect('abc'), 'ptech-admin://auth?code=abc');
+  assert.equal(deviceRedirect('abc', 's 1'), 'ptech-admin://auth?code=abc&state=s%201');
+});
+
+test('device: start stores only hashes, admin approves once, token issues a 30-day session', async () => {
+  const db = fakeDb();
+  db.users.set(ADMIN.id, ADMIN);
+  const env = deviceEnv(db);
+  const challenge = await challengeFor(VERIFIER);
+  assert.equal(challenge.length, 43);
+
+  const started = await startDevice(env, { challenge, label: 'PTech Admin', state: 'st-1' });
+  assert.ok(Math.abs(started.expiresAt - (now() + 10 * 60)) <= 1);
+  // The raw device code is nowhere in the store; only its SHA-256 is.
+  assert.equal(db.devices.has(started.deviceCode), false);
+  const row = db.devices.get(await sha256(started.deviceCode))!;
+  assert.equal(row.challenge_hash, await sha256(VERIFIER));
+  assert.match(String(row.challenge_hash), /^[0-9a-f]{64}$/); // hex, not the base64url challenge
+  assert.notEqual(row.challenge_hash, challenge);
+  assert.equal(row.label, 'PTech Admin');
+  assert.equal(row.state, 'st-1');
+
+  assert.deepEqual(await deviceInfo(env, started.deviceCode), { label: 'PTech Admin', expiresAt: started.expiresAt });
+  assert.equal(await deviceInfo(env, 'unknown'), null);
+
+  // A client account cannot approve a device sign-in, even with a valid code.
+  assert.equal(await approveDevice(env, CLIENT, started.deviceCode), null);
+
+  const approved = await approveDevice(env, ADMIN, started.deviceCode);
+  assert.ok(approved);
+  assert.equal(approved.state, 'st-1');
+  assert.equal(deviceRedirect(approved.code, approved.state), `ptech-admin://auth?code=${encodeURIComponent(approved.code)}&state=st-1`);
+  assert.equal(db.devices.get(await sha256(started.deviceCode))!.code_hash, await sha256(approved.code));
+  // One approval per device code.
+  assert.equal(await approveDevice(env, ADMIN, started.deviceCode), null);
+
+  // A wrong verifier is refused and does not burn the good code.
+  assert.equal(await exchangeDevice(env, approved.code, OTHER_VERIFIER), null);
+  const user = await exchangeDevice(env, approved.code, VERIFIER);
+  assert.equal(user?.id, ADMIN.id);
+  assert.equal(user?.role, 'admin');
+  assert.equal(user?.email, ADMIN.email);
+  // One-time: the same code cannot be redeemed twice.
+  assert.equal(await exchangeDevice(env, approved.code, VERIFIER), null);
+
+  const session = await createSession(env, user!);
+  assert.equal(db.sessions.length, 1);
+  assert.equal(db.sessions[0].user_id, ADMIN.id);
+  assert.equal(db.sessions[0].token_hash, await sha256(session));
+  assert.ok(Math.abs(Number(db.sessions[0].expires_at) - Number(db.sessions[0].created_at) - SESSION_TTL_SECONDS) <= 1);
+});
+
+test('device: expired, used and unknown codes fail the same way', async () => {
+  const db = fakeDb();
+  db.users.set(ADMIN.id, ADMIN);
+  const env = deviceEnv(db);
+  const challenge = await challengeFor(VERIFIER);
+
+  // The device code itself expires after ten minutes.
+  const expired = await startDevice(env, { challenge, label: null, state: null });
+  db.devices.get(await sha256(expired.deviceCode))!.expires_at = now() - 1;
+  assert.equal(await deviceInfo(env, expired.deviceCode), null);
+  assert.equal(await approveDevice(env, ADMIN, expired.deviceCode), null);
+
+  // The authorization code expires after five minutes.
+  const started = await startDevice(env, { challenge });
+  const approved = await approveDevice(env, ADMIN, started.deviceCode);
+  assert.ok(approved);
+  db.devices.get(await sha256(started.deviceCode))!.code_expires_at = now() - 1;
+  assert.equal(await exchangeDevice(env, approved.code, VERIFIER), null);
+
+  // Unknown codes are refused, and nothing has been marked used by the failures.
+  assert.equal(await approveDevice(env, ADMIN, 'not-a-device-code'), null);
+  assert.equal(await exchangeDevice(env, 'not-an-authorization-code', VERIFIER), null);
+  const fresh = await startDevice(env, { challenge });
+  assert.ok(await approveDevice(env, ADMIN, fresh.deviceCode));
+});
+
+test('device routes: public start, admin-only approve, one-time token, agent tokens refused', async () => {
+  const db = fakeDb();
+  db.users.set(ADMIN.id, ADMIN);
+  db.users.set(CLIENT.id, CLIENT);
+  const env = deviceEnv(db);
+  const adminSession = await createSession(env, ADMIN);
+  const clientSession = await createSession(env, CLIENT);
+
+  const call = async (path: string, init: { method?: string; body?: unknown; auth?: string } = {}) => {
+    const res = await portal.fetch(
+      new Request(`https://ptechsolutions.net${path}`, {
+        method: init.method ?? 'GET',
+        headers: {
+          ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
+          ...(init.auth ? { authorization: `Bearer ${init.auth}` } : {}),
+        },
+        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      }),
+      env,
+    );
+    return { status: res.status, data: (await res.json()) as Record<string, any> };
+  };
+
+  const started = await call('/auth/device/start', {
+    method: 'POST',
+    body: { challenge: await challengeFor(VERIFIER), label: 'PTech Admin', state: 'xyz' },
+  });
+  assert.equal(started.status, 200);
+  assert.equal(
+    started.data.verificationUrl,
+    `https://ptechsolutions.net/portal/device?code=${encodeURIComponent(started.data.deviceCode)}`,
+  );
+  assert.ok(Number(started.data.expiresAt) > now());
+
+  const info = await call(`/auth/device/info?code=${encodeURIComponent(started.data.deviceCode)}`);
+  assert.equal(info.status, 200);
+  assert.equal(info.data.label, 'PTech Admin');
+
+  // Start is public; approval needs a browser session and the admin role.
+  assert.equal((await call('/portal/device/approve', { method: 'POST', body: { deviceCode: started.data.deviceCode } })).status, 401);
+  assert.equal(
+    (await call('/portal/device/approve', { method: 'POST', body: { deviceCode: started.data.deviceCode }, auth: clientSession })).status,
+    403,
+  );
+
+  const approved = await call('/portal/device/approve', {
+    method: 'POST',
+    body: { deviceCode: started.data.deviceCode },
+    auth: adminSession,
+  });
+  assert.equal(approved.status, 200);
+  assert.equal(approved.data.redirect, `ptech-admin://auth?code=${approved.data.code}&state=xyz`);
+
+  const wrong = await call('/auth/device/token', { method: 'POST', body: { code: approved.data.code, verifier: OTHER_VERIFIER } });
+  assert.equal(wrong.status, 401);
+  assert.deepEqual(wrong.data, { error: 'invalid_code' });
+
+  const token = await call('/auth/device/token', { method: 'POST', body: { code: approved.data.code, verifier: VERIFIER } });
+  assert.equal(token.status, 200);
+  assert.equal(token.data.user.role, 'admin');
+  assert.equal(token.data.user.email, ADMIN.email);
+  assert.ok(token.data.session);
+
+  assert.equal((await call('/auth/device/token', { method: 'POST', body: { code: approved.data.code, verifier: VERIFIER } })).status, 401);
+
+  // An agent token is a client credential: it can never approve a device sign-in.
+  const agentToken = 'cat_agent-test';
+  db.agents.set(await sha256(agentToken), { token_hash: await sha256(agentToken), user_id: CLIENT.id, revoked_at: null });
+  const viaAgent = await call('/portal/device/approve', {
+    method: 'POST',
+    body: { deviceCode: started.data.deviceCode },
+    auth: agentToken,
+  });
+  assert.equal(viaAgent.status, 403);
 });

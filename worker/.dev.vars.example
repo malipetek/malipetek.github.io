@@ -22,5 +22,11 @@ CONTACT_FROM_EMAIL=intercom@malipetek.dev
 SITE_URL=http://localhost:4321
 DEV_RETURN_LINK=1
 
+# Portal admins. ADMIN_EMAIL is the legacy single address and stays the primary
+# for desk mail; ADMIN_EMAILS adds more, comma-separated and case-insensitive.
+# A magic link only raises an account to admin, never demotes it.
+ADMIN_EMAIL=admin@example.com
+ADMIN_EMAILS=
+
 # Fleet node API (see fleet/README.md). Any string locally.
 RUNNER_TOKEN=dev-runner-token

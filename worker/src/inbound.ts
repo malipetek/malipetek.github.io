@@ -4,9 +4,11 @@
  * Three doors:
  *   reply+<ticket>.<c|a>.<sig>@…  a reply to a ticket email. The sig must match
  *                                 (HMAC, see portal.ts) AND the envelope sender
- *                                 must be the ticket's client (c) or ADMIN_EMAIL
- *                                 (a). Posts into the thread and notifies the
- *                                 other side, exactly like the portal UI does.
+ *                                 must be the ticket's client (c) or one of
+ *                                 the portal admins (a; ADMIN_EMAILS or the
+ *                                 legacy ADMIN_EMAIL). Posts into the thread
+ *                                 and notifies the other side, exactly like
+ *                                 the portal UI does.
  *   new@…                         a new ticket from a registered client. The
  *                                 receiving server must vouch for the From
  *                                 address (DMARC or aligned DKIM, mailauth.ts):
@@ -39,7 +41,7 @@ import {
 } from './portal.ts';
 import { checkUploads, fileCount, FILE_LIMITS, type Upload } from './files.ts';
 import { handleBounceReport, handleComplaintReport, handleMarketingMail, isBounceMessage, isComplaintReport, marketingInbox } from './marketing.ts';
-import type { Env } from './shared.ts';
+import { isAdminEmail, type Env } from './shared.ts';
 import { verifySender } from './mailauth.ts';
 
 /** Room for a few phone screenshots; base64 makes attachments a third larger. */
@@ -245,8 +247,10 @@ export async function handleInbound(message: ForwardableEmailMessage, env: Env):
       .first<{ id: number; title: string; title_en: string | null; client_email: string; client_locale: string }>();
     if (!ticket) return reject('That ticket no longer exists.');
 
-    const expected = role === 'c' ? ticket.client_email : bare(env.ADMIN_EMAIL || '');
-    if (!expected || from !== expected) {
+    // Anyone listed as an admin may reply as Ali; a client may only reply from
+    // the address the ticket was sent to.
+    const allowed = role === 'c' ? from === ticket.client_email : isAdminEmail(env, from);
+    if (!allowed) {
       return reject(
         `Replies to this ticket are only accepted from the address it was sent to. ` +
           `Use ${siteUrl(env)}/portal instead.`,

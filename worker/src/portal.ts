@@ -4,10 +4,14 @@
  *   POST /auth/request   { email, turnstileToken }  → emails a magic link
  *   POST /auth/verify    { token }                   → { session, user }
  *   POST /auth/code      { email, code }             → { session, user }  (the code in the same email)
+ *   POST /auth/device/start { challenge, label?, state? } → { deviceCode, verificationUrl, expiresAt }
+ *   GET  /auth/device/info?code=                     → { label, expiresAt }  (consent page only)
+ *   POST /auth/device/token { code, verifier }       → { session, user }  (PTech Admin desktop app)
  *   POST /auth/logout
  *
  *   Signed in (Authorization: Bearer <session>):
  *   GET  /portal/me                       user + linked projects
+ *   POST /portal/device/approve { deviceCode } → { redirect, code }  (admin only)
  *   GET  /portal/tickets                  own tickets
  *   POST /portal/tickets                  { title, body, projectId? }
  *   GET  /portal/tickets/:id              ticket + public messages (with their files)
@@ -15,7 +19,7 @@
  *   GET  /portal/tickets/:id/files/:fileId
  *   POST /portal/tickets/:id/withdraw     only while new and nothing has run
  *
- *   Admin role only (ADMIN_EMAIL signs in as admin):
+ *   Admin role only (any address in ADMIN_EMAILS, or the legacy ADMIN_EMAIL):
  *   GET   /admin/tickets?status=
  *   GET   /admin/tickets/:id              includes internal notes
  *   PATCH /admin/tickets/:id              { status?, projectId? }
@@ -69,14 +73,28 @@ import {
   clientIp,
   corsHeaders,
   encoder,
+  isAdminEmail,
   isRateLimited,
   json,
   now,
-  toBase64Url,
+  primaryAdminEmail,
+  randomToken,
+  sha256,
   verifyTurnstile,
   type Env,
   type HonoEnv,
 } from './shared.ts';
+import { createSession } from './sessions.ts';
+import {
+  approveDevice,
+  cleanChallenge,
+  cleanDeviceLabel,
+  cleanDeviceState,
+  deviceInfo,
+  deviceRedirect,
+  exchangeDevice,
+  startDevice,
+} from './device.ts';
 import {
   briefText,
   cleanBrief,
@@ -116,10 +134,11 @@ import { runIntake } from './intake.ts';
 import { isAudioType, transcribe } from './transcribe.ts';
 import { checkUploads, fileCount, fileResponse, FILE_LIMITS, sizeText, storeFiles, withFiles, type FileMeta, type Upload } from './files.ts';
 
-export { now };
+// Kept exported from here for the modules that already import them from the
+// portal; the implementations live in shared.ts.
+export { now, randomToken, sha256 };
 
 const LINK_TTL_SECONDS = 15 * 60;
-const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 const MAX_EMAIL_CHARS = 254;
 export const MAX_TITLE_CHARS = 140;
 export const MAX_BODY_CHARS = 8000;
@@ -127,6 +146,8 @@ const MAX_NAME_CHARS = 80;
 const AUTH_IP_LIMIT = 5; // magic-link requests per IP per window
 const AUTH_EMAIL_LIMIT = 3; // per address per window
 const AUTH_WINDOW_SECONDS = 15 * 60;
+const DEVICE_START_LIMIT = 10; // device sign-in attempts per IP per window
+const DEVICE_TOKEN_LIMIT = 30; // device code redemptions per IP per window
 const TICKET_LIMIT = 10; // new tickets per user per window
 const TICKET_WINDOW_SECONDS = 60 * 60;
 /** Client messages per user per hour: each one mails Ali, and may carry files. */
@@ -161,15 +182,6 @@ export type PortalEnv = HonoEnv & { Variables: { user: User; viaAgent: boolean }
 type Ctx = Context<PortalEnv>;
 
 /* ——————————————————————— helpers ——————————————————————— */
-
-export function randomToken(): string {
-  return toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
-}
-
-export async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(value));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -891,15 +903,16 @@ const CODE_TRIES = 5; // wrong codes per address before its live codes die
  */
 async function signInAs(c: Ctx, email: string) {
   const env = c.env;
-  const role = email === (env.ADMIN_EMAIL || '').toLowerCase() ? 'admin' : 'client';
+  const role = isAdminEmail(env, email) ? 'admin' : 'client';
   // A new client starts in their browser's language; they can change it in the portal.
   const locale = role === 'client' ? fromAcceptLanguage(c.req.header('Accept-Language')) : 'en-US';
   // A magic link reached this address, so the account is verified from here on.
   // Only a verified account gets the free first preview.
   //
-  // The role is only ever raised to admin for ADMIN_EMAIL and is never changed
-  // for an account that already exists: a magic link proves the address, not
-  // the right to promote or demote an account.
+  // The role is only ever raised to admin for an address listed in ADMIN_EMAIL
+  // or ADMIN_EMAILS and is never changed for an account that already exists: a
+  // magic link proves the address, not the right to promote or demote an
+  // account. A second admin therefore needs an env var, never a code change.
   await env.DB.prepare(
     `INSERT INTO users (id, email, role, locale, created_at, verified_at) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(email) DO UPDATE SET
@@ -913,14 +926,7 @@ async function signInAs(c: Ctx, email: string) {
     .first<User>();
   if (!user) return reply(c, { error: 'user_missing' }, 500);
 
-  const session = randomToken();
-  await env.DB.batch([
-    env.DB.prepare('INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
-      .bind(await sha256(session), user.id, now() + SESSION_TTL_SECONDS, now()),
-    // Housekeeping while we're here.
-    env.DB.prepare('DELETE FROM login_tokens WHERE expires_at < ?').bind(now() - 86400),
-    env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now()),
-  ]);
+  const session = await createSession(env, user);
 
   return reply(c, { session, user });
 }
@@ -1000,10 +1006,7 @@ portal.post('/auth/demo', async (c) => {
     return reply(c, { error: 'unauthorized' }, 401);
   }
 
-  const session = randomToken();
-  await env.DB.prepare('INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
-    .bind(await sha256(session), user.id, now() + SESSION_TTL_SECONDS, now())
-    .run();
+  const session = await createSession(env, user);
   return reply(c, { session, user });
 });
 
@@ -1047,6 +1050,100 @@ portal.post('/auth/logout', async (c) => {
   const token = (c.req.header('authorization') ?? '').slice(7);
   await c.env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sha256(token)).run();
   return reply(c, { ok: true });
+});
+
+/* —— device sign-in for the PTech Admin desktop app (custom-scheme PKCE) —— */
+
+/**
+ * Open a device authorization. Public and IP rate-limited: the app has not
+ * signed anyone in yet and only gets a device code back.
+ */
+portal.post('/auth/device/start', async (c) => {
+  const env = c.env;
+  const body = await readJson<{ challenge?: unknown; label?: unknown; state?: unknown }>(c);
+
+  const ip = clientIp(c.req.raw);
+  if (await isRateLimited(env, ip, 'device-start', DEVICE_START_LIMIT, AUTH_WINDOW_SECONDS)) {
+    return reply(c, { error: 'rate_limited' }, 429);
+  }
+
+  const challenge = cleanChallenge(body?.challenge);
+  if (!challenge) return reply(c, { error: 'bad_challenge' }, 400);
+  const label = cleanDeviceLabel(body?.label);
+  if (label === undefined) return reply(c, { error: 'bad_label' }, 400);
+  const state = cleanDeviceState(body?.state);
+  if (state === undefined) return reply(c, { error: 'bad_state' }, 400);
+
+  const started = await startDevice(env, { challenge, label, state });
+  return reply(c, {
+    deviceCode: started.deviceCode,
+    // The default contract: the browser page needs only the code. `state` is
+    // kept server-side and echoed to the app in the approval redirect.
+    verificationUrl: `${siteUrl(env)}/portal/device?code=${encodeURIComponent(started.deviceCode)}`,
+    expiresAt: started.expiresAt,
+  });
+});
+
+/**
+ * The app's label for the consent page, before anyone signs in. Only the
+ * unexpired, unapproved device code's label and window are returned; the code
+ * itself is never echoed and is unguessable.
+ */
+portal.get('/auth/device/info', async (c) => {
+  const env = c.env;
+  const ip = clientIp(c.req.raw);
+  if (await isRateLimited(env, ip, 'device-info', 60, AUTH_WINDOW_SECONDS)) {
+    return reply(c, { error: 'rate_limited' }, 429);
+  }
+  const code = c.req.query('code') ?? '';
+  const info = await deviceInfo(env, code);
+  if (!info) return reply(c, { error: 'invalid_code' }, 404);
+  return reply(c, { label: info.label, expiresAt: info.expiresAt });
+});
+
+/**
+ * A signed-in portal admin approves the request. This is the only route that
+ * mints the one-time code; it is bound to this admin's user id and the app's
+ * original challenge, which the app must still prove with its verifier.
+ */
+portal.use('/portal/device/approve', requireBrowser);
+portal.post('/portal/device/approve', async (c) => {
+  const user = c.get('user');
+  if (user.role !== 'admin') return reply(c, { error: 'forbidden' }, 403);
+
+  const body = await readJson<{ deviceCode?: unknown }>(c);
+  const deviceCode = typeof body?.deviceCode === 'string' ? body.deviceCode.trim() : '';
+  if (!deviceCode) return reply(c, { error: 'bad_device_code' }, 400);
+
+  const approved = await approveDevice(c.env, user, deviceCode);
+  if (!approved) return reply(c, { error: 'invalid_code' }, 400);
+  return reply(c, { redirect: deviceRedirect(approved.code, approved.state), code: approved.code });
+});
+
+/**
+ * The app redeems the authorization code with its verifier. Public and IP
+ * rate-limited; every failure is the same 401 `invalid_code`, so nothing leaks
+ * which check (expiry, reuse, verifier) failed.
+ */
+portal.post('/auth/device/token', async (c) => {
+  const env = c.env;
+  const body = await readJson<{ code?: unknown; verifier?: unknown }>(c);
+
+  const ip = clientIp(c.req.raw);
+  if (await isRateLimited(env, ip, 'device-token', DEVICE_TOKEN_LIMIT, AUTH_WINDOW_SECONDS)) {
+    return reply(c, { error: 'rate_limited' }, 429);
+  }
+
+  const code = typeof body?.code === 'string' ? body.code.trim() : '';
+  const verifier = typeof body?.verifier === 'string' ? body.verifier : '';
+  const user = await exchangeDevice(env, code, verifier);
+  if (!user) return reply(c, { error: 'invalid_code' }, 401);
+
+  const session = await createSession(env, user);
+  return reply(c, {
+    session,
+    user: { id: user.id, email: user.email, name: user.name, role: user.role, locale: user.locale ?? null },
+  });
 });
 
 /* —— client —— */
@@ -2925,9 +3022,9 @@ portal.post('/admin/work', async (c) => {
 
 /* —— invites: add a client to existing projects before they sign up —— */
 
-/** The admin's name as the invite mail says it; Ali unless he has set another. */
+/** The primary admin's name as the invite mail says it; Ali unless one is set. */
 async function inviterName(env: Env): Promise<string> {
-  const email = (env.ADMIN_EMAIL || '').toLowerCase();
+  const email = primaryAdminEmail(env);
   const row = email ? await env.DB.prepare('SELECT name FROM users WHERE email = ?').bind(email).first<{ name: string | null }>() : null;
   return row?.name?.trim() || 'Ali';
 }
@@ -3034,7 +3131,9 @@ portal.post('/admin/clients', async (c) => {
   const body = await readJson<{ email?: unknown; name?: unknown; locale?: unknown; projectIds?: unknown; note?: unknown; copy?: unknown }>(c);
   const email = cleanEmail(body?.email);
   if (!email) return reply(c, { error: 'bad_email' }, 400);
-  if (email === (env.ADMIN_EMAIL || '').toLowerCase()) return reply(c, { error: 'admin_email' }, 400);
+  // Any admin address is refused, not only the primary one: an invite must
+  // never be the way a second admin account gets made or renamed.
+  if (isAdminEmail(env, email)) return reply(c, { error: 'admin_email' }, 400);
 
   const name = body?.name === undefined || body.name === '' ? null : cleanText(body.name, MAX_NAME_CHARS);
   if (name === null && body?.name !== undefined && body.name !== '') return reply(c, { error: 'bad_name' }, 400);
@@ -3072,7 +3171,7 @@ portal.post('/admin/clients', async (c) => {
   if (!user) return reply(c, { error: 'user_missing' }, 500);
   // Never grant admin, and never touch an existing account's role, name or
   // language: only the project links and the invite bookkeeping change.
-  if (user.role === 'admin') return reply(c, { error: 'admin_email' }, 400);
+  if (user.role === 'admin' || isAdminEmail(env, user.email)) return reply(c, { error: 'admin_email' }, 400);
 
   await env.DB.batch([
     env.DB.prepare('UPDATE users SET invited_at = COALESCE(invited_at, ?), invited_by = COALESCE(invited_by, ?) WHERE id = ?')
@@ -3117,7 +3216,7 @@ portal.post('/admin/clients/:userId/invite', async (c) => {
   const user = await env.DB.prepare('SELECT id, email, name, role, locale, verified_at FROM users WHERE id = ?')
     .bind(c.req.param('userId'))
     .first<{ id: string; email: string; name: string | null; role: string; locale: string | null; verified_at: number | null }>();
-  if (!user || user.role !== 'client') return reply(c, { error: 'not_found' }, 404);
+  if (!user || user.role !== 'client' || isAdminEmail(env, user.email)) return reply(c, { error: 'not_found' }, 404);
   const projects = await inviteProjects(env, user.id);
   if (!projects.length) return reply(c, { error: 'no_projects' }, 409);
   await env.DB.prepare(`DELETE FROM login_tokens WHERE email = ? AND purpose = 'invite' AND used_at IS NULL`)
@@ -3142,7 +3241,7 @@ portal.delete('/admin/clients/:userId/invite', async (c) => {
   const user = await env.DB.prepare('SELECT id, email, role FROM users WHERE id = ?')
     .bind(c.req.param('userId'))
     .first<{ id: string; email: string; role: string }>();
-  if (!user || user.role !== 'client') return reply(c, { error: 'not_found' }, 404);
+  if (!user || user.role !== 'client' || isAdminEmail(env, user.email)) return reply(c, { error: 'not_found' }, 404);
   const res = await env.DB.prepare(`DELETE FROM login_tokens WHERE email = ? AND purpose = 'invite' AND used_at IS NULL`)
     .bind(user.email)
     .run();

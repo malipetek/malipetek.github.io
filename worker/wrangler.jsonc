@@ -25,6 +25,12 @@
     "CONTACT_FROM_EMAIL": "intercom@ptechsolutions.net",
     "PORTAL_FROM_EMAIL": "portal@ptechsolutions.net",
     "ADMIN_EMAIL": "malipetek@gmail.com",
+    // Extra portal admins, comma-separated, trimmed, case-insensitive. Every
+    // address listed signs in with the admin role; a magic link only raises an
+    // account, never demotes it. ADMIN_EMAIL above is the legacy single value
+    // and stays the primary for desk mail and invite names. Not set here on
+    // purpose (an empty value is fine too): e.g. "second@example.com".
+    // "ADMIN_EMAILS": "",
     "SITE_URL": "https://malipetek.dev",
     "PORTAL_URL": "https://ptechsolutions.net",
     // The redirect_uri origin for Cloudflare OAuth. Must be a callback the

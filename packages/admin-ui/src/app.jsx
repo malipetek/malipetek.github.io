@@ -334,7 +334,7 @@ function SignedOut() {
           <a href="/portal">Sign in on the portal</a>, then come back.
         </p>
       ) : (
-        <p>Open Settings and paste a portal session token.</p>
+        <p>Open Settings and choose <strong>Sign in with portal</strong>.</p>
       )}
       {platform === 'dsh' ? <SettingsView /> : null}
     </div>

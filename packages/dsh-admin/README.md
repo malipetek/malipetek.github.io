@@ -7,21 +7,22 @@ and the clients and projects that decide who may file against what.
 
 ## What it is
 
-A panel in the sidebar (**Admin**) and a page in the main slot, plus two agent
-tools over the same operations.
+The admin surface is mostly native:
 
-A conversation that came from a ticket run gets two views beside Chat and
-Trajectory, registered only while that session is in front (no empty tabs
-anywhere else):
-
-- **Ticket #12** — the thread: title, the client's messages and the agent's runs,
-  the pre-review card, the composer, and the status moves that reach it
-  (approve, decline, hold, mark done, run again) under the title.
-- **Details** — the same fields the workbench keeps in a 300 px side column
-  (status, project, site, priority, agent, needs, budget, cost, runs, land,
-  Review in Git Graph), given a tab's width instead of squeezing the thread.
-
-A chip in the header still jumps to the Admin copy of the ticket.
+- **Needs you** is the default main page. It answers one question — what wants a
+  person now — with KPIs (to approve, to review, clients waiting, running) and
+  the tickets behind them. A cold launch lands here once.
+- **Inbox** is its own page and sidebar row: every approval, review, client
+  reply, stalled item and stuck queue entry, with filters, search and the same
+  inline actions. Its badge is the actionable count.
+- **A run's conversation is the ticket.** There is no separate Ticket tab.
+  Above the composer, a ticket strip shows the status, client, project, the
+  client's last message, the thread and the runs, with approve/decline, done/run
+  again and no-reply-needed. The chat input stays the one place to type, and a
+  small mode switch changes where a draft goes: **Chat** (agent), **Reply to
+  client** (emails them) or **Private note** (internal).
+- The full **workbench** (`packages/admin-ui`) is one click away for Fleet, SEO,
+  Health, Marketing and settings, instead of being the front door.
 
 **Replies made in the conversation land on the ticket.** While a run's session is
 on screen the Client half tells the Host (`/admin follow <ticketId> <sessionId>`)
@@ -31,23 +32,23 @@ at the newest message already in the log, so history is never replayed, and it
 skips what the Harness writes as a user message itself (runtime context, turn
 clock, model changes, skill and instruction reminders, subagent messages).
 
-The page is the shared admin workbench, `packages/admin-ui`: the same React app
-that `ptechsolutions.net/portal/admin` serves. Like an editor, it has an activity
-bar, a project explorer, tabs, a status bar and a ⌘K palette. Like a task
-tracker, it has **Needs you**, a drag-and-drop **Board**, a sortable **All work**
-list, and ticket pages with the thread, the agent's runs, a composer for client
-replies or private notes (with **Add note and run again**), and a details pane.
-Here every portal call is an `/admin api <METHOD> <path> [json]` line run by
-the Host half, which holds the token. The panel sends those lines to a loopback
-HTTP bridge the Host opens (found once with `/admin bridge`), not as Harness
-commands: the Harness logs every command and its full result into the session,
-and the workbench polls, so one session grew to 10,000 commands and 430 MB.
-If the bridge is unreachable the panel falls back to commands; the Harness build adds *This machine* to Fleet
-and the token field to Settings.
+The workbench is the shared `packages/admin-ui` app: the same React app that
+`ptechsolutions.net/portal/admin` serves. Like an editor, it has an activity bar,
+a project explorer, tabs, a status bar and a ⌘K palette. Like a task tracker, it
+has **Needs you**, a drag-and-drop **Board**, a sortable **All work** list, and
+ticket pages with the thread, the agent's runs, a composer for client replies or
+private notes (with **Add note and run again**), and a details pane. Here every
+portal call is an `/admin api <METHOD> <path> [json]` line run by the Host half,
+which holds the token. The panel sends those lines to a loopback HTTP bridge the
+Host opens (found once with `/admin bridge`), not as Harness commands: the
+Harness logs every command and its full result into the session, and the
+workbench polls, so one session grew to 10,000 commands and 430 MB. If the bridge
+is unreachable the panel falls back to commands; the Harness build adds *This
+machine* to Fleet and the token field to Settings.
 
-### Live in DSH Admin
+### Live in PTech Admin
 
-The plugin is a first-class citizen of the DSH Admin fork, not a page inside
+The plugin is a first-class citizen of the PTech Admin fork, not a page inside
 it.
 
 - **Clients is a sidebar section, not a blind poll.** The fork's
@@ -61,11 +62,12 @@ it.
   safety pass catches anything the cursors missed.
 - **Notifications.** When the Host's poll sees a new ticket, a ticket waiting
   for approval, a client reply, or a finished/failed run, it shows an in-app
-  toast (`shell.overlay`, so it survives panel switches) and a macOS
-  notification through `osascript` — title "DSH Admin", body like
-  `#12 Acme: new request`. The Host diffs the snapshot against the last state
-  it accounted for, so an event is shown once; the seen state lives in
-  `$DSH_HOME/admin/notify-state.json` (mode 600) and the first run after
+  toast (`shell.overlay`, so it survives panel switches) and a native banner
+  through the desktop bridge — title "PTech Admin", body like `#12 Acme: new
+  request`, and clicking it opens `ptech-admin://ticket/12`. A Harness without
+  the bridge falls back to `osascript`. The Host diffs the snapshot against the
+  last state it accounted for, so an event is shown once; the seen state lives
+  in `$DSH_HOME/admin/notify-state.json` (mode 600) and the first run after
   install marks everything existing as seen instead of flooding. The switch is
   **Settings → Admin → Notify me about new work**, which is the same
   `/admin notify on|off` command. Bursts are spaced out; more than three
@@ -73,9 +75,9 @@ it.
 - **A ticket opens as a conversation when it has one.** A ticket row opens the
   latest run's Harness session (`ctx.uiWorkspace.openSession`), importing the
   node's uploaded log through `/admin session` when this machine does not have
-  it; only a ticket with no session at all falls back to the **Ticket #N** view
-  in Admin. A ticket-linked session's header carries **Approve**, **Reply** and
-  **Open in portal** beside the ticket chip.
+  it; only a ticket with no session at all falls back to the ticket page in the
+  workbench. The conversation carries the ticket strip above its composer, so
+  the chat and the ticket are one screen.
 - **Review.** `packages/admin-ui/src/review.jsx` is the one seam. In the
   Harness with the Git Graph plugin it opens the native view at the ticket's
   branch; without it (or on the web) the newest run's recorded comparison is
@@ -85,22 +87,22 @@ it.
   review service addressed by repo/ref — or a way to mount
   `changes-review` for an arbitrary comparison — would remove the global.
 
-### `dsh-admin://` links
+### `ptech-admin://` links
 
 The plugin registers `globalThis.__dshAdminOpenLink(url)` and listens for a
-`window` event `dsh-admin:open-link` whose `detail.url` is the link, so the
+`window` event `ptech-admin:open-link` whose `detail.url` is the link, so the
 fork's URL scheme can hand links over without either side importing the other:
 
 | Link | Opens |
 | --- | --- |
-| `dsh-admin://ticket/12` | ticket #12 in the Admin panel |
-| `dsh-admin://client/<id>` | that client's page |
-| `dsh-admin://seo` | the SEO desk |
-| `dsh-admin://health` | the health desk |
+| `ptech-admin://ticket/12` | ticket #12 in the Admin panel |
+| `ptech-admin://client/<id>` | that client's page |
+| `ptech-admin://seo` | the SEO desk |
+| `ptech-admin://health` | the health desk |
 
 ```js
-globalThis.__dshAdminOpenLink('dsh-admin://ticket/12');
-window.dispatchEvent(new CustomEvent('dsh-admin:open-link', { detail: { url: 'dsh-admin://seo' } }));
+globalThis.__dshAdminOpenLink('ptech-admin://ticket/12');
+window.dispatchEvent(new CustomEvent('ptech-admin:open-link', { detail: { url: 'ptech-admin://seo' } }));
 ```
 
 `openAdminLink` returns `false` for anything it does not know, so the caller
@@ -152,16 +154,21 @@ first.
 
 ## Signing in
 
-The panel needs a **portal session token**, not your Harness login.
+PTech Admin signs in through the portal with a deep-link PKCE handoff:
 
-1. Sign in at <https://ptechsolutions.net/portal> with a magic link.
-2. In that page's browser console: `localStorage.getItem('portal-session')`.
-3. Paste the value into the panel's sign-in box.
+1. Click **Sign in with portal** on Needs you, Inbox, or Settings.
+2. The app opens `ptechsolutions.net/portal/device` in the browser. Sign in with
+   a portal admin account (magic link or six-digit code) and approve the app.
+3. The portal redirects to `ptech-admin://auth?code=…`; the app exchanges that
+   one-time code with the verifier it kept on disk and stores the session.
 
-It is stored Host-side at `$DSH_HOME/admin/config.json` (`~/.dsh` unless
-`DSH_HOME` is set; mode 600) and never
-reaches the browser page. Sessions last 30 days; when one expires the panel says
-so instead of showing stale data.
+The session is stored Host-side at `$DSH_HOME/admin/config.json` (`~/.dsh-admin`
+for PTech Admin, `~/.dsh` for the official app; mode 600) and never reaches the
+browser page. Sessions last 30 days; when one expires the sign-in card returns.
+`/admin signin` and `/admin login <token>` remain available as a shell fallback.
+
+Any address in the Worker's `ADMIN_EMAILS` signs in with the admin role, so a
+team can share the portal without sharing one password.
 
 ## How it works
 

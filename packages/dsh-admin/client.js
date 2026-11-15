@@ -6153,7 +6153,11 @@ button.aw-file:hover { border-color: currentColor; }
       platform === "web" ? /* @__PURE__ */ jsxs("p", { children: [
         /* @__PURE__ */ jsx("a", { href: "/portal", children: "Sign in on the portal" }),
         ", then come back."
-      ] }) : /* @__PURE__ */ jsx("p", { children: "Open Settings and paste a portal session token." }),
+      ] }) : /* @__PURE__ */ jsxs("p", { children: [
+        "Open Settings and choose ",
+        /* @__PURE__ */ jsx("strong", { children: "Sign in with portal" }),
+        "."
+      ] }),
       platform === "dsh" ? /* @__PURE__ */ jsx(SettingsView, {}) : null
     ] });
   }
@@ -6501,37 +6505,6 @@ ${question.text ?? ""}`)) {
       }
     };
   }
-  function TicketSidePanel({ api, host = null, ticketId, page = false }) {
-    const [data, reloadData] = useAdminData(api);
-    const [{ ticket, runs, land, loading }, reloadTicket] = useTicket(api, ticketId);
-    const meter = useMeter(api, ticket, Boolean(ticket));
-    const reload = useCallback(() => {
-      void reloadData();
-      void reloadTicket();
-    }, [reloadData, reloadTicket]);
-    const value = useMemo(() => ticketContext({ api, data, reload, host, files: null }), [api, data, reload, host]);
-    const scope = page ? { display: "block", padding: "18px 24px 28px", maxWidth: 820, margin: "0 auto" } : { display: "block", height: "100%", overflowY: "auto" };
-    if (loading && !ticket) {
-      return /* @__PURE__ */ jsxs("div", { className: "aw", style: scope, children: [
-        /* @__PURE__ */ jsx("style", { children: STYLES }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { padding: 12, fontSize: 12 }, children: "Loading ticket\u2026" })
-      ] });
-    }
-    if (!ticket) {
-      return /* @__PURE__ */ jsxs("div", { className: "aw", style: scope, children: [
-        /* @__PURE__ */ jsx("style", { children: STYLES }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { padding: 12, fontSize: 12 }, children: "That ticket is not available." })
-      ] });
-    }
-    return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: scope, children: [
-      /* @__PURE__ */ jsx("style", { children: STYLES }),
-      /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload, page }) })
-    ] });
-  }
-  function TicketPage({ api, host = null, files = null, ticketId, part = "thread" }) {
-    if (part === "details") return /* @__PURE__ */ jsx(TicketSidePanel, { api, host, ticketId, page: true });
-    return /* @__PURE__ */ jsx(TicketThread, { api, host, files, ticketId });
-  }
   function ClientPage({ api, host = null, files = null, clientId }) {
     const [data, reloadData] = useAdminData(api);
     const reload = useCallback(() => {
@@ -6541,18 +6514,6 @@ ${question.text ?? ""}`)) {
     return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: { display: "block", height: "100%", overflowY: "auto" }, children: [
       /* @__PURE__ */ jsx("style", { children: STYLES }),
       /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: data.error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: errorText(data.error) }) : /* @__PURE__ */ jsx(ClientView, { id: clientId }) })
-    ] });
-  }
-  function TicketThread({ api, host, files, ticketId }) {
-    const [data, reloadData] = useAdminData(api);
-    const reload = useCallback(() => {
-      void reloadData();
-    }, [reloadData]);
-    const value = useMemo(() => ticketContext({ api, data, reload, host, files }), [api, data, reload, host, files]);
-    const scope = { display: "block", height: "100%", overflowY: "auto" };
-    return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: scope, children: [
-      /* @__PURE__ */ jsx("style", { children: STYLES }),
-      /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: /* @__PURE__ */ jsx(TicketView, { id: ticketId, active: true, details: false }) })
     ] });
   }
 
@@ -6689,6 +6650,7 @@ ${question.text ?? ""}`)) {
   var inject = ["slots", "sessions", "layout", "remote", "remote.commands", "sidebarRightTabs", "sidebarRight"];
   function apply(ctx) {
     const command = makeTransport(makeCommand(ctx));
+    const desktopNotifications = typeof globalThis.dshDesktop?.notifications?.show === "function" ? globalThis.dshDesktop.notifications : null;
     const json = async (line) => {
       const r = await command(line);
       let value = null;
@@ -6817,7 +6779,7 @@ ${question.text ?? ""}`)) {
       ticket: "var(--dsw-alias-state-warning-primary, #d18f2e)"
     };
     function openTicket(run) {
-      ctx.layout?.selectPanel?.(PANEL_ID);
+      ctx.layout?.selectPanel?.("admin-workbench");
       const target = `#ticket=${run.ticketId}`;
       if (window.location.hash === target) window.dispatchEvent(new HashChangeEvent("hashchange"));
       else window.location.hash = target;
@@ -6832,7 +6794,7 @@ ${question.text ?? ""}`)) {
           title: `${run.kind === "task" ? "System task" : "Client ticket"} #${run.ticketId}${run.runId ? ` \xB7 run ${run.runId}` : ""} \u2014 click opens the ticket`,
           onClick: (e) => {
             e.stopPropagation();
-            openTicket(run);
+            void openTicketRun({ id: run.ticketId });
           },
           style: {
             display: "inline-flex",
@@ -6943,7 +6905,7 @@ ${question.text ?? ""}`)) {
         }
       };
       const waiting = state.tickets.filter((t) => t.status === "new" || t.status === "review");
-      const ticketRow = (ticket) => /* @__PURE__ */ jsxs("button", { type: "button", style: taskRowStyle, onClick: () => openTicket({ ticketId: ticket.id }), children: [
+      const ticketRow = (ticket) => /* @__PURE__ */ jsxs("button", { type: "button", style: taskRowStyle, onClick: () => void openTicketRun(ticket), children: [
         dot(TASK_TINT[ticket.status]),
         /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
           /* @__PURE__ */ jsxs("span", { style: lineStyle, children: [
@@ -6980,7 +6942,7 @@ ${question.text ?? ""}`)) {
         [...projects].map(([slug, tickets]) => /* @__PURE__ */ jsxs("section", { children: [
           /* @__PURE__ */ jsx("h4", { style: taskHeadStyle, children: slug }),
           [...tickets].map(([ticketId, runs]) => /* @__PURE__ */ jsxs("div", { style: { marginBottom: 4 }, children: [
-            /* @__PURE__ */ jsxs("button", { type: "button", style: taskRowStyle, title: "Open the ticket in Admin", onClick: () => openTicket({ ticketId }), children: [
+            /* @__PURE__ */ jsxs("button", { type: "button", style: taskRowStyle, title: "Open the ticket's conversation", onClick: () => void openTicketRun({ id: ticketId, title: runs[0].title }), children: [
               dot(TASK_TINT[runs[0].ticket_status]),
               /* @__PURE__ */ jsxs("span", { style: { ...lineStyle, flex: 1, minWidth: 0 }, children: [
                 "#",
@@ -7152,7 +7114,7 @@ ${question.text ?? ""}`)) {
           onClick: () => toast.ticketId && onOpen(toast),
           children: [
             /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
-              /* @__PURE__ */ jsx("span", { style: { display: "block", fontWeight: 600, fontSize: 11, letterSpacing: "0.04em", textTransform: "uppercase", opacity: 0.65 }, children: "DSH Admin" }),
+              /* @__PURE__ */ jsx("span", { style: { display: "block", fontWeight: 600, fontSize: 11, letterSpacing: "0.04em", textTransform: "uppercase", opacity: 0.65 }, children: "PTech Admin" }),
               /* @__PURE__ */ jsx("span", { style: { display: "block", lineHeight: 1.35, marginTop: 2 }, children: toast.body })
             ] }),
             /* @__PURE__ */ jsx(
@@ -7188,6 +7150,13 @@ ${question.text ?? ""}`)) {
             timers.current.delete(key);
             setToasts((prev) => prev.filter((item) => item.key !== key));
           }, TOAST_MS));
+          if (desktopNotifications) {
+            void desktopNotifications.show({
+              title: "PTech Admin",
+              body: event.body,
+              ...event.ticketId ? { url: `ptech-admin://ticket/${event.ticketId}` } : {}
+            }).catch(() => void 0);
+          }
         };
         const stop = notificationFeed.subscribe(add);
         return () => {
@@ -7288,7 +7257,12 @@ ${question.text ?? ""}`)) {
             }
           )
         ] }),
-        state.error ? /* @__PURE__ */ jsx("p", { style: { margin: "10px 0 0", fontSize: 12, color: "var(--dsw-alias-state-danger-primary, #e5534b)" }, children: state.error }) : null
+        state.error ? /* @__PURE__ */ jsx("p", { style: { margin: "10px 0 0", fontSize: 12, color: "var(--dsw-alias-state-danger-primary, #e5534b)" }, children: state.error }) : null,
+        /* @__PURE__ */ jsx("div", { style: rowStyle, children: /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
+          /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 13, marginBottom: 2 }, children: "Portal connection" }),
+          /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 12, opacity: 0.6, marginBottom: 8 }, children: "Sign in with a portal admin account. The browser approves this app; the token stays on this machine." }),
+          /* @__PURE__ */ jsx(PortalSignIn, { compact: true })
+        ] }) })
       ] });
     }
     function AdminEntryIcon(props) {
@@ -7318,6 +7292,41 @@ ${question.text ?? ""}`)) {
       return /* @__PURE__ */ jsxs("span", { style: { position: "relative", display: "inline-flex" }, title: parts.length ? parts.join(" \xB7 ") : void 0, children: [
         /* @__PURE__ */ jsx(AdminIcon, { size: props?.size ?? 16 }),
         waiting > 0 ? /* @__PURE__ */ jsx("span", { style: { ...badge, background: "var(--dsw-alias-state-warning-primary, #d18f2e)" }, children: waiting > 99 ? "99+" : waiting }) : counts?.running ? /* @__PURE__ */ jsx("span", { style: { ...badge, minWidth: 7, width: 7, height: 7, top: -2, right: -3, padding: 0, background: "var(--dsw-alias-state-success-primary, #2f9e5b)" } }) : null
+      ] });
+    }
+    function InboxIcon({ size = 16 }) {
+      return /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: [
+        /* @__PURE__ */ jsx("path", { d: "M4 13h4l2 3h4l2-3h4" }),
+        /* @__PURE__ */ jsx("path", { d: "M5.5 5h13l1.5 8v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-5z" })
+      ] });
+    }
+    function InboxEntryIcon(props) {
+      const counts = useSyncExternalStore(attention.subscribe, attention.get);
+      const waiting = counts ? counts.approve + counts.review + counts.waiting : 0;
+      return /* @__PURE__ */ jsxs("span", { style: { position: "relative", display: "inline-flex" }, title: waiting ? `${waiting} item(s) need you` : "Inbox", children: [
+        /* @__PURE__ */ jsx(InboxIcon, { size: props?.size ?? 16 }),
+        waiting > 0 ? /* @__PURE__ */ jsx(
+          "span",
+          {
+            style: {
+              position: "absolute",
+              top: -5,
+              right: -7,
+              minWidth: 13,
+              height: 13,
+              padding: "0 3px",
+              borderRadius: 7,
+              fontSize: 9,
+              fontWeight: 700,
+              lineHeight: "13px",
+              textAlign: "center",
+              color: "#fff",
+              boxSizing: "border-box",
+              background: "var(--dsw-alias-state-warning-primary, #d18f2e)"
+            },
+            children: waiting > 99 ? "99+" : waiting
+          }
+        ) : null
       ] });
     }
     const CLIENT_ROWS_MS = 6e4;
@@ -7742,48 +7751,56 @@ ${who} is emailed about this change.`)) return;
         mine.length > 0 && /* @__PURE__ */ jsx(TreeRow, { label: "Mine", badge: openTicketCount(mine) || void 0, children: /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: mine, changed: () => void load() }) })
       ] });
     }
-    function useTicketRun(props) {
-      const sessionId = typeof props?.sessionId === "string" ? props.sessionId : props?.params?.sessionId ?? null;
-      return ticketFromCwd(useSessionCwd(sessionId));
+    function useTicketDetail(ticketId) {
+      const [state, setState] = useState({ ticket: null, messages: [], runs: [], loading: true, error: "" });
+      const load = useCallback(async () => {
+        if (ticketId === null || ticketId === void 0) return;
+        try {
+          const detail = await api("GET", `/admin/tickets/${ticketId}`);
+          setState({
+            ticket: detail?.ticket ?? null,
+            messages: Array.isArray(detail?.messages) ? detail.messages : [],
+            runs: Array.isArray(detail?.runs) ? detail.runs : [],
+            loading: false,
+            error: ""
+          });
+        } catch (error) {
+          setState((prev) => ({ ...prev, loading: false, error: error?.message ?? "Could not load the ticket." }));
+        }
+      }, [ticketId]);
+      useEffect(() => {
+        setState({ ticket: null, messages: [], runs: [], loading: true, error: "" });
+      }, [ticketId]);
+      useEffect(() => {
+        let alive = true;
+        void load();
+        const changed = () => {
+          if (alive) void load();
+        };
+        window.addEventListener("admin:changed", changed);
+        window.addEventListener("focus", changed);
+        return () => {
+          alive = false;
+          window.removeEventListener("admin:changed", changed);
+          window.removeEventListener("focus", changed);
+        };
+      }, [load]);
+      return [state, load];
     }
-    function NotATicketRun() {
-      return /* @__PURE__ */ jsx("div", { style: { padding: "18px 24px", fontSize: 13, opacity: 0.7 }, children: "This session did not come from a ticket run." });
-    }
-    function TicketConversationView(props) {
-      const run = useTicketRun(props);
-      if (!run) return /* @__PURE__ */ jsx(NotATicketRun, {});
-      return /* @__PURE__ */ jsx("div", { style: { height: "100%", minHeight: 0 }, children: /* @__PURE__ */ jsx(TicketPage, { api, host, files, ticketId: run.ticketId, part: "thread" }) });
-    }
-    function TicketDetailsConversationView(props) {
-      const run = useTicketRun(props);
-      if (!run) return /* @__PURE__ */ jsx(NotATicketRun, {});
-      return /* @__PURE__ */ jsx("div", { style: { height: "100%", minHeight: 0, overflowY: "auto" }, children: /* @__PURE__ */ jsx(TicketPage, { api, host, files, ticketId: run.ticketId, part: "details" }) });
-    }
-    const ticketViews = { key: null, mounts: 0, disposers: [] };
-    function openTicketViews(ticketId, sessionId) {
+    const ticketFollow = { key: null, mounts: 0 };
+    function followTicket(ticketId, sessionId) {
       const key = `${ticketId}:${sessionId}`;
-      if (ticketViews.key !== key) {
-        for (const dispose of ticketViews.disposers) dispose?.();
-        ticketViews.disposers = [];
-        ticketViews.key = key;
-        ticketViews.mounts = 0;
+      if (ticketFollow.key !== key) {
+        ticketFollow.key = key;
+        ticketFollow.mounts = 0;
       }
-      ticketViews.mounts += 1;
-      if (ticketViews.disposers.length === 0) {
-        const register = (id, order, label, Component) => ctx.slots.register({ name: "conversation.view", id, order, label, locale: NAMESPACE }, Component);
-        ticketViews.disposers = [
-          register("admin-ticket", 20, `Ticket #${ticketId}`, TicketConversationView),
-          register("admin-ticket-details", 21, "Details", TicketDetailsConversationView)
-        ];
-        void command(`follow ${ticketId} ${sessionId}`).catch(() => void 0);
-      }
+      ticketFollow.mounts += 1;
+      if (ticketFollow.mounts === 1) void command(`follow ${ticketId} ${sessionId}`).catch(() => void 0);
       return () => {
-        if (ticketViews.key !== key) return;
-        ticketViews.mounts -= 1;
-        if (ticketViews.mounts > 0) return;
-        for (const dispose of ticketViews.disposers) dispose?.();
-        ticketViews.disposers = [];
-        ticketViews.key = null;
+        if (ticketFollow.key !== key) return;
+        ticketFollow.mounts -= 1;
+        if (ticketFollow.mounts > 0) return;
+        ticketFollow.key = null;
         void command(`unfollow ${sessionId}`).catch(() => void 0);
       };
     }
@@ -7831,71 +7848,18 @@ ${who} is emailed about this change.`)) return;
       const run = ticketFromCwd(useSessionCwd(sessionId));
       const ticketId = run?.ticketId ?? null;
       const brief = useTicketBrief(ticketId);
-      const [status, setStatus] = useState(null);
-      const [replyOpen, setReplyOpen] = useState(false);
-      const [text, setText] = useState("");
-      const [busy, setBusy] = useState("");
-      const [note, setNote] = useState("");
-      useEffect(() => {
-        setStatus(null);
-        setReplyOpen(false);
-        setText("");
-        setNote("");
-      }, [ticketId]);
       useEffect(() => {
         if (ticketId === null || !sessionId) return void 0;
-        return openTicketViews(ticketId, sessionId);
+        return followTicket(ticketId, sessionId);
       }, [ticketId, sessionId]);
       if (!run) return null;
-      const currentStatus = status ?? brief?.status ?? "";
-      const approve = async () => {
-        if (!brief) return;
-        const who = brief.client_email || brief.client_name || "The client";
-        if (brief.kind !== "system" && !window.confirm(`Approve #${brief.id}?
-
-${who} is emailed about this change.`)) return;
-        setBusy("approve");
-        setNote("");
-        try {
-          await api("PATCH", `/admin/tickets/${brief.id}`, { status: "approved" });
-          ticketBriefs.delete(brief.id);
-          setStatus("approved");
-          window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "ticket.approval", ticketId: brief.id } }));
-          setNote("Approved");
-        } catch (error) {
-          setNote(error?.message ?? "Could not approve");
-        } finally {
-          setBusy("");
-        }
-      };
-      const send = async () => {
-        const body = text.trim();
-        if (!brief || body.length === 0) return;
-        setBusy("reply");
-        setNote("");
-        try {
-          await api("POST", `/admin/tickets/${brief.id}/messages`, { body, internal: false });
-          setText("");
-          setReplyOpen(false);
-          setNote("Reply sent");
-          window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "ticket.reply", ticketId: brief.id } }));
-        } catch (error) {
-          setNote(error?.message ?? "Could not send the reply");
-        } finally {
-          setBusy("");
-        }
-      };
-      const openInPortal = () => {
-        const id = brief?.id ?? run.ticketId;
-        window.open(`https://ptechsolutions.net/portal/admin#ticket=${id}`, "_blank", "noopener,noreferrer");
-      };
-      return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 6, position: "relative" }, children: [
+      return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 6 }, children: [
         /* @__PURE__ */ jsxs(
           "button",
           {
             type: "button",
-            onClick: () => openTicket(run),
-            title: `Open ${run.kind === "task" ? "system task" : "client ticket"} #${run.ticketId} in Admin`,
+            onClick: () => void openTicketRun({ id: run.ticketId }),
+            title: `Open ${run.kind === "task" ? "system task" : "client ticket"} #${run.ticketId}`,
             style: {
               display: "inline-flex",
               alignItems: "center",
@@ -7921,77 +7885,699 @@ ${who} is emailed about this change.`)) return;
             ]
           }
         ),
-        currentStatus === "new" ? /* @__PURE__ */ jsx("button", { type: "button", style: headerActionStyle, disabled: busy === "approve", title: "Approve this ticket (emails the client)", onClick: () => void approve(), children: busy === "approve" ? "Approving\u2026" : "Approve" }) : null,
-        brief && brief.kind !== "system" ? /* @__PURE__ */ jsx("button", { type: "button", style: { ...headerActionStyle, borderColor: replyOpen ? "var(--dsw-alias-state-business-primary, #4c8dff)" : void 0 }, onClick: () => setReplyOpen((value) => !value), title: "Reply to the client (emails them)", children: "Reply" }) : null,
-        /* @__PURE__ */ jsx("button", { type: "button", style: headerActionStyle, onClick: openInPortal, title: "Open this ticket in the portal", children: "Open in portal" }),
-        note ? /* @__PURE__ */ jsx("span", { title: note, style: { fontSize: 11, opacity: 0.65, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: note }) : null,
-        replyOpen && brief ? /* @__PURE__ */ jsxs(
-          "div",
-          {
-            style: {
-              position: "absolute",
-              top: 30,
-              right: 0,
-              zIndex: 60,
-              width: 320,
-              boxSizing: "border-box",
-              padding: 10,
-              borderRadius: 8,
-              border: "1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.32))",
-              background: "var(--dsw-alias-bg-elevated, #23252a)",
-              boxShadow: "0 12px 32px rgba(0,0,0,0.32)"
-            },
-            children: [
-              /* @__PURE__ */ jsxs("div", { style: { fontSize: 11, opacity: 0.65, marginBottom: 6 }, children: [
-                "To ",
-                brief.client_email || brief.client_name || "the client",
-                " \u2014 this emails them."
-              ] }),
-              /* @__PURE__ */ jsx(
-                "textarea",
-                {
-                  autoFocus: true,
-                  rows: 3,
-                  value: text,
-                  placeholder: "Write to the client\u2026",
-                  onChange: (event) => setText(event.target.value),
-                  onKeyDown: (event) => (event.metaKey || event.ctrlKey) && event.key === "Enter" && void send(),
-                  style: {
-                    width: "100%",
-                    boxSizing: "border-box",
-                    resize: "vertical",
-                    minHeight: 64,
-                    padding: "6px 8px",
-                    borderRadius: 6,
-                    border: "1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.32))",
-                    background: "var(--dsw-alias-bg-secondary, rgba(127,127,127,0.12))",
-                    color: "inherit",
-                    font: "inherit",
-                    fontSize: 12.5
-                  }
-                }
-              ),
-              /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 8 }, children: [
-                /* @__PURE__ */ jsx("button", { type: "button", style: headerActionStyle, onClick: () => setReplyOpen(false), children: "Cancel" }),
-                /* @__PURE__ */ jsx(
-                  "button",
-                  {
-                    type: "button",
-                    style: { ...headerActionStyle, borderColor: "transparent", background: "var(--dsw-alias-state-business-primary, #4c8dff)", color: "#fff" },
-                    disabled: busy === "reply" || text.trim().length === 0,
-                    onClick: () => void send(),
-                    children: busy === "reply" ? "Sending\u2026" : "Send reply"
-                  }
-                )
-              ] })
-            ]
-          }
-        ) : null
+        brief ? /* @__PURE__ */ jsx(StatusPill2, { status: brief.status }) : null,
+        /* @__PURE__ */ jsx("button", { type: "button", style: headerActionStyle, onClick: () => openWorkbenchTicket(run.ticketId), title: "Open the full ticket in the workbench", children: "Workbench" })
       ] });
     }
     const files = { download: (path) => json(`download ${path}`) };
     function AdminPage() {
       return /* @__PURE__ */ jsx(AdminApp, { api, host, files, platform: "dsh" });
+    }
+    const NATIVE_STYLES = `
+    .pta-page{height:100%;overflow-y:auto;box-sizing:border-box;padding:26px 30px 56px;max-width:1120px;margin:0 auto;color:var(--dsw-alias-label-primary,inherit);font-size:13px;line-height:1.45}
+    .pta-head{display:flex;align-items:flex-start;gap:18px;margin:0 0 18px}
+    .pta-head h1{margin:0;font-size:24px;line-height:1.15;font-weight:650;letter-spacing:-0.02em}
+    .pta-head p{margin:6px 0 0;font-size:13px;opacity:.65;max-width:620px}
+    .pta-head__actions{display:flex;align-items:center;gap:8px;margin-left:auto;padding-top:2px}
+    .pta-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 22px}
+    .pta-kpi{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.22));border-radius:10px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.06));color:inherit;font:inherit;text-align:left;cursor:pointer}
+    .pta-kpi:disabled{cursor:default}
+    .pta-kpi:not(:disabled):hover{border-color:var(--dsw-alias-border-primary,rgba(127,127,127,.4))}
+    .pta-kpi__value{font-size:22px;font-weight:650;line-height:1.1;font-variant-numeric:tabular-nums}
+    .pta-kpi__label{font-size:11.5px;opacity:.7}
+    .pta-section{margin:0 0 22px}
+    .pta-section__head{display:flex;align-items:baseline;gap:10px;padding:0 2px 7px}
+    .pta-section__head h3{margin:0;font-size:13px;font-weight:600}
+    .pta-count{display:inline-block;min-width:16px;margin-left:5px;padding:0 5px;border-radius:8px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.16));font-size:10px;line-height:16px;text-align:center;vertical-align:1px}
+    .pta-rows{display:flex;flex-direction:column;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.22));border-radius:10px;overflow:hidden;background:var(--dsw-alias-bg-primary,transparent)}
+    .pta-rows--inbox{max-width:none}
+    .pta-row{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:8px 12px;border:0;border-bottom:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.14));background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+    .pta-row:last-child{border-bottom:0}
+    .pta-row:hover{background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.07))}
+    .pta-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#ff5a1f);outline-offset:-2px}
+    .pta-dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%}
+    .pta-id{flex:0 0 auto;font-variant-numeric:tabular-nums;font-size:11.5px;opacity:.6}
+    .pta-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+    .pta-tag{flex:0 0 auto;padding:1px 5px;border-radius:4px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));font-size:10px;opacity:.8;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pta-tag--client{border-color:transparent;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.14));opacity:.75}
+    .pta-meta{flex:0 0 auto;font-size:11px;opacity:.55;white-space:nowrap}
+    .pta-warn{flex:0 0 auto;font-size:11px;color:var(--dsw-alias-state-warning-primary,#d18f2e);white-space:nowrap}
+    .pta-fill{flex:1 1 auto;min-width:8px}
+    .pta-actions{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto}
+    .pta-btn{height:23px;padding:0 8px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.34));border-radius:5px;background:transparent;color:inherit;font:inherit;font-size:11.5px;line-height:1;white-space:nowrap;cursor:pointer}
+    .pta-btn:hover{background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.1))}
+    .pta-btn:disabled{opacity:.45;cursor:default}
+    .pta-btn--primary{border-color:transparent;background:var(--dsw-alias-brand-primary,#ff5a1f);color:#fff}
+    .pta-btn--primary:hover{filter:brightness(1.06);background:var(--dsw-alias-brand-primary,#ff5a1f)}
+    .pta-btn--ghost{border-color:transparent;opacity:.72}
+    .pta-pill{display:inline-flex;align-items:center;height:19px;padding:0 7px;border:1px solid currentColor;border-radius:10px;font-size:10.5px;line-height:1;white-space:nowrap;opacity:.9}
+    .pta-empty{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:28px 24px;border:1px dashed var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:12px}
+    .pta-empty h3{margin:0;font-size:15px}
+    .pta-empty p{margin:0;opacity:.65;max-width:560px}
+    .pta-empty__mark{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--dsw-alias-state-success-secondary,rgba(47,158,91,.16));color:var(--dsw-alias-state-success-primary,#2f9e5b);font-weight:700}
+    .pta-signin{display:flex;flex-direction:column;align-items:flex-start;gap:8px;max-width:560px;padding:16px 18px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.26));border-radius:10px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.05))}
+    .pta-signin p{margin:0;font-size:12.5px;opacity:.8}
+    .pta-signin--compact{padding:10px 12px;border:0;background:transparent}
+    .pta-link{color:var(--dsw-alias-brand-primary,#ff5a1f);text-decoration:none}
+    .pta-link:hover{text-decoration:underline}
+    .pta-search{height:28px;min-width:220px;box-sizing:border-box;padding:0 9px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.28));border-radius:6px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.06));color:inherit;font:inherit;font-size:12px}
+    .pta-filters{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+    .pta-filter{height:24px;padding:0 9px;border:1px solid transparent;border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:11.5px;opacity:.62;cursor:pointer}
+    .pta-filter:hover{opacity:.9;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.08))}
+    .pta-filter.is-active{opacity:1;border-color:var(--dsw-alias-border-secondary,rgba(127,127,127,.32));background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.12))}
+    .pta-dock{margin:0 0 8px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.24));border-radius:10px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.055));overflow:hidden;font-size:12px}
+    .pta-dock__head{display:flex;align-items:center;gap:7px;padding:7px 9px;min-height:30px;flex-wrap:wrap}
+    .pta-dock__id{font-variant-numeric:tabular-nums;opacity:.6;font-size:11px}
+    .pta-dock__title{max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:550}
+    .pta-dock__body{border-top:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.16));max-height:280px;overflow-y:auto;padding:8px 10px}
+    .pta-dock__last{padding:0 10px 7px;font-size:11.5px;opacity:.72;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pta-dock__compose{display:flex;align-items:center;gap:8px;padding:6px 9px;border-top:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.16));flex-wrap:wrap}
+    .pta-modes{display:inline-flex;padding:2px;gap:2px;border-radius:6px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.13))}
+    .pta-mode{padding:3px 7px;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:11px;opacity:.62;cursor:pointer}
+    .pta-mode:hover{opacity:.9}
+    .pta-mode.is-active{opacity:1;background:var(--dsw-alias-bg-primary,rgba(255,255,255,.08));box-shadow:0 1px 2px rgba(0,0,0,.12)}
+    .pta-mode:disabled{opacity:.3;cursor:default}
+    .pta-hint{font-size:11px;opacity:.5;max-width:520px}
+    .pta-facts{display:flex;flex-wrap:wrap;gap:4px 12px;padding:0 0 7px;margin:0 0 7px;border-bottom:1px dashed var(--dsw-alias-border-secondary,rgba(127,127,127,.2));font-size:11px;opacity:.62}
+    .pta-facts strong{font-weight:550;opacity:.95}
+    .pta-thread{display:flex;flex-direction:column;gap:7px}
+    .pta-msg{padding:6px 8px;border-radius:7px;background:var(--dsw-alias-bg-primary,rgba(255,255,255,.03))}
+    .pta-msg--client{background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.12))}
+    .pta-msg.is-note{border-left:2px solid var(--dsw-alias-state-warning-primary,#d18f2e)}
+    .pta-msg__meta{font-size:10px;opacity:.5;margin-bottom:2px}
+    .pta-msg__body{white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow-y:auto}
+    .pta-runs{display:flex;flex-direction:column;gap:3px;margin-top:4px;padding-top:6px;border-top:1px dashed var(--dsw-alias-border-secondary,rgba(127,127,127,.2))}
+    .pta-run{display:flex;align-items:center;gap:6px;font-size:11px;opacity:.7}
+    @media (max-width:760px){.pta-page{padding:18px 16px 40px}.pta-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.pta-head{flex-direction:column}.pta-head__actions{margin-left:0;width:100%}.pta-search{flex:1 1 auto;min-width:0}.pta-tag{max-width:120px}}
+  `;
+    const CLIENT_VISIBLE_STATUSES = /* @__PURE__ */ new Set(["approved", "declined", "done"]);
+    let handledDeepLink = false;
+    const WORKBENCH_PANEL = "admin-workbench";
+    const INBOX_PANEL = "admin-inbox";
+    const HOME_PANEL = "admin";
+    const STATUS_TINT = {
+      new: "var(--dsw-alias-state-warning-primary, #d18f2e)",
+      approved: "var(--dsw-alias-state-business-primary, #4c8dff)",
+      in_progress: "var(--dsw-alias-state-success-primary, #2f9e5b)",
+      review: "var(--dsw-alias-state-business-primary, #4c8dff)",
+      done: "var(--dsw-alias-label-tertiary, #8a9099)",
+      declined: "var(--dsw-alias-label-tertiary, #8a9099)"
+    };
+    const STATUS_TEXT = {
+      new: "Needs approval",
+      approved: "Approved",
+      in_progress: "Running",
+      review: "Review",
+      done: "Done",
+      declined: "Declined"
+    };
+    const tintOfStatus = (status) => STATUS_TINT[status] ?? STATUS_TINT.done;
+    const ticketLabel = (ticket) => ticket?.title_en || ticket?.title || "(untitled)";
+    const dollars = (cents) => Number.isFinite(Number(cents)) ? `$${(Number(cents) / 100).toFixed(2)}` : "";
+    const isWaiting = (ticket) => Boolean(ticket) && Number(ticket?.client_waiting_since ?? 0) > 0 && !isClosedTicket(ticket) && ticket?.status !== "new";
+    function useLiveAdmin() {
+      const [state, setState] = useState({
+        tickets: [],
+        running: [],
+        recent: [],
+        queue: [],
+        attention: null,
+        loading: true,
+        error: "",
+        code: "",
+        at: 0
+      });
+      const mounted = useRef(true);
+      const load = useCallback(async () => {
+        try {
+          const tickets = await api("GET", "/admin/tickets");
+          const [runs, queue, attentionNow] = await Promise.all([
+            api("GET", "/admin/runs").catch(() => null),
+            api("GET", "/admin/queue").catch(() => null),
+            api("GET", "/admin/attention").catch(() => null)
+          ]);
+          if (!mounted.current) return;
+          setState({
+            tickets: Array.isArray(tickets?.tickets) ? tickets.tickets : [],
+            running: Array.isArray(runs?.running) ? runs.running : [],
+            recent: Array.isArray(runs?.recent) ? runs.recent : [],
+            queue: Array.isArray(queue?.queue) ? queue.queue : [],
+            attention: attentionNow ?? null,
+            loading: false,
+            error: "",
+            code: "",
+            at: Date.now()
+          });
+        } catch (error) {
+          if (!mounted.current) return;
+          setState((prev) => ({
+            ...prev,
+            loading: false,
+            error: error?.message ?? "Could not reach the portal.",
+            code: error?.code ?? ""
+          }));
+        }
+      }, []);
+      useEffect(() => {
+        mounted.current = true;
+        void load();
+        let pending = null;
+        const soon = () => {
+          clearTimeout(pending);
+          pending = setTimeout(() => void load(), 250);
+        };
+        const stopAttention = attention.subscribe(soon);
+        window.addEventListener("admin:changed", soon);
+        window.addEventListener("focus", soon);
+        const every = setInterval(() => void load(), 3e4);
+        return () => {
+          mounted.current = false;
+          stopAttention();
+          clearTimeout(pending);
+          clearInterval(every);
+          window.removeEventListener("admin:changed", soon);
+          window.removeEventListener("focus", soon);
+        };
+      }, [load]);
+      return { ...state, reload: load };
+    }
+    function ticketGroups(data) {
+      const nowSeconds = Date.now() / 1e3;
+      const tickets = Array.isArray(data.tickets) ? data.tickets : [];
+      const queue = Array.isArray(data.queue) ? data.queue : [];
+      const stuck = new Set(
+        queue.filter((item) => !(Array.isArray(item?.eligible) ? item.eligible.length > 0 : Boolean(item?.eligible))).map((item) => Number(item?.id))
+      );
+      return {
+        approvals: tickets.filter((ticket) => ticket.status === "new"),
+        reviews: tickets.filter((ticket) => ticket.status === "review"),
+        waiting: tickets.filter(isWaiting),
+        stalled: tickets.filter((ticket) => ticket.status === "in_progress" && nowSeconds - Number(ticket.updated_at ?? 0) > 45 * 60),
+        stuck: tickets.filter((ticket) => ticket.status === "approved" && stuck.has(Number(ticket.id))),
+        running: Array.isArray(data.running) ? data.running : [],
+        failed: (Array.isArray(data.recent) ? data.recent : []).filter((run) => run.status === "failed" && nowSeconds - Number(run.finished_at ?? 0) < 86400).slice(0, 8)
+      };
+    }
+    function actionableCount(groups) {
+      const ids = /* @__PURE__ */ new Set();
+      for (const list of [groups.approvals, groups.reviews, groups.waiting, groups.stalled, groups.stuck]) {
+        for (const ticket of list) ids.add(ticket.id);
+      }
+      return ids.size;
+    }
+    async function changeTicketStatus(ticket, status) {
+      if (CLIENT_VISIBLE_STATUSES.has(status) && ticket.kind !== "system") {
+        const who = ticket.client_email || ticket.client_name || "The client";
+        const what = status === "approved" ? "Approve" : status === "declined" ? "Decline" : "Mark done";
+        if (!window.confirm(`${what} #${ticket.id}?
+
+${who} is emailed about this change.`)) return false;
+      }
+      await api("PATCH", `/admin/tickets/${ticket.id}`, { status });
+      ticketBriefs.delete(ticket.id);
+      window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "ticket.status", ticketId: ticket.id } }));
+      return true;
+    }
+    async function markTicketAnswered(ticket) {
+      await api("POST", `/admin/tickets/${ticket.id}/answered`);
+      window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "ticket.answered", ticketId: ticket.id } }));
+    }
+    function TicketRowActions({ ticket }) {
+      if (ticket.status === "new") {
+        return /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(PtaButton, { kind: "primary", onClick: () => void changeTicketStatus(ticket, "approved"), children: "Approve" }),
+          /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: () => void changeTicketStatus(ticket, "declined"), children: "Decline" })
+        ] });
+      }
+      if (ticket.status === "review") {
+        return /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(PtaButton, { kind: "primary", onClick: () => void changeTicketStatus(ticket, "done"), children: "Done" }),
+          /* @__PURE__ */ jsx(PtaButton, { onClick: () => void changeTicketStatus(ticket, "approved"), children: "Run again" })
+        ] });
+      }
+      if (isWaiting(ticket)) {
+        return /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: () => void markTicketAnswered(ticket), children: "No reply needed" });
+      }
+      if (ticket.status === "in_progress") {
+        return /* @__PURE__ */ jsx(PtaButton, { onClick: () => void changeTicketStatus(ticket, "approved"), children: "Requeue" });
+      }
+      return null;
+    }
+    function PtaButton({ children, kind = "default", className = "", ...rest }) {
+      return /* @__PURE__ */ jsx("button", { type: "button", className: `pta-btn pta-btn--${kind}${className ? ` ${className}` : ""}`, ...rest, children });
+    }
+    function StatusPill2({ status }) {
+      const tint = tintOfStatus(status);
+      return /* @__PURE__ */ jsx("span", { className: "pta-pill", style: { color: tint, borderColor: tint }, children: STATUS_TEXT[status] ?? status ?? "unknown" });
+    }
+    function TicketLine({ ticket, actions = null, reason = "", detail = "" }) {
+      const open = () => void openTicketRun(ticket);
+      return /* @__PURE__ */ jsxs(
+        "div",
+        {
+          className: "pta-row",
+          role: "button",
+          tabIndex: 0,
+          onClick: open,
+          onKeyDown: (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              open();
+            }
+          },
+          children: [
+            /* @__PURE__ */ jsx("span", { className: "pta-dot", style: { background: tintOfStatus(ticket.status) } }),
+            /* @__PURE__ */ jsxs("span", { className: "pta-id", children: [
+              "#",
+              ticket.id
+            ] }),
+            /* @__PURE__ */ jsx("span", { className: "pta-title", title: ticketLabel(ticket), children: ticketLabel(ticket) }),
+            ticket.kind === "system" ? /* @__PURE__ */ jsx("span", { className: "pta-tag", children: "mine" }) : /* @__PURE__ */ jsx("span", { className: "pta-tag pta-tag--client", title: ticket.client_email ?? "", children: ticket.client_email || "client" }),
+            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ticket.project_name || "no project" }),
+            reason ? /* @__PURE__ */ jsx("span", { className: "pta-warn", children: reason }) : null,
+            /* @__PURE__ */ jsx("span", { className: "pta-fill" }),
+            detail ? /* @__PURE__ */ jsx("span", { className: "pta-meta", children: detail }) : null,
+            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ago2(ticket.updated_at) }),
+            actions ? /* @__PURE__ */ jsx("span", { className: "pta-actions", onClick: (event) => event.stopPropagation(), children: actions }) : null
+          ]
+        }
+      );
+    }
+    function Kpi({ label, value, hint, tint, onClick }) {
+      return /* @__PURE__ */ jsxs("button", { type: "button", className: "pta-kpi", onClick, title: hint, disabled: !onClick, children: [
+        /* @__PURE__ */ jsx("span", { className: "pta-kpi__value", style: { color: tint }, children: value }),
+        /* @__PURE__ */ jsx("span", { className: "pta-kpi__label", children: label })
+      ] });
+    }
+    function EmptyState({ title, text, children }) {
+      return /* @__PURE__ */ jsxs("div", { className: "pta-empty", children: [
+        /* @__PURE__ */ jsx("div", { className: "pta-empty__mark", "aria-hidden": "true", children: "\u2713" }),
+        /* @__PURE__ */ jsx("h3", { children: title }),
+        /* @__PURE__ */ jsx("p", { children: text }),
+        children
+      ] });
+    }
+    function isAuthError(code) {
+      return code === "signed_out" || code === "unauthorized" || code === "forbidden" || code === "no_signin";
+    }
+    function PortalSignIn({ onDone = null, compact = false }) {
+      const [state, setState] = useState({ phase: "idle", url: "", error: "" });
+      const done = useRef(onDone);
+      done.current = onDone;
+      useEffect(() => {
+        if (state.phase !== "waiting") return void 0;
+        let alive = true;
+        let timer = null;
+        const poll = async () => {
+          try {
+            const status = await json("signin-status");
+            if (!alive) return;
+            if (status?.verificationUrl) setState((prev) => ({ ...prev, url: status.verificationUrl }));
+            if (status?.signedIn) {
+              setState({ phase: "done", url: "", error: "" });
+              done.current?.();
+              return;
+            }
+            if (status?.startedAt && Date.now() - Number(status.startedAt) > 10 * 6e4) {
+              setState({ phase: "idle", url: "", error: "That sign-in expired. Start again." });
+              return;
+            }
+          } catch {
+          }
+          if (alive) timer = setTimeout(poll, 2e3);
+        };
+        void poll();
+        return () => {
+          alive = false;
+          clearTimeout(timer);
+        };
+      }, [state.phase]);
+      const start = async () => {
+        setState({ phase: "starting", url: "", error: "" });
+        try {
+          const result = await command("signin");
+          if (!result?.ok) throw new Error(result?.text ?? "Could not start the sign-in.");
+          setState({ phase: "waiting", url: "", error: "" });
+        } catch (error) {
+          setState({ phase: "idle", url: "", error: error?.message ?? "Could not start the sign-in." });
+        }
+      };
+      if (state.phase === "done") {
+        return /* @__PURE__ */ jsx("p", { className: "pta-meta", role: "status", children: "Signed in. Reloading the portal data\u2026" });
+      }
+      return /* @__PURE__ */ jsxs("div", { className: compact ? "pta-signin pta-signin--compact" : "pta-signin", children: [
+        state.phase === "waiting" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx("p", { children: "Finish in your browser: sign in to the portal as an admin, then approve PTech Admin." }),
+          state.url ? /* @__PURE__ */ jsx("p", { children: /* @__PURE__ */ jsx("a", { className: "pta-link", href: state.url, target: "_blank", rel: "noreferrer", children: "Open the sign-in page again" }) }) : null,
+          /* @__PURE__ */ jsx("p", { className: "pta-meta", role: "status", children: "Waiting for the browser to hand the sign-in back\u2026" }),
+          /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: () => setState({ phase: "idle", url: "", error: "" }), children: "Cancel" })
+        ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx("p", { children: "Sign in with your PTech portal admin account. No token to copy: the browser approves this app and sends it back." }),
+          /* @__PURE__ */ jsx(PtaButton, { kind: "primary", disabled: state.phase === "starting", onClick: () => void start(), children: state.phase === "starting" ? "Opening\u2026" : "Sign in with portal" })
+        ] }),
+        state.error ? /* @__PURE__ */ jsx("p", { className: "pta-warn", role: "status", children: state.error }) : null
+      ] });
+    }
+    function NeedsYouPage() {
+      const data = useLiveAdmin();
+      const groups = useMemo(() => ticketGroups(data), [data]);
+      const total = actionableCount(groups);
+      const goInbox = () => ctx.layout?.selectPanel?.(INBOX_PANEL);
+      const goWorkbench = () => ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
+      if (data.loading && data.at === 0) return /* @__PURE__ */ jsx("div", { className: "pta-page", children: /* @__PURE__ */ jsx("p", { className: "pta-empty", children: "Loading\u2026" }) });
+      if (data.error) {
+        return /* @__PURE__ */ jsxs("div", { className: "pta-page", children: [
+          /* @__PURE__ */ jsx("header", { className: "pta-head", children: /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("h1", { children: "Needs you" }),
+            /* @__PURE__ */ jsx("p", { children: isAuthError(data.code) ? "Connect PTech Admin to the portal to see what is waiting." : "The portal could not be reached." })
+          ] }) }),
+          isAuthError(data.code) ? /* @__PURE__ */ jsx(PortalSignIn, { onDone: () => void data.reload() }) : /* @__PURE__ */ jsxs("div", { className: "pta-empty", children: [
+            /* @__PURE__ */ jsx("h3", { children: "Could not reach the portal" }),
+            /* @__PURE__ */ jsx("p", { children: data.error }),
+            /* @__PURE__ */ jsx(PtaButton, { onClick: () => void data.reload(), children: "Try again" })
+          ] }),
+          /* @__PURE__ */ jsx("p", { className: "pta-meta", style: { marginTop: 10 }, children: data.error })
+        ] });
+      }
+      const section = (key, title, hint, items, actions, reasonOf) => items.length === 0 ? null : /* @__PURE__ */ jsxs("section", { className: "pta-section", children: [
+        /* @__PURE__ */ jsxs("div", { className: "pta-section__head", children: [
+          /* @__PURE__ */ jsxs("h3", { children: [
+            title,
+            " ",
+            /* @__PURE__ */ jsx("span", { className: "pta-count", children: items.length })
+          ] }),
+          /* @__PURE__ */ jsx("span", { className: "pta-meta", children: hint })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "pta-rows", children: items.map((ticket) => /* @__PURE__ */ jsx(
+          TicketLine,
+          {
+            ticket,
+            reason: reasonOf ? reasonOf(ticket) : "",
+            actions: actions ? actions(ticket) : /* @__PURE__ */ jsx(TicketRowActions, { ticket })
+          },
+          ticket.id
+        )) })
+      ] }, key);
+      const stuckReason = new Map(
+        data.queue.filter((item) => !(Array.isArray(item?.eligible) ? item.eligible.length > 0 : Boolean(item?.eligible))).map((item) => [Number(item.id), item.reason ?? "no eligible node"])
+      );
+      return /* @__PURE__ */ jsxs("div", { className: "pta-page", children: [
+        /* @__PURE__ */ jsxs("header", { className: "pta-head", children: [
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("h1", { children: "Needs you" }),
+            /* @__PURE__ */ jsx("p", { children: total === 0 ? "Nothing is waiting on you. Agents are on it." : `${total} item${total === 1 ? "" : "s"} want a decision.` })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "pta-head__actions", children: [
+            /* @__PURE__ */ jsx(PtaButton, { onClick: goInbox, children: "Open Inbox" }),
+            /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: goWorkbench, children: "Workbench" })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "pta-kpis", children: [
+          /* @__PURE__ */ jsx(Kpi, { label: "To approve", value: groups.approvals.length, tint: tintOfStatus("new"), onClick: goInbox, hint: "New requests; nothing runs until you approve." }),
+          /* @__PURE__ */ jsx(Kpi, { label: "To review", value: groups.reviews.length, tint: tintOfStatus("review"), onClick: goInbox, hint: "Finished runs waiting for your check." }),
+          /* @__PURE__ */ jsx(Kpi, { label: "Clients waiting", value: groups.waiting.length, tint: tintOfStatus("approved"), onClick: goInbox, hint: "They wrote last and have heard nothing since." }),
+          /* @__PURE__ */ jsx(Kpi, { label: "Running now", value: groups.running.length, tint: tintOfStatus("in_progress"), onClick: goInbox, hint: "Agents working right now." })
+        ] }),
+        section("approvals", "Approve or decline", "New requests. Nothing runs until you decide.", groups.approvals),
+        section("review", "Check the agent\u2019s work", "Finished runs waiting for you.", groups.reviews),
+        section("waiting", "Answer the client", "They wrote last and have heard nothing since.", groups.waiting),
+        section("stalled", "Stalled", "In progress for 45+ minutes without a report.", groups.stalled),
+        section("stuck", "No node can take these", "Approved, but nothing eligible can run them.", groups.stuck, null, (ticket) => stuckReason.get(Number(ticket.id)) ?? ""),
+        groups.running.length > 0 ? /* @__PURE__ */ jsxs("section", { className: "pta-section", children: [
+          /* @__PURE__ */ jsxs("div", { className: "pta-section__head", children: [
+            /* @__PURE__ */ jsxs("h3", { children: [
+              "Running now ",
+              /* @__PURE__ */ jsx("span", { className: "pta-count", children: groups.running.length })
+            ] }),
+            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: "Live agent work." })
+          ] }),
+          /* @__PURE__ */ jsx("div", { className: "pta-rows", children: groups.running.map((run) => /* @__PURE__ */ jsxs("button", { type: "button", className: "pta-row", onClick: () => void openTicketRun({ id: run.ticket_id, title: run.title }), children: [
+            /* @__PURE__ */ jsx("span", { className: "pta-dot", style: { background: tintOfStatus("in_progress") } }),
+            /* @__PURE__ */ jsxs("span", { className: "pta-id", children: [
+              "#",
+              run.ticket_id
+            ] }),
+            /* @__PURE__ */ jsx("span", { className: "pta-title", children: run.title || "run" }),
+            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: run.executor }),
+            /* @__PURE__ */ jsxs("span", { className: "pta-meta", children: [
+              "on ",
+              run.node_id ?? "this machine"
+            ] }),
+            /* @__PURE__ */ jsx("span", { className: "pta-fill" }),
+            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ago2(run.started_at ?? run.updated_at) })
+          ] }, run.id)) })
+        ] }) : null,
+        groups.failed.length > 0 ? /* @__PURE__ */ jsxs("section", { className: "pta-section", children: [
+          /* @__PURE__ */ jsxs("div", { className: "pta-section__head", children: [
+            /* @__PURE__ */ jsx("h3", { children: "Failed runs, last 24h" }),
+            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: "These stop until someone looks." })
+          ] }),
+          /* @__PURE__ */ jsx("div", { className: "pta-rows", children: groups.failed.map((run) => /* @__PURE__ */ jsxs("button", { type: "button", className: "pta-row", onClick: () => void openTicketRun({ id: run.ticket_id, title: run.title }), children: [
+            /* @__PURE__ */ jsx("span", { className: "pta-dot", style: { background: "var(--dsw-alias-state-danger-primary, #e5534b)" } }),
+            /* @__PURE__ */ jsxs("span", { className: "pta-id", children: [
+              "#",
+              run.ticket_id
+            ] }),
+            /* @__PURE__ */ jsx("span", { className: "pta-title", children: run.title || "run" }),
+            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: run.executor }),
+            /* @__PURE__ */ jsxs("span", { className: "pta-meta", children: [
+              "on ",
+              run.node_id ?? "this machine"
+            ] }),
+            /* @__PURE__ */ jsx("span", { className: "pta-fill" }),
+            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ago2(run.finished_at) })
+          ] }, run.id)) })
+        ] }) : null,
+        total === 0 && groups.failed.length === 0 ? /* @__PURE__ */ jsxs(EmptyState, { title: "Inbox zero", text: "No approvals, no reviews, no client waiting. New work will appear here and in a notification.", children: [
+          /* @__PURE__ */ jsx(PtaButton, { onClick: goInbox, children: "Open Inbox" }),
+          /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: goWorkbench, children: "Workbench" })
+        ] }) : null
+      ] });
+    }
+    function InboxPage() {
+      const data = useLiveAdmin();
+      const groups = useMemo(() => ticketGroups(data), [data]);
+      const [filter, setFilter] = useState("all");
+      const [query, setQuery] = useState("");
+      const goWorkbench = () => ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
+      const all = useMemo(() => {
+        const seen = /* @__PURE__ */ new Map();
+        const add = (ticket, kind) => {
+          const entry = seen.get(ticket.id);
+          if (entry) {
+            entry.kinds.add(kind);
+            return;
+          }
+          seen.set(ticket.id, { ticket, kinds: /* @__PURE__ */ new Set([kind]) });
+        };
+        for (const ticket of groups.approvals) add(ticket, "approval");
+        for (const ticket of groups.reviews) add(ticket, "review");
+        for (const ticket of groups.waiting) add(ticket, "reply");
+        for (const ticket of groups.stalled) add(ticket, "stalled");
+        for (const ticket of groups.stuck) add(ticket, "stuck");
+        return [...seen.values()];
+      }, [groups]);
+      const filters = [
+        { key: "all", label: "All", count: all.length },
+        { key: "approval", label: "Approvals", count: groups.approvals.length },
+        { key: "review", label: "Reviews", count: groups.reviews.length },
+        { key: "reply", label: "Client replies", count: groups.waiting.length },
+        { key: "stalled", label: "Stalled", count: groups.stalled.length },
+        { key: "stuck", label: "Stuck", count: groups.stuck.length }
+      ];
+      const needle = query.trim().toLowerCase();
+      const shown = all.filter(({ ticket, kinds }) => {
+        if (filter !== "all" && !kinds.has(filter)) return false;
+        if (needle.length === 0) return true;
+        return `${ticket.id} ${ticketLabel(ticket)} ${ticket.project_name ?? ""} ${ticket.client_email ?? ""}`.toLowerCase().includes(needle);
+      });
+      if (data.error && isAuthError(data.code)) {
+        return /* @__PURE__ */ jsxs("div", { className: "pta-page", children: [
+          /* @__PURE__ */ jsx("header", { className: "pta-head", children: /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("h1", { children: "Inbox" }),
+            /* @__PURE__ */ jsx("p", { children: "Connect PTech Admin to the portal to see what is waiting." })
+          ] }) }),
+          /* @__PURE__ */ jsx(PortalSignIn, { onDone: () => void data.reload() })
+        ] });
+      }
+      return /* @__PURE__ */ jsxs("div", { className: "pta-page", children: [
+        /* @__PURE__ */ jsxs("header", { className: "pta-head", children: [
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("h1", { children: "Inbox" }),
+            /* @__PURE__ */ jsx("p", { children: "Approvals, reviews and client replies in one place. The same items notify you as they arrive." })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "pta-head__actions", children: [
+            /* @__PURE__ */ jsx(
+              "input",
+              {
+                className: "pta-search",
+                value: query,
+                placeholder: "Search tickets, clients, projects\u2026",
+                onChange: (event) => setQuery(event.target.value),
+                "aria-label": "Search the inbox"
+              }
+            ),
+            /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: goWorkbench, children: "Workbench" })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "pta-filters", children: filters.map((item) => /* @__PURE__ */ jsxs("button", { type: "button", className: `pta-filter${filter === item.key ? " is-active" : ""}`, onClick: () => setFilter(item.key), children: [
+          item.label,
+          item.count ? /* @__PURE__ */ jsx("span", { className: "pta-count", children: item.count }) : null
+        ] }, item.key)) }),
+        shown.length === 0 ? /* @__PURE__ */ jsx(EmptyState, { title: all.length === 0 ? "Inbox zero" : "Nothing in this filter", text: all.length === 0 ? "New approvals, reviews and client replies will land here and notify you." : "Try another filter, or clear the search." }) : /* @__PURE__ */ jsx("div", { className: "pta-rows pta-rows--inbox", children: shown.map(({ ticket }) => /* @__PURE__ */ jsx(
+          TicketLine,
+          {
+            ticket,
+            actions: /* @__PURE__ */ jsx(TicketRowActions, { ticket }),
+            detail: isWaiting(ticket) ? "waiting" : ""
+          },
+          ticket.id
+        )) })
+      ] });
+    }
+    function openWorkbenchTicket(ticketId) {
+      ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
+      const hash = `#ticket=${ticketId}`;
+      if (window.location.hash === hash) window.dispatchEvent(new HashChangeEvent("hashchange"));
+      else window.location.hash = hash;
+    }
+    function TicketDock({ sessionId, input, inputActions }) {
+      const run = ticketFromCwd(useSessionCwd(sessionId));
+      const ticketId = run?.ticketId ?? null;
+      const [detail, reload] = useTicketDetail(ticketId);
+      const [expanded, setExpanded] = useState(false);
+      const [mode, setMode] = useState("chat");
+      const [busy, setBusy] = useState("");
+      const [note, setNote] = useState("");
+      useEffect(() => {
+        setExpanded(false);
+        setMode("chat");
+        setBusy("");
+        setNote("");
+      }, [ticketId]);
+      if (!run) return null;
+      const ticket = detail.ticket;
+      const draft = typeof input?.draft === "string" ? input.draft : "";
+      const messages = Array.isArray(detail.messages) ? detail.messages : [];
+      const runs = Array.isArray(detail.runs) ? detail.runs : [];
+      const waiting = isWaiting(ticket);
+      const latestClient = [...messages].reverse().find((message) => message.author === "client" && !message.internal) ?? null;
+      const canReply = ticket?.kind !== "system";
+      const send = async (internal) => {
+        const body = draft.trim();
+        if (!ticket || body.length === 0) return;
+        setBusy(internal ? "note" : "reply");
+        setNote("");
+        try {
+          await api("POST", `/admin/tickets/${ticket.id}/messages`, { body, internal });
+          inputActions?.setDraft?.("");
+          setNote(internal ? "Note saved" : "Reply sent");
+          window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "ticket.reply", ticketId: ticket.id } }));
+          void reload();
+        } catch (error) {
+          setNote(error?.message ?? "Could not send it");
+        } finally {
+          setBusy("");
+        }
+      };
+      return /* @__PURE__ */ jsxs("section", { className: "pta-dock", "aria-label": `Ticket #${run.ticketId}`, children: [
+        /* @__PURE__ */ jsxs("div", { className: "pta-dock__head", children: [
+          /* @__PURE__ */ jsx(StatusPill2, { status: ticket?.status ?? "" }),
+          /* @__PURE__ */ jsxs("span", { className: "pta-dock__id", children: [
+            "#",
+            run.ticketId
+          ] }),
+          /* @__PURE__ */ jsx("span", { className: "pta-dock__title", title: ticketLabel(ticket), children: detail.loading && !ticket ? "Loading ticket\u2026" : ticketLabel(ticket) }),
+          ticket ? /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ticket.project_name || "no project" }) : null,
+          ticket && ticket.kind !== "system" ? /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ticket.client_email }) : null,
+          waiting ? /* @__PURE__ */ jsxs("span", { className: "pta-warn", children: [
+            "client waiting ",
+            ago2(ticket.client_waiting_since)
+          ] }) : null,
+          /* @__PURE__ */ jsx("span", { className: "pta-fill" }),
+          ticket ? /* @__PURE__ */ jsx(TicketRowActions, { ticket }) : null,
+          /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: () => setExpanded((value) => !value), children: expanded ? "Hide ticket" : `Ticket${messages.length ? ` \xB7 ${messages.length}` : ""}` }),
+          /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: () => openWorkbenchTicket(run.ticketId), children: "Workbench" })
+        ] }),
+        !expanded && latestClient ? /* @__PURE__ */ jsxs("div", { className: "pta-dock__last", title: latestClient.body, children: [
+          /* @__PURE__ */ jsx("span", { className: "pta-meta", children: "Client:" }),
+          " ",
+          latestClient.body
+        ] }) : null,
+        expanded ? /* @__PURE__ */ jsxs("div", { className: "pta-dock__body", children: [
+          ticket ? /* @__PURE__ */ jsxs("div", { className: "pta-facts", children: [
+            /* @__PURE__ */ jsxs("span", { children: [
+              "Priority ",
+              /* @__PURE__ */ jsx("strong", { children: ticket.priority ?? 0 })
+            ] }),
+            /* @__PURE__ */ jsxs("span", { children: [
+              "Agent ",
+              /* @__PURE__ */ jsx("strong", { children: ticket.executor || "auto" })
+            ] }),
+            ticket.attention ? /* @__PURE__ */ jsxs("span", { children: [
+              "Attention ",
+              /* @__PURE__ */ jsx("strong", { children: ticket.attention })
+            ] }) : null,
+            ticket.budget_cents !== null && ticket.budget_cents !== void 0 ? /* @__PURE__ */ jsxs("span", { children: [
+              "Budget ",
+              /* @__PURE__ */ jsx("strong", { children: dollars(ticket.budget_cents) })
+            ] }) : null,
+            ticket.price_cents !== null && ticket.price_cents !== void 0 ? /* @__PURE__ */ jsxs("span", { children: [
+              "Cost ",
+              /* @__PURE__ */ jsx("strong", { children: dollars(ticket.price_cents) })
+            ] }) : null,
+            ticket.requires ? /* @__PURE__ */ jsxs("span", { children: [
+              "Needs ",
+              /* @__PURE__ */ jsx("strong", { children: String(ticket.requires).replace(/^\[|\]$/g, "").replace(/"/g, "") || "nothing" })
+            ] }) : null
+          ] }) : null,
+          /* @__PURE__ */ jsxs("div", { className: "pta-thread", children: [
+            messages.length === 0 ? /* @__PURE__ */ jsx("p", { className: "pta-meta", children: "No messages yet." }) : null,
+            messages.slice(-12).map((message) => /* @__PURE__ */ jsxs("div", { className: `pta-msg pta-msg--${message.author}${message.internal ? " is-note" : ""}`, children: [
+              /* @__PURE__ */ jsxs("div", { className: "pta-msg__meta", children: [
+                message.author === "client" ? "Client" : message.author === "ali" ? "You" : "System",
+                message.internal ? " \xB7 private note" : "",
+                " \xB7 ",
+                ago2(message.created_at)
+              ] }),
+              /* @__PURE__ */ jsx("div", { className: "pta-msg__body", children: message.body })
+            ] }, message.id)),
+            runs.length > 0 ? /* @__PURE__ */ jsx("div", { className: "pta-runs", children: runs.slice(-4).map((ticketRun) => /* @__PURE__ */ jsxs("div", { className: "pta-run", children: [
+              /* @__PURE__ */ jsx("span", { className: "pta-dot", style: { background: ticketRun.status === "failed" ? "var(--dsw-alias-state-danger-primary, #e5534b)" : ticketRun.status === "running" ? tintOfStatus("in_progress") : "var(--dsw-alias-label-tertiary, #8a9099)" } }),
+              /* @__PURE__ */ jsxs("span", { children: [
+                "Run ",
+                ticketRun.id
+              ] }),
+              /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ticketRun.executor ?? "agent" }),
+              /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ticketRun.status }),
+              /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ago2(ticketRun.finished_at ?? ticketRun.started_at ?? ticketRun.created_at) })
+            ] }, ticketRun.id)) }) : null
+          ] })
+        ] }) : null,
+        /* @__PURE__ */ jsxs("div", { className: "pta-dock__compose", children: [
+          /* @__PURE__ */ jsx("div", { className: "pta-modes", role: "group", "aria-label": "Where the draft goes", children: [
+            ["chat", "Chat"],
+            ["reply", "Reply to client"],
+            ["note", "Private note"]
+          ].map(([key, label]) => /* @__PURE__ */ jsx(
+            "button",
+            {
+              type: "button",
+              className: `pta-mode${mode === key ? " is-active" : ""}`,
+              "aria-pressed": mode === key,
+              disabled: key !== "chat" && key === "reply" && !canReply,
+              onClick: () => setMode(key),
+              children: label
+            },
+            key
+          )) }),
+          /* @__PURE__ */ jsx("span", { className: "pta-hint", children: mode === "chat" ? "Typing here talks to the agent; the Host mirrors it to the ticket as a private note." : mode === "reply" ? "Type in the chat input, then send it to the client. This emails them." : "Type in the chat input, then save it as an internal note. The client never sees it." }),
+          /* @__PURE__ */ jsx("span", { className: "pta-fill" }),
+          mode === "reply" ? /* @__PURE__ */ jsx(PtaButton, { kind: "primary", disabled: !canReply || draft.trim().length === 0 || busy === "reply", onClick: () => void send(false), children: busy === "reply" ? "Sending\u2026" : "Send reply" }) : null,
+          mode === "note" ? /* @__PURE__ */ jsx(PtaButton, { kind: "primary", disabled: draft.trim().length === 0 || busy === "note", onClick: () => void send(true), children: busy === "note" ? "Saving\u2026" : "Save note" }) : null,
+          note ? /* @__PURE__ */ jsx("span", { className: "pta-meta", role: "status", children: note }) : null
+        ] })
+      ] });
     }
     function openAdminLink(url) {
       let parsed;
@@ -8000,7 +8586,7 @@ ${who} is emailed about this change.`)) return;
       } catch {
         return false;
       }
-      if (parsed.protocol !== "dsh-admin:") return false;
+      if (parsed.protocol !== "ptech-admin:") return false;
       const parts = [parsed.hostname, ...parsed.pathname.split("/")].filter((part) => typeof part === "string" && part.length > 0).map((part) => {
         try {
           return decodeURIComponent(part);
@@ -8011,7 +8597,7 @@ ${who} is emailed about this change.`)) return;
       const route = (parts.shift() ?? "").toLowerCase();
       const target = parts.join("/");
       const openHash = (hash) => {
-        ctx.layout?.selectPanel?.(PANEL_ID);
+        ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
         const wanted = `#${hash}`;
         if (window.location.hash === wanted) window.dispatchEvent(new HashChangeEvent("hashchange"));
         else window.location.hash = wanted;
@@ -8019,15 +8605,31 @@ ${who} is emailed about this change.`)) return;
       if (route === "ticket") {
         const id = Number.parseInt(target, 10);
         if (!Number.isInteger(id) || id <= 0) return false;
-        openTicket({ ticketId: id });
+        handledDeepLink = true;
+        void openTicketRun({ id });
+        return true;
+      }
+      if (route === "auth") {
+        const code = parsed.searchParams.get("code") ?? target;
+        if (typeof code !== "string" || code.length === 0) return false;
+        handledDeepLink = true;
+        void command(`login-code ${code}`).then((result) => {
+          if (!result?.ok) throw new Error(result?.text ?? "The portal did not accept the sign-in.");
+          window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "auth.signed-in" } }));
+          return void 0;
+        }).catch((error) => {
+          console.warn("admin: device sign-in failed:", error?.message ?? error);
+        });
         return true;
       }
       if (route === "client") {
         if (target.length === 0) return false;
+        handledDeepLink = true;
         openHash(`client=${encodeURIComponent(target)}`);
         return true;
       }
       if (route === "seo" || route === "health") {
+        handledDeepLink = true;
         openHash(route);
         return true;
       }
@@ -8038,19 +8640,42 @@ ${who} is emailed about this change.`)) return;
       if (typeof url === "string") openAdminLink(url);
     };
     globalThis.__dshAdminOpenLink = openAdminLink;
+    window.addEventListener("ptech-admin:open-link", onAdminLink);
     window.addEventListener("dsh-admin:open-link", onAdminLink);
     ctx.effect(
       () => () => {
+        window.removeEventListener("ptech-admin:open-link", onAdminLink);
         window.removeEventListener("dsh-admin:open-link", onAdminLink);
         if (globalThis.__dshAdminOpenLink === openAdminLink) delete globalThis.__dshAdminOpenLink;
       },
-      "admin: dsh-admin links"
+      "admin: ptech-admin links"
     );
     ctx.inject(["locale"], (localeCtx) => {
       localeCtx.effect(() => localeCtx.locale.register(NAMESPACE, { en: DICTIONARY }), "admin: locale namespace");
     });
-    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: PANEL_ID, locale: NAMESPACE }, AdminPage));
-    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: PANEL_ID, order: 12, label: "Admin" }, AdminEntryIcon));
+    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: HOME_PANEL, locale: NAMESPACE }, NeedsYouPage));
+    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: INBOX_PANEL, locale: NAMESPACE }, InboxPage));
+    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: WORKBENCH_PANEL, locale: NAMESPACE }, AdminPage));
+    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: HOME_PANEL, order: 11, label: "Needs you" }, AdminEntryIcon));
+    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: INBOX_PANEL, order: 12, label: "Inbox" }, InboxEntryIcon));
+    ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({ name: "conversation.input.dock", id: "admin-ticket", order: 20, locale: NAMESPACE }, TicketDock));
+    ctx.effect(() => {
+      const style = document.createElement("style");
+      style.dataset.admin = "native";
+      style.textContent = NATIVE_STYLES;
+      document.head.append(style);
+      return () => style.remove();
+    }, "admin: native styles");
+    ctx.effect(() => {
+      const timer = setTimeout(() => {
+        try {
+          if (window.location.hash !== "" || handledDeepLink) return;
+          ctx.layout?.selectPanel?.(HOME_PANEL);
+        } catch {
+        }
+      }, 900);
+      return () => clearTimeout(timer);
+    }, "admin: initial needs-you view");
     ctx.slots.inject("sidebar.panellist", () => syncClientRows());
     ctx.slots.inject("sidebar.workspaces.section", () => {
       sectionAvailable = true;
@@ -8099,6 +8724,7 @@ ${who} is emailed about this change.`)) return;
     ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({ name: "sidebar.right.pane.tab", key: "admin-tasks", locale: NAMESPACE }, TasksTab));
     ctx.slots.inject("sidebar.right.pane.tab.title", () => ctx.slots.register({ name: "sidebar.right.pane.tab.title", key: "admin-tasks", locale: NAMESPACE }, TasksTabTitle));
     void command(`hello ${CLIENT_VERSION}`).catch(() => void 0);
+    void command(`native-notify ${desktopNotifications ? "on" : "off"}`).catch(() => void 0);
   }
   var client_default = { name: PANEL_ID, inject, apply };
   return __toCommonJS(client_exports);

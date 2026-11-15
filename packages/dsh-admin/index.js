@@ -17,10 +17,10 @@
  * @module @malipetek/dsh-admin
  */
 import { execFile } from 'node:child_process';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { access, link, mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { basename, dirname, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -156,12 +156,18 @@ async function attachFiles(config, ticketId, { paths, text = '', internal = true
 
 /**
  * Where the plugin keeps its state: under the Harness home, `$DSH_HOME` when
- * set and `~/.dsh` otherwise. The official app and DSH Admin each set their
+ * set and `~/.dsh` otherwise. The official app and PTech Admin each set their
  * own, so the same plugin code keeps separate state in both.
  */
 const ADMIN_DIR = join(dshHome(), 'admin');
 const SNAPSHOT_PATH = join(ADMIN_DIR, 'state.json');
 const CONFIG_PATH = join(ADMIN_DIR, 'config.json');
+/**
+ * A portal sign-in in flight: the PKCE verifier and the device code the
+ * Worker gave us. Owner-only, and deleted as soon as the exchange succeeds, so
+ * a cold start from the browser's `ptech-admin://auth` link can still finish.
+ */
+const DEVICE_PENDING_PATH = join(ADMIN_DIR, 'device-signin.json');
 /**
  * The ticket the panel currently has open, thread included. A separate file
  * because a thread is only worth fetching when someone looks at it.
@@ -545,8 +551,11 @@ async function loadConfig() {
   return {
     endpoint: resolveEndpoint(stored.endpoint),
     token: typeof stored.token === 'string' ? stored.token : '',
-    // Notifications are on unless Ali turned them off (`/admin notify off`).
+    // Notifications are on unless the admin turned them off (`/admin notify off`).
     notify: stored.notify !== false,
+    // The PTech Admin renderer can show clickable native notifications through
+    // the desktop bridge; when it can, the Host stops shelling out to osascript.
+    nativeNotify: stored.nativeNotify === true,
   };
 }
 
@@ -558,9 +567,123 @@ async function loadConfig() {
 async function saveConfig(config) {
   await writeText(
     CONFIG_PATH,
-    JSON.stringify({ endpoint: config.endpoint, token: config.token, notify: config.notify !== false }, null, 2) + '\n',
+    JSON.stringify({
+      endpoint: config.endpoint,
+      token: config.token,
+      notify: config.notify !== false,
+      nativeNotify: config.nativeNotify === true,
+    }, null, 2) + '\n',
     0o600,
   );
+}
+
+/* ——————————————————— device sign-in (PKCE) ——————————————————— */
+
+/**
+ * Open a URL in the person's browser. The Worker's page finishes the sign-in
+ * and sends a one-time code back to `ptech-admin://auth`.
+ */
+function openExternal(url) {
+  const safe = typeof url === 'string' && (/^https:\/\//.test(url) || /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\//.test(url));
+  if (!safe) return Promise.reject(new Error('The portal gave no usable sign-in URL.'));
+  const [command, args] = process.platform === 'darwin'
+    ? ['open', [url]]
+    : process.platform === 'win32'
+      ? ['cmd', ['/c', 'start', '', url]]
+      : ['xdg-open', [url]];
+  return execFileP(command, args, { timeout: 10_000 }).then(() => undefined, () => undefined);
+}
+
+/** POST an unauthenticated device-login request, with the Worker's error text. */
+async function postPublic(endpoint, path, body) {
+  const url = `${endpoint.replace(/\/+$/, '')}${path}`;
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (cause) {
+    throw Object.assign(new Error(`Could not reach ${url}: ${cause?.message ?? String(cause)}`), { code: 'network' });
+  }
+  const text = await response.text();
+  let payload = null;
+  try {
+    payload = text.length > 0 ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) {
+    const code = typeof payload?.error === 'string' ? payload.error : `http_${response.status}`;
+    throw Object.assign(new Error(explain(code, response.status)), { code, status: response.status });
+  }
+  return payload;
+}
+
+/** The verifier and device code of a sign-in that has not completed yet. */
+async function readPendingSignIn() {
+  const stored = await readJson(DEVICE_PENDING_PATH, null);
+  if (!stored || typeof stored.verifier !== 'string' || stored.verifier.length < 43) return null;
+  return {
+    verifier: stored.verifier,
+    deviceCode: typeof stored.deviceCode === 'string' ? stored.deviceCode : '',
+    verificationUrl: typeof stored.verificationUrl === 'string' ? stored.verificationUrl : '',
+    endpoint: typeof stored.endpoint === 'string' ? stored.endpoint : '',
+    startedAt: Number(stored.startedAt ?? 0),
+  };
+}
+
+/**
+ * Start a portal sign-in: prove this app's verifier to the Worker, then send
+ * the person to the portal page that approves it.
+ * @param config - `{ endpoint }`.
+ * @returns `{ verificationUrl, expiresAt }`.
+ */
+async function startDeviceSignIn(config) {
+  const verifier = randomBytes(48).toString('base64url');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  const started = await postPublic(config.endpoint, '/auth/device/start', {
+    challenge,
+    label: `PTech Admin on ${hostname()}`,
+  });
+  if (typeof started?.verificationUrl !== 'string' || typeof started?.deviceCode !== 'string') {
+    throw Object.assign(new Error('The portal did not return a sign-in page.'), { code: 'bad_reply' });
+  }
+  await writeText(
+    DEVICE_PENDING_PATH,
+    JSON.stringify({
+      verifier,
+      deviceCode: started.deviceCode,
+      verificationUrl: started.verificationUrl,
+      endpoint: config.endpoint,
+      startedAt: Date.now(),
+    }, null, 2) + '\n',
+    0o600,
+  );
+  await openExternal(started.verificationUrl);
+  return { verificationUrl: started.verificationUrl, expiresAt: Number(started.expiresAt ?? 0) };
+}
+
+/**
+ * Finish a sign-in with the one-time code the portal sent back. The verifier
+ * never leaves this machine except in this exchange.
+ * @param config - `{ endpoint }`.
+ * @param code - the `code` query parameter of `ptech-admin://auth`.
+ * @returns the signed-in user.
+ */
+async function completeDeviceSignIn(config, code) {
+  const pending = await readPendingSignIn();
+  if (!pending) throw Object.assign(new Error('No portal sign-in is in flight. Start one from Settings.'), { code: 'no_signin' });
+  const endpoint = pending.endpoint || config.endpoint;
+  const exchanged = await postPublic(endpoint, '/auth/device/token', { code, verifier: pending.verifier });
+  const session = typeof exchanged?.session === 'string' ? exchanged.session : '';
+  if (session.length === 0) throw Object.assign(new Error('The portal did not return a session.'), { code: 'bad_reply' });
+  await saveConfig({ ...config, endpoint, token: session });
+  await unlink(DEVICE_PENDING_PATH).catch(() => undefined);
+  const snapshot = await refresh({ ...config, endpoint, token: session });
+  return { user: exchanged?.user ?? null, snapshot };
 }
 
 /**
@@ -608,7 +731,7 @@ async function writeFailure(endpoint, message) {
  */
 async function request(config, path, init = {}) {
   if (config.token.length === 0) {
-    const error = new Error('Not signed in to the portal. Paste a session token first.');
+    const error = new Error('Not signed in to the portal. Choose Sign in with portal.');
     error.code = 'signed_out';
     throw error;
   }
@@ -659,8 +782,10 @@ async function request(config, path, init = {}) {
  */
 function explain(code, status) {
   const known = {
-    signed_out: 'Not signed in to the portal. Paste a session token first.',
-    unauthorized: 'The portal rejected the session token — it may have expired. Sign in again and paste a fresh one.',
+    signed_out: 'Not signed in to the portal. Choose Sign in with portal.',
+    unauthorized: 'The portal rejected the session token — it may have expired. Sign in again.',
+    invalid_code: 'That sign-in code expired or was already used. Start the sign-in again.',
+    bad_device_code: 'The portal did not recognise that device request. Start the sign-in again.',
     forbidden: 'That session is not an admin session.',
     not_found: 'That ticket or client no longer exists.',
     bad_status: 'That is not a status the portal accepts.',
@@ -914,7 +1039,7 @@ const appleScriptText = (text) => String(text ?? '').replace(/\\/g, '\\\\').repl
  */
 function showMacNotification(body) {
   if (process.platform !== 'darwin') return Promise.resolve();
-  const script = `display notification "${appleScriptText(body)}" with title "DSH Admin"`;
+  const script = `display notification "${appleScriptText(body)}" with title "PTech Admin"`;
   return execFileP('osascript', ['-e', script], { timeout: 5000 }).then(
     () => undefined,
     () => undefined,
@@ -950,6 +1075,9 @@ function publishEvents(config, snapshot) {
     await writeText(NOTIFY_PATH, JSON.stringify(seenState(snapshot), null, 2) + '\n', 0o600);
     if (!previous || config?.notify === false || events.length === 0) return;
     const stamped = await appendEvents(events);
+    // A renderer with the desktop bridge shows these itself, with a click
+    // through to the ticket; avoid a second banner from osascript.
+    if (config?.nativeNotify === true) return;
     for (const event of stamped.slice(0, NOTIFY_MAX_PER_PASS)) queueMacNotification(event.body);
     if (stamped.length > NOTIFY_MAX_PER_PASS) {
       queueMacNotification(`${stamped.length - NOTIFY_MAX_PER_PASS} more in Admin`);
@@ -1184,7 +1312,10 @@ function makeCommandHandler(ctx) {
             '  /admin open <id>               load one ticket and its thread for the panel',
             '  /admin hello <version>         record that the Client half loaded',
             '  /admin bridge                  where the panel sends its calls (loopback, not logged)',
-            '  /admin login <token>           store the portal session token',
+            '  /admin signin                  sign in through the portal in your browser (no token to copy)',
+            '  /admin signin-status            whether a browser sign-in is still waiting',
+            '  /admin login-code <code>       finish a ptech-admin://auth handoff',
+            '  /admin login <token>           store the portal session token by hand',
             '  /admin endpoint <url>          point at another portal Worker',
             '  /admin logout                  forget the token',
             '  /admin status <id> <status>    set a ticket status',
@@ -1192,6 +1323,7 @@ function makeCommandHandler(ctx) {
             '  /admin reply <id> <text>       reply to the client (emails them)',
             '  /admin note <id> <text>        internal note (client never sees it)',
             '  /admin notify on|off           macOS and in-app notifications for new work',
+            '  /admin native-notify on|off    clickable desktop banners (the Client half sets this)',
             '  /admin follow <id> <sessionId> mirror what is typed in that conversation onto the ticket',
             '  /admin attach <id> {"paths":[…],"text"?,"internal"?}   post local files (private note unless internal is false)',
             '  /admin download </admin/tickets/<id>/files/<fileId>>  save an attachment to ~/Downloads',
@@ -1345,6 +1477,49 @@ function makeCommandHandler(ctx) {
           };
         }
 
+        // `/admin signin`: prove a PKCE verifier to the Worker, then open the
+        // portal page that approves this app. The browser sends a one-time
+        // code back to ptech-admin://auth, which becomes `/admin login-code`.
+        case 'signin': {
+          try {
+            const started = await startDeviceSignIn(config);
+            return {
+              kind: 'success',
+              text: `Opened ${started.verificationUrl} in your browser. Sign in there as a portal admin, then approve PTech Admin. This window finishes on its own.`,
+            };
+          } catch (error) {
+            return { kind: 'error', text: error?.message ?? 'Could not start the portal sign-in.' };
+          }
+        }
+
+        case 'signin-status': {
+          const pending = await readPendingSignIn();
+          return {
+            kind: 'success',
+            text: JSON.stringify({
+              pending: pending !== null,
+              signedIn: config.token.length > 0,
+              verificationUrl: pending?.verificationUrl ?? '',
+              startedAt: pending?.startedAt ?? 0,
+            }),
+          };
+        }
+
+        case 'login-code': {
+          const code = rest.join(' ').trim();
+          if (code.length === 0) return { kind: 'error', text: 'Give the code: /admin login-code <code>' };
+          try {
+            const result = await completeDeviceSignIn(config, code);
+            const who = result.user?.email ?? 'a portal admin';
+            return {
+              kind: 'success',
+              text: `Signed in as ${who}. ${result.snapshot.tickets.length} ticket(s), ${result.snapshot.clients.length} client(s).`,
+            };
+          } catch (error) {
+            return { kind: 'error', text: error?.message ?? 'The portal did not accept the sign-in.' };
+          }
+        }
+
         case 'login': {
           const token = rest.join(' ').trim();
           if (token.length === 0) return { kind: 'error', text: 'Give the token: /admin login <token>' };
@@ -1419,6 +1594,18 @@ function makeCommandHandler(ctx) {
           }
           await saveConfig({ ...config, notify: value === 'on' });
           return { kind: 'success', text: value === 'on' ? 'Notifications are on.' : 'Notifications are off.' };
+        }
+
+        // `/admin native-notify on|off`: the renderer has the desktop bridge and
+        // will show clickable native banners itself, so the Host stops the
+        // osascript fallback. Off returns the fallback to this process.
+        case 'native-notify': {
+          const [value] = rest;
+          if (value !== 'on' && value !== 'off') {
+            return { kind: 'error', text: 'Usage: /admin native-notify on|off' };
+          }
+          await saveConfig({ ...config, nativeNotify: value === 'on' });
+          return { kind: 'success', text: value === 'on' ? 'Native notifications are on.' : 'Native notifications are off.' };
         }
 
         // `/admin follow <ticketId> <sessionId>`: this conversation's replies are

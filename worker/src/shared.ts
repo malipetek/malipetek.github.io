@@ -26,8 +26,20 @@ export interface Env {
   MAILER?: SendEmail;
   /** Var. From address for portal mail (must be on an onboarded domain). */
   PORTAL_FROM_EMAIL?: string;
-  /** Var. The one address that signs in with the admin role. */
+  /**
+   * Var. Legacy single admin address, still read for compatibility. Every
+   * admin decision goes through `adminEmails(env)` / `isAdminEmail(env, …)`,
+   * which merge this with ADMIN_EMAILS.
+   */
   ADMIN_EMAIL?: string;
+  /**
+   * Var. Comma-separated portal admin addresses, trimmed and matched
+   * case-insensitively. Everyone listed signs in with the admin role; a magic
+   * link only ever raises an account to admin, never demotes it. Keep it in
+   * sync with the human who reads the portal mail (ADMIN_EMAIL is the primary:
+   * marketing test sends and invite names use the first address).
+   */
+  ADMIN_EMAILS?: string;
   /** Secret. Reviewer demo sign-in: the only email /auth/demo accepts. */
   DEMO_EMAIL?: string;
   /** Secret. The code /auth/demo requires alongside DEMO_EMAIL. */
@@ -99,6 +111,34 @@ export interface Env {
 
 export type HonoEnv = { Bindings: Env };
 
+/**
+ * Every portal admin address, in a stable order: ADMIN_EMAIL first (it is the
+ * primary, and the address existing deployments already have), then the
+ * comma-separated ADMIN_EMAILS, trimmed, lowercased and de-duplicated.
+ *
+ * This is the single source of truth for "is this person an admin?" — role
+ * resolution on sign-in, invite guards, inbound replies and desk mail all call
+ * it (or `isAdminEmail`) so a second admin never needs a code change.
+ */
+export function adminEmails(env: Env): string[] {
+  const addresses = `${env.ADMIN_EMAIL ?? ''},${env.ADMIN_EMAILS ?? ''}`
+    .split(',')
+    .map((address) => address.trim().toLowerCase())
+    .filter(Boolean);
+  return [...new Set(addresses)];
+}
+
+/** Case-insensitive, trimmed membership test against ADMIN_EMAIL + ADMIN_EMAILS. */
+export function isAdminEmail(env: Env, email: string | null | undefined): boolean {
+  const address = (email ?? '').trim().toLowerCase();
+  return address !== '' && adminEmails(env).includes(address);
+}
+
+/** The address that stands for "Ali" in mail and settings; the first configured admin. */
+export function primaryAdminEmail(env: Env): string | null {
+  return adminEmails(env)[0] ?? null;
+}
+
 export const ALLOWED_ORIGINS = [
   'https://malipetek.dev',
   // The portal lives on ptechsolutions.net; its pages call /api cross-origin.
@@ -167,6 +207,17 @@ export function fromBase64Url(value: string): Uint8Array {
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
   return out;
+}
+
+/** An opaque, URL-safe random token (32 bytes of entropy). Never stored raw. */
+export function randomToken(): string {
+  return toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+}
+
+/** Lowercase hex SHA-256 — the only form portal secrets are stored in. */
+export async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(value));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export async function hmacKey(secret: string): Promise<CryptoKey> {

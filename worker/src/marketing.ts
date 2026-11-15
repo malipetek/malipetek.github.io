@@ -24,7 +24,7 @@
  * bounce or complaint rate climbs towards what gets an SES account reviewed.
  */
 import { Hono, type Context } from 'hono';
-import { json, now, type Env, type HonoEnv } from './shared.ts';
+import { json, now, primaryAdminEmail, type Env, type HonoEnv } from './shared.ts';
 import { mailAli, requireAdmin, requireUser, siteUrl, type PortalEnv } from './portal.ts';
 import { cleanPost, ensureContentCycle } from './content.ts';
 import { sesConfigured, sesSend } from './ses.ts';
@@ -2232,7 +2232,9 @@ marketing.post('/admin/marketing/messages/:id/test', async (c) => {
   const settings = await readMarketingSettings(env);
   const sender = senderState(env, settings);
   if (!sender.ready) return out(c, { error: sender.reason }, 503);
-  const to = cleanEmail((env.ADMIN_EMAIL || '').replace(/^.*<|>.*$/g, ''));
+  // The primary admin (ADMIN_EMAIL, else the first ADMIN_EMAILS entry) reads
+  // the test; a desk with several admins still sends one message per press.
+  const to = cleanEmail(primaryAdminEmail(env) ?? '');
   if (!to) return out(c, { error: 'admin_email_unset' }, 400);
   const outgoing = await renderOutgoing(env, settings, message);
   try {
