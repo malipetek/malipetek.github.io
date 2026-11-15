@@ -7377,6 +7377,9 @@ ${question.text ?? ""}`)) {
         }
       );
     }
+    function ProjectGlyph({ color }) {
+      return /* @__PURE__ */ jsx("svg", { width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: "1.2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", style: { color }, children: /* @__PURE__ */ jsx("path", { d: "M1.8 4.2a1 1 0 0 1 1-1h3.1l1.3 1.5h5.9a1 1 0 0 1 1 1v6.1a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z" }) });
+    }
     function clientIcon(c) {
       return function ClientRowIcon(props) {
         const size = props?.size ?? 16;
@@ -7573,13 +7576,19 @@ ${who} is emailed about this change.`)) return;
         console.warn(`admin: could not select the page for client ${client.id}:`, error?.message ?? error);
       }
     }
+    function TreeNote({ children, nested = false }) {
+      return /* @__PURE__ */ jsx("div", { className: "pta-tree-note", style: nested ? { paddingLeft: 30 } : void 0, children });
+    }
     function TicketList({ Row, tickets, changed }) {
       const [showClosed, setShowClosed] = useState(false);
       const open = tickets.filter((t) => !isClosedTicket(t));
       const closed = tickets.filter((t) => isClosedTicket(t));
       const shown = showClosed ? [...open, ...closed] : open;
       const menu = (ticket) => {
-        const items = [{ id: "open", label: "Open in Admin", onSelect: () => openTicket({ ticketId: ticket.id }) }];
+        const items = [
+          { id: "open", label: "Open conversation", onSelect: () => void openTicketRun(ticket) },
+          { id: "workbench", label: "Open in workbench", onSelect: () => openTicket({ ticketId: ticket.id }) }
+        ];
         if (ticket.status === "new") items.push({ id: "approve", label: "Approve", onSelect: () => void approveTicket(ticket, changed) });
         items.push({ id: "copy", label: "Copy ticket link", separatorBefore: true, onSelect: () => copyTicketLink(ticket) });
         return items;
@@ -7590,7 +7599,10 @@ ${who} is emailed about this change.`)) return;
           {
             dot: TICKET_DOT[ticket.status] ?? TICKET_DOT.done,
             label: `#${ticket.id} ${ticket.title || ticket.title_en || "(untitled)"}`,
-            trailing: ago2(ticket.updated_at),
+            trailing: /* @__PURE__ */ jsxs("span", { className: "pta-trail", children: [
+              ago2(ticket.updated_at),
+              /* @__PURE__ */ jsx("span", { className: "pta-trail__go", "aria-hidden": "true", children: "\u2197" })
+            ] }),
             menuItems: menu(ticket),
             onClick: () => void openTicketRun(ticket)
           },
@@ -7660,6 +7672,10 @@ ${who} is emailed about this change.`)) return;
       const [state, setState] = useState({ clients: [], projects: [], tickets: [], loading: true, error: "" });
       const signature = useRef("");
       const mounted = useRef(true);
+      const [openRows, setOpenRows] = useState({});
+      const rowOpen = (key, fallback) => openRows[key] === void 0 ? fallback : openRows[key];
+      const setRowOpen = (key, open) => setOpenRows((previous) => ({ ...previous, [key]: open }));
+      const toggleRow = (key, fallback) => setRowOpen(key, !rowOpen(key, fallback));
       const load = useCallback(async () => {
         try {
           const [c, p, t] = await Promise.all([
@@ -7721,34 +7737,75 @@ ${who} is emailed about this change.`)) return;
         }
       );
       return /* @__PURE__ */ jsxs(Section, { id: "admin-clients", title: "Clients", count: openTotal || void 0, actions: refresh, children: [
-        state.loading && /* @__PURE__ */ jsx(TreeRow, { label: "Loading clients\u2026" }),
+        state.loading && /* @__PURE__ */ jsx(TreeNote, { children: "Loading clients\u2026" }),
         state.error !== "" && /* @__PURE__ */ jsx(TreeRow, { label: `${state.error} \u2014 click to retry`, onClick: () => void load() }),
-        tree.map(({ client, badge, projects }, index) => /* @__PURE__ */ jsx(
-          TreeRow,
-          {
-            icon: clientAvatar(client),
-            label: client.name || client.email,
-            badge: badge || void 0,
-            defaultExpanded: index === 0,
-            onClick: () => openClientPage(client, selectPanel),
-            menuItems: [{ id: "open-client", label: "Open client page", onSelect: () => openClientPage(client, selectPanel) }],
-            children: projects.length > 0 ? projects.map((project, projectIndex) => /* @__PURE__ */ jsx(
-              TreeRow,
-              {
-                dot: projectTint(project.tickets),
-                label: project.name,
-                badge: openTicketCount(project.tickets) || void 0,
-                defaultExpanded: index === 0 && projectIndex === 0 && project.tickets.length > 0,
-                children: project.tickets.length > 0 ? /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: project.tickets, changed: () => void load() }) : void 0
-              },
-              `${client.id}:${project.id}`
-            )) : void 0
-          },
-          client.id
-        )),
-        !state.loading && state.error === "" && tree.length === 0 && /* @__PURE__ */ jsx(TreeRow, { label: "No clients yet" }),
-        unsorted.length > 0 && /* @__PURE__ */ jsx(TreeRow, { label: "Unsorted", badge: openTicketCount(unsorted) || void 0, defaultExpanded: true, children: /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: unsorted, changed: () => void load() }) }),
-        mine.length > 0 && /* @__PURE__ */ jsx(TreeRow, { label: "Mine", badge: openTicketCount(mine) || void 0, children: /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: mine, changed: () => void load() }) })
+        tree.map(({ client, badge, projects }, index) => {
+          const clientKey = `client:${client.id}`;
+          const clientExpanded = rowOpen(clientKey, index === 0);
+          return /* @__PURE__ */ jsx(
+            TreeRow,
+            {
+              icon: clientAvatar(client),
+              label: client.name || client.email,
+              badge: badge || void 0,
+              expanded: clientExpanded,
+              onToggle: (open) => setRowOpen(clientKey, open),
+              onClick: () => openClientPage(client, selectPanel),
+              menuItems: [{ id: "open-client", label: "Open client page", onSelect: () => openClientPage(client, selectPanel) }],
+              children: projects.length > 0 ? projects.map((project, projectIndex) => {
+                const projectKey = `project:${client.id}:${project.id}`;
+                const projectDefault = index === 0 && projectIndex === 0 && project.tickets.length > 0;
+                const projectExpanded = rowOpen(projectKey, projectDefault);
+                return /* @__PURE__ */ jsx(
+                  TreeRow,
+                  {
+                    icon: /* @__PURE__ */ jsx(ProjectGlyph, { color: projectTint(project.tickets) }),
+                    label: project.name,
+                    badge: openTicketCount(project.tickets) || void 0,
+                    expanded: projectExpanded,
+                    onToggle: (open) => setRowOpen(projectKey, open),
+                    onClick: () => toggleRow(projectKey, projectDefault),
+                    menuItems: [{ id: "open-project-tickets", label: "Show project tickets", onSelect: () => setRowOpen(projectKey, true) }],
+                    children: project.tickets.length > 0 ? /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: project.tickets, changed: () => void load() }) : /* @__PURE__ */ jsx(TreeNote, { nested: true, children: "No open tickets" })
+                  },
+                  `${client.id}:${project.id}`
+                );
+              }) : void 0
+            },
+            client.id
+          );
+        }),
+        !state.loading && state.error === "" && tree.length === 0 && /* @__PURE__ */ jsx(TreeNote, { children: "No clients yet" }),
+        unsorted.length > 0 && (() => {
+          const key = "group:unsorted";
+          const expanded = rowOpen(key, true);
+          return /* @__PURE__ */ jsx(
+            TreeRow,
+            {
+              label: "Unsorted",
+              badge: openTicketCount(unsorted) || void 0,
+              expanded,
+              onToggle: (open) => setRowOpen(key, open),
+              onClick: () => toggleRow(key, true),
+              children: /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: unsorted, changed: () => void load() })
+            }
+          );
+        })(),
+        mine.length > 0 && (() => {
+          const key = "group:mine";
+          const expanded = rowOpen(key, false);
+          return /* @__PURE__ */ jsx(
+            TreeRow,
+            {
+              label: "Mine",
+              badge: openTicketCount(mine) || void 0,
+              expanded,
+              onToggle: (open) => setRowOpen(key, open),
+              onClick: () => toggleRow(key, false),
+              children: /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: mine, changed: () => void load() })
+            }
+          );
+        })()
       ] });
     }
     function useTicketDetail(ticketId) {
@@ -7945,29 +8002,39 @@ ${who} is emailed about this change.`)) return;
     .pta-filter{height:24px;padding:0 9px;border:1px solid transparent;border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:11.5px;opacity:.62;cursor:pointer}
     .pta-filter:hover{opacity:.9;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.08))}
     .pta-filter.is-active{opacity:1;border-color:var(--dsw-alias-border-secondary,rgba(127,127,127,.32));background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.12))}
-    .pta-dock{margin:0 0 8px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.24));border-radius:10px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.055));overflow:hidden;font-size:12px}
-    .pta-dock__head{display:flex;align-items:center;gap:7px;padding:7px 9px;min-height:30px;flex-wrap:wrap}
-    .pta-dock__id{font-variant-numeric:tabular-nums;opacity:.6;font-size:11px}
-    .pta-dock__title{max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:550}
-    .pta-dock__body{border-top:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.16));max-height:280px;overflow-y:auto;padding:8px 10px}
-    .pta-dock__last{padding:0 10px 7px;font-size:11.5px;opacity:.72;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .pta-dock__compose{display:flex;align-items:center;gap:8px;padding:6px 9px;border-top:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.16));flex-wrap:wrap}
-    .pta-modes{display:inline-flex;padding:2px;gap:2px;border-radius:6px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.13))}
-    .pta-mode{padding:3px 7px;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:11px;opacity:.62;cursor:pointer}
-    .pta-mode:hover{opacity:.9}
-    .pta-mode.is-active{opacity:1;background:var(--dsw-alias-bg-primary,rgba(255,255,255,.08));box-shadow:0 1px 2px rgba(0,0,0,.12)}
-    .pta-mode:disabled{opacity:.3;cursor:default}
-    .pta-hint{font-size:11px;opacity:.5;max-width:520px}
-    .pta-facts{display:flex;flex-wrap:wrap;gap:4px 12px;padding:0 0 7px;margin:0 0 7px;border-bottom:1px dashed var(--dsw-alias-border-secondary,rgba(127,127,127,.2));font-size:11px;opacity:.62}
-    .pta-facts strong{font-weight:550;opacity:.95}
-    .pta-thread{display:flex;flex-direction:column;gap:7px}
-    .pta-msg{padding:6px 8px;border-radius:7px;background:var(--dsw-alias-bg-primary,rgba(255,255,255,.03))}
-    .pta-msg--client{background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.12))}
+    .pta-tree-note{padding:5px 8px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));font-size:12px;line-height:18px;user-select:none}
+    .pta-trail{display:inline-flex;align-items:center;gap:4px}
+    .pta-trail__go{font-size:10px;line-height:1;opacity:.35}
+    .pta-dock{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance,0px) - var(--dsh-composer-side-clearance,0px));max-width:var(--dsh-composer-card-max-width,760px);margin:0 auto 8px;border:0;border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-elevated,#23252a));backdrop-filter:var(--dsw-menu-backdrop-filter,blur(12px));box-shadow:var(--dsw-elevation-panel,0 10px 30px rgba(0,0,0,.28));--dsw-elevation-stroke-color:var(--dsw-alias-border-l1,rgba(127,127,127,.24));overflow:hidden;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary,inherit);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}
+    .pta-dock .pta-meta{font-size:12px;opacity:.58}
+    .pta-dock .pta-btn{height:24px;font-size:12px;border-radius:var(--dsw-radius-sm,6px)}
+    .pta-dock .pta-pill{height:20px;font-size:11px}
+    .pta-dock__head{display:flex;align-items:center;gap:8px;padding:7px 10px;min-height:34px;flex-wrap:wrap}
+    .pta-dock__id{flex:none;font-variant-numeric:tabular-nums;font-size:12px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.72))}
+    .pta-dock__title{min-width:0;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:500}
+    .pta-dock__toggle{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 6px;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsw-alias-label-secondary,inherit);font:inherit;font-size:12px;cursor:pointer}
+    .pta-dock__toggle:hover{color:var(--dsw-alias-label-primary,inherit);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.1))}
+    .pta-dock__chev{font-size:10px;line-height:1;opacity:.55}
+    .pta-dock__body{border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));max-height:260px;overflow-y:auto;padding:8px 10px}
+    .pta-dock__last{padding:0 10px 7px;font-size:12px;color:var(--dsw-alias-label-secondary,inherit);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pta-dock__last .pta-meta{font-size:12px}
+    .pta-dock__compose{display:flex;align-items:center;gap:8px;padding:6px 10px;border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));flex-wrap:wrap}
+    .pta-modes{display:inline-flex;padding:2px;gap:1px;border-radius:var(--dsw-radius-md,7px);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.13))}
+    .pta-mode{height:22px;padding:0 8px;border:0;border-radius:calc(var(--dsw-radius-md,7px) - 2px);background:transparent;color:var(--dsw-alias-label-tertiary,inherit);font:inherit;font-size:12px;line-height:22px;cursor:pointer}
+    .pta-mode:hover{color:var(--dsw-alias-label-secondary,inherit)}
+    .pta-mode.is-active{color:var(--dsw-alias-label-primary,inherit);background:var(--dsw-specific-menu,var(--dsw-alias-bg-elevated,#23252a));box-shadow:0 1px 2px rgba(0,0,0,.18)}
+    .pta-mode:disabled{opacity:.35;cursor:default}
+    .pta-hint{min-width:0;font-size:12px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pta-facts{display:flex;flex-wrap:wrap;gap:4px 12px;padding:0 0 8px;margin:0 0 8px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));font-size:12px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.72))}
+    .pta-facts strong{font-weight:500;color:var(--dsw-alias-label-secondary,inherit)}
+    .pta-thread{display:flex;flex-direction:column;gap:8px}
+    .pta-msg{padding:7px 9px;border-radius:var(--dsw-radius-md,7px);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.09))}
+    .pta-msg--client{background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.13))}
     .pta-msg.is-note{border-left:2px solid var(--dsw-alias-state-warning-primary,#d18f2e)}
-    .pta-msg__meta{font-size:10px;opacity:.5;margin-bottom:2px}
-    .pta-msg__body{white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow-y:auto}
-    .pta-runs{display:flex;flex-direction:column;gap:3px;margin-top:4px;padding-top:6px;border-top:1px dashed var(--dsw-alias-border-secondary,rgba(127,127,127,.2))}
-    .pta-run{display:flex;align-items:center;gap:6px;font-size:11px;opacity:.7}
+    .pta-msg__meta{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.72));margin-bottom:3px}
+    .pta-msg__body{font-size:13px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow-y:auto}
+    .pta-runs{display:flex;flex-direction:column;gap:4px;margin-top:2px;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18))}
+    .pta-run{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
     @media (max-width:760px){.pta-page{padding:18px 16px 40px}.pta-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.pta-head{flex-direction:column}.pta-head__actions{margin-left:0;width:100%}.pta-search{flex:1 1 auto;min-width:0}.pta-tag{max-width:120px}}
   `;
     const CLIENT_VISIBLE_STATUSES = /* @__PURE__ */ new Set(["approved", "declined", "done"]);
@@ -8496,7 +8563,20 @@ ${who} is emailed about this change.`)) return false;
           ] }) : null,
           /* @__PURE__ */ jsx("span", { className: "pta-fill" }),
           ticket ? /* @__PURE__ */ jsx(TicketRowActions, { ticket }) : null,
-          /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: () => setExpanded((value) => !value), children: expanded ? "Hide ticket" : `Ticket${messages.length ? ` \xB7 ${messages.length}` : ""}` }),
+          /* @__PURE__ */ jsxs(
+            "button",
+            {
+              type: "button",
+              className: "pta-dock__toggle",
+              "aria-expanded": expanded,
+              title: expanded ? "Hide the ticket thread and details" : "Show the client thread and ticket details",
+              onClick: () => setExpanded((value) => !value),
+              children: [
+                /* @__PURE__ */ jsx("span", { children: expanded ? "Hide ticket" : `Ticket${messages.length ? ` \xB7 ${messages.length}` : ""}` }),
+                /* @__PURE__ */ jsx("span", { className: "pta-dock__chev", "aria-hidden": "true", children: expanded ? "\u25BE" : "\u25B8" })
+              ]
+            }
+          ),
           /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: () => openWorkbenchTicket(run.ticketId), children: "Workbench" })
         ] }),
         !expanded && latestClient ? /* @__PURE__ */ jsxs("div", { className: "pta-dock__last", title: latestClient.body, children: [

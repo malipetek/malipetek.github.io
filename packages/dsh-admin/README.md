@@ -15,12 +15,12 @@ The admin surface is mostly native:
 - **Inbox** is its own page and sidebar row: every approval, review, client
   reply, stalled item and stuck queue entry, with filters, search and the same
   inline actions. Its badge is the actionable count.
-- **A run's conversation is the ticket.** There is no separate Ticket tab.
-  Above the composer, a ticket strip shows the status, client, project, the
-  client's last message, the thread and the runs, with approve/decline, done/run
-  again and no-reply-needed. The chat input stays the one place to type, and a
-  small mode switch changes where a draft goes: **Chat** (agent), **Reply to
-  client** (emails them) or **Private note** (internal).
+- **A run's conversation is the ticket.** There is no separate Ticket tab. Above
+  the composer, a native menu-surface strip shows the status, client, project,
+  the client's last message, the thread and the runs, with approve/decline,
+  done/run again and no-reply-needed. The chat input stays the one place to
+  type, and a small segmented mode switch changes where a draft goes: **Chat**
+  (agent), **Reply to client** (emails them) or **Private note** (internal).
 - The full **workbench** (`packages/admin-ui`) is one click away for Fleet, SEO,
   Health, Marketing and settings, instead of being the front door.
 
@@ -52,9 +52,12 @@ The plugin is a first-class citizen of the PTech Admin fork, not a page inside
 it.
 
 - **Clients is a sidebar section, not a blind poll.** The fork's
-  `sidebar.workspaces.section` slot renders Clients → projects → open tickets,
-  with a status dot on each ticket and project, a count badge on clients and
-  projects, and **Unsorted** for tickets with no client the portal still lists.
+  `sidebar.workspaces.section` slot renders Clients → projects → open tickets.
+  Clients are avatar rows that open a client page; projects are folder rows
+  that toggle on the whole row (the chevron also works); tickets are status-dot
+  rows that open the ticket's conversation and carry a small `↗` as the open
+  affordance. Counts sit on clients and projects, and **Unsorted** keeps a
+  ticket with no client reachable.
   It reads the three lists once, then reloads only when something changed: the
   Host's 15-second `/admin/attention` count diff (four counts, one query), an
   event from the Host's own 60-second poll, window focus, or the ↻ button. A
