@@ -29,7 +29,7 @@ const CYCLE_REASON = {
   open_cycle: 'a cycle ticket is already open',
   no_findings: 'there are no open findings at medium or above',
   recent_cycle: 'a cycle was filed in the last day',
-  no_project: 'the malipetek-dev-site project is missing',
+  no_project: 'the ptechsolutions project is missing',
   no_admin: 'there is no admin account to file it for',
   insert_failed: 'the ticket could not be written',
 };
@@ -121,7 +121,7 @@ export function SeoView() {
       <header className="aw-hero">
         <h2>SEO</h2>
         <p className="aw-muted">
-          Our own two hosts, checked daily. Scores, open fixes, the questions buyers ask assistants, and the profiles that link back.
+          Our own host, checked daily. Scores, open fixes, the questions buyers ask assistants, and the profiles that link back.
         </p>
         <p className="aw-muted">
           Last audit {overview.state?.lastAuditAt ? `${ago(overview.state.lastAuditAt)} ago` : 'not yet'} · last GEO probe{' '}
@@ -728,7 +728,7 @@ const canonicalOk = (page) => {
 };
 
 function PagesTab({ api, hosts, tick }) {
-  const [host, setHost] = useState(hosts[0] ?? 'malipetek.dev');
+  const [host, setHost] = useState(hosts[0] ?? 'ptechsolutions.net');
   const [day, setDay] = useState('');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);

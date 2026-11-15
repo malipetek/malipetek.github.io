@@ -13,6 +13,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AdminApp, ClientPage } from '../../admin-ui/src/index.js';
+import { AdminContext } from '../../admin-ui/src/store.js';
+import { MarketingView } from '../../admin-ui/src/marketing.jsx';
+import { SeoView } from '../../admin-ui/src/seo.jsx';
+import { STYLES } from '../../admin-ui/src/styles.js';
 
 /** Panel identity: one id addresses both the sidebar row and the main page. */
 const PANEL_ID = 'admin';
@@ -1009,6 +1013,33 @@ function apply(ctx) {
     );
   }
 
+  /** The Marketing and SEO desk glyphs, matching the sidebar's 16px language. */
+  function MarketingGlyph({ size = 16 }) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M4 10v4a1 1 0 0 0 1 1h3l7 3V6l-7 3H5a1 1 0 0 0-1 1z" />
+        <path d="M8 15v4M18 9a3 3 0 0 1 0 6" />
+      </svg>
+    );
+  }
+
+  function SeoGlyph({ size = 16 }) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="10.5" cy="10.5" r="5.5" />
+        <path d="m15 15 5 5M8 11h5M8 8.5h3" />
+      </svg>
+    );
+  }
+
+  function MarketingEntryIcon(props) {
+    return <MarketingGlyph size={props?.size ?? 16} />;
+  }
+
+  function SeoEntryIcon(props) {
+    return <SeoGlyph size={props?.size ?? 16} />;
+  }
+
   function InboxEntryIcon(props) {
     const counts = useSyncExternalStore(attention.subscribe, attention.get);
     const waiting = counts ? counts.approve + counts.review + counts.waiting : 0;
@@ -1056,7 +1087,7 @@ function apply(ctx) {
    */
   const CLIENT_ROWS_MS = 60_000;
   const CLIENT_ROWS_MAX = 12;
-  const CLIENT_ROWS_ORDER = 13;
+  const CLIENT_ROWS_ORDER = 15;
   const CLIENT_TINTS = ['#4c8dff', '#d18f2e', '#2f9e5b', '#b45fd6', '#d1495b', '#1f9fb4', '#8a8f2e', '#6b6fd6'];
 
   /** True while the workspace browser declares the section slot. */
@@ -1898,6 +1929,8 @@ function apply(ctx) {
   const WORKBENCH_PANEL = 'admin-workbench';
   const INBOX_PANEL = 'admin-inbox';
   const HOME_PANEL = 'admin';
+  const MARKETING_PANEL = 'admin-marketing';
+  const SEO_PANEL = 'admin-seo';
 
   const STATUS_TINT = {
     new: 'var(--dsw-alias-state-warning-primary, #d18f2e)',
@@ -2436,6 +2469,66 @@ function apply(ctx) {
   }
 
   /**
+   * The Marketing and SEO desks are the shared workbench views, but they are
+   * first-class main pages here. Their contract is tiny: `api`, `act`,
+   * `notify` and (for SEO) `openTicket`, so a local provider is enough; no
+   * activity bar, tabs or explorer around them.
+   */
+  function DeskPage({ children }) {
+    const [toast, setToast] = useState(null);
+    const timer = useRef(null);
+    const notify = useCallback((text, kind = 'ok') => {
+      clearTimeout(timer.current);
+      setToast({ text: String(text ?? ''), kind });
+      timer.current = setTimeout(() => setToast(null), kind === 'error' ? 8000 : 4000);
+    }, []);
+    useEffect(() => () => clearTimeout(timer.current), []);
+    const act = useCallback(async (fn, done) => {
+      try {
+        const out = await fn();
+        if (done !== undefined) notify(typeof done === 'function' ? done(out) : done);
+        return out;
+      } catch (error) {
+        notify(error?.message ?? String(error), 'error');
+        throw error;
+      }
+    }, [notify]);
+    const context = useMemo(() => ({
+      api,
+      act,
+      notify,
+      openTicket: (id) => void openTicketRun({ id }),
+      platform: 'dsh',
+      host,
+      files,
+    }), [api, act, notify, host]);
+    return (
+      <div
+        className="aw pta-desk"
+        style={{ gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)', height: '100%', minHeight: 0 }}
+      >
+        <style>{STYLES}</style>
+        <div className="aw-content" style={{ overflow: 'auto', height: '100%' }}>
+          <AdminContext.Provider value={context}>{children}</AdminContext.Provider>
+        </div>
+        {toast ? (
+          <div className={`aw-toast${toast.kind === 'error' ? ' is-error' : ''}`} role="status">
+            {toast.text}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function MarketingPage() {
+    return <DeskPage><MarketingView /></DeskPage>;
+  }
+
+  function SeoPage() {
+    return <DeskPage><SeoView /></DeskPage>;
+  }
+
+  /**
    * The ticket strip above a run's own composer: what the ticket is, what the
    * client last said, and the three moves that are not a chat message. The
    * chat input stays the action surface; the mode buttons change where a typed
@@ -2667,7 +2760,17 @@ function apply(ctx) {
       openHash(`client=${encodeURIComponent(target)}`);
       return true;
     }
-    if (route === 'seo' || route === 'health') {
+    if (route === 'seo') {
+      handledDeepLink = true;
+      ctx.layout?.selectPanel?.(SEO_PANEL);
+      return true;
+    }
+    if (route === 'marketing') {
+      handledDeepLink = true;
+      ctx.layout?.selectPanel?.(MARKETING_PANEL);
+      return true;
+    }
+    if (route === 'health') {
       handledDeepLink = true;
       openHash(route);
       return true;
@@ -2700,9 +2803,13 @@ function apply(ctx) {
   // full workbench stays one click away.
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: HOME_PANEL, locale: NAMESPACE }, NeedsYouPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: INBOX_PANEL, locale: NAMESPACE }, InboxPage));
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: MARKETING_PANEL, locale: NAMESPACE }, MarketingPage));
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: SEO_PANEL, locale: NAMESPACE }, SeoPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: WORKBENCH_PANEL, locale: NAMESPACE }, AdminPage));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: HOME_PANEL, order: 11, label: 'Needs you' }, AdminEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: INBOX_PANEL, order: 12, label: 'Inbox' }, InboxEntryIcon));
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: MARKETING_PANEL, order: 13, label: 'Marketing' }, MarketingEntryIcon));
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: SEO_PANEL, order: 14, label: 'SEO' }, SeoEntryIcon));
   // A run's ticket lives above its own composer: status, the client's last
   // words and the moves that are not a chat message, with the chat input as
   // the one place to type.

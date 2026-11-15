@@ -39,7 +39,7 @@
     // Email Routing: send reply@ (subaddressing on) and new@ to this Worker.
     "REPLY_ADDRESS": "reply@ptechsolutions.net",
     // Outreach mail: cold and warm email, and the inbox replies land in.
-    "MARKETING_FROM_EMAIL": "hello@malipetek.dev",
+    "MARKETING_FROM_EMAIL": "hello@ptechsolutions.net",
     // Amazon SES, when the desk's sender is set to it (keys are secrets).
     "AWS_SES_REGION": "us-east-1",
   },
@@ -54,6 +54,12 @@
   //   wrangler d1 create malipetek-portal
   // paste the returned database_id below, then apply the schema:
   //   wrangler d1 migrations apply malipetek-portal --remote
+  // Read the site's own pages through a binding; a public fetch to the same
+  // custom domain can be answered with 522 from inside Cloudflare.
+  "services": [
+    { "binding": "SITE", "service": "ptechsolutions" }
+  ],
+
   "d1_databases": [
     {
       "binding": "DB",
@@ -103,6 +109,6 @@
     // Outreach (src/marketing.ts). A separate sender so a cold-email problem
     // cannot damage the portal's reputation, and so the admin views can tell
     // the two streams apart.
-    { "name": "MARKETING", "allowed_sender_addresses": ["hello@malipetek.dev"] },
+    { "name": "MARKETING", "allowed_sender_addresses": ["hello@ptechsolutions.net"] },
   ],
 }

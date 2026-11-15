@@ -4,6 +4,8 @@
  */
 
 export interface Env {
+  /** Service binding to the ptechsolutions site Worker, so the SEO audit reads it without a public fetch. */
+  SITE?: Fetcher;
   /** Secret. Turnstile secret. If unset, verification is skipped (local dev). */
   TURNSTILE_SECRET_KEY?: string;
   /** Var/secret. Directus base URL. */

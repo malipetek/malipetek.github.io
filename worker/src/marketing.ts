@@ -173,7 +173,7 @@ export async function saveMarketingSettings(env: Env, patch: Record<string, unkn
 }
 
 export function marketingFrom(env: Env): string {
-  return env.MARKETING_FROM_EMAIL || 'hello@malipetek.dev';
+  return env.MARKETING_FROM_EMAIL || 'hello@ptechsolutions.net';
 }
 
 /** Local part of the outreach address, for the inbound router. */
@@ -250,7 +250,7 @@ It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 Reply with what you're working on and I'll tell you how I'd help.
 
 Muhammet
-malipetek.dev`,
+ptechsolutions.net`,
       plain: `{{greeting}}
 
 Do you want help using AI on your business and getting your projects online?
@@ -262,7 +262,7 @@ It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 Reply with what you're working on and I'll tell you how I'd help.
 
 Muhammet
-malipetek.dev`,
+ptechsolutions.net`,
     },
     {
       kind: 'followup_1',
@@ -285,12 +285,12 @@ Muhammet`,
       subject: 'Re: Vibe contracting',
       body: `{{greeting}}
 
-Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
+Last note from me. If you want help with AI or getting a project online later, it's here: ptechsolutions.net
 
 Muhammet`,
       plain: `{{greeting}}
 
-Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
+Last note from me. If you want help with AI or getting a project online later, it's here: ptechsolutions.net
 
 Muhammet`,
     },
@@ -311,7 +311,7 @@ It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 Reply with what you're working on and I'll tell you how I'd help.
 
 Muhammet
-malipetek.dev`,
+ptechsolutions.net`,
       plain: `{{greeting}}
 
 Do you want help using AI on your business and getting your projects online?
@@ -323,7 +323,7 @@ It costs $100 an hour, billed by the second, so most jobs come to less than $10.
 Reply with what you're working on and I'll tell you how I'd help.
 
 Muhammet
-malipetek.dev`,
+ptechsolutions.net`,
     },
     {
       kind: 'followup_1',
@@ -341,7 +341,7 @@ Muhammet`,
       subject: 'Re: Vibe contracting for {{site}}',
       body: `{{greeting}}
 
-Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
+Last note from me. If you want help with AI or getting a project online later, it's here: ptechsolutions.net
 
 Muhammet`,
     },
@@ -363,7 +363,7 @@ I build small business sites. An AI agent does the typing, and I approve the job
 If you want one, reply with a line about the business and I will tell you what it would take.
 
 Muhammet
-malipetek.dev`,
+ptechsolutions.net`,
     },
     {
       kind: 'followup_1',
@@ -381,7 +381,7 @@ Muhammet`,
       subject: 'Re: A website for {{business}}',
       body: `{{greeting}}
 
-Last note from me. If you want a site later, you can ask through malipetek.dev/portal, with no call or quote first.
+Last note from me. If you want a site later, you can ask through ptechsolutions.net/portal, with no call or quote first.
 
 Muhammet`,
     },
@@ -417,7 +417,7 @@ Muhammet`,
       subject: 'Re: A small experiment (and a favour)',
       body: `{{greeting}}
 
-I will stop filling your inbox. If something small comes up, the door is open: malipetek.dev/portal.
+I will stop filling your inbox. If something small comes up, the door is open: ptechsolutions.net/portal.
 
 Muhammet`,
     },
@@ -2525,7 +2525,7 @@ unsubscribe.get('/marketing/u/:id/:sig', async (c) => {
   if (contact.status === 'opted_out') return page('Unsubscribed', `<p>${contact.email} is unsubscribed. Nothing more will be sent.</p>`);
   return page(
     'Unsubscribe',
-    `<p>Stop emails from malipetek.dev to <b>${contact.email.replace(/[<>&"]/g, '')}</b>?</p>` +
+    `<p>Stop emails from ptechsolutions.net to <b>${contact.email.replace(/[<>&"]/g, '')}</b>?</p>` +
       `<form method="post"><button style="font:inherit;padding:.5rem 1rem">Unsubscribe</button></form>`,
   );
 });

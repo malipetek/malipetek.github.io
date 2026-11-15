@@ -1,6 +1,6 @@
 /*
- * The SEO desk: how our own two hosts look to search engines and to
- * assistants, and what we do about it.
+ * The SEO desk: how our own host looks to search engines and to assistants,
+ * and what we do about it.
  *
  * Three streams, one store:
  *   audit      — once a day the five-minute cron reads each host's sitemap,
@@ -32,15 +32,15 @@ import { SLOP } from './content.ts';
 
 const DAY = 86_400;
 
-/** Our host, the only pages this desk ever reads. The lab subdomain 301s here. */
-export const SEO_HOSTS = ['malipetek.dev'] as const;
+/** Our host, the only pages this desk ever reads. */
+export const SEO_HOSTS = ['ptechsolutions.net'] as const;
 export type SeoHost = (typeof SEO_HOSTS)[number];
 
 /**
- * A bounded audit. Both hosts fit: malipetek.dev has about 110 sitemap pages
- * (the locale homepages add up) and the lab about 20, so 200 reads the whole
- * site and still stops a runaway sitemap. Whatever the budget skips is not
- * audited that day, so its findings are neither opened nor resolved.
+ * A bounded audit. The site has a small public surface (the company pages
+ * plus the portal), so 200 reads the whole site and still stops a runaway
+ * sitemap. Whatever the budget skips is not audited that day, so its findings
+ * are neither opened nor resolved.
  */
 export const MAX_PAGES_PER_HOST = 200;
 /** No new page is started after this, so a slow host cannot hold the cron. */
@@ -71,7 +71,7 @@ const RANK_PENDING_MAX = 3 * DAY;
 /** Ranked both weeks or not: a keyword missing from the top 100 counts as 101. */
 export const NOT_RANKED = 101;
 
-const UA = 'malipetek-seo-audit/1.0 (+https://malipetek.dev)';
+const UA = 'ptech-seo-audit/1.0 (+https://ptechsolutions.net)';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -794,14 +794,17 @@ interface Fetched {
 }
 
 /** One request, timed, with a timeout; null when it never answered. */
-async function fetchText(url: string): Promise<Fetched | null> {
+type HostFetch = (request: Request) => Promise<Response>;
+
+async function fetchText(url: string, via?: HostFetch): Promise<Fetched | null> {
   const started = Date.now();
   try {
-    const res = await fetch(url, {
+    const request = new Request(url, {
       headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml,application/xml,text/plain;q=0.9,*/*;q=0.8' },
       redirect: 'follow',
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
+    const res = via ? await via(request) : await fetch(request);
     const buffer = await res.arrayBuffer();
     return { status: res.status, text: decoder.decode(buffer), bytes: buffer.byteLength, ms: Date.now() - started };
   } catch (error) {
@@ -837,17 +840,17 @@ interface SitemapRead {
  * /sitemap.xml, /kb/sitemap.xml and /plugins/sitemap.xml. A host that only has
  * /sitemap.xml (the contracting site) falls through to it.
  */
-async function readSitemaps(host: string): Promise<SitemapRead> {
+async function readSitemaps(host: string, via?: HostFetch): Promise<SitemapRead> {
   const origin = `https://${host}`;
   for (const root of [`${origin}/sitemap-index.xml`, `${origin}/sitemap.xml`]) {
-    const res = await fetchText(root);
+    const res = await fetchText(root, via);
     if (!res || res.status < 200 || res.status >= 300) continue;
     const first = parseSitemap(res.text);
     // An index's <loc>s are the sitemaps themselves, not pages.
     const urls = first.index ? [] : [...first.urls];
     if (first.index) {
       const children = first.urls.filter((url) => pathOf(url, host) !== null).slice(0, MAX_CHILD_SITEMAPS);
-      const nested = await Promise.all(children.map((url) => fetchText(url)));
+      const nested = await Promise.all(children.map((url) => fetchText(url, via)));
       for (const child of nested) if (child && child.status >= 200 && child.status < 300) urls.push(...parseSitemap(child.text).urls);
     }
     const paths: string[] = [];
@@ -903,11 +906,17 @@ async function writeInChunks(env: Env, statements: D1PreparedStatement[]): Promi
 export async function auditHost(env: Env, host: SeoHost, t = now()): Promise<HostAudit> {
   const day = dayKey(t);
   const origin = `https://${host}`;
+  // Read our own site through its service binding: a Worker fetch to its own
+  // custom domain can be answered by the edge with 522, while the binding is
+  // the same document without the round trip.
+  const via: HostFetch | undefined = env.SITE === undefined
+    ? undefined
+    : (request: Request): Promise<Response> => env.SITE!.fetch(request);
 
   const [sitemap, robots, llms] = await Promise.all([
-    readSitemaps(host),
-    fetchText(`${origin}/robots.txt`),
-    fetchText(`${origin}/llms.txt`),
+    readSitemaps(host, via),
+    fetchText(`${origin}/robots.txt`, via),
+    fetchText(`${origin}/llms.txt`, via),
   ]);
   const robotsText = robots && robots.status >= 200 && robots.status < 300 ? robots.text : null;
   const llmsText = llms && llms.status >= 200 && llms.status < 300 ? llms.text : null;
@@ -922,7 +931,7 @@ export async function auditHost(env: Env, host: SeoHost, t = now()): Promise<Hos
   const deadline = Date.now() + AUDIT_BUDGET_MS;
   const pages = await mapLimit(paths, FETCH_CONCURRENCY, async (path): Promise<AuditPage | null> => {
     if (Date.now() > deadline) return null;
-    const fetched = await fetchText(`${origin}${path}`);
+    const fetched = await fetchText(`${origin}${path}`, via);
     if (!fetched) return null;
     const parsed = parsePage(fetched.text);
     const facts: PageFacts = {
@@ -1255,7 +1264,9 @@ const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 export function seoHostOf(domain: string): SeoHost | null {
   const name = domain.trim().toLowerCase().replace(/\.$/, '');
   if (!name) return null;
-  if (name === 'malipetek.dev' || name.endsWith('.malipetek.dev')) return 'malipetek.dev';
+  for (const host of SEO_HOSTS) {
+    if (name === host || name.endsWith(`.${host}`)) return host;
+  }
   return null;
 }
 
@@ -1734,7 +1745,7 @@ export async function runSeo(env: Env, t = now()): Promise<SeoRun> {
 
 /* ——————————————————————— the cycle ——————————————————————— */
 
-export const CYCLE_PROJECT = 'malipetek-dev-site';
+export const CYCLE_PROJECT = 'ptechsolutions';
 /** A cycle ticket younger than this is not joined by another. */
 const RETRY_AFTER = DAY;
 /** The brief lists this many findings; the rest wait for the next cycle. */
@@ -1838,16 +1849,17 @@ export function seoBrief(options: {
   const lines = [
     'Fix the search and assistant visibility issues below on our own host.',
     '',
-    'The site, from AGENTS.md:',
-    '- malipetek.dev is the developer lab: /kb/*, /plugins/*, /plugins.json,',
-    '  /blog/*, /experience/*, /projects/*, /pdfextractor/*, and its own /mcp.',
-    '  The portal lives on ptechsolutions.net; its paths here 301.',
-    '- Pass site="lab" to Base.astro (it sets the nav, canonical origin and footer).',
-    '- llms.txt, robots.txt, sitemap.xml and sitemap-index.xml are server routes and',
-    '  answer per Host. Do not add a static public/robots.txt or public/llms.txt;',
-    '  assets are served before the Worker.',
-    '- The list of sitemap pages is written per request in src/pages/sitemap.xml.ts,',
-    '  so a new page appears there only if the page is added to that route too.',
+    'The site, from DEPLOY.md:',
+    '- ptechsolutions.net is the company site and the client portal: one Astro build,',
+    '  served by one Worker.',
+    '- src/pages/: index.astro, privacy.astro, refunds.astro, and the prerendered',
+    '  portal pages under src/pages/portal/.',
+    '- src/layouts/: SiteLayout.astro for the company pages, PortalBase.astro for the',
+    '  portal. src/components/site/ and src/lib/site.ts feed the homepage sections.',
+    '- public/: fonts, me.webp, favicon.svg, .well-known/mcp-server.json, robots.txt,',
+    '  llms.txt and sitemap.xml. Astro copies public/ into dist/ unchanged.',
+    '- Portal pages are behind the client session; do not add them to the public',
+    '  sitemap. The company pages and their assets are the crawlable surface.',
     '',
     'Findings to fix, worst first:',
     ...findings.map(

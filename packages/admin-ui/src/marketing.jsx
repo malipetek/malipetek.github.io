@@ -35,7 +35,7 @@ const CYCLE_SKIP = {
   recent_cycle: 'The last cycle was filed less than a day ago.',
   weekly_cycle: 'This week’s cycle is already queued.',
   stocked: 'The next week already has three posts queued.',
-  no_project: 'No malipetek-dev-site project to run the agent in.',
+  no_project: 'No project is set up to run the agent in.',
   no_admin: 'No admin account to file the ticket for.',
 };
 const cycleMessage = (result) =>
@@ -1347,7 +1347,7 @@ function SettingsTab({ overview, run, api, contactsById }) {
             label="Sender"
             hint={
               overview.providers.ses
-                ? 'Amazon SES: 50,000 a day, 14 a second, DKIM on malipetek.dev. Bounces and complaints come back to hello@ and are filed here.'
+                ? 'Amazon SES: 50,000 a day, 14 a second, DKIM on ptechsolutions.net. Bounces and complaints come back to hello@ and are filed here.'
                 : 'Amazon SES needs AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY as Worker secrets first.'
             }
           >
@@ -1375,7 +1375,7 @@ function SettingsTab({ overview, run, api, contactsById }) {
           </Field>
           <Field
             label="Workshop GIF"
-            hint="HTML emails: the homepage how diagram at the top and the conveyor as a looping GIF above the signature (both linked from malipetek.dev/email/, the GIF about 470 KB). Emails without it go as plain text only."
+            hint="HTML emails: the homepage how diagram at the top and the conveyor as a looping GIF above the signature (both linked from ptechsolutions.net/email/, the GIF about 470 KB). Emails without it go as plain text only."
           >
             <Segmented
               value={draft.image ?? 'first'}

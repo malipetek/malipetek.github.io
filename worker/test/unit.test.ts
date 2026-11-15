@@ -1083,14 +1083,14 @@ test('seo: a page is read for the head it ships, in any attribute order', () => 
     '<!doctype html><html><head>',
     '<title>Vibe contracting: a website change, built &amp; reviewed</title>',
     '<meta content="Send a change; an agent builds it, Ali checks it." name="description">',
-    '<link href="https://malipetek.dev/contact" rel="canonical">',
-    '<link rel="alternate" hreflang="tr" href="https://malipetek.dev/tr/contact">',
-    "<link rel='alternate' hreflang='de-DE' href='https://malipetek.dev/de-DE/contact'>",
+    '<link href="https://ptechsolutions.net/contact" rel="canonical">',
+    '<link rel="alternate" hreflang="tr" href="https://ptechsolutions.net/tr/contact">',
+    "<link rel='alternate' hreflang='de-DE' href='https://ptechsolutions.net/de-DE/contact'>",
     '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite"},{"@type":["Organization","ProfessionalService"]}]}</script>',
     '<script>var x = 1;</script>',
     '</head><body><h1>One</h1><h1>Two</h1>',
     '<a href="/contact">contact</a>',
-    '<a href="https://malipetek.dev/kb/x">kb</a>',
+    '<a href="https://ptechsolutions.net/kb/x">kb</a>',
     '<a href="https://example.com/x">elsewhere</a>',
     '<a href="#top">top</a>',
     '</body></html>',
@@ -1100,7 +1100,7 @@ test('seo: a page is read for the head it ships, in any attribute order', () => 
   assert.equal(page.title, 'Vibe contracting: a website change, built & reviewed');
   assert.equal(page.titleLen, [...page.title].length);
   assert.equal(page.description, 'Send a change; an agent builds it, Ali checks it.');
-  assert.equal(page.canonical, 'https://malipetek.dev/contact');
+  assert.equal(page.canonical, 'https://ptechsolutions.net/contact');
   assert.equal(page.hreflangCount, 2);
   assert.deepEqual(page.hreflang.map((link) => link.hreflang), ['tr', 'de-de']);
   assert.deepEqual(page.jsonldTypes, ['Organization', 'ProfessionalService', 'WebSite']);
@@ -1317,15 +1317,15 @@ test('seo: days and weeks are UTC days, so a series groups the same everywhere',
 test('seo: the brief carries the rules, the findings and the hold', () => {
   const brief = seoBrief({
     findings: [
-      { id: 12, host: 'malipetek.dev', path: '/contact', code: 'missing_description', severity: 'high', detail: 'No meta description.' },
+      { id: 12, host: 'ptechsolutions.net', path: '/contact', code: 'missing_description', severity: 'high', detail: 'No meta description.' },
     ],
     drafts: [{ id: 3, platform: 'DEV', domain: 'dev.to', dr: 90 }],
     held: { held: true, since: '2026-05-25', until: '2026-06-08' },
     total: 9,
   });
-  assert.match(brief, /finding_id 12 — malipetek\.dev\/contact — missing_description \(high\)/);
-  assert.match(brief, /site="lab"/);
-  assert.match(brief, /robots\.txt, sitemap\.xml and sitemap-index\.xml are server routes/);
+  assert.match(brief, /finding_id 12 — ptechsolutions\.net\/contact — missing_description \(high\)/);
+  assert.match(brief, /ptechsolutions\.net is the company site and the client portal/);
+  assert.match(brief, /public\/: fonts, me\.webp, favicon\.svg/);
   assert.match(brief, /Never push to/);
   assert.match(brief, /pnpm --dir worker test/);
   assert.match(brief, /Volatility hold/);
@@ -1348,8 +1348,8 @@ test('seo: a task_get is read for our best position, its URL and the domains ahe
   const [task] = tasks;
   assert.equal(task.keyword, 'vibe contracting');
   assert.equal(task.position, 7); // the paid ad at rank 1 is not an organic result
-  assert.equal(task.url, 'https://malipetek.dev/');
-  assert.equal(task.host, 'malipetek.dev');
+  assert.equal(task.url, 'https://ptechsolutions.net/');
+  assert.equal(task.host, 'ptechsolutions.net');
   assert.equal(task.topDomains.length, 10);
   assert.equal(task.topDomains[0], 'www.upwork.com');
   assert.equal(task.topDomains.includes('www.ads-example.com'), false);
@@ -1371,10 +1371,10 @@ test('seo: a keyword we do not rank for is a row with no position, not a missing
 test('seo: a queued task has no result and is not mistaken for "not ranked"', () => {
   assert.equal(parseRankTask({ id: 'x', data: { keyword: 'vibe contracting' }, result: null }), null);
   assert.deepEqual(parseRankTasks({ tasks: [{ id: 'x', data: { keyword: 'vibe contracting' }, result: null }] }), []);
-  assert.equal(seoHostOf('malipetek.dev'), 'malipetek.dev');
-  assert.equal(seoHostOf('www.malipetek.dev'), 'malipetek.dev');
-  assert.equal(seoHostOf('blog.lab.malipetek.dev'), 'malipetek.dev');
-  assert.equal(seoHostOf('notmalipetek.dev'), null);
+  assert.equal(seoHostOf('ptechsolutions.net'), 'ptechsolutions.net');
+  assert.equal(seoHostOf('www.ptechsolutions.net'), 'ptechsolutions.net');
+  assert.equal(seoHostOf('blog.ptechsolutions.net'), 'ptechsolutions.net');
+  assert.equal(seoHostOf('notptechsolutions.net'), null);
 });
 
 test('seo: the rank swing counts a keyword outside the top 100 as 101', () => {

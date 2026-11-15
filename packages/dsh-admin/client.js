@@ -2617,7 +2617,7 @@ var __awPlugin = (() => {
     recent_cycle: "The last cycle was filed less than a day ago.",
     weekly_cycle: "This week\u2019s cycle is already queued.",
     stocked: "The next week already has three posts queued.",
-    no_project: "No malipetek-dev-site project to run the agent in.",
+    no_project: "No project is set up to run the agent in.",
     no_admin: "No admin account to file the ticket for."
   };
   var cycleMessage = (result) => result?.filed ? `Filed #${result.id}: an agent writes the posts and the desk queues them.` : CYCLE_SKIP[result?.reason] ?? `Nothing filed: ${result?.reason ?? "unknown reason"}`;
@@ -3631,7 +3631,7 @@ var __awPlugin = (() => {
             Field,
             {
               label: "Sender",
-              hint: overview.providers.ses ? "Amazon SES: 50,000 a day, 14 a second, DKIM on malipetek.dev. Bounces and complaints come back to hello@ and are filed here." : "Amazon SES needs AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY as Worker secrets first.",
+              hint: overview.providers.ses ? "Amazon SES: 50,000 a day, 14 a second, DKIM on ptechsolutions.net. Bounces and complaints come back to hello@ and are filed here." : "Amazon SES needs AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY as Worker secrets first.",
               children: /* @__PURE__ */ jsx(
                 Segmented,
                 {
@@ -3667,7 +3667,7 @@ var __awPlugin = (() => {
             Field,
             {
               label: "Workshop GIF",
-              hint: "HTML emails: the homepage how diagram at the top and the conveyor as a looping GIF above the signature (both linked from malipetek.dev/email/, the GIF about 470 KB). Emails without it go as plain text only.",
+              hint: "HTML emails: the homepage how diagram at the top and the conveyor as a looping GIF above the signature (both linked from ptechsolutions.net/email/, the GIF about 470 KB). Emails without it go as plain text only.",
               children: /* @__PURE__ */ jsx(
                 Segmented,
                 {
@@ -4109,7 +4109,7 @@ var __awPlugin = (() => {
     open_cycle: "a cycle ticket is already open",
     no_findings: "there are no open findings at medium or above",
     recent_cycle: "a cycle was filed in the last day",
-    no_project: "the malipetek-dev-site project is missing",
+    no_project: "the ptechsolutions project is missing",
     no_admin: "there is no admin account to file it for",
     insert_failed: "the ticket could not be written"
   };
@@ -4187,7 +4187,7 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-seo", children: [
       /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
         /* @__PURE__ */ jsx("h2", { children: "SEO" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Our own two hosts, checked daily. Scores, open fixes, the questions buyers ask assistants, and the profiles that link back." }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Our own host, checked daily. Scores, open fixes, the questions buyers ask assistants, and the profiles that link back." }),
         /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
           "Last audit ",
           overview.state?.lastAuditAt ? `${ago(overview.state.lastAuditAt)} ago` : "not yet",
@@ -4692,7 +4692,7 @@ var __awPlugin = (() => {
     return page.canonical.replace(/\/$/, "") === expected;
   };
   function PagesTab({ api, hosts, tick }) {
-    const [host, setHost] = useState(hosts[0] ?? "malipetek.dev");
+    const [host, setHost] = useState(hosts[0] ?? "ptechsolutions.net");
     const [day, setDay] = useState("");
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
@@ -7300,6 +7300,24 @@ ${question.text ?? ""}`)) {
         /* @__PURE__ */ jsx("path", { d: "M5.5 5h13l1.5 8v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-5z" })
       ] });
     }
+    function MarketingGlyph({ size = 16 }) {
+      return /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: [
+        /* @__PURE__ */ jsx("path", { d: "M4 10v4a1 1 0 0 0 1 1h3l7 3V6l-7 3H5a1 1 0 0 0-1 1z" }),
+        /* @__PURE__ */ jsx("path", { d: "M8 15v4M18 9a3 3 0 0 1 0 6" })
+      ] });
+    }
+    function SeoGlyph({ size = 16 }) {
+      return /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: [
+        /* @__PURE__ */ jsx("circle", { cx: "10.5", cy: "10.5", r: "5.5" }),
+        /* @__PURE__ */ jsx("path", { d: "m15 15 5 5M8 11h5M8 8.5h3" })
+      ] });
+    }
+    function MarketingEntryIcon(props) {
+      return /* @__PURE__ */ jsx(MarketingGlyph, { size: props?.size ?? 16 });
+    }
+    function SeoEntryIcon(props) {
+      return /* @__PURE__ */ jsx(SeoGlyph, { size: props?.size ?? 16 });
+    }
     function InboxEntryIcon(props) {
       const counts = useSyncExternalStore(attention.subscribe, attention.get);
       const waiting = counts ? counts.approve + counts.review + counts.waiting : 0;
@@ -7331,7 +7349,7 @@ ${question.text ?? ""}`)) {
     }
     const CLIENT_ROWS_MS = 6e4;
     const CLIENT_ROWS_MAX = 12;
-    const CLIENT_ROWS_ORDER = 13;
+    const CLIENT_ROWS_ORDER = 15;
     const CLIENT_TINTS = ["#4c8dff", "#d18f2e", "#2f9e5b", "#b45fd6", "#d1495b", "#1f9fb4", "#8a8f2e", "#6b6fd6"];
     let sectionAvailable = false;
     let refreshClientRows = () => {
@@ -8042,6 +8060,8 @@ ${who} is emailed about this change.`)) return;
     const WORKBENCH_PANEL = "admin-workbench";
     const INBOX_PANEL = "admin-inbox";
     const HOME_PANEL = "admin";
+    const MARKETING_PANEL = "admin-marketing";
+    const SEO_PANEL = "admin-seo";
     const STATUS_TINT = {
       new: "var(--dsw-alias-state-warning-primary, #d18f2e)",
       approved: "var(--dsw-alias-state-business-primary, #4c8dff)",
@@ -8508,6 +8528,53 @@ ${who} is emailed about this change.`)) return false;
       if (window.location.hash === hash) window.dispatchEvent(new HashChangeEvent("hashchange"));
       else window.location.hash = hash;
     }
+    function DeskPage({ children }) {
+      const [toast, setToast] = useState(null);
+      const timer = useRef(null);
+      const notify = useCallback((text, kind = "ok") => {
+        clearTimeout(timer.current);
+        setToast({ text: String(text ?? ""), kind });
+        timer.current = setTimeout(() => setToast(null), kind === "error" ? 8e3 : 4e3);
+      }, []);
+      useEffect(() => () => clearTimeout(timer.current), []);
+      const act = useCallback(async (fn, done) => {
+        try {
+          const out = await fn();
+          if (done !== void 0) notify(typeof done === "function" ? done(out) : done);
+          return out;
+        } catch (error) {
+          notify(error?.message ?? String(error), "error");
+          throw error;
+        }
+      }, [notify]);
+      const context = useMemo(() => ({
+        api,
+        act,
+        notify,
+        openTicket: (id) => void openTicketRun({ id }),
+        platform: "dsh",
+        host,
+        files
+      }), [api, act, notify, host]);
+      return /* @__PURE__ */ jsxs(
+        "div",
+        {
+          className: "aw pta-desk",
+          style: { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(0, 1fr)", height: "100%", minHeight: 0 },
+          children: [
+            /* @__PURE__ */ jsx("style", { children: STYLES }),
+            /* @__PURE__ */ jsx("div", { className: "aw-content", style: { overflow: "auto", height: "100%" }, children: /* @__PURE__ */ jsx(AdminContext.Provider, { value: context, children }) }),
+            toast ? /* @__PURE__ */ jsx("div", { className: `aw-toast${toast.kind === "error" ? " is-error" : ""}`, role: "status", children: toast.text }) : null
+          ]
+        }
+      );
+    }
+    function MarketingPage() {
+      return /* @__PURE__ */ jsx(DeskPage, { children: /* @__PURE__ */ jsx(MarketingView, {}) });
+    }
+    function SeoPage() {
+      return /* @__PURE__ */ jsx(DeskPage, { children: /* @__PURE__ */ jsx(SeoView, {}) });
+    }
     function TicketDock({ sessionId, input, inputActions }) {
       const run = ticketFromCwd(useSessionCwd(sessionId));
       const ticketId = run?.ticketId ?? null;
@@ -8708,7 +8775,17 @@ ${who} is emailed about this change.`)) return false;
         openHash(`client=${encodeURIComponent(target)}`);
         return true;
       }
-      if (route === "seo" || route === "health") {
+      if (route === "seo") {
+        handledDeepLink = true;
+        ctx.layout?.selectPanel?.(SEO_PANEL);
+        return true;
+      }
+      if (route === "marketing") {
+        handledDeepLink = true;
+        ctx.layout?.selectPanel?.(MARKETING_PANEL);
+        return true;
+      }
+      if (route === "health") {
         handledDeepLink = true;
         openHash(route);
         return true;
@@ -8735,9 +8812,13 @@ ${who} is emailed about this change.`)) return false;
     });
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: HOME_PANEL, locale: NAMESPACE }, NeedsYouPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: INBOX_PANEL, locale: NAMESPACE }, InboxPage));
+    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: MARKETING_PANEL, locale: NAMESPACE }, MarketingPage));
+    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: SEO_PANEL, locale: NAMESPACE }, SeoPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: WORKBENCH_PANEL, locale: NAMESPACE }, AdminPage));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: HOME_PANEL, order: 11, label: "Needs you" }, AdminEntryIcon));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: INBOX_PANEL, order: 12, label: "Inbox" }, InboxEntryIcon));
+    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: MARKETING_PANEL, order: 13, label: "Marketing" }, MarketingEntryIcon));
+    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: SEO_PANEL, order: 14, label: "SEO" }, SeoEntryIcon));
     ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({ name: "conversation.input.dock", id: "admin-ticket", order: 20, locale: NAMESPACE }, TicketDock));
     ctx.effect(() => {
       const style = document.createElement("style");
