@@ -54,6 +54,7 @@ import { healthMail, healthView, markHealthAlerted, runHealthChecks } from './he
 import { latestReview, reviewLine, reviewRun } from './review.ts';
 import { maybeAutoApprove } from './approve.ts';
 import { completeFirstPreview } from './firstPreview.ts';
+import { apiBase, cloudflareAccess } from './cfaccess.ts';
 import { screenshotResponse, screenshotsFor, verifyShotToken } from './screenshots.ts';
 import {
   CAPABILITY_CATALOG,
@@ -69,6 +70,7 @@ import {
   type NodeOverrides,
 } from './queue.ts';
 import {
+  canUseAssistant,
   isAllowedOrigin,
   clientIp,
   corsHeaders,
@@ -560,8 +562,11 @@ export const AGENT_TOKEN_PREFIX = 'cat_';
 export const MAX_AGENT_TOKENS = 5;
 
 /**
- * The client an agent token acts for. Revoked tokens and admins resolve to
- * nothing: an agent token is a client credential, whoever minted it.
+ * The client an agent token acts for. Revoked tokens resolve to nothing, and so
+ * do accounts that may not hold an assistant connection: an agent token is a
+ * client credential, whoever minted it. ASSISTANT_EMAILS is the explicit
+ * exception for the owner's own demo account; its role stays admin, and the
+ * token still cannot reach admin routes (they reject `viaAgent`).
  */
 export async function agentUser(env: Env, token: string): Promise<User | null> {
   if (!token.startsWith(AGENT_TOKEN_PREFIX) || token.length > 200) return null;
@@ -569,13 +574,12 @@ export async function agentUser(env: Env, token: string): Promise<User | null> {
   const user = await env.DB.prepare(
     `SELECT u.id, u.email, u.name, u.role, u.handoff, u.locale, u.translation
        FROM agent_tokens a JOIN users u ON u.id = a.user_id
-      WHERE a.token_hash = ? AND a.revoked_at IS NULL AND u.role = 'client'`,
+      WHERE a.token_hash = ? AND a.revoked_at IS NULL`,
   )
     .bind(hash)
     .first<User>();
-  if (user) {
-    await env.DB.prepare('UPDATE agent_tokens SET last_used_at = ? WHERE token_hash = ?').bind(now(), hash).run();
-  }
+  if (!user || !canUseAssistant(env, user)) return null;
+  await env.DB.prepare('UPDATE agent_tokens SET last_used_at = ? WHERE token_hash = ?').bind(now(), hash).run();
   return user;
 }
 
@@ -1187,6 +1191,7 @@ portal.get('/portal/me', async (c) => {
   return reply(c, {
     user,
     canPublish: settings.clientPublish,
+    canConnectAssistant: canUseAssistant(env, user),
     usage: usage.get(user.id) ?? NO_USAGE,
     projects: (projects ?? []).map((project) => {
       const kind = isProjectKind(project.kind) ? project.kind : 'existing';
@@ -1320,7 +1325,7 @@ export async function mintAgentToken(
 portal.post('/portal/agent-tokens', async (c) => {
   const env = c.env;
   const user = c.get('user');
-  if (user.role !== 'client') return reply(c, { error: 'clients_only' }, 400);
+  if (!canUseAssistant(env, user)) return reply(c, { error: 'clients_only' }, 400);
   const body = await readJson<{ label?: unknown }>(c);
   const label = cleanText(body?.label, 60);
   if (!label) return reply(c, { error: 'bad_label' }, 400);
@@ -2033,8 +2038,10 @@ portal.get('/portal/tickets/:id/workspace/file', async (c) => {
   const ticket = await ownTicket(c);
   if (!ticket) return reply(c, { error: 'not_found' }, 404);
   const path = c.req.query('path') ?? '';
+  const workspace = ticket.project_id ? await workspaceFor(c.env, ticket.project_id) : null;
+  if (!workspace) return reply(c, { error: 'not_hosted' }, 404);
   const file = ticket.project_id ? await workspaceRead(c.env, ticket.project_id, path) : null;
-  if (!file) return reply(c, { error: 'not_found' }, 404);
+  if (!file) return reply(c, { error: 'file_not_found' }, 404);
   return reply(c, file);
 });
 
@@ -3614,6 +3621,101 @@ portal.post('/admin/projects/:id/site/host', async (c) => {
   if (!site) return reply(c, { error: 'not_found' }, 404);
   const { sitesDomain } = await getSettings(c.env);
   return reply(c, { site: siteView(site, sitesDomain) });
+});
+
+/** Attach a hostname to the site's mirrored Worker and point its DNS at it. */
+portal.post('/admin/projects/:id/site/domain', async (c) => {
+  const body = await readJson<{ siteId?: unknown; hostname?: unknown; zoneId?: unknown }>(c);
+  const site = typeof body?.siteId === 'string'
+    ? await getSiteById(c.env, body.siteId)
+    : await getSite(c.env, c.req.param('id'));
+  if (!site || site.project_id !== c.req.param('id')) return reply(c, { error: 'not_found' }, 404);
+  if (site.host !== 'cloudflare' || !site.cloudflare_connection_id || !site.cloudflare_account_id) {
+    return reply(c, { error: 'not_cloudflare' }, 409);
+  }
+  if (!site.cloudflare_production_script) return reply(c, { error: 'not_deployed' }, 409);
+
+  const hostname = typeof body?.hostname === 'string' ? body.hostname.trim().toLowerCase() : '';
+  if (!/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(hostname)) {
+    return reply(c, { error: 'bad_hostname' }, 400);
+  }
+  const token = await cloudflareAccess(c.env, site.cloudflare_connection_id);
+  if (!token) return reply(c, { error: 'reconnect_cloudflare' }, 409);
+
+  const cf = async (path: string, init: RequestInit = {}) => {
+    const res = await fetch(`${apiBase(c.env)}${path}`, {
+      ...init,
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept: 'application/json',
+        ...(init.headers ?? {}),
+      },
+      signal: AbortSignal.timeout(20_000),
+    });
+    const data = (await res.json().catch(() => null)) as
+      | { success?: boolean; result?: unknown; errors?: { message?: string; code?: number }[] }
+      | null;
+    return { ok: res.ok && data?.success !== false, status: res.status, data };
+  };
+
+  let zoneId = typeof body?.zoneId === 'string' ? body.zoneId : '';
+  if (!zoneId) {
+    const zones = await cf('/zones?per_page=100');
+    const rows = (Array.isArray(zones.data?.result) ? zones.data.result : []) as {
+      id?: string;
+      name?: string;
+      account?: { id?: string };
+    }[];
+    const match = rows
+      .filter((z) => z.id && z.name && hostname.endsWith(`.${z.name}`) || hostname === z.name)
+      .filter((z) => !z.account?.id || z.account.id === site.cloudflare_account_id)
+      .sort((a, b) => (b.name?.length ?? 0) - (a.name?.length ?? 0))[0];
+    if (!match?.id) return reply(c, { error: 'no_zone', hostname }, 409);
+    zoneId = match.id;
+  }
+
+  const attach = () =>
+    cf(`/accounts/${site.cloudflare_account_id}/workers/domains`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        hostname,
+        service: site.cloudflare_production_script,
+        environment: 'production',
+        zone_id: zoneId,
+      }),
+    });
+
+  let attached = await attach();
+  if (!attached.ok) {
+    const message = attached.data?.errors?.map((e) => e.message).join('; ') ?? '';
+    // A Pages/A record already owns the hostname. Replace only the record at
+    // exactly this name (never a wildcard or another subdomain), then retry.
+    if (/already exists|in use|conflict|externally managed|DNS record|100117/i.test(message)) {
+      const records = await cf(`/zones/${zoneId}/dns_records?name=${encodeURIComponent(hostname)}`);
+      const rows = (Array.isArray(records.data?.result) ? records.data.result : []) as {
+        id?: string;
+        type?: string;
+        name?: string;
+      }[];
+      for (const record of rows) {
+        if (!record.id || record.name?.toLowerCase() !== hostname) continue;
+        if (!['A', 'AAAA', 'CNAME'].includes(String(record.type))) continue;
+        await cf(`/zones/${zoneId}/dns_records/${record.id}`, { method: 'DELETE' });
+      }
+      attached = await attach();
+    }
+  }
+
+  if (!attached.ok) {
+    const message = attached.data?.errors?.map((e) => `${e.message} (${e.code})`).join('; ') || `Cloudflare answered ${attached.status}`;
+    return reply(c, { error: 'cloudflare', message }, 502);
+  }
+
+  await c.env.DB.prepare('UPDATE sites SET custom_domain = ?, updated_at = ? WHERE id = ?')
+    .bind(hostname, now(), site.id)
+    .run();
+  return reply(c, { ok: true, hostname, zoneId, url: `https://${hostname}` });
 });
 
 /** Delete one site of a project. */
