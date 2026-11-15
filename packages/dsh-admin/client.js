@@ -4792,7 +4792,7 @@ var __awPlugin = (() => {
   }
   function FindingsTab({ api, hosts, tick, openTicket, refresh }) {
     const [status, setStatus] = useState("open");
-    const [host, setHost] = useState("");
+    const [host, setHost] = useState(hosts[0] ?? "");
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
     const [busy, setBusy] = useState(null);
@@ -4837,7 +4837,7 @@ var __awPlugin = (() => {
           }
         ),
         /* @__PURE__ */ jsxs("select", { value: host, "aria-label": "Host", onChange: (event) => setHost(event.target.value), children: [
-          /* @__PURE__ */ jsx("option", { value: "", children: "Both hosts" }),
+          /* @__PURE__ */ jsx("option", { value: "", children: "All hosts" }),
           hosts.map((name) => /* @__PURE__ */ jsx("option", { value: name, children: name }, name))
         ] }),
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),

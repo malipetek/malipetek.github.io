@@ -881,7 +881,7 @@ function PagesTab({ api, hosts, tick }) {
 
 function FindingsTab({ api, hosts, tick, openTicket, refresh }) {
   const [status, setStatus] = useState('open');
-  const [host, setHost] = useState('');
+  const [host, setHost] = useState(hosts[0] ?? '');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
@@ -932,7 +932,7 @@ function FindingsTab({ api, hosts, tick, openTicket, refresh }) {
           }}
         />
         <select value={host} aria-label="Host" onChange={(event) => setHost(event.target.value)}>
-          <option value="">Both hosts</option>
+          <option value="">All hosts</option>
           {hosts.map((name) => (
             <option key={name} value={name}>
               {name}

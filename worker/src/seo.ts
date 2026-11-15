@@ -2563,6 +2563,11 @@ seo.get('/admin/seo/findings', async (c) => {
     if (!isHost(host)) return out(c, { error: 'bad_host', hosts: SEO_HOSTS }, 400);
     where.push('host = ?');
     binds.push(host);
+  } else {
+    // A host that is no longer audited must not leak back through the
+    // "all hosts" filter: the desk only ever shows SEO_HOSTS.
+    where.push(`host IN (${SEO_HOSTS.map(() => '?').join(', ')})`);
+    binds.push(...SEO_HOSTS);
   }
   const statement = env.DB.prepare(
     `SELECT id, host, path, code, severity, detail, first_seen, last_seen, resolved_at, ticket_id
