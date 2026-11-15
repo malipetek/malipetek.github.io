@@ -334,3 +334,46 @@ test('a caller can pin the worker route, directory and depth per delegation', as
     endpoint.close();
   }
 });
+
+test('the spec carries the 0.2.2 top level, where DSH reads the parent', async () => {
+  // DSH 0.2.2 flattened `SubagentActivationSpec.request` into the spec itself:
+  // `startActivation` reads `spec.parent.id`, `spec.prompt` and `spec.maxDepth`
+  // from the top level. A nested-only spec made every delegation fail with
+  // "Cannot read properties of undefined (reading 'id')", so the mock below is
+  // the 0.2.2 read: a regression fails here instead of in a user's session.
+  const calls = [];
+  const { endpoint, call } = await start({
+    subagents: {
+      async startActivation(spec) {
+        if (spec.parent === undefined) throw new TypeError("Cannot read properties of undefined (reading 'id')");
+        calls.push(spec);
+        return {
+          childId: 'child-9',
+          result: Promise.resolve({ output: [{ type: 'text', text: 'ok' }], stopReason: 'completed' }),
+          dispose: () => {},
+        };
+      },
+    },
+  });
+  try {
+    const reply = await call({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'delegate', arguments: { task: 'do it', cwd: '/tmp/x', depth: 3 } },
+    });
+    assert.equal(reply.body.result.isError, undefined);
+    assert.equal(reply.body.result.content[0].text, 'ok');
+
+    const spec = calls[0];
+    assert.equal(spec.parent.id, 'agent-1');
+    assert.deepEqual(spec.prompt, [{ type: 'text', text: 'do it' }]);
+    assert.equal(spec.delivery, 'caller');
+    assert.equal(spec.cwd, '/tmp/x');
+    assert.equal(spec.maxDepth, 3);
+    // 0.2.1 read the nested `request`, so one build sends both shapes.
+    assert.equal(spec.request.parent.id, 'agent-1');
+  } finally {
+    endpoint.close();
+  }
+});

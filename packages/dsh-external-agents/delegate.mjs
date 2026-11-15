@@ -209,16 +209,24 @@ export function createDelegateEndpoint(options) {
           const askedCwd = typeof params?.arguments?.cwd === 'string' ? params.arguments.cwd.trim() : '';
           const askedDepth = Number.isInteger(params?.arguments?.depth) ? params.arguments.depth : undefined;
 
+          const request = {
+            prompt: [{ type: 'text', text: task }],
+            parent,
+            ...(askedCwd.length === 0 ? {} : { cwd: askedCwd }),
+            ...(askedDepth === undefined ? {} : { maxDepth: askedDepth }),
+            ...(Object.keys(agentOptions).length === 0 ? {} : { agentOptions }),
+          };
           const activation = await subagents.startActivation({
             provider,
             label,
-            request: {
-              prompt: [{ type: 'text', text: task }],
-              parent,
-              ...(askedCwd.length === 0 ? {} : { cwd: askedCwd }),
-              ...(askedDepth === undefined ? {} : { maxDepth: askedDepth }),
-              ...(Object.keys(agentOptions).length === 0 ? {} : { agentOptions }),
-            },
+            // DSH 0.2.2 flattened this request into the activation spec: `prompt`,
+            // `parent`, `cwd`, `maxDepth` and `agentOptions` moved out of `request`
+            // to the top level, and 0.2.2 reads `spec.parent.id` there. Keeping the
+            // old `request` object too is what makes one build work on both
+            // runtimes: 0.2.1 read `request` and ignored the top-level keys, 0.2.2
+            // reads the top level and ignores `request`.
+            ...request,
+            request,
             // `caller` awaits the child's result instead of notifying the parent,
             // which is what a tool call needs.
             delivery: 'caller',

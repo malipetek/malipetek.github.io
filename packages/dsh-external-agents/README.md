@@ -71,6 +71,29 @@ Or use the **Plugins** page in the Web sidebar. Either way, **restart the app**:
 the Host half composes into a live profile, but the running JavaScript
 generation has to be replaced before a new bundle is loaded.
 
+## Codex: re-importing the grant
+
+The `openai-codex` route authenticates with an OAuth grant imported from the
+Codex CLI. OpenAI **rotates refresh tokens**, so whichever client refreshes first
+invalidates the other's copy — the symptom is:
+
+```
+OAuth refresh failed for openai-codex: (401) "Your refresh token has already been
+used to generate a new access token"
+```
+
+Repair it from the CLI's current login:
+
+```sh
+node tools/import-codex-grant.mjs --dry-run   # show the token's remaining life
+node tools/import-codex-grant.mjs             # back up the store and re-import
+```
+
+The credential store reloads on its own, so no restart is needed. Expect to run
+this whenever the Codex CLI has signed in since the last import, or when the
+access token has expired; the tool refuses to import a token that is already
+dead, because that would just move the failure.
+
 ## Agent instructions
 
 Paste this into a DeepSeek Harness agent to install and configure it end to end.
