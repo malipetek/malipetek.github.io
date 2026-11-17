@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Serves the client sites: static deploys from the malipetek-sites R2 bucket on *.malipetek.online.",
+  "description": "Serves the client sites: static deploys from the malipetek-sites R2 bucket on *.ptechsolutions.dev (and *.malipetek.online, which 301s there).",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

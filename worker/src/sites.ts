@@ -1,9 +1,9 @@
 /*
  * Hosted sites, ours now: static files in the `malipetek-sites` R2 bucket,
- * served by the malipetek-sites Worker on malipetek.online.
+ * served by the malipetek-sites Worker on ptechsolutions.dev.
  *
- *   <slug>.malipetek.online            production
- *   <slug>--preview.malipetek.online   preview
+ *   <slug>.ptechsolutions.dev            production
+ *   <slug>--preview.ptechsolutions.dev   preview
  *
  * A deploy is immutable: files are content-addressed blobs under
  * `sites/<slug>/blobs/<sha256>` and a manifest at
@@ -87,7 +87,7 @@ export interface SiteView {
 }
 
 /** The domain hosted sites live under when the setting does not say. */
-export const DEFAULT_SITES_DOMAIN = 'malipetek.online';
+export const DEFAULT_SITES_DOMAIN = 'ptechsolutions.dev';
 
 function urls(
   row: Pick<SiteRow, 'slug' | 'custom_domain' | 'host' | 'cloudflare_preview_url' | 'cloudflare_production_url'>,

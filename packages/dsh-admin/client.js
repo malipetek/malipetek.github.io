@@ -1499,7 +1499,7 @@ var __awPlugin = (() => {
         " \xB7 ",
         site.state,
         " \xB7 ",
-        site.host === "cloudflare" ? "Cloudflare" : "malipetek.online"
+        site.host === "cloudflare" ? "Cloudflare" : "ptechsolutions.dev"
       ] }),
       site.cloudflare?.error ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
         "Cloudflare: ",

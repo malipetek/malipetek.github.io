@@ -1,8 +1,10 @@
 /*
  * malipetek-sites — serves the client sites.
  *
- *   <slug>.malipetek.online            production deploy
- *   <slug>--preview.malipetek.online   preview deploy (X-Robots-Tag: noindex)
+ *   <slug>.ptechsolutions.dev            production deploy
+ *   <slug>--preview.ptechsolutions.dev   preview deploy (X-Robots-Tag: noindex)
+ *
+ * malipetek.online, where these lived first, still answers and 301s across.
  *
  * A site is a row in the portal's `sites` table: each channel is a pointer to
  * an immutable deploy. The deploy is a manifest in R2 (path → sha256, size,
@@ -17,14 +19,23 @@ interface Env {
   DB: D1Database;
 }
 
-const DOMAIN = 'malipetek.online';
-const PORTAL = 'https://malipetek.dev';
+/**
+ * The domains client sites are served from. The first is canonical and the one
+ * every address is built on (worker/src/queue.ts, the `sitesDomain` setting);
+ * the rest keep answering so links sent before the move still land, and 301
+ * to the same path on the canonical domain.
+ */
+const DOMAINS = ['ptechsolutions.dev', 'malipetek.online'];
+const DOMAIN = DOMAINS[0];
+/** Where a site domain's own apex sends people: the client portal. */
+const PORTAL = 'https://ptechsolutions.net';
 /**
  * The feedback widget on previews: the script lives on the portal (one copy,
  * shared with client-hosted mirrors), the API hop is the portal's Worker.
  */
-const FEEDBACK_SCRIPT = `${PORTAL}/preview-feedback.js?v=1`;
-const FEEDBACK_API = `${PORTAL}/api`;
+const FEEDBACK_ORIGIN = 'https://malipetek.dev';
+const FEEDBACK_SCRIPT = `${FEEDBACK_ORIGIN}/preview-feedback.js?v=1`;
+const FEEDBACK_API = `${FEEDBACK_ORIGIN}/api`;
 
 interface ManifestFile {
   sha: string;
@@ -42,9 +53,9 @@ const blobKey = (slug: string, sha: string) => `sites/${slug}/blobs/${sha}`;
 function baseHeaders(preview: boolean): Record<string, string> {
   const headers: Record<string, string> = {
     'content-security-policy':
-      "default-src 'self'; script-src 'self' 'unsafe-inline' https://malipetek.dev; style-src 'self' 'unsafe-inline'; " +
+      `default-src 'self'; script-src 'self' 'unsafe-inline' ${FEEDBACK_ORIGIN}; style-src 'self' 'unsafe-inline'; ` +
       "img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob: data:; " +
-      "connect-src 'self' https://malipetek.dev; " +
+      `connect-src 'self' ${FEEDBACK_ORIGIN}; ` +
       "frame-ancestors 'none'; base-uri 'self'; form-action 'self' https:",
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'strict-origin-when-cross-origin',
@@ -163,10 +174,17 @@ export default {
     if (request.method !== 'GET' && request.method !== 'HEAD') return text('method not allowed', 405, false);
 
     const host = (request.headers.get('host') ?? url.hostname).toLowerCase().replace(/:\d+$/, '');
-    if (host === DOMAIN || host === `www.${DOMAIN}`) {
+    const domain = DOMAINS.find((d) => host === d || host === `www.${d}` || host.endsWith(`.${d}`));
+    if (!domain) return text('not found', 404, false);
+    if (host === domain || host === `www.${domain}`) {
       return Response.redirect(`${PORTAL}/portal`, 302);
     }
-    if (!host.endsWith(`.${DOMAIN}`)) return text('not found', 404, false);
+    // An address on a domain that has been superseded: same path, same query
+    // (a preview's feedback token rides in it), on the canonical domain.
+    if (domain !== DOMAIN) {
+      url.hostname = `${host.slice(0, host.length - domain.length)}${DOMAIN}`;
+      return Response.redirect(url.toString(), 301);
+    }
 
     const sub = host.slice(0, -(DOMAIN.length + 1));
     const preview = sub.endsWith('--preview');

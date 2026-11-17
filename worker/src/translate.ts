@@ -95,7 +95,7 @@ export function translationPrompt(target: string): string {
     'Reply with JSON only: {"source": "<BCP-47 code of the language the text is written in>", "text": "<the translation>"}.',
     'Rules:',
     '- Tokens like ⟦0⟧ stand for code, links and file names. Copy every token exactly, once each, where it belongs in the sentence.',
-    '- Keep names as they are: PTech, ptechsolutions.net, malipetek.dev, malipetek.online, Ali, GitHub, Cloudflare, Shopify, product and company names.',
+    '- Keep names as they are: PTech, ptechsolutions.net, ptechsolutions.dev, malipetek.dev, malipetek.online, Ali, GitHub, Cloudflare, Shopify, product and company names.',
     '- "ticket" or "request" is a support request; "preview" is a test version of a website; "deploy" and "publish" mean putting a site live.',
     '- Keep the tone, line breaks, lists and Markdown. Do not add, explain or summarise anything.',
     '- If the text is already in the target language, return it unchanged.',

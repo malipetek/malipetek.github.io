@@ -814,14 +814,14 @@ const groups = {
     const { project } = (await newProject(a.session, { kind: 'new', name: 'Rosa Florist', brief: NEW_BRIEF })).data;
     check('another client cannot start this site', (await call(`/portal/projects/${project.id}/site`, { method: 'POST', auth: other.session, body: {} })).status === 404);
     const start = await call(`/portal/projects/${project.id}/site`, { method: 'POST', auth: a.session, body: {} });
-    check('start → allocating, with the preview address', start.status === 201 && start.data.site.state === 'allocating' && start.data.site.previewUrl === 'https://rosa-florist--preview.malipetek.online', JSON.stringify(start.data));
+    check('start → allocating, with the preview address', start.status === 201 && start.data.site.state === 'allocating' && start.data.site.previewUrl === 'https://rosa-florist--preview.ptechsolutions.dev', JSON.stringify(start.data));
     const np0 = (await call('/node/projects', { auth: RUNNER_TOKEN })).data.projects.find((x) => x.id === project.id);
     check('nodes are asked to make the repo', np0?.needsRepo?.site === 'rosa-florist' && np0.needsRepo.template === 'site');
     // A fleet node creates the repo and reports it; then the site is ready.
     const reported = await call('/node/sites/rosa-florist/repo', { method: 'POST', auth: RUNNER_TOKEN, body: { repo: 'https://github.com/malipetek/rosa-florist' } });
     check('a node reports the repo it made', reported.status === 200 && reported.data.state === 'ready', JSON.stringify(reported.data));
     const site = (await call(`/portal/projects/${project.id}/site`, { auth: a.session })).data.site;
-    check('ready, with preview and production addresses', site.state === 'ready' && site.productionUrl === 'https://rosa-florist.malipetek.online');
+    check('ready, with preview and production addresses', site.state === 'ready' && site.productionUrl === 'https://rosa-florist.ptechsolutions.dev');
     const np = (await call('/node/projects', { auth: RUNNER_TOKEN })).data.projects.find((x) => x.id === project.id);
     check('nodes get the repo and the preview base', np?.repo === 'https://github.com/malipetek/rosa-florist' && np.baseRef === 'origin/preview' && np.site === 'rosa-florist');
     const p = (await call('/portal/me', { auth: a.session })).data.projects.find((x) => x.id === project.id);
@@ -848,7 +848,7 @@ const groups = {
     await call('/admin/settings', { method: 'PATCH', auth: admin, body: { clientPublish: true } });
     check('a bad sites domain is refused', (await call('/admin/settings', { method: 'PATCH', auth: admin, body: { sitesDomain: 'not a domain' } })).status !== 200);
     const pub = await call(`/admin/projects/${project.id}/site/publish`, { method: 'POST', auth: admin, body: {} });
-    check('Ali publishes', pub.status === 200 && pub.data.productionUrl === 'https://rosa-florist.malipetek.online');
+    check('Ali publishes', pub.status === 200 && pub.data.productionUrl === 'https://rosa-florist.ptechsolutions.dev');
     check('…and his publish is on record as his', rows(`SELECT role, via FROM site_publishes WHERE project_id = '${project.id}' ORDER BY id DESC LIMIT 1`)[0]?.role === 'admin');
     const deploys = (await call(`/admin/projects/${project.id}/site/deploys`, { auth: admin })).data.deploys;
     check('the deploy is in the history', deploys?.some((d) => d.id === made.data.deployId));
@@ -1009,8 +1009,8 @@ const groups = {
       body: { host: 'ours', siteId: site.id },
     });
     check(
-      'the client can move it back to malipetek.online',
-      moved.data.site?.host === 'ours' && /\.malipetek\.online$/.test(moved.data.site?.previewUrl ?? ''),
+      'the client can move it back to ptechsolutions.dev',
+      moved.data.site?.host === 'ours' && /\.ptechsolutions\.dev$/.test(moved.data.site?.previewUrl ?? ''),
       JSON.stringify(moved.data.site),
     );
     check(
@@ -1259,8 +1259,8 @@ const groups = {
     await fetch(`${W}/node/sites/preview-cafe/deploys/${made.data.deployId}/files/${file.sha256}`, { method: 'PUT', headers: { authorization: `Bearer ${RUNNER_TOKEN}`, 'content-length': String(file.size) }, body: new TextEncoder().encode('<h1>Order</h1>') });
     check('finish from a node not holding the run is refused', (await call(`/node/sites/preview-cafe/deploys/${made.data.deployId}/finish`, { method: 'POST', auth: RUNNER_TOKEN, body: { ticketId, nodeId: 'someone-else' } })).status === 403);
     const fin = await call(`/node/sites/preview-cafe/deploys/${made.data.deployId}/finish`, { method: 'POST', auth: RUNNER_TOKEN, body: { ticketId, nodeId } });
-    check('finish from the holding node deploys the preview', fin.status === 200 && fin.data.previewUrl === 'https://preview-cafe--preview.malipetek.online', JSON.stringify(fin.data));
-    check('the client is told where to look', /The preview has this change: https:\/\/preview-cafe--preview\.malipetek\.online/.test(JSON.stringify((await call(`/portal/tickets/${ticketId}`, { auth: a.session })).data)));
+    check('finish from the holding node deploys the preview', fin.status === 200 && fin.data.previewUrl === 'https://preview-cafe--preview.ptechsolutions.dev', JSON.stringify(fin.data));
+    check('the client is told where to look', /The preview has this change: https:\/\/preview-cafe--preview\.ptechsolutions\.dev/.test(JSON.stringify((await call(`/portal/tickets/${ticketId}`, { auth: a.session })).data)));
     check('a missing blob stops the finish', (await call(`/node/sites/preview-cafe/deploys/${(await call('/node/sites/preview-cafe/deploys', { method: 'POST', auth: RUNNER_TOKEN, body: { files: [{ path: 'x.html', sha256: sha('x'), size: 1 }] } })).data.deployId}/finish`, { method: 'POST', auth: RUNNER_TOKEN, body: {} })).status === 409);
     await call(`/node/runs/${c.runId}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId, ok: true, summary: 'Done.' } });
 
@@ -1295,7 +1295,7 @@ const groups = {
     check('the change records who made it and which files', /ChatGPT sent a change \(1 file\): src\/pages\/index\.astro/.test(JSON.stringify((await call(`/portal/tickets/${cid}`, { auth: a.session })).data.messages)));
     await call(`/portal/tickets/${cid}/build`, { method: 'POST', auth: key, body: {} });
     check('the client cannot decide while the preview builds', (await call(`/portal/changes/${cid}/finish`, { method: 'POST', auth: key, body: { review: false } })).data?.error === 'still_building');
-    await call(`/node/builds/${cid}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId, ok: true, previewUrl: 'https://preview-cafe--preview.malipetek.online' } });
+    await call(`/node/builds/${cid}/result`, { method: 'POST', auth: RUNNER_TOKEN, body: { nodeId, ok: true, previewUrl: 'https://preview-cafe--preview.ptechsolutions.dev' } });
     check('a built preview waits for the client, not for Ali', (await call(`/portal/tickets/${cid}`, { auth: a.session })).data.ticket.status === 'in_progress');
     const kept = await call(`/portal/changes/${cid}/finish`, { method: 'POST', auth: key, body: { review: false } });
     check('kept without review: closed, nothing to bill', kept.data?.status === 'done' && (await call(`/portal/tickets/${cid}`, { auth: a.session })).data.ticket.status === 'done', JSON.stringify(kept.data));

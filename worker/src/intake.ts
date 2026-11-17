@@ -186,7 +186,7 @@ const TOOLS = [
         properties: {
           projectId: { type: 'string' },
           name: { type: 'string' },
-          slug: { type: 'string', description: 'Address on malipetek.online, e.g. rosa-florist.' },
+          slug: { type: 'string', description: 'Address on ptechsolutions.dev, e.g. rosa-florist.' },
           host: { type: 'string', enum: ['ours', 'cloudflare'] },
         },
         required: ['projectId'],
@@ -464,7 +464,7 @@ async function tool(ctx: ToolContext, name: string, args: Record<string, unknown
         connection = { id: row.id, accountId: account.id };
       }
       const moved = await setSiteHost(env, site.project_id, args.host === 'cloudflare' ? 'cloudflare' : 'ours', connection, site.id);
-      return { result: { ok: Boolean(moved) }, note: `Hosting set to ${args.host === 'cloudflare' ? 'the client Cloudflare account' : 'malipetek.online'}.` };
+      return { result: { ok: Boolean(moved) }, note: `Hosting set to ${args.host === 'cloudflare' ? 'the client Cloudflare account' : 'ptechsolutions.dev'}.` };
     }
 
     case 'move_request': {
