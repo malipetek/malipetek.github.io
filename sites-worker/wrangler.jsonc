@@ -6,10 +6,16 @@
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat"],
 
-  // Every client site: <slug>.malipetek.online (production) and
-  // <slug>--preview.malipetek.online (preview). One level deep each, so the
+  // Every client site: <slug>.ptechsolutions.dev (production) and
+  // <slug>--preview.ptechsolutions.dev (preview). One level deep each, so the
   // free Universal SSL wildcard covers both. The apex redirects to the portal.
-  "routes": ["*.malipetek.online/*", "malipetek.online/*"],
+  // malipetek.online, where they were served first, still routes here and 301s.
+  "routes": [
+    "*.ptechsolutions.dev/*",
+    "ptechsolutions.dev/*",
+    "*.malipetek.online/*",
+    "malipetek.online/*",
+  ],
 
   // The deploy store, written by ptechsolutions-intercom and the fleet nodes:
   //   sites/<slug>/deploys/<deployId>/manifest.json   path → { sha, size, type }

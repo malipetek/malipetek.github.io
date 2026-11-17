@@ -75,7 +75,7 @@ export const SETTING_DEFAULTS = {
   /** Priority a new system task gets when the form does not say. */
   defaultPriority: 0,
   /** The domain hosted sites live under: `<site>.<domain>`, `<site>--preview.<domain>`. */
-  sitesDomain: 'malipetek.online',
+  sitesDomain: 'ptechsolutions.dev',
   /**
    * A client may publish their own preview to production (and roll it back).
    * They carry the responsibility: every publish is recorded with who, how,

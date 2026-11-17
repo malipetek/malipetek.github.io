@@ -207,8 +207,8 @@ const siteRow: SiteRow = {
 
 test('site: the feedback link carries the token, the shown preview address does not', () => {
   const view = siteView(siteRow)!;
-  assert.equal(view.previewUrl, 'https://rosa--preview.malipetek.online');
-  assert.equal(view.feedbackUrl, `https://rosa--preview.malipetek.online/?mf=${'a'.repeat(36)}`);
+  assert.equal(view.previewUrl, 'https://rosa--preview.ptechsolutions.dev');
+  assert.equal(view.feedbackUrl, `https://rosa--preview.ptechsolutions.dev/?mf=${'a'.repeat(36)}`);
   assert.equal(new URL(view.feedbackUrl!).searchParams.get('mf'), 'a'.repeat(36));
 });
 
@@ -244,7 +244,7 @@ const base: SetupInput = {
   ticketCount: 1,
   clientCreated: true,
 };
-const ready = { state: 'ready' as const, slug: 'rosa', previewUrl: 'https://rosa--preview.malipetek.online', productionUrl: 'https://rosa.malipetek.online', customDomain: null, error: null, previewDeploy: 'd1', productionDeploy: 'd1', updatedAt: 0 };
+const ready = { state: 'ready' as const, slug: 'rosa', previewUrl: 'https://rosa--preview.ptechsolutions.dev', productionUrl: 'https://rosa.ptechsolutions.dev', customDomain: null, error: null, previewDeploy: 'd1', productionDeploy: 'd1', updatedAt: 0 };
 
 test('setup: a new project without a site is not autonomous', () => {
   const s = setupFor(base);

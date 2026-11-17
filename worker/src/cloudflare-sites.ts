@@ -15,7 +15,7 @@
  *
  * We mirror the same immutable deploy that lives in R2, so our copy remains
  * the source of truth: if the client's grant lapses, their site can fall back
- * to malipetek.online without rebuilding anything.
+ * to ptechsolutions.dev without rebuilding anything.
  */
 import { apiBase, cloudflareAccess } from './cfaccess.ts';
 import { type Env } from './shared.ts';
@@ -30,7 +30,7 @@ const COMPATIBILITY_DATE = '2026-01-01';
 
 /*
  * A mirrored preview gets the same feedback launcher as one on
- * malipetek.online. Mirrors are uploaded ahead of time, so unlike our own
+ * ptechsolutions.dev. Mirrors are uploaded ahead of time, so unlike our own
  * host this cannot be injected at serve time: the HTML is rewritten here, on
  * the preview channel only. The script is loaded from the portal because the
  * client's Worker has no copy of it.

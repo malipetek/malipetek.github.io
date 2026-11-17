@@ -1578,7 +1578,7 @@ const siteError = (c: Ctx, error: unknown) => {
 };
 
 /**
- * Set up the hosted site for a project we build: a slug on malipetek.online,
+ * Set up the hosted site for a project we build: a slug on ptechsolutions.dev,
  * a placeholder page at once, then a fleet node makes the source repo. Only a
  * "new" project gets one: an existing stack is the client's to bring, with
  * its own credentials.
@@ -2161,7 +2161,7 @@ portal.post('/portal/tickets', async (c) => {
  *
  * Multipart body: `token`, `body`, optional `page`, `viewport`, `files`.
  * CORS is echoed for this route only: a preview lives on another origin
- * (malipetek.online, workers.dev or the client's own domain). Since the token
+ * (ptechsolutions.dev, workers.dev or the client's own domain). Since the token
  * travels in the body and no cookie is read, echoing the origin grants nothing.
  */
 const PREVIEW_FEEDBACK_LIMIT = 8;
