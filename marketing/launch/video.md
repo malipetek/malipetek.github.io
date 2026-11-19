@@ -45,7 +45,7 @@ Timecodes are approximate; hold a beat longer rather than rush.
 | 0:56–1:04 | You pay for my minutes, billed by the second, plus the AI at cost. | Ticket: the price line — time, AI, total. Card: **"Measured, not estimated."** |
 | 1:04–1:14 | The first five pilot jobs billed between two eighteen and eight twenty-five. | Card: **"$2.18 – $8.25"** / **"First five pilot jobs."** / small: **"Pilot jobs on my own and demo projects."** |
 | 1:14–1:20 | Send the smallest thing on your list. | Card: **"Send the smallest thing on your list."** |
-| 1:20–1:25 | malipetek dot dev. | Card: **malipetek.dev/portal** |
+| 1:20–1:25 | ptechsolutions dot net. | Card: **ptechsolutions.net/portal** |
 
 Voiceover is about 130 words. At a dry, unhurried pace that is roughly 80
 seconds of speech, leaving room for the pauses above. If it runs long, cut the
@@ -69,7 +69,7 @@ Record at 1440×900 in a clean browser profile, then crop the chrome.
 | 10 | Publish | admin | Move the production pointer / click Publish | Show "preview first, then live" |
 | 11 | Bill | ticket page | Zoom the price line | Time, AI at cost, total |
 | 12 | Proof card | — | Static card | $2.18–$8.25, first five pilot jobs |
-| 13 | CTA | — | Static card | malipetek.dev/portal |
+| 13 | CTA | — | Static card | ptechsolutions.net/portal |
 
 ## Production
 
@@ -93,7 +93,7 @@ Record at 1440×900 in a clean browser profile, then crop the chrome.
 
 - Cuts on sentence ends. No transitions except a hard cut.
 - Captions burned in, large enough to read muted on a phone. Proofread them.
-- Optional: an `.srt` for LinkedIn; auto-captions will mangle "malipetek".
+- Optional: an `.srt` for LinkedIn; auto-captions will mangle "PTech".
 - Poster frame: the price card, not a face.
 
 **Voice**
@@ -117,7 +117,7 @@ Record at 1440×900 in a clean browser profile, then crop the chrome.
 
 **15s (email):** "You built most of it with AI." → "A one-minute fix is $1.67.
 No quote, no minimum." → "Send the smallest thing on your list.
-malipetek.dev/portal."
+ptechsolutions.net/portal."
 
 **6s loop:** the diorama belt moving, with the price card overlaid. No voice.
 

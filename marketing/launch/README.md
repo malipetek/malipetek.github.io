@@ -15,7 +15,7 @@ Read with:
 ## Situation in one paragraph
 
 The system is built and running: a client portal, two fleet nodes, an admin
-workbench, preview and production hosting on `malipetek.online`, an MCP
+workbench, preview and production hosting on `ptechsolutions.dev`, an MCP
 endpoint, and a ChatGPT plugin submitted to the directory. What does not exist
 is demand. Five pilot jobs have run end to end and billed $2.18–$8.25. The
 launch is a **first-clients** launch: sell the offer, use the pilot data to

@@ -67,7 +67,7 @@ build, I will say so.
 
 ## Start
 
-**malipetek.dev/portal** — sign in with your email and write what you need.
+**ptechsolutions.net/portal** — sign in with your email and write what you need.
 No call, no quote, no minimum.
 
-Muhammet Ali Petek · malipetek.dev
+Muhammet Ali Petek · ptechsolutions.net

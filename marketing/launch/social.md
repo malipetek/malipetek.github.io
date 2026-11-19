@@ -90,7 +90,7 @@ not the distribution.
 > see it. You pay for the minutes I spend, by the second: a one-minute fix is
 > $1.67, with no quote, call or minimum.
 >
-> malipetek.dev/portal
+> ptechsolutions.net/portal
 
 ---
 
@@ -114,7 +114,7 @@ not the distribution.
 > 5/ Those were pilot jobs on my own and demo projects, not clients yet. Every
 > bill came from the meter.
 >
-> 6/ malipetek.dev/portal
+> 6/ ptechsolutions.net/portal
 
 ### Singles
 
@@ -185,14 +185,14 @@ rewrite it here; if it changes, change it there.
 
 Use the same short text everywhere:
 
-> **malipetek** — One MCP endpoint for malipetek.dev: a public agentic-coding
+> **PTech** — One MCP endpoint for ptechsolutions.net: a public agentic-coding
 > knowledgebase plus a client portal. Public tools read and search the
 > knowledgebase with no key. Portal tools file, track and budget software work
 > for a signed-in client. Streamable HTTP, protocol 2025-06-18.
 
 Longer, where the field allows:
 
-> malipetek.dev is a vibe contracting service: an AI agent builds, and one
+> ptechsolutions.net is a vibe contracting service: an AI agent builds, and one
 > developer signs off on every change. Its MCP server exposes a public knowledgebase of real agentic-coding
 > problems (search, read, list) and a client portal (projects, requests, replies,
 > budgets, preview and publish). Reading needs no authentication. Writing needs a
@@ -207,7 +207,7 @@ discovery; do not count it as a launch channel.
 > you send a request, I approve it, the agent builds it on a sealed copy
 > of your project, and I check it before you see it. You pay for my minutes,
 > billed by the second: a one-minute fix is $1.67, with no quote and no minimum.
-> Serverless, small jobs welcome. malipetek.dev
+> Serverless, small jobs welcome. ptechsolutions.net
 
 ---
 
@@ -230,21 +230,21 @@ discovery; do not count it as a launch channel.
 > You pay for the minutes I actually spend, billed by the second, plus the AI at
 > cost. A one-minute fix is $1.67. No quote, no call, no minimum.
 >
-> malipetek.dev
+> ptechsolutions.net
 
 ### X bio
 
 > Software help, by the minute. The last mile of your vibe-coded app, without a
-> quote. malipetek.dev
+> quote. ptechsolutions.net
 
 ### GitHub bio
 
-> Software help, by the minute. malipetek.dev
+> Software help, by the minute. ptechsolutions.net
 
 ### Email signature
 
 > Ali Petek
-> Vibe contracting, by the minute · malipetek.dev/portal
+> Vibe contracting, by the minute · ptechsolutions.net/portal
 
 ---
 

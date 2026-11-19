@@ -23,6 +23,7 @@ export default {
     "mail.signin.subject": "Your sign-in link for ptechsolutions.net",
     "mail.signin.body": "Here's your sign-in link for the PTech client portal:\n\n{link}\n\nIt works once and expires in 15 minutes. If you didn't ask for it, ignore this email.",
     "mail.signin.code": "Signing in from another window, such as an assistant asking to connect? Type this code there instead of opening the link: {code}",
+    "mail.signin.moved": "The portal used to be at malipetek.dev/portal. It is now at ptechsolutions.net/portal: same account, same projects and requests, nothing to set up again. Old links and bookmarks still work.",
     "mail.invite.subject": "{name} set up {project} for you on ptechsolutions.net",
     "mail.invite.body": "{name} set up {project} for you on ptechsolutions.net.\n\nOpen it here: {link}\n\nThe link works once and expires in 7 days.",
     "mail.invite.added.subject": "You've been added to {project} on ptechsolutions.net",

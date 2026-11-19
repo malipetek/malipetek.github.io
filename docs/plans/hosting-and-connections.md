@@ -214,7 +214,9 @@ Each tool carries read-only / destructive annotations. The tools only accept
 work on requests Ali approved; review still follows the attention level.
 
 Owner tools (Ali's own token, never through client OAuth; the consent page
-keeps refusing the admin email): approve / decline, queue and fleet status,
+refuses every admin email except an address listed in ASSISTANT_EMAILS for the
+owner's own demo recording — and even then the OAuth token reaches only the
+client tools, never these): approve / decline, queue and fleet status,
 publish, rollback.
 
 ### The ChatGPT plugin

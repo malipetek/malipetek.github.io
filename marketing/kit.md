@@ -203,7 +203,7 @@ Two rules for any email in our name:
 ## Bios
 
 - **Short:** Software help, by the minute. The last mile of your vibe-coded app,
-  without a quote — malipetek.dev
+  without a quote — ptechsolutions.net
 - **Longer:** Vibe contracting from a one-person dev shop. You send a
   request, I approve it, the agent builds it, I check it before you see it. You
-  pay for my minutes, by the second. malipetek.dev
+  pay for my minutes, by the second. ptechsolutions.net
