@@ -1481,7 +1481,7 @@ const groups = {
       JSON.stringify(anonTools.filter((t) => t.securitySchemes?.[0]?.type !== 'oauth2').map((t) => t.name)),
     );
     const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'e2e', version: '0' } }, token);
-    check('initialize says changes cost nothing, review is optional and notices come by email', /costs nothing on PTech/.test(init.result?.instructions ?? '') && /billed as developer time/.test(init.result?.instructions ?? '') && /by email/.test(init.result?.instructions ?? ''));
+    check('initialize separates preview edits from publishing and says review is optional', /preview workspace/.test(init.result?.instructions ?? '') && /site_publish is a separate action/.test(init.result?.instructions ?? '') && /billed as developer time/.test(init.result?.instructions ?? '') && /by email/.test(init.result?.instructions ?? ''));
     check('the portal introduces itself as the client portal, version 1.2.0', init.result?.serverInfo?.title === 'PTech client portal' && init.result?.serverInfo?.version === '1.2.0', JSON.stringify(init.result?.serverInfo));
     check('…and never mentions the knowledgebase', !/knowledgebase/i.test(init.result?.instructions ?? ''));
     const portalResources = (await rpc('resources/list', {}, null)).result?.resources ?? [];
@@ -2241,6 +2241,9 @@ async function main() {
   const vars = {
     DEV_RETURN_LINK: '1',
     RUNNER_TOKEN,
+    // The suite keeps the closed default so the admin-refusal checks stay
+    // meaningful; the owner's production allowlist is a unit-test concern.
+    ASSISTANT_EMAILS: '',
     // CI has no .dev.vars; the suite must bring every secret it needs.
     SESSION_SECRET: 'e2e-session-secret',
     SITE_URL: 'http://localhost:4321',

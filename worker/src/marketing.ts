@@ -285,12 +285,12 @@ Muhammet`,
       subject: 'Re: Vibe contracting',
       body: `{{greeting}}
 
-Last note from me. If you want help with AI or getting a project online later, it's here: ptechsolutions.net
+Last note from me. If you want help with AI or getting a project online later, you can ask at ptechsolutions.net/portal, with no call or quote first.
 
 Muhammet`,
       plain: `{{greeting}}
 
-Last note from me. If you want help with AI or getting a project online later, it's here: ptechsolutions.net
+Last note from me. If you want help with AI or getting a project online later, you can ask at ptechsolutions.net/portal, with no call or quote first.
 
 Muhammet`,
     },
@@ -341,7 +341,7 @@ Muhammet`,
       subject: 'Re: Vibe contracting for {{site}}',
       body: `{{greeting}}
 
-Last note from me. If you want help with AI or getting a project online later, it's here: ptechsolutions.net
+Last note from me. If you want help with AI or getting a project online later, you can ask at ptechsolutions.net/portal, with no call or quote first.
 
 Muhammet`,
     },

@@ -42,6 +42,13 @@ export interface Env {
    * marketing test sends and invite names use the first address).
    */
   ADMIN_EMAILS?: string;
+  /**
+   * Var. Comma-separated addresses that may connect an assistant even though
+   * they are not client accounts. For the owner's own account when recording a
+   * demo: the role stays admin, and an agent token minted for one still reaches
+   * only the client tools and that account's attached projects, never /admin.
+   */
+  ASSISTANT_EMAILS?: string;
   /** Secret. Reviewer demo sign-in: the only email /auth/demo accepts. */
   DEMO_EMAIL?: string;
   /** Secret. The code /auth/demo requires alongside DEMO_EMAIL. */
@@ -139,6 +146,24 @@ export function isAdminEmail(env: Env, email: string | null | undefined): boolea
 /** The address that stands for "Ali" in mail and settings; the first configured admin. */
 export function primaryAdminEmail(env: Env): string | null {
   return adminEmails(env)[0] ?? null;
+}
+
+/** Every address explicitly allowed to hold an assistant connection. */
+export function assistantEmails(env: Env): string[] {
+  const addresses = `${env.ASSISTANT_EMAILS ?? ''}`
+    .split(',')
+    .map((address) => address.trim().toLowerCase())
+    .filter(Boolean);
+  return [...new Set(addresses)];
+}
+
+/**
+ * Whether an account may connect an assistant and use agent tokens. Client
+ * accounts may; an address in ASSISTANT_EMAILS may too, without changing its
+ * role. Everything else, including other admins, still may not.
+ */
+export function canUseAssistant(env: Env, user: { email: string; role: string }): boolean {
+  return user.role === 'client' || assistantEmails(env).includes(user.email.trim().toLowerCase());
 }
 
 export const ALLOWED_ORIGINS = [

@@ -25,6 +25,9 @@
     "CONTACT_FROM_EMAIL": "intercom@ptechsolutions.net",
     "PORTAL_FROM_EMAIL": "portal@ptechsolutions.net",
     "ADMIN_EMAIL": "malipetek@gmail.com",
+    // Accounts that may connect an assistant although they are not clients.
+    // The owner's own account, for recording the demo. Keep it to that one.
+    "ASSISTANT_EMAILS": "malipetek@gmail.com",
     // Extra portal admins, comma-separated, trimmed, case-insensitive. Every
     // address listed signs in with the admin role; a magic link only raises an
     // account, never demotes it. ADMIN_EMAIL above is the legacy single value

@@ -41,7 +41,7 @@
  */
 import { Hono, type Context } from 'hono';
 import { ATTENTION_KEYS, billOf, DEFAULT_ATTENTION, money, priceLine, priceOf } from '../../src/lib/pricing.js';
-import { claimTicketById, finishRun, normalizeReport, openRuns, recentRuns, sessionKey, sharedLine, ticketRuns } from './runs.ts';
+import { claimTicketById, finishRun, normalizeReport, sessionKey, sharedLine, ticketRuns } from './runs.ts';
 import { finishContentCycle } from './content.ts';
 import { finishSeoCycle } from './seo.ts';
 import { bridgeMessage, bridgeTitle, forAli, forClientMail, threadFor, translateText, type Bridged } from './translate.ts';
@@ -130,7 +130,9 @@ import {
   type SiteRow,
 } from './sites.ts';
 import { grantedAccounts, connectionRow } from './cfaccess.ts';
-import { ensureRepo, useClientRepo } from './ghapp.ts';
+import { registerProjectCollaborationRoutes } from './projectCollaboration.ts';
+import { ensureRepo, useClientRepo, installationToken } from './ghapp.ts';
+import { accessFor, authorizeWorkbenchRoute, canWorkProject, isSuperAdmin, ownsProject, projectScope, sealProjectSecret, openProjectSecret } from './projectAccess.ts';
 import { moveSite, moveTicket, promotePrimary } from './move.ts';
 import { runIntake } from './intake.ts';
 import { isAudioType, transcribe } from './transcribe.ts';
@@ -298,6 +300,13 @@ async function readJson<T>(c: Ctx): Promise<T | null> {
 
 const origin = (c: Ctx) => c.req.header('Origin') ?? null;
 const reply = (c: Ctx, data: unknown, status = 200) => json(data, status, origin(c));
+
+/**
+ * When the portal moved from malipetek.dev/portal to ptechsolutions.net/portal
+ * (2026-11-13, UTC). Accounts created before it get a line in the sign-in
+ * email saying the new sender is the same portal.
+ */
+export const PORTAL_MOVED_AT = Date.UTC(2026, 10, 13) / 1000;
 
 export function siteUrl(env: Env): string {
   return (env.PORTAL_URL || env.SITE_URL || 'https://ptechsolutions.net').replace(/\/+$/, '');
@@ -613,10 +622,12 @@ async function userProjects(env: Env, userId: string) {
   const { results } = await env.DB.prepare(
     `SELECT p.id, p.slug, p.name, p.kind, p.brief, p.repo, p.repo_kind, p.repo_wanted, p.repo_error,
             p.github_installation_id, p.created_by, p.created_at
-       FROM user_projects up JOIN projects p ON p.id = up.project_id
-      WHERE up.user_id = ? ORDER BY p.name`,
+       FROM projects p
+      WHERE EXISTS (SELECT 1 FROM user_projects up WHERE up.project_id=p.id AND up.user_id=?)
+         OR p.owner_user_id=? OR EXISTS (SELECT 1 FROM project_memberships pm WHERE pm.project_id=p.id AND pm.user_id=? AND pm.member_type='trusted_developer')
+      ORDER BY p.name`,
   )
-    .bind(userId)
+    .bind(userId, userId, userId)
     .all<ProjectRow>();
   return results;
 }
@@ -680,10 +691,11 @@ async function usageByUser(env: Env, userId?: string): Promise<Map<string, Usage
 }
 
 /** Hosted sites grouped by project, main site first. */
-async function sitesByProject(env: Env): Promise<Map<string, SiteRow[]>> {
+async function sitesByProject(env: Env, user?: User): Promise<Map<string, SiteRow[]>> {
+  const scope = user ? projectScope(user, 's.project_id') : {sql:'1=1',bindings:[]};
   const { results } = await env.DB.prepare(
-    'SELECT * FROM sites ORDER BY is_primary DESC, created_at ASC',
-  ).all<SiteRow>();
+    `SELECT s.* FROM sites s WHERE ${scope.sql} ORDER BY is_primary DESC, created_at ASC`,
+  ).bind(...scope.bindings).all<SiteRow>();
   const out = new Map<string, SiteRow[]>();
   for (const row of results ?? []) out.set(row.project_id, [...(out.get(row.project_id) ?? []), row]);
   return out;
@@ -713,7 +725,7 @@ const TICKET_COLUMNS = `t.id, t.title, t.status, t.created_at, t.updated_at, t.c
   t.project_id, t.site_id, p.name AS project_name, p.slug AS project_slug,
   t.attention, t.human_seconds, t.ai_micro_usd, t.budget_cents, t.price_cents,
   t.kind, t.source, t.priority, t.requires, t.executor, t.worked_by, t.title_en,
-  t.first_preview, t.first_preview_done_at`;
+  t.first_preview, t.first_preview_done_at, t.assistant_app`;
 
 /**
  * What a client may see of a ticket: their own requests, plus the client
@@ -856,11 +868,16 @@ portal.post('/auth/request', async (c) => {
   // Fragment, not query: the token never reaches a server log or a Referer.
   const link = `${siteUrl(env)}/portal/verify#token=${token}`;
   // Their saved language, else the browser's: the email is the first thing they read.
-  const known = await env.DB.prepare('SELECT locale FROM users WHERE email = ?').bind(email).first<{ locale: string }>();
+  const known = await env.DB.prepare('SELECT locale, created_at FROM users WHERE email = ?')
+    .bind(email)
+    .first<{ locale: string; created_at: number }>();
   const tr = tFor(known?.locale ?? fromAcceptLanguage(c.req.header('Accept-Language')));
+  // An account from before the move knew the portal as malipetek.dev/portal:
+  // say once, in the mail they get anyway, that this sender is the same portal.
+  const moved = known && known.created_at < PORTAL_MOVED_AT ? `\n\n${tr('mail.signin.moved')}` : '';
   const sent = await mailClient(env, email, {
     subject: tr('mail.signin.subject'),
-    text: `${tr('mail.signin.body', { link })}\n\n${tr('mail.signin.code', { code })}`,
+    text: `${tr('mail.signin.body', { link })}\n\n${tr('mail.signin.code', { code })}${moved}`,
   });
 
   // Same answer whether or not the address has an account — no enumeration.
@@ -1048,7 +1065,15 @@ const PUBLIC_PORTAL_PATHS = new Set(['/portal/cloudflare/callback', '/portal/pre
 portal.use('/portal/*', (c, next) => (PUBLIC_PORTAL_PATHS.has(c.req.path) ? next() : requireUser(c, next)));
 portal.use('/portal/agent-tokens', requireBrowser);
 portal.use('/portal/agent-tokens/*', requireBrowser);
-portal.use('/admin/*', requireUser, requireAdmin);
+// Scoped work routes are explicit; unknown/global routes remain super-admin only.
+portal.use('/admin/*', requireUser, async (c, next) => {
+  if (c.get('viaAgent') || !await authorizeWorkbenchRoute(c.env, c.get('user'), c.req.method, c.req.path)) {
+    return reply(c, { error: 'forbidden' }, 403);
+  }
+  return next();
+});
+registerProjectCollaborationRoutes(portal, { sendMail: mailClient });
+
 
 portal.post('/auth/logout', async (c) => {
   const token = (c.req.header('authorization') ?? '').slice(7);
@@ -1113,7 +1138,7 @@ portal.get('/auth/device/info', async (c) => {
 portal.use('/portal/device/approve', requireBrowser);
 portal.post('/portal/device/approve', async (c) => {
   const user = c.get('user');
-  if (user.role !== 'admin') return reply(c, { error: 'forbidden' }, 403);
+  if (!(await accessFor(c.env, user)).canUseWorkbench) return reply(c, { error: 'forbidden' }, 403);
 
   const body = await readJson<{ deviceCode?: unknown }>(c);
   const deviceCode = typeof body?.deviceCode === 'string' ? body.deviceCode.trim() : '';
@@ -1147,6 +1172,7 @@ portal.post('/auth/device/token', async (c) => {
   return reply(c, {
     session,
     user: { id: user.id, email: user.email, name: user.name, role: user.role, locale: user.locale ?? null },
+    access: await accessFor(env, user),
   });
 });
 
@@ -1190,6 +1216,7 @@ portal.get('/portal/me', async (c) => {
 
   return reply(c, {
     user,
+    access: await accessFor(env, user),
     canPublish: settings.clientPublish,
     canConnectAssistant: canUseAssistant(env, user),
     usage: usage.get(user.id) ?? NO_USAGE,
@@ -1407,7 +1434,7 @@ portal.post('/portal/projects', async (c) => {
   // Where the code comes from. `repoKind` is the old form; `repoMode` adds
   // "create it for me" and "in my GitHub account" as first-class choices.
   const mode =
-    body?.repoMode === 'create' || body?.repoMode === 'repo' || body?.repoMode === 'zip'
+    body?.repoMode === 'none' || body?.repoMode === 'create' || body?.repoMode === 'repo' || body?.repoMode === 'zip'
       ? body.repoMode
       : body?.repoKind === 'repo' || body?.repoKind === 'zip'
         ? body.repoKind
@@ -1430,13 +1457,17 @@ portal.post('/portal/projects', async (c) => {
   const id = crypto.randomUUID();
   const slug = await uniqueSlug(env, name);
   const repoWanted = mode === 'create' ? 1 : 0;
+  const creatorAccess = await accessFor(env, user);
   try {
     await env.DB.batch([
       env.DB.prepare(
-        `INSERT INTO projects (id, slug, name, kind, brief, repo, repo_kind, repo_wanted, created_by, onboarded_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(id, slug, name, kind, JSON.stringify(brief), repo, repoKind, repoWanted, user.id, t, t),
+        `INSERT INTO projects (id, slug, name, kind, brief, repo, repo_kind, repo_wanted, created_by, owner_user_id, onboarded_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, slug, name, kind, JSON.stringify(brief), repo, repoKind, repoWanted, user.id, user.id, t, t),
       env.DB.prepare('INSERT INTO user_projects (user_id, project_id) VALUES (?, ?)').bind(user.id, id),
+      ...(creatorAccess.developerProjectIds.length ? [env.DB.prepare(
+        `INSERT INTO project_memberships (project_id,user_id,member_type,granted_by,created_at) VALUES (?,?,'trusted_developer',?,?)`,
+      ).bind(id,user.id,user.id,t)] : []),
     ]);
   } catch {
     return reply(c, { error: 'slug_taken' }, 409);
@@ -2114,10 +2145,11 @@ portal.post('/portal/tickets', async (c) => {
   // project/site/repo the client described, and files the real work (which
   // still needs Ali's approval).
   const intake = !projectId || body?.intake === true;
+  const filedBy = c.get('viaAgent') ? await agentApp(c) : null;
   const t = now();
   const ticket = await env.DB.prepare(
-    `INSERT INTO tickets (user_id, project_id, title, status, attention, budget_cents, kind, worked_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+    `INSERT INTO tickets (user_id, project_id, title, status, attention, budget_cents, kind, worked_by, assistant_app, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
   )
     .bind(
       user.id,
@@ -2128,6 +2160,9 @@ portal.post('/portal/tickets', async (c) => {
       budget ?? null,
       intake ? 'intake' : 'client',
       intake ? 'client_agent' : 'fleet',
+      // Which assistant filed it (MCP key or ChatGPT), for the client's start
+      // page. Only a label: source stays 'portal', so review is never skipped.
+      filedBy,
       t,
       t,
     )
@@ -2325,7 +2360,7 @@ async function loadTicket(c: Ctx, admin: boolean) {
     .bind(id)
     .first<Record<string, unknown> & Meter & { id: number; user_id: string; client_email: string; client_locale: string | null; title_en: string | null; title: string; status: Status; attention: string; kind: string; project_id: string | null }>();
   if (!ticket) return null;
-  if (admin) return ticket;
+  if (admin) return isSuperAdmin(c.get('user')) || await canWorkProject(c.env,c.get('user'),ticket.project_id) ? ticket : null;
   if (ticket.user_id === c.get('user').id) return ticket;
   // Another client's request is readable when it is a client request on a
   // project they share. Nothing else is.
@@ -2382,7 +2417,7 @@ portal.post('/portal/tickets/:id/messages', async (c) => {
       ...(ticket.kind === 'intake' ? [runIntake(env, ticket.id)] : []),
     ]),
   );
-  return reply(c, { ok: true, files: stored }, 201);
+  return reply(c, { ok: true, files: stored, messageId: stored.messageId }, 201);
 });
 
 /**
@@ -2481,29 +2516,33 @@ portal.patch('/portal/tickets/:id/budget', async (c) => {
  * sidebar polls it for the Admin entry's count.
  */
 portal.get('/admin/attention', async (c) => {
+  const scope = projectScope(c.get('user'));
   const row = await c.env.DB.prepare(
     `SELECT
-       (SELECT count(*) FROM tickets WHERE status = 'new') AS approve,
-       (SELECT count(*) FROM tickets WHERE status = 'review') AS review,
-       (SELECT count(*) FROM tickets WHERE client_waiting_since IS NOT NULL AND status NOT IN ('new', 'done', 'declined')) AS waiting,
-       (SELECT count(*) FROM ticket_runs WHERE status = 'running') AS running`,
-  ).first<{ approve: number; review: number; waiting: number; running: number }>();
+       (SELECT count(*) FROM tickets t WHERE t.status = 'new' AND ${scope.sql}) AS approve,
+       (SELECT count(*) FROM tickets t WHERE t.status = 'review' AND ${scope.sql}) AS review,
+       (SELECT count(*) FROM tickets t WHERE t.client_waiting_since IS NOT NULL AND t.status NOT IN ('new', 'done', 'declined') AND ${scope.sql}) AS waiting,
+       (SELECT count(*) FROM ticket_runs r JOIN tickets t ON t.id=r.ticket_id WHERE r.status = 'running' AND ${scope.sql}) AS running`,
+  ).bind(...scope.bindings, ...scope.bindings, ...scope.bindings, ...scope.bindings).first<{ approve: number; review: number; waiting: number; running: number }>();
   return reply(c, row ?? { approve: 0, review: 0, waiting: 0, running: 0 });
 });
 
 portal.get('/admin/tickets', async (c) => {
   const status = c.req.query('status');
   const filter = status && (STATUSES as readonly string[]).includes(status) ? status : null;
+  const projectId = c.req.query('projectId');
+  if (projectId && !await canWorkProject(c.env, c.get('user'), projectId)) return reply(c, { error: 'forbidden' }, 403);
+  const scope = projectScope(c.get('user'));
   const { results } = await c.env.DB.prepare(
     `SELECT ${TICKET_COLUMNS}, u.email AS client_email, u.name AS client_name
        FROM tickets t
        LEFT JOIN projects p ON p.id = t.project_id
        JOIN users u ON u.id = t.user_id
-      ${filter ? 'WHERE t.status = ?' : ''}
+      WHERE ${scope.sql} ${filter ? 'AND t.status = ?' : ''} ${projectId ? 'AND t.project_id = ?' : ''}
       ORDER BY (t.status = 'new') DESC, t.updated_at DESC
       LIMIT 200`,
   )
-    .bind(...(filter ? [filter] : []))
+    .bind(...scope.bindings, ...(filter ? [filter] : []), ...(projectId ? [projectId] : []))
     .all();
   return reply(c, { tickets: results });
 });
@@ -2517,14 +2556,15 @@ portal.get('/admin/search', async (c) => {
   const q = (c.req.query('q') ?? '').trim().slice(0, 100);
   if (q.length < 3) return reply(c, { hits: [] });
   const like = `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+  const scope = projectScope(c.get('user'));
   const { results } = await c.env.DB.prepare(
     `SELECT m.ticket_id AS id, max(m.id) AS mid, m.body
-       FROM ticket_messages m
+       FROM ticket_messages m JOIN tickets t ON t.id = m.ticket_id
       WHERE m.body LIKE ? ESCAPE '\\'
-      GROUP BY m.ticket_id
+      AND ${scope.sql} GROUP BY m.ticket_id
       ORDER BY mid DESC LIMIT 50`,
   )
-    .bind(like)
+    .bind(like, ...scope.bindings)
     .all<{ id: number; mid: number; body: string }>();
   const lower = q.toLowerCase();
   const hits = (results ?? []).map((r) => {
@@ -2639,6 +2679,7 @@ portal.patch('/admin/tickets/:id', async (c) => {
     } else return reply(c, { error: 'bad_project' }, 400);
   }
 
+  if (projectId !== undefined && !isSuperAdmin(c.get('user')) && !await canWorkProject(env, c.get('user'), projectId)) return reply(c, { error: 'forbidden' }, 403);
   const effectiveProject = projectId !== undefined ? projectId : ticket.project_id;
   let siteId: string | null | undefined;
   if (body?.siteId !== undefined) {
@@ -2768,7 +2809,7 @@ portal.post('/admin/tickets/:id/messages', async (c) => {
     .bind(t, ticket.id)
     .run();
   if (!internal && ticket.kind === 'client') c.executionCtx.waitUntil(relayAliReply(env, ticket, stored.messageId, msg.text, stored));
-  return reply(c, { ok: true, files: stored }, 201);
+  return reply(c, { ok: true, files: stored, messageId: stored.messageId }, 201);
 });
 
 /** "No reply needed": the client's last word (a thank-you, say) needs no answer. */
@@ -2826,7 +2867,17 @@ portal.post('/admin/tickets/:id/run-result', async (c) => {
 
 /** The fleet: what is running now, and what ran recently. */
 portal.get('/admin/runs', async (c) => {
-  const [running, recent] = await Promise.all([openRuns(c.env), recentRuns(c.env, 40)]);
+  const scope = projectScope(c.get('user'));
+  const select = `SELECT r.id, r.ticket_id, r.executor, r.model, r.status, r.cost_micro_usd, r.started_at, r.finished_at,
+    r.node_id, r.lease_expires_at, r.attempt, r.cancel_requested, r.session_id, r.session_dir, r.session_log,
+    t.title, t.status AS ticket_status, p.slug, t.project_id
+    FROM ticket_runs r JOIN tickets t ON t.id=r.ticket_id LEFT JOIN projects p ON p.id=t.project_id`;
+  const [active, latest] = await Promise.all([
+    c.env.DB.prepare(`${select} WHERE ${scope.sql} AND r.status='running' ORDER BY r.started_at`).bind(...scope.bindings).all(),
+    c.env.DB.prepare(`${select} WHERE ${scope.sql} ORDER BY r.id DESC LIMIT 40`).bind(...scope.bindings).all(),
+  ]);
+  const running = active.results ?? [];
+  const recent = latest.results ?? [];
   return reply(c, { running, recent });
 });
 
@@ -2998,6 +3049,7 @@ portal.post('/admin/work', async (c) => {
         ? await env.DB.prepare('SELECT id FROM projects WHERE slug = ?').bind(body.slug.trim().toLowerCase()).first<{ id: string }>()
         : null;
   if (!project) return reply(c, { error: 'bad_project' }, 400);
+  if (!await canWorkProject(env, c.get('user'), project.id)) return reply(c, { error: 'forbidden' }, 403);
 
   const status = body?.approve === false ? 'new' : 'approved';
   const source = body?.source === 'schedule' ? 'schedule' : 'dsh';
@@ -3276,27 +3328,30 @@ function repoStatus(p: {
 }
 
 portal.get('/admin/projects', async (c) => {
+  const scope = projectScope(c.get('user'), 'p.id');
+  const ticketScope = projectScope(c.get('user'));
   const [{ sitesDomain }, projects, slugs, counts, sites, installations, links] = await Promise.all([
     getSettings(c.env),
     c.env.DB.prepare(
       `SELECT id, slug, name, kind, brief, repo, repo_kind, repo_wanted, repo_error, repo_claim_node, repo_claim_at,
-              github_installation_id, created_by, onboarded_at, created_at
-         FROM projects ORDER BY name`,
-    ).all<ProjectRow & { repo_wanted: number; repo_error: string | null; repo_claim_node: string | null; repo_claim_at: number | null; github_installation_id: number | null }>(),
+              github_installation_id, created_by, owner_user_id, onboarded_at, created_at
+         FROM projects p WHERE ${scope.sql} ORDER BY name`,
+    ).bind(...scope.bindings).all<ProjectRow & { repo_wanted: number; repo_error: string | null; repo_claim_node: string | null; repo_claim_at: number | null; github_installation_id: number | null }>(),
     onlineSlugs(c.env),
     c.env.DB.prepare(
-      `SELECT project_id, count(*) AS n FROM tickets WHERE project_id IS NOT NULL GROUP BY project_id`,
-    ).all<{ project_id: string; n: number }>(),
-    sitesByProject(c.env),
-    c.env.DB.prepare('SELECT id, user_id, account_login FROM github_installations').all<{
+      `SELECT project_id, count(*) AS n FROM tickets t WHERE project_id IS NOT NULL AND ${ticketScope.sql} GROUP BY project_id`,
+    ).bind(...ticketScope.bindings).all<{ project_id: string; n: number }>(),
+    sitesByProject(c.env, c.get('user')),
+    c.env.DB.prepare(`SELECT i.id, i.user_id, i.account_login FROM github_installations i WHERE EXISTS (
+      SELECT 1 FROM projects p WHERE ${scope.sql} AND (p.github_installation_id=i.id OR p.owner_user_id=i.user_id OR EXISTS(SELECT 1 FROM user_projects up WHERE up.project_id=p.id AND up.user_id=i.user_id)))`).bind(...scope.bindings).all<{
       id: number;
       user_id: string | null;
       account_login: string;
     }>(),
     c.env.DB.prepare(
       `SELECT up.project_id, up.copy_mail, u.id, u.email, u.name, u.invited_at, u.verified_at
-         FROM user_projects up JOIN users u ON u.id = up.user_id ORDER BY u.email`,
-    ).all<{ project_id: string; copy_mail: number; id: string; email: string; name: string | null; invited_at: number | null; verified_at: number | null }>(),
+         FROM user_projects up JOIN users u ON u.id = up.user_id JOIN projects p ON p.id=up.project_id WHERE ${scope.sql} ORDER BY u.email`,
+    ).bind(...scope.bindings).all<{ project_id: string; copy_mail: number; id: string; email: string; name: string | null; invited_at: number | null; verified_at: number | null }>(),
   ]);
   const filed = new Map((counts.results ?? []).map((row) => [row.project_id, row.n]));
   const installationsById = new Map((installations.results ?? []).map((row) => [row.id, row]));
@@ -3392,6 +3447,7 @@ portal.patch('/admin/sites/:id', async (c) => {
   if (typeof body?.projectId !== 'string' || !body.projectId) return reply(c, { error: 'bad_project' }, 400);
   const target = await c.env.DB.prepare('SELECT 1 FROM projects WHERE id = ?').bind(body.projectId).first();
   if (!target) return reply(c, { error: 'bad_project' }, 400);
+  if (!await canWorkProject(c.env, c.get('user'), body.projectId)) return reply(c, { error: 'forbidden' }, 403);
   if (site.project_id !== body.projectId) {
     const old = site.project_id;
     await c.env.DB.prepare('UPDATE sites SET project_id = ?, is_primary = 0, updated_at = ? WHERE id = ?')
@@ -3411,7 +3467,7 @@ portal.post('/admin/projects/:id/site/retry', async (c) => {
     typeof body?.siteId === 'string' && body.siteId
       ? await getSiteById(env, body.siteId)
       : await getSite(env, c.req.param('id'));
-  if (!site) return reply(c, { error: 'not_found' }, 404);
+  if (!site || site.project_id !== c.req.param('id')) return reply(c, { error: 'not_found' }, 404);
   await env.DB.prepare(
     `UPDATE sites SET state = 'allocating', error = NULL, failure_alerted_at = NULL, created_at = ?, updated_at = ?
       WHERE id = ?`,
@@ -3426,7 +3482,7 @@ portal.post('/admin/projects/:id/site/retry', async (c) => {
 portal.get('/admin/projects/:id/site/deploys', async (c) => {
   const siteId = c.req.query('siteId');
   const site = siteId ? await getSiteById(c.env, siteId) : await getSite(c.env, c.req.param('id'));
-  if (!site) return reply(c, { error: 'not_found' }, 404);
+  if (!site || site.project_id !== c.req.param('id')) return reply(c, { error: 'not_found' }, 404);
   return reply(c, { deploys: await listDeploys(c.env, site.project_id, 50, site.id) });
 });
 
@@ -3492,9 +3548,91 @@ portal.post('/admin/projects', async (c) => {
  * Ali's hand edits to a project: its name and whether it is new or existing.
  * The slug stays: nodes map it to a folder and the first site is named after it.
  */
+portal.get('/admin/projects/:id', async (c) => {
+  const project = await c.env.DB.prepare('SELECT id,slug,name,kind,brief,repo,owner_user_id FROM projects WHERE id=?').bind(c.req.param('id')).first<{brief:string}>();
+  return project ? reply(c,{project:{...project,brief:parseBrief(project.brief)}}) : reply(c,{error:'not_found'},404);
+});
+
+portal.get('/admin/projects/:id/memberships', async (c) => {
+  const id=c.req.param('id');
+  const project=await c.env.DB.prepare('SELECT owner_user_id FROM projects WHERE id=?').bind(id).first<{owner_user_id:string|null}>();
+  if (!project) return reply(c,{error:'not_found'},404);
+  const members=await c.env.DB.prepare(`SELECT u.id AS userId,u.email,u.name,pm.member_type AS memberType,pm.created_at AS createdAt FROM project_memberships pm JOIN users u ON u.id=pm.user_id WHERE pm.project_id=? ORDER BY u.email`).bind(id).all();
+  const clients=await c.env.DB.prepare('SELECT u.id,u.email,u.name FROM user_projects up JOIN users u ON u.id=up.user_id WHERE up.project_id=? ORDER BY u.email').bind(id).all();
+  return reply(c,{ownerUserId:project.owner_user_id,memberships:members.results??[],clients:clients.results??[]});
+});
+portal.post('/admin/projects/:id/memberships', async (c) => {
+  if (!isSuperAdmin(c.get('user'))) return reply(c,{error:'forbidden'},403);
+  const body=await readJson<{userId?:unknown;email?:unknown}>(c);
+  const email=cleanEmail(body?.email);
+  const user=typeof body?.userId==='string'
+    ? await c.env.DB.prepare('SELECT id FROM users WHERE id=? AND verified_at IS NOT NULL').bind(body.userId).first<{id:string}>()
+    : email ? await c.env.DB.prepare('SELECT id FROM users WHERE email=? AND verified_at IS NOT NULL').bind(email).first<{id:string}>() : null;
+  if (!user) return reply(c,{error:'account_required'},400);
+  const exists=await c.env.DB.prepare('SELECT 1 FROM projects WHERE id=?').bind(c.req.param('id')).first();
+  if (!exists) return reply(c,{error:'not_found'},404);
+  await c.env.DB.prepare(`INSERT INTO project_memberships(project_id,user_id,member_type,granted_by,created_at) VALUES (?,?,'trusted_developer',?,?) ON CONFLICT(project_id,user_id) DO NOTHING`).bind(c.req.param('id'),user.id,c.get('user').id,now()).run();
+  return reply(c,{ok:true});
+});
+portal.delete('/admin/projects/:id/memberships/:userId', async (c) => {
+  if (!isSuperAdmin(c.get('user')) && !await ownsProject(c.env,c.get('user'),c.req.param('id'))) return reply(c,{error:'forbidden'},403);
+  await c.env.DB.prepare('DELETE FROM project_memberships WHERE project_id=? AND user_id=?').bind(c.req.param('id'),c.req.param('userId')).run();
+  return reply(c,{ok:true});
+});
+const secretName = (name:string) => /^[A-Za-z_][A-Za-z0-9_.-]{0,127}$/.test(name);
+portal.get('/admin/projects/:id/secrets', async (c) => {
+  if (!c.env.SESSION_SECRET) return reply(c,{error:'secrets_unavailable'},503);
+  const rows=await c.env.DB.prepare('SELECT name,updated_at AS updatedAt FROM project_secrets WHERE project_id=? ORDER BY name').bind(c.req.param('id')).all();
+  return reply(c,{secrets:rows.results??[]});
+});
+portal.put('/admin/projects/:id/secrets/:name', async (c) => {
+  if (!c.env.SESSION_SECRET) return reply(c,{error:'secrets_unavailable'},503);
+  const name=c.req.param('name'),id=c.req.param('id');
+  const body=await readJson<{value?:unknown}>(c);
+  if (!secretName(name) || typeof body?.value!=='string' || body.value.length>16384) return reply(c,{error:'bad_secret'},400);
+  const value=await sealProjectSecret(c.env,id,name,body.value);
+  await c.env.DB.prepare('INSERT INTO project_secrets(project_id,name,value_enc,updated_by,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(project_id,name) DO UPDATE SET value_enc=excluded.value_enc,updated_by=excluded.updated_by,updated_at=excluded.updated_at').bind(id,name,value,c.get('user').id,now()).run();
+  return reply(c,{ok:true});
+});
+portal.post('/admin/projects/:id/secrets/:name/reveal', async (c) => {
+  if (!c.env.SESSION_SECRET) return reply(c,{error:'secrets_unavailable'},503);
+  const id=c.req.param('id'),name=c.req.param('name');
+  const row=await c.env.DB.prepare('SELECT value_enc FROM project_secrets WHERE project_id=? AND name=?').bind(id,name).first<{value_enc:string}>();
+  if (!row) return reply(c,{error:'not_found'},404);
+  c.header('Cache-Control','no-store');
+  try { return reply(c,{value:await openProjectSecret(c.env,id,name,row.value_enc)}); }
+  catch { return reply(c,{error:'secrets_unavailable'},503); }
+});
+portal.delete('/admin/projects/:id/secrets/:name', async (c) => {
+  if (!c.env.SESSION_SECRET) return reply(c,{error:'secrets_unavailable'},503);
+  await c.env.DB.prepare('DELETE FROM project_secrets WHERE project_id=? AND name=?').bind(c.req.param('id'),c.req.param('name')).run();
+  return reply(c,{ok:true});
+});
+portal.post('/admin/projects/:id/git-token', async (c) => {
+  const project=await c.env.DB.prepare('SELECT repo,github_installation_id FROM projects WHERE id=?').bind(c.req.param('id')).first<{repo:string|null;github_installation_id:number|null}>();
+  const repo=project?.repo?.match(/^(?:https:\/\/github\.com\/|git@github\.com:)?([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/);
+  if (!repo || !project?.github_installation_id) return reply(c,{error:'github_installation_required'},409);
+  const install=await c.env.DB.prepare('SELECT account_login FROM github_installations WHERE id=?').bind(project.github_installation_id).first<{account_login:string}>();
+  if (!install || install.account_login.toLowerCase()!==repo[1].toLowerCase()) return reply(c,{error:'github_installation_required'},409);
+  c.header('Cache-Control','no-store');
+  try {
+    const token=await installationToken(c.env,project.github_installation_id,[repo[2]]);
+    return reply(c,{...token,repo:`${repo[1]}/${repo[2]}`});
+  } catch { return reply(c,{error:'github_token_unavailable'},502); }
+});
+
 portal.patch('/admin/projects/:id', async (c) => {
-  const body = await readJson<{ name?: unknown; kind?: unknown }>(c);
+  const body = await readJson<{ name?: unknown; kind?: unknown; brief?: unknown }>(c);
+  const current = await c.env.DB.prepare('SELECT kind FROM projects WHERE id = ?').bind(c.req.param('id')).first<{kind:string}>();
+  if (!current) return reply(c, { error: 'not_found' }, 404);
   const sets: [string, unknown][] = [];
+  if (body?.brief !== undefined) {
+    const kind = body.kind ?? current.kind;
+    if (!isProjectKind(kind)) return reply(c, {error:'bad_kind'},400);
+    const brief = cleanBrief(body.brief, kind);
+    if (!brief) return reply(c, {error:'bad_brief'},400);
+    sets.push(['brief', JSON.stringify(brief)]);
+  }
   if (body?.name !== undefined) {
     const name = cleanText(body.name, MAX_NAME_CHARS);
     if (!name) return reply(c, { error: 'bad_name' }, 400);
@@ -3509,8 +3647,8 @@ portal.patch('/admin/projects/:id', async (c) => {
     .bind(...sets.map(([, v]) => v), c.req.param('id'))
     .run();
   if (!res.meta.changes) return reply(c, { error: 'not_found' }, 404);
-  const project = await c.env.DB.prepare('SELECT id, slug, name, kind FROM projects WHERE id = ?').bind(c.req.param('id')).first();
-  return reply(c, { ok: true, project });
+  const project = await c.env.DB.prepare('SELECT id, slug, name, kind, brief FROM projects WHERE id = ?').bind(c.req.param('id')).first<{id:string;slug:string;name:string;kind:string;brief:string}>();
+  return reply(c, { ok: true, project: project ? {...project,brief:parseBrief(project.brief)} : null });
 });
 
 /** Name the project's repo. Replaces whatever was there, and stops any pending creation. */
@@ -3520,7 +3658,7 @@ portal.put('/admin/projects/:id/repo', async (c) => {
   if (!repo || /^https:\/\/[^/]*@/i.test(repo)) return reply(c, { error: 'bad_repo' }, 400);
   const res = await c.env.DB.prepare(
     `UPDATE projects SET repo = ?, repo_kind = 'repo', repo_wanted = 0, repo_error = NULL,
-            repo_claim_node = NULL, repo_claim_at = NULL WHERE id = ?`,
+            repo_claim_node = NULL, repo_claim_at = NULL, github_installation_id = NULL WHERE id = ?`,
   )
     .bind(repo, c.req.param('id'))
     .run();
@@ -3581,6 +3719,8 @@ portal.post('/admin/projects/:id/repo/github', async (c) => {
             .bind(id)
             .first<{ id: number; account_login: string }>();
   if (!installation) return reply(c, { error: 'no_github' }, 400);
+  const related = await c.env.DB.prepare(`SELECT 1 FROM github_installations i JOIN projects p ON p.id=? WHERE i.id=? AND (p.github_installation_id=i.id OR p.owner_user_id=i.user_id OR EXISTS (SELECT 1 FROM user_projects up WHERE up.project_id=p.id AND up.user_id=i.user_id))`).bind(id,installation.id).first();
+  if (!related) return reply(c,{error:'no_github'},400);
   try {
     const out = await useClientRepo(c.env, project, installation);
     return reply(c, { ok: true, repo: out.repo, outcome: out.outcome, account: installation.account_login });
@@ -3606,8 +3746,10 @@ portal.post('/admin/projects/:id/site/host', async (c) => {
     const wanted = Number(body?.connectionId);
     const connection = Number.isInteger(wanted) && wanted > 0 ? await connectionRow(c.env, wanted) : null;
     if (!connection) return reply(c, { error: 'no_cloudflare' }, 400);
+    const related = await c.env.DB.prepare(`SELECT 1 FROM projects p WHERE p.id=? AND (p.owner_user_id=? OR EXISTS (SELECT 1 FROM user_projects up WHERE up.project_id=p.id AND up.user_id=?))`).bind(id,connection.user_id,connection.user_id).first();
+    if (!related) return reply(c,{error:'no_cloudflare'},400);
     const accounts = grantedAccounts(connection);
-    const account = accounts.find((a) => a.id === body.accountId) ?? accounts[0];
+    const account = body.accountId ? accounts.find((a) => a.id === body.accountId) : accounts[0];
     if (!account) return reply(c, { error: 'no_cloudflare_account' }, 400);
     target = { id: connection.id, accountId: account.id };
   }
@@ -3672,6 +3814,13 @@ portal.post('/admin/projects/:id/site/domain', async (c) => {
       .sort((a, b) => (b.name?.length ?? 0) - (a.name?.length ?? 0))[0];
     if (!match?.id) return reply(c, { error: 'no_zone', hostname }, 409);
     zoneId = match.id;
+  } else {
+    // A connection can cover several accounts. A supplied zone must still be
+    // inside this site's selected account and contain the requested hostname.
+    const zone = await cf(`/zones/${encodeURIComponent(zoneId)}`);
+    const data = zone.data?.result as { name?: string; account?: { id?: string } } | undefined;
+    if (!zone.ok || data?.account?.id !== site.cloudflare_account_id || !data.name ||
+        !(hostname === data.name || hostname.endsWith(`.${data.name}`))) return reply(c, { error: 'no_zone', hostname }, 409);
   }
 
   const attach = () =>
@@ -3767,7 +3916,7 @@ portal.post('/admin/projects/:id/site/rebuild', async (c) => {
     typeof body?.siteId === 'string' && body.siteId
       ? await getSiteById(c.env, body.siteId)
       : await getSite(c.env, c.req.param('id'));
-  if (!site) return reply(c, { error: 'not_found' }, 404);
+  if (!site || site.project_id !== c.req.param('id')) return reply(c, { error: 'not_found' }, 404);
   const res = await c.env.DB.prepare(
     `UPDATE sites SET rebuild_requested_at = ?, rebuild_error = NULL WHERE id = ? AND state = 'ready'`,
   )
@@ -3795,8 +3944,10 @@ portal.post('/admin/projects/:id/site', async (c) => {
     const wantedConnection = Number(body?.connectionId);
     const connection = Number.isInteger(wantedConnection) && wantedConnection > 0 ? await connectionRow(c.env, wantedConnection) : null;
     if (!connection) return reply(c, { error: 'no_cloudflare' }, 400);
+    const related = await c.env.DB.prepare(`SELECT 1 FROM projects p WHERE p.id=? AND (p.owner_user_id=? OR EXISTS (SELECT 1 FROM user_projects up WHERE up.project_id=p.id AND up.user_id=?))`).bind(project.id,connection.user_id,connection.user_id).first();
+    if (!related) return reply(c,{error:'no_cloudflare'},400);
     const accounts = grantedAccounts(connection);
-    const account = accounts.find((a) => a.id === body.accountId) ?? accounts[0];
+    const account = body.accountId ? accounts.find((a) => a.id === body.accountId) : accounts[0];
     if (!account) return reply(c, { error: 'no_cloudflare_account' }, 400);
     host = 'cloudflare';
     connectionId = connection.id;
@@ -3889,6 +4040,11 @@ portal.delete('/admin/clients/:userId/projects/:projectId', async (c) => {
   const { userId, projectId } = c.req.param();
   await c.env.DB.prepare('DELETE FROM user_projects WHERE user_id = ? AND project_id = ?')
     .bind(userId, projectId)
+    .run();
+  // Removing the owning client removes their ownership too; ownership is never
+  // transferred silently to another account.
+  await c.env.DB.prepare('UPDATE projects SET owner_user_id = NULL WHERE id = ? AND owner_user_id = ?')
+    .bind(projectId, userId)
     .run();
   return reply(c, { ok: true });
 });

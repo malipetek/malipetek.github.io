@@ -10,6 +10,8 @@ import PostalMime from 'postal-mime';
 import { verifySender } from '../src/mailauth.ts';
 import {
   adminEmails,
+  assistantEmails,
+  canUseAssistant,
   corsHeaders,
   isAdminEmail,
   isAllowedOrigin,
@@ -1049,16 +1051,20 @@ test('first preview: the client is not charged for it, and the run cost is still
   assert.equal(normal.totalCents, 10200);
 });
 
-test('mcp: /mcp advertises the assistant as a builder on the project', () => {
+test('mcp: /mcp describes preview edits without bypassing approval', () => {
   const tools = toolsFor('portal', null) as { name: string; description?: string }[];
   const start = tools.find((tool) => tool.name === 'start_change');
   assert.ok(start, 'start_change is advertised');
-  assert.match(start.description ?? '', /builder on this project/);
-  assert.match(PORTAL_INSTRUCTIONS, /builder on this project/);
-  assert.match(PORTAL_INSTRUCTIONS, /We can keep working on it together until/);
-  assert.match(PORTAL_INSTRUCTIONS, /preview every step live/);
+  assert.match(start.description ?? '', /preview workspace/);
+  assert.match(start.description ?? '', /does not publish to production or start a paid review/);
+  assert.match(start.description ?? '', /site_publish only after the client confirms/);
+  assert.doesNotMatch(start.description ?? '', /no approval|change anything|same footing/);
+  assert.match(PORTAL_INSTRUCTIONS, /preview workspace/);
+  assert.match(PORTAL_INSTRUCTIONS, /site_publish is a separate action/);
+  assert.match(PORTAL_INSTRUCTIONS, /explicit confirmation/);
+  assert.doesNotMatch(PORTAL_INSTRUCTIONS, /no approval|do not ask permission|costs nothing/);
   // The safety facts stay true.
-  assert.match(PORTAL_INSTRUCTIONS, /never straight to production/);
+  assert.match(PORTAL_INSTRUCTIONS, /Changes go to the preview/);
   assert.match(PORTAL_INSTRUCTIONS, /every change, every review choice and every publish/);
 });
 
@@ -1506,6 +1512,19 @@ test('admins: ADMIN_EMAILS is trimmed, case-insensitive, and ADMIN_EMAIL still w
   assert.equal(primaryAdminEmail(env({})), null);
 });
 
+/* —— assistant connections: clients, plus explicitly listed owner accounts —— */
+
+test('assistant allowlist: clients always, listed addresses too, nobody else', () => {
+  const env = (vars: Partial<Env>) => vars as Env;
+  const listed = env({ ASSISTANT_EMAILS: ' Malipetek@Gmail.com , demo@example.com, malipetek@gmail.com ' });
+  assert.deepEqual(assistantEmails(listed), ['malipetek@gmail.com', 'demo@example.com']);
+  assert.equal(canUseAssistant(listed, { email: 'malipetek@gmail.com', role: 'admin' }), true);
+  assert.equal(canUseAssistant(listed, { email: 'other@example.com', role: 'admin' }), false);
+  assert.equal(canUseAssistant(listed, { email: 'client@example.com', role: 'client' }), true);
+  // Closed by default: no list means admins stay out, exactly as before.
+  assert.equal(canUseAssistant(env({}), { email: 'malipetek@gmail.com', role: 'admin' }), false);
+});
+
 /* —— PTech Admin device sign-in (custom-scheme PKCE) —— */
 
 type FakeRow = Record<string, unknown>;
@@ -1583,6 +1602,9 @@ function fakeDb() {
         rows: row && row.used_at === null && Number(row.expires_at) > at ? [{ label: row.label, expires_at: row.expires_at }] : [],
         changes: 0,
       };
+    }
+    if (text.startsWith('SELECT project_id FROM project_memberships WHERE user_id = ?')) {
+      return { rows: [], changes: 0 };
     }
     if (text.startsWith('SELECT id, email, name, role, locale FROM users')) {
       const row = users.get(String(args[0]));

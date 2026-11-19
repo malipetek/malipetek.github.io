@@ -16,6 +16,7 @@
  * verifier, and no session exists until the app proves it wrote the challenge.
  */
 import { fromBase64Url, now, randomToken, sha256, type Env } from './shared.ts';
+import { accessFor } from './projectAccess.ts';
 
 /** How long the app has to get the person to the browser and approve. */
 export const DEVICE_TTL_SECONDS = 10 * 60;
@@ -146,7 +147,7 @@ export async function approveDevice(
   user: { id: string; role: string },
   deviceCode: string,
 ): Promise<{ code: string; state: string | null } | null> {
-  if (user.role !== 'admin') return null;
+  if (!(await accessFor(env, user)).canUseWorkbench) return null;
   if (!deviceCode || deviceCode.length > MAX_DEVICE_CODE_CHARS) return null;
   const code = randomToken();
   const t = now();
@@ -182,9 +183,7 @@ export async function exchangeDevice(env: Env, code: string, verifier: string): 
     .bind(t, await sha256(code), t, await sha256(verifier))
     .first<{ user_id: string }>();
   if (!claimed) return null;
-  return (
-    (await env.DB.prepare('SELECT id, email, name, role, locale FROM users WHERE id = ?')
-      .bind(claimed.user_id)
-      .first<DeviceUser>()) ?? null
-  );
+  const user = await env.DB.prepare('SELECT id, email, name, role, locale FROM users WHERE id = ?')
+    .bind(claimed.user_id).first<DeviceUser>();
+  return user && (await accessFor(env, user)).canUseWorkbench ? user : null;
 }

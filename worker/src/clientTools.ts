@@ -161,12 +161,11 @@ export const CLIENT_TOOLS: ClientTool[] = [
     },
     readOnly: true,
     // The sidebar entry's icon (ChatGPT reads it from the entrypoint tool). Hosts
-    // draw it as a one-colour glyph: its transparency is a mask they tint, so a
-    // photo turns into a solid or inverted square. public/plugin-glyph.svg is a
-    // line mark on transparent; the photo stays the listing logo.
+    // draw it as a one-colour glyph: its transparency is a mask they tint, so the
+    // PTech symbol is on transparent. The listing logo stays the plugin package's.
     icons: [
-      { src: 'https://malipetek.dev/plugin-glyph.svg', mimeType: 'image/svg+xml', sizes: ['any'] },
-      { src: 'https://malipetek.dev/plugin-glyph.png', mimeType: 'image/png', sizes: ['256x256'] },
+      { src: 'https://ptechsolutions.net/ptech-glyph.svg', mimeType: 'image/svg+xml', sizes: ['any'] },
+      { src: 'https://ptechsolutions.net/ptech-glyph.png', mimeType: 'image/png', sizes: ['512x512'] },
     ],
     _meta: {
       ui: { resourceUri: BOARD_UI_URI },
@@ -293,7 +292,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'start_change',
     title: 'Start a change',
     description:
-      'Make a change to one of the client’s hosted sites yourself. You are a builder on this project, with the same footing as our agents: you read the source, change it, build the preview and keep iterating with the client. This costs nothing on PTech: no AI cost, no approval to wait for, and you may change anything in the site. It opens a request of its own, so there is a record of who changed what. Then: project_context and workspace_files to read the site, submit_change with the files, preview_build, and when the preview has it, show the link and ask what to change next.',
+      'Open a change request for one of the client’s hosted sites and get a preview workspace for it. It records who is making the change. It does not publish to production or start a paid review. Read the site with project_context and workspace_files, send the changed files with submit_change, then rebuild the preview with preview_build. Publishing is a separate action: site_publish only after the client confirms that exact site and action. A developer review is optional and paid (finish_change).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -340,7 +339,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
   {
     name: 'workspace_read',
     title: 'Read a source file',
-    description: 'One file’s full text from the site’s current preview, by path from workspace_files.',
+    description: 'One file’s full text from the site’s current preview, by path from workspace_files. The text is in `source`.',
     inputSchema: {
       type: 'object',
       properties: { request_id: REQUEST_ID, path: { type: 'string', description: 'A path exactly as workspace_files listed it.' } },
@@ -353,7 +352,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'submit_change',
     title: 'Send a change',
     description:
-      'Send the files you changed, whole contents, at most 40 files and 2 MB, for a request from start_change (or one a developer approved). They land on the request’s own branch and the preview, never production, and are recorded with your name and the file list. Then call preview_build, show the client the link, and ask what to change next.',
+      'Send the files you changed, whole contents, at most 40 files and 2 MB, for a request from start_change (or one a developer approved). They land on the request’s own branch and the preview, never production, and are recorded with your name and the file list.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -379,7 +378,7 @@ export const CLIENT_TOOLS: ClientTool[] = [
     name: 'preview_build',
     title: 'Build the preview',
     description:
-      'Apply the change you sent with submit_change and rebuild the preview site. A machine picks it up, usually within a minute or two; portal_request then shows the preview link in the thread. Send the change first, then show the link and keep going with the client.',
+      'Apply the change you sent with submit_change and rebuild the preview site. A machine picks it up, usually within a minute or two; portal_request then shows the preview link in the thread.',
     inputSchema: { type: 'object', properties: { request_id: REQUEST_ID }, required: ['request_id'], additionalProperties: false },
     readOnly: false,
   },
@@ -514,6 +513,8 @@ async function portalCall(env: Env, ctx: Ctx, token: string, method: string, pat
     const hint: Record<string, string> = {
       unauthorized: 'The agent token is missing, wrong or revoked. Make a new one in the portal: Connect an assistant.',
       not_found: 'No such request or project on this account.',
+      not_hosted: 'This project has no hosted preview yet. A developer must set up the site first.',
+      file_not_found: 'That path is not in the current preview. Use workspace_files to list the exact paths.',
       rate_limited: 'Too many requests for now; try again later.',
       bad_ticket: 'The title (up to 140 characters) and the body are both required; attention must be auto, checked or hands_on; a budget is 1–10000 whole dollars.',
       bad_budget: 'A budget is a whole number of dollars from 1 to 10000, or null for none.',
@@ -675,8 +676,8 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
       return {
         request_id: out?.id,
         status: 'In progress',
-        cost: 'None on PTech: you are doing the work on the client’s own subscription.',
-        next: 'Read the site with project_context, workspace_files and workspace_read, send the files with submit_change, then preview_build. When portal_request shows the preview link, show it to the client, ask what to change next, and keep going until they are happy. Then finish_change: a developer reviews it first, or they publish it themselves with site_publish.',
+        cost: 'This call starts no review. A developer review, if the client chooses one, is billed separately.',
+        next: 'The request has a workspace: project_context and workspace_files describe it, workspace_read returns a file, submit_change sends whole files, preview_build rebuilds the preview, site_publish publishes, finish_change records the review choice.',
         review: reviewEstimate(),
       };
     }
@@ -699,8 +700,21 @@ export async function callClientTool(env: Env, ctx: Ctx, token: string | null, n
       return portalCall(env, ctx, token, 'GET', `/portal/tickets/${Number.isInteger(id) ? id : 0}/context`);
     case 'workspace_files':
       return portalCall(env, ctx, token, 'GET', `/portal/tickets/${Number.isInteger(id) ? id : 0}/workspace`);
-    case 'workspace_read':
-      return portalCall(env, ctx, token, 'GET', `/portal/tickets/${Number.isInteger(id) ? id : 0}/workspace/file?path=${encodeURIComponent(String(args.path ?? ''))}`);
+    case 'workspace_read': {
+      const path = typeof args.path === 'string' ? args.path.trim() : '';
+      if (!Number.isInteger(id) || id <= 0) {
+        throw new Error('bad_request: pass the request id from start_change or portal_requests.');
+      }
+      if (!path) throw new Error('bad_path: pass the file path exactly as workspace_files listed it.');
+      const out = await portalCall(env, ctx, token, 'GET', `/portal/tickets/${id}/workspace/file?path=${encodeURIComponent(path)}`);
+      if (!out || typeof out.content !== 'string') {
+        throw new Error('bad_workspace: the portal returned no file text. Try workspace_files again.');
+      }
+      // Not `content`: that is the MCP result envelope's own field name, and
+      // ChatGPT drops a text result whose JSON carries a top-level `content`
+      // key (it showed the call's arguments instead of the file).
+      return { path, bytes: new TextEncoder().encode(out.content).length, source: out.content };
+    }
     case 'submit_change':
       return portalCall(env, ctx, token, 'POST', `/portal/tickets/${Number.isInteger(id) ? id : 0}/change`, { files: args.files });
     case 'preview_build': {
