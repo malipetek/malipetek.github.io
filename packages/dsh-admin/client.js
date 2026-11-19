@@ -10616,8 +10616,82 @@ ${question.text ?? ""}`)) {
     const who = plot.client ? `${plot.name} (${plot.client})` : plot.name;
     return `${who} \u2014 ${plot.state}: ${countsSummary(plot.counts)}`;
   }
+  var PARK_FILTERS = Object.freeze([
+    { key: "all", label: "All" },
+    { key: "needsYou", label: "Needs you" },
+    { key: "failing", label: "Failing" },
+    { key: "stalled", label: "Stalled" },
+    { key: "running", label: "Running" }
+  ]);
+  function plotMatches(plot, filter) {
+    if (!filter || filter === "all") return true;
+    return Number(plot?.counts?.[filter] ?? 0) > 0;
+  }
+  function filterCounts(plots = []) {
+    const out = { all: 0, needsYou: 0, failing: 0, stalled: 0, running: 0 };
+    for (const plot of plots) {
+      out.all += 1;
+      for (const key of ["needsYou", "failing", "stalled", "running"]) {
+        if (plotMatches(plot, key)) out[key] += 1;
+      }
+    }
+    return out;
+  }
+  function shortAge(seconds) {
+    const s = Math.max(0, Math.floor(Number(seconds) || 0));
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h`;
+    return `${Math.floor(s / 86400)}d`;
+  }
+  var KIND_RANK = Object.freeze({ stalled: 0, needsYou: 1, running: 2, open: 3 });
+  function runStartsByTicket(runs) {
+    const list = Array.isArray(runs) ? runs : Array.isArray(runs?.running) ? runs.running : [];
+    const starts = /* @__PURE__ */ new Map();
+    for (const run of list) {
+      if (!run || run.ticket_id === null || run.ticket_id === void 0) continue;
+      if (run.finished_at || TERMINAL_RUN_STATUSES.has(String(run.status ?? "").toLowerCase())) continue;
+      const started = toUnixSeconds(run.started_at ?? run.created_at);
+      const key = String(run.ticket_id);
+      if (started && (!starts.has(key) || started < starts.get(key))) starts.set(key, started);
+    }
+    return starts;
+  }
+  function plotTickets(plot, tickets = [], runs = [], now = Date.now()) {
+    if (!plot) return [];
+    const nowSeconds = toUnixSeconds(now) || Date.now() / 1e3;
+    const running = activeRunTicketKeys(runs);
+    const starts = runStartsByTicket(runs);
+    const rows = [];
+    for (const ticket of Array.isArray(tickets) ? tickets : []) {
+      if (!ticket || isClosedTicket(ticket)) continue;
+      if (String(ticket.project_id ?? "") !== String(plot.id)) continue;
+      const key = String(ticket.id);
+      const kind = isStalledTicket(ticket, nowSeconds) ? "stalled" : isNeedsYouTicket(ticket) ? "needsYou" : ticket.status === "in_progress" && running.has(key) ? "running" : "open";
+      const since = kind === "running" ? starts.get(key) : toUnixSeconds(ticket.updated_at ?? ticket.created_at);
+      const app = typeof ticket.assistant_app === "string" && ticket.assistant_app.trim() ? ticket.assistant_app.trim() : null;
+      rows.push({
+        id: ticket.id,
+        title: typeof ticket.title === "string" && ticket.title.trim() ? ticket.title.trim() : `#${ticket.id}`,
+        status: ticket.status ?? "open",
+        kind,
+        age: since ? shortAge(nowSeconds - since) : null,
+        ageSeconds: since ? Math.max(0, nowSeconds - since) : 0,
+        via: app
+      });
+    }
+    rows.sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || b.ageSeconds - a.ageSeconds);
+    return rows;
+  }
+  function plotHeadline(plot, tickets = [], runs = [], now = Date.now()) {
+    const top = plotTickets(plot, tickets, runs, now)[0];
+    if (!top) return null;
+    const title = top.title.length > 28 ? `${top.title.slice(0, 27)}\u2026` : top.title;
+    return [`#${top.id} ${title}`, top.via ? `via ${top.via}` : null, top.age].filter(Boolean).join(" \xB7 ");
+  }
 
   // packages/dsh-admin/src/project-park.jsx
+  var KIND_LABEL = { stalled: "Stalled", needsYou: "Needs you", running: "Running", open: "Open" };
   var STROKE_INK = 1.2;
   function round1(value) {
     return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
@@ -10754,7 +10828,7 @@ ${question.text ?? ""}`)) {
       /* @__PURE__ */ jsx("text", { x: rx, y: round1(ry + 2.5), textAnchor: "middle", className: "pta-park__beacon-num", children: text })
     ] });
   }
-  function PlotTile({ plot, opts, active, onActivate, onDeactivate, onSelect }) {
+  function PlotTile({ plot, opts, active, dimmed = false, picked = false, onActivate, onDeactivate, onSelect, onStep }) {
     const { x, y, state, counts, name } = plot;
     const center = iso2(x, y, 0, opts);
     const pad = isoBoxFaces(x - 0.42, y - 0.42, 0, 0.84, 0.84, 4, opts);
@@ -10793,17 +10867,21 @@ ${question.text ?? ""}`)) {
     return /* @__PURE__ */ jsxs(
       "g",
       {
-        className: `pta-park__plot${active ? " is-active" : ""}`,
+        className: `pta-park__plot${active ? " is-active" : ""}${dimmed ? " is-dimmed" : ""}${picked ? " is-picked" : ""}`,
         "data-state": state,
         "data-plot-id": String(plot.id),
         role: "button",
         tabIndex: 0,
         "aria-label": ariaLabel,
+        "aria-expanded": picked,
         onClick: open,
         onKeyDown: (event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             open();
+          } else if (["j", "k", "ArrowRight", "ArrowLeft"].includes(event.key)) {
+            event.preventDefault();
+            onStep?.(plot.id, event.key === "j" || event.key === "ArrowRight" ? 1 : -1);
           }
         },
         onMouseEnter: () => onActivate(plot.id),
@@ -10901,12 +10979,39 @@ ${question.text ?? ""}`)) {
       }
     );
   }
-  function ProjectPark({ projects = [], tickets = [], runs = [], now = Date.now(), onSelect }) {
+  function ProjectPark({ projects = [], tickets = [], runs = [], now = Date.now(), onSelect, onOpenTicket }) {
     const [activeId, setActiveId] = useState(null);
+    const [filter, setFilter] = useState("all");
+    const [pickedId, setPickedId] = useState(null);
+    const rootRef = useRef(null);
     const plots = useMemo(
       () => parkPlots({ projects, tickets, runs, now }),
       [projects, tickets, runs, now]
     );
+    const counts = useMemo(() => filterCounts(plots), [plots]);
+    useEffect(() => {
+      if (pickedId === null) return void 0;
+      const onKey = (event) => {
+        if (event.key === "Escape") setPickedId(null);
+      };
+      const onDown = (event) => {
+        if (rootRef.current && !rootRef.current.contains(event.target)) setPickedId(null);
+      };
+      document.addEventListener("keydown", onKey);
+      document.addEventListener("mousedown", onDown);
+      return () => {
+        document.removeEventListener("keydown", onKey);
+        document.removeEventListener("mousedown", onDown);
+      };
+    }, [pickedId]);
+    const step = (id, delta) => {
+      const order = plots.filter((plot) => plotMatches(plot, filter));
+      if (order.length === 0) return;
+      const at = order.findIndex((plot) => plot.id === id);
+      const next = order[(at + delta + order.length) % order.length];
+      const el = rootRef.current?.querySelector(`[data-plot-id="${CSS.escape(String(next.id))}"]`);
+      el?.focus();
+    };
     const painted = useMemo(
       () => [...plots].sort((a, b) => a.x + a.y - (b.x + b.y) || a.x - a.y - (b.x - b.y)),
       [plots]
@@ -10937,9 +11042,16 @@ ${question.text ?? ""}`)) {
     }, [plots]);
     if (!layout || plots.length === 0) return null;
     const activePlot = activeId !== null ? plots.find((plot) => plot.id === activeId) ?? null : null;
+    const activeHeadline = activePlot ? plotHeadline(activePlot, tickets, runs, now) : null;
+    const pickedPlot = pickedId !== null ? plots.find((plot) => plot.id === pickedId) ?? null : null;
+    const pickedRows = pickedPlot ? plotTickets(pickedPlot, tickets, runs, now).slice(0, 4) : [];
+    const pickedProject = pickedPlot ? projects.find((p) => String(p?.id) === String(pickedPlot.id)) : null;
+    const pickedSite = pickedProject ? Array.isArray(pickedProject.sites) ? pickedProject.sites[0] : pickedProject.site : null;
+    const pickedUrl = pickedSite?.customDomain ? `https://${String(pickedSite.customDomain).replace(/^https?:\/\//, "")}` : pickedSite?.productionUrl ?? null;
+    const pick = (plot) => setPickedId((prev) => prev === plot.id ? null : plot.id);
     const activate = (id) => setActiveId(id);
     const deactivate = (id) => setActiveId((prev) => prev === id ? null : prev);
-    return /* @__PURE__ */ jsxs("section", { className: "pta-park", "aria-label": "Project park", children: [
+    return /* @__PURE__ */ jsxs("section", { className: "pta-park", "aria-label": "Project park", ref: rootRef, children: [
       /* @__PURE__ */ jsxs("div", { className: "pta-park__head", children: [
         /* @__PURE__ */ jsxs("div", { className: "pta-park__title", children: [
           /* @__PURE__ */ jsx("span", { className: "pta-park__label", children: "Project park" }),
@@ -10951,25 +11063,23 @@ ${question.text ?? ""}`)) {
             "\xB7 ",
             activePlot.client
           ] }) : null,
-          /* @__PURE__ */ jsx("span", { className: "pta-park__tip-counts", children: countsSummary(activePlot.counts) })
-        ] }) : /* @__PURE__ */ jsxs("div", { className: "pta-park__legend", "aria-hidden": "true", children: [
-          /* @__PURE__ */ jsxs("span", { className: "pta-park__leg", children: [
-            /* @__PURE__ */ jsx("i", { className: "pta-park__swatch pta-park__swatch--bad" }),
-            "Bad"
-          ] }),
-          /* @__PURE__ */ jsxs("span", { className: "pta-park__leg", children: [
-            /* @__PURE__ */ jsx("i", { className: "pta-park__swatch pta-park__swatch--attention" }),
-            "Attention"
-          ] }),
-          /* @__PURE__ */ jsxs("span", { className: "pta-park__leg", children: [
-            /* @__PURE__ */ jsx("i", { className: "pta-park__swatch pta-park__swatch--active" }),
-            "Active"
-          ] }),
-          /* @__PURE__ */ jsxs("span", { className: "pta-park__leg", children: [
-            /* @__PURE__ */ jsx("i", { className: "pta-park__swatch pta-park__swatch--calm" }),
-            "Calm"
-          ] })
-        ] })
+          /* @__PURE__ */ jsx("span", { className: "pta-park__tip-counts", children: activeHeadline ?? countsSummary(activePlot.counts) })
+        ] }) : /* @__PURE__ */ jsx("div", { className: "pta-park__filters", role: "group", "aria-label": "Filter projects", children: PARK_FILTERS.map((f) => /* @__PURE__ */ jsxs(
+          "button",
+          {
+            type: "button",
+            className: `pta-park__filter pta-park__filter--${f.key}`,
+            "aria-pressed": filter === f.key,
+            disabled: f.key !== "all" && counts[f.key] === 0,
+            onClick: () => setFilter((prev) => prev === f.key ? "all" : f.key),
+            children: [
+              f.key !== "all" ? /* @__PURE__ */ jsx("i", { className: "pta-park__swatch", "aria-hidden": "true" }) : null,
+              f.label,
+              /* @__PURE__ */ jsx("span", { className: "pta-park__filter-n", children: counts[f.key] })
+            ]
+          },
+          f.key
+        )) })
       ] }),
       /* @__PURE__ */ jsx("div", { className: "pta-park__scroll", children: /* @__PURE__ */ jsxs(
         "svg",
@@ -10992,15 +11102,52 @@ ${question.text ?? ""}`)) {
                 plot,
                 opts: layout.opts,
                 active: activeId === plot.id,
+                dimmed: !plotMatches(plot, filter),
+                picked: pickedId === plot.id,
                 onActivate: activate,
                 onDeactivate: deactivate,
-                onSelect
+                onSelect: pick,
+                onStep: step
               },
               String(plot.id)
             ))
           ]
         }
       ) }),
+      pickedPlot ? /* @__PURE__ */ jsxs("div", { className: "pta-park__strip", role: "region", "aria-label": `${pickedPlot.name}: open work`, children: [
+        /* @__PURE__ */ jsxs("div", { className: "pta-park__strip-head", children: [
+          /* @__PURE__ */ jsx("strong", { children: pickedPlot.name }),
+          pickedPlot.client ? /* @__PURE__ */ jsx("span", { className: "pta-park__strip-client", children: pickedPlot.client }) : null,
+          /* @__PURE__ */ jsxs("span", { className: "pta-park__strip-actions", children: [
+            pickedUrl ? /* @__PURE__ */ jsx("a", { href: pickedUrl, target: "_blank", rel: "noreferrer", className: "pta-park__strip-link", children: "Site \u2197" }) : null,
+            /* @__PURE__ */ jsx("button", { type: "button", className: "pta-park__strip-link", onClick: () => onSelect?.(pickedPlot), children: "Open project" }),
+            /* @__PURE__ */ jsx("button", { type: "button", className: "pta-park__strip-close", "aria-label": "Close", onClick: () => setPickedId(null), children: "\xD7" })
+          ] })
+        ] }),
+        pickedRows.length ? /* @__PURE__ */ jsx("ul", { className: "pta-park__strip-list", children: pickedRows.map((row) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs(
+          "button",
+          {
+            type: "button",
+            className: `pta-park__strip-row is-${row.kind}`,
+            title: "Open the ticket's conversation",
+            onClick: () => onOpenTicket?.({ id: row.id, title: row.title }),
+            children: [
+              /* @__PURE__ */ jsx("span", { className: "pta-park__strip-kind", children: KIND_LABEL[row.kind] }),
+              /* @__PURE__ */ jsxs("span", { className: "pta-park__strip-title", children: [
+                "#",
+                row.id,
+                " ",
+                row.title
+              ] }),
+              row.via ? /* @__PURE__ */ jsxs("span", { className: "pta-park__strip-via", children: [
+                "via ",
+                row.via
+              ] }) : null,
+              row.age ? /* @__PURE__ */ jsx("span", { className: "pta-park__strip-age", children: row.age }) : null
+            ]
+          }
+        ) }, String(row.id))) }) : /* @__PURE__ */ jsx("p", { className: "pta-park__strip-empty", children: "Nothing open on this project." })
+      ] }) : null,
       /* @__PURE__ */ jsx("ul", { className: "pta-sr", "aria-label": "Projects by urgency", children: plots.map((plot) => /* @__PURE__ */ jsx("li", { children: plotAriaLabel(plot) }, String(plot.id))) })
     ] });
   }
@@ -11052,6 +11199,35 @@ ${question.text ?? ""}`)) {
   .pta-park__tag-bg{fill:rgba(128,134,142,.24);stroke:var(--dsw-alias-border-secondary,rgba(127,127,127,.42))}
   .pta-park__tag-text{font-size:9px;font-weight:550;fill:var(--dsw-alias-label-primary,currentColor);pointer-events:none}
   @media (prefers-reduced-motion:reduce){.pta-park__pulse{animation:none;opacity:.45}.pta-park__lift,.pta-park__halo{transition:none}}
+  .pta-park__filters{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+  .pta-park__filter{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary,inherit);font:inherit;font-size:10.5px;line-height:17px;cursor:pointer}
+  .pta-park__filter:hover:not(:disabled){background:rgba(128,134,142,.16)}
+  .pta-park__filter[aria-pressed="true"]{background:rgba(128,134,142,.24);color:var(--dsw-alias-label-primary,inherit);border-color:var(--dsw-alias-border-primary,rgba(127,127,127,.5))}
+  .pta-park__filter:disabled{opacity:.4;cursor:default}
+  .pta-park__filter-n{font-variant-numeric:tabular-nums;opacity:.75}
+  .pta-park__filter--needsYou .pta-park__swatch{background:var(--dsw-alias-state-warning-primary,#d18f2e)}
+  .pta-park__filter--failing .pta-park__swatch{background:var(--dsw-alias-state-danger-primary,#e5534b)}
+  .pta-park__filter--stalled .pta-park__swatch{background:#d9483b}
+  .pta-park__filter--running .pta-park__swatch{background:var(--dsw-alias-state-business-primary,#4c8dff)}
+  .pta-park__plot.is-dimmed{opacity:.25}
+  .pta-park__plot.is-picked .pta-park__halo{opacity:1;stroke-width:2}
+  .pta-park__strip{margin:4px 0 2px;padding:6px 8px;border-radius:8px;background:rgba(128,134,142,.12);font-size:11.5px;color:var(--dsw-alias-label-primary,inherit)}
+  .pta-park__strip-head{display:flex;align-items:baseline;gap:8px;margin:0 0 4px}
+  .pta-park__strip-client{color:var(--dsw-alias-label-secondary,inherit);opacity:.8}
+  .pta-park__strip-actions{margin-left:auto;display:inline-flex;align-items:center;gap:8px}
+  .pta-park__strip-link{background:none;border:0;padding:0;font:inherit;font-size:11px;color:var(--dsw-alias-label-secondary,inherit);text-decoration:underline;cursor:pointer}
+  .pta-park__strip-close{background:none;border:0;padding:0 2px;font-size:14px;line-height:1;color:var(--dsw-alias-label-secondary,inherit);cursor:pointer}
+  .pta-park__strip-list{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+  .pta-park__strip-row{display:flex;align-items:baseline;gap:8px;width:100%;padding:3px 6px;border:0;border-radius:6px;background:transparent;font:inherit;color:inherit;text-align:left;cursor:pointer}
+  .pta-park__strip-row:hover,.pta-park__strip-row:focus-visible{background:rgba(128,134,142,.18);outline:none}
+  .pta-park__strip-kind{flex:0 0 64px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;opacity:.8}
+  .pta-park__strip-row.is-stalled .pta-park__strip-kind{color:#d9483b;opacity:1}
+  .pta-park__strip-row.is-needsYou .pta-park__strip-kind{color:var(--dsw-alias-state-warning-primary,#d18f2e);opacity:1}
+  .pta-park__strip-row.is-running .pta-park__strip-kind{color:var(--dsw-alias-state-business-primary,#4c8dff);opacity:1}
+  .pta-park__strip-title{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pta-park__strip-via{flex:0 0 auto;padding:0 5px;border-radius:4px;background:rgba(128,134,142,.2);font-size:10px}
+  .pta-park__strip-age{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary,inherit)}
+  .pta-park__strip-empty{margin:0;color:var(--dsw-alias-label-secondary,inherit)}
 `;
 
   // packages/dsh-admin/src/client.jsx
@@ -13093,7 +13269,8 @@ ${who} is emailed about this change.`)) return false;
             tickets: data.tickets,
             runs: data.running,
             now: data.at || Date.now(),
-            onSelect: (plot) => openProjectPage(plot)
+            onSelect: (plot) => openProjectPage(plot),
+            onOpenTicket: (ticket) => void openTicketRun(ticket)
           }
         ),
         /* @__PURE__ */ jsxs("div", { className: "pta-kpis", children: [

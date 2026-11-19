@@ -2480,6 +2480,7 @@ function apply(ctx) {
           runs={data.running}
           now={data.at || Date.now()}
           onSelect={(plot) => openProjectPage(plot)}
+          onOpenTicket={(ticket) => void openTicketRun(ticket)}
         />
 
         <div className="pta-kpis">

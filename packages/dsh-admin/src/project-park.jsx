@@ -1,5 +1,18 @@
-import { useMemo, useState } from 'react';
-import { ISO_TILE, countsSummary, iso, parkPlots, plotAriaLabel } from './project-park.mjs';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ISO_TILE,
+  PARK_FILTERS,
+  countsSummary,
+  filterCounts,
+  iso,
+  parkPlots,
+  plotAriaLabel,
+  plotHeadline,
+  plotMatches,
+  plotTickets,
+} from './project-park.mjs';
+
+const KIND_LABEL = { stalled: 'Stalled', needsYou: 'Needs you', running: 'Running', open: 'Open' };
 
 const STROKE_INK = 1.2;
 
@@ -149,7 +162,7 @@ function BeaconPin({ x, y, stemBottomY, kind, value }) {
   );
 }
 
-function PlotTile({ plot, opts, active, onActivate, onDeactivate, onSelect }) {
+function PlotTile({ plot, opts, active, dimmed = false, picked = false, onActivate, onDeactivate, onSelect, onStep }) {
   const { x, y, state, counts, name } = plot;
   const center = iso(x, y, 0, opts);
 
@@ -204,17 +217,21 @@ function PlotTile({ plot, opts, active, onActivate, onDeactivate, onSelect }) {
 
   return (
     <g
-      className={`pta-park__plot${active ? ' is-active' : ''}`}
+      className={`pta-park__plot${active ? ' is-active' : ''}${dimmed ? ' is-dimmed' : ''}${picked ? ' is-picked' : ''}`}
       data-state={state}
       data-plot-id={String(plot.id)}
       role="button"
       tabIndex={0}
       aria-label={ariaLabel}
+      aria-expanded={picked}
       onClick={open}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           open();
+        } else if (['j', 'k', 'ArrowRight', 'ArrowLeft'].includes(event.key)) {
+          event.preventDefault();
+          onStep?.(plot.id, event.key === 'j' || event.key === 'ArrowRight' ? 1 : -1);
         }
       }}
       onMouseEnter={() => onActivate(plot.id)}
@@ -314,13 +331,44 @@ function PlotTile({ plot, opts, active, onActivate, onDeactivate, onSelect }) {
 /**
  * Compact isometric "Project park" overview for the top of NeedsYouPage.
  */
-export function ProjectPark({ projects = [], tickets = [], runs = [], now = Date.now(), onSelect }) {
+export function ProjectPark({ projects = [], tickets = [], runs = [], now = Date.now(), onSelect, onOpenTicket }) {
   const [activeId, setActiveId] = useState(null);
+  const [filter, setFilter] = useState('all');
+  const [pickedId, setPickedId] = useState(null);
+  const rootRef = useRef(null);
 
   const plots = useMemo(
     () => parkPlots({ projects, tickets, runs, now }),
     [projects, tickets, runs, now],
   );
+  const counts = useMemo(() => filterCounts(plots), [plots]);
+
+  // Escape or a click outside the park closes the ticket strip.
+  useEffect(() => {
+    if (pickedId === null) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') setPickedId(null);
+    };
+    const onDown = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) setPickedId(null);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [pickedId]);
+
+  /** J/K or arrows: move focus to the next plot in urgency order, within the filter. */
+  const step = (id, delta) => {
+    const order = plots.filter((plot) => plotMatches(plot, filter));
+    if (order.length === 0) return;
+    const at = order.findIndex((plot) => plot.id === id);
+    const next = order[(at + delta + order.length) % order.length];
+    const el = rootRef.current?.querySelector(`[data-plot-id="${CSS.escape(String(next.id))}"]`);
+    el?.focus();
+  };
 
   // Paint back-to-front so front buildings/beacons layer cleanly over rear pads.
   const painted = useMemo(
@@ -356,12 +404,21 @@ export function ProjectPark({ projects = [], tickets = [], runs = [], now = Date
   if (!layout || plots.length === 0) return null;
 
   const activePlot = activeId !== null ? plots.find((plot) => plot.id === activeId) ?? null : null;
+  const activeHeadline = activePlot ? plotHeadline(activePlot, tickets, runs, now) : null;
+  const pickedPlot = pickedId !== null ? plots.find((plot) => plot.id === pickedId) ?? null : null;
+  const pickedRows = pickedPlot ? plotTickets(pickedPlot, tickets, runs, now).slice(0, 4) : [];
+  const pickedProject = pickedPlot ? projects.find((p) => String(p?.id) === String(pickedPlot.id)) : null;
+  const pickedSite = pickedProject ? (Array.isArray(pickedProject.sites) ? pickedProject.sites[0] : pickedProject.site) : null;
+  const pickedUrl = pickedSite?.customDomain
+    ? `https://${String(pickedSite.customDomain).replace(/^https?:\/\//, '')}`
+    : pickedSite?.productionUrl ?? null;
+  const pick = (plot) => setPickedId((prev) => (prev === plot.id ? null : plot.id));
 
   const activate = (id) => setActiveId(id);
   const deactivate = (id) => setActiveId((prev) => (prev === id ? null : prev));
 
   return (
-    <section className="pta-park" aria-label="Project park">
+    <section className="pta-park" aria-label="Project park" ref={rootRef}>
       <div className="pta-park__head">
         <div className="pta-park__title">
           <span className="pta-park__label">Project park</span>
@@ -371,14 +428,24 @@ export function ProjectPark({ projects = [], tickets = [], runs = [], now = Date
           <div className="pta-park__tip" role="status">
             <strong>{activePlot.name}</strong>
             {activePlot.client ? <span className="pta-park__tip-client">· {activePlot.client}</span> : null}
-            <span className="pta-park__tip-counts">{countsSummary(activePlot.counts)}</span>
+            <span className="pta-park__tip-counts">{activeHeadline ?? countsSummary(activePlot.counts)}</span>
           </div>
         ) : (
-          <div className="pta-park__legend" aria-hidden="true">
-            <span className="pta-park__leg"><i className="pta-park__swatch pta-park__swatch--bad" />Bad</span>
-            <span className="pta-park__leg"><i className="pta-park__swatch pta-park__swatch--attention" />Attention</span>
-            <span className="pta-park__leg"><i className="pta-park__swatch pta-park__swatch--active" />Active</span>
-            <span className="pta-park__leg"><i className="pta-park__swatch pta-park__swatch--calm" />Calm</span>
+          <div className="pta-park__filters" role="group" aria-label="Filter projects">
+            {PARK_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                className={`pta-park__filter pta-park__filter--${f.key}`}
+                aria-pressed={filter === f.key}
+                disabled={f.key !== 'all' && counts[f.key] === 0}
+                onClick={() => setFilter((prev) => (prev === f.key ? 'all' : f.key))}
+              >
+                {f.key !== 'all' ? <i className="pta-park__swatch" aria-hidden="true" /> : null}
+                {f.label}
+                <span className="pta-park__filter-n">{counts[f.key]}</span>
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -405,13 +472,53 @@ export function ProjectPark({ projects = [], tickets = [], runs = [], now = Date
               plot={plot}
               opts={layout.opts}
               active={activeId === plot.id}
+              dimmed={!plotMatches(plot, filter)}
+              picked={pickedId === plot.id}
               onActivate={activate}
               onDeactivate={deactivate}
-              onSelect={onSelect}
+              onSelect={pick}
+              onStep={step}
             />
           ))}
         </svg>
       </div>
+
+      {pickedPlot ? (
+        <div className="pta-park__strip" role="region" aria-label={`${pickedPlot.name}: open work`}>
+          <div className="pta-park__strip-head">
+            <strong>{pickedPlot.name}</strong>
+            {pickedPlot.client ? <span className="pta-park__strip-client">{pickedPlot.client}</span> : null}
+            <span className="pta-park__strip-actions">
+              {pickedUrl ? (
+                <a href={pickedUrl} target="_blank" rel="noreferrer" className="pta-park__strip-link">Site ↗</a>
+              ) : null}
+              <button type="button" className="pta-park__strip-link" onClick={() => onSelect?.(pickedPlot)}>Open project</button>
+              <button type="button" className="pta-park__strip-close" aria-label="Close" onClick={() => setPickedId(null)}>×</button>
+            </span>
+          </div>
+          {pickedRows.length ? (
+            <ul className="pta-park__strip-list">
+              {pickedRows.map((row) => (
+                <li key={String(row.id)}>
+                  <button
+                    type="button"
+                    className={`pta-park__strip-row is-${row.kind}`}
+                    title="Open the ticket's conversation"
+                    onClick={() => onOpenTicket?.({ id: row.id, title: row.title })}
+                  >
+                    <span className="pta-park__strip-kind">{KIND_LABEL[row.kind]}</span>
+                    <span className="pta-park__strip-title">#{row.id} {row.title}</span>
+                    {row.via ? <span className="pta-park__strip-via">via {row.via}</span> : null}
+                    {row.age ? <span className="pta-park__strip-age">{row.age}</span> : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="pta-park__strip-empty">Nothing open on this project.</p>
+          )}
+        </div>
+      ) : null}
 
       <ul className="pta-sr" aria-label="Projects by urgency">
         {plots.map((plot) => (
@@ -471,4 +578,33 @@ export const PROJECT_PARK_STYLES = `
   .pta-park__tag-bg{fill:rgba(128,134,142,.24);stroke:var(--dsw-alias-border-secondary,rgba(127,127,127,.42))}
   .pta-park__tag-text{font-size:9px;font-weight:550;fill:var(--dsw-alias-label-primary,currentColor);pointer-events:none}
   @media (prefers-reduced-motion:reduce){.pta-park__pulse{animation:none;opacity:.45}.pta-park__lift,.pta-park__halo{transition:none}}
+  .pta-park__filters{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+  .pta-park__filter{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary,inherit);font:inherit;font-size:10.5px;line-height:17px;cursor:pointer}
+  .pta-park__filter:hover:not(:disabled){background:rgba(128,134,142,.16)}
+  .pta-park__filter[aria-pressed="true"]{background:rgba(128,134,142,.24);color:var(--dsw-alias-label-primary,inherit);border-color:var(--dsw-alias-border-primary,rgba(127,127,127,.5))}
+  .pta-park__filter:disabled{opacity:.4;cursor:default}
+  .pta-park__filter-n{font-variant-numeric:tabular-nums;opacity:.75}
+  .pta-park__filter--needsYou .pta-park__swatch{background:var(--dsw-alias-state-warning-primary,#d18f2e)}
+  .pta-park__filter--failing .pta-park__swatch{background:var(--dsw-alias-state-danger-primary,#e5534b)}
+  .pta-park__filter--stalled .pta-park__swatch{background:#d9483b}
+  .pta-park__filter--running .pta-park__swatch{background:var(--dsw-alias-state-business-primary,#4c8dff)}
+  .pta-park__plot.is-dimmed{opacity:.25}
+  .pta-park__plot.is-picked .pta-park__halo{opacity:1;stroke-width:2}
+  .pta-park__strip{margin:4px 0 2px;padding:6px 8px;border-radius:8px;background:rgba(128,134,142,.12);font-size:11.5px;color:var(--dsw-alias-label-primary,inherit)}
+  .pta-park__strip-head{display:flex;align-items:baseline;gap:8px;margin:0 0 4px}
+  .pta-park__strip-client{color:var(--dsw-alias-label-secondary,inherit);opacity:.8}
+  .pta-park__strip-actions{margin-left:auto;display:inline-flex;align-items:center;gap:8px}
+  .pta-park__strip-link{background:none;border:0;padding:0;font:inherit;font-size:11px;color:var(--dsw-alias-label-secondary,inherit);text-decoration:underline;cursor:pointer}
+  .pta-park__strip-close{background:none;border:0;padding:0 2px;font-size:14px;line-height:1;color:var(--dsw-alias-label-secondary,inherit);cursor:pointer}
+  .pta-park__strip-list{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+  .pta-park__strip-row{display:flex;align-items:baseline;gap:8px;width:100%;padding:3px 6px;border:0;border-radius:6px;background:transparent;font:inherit;color:inherit;text-align:left;cursor:pointer}
+  .pta-park__strip-row:hover,.pta-park__strip-row:focus-visible{background:rgba(128,134,142,.18);outline:none}
+  .pta-park__strip-kind{flex:0 0 64px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;opacity:.8}
+  .pta-park__strip-row.is-stalled .pta-park__strip-kind{color:#d9483b;opacity:1}
+  .pta-park__strip-row.is-needsYou .pta-park__strip-kind{color:var(--dsw-alias-state-warning-primary,#d18f2e);opacity:1}
+  .pta-park__strip-row.is-running .pta-park__strip-kind{color:var(--dsw-alias-state-business-primary,#4c8dff);opacity:1}
+  .pta-park__strip-title{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pta-park__strip-via{flex:0 0 auto;padding:0 5px;border-radius:4px;background:rgba(128,134,142,.2);font-size:10px}
+  .pta-park__strip-age{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary,inherit)}
+  .pta-park__strip-empty{margin:0;color:var(--dsw-alias-label-secondary,inherit)}
 `;
