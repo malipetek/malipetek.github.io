@@ -10928,8 +10928,96 @@ ${question.text ?? ""}`)) {
     if (agentSeconds > 0) parts.push(`${shortAge(agentSeconds)} agent`);
     return { runs: runs.slice(-limit), total: runs.length, failed, agentSeconds, summary: parts.join(" \xB7 ") };
   }
+  function fleetTicker({ running = [], recent = [], tickets = [], now = Date.now(), limit = 4 } = {}) {
+    const nowSeconds = toUnixSeconds(now) || Date.now() / 1e3;
+    const byTicket = new Map((Array.isArray(tickets) ? tickets : []).filter(Boolean).map((t) => [String(t.id), t]));
+    const titleOf = (id, fallback) => {
+      const t = byTicket.get(String(id));
+      return typeof t?.title === "string" && t.title.trim() || typeof fallback === "string" && fallback.trim() || `#${id}`;
+    };
+    const runningNow = [];
+    const runningIds = /* @__PURE__ */ new Set();
+    for (const run of Array.isArray(running) ? running : []) {
+      if (!run || run.ticket_id === null || run.ticket_id === void 0 || runKind(run) !== "running") continue;
+      const key = String(run.ticket_id);
+      if (runningIds.has(key)) continue;
+      runningIds.add(key);
+      const started = toUnixSeconds(run.started_at);
+      runningNow.push({ ticketId: run.ticket_id, title: titleOf(run.ticket_id, run.title), seconds: started ? Math.max(0, nowSeconds - started) : 0 });
+    }
+    runningNow.sort((a, b) => b.seconds - a.seconds);
+    const latest = /* @__PURE__ */ new Map();
+    for (const run of Array.isArray(recent) ? recent : []) {
+      if (!run || run.ticket_id === null || run.ticket_id === void 0) continue;
+      const key = String(run.ticket_id);
+      const prev = latest.get(key);
+      if (!prev || toUnixSeconds(run.started_at) > toUnixSeconds(prev.started_at)) latest.set(key, run);
+    }
+    const attention = [];
+    for (const [key, run] of latest) {
+      if (runningIds.has(key)) continue;
+      const ticket = byTicket.get(key);
+      if (ticket && isClosedTicket(ticket)) continue;
+      const kind = runKind(run);
+      const finished = toUnixSeconds(run.finished_at);
+      let reason = null;
+      if (kind === "failed") reason = "failed";
+      else if (kind === "ok" && ticket?.status === "review") reason = "review";
+      if (!reason) continue;
+      attention.push({ ticketId: run.ticket_id, title: titleOf(run.ticket_id, run.title), reason, seconds: finished ? Math.max(0, nowSeconds - finished) : 0 });
+    }
+    attention.sort((a, b) => (a.reason === b.reason ? 0 : a.reason === "failed" ? -1 : 1) || b.seconds - a.seconds);
+    let idle = null;
+    if (!runningNow.length) {
+      const last = Math.max(0, ...[...latest.values()].map((r) => toUnixSeconds(r.finished_at)));
+      idle = last ? `last run finished ${shortAge(nowSeconds - last)} ago` : null;
+    }
+    return { running: runningNow.slice(0, limit), attention: attention.slice(0, limit), attentionTotal: attention.length, idle };
+  }
 
   // packages/dsh-admin/src/project-park.jsx
+  function FleetTicker({ running, recent, tickets, onOpenTicket }) {
+    const [now, setNow] = useState(() => Date.now());
+    const ticker = fleetTicker({ running, recent, tickets, now });
+    const live = ticker.running.length > 0;
+    useEffect(() => {
+      if (!live) return void 0;
+      const id = setInterval(() => setNow(Date.now()), 15e3);
+      return () => clearInterval(id);
+    }, [live]);
+    if (!live && !ticker.attention.length && !ticker.idle) return null;
+    const open = (item) => onOpenTicket?.({ id: item.ticketId, title: item.title });
+    return /* @__PURE__ */ jsxs("div", { className: "pta-park__ticker", role: "status", "aria-label": "Fleet now", children: [
+      live ? ticker.running.map((item) => /* @__PURE__ */ jsxs("button", { type: "button", className: "pta-park__chip is-running", onClick: () => open(item), title: "Open the ticket's conversation", children: [
+        /* @__PURE__ */ jsx("i", { className: "pta-park__run is-running", "aria-hidden": "true" }),
+        "#",
+        item.ticketId,
+        " ",
+        item.title,
+        " \xB7 ",
+        shortAge(item.seconds)
+      ] }, `r${item.ticketId}`)) : /* @__PURE__ */ jsxs("span", { className: "pta-park__ticker-idle", children: [
+        "0 running",
+        ticker.attention.length ? "" : " \xB7 fleet clear",
+        ticker.idle ? ` \xB7 ${ticker.idle}` : ""
+      ] }),
+      ticker.attention.map((item) => /* @__PURE__ */ jsxs("button", { type: "button", className: `pta-park__chip is-${item.reason}`, onClick: () => open(item), title: "Open the ticket's conversation", children: [
+        /* @__PURE__ */ jsx("i", { className: `pta-park__run is-${item.reason === "failed" ? "failed" : "ok"}`, "aria-hidden": "true" }),
+        item.reason === "failed" ? "Failed" : "Review",
+        " #",
+        item.ticketId,
+        " ",
+        item.title,
+        " \xB7 ",
+        shortAge(item.seconds)
+      ] }, `a${item.ticketId}`)),
+      ticker.attentionTotal > ticker.attention.length ? /* @__PURE__ */ jsxs("span", { className: "pta-park__ticker-idle", children: [
+        "+",
+        ticker.attentionTotal - ticker.attention.length,
+        " more"
+      ] }) : null
+    ] });
+  }
   function RunBand({ trail }) {
     if (!trail) return null;
     return /* @__PURE__ */ jsxs("span", { className: "pta-park__runs", title: trail.summary, children: [
@@ -11327,6 +11415,7 @@ ${question.text ?? ""}`)) {
           f.key
         )) })
       ] }),
+      /* @__PURE__ */ jsx(FleetTicker, { running: runs, recent: recentRuns, tickets, onOpenTicket }),
       /* @__PURE__ */ jsx("div", { className: "pta-park__scroll", children: /* @__PURE__ */ jsxs(
         "svg",
         {
@@ -11474,6 +11563,11 @@ ${question.text ?? ""}`)) {
   .pta-park__strip-title{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pta-park__strip-via{flex:0 0 auto;padding:0 5px;border-radius:4px;background:rgba(128,134,142,.2);font-size:10px}
   .pta-park__strip-age{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary,inherit)}
+  .pta-park__ticker{display:flex;align-items:center;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 0 4px;font-size:10.5px;color:var(--dsw-alias-label-secondary,inherit)}
+  .pta-park__chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;max-width:260px;padding:1px 8px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:999px;background:rgba(128,134,142,.12);color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:10.5px;line-height:17px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pta-park__chip:hover,.pta-park__chip:focus-visible{background:rgba(128,134,142,.24);outline:none}
+  .pta-park__chip.is-failed{border-color:color-mix(in srgb,var(--dsw-alias-state-danger-primary,#e5534b) 55%,transparent)}
+  .pta-park__ticker-idle{flex:0 0 auto;white-space:nowrap;opacity:.85}
   .pta-park__runs{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--dsw-alias-label-secondary,inherit);white-space:nowrap}
   .pta-park__runband{display:inline-flex;gap:2px}
   .pta-park__run{display:inline-block;width:8px;height:8px;border-radius:2px;background:rgba(128,134,142,.45)}

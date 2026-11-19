@@ -407,3 +407,61 @@ export function runTrail(ticketId, running = [], recent = [], now = Date.now(), 
   return { runs: runs.slice(-limit), total: runs.length, failed, agentSeconds, summary: parts.join(' · ') };
 }
 
+/* ————— fleet ticker: what is running now, and what waits on a person ————— */
+
+/**
+ * One line for the top of the park. `running`: each running ticket with how
+ * long its run has gone. `attention`: tickets whose latest run failed (and is
+ * not being retried) or finished and now waits in review, oldest wait first.
+ * `idle`: when nothing runs, how long ago the last run finished.
+ */
+export function fleetTicker({ running = [], recent = [], tickets = [], now = Date.now(), limit = 4 } = {}) {
+  const nowSeconds = toUnixSeconds(now) || Date.now() / 1000;
+  const byTicket = new Map((Array.isArray(tickets) ? tickets : []).filter(Boolean).map((t) => [String(t.id), t]));
+  const titleOf = (id, fallback) => {
+    const t = byTicket.get(String(id));
+    return (typeof t?.title === 'string' && t.title.trim()) || (typeof fallback === 'string' && fallback.trim()) || `#${id}`;
+  };
+
+  const runningNow = [];
+  const runningIds = new Set();
+  for (const run of Array.isArray(running) ? running : []) {
+    if (!run || run.ticket_id === null || run.ticket_id === undefined || runKind(run) !== 'running') continue;
+    const key = String(run.ticket_id);
+    if (runningIds.has(key)) continue;
+    runningIds.add(key);
+    const started = toUnixSeconds(run.started_at);
+    runningNow.push({ ticketId: run.ticket_id, title: titleOf(run.ticket_id, run.title), seconds: started ? Math.max(0, nowSeconds - started) : 0 });
+  }
+  runningNow.sort((a, b) => b.seconds - a.seconds);
+
+  const latest = new Map();
+  for (const run of Array.isArray(recent) ? recent : []) {
+    if (!run || run.ticket_id === null || run.ticket_id === undefined) continue;
+    const key = String(run.ticket_id);
+    const prev = latest.get(key);
+    if (!prev || toUnixSeconds(run.started_at) > toUnixSeconds(prev.started_at)) latest.set(key, run);
+  }
+  const attention = [];
+  for (const [key, run] of latest) {
+    if (runningIds.has(key)) continue;
+    const ticket = byTicket.get(key);
+    if (ticket && isClosedTicket(ticket)) continue;
+    const kind = runKind(run);
+    const finished = toUnixSeconds(run.finished_at);
+    let reason = null;
+    if (kind === 'failed') reason = 'failed';
+    else if (kind === 'ok' && ticket?.status === 'review') reason = 'review';
+    if (!reason) continue;
+    attention.push({ ticketId: run.ticket_id, title: titleOf(run.ticket_id, run.title), reason, seconds: finished ? Math.max(0, nowSeconds - finished) : 0 });
+  }
+  attention.sort((a, b) => (a.reason === b.reason ? 0 : a.reason === 'failed' ? -1 : 1) || b.seconds - a.seconds);
+
+  let idle = null;
+  if (!runningNow.length) {
+    const last = Math.max(0, ...[...latest.values()].map((r) => toUnixSeconds(r.finished_at)));
+    idle = last ? `last run finished ${shortAge(nowSeconds - last)} ago` : null;
+  }
+  return { running: runningNow.slice(0, limit), attention: attention.slice(0, limit), attentionTotal: attention.length, idle };
+}
+
