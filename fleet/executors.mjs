@@ -329,6 +329,22 @@ export function parseDshEvents(stdout) {
 }
 
 /** Defaults for the Harness-driven external agents. */
+/**
+ * The Harness titles a new Session from the leading words of its first user
+ * message (dsh-session-title's fallback: 5 words / 40 bytes). A fleet run's
+ * first line is `Ticket #27 — First look: Personal website`; `Ticket`, `#27`
+ * and the dash spend three of the five words, so the stored title was cut to
+ * "Ticket #27 — First look:". A patch `config` replaces the plugin's whole
+ * config (the name is kept), so every key of the base entry is restated.
+ */
+const TITLE_ROOM = [
+  '- id: session-title',
+  '  config:',
+  '    fallbackMaxWords: 20',
+  '    fallbackMaxBytes: 96',
+  '    maxTitleBytes: 128',
+];
+
 export const DSH_AGENTS = {
   claude: { provider: 'acp-claude', label: 'Claude Code', command: 'claude-agent-acp', args: [], model: 'opus' },
   opencode: { provider: 'acp-opencode', label: 'opencode', command: 'opencode', args: ['acp'], model: 'opencode/deepseek-v4.1-flash-free' },
@@ -379,6 +395,7 @@ export function dshAgentOverlay(agent, config = {}) {
   // agent. The ACP adapter cannot serve both: the title's answer came back as
   // the turn's, and the task never ran (or the turn ended EMPTY_TURN). A
   // fleet run's title is the worktree name anyway, so the LLM title is off.
+  lines.push(...TITLE_ROOM);
   lines.push('- id: session-title-llm', '  disabled: true');
   return lines.join('\n') + '\n';
 }
@@ -410,6 +427,7 @@ export function dshModelOverlay({ provider, model }) {
   ];
   if (model) lines.push(`    model: ${q(model)}`);
   // A fleet run's title is its worktree name; an LLM title is a wasted call.
+  lines.push(...TITLE_ROOM);
   lines.push('- id: session-title-llm', '  disabled: true');
   return lines.join('\n') + '\n';
 }
