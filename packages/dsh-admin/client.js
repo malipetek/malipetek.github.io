@@ -10894,8 +10894,49 @@ ${question.text ?? ""}`)) {
     const title = top.title.length > 28 ? `${top.title.slice(0, 27)}\u2026` : top.title;
     return [`#${top.id} ${title}`, top.via ? `via ${top.via}` : null, top.age].filter(Boolean).join(" \xB7 ");
   }
+  var OK_RUN = /* @__PURE__ */ new Set(["ok", "done", "completed", "succeeded", "success"]);
+  var FAILED_RUN = /* @__PURE__ */ new Set(["failed", "error", "errored", "timeout", "timed_out"]);
+  function runKind(run) {
+    const status = String(run?.status ?? "").toLowerCase();
+    if (status === "running" && !toUnixSeconds(run?.finished_at)) return "running";
+    if (OK_RUN.has(status)) return "ok";
+    if (FAILED_RUN.has(status)) return "failed";
+    return "other";
+  }
+  function runTrail(ticketId, running = [], recent = [], now = Date.now(), limit = 6) {
+    if (ticketId === null || ticketId === void 0) return null;
+    const key = String(ticketId);
+    const nowSeconds = toUnixSeconds(now) || Date.now() / 1e3;
+    const seen = /* @__PURE__ */ new Map();
+    for (const run of [...Array.isArray(recent) ? recent : [], ...Array.isArray(running) ? running : []]) {
+      if (!run || String(run.ticket_id) !== key) continue;
+      seen.set(String(run.id ?? `${run.started_at}`), run);
+    }
+    if (seen.size === 0) return null;
+    const runs = [...seen.values()].map((run) => {
+      const kind = runKind(run);
+      const started = toUnixSeconds(run.started_at);
+      const finished = toUnixSeconds(run.finished_at);
+      const seconds = started ? Math.max(0, (finished || (kind === "running" ? nowSeconds : 0)) - started) : 0;
+      return { id: run.id ?? null, kind, status: run.status ?? null, started, seconds: finished || kind === "running" ? seconds : 0 };
+    }).sort((a, b) => (a.started || 0) - (b.started || 0));
+    const failed = runs.filter((r) => r.kind === "failed").length;
+    const agentSeconds = runs.reduce((sum, r) => sum + r.seconds, 0);
+    const parts = [`${runs.length} ${runs.length === 1 ? "run" : "runs"}`];
+    if (failed) parts.push(`${failed} failed`);
+    if (runs.some((r) => r.kind === "running")) parts.push("running now");
+    if (agentSeconds > 0) parts.push(`${shortAge(agentSeconds)} agent`);
+    return { runs: runs.slice(-limit), total: runs.length, failed, agentSeconds, summary: parts.join(" \xB7 ") };
+  }
 
   // packages/dsh-admin/src/project-park.jsx
+  function RunBand({ trail }) {
+    if (!trail) return null;
+    return /* @__PURE__ */ jsxs("span", { className: "pta-park__runs", title: trail.summary, children: [
+      /* @__PURE__ */ jsx("span", { className: "pta-park__runband", "aria-hidden": "true", children: trail.runs.map((run, i) => /* @__PURE__ */ jsx("i", { className: `pta-park__run is-${run.kind}` }, String(run.id ?? i))) }),
+      /* @__PURE__ */ jsx("span", { className: "pta-park__runs-text", children: trail.summary })
+    ] });
+  }
   var KIND_LABEL = { stalled: "Stalled", needsYou: "Needs you", running: "Running", open: "Open" };
   var STROKE_INK = 1.2;
   function round1(value) {
@@ -11184,7 +11225,7 @@ ${question.text ?? ""}`)) {
       }
     );
   }
-  function ProjectPark({ projects = [], tickets = [], runs = [], now = Date.now(), onSelect, onOpenTicket }) {
+  function ProjectPark({ projects = [], tickets = [], runs = [], recentRuns = [], now = Date.now(), onSelect, onOpenTicket }) {
     const [activeId, setActiveId] = useState(null);
     const [filter, setFilter] = useState("all");
     const [pickedId, setPickedId] = useState(null);
@@ -11348,6 +11389,7 @@ ${question.text ?? ""}`)) {
                 "via ",
                 row.via
               ] }) : null,
+              /* @__PURE__ */ jsx(RunBand, { trail: runTrail(row.id, runs, recentRuns, now) }),
               row.age ? /* @__PURE__ */ jsx("span", { className: "pta-park__strip-age", children: row.age }) : null
             ]
           }
@@ -11432,6 +11474,14 @@ ${question.text ?? ""}`)) {
   .pta-park__strip-title{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pta-park__strip-via{flex:0 0 auto;padding:0 5px;border-radius:4px;background:rgba(128,134,142,.2);font-size:10px}
   .pta-park__strip-age{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary,inherit)}
+  .pta-park__runs{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--dsw-alias-label-secondary,inherit);white-space:nowrap}
+  .pta-park__runband{display:inline-flex;gap:2px}
+  .pta-park__run{display:inline-block;width:8px;height:8px;border-radius:2px;background:rgba(128,134,142,.45)}
+  .pta-park__run.is-ok{background:var(--dsw-alias-state-success-primary,#35c07a)}
+  .pta-park__run.is-failed{background:var(--dsw-alias-state-danger-primary,#e5534b)}
+  .pta-park__run.is-running{background:var(--dsw-alias-state-business-primary,#4c8dff);animation:pta-park-run 1.6s ease-in-out infinite}
+  @keyframes pta-park-run{50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){.pta-park__run.is-running{animation:none}}
   .pta-park__strip-empty{margin:0;color:var(--dsw-alias-label-secondary,inherit)}
 `;
 
@@ -13473,6 +13523,7 @@ ${who} is emailed about this change.`)) return false;
             projects: data.projects,
             tickets: data.tickets,
             runs: data.running,
+            recentRuns: data.recent,
             now: data.at || Date.now(),
             onSelect: (plot) => openProjectPage(plot),
             onOpenTicket: (ticket) => void openTicketRun(ticket)

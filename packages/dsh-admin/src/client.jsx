@@ -2478,6 +2478,7 @@ function apply(ctx) {
           projects={data.projects}
           tickets={data.tickets}
           runs={data.running}
+          recentRuns={data.recent}
           now={data.at || Date.now()}
           onSelect={(plot) => openProjectPage(plot)}
           onOpenTicket={(ticket) => void openTicketRun(ticket)}

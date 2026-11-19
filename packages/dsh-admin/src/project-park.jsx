@@ -10,7 +10,23 @@ import {
   plotHeadline,
   plotMatches,
   plotTickets,
+  runTrail,
 } from './project-park.mjs';
+
+/** A ticket's runs as small segments (oldest left), with a one-line summary. */
+function RunBand({ trail }) {
+  if (!trail) return null;
+  return (
+    <span className="pta-park__runs" title={trail.summary}>
+      <span className="pta-park__runband" aria-hidden="true">
+        {trail.runs.map((run, i) => (
+          <i key={String(run.id ?? i)} className={`pta-park__run is-${run.kind}`} />
+        ))}
+      </span>
+      <span className="pta-park__runs-text">{trail.summary}</span>
+    </span>
+  );
+}
 
 const KIND_LABEL = { stalled: 'Stalled', needsYou: 'Needs you', running: 'Running', open: 'Open' };
 
@@ -331,7 +347,7 @@ function PlotTile({ plot, opts, active, dimmed = false, picked = false, onActiva
 /**
  * Compact isometric "Project park" overview for the top of NeedsYouPage.
  */
-export function ProjectPark({ projects = [], tickets = [], runs = [], now = Date.now(), onSelect, onOpenTicket }) {
+export function ProjectPark({ projects = [], tickets = [], runs = [], recentRuns = [], now = Date.now(), onSelect, onOpenTicket }) {
   const [activeId, setActiveId] = useState(null);
   const [filter, setFilter] = useState('all');
   const [pickedId, setPickedId] = useState(null);
@@ -509,6 +525,7 @@ export function ProjectPark({ projects = [], tickets = [], runs = [], now = Date
                     <span className="pta-park__strip-kind">{KIND_LABEL[row.kind]}</span>
                     <span className="pta-park__strip-title">#{row.id} {row.title}</span>
                     {row.via ? <span className="pta-park__strip-via">via {row.via}</span> : null}
+                    <RunBand trail={runTrail(row.id, runs, recentRuns, now)} />
                     {row.age ? <span className="pta-park__strip-age">{row.age}</span> : null}
                   </button>
                 </li>
@@ -606,5 +623,13 @@ export const PROJECT_PARK_STYLES = `
   .pta-park__strip-title{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pta-park__strip-via{flex:0 0 auto;padding:0 5px;border-radius:4px;background:rgba(128,134,142,.2);font-size:10px}
   .pta-park__strip-age{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary,inherit)}
+  .pta-park__runs{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--dsw-alias-label-secondary,inherit);white-space:nowrap}
+  .pta-park__runband{display:inline-flex;gap:2px}
+  .pta-park__run{display:inline-block;width:8px;height:8px;border-radius:2px;background:rgba(128,134,142,.45)}
+  .pta-park__run.is-ok{background:var(--dsw-alias-state-success-primary,#35c07a)}
+  .pta-park__run.is-failed{background:var(--dsw-alias-state-danger-primary,#e5534b)}
+  .pta-park__run.is-running{background:var(--dsw-alias-state-business-primary,#4c8dff);animation:pta-park-run 1.6s ease-in-out infinite}
+  @keyframes pta-park-run{50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){.pta-park__run.is-running{animation:none}}
   .pta-park__strip-empty{margin:0;color:var(--dsw-alias-label-secondary,inherit)}
 `;

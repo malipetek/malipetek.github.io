@@ -359,3 +359,51 @@ export function plotHeadline(plot, tickets = [], runs = [], now = Date.now()) {
   const title = top.title.length > 28 ? `${top.title.slice(0, 27)}…` : top.title;
   return [`#${top.id} ${title}`, top.via ? `via ${top.via}` : null, top.age].filter(Boolean).join(' · ');
 }
+
+/* ————— run trail: what the agent has done on one ticket, run by run ————— */
+
+const OK_RUN = new Set(['ok', 'done', 'completed', 'succeeded', 'success']);
+const FAILED_RUN = new Set(['failed', 'error', 'errored', 'timeout', 'timed_out']);
+
+function runKind(run) {
+  const status = String(run?.status ?? '').toLowerCase();
+  if (status === 'running' && !toUnixSeconds(run?.finished_at)) return 'running';
+  if (OK_RUN.has(status)) return 'ok';
+  if (FAILED_RUN.has(status)) return 'failed';
+  return 'other';
+}
+
+/**
+ * The runs of one ticket, oldest first, from the admin's active and recent run
+ * lists (a run in both counts once). Each says how it went and how long it
+ * took; a running one counts up to now. Durations come only from real
+ * started/finished times. `summary` reads like "3 runs · 1 failed · 14m agent".
+ */
+export function runTrail(ticketId, running = [], recent = [], now = Date.now(), limit = 6) {
+  if (ticketId === null || ticketId === undefined) return null;
+  const key = String(ticketId);
+  const nowSeconds = toUnixSeconds(now) || Date.now() / 1000;
+  const seen = new Map();
+  for (const run of [...(Array.isArray(recent) ? recent : []), ...(Array.isArray(running) ? running : [])]) {
+    if (!run || String(run.ticket_id) !== key) continue;
+    seen.set(String(run.id ?? `${run.started_at}`), run);
+  }
+  if (seen.size === 0) return null;
+  const runs = [...seen.values()]
+    .map((run) => {
+      const kind = runKind(run);
+      const started = toUnixSeconds(run.started_at);
+      const finished = toUnixSeconds(run.finished_at);
+      const seconds = started ? Math.max(0, (finished || (kind === 'running' ? nowSeconds : 0)) - started) : 0;
+      return { id: run.id ?? null, kind, status: run.status ?? null, started, seconds: finished || kind === 'running' ? seconds : 0 };
+    })
+    .sort((a, b) => (a.started || 0) - (b.started || 0));
+  const failed = runs.filter((r) => r.kind === 'failed').length;
+  const agentSeconds = runs.reduce((sum, r) => sum + r.seconds, 0);
+  const parts = [`${runs.length} ${runs.length === 1 ? 'run' : 'runs'}`];
+  if (failed) parts.push(`${failed} failed`);
+  if (runs.some((r) => r.kind === 'running')) parts.push('running now');
+  if (agentSeconds > 0) parts.push(`${shortAge(agentSeconds)} agent`);
+  return { runs: runs.slice(-limit), total: runs.length, failed, agentSeconds, summary: parts.join(' · ') };
+}
+
