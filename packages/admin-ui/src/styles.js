@@ -545,13 +545,13 @@ button.aw-file:hover { border-color: currentColor; }
   color: var(--aw-w-ink);
 }
 @media (prefers-color-scheme: dark) {
-  .aw-world {
+  .aw-world, .aw-world__journeys {
     --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
     --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
     --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
   }
 }
-:root[data-theme='dark'] .aw-world {
+:root[data-theme='dark'] .aw-world, :root[data-theme='dark'] .aw-world__journeys {
   --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
   --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
   --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
@@ -690,6 +690,45 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-world__check-who { color: var(--aw-w-ink); }
 
 .aw-world__nav { display: flex; flex-wrap: wrap; gap: 4px; }
+.aw-world__journeys {
+  --aw-w-ink: var(--aw-text, var(--dsw-alias-label-primary, currentColor));
+  --aw-w-ink-soft: var(--aw-text2, var(--dsw-alias-label-secondary, rgba(128,134,142,.92)));
+  --aw-w-surface: var(--aw-bg, rgba(128,134,142,.06));
+  --aw-w-stage: var(--aw-bg2, rgba(128,134,142,.09));
+  --aw-w-chip: rgba(128,134,142,.16);
+  --aw-w-rule: var(--aw-border, rgba(128,134,142,.24));
+  --aw-w-rule-strong: var(--aw-border2, rgba(128,134,142,.38));
+  --aw-w-accent: var(--aw-accent, #ff5a1f);
+  --aw-w-ok: var(--aw-ok, #2f9e5b);
+  --aw-w-warn: var(--aw-warn, #d99a16);
+  --aw-w-bad: var(--aw-bad, #d6453d);
+  --aw-w-hover: var(--aw-hover, rgba(128,134,142,.14));
+  --aw-w-tint: color-mix(in srgb, var(--aw-w-accent) 14%, transparent);
+  --aw-w-mono: var(--aw-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 90%, var(--aw-w-ink) 10%);
+  --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 78%, var(--aw-w-ink) 22%);
+  --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 64%, var(--aw-w-ink) 36%);
+  --aw-w-accent-top: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface));
+  --aw-w-accent-left: color-mix(in srgb, var(--aw-w-accent) 36%, var(--aw-w-surface));
+  --aw-w-accent-right: color-mix(in srgb, var(--aw-w-accent) 50%, var(--aw-w-surface));
+  --aw-w-ok-soft: color-mix(in srgb, var(--aw-w-ok) 22%, var(--aw-w-surface));
+  --aw-w-bad-soft: color-mix(in srgb, var(--aw-w-bad) 22%, var(--aw-w-surface));
+  --aw-w-warn-soft: color-mix(in srgb, var(--aw-w-warn) 24%, var(--aw-w-surface));
+}
+.aw-world__journeys { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+.aw-world__journey-pill { appearance: none; display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font: inherit; font-size: 11px; line-height: 1.4; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-world__journey-pill[aria-pressed="true"] { border-color: color-mix(in srgb, var(--aw-w-accent) 60%, var(--aw-w-rule)); background: var(--aw-w-tint); color: var(--aw-w-ink); }
+.aw-world__journey-pill.is-all { border-style: dashed; }
+.aw-world__journey-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-ink-soft); flex: 0 0 auto; }
+.aw-world__journey-pill.is-in_progress .aw-world__journey-dot, .aw-world__journey-pill.is-review .aw-world__journey-dot { background: var(--aw-w-accent); }
+.aw-world__journey-pill.is-done .aw-world__journey-dot { background: var(--aw-w-ok, #2f9e5b); }
+.aw-world__journey { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: var(--aw-w-tint); }
+.aw-world__journey-sentence { margin: 2px 0 6px; font-size: 13px; line-height: 1.4; color: var(--aw-w-ink); }
+.aw-world__journey-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--aw-w-accent) 55%, var(--aw-w-rule)); color: var(--aw-w-ink); font-size: 11px; text-decoration: none; }
+.aw-world__station.is-journey-ahead { opacity: .35; }
+.aw-world__station.is-journey-current .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface)); stroke: var(--aw-w-accent); stroke-width: 1.6; }
+@media (prefers-reduced-motion: no-preference) { .aw-world__station.is-journey-current .aw-world__pad { animation: aw-world-journey-pulse 2.4s ease-in-out infinite; } }
+@keyframes aw-world-journey-pulse { 50% { stroke-opacity: .45; } }
 .aw-world__chip { appearance: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font-size: 11px; font-weight: 500; line-height: 1.25; cursor: pointer; transition: border-color 120ms ease, background 120ms ease, color 120ms ease; }
 .aw-world__chip:hover { background: var(--aw-w-hover); color: var(--aw-w-ink); }
 .aw-world__chip[aria-pressed='true'] { border-color: var(--aw-w-accent); background: var(--aw-w-tint); color: var(--aw-w-ink); font-weight: 600; }

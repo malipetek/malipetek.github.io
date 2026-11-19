@@ -957,3 +957,225 @@ export function cablesFor(stations) {
     },
   ];
 }
+
+/* Ported from the portal (ptechsolutions-site src/components/portal/project-world-model.js); keep in sync. */
+/* ————— request journey trace (ticket status → workshop stations) ————— */
+
+/** The stations one request passes through, in journey order (preview before
+ *  the production publish). Distinct from JOURNEY_CABLE_ORDER below, which is
+ *  the physical cable wiring: the request's story stops at the preview for
+ *  review ("request/agent/code reached, current=preview") while its cables
+ *  still run through the deploy corner to reach it. */
+export const JOURNEY_STATION_KEYS = Object.freeze([
+  'request',
+  'agent',
+  'code',
+  'preview',
+  'deploy',
+  'hosting',
+]);
+
+/** The same stations in the order the map's build cables wire them. */
+const JOURNEY_CABLE_ORDER = Object.freeze(['request', 'agent', 'code', 'deploy', 'preview', 'hosting']);
+const JOURNEY_CABLE_IDS = Object.freeze([
+  'request-agent',
+  'agent-code',
+  'code-deploy',
+  'deploy-preview',
+  'preview-hosting',
+]);
+
+/** Honest mapping from a ticket status alone: where the request stands now. */
+const JOURNEY_PLANS = Object.freeze({
+  new: { current: 'request', reached: 0 },
+  approved: { current: 'request', reached: 0 },
+  declined: { current: 'request', reached: 0 },
+  in_progress: { current: 'agent', reached: 1 },
+  review: { current: 'preview', reached: 3 },
+  done: { current: 'hosting', reached: 5 },
+});
+
+/** The plain-English tail of the journey sentence, per status. */
+const JOURNEY_STATUS_SENTENCE = Object.freeze({
+  new: ['world.journey.status.new', 'waiting for approval'],
+  approved: ['world.journey.status.approved', 'approved, waiting for the builder'],
+  in_progress: ['world.journey.status.in_progress', 'being built now'],
+  review: ['world.journey.status.review', 'ready for review on the preview'],
+  done: ['world.journey.status.done', 'live on your site'],
+  declined: ['world.journey.status.declined', 'declined'],
+});
+
+/** Minutes of human review spent on a ticket; at least one once any time is recorded. */
+function humanReviewMinutes(rawSeconds) {
+  const s = Number(rawSeconds);
+  if (!Number.isFinite(s) || s <= 0) return 0;
+  return Math.max(1, Math.ceil(s / 60));
+}
+
+/** "$40" for whole dollars, "$40.50" otherwise — from price_cents only. */
+function receiptMoney(cents) {
+  const dollars = cents / 100;
+  return `$${Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2)}`;
+}
+
+/** The site's public address for an "Open site" chip, https:// for bare hosts. */
+function journeySiteUrl(site) {
+  const raw =
+    cleanString(site?.customDomain) ??
+    cleanString(site?.productionUrl) ??
+    cleanString(site?.cloudflare?.productionUrl) ??
+    cleanString(site?.url);
+  if (!raw) return null;
+  return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+}
+
+/**
+ * Trace one ticket across the workshop stations, honestly and from its
+ * status alone. Returns null when the ticket or its status says nothing.
+ *
+ *   stations:       request | agent | code | preview | deploy | hosting
+ *                   → 'reached' | 'current' | 'ahead'
+ *   currentKey:     the station the request stands at now
+ *   activeCableIds: build cables (cablesFor ids) lit up to the current station
+ *   sentence:        "Asked via Claude 2h ago → being built now"
+ *   previewUrl / siteUrl: addresses for the caption chips, when the site has them
+ */
+export function journeyFor(ticket, { sites = [], t = (k) => k, now } = {}) {
+  if (!ticket || typeof ticket !== 'object') return null;
+  const plan = JOURNEY_PLANS[ticket.status];
+  if (!plan) return null;
+
+  const stations = {};
+  const at = JOURNEY_STATION_KEYS.indexOf(plan.current);
+  JOURNEY_STATION_KEYS.forEach((key, idx) => {
+    stations[key] = key === plan.current ? 'current' : idx < at ? 'reached' : 'ahead';
+  });
+
+  const site = pickSite(null, sites);
+  const previewUrl = cleanString(site?.previewUrl) ?? cleanString(site?.cloudflare?.previewUrl) ?? null;
+
+  // "Asked via Claude 2h ago" — only what the ticket actually says.
+  const askedBits = [tx(t, 'world.journey.asked', 'Asked')];
+  const app = cleanString(ticket.assistant_app);
+  if (app) askedBits.push(tx(t, 'world.journey.via', 'via {app}', { app }));
+  const askedWhen = formatDeployTime(ticket.created_at, now);
+  if (askedWhen) askedBits.push(askedWhen);
+
+  const [tailKey, tailDefault] = JOURNEY_STATUS_SENTENCE[ticket.status];
+  let sentence = `${askedBits.join(' ')} → ${tx(t, tailKey, tailDefault)}`;
+
+  const minutes = humanReviewMinutes(ticket.human_seconds);
+  if (minutes > 0) {
+    sentence = `${sentence} · ${tx(t, 'world.journey.human', '{min} min of human review', { min: minutes })}`;
+  }
+
+  return {
+    ticketId: ticket.id ?? null,
+    status: ticket.status,
+    stations,
+    currentKey: plan.current,
+    activeCableIds: JOURNEY_CABLE_IDS.slice(0, JOURNEY_CABLE_ORDER.indexOf(plan.current)),
+    sentence,
+    previewUrl,
+    siteUrl: journeySiteUrl(site),
+  };
+}
+
+/** A ticket's clock: when it was last touched, or created if never touched. */
+function ticketStamp(ticket) {
+  return normalizeTimestampMs(ticket?.updated_at) ?? normalizeTimestampMs(ticket?.created_at) ?? 0;
+}
+
+function sameTicketId(a, b) {
+  if (a === null || a === undefined || b === null || b === undefined) return false;
+  return String(a) === String(b);
+}
+
+/** A project's tickets newest-updated first. */
+function latestTickets(project, tickets, limit = Infinity) {
+  const sorted = [...filterProjectTickets(project, tickets)]
+    .filter(Boolean)
+    .sort((a, b) => ticketStamp(b) - ticketStamp(a));
+  return Number.isFinite(limit) ? sorted.slice(0, Math.max(0, limit)) : sorted;
+}
+
+/**
+ * The ticket a freshly opened map traces by default: the most recently
+ * updated open one, or null when nothing is open.
+ */
+export function defaultJourneyTicket(project, tickets) {
+  const open = filterProjectTickets(project, tickets).filter((tk) => OPEN_TICKET_STATUSES.has(tk?.status));
+  if (open.length === 0) return null;
+  return open.reduce((best, tk) => (ticketStamp(tk) > ticketStamp(best) ? tk : best), open[0]);
+}
+
+/**
+ * Pills for the journeys row: the project's latest `limit` tickets, newest
+ * updated first. `ensure` (usually the default trace) is never dropped — when
+ * newer closed tickets push it out of the window it takes the last slot, so
+ * the default journey always has a visible pill.
+ */
+export function journeyPillTickets(project, tickets, { limit = 5, ensure = null } = {}) {
+  const sorted = latestTickets(project, tickets);
+  const pills = sorted.slice(0, Math.max(0, limit));
+  if (ensure !== null && ensure !== undefined && !pills.some((tk) => sameTicketId(tk.id, ensure.id))) {
+    const missing = sorted.find((tk) => sameTicketId(tk.id, ensure.id));
+    if (missing) {
+      if (pills.length < Math.max(0, limit)) pills.push(missing);
+      else if (pills.length > 0) pills[pills.length - 1] = missing;
+    }
+  }
+  return pills;
+}
+
+/**
+ * Receipts for the request inbox station: the latest few tickets with a
+ * "via <assistant_app>" badge when the ticket names one, and relative time.
+ */
+export function requestReceipts(project, tickets, { t = (k) => k, now, limit = 3 } = {}) {
+  return latestTickets(project, tickets, limit)
+    .map((tk) => {
+      const app = cleanString(tk.assistant_app);
+      const when = formatDeployTime(tk.updated_at ?? tk.created_at, now);
+      const id = tk.id ?? null;
+      return {
+        id,
+        title: cleanString(tk.title) ?? (id !== null ? `#${id}` : null),
+        via: app ? tx(t, 'world.journey.via', 'via {app}', { app }) : null,
+        whenText: when,
+      };
+    })
+    .filter((r) => r.id !== null && r.title);
+}
+
+/**
+ * One-line receipt for the builder desk: the latest done-or-review change,
+ * e.g. "AI built the change · 12 min human review · $40". Missing parts are
+ * omitted, and the AI meter (ai_micro_usd) is never shown to the client.
+ */
+export function agentReceipt(project, tickets, { t = (k) => k } = {}) {
+  const eligible = filterProjectTickets(project, tickets).filter(
+    (tk) => tk && (tk.status === 'done' || tk.status === 'review'),
+  );
+  if (eligible.length === 0) return null;
+  const latest = eligible.reduce((best, tk) => (ticketStamp(tk) > ticketStamp(best) ? tk : best), eligible[0]);
+
+  const parts = [tx(t, 'world.journey.receipt.built', 'AI built the change')];
+  const minutes = humanReviewMinutes(latest.human_seconds);
+  if (minutes > 0) {
+    parts.push(tx(t, 'world.journey.receipt.human', '{min} min human review', { min: minutes }));
+  }
+  // A frozen $0 (a first preview is free) is data, not a missing part.
+  const rawPrice = latest.price_cents;
+  const cents = Number(rawPrice);
+  if (
+    rawPrice !== null &&
+    rawPrice !== undefined &&
+    String(rawPrice).trim() !== '' &&
+    Number.isFinite(cents) &&
+    cents >= 0
+  ) {
+    parts.push(receiptMoney(cents));
+  }
+  return parts.join(' · ');
+}

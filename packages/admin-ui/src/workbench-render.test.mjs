@@ -128,3 +128,18 @@ test('ProjectWorld renders in ProjectView Overview without NaN or undefined',()=
     assert.doesNotMatch(opHtml,/\bundefined\b/);
   }
 });
+
+test('ProjectWorld follows the most recent open request, as the client sees it',()=>{
+  const html=rendered.renderProjectWorldStandalone('hosting');
+  // Pills for the project's requests plus "All stations"; the newest open one (#10, new) is followed.
+  assert.match(html,/class="aw-world__journeys"/);
+  assert.match(html,/All stations/);
+  assert.match(html,/aria-pressed="true"[^>]*title="#10 Update hours"/);
+  // The sample tickets carry no created_at, so the sentence has no "2h ago" part.
+  assert.match(html,/class="aw-world__journey-sentence">Asked[^<]*→ waiting for approval</);
+  // A new request is at the inbox: request current, the rest of the path ahead.
+  assert.match(html,/aw-world__station--request[^"]*is-journey-current/);
+  assert.match(html,/aw-world__station--hosting[^"]*is-journey-ahead/);
+  assert.doesNotMatch(html,/\bNaN\b/);
+  assert.doesNotMatch(html,/\bundefined\b/);
+});

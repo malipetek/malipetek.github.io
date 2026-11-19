@@ -6641,13 +6641,13 @@ button.aw-file:hover { border-color: currentColor; }
   color: var(--aw-w-ink);
 }
 @media (prefers-color-scheme: dark) {
-  .aw-world {
+  .aw-world, .aw-world__journeys {
     --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
     --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
     --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
   }
 }
-:root[data-theme='dark'] .aw-world {
+:root[data-theme='dark'] .aw-world, :root[data-theme='dark'] .aw-world__journeys {
   --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
   --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
   --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
@@ -6786,6 +6786,45 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-world__check-who { color: var(--aw-w-ink); }
 
 .aw-world__nav { display: flex; flex-wrap: wrap; gap: 4px; }
+.aw-world__journeys {
+  --aw-w-ink: var(--aw-text, var(--dsw-alias-label-primary, currentColor));
+  --aw-w-ink-soft: var(--aw-text2, var(--dsw-alias-label-secondary, rgba(128,134,142,.92)));
+  --aw-w-surface: var(--aw-bg, rgba(128,134,142,.06));
+  --aw-w-stage: var(--aw-bg2, rgba(128,134,142,.09));
+  --aw-w-chip: rgba(128,134,142,.16);
+  --aw-w-rule: var(--aw-border, rgba(128,134,142,.24));
+  --aw-w-rule-strong: var(--aw-border2, rgba(128,134,142,.38));
+  --aw-w-accent: var(--aw-accent, #ff5a1f);
+  --aw-w-ok: var(--aw-ok, #2f9e5b);
+  --aw-w-warn: var(--aw-warn, #d99a16);
+  --aw-w-bad: var(--aw-bad, #d6453d);
+  --aw-w-hover: var(--aw-hover, rgba(128,134,142,.14));
+  --aw-w-tint: color-mix(in srgb, var(--aw-w-accent) 14%, transparent);
+  --aw-w-mono: var(--aw-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 90%, var(--aw-w-ink) 10%);
+  --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 78%, var(--aw-w-ink) 22%);
+  --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 64%, var(--aw-w-ink) 36%);
+  --aw-w-accent-top: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface));
+  --aw-w-accent-left: color-mix(in srgb, var(--aw-w-accent) 36%, var(--aw-w-surface));
+  --aw-w-accent-right: color-mix(in srgb, var(--aw-w-accent) 50%, var(--aw-w-surface));
+  --aw-w-ok-soft: color-mix(in srgb, var(--aw-w-ok) 22%, var(--aw-w-surface));
+  --aw-w-bad-soft: color-mix(in srgb, var(--aw-w-bad) 22%, var(--aw-w-surface));
+  --aw-w-warn-soft: color-mix(in srgb, var(--aw-w-warn) 24%, var(--aw-w-surface));
+}
+.aw-world__journeys { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+.aw-world__journey-pill { appearance: none; display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font: inherit; font-size: 11px; line-height: 1.4; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-world__journey-pill[aria-pressed="true"] { border-color: color-mix(in srgb, var(--aw-w-accent) 60%, var(--aw-w-rule)); background: var(--aw-w-tint); color: var(--aw-w-ink); }
+.aw-world__journey-pill.is-all { border-style: dashed; }
+.aw-world__journey-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-ink-soft); flex: 0 0 auto; }
+.aw-world__journey-pill.is-in_progress .aw-world__journey-dot, .aw-world__journey-pill.is-review .aw-world__journey-dot { background: var(--aw-w-accent); }
+.aw-world__journey-pill.is-done .aw-world__journey-dot { background: var(--aw-w-ok, #2f9e5b); }
+.aw-world__journey { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: var(--aw-w-tint); }
+.aw-world__journey-sentence { margin: 2px 0 6px; font-size: 13px; line-height: 1.4; color: var(--aw-w-ink); }
+.aw-world__journey-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--aw-w-accent) 55%, var(--aw-w-rule)); color: var(--aw-w-ink); font-size: 11px; text-decoration: none; }
+.aw-world__station.is-journey-ahead { opacity: .35; }
+.aw-world__station.is-journey-current .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface)); stroke: var(--aw-w-accent); stroke-width: 1.6; }
+@media (prefers-reduced-motion: no-preference) { .aw-world__station.is-journey-current .aw-world__pad { animation: aw-world-journey-pulse 2.4s ease-in-out infinite; } }
+@keyframes aw-world-journey-pulse { 50% { stroke-opacity: .45; } }
 .aw-world__chip { appearance: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font-size: 11px; font-weight: 500; line-height: 1.25; cursor: pointer; transition: border-color 120ms ease, background 120ms ease, color 120ms ease; }
 .aw-world__chip:hover { background: var(--aw-w-hover); color: var(--aw-w-ink); }
 .aw-world__chip[aria-pressed='true'] { border-color: var(--aw-w-accent); background: var(--aw-w-tint); color: var(--aw-w-ink); font-weight: 600; }
@@ -7667,6 +7706,109 @@ button.aw-file:hover { border-color: currentColor; }
       }
     ];
   }
+  var JOURNEY_STATION_KEYS = Object.freeze([
+    "request",
+    "agent",
+    "code",
+    "preview",
+    "deploy",
+    "hosting"
+  ]);
+  var JOURNEY_CABLE_ORDER = Object.freeze(["request", "agent", "code", "deploy", "preview", "hosting"]);
+  var JOURNEY_CABLE_IDS = Object.freeze([
+    "request-agent",
+    "agent-code",
+    "code-deploy",
+    "deploy-preview",
+    "preview-hosting"
+  ]);
+  var JOURNEY_PLANS = Object.freeze({
+    new: { current: "request", reached: 0 },
+    approved: { current: "request", reached: 0 },
+    declined: { current: "request", reached: 0 },
+    in_progress: { current: "agent", reached: 1 },
+    review: { current: "preview", reached: 3 },
+    done: { current: "hosting", reached: 5 }
+  });
+  var JOURNEY_STATUS_SENTENCE = Object.freeze({
+    new: ["world.journey.status.new", "waiting for approval"],
+    approved: ["world.journey.status.approved", "approved, waiting for the builder"],
+    in_progress: ["world.journey.status.in_progress", "being built now"],
+    review: ["world.journey.status.review", "ready for review on the preview"],
+    done: ["world.journey.status.done", "live on your site"],
+    declined: ["world.journey.status.declined", "declined"]
+  });
+  function humanReviewMinutes(rawSeconds) {
+    const s = Number(rawSeconds);
+    if (!Number.isFinite(s) || s <= 0) return 0;
+    return Math.max(1, Math.ceil(s / 60));
+  }
+  function journeySiteUrl(site) {
+    const raw = cleanString(site?.customDomain) ?? cleanString(site?.productionUrl) ?? cleanString(site?.cloudflare?.productionUrl) ?? cleanString(site?.url);
+    if (!raw) return null;
+    return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  }
+  function journeyFor(ticket, { sites = [], t = (k) => k, now } = {}) {
+    if (!ticket || typeof ticket !== "object") return null;
+    const plan = JOURNEY_PLANS[ticket.status];
+    if (!plan) return null;
+    const stations = {};
+    const at = JOURNEY_STATION_KEYS.indexOf(plan.current);
+    JOURNEY_STATION_KEYS.forEach((key, idx) => {
+      stations[key] = key === plan.current ? "current" : idx < at ? "reached" : "ahead";
+    });
+    const site = pickSite(null, sites);
+    const previewUrl = cleanString(site?.previewUrl) ?? cleanString(site?.cloudflare?.previewUrl) ?? null;
+    const askedBits = [tx(t, "world.journey.asked", "Asked")];
+    const app = cleanString(ticket.assistant_app);
+    if (app) askedBits.push(tx(t, "world.journey.via", "via {app}", { app }));
+    const askedWhen = formatDeployTime(ticket.created_at, now);
+    if (askedWhen) askedBits.push(askedWhen);
+    const [tailKey, tailDefault] = JOURNEY_STATUS_SENTENCE[ticket.status];
+    let sentence = `${askedBits.join(" ")} \u2192 ${tx(t, tailKey, tailDefault)}`;
+    const minutes = humanReviewMinutes(ticket.human_seconds);
+    if (minutes > 0) {
+      sentence = `${sentence} \xB7 ${tx(t, "world.journey.human", "{min} min of human review", { min: minutes })}`;
+    }
+    return {
+      ticketId: ticket.id ?? null,
+      status: ticket.status,
+      stations,
+      currentKey: plan.current,
+      activeCableIds: JOURNEY_CABLE_IDS.slice(0, JOURNEY_CABLE_ORDER.indexOf(plan.current)),
+      sentence,
+      previewUrl,
+      siteUrl: journeySiteUrl(site)
+    };
+  }
+  function ticketStamp(ticket) {
+    return normalizeTimestampMs(ticket?.updated_at) ?? normalizeTimestampMs(ticket?.created_at) ?? 0;
+  }
+  function sameTicketId(a, b) {
+    if (a === null || a === void 0 || b === null || b === void 0) return false;
+    return String(a) === String(b);
+  }
+  function latestTickets(project, tickets, limit = Infinity) {
+    const sorted = [...filterProjectTickets(project, tickets)].filter(Boolean).sort((a, b) => ticketStamp(b) - ticketStamp(a));
+    return Number.isFinite(limit) ? sorted.slice(0, Math.max(0, limit)) : sorted;
+  }
+  function defaultJourneyTicket(project, tickets) {
+    const open = filterProjectTickets(project, tickets).filter((tk) => OPEN_TICKET_STATUSES.has(tk?.status));
+    if (open.length === 0) return null;
+    return open.reduce((best, tk) => ticketStamp(tk) > ticketStamp(best) ? tk : best, open[0]);
+  }
+  function journeyPillTickets(project, tickets, { limit = 5, ensure = null } = {}) {
+    const sorted = latestTickets(project, tickets);
+    const pills = sorted.slice(0, Math.max(0, limit));
+    if (ensure !== null && ensure !== void 0 && !pills.some((tk) => sameTicketId(tk.id, ensure.id))) {
+      const missing = sorted.find((tk) => sameTicketId(tk.id, ensure.id));
+      if (missing) {
+        if (pills.length < Math.max(0, limit)) pills.push(missing);
+        else if (pills.length > 0) pills[pills.length - 1] = missing;
+      }
+    }
+    return pills;
+  }
 
   // packages/admin-ui/src/project-world.jsx
   var VIEW_WIDTH = 760;
@@ -8130,6 +8272,14 @@ button.aw-file:hover { border-color: currentColor; }
     const cables = useMemo(() => cablesFor(stations), [stations]);
     const dots = useMemo(() => floorDots(stations, 0.42), [stations]);
     const [selectedKey, setSelectedKey] = useState(initialStation);
+    const [journeyId, setJourneyId] = useState(void 0);
+    const defaultTicket = useMemo(() => defaultJourneyTicket(project, tickets ?? []), [project, tickets]);
+    const pillTickets = useMemo(
+      () => journeyPillTickets(project, tickets ?? [], { limit: 5, ensure: defaultTicket }),
+      [project, tickets, defaultTicket]
+    );
+    const followed = journeyId === null ? null : journeyId === void 0 ? defaultTicket : (tickets ?? []).find((tk) => String(tk?.id) === String(journeyId)) ?? null;
+    const journey = useMemo(() => followed ? journeyFor(followed, { sites, t, now }) : null, [followed, sites, t, now]);
     const activeStation = stations.find((s) => s.key === selectedKey) ?? stations[0];
     const activateStation = (key, emit) => {
       setSelectedKey(key);
@@ -8150,174 +8300,229 @@ button.aw-file:hover { border-color: currentColor; }
     const workshopZonePt = iso(6.6, 5.2, 0);
     const [stateKey, stateDefault] = STATE_LABEL[activeStation.state] ?? STATE_LABEL.off;
     const stateBadgeText = tx(t, stateKey, stateDefault);
-    return /* @__PURE__ */ jsx("div", { className: "aw-world-wrap", children: /* @__PURE__ */ jsxs("figure", { className: "aw-world", children: [
-      /* @__PURE__ */ jsx("div", { className: "aw-world__stage", children: /* @__PURE__ */ jsxs(
-        "svg",
-        {
-          className: "aw-world__svg",
-          viewBox: `0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`,
-          preserveAspectRatio: "xMidYMid meet",
-          role: "img",
-          "aria-label": tx(t, "world.mapLabel", "Interactive map showing how your website works"),
-          children: [
-            /* @__PURE__ */ jsx("polygon", { className: "aw-world__floor-plate", points: floorPlate }),
-            /* @__PURE__ */ jsx("g", { "aria-hidden": "true", children: dots.map((d) => /* @__PURE__ */ jsx(
-              "circle",
-              {
-                className: d.active ? "aw-world__dot aw-world__dot--active" : "aw-world__dot",
-                cx: d.x,
-                cy: d.y,
-                r: d.active ? 2 : 1.25
-              },
-              d.id
-            )) }),
-            /* @__PURE__ */ jsx("text", { className: "aw-world__zone-label", x: visitorsZonePt.x, y: visitorsZonePt.y, textAnchor: "middle", children: tx(t, "world.zone.visitors", "Visitors") }),
-            /* @__PURE__ */ jsx("text", { className: "aw-world__zone-label", x: workshopZonePt.x, y: workshopZonePt.y, textAnchor: "middle", children: tx(t, "world.zone.workshop", "Workshop") }),
-            /* @__PURE__ */ jsx("g", { "aria-hidden": "true", children: cables.map((c) => {
-              const p1 = iso(c.points[0][0], c.points[0][1], 0);
-              const p2 = iso(c.points[1][0], c.points[1][1], 0);
-              const dPath = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
-              return /* @__PURE__ */ jsxs("g", { children: [
-                /* @__PURE__ */ jsx(
-                  "path",
-                  {
-                    className: c.connected ? "aw-world__cable-base is-connected" : "aw-world__cable-base",
-                    d: dPath
-                  }
-                ),
-                c.active ? /* @__PURE__ */ jsx("path", { className: "aw-world__cable-flow", d: dPath }) : null,
-                /* @__PURE__ */ jsx(CableArrow, { p1, p2, u: 0.5, active: c.active })
-              ] }, c.id);
-            }) }),
-            /* @__PURE__ */ jsxs("g", { "aria-hidden": "true", children: [
-              /* @__PURE__ */ jsx("circle", { className: "aw-world__face-top", cx: visitorPt.x, cy: visitorPt.y, r: 7.5 }),
-              /* @__PURE__ */ jsx(CableArrow, { p1: visitorPt, p2: visitorNext, u: 0.14, active: false }),
-              /* @__PURE__ */ jsx("text", { className: "aw-world__micro", x: visitorPt.x - 24, y: visitorPt.y + 18, children: tx(t, "world.visitor", "Visitor") })
-            ] }),
-            paintedStations.map((station) => {
-              const pos = STATION_POSITIONS[station.key];
-              const r = pos?.padHalf ?? 0.7;
-              const padPts = isoPoints([
-                [station.x - r, station.y - r, 0],
-                [station.x + r, station.y - r, 0],
-                [station.x + r, station.y + r, 0],
-                [station.x - r, station.y + r, 0]
-              ]);
-              const hitR = r + 0.16;
-              const hitPts = isoPoints([
-                [station.x - hitR, station.y - hitR, 0],
-                [station.x + hitR, station.y - hitR, 0],
-                [station.x + hitR, station.y + hitR, 0],
-                [station.x - hitR, station.y + hitR, 0]
-              ]);
-              const center = iso(station.x, station.y, 0);
-              const off = LABEL_OFFSETS[station.key] ?? { dx: 0, dy: 42 };
-              const lx = center.x + off.dx;
-              const ly = center.y + off.dy;
-              const labelW = Math.max(66, station.shortLabel.length * 6.5 + 22);
-              const isSelected = activeStation.key === station.key;
-              const cls = [
-                "aw-world__station",
-                `aw-world__station--${station.key}`,
-                `is-${station.state}`,
-                isSelected ? "is-selected" : ""
-              ].filter(Boolean).join(" ");
-              return /* @__PURE__ */ jsxs(
-                "g",
-                {
-                  className: cls,
-                  role: "button",
-                  tabIndex: 0,
-                  "aria-label": `${station.title}: ${station.stateText}`,
-                  "aria-pressed": isSelected,
-                  onMouseEnter: () => activateStation(station.key, false),
-                  onFocus: () => activateStation(station.key, false),
-                  onClick: () => activateStation(station.key, true),
-                  onKeyDown: (e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      activateStation(station.key, true);
-                    }
-                  },
-                  children: [
-                    /* @__PURE__ */ jsx("polygon", { className: "aw-world__hit", points: hitPts }),
-                    /* @__PURE__ */ jsx("polygon", { className: "aw-world__pad", points: padPts }),
-                    /* @__PURE__ */ jsx(StationGeometry, { station }),
-                    /* @__PURE__ */ jsxs("g", { "aria-hidden": "true", children: [
-                      /* @__PURE__ */ jsx(
-                        "rect",
-                        {
-                          className: "aw-world__tag-bg",
-                          x: lx - labelW / 2,
-                          y: ly - 10,
-                          width: labelW,
-                          height: 20,
-                          rx: 10
-                        }
-                      ),
-                      /* @__PURE__ */ jsx(
-                        "circle",
-                        {
-                          className: `aw-world__beacon aw-world__beacon--${station.state}`,
-                          cx: lx - labelW / 2 + 10,
-                          cy: ly,
-                          r: 3.2
-                        }
-                      ),
-                      /* @__PURE__ */ jsx("text", { className: "aw-world__tag-text", x: lx + 5, y: ly + 0.5, children: station.shortLabel })
-                    ] })
-                  ]
-                },
-                station.key
-              );
-            })
-          ]
-        }
-      ) }),
-      /* @__PURE__ */ jsxs("figcaption", { className: "aw-world__caption", "aria-live": "polite", children: [
-        /* @__PURE__ */ jsxs("div", { className: "aw-world__eyebrow", children: [
-          /* @__PURE__ */ jsx("span", { children: tx(t, "world.eyebrow", "Project world") }),
-          project?.name ? /* @__PURE__ */ jsx("span", { className: "aw-world__project-name", children: project.name }) : null
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-world__card", children: [
-          /* @__PURE__ */ jsx("div", { className: "aw-world__card-top", children: /* @__PURE__ */ jsxs("span", { className: `aw-world__pill aw-world__pill--${activeStation.state}`, children: [
-            /* @__PURE__ */ jsx("span", { className: "aw-world__pill-dot", "aria-hidden": "true" }),
-            stateBadgeText
-          ] }) }),
-          /* @__PURE__ */ jsx("h3", { className: "aw-world__title", children: activeStation.title }),
-          /* @__PURE__ */ jsx("p", { className: "aw-world__explain", children: activeStation.explain }),
-          /* @__PURE__ */ jsxs("div", { className: "aw-world__status-box", children: [
-            /* @__PURE__ */ jsx("span", { className: "aw-world__status-label", children: tx(t, "world.currentStatus", "Current status") }),
-            /* @__PURE__ */ jsx("p", { className: "aw-world__status-value", children: activeStation.stateText })
-          ] }),
-          /* @__PURE__ */ jsx(OperatorExtras, { station: activeStation }),
-          /* @__PURE__ */ jsx(ChecksList, { checks: activeStation.checks, t })
-        ] }),
-        /* @__PURE__ */ jsx("div", { className: "aw-world__nav", role: "group", "aria-label": tx(t, "world.stationsNav", "Map stations"), children: stations.map((s) => /* @__PURE__ */ jsxs(
+    return /* @__PURE__ */ jsxs("div", { className: "aw-world-wrap", children: [
+      pillTickets.length ? /* @__PURE__ */ jsxs("div", { className: "aw-world__journeys", role: "group", "aria-label": tx(t, "world.journey.pills", "Follow a request"), children: [
+        pillTickets.map((tk) => /* @__PURE__ */ jsxs(
           "button",
           {
             type: "button",
-            className: "aw-world__chip",
-            "aria-pressed": activeStation.key === s.key,
-            onClick: () => activateStation(s.key, true),
+            className: `aw-world__journey-pill is-${tk.status}`,
+            "aria-pressed": followed ? String(followed.id) === String(tk.id) : false,
+            onClick: () => setJourneyId(tk.id),
+            title: `#${tk.id} ${tk.title ?? ""}`,
             children: [
-              /* @__PURE__ */ jsx("span", { className: `aw-world__chip-dot aw-world__chip-dot--${s.state}`, "aria-hidden": "true" }),
-              s.shortLabel
+              /* @__PURE__ */ jsx("span", { className: "aw-world__journey-dot", "aria-hidden": "true" }),
+              tk.title ?? `#${tk.id}`
             ]
           },
-          s.key
-        )) })
-      ] }),
-      /* @__PURE__ */ jsx("ul", { className: "aw-world__sr-only", "aria-label": tx(t, "world.summaryLabel", "Website map station status"), children: stations.map((s) => /* @__PURE__ */ jsxs("li", { children: [
-        s.title,
-        ": ",
-        s.stateText,
-        ". ",
-        s.explain,
-        operatorSummaryText(s),
-        s.checks?.length ? ` ${s.checks.map((c) => [c.label, c.detail, c.whoText, c.checkedText].filter(Boolean).join(" \u2014 ")).join("; ")}` : ""
-      ] }, s.key)) })
-    ] }) });
+          String(tk.id)
+        )),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            type: "button",
+            className: "aw-world__journey-pill is-all",
+            "aria-pressed": !followed,
+            onClick: () => setJourneyId(null),
+            children: tx(t, "world.journey.all", "All stations")
+          }
+        )
+      ] }) : null,
+      /* @__PURE__ */ jsxs("figure", { className: "aw-world", children: [
+        /* @__PURE__ */ jsx("div", { className: "aw-world__stage", children: /* @__PURE__ */ jsxs(
+          "svg",
+          {
+            className: "aw-world__svg",
+            viewBox: `0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`,
+            preserveAspectRatio: "xMidYMid meet",
+            role: "img",
+            "aria-label": tx(t, "world.mapLabel", "Interactive map showing how your website works"),
+            children: [
+              /* @__PURE__ */ jsx("polygon", { className: "aw-world__floor-plate", points: floorPlate }),
+              /* @__PURE__ */ jsx("g", { "aria-hidden": "true", children: dots.map((d) => /* @__PURE__ */ jsx(
+                "circle",
+                {
+                  className: d.active ? "aw-world__dot aw-world__dot--active" : "aw-world__dot",
+                  cx: d.x,
+                  cy: d.y,
+                  r: d.active ? 2 : 1.25
+                },
+                d.id
+              )) }),
+              /* @__PURE__ */ jsx("text", { className: "aw-world__zone-label", x: visitorsZonePt.x, y: visitorsZonePt.y, textAnchor: "middle", children: tx(t, "world.zone.visitors", "Visitors") }),
+              /* @__PURE__ */ jsx("text", { className: "aw-world__zone-label", x: workshopZonePt.x, y: workshopZonePt.y, textAnchor: "middle", children: tx(t, "world.zone.workshop", "Workshop") }),
+              /* @__PURE__ */ jsx("g", { "aria-hidden": "true", children: cables.map((c) => {
+                const p1 = iso(c.points[0][0], c.points[0][1], 0);
+                const p2 = iso(c.points[1][0], c.points[1][1], 0);
+                const dPath = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
+                return /* @__PURE__ */ jsxs("g", { children: [
+                  /* @__PURE__ */ jsx(
+                    "path",
+                    {
+                      className: c.connected ? "aw-world__cable-base is-connected" : "aw-world__cable-base",
+                      d: dPath
+                    }
+                  ),
+                  (journey && c.flow === "build" ? journey.activeCableIds.includes(c.id) : c.active) ? /* @__PURE__ */ jsx("path", { className: "aw-world__cable-flow", d: dPath }) : null,
+                  /* @__PURE__ */ jsx(
+                    CableArrow,
+                    {
+                      p1,
+                      p2,
+                      u: 0.5,
+                      active: journey && c.flow === "build" ? journey.activeCableIds.includes(c.id) : c.active
+                    }
+                  )
+                ] }, c.id);
+              }) }),
+              /* @__PURE__ */ jsxs("g", { "aria-hidden": "true", children: [
+                /* @__PURE__ */ jsx("circle", { className: "aw-world__face-top", cx: visitorPt.x, cy: visitorPt.y, r: 7.5 }),
+                /* @__PURE__ */ jsx(CableArrow, { p1: visitorPt, p2: visitorNext, u: 0.14, active: false }),
+                /* @__PURE__ */ jsx("text", { className: "aw-world__micro", x: visitorPt.x - 24, y: visitorPt.y + 18, children: tx(t, "world.visitor", "Visitor") })
+              ] }),
+              paintedStations.map((station) => {
+                const pos = STATION_POSITIONS[station.key];
+                const r = pos?.padHalf ?? 0.7;
+                const padPts = isoPoints([
+                  [station.x - r, station.y - r, 0],
+                  [station.x + r, station.y - r, 0],
+                  [station.x + r, station.y + r, 0],
+                  [station.x - r, station.y + r, 0]
+                ]);
+                const hitR = r + 0.16;
+                const hitPts = isoPoints([
+                  [station.x - hitR, station.y - hitR, 0],
+                  [station.x + hitR, station.y - hitR, 0],
+                  [station.x + hitR, station.y + hitR, 0],
+                  [station.x - hitR, station.y + hitR, 0]
+                ]);
+                const center = iso(station.x, station.y, 0);
+                const off = LABEL_OFFSETS[station.key] ?? { dx: 0, dy: 42 };
+                const lx = center.x + off.dx;
+                const ly = center.y + off.dy;
+                const labelW = Math.max(66, station.shortLabel.length * 6.5 + 22);
+                const isSelected = activeStation.key === station.key;
+                const cls = [
+                  "aw-world__station",
+                  `aw-world__station--${station.key}`,
+                  `is-${station.state}`,
+                  isSelected ? "is-selected" : "",
+                  journey?.stations?.[station.key] ? `is-journey-${journey.stations[station.key]}` : ""
+                ].filter(Boolean).join(" ");
+                return /* @__PURE__ */ jsxs(
+                  "g",
+                  {
+                    className: cls,
+                    role: "button",
+                    tabIndex: 0,
+                    "aria-label": `${station.title}: ${station.stateText}`,
+                    "aria-pressed": isSelected,
+                    onMouseEnter: () => activateStation(station.key, false),
+                    onFocus: () => activateStation(station.key, false),
+                    onClick: () => activateStation(station.key, true),
+                    onKeyDown: (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        activateStation(station.key, true);
+                      }
+                    },
+                    children: [
+                      /* @__PURE__ */ jsx("polygon", { className: "aw-world__hit", points: hitPts }),
+                      /* @__PURE__ */ jsx("polygon", { className: "aw-world__pad", points: padPts }),
+                      /* @__PURE__ */ jsx(StationGeometry, { station }),
+                      /* @__PURE__ */ jsxs("g", { "aria-hidden": "true", children: [
+                        /* @__PURE__ */ jsx(
+                          "rect",
+                          {
+                            className: "aw-world__tag-bg",
+                            x: lx - labelW / 2,
+                            y: ly - 10,
+                            width: labelW,
+                            height: 20,
+                            rx: 10
+                          }
+                        ),
+                        /* @__PURE__ */ jsx(
+                          "circle",
+                          {
+                            className: `aw-world__beacon aw-world__beacon--${station.state}`,
+                            cx: lx - labelW / 2 + 10,
+                            cy: ly,
+                            r: 3.2
+                          }
+                        ),
+                        /* @__PURE__ */ jsx("text", { className: "aw-world__tag-text", x: lx + 5, y: ly + 0.5, children: station.shortLabel })
+                      ] })
+                    ]
+                  },
+                  station.key
+                );
+              })
+            ]
+          }
+        ) }),
+        /* @__PURE__ */ jsxs("figcaption", { className: "aw-world__caption", "aria-live": "polite", children: [
+          /* @__PURE__ */ jsxs("div", { className: "aw-world__eyebrow", children: [
+            /* @__PURE__ */ jsx("span", { children: tx(t, "world.eyebrow", "Project world") }),
+            project?.name ? /* @__PURE__ */ jsx("span", { className: "aw-world__project-name", children: project.name }) : null
+          ] }),
+          journey ? /* @__PURE__ */ jsxs("div", { className: "aw-world__journey", children: [
+            /* @__PURE__ */ jsxs("span", { className: "aw-world__status-label", children: [
+              "#",
+              followed.id,
+              " ",
+              followed.title ?? ""
+            ] }),
+            /* @__PURE__ */ jsx("p", { className: "aw-world__journey-sentence", children: journey.sentence }),
+            journey.status === "review" && journey.previewUrl ? /* @__PURE__ */ jsxs("a", { className: "aw-world__journey-chip", href: journey.previewUrl, target: "_blank", rel: "noreferrer", children: [
+              tx(t, "world.journey.openPreview", "Open preview"),
+              " \u2197"
+            ] }) : null,
+            journey.status === "done" && journey.siteUrl ? /* @__PURE__ */ jsxs("a", { className: "aw-world__journey-chip", href: journey.siteUrl, target: "_blank", rel: "noreferrer", children: [
+              tx(t, "world.journey.openSite", "Open site"),
+              " \u2197"
+            ] }) : null
+          ] }) : null,
+          /* @__PURE__ */ jsxs("div", { className: "aw-world__card", children: [
+            /* @__PURE__ */ jsx("div", { className: "aw-world__card-top", children: /* @__PURE__ */ jsxs("span", { className: `aw-world__pill aw-world__pill--${activeStation.state}`, children: [
+              /* @__PURE__ */ jsx("span", { className: "aw-world__pill-dot", "aria-hidden": "true" }),
+              stateBadgeText
+            ] }) }),
+            /* @__PURE__ */ jsx("h3", { className: "aw-world__title", children: activeStation.title }),
+            /* @__PURE__ */ jsx("p", { className: "aw-world__explain", children: activeStation.explain }),
+            /* @__PURE__ */ jsxs("div", { className: "aw-world__status-box", children: [
+              /* @__PURE__ */ jsx("span", { className: "aw-world__status-label", children: tx(t, "world.currentStatus", "Current status") }),
+              /* @__PURE__ */ jsx("p", { className: "aw-world__status-value", children: activeStation.stateText })
+            ] }),
+            /* @__PURE__ */ jsx(OperatorExtras, { station: activeStation }),
+            /* @__PURE__ */ jsx(ChecksList, { checks: activeStation.checks, t })
+          ] }),
+          /* @__PURE__ */ jsx("div", { className: "aw-world__nav", role: "group", "aria-label": tx(t, "world.stationsNav", "Map stations"), children: stations.map((s) => /* @__PURE__ */ jsxs(
+            "button",
+            {
+              type: "button",
+              className: "aw-world__chip",
+              "aria-pressed": activeStation.key === s.key,
+              onClick: () => activateStation(s.key, true),
+              children: [
+                /* @__PURE__ */ jsx("span", { className: `aw-world__chip-dot aw-world__chip-dot--${s.state}`, "aria-hidden": "true" }),
+                s.shortLabel
+              ]
+            },
+            s.key
+          )) })
+        ] }),
+        /* @__PURE__ */ jsx("ul", { className: "aw-world__sr-only", "aria-label": tx(t, "world.summaryLabel", "Website map station status"), children: stations.map((s) => /* @__PURE__ */ jsxs("li", { children: [
+          s.title,
+          ": ",
+          s.stateText,
+          ". ",
+          s.explain,
+          operatorSummaryText(s),
+          s.checks?.length ? ` ${s.checks.map((c) => [c.label, c.detail, c.whoText, c.checkedText].filter(Boolean).join(" \u2014 ")).join("; ")}` : ""
+        ] }, s.key)) })
+      ] })
+    ] });
   }
 
   // packages/admin-ui/src/project-styles.js

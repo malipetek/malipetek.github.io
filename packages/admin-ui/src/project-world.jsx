@@ -20,10 +20,13 @@ import {
   STATION_POSITIONS,
   VISITOR_POS,
   cablesFor,
+  defaultJourneyTicket,
   floorDots,
   iso,
   isoBox,
   isoPoints,
+  journeyFor,
+  journeyPillTickets,
   stationsFor,
   tx,
 } from './project-world-model.mjs';
@@ -628,6 +631,22 @@ export function ProjectWorld({
   const dots = useMemo(() => floorDots(stations, 0.42), [stations]);
 
   const [selectedKey, setSelectedKey] = useState(initialStation);
+
+  // A request's journey across the map: the same story the client sees.
+  // undefined = follow the default (most recent open request); null = all stations.
+  const [journeyId, setJourneyId] = useState(undefined);
+  const defaultTicket = useMemo(() => defaultJourneyTicket(project, tickets ?? []), [project, tickets]);
+  const pillTickets = useMemo(
+    () => journeyPillTickets(project, tickets ?? [], { limit: 5, ensure: defaultTicket }),
+    [project, tickets, defaultTicket],
+  );
+  const followed =
+    journeyId === null
+      ? null
+      : journeyId === undefined
+        ? defaultTicket
+        : (tickets ?? []).find((tk) => String(tk?.id) === String(journeyId)) ?? null;
+  const journey = useMemo(() => (followed ? journeyFor(followed, { sites, t, now }) : null), [followed, sites, t, now]);
   const activeStation = stations.find((s) => s.key === selectedKey) ?? stations[0];
 
   const activateStation = (key, emit) => {
@@ -656,6 +675,31 @@ export function ProjectWorld({
 
   return (
     <div className="aw-world-wrap">
+      {pillTickets.length ? (
+        <div className="aw-world__journeys" role="group" aria-label={tx(t, 'world.journey.pills', 'Follow a request')}>
+          {pillTickets.map((tk) => (
+            <button
+              key={String(tk.id)}
+              type="button"
+              className={`aw-world__journey-pill is-${tk.status}`}
+              aria-pressed={followed ? String(followed.id) === String(tk.id) : false}
+              onClick={() => setJourneyId(tk.id)}
+              title={`#${tk.id} ${tk.title ?? ''}`}
+            >
+              <span className="aw-world__journey-dot" aria-hidden="true" />
+              {tk.title ?? `#${tk.id}`}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="aw-world__journey-pill is-all"
+            aria-pressed={!followed}
+            onClick={() => setJourneyId(null)}
+          >
+            {tx(t, 'world.journey.all', 'All stations')}
+          </button>
+        </div>
+      ) : null}
       <figure className="aw-world">
         <div className="aw-world__stage">
           <svg
@@ -699,8 +743,15 @@ export function ProjectWorld({
                       className={c.connected ? 'aw-world__cable-base is-connected' : 'aw-world__cable-base'}
                       d={dPath}
                     />
-                    {c.active ? <path className="aw-world__cable-flow" d={dPath} /> : null}
-                    <CableArrow p1={p1} p2={p2} u={0.5} active={c.active} />
+                    {(journey && c.flow === 'build' ? journey.activeCableIds.includes(c.id) : c.active) ? (
+                      <path className="aw-world__cable-flow" d={dPath} />
+                    ) : null}
+                    <CableArrow
+                      p1={p1}
+                      p2={p2}
+                      u={0.5}
+                      active={journey && c.flow === 'build' ? journey.activeCableIds.includes(c.id) : c.active}
+                    />
                   </g>
                 );
               })}
@@ -745,6 +796,7 @@ export function ProjectWorld({
                 `aw-world__station--${station.key}`,
                 `is-${station.state}`,
                 isSelected ? 'is-selected' : '',
+                journey?.stations?.[station.key] ? `is-journey-${journey.stations[station.key]}` : '',
               ]
                 .filter(Boolean)
                 .join(' ');
@@ -801,6 +853,25 @@ export function ProjectWorld({
             <span>{tx(t, 'world.eyebrow', 'Project world')}</span>
             {project?.name ? <span className="aw-world__project-name">{project.name}</span> : null}
           </div>
+
+          {journey ? (
+            <div className="aw-world__journey">
+              <span className="aw-world__status-label">
+                #{followed.id} {followed.title ?? ''}
+              </span>
+              <p className="aw-world__journey-sentence">{journey.sentence}</p>
+              {journey.status === 'review' && journey.previewUrl ? (
+                <a className="aw-world__journey-chip" href={journey.previewUrl} target="_blank" rel="noreferrer">
+                  {tx(t, 'world.journey.openPreview', 'Open preview')} ↗
+                </a>
+              ) : null}
+              {journey.status === 'done' && journey.siteUrl ? (
+                <a className="aw-world__journey-chip" href={journey.siteUrl} target="_blank" rel="noreferrer">
+                  {tx(t, 'world.journey.openSite', 'Open site')} ↗
+                </a>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="aw-world__card">
             <div className="aw-world__card-top">
