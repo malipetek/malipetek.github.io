@@ -162,6 +162,22 @@ export function createDelegateEndpoint(options) {
       }
       const { id, method, params } = message;
       const answer = (result) => finish({ jsonrpc: '2.0', id, result });
+      /**
+       * Answer anything this endpoint does not implement.
+       *
+       * A client that opens with a method we ignore waits forever: Antigravity's
+       * `agy acp` starts with `server/discover`, and because no response was ever
+       * written the MCP server never finished initializing, so the agent was
+       * handed no tools at all — the `delegate` tool silently did not exist.
+       * Notifications still get no reply, per JSON-RPC.
+       */
+      const unimplemented = () => {
+        if (id === undefined) {
+          response.writeHead(202);
+          return response.end();
+        }
+        return answer({});
+      };
       const fail = (text) => finish({
         jsonrpc: '2.0',
         id,
@@ -172,6 +188,12 @@ export function createDelegateEndpoint(options) {
         return answer({ protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'dsh', version: '1' } });
       }
       if (method === 'tools/list') return answer({ tools: [DELEGATE_TOOL] });
+      if (method === 'server/discover') return answer({});
+      if (method === 'ping') return answer({});
+      if (typeof method === 'string' && method.startsWith('notifications/')) {
+        response.writeHead(202);
+        return response.end();
+      }
       if (method === 'tools/call') {
         if (params?.name !== DELEGATE_TOOL.name) return fail(`unknown tool ${String(params?.name)}`);
         const task = String(params?.arguments?.task ?? '').trim();
