@@ -24,7 +24,7 @@
  */
 import { Hono, type Context } from 'hono';
 import { MAX_AGENT_TOKENS, mintAgentToken, randomToken, sessionUser, sha256, siteUrl } from './portal.ts';
-import { isAllowedOrigin, corsHeaders, isRateLimited, clientIp, now, type Env, type HonoEnv } from './shared.ts';
+import { isAllowedOrigin, canUseAssistant, corsHeaders, isRateLimited, clientIp, now, type Env, type HonoEnv } from './shared.ts';
 
 type Ctx = Context<HonoEnv>;
 
@@ -206,7 +206,7 @@ oauth.post('/oauth/approve', async (c) => {
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   const user = token && !token.startsWith('cat_') ? await sessionUser(env, token) : null;
   if (!user) return portalReply(c, { error: 'unauthorized' }, 401);
-  if (user.role !== 'client') return portalReply(c, { error: 'clients_only' }, 400);
+  if (!canUseAssistant(env, user)) return portalReply(c, { error: 'clients_only' }, 400);
 
   const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
   const client = await getClient(env, body?.client_id);
