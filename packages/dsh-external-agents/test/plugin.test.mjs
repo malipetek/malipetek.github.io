@@ -257,6 +257,36 @@ test('the catch-up budget is configurable, per agent or profile-wide', () => {
   }
 });
 
+test('shared instructions reach every agent, after its own', () => {
+  const run = fakeContext();
+  const dispose = apply(run.ctx, {
+    agents: [
+      { id: 'own', command: process.execPath, args: [mock], cwd: scratch, instructions: 'Agent rule.' },
+      { id: 'bare', command: process.execPath, args: [mock], cwd: scratch },
+    ],
+    sessionStoreDir: scratch,
+    sharedInstructions: '  ## Model routing\nUse the table.  ',
+  });
+  try {
+    const [own, bare] = run.registered.adapters.map((entry) => entry.adapter.instructions);
+    assert.equal(own, 'Agent rule.\n\n## Model routing\nUse the table.');
+    assert.equal(bare, '## Model routing\nUse the table.');
+  } finally {
+    dispose();
+  }
+
+  const none = fakeContext();
+  const d2 = apply(none.ctx, {
+    agents: [{ id: 'own', command: process.execPath, args: [mock], cwd: scratch, instructions: 'Agent rule.' }],
+    sessionStoreDir: scratch,
+  });
+  try {
+    assert.equal(none.registered.adapters[0].adapter.instructions, 'Agent rule.');
+  } finally {
+    d2();
+  }
+});
+
 test('apply registers one model provider per agent, which is what populates the picker', () => {
   const { ctx, registered } = fakeContext();
   const dispose = apply(ctx, config);

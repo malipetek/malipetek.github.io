@@ -19,6 +19,8 @@ import { MarketingView } from './marketing.jsx';
 import { SeoView } from './seo.jsx';
 import { HealthView } from './health.jsx';
 import { STYLES } from './styles.js';
+import { ProjectView } from './project.jsx';
+import { createTaskSubmission, createProjectSubmission, destinationFromHash, workbenchAllowed, projectCreationRequest } from './workbench.js';
 
 const VIEWS = [
   { key: 'inbox', label: 'Needs you', icon: 'inbox' },
@@ -93,7 +95,10 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
     }
   }, [tabs, active]);
 
-  const open = useCallback((key) => setTabs((s) => ({ tabs: s.tabs.includes(key) ? s.tabs : [...s.tabs, key], active: key })), []);
+  const open = useCallback((key) => {
+    if (key.startsWith('p:') && host?.openProject) return host.openProject(key.slice(2));
+    setTabs((s) => ({ tabs: s.tabs.includes(key) ? s.tabs : [...s.tabs, key], active: key }));
+  }, [host]);
   const close = useCallback(
     (key) =>
       setTabs((s) => {
@@ -111,10 +116,8 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
     if (typeof window === 'undefined') return undefined;
     const fromHash = () => {
       const hash = window.location.hash.slice(1);
-      const id = Number(new URLSearchParams(hash).get('ticket'));
-      if (Number.isInteger(id) && id > 0) openTicket(id);
-      const client = new URLSearchParams(hash).get('client');
-      if (client) open(`c:${client}`);
+      const destination = destinationFromHash(hash);
+      if (destination) open(destination);
       // Notification mail links to #marketing; a view name is a valid target too.
       if (viewOf(hash)) open(hash);
     };
@@ -183,6 +186,10 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  useEffect(() => {
+    if (data.loaded && !workbenchAllowed(active, data.access)) open('board');
+  }, [data.loaded, data.access, active, open]);
+
   const ctx = useMemo(
     () => ({ api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, ask: setAsk, setModal, boardProject, setBoardProject }),
     [api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, boardProject],
@@ -196,6 +203,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
       const t = ticketById.get(Number(key.slice(2)));
       return t ? `#${t.id} ${t.title}` : `#${key.slice(2)}`;
     }
+    if (key.startsWith('p:')) return data.projects.find((p) => p.id === key.slice(2))?.name ?? 'Project';
     if (key.startsWith('c:')) {
       const c = data.clients.find((x) => x.id === key.slice(2));
       return c ? c.name || c.email : 'Client';
@@ -210,7 +218,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
       <style>{STYLES}</style>
       <div ref={rootRef} className={cx('aw', fullscreen && 'aw--fullscreen', `aw--${platform}`, underButtons && 'aw--inset')}>
         <nav className="aw-activity" aria-label="Views">
-          {VIEWS.map((v) => (
+          {VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => (
             <button key={v.key} type="button" title={v.label} aria-pressed={active === v.key} onClick={() => open(v.key)}>
               <Icon name={v.icon} size={20} />
               {v.key === 'inbox' && inboxCount ? <span className="aw-badge">{inboxCount}</span> : null}
@@ -230,7 +238,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
 
         <main className="aw-main">
           <div className="aw-tabs" role="tablist">
-            {tabs.map((key) => (
+            {tabs.filter((key) => workbenchAllowed(key, data.access)).map((key) => (
               <div
                 key={key}
                 role="tab"
@@ -240,7 +248,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
                 onAuxClick={(e) => e.button === 1 && close(key)}
                 title={tabLabel(key)}
               >
-                <Icon name={key.startsWith('t:') ? 'ticket' : key.startsWith('c:') ? 'clients' : viewOf(key)?.icon ?? 'list'} size={14} />
+                <Icon name={key.startsWith('p:') ? 'folder' : key.startsWith('t:') ? 'ticket' : key.startsWith('c:') ? 'clients' : viewOf(key)?.icon ?? 'list'} size={14} />
                 <span className="aw-tab__label">{tabLabel(key)}</span>
                 <button
                   type="button"
@@ -267,10 +275,12 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
             ) : !data.loaded ? (
               <p className="aw-empty">Loading…</p>
             ) : (
-              tabs.map((key) => (
+              tabs.filter((key) => workbenchAllowed(key, data.access)).map((key) => (
                 <section key={key} className="aw-pane" hidden={key !== active}>
                   {key.startsWith('t:') ? (
                     <TicketView id={Number(key.slice(2))} active={key === active} />
+                  ) : key.startsWith('p:') ? (
+                    <ProjectView id={key.slice(2)} />
                   ) : key.startsWith('c:') ? (
                     <ClientView id={key.slice(2)} />
                   ) : (
@@ -344,7 +354,7 @@ function SignedOut() {
 /* ————— the explorer: projects as folders, live work, nodes ————— */
 
 function Explorer() {
-  const { data, open, openTicket, setBoardProject, boardProject } = useAdminCtx();
+  const { data, open, openTicket, setModal, setBoardProject, boardProject } = useAdminCtx();
   const [openSlug, setOpenSlug] = useState({});
   const byProject = new Map();
   for (const t of data.tickets) {
@@ -356,7 +366,7 @@ function Explorer() {
   const runningTicket = new Set(data.running.map((r) => r.ticket_id));
   return (
     <aside className="aw-explorer" aria-label="Explorer">
-      <h3>Projects</h3>
+      <h3>Projects {data.access?.canUseWorkbench ? <Button kind="ghost" size="sm" title="New project" onClick={() => setModal({ kind: 'project' })}><Icon name="plus" size={12} /></Button> : null}</h3>
       <ul className="aw-tree">
         {data.projects.map((p) => {
           const items = (byProject.get(p.id) ?? []).filter(live);
@@ -372,9 +382,9 @@ function Explorer() {
                   className="aw-tree__name"
                   onClick={() => {
                     setBoardProject(p.id);
-                    open('board');
+                    open(`p:${p.id}`);
                   }}
-                  title={`Open ${p.name} on the board`}
+                  title={`Open ${p.name}`}
                 >
                   <Icon name="folder" size={14} /> {p.name}
                 </button>
@@ -414,6 +424,7 @@ function Explorer() {
         )}
       </ul>
 
+      {data.access?.superAdmin ? <>
       <h3>Nodes</h3>
       <ul className="aw-tree">
         {data.nodes.map((n) => (
@@ -425,6 +436,7 @@ function Explorer() {
           </li>
         ))}
       </ul>
+      </> : null}
     </aside>
   );
 }
@@ -436,6 +448,7 @@ function StatusBar() {
   const stuck = data.queue.filter((q) => !q.eligible.length).length;
   return (
     <footer className="aw-status">
+      {data.access?.superAdmin ? <>
       <button type="button" onClick={() => open('fleet')}>
         <Dot state={online === data.nodes.length && online ? 'ok' : online ? 'warn' : 'bad'} /> {online}/{data.nodes.length} nodes online
       </button>
@@ -445,6 +458,7 @@ function StatusBar() {
       <button type="button" onClick={() => open('fleet')}>
         {waiting} queued{stuck ? ` · ${stuck} stuck` : ''}
       </button>
+      </> : <span>{data.projects.length} projects</span>}
       <span className="aw-status__fill" />
       {data.error ? <span className="aw-status__err">{errorText(data.error)}</span> : null}
       <span>{data.fetchedAt ? `updated ${new Date(data.fetchedAt).toLocaleTimeString()}` : ''}</span>
@@ -464,15 +478,16 @@ function Palette({ onClose }) {
   const items = useMemo(() => {
     const cmds = [
       { label: 'New task…', hint: 'command', run: () => setModal({ kind: 'task' }) },
-      { label: 'New project…', hint: 'command', run: () => setModal({ kind: 'project' }) },
+      ...(data.access?.canUseWorkbench ? [{ label: 'New project…', hint: 'command', run: () => setModal({ kind: 'project' }) }] : []),
       { label: 'Refresh', hint: 'command', run: () => void reload() },
-      ...VIEWS.map((v) => ({ label: `Go to ${v.label}`, hint: 'view', run: () => open(v.key) })),
+      ...VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => ({ label: `Go to ${v.label}`, hint: 'view', run: () => open(v.key) })),
+      ...data.projects.map((p) => ({ label: p.name, hint: 'project', run: () => open(`p:${p.id}`) })),
       ...data.tickets.map((t) => ({ label: `#${t.id} ${t.title}`, hint: `${STATUS_LABEL[t.status]} · ${t.project_name ?? 'no project'}`, run: () => openTicket(t.id) })),
     ];
     const needle = q.trim().toLowerCase();
     if (!needle) return cmds.slice(0, 40);
     return cmds.filter((c) => `${c.label} ${c.hint}`.toLowerCase().includes(needle)).slice(0, 40);
-  }, [q, data.tickets, open, openTicket, setModal, reload]);
+  }, [q, data, open, openTicket, setModal, reload]);
   const pick = (item) => {
     onClose();
     item?.run();
@@ -511,7 +526,7 @@ function Palette({ onClose }) {
 
 /* ————— filing work ————— */
 
-function TaskModal({ preset, onClose }) {
+export function TaskModal({ preset = {}, onClose }) {
   const { api, data, act, openTicket } = useAdminCtx();
   const [title, setTitle] = useState('');
   const [brief, setBrief] = useState('');
@@ -519,51 +534,55 @@ function TaskModal({ preset, onClose }) {
   const [priority, setPriority] = useState(data.settings?.defaultPriority ?? 0);
   const [executor, setExecutor] = useState(null);
   const [requires, setRequires] = useState([]);
-  const [approve, setApprove] = useState(true);
+  const [approve, setApprove] = useState(false);
   const [busy, setBusy] = useState(false);
   const slug = data.projects.find((p) => p.id === projectId)?.slug ?? null;
   const where = predict(data.nodes, { slug, requires, executor, kind: 'system' });
   const caps = data.catalog?.capabilities ?? [];
+  const submitRef = useRef(null);
+  if (!submitRef.current) submitRef.current = createTaskSubmission((body) =>
+    act(() => api('POST', '/admin/work', body), (o) => `Saved #${o.id}${body.approve ? ' and queued it' : ' as a draft'}.`));
+  const busyRef = useRef(false);
   const submit = async () => {
+    if (busyRef.current || !title.trim() || !brief.trim() || !projectId) return;
+    busyRef.current = true;
+    const pending = submitRef.current({ title, brief, projectId, priority, requires, executor, approve });
     setBusy(true);
     try {
-      const out = await act(
-        () => api('POST', '/admin/work', { title: title.trim(), brief: brief.trim(), projectId, priority, requires, executor, approve }),
-        (o) => `Filed #${o.id}${approve ? ' and queued it' : ''}.`,
-      );
-      onClose();
-      openTicket(out.id);
-    } catch {
-      setBusy(false);
-    }
+      const out = await pending;
+      if (out) { onClose(); openTicket(out.id); }
+    } catch { /* act displays the error; keep the form for retry. */ }
+    finally { busyRef.current = false; setBusy(false); }
   };
   return (
     <Modal
       title="New task"
       subtitle="Your own work on one of your projects. The brief is trusted guidance for the agent."
-      onClose={onClose}
+      onClose={() => !busyRef.current && onClose()}
       wide
       actions={
         <>
-          <span className={`aw-predict aw-predict--${where.state}`}>
+          {data.access?.superAdmin ? <span className={`aw-predict aw-predict--${where.state}`}>
             <Dot state={where.state} /> {where.text}
-          </span>
-          <Button onClick={onClose}>Cancel</Button>
+          </span> : <span className="aw-muted">{approve ? 'The agent will be queued.' : 'Draft only · no agent starts.'}</span>}
+          <Button disabled={busy} onClick={onClose}>Cancel</Button>
           <Button kind="primary" disabled={busy || !title.trim() || !brief.trim() || !projectId} onClick={submit}>
-            {approve ? 'File and queue' : 'File'}
+            {busy ? 'Saving…' : approve ? 'Save and queue agent' : 'Save draft'}
           </Button>
         </>
       }
     >
+      <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <Field label="Title">
-        <input value={title} maxLength={140} placeholder="Fix the checkout total rounding" onChange={(e) => setTitle(e.target.value)} />
+        <input disabled={busy} value={title} maxLength={140} placeholder="Fix the checkout total rounding" onChange={(e) => setTitle(e.target.value)} />
       </Field>
       <Field label="Brief" hint="What to change, where, and how to check it.">
         <textarea
+          disabled={busy}
           rows={7}
           value={brief}
           onChange={(e) => setBrief(e.target.value)}
-          onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === 'Enter' && submit()}
+          onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void submit(); } }}
         />
       </Field>
       <div className="aw-grid2">
@@ -584,7 +603,7 @@ function TaskModal({ preset, onClose }) {
           <Segmented value={executor} options={AGENTS} onChange={setExecutor} />
         </Field>
         <Field label="Start">
-          <Segmented value={approve} options={[{ value: true, label: 'Queue now' }, { value: false, label: 'Hold in New' }]} onChange={setApprove} />
+          <Segmented value={approve} disabled={busy} options={[{ value: false, label: 'Save draft' }, { value: true, label: 'Queue agent' }]} onChange={setApprove} />
         </Field>
       </div>
       {caps.length ? (
@@ -592,38 +611,67 @@ function TaskModal({ preset, onClose }) {
           <Chips value={requires} options={caps.map((c) => ({ value: c.id, label: c.label, hint: c.hint }))} onChange={setRequires} />
         </Field>
       ) : null}
+      </fieldset>
     </Modal>
   );
 }
 
-function ProjectModal({ onClose }) {
-  const { api, act } = useAdminCtx();
+export function ProjectModal({ onClose }) {
+  const { api, act, host, open, data, notify } = useAdminCtx();
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [edited, setEdited] = useState(false);
   const [kind, setKind] = useState('existing');
   const [code, setCode] = useState('create');
   const [repo, setRepo] = useState('');
-  const ready = name.trim() && slug && (code !== 'repo' || repo.trim());
-  const submit = () =>
-    act(
-      () => api('POST', '/admin/projects', { name: name.trim(), slug, kind, code, repo: code === 'repo' ? repo.trim() : undefined }),
-      `Created ${name.trim()}.`,
-    ).then(onClose, () => undefined);
+  const [what, setWhat] = useState('');
+  const [goal, setGoal] = useState('');
+  const [receipt, setReceipt] = useState(null);
+  const [localPath, setLocalPath] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [setupError, setSetupError] = useState(null);
+  const submission = useRef(null);
+  const busyRef = useRef(false);
+  if (!submission.current) submission.current = createProjectSubmission(
+    (input) => act(async () => {
+      const request = projectCreationRequest(input, data.access);
+      const result = await api('POST', request.path, request.body);
+      setReceipt(result);
+      if (result.repoError) notify?.(`Project created; repository setup needs attention: ${result.repoError}`, 'error');
+      return result.project ?? result;
+    }),
+    (project, input) => input.localPath ? host.projectConfigureLocal({ projectId: project.id, path: input.localPath }) : Promise.resolve(),
+    { requireSlug: Boolean(data.access?.superAdmin) },
+  );
+  const created = submission.current.project;
+  const ready = name.trim() && (!data.access?.superAdmin || /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug)) && (code !== 'repo' || repo.trim()) && (data.access?.superAdmin || (what.trim() && goal.trim()));
+  const go = (project) => { onClose(); open(`p:${project.id}`); };
+  const submit = async () => {
+    if (busyRef.current || !ready) return;
+    busyRef.current = true; setBusy(true); setSetupError(null);
+    try {
+      const project = await submission.current({ name, slug, kind, code, repo: code === 'repo' ? repo.trim() : undefined, brief: { what: what.trim(), goal: goal.trim() }, localPath: localPath.trim() });
+      if (project) go(project);
+    } catch (error) { setSetupError(errorText(error)); }
+    finally { busyRef.current = false; setBusy(false); }
+  };
   return (
     <Modal
       title="New project"
-      subtitle="What clients file against. Work starts once a node holds its repo."
-      onClose={onClose}
+      subtitle="Create the project, then choose where to develop it."
+      onClose={() => !busyRef.current && onClose()}
       actions={
         <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button kind="primary" disabled={!ready} onClick={submit}>
-            Create
+          <Button disabled={busy} onClick={() => created ? go(created) : onClose()}>{created ? 'Open project' : 'Cancel'}</Button>
+          <Button kind="primary" disabled={busy || !ready} onClick={submit}>
+            {busy ? 'Saving…' : created ? 'Retry local setup' : 'Create project'}
           </Button>
         </>
       }
     >
+      {receipt?.repoError ? <p role="status" className="aw-callout">Project created; repository setup needs attention: {String(receipt.repoError)}</p> : null}
+      {setupError ? <p role="alert" className="aw-callout">{created ? 'Project created. Local setup failed; retry does not create another project. ' : ''}{setupError}</p> : null}
+      <fieldset disabled={busy || Boolean(created)} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <Field label="Name">
         <input
           value={name}
@@ -635,7 +683,7 @@ function ProjectModal({ onClose }) {
           }}
         />
       </Field>
-      <Field label="Slug" hint="Lowercase and dashes.">
+      {data.access?.superAdmin ? <Field label="Slug" hint="Lowercase and dashes.">
         <input
           className="aw-mono"
           value={slug}
@@ -645,7 +693,11 @@ function ProjectModal({ onClose }) {
             setSlug(e.target.value.toLowerCase());
           }}
         />
-      </Field>
+      </Field> : null}
+      {!data.access?.superAdmin ? <>
+        <Field label="What are you building?"><textarea value={what} maxLength={4000} onChange={(e) => setWhat(e.target.value)} /></Field>
+        <Field label="What should happen first?"><textarea value={goal} maxLength={4000} onChange={(e) => setGoal(e.target.value)} /></Field>
+      </> : null}
       <Field label="What it is">
         <Segmented
           value={kind}
@@ -665,7 +717,7 @@ function ProjectModal({ onClose }) {
               : 'A node makes a private repo with a README.'
             : code === 'repo'
               ? 'Nodes clone this. A private repo needs a node whose git can reach it.'
-              : 'A node with a folder named like the slug shares its origin.'
+              : data.access?.superAdmin ? 'A node with a folder named like the slug shares its origin.' : 'Create the project without linking a repository yet.'
         }
       >
         <Segmented
@@ -673,7 +725,7 @@ function ProjectModal({ onClose }) {
           options={[
             { value: 'create', label: 'Create a repo' },
             { value: 'repo', label: 'Use a repo URL' },
-            { value: 'folder', label: 'Folder on a node' },
+            { value: 'folder', label: data.access?.superAdmin ? 'Folder on a node' : 'Not linked yet' },
           ]}
           onChange={setCode}
         />
@@ -683,8 +735,59 @@ function ProjectModal({ onClose }) {
           <input className="aw-mono" value={repo} maxLength={300} placeholder="https://github.com/owner/repo" onChange={(e) => setRepo(e.target.value)} />
         </Field>
       ) : null}
+      </fieldset>
+      {host?.projectConfigureLocal ? <Field label="Local checkout folder (optional)" hint="Map an existing checkout on this computer. This does not clone a repository.">
+        <input disabled={busy} value={localPath} placeholder="/Users/you/Projects/acme" onChange={(e) => setLocalPath(e.target.value)} />
+      </Field> : null}
     </Modal>
   );
+}
+
+
+/** The project cockpit outside the workbench, with real navigation and dialogs. */
+export function ProjectPage({ api, id, host = null, files = null }) {
+  const [data, reload] = useAdminData(api);
+  const [navigation, setNavigation] = useState({ id, destination: `p:${id}` });
+  const destination = navigation.id === id ? navigation.destination : `p:${id}`;
+  const [modal, setModal] = useState(null);
+  const [question, setQuestion] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [boardProject, setBoardProject] = useState(id);
+  const open = useCallback((key) => {
+    if (key.startsWith('p:') && host?.openProject) return host.openProject(key.slice(2));
+    if (key.startsWith('t:') && host?.openTicket) return host.openTicket(Number(key.slice(2)));
+    setNavigation({ id, destination: key });
+  }, [host, id]);
+  const openTicket = useCallback((target) => open(`t:${target}`), [open]);
+  const notify = useCallback((text, kind = 'ok') => { setNotice({ text, kind }); host?.notify?.(text); }, [host]);
+  const act = useCallback(async (run, done) => {
+    try {
+      const result = await run();
+      if (done) notify(typeof done === 'function' ? done(result) : done);
+      void reload();
+      return result;
+    } catch (error) { notify(errorText(error), 'error'); throw error; }
+  }, [notify, reload]);
+  const setStatus = useCallback((ticket, status) => {
+    const run = () => act(() => api('PATCH', `/admin/tickets/${ticket.id}`, { status }));
+    if (ticket.kind !== 'system' && CLIENT_VISIBLE.includes(status)) {
+      setQuestion({ title: `${STATUS_LABEL[status]}: #${ticket.id}?`, text: 'The client is emailed about this change.', confirm: STATUS_LABEL[status], run });
+      return Promise.resolve();
+    }
+    return run();
+  }, [act, api]);
+  const value = { api, files, host, platform: host ? 'dsh' : 'web', data, reload, open, openTicket, notify, act, setStatus, ask: setQuestion, setModal, boardProject, setBoardProject };
+  return <div className={cx('aw', host && 'aw--dsh')} style={{ display: 'block', height: '100%', overflowY: 'auto' }}>
+    <style>{STYLES}</style>
+    <AdminContext.Provider value={value}>
+      {destination.startsWith('p:') ? <ProjectView key={destination} id={destination.slice(2)} /> : destination.startsWith('t:') ? <TicketView key={destination} id={Number(destination.slice(2))} active /> : workbenchAllowed(destination, data.access) ? <View name={destination} /> : <p className="aw-empty">This destination requires administrator access.</p>}
+      {notice ? <div role="status" className={cx('aw-toast', notice.kind === 'error' && 'is-error')} onClick={() => setNotice(null)}>{notice.text}</div> : null}
+      {modal?.kind === 'task' ? <TaskModal preset={modal} onClose={() => setModal(null)} /> : null}
+      {modal?.kind === 'project' && data.access?.canUseWorkbench ? <ProjectModal onClose={() => setModal(null)} /> : null}
+      {modal?.kind === 'custom' ? modal.render(() => setModal(null)) : null}
+      {question ? <Confirm ask={question} onClose={() => setQuestion(null)} /> : null}
+    </AdminContext.Provider>
+  </div>;
 }
 
 
@@ -787,11 +890,11 @@ export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
  * workbench: the Harness conversation's Ticket view. Same `TicketView`, data
  * hooks, provider and styles as the workbench page, so the two cannot drift.
  */
-export function TicketPage({ api, host = null, files = null, ticketId, part = 'thread' }) {
+export function TicketPage({ api, host = null, files = null, ticketId, part = 'thread', autoMeter = true }) {
   // A host with a narrow conversation shows the details as a tab of their own
   // (`part: 'details'`) rather than as a column that squeezes the thread.
   if (part === 'details') return <TicketSidePanel api={api} host={host} ticketId={ticketId} page />;
-  return <TicketThread api={api} host={host} files={files} ticketId={ticketId} />;
+  return <TicketThread api={api} host={host} files={files} ticketId={ticketId} autoMeter={autoMeter} />;
 }
 
 /**
@@ -814,7 +917,7 @@ export function ClientPage({ api, host = null, files = null, clientId }) {
   );
 }
 
-function TicketThread({ api, host, files, ticketId }) {
+function TicketThread({ api, host, files, ticketId, autoMeter }) {
   const [data, reloadData] = useAdminData(api);
   const reload = useCallback(() => {
     void reloadData();
@@ -827,7 +930,7 @@ function TicketThread({ api, host, files, ticketId }) {
     <div className="aw aw--dsh" style={scope}>
       <style>{STYLES}</style>
       <AdminContext.Provider value={value}>
-        <TicketView id={ticketId} active details={false} />
+        <TicketView id={ticketId} active={autoMeter} details={false} />
       </AdminContext.Provider>
     </div>
   );

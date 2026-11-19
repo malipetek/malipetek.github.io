@@ -828,6 +828,18 @@ sent once at the start of a session:
 This is the honest boundary of the design: a harness turn is the unit of
 conversation, and an external agent can end one but cannot reach back into it.
 
+Guidance that is the same for every agent goes in the plugin-level
+`sharedInstructions` option. It is appended after each agent's own
+`instructions` (explicit and discovered agents alike) and sent with them, once
+per session. To keep one source of truth, read it from a file in the profile
+patch; `!!js` has no `require`, so use `process.getBuiltinModule`:
+
+```yaml
+- id: external-agents
+  config:
+    sharedInstructions: !!js "((fs, p) => fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '')(process.getBuiltinModule('node:fs'), process.env.HOME + '/.dsh/model-routing.md')"
+```
+
 ## A turn that says nothing
 
 Two ways an answer can exist on the agent's side and never reach your screen, both

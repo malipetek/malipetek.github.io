@@ -273,7 +273,7 @@ export function InboxView() {
           {empty ? 'Nothing is waiting on you. Agents are on it.' : `${groups.reduce((a, g) => a + g.items.length, 0)} item(s) waiting on you.`}
         </p>
       </header>
-      {n.offline.length ? (
+      {data.access?.superAdmin && n.offline.length ? (
         <div className="aw-banner aw-banner--bad">
           <Dot state="bad" /> Offline: {n.offline.map((x) => x.id).join(', ')}.{' '}
           <button type="button" className="aw-link" onClick={() => open('fleet')}>

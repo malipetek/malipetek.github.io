@@ -276,7 +276,7 @@ const usageLine = (u) =>
         .join(' · ') || 'nothing owed'
     : '';
 
-function RepoModal({ project, onClose }) {
+export function RepoModal({ project, onClose }) {
   const { api, act } = useAdmin();
   const [repo, setRepo] = useState(project.repo ?? '');
   const submit = () => act(() => api('PUT', `/admin/projects/${project.id}/repo`, { repo: repo.trim() }), 'Repo saved.').then(onClose, () => undefined);
@@ -494,7 +494,7 @@ function InviteClientModal({ onClose }) {
 }
 
 /** Ali's hand edits to a project: its name and what it is. The slug stays (nodes and sites hang off it). */
-function ProjectEditModal({ project, onClose }) {
+export function ProjectEditModal({ project, onClose }) {
   const { api, act } = useAdmin();
   const [name, setName] = useState(project.name);
   const [kind, setKind] = useState(project.kind ?? 'existing');
@@ -636,7 +636,7 @@ function AddPeopleModal({ project, onClose }) {
 }
 
 /** Everyone on a project: their copies switch, and taking them off it. */
-function ProjectPeople({ project: p }) {
+export function ProjectPeople({ project: p }) {
   const { api, act, ask, setModal, open } = useAdmin();
   const people = p.clients ?? [];
   return (

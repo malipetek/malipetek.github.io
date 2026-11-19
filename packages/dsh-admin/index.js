@@ -18,11 +18,15 @@
  */
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { access, link, mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { access, link, mkdir, readdir, readFile, realpath, unlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { homedir, hostname } from 'node:os';
-import { basename, dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
+import { createLocalProjects } from './local-project.mjs';
+import { PROJECT_OPERATIONS, projectOperationRequest } from './project-operations.mjs';
+import { createWorkspaceRecovery } from './workspace-recovery.mjs';
+import { fleetWorkspaceCandidate, verifiedTicketWorkspace } from './ticket-workspace-source.mjs';
 
 const execFileP = promisify(execFile);
 
@@ -1284,7 +1288,7 @@ function describeRun(run) {
   return `#${run.ticket_id} "${run.title}" · ${run.slug ?? 'no project'} · ${run.status ?? 'running'} · ${who}${cost}`;
 }
 
-export const inject = ['tools', 'commands'];
+export const inject = ['tools', 'commands', 'sessions'];
 
 /**
  * The `/admin` command. The panel calls it through `remote.commands.execute`,
@@ -1293,6 +1297,21 @@ export const inject = ['tools', 'commands'];
  * @returns the command handler.
  */
 function makeCommandHandler(ctx) {
+  const localProjects = createLocalProjects({
+    authorize: async (projectId) => {
+      const result = await request(await loadConfig(), '/admin/projects');
+      const project = result?.projects?.find((entry) => String(entry.id) === projectId);
+      if (!project) throw new Error('Project access denied or project no longer exists.');
+      return project;
+    },
+    getLocal: async (slug) => {
+      const runner = await loadRunner();
+      const entry = Object.hasOwn(runner.projects ?? {}, slug) ? runner.projects[slug] : null;
+      return { ...(typeof entry === 'object' && entry ? entry : {}), path: folderFor(runner, slug), configured: Boolean(typeof entry === 'string' ? entry : entry?.path) };
+    },
+    setLocal: setProjectLocal,
+    gitToken: async (projectId) => request(await loadConfig(), `/admin/projects/${encodeURIComponent(projectId)}/git-token`, { method: 'POST', body: {} }),
+  });
   return async function handleAdmin({ rawInput }) {
     const input = typeof rawInput === 'string' ? rawInput.trim() : '';
     const [sub = 'help', ...rest] = input.length > 0 ? input.split(/\s+/) : [];
@@ -1435,6 +1454,15 @@ function makeCommandHandler(ctx) {
           } catch (error) {
             return { kind: 'error', text: error.message };
           }
+        }
+
+        case 'project-local': {
+          const [, action, payload] = input.match(/^project-local\s+(\S+)\s+([\s\S]+)$/) ?? [];
+          const methods = { info: 'info', configure: 'configure', clone: 'clone', operation: 'operation', files: 'files', git: 'gitInfo' };
+          if (!Object.hasOwn(methods, action)) throw new Error('Unknown local project action.');
+          const args = jsonArg(payload, 'Send a local project action and JSON arguments.');
+          const result = await localProjects[methods[action]](args);
+          return { kind: 'success', text: JSON.stringify(result) };
         }
 
         case 'localinfo': {
@@ -2001,6 +2029,140 @@ export function apply(ctx) {
     };
   }, 'admin: panel bridge');
 
+  const defaultFleetRoot = join(homedir(), '.cache', 'malipetek-runner', 'worktrees');
+  let query;
+  let workingDirectory;
+  ctx.inject(['sessionQuery'], (scope) => {
+    scope.effect(() => {
+      query = scope.sessionQuery;
+      return () => { query = undefined; };
+    }, 'admin: ticket workspace session lookup');
+  });
+
+  async function withWorkspaceIdentity(sessionId, header, use) {
+    const runner = await loadRunner();
+    const roots = [defaultFleetRoot, typeof runner.worktreeRoot === 'string' ? expandHome(runner.worktreeRoot) : null];
+    let observation;
+    try {
+      if (!header) {
+        observation = await query?.observeSession?.(sessionId, { projectionMode: 'none' });
+        header = observation?.header;
+      }
+      if (!header) return use(undefined, undefined, runner);
+      let candidate = fleetWorkspaceCandidate(header, '', roots);
+      if (candidate && candidate.ticketId === null) {
+        observation ??= await query?.observeSession?.(sessionId, { projectionMode: 'none' });
+        if (observation?.header?.id === sessionId && observation.header.cwd === header.cwd) {
+          const titles = observation.events.filter(event => event.type === 'session/title');
+          for (let i = titles.length - 1; i >= 0 && candidate.ticketId === null; i -= 1) {
+            candidate = fleetWorkspaceCandidate(header, titles[i].data?.title, roots);
+          }
+        }
+      }
+      return use(header, candidate, runner);
+    } finally {
+      observation?.[Symbol.dispose]();
+    }
+  }
+
+  const recovery = createWorkspaceRecovery({
+    recoveryRoot: join(ADMIN_DIR, 'recovered-workspaces'),
+    resolveSource: (sessionId) => withWorkspaceIdentity(sessionId, ctx.sessions?.get(sessionId)?.header, async (header, candidate, runner) => {
+      if (!candidate?.ticketId || header.id !== sessionId || header.origin === 'subagent') return null;
+      const detail = await request(await loadConfig(), `/admin/tickets/${candidate.ticketId}`, { timeoutMs: 8000 });
+      return verifiedTicketWorkspace(header, candidate, detail, slug => folderFor(runner, slug));
+    }),
+  });
+
+  const blockReason = 'Verify or restore this ticket’s checkout in Chat before using workspace actions.';
+  ctx.inject(['workingDirectory'], (scope) => {
+    scope.effect(() => {
+      const service = scope.workingDirectory;
+      if (typeof service?.registerPolicy !== 'function') return;
+      workingDirectory = service;
+      const dispose = service.registerPolicy(async (header, signal) => {
+        const runner = await loadRunner();
+        const configured = typeof runner.worktreeRoot === 'string' ? expandHome(runner.worktreeRoot) : null;
+        if (!fleetWorkspaceCandidate(header, '', [defaultFleetRoot, configured])) return undefined;
+        const restored = signal.aborted ? null : await recovery.status(header.id);
+        if (!signal.aborted && restored?.state === 'ready') return { status: 'ready', cwd: restored.path };
+        return { status: 'blocked', reason: blockReason };
+      });
+      return () => { dispose(); if (workingDirectory === service) workingDirectory = undefined; };
+    }, 'admin: ticket workspace policy');
+  });
+
+  async function ticketWorkspace(operation, sessionId, reply) {
+    if (typeof sessionId !== 'string' || !SESSION_ID_RE.test(sessionId) || sessionId.includes('..')) {
+      return reply(400, { state: 'unavailable', reason: 'invalid_session' });
+    }
+    try {
+      return await withWorkspaceIdentity(sessionId, ctx.sessions?.get(sessionId)?.header, async (header, candidate) => {
+        if (!header || header.id !== sessionId) return reply(404, { state: 'unavailable', reason: 'session_not_found' });
+        if (!candidate) return reply(200, { state: 'unmanaged' });
+        if (!workingDirectory) return reply(200, { state: 'unavailable', reason: 'workspace_policy_unavailable' });
+        const result = operation === 'ticket-workspace-restore' ? await recovery.restore(sessionId) : await recovery.status(sessionId);
+        // Never send a local path or portal metadata from the recovery route.
+        return reply(200, { state: result.state, reason: result.reason });
+      });
+    } catch {
+      return reply(200, { state: 'unavailable', reason: 'source_unavailable' });
+    }
+  }
+
+  // The private graph bridge searches the session cwd and all known workspace
+  // folders. Do not load its default page unless a repository the bridge can
+  // select for this cwd actually exists (the folder itself or a direct child).
+  async function gitGraphEligibility(sessionId, reply) {
+    const unavailable = { status: 'unavailable' };
+    if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > 512) return reply(400, unavailable);
+    const session = ctx.sessions?.get(sessionId);
+    if (!session) return reply(404, unavailable);
+    const historicalCwd = session.header?.cwd;
+    if (typeof historicalCwd !== 'string' || !isAbsolute(historicalCwd)) return reply(200, { status: 'no-repo' });
+    try {
+      const managed = await workingDirectory?.resolveManaged(session.header);
+      if (managed?.status === 'blocked') return reply(200, unavailable);
+      if (!managed && await withWorkspaceIdentity(sessionId, session.header, (_header, candidate) => Boolean(candidate))) return reply(200, unavailable);
+      const folder = (managed?.cwd ?? historicalCwd).replace(/\/+$/u, '') || '/';
+      const pin = process.env.DSH_GIT_GRAPH_NATIVE_FOLDER;
+      if (!managed && pin && (pin.replace(/\/+$/u, '') || '/') !== folder) return reply(200, unavailable);
+      // Match the path the graph uses to select roots; do not approve a checkout
+      // if a symlink or other noncanonical path can make its root comparison miss.
+      if (await realpath(folder) !== folder) return reply(200, unavailable);
+      const entries = await readdir(folder, { withFileTypes: true });
+      const signal = AbortSignal.timeout(2000);
+      const isRoot = async (directory) => {
+        try {
+          const { stdout } = await execFileP('git', ['rev-parse', '--show-toplevel'], {
+            cwd: directory, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, signal, maxBuffer: 32 * 1024,
+          });
+          return stdout.trimEnd() === directory;
+        } catch { return false; }
+      };
+      let found = false;
+      if (entries.some((entry) => entry.name === '.git')) {
+        found = await isRoot(folder);
+      } else if (folder !== '/') {
+        for (const entry of entries) {
+          if (signal.aborted) return reply(200, unavailable);
+          if (!entry.isDirectory()) continue;
+          const candidate = join(folder, entry.name);
+          if (await access(join(candidate, '.git')).then(() => true, () => false) && await isRoot(candidate)) {
+            found = true;
+            break;
+          }
+        }
+      }
+      const current = ctx.sessions?.get(sessionId);
+      if (!current) return reply(404, unavailable);
+      if (current !== session || current.header?.cwd !== historicalCwd || signal.aborted) return reply(200, unavailable);
+      return reply(200, { status: found ? 'ready' : 'no-repo' });
+    } catch {
+      return reply(200, unavailable);
+    }
+  }
+
   // The panel's first choice of transport: an authenticated route inside the
   // Harness's own `/api` fence. It needs no Session — so it never lands in a
   // session log and is never refused because an agent holds a Session's writer
@@ -2017,12 +2179,17 @@ export function apply(ctx) {
           fetch: async (request) => {
             const reply = (status, body) =>
               new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
-            let line;
+            let body;
             try {
-              line = (await request.json())?.line;
+              body = await request.json();
             } catch {
               /* handled below */
             }
+            if (body?.operation === 'git-graph-eligibility') return gitGraphEligibility(body.sessionId, reply);
+            if (body?.operation === 'ticket-workspace-status' || body?.operation === 'ticket-workspace-restore') {
+              return ticketWorkspace(body.operation, body.sessionId, reply);
+            }
+            const line = body?.line;
             if (typeof line !== 'string' || line.trim().length === 0) return reply(400, { kind: 'error', text: 'Send {"line":"<subcommand> …"}.' });
             if (line.length > BRIDGE_MAX_BODY) return reply(413, { kind: 'error', text: 'Too large.' });
             try {
@@ -2247,6 +2414,48 @@ export function apply(ctx) {
     }
     return dispose;
   }, 'admin: admin_directory tool');
+
+  ctx.effect(() => {
+    return ctx.tools.register({
+      name: 'admin_project_local',
+      description: 'Inspect or configure an authorized PTech project checkout on this desktop. Clone uses a project-restricted GitHub App token internally; no credential is returned. Clone never overwrites a destination. After clone, poll operation for its result before a plugin restart; receipts are in memory. Failed clones preserve the destination for inspection. Files are read-only text previews; use a native workspace session for edits. Do not clone or change local mappings without the user requesting that action.',
+      parameters: {
+        type: 'object', additionalProperties: false, required: ['action'],
+        properties: {
+          action: { type: 'string', enum: ['info', 'configure', 'clone', 'operation', 'files', 'git'] },
+          projectId: { type: 'string', description: 'Authorized portal project ID; required except when polling operation.' },
+          operationId: { type: 'string', description: 'Receipt ID returned by clone.' },
+          path: { type: 'string', description: 'Configure: absolute existing directory. Files: project-relative path.' },
+          parentPath: { type: 'string', description: 'Existing absolute clone parent directory.' },
+          directoryName: { type: 'string', description: 'New directory name; defaults to project slug.' },
+          verify: { type: 'string', description: 'Configure only: verify command metadata; never executed here.' },
+          baseRef: { type: 'string', description: 'Configure only: base Git ref metadata.' },
+          fileAction: { type: 'string', enum: ['list', 'read', 'stat'] },
+          range: { type: 'object', additionalProperties: false, properties: { startLine: { type: 'integer', minimum: 1 }, endLine: { type: 'integer', minimum: 1 } } },
+        },
+      },
+      output: { schema: { type: 'object', additionalProperties: false, required: ['message'], properties: { message: { type: 'string' } } }, render: (_args, value) => [{ type: 'text', text: value.message }] },
+      async execute({ action, fileAction, ...args }) {
+        const result = await handleAdmin({ rawInput: `project-local ${action} ${JSON.stringify({ ...args, ...(action === 'files' ? { action: fileAction } : {}) })}` });
+        if (result.kind !== 'success') throw new Error(result.text);
+        return { message: result.text };
+      },
+    });
+  }, 'admin: local project tool');
+
+  ctx.effect(() => ctx.tools.register({
+    name: 'admin_project_operations',
+    description: PROJECT_OPERATIONS.description,
+    parameters: PROJECT_OPERATIONS.parameters,
+    output: { schema: { type: 'object', additionalProperties: false, required: ['message'], properties: { message: { type: 'string' } } }, render: (_args, value) => [{ type: 'text', text: value.message }] },
+    async execute({ operation, ...args }) {
+      const route = projectOperationRequest(operation, args);
+      const config = await loadConfig();
+      // Reuse the same session and backend project guards as the cockpit UI.
+      const result = await request(config, route.path, { method: route.method, ...(route.body === undefined ? {} : { body: route.body }) });
+      return { message: JSON.stringify(result) };
+    },
+  }), 'admin: project operations tool');
 
   ctx.effect(() => {
     let dispose = null;

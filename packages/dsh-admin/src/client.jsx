@@ -11,12 +11,22 @@
  *
  * @module @malipetek/dsh-admin
  */
+import { createTicketDetailReader, ticketActivity, sendTicketMessage, requestTicketWorkspace, migrateTicketView } from './ticket-chat.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { AdminApp, ClientPage } from '../../admin-ui/src/index.js';
+import { AdminApp, ClientPage, ProjectPage, TicketPage } from '../../admin-ui/src/index.js';
+import { openLocalProject } from '../native-project.mjs';
+import { sidebarTicketLabel, sidebarRunShortcut } from './sidebar-presentation.mjs';
+import { createConversationMeter, formatRecordedTime } from './conversation-meter.mjs';
 import { AdminContext } from '../../admin-ui/src/store.js';
+import { ConversationGitGraph } from './conversation-git-graph.mjs';
 import { MarketingView } from '../../admin-ui/src/marketing.jsx';
 import { SeoView } from '../../admin-ui/src/seo.jsx';
 import { STYLES } from '../../admin-ui/src/styles.js';
+import { assistantBadge, assistantBadgeTitle } from '../../admin-ui/src/ticket-assistant.mjs';
+import { panelTransport } from './panel-transport.mjs';
+import { ConversationHistory } from './conversation-history.jsx';
+import { nextRowIndex } from './row-navigation.mjs';
+import { ProjectPark, PROJECT_PARK_STYLES } from './project-park.jsx';
 
 /** Panel identity: one id addresses both the sidebar row and the main page. */
 const PANEL_ID = 'admin';
@@ -216,7 +226,9 @@ function AdminIcon({ size = 16 }) {
 const inject = ['slots', 'sessions', 'layout', 'remote', 'remote.commands', 'sidebarRightTabs', 'sidebarRight'];
 
 function apply(ctx) {
-  const command = makeTransport(makeCommand(ctx));
+  migrateTicketView(globalThis.localStorage);
+  const desktop = globalThis.location?.protocol === 'dsh-app:' && globalThis.location?.hostname === 'app';
+  const command = panelTransport(makeTransport(makeCommand(ctx)), { desktop });
   /**
    * PTech Admin's Electron preload exposes clickable native notifications.
    * When it does, the Host stops its osascript fallback and this half shows
@@ -226,8 +238,8 @@ function apply(ctx) {
     ? globalThis.dshDesktop.notifications
     : null;
   /** Host commands whose text is JSON. */
-  const json = async (line) => {
-    const r = await command(line);
+  const json = async (line, run = command) => {
+    const r = await run(line);
     let value = null;
     try {
       value = JSON.parse(r.text);
@@ -272,9 +284,10 @@ function apply(ctx) {
       'admin: uiWorkspace',
     );
   });
+  let nativeConversation = null;
   const conversation = {
     available: () => typeof workspace?.openSession === 'function',
-    open: async ({ runId, sessionId, sessionDir }) => {
+    open: async ({ runId, sessionId, sessionDir, taskTicketId }) => {
       if (!sessionId || !sessionDir) throw new Error('This run did not record its Harness session.');
       const found = await json(`session ${runId} ${sessionId} ${sessionDir}`);
       const ws = workspace;
@@ -288,6 +301,12 @@ function apply(ctx) {
       opened.set(id, Date.now());
       if (archivedIds().includes(id) && typeof ws.unarchiveSession === 'function') await ws.unarchiveSession(id).catch(() => undefined);
       await ws.openSession(id);
+      if (taskTicketId != null && nativeConversation?.selectView) {
+        const row = ctx.sessions?.list?.getSnapshot?.()?.byId?.[id];
+        if (ticketForSession(row)?.ticketId !== Number(taskTicketId) || !nativeConversation.selectView(id, 'chat')) {
+          throw new Error('The opened conversation is not linked to this task.');
+        }
+      }
       return found;
     },
   };
@@ -361,8 +380,24 @@ function apply(ctx) {
     );
   }
   /** One stable object so React effects that depend on it do not re-run. */
-  const host = { command, json, gitGraph, conversation, openTicket: (target) => openTicket(target) };
+  const localProject = (action, args) => json(`project-local ${action} ${JSON.stringify(args)}`);
+  const host = {
+    command, json, gitGraph, conversation, openTicket: (target) => openTicketRun({ id: target?.ticketId ?? target }),
+    projectLocalInfo: (args) => localProject('info', args),
+    projectConfigureLocal: (args) => localProject('configure', args),
+    projectCloneLocal: (args) => localProject('clone', args),
+    projectLocalOperation: (args) => localProject('operation', args),
+    projectFiles: (args) => localProject('files', args),
+    projectGitInfo: (args) => localProject('git', args),
+    projectOpenLocal: (args) => openLocalProject(args, {
+      info: (value) => localProject('info', value), sessions: ctx.sessions, workspace, remote: ctx.remote,
+    }),
+    // The workbench's project destination selects this panel instead of an in-panel copy.
+    openProject: (id) => openProjectPage({ id }),
+  };
   const api = (method, path, body) => json(`api ${method} ${path}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`);
+  // The public portal (and non-desktop Harness clients) keep the legacy meter.
+  api.conversationMeter = desktop;
 
   /* ————— Ticket runs in the session list ————— */
 
@@ -391,6 +426,22 @@ function apply(ctx) {
     return { slug: folder, kind: named[1] === 'Ticket' ? 'ticket' : 'task', ticketId: Number(named[2]), runId: named[3] ? Number(named[3]) : null, cwd };
   }
 
+  function ticketForSession(row) {
+    return row?.cwd === undefined ? null : ticketFromCwd(`${row.cwd}${SEP}${typeof row.title === 'string' ? row.title : ''}`);
+  }
+
+  function NativeTask({ sessionId }) {
+    const ticket = ticketFromCwd(useSessionCwd(sessionId));
+    if (!ticket) return null;
+    return <TicketPage key={`${sessionId}:${ticket.ticketId}`} api={api} host={host} files={files} ticketId={ticket.ticketId} autoMeter={false} />;
+  }
+
+  function NativeHistory({ sessionId }) {
+    const ticket = ticketFromCwd(useSessionCwd(sessionId));
+    if (!ticket) return null;
+    return <ConversationHistory key={`${sessionId}:${ticket.ticketId}`} api={api} ticketId={ticket.ticketId} openTicket={openTicketRun} />;
+  }
+
   /** Live-read one session's folder and title from the catalog, as one string (updates on refresh/import). */
   function useSessionCwd(sessionId) {
     const list = ctx.sessions?.list;
@@ -403,11 +454,6 @@ function apply(ctx) {
     );
   }
 
-  const TICKET_COLORS = {
-    task: 'var(--dsw-alias-state-business-primary, #4c8dff)',
-    ticket: 'var(--dsw-alias-state-warning-primary, #d18f2e)',
-  };
-
   function openTicket(run) {
     // The full ticket lives in the workbench; a ticket with a run opens its
     // conversation instead (see openTicketRun).
@@ -417,36 +463,26 @@ function apply(ctx) {
     else window.location.hash = target;
   }
 
-  /** The `sidebar.session.row.leading` mark: a colored #N chip on run sessions. */
+  /** A bounded shortcut in the run row's leading cell; the title owns visible text. */
   function TicketMark({ sessionId }) {
     const run = ticketFromCwd(useSessionCwd(sessionId));
     if (!run) return null;
-    const color = TICKET_COLORS[run.kind];
+    const label = sidebarRunShortcut(run);
     return (
-      <span
-        title={`${run.kind === 'task' ? 'System task' : 'Client ticket'} #${run.ticketId}${run.runId ? ` · run ${run.runId}` : ''} — click opens the ticket`}
+      <button
+        type="button"
+        className="pta-run-shortcut"
+        aria-label={label}
+        title={label}
         onClick={(e) => {
           e.stopPropagation();
           void openTicketRun({ id: run.ticketId });
         }}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minWidth: 14,
-          height: 14,
-          padding: '0 3px',
-          borderRadius: 4,
-          fontSize: 9,
-          fontWeight: 700,
-          lineHeight: 1,
-          color: '#fff',
-          background: color,
-          cursor: 'pointer',
-        }}
       >
-        {run.ticketId}
-      </span>
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {run.kind === 'task' ? <path d="m4 8 2.5 2.5L12 5" /> : <path d="M3 4.5h10v6H7l-2.5 2v-2H3z" />}
+        </svg>
+      </button>
     );
   }
 
@@ -548,7 +584,7 @@ function apply(ctx) {
       }
       setNote(`Opening run ${run.id}…`);
       try {
-        await conversation.open({ runId: run.id, sessionId: run.session_id, sessionDir: run.session_dir });
+        await conversation.open({ runId: run.id, sessionId: run.session_id, sessionDir: run.session_dir, taskTicketId: run.ticket_id });
         setNote('');
       } catch (error) {
         setNote(`Run ${run.id}: ${error?.message ?? 'could not open its conversation'}`);
@@ -1190,6 +1226,21 @@ function apply(ctx) {
     };
   }
 
+  /** Project labels navigate independently from their disclosure chevron. */
+  const projectPages = new Map();
+  function openProjectPage(project, selectPanel = (key) => ctx.layout?.selectPanel?.(key)) {
+    if (!project?.id || project.id === '__none__') return;
+    const key = `admin-project-${project.id}`;
+    if (!projectPages.has(project.id)) {
+      projectPages.set(project.id, ctx.slots.register({ name: 'main', key, locale: NAMESPACE }, () => <ProjectPage api={api} host={host} files={files} id={project.id} />));
+    }
+    selectPanel(key);
+  }
+  ctx.effect(() => () => {
+    for (const dispose of projectPages.values()) dispose();
+    projectPages.clear();
+  }, 'admin: project pages');
+
   /** client id → the disposer of its `main` page. */
   const clientPages = new Map();
 
@@ -1359,7 +1410,7 @@ function apply(ctx) {
         const run = runs[i];
         if (!run?.session_id || !run?.session_dir) continue;
         if (!conversation.available()) break;
-        await conversation.open({ runId: run.id, sessionId: run.session_id, sessionDir: run.session_dir });
+        await conversation.open({ runId: run.id, sessionId: run.session_id, sessionDir: run.session_dir, taskTicketId: ticket.id });
         return;
       }
     } catch (error) {
@@ -1404,19 +1455,15 @@ function apply(ctx) {
           <Row
             key={ticket.id}
             dot={TICKET_DOT[ticket.status] ?? TICKET_DOT.done}
-            label={`#${ticket.id} ${ticket.title || ticket.title_en || '(untitled)'}`}
-            trailing={(
-              <span className="pta-trail">
-                {ago(ticket.updated_at)}
-                <span className="pta-trail__go" aria-hidden="true">↗</span>
-              </span>
-            )}
+            label={sidebarTicketLabel(ticket)}
+            trailing={ago(ticket.updated_at)}
             menuItems={menu(ticket)}
             onClick={() => void openTicketRun(ticket)}
           />
         ))}
         {closed.length > 0 && (
           <Row
+            appearance="secondary"
             label={showClosed ? `Hide closed` : `Show closed · ${closed.length}`}
             onClick={() => setShowClosed((value) => !value)}
           />
@@ -1586,6 +1633,7 @@ function apply(ctx) {
           return (
             <TreeRow
               key={client.id}
+              appearance="container"
               icon={clientAvatar(client)}
               label={client.name || client.email}
               badge={badge || undefined}
@@ -1600,16 +1648,20 @@ function apply(ctx) {
                 return (
                   <TreeRow
                     key={`${client.id}:${project.id}`}
-                    icon={<ProjectGlyph color={projectTint(project.tickets)} />}
+                    appearance="container"
+                     icon={<ProjectGlyph color={projectTint(project.tickets)} />}
                     label={project.name}
                     badge={openTicketCount(project.tickets) || undefined}
                     expanded={projectExpanded}
                     onToggle={(open) => setRowOpen(projectKey, open)}
-                    onClick={() => toggleRow(projectKey, projectDefault)}
-                    menuItems={[{ id: 'open-project-tickets', label: 'Show project tickets', onSelect: () => setRowOpen(projectKey, true) }]}
+                    onClick={() => project.id === '__none__' ? toggleRow(projectKey, projectDefault) : openProjectPage(project, selectPanel)}
+                    menuItems={[
+                      ...(project.id === '__none__' ? [] : [{ id: 'open-project', label: 'Open project', onSelect: () => openProjectPage(project, selectPanel) }]),
+                      ...(project.tickets.length === 0 ? [] : [{ id: 'open-project-tickets', label: 'Show project tickets', onSelect: () => setRowOpen(projectKey, true) }]),
+                    ]}
                     children={project.tickets.length > 0
                       ? <TicketList Row={TreeRow} tickets={project.tickets} changed={() => void load()} />
-                      : <TreeNote nested>No open tickets</TreeNote>}
+                      : undefined}
                   />
                 );
               }) : undefined}
@@ -1622,7 +1674,8 @@ function apply(ctx) {
           const expanded = rowOpen(key, true);
           return (
             <TreeRow
-              label="Unsorted"
+              appearance="group"
+               label="Unsorted"
               badge={openTicketCount(unsorted) || undefined}
               expanded={expanded}
               onToggle={(open) => setRowOpen(key, open)}
@@ -1637,7 +1690,8 @@ function apply(ctx) {
           const expanded = rowOpen(key, false);
           return (
             <TreeRow
-              label="Mine"
+              appearance="group"
+               label="Mine"
               badge={openTicketCount(mine) || undefined}
               expanded={expanded}
               onToggle={(open) => setRowOpen(key, open)}
@@ -1653,170 +1707,160 @@ function apply(ctx) {
 
   /* ————— The ticket, merged into its conversation ————— */
 
-  /**
-   * One ticket's live detail: its fields, its thread and its runs. The
-   * conversation dock reads it once and again when the portal says something
-   * changed, so the chat and the ticket are the same surface.
-   */
-  function useTicketDetail(ticketId) {
-    const [state, setState] = useState({ ticket: null, messages: [], runs: [], loading: true, error: '' });
-    const load = useCallback(async () => {
-      if (ticketId === null || ticketId === undefined) return;
-      try {
-        const detail = await api('GET', `/admin/tickets/${ticketId}`);
-        setState({
-          ticket: detail?.ticket ?? null,
-          messages: Array.isArray(detail?.messages) ? detail.messages : [],
-          runs: Array.isArray(detail?.runs) ? detail.runs : [],
-          loading: false,
-          error: '',
-        });
-      } catch (error) {
-        setState((prev) => ({ ...prev, loading: false, error: error?.message ?? 'Could not load the ticket.' }));
-      }
-    }, [ticketId]);
+  const ticketCommandApi = (method, path, body) => desktop
+    ? json(`api ${method} ${path}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`, command.quiet)
+    : api(method, path, body);
+
+  function useLinkedTicketDetail(ticketId, sessionId) {
+    const key = ticketId && sessionId ? `${ticketId}:${sessionId}` : null;
+    const [state, setState] = useState(null);
     useEffect(() => {
-      // A different ticket must not show the previous one's thread while the
-      // new read is in flight.
-      setState({ ticket: null, messages: [], runs: [], loading: true, error: '' });
-    }, [ticketId]);
-    useEffect(() => {
-      let alive = true;
-      void load();
-      const changed = () => { if (alive) void load(); };
+      if (!key) return;
+      const reader = createTicketDetailReader({ ticketId, sessionId, api: ticketCommandApi, update: next => setState({ ...next, key }) });
+      const changed = event => {
+        if (event.detail?.ticketId == null || Number(event.detail.ticketId) === ticketId) void reader.load();
+      };
+      void reader.load();
       window.addEventListener('admin:changed', changed);
       window.addEventListener('focus', changed);
       return () => {
-        alive = false;
+        reader.dispose();
         window.removeEventListener('admin:changed', changed);
         window.removeEventListener('focus', changed);
       };
-    }, [load]);
-    return [state, load];
+    }, [key, ticketId, sessionId]);
+    return (state?.key === key ? state : null) ?? { detail: null, error: '' };
   }
 
-  /**
-   * While this conversation is on screen, what is typed in it belongs to the
-   * ticket: the Host mirrors each new user message as a private note. The
-   * header can mount more than once for the same conversation (split pane,
-   * pop-out), so count the mounts and only the last one unfollows.
-   */
-  const ticketFollow = { key: null, mounts: 0 };
+  function TicketActivityFrame({ sessionId, ActivityProvider, children }) {
+    const candidate = ticketFromCwd(useSessionCwd(sessionId));
+    const { detail } = useLinkedTicketDetail(candidate?.ticketId, sessionId);
+    const activity = useMemo(() => ticketActivity(detail), [detail]);
+    return <ActivityProvider value={activity}>{children}</ActivityProvider>;
+  }
 
-  function followTicket(ticketId, sessionId) {
-    const key = `${ticketId}:${sessionId}`;
-    if (ticketFollow.key !== key) {
-      ticketFollow.key = key;
-      ticketFollow.mounts = 0;
-    }
-    ticketFollow.mounts += 1;
-    if (ticketFollow.mounts === 1) void command(`follow ${ticketId} ${sessionId}`).catch(() => undefined);
+  const meterApi = (method, path, body) =>
+    json(`api ${method} ${path}${body === undefined ? '' : ` ${JSON.stringify(body)}`}`, command.quiet);
+  const meter = createConversationMeter({
+    api: meterApi,
+    locks: desktop ? navigator.locks : null,
+    now: () => performance.now(),
+    foreground: () => document.visibilityState === 'visible' && document.hasFocus(),
+  });
+  if (desktop) ctx.effect(() => {
+    const input = ['pointermove', 'pointerdown', 'keydown', 'scroll'];
+    const options = { capture: true, passive: true };
+    for (const event of input) window.addEventListener(event, meter.input, options);
+    window.addEventListener('blur', meter.suspend);
+    window.addEventListener('pagehide', meter.leave);
+    document.addEventListener('visibilitychange', meter.suspend);
+    const timer = setInterval(meter.tick, 250);
     return () => {
-      if (ticketFollow.key !== key) return;
-      ticketFollow.mounts -= 1;
-      if (ticketFollow.mounts > 0) return;
-      ticketFollow.key = null;
-      // Named, so a late unfollow cannot cancel the conversation now on screen.
-      void command(`unfollow ${sessionId}`).catch(() => undefined);
+      clearInterval(timer);
+      for (const event of input) window.removeEventListener(event, meter.input, options);
+      window.removeEventListener('blur', meter.suspend);
+      window.removeEventListener('pagehide', meter.leave);
+      document.removeEventListener('visibilitychange', meter.suspend);
+      meter.leave();
     };
-  }
+  }, 'admin: conversation time eligibility');
 
-  /** Ticket summaries for the conversation header, kept briefly across mounts. */
-  const ticketBriefs = new Map();
-  const TICKET_BRIEF_MS = 30_000;
-
-  /**
-   * The ticket behind a run session, for the header's actions. One read when
-   * the header mounts (and after a minute), not a poll: the header only needs
-   * the status to decide whether Approve is offered.
-   */
-  function useTicketBrief(ticketId) {
-    const [brief, setBrief] = useState(() => (ticketId === null ? null : ticketBriefs.get(ticketId)?.ticket ?? null));
-    useEffect(() => {
-      if (ticketId === null) return undefined;
-      const hit = ticketBriefs.get(ticketId);
-      if (hit && Date.now() - hit.at < TICKET_BRIEF_MS) {
-        setBrief(hit.ticket);
-        return undefined;
-      }
-      // Another ticket's summary would offer the wrong moves while this read runs.
-      setBrief(null);
-      let alive = true;
-      api('GET', `/admin/tickets/${ticketId}`).then(
-        (detail) => {
-          if (!alive) return;
-          const ticket = detail?.ticket ?? null;
-          if (ticket) ticketBriefs.set(ticketId, { at: Date.now(), ticket });
-          setBrief(ticket);
-        },
-        () => undefined,
-      );
-      return () => { alive = false; };
-    }, [ticketId]);
-    return brief;
-  }
-
-  const headerActionStyle = {
-    height: 24,
-    padding: '0 8px',
-    borderRadius: 6,
-    border: '1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.35))',
-    background: 'transparent',
-    color: 'inherit',
-    font: 'inherit',
-    fontSize: 12,
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
+  const meterNotices = {
+    occupied: 'Time is already being recorded in another conversation or window.',
+    unavailable: 'Time recording is unavailable in this window.',
+    unconfirmed: 'Save not confirmed. Check the recorded total before resuming.',
+    readFailed: 'Could not read the recorded time. Recording is paused.',
   };
 
-  /**
-   * In a run's own conversation header: the ticket's name, one click to the
-   * workbench copy, and the moves that belong to the ticket rather than the
-   * conversation. The ticket itself lives in the composer dock below, so the
-   * chat and the ticket are one screen instead of two tabs.
-   */
-  function TicketHeaderChip({ sessionId }) {
-    const run = ticketFromCwd(useSessionCwd(sessionId));
-    const ticketId = run?.ticketId ?? null;
-    const brief = useTicketBrief(ticketId);
+  function TicketHeaderReadout({ sessionId, run, titled = false }) {
+    const { ticketId } = run;
+    const key = `${ticketId}:${sessionId}`;
+    const root = useRef(null);
+    const refresh = useRef(null);
+    // Who filed the ticket, off the same detail read the meter takes.
+    const [assistantApp, setAssistantApp] = useState(null);
+    const snapshot = useSyncExternalStore(meter.subscribe, () => meter.snapshot(key));
     useEffect(() => {
-      if (ticketId === null || !sessionId) return undefined;
-      return followTicket(ticketId, sessionId);
-    }, [ticketId, sessionId]);
-    if (!run) return null;
+      const isCurrent = () => {
+        const element = root.current;
+        return Boolean(element?.isConnected && (element.checkVisibility?.({ visibilityProperty: true }) ?? element.getClientRects().length));
+      };
+      const release = meter.retain(key, ticketId, isCurrent);
+      let alive = true;
+      let inFlight = false;
+      let queued = false;
+      async function read(force = false) {
+        if (!alive || (!force && (document.hidden || !isCurrent()))) return;
+        if (inFlight) { queued ||= force; return; }
+        inFlight = true;
+        const revision = meter.revision();
+        try {
+          const detail = await (desktop ? meterApi : api)('GET', `/admin/tickets/${ticketId}`);
+          if (alive && !meter.observe(key, detail?.ticket, revision)) meter.readFailed(key);
+          if (alive) setAssistantApp(typeof detail?.ticket?.assistant_app === 'string' ? detail.ticket.assistant_app : null);
+        } catch {
+          if (alive) meter.readFailed(key);
+        } finally {
+          inFlight = false;
+          if (queued) { queued = false; void read(true); }
+        }
+      }
+      const changed = event => {
+        if (event.detail?.ticketId == null || Number(event.detail.ticketId) === ticketId) void read(true);
+      };
+      const foreground = () => void read();
+      refresh.current = () => void read(true);
+      void read(true);
+      window.addEventListener('admin:changed', changed);
+      if (desktop) window.addEventListener('focus', foreground);
+      const timer = desktop ? setInterval(foreground, 30_000) : null;
+      return () => {
+        alive = false;
+        refresh.current = null;
+        clearInterval(timer);
+        window.removeEventListener('admin:changed', changed);
+        window.removeEventListener('focus', foreground);
+        release();
+      };
+    }, [key, ticketId]);
+    useEffect(() => {
+      if (snapshot.notice === 'unconfirmed') refresh.current?.();
+    }, [snapshot.notice]);
+
+    const { phase, notice, seconds, status, needsRead } = snapshot;
+    const enabled = phase === 'running' || phase === 'waiting';
+    const busy = phase === 'starting' || phase === 'saving';
+    const recorded = seconds === null ? '—' : formatRecordedTime(seconds);
+    const hint = meterNotices[notice] ?? (phase === 'waiting' ? 'Time waits while this conversation is idle or out of focus.' : 'Recorded human time');
+    const via = assistantBadge({ assistant_app: assistantApp });
     return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-        <button
-          type="button"
-          onClick={() => void openTicketRun({ id: run.ticketId })}
-          title={`Open ${run.kind === 'task' ? 'system task' : 'client ticket'} #${run.ticketId}`}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-            height: 24,
-            padding: '0 8px',
-            borderRadius: 6,
-            border: `1px solid ${TICKET_COLORS[run.kind]}`,
-            background: 'transparent',
-            color: 'inherit',
-            font: 'inherit',
-            fontSize: 12,
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <TicketGlyph size={13} />
-          <span>
-            {run.kind === 'task' ? 'Task' : 'Ticket'} #{run.ticketId}
-          </span>
-        </button>
-        {brief ? <StatusPill status={brief.status} /> : null}
-        <button type="button" style={headerActionStyle} onClick={() => openWorkbenchTicket(run.ticketId)} title="Open the full ticket in the workbench">
-          Workbench
-        </button>
+      <span ref={root} className="pta-chat-ticket" title={hint}>
+        <span className={`pta-chat-ticket__id${titled ? ' pta-sr' : ''}`}>{run.kind === 'task' ? 'Task' : 'Ticket'} #{ticketId}</span>
+        <span className="pta-chat-ticket__status">{status ? (STATUS_TEXT[status] ?? status) : needsRead ? 'Unavailable' : 'Loading…'}</span>
+        {via ? <span className="pta-tag pta-tag--client" title={assistantBadgeTitle({ assistant_app: assistantApp })}>{via}</span> : null}
+        {desktop ? (
+          <>
+            <span className="pta-chat-ticket__time" aria-label={`Recorded human time: ${seconds === null ? 'unavailable' : recorded}`}><span aria-hidden="true">⏱ </span>{recorded}</span>
+            {status && seconds !== null && phase !== 'closed' ? (
+              <PtaButton className="pta-chat-ticket__action" disabled={busy || needsRead}
+                onClick={() => enabled ? meter.pause(key) : void meter.resume(key)}>
+                {enabled ? 'Pause' : phase === 'starting' ? 'Starting…' : phase === 'saving' ? 'Saving…' : 'Resume'}
+              </PtaButton>
+            ) : null}
+            <span className="pta-chat-ticket__feedback" role="status">{notice ? hint : ''}</span>
+          </>
+        ) : null}
       </span>
     );
+  }
+
+  function TicketHeaderChip({ sessionId }) {
+    const key = useSessionCwd(sessionId);
+    const run = ticketFromCwd(key);
+    if (!run || !sessionId) return null;
+    // The session title usually starts "Ticket #27 —"; then the id would only repeat it.
+    const titled = new RegExp(`#${run.ticketId}\\b`).test(String(key ?? '').split(SEP)[1] ?? '');
+    return <TicketHeaderReadout key={`${run.ticketId}:${sessionId}`} sessionId={sessionId} run={run} titled={titled} />;
   }
 
   // Downloads go through the Host (it holds the token and the disk). Uploads
@@ -1836,17 +1880,39 @@ function apply(ctx) {
    */
 
   const NATIVE_STYLES = `
-    .pta-page{height:100%;overflow-y:auto;box-sizing:border-box;padding:26px 30px 56px;max-width:1120px;margin:0 auto;color:var(--dsw-alias-label-primary,inherit);font-size:13px;line-height:1.45}
+    .pta-ticket-form{display:grid;gap:6px;max-width:40rem}
+    .pta-ticket-form label{display:grid;gap:4px}
+    .pta-ticket-form textarea{min-height:4rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-translucent,currentColor);border-radius:6px}
+    .pta-ticket-form .pta-btn{justify-self:start}
+    .pta-ticket-form__row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .pta-dock .pta-ticket-form{max-width:none}
+    .pta-dock .pta-ticket-form textarea{min-height:0;resize:vertical;padding:4px 6px}
+    .pta-chat-ticket{display:inline-flex;align-items:center;flex-wrap:wrap;gap:3px 8px;min-width:0;max-width:100%;line-height:1.3;font-size:12px}
+    .pta-chat-ticket__id,.pta-chat-ticket__time{white-space:nowrap}
+    .pta-chat-ticket__status{color:var(--dsw-alias-label-secondary,currentColor);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pta-chat-ticket__time{font-variant-numeric:tabular-nums}
+    .pta-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+    [class*="_titleCluster"]:has(.pta-chat-ticket) [class*="_crumbCurrent"]{max-width:min(460px,42vw)}
+    .pta-chat-ticket .pta-chat-ticket__action{min-height:24px;padding:2px 7px}
+    .pta-chat-ticket__action:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,currentColor);outline-offset:2px}
+    .pta-chat-ticket__feedback{font-size:11px;max-width:100%;color:var(--dsw-alias-label-secondary,currentColor);overflow-wrap:anywhere}
+    .pta-chat-ticket__feedback:empty{position:absolute;width:1px;height:1px;overflow:hidden}
+    .pta-page{height:100%;overflow-y:auto;box-sizing:border-box;min-width:0;flex:1 1 auto;width:100%;padding:26px 30px 56px;max-width:1120px;margin:0 auto;color:var(--dsw-alias-label-primary,inherit);font-size:13px;line-height:1.45}
     .pta-head{display:flex;align-items:flex-start;gap:18px;margin:0 0 18px}
     .pta-head h1{margin:0;font-size:24px;line-height:1.15;font-weight:650;letter-spacing:-0.02em}
     .pta-head p{margin:6px 0 0;font-size:13px;opacity:.65;max-width:620px}
     .pta-head__actions{display:flex;align-items:center;gap:8px;margin-left:auto;padding-top:2px}
-    .pta-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 22px}
+    .pta-kpis{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 18px}
     .pta-kpi{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.22));border-radius:10px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.06));color:inherit;font:inherit;text-align:left;cursor:pointer}
     .pta-kpi:disabled{cursor:default}
     .pta-kpi:not(:disabled):hover{border-color:var(--dsw-alias-border-primary,rgba(127,127,127,.4))}
     .pta-kpi__value{font-size:22px;font-weight:650;line-height:1.1;font-variant-numeric:tabular-nums}
     .pta-kpi__label{font-size:11.5px;opacity:.7}
+    .pta-kpis .pta-kpi{flex-direction:row;align-items:baseline;gap:6px;padding:5px 11px;border-radius:999px}
+    .pta-kpis .pta-kpi__value{font-size:15px}
+    .pta-kpis .pta-kpi__label{font-size:12px}
+    .pta-kpis .pta-kpi.is-zero{opacity:.45;background:transparent}
+    .pta-row:not(:hover):not(:focus-within) .pta-btn--reveal{visibility:hidden}
     .pta-section{margin:0 0 22px}
     .pta-section__head{display:flex;align-items:baseline;gap:10px;padding:0 2px 7px}
     .pta-section__head h3{margin:0;font-size:13px;font-weight:600}
@@ -1863,6 +1929,7 @@ function apply(ctx) {
     .pta-tag{flex:0 0 auto;padding:1px 5px;border-radius:4px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));font-size:10px;opacity:.8;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .pta-tag--client{border-color:transparent;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.14));opacity:.75}
     .pta-meta{flex:0 0 auto;font-size:11px;opacity:.55;white-space:nowrap}
+    .pta-hint{margin:6px 2px 10px;font-size:10.5px;opacity:.45}
     .pta-warn{flex:0 0 auto;font-size:11px;color:var(--dsw-alias-state-warning-primary,#d18f2e);white-space:nowrap}
     .pta-fill{flex:1 1 auto;min-width:8px}
     .pta-actions{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto}
@@ -1888,8 +1955,9 @@ function apply(ctx) {
     .pta-filter:hover{opacity:.9;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.08))}
     .pta-filter.is-active{opacity:1;border-color:var(--dsw-alias-border-secondary,rgba(127,127,127,.32));background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.12))}
     .pta-tree-note{padding:5px 8px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));font-size:12px;line-height:18px;user-select:none}
-    .pta-trail{display:inline-flex;align-items:center;gap:4px}
-    .pta-trail__go{font-size:10px;line-height:1;opacity:.35}
+    .pta-run-shortcut{display:grid;place-items:center;width:16px;height:20px;padding:0;border:0;border-radius:3px;background:transparent;color:inherit;cursor:pointer}
+    .pta-run-shortcut:hover,.pta-run-shortcut:focus-visible{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-skeleton)}
+    .pta-run-shortcut:focus-visible{outline:1px solid currentColor;outline-offset:-1px}
     .pta-dock{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance,0px) - var(--dsh-composer-side-clearance,0px));max-width:var(--dsh-composer-card-max-width,760px);margin:0 auto 8px;border:0;border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-elevated,#23252a));backdrop-filter:var(--dsw-menu-backdrop-filter,blur(12px));box-shadow:var(--dsw-elevation-panel,0 10px 30px rgba(0,0,0,.28));--dsw-elevation-stroke-color:var(--dsw-alias-border-l1,rgba(127,127,127,.24));overflow:hidden;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary,inherit);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}
     .pta-dock .pta-meta{font-size:12px;opacity:.58}
     .pta-dock .pta-btn{height:24px;font-size:12px;border-radius:var(--dsw-radius-sm,6px)}
@@ -1903,6 +1971,48 @@ function apply(ctx) {
     .pta-dock__body{border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));max-height:260px;overflow-y:auto;padding:8px 10px}
     .pta-dock__last{padding:0 10px 7px;font-size:12px;color:var(--dsw-alias-label-secondary,inherit);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .pta-dock__last .pta-meta{font-size:12px}
+    .pta-dock__row{flex-wrap:nowrap;padding:4px 8px;min-height:32px;gap:6px}
+    .pta-dock__row .pta-dock__title{flex:1 1 auto;max-width:none}
+    .pta-dock__ws{display:inline-flex;align-items:center;gap:4px;flex:none}
+    .pta-dock__chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 6px;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsw-alias-label-secondary,inherit);font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}
+    .pta-dock__chip:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.1))}
+    .pta-dock__chip:disabled{cursor:default}
+    .pta-dock__dot{width:7px;height:7px;border-radius:50%;background:#9aa0a6}
+    .pta-dock__ws[data-state=ready] .pta-dock__dot{background:#3fb950}
+    .pta-dock__ws[data-state=missing] .pta-dock__dot,.pta-dock__ws[data-state=conflict] .pta-dock__dot{background:#d29922}
+    .pta-dock__ws[data-state=unavailable] .pta-dock__dot{background:#f85149}
+    .pta-dock__actions{display:inline-flex;gap:2px;flex:none}
+    .pta-dock__toggle[aria-expanded=true]{color:var(--dsw-alias-label-primary,inherit);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
+    .pta-hist{height:100%;width:100%;overflow-y:auto;box-sizing:border-box;padding:18px 24px 140px;max-width:860px;margin:0 auto;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary,inherit)}
+    .pta-hist__bar{display:flex;align-items:center;gap:10px;margin:0 0 14px}
+    .pta-seg{display:inline-flex;padding:2px;border-radius:8px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.1))}
+    .pta-seg button{height:26px;padding:0 12px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary,inherit);font:inherit;font-size:12.5px;cursor:pointer}
+    .pta-seg button[aria-pressed=true]{background:var(--dsw-alias-bg-elevated,rgba(127,127,127,.22));color:var(--dsw-alias-label-primary,inherit);box-shadow:0 1px 2px rgba(0,0,0,.25)}
+    .pta-hist__reload{margin-left:auto;height:26px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary,inherit);font:inherit;font-size:12px;cursor:pointer}
+    .pta-hist__reload:hover,.pta-hist__tickets button:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.1))}
+    .pta-hist__day h3{margin:14px 0 4px;font-size:11.5px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.8))}
+    .pta-hist__day ol{list-style:none;margin:0;padding:0}
+    .pta-hist__item{position:relative;display:grid;grid-template-columns:44px 14px 1fr;align-items:baseline;gap:6px;padding:3px 0}
+    .pta-hist__item time{font-variant-numeric:tabular-nums;font-size:12px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.8))}
+    .pta-hist__item:not(:last-child)::after{content:"";position:absolute;left:56px;top:17px;bottom:-5px;width:1px;background:var(--dsw-alias-border-l1,rgba(127,127,127,.22))}
+    .pta-hist__dot{justify-self:center;width:8px;height:8px;border-radius:50%;background:#9aa0a6;transform:translateY(-1px)}
+    .pta-hist__item[data-type=run] .pta-hist__dot{background:#58a6ff}
+    .pta-hist__item[data-type=land] .pta-hist__dot{background:#3fb950}
+    .pta-hist__item[data-status=done] .pta-hist__dot{background:#3fb950}
+    .pta-hist__item[data-status="in review"] .pta-hist__dot{background:#a371f7}
+    .pta-hist__item[data-status="in progress"] .pta-hist__dot,.pta-hist__item[data-status=approved] .pta-hist__dot{background:#d29922}
+    .pta-hist__item[data-status=declined] .pta-hist__dot{background:#f85149}
+    .pta-hist__text{min-width:0;overflow-wrap:anywhere}
+    .pta-hist__text strong{font-weight:550}
+    .pta-hist__detail{color:var(--dsw-alias-label-secondary,inherit)}
+    .pta-hist__empty{color:var(--dsw-alias-label-secondary,inherit)}
+    .pta-hist__scope{margin:0;font-size:13px;font-weight:600}
+    .pta-hist__tickets{list-style:none;margin:0;padding:0}
+    .pta-hist__tickets button{display:flex;align-items:baseline;gap:8px;width:100%;padding:6px 8px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;text-align:start;cursor:pointer}
+    .pta-hist__tid{flex:none;font-variant-numeric:tabular-nums;font-size:12px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.8))}
+    .pta-hist__ttitle{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pta-hist__tstatus{flex:none;font-size:11.5px;color:var(--dsw-alias-label-secondary,inherit);text-transform:capitalize}
+    .pta-hist__tickets time{flex:none;font-size:12px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.8))}
     .pta-dock__compose{display:flex;align-items:center;gap:8px;padding:6px 10px;border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));flex-wrap:wrap}
     .pta-modes{display:inline-flex;padding:2px;gap:1px;border-radius:var(--dsw-radius-md,7px);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.13))}
     .pta-mode{height:22px;padding:0 8px;border:0;border-radius:calc(var(--dsw-radius-md,7px) - 2px);background:transparent;color:var(--dsw-alias-label-tertiary,inherit);font:inherit;font-size:12px;line-height:22px;cursor:pointer}
@@ -1921,6 +2031,7 @@ function apply(ctx) {
     .pta-runs{display:flex;flex-direction:column;gap:4px;margin-top:2px;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18))}
     .pta-run{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
     @media (max-width:760px){.pta-page{padding:18px 16px 40px}.pta-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.pta-head{flex-direction:column}.pta-head__actions{margin-left:0;width:100%}.pta-search{flex:1 1 auto;min-width:0}.pta-tag{max-width:120px}}
+    ${PROJECT_PARK_STYLES}
   `;
 
   const CLIENT_VISIBLE_STATUSES = new Set(['approved', 'declined', 'done']);
@@ -1959,7 +2070,7 @@ function apply(ctx) {
    */
   function useLiveAdmin() {
     const [state, setState] = useState({
-      tickets: [], running: [], recent: [], queue: [], attention: null, loading: true, error: '', code: '', at: 0,
+      tickets: [], projects: [], running: [], recent: [], queue: [], attention: null, loading: true, error: '', code: '', at: 0,
     });
     const mounted = useRef(true);
     const load = useCallback(async () => {
@@ -1968,7 +2079,8 @@ function apply(ctx) {
         // offline). The extra desks are best-effort, so an older Worker
         // without one still leaves the home usable.
         const tickets = await api('GET', '/admin/tickets');
-        const [runs, queue, attentionNow] = await Promise.all([
+        const [projects, runs, queue, attentionNow] = await Promise.all([
+          api('GET', '/admin/projects').catch(() => null),
           api('GET', '/admin/runs').catch(() => null),
           api('GET', '/admin/queue').catch(() => null),
           api('GET', '/admin/attention').catch(() => null),
@@ -1976,6 +2088,7 @@ function apply(ctx) {
         if (!mounted.current) return;
         setState({
           tickets: Array.isArray(tickets?.tickets) ? tickets.tickets : [],
+          projects: Array.isArray(projects?.projects) ? projects.projects : [],
           running: Array.isArray(runs?.running) ? runs.running : [],
           recent: Array.isArray(runs?.recent) ? runs.recent : [],
           queue: Array.isArray(queue?.queue) ? queue.queue : [],
@@ -2042,6 +2155,21 @@ function apply(ctx) {
     };
   }
 
+  /** Why a stalled row is flagged, with how long it has been quiet. */
+  const stalledReason = (ticket) => `no report for ${ago(ticket.updated_at)}`;
+
+  /**
+   * A Needs-you KPI opens the Inbox on its own filter. The panel may mount
+   * after the click or already be mounted, so the choice is both stored and
+   * broadcast.
+   */
+  let pendingInboxFilter = null;
+  function openInboxFilter(filter) {
+    pendingInboxFilter = filter;
+    window.dispatchEvent(new CustomEvent('pta:inbox-filter', { detail: { filter } }));
+    ctx.layout?.selectPanel?.(INBOX_PANEL);
+  }
+
   function actionableCount(groups) {
     const ids = new Set();
     for (const list of [groups.approvals, groups.reviews, groups.waiting, groups.stalled, groups.stuck]) {
@@ -2052,13 +2180,14 @@ function apply(ctx) {
 
   /** Set a ticket's status, confirming the moves that email the client. */
   async function changeTicketStatus(ticket, status) {
-    if (CLIENT_VISIBLE_STATUSES.has(status) && ticket.kind !== 'system') {
+    const requeue = status === 'approved' && ticket.status !== 'new';
+    if (requeue && !window.confirm(`Queue another Fleet run for #${ticket.id}? This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.`)) return false;
+    if (!requeue && CLIENT_VISIBLE_STATUSES.has(status) && ticket.kind !== 'system') {
       const who = ticket.client_email || ticket.client_name || 'The client';
       const what = status === 'approved' ? 'Approve' : status === 'declined' ? 'Decline' : 'Mark done';
       if (!window.confirm(`${what} #${ticket.id}?\n\n${who} is emailed about this change.`)) return false;
     }
     await api('PATCH', `/admin/tickets/${ticket.id}`, { status });
-    ticketBriefs.delete(ticket.id);
     window.dispatchEvent(new CustomEvent('admin:changed', { detail: { kind: 'ticket.status', ticketId: ticket.id } }));
     return true;
   }
@@ -2081,8 +2210,8 @@ function apply(ctx) {
     if (ticket.status === 'review') {
       return (
         <>
-          <PtaButton kind="primary" onClick={() => void changeTicketStatus(ticket, 'done')}>Done</PtaButton>
-          <PtaButton onClick={() => void changeTicketStatus(ticket, 'approved')}>Run again</PtaButton>
+          <PtaButton kind="primary" onClick={() => void changeTicketStatus(ticket, 'done')}>Mark done</PtaButton>
+          <PtaButton kind="ghost" className="pta-btn--reveal" onClick={() => void changeTicketStatus(ticket, 'approved')}>Queue another run</PtaButton>
         </>
       );
     }
@@ -2090,7 +2219,7 @@ function apply(ctx) {
       return <PtaButton kind="ghost" onClick={() => void markTicketAnswered(ticket)}>No reply needed</PtaButton>;
     }
     if (ticket.status === 'in_progress') {
-      return <PtaButton onClick={() => void changeTicketStatus(ticket, 'approved')}>Requeue</PtaButton>;
+      return <PtaButton kind="ghost" className="pta-btn--reveal" onClick={() => void changeTicketStatus(ticket, 'approved')}>Queue another run</PtaButton>;
     }
     return null;
   }
@@ -2108,8 +2237,10 @@ function apply(ctx) {
     );
   }
 
-  function TicketLine({ ticket, actions = null, reason = '', detail = '' }) {
+  function TicketLine({ ticket, actions = null, reason = '', detail = '', showAge = true }) {
     const open = () => void openTicketRun(ticket);
+    // Who filed it: a person in the portal, or the client's assistant over MCP.
+    const via = assistantBadge(ticket);
     return (
       <div
         className="pta-row"
@@ -2129,19 +2260,52 @@ function apply(ctx) {
         {ticket.kind === 'system'
           ? <span className="pta-tag">mine</span>
           : <span className="pta-tag pta-tag--client" title={ticket.client_email ?? ''}>{ticket.client_email || 'client'}</span>}
+        {via ? <span className="pta-tag pta-tag--client" title={assistantBadgeTitle(ticket)}>{via}</span> : null}
         <span className="pta-meta">{ticket.project_name || 'no project'}</span>
         {reason ? <span className="pta-warn">{reason}</span> : null}
         <span className="pta-fill" />
         {detail ? <span className="pta-meta">{detail}</span> : null}
-        <span className="pta-meta">{ago(ticket.updated_at)}</span>
+        {showAge ? <span className="pta-meta">{ago(ticket.updated_at)}</span> : null}
         {actions ? <span className="pta-actions" onClick={(event) => event.stopPropagation()}>{actions}</span> : null}
       </div>
     );
   }
 
+  /**
+   * j/k, the arrows, Home and End move focus between the ticket rows of one
+   * page. The rows are queried from that page's own root element, so a
+   * mounted-but-hidden page never moves focus for the page the user is looking
+   * at. Rows are plain `.pta-row` elements, which covers the divs on Inbox and
+   * Needs you and the run buttons on Needs you alike.
+   */
+  function navigateRowFocus(root, event) {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return false;
+    const target = event.target;
+    if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return false;
+    if (!root?.isConnected || root.offsetParent === null) return false;
+    const rows = Array.from(root.querySelectorAll('.pta-row'));
+    const active = document.activeElement;
+    const focusedRow = active instanceof Element ? active.closest('.pta-row') : null;
+    const index = nextRowIndex(focusedRow ? rows.indexOf(focusedRow) : -1, rows.length, event.key);
+    if (index === null || index >= rows.length) return false;
+    event.preventDefault();
+    rows[index].focus({ preventScroll: true });
+    rows[index].scrollIntoView({ block: 'nearest' });
+    return true;
+  }
+
+  /** One window keydown listener for a page that has no other page-wide keys. */
+  function useRowNavigation(rootRef) {
+    useEffect(() => {
+      const onKeyDown = (event) => { navigateRowFocus(rootRef.current, event); };
+      window.addEventListener('keydown', onKeyDown);
+      return () => window.removeEventListener('keydown', onKeyDown);
+    }, [rootRef]);
+  }
+
   function Kpi({ label, value, hint, tint, onClick }) {
     return (
-      <button type="button" className="pta-kpi" onClick={onClick} title={hint} disabled={!onClick}>
+      <button type="button" className={`pta-kpi${Number(value) === 0 ? ' is-zero' : ''}`} onClick={onClick} title={hint} disabled={!onClick || Number(value) === 0}>
         <span className="pta-kpi__value" style={{ color: tint }}>{value}</span>
         <span className="pta-kpi__label">{label}</span>
       </button>
@@ -2240,14 +2404,16 @@ function apply(ctx) {
 
   function NeedsYouPage() {
     const data = useLiveAdmin();
+    const root = useRef(null);
+    useRowNavigation(root);
     const groups = useMemo(() => ticketGroups(data), [data]);
     const total = actionableCount(groups);
     const goInbox = () => ctx.layout?.selectPanel?.(INBOX_PANEL);
     const goWorkbench = () => ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
-    if (data.loading && data.at === 0) return <div className="pta-page"><p className="pta-empty">Loading…</p></div>;
+    if (data.loading && data.at === 0) return <div className="pta-page" ref={root}><p className="pta-empty">Loading…</p></div>;
     if (data.error) {
       return (
-        <div className="pta-page">
+        <div className="pta-page" ref={root}>
           <header className="pta-head">
             <div>
               <h1>Needs you</h1>
@@ -2279,6 +2445,7 @@ function apply(ctx) {
               key={ticket.id}
               ticket={ticket}
               reason={reasonOf ? reasonOf(ticket) : ''}
+              showAge={key !== 'stalled'}
               actions={actions ? actions(ticket) : <TicketRowActions ticket={ticket} />}
             />
           ))}
@@ -2291,7 +2458,7 @@ function apply(ctx) {
         .map((item) => [Number(item.id), item.reason ?? 'no eligible node']),
     );
     return (
-      <div className="pta-page">
+      <div className="pta-page" ref={root}>
         <header className="pta-head">
           <div>
             <h1>Needs you</h1>
@@ -2307,17 +2474,26 @@ function apply(ctx) {
           </div>
         </header>
 
+        <ProjectPark
+          projects={data.projects}
+          tickets={data.tickets}
+          runs={data.running}
+          now={data.at || Date.now()}
+          onSelect={(plot) => openProjectPage(plot)}
+        />
+
         <div className="pta-kpis">
-          <Kpi label="To approve" value={groups.approvals.length} tint={tintOfStatus('new')} onClick={goInbox} hint="New requests; nothing runs until you approve." />
-          <Kpi label="To review" value={groups.reviews.length} tint={tintOfStatus('review')} onClick={goInbox} hint="Finished runs waiting for your check." />
-          <Kpi label="Clients waiting" value={groups.waiting.length} tint={tintOfStatus('approved')} onClick={goInbox} hint="They wrote last and have heard nothing since." />
-          <Kpi label="Running now" value={groups.running.length} tint={tintOfStatus('in_progress')} onClick={goInbox} hint="Agents working right now." />
+          <Kpi label="To approve" value={groups.approvals.length} tint={tintOfStatus('new')} onClick={() => openInboxFilter('approval')} hint="New requests; nothing runs until you approve." />
+          <Kpi label="To review" value={groups.reviews.length} tint={tintOfStatus('review')} onClick={() => openInboxFilter('review')} hint="Finished runs waiting for your check." />
+          <Kpi label="Clients waiting" value={groups.waiting.length} tint={tintOfStatus('approved')} onClick={() => openInboxFilter('reply')} hint="They wrote last and have heard nothing since." />
+          <Kpi label="Stalled" value={groups.stalled.length} tint={tintOfStatus('in_progress')} onClick={() => openInboxFilter('stalled')} hint="In progress for 45+ minutes without a report." />
+          <Kpi label="Running now" value={groups.running.length} tint={tintOfStatus('in_progress')} hint="Agents working right now. Listed at the bottom of this page." />
         </div>
 
         {section('approvals', 'Approve or decline', 'New requests. Nothing runs until you decide.', groups.approvals)}
         {section('review', 'Check the agent’s work', 'Finished runs waiting for you.', groups.reviews)}
         {section('waiting', 'Answer the client', 'They wrote last and have heard nothing since.', groups.waiting)}
-        {section('stalled', 'Stalled', 'In progress for 45+ minutes without a report.', groups.stalled)}
+        {section('stalled', 'Stalled', 'In progress for 45+ minutes without a report.', groups.stalled, null, stalledReason)}
         {section('stuck', 'No node can take these', 'Approved, but nothing eligible can run them.', groups.stuck, null, (ticket) => stuckReason.get(Number(ticket.id)) ?? '')}
 
         {groups.running.length > 0 ? (
@@ -2371,8 +2547,35 @@ function apply(ctx) {
   function InboxPage() {
     const data = useLiveAdmin();
     const groups = useMemo(() => ticketGroups(data), [data]);
-    const [filter, setFilter] = useState('all');
+    const [filter, setFilter] = useState(() => {
+      const preset = pendingInboxFilter;
+      pendingInboxFilter = null;
+      return preset ?? 'all';
+    });
     const [query, setQuery] = useState('');
+    const search = useRef(null);
+    const root = useRef(null);
+    useEffect(() => {
+      const onPreset = (event) => { pendingInboxFilter = null; setFilter(event.detail?.filter ?? 'all'); };
+      // "/" jumps to search from anywhere on the page; Escape clears it. The
+      // same listener runs the row keys (j/k, arrows, Home/End), so this page
+      // has exactly one page-wide key handler.
+      const onKey = (event) => {
+        if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+          const target = event.target;
+          const typing = target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+          if (!typing && search.current?.isConnected && search.current.offsetParent !== null) {
+            event.preventDefault();
+            search.current.focus();
+            return;
+          }
+        }
+        navigateRowFocus(root.current, event);
+      };
+      window.addEventListener('pta:inbox-filter', onPreset);
+      window.addEventListener('keydown', onKey);
+      return () => { window.removeEventListener('pta:inbox-filter', onPreset); window.removeEventListener('keydown', onKey); };
+    }, []);
     const goWorkbench = () => ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
     const all = useMemo(() => {
       const seen = new Map();
@@ -2412,14 +2615,14 @@ function apply(ctx) {
     });
     if (data.error && isAuthError(data.code)) {
       return (
-        <div className="pta-page">
+        <div className="pta-page" ref={root}>
           <header className="pta-head"><div><h1>Inbox</h1><p>Connect PTech Admin to the portal to see what is waiting.</p></div></header>
           <PortalSignIn onDone={() => void data.reload()} />
         </div>
       );
     }
     return (
-      <div className="pta-page">
+      <div className="pta-page" ref={root}>
         <header className="pta-head">
           <div>
             <h1>Inbox</h1>
@@ -2427,10 +2630,12 @@ function apply(ctx) {
           </div>
           <div className="pta-head__actions">
             <input
+              ref={search}
               className="pta-search"
               value={query}
-              placeholder="Search tickets, clients, projects…"
+              placeholder="Search tickets, clients, projects…  /"
               onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Escape') { setQuery(''); event.currentTarget.blur(); } }}
               aria-label="Search the inbox"
             />
             <PtaButton kind="ghost" onClick={goWorkbench}>Workbench</PtaButton>
@@ -2443,14 +2648,17 @@ function apply(ctx) {
             </button>
           ))}
         </div>
+        <p className="pta-meta pta-hint">j/k to move · Enter to open · / to search</p>
         {shown.length === 0 ? (
           <EmptyState title={all.length === 0 ? 'Inbox zero' : 'Nothing in this filter'} text={all.length === 0 ? 'New approvals, reviews and client replies will land here and notify you.' : 'Try another filter, or clear the search.'} />
         ) : (
           <div className="pta-rows pta-rows--inbox">
-            {shown.map(({ ticket }) => (
+            {shown.map(({ ticket, kinds }) => (
               <TicketLine
                 key={ticket.id}
                 ticket={ticket}
+                reason={kinds.has('stalled') ? stalledReason(ticket) : ''}
+                showAge={!kinds.has('stalled')}
                 actions={<TicketRowActions ticket={ticket} />}
                 detail={isWaiting(ticket) ? 'waiting' : ''}
               />
@@ -2459,13 +2667,6 @@ function apply(ctx) {
         )}
       </div>
     );
-  }
-
-  function openWorkbenchTicket(ticketId) {
-    ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
-    const hash = `#ticket=${ticketId}`;
-    if (window.location.hash === hash) window.dispatchEvent(new HashChangeEvent('hashchange'));
-    else window.location.hash = hash;
   }
 
   /**
@@ -2528,161 +2729,154 @@ function apply(ctx) {
     return <DeskPage><SeoView /></DeskPage>;
   }
 
-  /**
-   * The ticket strip above a run's own composer: what the ticket is, what the
-   * client last said, and the three moves that are not a chat message. The
-   * chat input stays the action surface; the mode buttons change where a typed
-   * draft goes.
-   */
-  function TicketDock({ sessionId, input, inputActions }) {
-    const run = ticketFromCwd(useSessionCwd(sessionId));
-    const ticketId = run?.ticketId ?? null;
-    const [detail, reload] = useTicketDetail(ticketId);
-    const [expanded, setExpanded] = useState(false);
-    const [mode, setMode] = useState('chat');
-    const [busy, setBusy] = useState('');
-    const [note, setNote] = useState('');
+  const WORKSPACE_TEXT = {
+    ready: 'Workspace ready.',
+    missing: 'Workspace is missing. Restore it from the saved commit.',
+    conflict: 'Restore is blocked by an existing checkout or local changes. Preserve that work before retrying.',
+    unavailable: 'No verified workspace is available. Check that the run recorded its repository and commit.',
+    pending: 'Checking or restoring this session’s workspace…',
+    unmanaged: 'This session has no managed workspace to restore.',
+  };
+
+  const WORKSPACE_LABEL = {
+    ready: 'Workspace ready',
+    missing: 'Workspace missing',
+    conflict: 'Restore blocked',
+    unavailable: 'No workspace',
+    pending: 'Checking workspace…',
+    unmanaged: 'No managed workspace',
+  };
+
+  /** One inline chip in the dock row; the full explanation lives in its tooltip. */
+  function TicketWorkspace({ sessionId }) {
+    const [result, setResult] = useState({ state: 'pending' });
+    const active = useRef(null);
+    const request = useCallback(async (action) => {
+      active.current?.abort();
+      const controller = new AbortController();
+      active.current = controller;
+      setResult({ state: 'pending' });
+      const next = await requestTicketWorkspace(sessionId, action, controller.signal);
+      if (!controller.signal.aborted) setResult(next);
+    }, [sessionId]);
     useEffect(() => {
-      setExpanded(false);
-      setMode('chat');
-      setBusy('');
-      setNote('');
-    }, [ticketId]);
-    if (!run) return null;
-    const ticket = detail.ticket;
-    const draft = typeof input?.draft === 'string' ? input.draft : '';
-    const messages = Array.isArray(detail.messages) ? detail.messages : [];
-    const runs = Array.isArray(detail.runs) ? detail.runs : [];
-    const waiting = isWaiting(ticket);
-    const latestClient = [...messages].reverse().find((message) => message.author === 'client' && !message.internal) ?? null;
-    const canReply = ticket?.kind !== 'system';
-    const send = async (internal) => {
-      const body = draft.trim();
-      if (!ticket || body.length === 0) return;
-      setBusy(internal ? 'note' : 'reply');
-      setNote('');
-      try {
-        await api('POST', `/admin/tickets/${ticket.id}/messages`, { body, internal });
-        inputActions?.setDraft?.('');
-        setNote(internal ? 'Note saved' : 'Reply sent');
-        window.dispatchEvent(new CustomEvent('admin:changed', { detail: { kind: 'ticket.reply', ticketId: ticket.id } }));
-        void reload();
-      } catch (error) {
-        setNote(error?.message ?? 'Could not send it');
-      } finally {
-        setBusy('');
-      }
+      void request('status');
+      return () => active.current?.abort();
+    }, [request]);
+    useEffect(() => {
+      if (result.state !== 'pending') return;
+      const refresh = () => void request('status');
+      window.addEventListener('focus', refresh);
+      return () => window.removeEventListener('focus', refresh);
+    }, [result.state, request]);
+    const restore = () => {
+      if (window.confirm('Restore this workspace from its saved commit? Uncommitted edits are not recovered. This does not change the ticket or queue a Fleet run.')) void request('restore');
     };
-    return (
-      <section className="pta-dock" aria-label={`Ticket #${run.ticketId}`}>
-        <div className="pta-dock__head">
-          <StatusPill status={ticket?.status ?? ''} />
-          <span className="pta-dock__id">#{run.ticketId}</span>
-          <span className="pta-dock__title" title={ticketLabel(ticket)}>{detail.loading && !ticket ? 'Loading ticket…' : ticketLabel(ticket)}</span>
-          {ticket ? <span className="pta-meta">{ticket.project_name || 'no project'}</span> : null}
-          {ticket && ticket.kind !== 'system' ? <span className="pta-meta">{ticket.client_email}</span> : null}
-          {waiting ? <span className="pta-warn">client waiting {ago(ticket.client_waiting_since)}</span> : null}
-          <span className="pta-fill" />
-          {ticket ? <TicketRowActions ticket={ticket} /> : null}
-          <button
-            type="button"
-            className="pta-dock__toggle"
-            aria-expanded={expanded}
-            title={expanded ? 'Hide the ticket thread and details' : 'Show the client thread and ticket details'}
-            onClick={() => setExpanded((value) => !value)}
-          >
-            <span>{expanded ? 'Hide ticket' : `Ticket${messages.length ? ` · ${messages.length}` : ''}`}</span>
-            <span className="pta-dock__chev" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-          </button>
-          <PtaButton kind="ghost" onClick={() => openWorkbenchTicket(run.ticketId)}>Workbench</PtaButton>
-        </div>
-        {!expanded && latestClient ? (
-          <div className="pta-dock__last" title={latestClient.body}>
-            <span className="pta-meta">Client:</span> {latestClient.body}
-          </div>
-        ) : null}
-        {expanded ? (
-          <div className="pta-dock__body">
-            {ticket ? (
-              <div className="pta-facts">
-                <span>Priority <strong>{ticket.priority ?? 0}</strong></span>
-                <span>Agent <strong>{ticket.executor || 'auto'}</strong></span>
-                {ticket.attention ? <span>Attention <strong>{ticket.attention}</strong></span> : null}
-                {ticket.budget_cents !== null && ticket.budget_cents !== undefined ? <span>Budget <strong>{dollars(ticket.budget_cents)}</strong></span> : null}
-                {ticket.price_cents !== null && ticket.price_cents !== undefined ? <span>Cost <strong>{dollars(ticket.price_cents)}</strong></span> : null}
-                {ticket.requires ? <span>Needs <strong>{String(ticket.requires).replace(/^\[|\]$/g, '').replace(/"/g, '') || 'nothing'}</strong></span> : null}
-              </div>
-            ) : null}
-            <div className="pta-thread">
-              {messages.length === 0 ? <p className="pta-meta">No messages yet.</p> : null}
-              {messages.slice(-12).map((message) => (
-                <div key={message.id} className={`pta-msg pta-msg--${message.author}${message.internal ? ' is-note' : ''}`}>
-                  <div className="pta-msg__meta">
-                    {message.author === 'client' ? 'Client' : message.author === 'ali' ? 'You' : 'System'}
-                    {message.internal ? ' · private note' : ''}
-                    {' · '}
-                    {ago(message.created_at)}
-                  </div>
-                  <div className="pta-msg__body">{message.body}</div>
-                </div>
-              ))}
-              {runs.length > 0 ? (
-                <div className="pta-runs">
-                  {runs.slice(-4).map((ticketRun) => (
-                    <div key={ticketRun.id} className="pta-run">
-                      <span className="pta-dot" style={{ background: ticketRun.status === 'failed' ? 'var(--dsw-alias-state-danger-primary, #e5534b)' : ticketRun.status === 'running' ? tintOfStatus('in_progress') : 'var(--dsw-alias-label-tertiary, #8a9099)' }} />
-                      <span>Run {ticketRun.id}</span>
-                      <span className="pta-meta">{ticketRun.executor ?? 'agent'}</span>
-                      <span className="pta-meta">{ticketRun.status}</span>
-                      <span className="pta-meta">{ago(ticketRun.finished_at ?? ticketRun.started_at ?? ticketRun.created_at)}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-        <div className="pta-dock__compose">
-          <div className="pta-modes" role="group" aria-label="Where the draft goes">
-            {[
-              ['chat', 'Chat'],
-              ['reply', 'Reply to client'],
-              ['note', 'Private note'],
-            ].map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                className={`pta-mode${mode === key ? ' is-active' : ''}`}
-                aria-pressed={mode === key}
-                disabled={key !== 'chat' && key === 'reply' && !canReply}
-                onClick={() => setMode(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <span className="pta-hint">
-            {mode === 'chat'
-              ? 'Typing here talks to the agent; the Host mirrors it to the ticket as a private note.'
-              : mode === 'reply'
-                ? 'Type in the chat input, then send it to the client. This emails them.'
-                : 'Type in the chat input, then save it as an internal note. The client never sees it.'}
-          </span>
-          <span className="pta-fill" />
-          {mode === 'reply' ? (
-            <PtaButton kind="primary" disabled={!canReply || draft.trim().length === 0 || busy === 'reply'} onClick={() => void send(false)}>
-              {busy === 'reply' ? 'Sending…' : 'Send reply'}
-            </PtaButton>
-          ) : null}
-          {mode === 'note' ? (
-            <PtaButton kind="primary" disabled={draft.trim().length === 0 || busy === 'note'} onClick={() => void send(true)}>
-              {busy === 'note' ? 'Saving…' : 'Save note'}
-            </PtaButton>
-          ) : null}
-          {note ? <span className="pta-meta" role="status">{note}</span> : null}
-        </div>
-      </section>
-    );
+    const detail = [WORKSPACE_TEXT[result.state], result.reason].filter(Boolean).join(' ');
+    const checkable = ['conflict', 'unavailable', 'pending', 'ready'].includes(result.state);
+    return <span className="pta-dock__ws" data-state={result.state}>
+      <button type="button" className="pta-dock__chip" title={checkable ? `${detail} Click to check again.` : detail}
+        aria-label={detail} disabled={!checkable} onClick={() => void request('status')}>
+        <span className="pta-dock__dot" aria-hidden="true" />
+        <span role="status">{WORKSPACE_LABEL[result.state] ?? result.state}</span>
+      </button>
+      {result.state === 'missing' ? <PtaButton onClick={restore}>Restore</PtaButton> : null}
+    </span>;
+  }
+
+  function TicketMessageForm({ mode, ticket }) {
+    const [text, setText] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [notice, setNotice] = useState('');
+    const internal = mode === 'note';
+    const label = internal ? 'Add private note' : 'Reply by email';
+    const submit = async (event) => {
+      event.preventDefault();
+      if (busy) return;
+      setNotice('');
+      setBusy(true);
+      try {
+        if (await sendTicketMessage({ api: ticketCommandApi, ticket, mode, text, confirm: message => window.confirm(message) })) {
+          setText('');
+          setNotice(internal ? 'Private note saved.' : 'Email reply sent.');
+          window.dispatchEvent(new CustomEvent('admin:changed', { detail: { kind: 'ticket.reply', ticketId: ticket.id } }));
+        }
+      } catch {
+        setNotice(internal ? 'Could not save the private note.' : 'Could not send the email reply.');
+      } finally { setBusy(false); }
+    };
+    return <form className="pta-dock__body pta-ticket-form" onSubmit={submit}>
+      <textarea aria-label={label} autoFocus rows={2} value={text} onChange={event => setText(event.target.value)} disabled={busy}
+        placeholder={internal ? 'Private to the team and future Fleet runs. Saving does not queue a run.' : `Emails ${ticket.client_email} after confirmation.`} />
+      <div className="pta-ticket-form__row">
+        <span className="pta-meta" role="status">{notice}</span>
+        <PtaButton type="submit" disabled={busy || !text.trim()}>{internal ? 'Save private note' : 'Send email reply'}</PtaButton>
+      </div>
+    </form>;
+  }
+
+  /**
+   * The ticket card above the composer: one row (status, id, title, workspace,
+   * note/email toggles). A form opens below the row only when asked for.
+   * Messages to the agent go through the native composer underneath.
+   */
+  function LinkedTicketDock({ sessionId, ticketId }) {
+    const { detail, error } = useLinkedTicketDetail(ticketId, sessionId);
+    const ticket = detail?.ticket;
+    const [open, setOpen] = useState(null);
+    const canReply = ticket && ticket.kind !== 'system' && ticket.client_email;
+    const toggle = (mode, label) => <button type="button" className="pta-dock__toggle" aria-expanded={open === mode}
+      onClick={() => setOpen(open === mode ? null : mode)}>{label}</button>;
+    const title = error || (ticket ? ticketLabel(ticket) : 'Loading linked ticket…');
+    return <section className="pta-dock" aria-label={`Ticket #${ticketId}`}
+      title="Type below to message the agent. That does not email the client or save a private note.">
+      <div className="pta-dock__head pta-dock__row">
+        {ticket ? <StatusPill status={ticket.status} /> : null}
+        <span className="pta-dock__id">#{ticketId}</span>
+        <span className="pta-dock__title" title={title}>{title}</span>
+        {desktop ? <TicketWorkspace sessionId={sessionId} /> : null}
+        {ticket ? <span className="pta-dock__actions">
+          {toggle('note', 'Add private note')}
+          {canReply ? toggle('reply', 'Reply by email') : null}
+        </span> : null}
+      </div>
+      {ticket && open === 'note' ? <TicketMessageForm key="note" mode="note" ticket={ticket} /> : null}
+      {canReply && open === 'reply' ? <TicketMessageForm key="reply" mode="reply" ticket={ticket} /> : null}
+    </section>;
+  }
+
+  /**
+   * True while this session shows its Chat view. Chat is always the strip's
+   * first tab; with no tab strip there is only Chat. Read from the session's
+   * own tab strip so another open session cannot answer for this one.
+   */
+  function useChatViewActive(anchor, ready) {
+    const [active, setActive] = useState(true);
+    useEffect(() => {
+      let scope = anchor.current?.parentElement ?? null;
+      while (scope && !scope.querySelector('[data-conversation-tabs]')) scope = scope.parentElement;
+      if (!scope) return undefined;
+      const read = () => {
+        const strip = scope.querySelector('[data-conversation-tabs]');
+        setActive(!strip || strip.firstElementChild?.getAttribute('aria-selected') === 'true');
+      };
+      read();
+      const observer = new MutationObserver(read);
+      observer.observe(scope, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-selected'] });
+      return () => observer.disconnect();
+    }, [anchor, ready]);
+    return active;
+  }
+
+  /** The ticket card belongs to Chat; Task and History already show the ticket. */
+  function TicketDock({ sessionId }) {
+    const run = ticketFromCwd(useSessionCwd(sessionId));
+    const anchor = useRef(null);
+    const chat = useChatViewActive(anchor, Boolean(run && sessionId));
+    if (!run || !sessionId) return null;
+    return <div ref={anchor} style={{ display: 'contents' }}>
+      {chat ? <LinkedTicketDock key={`${run.ticketId}:${sessionId}`} ticketId={run.ticketId} sessionId={sessionId} /> : null}
+    </div>;
   }
 
   /* ————— ptech-admin:// links ————— */
@@ -2810,9 +3004,19 @@ function apply(ctx) {
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: INBOX_PANEL, order: 12, label: 'Inbox' }, InboxEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: MARKETING_PANEL, order: 13, label: 'Marketing' }, MarketingEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: SEO_PANEL, order: 14, label: 'SEO' }, SeoEntryIcon));
-  // A run's ticket lives above its own composer: status, the client's last
-  // words and the moves that are not a chat message, with the chat input as
-  // the one place to type.
+  ctx.inject(['conversation'], (scope) => {
+    nativeConversation = scope.conversation;
+    scope.effect(() => () => { nativeConversation = null; }, 'admin: native view selection');
+    // Older shells do not understand visibility. Do not register global tabs on them.
+    if (!nativeConversation?.selectView) return;
+    scope.slots.inject('conversation.view', function* () {
+      const visible = (row) => Boolean(ticketForSession(row));
+      yield scope.slots.register({ name: 'conversation.view', id: 'admin-task', order: 20, label: 'Task', visible }, NativeTask);
+      yield scope.slots.register({ name: 'conversation.view', id: 'admin-history', order: 21, label: 'History', visible }, NativeHistory);
+    });
+  });
+  ctx.slots.inject('conversation.chat.activity-frame', () =>
+    ctx.slots.register({ name: 'conversation.chat.activity-frame', id: 'admin-ticket-activity' }, TicketActivityFrame));
   ctx.slots.inject('conversation.input.dock', () =>
     ctx.slots.register({ name: 'conversation.input.dock', id: 'admin-ticket', order: 20, locale: NAMESPACE }, TicketDock));
   // The native pages own their own small stylesheet; no workbench CSS leaks
@@ -2908,6 +3112,8 @@ function apply(ctx) {
     ctx.slots.register({ name: 'sidebar.right.pane.tab', key: 'admin-tasks', locale: NAMESPACE }, TasksTab));
   ctx.slots.inject('sidebar.right.pane.tab.title', () =>
     ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: 'admin-tasks', locale: NAMESPACE }, TasksTabTitle));
+  ctx.slots.inject('conversation.view', () =>
+    ctx.slots.register({ name: 'conversation.view', id: 'admin-git-graph', order: 22, label: 'Git Graph' }, ConversationGitGraph));
   // Goes over the route when the Host has it; only an older Host makes this
   // (and the bridge lookup behind it) a session command.
   void command(`hello ${CLIENT_VERSION}`).catch(() => undefined);

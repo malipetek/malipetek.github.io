@@ -1,5 +1,5 @@
 /* One ticket: the thread and the agent's runs in the middle, its properties on the right. */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ACCEPT, checkPicked, sizeText } from '../../../src/lib/attachments.js';
 import { isEnglish, localeInfo } from '../../../src/lib/locales.js';
 import { useAdmin, useMeter, useTicket } from './store.js';
@@ -21,7 +21,13 @@ import {
   when,
 } from './format.js';
 import { Button, Chips, Dot, Field, Modal, Resizer, Segmented, StatusPill, Tag, cx } from './ui.jsx';
-import { ReviewButton } from './review.jsx';
+import { ReviewButton, RecordedEvidence } from './review.jsx';
+import { createSubmission } from './submit-state.js';
+import { recordedPatch, sortedRuns } from './run-evidence.js';
+import { createStepRequest } from './request-state.js';
+import { MentionRecipients } from './mention-recipients.jsx';
+import { createMentionDelivery } from './mention-delivery.js';
+import { assistantBadge, assistantBadgeTitle } from './ticket-assistant.mjs';
 
 /** The obvious next moves for each status; anything else is in the Status select. */
 const PRIMARY = {
@@ -32,9 +38,9 @@ const PRIMARY = {
   approved: [['new', 'Hold', 'ghost']],
   review: [
     ['done', 'Mark done', 'primary'],
-    ['approved', 'Run again', 'default'],
+    ['approved', 'Queue another run', 'ghost'],
   ],
-  done: [['approved', 'Reopen and run', 'ghost']],
+  done: [['approved', 'Queue another run', 'ghost']],
   declined: [['new', 'Reopen', 'ghost']],
 };
 
@@ -46,22 +52,25 @@ const PRIMARY = {
  */
 export function TicketView({ id, active, details = true }) {
   const { api, act } = useAdmin();
-  const [{ ticket, messages, runs, review, screenshots, land, error, loading }, reload] = useTicket(api, id);
+  const [{ ticket, messages, runs, review, screenshots, land, error, loading, fetchedAt }, reload] = useTicket(api, id);
   const meter = useMeter(api, ticket, active);
   if (loading && !ticket) return <p className="aw-empty">Loading #{id}…</p>;
-  if (!ticket) return <p className="aw-empty">{errorText(error)}</p>;
+  if (!ticket) return <div className="aw-empty" role="alert">{errorText(error)} <Button onClick={reload}>Retry loading ticket</Button></div>;
   const isClient = ticket.kind !== 'system';
+  // Who filed it: a person in the portal, or the client's assistant over MCP.
+  const via = assistantBadge(ticket);
   return (
     <div className={cx('aw-ticket', !details && 'aw-ticket--solo')}>
       {details ? (
         <Resizer host=".aw-ticket" cssVar="--aw-details-w" def={300} min={200} max={640} invert storage="aw.details.w" className="aw-resize--details" />
       ) : null}
       <div className="aw-ticket__main">
+        {error ? <div className="aw-banner aw-banner--warn" role="alert">Refresh failed. Showing ticket evidence last fetched {fetchedAt ? new Date(fetchedAt).toLocaleString() : 'at an unknown time'}. {errorText(error)} <Button size="sm" onClick={reload}>Retry refresh</Button></div> : null}
         <header className="aw-ticket__head">
           <div className="aw-ticket__crumbs">
             <span className="aw-mono">#{ticket.id}</span>
             <span>{ticket.project_name ?? 'no project'}</span>
-            <span>{isClient ? `${ticket.client_name ? `${ticket.client_name} · ` : ''}${ticket.client_email}` : 'your task'}</span>
+            <span>{isClient ? `${ticket.client_name ? `${ticket.client_name} · ` : ''}${ticket.client_email}` : 'your task'}{via ? <>{' '}<Tag title={assistantBadgeTitle(ticket)}>{via}</Tag></> : null}</span>
             <span>opened {when(ticket.created_at)}</span>
             {isClient && ticket.client_locale && !isEnglish(ticket.client_locale) ? (
               <span title="Their messages are machine-translated for you; your replies reach them translated.">
@@ -92,10 +101,12 @@ export function TicketView({ id, active, details = true }) {
 
         <ReviewCard
           review={review}
-          screenshots={screenshots.filter((shot) => shot.runId === (review?.runId ?? runs[runs.length - 1]?.id))}
+          latestRunId={sortedRuns(runs)[0]?.id}
+          screenshots={screenshots.filter((shot) => review?.runId != null && String(shot.runId) === String(review.runId))}
         />
-        <Timeline ticket={ticket} messages={messages} runs={runs} />
-        <Composer ticket={ticket} onSent={reload} />
+        <RecordedEvidence key={`evidence-${ticket.id}`} runs={runs} review={review} screenshots={screenshots} />
+        <Timeline key={`timeline-${ticket.id}`} ticket={ticket} messages={messages} runs={runs} />
+        <Composer key={ticket.id} ticket={ticket} onSent={reload} />
       </div>
       {details ? <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} /> : null}
     </div>
@@ -110,7 +121,18 @@ export function TicketView({ id, active, details = true }) {
 function TicketActions({ ticket, runs, land, reload }) {
   const { api, setStatus, act, ask } = useAdmin();
   const live = runs.find((r) => r.status === 'running');
-  const move = (s) => setStatus(ticket, s).then(reload);
+  const move = (s) => {
+    if (s === 'approved' && ticket.status !== 'new') {
+      ask({
+        title: `Queue another run for #${ticket.id}?`,
+        text: 'This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.',
+        confirm: 'Queue another run',
+        run: () => act(() => api('PATCH', `/admin/tickets/${ticket.id}`, { status: 'approved' })).then(reload),
+      });
+      return;
+    }
+    return setStatus(ticket, s).then(reload);
+  };
   // Landable once a run has left work on the branch, and never mid-run.
   const canLand = Boolean(ticket.project_id) && ticket.status !== 'in_progress' && runs.length > 0;
   return (
@@ -166,7 +188,7 @@ function TicketActions({ ticket, runs, land, reload }) {
       ) : null}
       {land?.ref && !land.requestedAt ? (
         <span className="aw-muted" style={{ fontSize: 12 }}>
-          landed on {land.ref}
+          {canLand ? 'last landed on' : 'landed on'} {land.ref}
           {land.sha ? ` (${String(land.sha).slice(0, 8)})` : ''}
         </span>
       ) : null}
@@ -175,7 +197,7 @@ function TicketActions({ ticket, runs, land, reload }) {
 }
 
 /** The pre-review's one screen: verdict, why, and the build it was based on. */
-function ReviewCard({ review, screenshots = [] }) {
+function ReviewCard({ review, latestRunId, screenshots = [] }) {
   if (!review) return null;
   const tone = review.verdict === 'pass' ? 'ok' : review.verdict === 'attention' ? 'warn' : 'bad';
   const label = review.verdict === 'pass' ? 'pass' : review.verdict === 'attention' ? 'check' : 'fail';
@@ -183,7 +205,7 @@ function ReviewCard({ review, screenshots = [] }) {
     <section className={cx('aw-prereview', `aw-prereview--${tone}`)}>
       <header>
         <Dot state={tone} />
-        <strong>Pre-review</strong>
+        <strong>Pre-review · run #{review.runId ?? 'unknown'}{review.runId != null && String(review.runId) !== String(latestRunId) ? ' · previous run, not the latest run' : ''}</strong>
         <Tag tone={tone}>{label}</Tag>
         <span className="aw-toolbar__fill" />
         <span className="aw-muted">
@@ -211,8 +233,8 @@ function ReviewCard({ review, screenshots = [] }) {
         </div>
       ) : null}
       <footer>
-        {review.buildOk === null ? (
-          <Tag tone="dash">no build gate</Tag>
+        {review.buildOk == null ? (
+          <Tag tone="dash">build result unknown</Tag>
         ) : review.buildOk ? (
           <Tag tone="ok">build passed</Tag>
         ) : (
@@ -254,8 +276,8 @@ function Timeline({ ticket, messages, runs }) {
         ),
       )}
       {diff ? (
-        <Modal title={`Run ${diff.id}: changes`} subtitle={diff.branch ? `Branch ${diff.branch}` : undefined} onClose={() => setDiff(null)} wide>
-          <pre className="aw-diff">{diff.diff ?? diff.diff_stat ?? 'No diff recorded.'}</pre>
+        <Modal title={`Run ${diff.id}: changes`} subtitle={`Recorded evidence for run #${diff.id}${diff.branch ? ` · branch ${diff.branch} is mutable` : ''}; not the current repository state`} onClose={() => setDiff(null)} wide>
+          <pre className="aw-diff">{recordedPatch(diff) ?? 'No patch or statistics recorded.'}</pre>
         </Modal>
       ) : null}
     </ol>
@@ -384,31 +406,23 @@ const STEP_MARK = { tool: '›', text: '·', error: '!', node: '◦' };
 function RunSteps({ run, live }) {
   const { api } = useAdmin();
   const [open, setOpen] = useState(live);
-  const [steps, setSteps] = useState(null);
+  useEffect(() => { if (live) setOpen(true); }, [live]);
+  const [{steps,error}, setStepsState] = useState({steps:null,error:null});
+  const [retry, setRetry] = useState(0);
+  const request = useMemo(() => createStepRequest(api, run.id, setStepsState), [api, run.id]);
   const listRef = useRef(null);
-  const lastSeq = useRef(0);
   useEffect(() => {
     if (!open) return undefined;
     let alive = true;
     let timer = null;
     const pull = async () => {
-      try {
-        const data = await api('GET', `/admin/runs/${run.id}/steps?after=${lastSeq.current}`);
-        if (!alive) return;
-        const fresh = data?.steps ?? [];
-        if (fresh.length) lastSeq.current = fresh[fresh.length - 1].seq;
-        setSteps((prev) => [...(prev ?? []), ...fresh]);
-        if (data?.live) timer = setTimeout(pull, STEP_POLL_MS);
-      } catch {
-        if (alive) setSteps((prev) => prev ?? []);
-      }
+      const data = await request.pull();
+      // A failed live pull must not stop the polling loop.
+      if (alive && (live || data?.live)) timer = setTimeout(pull, STEP_POLL_MS);
     };
     void pull();
-    return () => {
-      alive = false;
-      if (timer) clearTimeout(timer);
-    };
-  }, [open, run.id, api]);
+    return () => { alive = false; clearTimeout(timer); request.invalidate(); };
+  }, [open, request, live, retry]);
   // Follow the newest step while live, unless the reader scrolled up.
   useEffect(() => {
     const el = listRef.current;
@@ -421,12 +435,12 @@ function RunSteps({ run, live }) {
       </button>
     );
   }
-  if (steps === null) return <p className="aw-muted" style={{ fontSize: 12 }}>Loading steps…</p>;
-  if (steps.length === 0) {
-    return live ? <p className="aw-muted" style={{ fontSize: 12 }}>Working… steps appear here as the agent takes them.</p> : <p className="aw-muted" style={{ fontSize: 12 }}>No steps were recorded for this run.</p>;
-  }
+  const failure = error ? <p role="alert" className="aw-error">Steps could not refresh. {errorText(error)} <Button size="sm" onClick={() => setRetry(n => n + 1)}>Retry steps</Button></p> : null;
+  if (steps === null) return <>{failure}{!error ? <p className="aw-muted">Loading steps…</p> : null}</>;
+  if (steps.length === 0) return <>{failure}<p className="aw-muted">{live ? 'Working… steps appear here as the agent takes them.' : 'No steps were recorded for this run.'}</p></>;
   return (
     <>
+      {failure}
       <ol className="aw-steps" ref={listRef}>
         {steps.map((step) => (
           <li key={step.seq} className={`aw-step--${step.kind}`}>
@@ -454,7 +468,7 @@ function RunCard({ run, latest, onDiff }) {
       <header className={cx(fold.long && 'aw-fold')} onClick={fold.toggle}>
         <FoldChevron fold={fold} />
         {live ? <span className="aw-live" /> : <Dot state={run.status === 'ok' ? 'ok' : 'bad'} />}
-        <strong>{run.executor}</strong>
+        <strong>Run #{run.id} · {run.executor}</strong>
         {run.model ? <span className="aw-muted">{run.model}</span> : null}
         <span className="aw-muted">on {run.node_id ?? 'the Harness'}</span>
         {run.attempt > 1 ? <Tag>attempt {run.attempt}</Tag> : null}
@@ -474,7 +488,7 @@ function RunCard({ run, latest, onDiff }) {
       <footer>
         {fold.long ? <FoldMore fold={fold} text={summary} /> : null}
         {run.diff_stat ? <code className="aw-muted">{run.diff_stat.split('\n').pop()}</code> : null}
-        {run.diff || run.diff_stat ? (
+        {recordedPatch(run) ? (
           <button type="button" className="aw-link" onClick={onDiff}>
             View changes
           </button>
@@ -543,38 +557,67 @@ function Composer({ ticket, onSent }) {
   const [text, setText] = useState('');
   const [picked, setPicked] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [sendError, setSendError] = useState(null);
+  const submission = useRef(createSubmission());
+  const [recipientUserIds, setRecipientUserIds] = useState([]);
+  const [mentionJobs, setMentionJobs] = useState([]);
+  const [mentionVersion, setMentionVersion] = useState(0);
   const picker = useRef(null);
   const note = mode === 'note' || !isClient;
   const canRerun = ['review', 'done', 'approved', 'new'].includes(ticket.status);
 
+  const checkMention = async (job, saved) => {
+    setMentionJobs(previous => previous.map(value => value.key === job.key ? {...value,status:'checking'} : value));
+    try {
+      const result = await job.deliver(saved);
+      setMentionJobs(previous => previous.map(value => value.key === job.key ? {...value,status:'complete',result,error:null} : value));
+    } catch (error) {
+      setMentionJobs(previous => previous.map(value => value.key === job.key ? {...value,status:'failed',error} : value));
+    }
+  };
   const send = async (rerun) => {
+    if (submission.current.busy || submission.current.pendingQueue) return;
     const body = text.trim();
     if (!body && !picked.length) return;
-    const go = async () => {
-      setBusy(true);
-      try {
-        await act(async () => {
-          if (picked.length) {
-            const form = new FormData();
-            form.append('body', body);
-            form.append('internal', String(note));
-            for (const f of picked) form.append('files', f);
-            await host.upload(`/admin/tickets/${ticket.id}/messages`, form);
-          } else {
-            await api('POST', `/admin/tickets/${ticket.id}/messages`, { body, internal: note });
-          }
-          if (rerun && ticket.status !== 'approved') await api('PATCH', `/admin/tickets/${ticket.id}`, { status: 'approved' });
-        }, note ? (rerun ? 'Note added; the agent runs again with it.' : 'Note added. The agent reads it on the next run.') : 'Reply sent; the client was emailed.');
-        setText('');
-        setPicked([]);
-        if (picker.current) picker.current.value = '';
-        onSent();
-      } finally {
-        setBusy(false);
-      }
+    const save = async () => {
+      if (picked.length) {
+        const form = new FormData();
+        form.append('body', body);
+        form.append('internal', String(note));
+        for (const file of picked) form.append('files', file);
+        return host.upload(`/admin/tickets/${ticket.id}/messages`, form);
+      } else return api('POST', `/admin/tickets/${ticket.id}/messages`, {body, internal:note});
     };
-    if (!note) ask({ title: 'Email the client?', text: `${ticket.client_email} receives this reply.`, confirm: 'Send reply', run: go });
-    else await go().catch(() => undefined);
+    const go = async () => {
+      if (submission.current.busy || submission.current.pendingQueue) return;
+      setBusy(true); setSendError(null);
+      try {
+        await submission.current.run({save,
+          queue: rerun && ticket.status !== 'approved' ? () => api('PATCH', `/admin/tickets/${ticket.id}`, {status:'approved'}) : null,
+          onSaved: saved => {
+            setText(''); setPicked([]); if (picker.current) picker.current.value = ''; void onSent();
+            if (recipientUserIds.length) {
+              const job = {key:globalThis.crypto.randomUUID(),messageId:saved?.messageId,deliver:createMentionDelivery({api,projectId:ticket.project_id,ticketId:ticket.id,recipientUserIds}),status:'checking'};
+              setMentionJobs(previous => [...previous,job]);
+              void checkMention(job,saved);
+            }
+            setRecipientUserIds([]); setMentionVersion(value => value + 1);
+          },
+        });
+        notify(rerun ? 'Note saved; agent queued.' : note ? 'Note saved.' : 'Reply sent.');
+        void onSent();
+      } catch (error) { setSendError(error); }
+      finally { setBusy(false); }
+    };
+    if (!note) ask({title:'Email the client?',text:`${ticket.client_email} receives this reply.`,confirm:'Send reply',run:go});
+    else await go();
+  };
+  const retryQueue = async () => {
+    if (submission.current.busy) return;
+    setBusy(true); setSendError(null);
+    try { await submission.current.retryQueue(); notify('Agent queued.'); void onSent(); }
+    catch (error) { setSendError(error); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -583,6 +626,7 @@ function Composer({ ticket, onSent }) {
         {isClient ? (
           <Segmented
             value={mode}
+            disabled={busy}
             options={[
               { value: 'note', label: 'Private note' },
               { value: 'reply', label: 'Reply to client' },
@@ -597,16 +641,26 @@ function Composer({ ticket, onSent }) {
       <textarea
         rows={4}
         value={text}
+        disabled={busy}
         placeholder={note ? 'Steer the agent: what to change, what to avoid, how to check…' : 'Write to the client…'}
         onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === 'Enter' && void send(false)}
+        onKeyDown={(e) => { if (!e.nativeEvent?.isComposing && (e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void send(false); } }}
       />
+      <MentionRecipients key={mentionVersion} api={api} projectId={ticket.project_id} onChange={setRecipientUserIds} disabled={busy} internal={note} />
+      {mentionJobs.map(job => <div key={job.key} role="status" className="aw-muted">
+        Message #{job.messageId ?? 'unknown'} saved. {job.status === 'checking' ? 'Checking notification delivery…' : job.error ? `Notification status unavailable: ${errorText(job.error)}` : job.result?.ok ? 'All selected notification emails sent.' : 'Some notifications were not confirmed sent.'}
+        {job.result?.deliveries?.map(delivery => <p key={delivery.userId}>Recipient #{delivery.userId}: {delivery.status === 'sent' ? 'Email sent' : delivery.status === 'failed' ? 'Email could not be sent' : delivery.status === 'sending' ? 'Delivery status unknown' : delivery.status === 'cancelled' ? 'Notification cancelled' : 'Delivery pending'}.</p>)}
+        {job.status !== 'checking' && (job.error || !job.result?.ok) ? <Button size="sm" onClick={() => void checkMention(job)}>Check notification status</Button> : null}
+      </div>)}
+      {sendError ? <p role="alert" className="aw-error">{submission.current.pendingQueue ? 'Message saved. Queue failed; retry queues only, without another message. ' : 'Message was not saved. '}{errorText(sendError)}</p> : null}
+      {submission.current.pendingQueue ? <Button disabled={busy} onClick={retryQueue}>{busy ? 'Queuing…' : 'Retry queue only'}</Button> : null}
       <div className="aw-composer__foot">
         {host?.upload ? (
           <>
             <input
               ref={picker}
               type="file"
+              disabled={busy}
               multiple
               accept={ACCEPT}
               hidden
@@ -621,13 +675,14 @@ function Composer({ ticket, onSent }) {
                 setPicked(list);
               }}
             />
-            <button type="button" className="aw-link" onClick={() => picker.current?.click()}>
+            <button type="button" className="aw-link" disabled={busy} onClick={() => picker.current?.click()}>
               {picked.length ? `${picked.length} file${picked.length > 1 ? 's' : ''}: ${picked.map((f) => f.name).join(', ')}` : 'Attach files…'}
             </button>
             {picked.length ? (
               <button
                 type="button"
                 className="aw-link"
+                disabled={busy}
                 onClick={() => {
                   setPicked([]);
                   if (picker.current) picker.current.value = '';
@@ -641,11 +696,11 @@ function Composer({ ticket, onSent }) {
         <span className="aw-muted">⌘↵ to send</span>
         <span className="aw-toolbar__fill" />
         {note && canRerun ? (
-          <Button disabled={busy || (!text.trim() && !picked.length)} onClick={() => void send(true)}>
+          <Button disabled={busy || submission.current.pendingQueue || (!text.trim() && !picked.length)} onClick={() => void send(true)}>
             Add note and run again
           </Button>
         ) : null}
-        <Button kind="primary" disabled={busy || (!text.trim() && !picked.length)} onClick={() => void send(false)}>
+        <Button kind="primary" disabled={busy || submission.current.pendingQueue || (!text.trim() && !picked.length)} onClick={() => void send(false)}>
           {note ? 'Add note' : 'Send reply…'}
         </Button>
       </div>

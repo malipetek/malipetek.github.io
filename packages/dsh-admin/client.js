@@ -28,9 +28,193 @@ var __awPlugin = (() => {
     default: () => client_default
   });
 
+  // packages/dsh-admin/src/ticket-chat.mjs
+  function linkedTicketDetail(detail, ticketId, sessionId) {
+    return typeof sessionId === "string" && sessionId !== "" && detail?.ticket?.id === ticketId && Array.isArray(detail.runs) && detail.runs.some((run) => run?.session_id === sessionId) ? detail : null;
+  }
+  function createTicketDetailReader({ ticketId, sessionId, api, update }) {
+    let revision = 0, disposed = false;
+    return {
+      async load() {
+        if (disposed || !Number.isSafeInteger(ticketId) || ticketId <= 0) return;
+        const current = ++revision;
+        let result;
+        try {
+          const detail = linkedTicketDetail(await api("GET", `/admin/tickets/${ticketId}`), ticketId, sessionId);
+          result = { detail, error: detail ? "" : "This session is not linked to the ticket." };
+        } catch {
+          result = { detail: null, error: "Could not load the linked ticket." };
+        }
+        if (!disposed && current === revision) update(result);
+      },
+      dispose() {
+        disposed = true;
+      }
+    };
+  }
+  function ticketActivity(detail) {
+    if (!detail) return [];
+    const rows = /* @__PURE__ */ new Map();
+    const { ticket } = detail;
+    const add = (source, seconds, label, text) => {
+      const time = seconds * 1e3;
+      const id = `ticket:${ticket.id}:${source}`;
+      if (typeof seconds === "number" && seconds > 0 && time <= 864e13 && !rows.has(id)) rows.set(id, { id, time, label, text });
+    };
+    add("opened", ticket.created_at, "Ticket status", `Ticket #${ticket.id} opened`);
+    for (const message of detail.messages ?? []) {
+      if (!Number.isSafeInteger(message?.id) || typeof message.body !== "string") continue;
+      const label = message.author === "system" ? "Ticket status" : message.internal ? "Private note" : message.author === "client" ? "Client message" : message.author === "runner" ? "Fleet run" : "Team reply";
+      add(`message:${message.id}`, message.created_at, label, message.body);
+    }
+    for (const run of detail.runs) {
+      if (!Number.isSafeInteger(run?.id)) continue;
+      add(`run:${run.id}:start`, run.started_at, "Fleet run", `Run #${run.id} started`);
+      add(`run:${run.id}:finish`, run.finished_at, "Fleet run", `Run #${run.id} finished${typeof run.status === "string" ? ` \xB7 ${run.status}` : ""}`);
+    }
+    return [...rows.values()].sort((a, b) => a.time - b.time || a.id.localeCompare(b.id));
+  }
+  async function sendTicketMessage({ api, ticket, mode, text, confirm }) {
+    if (!Number.isSafeInteger(ticket?.id) || ticket.id <= 0 || !text.trim() || !["note", "reply"].includes(mode)) return false;
+    const internal = mode === "note";
+    if (!internal && (!ticket.client_email || ticket.kind === "system" || !confirm(`Email this reply to ${ticket.client_email}?`))) return false;
+    await api("POST", `/admin/tickets/${ticket.id}/messages`, { body: text.trim(), internal });
+    return true;
+  }
+  var workspaceStates = /* @__PURE__ */ new Set(["ready", "missing", "conflict", "unavailable", "pending", "unmanaged"]);
+  async function requestTicketWorkspace(sessionId, action, signal, fetcher = globalThis.fetch) {
+    if (typeof sessionId !== "string" || !sessionId || !["status", "restore"].includes(action)) return { state: "unavailable" };
+    try {
+      const response = await fetcher("/api/admin/command", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        redirect: "error",
+        body: JSON.stringify({ operation: `ticket-workspace-${action}`, sessionId }),
+        signal
+      });
+      if (response.ok) {
+        const result = await response.json();
+        if (workspaceStates.has(result?.state)) return {
+          state: result.state,
+          ...typeof result.reason === "string" ? { reason: result.reason } : {}
+        };
+      }
+    } catch {
+    }
+    return { state: "unavailable" };
+  }
+  function migrateTicketView(storage, marker = "dsh.admin.ticket-view-migrated") {
+    if (!storage) return 0;
+    try {
+      if (storage.getItem(marker) !== null) return 0;
+      let moved = 0;
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+        if (typeof key !== "string" || !key.startsWith("dsh.conversation.")) continue;
+        let state;
+        try {
+          state = JSON.parse(storage.getItem(key) ?? "null");
+        } catch {
+          continue;
+        }
+        if (state === null || typeof state !== "object" || state.view !== "admin-task") continue;
+        storage.setItem(key, JSON.stringify({ ...state, view: "chat" }));
+        moved += 1;
+      }
+      storage.setItem(marker, "1");
+      return moved;
+    } catch {
+      return 0;
+    }
+  }
+
   // host-react:react
   var R = globalThis.__AW_REACT__;
   var { createContext, createElement, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } = R;
+
+  // packages/admin-ui/src/run-evidence.js
+  var sortedRuns = (runs = []) => [...runs].sort((a, b) => Number(b.id) - Number(a.id));
+  var selectedRun = (runs, id) => id == null ? sortedRuns(runs)[0] ?? null : runs.find((run) => String(run.id) === String(id)) ?? null;
+  var recordedPatch = (run) => [run?.diff, run?.diff_stat].find((text) => typeof text === "string" && text.trim()) ?? null;
+  var verification = (value) => value == null ? "unknown" : value === true || value === 1 ? "passed" : "failed";
+  var mergeSteps = (previous = [], fresh = []) => [...new Map([...previous, ...fresh].map((step) => [step.seq, step])).values()].sort((a, b) => a.seq - b.seq);
+  function reviewTarget(runs) {
+    const sorted = sortedRuns(runs);
+    for (const run of sorted) {
+      const commit = run.commit_sha;
+      const ref = commit || run.shared_to === "origin" && run.shared_ref || run.branch;
+      if (ref) return { runId: run.id, ref, mutable: !commit, older: run.id !== sorted[0].id };
+    }
+    return null;
+  }
+
+  // packages/admin-ui/src/request-state.js
+  function createStepRequest(api, runId, publish) {
+    let state = { steps: null, error: null }, after = 0, generation = 0, inflight = null;
+    return {
+      invalidate() {
+        generation++;
+        inflight = null;
+      },
+      pull() {
+        if (inflight) return inflight;
+        const token = ++generation;
+        inflight = (async () => {
+          try {
+            const data = await api("GET", `/admin/runs/${runId}/steps?after=${after}`);
+            if (token !== generation) return;
+            state = { steps: mergeSteps(state.steps ?? [], data?.steps ?? []), error: null };
+            after = Math.max(after, ...state.steps.map((step) => step.seq));
+            publish(state);
+            return data;
+          } catch (error) {
+            if (token === generation) {
+              state = { ...state, error };
+              publish(state);
+            }
+          } finally {
+            if (token === generation) inflight = null;
+          }
+        })();
+        return inflight;
+      }
+    };
+  }
+  var emptyTicket = (id = null) => ({ id, loading: true, refreshing: false, stale: false, fetchedAt: 0, error: null, ticket: null, messages: [], runs: [], review: null, screenshots: [], land: null });
+  function createTicketRequest(api, publish) {
+    let state = emptyTicket(), generation = 0;
+    const update = (next) => {
+      state = next;
+      publish(next);
+    };
+    return {
+      invalidate() {
+        generation++;
+      },
+      async load(id) {
+        const token = ++generation;
+        const same = String(state.id) === String(id);
+        update({ ...same ? state : emptyTicket(id), loading: !same || !state.ticket, refreshing: true });
+        try {
+          const data = await api("GET", `/admin/tickets/${id}`);
+          if (token !== generation) return;
+          update({ ...emptyTicket(id), ...data, id, loading: false, refreshing: false, stale: false, fetchedAt: Date.now(), error: null });
+        } catch (error) {
+          if (token === generation) update({ ...state, loading: false, refreshing: false, stale: Boolean(state.ticket), error });
+        }
+      }
+    };
+  }
+  async function workbenchRequests(api) {
+    const identity = await api("GET", "/portal/me");
+    const legacyAdmin = identity?.user?.role === "admin";
+    const access = identity?.access ?? { superAdmin: legacyAdmin, canUseWorkbench: legacyAdmin, developerProjectIds: [] };
+    if (!access.canUseWorkbench && !access.superAdmin) throw new Error("Workbench access is unavailable.");
+    const paths = ["/admin/tickets", "/admin/projects", "/admin/runs"];
+    if (access.superAdmin) paths.push("/admin/clients", "/admin/nodes", "/admin/queue", "/admin/settings");
+    const results = await Promise.allSettled(paths.map((path) => api("GET", path)));
+    return { access, identity, results: Object.fromEntries(paths.map((path, i) => [path, results[i]])) };
+  }
 
   // packages/admin-ui/src/store.js
   var AdminContext = createContext(null);
@@ -62,34 +246,36 @@ var __awPlugin = (() => {
     const inflight = useRef(null);
     const load = useCallback(() => {
       if (inflight.current) return inflight.current;
-      const get = (path) => api("GET", path);
-      inflight.current = Promise.allSettled([
-        get("/admin/tickets"),
-        get("/admin/projects"),
-        get("/admin/clients"),
-        get("/admin/nodes"),
-        get("/admin/queue"),
-        get("/admin/runs"),
-        get("/admin/settings")
-      ]).then(([tickets, projects, clients, nodes, queue, runs, settings]) => {
-        const v = (r, fallback) => r.status === "fulfilled" ? r.value : fallback;
-        const failed = [tickets, projects].find((r) => r.status === "rejected");
-        setData((prev) => ({
-          loaded: true,
-          error: failed ? failed.reason : null,
-          fetchedAt: Date.now(),
-          tickets: v(tickets, { tickets: prev.tickets }).tickets ?? [],
-          projects: v(projects, { projects: prev.projects }).projects ?? [],
-          clients: v(clients, { clients: prev.clients }).clients ?? [],
-          usageTotal: v(clients, { total: prev.usageTotal }).total ?? null,
-          nodes: v(nodes, { nodes: prev.nodes }).nodes ?? [],
-          queue: v(queue, { queue: prev.queue }).queue ?? [],
-          running: v(runs, { running: prev.running }).running ?? [],
-          recent: v(runs, { recent: prev.recent }).recent ?? [],
-          settings: v(settings, { settings: prev.settings }).settings ?? null,
-          catalog: v(settings, { catalog: prev.catalog }).catalog ?? null
-        }));
-      }).finally(() => {
+      inflight.current = workbenchRequests(api).then(({ access, identity, results }) => {
+        const get = (path) => results[path];
+        const v = (path, fallback) => get(path)?.status === "fulfilled" ? get(path).value : fallback;
+        const failed = Object.values(results).find((r) => r.status === "rejected");
+        setData((previous) => {
+          const scope = (value) => JSON.stringify([value?.user?.id, value?.access?.superAdmin, [...value?.access?.developerProjectIds ?? []].sort()]);
+          const prev = scope(previous.identity) === scope(identity) ? previous : EMPTY;
+          return {
+            ...EMPTY,
+            loaded: true,
+            access,
+            identity,
+            user: identity.user,
+            error: failed?.reason ?? null,
+            fetchedAt: failed ? prev.fetchedAt : Date.now(),
+            tickets: v("/admin/tickets", { tickets: prev.tickets }).tickets ?? [],
+            projects: v("/admin/projects", { projects: prev.projects }).projects ?? [],
+            running: v("/admin/runs", { running: prev.running }).running ?? [],
+            recent: v("/admin/runs", { recent: prev.recent }).recent ?? [],
+            ...access.superAdmin ? {
+              clients: v("/admin/clients", { clients: prev.clients }).clients ?? [],
+              usageTotal: v("/admin/clients", { total: prev.usageTotal }).total ?? null,
+              nodes: v("/admin/nodes", { nodes: prev.nodes }).nodes ?? [],
+              queue: v("/admin/queue", { queue: prev.queue }).queue ?? [],
+              settings: v("/admin/settings", { settings: prev.settings }).settings ?? null,
+              catalog: v("/admin/settings", { catalog: prev.catalog }).catalog ?? null
+            } : {}
+          };
+        });
+      }).catch((error) => setData({ ...EMPTY, loaded: true, error, access: { superAdmin: false, canUseWorkbench: false, developerProjectIds: [] } })).finally(() => {
         inflight.current = null;
       });
       return inflight.current;
@@ -101,28 +287,17 @@ var __awPlugin = (() => {
     return [data, load];
   }
   function useTicket(api, id) {
-    const [state, setState] = useState({ loading: true, error: null, ticket: null, messages: [], runs: [], review: null, screenshots: [], land: null });
-    const load = useCallback(
-      () => api("GET", `/admin/tickets/${id}`).then(
-        (d) => setState({
-          loading: false,
-          error: null,
-          ticket: d.ticket,
-          messages: d.messages ?? [],
-          runs: d.runs ?? [],
-          review: d.review ?? null,
-          screenshots: d.screenshots ?? [],
-          land: d.land ?? null
-        })
-      ).catch((error) => setState((s) => ({ ...s, loading: false, error }))),
-      [api, id]
-    );
+    const [state, setState] = useState(() => ({ ...emptyTicket(id), source: api }));
+    const request = useMemo(() => createTicketRequest(api, (next) => setState({ ...next, source: api })), [api]);
+    const load = useCallback(() => request.load(id), [request, id]);
     useEffect(() => {
       void load();
-    }, [load]);
-    const live = state.ticket?.status === "in_progress" || state.runs.some((r) => r.status === "running");
+      return () => request.invalidate();
+    }, [load, request]);
+    const current = state.source === api && String(state.id) === String(id) ? state : emptyTicket(id);
+    const live = current.ticket?.status === "in_progress" || current.runs.some((r) => r.status === "running");
     usePoll(load, live ? 5e3 : 2e4, [load, live]);
-    return [state, load];
+    return [current, load];
   }
   var IDLE_AFTER_MS = 6e4;
   var lastInput = Date.now();
@@ -137,9 +312,10 @@ var __awPlugin = (() => {
     const [running, setRunning] = useState(false);
     const pending = useRef(0);
     const id = ticket?.id;
+    const conversationMeter = api.conversationMeter === true;
     useEffect(() => setSeconds(ticket?.human_seconds ?? 0), [id, ticket?.human_seconds]);
     useEffect(() => {
-      if (!id) return void 0;
+      if (!id || conversationMeter) return void 0;
       const flush = () => {
         const n = pending.current;
         if (n <= 0) return;
@@ -718,7 +894,7 @@ var __awPlugin = (() => {
         /* @__PURE__ */ jsx("h2", { children: "Needs you" }),
         /* @__PURE__ */ jsx("p", { className: "aw-muted", children: empty ? "Nothing is waiting on you. Agents are on it." : `${groups.reduce((a, g) => a + g.items.length, 0)} item(s) waiting on you.` })
       ] }),
-      n.offline.length ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--bad", children: [
+      data.access?.superAdmin && n.offline.length ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--bad", children: [
         /* @__PURE__ */ jsx(Dot, { state: "bad" }),
         " Offline: ",
         n.offline.map((x) => x.id).join(", "),
@@ -898,17 +1074,93 @@ var __awPlugin = (() => {
     return typeof code === "string" && /^en(-|$)/i.test(code);
   }
 
+  // packages/admin-ui/src/markdown.js
+  var MAX_INLINE_DEPTH = 4;
+  function markdownInline(input, depth = 0) {
+    const text = String(input ?? "");
+    if (!text) return [];
+    if (depth >= MAX_INLINE_DEPTH) return [{ type: "text", text }];
+    const token = /`([^`\n]+)`|\*\*([^\s*](?:[^*\n]*[^\s*])?)\*\*|\*([^\s*](?:[^*\n]*[^\s*])?)\*|\[([^\]\n]+)\]\(([^)\s]+)\)|<((?:https?|mailto):[^>\s]+)>|\\([\\`*_[\]()<>])/g;
+    const spans = [];
+    const pushText = (value) => {
+      if (!value) return;
+      const last = spans[spans.length - 1];
+      if (last?.type === "text") last.text += value;
+      else spans.push({ type: "text", text: value });
+    };
+    let match;
+    let at = 0;
+    while (match = token.exec(text)) {
+      pushText(text.slice(at, match.index));
+      at = token.lastIndex;
+      const [, code, strong, em, label, href, autolink, escaped] = match;
+      if (code != null) spans.push({ type: "code", text: code });
+      else if (strong != null) spans.push({ type: "strong", spans: markdownInline(strong, depth + 1) });
+      else if (em != null) spans.push({ type: "em", spans: markdownInline(em, depth + 1) });
+      else if (label != null) spans.push({ type: "link", href: href ?? "", spans: markdownInline(label, depth + 1) });
+      else if (autolink != null) spans.push({ type: "link", href: autolink, spans: [{ type: "text", text: autolink }] });
+      else if (escaped != null) pushText(escaped);
+      else pushText(match[0]);
+    }
+    pushText(text.slice(at));
+    return spans;
+  }
+  var LIST_ITEM = /^\s{0,3}(?:([-*+])|(\d+)[.)])\s+(.*)$/;
+  var HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+  var FENCE = /^\s{0,3}```([\w-]*)\s*$/;
+  function markdownBlocks(input) {
+    const lines = String(input ?? "").replace(/\r\n?/g, "\n").split("\n");
+    const blocks = [];
+    let paragraph = [];
+    const flush = () => {
+      if (!paragraph.length) return;
+      blocks.push({ type: "paragraph", spans: markdownInline(paragraph.join(" ")) });
+      paragraph = [];
+    };
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      const fence = line.match(FENCE);
+      if (fence) {
+        flush();
+        const body = [];
+        i += 1;
+        while (i < lines.length && !FENCE.test(lines[i])) {
+          body.push(lines[i]);
+          i += 1;
+        }
+        blocks.push({ type: "code", lang: fence[1] || null, text: body.join("\n") });
+        continue;
+      }
+      if (!line.trim()) {
+        flush();
+        continue;
+      }
+      const heading = line.match(HEADING);
+      if (heading) {
+        flush();
+        blocks.push({ type: "heading", level: heading[1].length, spans: markdownInline(heading[2]) });
+        continue;
+      }
+      const item = line.match(LIST_ITEM);
+      if (item) {
+        flush();
+        const ordered = item[2] != null;
+        const last = blocks[blocks.length - 1];
+        const target = last?.type === "list" && last.ordered === ordered ? last : null;
+        if (target) target.items.push({ spans: markdownInline(item[3]) });
+        else blocks.push({ type: "list", ordered, items: [{ spans: markdownInline(item[3]) }] });
+        continue;
+      }
+      paragraph.push(line.replace(/^\s{0,3}>\s?/, ""));
+    }
+    flush();
+    return blocks;
+  }
+
   // packages/admin-ui/src/review.jsx
   var portalTicketUrl = (id) => `https://ptechsolutions.net/portal/admin#ticket=${id}`;
-  function reviewRef(runs) {
-    for (const run of [...runs ?? []].sort((a, b) => b.id - a.id)) {
-      if (run.shared_to === "origin" && run.shared_ref) return run.shared_ref;
-      if (run.branch) return run.branch;
-    }
-    return null;
-  }
   function newestDiff(runs) {
-    return [...runs ?? []].sort((a, b) => b.id - a.id).find((run) => run.diff || run.diff_stat) ?? null;
+    return [...runs ?? []].sort((a, b) => b.id - a.id).find((run) => recordedPatch(run)) ?? null;
   }
   function reviewPlan(host, ticket, runs) {
     if (!ticket) return null;
@@ -917,7 +1169,7 @@ var __awPlugin = (() => {
       return { kind: "git-graph", gitGraph };
     }
     const run = newestDiff(runs);
-    if (run) return { kind: "diff", run };
+    if (run) return { kind: "diff", run, older: run.id !== sortedRuns(runs)[0]?.id };
     if (ticket.id) return { kind: "portal", url: portalTicketUrl(ticket.id) };
     return null;
   }
@@ -938,6 +1190,7 @@ var __awPlugin = (() => {
         }
       );
     }
+    const target = reviewTarget(runs);
     const label = plan.kind === "git-graph" ? "Review in Git Graph" : "Review changes";
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       /* @__PURE__ */ jsx(
@@ -950,14 +1203,18 @@ var __awPlugin = (() => {
           children: label
         }
       ),
-      open ? plan.kind === "git-graph" ? /* @__PURE__ */ jsx(GitGraphReview, { ticket, gitRef: reviewRef(runs), gitGraph: plan.gitGraph, onClose: () => setOpen(false) }) : /* @__PURE__ */ jsx(Modal, { title: `Run ${plan.run.id}: changes`, subtitle: plan.run.branch ? `Branch ${plan.run.branch}` : void 0, onClose: () => setOpen(false), wide: true, children: /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: plan.run.diff ?? plan.run.diff_stat ?? "No diff recorded." }) }) : null
+      open ? plan.kind === "git-graph" ? /* @__PURE__ */ jsx(GitGraphReview, { ticket, target, gitGraph: plan.gitGraph, onClose: () => setOpen(false) }, `${ticket.id}:${target?.runId}:${target?.ref}`) : /* @__PURE__ */ jsx(Modal, { title: `Run ${plan.run.id}: changes`, subtitle: `${plan.older ? "Older evidence fallback \xB7 " : ""}Recorded evidence, not the current repository state`, onClose: () => setOpen(false), wide: true, children: /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: recordedPatch(plan.run) ?? "No patch or statistics recorded." }) }) : null
     ] });
   }
-  function GitGraphReview({ ticket, gitRef, gitGraph, onClose }) {
+  function GitGraphReview({ ticket, target, gitGraph, onClose }) {
+    const gitRef = target?.ref;
+    const attribution = target ? `Run #${target.runId}${target.older ? " \xB7 older run fallback" : ""} \xB7 ${target.mutable ? "mutable branch; may have changed since this run" : "recorded commit"}` : "Current repository \xB7 no recorded ref";
     const { host } = useAdmin();
     const [state, setState] = useState({ status: "loading", text: "Finding the repository\u2026", sessionId: null });
+    const [retry, setRetry] = useState(0);
     useEffect(() => {
       let alive = true;
+      setState({ status: "loading", text: "Finding the repository\u2026", sessionId: null });
       void (async () => {
         try {
           const where = await host.json(`review ${ticket.project_slug}`);
@@ -982,9 +1239,306 @@ var __awPlugin = (() => {
       return () => {
         alive = false;
       };
-    }, [ticket.project_slug, gitRef, gitGraph, host]);
+    }, [ticket.project_slug, gitRef, gitGraph, host, retry]);
     const View2 = gitGraph.View;
-    return /* @__PURE__ */ jsx(Modal, { title: `Review #${ticket.id}`, subtitle: state.text, onClose, full: true, children: /* @__PURE__ */ jsx("div", { className: "aw-review", children: state.status === "ready" ? /* @__PURE__ */ jsx(View2, { sessionId: state.sessionId }) : /* @__PURE__ */ jsx("p", { className: cx("aw-empty", state.status === "failed" && "aw-error"), children: state.text }) }) });
+    return /* @__PURE__ */ jsx(Modal, { title: `Review #${ticket.id}`, subtitle: `${attribution} \xB7 ${state.text}`, onClose, full: true, children: /* @__PURE__ */ jsx("div", { className: "aw-review", children: state.status === "ready" ? /* @__PURE__ */ jsx(View2, { sessionId: state.sessionId }) : /* @__PURE__ */ jsxs("div", { className: cx("aw-empty", state.status === "failed" && "aw-error"), role: state.status === "failed" ? "alert" : "status", children: [
+      state.text,
+      state.status === "failed" ? /* @__PURE__ */ jsx(Button, { onClick: () => setRetry((n) => n + 1), children: "Retry repository review" }) : null
+    ] }) }) });
+  }
+  function RecordedEvidence({ runs = [], screenshots = [], review, initialOpen = false }) {
+    const [runId, setRunId] = useState(null);
+    const [compareId, setCompareId] = useState("");
+    const [open, setOpen] = useState(initialOpen);
+    useEffect(() => {
+      if (runId == null && runs.length) setRunId(sortedRuns(runs)[0].id);
+    }, [runs, runId]);
+    if (!runs.length) return null;
+    const selected = selectedRun(runs, runId);
+    const comparison = compareId ? selectedRun(runs, compareId) : null;
+    const options = sortedRuns(runs);
+    const checks = selected ? verification(selected.verify_ok) : null;
+    const line = selected ? [`Run #${selected.id}`, selected.status, selected.commit_sha ? `commit ${String(selected.commit_sha).slice(0, 8)}` : "no commit recorded", `verification ${checks}`, comparison ? `comparing #${comparison.id}` : compareId ? `comparing #${compareId}` : null].filter(Boolean).join(" \xB7 ") : `Run #${runId} \xB7 unavailable`;
+    const panelId = `aw-evidence-panel-${runId ?? "none"}`;
+    return /* @__PURE__ */ jsxs("section", { className: "aw-prereview aw-evidence", "aria-label": "Recorded run evidence", children: [
+      /* @__PURE__ */ jsxs("header", { className: "aw-evidence__head", children: [
+        /* @__PURE__ */ jsx("strong", { children: "Recorded evidence" }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-muted aw-evidence__line", children: [
+          "\xB7 ",
+          line
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            type: "button",
+            className: "aw-link aw-evidence__toggle",
+            "aria-expanded": open,
+            "aria-controls": open ? panelId : void 0,
+            onClick: () => setOpen((value) => !value),
+            children: open ? "Hide details" : "Show details"
+          }
+        )
+      ] }),
+      open ? /* @__PURE__ */ jsxs("div", { className: "aw-evidence__body", id: panelId, children: [
+        /* @__PURE__ */ jsx("p", { className: "aw-muted aw-evidence__hint", children: "One column per run\u2019s saved evidence, not a code diff between runs. Selection does not change what runs or lands next." }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-inline", style: { flexWrap: "wrap" }, children: [
+          /* @__PURE__ */ jsxs("label", { children: [
+            "Run ",
+            /* @__PURE__ */ jsxs("select", { "aria-label": "Evidence run", value: runId ?? "", onChange: (e) => setRunId(e.target.value), children: [
+              runId != null && !selected ? /* @__PURE__ */ jsxs("option", { value: runId, children: [
+                "Run #",
+                runId,
+                " \xB7 unavailable"
+              ] }) : null,
+              options.map((run) => /* @__PURE__ */ jsxs("option", { value: run.id, children: [
+                "Run #",
+                run.id,
+                " \xB7 ",
+                run.status
+              ] }, run.id))
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxs("label", { children: [
+            "Compare with ",
+            /* @__PURE__ */ jsxs("select", { "aria-label": "Comparison run", value: compareId, onChange: (e) => setCompareId(e.target.value), children: [
+              /* @__PURE__ */ jsx("option", { value: "", children: "No comparison" }),
+              compareId && !comparison ? /* @__PURE__ */ jsxs("option", { value: compareId, children: [
+                "Run #",
+                compareId,
+                " \xB7 unavailable"
+              ] }) : null,
+              options.map((run) => /* @__PURE__ */ jsxs("option", { value: run.id, children: [
+                "Run #",
+                run.id,
+                " \xB7 ",
+                run.status
+              ] }, run.id))
+            ] })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 16 }, children: [
+          /* @__PURE__ */ jsx(EvidenceColumn, { run: selected, runId, screenshots, review }),
+          compareId ? /* @__PURE__ */ jsx(EvidenceColumn, { run: comparison, runId: compareId, screenshots, review }) : null
+        ] })
+      ] }) : null
+    ] });
+  }
+  function EvidenceColumn({ run, runId, screenshots, review }) {
+    if (!run) return /* @__PURE__ */ jsxs("p", { role: "status", children: [
+      "Run #",
+      runId,
+      " evidence is unavailable."
+    ] });
+    const checks = verification(run.verify_ok);
+    const shots = screenshots.filter((shot) => String(shot.runId) === String(run.id));
+    return /* @__PURE__ */ jsxs("div", { style: { flex: "1 1 280px", minWidth: 0 }, children: [
+      /* @__PURE__ */ jsxs("h3", { children: [
+        "Run #",
+        run.id
+      ] }),
+      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        run.status,
+        " \xB7 ",
+        run.executor,
+        " \xB7 ",
+        run.branch ? `Recorded branch: ${run.branch} (mutable)` : "No branch recorded"
+      ] }),
+      run.commit_sha ? /* @__PURE__ */ jsxs("p", { children: [
+        "Recorded commit: ",
+        /* @__PURE__ */ jsx("code", { children: run.commit_sha })
+      ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No immutable commit recorded." }),
+      /* @__PURE__ */ jsxs("p", { children: [
+        "Verification: ",
+        checks,
+        checks === "unknown" ? " \xB7 no result recorded" : ""
+      ] }),
+      run.verify_command ? /* @__PURE__ */ jsxs("p", { children: [
+        "Recorded check: ",
+        /* @__PURE__ */ jsx("code", { children: run.verify_command })
+      ] }) : null,
+      run.verify_output ? /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: run.verify_output }) : null,
+      review && String(review.runId) === String(run.id) ? /* @__PURE__ */ jsxs("p", { children: [
+        "Pre-review for run #",
+        run.id,
+        ": ",
+        review.verdict,
+        " \xB7 ",
+        review.headline
+      ] }) : /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "No pre-review recorded for run #",
+        run.id,
+        "."
+      ] }),
+      run.summary ? /* @__PURE__ */ jsx("div", { className: "aw-md", children: /* @__PURE__ */ jsx(MarkdownReport, { text: run.summary }) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No summary recorded." }),
+      /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: recordedPatch(run) || "No patch or statistics recorded." }),
+      shots.length ? shots.map((shot) => /* @__PURE__ */ jsxs("figure", { children: [
+        /* @__PURE__ */ jsx("a", { href: shot.url, target: "_blank", rel: "noreferrer", children: /* @__PURE__ */ jsx("img", { style: { maxWidth: "100%" }, src: shot.url, alt: `Run #${run.id} \xB7 ${shot.kind}`, loading: "lazy" }) }),
+        /* @__PURE__ */ jsxs("figcaption", { children: [
+          "Run #",
+          run.id,
+          " \xB7 ",
+          shot.kind
+        ] })
+      ] }, `${shot.runId}-${shot.kind}`)) : /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "No screenshots recorded for run #",
+        run.id,
+        "."
+      ] })
+    ] });
+  }
+  function MarkdownReport({ text }) {
+    return markdownBlocks(text).map((block, index) => {
+      if (block.type === "code") return /* @__PURE__ */ jsx("pre", { className: "aw-diff aw-md__code", children: block.text }, index);
+      if (block.type === "list") {
+        const items = block.items.map((item, at) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsx(Inline, { spans: item.spans }) }, at));
+        return block.ordered ? /* @__PURE__ */ jsx("ol", { className: "aw-md__list", children: items }, index) : /* @__PURE__ */ jsx("ul", { className: "aw-md__list", children: items }, index);
+      }
+      if (block.type === "heading") return /* @__PURE__ */ jsx("p", { className: "aw-md__heading", children: /* @__PURE__ */ jsx("strong", { children: /* @__PURE__ */ jsx(Inline, { spans: block.spans }) }) }, index);
+      return /* @__PURE__ */ jsx("p", { children: /* @__PURE__ */ jsx(Inline, { spans: block.spans }) }, index);
+    });
+  }
+  function Inline({ spans }) {
+    return spans.map((span2, index) => {
+      if (span2.type === "strong") return /* @__PURE__ */ jsx("strong", { children: /* @__PURE__ */ jsx(Inline, { spans: span2.spans }) }, index);
+      if (span2.type === "em") return /* @__PURE__ */ jsx("em", { children: /* @__PURE__ */ jsx(Inline, { spans: span2.spans }) }, index);
+      if (span2.type === "code") return /* @__PURE__ */ jsx("code", { children: span2.text }, index);
+      if (span2.type === "link") return /* @__PURE__ */ jsx("span", { title: span2.href, children: /* @__PURE__ */ jsx(Inline, { spans: span2.spans }) }, index);
+      return span2.text;
+    });
+  }
+
+  // packages/admin-ui/src/submit-state.js
+  function createSubmission() {
+    let busy = false, pending = null;
+    const queueOnly = async () => {
+      await pending();
+      pending = null;
+    };
+    return {
+      get busy() {
+        return busy;
+      },
+      get pendingQueue() {
+        return Boolean(pending);
+      },
+      async run({ save, onSaved, queue }) {
+        if (busy || pending) return;
+        busy = true;
+        try {
+          const saved = await save();
+          if (queue) pending = queue;
+          onSaved?.(saved);
+          if (pending) await queueOnly();
+        } finally {
+          busy = false;
+        }
+      },
+      async retryQueue() {
+        if (busy || !pending) return;
+        busy = true;
+        try {
+          await queueOnly();
+        } finally {
+          busy = false;
+        }
+      }
+    };
+  }
+
+  // packages/admin-ui/src/mention-delivery.js
+  var visibleRecipients = (recipients, internal) => recipients.filter((person) => !internal || person.memberType === "trusted_developer");
+  async function deliverMentions({ api, projectId, ticketId, messageId, recipientUserIds, requestId }) {
+    if (!recipientUserIds?.length) return { ok: true, deliveries: [] };
+    if (!Number.isSafeInteger(messageId) || messageId < 1) throw new Error("saved_message_required");
+    return api("POST", `/admin/projects/${encodeURIComponent(projectId)}/mentions`, { ticketId, messageId, recipientUserIds, requestId });
+  }
+  function createMentionDelivery({ api, projectId, ticketId, recipientUserIds, requestId = globalThis.crypto.randomUUID() }) {
+    const recipients = [...new Set(recipientUserIds || [])];
+    let messageId;
+    let pending;
+    return function deliver(saved) {
+      if (saved?.messageId && !messageId) messageId = saved.messageId;
+      if (pending) return pending;
+      pending = deliverMentions({ api, projectId, ticketId, messageId, recipientUserIds: recipients, requestId }).finally(() => {
+        pending = null;
+      });
+      return pending;
+    };
+  }
+
+  // packages/admin-ui/src/mention-recipients.jsx
+  function MentionRecipients({ api, projectId, onChange, disabled = false, internal = false }) {
+    const [state, setState] = useState({ projectId: null, internal: null, recipients: [], loading: true, error: false });
+    const [selected, setSelected] = useState([]);
+    const [version, setVersion] = useState(0);
+    useEffect(() => {
+      let alive = true;
+      setSelected([]);
+      onChange([]);
+      setState({ projectId, internal, recipients: [], loading: true, error: false });
+      if (!projectId) {
+        setState({ projectId, internal, recipients: [], loading: false, error: false });
+        return () => {
+          alive = false;
+        };
+      }
+      Promise.resolve().then(() => api("GET", `/admin/projects/${encodeURIComponent(projectId)}/recipients`)).then((result) => {
+        if (alive) setState({ projectId, internal, recipients: visibleRecipients(result.recipients || [], internal), loading: false, error: false });
+      }, () => {
+        if (alive) setState({ projectId, internal, recipients: [], loading: false, error: true });
+      });
+      return () => {
+        alive = false;
+      };
+    }, [api, projectId, internal, version]);
+    const current = state.projectId === projectId && state.internal === internal ? { ...state, recipients: visibleRecipients(state.recipients, internal) } : { recipients: [], loading: true };
+    const toggle = (userId) => {
+      const next = selected.includes(userId) ? selected.filter((id) => id !== userId) : [...selected, userId];
+      setSelected(next);
+      onChange(next);
+    };
+    if (!projectId) return null;
+    return /* @__PURE__ */ jsxs("fieldset", { className: "aw-mentions", disabled: disabled || current.loading, children: [
+      /* @__PURE__ */ jsx("legend", { children: "Notify people about this note" }),
+      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "Email contains a link, not the note. ",
+        internal ? "Only trusted developers can receive internal notes." : "Clients can receive public notes."
+      ] }),
+      current.loading ? /* @__PURE__ */ jsx("p", { role: "status", children: "Loading project people\u2026" }) : null,
+      current.error ? /* @__PURE__ */ jsxs("p", { role: "alert", children: [
+        "Could not load project people. ",
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setVersion((value) => value + 1), children: "Retry loading people" })
+      ] }) : null,
+      !current.loading && !current.error && !current.recipients.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No eligible project people." }) : null,
+      current.recipients.map((person) => /* @__PURE__ */ jsxs("label", { className: "aw-check", children: [
+        /* @__PURE__ */ jsx("input", { type: "checkbox", checked: selected.includes(person.userId), disabled: disabled || !selected.includes(person.userId) && selected.length >= 25, onChange: () => toggle(person.userId) }),
+        /* @__PURE__ */ jsxs("span", { children: [
+          person.name || person.email,
+          " ",
+          /* @__PURE__ */ jsx("small", { className: "aw-muted", children: person.memberType === "trusted_developer" ? "Trusted developer" : "Client" })
+        ] })
+      ] }, person.userId))
+    ] });
+  }
+
+  // packages/admin-ui/src/ticket-assistant.mjs
+  var ASSISTANT_BADGE_MAX = 24;
+  function assistantName(ticket) {
+    const value = ticket?.assistant_app;
+    if (typeof value !== "string") return null;
+    const name = value.trim();
+    return name === "" ? null : name;
+  }
+  function assistantBadge(ticket) {
+    const name = assistantName(ticket);
+    if (name === null) return null;
+    const chars = Array.from(`via ${name}`);
+    return chars.length <= ASSISTANT_BADGE_MAX ? chars.join("") : `${chars.slice(0, ASSISTANT_BADGE_MAX - 1).join("")}\u2026`;
+  }
+  function assistantBadgeTitle(ticket) {
+    const name = assistantName(ticket);
+    return name === null ? null : `Filed by the client's assistant (${name}) through PTech's MCP server`;
   }
 
   // packages/admin-ui/src/ticket.jsx
@@ -996,25 +1550,38 @@ var __awPlugin = (() => {
     approved: [["new", "Hold", "ghost"]],
     review: [
       ["done", "Mark done", "primary"],
-      ["approved", "Run again", "default"]
+      ["approved", "Queue another run", "ghost"]
     ],
-    done: [["approved", "Reopen and run", "ghost"]],
+    done: [["approved", "Queue another run", "ghost"]],
     declined: [["new", "Reopen", "ghost"]]
   };
   function TicketView({ id, active, details = true }) {
     const { api, act } = useAdmin();
-    const [{ ticket, messages, runs, review, screenshots, land, error, loading }, reload] = useTicket(api, id);
+    const [{ ticket, messages, runs, review, screenshots, land, error, loading, fetchedAt }, reload] = useTicket(api, id);
     const meter = useMeter(api, ticket, active);
     if (loading && !ticket) return /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
       "Loading #",
       id,
       "\u2026"
     ] });
-    if (!ticket) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: errorText(error) });
+    if (!ticket) return /* @__PURE__ */ jsxs("div", { className: "aw-empty", role: "alert", children: [
+      errorText(error),
+      " ",
+      /* @__PURE__ */ jsx(Button, { onClick: reload, children: "Retry loading ticket" })
+    ] });
     const isClient = ticket.kind !== "system";
+    const via = assistantBadge(ticket);
     return /* @__PURE__ */ jsxs("div", { className: cx("aw-ticket", !details && "aw-ticket--solo"), children: [
       details ? /* @__PURE__ */ jsx(Resizer, { host: ".aw-ticket", cssVar: "--aw-details-w", def: 300, min: 200, max: 640, invert: true, storage: "aw.details.w", className: "aw-resize--details" }) : null,
       /* @__PURE__ */ jsxs("div", { className: "aw-ticket__main", children: [
+        error ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", role: "alert", children: [
+          "Refresh failed. Showing ticket evidence last fetched ",
+          fetchedAt ? new Date(fetchedAt).toLocaleString() : "at an unknown time",
+          ". ",
+          errorText(error),
+          " ",
+          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: reload, children: "Retry refresh" })
+        ] }) : null,
         /* @__PURE__ */ jsxs("header", { className: "aw-ticket__head", children: [
           /* @__PURE__ */ jsxs("div", { className: "aw-ticket__crumbs", children: [
             /* @__PURE__ */ jsxs("span", { className: "aw-mono", children: [
@@ -1022,7 +1589,13 @@ var __awPlugin = (() => {
               ticket.id
             ] }),
             /* @__PURE__ */ jsx("span", { children: ticket.project_name ?? "no project" }),
-            /* @__PURE__ */ jsx("span", { children: isClient ? `${ticket.client_name ? `${ticket.client_name} \xB7 ` : ""}${ticket.client_email}` : "your task" }),
+            /* @__PURE__ */ jsxs("span", { children: [
+              isClient ? `${ticket.client_name ? `${ticket.client_name} \xB7 ` : ""}${ticket.client_email}` : "your task",
+              via ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                " ",
+                /* @__PURE__ */ jsx(Tag, { title: assistantBadgeTitle(ticket), children: via })
+              ] }) : null
+            ] }),
             /* @__PURE__ */ jsxs("span", { children: [
               "opened ",
               when(ticket.created_at)
@@ -1054,11 +1627,13 @@ var __awPlugin = (() => {
           ReviewCard,
           {
             review,
-            screenshots: screenshots.filter((shot) => shot.runId === (review?.runId ?? runs[runs.length - 1]?.id))
+            latestRunId: sortedRuns(runs)[0]?.id,
+            screenshots: screenshots.filter((shot) => review?.runId != null && String(shot.runId) === String(review.runId))
           }
         ),
-        /* @__PURE__ */ jsx(Timeline, { ticket, messages, runs }),
-        /* @__PURE__ */ jsx(Composer, { ticket, onSent: reload })
+        /* @__PURE__ */ jsx(RecordedEvidence, { runs, review, screenshots }, `evidence-${ticket.id}`),
+        /* @__PURE__ */ jsx(Timeline, { ticket, messages, runs }, `timeline-${ticket.id}`),
+        /* @__PURE__ */ jsx(Composer, { ticket, onSent: reload }, ticket.id)
       ] }),
       details ? /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload }) : null
     ] });
@@ -1066,7 +1641,18 @@ var __awPlugin = (() => {
   function TicketActions({ ticket, runs, land, reload }) {
     const { api, setStatus, act, ask } = useAdmin();
     const live = runs.find((r) => r.status === "running");
-    const move = (s) => setStatus(ticket, s).then(reload);
+    const move = (s) => {
+      if (s === "approved" && ticket.status !== "new") {
+        ask({
+          title: `Queue another run for #${ticket.id}?`,
+          text: "This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.",
+          confirm: "Queue another run",
+          run: () => act(() => api("PATCH", `/admin/tickets/${ticket.id}`, { status: "approved" })).then(reload)
+        });
+        return;
+      }
+      return setStatus(ticket, s).then(reload);
+    };
     const canLand = Boolean(ticket.project_id) && ticket.status !== "in_progress" && runs.length > 0;
     return /* @__PURE__ */ jsxs("div", { className: "aw-ticket__actions", children: [
       /* @__PURE__ */ jsx(StatusPill, { status: ticket.status }),
@@ -1109,20 +1695,25 @@ var __awPlugin = (() => {
         " landing\u2026"
       ] }) : null,
       land?.ref && !land.requestedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", style: { fontSize: 12 }, children: [
-        "landed on ",
+        canLand ? "last landed on" : "landed on",
+        " ",
         land.ref,
         land.sha ? ` (${String(land.sha).slice(0, 8)})` : ""
       ] }) : null
     ] });
   }
-  function ReviewCard({ review, screenshots = [] }) {
+  function ReviewCard({ review, latestRunId, screenshots = [] }) {
     if (!review) return null;
     const tone2 = review.verdict === "pass" ? "ok" : review.verdict === "attention" ? "warn" : "bad";
     const label = review.verdict === "pass" ? "pass" : review.verdict === "attention" ? "check" : "fail";
     return /* @__PURE__ */ jsxs("section", { className: cx("aw-prereview", `aw-prereview--${tone2}`), children: [
       /* @__PURE__ */ jsxs("header", { children: [
         /* @__PURE__ */ jsx(Dot, { state: tone2 }),
-        /* @__PURE__ */ jsx("strong", { children: "Pre-review" }),
+        /* @__PURE__ */ jsxs("strong", { children: [
+          "Pre-review \xB7 run #",
+          review.runId ?? "unknown",
+          review.runId != null && String(review.runId) !== String(latestRunId) ? " \xB7 previous run, not the latest run" : ""
+        ] }),
         /* @__PURE__ */ jsx(Tag, { tone: tone2, children: label }),
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
         /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
@@ -1138,7 +1729,7 @@ var __awPlugin = (() => {
         /* @__PURE__ */ jsx("figcaption", { children: shot.kind })
       ] }, `${shot.runId}-${shot.kind}`)) }) : null,
       /* @__PURE__ */ jsxs("footer", { children: [
-        review.buildOk === null ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "no build gate" }) : review.buildOk ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "build passed" }) : /* @__PURE__ */ jsx(Tag, { tone: "bad", children: "build failed" }),
+        review.buildOk == null ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "build result unknown" }) : review.buildOk ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "build passed" }) : /* @__PURE__ */ jsx(Tag, { tone: "bad", children: "build failed" }),
         /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "A cheap agent's read; you still decide." })
       ] })
     ] });
@@ -1162,7 +1753,7 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx("time", { children: when(item.m.created_at) })
         ] }, `m${item.m.id}`) : /* @__PURE__ */ jsx(Message, { ticket, m: item.m, latest: item === latest }, `m${item.m.id}`)
       ),
-      diff ? /* @__PURE__ */ jsx(Modal, { title: `Run ${diff.id}: changes`, subtitle: diff.branch ? `Branch ${diff.branch}` : void 0, onClose: () => setDiff(null), wide: true, children: /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: diff.diff ?? diff.diff_stat ?? "No diff recorded." }) }) : null
+      diff ? /* @__PURE__ */ jsx(Modal, { title: `Run ${diff.id}: changes`, subtitle: `Recorded evidence for run #${diff.id}${diff.branch ? ` \xB7 branch ${diff.branch} is mutable` : ""}; not the current repository state`, onClose: () => setDiff(null), wide: true, children: /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: recordedPatch(diff) ?? "No patch or statistics recorded." }) }) : null
     ] });
   }
   var isLong = (text) => (text ?? "").length > 320 || (text ?? "").split("\n").length > 6;
@@ -1252,31 +1843,28 @@ var __awPlugin = (() => {
   function RunSteps({ run, live }) {
     const { api } = useAdmin();
     const [open, setOpen] = useState(live);
-    const [steps, setSteps] = useState(null);
+    useEffect(() => {
+      if (live) setOpen(true);
+    }, [live]);
+    const [{ steps, error }, setStepsState] = useState({ steps: null, error: null });
+    const [retry, setRetry] = useState(0);
+    const request = useMemo(() => createStepRequest(api, run.id, setStepsState), [api, run.id]);
     const listRef = useRef(null);
-    const lastSeq = useRef(0);
     useEffect(() => {
       if (!open) return void 0;
       let alive = true;
       let timer = null;
       const pull = async () => {
-        try {
-          const data = await api("GET", `/admin/runs/${run.id}/steps?after=${lastSeq.current}`);
-          if (!alive) return;
-          const fresh = data?.steps ?? [];
-          if (fresh.length) lastSeq.current = fresh[fresh.length - 1].seq;
-          setSteps((prev) => [...prev ?? [], ...fresh]);
-          if (data?.live) timer = setTimeout(pull, STEP_POLL_MS);
-        } catch {
-          if (alive) setSteps((prev) => prev ?? []);
-        }
+        const data = await request.pull();
+        if (alive && (live || data?.live)) timer = setTimeout(pull, STEP_POLL_MS);
       };
       void pull();
       return () => {
         alive = false;
-        if (timer) clearTimeout(timer);
+        clearTimeout(timer);
+        request.invalidate();
       };
-    }, [open, run.id, api]);
+    }, [open, request, live, retry]);
     useEffect(() => {
       const el = listRef.current;
       if (live && el && el.scrollHeight - el.scrollTop - el.clientHeight < 60) el.scrollTop = el.scrollHeight;
@@ -1284,11 +1872,22 @@ var __awPlugin = (() => {
     if (!open) {
       return /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", style: { fontSize: 12, margin: "2px 0 4px" }, onClick: () => setOpen(true), children: "Show steps" });
     }
-    if (steps === null) return /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { fontSize: 12 }, children: "Loading steps\u2026" });
-    if (steps.length === 0) {
-      return live ? /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { fontSize: 12 }, children: "Working\u2026 steps appear here as the agent takes them." }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { fontSize: 12 }, children: "No steps were recorded for this run." });
-    }
+    const failure = error ? /* @__PURE__ */ jsxs("p", { role: "alert", className: "aw-error", children: [
+      "Steps could not refresh. ",
+      errorText(error),
+      " ",
+      /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setRetry((n) => n + 1), children: "Retry steps" })
+    ] }) : null;
+    if (steps === null) return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      failure,
+      !error ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading steps\u2026" }) : null
+    ] });
+    if (steps.length === 0) return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      failure,
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: live ? "Working\u2026 steps appear here as the agent takes them." : "No steps were recorded for this run." })
+    ] });
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      failure,
       /* @__PURE__ */ jsx("ol", { className: "aw-steps", ref: listRef, children: steps.map((step) => /* @__PURE__ */ jsxs("li", { className: `aw-step--${step.kind}`, children: [
         /* @__PURE__ */ jsx("time", { children: new Date(step.at * 1e3).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) }),
         /* @__PURE__ */ jsx("b", { className: "aw-step__mark", "aria-hidden": "true", children: STEP_MARK[step.kind] ?? "\xB7" }),
@@ -1305,7 +1904,12 @@ var __awPlugin = (() => {
       /* @__PURE__ */ jsxs("header", { className: cx(fold.long && "aw-fold"), onClick: fold.toggle, children: [
         /* @__PURE__ */ jsx(FoldChevron, { fold }),
         live ? /* @__PURE__ */ jsx("span", { className: "aw-live" }) : /* @__PURE__ */ jsx(Dot, { state: run.status === "ok" ? "ok" : "bad" }),
-        /* @__PURE__ */ jsx("strong", { children: run.executor }),
+        /* @__PURE__ */ jsxs("strong", { children: [
+          "Run #",
+          run.id,
+          " \xB7 ",
+          run.executor
+        ] }),
         run.model ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: run.model }) : null,
         /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
           "on ",
@@ -1327,7 +1931,7 @@ var __awPlugin = (() => {
       /* @__PURE__ */ jsxs("footer", { children: [
         fold.long ? /* @__PURE__ */ jsx(FoldMore, { fold, text: summary }) : null,
         run.diff_stat ? /* @__PURE__ */ jsx("code", { className: "aw-muted", children: run.diff_stat.split("\n").pop() }) : null,
-        run.diff || run.diff_stat ? /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", onClick: onDiff, children: "View changes" }) : null,
+        recordedPatch(run) ? /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", onClick: onDiff, children: "View changes" }) : null,
         run.shared_to === "origin" ? /* @__PURE__ */ jsxs(Tag, { tone: "ok", title: "The next run starts from it on any node", children: [
           "pushed \xB7 ",
           run.shared_ref
@@ -1383,37 +1987,82 @@ var __awPlugin = (() => {
     const [text, setText] = useState("");
     const [picked, setPicked] = useState([]);
     const [busy, setBusy] = useState(false);
+    const [sendError, setSendError] = useState(null);
+    const submission = useRef(createSubmission());
+    const [recipientUserIds, setRecipientUserIds] = useState([]);
+    const [mentionJobs, setMentionJobs] = useState([]);
+    const [mentionVersion, setMentionVersion] = useState(0);
     const picker = useRef(null);
     const note = mode === "note" || !isClient;
     const canRerun = ["review", "done", "approved", "new"].includes(ticket.status);
+    const checkMention = async (job, saved) => {
+      setMentionJobs((previous) => previous.map((value) => value.key === job.key ? { ...value, status: "checking" } : value));
+      try {
+        const result = await job.deliver(saved);
+        setMentionJobs((previous) => previous.map((value) => value.key === job.key ? { ...value, status: "complete", result, error: null } : value));
+      } catch (error) {
+        setMentionJobs((previous) => previous.map((value) => value.key === job.key ? { ...value, status: "failed", error } : value));
+      }
+    };
     const send = async (rerun) => {
+      if (submission.current.busy || submission.current.pendingQueue) return;
       const body = text.trim();
       if (!body && !picked.length) return;
+      const save = async () => {
+        if (picked.length) {
+          const form = new FormData();
+          form.append("body", body);
+          form.append("internal", String(note));
+          for (const file of picked) form.append("files", file);
+          return host.upload(`/admin/tickets/${ticket.id}/messages`, form);
+        } else return api("POST", `/admin/tickets/${ticket.id}/messages`, { body, internal: note });
+      };
       const go = async () => {
+        if (submission.current.busy || submission.current.pendingQueue) return;
         setBusy(true);
+        setSendError(null);
         try {
-          await act(async () => {
-            if (picked.length) {
-              const form = new FormData();
-              form.append("body", body);
-              form.append("internal", String(note));
-              for (const f of picked) form.append("files", f);
-              await host.upload(`/admin/tickets/${ticket.id}/messages`, form);
-            } else {
-              await api("POST", `/admin/tickets/${ticket.id}/messages`, { body, internal: note });
+          await submission.current.run({
+            save,
+            queue: rerun && ticket.status !== "approved" ? () => api("PATCH", `/admin/tickets/${ticket.id}`, { status: "approved" }) : null,
+            onSaved: (saved) => {
+              setText("");
+              setPicked([]);
+              if (picker.current) picker.current.value = "";
+              void onSent();
+              if (recipientUserIds.length) {
+                const job = { key: globalThis.crypto.randomUUID(), messageId: saved?.messageId, deliver: createMentionDelivery({ api, projectId: ticket.project_id, ticketId: ticket.id, recipientUserIds }), status: "checking" };
+                setMentionJobs((previous) => [...previous, job]);
+                void checkMention(job, saved);
+              }
+              setRecipientUserIds([]);
+              setMentionVersion((value) => value + 1);
             }
-            if (rerun && ticket.status !== "approved") await api("PATCH", `/admin/tickets/${ticket.id}`, { status: "approved" });
-          }, note ? rerun ? "Note added; the agent runs again with it." : "Note added. The agent reads it on the next run." : "Reply sent; the client was emailed.");
-          setText("");
-          setPicked([]);
-          if (picker.current) picker.current.value = "";
-          onSent();
+          });
+          notify(rerun ? "Note saved; agent queued." : note ? "Note saved." : "Reply sent.");
+          void onSent();
+        } catch (error) {
+          setSendError(error);
         } finally {
           setBusy(false);
         }
       };
       if (!note) ask({ title: "Email the client?", text: `${ticket.client_email} receives this reply.`, confirm: "Send reply", run: go });
-      else await go().catch(() => void 0);
+      else await go();
+    };
+    const retryQueue = async () => {
+      if (submission.current.busy) return;
+      setBusy(true);
+      setSendError(null);
+      try {
+        await submission.current.retryQueue();
+        notify("Agent queued.");
+        void onSent();
+      } catch (error) {
+        setSendError(error);
+      } finally {
+        setBusy(false);
+      }
     };
     return /* @__PURE__ */ jsxs("div", { className: cx("aw-composer", note && "is-note"), children: [
       /* @__PURE__ */ jsxs("div", { className: "aw-composer__head", children: [
@@ -1421,6 +2070,7 @@ var __awPlugin = (() => {
           Segmented,
           {
             value: mode,
+            disabled: busy,
             options: [
               { value: "note", label: "Private note" },
               { value: "reply", label: "Reply to client" }
@@ -1435,11 +2085,37 @@ var __awPlugin = (() => {
         {
           rows: 4,
           value: text,
+          disabled: busy,
           placeholder: note ? "Steer the agent: what to change, what to avoid, how to check\u2026" : "Write to the client\u2026",
           onChange: (e) => setText(e.target.value),
-          onKeyDown: (e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && void send(false)
+          onKeyDown: (e) => {
+            if (!e.nativeEvent?.isComposing && (e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              void send(false);
+            }
+          }
         }
       ),
+      /* @__PURE__ */ jsx(MentionRecipients, { api, projectId: ticket.project_id, onChange: setRecipientUserIds, disabled: busy, internal: note }, mentionVersion),
+      mentionJobs.map((job) => /* @__PURE__ */ jsxs("div", { role: "status", className: "aw-muted", children: [
+        "Message #",
+        job.messageId ?? "unknown",
+        " saved. ",
+        job.status === "checking" ? "Checking notification delivery\u2026" : job.error ? `Notification status unavailable: ${errorText(job.error)}` : job.result?.ok ? "All selected notification emails sent." : "Some notifications were not confirmed sent.",
+        job.result?.deliveries?.map((delivery) => /* @__PURE__ */ jsxs("p", { children: [
+          "Recipient #",
+          delivery.userId,
+          ": ",
+          delivery.status === "sent" ? "Email sent" : delivery.status === "failed" ? "Email could not be sent" : delivery.status === "sending" ? "Delivery status unknown" : delivery.status === "cancelled" ? "Notification cancelled" : "Delivery pending",
+          "."
+        ] }, delivery.userId)),
+        job.status !== "checking" && (job.error || !job.result?.ok) ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void checkMention(job), children: "Check notification status" }) : null
+      ] }, job.key)),
+      sendError ? /* @__PURE__ */ jsxs("p", { role: "alert", className: "aw-error", children: [
+        submission.current.pendingQueue ? "Message saved. Queue failed; retry queues only, without another message. " : "Message was not saved. ",
+        errorText(sendError)
+      ] }) : null,
+      submission.current.pendingQueue ? /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: retryQueue, children: busy ? "Queuing\u2026" : "Retry queue only" }) : null,
       /* @__PURE__ */ jsxs("div", { className: "aw-composer__foot", children: [
         host?.upload ? /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx(
@@ -1447,6 +2123,7 @@ var __awPlugin = (() => {
             {
               ref: picker,
               type: "file",
+              disabled: busy,
               multiple: true,
               accept: ACCEPT,
               hidden: true,
@@ -1462,12 +2139,13 @@ var __awPlugin = (() => {
               }
             }
           ),
-          /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", onClick: () => picker.current?.click(), children: picked.length ? `${picked.length} file${picked.length > 1 ? "s" : ""}: ${picked.map((f) => f.name).join(", ")}` : "Attach files\u2026" }),
+          /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", disabled: busy, onClick: () => picker.current?.click(), children: picked.length ? `${picked.length} file${picked.length > 1 ? "s" : ""}: ${picked.map((f) => f.name).join(", ")}` : "Attach files\u2026" }),
           picked.length ? /* @__PURE__ */ jsx(
             "button",
             {
               type: "button",
               className: "aw-link",
+              disabled: busy,
               onClick: () => {
                 setPicked([]);
                 if (picker.current) picker.current.value = "";
@@ -1478,8 +2156,8 @@ var __awPlugin = (() => {
         ] }) : null,
         /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "\u2318\u21B5 to send" }),
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        note && canRerun ? /* @__PURE__ */ jsx(Button, { disabled: busy || !text.trim() && !picked.length, onClick: () => void send(true), children: "Add note and run again" }) : null,
-        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !text.trim() && !picked.length, onClick: () => void send(false), children: note ? "Add note" : "Send reply\u2026" })
+        note && canRerun ? /* @__PURE__ */ jsx(Button, { disabled: busy || submission.current.pendingQueue || !text.trim() && !picked.length, onClick: () => void send(true), children: "Add note and run again" }) : null,
+        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || submission.current.pendingQueue || !text.trim() && !picked.length, onClick: () => void send(false), children: note ? "Add note" : "Send reply\u2026" })
       ] })
     ] });
   }
@@ -1499,7 +2177,7 @@ var __awPlugin = (() => {
         " \xB7 ",
         site.state,
         " \xB7 ",
-        site.host === "cloudflare" ? "Cloudflare" : "ptechsolutions.dev"
+        site.host === "cloudflare" ? "Cloudflare" : "malipetek.online"
       ] }),
       site.cloudflare?.error ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
         "Cloudflare: ",
@@ -2243,9 +2921,9 @@ var __awPlugin = (() => {
     const { data, openTicket } = useAdmin();
     const c = data.clients.find((x) => x.id === id);
     if (!c) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: data.loaded ? "No such client." : "Loading\u2026" });
-    const closed = (t) => ["done", "declined"].includes(t.status);
-    const tickets = data.tickets.filter((t) => t.kind !== "system" && t.client_email === c.email).sort((a, b) => closed(a) - closed(b) || b.updated_at - a.updated_at);
-    const open = tickets.filter((t) => !closed(t)).length;
+    const closed2 = (t) => ["done", "declined"].includes(t.status);
+    const tickets = data.tickets.filter((t) => t.kind !== "system" && t.client_email === c.email).sort((a, b) => closed2(a) - closed2(b) || b.updated_at - a.updated_at);
+    const open = tickets.filter((t) => !closed2(t)).length;
     return /* @__PURE__ */ jsxs("div", { className: "aw-view", children: [
       /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
         /* @__PURE__ */ jsx("h2", { children: c.name || c.email }),
@@ -2281,7 +2959,7 @@ var __awPlugin = (() => {
                 t.id
               ] }),
               /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
-                t.client_waiting_since && !closed(t) ? /* @__PURE__ */ jsx(Dot, { state: "warn" }) : null,
+                t.client_waiting_since && !closed2(t) ? /* @__PURE__ */ jsx(Dot, { state: "warn" }) : null,
                 " ",
                 t.title
               ] }),
@@ -5883,6 +6561,22 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-prereview ul { margin: 4px 0 8px; padding-left: 20px; font-size: 13px; }
 .aw-prereview footer { margin-top: 6px; }
 
+/* Recorded evidence: one summary row; the run and compare controls open on demand. */
+.aw-evidence { padding: 8px 12px; }
+.aw-evidence header { align-items: baseline; }
+.aw-evidence__line { font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-evidence__toggle { flex: none; font-size: 12px; }
+.aw-evidence__body { margin-top: 8px; }
+.aw-evidence__hint { margin: 0 0 8px; font-size: 12px; }
+.aw-md { margin: 6px 0 8px; overflow-wrap: anywhere; }
+.aw-md p { margin: 0 0 6px; }
+.aw-md p:last-child, .aw-md ul:last-child, .aw-md ol:last-child, .aw-md pre:last-child { margin-bottom: 0; }
+.aw-md__heading { margin: 10px 0 4px; font-size: 13px; }
+.aw-md ul, .aw-md ol { margin: 4px 0 8px; padding-left: 20px; font-size: 12.5px; }
+.aw-md li { margin: 2px 0; }
+.aw-md code { font-family: var(--aw-mono); font-size: 11.5px; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
+.aw-md__code { margin: 4px 0 8px; max-height: 32vh; }
+
 /* Before/after preview shots: evidence, not decoration. */
 .aw-shots { display: flex; gap: 8px; margin-top: 10px; }
 .aw-shots figure { flex: 1; min-width: 0; margin: 0; }
@@ -5903,7 +6597,2620 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-seo-issues { display: grid; gap: 4px; padding: 2px 0; }
 .aw-seo-issue { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .aw-seo-issue span:last-child { color: var(--aw-text2); }
+
+/* ProjectWorld \u2014 compact isometric map ported from client portal; works in dark & light themes. */
+.aw-world-wrap { container-type: inline-size; min-width: 0; }
+.aw-project__world { padding: 16px 0 20px; }
+.aw-world {
+  --aw-w-ink: var(--aw-text, var(--dsw-alias-label-primary, currentColor));
+  --aw-w-ink-soft: var(--aw-text2, var(--dsw-alias-label-secondary, rgba(128,134,142,.92)));
+  --aw-w-surface: var(--aw-bg, rgba(128,134,142,.06));
+  --aw-w-stage: var(--aw-bg2, rgba(128,134,142,.09));
+  --aw-w-chip: rgba(128,134,142,.16);
+  --aw-w-rule: var(--aw-border, rgba(128,134,142,.24));
+  --aw-w-rule-strong: var(--aw-border2, rgba(128,134,142,.38));
+  --aw-w-accent: var(--aw-accent, #ff5a1f);
+  --aw-w-ok: var(--aw-ok, #2f9e5b);
+  --aw-w-warn: var(--aw-warn, #d99a16);
+  --aw-w-bad: var(--aw-bad, #d6453d);
+  --aw-w-hover: var(--aw-hover, rgba(128,134,142,.14));
+  --aw-w-tint: color-mix(in srgb, var(--aw-w-accent) 14%, transparent);
+  --aw-w-mono: var(--aw-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+
+  --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 90%, var(--aw-w-ink) 10%);
+  --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 78%, var(--aw-w-ink) 22%);
+  --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 64%, var(--aw-w-ink) 36%);
+
+  --aw-w-accent-top: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface));
+  --aw-w-accent-left: color-mix(in srgb, var(--aw-w-accent) 36%, var(--aw-w-surface));
+  --aw-w-accent-right: color-mix(in srgb, var(--aw-w-accent) 50%, var(--aw-w-surface));
+
+  --aw-w-ok-soft: color-mix(in srgb, var(--aw-w-ok) 22%, var(--aw-w-surface));
+  --aw-w-bad-soft: color-mix(in srgb, var(--aw-w-bad) 22%, var(--aw-w-surface));
+  --aw-w-warn-soft: color-mix(in srgb, var(--aw-w-warn) 24%, var(--aw-w-surface));
+
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(240px, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--aw-w-rule);
+  background: var(--aw-w-stage);
+  color: var(--aw-w-ink);
+}
+@media (prefers-color-scheme: dark) {
+  .aw-world {
+    --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
+    --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
+    --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
+  }
+}
+:root[data-theme='dark'] .aw-world {
+  --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
+  --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
+  --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
+}
+.aw-world__stage {
+  position: relative;
+  border-radius: 8px;
+  background: var(--aw-w-surface);
+  border: 1px solid var(--aw-w-rule);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 4px;
+}
+.aw-world__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 260px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.aw-world__floor-plate { fill: color-mix(in srgb, var(--aw-w-stage) 65%, var(--aw-w-surface)); stroke: var(--aw-w-rule-strong); stroke-width: 1; }
+.aw-world__dot { fill: color-mix(in srgb, var(--aw-w-ink) 20%, transparent); }
+.aw-world__dot--active { fill: var(--aw-w-accent); opacity: .72; }
+.aw-world__zone-label { font: 600 9px/1 var(--aw-w-mono); letter-spacing: .12em; text-transform: uppercase; fill: var(--aw-w-ink-soft); opacity: .78; }
+
+.aw-world__cable-base { fill: none; stroke: var(--aw-w-rule-strong); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.aw-world__cable-base.is-connected { stroke: color-mix(in srgb, var(--aw-w-ink) 45%, transparent); }
+.aw-world__cable-flow { fill: none; stroke: var(--aw-w-accent); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 5 7; animation: aw-world-dash-flow 1.35s linear infinite; }
+.aw-world__cable-arrow { fill: var(--aw-w-ink-soft); }
+.aw-world__cable-arrow.is-active { fill: var(--aw-w-accent); }
+@keyframes aw-world-dash-flow { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+
+.aw-world__station { cursor: pointer; outline: none; }
+.aw-world__hit { fill: transparent; stroke: none; }
+.aw-world__pad { fill: color-mix(in srgb, var(--aw-w-surface) 80%, var(--aw-w-stage)); stroke: var(--aw-w-rule-strong); stroke-width: 1; transition: fill 150ms ease, stroke 150ms ease; }
+.aw-world__station.is-active .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-accent) 12%, var(--aw-w-surface)); stroke: color-mix(in srgb, var(--aw-w-accent) 55%, var(--aw-w-ink)); }
+.aw-world__station.is-warn .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-warn) 12%, var(--aw-w-surface)); stroke: color-mix(in srgb, var(--aw-w-warn) 60%, var(--aw-w-ink)); }
+.aw-world__station.is-selected .aw-world__pad,
+.aw-world__station:hover .aw-world__pad { fill: var(--aw-w-tint); stroke: var(--aw-w-accent); stroke-width: 1.5; }
+.aw-world__station:focus-visible .aw-world__pad { stroke: var(--aw-w-accent); stroke-width: 2.2; }
+
+.aw-world__face-top { fill: var(--aw-w-face-top); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
+.aw-world__face-left { fill: var(--aw-w-face-left); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
+.aw-world__face-right { fill: var(--aw-w-face-right); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
+.aw-world__face-accent-top { fill: var(--aw-w-accent-top); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-accent-left { fill: var(--aw-w-accent-left); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-accent-right { fill: var(--aw-w-accent-right); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-ok { fill: var(--aw-w-ok-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-bad { fill: var(--aw-w-bad-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-warn { fill: var(--aw-w-warn-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__ink-line { fill: none; stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.aw-world__detail-line { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 55%, transparent); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+.aw-world__window { fill: color-mix(in srgb, var(--aw-w-ink) 14%, var(--aw-w-surface)); stroke: var(--aw-w-ink); stroke-width: 1.1; stroke-linejoin: round; }
+.aw-world__window--lit { fill: var(--aw-w-accent-left); }
+.aw-world__window--ok { fill: var(--aw-w-ok-soft); }
+
+.aw-world__cloche-rim-back { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 32%, transparent); stroke-width: 1; stroke-dasharray: 2.5 2; }
+.aw-world__cloche-glass { fill: rgba(128,134,142,.18); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__cloche-glass--active { fill: color-mix(in srgb, var(--aw-w-accent) 18%, transparent); }
+.aw-world__cloche-glass--warn { fill: color-mix(in srgb, var(--aw-w-warn) 18%, transparent); }
+.aw-world__cloche-shine { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 32%, transparent); stroke-width: 1.8; stroke-linecap: round; }
+
+.aw-world__station.is-unknown .aw-world__face-top,
+.aw-world__station.is-unknown .aw-world__face-left,
+.aw-world__station.is-unknown .aw-world__face-right,
+.aw-world__station.is-unknown .aw-world__ink-line { stroke-dasharray: 3.5 2.5; stroke: var(--aw-w-ink-soft); fill-opacity: .55; }
+.aw-world__station.is-off .aw-world__object { opacity: .66; }
+.aw-world__station.is-off:hover .aw-world__object,
+.aw-world__station.is-off.is-selected .aw-world__object,
+.aw-world__station.is-off:focus-visible .aw-world__object { opacity: .92; }
+
+.aw-world__beacon { stroke: var(--aw-w-ink); stroke-width: 1.2; }
+.aw-world__beacon--ok { fill: var(--aw-w-ok); }
+.aw-world__beacon--active { fill: var(--aw-w-accent); }
+.aw-world__beacon--warn { fill: var(--aw-w-warn); }
+.aw-world__beacon--bad { fill: var(--aw-w-bad); }
+.aw-world__beacon--off,
+.aw-world__beacon--unknown { fill: var(--aw-w-stage); }
+.aw-world__badge-bg { fill: var(--aw-w-accent); stroke: var(--aw-w-ink); stroke-width: 1.2; }
+.aw-world__badge-text { font: 700 10px/1 var(--aw-w-mono); fill: #fff; text-anchor: middle; dominant-baseline: central; }
+
+.aw-world__tag-bg { fill: var(--aw-w-chip); stroke: var(--aw-w-rule-strong); stroke-width: 1; }
+.aw-world__station.is-selected .aw-world__tag-bg,
+.aw-world__station:hover .aw-world__tag-bg { stroke: var(--aw-w-accent); }
+.aw-world__tag-text { font: 600 10px/1 inherit; fill: var(--aw-w-ink); text-anchor: middle; dominant-baseline: central; }
+.aw-world__micro { font: 500 9px/1 var(--aw-w-mono); fill: var(--aw-w-ink-soft); text-anchor: middle; }
+
+.aw-world__caption { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.aw-world__eyebrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 600 10px/1.2 var(--aw-w-mono); text-transform: uppercase; letter-spacing: .09em; color: var(--aw-w-ink-soft); }
+.aw-world__project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+.aw-world__card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--aw-w-surface); border: 1px solid var(--aw-w-rule); flex: 1; }
+.aw-world__card-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.aw-world__pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.3; border: 1px solid var(--aw-w-rule-strong); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); }
+.aw-world__pill-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-ink-soft); flex: none; }
+.aw-world__pill--ok { border-color: color-mix(in srgb, var(--aw-w-ok) 45%, transparent); background: color-mix(in srgb, var(--aw-w-ok) 14%, transparent); color: var(--aw-w-ok); }
+.aw-world__pill--ok .aw-world__pill-dot { background: var(--aw-w-ok); }
+.aw-world__pill--active { border-color: color-mix(in srgb, var(--aw-w-accent) 45%, transparent); background: var(--aw-w-tint); color: var(--aw-w-accent); }
+.aw-world__pill--active .aw-world__pill-dot { background: var(--aw-w-accent); }
+.aw-world__pill--warn { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 14%, transparent); color: var(--aw-w-warn); }
+.aw-world__pill--warn .aw-world__pill-dot { background: var(--aw-w-warn); }
+.aw-world__pill--bad { border-color: color-mix(in srgb, var(--aw-w-bad) 45%, transparent); background: color-mix(in srgb, var(--aw-w-bad) 14%, transparent); color: var(--aw-w-bad); }
+.aw-world__pill--bad .aw-world__pill-dot { background: var(--aw-w-bad); }
+.aw-world__pill--unknown { border-style: dashed; }
+
+.aw-world .aw-world__title { margin: 0; font-size: 14px; font-weight: 700; line-height: 1.25; letter-spacing: -.01em; color: var(--aw-w-ink); }
+.aw-world .aw-world__explain { margin: 0; font-size: 12px; line-height: 1.4; color: var(--aw-w-ink-soft); max-width: none; }
+.aw-world__status-box { margin-top: auto; padding-top: 7px; border-top: 1px dashed var(--aw-w-rule-strong); display: flex; flex-direction: column; gap: 2px; }
+.aw-world__status-label { font: 600 9.5px/1.2 var(--aw-w-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--aw-w-ink-soft); }
+.aw-world .aw-world__status-value { margin: 0; font-size: 12.5px; font-weight: 600; line-height: 1.35; color: var(--aw-w-ink); word-break: break-word; max-width: none; }
+
+.aw-world__ops { padding-top: 7px; border-top: 1px dashed var(--aw-w-rule-strong); display: flex; flex-direction: column; gap: 4px; }
+.aw-world__op-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.aw-world__op-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font-size: 11px; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.aw-world__op-chip strong { color: var(--aw-w-ink); font-weight: 650; }
+.aw-world__op-chip--warn { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 14%, transparent); color: var(--aw-w-warn); }
+.aw-world__op-chip--warn strong { color: var(--aw-w-warn); }
+.aw-world__op-chip--bad { border-color: color-mix(in srgb, var(--aw-w-bad) 45%, transparent); background: color-mix(in srgb, var(--aw-w-bad) 14%, transparent); color: var(--aw-w-bad); }
+.aw-world__op-chip--bad strong { color: var(--aw-w-bad); }
+
+.aw-world__checks { padding-top: 7px; border-top: 1px dashed var(--aw-w-rule-strong); display: flex; flex-direction: column; gap: 5px; }
+.aw-world__check-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.aw-world__check-item { display: flex; align-items: flex-start; gap: 7px; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); font-size: 11.5px; line-height: 1.35; }
+.aw-world__check-item.is-pending { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 10%, transparent); }
+.aw-world__check-item.is-ready { border-color: color-mix(in srgb, var(--aw-w-ok) 35%, transparent); background: color-mix(in srgb, var(--aw-w-ok) 9%, transparent); }
+.aw-world__check-mark { flex: none; width: 15px; height: 15px; margin-top: 1px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font: 700 10px/1 var(--aw-w-mono); color: var(--aw-w-ink-soft); background: var(--aw-w-chip); }
+.aw-world__check-item.is-pending .aw-world__check-mark { color: var(--aw-w-warn); background: color-mix(in srgb, var(--aw-w-warn) 18%, transparent); }
+.aw-world__check-item.is-ready .aw-world__check-mark { color: var(--aw-w-ok); background: color-mix(in srgb, var(--aw-w-ok) 18%, transparent); }
+.aw-world__check-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.aw-world__check-label { font-weight: 600; color: var(--aw-w-ink); }
+.aw-world .aw-world__check-detail { margin: 0; font-size: 11.5px; line-height: 1.35; color: var(--aw-w-ink-soft); word-break: break-word; max-width: none; }
+.aw-world__check-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 1px; font: 500 10.5px/1.25 var(--aw-w-mono); color: var(--aw-w-ink-soft); }
+.aw-world__check-who { color: var(--aw-w-ink); }
+
+.aw-world__nav { display: flex; flex-wrap: wrap; gap: 4px; }
+.aw-world__chip { appearance: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font-size: 11px; font-weight: 500; line-height: 1.25; cursor: pointer; transition: border-color 120ms ease, background 120ms ease, color 120ms ease; }
+.aw-world__chip:hover { background: var(--aw-w-hover); color: var(--aw-w-ink); }
+.aw-world__chip[aria-pressed='true'] { border-color: var(--aw-w-accent); background: var(--aw-w-tint); color: var(--aw-w-ink); font-weight: 600; }
+.aw-world__chip:focus-visible { outline: 2px solid var(--aw-w-accent); outline-offset: 1px; }
+.aw-world__chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-rule-strong); flex: none; }
+.aw-world__chip-dot--ok { background: var(--aw-w-ok); }
+.aw-world__chip-dot--active { background: var(--aw-w-accent); }
+.aw-world__chip-dot--warn { background: var(--aw-w-warn); }
+.aw-world__chip-dot--bad { background: var(--aw-w-bad); }
+.aw-world__chip-dot--unknown { background: transparent; border: 1px dashed var(--aw-w-ink-soft); }
+
+.aw-world__sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+@media (max-width: 719px) {
+  .aw-world { grid-template-columns: minmax(0, 1fr); }
+}
+@container (max-width: 719px) {
+  .aw-world { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aw-world__cable-flow { animation: none; }
+  .aw-world__pad, .aw-world__chip { transition: none; }
+}
 `;
+
+  // packages/admin-ui/src/project-model.js
+  function briefPayload(raw = {}, kind = "existing") {
+    const answer = (value) => typeof value === "string" ? value.trim() : "";
+    const what = answer(raw.what), goal = answer(raw.goal);
+    const key = kind === "new" ? "manual" : "where";
+    const optional = answer(raw[key]);
+    if (!what || !goal || [what, goal, optional].some((value) => value.length > 1200)) return null;
+    return { what, goal, ...optional ? { [key]: optional } : {} };
+  }
+  function resourceUrl(value) {
+    if (typeof value !== "string") return null;
+    const ssh = /^git@([^:]+):(.+)$/.exec(value);
+    const normalized = ssh ? `https://${ssh[1]}/${ssh[2]}` : value;
+    try {
+      const url = new URL(normalized);
+      if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) return null;
+      return url.href.replace(/\.git\/?$/, "");
+    } catch {
+      return null;
+    }
+  }
+  function projectTopology(project = {}, local, git) {
+    const exists = local?.exists ?? local?.found;
+    const isGit = local?.isGit ?? git?.isGit ?? (git ? Boolean(git.head || git.branch) : null);
+    return {
+      local: !local ? "Not inspected on this device" : !local.path ? "Not connected on this device" : !exists ? `Folder not found: ${local.path}` : `${local.path}${isGit === false ? " \xB7 not a Git checkout" : ""}`,
+      repoUrl: resourceUrl(project.repo),
+      branch: git?.head || git?.branch ? [git.branch || "Detached HEAD", git.head?.slice(0, 8), git.dirty ? "uncommitted changes" : "clean"].filter(Boolean).join(" \xB7 ") : "Not inspected",
+      sites: (project.sites ?? (project.site ? [project.site] : [])).map((site) => ({
+        ...site,
+        previewUrl: resourceUrl(site.previewUrl),
+        productionUrl: resourceUrl(site.productionUrl),
+        deployment: !site.previewDeploy || !site.productionDeploy ? "Deployment state unknown" : site.previewDeploy === "placeholder" ? "Preview is a placeholder" : site.previewDeploy === site.productionDeploy ? "Production matches preview" : "Preview differs from production"
+      }))
+    };
+  }
+  function projectWork(tickets = [], projectId) {
+    const closed2 = (ticket) => ["done", "declined"].includes(ticket.status);
+    return tickets.filter((ticket) => ticket.project_id === projectId && ticket.kind !== "system").sort((a, b) => closed2(a) - closed2(b) || (b.updated_at ?? 0) - (a.updated_at ?? 0));
+  }
+  function createProjectResource(load, publish) {
+    let generation = 0, disposed = false;
+    let state = { value: null, loading: true, refreshing: false, error: null, fetchedAt: null };
+    return {
+      async refresh() {
+        const request = ++generation;
+        state = { ...state, loading: state.value === null, refreshing: true, error: null };
+        publish(state);
+        try {
+          const value = await load();
+          if (disposed || request !== generation) return;
+          state = { value, loading: false, refreshing: false, error: null, fetchedAt: Date.now() };
+        } catch (error) {
+          if (disposed || request !== generation) return;
+          state = { ...state, loading: false, refreshing: false, error };
+        }
+        publish(state);
+      },
+      dispose() {
+        disposed = true;
+        ++generation;
+      }
+    };
+  }
+  function singleFlight(fn) {
+    let pending = null;
+    return (...args) => {
+      if (pending) return pending;
+      let resolve, reject;
+      pending = new Promise((yes, no) => {
+        resolve = yes;
+        reject = no;
+      });
+      const result = pending;
+      try {
+        Promise.resolve(fn(...args)).then(resolve, reject);
+      } catch (error) {
+        reject(error);
+      }
+      result.then(() => {
+        pending = null;
+      }, () => {
+        pending = null;
+      });
+      return result;
+    };
+  }
+
+  // packages/admin-ui/src/project-world-model.mjs
+  var ISO_COS = Math.cos(Math.PI / 6);
+  var ISO_SIN = 0.5;
+  var DEFAULT_ISO = Object.freeze({
+    scale: 44,
+    originX: 325,
+    originY: 92
+  });
+  var FLOOR_BOUNDS = Object.freeze({
+    minX: 0,
+    maxX: 8.6,
+    minY: 0,
+    maxY: 5.6
+  });
+  var OPEN_TICKET_STATUSES = /* @__PURE__ */ new Set(["new", "approved", "in_progress", "review"]);
+  var STALL_MS = 45 * 60 * 1e3;
+  function iso(x, y, z = 0, opts = DEFAULT_ISO) {
+    const scale = Number.isFinite(opts?.scale) ? opts.scale : DEFAULT_ISO.scale;
+    const originX = Number.isFinite(opts?.originX) ? opts.originX : DEFAULT_ISO.originX;
+    const originY = Number.isFinite(opts?.originY) ? opts.originY : DEFAULT_ISO.originY;
+    const nx = Number.isFinite(x) ? x : 0;
+    const ny = Number.isFinite(y) ? y : 0;
+    const nz = Number.isFinite(z) ? z : 0;
+    return {
+      x: round2(originX + (nx - ny) * ISO_COS * scale),
+      y: round2(originY + (nx + ny) * ISO_SIN * scale - nz * scale)
+    };
+  }
+  function round2(n) {
+    return Math.round(n * 100) / 100;
+  }
+  function isoPoints(points3d, opts = DEFAULT_ISO) {
+    return points3d.map(([x, y, z = 0]) => {
+      const p = iso(x, y, z, opts);
+      return `${p.x},${p.y}`;
+    }).join(" ");
+  }
+  function isoBox(x, y, z, dx, dy, dz, opts = DEFAULT_ISO) {
+    const x1 = x + dx;
+    const y1 = y + dy;
+    const z1 = z + dz;
+    return {
+      top: isoPoints(
+        [
+          [x, y, z1],
+          [x1, y, z1],
+          [x1, y1, z1],
+          [x, y1, z1]
+        ],
+        opts
+      ),
+      left: isoPoints(
+        [
+          [x, y1, z1],
+          [x1, y1, z1],
+          [x1, y1, z],
+          [x, y1, z]
+        ],
+        opts
+      ),
+      right: isoPoints(
+        [
+          [x1, y, z1],
+          [x1, y1, z1],
+          [x1, y1, z],
+          [x1, y, z]
+        ],
+        opts
+      ),
+      base: isoPoints(
+        [
+          [x, y, z],
+          [x1, y, z],
+          [x1, y1, z],
+          [x, y1, z]
+        ],
+        opts
+      ),
+      centerTop: iso(x + dx / 2, y + dy / 2, z1, opts)
+    };
+  }
+  function tx(t, key, english, vars) {
+    if (typeof t === "function") {
+      const out = vars !== void 0 ? t(key, vars) : t(key);
+      if (typeof out === "string" && out !== key && out.length > 0) {
+        return out;
+      }
+    }
+    if (!vars) return english;
+    return String(english).replace(
+      /\{(\w+)\}/g,
+      (match, name) => vars[name] === void 0 || vars[name] === null ? match : String(vars[name])
+    );
+  }
+  var STATION_POSITIONS = Object.freeze({
+    hosting: { x: 1.5, y: 1.2, padHalf: 0.82 },
+    https: { x: 1.5, y: 2.6, padHalf: 0.54 },
+    domain: { x: 1.5, y: 4.2, padHalf: 0.64 },
+    preview: { x: 3.5, y: 1.2, padHalf: 0.68 },
+    deploy: { x: 5.5, y: 1.2, padHalf: 0.74 },
+    code: { x: 7.5, y: 1.2, padHalf: 0.68 },
+    request: { x: 5, y: 3.5, padHalf: 0.66 },
+    agent: { x: 7.5, y: 3.5, padHalf: 0.74 }
+  });
+  var VISITOR_POS = Object.freeze({ x: 1.5, y: 5.4 });
+  function floorDots(stations = [], step = 0.4, opts = DEFAULT_ISO) {
+    const dots = [];
+    const activeZones = stations.filter((s) => s.state === "active").map((s) => {
+      const pos = STATION_POSITIONS[s.key];
+      const r = (pos?.padHalf ?? 0.7) + 0.18;
+      return { key: s.key, x: s.x, y: s.y, r };
+    });
+    for (let gx = FLOOR_BOUNDS.minX + 0.2; gx <= FLOOR_BOUNDS.maxX - 0.1; gx = round2(gx + step)) {
+      for (let gy = FLOOR_BOUNDS.minY + 0.2; gy <= FLOOR_BOUNDS.maxY - 0.1; gy = round2(gy + step)) {
+        const hit = activeZones.find((z) => Math.abs(gx - z.x) <= z.r && Math.abs(gy - z.y) <= z.r);
+        const p = iso(gx, gy, 0, opts);
+        dots.push({
+          id: `${gx}_${gy}`,
+          gx,
+          gy,
+          x: p.x,
+          y: p.y,
+          active: Boolean(hit),
+          stationKey: hit?.key ?? null
+        });
+      }
+    }
+    return dots;
+  }
+  function pickSite(project, sites) {
+    const list = Array.isArray(sites) && sites.length > 0 ? sites : Array.isArray(project?.sites) && project.sites.length > 0 ? project.sites : project?.site ? [project.site] : [];
+    if (!list.length) return null;
+    return list.find((s) => s?.isPrimary) ?? list.find((s) => s?.state === "ready") ?? list[0] ?? null;
+  }
+  function cleanString(v) {
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+  }
+  function hostnameOf(raw) {
+    const s = cleanString(raw);
+    if (!s) return null;
+    const stripped = s.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+    return stripped || null;
+  }
+  function extractAddress(site) {
+    if (!site) return { raw: null, hostname: null, hasExplicitHttps: false, hasExplicitHttp: false };
+    const urlCandidates = [
+      cleanString(site.customDomain),
+      cleanString(site.productionUrl),
+      cleanString(site.cloudflare?.productionUrl),
+      cleanString(site.url)
+    ].filter(Boolean);
+    const primaryUrl = urlCandidates[0] ?? null;
+    const hasExplicitHttp = Boolean(primaryUrl && /^http:\/\//i.test(primaryUrl));
+    const hasExplicitHttps = !hasExplicitHttp && urlCandidates.some((u) => /^https:\/\//i.test(u));
+    const displayRaw = cleanString(site.customDomain) ?? cleanString(site.domain) ?? cleanString(site.hostname) ?? cleanString(site.productionUrl) ?? cleanString(site.cloudflare?.productionUrl) ?? cleanString(site.url) ?? cleanString(site.previewUrl) ?? cleanString(site.cloudflare?.previewUrl) ?? null;
+    return {
+      raw: primaryUrl ?? displayRaw,
+      hostname: hostnameOf(displayRaw),
+      hasExplicitHttps,
+      hasExplicitHttp
+    };
+  }
+  function shortRepo(repo) {
+    const s = cleanString(repo);
+    if (!s) return null;
+    return s.replace(/^https?:\/\/(www\.)?github\.com\//i, "").replace(/\.git$/i, "").replace(/\/+$/, "");
+  }
+  function normalizeTimestampMs(value) {
+    if (value === null || value === void 0) return null;
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value > 1e12 ? value : value * 1e3;
+    }
+    if (typeof value === "string" && value.trim()) {
+      const asNum = Number(value);
+      if (Number.isFinite(asNum)) return asNum > 1e12 ? asNum : asNum * 1e3;
+      const parsed = Date.parse(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  }
+  function formatDeployTime(rawTime, nowMs) {
+    const ts = normalizeTimestampMs(rawTime);
+    if (ts === null) return null;
+    const ref = typeof nowMs === "number" && Number.isFinite(nowMs) ? nowMs : Date.now();
+    const diffSec = Math.max(0, Math.floor((ref - ts) / 1e3));
+    if (diffSec < 60) return "just now";
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 14) return `${diffDay}d ago`;
+    try {
+      return new Date(ts).toISOString().slice(0, 10);
+    } catch {
+      return null;
+    }
+  }
+  function latestDeployOf(deploys) {
+    if (!Array.isArray(deploys) || deploys.length === 0) return null;
+    let best = deploys[0];
+    let bestTs = normalizeTimestampMs(best?.created_at ?? best?.updated_at ?? best?.timestamp ?? best?.time);
+    for (let i = 1; i < deploys.length; i++) {
+      const d = deploys[i];
+      const ts = normalizeTimestampMs(d?.created_at ?? d?.updated_at ?? d?.timestamp ?? d?.time);
+      if (ts !== null && (bestTs === null || ts > bestTs)) {
+        best = d;
+        bestTs = ts;
+      }
+    }
+    return best;
+  }
+  function filterProjectTickets(project, tickets) {
+    if (!Array.isArray(tickets)) return [];
+    const pid = project?.id;
+    if (pid === null || pid === void 0) return tickets.filter(Boolean);
+    return tickets.filter((tk) => {
+      if (!tk) return false;
+      if (tk.project_id === null || tk.project_id === void 0) return true;
+      return String(tk.project_id) === String(pid);
+    });
+  }
+  function operatorTicketCounts(project, tickets, now) {
+    if (!Array.isArray(tickets)) {
+      return { needsYou: null, stalled: null, newCount: null, reviewCount: null };
+    }
+    const projectTickets = filterProjectTickets(project, tickets);
+    const nowMs = normalizeTimestampMs(now) ?? Date.now();
+    let newCount = 0;
+    let reviewCount = 0;
+    let inProgressTotal = 0;
+    let inProgressTimed = 0;
+    let stalledCount = 0;
+    for (const tk of projectTickets) {
+      if (tk.status === "new") {
+        newCount += 1;
+      } else if (tk.status === "review") {
+        reviewCount += 1;
+      } else if (tk.status === "in_progress") {
+        inProgressTotal += 1;
+        const updatedMs = normalizeTimestampMs(tk.updated_at);
+        if (updatedMs !== null) {
+          inProgressTimed += 1;
+          if (nowMs - updatedMs > STALL_MS) {
+            stalledCount += 1;
+          }
+        }
+      }
+    }
+    return {
+      needsYou: newCount + reviewCount,
+      stalled: inProgressTotal === 0 || inProgressTimed > 0 ? stalledCount : null,
+      newCount,
+      reviewCount
+    };
+  }
+  var EXACT_CHECK_STATION = Object.freeze({
+    domain: "domain",
+    dns: "domain",
+    email: "domain",
+    mail: "domain",
+    mx: "domain",
+    https: "https",
+    ssl: "https",
+    tls: "https",
+    hosting: "hosting",
+    host: "hosting",
+    code: "code",
+    repo: "code",
+    github: "code",
+    preview: "preview",
+    deploy: "deploy"
+  });
+  function matchCheckText(text) {
+    if (!text) return null;
+    if (/https|ssl|tls|(?:^|[^a-z])cert(?:ificate)?(?:$|[^a-z])/.test(text)) return "https";
+    if (/domain|dns|e-?mail|(?:^|[^a-z])mail(?:$|[^a-z])|(?:^|[^a-z])mx(?:$|[^a-z])/.test(text)) return "domain";
+    if (/repo|github|(?:^|[^a-z])git(?:$|[^a-z])|(?:^|[^a-z])code(?:$|[^a-z])/.test(text)) return "code";
+    if (/preview|staging/.test(text)) return "preview";
+    if (/hosting|(?:^|[^a-z])host(?:$|[^a-z])|cloudflare/.test(text)) return "hosting";
+    if (/deploy|publish/.test(text)) return "deploy";
+    return null;
+  }
+  function stationForCheck(check) {
+    if (!check || typeof check !== "object") return null;
+    const key = typeof check.key === "string" ? check.key.trim().toLowerCase() : "";
+    const label = typeof check.label === "string" ? check.label.trim().toLowerCase() : "";
+    if (key && Object.prototype.hasOwnProperty.call(EXACT_CHECK_STATION, key)) {
+      return EXACT_CHECK_STATION[key];
+    }
+    return matchCheckText(key) ?? matchCheckText(label);
+  }
+  function normalizeSetupChecks(project, t, nowMs) {
+    const raw = project?.setup?.checks;
+    const byStation = /* @__PURE__ */ new Map();
+    if (!Array.isArray(raw)) return byStation;
+    for (const check of raw) {
+      if (!check || typeof check !== "object") continue;
+      const state = typeof check.state === "string" ? check.state.trim().toLowerCase() : "";
+      if (!state || state === "unknown") continue;
+      const stationKey = stationForCheck(check);
+      if (!stationKey) continue;
+      const owner = check.owner === "you" || check.owner === "us" ? check.owner : null;
+      const ownerLabel = owner === "you" ? tx(t, "world.check.owner.you", "You") : owner === "us" ? tx(t, "world.check.owner.us", "PTech") : null;
+      const whoText = ownerLabel ? tx(t, "world.check.who", "Who: {who}", { who: ownerLabel }) : null;
+      const rawTime = check.checked_at ?? check.checkedAt ?? check.at ?? check.updated_at ?? check.updatedAt ?? check.updated ?? null;
+      const checkedAt = normalizeTimestampMs(rawTime);
+      const rel = checkedAt !== null ? formatDeployTime(checkedAt, nowMs) : null;
+      const checkedText = rel ? tx(t, "world.check.checkedAt", "Checked {time}", { time: rel }) : null;
+      const normalized = {
+        key: cleanString(check.key) ?? stationKey,
+        label: cleanString(check.label) ?? cleanString(check.key) ?? stationKey,
+        detail: cleanString(check.detail) ?? "",
+        state,
+        owner,
+        ownerLabel,
+        whoText,
+        blocking: Boolean(check.blocking),
+        checkedAt,
+        checkedText
+      };
+      if (!byStation.has(stationKey)) byStation.set(stationKey, []);
+      byStation.get(stationKey).push(normalized);
+    }
+    return byStation;
+  }
+  function applyStationChecks(station, mappedChecks, t) {
+    const checks = Array.isArray(mappedChecks) ? mappedChecks : [];
+    if (checks.length === 0) {
+      return { ...station, checks: [] };
+    }
+    const pendingCheck = checks.find((c) => c.state === "pending");
+    const readyCheck = checks.find((c) => c.state === "ready");
+    let { state, stateText, meta } = station;
+    if (pendingCheck) {
+      if (state !== "bad") {
+        const wasEmpty = state === "off" || state === "unknown";
+        state = "warn";
+        if (wasEmpty && pendingCheck.label) {
+          stateText = pendingCheck.label;
+        }
+      }
+    } else if (readyCheck && state === "unknown" && (station.key === "https" || station.key === "domain")) {
+      state = "ok";
+      if (station.key === "https") {
+        stateText = tx(t, "world.https.state.ok", "Locked with HTTPS");
+        meta = { ...meta, verified: true, verifiedByCheck: true };
+      } else {
+        stateText = readyCheck.detail || tx(t, "world.domain.state.checkReady", "Domain ready");
+        meta = { ...meta, verifiedByCheck: true };
+      }
+    }
+    return {
+      ...station,
+      state,
+      stateText,
+      meta,
+      checks
+    };
+  }
+  function stationsFor({ project = null, sites = [], tickets = void 0, deploys = null, t = (k) => k, now } = {}) {
+    const site = pickSite(project, sites);
+    const addr = extractAddress(site);
+    const projectTickets = filterProjectTickets(project, tickets ?? []);
+    const opCounts = operatorTicketCounts(project, tickets, now);
+    const checksByStation = normalizeSetupChecks(project, t, now);
+    const siteReady = site?.state === "ready";
+    const siteFailed = site?.state === "failed";
+    const siteBuilding = Boolean(site && !siteReady && !siteFailed);
+    const previewDeploy = cleanString(site?.previewDeploy);
+    const productionDeploy = cleanString(site?.productionDeploy);
+    const previewAhead = Boolean(siteReady && previewDeploy && previewDeploy !== productionDeploy);
+    const previewUrl = cleanString(site?.previewUrl) ?? cleanString(site?.cloudflare?.previewUrl);
+    let domainState = "off";
+    let domainText = tx(t, "world.domain.state.off", "Not connected yet");
+    if (site) {
+      if (siteFailed) {
+        domainState = "bad";
+        domainText = addr.hostname ? tx(t, "world.domain.state.failedHost", "Setup stopped for {host}", { host: addr.hostname }) : tx(t, "world.domain.state.failed", "Address setup stopped");
+      } else if (siteReady) {
+        if (addr.hostname) {
+          domainState = "ok";
+          domainText = tx(t, "world.domain.state.live", "Live at {host}", { host: addr.hostname });
+        } else {
+          domainState = "unknown";
+          domainText = tx(t, "world.domain.state.missing", "No web address reported yet");
+        }
+      } else {
+        domainState = "active";
+        domainText = addr.hostname ? tx(t, "world.domain.state.settingUpHost", "Setting up {host}", { host: addr.hostname }) : tx(t, "world.domain.state.settingUp", "Setting up your web address");
+      }
+    }
+    const isCloudflare = site?.host === "cloudflare";
+    const hostLabel = isCloudflare ? tx(t, "world.hosting.host.cloudflare", "Cloudflare (your account)") : tx(t, "world.hosting.host.ptech", "PTech hosting");
+    let hostingState = "off";
+    let hostingText = tx(t, "world.hosting.state.none", "No hosting set up yet");
+    if (site) {
+      if (siteFailed) {
+        hostingState = "bad";
+        hostingText = tx(t, "world.hosting.state.failed", "{host} \u2014 setup stopped", { host: hostLabel });
+      } else if (siteReady) {
+        hostingState = "ok";
+        hostingText = previewAhead ? tx(t, "world.hosting.state.livePreview", "Live on {host} (preview ready)", { host: hostLabel }) : tx(t, "world.hosting.state.live", "Live on {host}", { host: hostLabel });
+      } else {
+        hostingState = "active";
+        hostingText = tx(t, "world.hosting.state.building", "Setting up on {host}", { host: hostLabel });
+      }
+    }
+    const httpsVerified = Boolean(siteReady && addr.hasExplicitHttps);
+    const httpsState = httpsVerified ? "ok" : "unknown";
+    let httpsText;
+    if (httpsVerified) {
+      httpsText = tx(t, "world.https.state.ok", "Locked with HTTPS");
+    } else if (!site) {
+      httpsText = tx(t, "world.https.state.noSite", "Unknown \u2014 no live site yet");
+    } else if (siteFailed) {
+      httpsText = tx(t, "world.https.state.failed", "Unknown \u2014 site is not live");
+    } else if (!siteReady) {
+      httpsText = tx(t, "world.https.state.waiting", "Unknown \u2014 checked once live");
+    } else if (addr.hasExplicitHttp) {
+      httpsText = tx(t, "world.https.state.http", "Unknown \u2014 address is not HTTPS");
+    } else {
+      httpsText = tx(t, "world.https.state.unverified", "Unknown \u2014 HTTPS address not reported");
+    }
+    const repoSlug = shortRepo(project?.repo);
+    const repoError = cleanString(project?.repoError) ?? cleanString(project?.repo_error);
+    const repoWanted = Boolean(project?.repoWanted || project?.repo_wanted);
+    let codeState = "off";
+    let codeText = tx(t, "world.code.state.missing", "Not connected yet");
+    if (repoError) {
+      codeState = "bad";
+      codeText = tx(t, "world.code.state.error", "Connection problem \u2014 needs attention");
+    } else if (repoSlug) {
+      codeState = "ok";
+      codeText = tx(t, "world.code.state.connected", "Connected: {repo}", { repo: repoSlug });
+    } else if (repoWanted) {
+      codeState = "active";
+      codeText = tx(t, "world.code.state.settingUp", "Setting up your code repository");
+    } else if (project?.kind === "new") {
+      codeState = "ok";
+      codeText = tx(t, "world.code.state.ptech", "Kept by PTech");
+    }
+    const latestDeploy = latestDeployOf(deploys);
+    let deployState = "off";
+    let deployText = tx(t, "world.deploy.state.neutral", "Ready for the next update");
+    let deployTime = null;
+    if (latestDeploy) {
+      const rawStatus = String(latestDeploy.status ?? latestDeploy.state ?? "").toLowerCase();
+      deployTime = formatDeployTime(
+        latestDeploy.created_at ?? latestDeploy.updated_at ?? latestDeploy.timestamp ?? latestDeploy.time,
+        now
+      );
+      if (["failed", "error", "canceled", "cancelled"].includes(rawStatus)) {
+        deployState = "bad";
+        deployText = deployTime ? tx(t, "world.deploy.state.failedAt", "Last publish failed ({time})", { time: deployTime }) : tx(t, "world.deploy.state.failed", "Last publish failed");
+      } else if (["building", "running", "deploying", "pending", "queued", "in_progress"].includes(rawStatus)) {
+        deployState = "active";
+        deployText = tx(t, "world.deploy.state.building", "Publishing update now");
+      } else {
+        deployState = "ok";
+        deployText = deployTime ? tx(t, "world.deploy.state.okAt", "Last published {time}", { time: deployTime }) : tx(t, "world.deploy.state.ok", "Latest changes published");
+      }
+    } else if (!site) {
+      deployState = "off";
+      deployText = tx(t, "world.deploy.state.noSite", "Waiting for a site to publish to");
+    } else if (siteFailed) {
+      deployState = "bad";
+      deployText = tx(t, "world.deploy.state.paused", "Paused \u2014 hosting setup stopped");
+    } else if (siteBuilding) {
+      deployState = "active";
+      deployText = tx(t, "world.deploy.state.preparing", "Preparing first publish");
+    } else if (previewAhead) {
+      deployState = "warn";
+      deployText = tx(t, "world.deploy.state.previewAhead", "New preview ready to publish");
+    }
+    const inProgressCount = projectTickets.filter((tk) => tk.status === "in_progress").length;
+    const inReviewCount = projectTickets.filter((tk) => tk.status === "review").length;
+    const workingCount = inProgressCount + inReviewCount;
+    let agentState = "off";
+    let agentText = tx(t, "world.agent.state.idle", "Standing by \u2014 no active build");
+    if (workingCount > 0) {
+      agentState = "active";
+      if (inProgressCount > 0 && inReviewCount > 0) {
+        agentText = tx(
+          t,
+          "world.agent.state.both",
+          "Working on {count} requests ({building} building, {review} in review)",
+          { count: workingCount, building: inProgressCount, review: inReviewCount }
+        );
+      } else if (inReviewCount > 0) {
+        agentText = inReviewCount === 1 ? tx(t, "world.agent.state.reviewOne", "1 request in human review") : tx(t, "world.agent.state.reviewMany", "{count} requests in human review", { count: inReviewCount });
+      } else {
+        agentText = inProgressCount === 1 ? tx(t, "world.agent.state.buildOne", "Building 1 request") : tx(t, "world.agent.state.buildMany", "Building {count} requests", { count: inProgressCount });
+      }
+    }
+    const openCount = projectTickets.filter((tk) => OPEN_TICKET_STATUSES.has(tk.status)).length;
+    const requestState = openCount > 0 ? "active" : "off";
+    const requestText = openCount === 0 ? tx(t, "world.request.state.none", "No open requests") : openCount === 1 ? tx(t, "world.request.state.one", "1 open request") : tx(t, "world.request.state.many", "{count} open requests", { count: openCount });
+    let previewState = "off";
+    let previewText = tx(t, "world.preview.state.off", "No preview yet");
+    if (site && previewDeploy) {
+      if (siteFailed) {
+        previewState = "bad";
+        previewText = tx(t, "world.preview.state.failed", "Preview paused \u2014 site setup stopped");
+      } else if (!siteReady) {
+        previewState = "active";
+        previewText = tx(t, "world.preview.state.building", "Setting up preview");
+      } else if (previewAhead) {
+        previewState = "active";
+        previewText = tx(t, "world.preview.state.ahead", "A newer version is waiting to be published");
+      } else {
+        previewState = "ok";
+        previewText = tx(t, "world.preview.state.ok", "Matches your live site");
+      }
+    }
+    const baseStations = [
+      {
+        key: "domain",
+        title: tx(t, "world.domain.title", "Your web address"),
+        shortLabel: tx(t, "world.domain.short", "Web address"),
+        explain: tx(
+          t,
+          "world.domain.explain",
+          "The domain name people type into their browser to reach your website."
+        ),
+        state: domainState,
+        stateText: domainText,
+        x: STATION_POSITIONS.domain.x,
+        y: STATION_POSITIONS.domain.y,
+        meta: { hostname: addr.hostname, url: addr.raw }
+      },
+      {
+        key: "hosting",
+        title: tx(t, "world.hosting.title", "Where your site lives"),
+        shortLabel: tx(t, "world.hosting.short", "Hosting"),
+        explain: tx(
+          t,
+          "world.hosting.explain",
+          "The always-on server that stores your finished website and delivers it to every visitor."
+        ),
+        state: hostingState,
+        stateText: hostingText,
+        x: STATION_POSITIONS.hosting.x,
+        y: STATION_POSITIONS.hosting.y,
+        meta: {
+          hostLabel,
+          hostKind: site ? isCloudflare ? "cloudflare" : "ptech" : null,
+          previewAhead
+        }
+      },
+      {
+        key: "https",
+        title: tx(t, "world.https.title", "Secure connection (HTTPS)"),
+        shortLabel: tx(t, "world.https.short", "HTTPS"),
+        explain: tx(
+          t,
+          "world.https.explain",
+          "The browser padlock that encrypts traffic between visitors and your website."
+        ),
+        state: httpsState,
+        stateText: httpsText,
+        x: STATION_POSITIONS.https.x,
+        y: STATION_POSITIONS.https.y,
+        meta: { verified: httpsVerified }
+      },
+      {
+        key: "preview",
+        title: tx(t, "world.preview.title", "Preview"),
+        shortLabel: tx(t, "world.preview.short", "Preview"),
+        explain: tx(
+          t,
+          "world.preview.explain",
+          "A private copy of your site where changes are checked before going live."
+        ),
+        state: previewState,
+        stateText: previewText,
+        x: STATION_POSITIONS.preview.x,
+        y: STATION_POSITIONS.preview.y,
+        meta: {
+          ahead: previewAhead,
+          previewDeploy,
+          productionDeploy,
+          previewUrl
+        }
+      },
+      {
+        key: "code",
+        title: tx(t, "world.code.title", "Your code, with full history"),
+        shortLabel: tx(t, "world.code.short", "Code vault"),
+        explain: tx(
+          t,
+          "world.code.explain",
+          "A versioned filing cabinet of every file in your site so changes can always be reviewed or undone."
+        ),
+        state: codeState,
+        stateText: codeText,
+        x: STATION_POSITIONS.code.x,
+        y: STATION_POSITIONS.code.y,
+        meta: { repoSlug, keptByPTech: !repoSlug && !repoError && project?.kind === "new" }
+      },
+      {
+        key: "deploy",
+        title: tx(t, "world.deploy.title", "Publishing changes"),
+        shortLabel: tx(t, "world.deploy.short", "Publish"),
+        explain: tx(
+          t,
+          "world.deploy.explain",
+          "The automated conveyor that packages approved code and pushes updates onto your live hosting."
+        ),
+        state: deployState,
+        stateText: deployText,
+        x: STATION_POSITIONS.deploy.x,
+        y: STATION_POSITIONS.deploy.y,
+        meta: { deployTime, hasDeploys: Boolean(latestDeploy), previewAhead }
+      },
+      {
+        key: "agent",
+        title: tx(t, "world.agent.title", "PTech's AI builder + human review"),
+        shortLabel: tx(t, "world.agent.short", "Builder"),
+        explain: tx(
+          t,
+          "world.agent.explain",
+          "Our AI builds your requested changes in code while a PTech engineer reviews the result before it ships."
+        ),
+        state: agentState,
+        stateText: agentText,
+        x: STATION_POSITIONS.agent.x,
+        y: STATION_POSITIONS.agent.y,
+        meta: {
+          count: workingCount,
+          inProgress: inProgressCount,
+          inReview: inReviewCount,
+          needsYou: opCounts.needsYou,
+          stalled: opCounts.stalled
+        }
+      },
+      {
+        key: "request",
+        title: tx(t, "world.request.title", "Your requests"),
+        shortLabel: tx(t, "world.request.short", "Requests"),
+        explain: tx(
+          t,
+          "world.request.explain",
+          "Your inbox for asking for new pages, wording edits, or fixes in plain English."
+        ),
+        state: requestState,
+        stateText: requestText,
+        x: STATION_POSITIONS.request.x,
+        y: STATION_POSITIONS.request.y,
+        meta: {
+          count: openCount,
+          needsYou: opCounts.needsYou,
+          stalled: opCounts.stalled,
+          newCount: opCounts.newCount,
+          reviewCount: opCounts.reviewCount
+        }
+      }
+    ];
+    return baseStations.map(
+      (station) => applyStationChecks(station, checksByStation.get(station.key) ?? [], t)
+    );
+  }
+  function cablesFor(stations) {
+    const byKey = Object.fromEntries((stations ?? []).map((s) => [s.key, s]));
+    const st = (k) => byKey[k]?.state ?? "off";
+    const liveSite = st("hosting") === "ok";
+    const buildingSite = st("hosting") === "active";
+    const previewActive = st("preview") === "active";
+    const previewLive = st("preview") === "ok" || previewActive;
+    return [
+      {
+        id: "visitor-domain",
+        from: "visitor",
+        to: "domain",
+        flow: "visitor",
+        points: [
+          [VISITOR_POS.x, VISITOR_POS.y],
+          [STATION_POSITIONS.domain.x, STATION_POSITIONS.domain.y]
+        ],
+        active: liveSite || st("domain") === "active",
+        connected: st("domain") === "ok" || st("domain") === "active"
+      },
+      {
+        id: "domain-https",
+        from: "domain",
+        to: "https",
+        flow: "visitor",
+        points: [
+          [STATION_POSITIONS.domain.x, STATION_POSITIONS.domain.y],
+          [STATION_POSITIONS.https.x, STATION_POSITIONS.https.y]
+        ],
+        active: liveSite || buildingSite,
+        connected: st("domain") === "ok" || buildingSite
+      },
+      {
+        id: "https-hosting",
+        from: "https",
+        to: "hosting",
+        flow: "visitor",
+        points: [
+          [STATION_POSITIONS.https.x, STATION_POSITIONS.https.y],
+          [STATION_POSITIONS.hosting.x, STATION_POSITIONS.hosting.y]
+        ],
+        active: liveSite || buildingSite,
+        connected: liveSite || buildingSite
+      },
+      {
+        id: "request-agent",
+        from: "request",
+        to: "agent",
+        flow: "build",
+        points: [
+          [STATION_POSITIONS.request.x, STATION_POSITIONS.request.y],
+          [STATION_POSITIONS.agent.x, STATION_POSITIONS.agent.y]
+        ],
+        active: st("request") === "active" || st("agent") === "active",
+        connected: st("request") === "active" || st("agent") === "active"
+      },
+      {
+        id: "agent-code",
+        from: "agent",
+        to: "code",
+        flow: "build",
+        points: [
+          [STATION_POSITIONS.agent.x, STATION_POSITIONS.agent.y],
+          [STATION_POSITIONS.code.x, STATION_POSITIONS.code.y]
+        ],
+        active: st("agent") === "active",
+        connected: st("code") === "ok" || st("agent") === "active"
+      },
+      {
+        id: "code-deploy",
+        from: "code",
+        to: "deploy",
+        flow: "build",
+        points: [
+          [STATION_POSITIONS.code.x, STATION_POSITIONS.code.y],
+          [STATION_POSITIONS.deploy.x, STATION_POSITIONS.deploy.y]
+        ],
+        active: st("deploy") === "active" || buildingSite,
+        connected: st("code") === "ok" && st("deploy") !== "off"
+      },
+      {
+        id: "deploy-preview",
+        from: "deploy",
+        to: "preview",
+        flow: "build",
+        points: [
+          [STATION_POSITIONS.deploy.x, STATION_POSITIONS.deploy.y],
+          [STATION_POSITIONS.preview.x, STATION_POSITIONS.preview.y]
+        ],
+        active: st("deploy") === "active" || previewActive || buildingSite,
+        connected: previewLive || st("deploy") === "ok" || st("deploy") === "active"
+      },
+      {
+        id: "preview-hosting",
+        from: "preview",
+        to: "hosting",
+        flow: "build",
+        points: [
+          [STATION_POSITIONS.preview.x, STATION_POSITIONS.preview.y],
+          [STATION_POSITIONS.hosting.x, STATION_POSITIONS.hosting.y]
+        ],
+        active: st("deploy") === "active" || previewActive || buildingSite,
+        connected: liveSite || previewLive
+      }
+    ];
+  }
+
+  // packages/admin-ui/src/project-world.jsx
+  var VIEW_WIDTH = 760;
+  var VIEW_HEIGHT = 440;
+  var STATE_LABEL = {
+    ok: ["world.state.ok", "Live"],
+    active: ["world.state.active", "Working"],
+    warn: ["world.state.warn", "Pending"],
+    bad: ["world.state.bad", "Needs attention"],
+    off: ["world.state.off", "Idle"],
+    unknown: ["world.state.unknown", "Unknown"]
+  };
+  var LABEL_OFFSETS = {
+    hosting: { dx: 0, dy: -108 },
+    https: { dx: -56, dy: -34 },
+    domain: { dx: -62, dy: -28 },
+    preview: { dx: 24, dy: -74 },
+    deploy: { dx: 30, dy: -70 },
+    code: { dx: 62, dy: -22 },
+    request: { dx: -46, dy: 40 },
+    agent: { dx: 10, dy: 46 }
+  };
+  function IsoBox({ x, y, z, dx, dy, dz, tone: tone2 = "base", className = "" }) {
+    const b = isoBox(x, y, z, dx, dy, dz);
+    const topCls = tone2 === "accent" ? "aw-world__face-accent-top" : tone2 === "ok" ? "aw-world__face-ok" : tone2 === "bad" ? "aw-world__face-bad" : tone2 === "warn" ? "aw-world__face-warn" : "aw-world__face-top";
+    const leftCls = tone2 === "accent" ? "aw-world__face-accent-left" : "aw-world__face-left";
+    const rightCls = tone2 === "accent" ? "aw-world__face-accent-right" : "aw-world__face-right";
+    return /* @__PURE__ */ jsxs("g", { className: className || void 0, children: [
+      /* @__PURE__ */ jsx("polygon", { className: leftCls, points: b.left }),
+      /* @__PURE__ */ jsx("polygon", { className: rightCls, points: b.right }),
+      /* @__PURE__ */ jsx("polygon", { className: topCls, points: b.top })
+    ] });
+  }
+  function CableArrow({ p1, p2, u = 0.52, active }) {
+    const mx = p1.x + (p2.x - p1.x) * u;
+    const my = p1.y + (p2.y - p1.y) * u;
+    const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
+    return /* @__PURE__ */ jsx(
+      "polygon",
+      {
+        className: active ? "aw-world__cable-arrow is-active" : "aw-world__cable-arrow",
+        points: "4.5,0 -3.5,-3 -2,0 -3.5,3",
+        transform: `translate(${mx.toFixed(1)}, ${my.toFixed(1)}) rotate(${angle.toFixed(1)})`
+      }
+    );
+  }
+  function CountBadge({ x, y, z, count }) {
+    if (!count) return null;
+    const p = iso(x, y, z);
+    const text = count > 99 ? "99+" : String(count);
+    const rx = text.length > 2 ? 14 : 10.5;
+    return /* @__PURE__ */ jsxs("g", { "aria-hidden": "true", children: [
+      /* @__PURE__ */ jsx(
+        "rect",
+        {
+          className: "aw-world__badge-bg",
+          x: p.x - rx,
+          y: p.y - 10.5,
+          width: rx * 2,
+          height: 21,
+          rx: 10.5
+        }
+      ),
+      /* @__PURE__ */ jsx("text", { className: "aw-world__badge-text", x: p.x, y: p.y + 0.5, children: text })
+    ] });
+  }
+  function HostingObject({ station }) {
+    const { x, y, state, meta } = station;
+    const x0 = x - 0.62;
+    const y0 = y - 0.58;
+    const w = 1.24;
+    const d = 1.16;
+    const h = 1.22;
+    const roofTone = state === "active" ? "accent" : state === "bad" ? "bad" : state === "warn" ? "warn" : "base";
+    const winCls = state === "ok" ? "aw-world__window aw-world__window--ok" : state === "active" ? "aw-world__window aw-world__window--lit" : "aw-world__window";
+    const doorPts = isoPoints([
+      [x - 0.19, y0 + d, 0.04],
+      [x + 0.19, y0 + d, 0.04],
+      [x + 0.19, y0 + d, 0.54],
+      [x - 0.19, y0 + d, 0.54]
+    ]);
+    const winL = isoPoints([
+      [x0 + 0.18, y0 + d, 0.72],
+      [x0 + 0.52, y0 + d, 0.72],
+      [x0 + 0.52, y0 + d, 1.02],
+      [x0 + 0.18, y0 + d, 1.02]
+    ]);
+    const winR = isoPoints([
+      [x0 + 0.72, y0 + d, 0.72],
+      [x0 + 1.06, y0 + d, 0.72],
+      [x0 + 1.06, y0 + d, 1.02],
+      [x0 + 0.72, y0 + d, 1.02]
+    ]);
+    const vents = [0.3, 0.56, 0.82, 1.04].map((vz) => {
+      const a = iso(x0 + w, y0 + 0.2, vz);
+      const b = iso(x0 + w, y0 + d - 0.2, vz);
+      return { vz, a, b };
+    });
+    const mastBase = iso(x + 0.25, y - 0.15, h + 0.24);
+    const mastTop = iso(x + 0.25, y - 0.15, h + 0.62);
+    const hostPlatePt = iso(x, y, h + 0.1);
+    return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
+      /* @__PURE__ */ jsx(IsoBox, { x: x0 - 0.08, y: y0 - 0.08, z: 0, dx: w + 0.16, dy: d + 0.16, dz: 0.1 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0, y: y0, z: 0.1, dx: w, dy: d, dz: h - 0.1 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0 - 0.04, y: y0 - 0.04, z: h, dx: w + 0.08, dy: d + 0.08, dz: 0.1, tone: roofTone }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0 + 0.16, y: y0 + 0.18, z: h + 0.1, dx: 0.46, dy: 0.42, dz: 0.22 }),
+      /* @__PURE__ */ jsx("line", { className: "aw-world__ink-line", x1: mastBase.x, y1: mastBase.y, x2: mastTop.x, y2: mastTop.y }),
+      /* @__PURE__ */ jsx("circle", { className: `aw-world__beacon aw-world__beacon--${state}`, cx: mastTop.x, cy: mastTop.y, r: 4.5 }),
+      /* @__PURE__ */ jsx(
+        "polygon",
+        {
+          className: state === "ok" ? "aw-world__face-ok" : state === "bad" ? "aw-world__face-bad" : "aw-world__window",
+          points: doorPts
+        }
+      ),
+      /* @__PURE__ */ jsx("polygon", { className: winCls, points: winL }),
+      /* @__PURE__ */ jsx("polygon", { className: winCls, points: winR }),
+      vents.map((v) => /* @__PURE__ */ jsx("line", { className: "aw-world__detail-line", x1: v.a.x, y1: v.a.y, x2: v.b.x, y2: v.b.y }, v.vz)),
+      meta?.hostKind ? /* @__PURE__ */ jsx("text", { className: "aw-world__micro", x: hostPlatePt.x, y: hostPlatePt.y + 2, children: meta.hostKind === "cloudflare" ? "CF" : "PT" }) : null
+    ] });
+  }
+  function HttpsObject({ station }) {
+    const { x, y, state } = station;
+    const verified = state === "ok";
+    const tone2 = verified ? "ok" : state === "warn" ? "warn" : "base";
+    const archH = 0.88;
+    const lockCenter = iso(x, y, archH + 0.34);
+    const shackleL = iso(x - 0.11, y, archH + 0.32);
+    const shackleR = iso(x + 0.11, y, archH + 0.32);
+    const shackleTop = iso(x, y, archH + 0.58);
+    const shacklePath = verified ? `M ${shackleL.x} ${shackleL.y} C ${shackleL.x} ${shackleTop.y - 4}, ${shackleR.x} ${shackleTop.y - 4}, ${shackleR.x} ${shackleR.y}` : `M ${shackleL.x} ${shackleL.y} C ${shackleL.x} ${shackleTop.y - 4}, ${shackleR.x} ${shackleTop.y - 4}, ${shackleR.x + 2} ${shackleR.y - 7}`;
+    return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.44, y: y - 0.1, z: 0, dx: 0.18, dy: 0.2, dz: archH }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x + 0.26, y: y - 0.1, z: 0, dx: 0.18, dy: 0.2, dz: archH }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.48, y: y - 0.12, z: archH, dx: 0.96, dy: 0.24, dz: 0.14, tone: tone2 }),
+      /* @__PURE__ */ jsx("path", { className: "aw-world__ink-line", d: shacklePath }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.19, y: y - 0.12, z: archH + 0.08, dx: 0.38, dy: 0.24, dz: 0.28, tone: tone2 }),
+      verified ? /* @__PURE__ */ jsx("circle", { className: "aw-world__beacon aw-world__beacon--ok", cx: lockCenter.x, cy: lockCenter.y + 8, r: 2.3 }) : state === "warn" ? /* @__PURE__ */ jsx("circle", { className: "aw-world__beacon aw-world__beacon--warn", cx: lockCenter.x, cy: lockCenter.y + 8, r: 2.6 }) : /* @__PURE__ */ jsx("text", { className: "aw-world__micro", x: lockCenter.x, y: lockCenter.y + 11, children: "?" })
+    ] });
+  }
+  function DomainObject({ station }) {
+    const { x, y, state, meta } = station;
+    const boardTone = state === "active" ? "accent" : state === "bad" ? "bad" : state === "warn" ? "warn" : "base";
+    const l1a = iso(x - 0.34, y + 0.08, 0.96);
+    const l1b = iso(x + 0.32, y + 0.08, 0.96);
+    const l2a = iso(x - 0.34, y + 0.08, 0.82);
+    const l2b = iso(x + 0.14, y + 0.08, 0.82);
+    const cap = iso(x, y, 1.24);
+    const shortHost = meta?.hostname ? meta.hostname.length > 18 ? `${meta.hostname.slice(0, 16)}\u2026` : meta.hostname : null;
+    const hostPt = iso(x + 0.62, y + 0.05, 0);
+    return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.24, y: y - 0.22, z: 0, dx: 0.48, dy: 0.44, dz: 0.12 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.07, y: y - 0.07, z: 0.12, dx: 0.14, dy: 0.14, dz: 1.06 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.44, y: y - 0.08, z: 0.68, dx: 0.88, dy: 0.16, dz: 0.42, tone: boardTone }),
+      /* @__PURE__ */ jsx("line", { className: "aw-world__ink-line", x1: l1a.x, y1: l1a.y, x2: l1b.x, y2: l1b.y }),
+      /* @__PURE__ */ jsx("line", { className: "aw-world__detail-line", x1: l2a.x, y1: l2a.y, x2: l2b.x, y2: l2b.y }),
+      /* @__PURE__ */ jsx("circle", { className: `aw-world__beacon aw-world__beacon--${state}`, cx: cap.x, cy: cap.y, r: 4 }),
+      shortHost ? /* @__PURE__ */ jsx("text", { className: "aw-world__micro", x: hostPt.x + 4, y: hostPt.y + 4, children: shortHost }) : null
+    ] });
+  }
+  function PreviewObject({ station }) {
+    const { x, y, state } = station;
+    const roofTone = state === "active" ? "accent" : state === "ok" ? "ok" : state === "warn" ? "warn" : state === "bad" ? "bad" : "base";
+    const winCls = state === "ok" ? "aw-world__window aw-world__window--ok" : state === "active" ? "aw-world__window aw-world__window--lit" : "aw-world__window";
+    const doorPts = isoPoints([
+      [x - 0.1, y + 0.25, 0.15],
+      [x + 0.09, y + 0.25, 0.15],
+      [x + 0.09, y + 0.25, 0.39],
+      [x - 0.1, y + 0.25, 0.39]
+    ]);
+    const winPts = isoPoints([
+      [x + 0.28, y - 0.12, 0.25],
+      [x + 0.28, y + 0.13, 0.25],
+      [x + 0.28, y + 0.13, 0.44],
+      [x + 0.28, y - 0.12, 0.44]
+    ]);
+    const c = iso(x, y, 0.15);
+    const rx = 28;
+    const ry = 14.5;
+    const domeH = 44;
+    const backRim = `M ${c.x - rx} ${c.y} A ${rx} ${ry} 0 0 1 ${c.x + rx} ${c.y}`;
+    const domeShell = [
+      `M ${c.x - rx} ${c.y}`,
+      `C ${c.x - rx} ${c.y - domeH}, ${c.x + rx} ${c.y - domeH}, ${c.x + rx} ${c.y}`,
+      `A ${rx} ${ry} 0 0 1 ${c.x - rx} ${c.y}`,
+      "Z"
+    ].join(" ");
+    const shineArc = `M ${c.x - rx + 6} ${c.y - 9} C ${c.x - rx + 7} ${c.y - 24}, ${c.x - 10} ${c.y - 31}, ${c.x - 4} ${c.y - 32}`;
+    const apexY = c.y - 36.5;
+    return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.52, y: y - 0.48, z: 0, dx: 1.04, dy: 0.96, dz: 0.14 }),
+      /* @__PURE__ */ jsx("path", { className: "aw-world__cloche-rim-back", d: backRim }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.28, y: y - 0.25, z: 0.14, dx: 0.56, dy: 0.5, dz: 0.4 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.31, y: y - 0.28, z: 0.54, dx: 0.62, dy: 0.56, dz: 0.07, tone: roofTone }),
+      /* @__PURE__ */ jsx(
+        "polygon",
+        {
+          className: state === "ok" ? "aw-world__face-ok" : state === "active" ? "aw-world__face-accent-top" : "aw-world__window",
+          points: doorPts
+        }
+      ),
+      /* @__PURE__ */ jsx("polygon", { className: winCls, points: winPts }),
+      /* @__PURE__ */ jsx(
+        "path",
+        {
+          className: state === "active" ? "aw-world__cloche-glass aw-world__cloche-glass--active" : state === "warn" ? "aw-world__cloche-glass aw-world__cloche-glass--warn" : "aw-world__cloche-glass",
+          d: domeShell
+        }
+      ),
+      /* @__PURE__ */ jsx("path", { className: "aw-world__cloche-shine", d: shineArc }),
+      /* @__PURE__ */ jsx("circle", { className: `aw-world__beacon aw-world__beacon--${state}`, cx: c.x, cy: apexY, r: 4 })
+    ] });
+  }
+  function CodeObject({ station }) {
+    const { x, y, state } = station;
+    const x0 = x - 0.42;
+    const y0 = y - 0.4;
+    const w = 0.84;
+    const d = 0.8;
+    const h = 1.24;
+    const topTone = state === "bad" ? "bad" : state === "warn" ? "warn" : state === "active" ? "accent" : "base";
+    const drawerTops = [0.42, 0.82];
+    const handles = [0.22, 0.62, 1.02];
+    const beaconPt = iso(x0 + w - 0.14, y0 + 0.14, h + 0.04);
+    return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
+      /* @__PURE__ */ jsx(IsoBox, { x: x0, y: y0, z: 0, dx: w, dy: d, dz: h, tone: topTone }),
+      drawerTops.map((dz) => {
+        const a = iso(x0 + 0.05, y0 + d, dz);
+        const b = iso(x0 + w - 0.05, y0 + d, dz);
+        return /* @__PURE__ */ jsx("line", { className: "aw-world__ink-line", x1: a.x, y1: a.y, x2: b.x, y2: b.y }, dz);
+      }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0 + 0.08, y: y0 + d, z: 0.44, dx: w - 0.16, dy: 0.22, dz: 0.34 }),
+      /* @__PURE__ */ jsx(
+        IsoBox,
+        {
+          x: x0 + 0.16,
+          y: y0 + d + 0.04,
+          z: 0.78,
+          dx: 0.26,
+          dy: 0.08,
+          dz: 0.12,
+          tone: state === "ok" ? "ok" : state === "bad" ? "bad" : state === "warn" ? "warn" : "base"
+        }
+      ),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0 + 0.45, y: y0 + d + 0.06, z: 0.78, dx: 0.24, dy: 0.08, dz: 0.09 }),
+      handles.map((hz) => {
+        const yFace = hz === 0.62 ? y0 + d + 0.22 : y0 + d;
+        const a = iso(x - 0.13, yFace, hz);
+        const b = iso(x + 0.13, yFace, hz);
+        return /* @__PURE__ */ jsx("line", { className: "aw-world__ink-line", x1: a.x, y1: a.y, x2: b.x, y2: b.y }, hz);
+      }),
+      /* @__PURE__ */ jsx("circle", { className: `aw-world__beacon aw-world__beacon--${state}`, cx: beaconPt.x, cy: beaconPt.y, r: 4 })
+    ] });
+  }
+  function DeployObject({ station }) {
+    const { x, y, state } = station;
+    const bedX = x - 0.64;
+    const bedY = y - 0.32;
+    const bedW = 1.28;
+    const bedD = 0.64;
+    const bedH = 0.22;
+    const crateTone = state === "active" ? "accent" : state === "ok" ? "ok" : state === "warn" ? "warn" : state === "bad" ? "bad" : "base";
+    const rollers = [-0.46, -0.22, 0.02, 0.26, 0.48].map((rx) => {
+      const a = iso(x + rx, bedY + 0.08, bedH);
+      const b = iso(x + rx, bedY + bedD - 0.08, bedH);
+      return { rx, a, b };
+    });
+    const hookTop = iso(x - 0.04, y, 0.98);
+    const hookBot = iso(x - 0.04, y, 0.62);
+    const beaconPt = iso(x + 0.32, y - 0.32, 1.14);
+    return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
+      /* @__PURE__ */ jsx(IsoBox, { x: bedX, y: bedY, z: 0, dx: bedW, dy: bedD, dz: bedH }),
+      rollers.map((r) => /* @__PURE__ */ jsx("line", { className: "aw-world__detail-line", x1: r.a.x, y1: r.a.y, x2: r.b.x, y2: r.b.y }, r.rx)),
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.08, y: bedY - 0.08, z: 0, dx: 0.16, dy: 0.14, dz: 1.04 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.24, y: y - 0.18, z: bedH, dx: 0.42, dy: 0.36, dz: 0.38, tone: crateTone }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.08, y: bedY + bedD - 0.06, z: 0, dx: 0.16, dy: 0.14, dz: 1.04 }),
+      /* @__PURE__ */ jsx(
+        IsoBox,
+        {
+          x: x - 0.12,
+          y: bedY - 0.12,
+          z: 0.98,
+          dx: 0.24,
+          dy: bedD + 0.24,
+          dz: 0.14,
+          tone: state === "active" ? "accent" : "base"
+        }
+      ),
+      /* @__PURE__ */ jsx("line", { className: "aw-world__ink-line", x1: hookTop.x, y1: hookTop.y, x2: hookBot.x, y2: hookBot.y }),
+      /* @__PURE__ */ jsx("circle", { className: `aw-world__beacon aw-world__beacon--${state}`, cx: beaconPt.x, cy: beaconPt.y, r: 3.8 })
+    ] });
+  }
+  function AgentObject({ station }) {
+    const { x, y, state, meta } = station;
+    const x0 = x - 0.56;
+    const y0 = y - 0.42;
+    const w = 1.12;
+    const d = 0.84;
+    const deskZ = 0.52;
+    const working = state === "active";
+    const screenPts = isoPoints([
+      [x - 0.22, y0 + 0.28, deskZ + 0.2],
+      [x + 0.24, y0 + 0.28, deskZ + 0.2],
+      [x + 0.24, y0 + 0.28, deskZ + 0.54],
+      [x - 0.22, y0 + 0.28, deskZ + 0.54]
+    ]);
+    const c1a = iso(x0 + 0.14, y0 + 0.56, deskZ + 0.12);
+    const c1b = iso(x0 + 0.34, y0 + 0.56, deskZ + 0.12);
+    return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
+      /* @__PURE__ */ jsx(IsoBox, { x: x0 + 0.06, y: y0 + 0.06, z: 0, dx: 0.24, dy: d - 0.12, dz: deskZ }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0 + w - 0.3, y: y0 + 0.06, z: 0, dx: 0.24, dy: d - 0.12, dz: deskZ }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0, y: y0, z: deskZ, dx: w, dy: d, dz: 0.09 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.07, y: y0 + 0.15, z: deskZ + 0.09, dx: 0.14, dy: 0.12, dz: 0.1 }),
+      /* @__PURE__ */ jsx(
+        IsoBox,
+        {
+          x: x - 0.28,
+          y: y0 + 0.14,
+          z: deskZ + 0.16,
+          dx: 0.58,
+          dy: 0.14,
+          dz: 0.44,
+          tone: working ? "accent" : "base"
+        }
+      ),
+      /* @__PURE__ */ jsx("polygon", { className: working ? "aw-world__window aw-world__window--lit" : "aw-world__window", points: screenPts }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.14, y: y0 + 0.44, z: deskZ + 0.09, dx: 0.42, dy: 0.2, dz: 0.04 }),
+      /* @__PURE__ */ jsx(
+        IsoBox,
+        {
+          x: x0 + 0.1,
+          y: y0 + 0.44,
+          z: deskZ + 0.09,
+          dx: 0.28,
+          dy: 0.26,
+          dz: 0.03,
+          tone: working ? "accent" : "base"
+        }
+      ),
+      /* @__PURE__ */ jsx("line", { className: "aw-world__detail-line", x1: c1a.x, y1: c1a.y, x2: c1b.x, y2: c1b.y }),
+      /* @__PURE__ */ jsx(CountBadge, { x: x + 0.38, y: y - 0.22, z: deskZ + 0.68, count: meta?.count ?? 0 })
+    ] });
+  }
+  function RequestObject({ station }) {
+    const { x, y, state, meta } = station;
+    const x0 = x - 0.46;
+    const y0 = y - 0.4;
+    const w = 0.92;
+    const d = 0.8;
+    const openCount = meta?.count ?? 0;
+    const sheets = openCount > 0 ? Math.min(3, openCount) : 0;
+    return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
+      /* @__PURE__ */ jsx(IsoBox, { x: x0 + 0.08, y: y0 + 0.08, z: 0, dx: w - 0.16, dy: d - 0.16, dz: 0.16 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0, y: y0, z: 0.16, dx: w, dy: d, dz: 0.1 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0, y: y0, z: 0.26, dx: w, dy: 0.08, dz: 0.22 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0, y: y0 + 0.08, z: 0.26, dx: 0.08, dy: d - 0.08, dz: 0.22 }),
+      sheets === 0 ? /* @__PURE__ */ jsx(IsoBox, { x: x0 + 0.16, y: y0 + 0.16, z: 0.26, dx: w - 0.32, dy: d - 0.32, dz: 0.04 }) : Array.from({ length: sheets }).map((_, i) => /* @__PURE__ */ jsx(
+        IsoBox,
+        {
+          x: x0 + 0.15 + i * 0.03,
+          y: y0 + 0.15 + i * 0.02,
+          z: 0.26 + i * 0.1,
+          dx: w - 0.34,
+          dy: d - 0.32,
+          dz: 0.08,
+          tone: i === sheets - 1 && state === "active" ? "accent" : "base"
+        },
+        i
+      )),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0 + w - 0.08, y: y0 + 0.08, z: 0.26, dx: 0.08, dy: d - 0.08, dz: 0.16 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0 + 0.08, y: y0 + d - 0.08, z: 0.26, dx: w - 0.16, dy: 0.08, dz: 0.14 }),
+      /* @__PURE__ */ jsx(CountBadge, { x: x + 0.34, y: y - 0.24, z: 0.78, count: openCount })
+    ] });
+  }
+  function StationGeometry({ station }) {
+    switch (station.key) {
+      case "hosting":
+        return /* @__PURE__ */ jsx(HostingObject, { station });
+      case "https":
+        return /* @__PURE__ */ jsx(HttpsObject, { station });
+      case "domain":
+        return /* @__PURE__ */ jsx(DomainObject, { station });
+      case "preview":
+        return /* @__PURE__ */ jsx(PreviewObject, { station });
+      case "code":
+        return /* @__PURE__ */ jsx(CodeObject, { station });
+      case "deploy":
+        return /* @__PURE__ */ jsx(DeployObject, { station });
+      case "agent":
+        return /* @__PURE__ */ jsx(AgentObject, { station });
+      case "request":
+        return /* @__PURE__ */ jsx(RequestObject, { station });
+      default:
+        return null;
+    }
+  }
+  function ChecksList({ checks, t }) {
+    if (!Array.isArray(checks) || checks.length === 0) return null;
+    return /* @__PURE__ */ jsxs("div", { className: "aw-world__checks", children: [
+      /* @__PURE__ */ jsx("span", { className: "aw-world__status-label", children: tx(t, "world.check.section", "Setup checks") }),
+      /* @__PURE__ */ jsx("ul", { className: "aw-world__check-list", children: checks.map((c) => {
+        const mark = c.state === "ready" ? "\u2713" : c.state === "pending" ? "\u2026" : "\u25CB";
+        return /* @__PURE__ */ jsxs("li", { className: `aw-world__check-item is-${c.state}`, children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-world__check-mark", "aria-hidden": "true", children: mark }),
+          /* @__PURE__ */ jsxs("div", { className: "aw-world__check-body", children: [
+            /* @__PURE__ */ jsx("strong", { className: "aw-world__check-label", children: c.label }),
+            c.detail ? /* @__PURE__ */ jsx("p", { className: "aw-world__check-detail", children: c.detail }) : null,
+            c.whoText || c.checkedText ? /* @__PURE__ */ jsxs("div", { className: "aw-world__check-meta", children: [
+              c.whoText ? /* @__PURE__ */ jsx("span", { className: "aw-world__check-who", children: c.whoText }) : null,
+              c.checkedText ? /* @__PURE__ */ jsx("span", { className: "aw-world__check-time", children: c.checkedText }) : null
+            ] }) : null
+          ] })
+        ] }, c.key);
+      }) })
+    ] });
+  }
+  function OperatorExtras({ station }) {
+    if (station.key !== "agent" && station.key !== "request") return null;
+    const needsYou2 = station.meta?.needsYou;
+    const stalled = station.meta?.stalled;
+    if (needsYou2 == null && stalled == null) return null;
+    return /* @__PURE__ */ jsxs("div", { className: "aw-world__ops", children: [
+      /* @__PURE__ */ jsx("span", { className: "aw-world__status-label", children: "Operator" }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-world__op-chips", children: [
+        needsYou2 != null ? /* @__PURE__ */ jsxs("span", { className: needsYou2 > 0 ? "aw-world__op-chip aw-world__op-chip--warn" : "aw-world__op-chip", children: [
+          "Needs you: ",
+          /* @__PURE__ */ jsx("strong", { children: needsYou2 })
+        ] }) : null,
+        stalled != null ? /* @__PURE__ */ jsxs("span", { className: stalled > 0 ? "aw-world__op-chip aw-world__op-chip--bad" : "aw-world__op-chip", children: [
+          "Stalled (>45m): ",
+          /* @__PURE__ */ jsx("strong", { children: stalled })
+        ] }) : null
+      ] })
+    ] });
+  }
+  function operatorSummaryText(station) {
+    if (station.key !== "agent" && station.key !== "request") return "";
+    const parts = [];
+    if (station.meta?.needsYou != null) parts.push(`Needs you: ${station.meta.needsYou}`);
+    if (station.meta?.stalled != null) parts.push(`Stalled: ${station.meta.stalled}`);
+    return parts.length ? ` Operator: ${parts.join(", ")}.` : "";
+  }
+  function ProjectWorld({
+    project,
+    sites = [],
+    tickets = null,
+    deploys = null,
+    t = (k) => k,
+    now,
+    initialStation = "hosting",
+    onSelect
+  }) {
+    const stations = useMemo(
+      () => stationsFor({ project, sites, tickets, deploys, t, now }),
+      [project, sites, tickets, deploys, t, now]
+    );
+    const paintedStations = useMemo(
+      () => [...stations].sort((a, b) => a.x + a.y - (b.x + b.y)),
+      [stations]
+    );
+    const cables = useMemo(() => cablesFor(stations), [stations]);
+    const dots = useMemo(() => floorDots(stations, 0.42), [stations]);
+    const [selectedKey, setSelectedKey] = useState(initialStation);
+    const activeStation = stations.find((s) => s.key === selectedKey) ?? stations[0];
+    const activateStation = (key, emit) => {
+      setSelectedKey(key);
+      if (emit) onSelect?.(key);
+    };
+    const floorPlate = useMemo(
+      () => isoPoints([
+        [FLOOR_BOUNDS.minX, FLOOR_BOUNDS.minY, 0],
+        [FLOOR_BOUNDS.maxX, FLOOR_BOUNDS.minY, 0],
+        [FLOOR_BOUNDS.maxX, FLOOR_BOUNDS.maxY, 0],
+        [FLOOR_BOUNDS.minX, FLOOR_BOUNDS.maxY, 0]
+      ]),
+      []
+    );
+    const visitorPt = iso(VISITOR_POS.x, VISITOR_POS.y, 0);
+    const visitorNext = iso(STATION_POSITIONS.domain.x, STATION_POSITIONS.domain.y, 0);
+    const visitorsZonePt = iso(2.55, 5.25, 0);
+    const workshopZonePt = iso(6.6, 5.2, 0);
+    const [stateKey, stateDefault] = STATE_LABEL[activeStation.state] ?? STATE_LABEL.off;
+    const stateBadgeText = tx(t, stateKey, stateDefault);
+    return /* @__PURE__ */ jsx("div", { className: "aw-world-wrap", children: /* @__PURE__ */ jsxs("figure", { className: "aw-world", children: [
+      /* @__PURE__ */ jsx("div", { className: "aw-world__stage", children: /* @__PURE__ */ jsxs(
+        "svg",
+        {
+          className: "aw-world__svg",
+          viewBox: `0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`,
+          preserveAspectRatio: "xMidYMid meet",
+          role: "img",
+          "aria-label": tx(t, "world.mapLabel", "Interactive map showing how your website works"),
+          children: [
+            /* @__PURE__ */ jsx("polygon", { className: "aw-world__floor-plate", points: floorPlate }),
+            /* @__PURE__ */ jsx("g", { "aria-hidden": "true", children: dots.map((d) => /* @__PURE__ */ jsx(
+              "circle",
+              {
+                className: d.active ? "aw-world__dot aw-world__dot--active" : "aw-world__dot",
+                cx: d.x,
+                cy: d.y,
+                r: d.active ? 2 : 1.25
+              },
+              d.id
+            )) }),
+            /* @__PURE__ */ jsx("text", { className: "aw-world__zone-label", x: visitorsZonePt.x, y: visitorsZonePt.y, textAnchor: "middle", children: tx(t, "world.zone.visitors", "Visitors") }),
+            /* @__PURE__ */ jsx("text", { className: "aw-world__zone-label", x: workshopZonePt.x, y: workshopZonePt.y, textAnchor: "middle", children: tx(t, "world.zone.workshop", "Workshop") }),
+            /* @__PURE__ */ jsx("g", { "aria-hidden": "true", children: cables.map((c) => {
+              const p1 = iso(c.points[0][0], c.points[0][1], 0);
+              const p2 = iso(c.points[1][0], c.points[1][1], 0);
+              const dPath = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
+              return /* @__PURE__ */ jsxs("g", { children: [
+                /* @__PURE__ */ jsx(
+                  "path",
+                  {
+                    className: c.connected ? "aw-world__cable-base is-connected" : "aw-world__cable-base",
+                    d: dPath
+                  }
+                ),
+                c.active ? /* @__PURE__ */ jsx("path", { className: "aw-world__cable-flow", d: dPath }) : null,
+                /* @__PURE__ */ jsx(CableArrow, { p1, p2, u: 0.5, active: c.active })
+              ] }, c.id);
+            }) }),
+            /* @__PURE__ */ jsxs("g", { "aria-hidden": "true", children: [
+              /* @__PURE__ */ jsx("circle", { className: "aw-world__face-top", cx: visitorPt.x, cy: visitorPt.y, r: 7.5 }),
+              /* @__PURE__ */ jsx(CableArrow, { p1: visitorPt, p2: visitorNext, u: 0.14, active: false }),
+              /* @__PURE__ */ jsx("text", { className: "aw-world__micro", x: visitorPt.x - 24, y: visitorPt.y + 18, children: tx(t, "world.visitor", "Visitor") })
+            ] }),
+            paintedStations.map((station) => {
+              const pos = STATION_POSITIONS[station.key];
+              const r = pos?.padHalf ?? 0.7;
+              const padPts = isoPoints([
+                [station.x - r, station.y - r, 0],
+                [station.x + r, station.y - r, 0],
+                [station.x + r, station.y + r, 0],
+                [station.x - r, station.y + r, 0]
+              ]);
+              const hitR = r + 0.16;
+              const hitPts = isoPoints([
+                [station.x - hitR, station.y - hitR, 0],
+                [station.x + hitR, station.y - hitR, 0],
+                [station.x + hitR, station.y + hitR, 0],
+                [station.x - hitR, station.y + hitR, 0]
+              ]);
+              const center = iso(station.x, station.y, 0);
+              const off = LABEL_OFFSETS[station.key] ?? { dx: 0, dy: 42 };
+              const lx = center.x + off.dx;
+              const ly = center.y + off.dy;
+              const labelW = Math.max(66, station.shortLabel.length * 6.5 + 22);
+              const isSelected = activeStation.key === station.key;
+              const cls = [
+                "aw-world__station",
+                `aw-world__station--${station.key}`,
+                `is-${station.state}`,
+                isSelected ? "is-selected" : ""
+              ].filter(Boolean).join(" ");
+              return /* @__PURE__ */ jsxs(
+                "g",
+                {
+                  className: cls,
+                  role: "button",
+                  tabIndex: 0,
+                  "aria-label": `${station.title}: ${station.stateText}`,
+                  "aria-pressed": isSelected,
+                  onMouseEnter: () => activateStation(station.key, false),
+                  onFocus: () => activateStation(station.key, false),
+                  onClick: () => activateStation(station.key, true),
+                  onKeyDown: (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      activateStation(station.key, true);
+                    }
+                  },
+                  children: [
+                    /* @__PURE__ */ jsx("polygon", { className: "aw-world__hit", points: hitPts }),
+                    /* @__PURE__ */ jsx("polygon", { className: "aw-world__pad", points: padPts }),
+                    /* @__PURE__ */ jsx(StationGeometry, { station }),
+                    /* @__PURE__ */ jsxs("g", { "aria-hidden": "true", children: [
+                      /* @__PURE__ */ jsx(
+                        "rect",
+                        {
+                          className: "aw-world__tag-bg",
+                          x: lx - labelW / 2,
+                          y: ly - 10,
+                          width: labelW,
+                          height: 20,
+                          rx: 10
+                        }
+                      ),
+                      /* @__PURE__ */ jsx(
+                        "circle",
+                        {
+                          className: `aw-world__beacon aw-world__beacon--${station.state}`,
+                          cx: lx - labelW / 2 + 10,
+                          cy: ly,
+                          r: 3.2
+                        }
+                      ),
+                      /* @__PURE__ */ jsx("text", { className: "aw-world__tag-text", x: lx + 5, y: ly + 0.5, children: station.shortLabel })
+                    ] })
+                  ]
+                },
+                station.key
+              );
+            })
+          ]
+        }
+      ) }),
+      /* @__PURE__ */ jsxs("figcaption", { className: "aw-world__caption", "aria-live": "polite", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-world__eyebrow", children: [
+          /* @__PURE__ */ jsx("span", { children: tx(t, "world.eyebrow", "Project world") }),
+          project?.name ? /* @__PURE__ */ jsx("span", { className: "aw-world__project-name", children: project.name }) : null
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-world__card", children: [
+          /* @__PURE__ */ jsx("div", { className: "aw-world__card-top", children: /* @__PURE__ */ jsxs("span", { className: `aw-world__pill aw-world__pill--${activeStation.state}`, children: [
+            /* @__PURE__ */ jsx("span", { className: "aw-world__pill-dot", "aria-hidden": "true" }),
+            stateBadgeText
+          ] }) }),
+          /* @__PURE__ */ jsx("h3", { className: "aw-world__title", children: activeStation.title }),
+          /* @__PURE__ */ jsx("p", { className: "aw-world__explain", children: activeStation.explain }),
+          /* @__PURE__ */ jsxs("div", { className: "aw-world__status-box", children: [
+            /* @__PURE__ */ jsx("span", { className: "aw-world__status-label", children: tx(t, "world.currentStatus", "Current status") }),
+            /* @__PURE__ */ jsx("p", { className: "aw-world__status-value", children: activeStation.stateText })
+          ] }),
+          /* @__PURE__ */ jsx(OperatorExtras, { station: activeStation }),
+          /* @__PURE__ */ jsx(ChecksList, { checks: activeStation.checks, t })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "aw-world__nav", role: "group", "aria-label": tx(t, "world.stationsNav", "Map stations"), children: stations.map((s) => /* @__PURE__ */ jsxs(
+          "button",
+          {
+            type: "button",
+            className: "aw-world__chip",
+            "aria-pressed": activeStation.key === s.key,
+            onClick: () => activateStation(s.key, true),
+            children: [
+              /* @__PURE__ */ jsx("span", { className: `aw-world__chip-dot aw-world__chip-dot--${s.state}`, "aria-hidden": "true" }),
+              s.shortLabel
+            ]
+          },
+          s.key
+        )) })
+      ] }),
+      /* @__PURE__ */ jsx("ul", { className: "aw-world__sr-only", "aria-label": tx(t, "world.summaryLabel", "Website map station status"), children: stations.map((s) => /* @__PURE__ */ jsxs("li", { children: [
+        s.title,
+        ": ",
+        s.stateText,
+        ". ",
+        s.explain,
+        operatorSummaryText(s),
+        s.checks?.length ? ` ${s.checks.map((c) => [c.label, c.detail, c.whoText, c.checkedText].filter(Boolean).join(" \u2014 ")).join("; ")}` : ""
+      ] }, s.key)) })
+    ] }) });
+  }
+
+  // packages/admin-ui/src/project-styles.js
+  var project_styles_default = `
+.aw-project { max-width: 1440px; margin: 0 auto; width: 100%; min-width: 0; box-sizing: border-box; }
+.aw-project h2 { margin: 0 0 5px; font-size: 24px; line-height: 1.25; letter-spacing: -.025em; }
+.aw-project h3 { margin: 0 0 14px; font-size: 15px; line-height: 1.4; font-weight: 650; }
+.aw-project p { line-height: 1.6; max-width: 75ch; }
+.aw-project a { color: var(--aw-accent); text-underline-offset: 3px; overflow-wrap: anywhere; }
+.aw-project button { scroll-margin-block: 80px; }
+.aw-project :is(button, a, input, textarea, summary):focus-visible { outline: 2px solid var(--aw-accent); outline-offset: 3px; }
+.aw-project :is(input, textarea) { caret-color: var(--aw-accent); }
+.aw-project ::selection { background: var(--aw-accent); color: var(--aw-bg); }
+.aw-project__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding: 6px 0 22px; }
+.aw-project__header > div { min-width: 0; }
+.aw-project__header h2 { overflow-wrap: anywhere; }
+.aw-project__header p { margin: 0; }
+.aw-project__actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.aw-project__tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--aw-border); overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--aw-border2) var(--aw-bg); }
+.aw-project__tabs button { appearance: none; flex: 0 0 auto; background: none; border: 0; color: var(--aw-text2); font: inherit; padding: 13px 0; border-bottom: 2px solid transparent; cursor: pointer; }
+.aw-project__tabs button:hover { color: var(--aw-text); }
+.aw-project__tabs button[aria-current] { color: var(--aw-accent); border-bottom-color: var(--aw-accent); }
+.aw-project__body { min-width: 0; }
+.aw-project__section { padding: 28px 0; border-bottom: 1px solid var(--aw-border); min-width: 0; }
+.aw-project__section > :first-child { margin-top: 0; }
+.aw-project__section > :last-child { margin-bottom: 0; }
+.aw-project__overview { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(250px, 1fr); gap: 42px; }
+.aw-project__overview > section { border-bottom: 0; }
+.aw-project__brief { margin: 8px 0 0; }
+.aw-project__brief dt { color: var(--aw-text2); font-size: 11px; font-weight: 600; margin: 22px 0 6px; }
+.aw-project__brief dt:first-child { margin-top: 0; }
+.aw-project__brief dd { margin: 0; white-space: pre-wrap; line-height: 1.65; overflow-wrap: anywhere; max-width: 72ch; }
+.aw-project__form { display: grid; gap: 14px; margin: 14px 0; max-width: 760px; }
+.aw-project__form > .aw-button { justify-self: start; }
+.aw-project__fields { display: grid; grid-template-columns: 1fr 1.5fr; gap: 16px; }
+.aw-project__topology { display: grid; grid-template-columns: 1fr 1.1fr 1.2fr; gap: 26px; list-style: none; padding: 0; margin: 16px 0 22px; }
+.aw-project__topology > li { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.aw-project__topology > li > svg { margin-top: 2px; color: var(--aw-text2); flex-shrink: 0; }
+.aw-project__topology > li > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.aw-project__topology strong { font-size: 12px; }
+.aw-project__topology span, .aw-project__topology a { color: var(--aw-text2); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.aw-project__topology a { color: var(--aw-accent); }
+.aw-project__destination { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+.aw-project__work { list-style: none; padding: 0; margin: 12px 0 20px; }
+.aw-project__work > li { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--aw-border); padding: 13px 0; min-width: 0; }
+.aw-project__work > li:last-child { border-bottom: 0; }
+.aw-project__work > li > div { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.aw-project__work > li > div:first-child { flex: 1; }
+.aw-project__worklink { flex: 1; display: flex; align-items: baseline; gap: 10px; border: 0; padding: 0; background: transparent; color: var(--aw-text); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.aw-project__worklink:hover strong { color: var(--aw-accent); }
+.aw-project__worklink strong { font-weight: 500; overflow-wrap: anywhere; }
+.aw-project__worklink > .aw-muted { margin-left: auto; font-size: 11px; white-space: nowrap; }
+.aw-project__run { overflow-wrap: anywhere; }
+.aw-project__note { margin-top: 22px; font-size: 12px; }
+.aw-project__error { color: var(--aw-bad); line-height: 1.6; margin-block: 12px; overflow-wrap: anywhere; }
+.aw-project__success { color: var(--aw-ok); margin-block: 12px; }
+.aw-project__empty { color: var(--aw-text2); padding: 20px 0; }
+.aw-project__subheading { margin-top: 32px !important; }
+.aw-project__handoff { max-width: 75ch; }
+.aw-project details { padding: 12px 0; }
+.aw-project summary { cursor: pointer; color: var(--aw-text); font-weight: 500; padding: 5px 0; }
+.aw-project__invite { display: flex; align-items: end; gap: 12px; margin-top: 18px; max-width: 650px; }
+.aw-project__invite .aw-field { flex: 1; }
+.aw-project__files { list-style: none; margin: 12px 0; padding: 0; max-height: 320px; overflow: auto; }
+.aw-project__files button { display: flex; gap: 8px; align-items: center; width: 100%; color: var(--aw-text); background: none; border: 0; font: inherit; text-align: left; padding: 7px 5px; cursor: pointer; }
+.aw-project__files button:hover { background: var(--aw-bg3); }
+.aw-project__files button:disabled { opacity: .5; cursor: wait; }
+.aw-project__file, .aw-project__reveal { background: var(--aw-bg2); padding: 14px; margin-top: 12px; min-width: 0; }
+.aw-project pre { overflow: auto; font-family: var(--aw-mono); font-size: 12px; line-height: 1.6; tab-size: 2; max-height: 480px; }
+.aw-project__reveal pre { white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+@media (max-width: 760px) {
+  .aw-project__header { flex-direction: column; gap: 14px; }
+  .aw-project__overview, .aw-project__fields { grid-template-columns: minmax(0,1fr); gap: 0; }
+  .aw-project__topology { grid-template-columns: minmax(0,1fr); gap: 22px; }
+  .aw-project__tabs { gap: 20px; }
+  .aw-project__overview > section { border-bottom: 1px solid var(--aw-border); }
+  .aw-project__work > li { flex-wrap: wrap; }
+  .aw-project__worklink { flex-basis: calc(100% - 100px); flex-wrap: wrap; gap: 6px 10px; }
+  .aw-project__worklink > .aw-muted { margin-left: 0; }
+  .aw-project__invite { align-items: stretch; flex-direction: column; }
+  .aw-project .aw-row-h { flex-wrap: wrap; gap: 8px; }
+}
+`;
+
+  // packages/admin-ui/src/project.jsx
+  var errorText3 = (error) => error?.message || String(error || "Request failed");
+  var pathFor = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
+  var TABS = ["Overview", "Resources", "Work", "Activity & review", "People"];
+  function useProjectResource(load) {
+    const [state, setState] = useState({ load: null, value: null, loading: true, error: null });
+    const resource = useRef(null);
+    useEffect(() => {
+      const current = createProjectResource(load, (next) => setState({ ...next, load }));
+      resource.current = current;
+      void current.refresh();
+      return () => current.dispose();
+    }, [load]);
+    const refresh = useCallback(() => resource.current?.refresh(), []);
+    return [state.load === load ? state : { value: null, loading: true, error: null }, refresh];
+  }
+  function useWrite() {
+    const [state, setState] = useState({ busy: false, error: null, success: null });
+    const alive = useRef(true);
+    useEffect(() => {
+      alive.current = true;
+      return () => {
+        alive.current = false;
+      };
+    }, []);
+    const run = useMemo(() => singleFlight(async (operation, success) => {
+      if (alive.current) setState({ busy: true, error: null, success: null });
+      try {
+        const result = await operation();
+        if (alive.current) setState({ busy: false, error: null, success: success || null });
+        return result;
+      } catch (error) {
+        if (alive.current) setState({ busy: false, error, success: null });
+        return void 0;
+      }
+    }), []);
+    return [state, run];
+  }
+  function Feedback({ state }) {
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      state.error ? /* @__PURE__ */ jsx("p", { className: "aw-project__error", role: "alert", children: errorText3(state.error) }) : null,
+      state.success ? /* @__PURE__ */ jsx("p", { className: "aw-project__success", role: "status", children: state.success }) : null
+    ] });
+  }
+  function ResourceState({ state, refresh, children }) {
+    if (state.loading) return /* @__PURE__ */ jsx("p", { className: "aw-muted", role: "status", children: "Loading\u2026" });
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      state.error ? /* @__PURE__ */ jsxs("div", { className: "aw-project__error", role: "alert", children: [
+        state.value ? "Showing the last successful response. " : "",
+        errorText3(state.error),
+        " ",
+        /* @__PURE__ */ jsx(Button, { size: "sm", disabled: state.refreshing, onClick: refresh, children: "Retry" })
+      ] }) : null,
+      children
+    ] });
+  }
+  function ProjectView({ id }) {
+    const { api, data, host, setModal, reload } = useAdmin();
+    const [tab, setTab] = useState("Overview");
+    const load = useCallback(async () => {
+      const result = await api("GET", "/admin/projects");
+      return { project: (result.projects ?? []).find((project2) => project2.id === id) ?? null };
+    }, [api, id]);
+    const [remote, refresh] = useProjectResource(load);
+    const lastInventory = useRef(data.projects);
+    useEffect(() => {
+      if (lastInventory.current !== data.projects) {
+        lastInventory.current = data.projects;
+        void refresh();
+      }
+    }, [data.projects, refresh]);
+    useEffect(() => setTab("Overview"), [id]);
+    const project = remote.value ? remote.value.project : (data.projects ?? []).find((project2) => project2.id === id);
+    const refreshAll = useCallback(async () => {
+      await refresh();
+      await reload?.();
+    }, [refresh, reload]);
+    if (!project) return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-project", children: [
+      /* @__PURE__ */ jsx("style", { children: project_styles_default }),
+      /* @__PURE__ */ jsx(ResourceState, { state: remote, refresh, children: !remote.loading ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx("h2", { children: "Project unavailable" }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "This project no longer exists or is not available to your account. Refresh the project list or choose another project." }),
+        /* @__PURE__ */ jsx(Button, { onClick: refreshAll, children: "Refresh projects" })
+      ] }) : null })
+    ] });
+    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-project", children: [
+      /* @__PURE__ */ jsx("style", { children: project_styles_default }),
+      /* @__PURE__ */ jsxs("header", { className: "aw-project__header", children: [
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("h2", { children: project.name }),
+          /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+            project.slug,
+            " \xB7 ",
+            project.kind === "new" ? "New project" : "Existing project",
+            project.githubAccount ? ` \xB7 GitHub @${project.githubAccount}` : ""
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
+          /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(ProjectEditModal, { project, onClose: () => {
+            close();
+            void refreshAll();
+          } }) }), children: "Edit project" }),
+          /* @__PURE__ */ jsxs(Button, { kind: "primary", onClick: () => setModal({ kind: "task", projectId: id }), children: [
+            /* @__PURE__ */ jsx(Icon, { name: "plus" }),
+            " Add work"
+          ] })
+        ] })
+      ] }),
+      remote.error ? /* @__PURE__ */ jsxs("div", { role: "alert", className: "aw-project__error", children: [
+        "Project refresh failed. ",
+        errorText3(remote.error),
+        " ",
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: refresh, children: "Retry" })
+      ] }) : null,
+      /* @__PURE__ */ jsx("nav", { className: "aw-project__tabs", "aria-label": "Project sections", children: TABS.map((label) => /* @__PURE__ */ jsx("button", { type: "button", "aria-current": tab === label ? "page" : void 0, onClick: () => setTab(label), children: label }, label)) }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-project__body", children: [
+        tab === "Overview" ? /* @__PURE__ */ jsx(Overview, { project, refresh: refreshAll, setTab }) : null,
+        tab === "Resources" ? /* @__PURE__ */ jsx(Resources, { project, refresh: refreshAll, host }) : null,
+        tab === "Work" ? /* @__PURE__ */ jsx(Work, { project }) : null,
+        tab === "Activity & review" ? /* @__PURE__ */ jsx(Activity, { project }) : null,
+        tab === "People" ? /* @__PURE__ */ jsx(People, { project, refresh: refreshAll }) : null
+      ] }, `${id}:${tab}`)
+    ] }, id);
+  }
+  function Overview({ project, refresh, setTab }) {
+    const { data } = useAdmin();
+    const work = projectWork(data.tickets, project.id);
+    const projectTickets = useMemo(
+      () => (data.tickets ?? []).filter((ticket) => ticket && ticket.project_id != null && String(ticket.project_id) === String(project.id)),
+      [data.tickets, project.id]
+    );
+    const sites = useMemo(
+      () => Array.isArray(project.sites) && project.sites.length ? project.sites : project.site ? [project.site] : [],
+      [project.sites, project.site]
+    );
+    const active = work.filter((ticket) => !["done", "declined"].includes(ticket.status));
+    const review = active.filter((ticket) => ticket.status === "review");
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx("section", { className: "aw-project__section aw-project__world", "aria-label": "Project world", children: /* @__PURE__ */ jsx(ProjectWorld, { project, sites, tickets: projectTickets }) }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-project__overview", children: [
+        /* @__PURE__ */ jsx("section", { className: "aw-project__section", children: /* @__PURE__ */ jsx(Brief, { project, refresh }) }),
+        /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+          /* @__PURE__ */ jsx("h3", { children: "Next actions" }),
+          review.length ? /* @__PURE__ */ jsxs("p", { children: [
+            review.length,
+            " ",
+            review.length === 1 ? "request is" : "requests are",
+            " ready for review. Inspect the recorded changes and checks before deciding what to land."
+          ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: active.length ? `${active.length} open ${active.length === 1 ? "request" : "requests"}. Continue locally or add a clear next step for an agent.` : "No open work yet. Add your first request, save a draft, or continue in a local checkout." }),
+          /* @__PURE__ */ jsx(WorkList, { tickets: (review.length ? review : active).slice(0, 4) }),
+          /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
+            /* @__PURE__ */ jsx(Button, { onClick: () => setTab("Work"), children: "All work" }),
+            /* @__PURE__ */ jsx(Button, { onClick: () => setTab("Resources"), children: "Set up development" })
+          ] }),
+          /* @__PURE__ */ jsx("p", { className: "aw-muted aw-project__note", children: "You control this project. Agent help is optional; saving a draft never starts an agent." })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Project connections" }),
+        /* @__PURE__ */ jsx(Topology, { project }),
+        /* @__PURE__ */ jsx(Button, { onClick: () => setTab("Resources"), children: "Manage resources" })
+      ] })
+    ] });
+  }
+  function Brief({ project, refresh }) {
+    const { api } = useAdmin();
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState(project.brief ?? { what: "", goal: "" });
+    const [saved, setSaved] = useState(project.brief);
+    const [state, write] = useWrite();
+    useEffect(() => {
+      setSaved(project.brief);
+      if (!editing) setDraft(project.brief ?? { what: "", goal: "" });
+    }, [project.brief]);
+    const payload = briefPayload(draft, project.kind);
+    const save = (event) => {
+      event.preventDefault();
+      if (!payload) return;
+      void write(async () => {
+        const result = await api("PATCH", pathFor(project), { brief: payload });
+        setSaved(result.project?.brief ?? payload);
+        setEditing(false);
+        void refresh();
+      }, "Expectations saved.");
+    };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Expectations" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        !editing ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => {
+          setDraft(saved ?? { what: "", goal: "" });
+          setEditing(true);
+        }, children: "Edit expectations" }) : null
+      ] }),
+      editing ? /* @__PURE__ */ jsxs("form", { onSubmit: save, className: "aw-project__form", children: [
+        /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx("textarea", { "aria-label": "What it is", required: true, rows: 3, maxLength: 1200, value: draft.what ?? "", onChange: (event) => setDraft({ ...draft, what: event.target.value }) }) }),
+        /* @__PURE__ */ jsx(Field, { label: "What done looks like", children: /* @__PURE__ */ jsx("textarea", { "aria-label": "What done looks like", required: true, rows: 3, maxLength: 1200, value: draft.goal ?? "", onChange: (event) => setDraft({ ...draft, goal: event.target.value }) }) }),
+        project.kind === "new" ? /* @__PURE__ */ jsx(Field, { label: "Done by hand today", hint: "Optional", children: /* @__PURE__ */ jsx("textarea", { rows: 2, maxLength: 1200, value: draft.manual ?? "", onChange: (event) => setDraft({ ...draft, manual: event.target.value }) }) }) : /* @__PURE__ */ jsx(Field, { label: "Where the code lives", hint: "Context only; configure the actual repository in Resources.", children: /* @__PURE__ */ jsx("textarea", { rows: 2, maxLength: 1200, value: draft.where ?? "", onChange: (event) => setDraft({ ...draft, where: event.target.value }) }) }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
+          /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => setEditing(false), children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { type: "submit", kind: "primary", disabled: state.busy || !payload, children: state.busy ? "Saving\u2026" : "Save expectations" })
+        ] })
+      ] }) : /* @__PURE__ */ jsxs("dl", { className: "aw-project__brief", children: [
+        /* @__PURE__ */ jsx("dt", { children: "What it is" }),
+        /* @__PURE__ */ jsx("dd", { children: saved?.what || "Describe the project so the next person can pick it up." }),
+        /* @__PURE__ */ jsx("dt", { children: "What done looks like" }),
+        /* @__PURE__ */ jsx("dd", { children: saved?.goal || "Add an outcome and a clear definition of done." }),
+        saved?.where ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx("dt", { children: "Code context" }),
+          /* @__PURE__ */ jsx("dd", { children: saved.where })
+        ] }) : null,
+        saved?.manual ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx("dt", { children: "Done by hand today" }),
+          /* @__PURE__ */ jsx("dd", { children: saved.manual })
+        ] }) : null
+      ] }),
+      /* @__PURE__ */ jsx(Feedback, { state })
+    ] });
+  }
+  function ProjectIcon({ name }) {
+    const paths = { branch: "M6 3v12a3 3 0 1 0 3 3M6 9h8a4 4 0 0 0 4-4M18 3v4M4 3h4", globe: "M21 12a9 9 0 1 0-18 0 9 9 0 0 0 18 0M3 12h18M12 3c4 5 4 13 0 18-4-5-4-13 0-18", file: "M14 3H5v18h14V8l-5-5v5h5M8 12h8M8 16h8" };
+    return /* @__PURE__ */ jsx("svg", { "aria-hidden": "true", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round", children: /* @__PURE__ */ jsx("path", { d: paths[name] }) });
+  }
+  function Topology({ project, local, git }) {
+    const topology = projectTopology(project, local, git);
+    return /* @__PURE__ */ jsxs("ol", { className: "aw-project__topology", "aria-label": "Development to deployment", children: [
+      /* @__PURE__ */ jsxs("li", { children: [
+        /* @__PURE__ */ jsx(Icon, { name: "folder" }),
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("strong", { children: "Local checkout" }),
+          /* @__PURE__ */ jsx("span", { children: topology.local })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("li", { children: [
+        /* @__PURE__ */ jsx(ProjectIcon, { name: "branch" }),
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("strong", { children: "Repository & ref" }),
+          topology.repoUrl ? /* @__PURE__ */ jsx("a", { href: topology.repoUrl, target: "_blank", rel: "noreferrer", children: topology.repoUrl }) : /* @__PURE__ */ jsx("span", { children: project.repo ? "Repository configured; open it with your Git client." : "No repository linked" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-mono", children: topology.branch }),
+          git?.remotes?.length ? /* @__PURE__ */ jsxs("span", { children: [
+            "Remotes: ",
+            git.remotes.map((remote) => remote.name).join(", ")
+          ] }) : null
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("li", { children: [
+        /* @__PURE__ */ jsx(ProjectIcon, { name: "globe" }),
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("strong", { children: "Preview & production" }),
+          topology.sites.length ? topology.sites.map((site) => /* @__PURE__ */ jsxs("div", { className: "aw-project__destination", children: [
+            /* @__PURE__ */ jsxs("span", { children: [
+              site.name || project.name,
+              " \xB7 ",
+              site.state || "State unknown"
+            ] }),
+            /* @__PURE__ */ jsxs("span", { children: [
+              site.previewUrl ? /* @__PURE__ */ jsx("a", { href: site.previewUrl, target: "_blank", rel: "noreferrer", children: "Preview" }) : "No preview address",
+              " \xB7 ",
+              site.productionUrl ? /* @__PURE__ */ jsx("a", { href: site.productionUrl, target: "_blank", rel: "noreferrer", children: "Production" }) : "No production address"
+            ] }),
+            /* @__PURE__ */ jsx("span", { children: site.deployment })
+          ] }, site.id)) : /* @__PURE__ */ jsx("span", { children: "No hosted destinations yet" })
+        ] })
+      ] })
+    ] });
+  }
+  function Resources({ project, refresh, host }) {
+    const { api, setModal } = useAdmin();
+    const [state, write] = useWrite();
+    const native = typeof host?.projectLocalInfo === "function";
+    const loadLocal = useCallback(async () => {
+      if (!native) return null;
+      const local = await host.projectLocalInfo({ projectId: project.id });
+      let git = null, gitError = null;
+      if (host.projectGitInfo && (local.found ?? local.exists)) {
+        try {
+          git = await host.projectGitInfo({ projectId: project.id });
+        } catch (error) {
+          gitError = error;
+        }
+      }
+      return { local, git, gitError };
+    }, [host, native, project.id]);
+    const [localState, refreshLocal] = useProjectResource(loadLocal);
+    const topology = localState.value;
+    const mutate = (operation, message) => void write(async () => {
+      await operation();
+      void refresh();
+    }, message);
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Development to deployment" }),
+        /* @__PURE__ */ jsx(Topology, { project, local: topology?.local, git: topology?.git })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Local development" }),
+        native ? /* @__PURE__ */ jsxs(ResourceState, { state: localState, refresh: refreshLocal, children: [
+          topology?.gitError ? /* @__PURE__ */ jsxs("p", { className: "aw-project__error", role: "alert", children: [
+            "Git inspection failed: ",
+            errorText3(topology.gitError),
+            " ",
+            /* @__PURE__ */ jsx(Button, { size: "sm", onClick: refreshLocal, children: "Retry" })
+          ] }) : null,
+          /* @__PURE__ */ jsx(LocalDevelopment, { project, local: topology?.local, host, refresh: refreshLocal })
+        ] }) : /* @__PURE__ */ jsxs("div", { className: "aw-project__handoff", children: [
+          /* @__PURE__ */ jsx("p", { children: "This browser cannot access your local files. Open this project in PTech Admin to connect a checkout, edit files and continue a development conversation." }),
+          /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Repository links, work, recorded agent evidence and hosted deployments remain available here." }),
+          resourceUrl(project.repo) ? /* @__PURE__ */ jsx("a", { href: resourceUrl(project.repo), target: "_blank", rel: "noreferrer", children: "Open repository" }) : /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
+            close();
+            void refresh();
+          } }) }), children: "Link a repository" })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+          /* @__PURE__ */ jsx("h3", { children: "Repository & integrations" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
+            close();
+            void refresh();
+          } }) }), children: project.repo ? "Change repository" : "Link repository" })
+        ] }),
+        /* @__PURE__ */ jsx("p", { children: resourceUrl(project.repo) ? /* @__PURE__ */ jsx("a", { href: resourceUrl(project.repo), target: "_blank", rel: "noreferrer", children: resourceUrl(project.repo) }) : project.repo ? "Repository configured for Git access." : "Link existing code or create a repository for this project." }),
+        project.repo_error ? /* @__PURE__ */ jsx("p", { role: "alert", className: "aw-project__error", children: project.repo_error }) : null,
+        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+          project.githubAccount ? `GitHub connected: @${project.githubAccount}` : "No GitHub account linked to this project.",
+          project.repoStatus?.label ? ` \xB7 ${project.repoStatus.label}` : ""
+        ] }),
+        !project.repo ? /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
+          /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor(project)}/repo/create`, {}), "Repository creation requested."), children: "Create repository" }),
+          project.githubInstallationId ? /* @__PURE__ */ jsxs(Button, { disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor(project)}/repo/github`, {}), "GitHub repository creation requested."), children: [
+            "Create in @",
+            project.githubAccount || "connected GitHub"
+          ] }) : null
+        ] }) : null,
+        /* @__PURE__ */ jsx(Feedback, { state })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+          /* @__PURE__ */ jsx("h3", { children: "Hosted destinations" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor(project)}/site`, {}), "Hosting setup requested."), children: project.sites?.length ? "Add a site" : "Set up hosting" })
+        ] }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Rebuild changes preview only. Publishing replaces the live site with preview; the publish action asks you to confirm the destination." }),
+        /* @__PURE__ */ jsx(SitePanel, { project }),
+        (project.sites ?? (project.site ? [project.site] : [])).map((site) => /* @__PURE__ */ jsx(DeployHistory, { project, site, refresh }, site.id))
+      ] }),
+      /* @__PURE__ */ jsx(Secrets, { project })
+    ] });
+  }
+  function LocalDevelopment({ project, local, host, refresh }) {
+    const [path, setPath] = useState(local?.path ?? "");
+    const [baseRef, setBaseRef] = useState(local?.baseRef ?? "");
+    const [verify, setVerify] = useState(local?.verify ?? "");
+    const [parentPath, setParentPath] = useState("");
+    const [directoryName, setDirectoryName] = useState(project.slug);
+    const [operationId, setOperationId] = useState(null);
+    const [operation, setOperation] = useState(null);
+    const [state, write] = useWrite();
+    const found = local?.found ?? local?.exists;
+    useEffect(() => {
+      if (!operationId || !host.projectLocalOperation) return;
+      let alive = true, timer;
+      const poll = async () => {
+        try {
+          const next = await host.projectLocalOperation({ operationId });
+          if (!alive) return;
+          setOperation(next);
+          if (next.status === "running") timer = setTimeout(poll, 1200);
+          else if (next.status === "succeeded") void refresh();
+        } catch (error) {
+          if (alive) setOperation({ status: "failed", error: errorText3(error) });
+        }
+      };
+      void poll();
+      return () => {
+        alive = false;
+        clearTimeout(timer);
+      };
+    }, [operationId, host, refresh]);
+    const cloning = operationId && (!operation || operation.status === "running");
+    const configure = (event) => {
+      event.preventDefault();
+      if (!path.trim() || !host.projectConfigureLocal) return;
+      void write(async () => {
+        await host.projectConfigureLocal({ projectId: project.id, path: path.trim(), baseRef: baseRef.trim(), verify: verify.trim() });
+        void refresh();
+      }, "Local checkout connected.");
+    };
+    const clone = (event) => {
+      event.preventDefault();
+      if (!parentPath.trim() || cloning || !host.projectCloneLocal) return;
+      void write(async () => {
+        setOperation(null);
+        const result = await host.projectCloneLocal({ projectId: project.id, parentPath: parentPath.trim(), directoryName: directoryName.trim() || void 0 });
+        setOperationId(result.operationId);
+      });
+    };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      found && host.projectOpenLocal ? /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
+        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: state.busy, onClick: () => void write(() => host.projectOpenLocal({ projectId: project.id, mode: "session" }), "Development conversation opened."), children: "Continue locally" }),
+        /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => void write(() => host.projectOpenLocal({ projectId: project.id, mode: "reveal" })), children: "Show folder" })
+      ] }) : null,
+      host.projectConfigureLocal ? /* @__PURE__ */ jsxs("details", { open: !found, children: [
+        /* @__PURE__ */ jsx("summary", { children: found ? "Change checkout & development settings" : "Connect an existing checkout" }),
+        /* @__PURE__ */ jsxs("form", { onSubmit: configure, className: "aw-project__form", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Local folder", hint: "An existing folder on this device. Connecting does not clone or overwrite it.", children: /* @__PURE__ */ jsx("input", { required: true, value: path, onChange: (event) => setPath(event.target.value), placeholder: "/Users/you/Projects/site" }) }),
+          /* @__PURE__ */ jsxs("div", { className: "aw-project__fields", children: [
+            /* @__PURE__ */ jsx(Field, { label: "Base ref", hint: "Optional Git ref for review", children: /* @__PURE__ */ jsx("input", { value: baseRef, onChange: (event) => setBaseRef(event.target.value), placeholder: "main" }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Verification command", hint: "Saved for deliberate local execution", children: /* @__PURE__ */ jsx("input", { value: verify, onChange: (event) => setVerify(event.target.value), placeholder: "npm test" }) })
+          ] }),
+          /* @__PURE__ */ jsx(Button, { type: "submit", disabled: state.busy || !path.trim() || Boolean(cloning), children: state.busy ? "Connecting\u2026" : "Connect folder" })
+        ] })
+      ] }) : null,
+      project.repo && host.projectCloneLocal && host.projectLocalOperation ? /* @__PURE__ */ jsxs("details", { children: [
+        /* @__PURE__ */ jsx("summary", { children: "Clone the linked repository" }),
+        /* @__PURE__ */ jsxs("form", { onSubmit: clone, className: "aw-project__form", children: [
+          /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Creates a new folder; an existing destination is never overwritten. Private repositories use the project\u2019s authorized Git connection." }),
+          /* @__PURE__ */ jsx(Field, { label: "Parent folder", children: /* @__PURE__ */ jsx("input", { required: true, value: parentPath, onChange: (event) => setParentPath(event.target.value), placeholder: "/Users/you/Projects" }) }),
+          /* @__PURE__ */ jsx(Field, { label: "New folder name", children: /* @__PURE__ */ jsx("input", { value: directoryName, onChange: (event) => setDirectoryName(event.target.value) }) }),
+          /* @__PURE__ */ jsx(Button, { type: "submit", disabled: state.busy || Boolean(cloning) || !parentPath.trim(), children: cloning ? "Cloning\u2026" : "Clone repository" })
+        ] })
+      ] }) : null,
+      operation ? /* @__PURE__ */ jsx("p", { className: operation.status === "failed" ? "aw-project__error" : "aw-muted", role: operation.status === "failed" ? "alert" : "status", children: operation.status === "failed" ? `Clone failed: ${errorText3(operation.error)}. Check the destination and Git connection, then retry.` : operation.status === "succeeded" ? `Clone ready: ${operation.receipt?.path || "checkout connected"}` : `Cloning: ${operation.phase || "working"}` }) : null,
+      /* @__PURE__ */ jsx(Feedback, { state }),
+      found && host.projectFiles ? /* @__PURE__ */ jsx(LocalFiles, { project, host }) : null,
+      found && host.gitGraph ? /* @__PURE__ */ jsx(GitGraph, { project, host }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Git Graph is optional. Use your repository, local conversation or recorded work review without it." })
+    ] });
+  }
+  function LocalFiles({ project, host }) {
+    const [path, setPath] = useState("");
+    const [file, setFile] = useState(null);
+    const readEpoch = useRef(0);
+    useEffect(() => () => {
+      readEpoch.current++;
+    }, []);
+    const navigate = (nextPath) => {
+      readEpoch.current++;
+      setPath(nextPath);
+      setFile(null);
+    };
+    const load = useCallback(() => host.projectFiles({ projectId: project.id, action: "list", path }), [host, project.id, path]);
+    const [state, refresh] = useProjectResource(load);
+    const [readState, write] = useWrite();
+    return /* @__PURE__ */ jsxs("details", { children: [
+      /* @__PURE__ */ jsx("summary", { children: "Browse checkout files" }),
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Read-only file preview. Continue locally to edit with the project\u2019s development conversation or your editor." }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
+        /* @__PURE__ */ jsx(Button, { size: "sm", disabled: !path, onClick: () => navigate(path.split("/").slice(0, -1).join("/")), children: "Parent folder" }),
+        /* @__PURE__ */ jsx("code", { children: path || "/" }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: refresh, children: "Refresh files" })
+      ] }),
+      /* @__PURE__ */ jsxs(ResourceState, { state, refresh, children: [
+        /* @__PURE__ */ jsx("ul", { className: "aw-project__files", children: (state.value?.entries ?? []).map((entry) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", disabled: readState.busy, onClick: () => {
+          if (entry.type === "directory") {
+            navigate(entry.path);
+          } else {
+            void write(async () => {
+              const epoch = ++readEpoch.current;
+              setFile(null);
+              const result = await host.projectFiles({ projectId: project.id, action: "read", path: entry.path, range: { startLine: 1, endLine: 250 } });
+              if (readEpoch.current === epoch) setFile(result);
+            });
+          }
+        }, children: [
+          entry.type === "directory" ? /* @__PURE__ */ jsx(Icon, { name: "folder" }) : /* @__PURE__ */ jsx(ProjectIcon, { name: "file" }),
+          entry.name,
+          entry.type === "directory" ? "/" : ""
+        ] }) }, entry.path)) }),
+        !state.loading && !state.value?.entries?.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "This folder is empty." }) : null
+      ] }),
+      /* @__PURE__ */ jsx(Feedback, { state: readState }),
+      file ? /* @__PURE__ */ jsxs("div", { className: "aw-project__file", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+          /* @__PURE__ */ jsx("strong", { children: file.path }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => {
+            readEpoch.current++;
+            setFile(null);
+          }, children: "Close preview" })
+        ] }),
+        /* @__PURE__ */ jsx("pre", { children: file.text }),
+        file.truncated ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+          "Showing lines ",
+          file.startLine,
+          "\u2013",
+          file.endLine,
+          ". Open locally to read the full file."
+        ] }) : null
+      ] }) : null
+    ] });
+  }
+  function GitGraph({ project, host }) {
+    const [open, setOpen] = useState(false);
+    const load = useCallback(async () => ({ available: await host.gitGraph.available() }), [host]);
+    const [state, refresh] = useProjectResource(load);
+    const graph = host.gitGraph;
+    const installed = state.value?.available && typeof graph.View === "function" && typeof graph.focus === "function" && typeof graph.sessionId === "function";
+    return /* @__PURE__ */ jsx(ResourceState, { state, refresh, children: installed ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx(Button, { onClick: () => setOpen(true), children: "Open Git Graph" }),
+      open ? /* @__PURE__ */ jsx(ProjectGitGraph, { host, project, onClose: () => setOpen(false) }) : null
+    ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Git Graph is not installed. Repository links, local development and work review remain available." }) });
+  }
+  function ProjectGitGraph({ host, project, onClose }) {
+    const load = useCallback(async () => {
+      const local = await host.projectLocalInfo({ projectId: project.id });
+      if (!local?.found || !local.path) throw new Error("Connect a local checkout before opening Git Graph.");
+      const sessionId = host.gitGraph.sessionId();
+      if (!sessionId) throw new Error("Open a local session, then try Git Graph again.");
+      await host.gitGraph.focus({ sessionId, repo: local.path });
+      return { sessionId };
+    }, [host, project.id]);
+    const [state, refresh] = useProjectResource(load);
+    const View2 = host.gitGraph.View;
+    return /* @__PURE__ */ jsx(Modal, { title: `${project.name} \xB7 Git Graph`, onClose, full: true, children: /* @__PURE__ */ jsx("div", { className: "aw-review", children: /* @__PURE__ */ jsx(ResourceState, { state, refresh, children: state.value ? /* @__PURE__ */ jsx(View2, { sessionId: state.value.sessionId }) : null }) }) });
+  }
+  function DeployHistory({ project, site, refresh }) {
+    const { api, ask } = useAdmin();
+    const load = useCallback(() => api("GET", `${pathFor(project)}/site/deploys?siteId=${encodeURIComponent(site.id)}`), [api, project.id, site.id]);
+    const [state, refreshDeploys] = useProjectResource(load);
+    const [writeState, write] = useWrite();
+    return /* @__PURE__ */ jsxs("details", { children: [
+      /* @__PURE__ */ jsxs("summary", { children: [
+        site.name || project.name,
+        ": deployment history & rollback"
+      ] }),
+      /* @__PURE__ */ jsx(ResourceState, { state, refresh: refreshDeploys, children: (state.value?.deploys ?? []).length ? /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: state.value.deploys.map((deploy) => /* @__PURE__ */ jsxs("li", { children: [
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("strong", { children: deploy.id }),
+          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            deploy.branch || deploy.kind || "Recorded deploy",
+            deploy.created_at ? ` \xB7 ${ago(deploy.created_at)}` : ""
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx(Button, { disabled: writeState.busy, size: "sm", onClick: () => ask({ title: "Roll production back?", text: `Replace ${site.productionUrl || site.name || project.name} with recorded deploy ${deploy.id}. This changes what visitors see.`, confirm: "Roll back", run: () => write(async () => {
+          await api("POST", `${pathFor(project)}/site/rollback`, { deployId: deploy.id, siteId: site.id });
+          void refresh();
+          void refreshDeploys();
+        }, "Production rolled back.") }), children: "Roll back" })
+      ] }, deploy.id)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No recorded deployments yet." }) }),
+      /* @__PURE__ */ jsx(Feedback, { state: writeState })
+    ] });
+  }
+  function Work({ project }) {
+    const { data, setModal } = useAdmin();
+    const tickets = projectWork(data.tickets, project.id);
+    return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Project work" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => setModal({ kind: "task", projectId: project.id }), children: "Add work" })
+      ] }),
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Save a draft for later, queue an agent deliberately, or continue the same work locally. Open a request for its conversation and evidence." }),
+      /* @__PURE__ */ jsx(WorkList, { tickets }),
+      !tickets.length ? /* @__PURE__ */ jsx("p", { className: "aw-project__empty", children: "No work yet. Add the first outcome you want to deliver." }) : null
+    ] });
+  }
+  function WorkList({ tickets }) {
+    const { openTicket } = useAdmin();
+    return /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: tickets.map((ticket) => /* @__PURE__ */ jsxs("li", { children: [
+      /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-project__worklink", onClick: () => openTicket(ticket.id), children: [
+        /* @__PURE__ */ jsxs("span", { className: "aw-mono", children: [
+          "#",
+          ticket.id
+        ] }),
+        /* @__PURE__ */ jsx("strong", { children: ticket.title }),
+        ticket.updated_at ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: ago(ticket.updated_at) }) : null
+      ] }),
+      /* @__PURE__ */ jsx(StatusPill, { status: ticket.status })
+    ] }, ticket.id)) });
+  }
+  function Activity({ project }) {
+    const { data, openTicket } = useAdmin();
+    const tickets = projectWork(data.tickets, project.id);
+    const ids = new Set(tickets.map((ticket) => String(ticket.id)));
+    const runs = [...data.running ?? [], ...data.recent ?? []].filter((run, index, all) => ids.has(String(run.ticket_id)) && all.findIndex((other) => other.id === run.id) === index).sort((a, b) => (b.started_at ?? b.created_at ?? 0) - (a.started_at ?? a.created_at ?? 0));
+    return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+      /* @__PURE__ */ jsx("h3", { children: "Activity & review" }),
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Recent recorded attempts are listed below. Open a request to select any historical run and inspect its changes, checks and agent session. Missing checks mean unknown, not passing." }),
+      runs.length ? /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: runs.map((run) => /* @__PURE__ */ jsxs("li", { children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-project__run", children: [
+          /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-link", onClick: () => openTicket(run.ticket_id), children: [
+            "#",
+            run.ticket_id,
+            " \xB7 ",
+            tickets.find((ticket) => String(ticket.id) === String(run.ticket_id))?.title
+          ] }),
+          /* @__PURE__ */ jsxs("span", { className: "aw-mono", children: [
+            "Run ",
+            run.id
+          ] }),
+          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            run.executor || "Agent",
+            " \xB7 ",
+            run.started_at ? ago(run.started_at) : "Start time unknown",
+            " \xB7 checks available in request review"
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx(StatusPill, { status: run.status }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => openTicket(run.ticket_id), children: "Inspect attempts" })
+      ] }, run.id)) }) : /* @__PURE__ */ jsx("p", { className: "aw-project__empty", children: "No recent agent attempts. Older evidence, when available, remains inside each request." }),
+      /* @__PURE__ */ jsx("h3", { className: "aw-project__subheading", children: "Requests with history" }),
+      /* @__PURE__ */ jsx(WorkList, { tickets })
+    ] });
+  }
+  function People({ project, refresh }) {
+    const { api, data, ask } = useAdmin();
+    const load = useCallback(() => api("GET", `${pathFor(project)}/memberships`), [api, project.id]);
+    const [state, refreshPeople] = useProjectResource(load);
+    const loadRecipients = useCallback(() => api("GET", `${pathFor(project)}/recipients`), [api, project.id]);
+    const [recipients, refreshRecipients] = useProjectResource(loadRecipients);
+    const [email, setEmail] = useState("");
+    const [writeState, write] = useWrite();
+    const user = data.identity?.user ?? data.user;
+    const admin = data.access?.superAdmin === true || data.identity?.access?.superAdmin === true || user?.role === "admin";
+    const owner = state.value?.ownerUserId && state.value.ownerUserId === user?.id;
+    const ownerPerson = (state.value?.clients ?? project.clients ?? []).find((person) => person.id === state.value?.ownerUserId);
+    const grant = (event) => {
+      event.preventDefault();
+      if (!email.trim() || !admin) return;
+      void write(async () => {
+        await api("POST", `${pathFor(project)}/memberships`, { email: email.trim() });
+        setEmail("");
+        void refreshPeople();
+        void refreshRecipients();
+        void refresh();
+      }, "Trusted project access granted.");
+    };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Project ownership" }),
+        /* @__PURE__ */ jsx("p", { children: state.value?.ownerUserId ? `Owned by ${ownerPerson?.name || ownerPerson?.email || state.value.ownerUserId}.` : "An owner has not been verified for this project." }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "The client owns the project and can act independently. Agent help and agency support are optional." })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Trusted developers" }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Trusted developers can work across the project: context, integrations, configuration, code and deployments. Access does not extend to other projects or global administration." }),
+        /* @__PURE__ */ jsxs(ResourceState, { state, refresh: refreshPeople, children: [
+          /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: (state.value?.memberships ?? []).map((person) => /* @__PURE__ */ jsxs("li", { children: [
+            /* @__PURE__ */ jsxs("div", { children: [
+              /* @__PURE__ */ jsx("strong", { children: person.name || person.email }),
+              person.name ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: person.email }) : null,
+              /* @__PURE__ */ jsx(Tag, { children: "Trusted developer" })
+            ] }),
+            admin || owner ? /* @__PURE__ */ jsx(Button, { size: "sm", disabled: writeState.busy, onClick: () => ask({ title: `Remove ${person.email} from this project?`, text: "Their trusted access ends immediately. Their account and access to other projects stay unchanged.", confirm: "Remove access", danger: true, run: () => write(async () => {
+              await api("DELETE", `${pathFor(project)}/memberships/${encodeURIComponent(person.userId)}`);
+              void refreshPeople();
+              void refreshRecipients();
+            }, "Trusted access removed.") }), children: "Remove access" }) : null
+          ] }, person.userId)) }),
+          !state.value?.memberships?.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No trusted developers assigned." }) : null
+        ] }),
+        admin ? /* @__PURE__ */ jsxs("form", { onSubmit: grant, className: "aw-project__invite", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Existing account email", children: /* @__PURE__ */ jsx("input", { type: "email", required: true, maxLength: 254, value: email, onChange: (event) => setEmail(event.target.value) }) }),
+          /* @__PURE__ */ jsx(Button, { type: "submit", disabled: writeState.busy || !email.trim(), children: writeState.busy ? "Granting\u2026" : "Grant project access" })
+        ] }) : /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+          "A workspace administrator can grant trusted developer access.",
+          owner ? " As project owner, you can remove it." : ""
+        ] }),
+        /* @__PURE__ */ jsx(Feedback, { state: writeState })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Client participants" }),
+        admin ? /* @__PURE__ */ jsx(ProjectPeople, { project }) : /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: (state.value?.clients ?? project.clients ?? []).map((person) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("strong", { children: person.name || person.email }),
+          person.name ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: person.email }) : null
+        ] }) }, person.id)) }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Client participation is separate from trusted developer access. Select recipients in a work conversation to notify them; typed @names alone do not send notifications." })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Conversation recipients" }),
+        /* @__PURE__ */ jsxs(ResourceState, { state: recipients, refresh: refreshRecipients, children: [
+          /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: (recipients.value?.recipients ?? []).map((person) => /* @__PURE__ */ jsxs("li", { children: [
+            /* @__PURE__ */ jsxs("div", { children: [
+              /* @__PURE__ */ jsx("strong", { children: person.name || person.email }),
+              person.name ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: person.email }) : null
+            ] }),
+            /* @__PURE__ */ jsx(Tag, { children: person.memberType === "trusted_developer" ? "Trusted developer" : "Client" })
+          ] }, person.userId)) }),
+          !recipients.value?.recipients?.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No eligible recipients returned. Recipient selection is available inside a saved work conversation." }) : null
+        ] })
+      ] })
+    ] });
+  }
+  function Secrets({ project }) {
+    const { api, ask } = useAdmin();
+    const [opened, setOpened] = useState(false);
+    return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+      /* @__PURE__ */ jsx("h3", { children: "Project secrets" }),
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Values stay hidden until you deliberately reveal one. Never paste secrets into work briefs, agent conversations or screenshots." }),
+      opened ? /* @__PURE__ */ jsx(SecretManager, { project, api, ask, onClose: () => setOpened(false) }, project.id) : /* @__PURE__ */ jsx(Button, { onClick: () => setOpened(true), children: "Manage project secrets" })
+    ] });
+  }
+  function SecretManager({ project, api, ask, onClose }) {
+    const load = useCallback(() => api("GET", `${pathFor(project)}/secrets`), [api, project.id]);
+    const [state, refresh] = useProjectResource(load);
+    const [name, setName] = useState("");
+    const [value, setValue] = useState("");
+    const [revealed, setRevealed] = useState(null);
+    const [writeState, write] = useWrite();
+    const timer = useRef(null);
+    const alive = useRef(true);
+    useEffect(() => {
+      alive.current = true;
+      return () => {
+        alive.current = false;
+        clearTimeout(timer.current);
+      };
+    }, []);
+    const hide = () => {
+      clearTimeout(timer.current);
+      setRevealed(null);
+    };
+    const save = (event) => {
+      event.preventDefault();
+      if (!name.trim() || !value) return;
+      void write(async () => {
+        await api("PUT", `${pathFor(project)}/secrets/${encodeURIComponent(name.trim())}`, { value });
+        setValue("");
+        setName("");
+        hide();
+        void refresh();
+      }, "Secret saved.");
+    };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: onClose, children: "Close secrets" }) }),
+      /* @__PURE__ */ jsxs(ResourceState, { state, refresh, children: [
+        /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: (state.value?.secrets ?? []).map((secret) => /* @__PURE__ */ jsxs("li", { children: [
+          /* @__PURE__ */ jsx("code", { children: secret.name }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: writeState.busy, onClick: () => void write(async () => {
+            hide();
+            const result = await api("POST", `${pathFor(project)}/secrets/${encodeURIComponent(secret.name)}/reveal`, {});
+            if (!alive.current) return;
+            setRevealed({ name: secret.name, value: result.value });
+            timer.current = setTimeout(() => setRevealed(null), 3e4);
+          }), children: "Reveal" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: writeState.busy, onClick: () => ask({ title: `Delete ${secret.name}?`, text: "Project operations that depend on this secret may stop working. This cannot be undone.", confirm: "Delete secret", danger: true, run: () => write(async () => {
+            await api("DELETE", `${pathFor(project)}/secrets/${encodeURIComponent(secret.name)}`);
+            hide();
+            void refresh();
+          }, "Secret deleted.") }), children: "Delete" })
+        ] }, secret.name)) }),
+        !state.value?.secrets?.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No project secrets stored." }) : null
+      ] }),
+      revealed ? /* @__PURE__ */ jsxs("div", { className: "aw-project__reveal", children: [
+        /* @__PURE__ */ jsx("strong", { children: revealed.name }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Visible for 30 seconds. Hide it before sharing this screen." }),
+        /* @__PURE__ */ jsx("pre", { children: revealed.value }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: hide, children: "Hide value" })
+      ] }) : null,
+      /* @__PURE__ */ jsxs("form", { onSubmit: save, className: "aw-project__form", children: [
+        /* @__PURE__ */ jsx(Field, { label: "Secret name", children: /* @__PURE__ */ jsx("input", { required: true, autoComplete: "off", maxLength: 128, value: name, onChange: (event) => setName(event.target.value) }) }),
+        /* @__PURE__ */ jsx(Field, { label: "New value", hint: "An existing name replaces that secret\u2019s value.", children: /* @__PURE__ */ jsx("input", { type: "password", required: true, autoComplete: "new-password", value, onChange: (event) => setValue(event.target.value) }) }),
+        /* @__PURE__ */ jsx(Button, { type: "submit", disabled: writeState.busy || !name.trim() || !value, children: writeState.busy ? "Saving\u2026" : "Set secret" })
+      ] }),
+      /* @__PURE__ */ jsx(Feedback, { state: writeState })
+    ] });
+  }
+
+  // packages/admin-ui/src/workbench.js
+  function projectCreationRequest(input, access) {
+    const { name, slug, kind, code, repo, brief } = input;
+    if (access?.superAdmin) return { path: "/admin/projects", body: { name, slug, kind, code, repo } };
+    return { path: "/portal/projects", body: { name, kind, brief, repoMode: code === "folder" ? "none" : code, ...code === "repo" ? { repo } : {} } };
+  }
+  function createTaskSubmission(send) {
+    let busy = false;
+    return async (input) => {
+      const title = input.title?.trim();
+      const brief = input.brief?.trim();
+      if (busy || !title || !brief || !input.projectId) return null;
+      busy = true;
+      try {
+        return await send({ ...input, title, brief, approve: input.approve === true });
+      } finally {
+        busy = false;
+      }
+    };
+  }
+  function createProjectSubmission(create, setup = async () => {
+  }, { requireSlug = true } = {}) {
+    let busy = false;
+    const submit = async (input) => {
+      if (busy || !input.name?.trim() || requireSlug && (typeof input.slug !== "string" || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(input.slug)) || input.code === "repo" && !input.repo?.trim()) return null;
+      busy = true;
+      try {
+        if (!submit.project) submit.project = await create({ ...input, name: input.name.trim() });
+        await setup(submit.project, input);
+        return submit.project;
+      } finally {
+        busy = false;
+      }
+    };
+    submit.project = null;
+    return submit;
+  }
+  function destinationFromHash(hash) {
+    const query = new URLSearchParams(hash.replace(/^#/, ""));
+    const id = Number(query.get("ticket"));
+    if (Number.isInteger(id) && id > 0) return `t:${id}`;
+    if (query.get("project")) return `p:${query.get("project")}`;
+    if (query.get("client")) return `c:${query.get("client")}`;
+    return null;
+  }
+  function workbenchAllowed(key, access) {
+    if (access?.superAdmin) return true;
+    return ["inbox", "board", "list"].includes(key) || key.startsWith("p:") || key.startsWith("t:");
+  }
 
   // packages/admin-ui/src/app.jsx
   var VIEWS = [
@@ -5964,7 +9271,10 @@ button.aw-file:hover { border-color: currentColor; }
       } catch {
       }
     }, [tabs, active]);
-    const open = useCallback((key) => setTabs((s) => ({ tabs: s.tabs.includes(key) ? s.tabs : [...s.tabs, key], active: key })), []);
+    const open = useCallback((key) => {
+      if (key.startsWith("p:") && host?.openProject) return host.openProject(key.slice(2));
+      setTabs((s) => ({ tabs: s.tabs.includes(key) ? s.tabs : [...s.tabs, key], active: key }));
+    }, [host]);
     const close = useCallback(
       (key) => setTabs((s) => {
         const i = s.tabs.indexOf(key);
@@ -5979,10 +9289,8 @@ button.aw-file:hover { border-color: currentColor; }
       if (typeof window === "undefined") return void 0;
       const fromHash = () => {
         const hash = window.location.hash.slice(1);
-        const id = Number(new URLSearchParams(hash).get("ticket"));
-        if (Number.isInteger(id) && id > 0) openTicket(id);
-        const client = new URLSearchParams(hash).get("client");
-        if (client) open(`c:${client}`);
+        const destination = destinationFromHash(hash);
+        if (destination) open(destination);
         if (viewOf(hash)) open(hash);
       };
       fromHash();
@@ -6043,6 +9351,9 @@ button.aw-file:hover { border-color: currentColor; }
       window.addEventListener("keydown", onKey);
       return () => window.removeEventListener("keydown", onKey);
     }, []);
+    useEffect(() => {
+      if (data.loaded && !workbenchAllowed(active, data.access)) open("board");
+    }, [data.loaded, data.access, active, open]);
     const ctx = useMemo(
       () => ({ api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, ask: setAsk, setModal, boardProject, setBoardProject }),
       [api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, boardProject]
@@ -6055,6 +9366,7 @@ button.aw-file:hover { border-color: currentColor; }
         const t = ticketById.get(Number(key.slice(2)));
         return t ? `#${t.id} ${t.title}` : `#${key.slice(2)}`;
       }
+      if (key.startsWith("p:")) return data.projects.find((p) => p.id === key.slice(2))?.name ?? "Project";
       if (key.startsWith("c:")) {
         const c = data.clients.find((x) => x.id === key.slice(2));
         return c ? c.name || c.email : "Client";
@@ -6066,7 +9378,7 @@ button.aw-file:hover { border-color: currentColor; }
       /* @__PURE__ */ jsx("style", { children: STYLES }),
       /* @__PURE__ */ jsxs("div", { ref: rootRef, className: cx("aw", fullscreen && "aw--fullscreen", `aw--${platform}`, underButtons && "aw--inset"), children: [
         /* @__PURE__ */ jsxs("nav", { className: "aw-activity", "aria-label": "Views", children: [
-          VIEWS.map((v) => /* @__PURE__ */ jsxs("button", { type: "button", title: v.label, "aria-pressed": active === v.key, onClick: () => open(v.key), children: [
+          VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => /* @__PURE__ */ jsxs("button", { type: "button", title: v.label, "aria-pressed": active === v.key, onClick: () => open(v.key), children: [
             /* @__PURE__ */ jsx(Icon, { name: v.icon, size: 20 }),
             v.key === "inbox" && inboxCount ? /* @__PURE__ */ jsx("span", { className: "aw-badge", children: inboxCount }) : null
           ] }, v.key)),
@@ -6078,7 +9390,7 @@ button.aw-file:hover { border-color: currentColor; }
         sidebar ? /* @__PURE__ */ jsx(Resizer, { host: ".aw", cssVar: "--aw-explorer-w", def: 260, min: 180, max: 520, storage: "aw.explorer.w", className: "aw-resize--explorer" }) : null,
         /* @__PURE__ */ jsxs("main", { className: "aw-main", children: [
           /* @__PURE__ */ jsxs("div", { className: "aw-tabs", role: "tablist", children: [
-            tabs.map((key) => /* @__PURE__ */ jsxs(
+            tabs.filter((key) => workbenchAllowed(key, data.access)).map((key) => /* @__PURE__ */ jsxs(
               "div",
               {
                 role: "tab",
@@ -6088,7 +9400,7 @@ button.aw-file:hover { border-color: currentColor; }
                 onAuxClick: (e) => e.button === 1 && close(key),
                 title: tabLabel(key),
                 children: [
-                  /* @__PURE__ */ jsx(Icon, { name: key.startsWith("t:") ? "ticket" : key.startsWith("c:") ? "clients" : viewOf(key)?.icon ?? "list", size: 14 }),
+                  /* @__PURE__ */ jsx(Icon, { name: key.startsWith("p:") ? "folder" : key.startsWith("t:") ? "ticket" : key.startsWith("c:") ? "clients" : viewOf(key)?.icon ?? "list", size: 14 }),
                   /* @__PURE__ */ jsx("span", { className: "aw-tab__label", children: tabLabel(key) }),
                   /* @__PURE__ */ jsx(
                     "button",
@@ -6110,7 +9422,7 @@ button.aw-file:hover { border-color: currentColor; }
             /* @__PURE__ */ jsx("span", { className: "aw-tabs__fill" }),
             /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "Refresh", onClick: () => void reload(), children: /* @__PURE__ */ jsx(Icon, { name: "refresh", size: 14 }) })
           ] }),
-          /* @__PURE__ */ jsx("div", { className: "aw-content", children: signedOut ? /* @__PURE__ */ jsx(SignedOut, {}) : !data.loaded ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading\u2026" }) : tabs.map((key) => /* @__PURE__ */ jsx("section", { className: "aw-pane", hidden: key !== active, children: key.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(key.slice(2)), active: key === active }) : key.startsWith("c:") ? /* @__PURE__ */ jsx(ClientView, { id: key.slice(2) }) : /* @__PURE__ */ jsx(View, { name: key }) }, key)) })
+          /* @__PURE__ */ jsx("div", { className: "aw-content", children: signedOut ? /* @__PURE__ */ jsx(SignedOut, {}) : !data.loaded ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading\u2026" }) : tabs.filter((key) => workbenchAllowed(key, data.access)).map((key) => /* @__PURE__ */ jsx("section", { className: "aw-pane", hidden: key !== active, children: key.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(key.slice(2)), active: key === active }) : key.startsWith("p:") ? /* @__PURE__ */ jsx(ProjectView, { id: key.slice(2) }) : key.startsWith("c:") ? /* @__PURE__ */ jsx(ClientView, { id: key.slice(2) }) : /* @__PURE__ */ jsx(View, { name: key }) }, key)) })
         ] }),
         /* @__PURE__ */ jsx(StatusBar, {}),
         toast ? /* @__PURE__ */ jsx("div", { className: cx("aw-toast", toast.kind === "error" && "is-error"), role: "status", children: toast.text }) : null,
@@ -6162,7 +9474,7 @@ button.aw-file:hover { border-color: currentColor; }
     ] });
   }
   function Explorer() {
-    const { data, open, openTicket, setBoardProject, boardProject } = useAdmin();
+    const { data, open, openTicket, setModal, setBoardProject, boardProject } = useAdmin();
     const [openSlug, setOpenSlug] = useState({});
     const byProject = /* @__PURE__ */ new Map();
     for (const t of data.tickets) {
@@ -6173,7 +9485,10 @@ button.aw-file:hover { border-color: currentColor; }
     const live = (t) => !["done", "declined"].includes(t.status);
     const runningTicket = new Set(data.running.map((r) => r.ticket_id));
     return /* @__PURE__ */ jsxs("aside", { className: "aw-explorer", "aria-label": "Explorer", children: [
-      /* @__PURE__ */ jsx("h3", { children: "Projects" }),
+      /* @__PURE__ */ jsxs("h3", { children: [
+        "Projects ",
+        data.access?.canUseWorkbench ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "New project", onClick: () => setModal({ kind: "project" }), children: /* @__PURE__ */ jsx(Icon, { name: "plus", size: 12 }) }) : null
+      ] }),
       /* @__PURE__ */ jsx("ul", { className: "aw-tree", children: data.projects.map((p) => {
         const items = (byProject.get(p.id) ?? []).filter(live);
         const expanded = openSlug[p.id] ?? items.length > 0;
@@ -6187,9 +9502,9 @@ button.aw-file:hover { border-color: currentColor; }
                 className: "aw-tree__name",
                 onClick: () => {
                   setBoardProject(p.id);
-                  open("board");
+                  open(`p:${p.id}`);
                 },
-                title: `Open ${p.name} on the board`,
+                title: `Open ${p.name}`,
                 children: [
                   /* @__PURE__ */ jsx(Icon, { name: "folder", size: 14 }),
                   " ",
@@ -6224,18 +9539,20 @@ button.aw-file:hover { border-color: currentColor; }
         " \xB7 ",
         r.node_id ?? "Harness"
       ] }) }, r.id)) : /* @__PURE__ */ jsx("li", { className: "aw-tree__none", children: "Nothing" }) }),
-      /* @__PURE__ */ jsx("h3", { children: "Nodes" }),
-      /* @__PURE__ */ jsx("ul", { className: "aw-tree", children: data.nodes.map((n) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-tree__leaf", onClick: () => open("fleet"), children: [
-        /* @__PURE__ */ jsx(Dot, { state: !n.online ? "bad" : n.draining ? "warn" : "ok" }),
-        " ",
-        n.id,
-        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+      data.access?.superAdmin ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx("h3", { children: "Nodes" }),
+        /* @__PURE__ */ jsx("ul", { className: "aw-tree", children: data.nodes.map((n) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-tree__leaf", onClick: () => open("fleet"), children: [
+          /* @__PURE__ */ jsx(Dot, { state: !n.online ? "bad" : n.draining ? "warn" : "ok" }),
           " ",
-          n.running.length,
-          "/",
-          n.slots
-        ] })
-      ] }) }, n.id)) })
+          n.id,
+          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            " ",
+            n.running.length,
+            "/",
+            n.slots
+          ] })
+        ] }) }, n.id)) })
+      ] }) : null
     ] });
   }
   function StatusBar() {
@@ -6244,22 +9561,27 @@ button.aw-file:hover { border-color: currentColor; }
     const waiting = data.queue.length;
     const stuck = data.queue.filter((q) => !q.eligible.length).length;
     return /* @__PURE__ */ jsxs("footer", { className: "aw-status", children: [
-      /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => open("fleet"), children: [
-        /* @__PURE__ */ jsx(Dot, { state: online === data.nodes.length && online ? "ok" : online ? "warn" : "bad" }),
-        " ",
-        online,
-        "/",
-        data.nodes.length,
-        " nodes online"
-      ] }),
-      /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => open("fleet"), children: [
-        data.running.length,
-        " running"
-      ] }),
-      /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => open("fleet"), children: [
-        waiting,
-        " queued",
-        stuck ? ` \xB7 ${stuck} stuck` : ""
+      data.access?.superAdmin ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => open("fleet"), children: [
+          /* @__PURE__ */ jsx(Dot, { state: online === data.nodes.length && online ? "ok" : online ? "warn" : "bad" }),
+          " ",
+          online,
+          "/",
+          data.nodes.length,
+          " nodes online"
+        ] }),
+        /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => open("fleet"), children: [
+          data.running.length,
+          " running"
+        ] }),
+        /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => open("fleet"), children: [
+          waiting,
+          " queued",
+          stuck ? ` \xB7 ${stuck} stuck` : ""
+        ] })
+      ] }) : /* @__PURE__ */ jsxs("span", { children: [
+        data.projects.length,
+        " projects"
       ] }),
       /* @__PURE__ */ jsx("span", { className: "aw-status__fill" }),
       data.error ? /* @__PURE__ */ jsx("span", { className: "aw-status__err", children: errorText(data.error) }) : null,
@@ -6276,15 +9598,16 @@ button.aw-file:hover { border-color: currentColor; }
     const items = useMemo(() => {
       const cmds = [
         { label: "New task\u2026", hint: "command", run: () => setModal({ kind: "task" }) },
-        { label: "New project\u2026", hint: "command", run: () => setModal({ kind: "project" }) },
+        ...data.access?.canUseWorkbench ? [{ label: "New project\u2026", hint: "command", run: () => setModal({ kind: "project" }) }] : [],
         { label: "Refresh", hint: "command", run: () => void reload() },
-        ...VIEWS.map((v) => ({ label: `Go to ${v.label}`, hint: "view", run: () => open(v.key) })),
+        ...VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => ({ label: `Go to ${v.label}`, hint: "view", run: () => open(v.key) })),
+        ...data.projects.map((p) => ({ label: p.name, hint: "project", run: () => open(`p:${p.id}`) })),
         ...data.tickets.map((t) => ({ label: `#${t.id} ${t.title}`, hint: `${STATUS_LABEL[t.status]} \xB7 ${t.project_name ?? "no project"}`, run: () => openTicket(t.id) }))
       ];
       const needle = q.trim().toLowerCase();
       if (!needle) return cmds.slice(0, 40);
       return cmds.filter((c) => `${c.label} ${c.hint}`.toLowerCase().includes(needle)).slice(0, 40);
-    }, [q, data.tickets, open, openTicket, setModal, reload]);
+    }, [q, data, open, openTicket, setModal, reload]);
     const pick = (item) => {
       onClose();
       item?.run();
@@ -6317,7 +9640,7 @@ button.aw-file:hover { border-color: currentColor; }
       ] })
     ] }) });
   }
-  function TaskModal({ preset, onClose }) {
+  function TaskModal({ preset = {}, onClose }) {
     const { api, data, act, openTicket } = useAdmin();
     const [title, setTitle] = useState("");
     const [brief, setBrief] = useState("");
@@ -6325,49 +9648,62 @@ button.aw-file:hover { border-color: currentColor; }
     const [priority, setPriority] = useState(data.settings?.defaultPriority ?? 0);
     const [executor, setExecutor] = useState(null);
     const [requires, setRequires] = useState([]);
-    const [approve, setApprove] = useState(true);
+    const [approve, setApprove] = useState(false);
     const [busy, setBusy] = useState(false);
     const slug = data.projects.find((p) => p.id === projectId)?.slug ?? null;
     const where = predict(data.nodes, { slug, requires, executor, kind: "system" });
     const caps = data.catalog?.capabilities ?? [];
+    const submitRef = useRef(null);
+    if (!submitRef.current) submitRef.current = createTaskSubmission((body) => act(() => api("POST", "/admin/work", body), (o) => `Saved #${o.id}${body.approve ? " and queued it" : " as a draft"}.`));
+    const busyRef = useRef(false);
     const submit = async () => {
+      if (busyRef.current || !title.trim() || !brief.trim() || !projectId) return;
+      busyRef.current = true;
+      const pending = submitRef.current({ title, brief, projectId, priority, requires, executor, approve });
       setBusy(true);
       try {
-        const out = await act(
-          () => api("POST", "/admin/work", { title: title.trim(), brief: brief.trim(), projectId, priority, requires, executor, approve }),
-          (o) => `Filed #${o.id}${approve ? " and queued it" : ""}.`
-        );
-        onClose();
-        openTicket(out.id);
+        const out = await pending;
+        if (out) {
+          onClose();
+          openTicket(out.id);
+        }
       } catch {
+      } finally {
+        busyRef.current = false;
         setBusy(false);
       }
     };
-    return /* @__PURE__ */ jsxs(
+    return /* @__PURE__ */ jsx(
       Modal,
       {
         title: "New task",
         subtitle: "Your own work on one of your projects. The brief is trusted guidance for the agent.",
-        onClose,
+        onClose: () => !busyRef.current && onClose(),
         wide: true,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsxs("span", { className: `aw-predict aw-predict--${where.state}`, children: [
+          data.access?.superAdmin ? /* @__PURE__ */ jsxs("span", { className: `aw-predict aw-predict--${where.state}`, children: [
             /* @__PURE__ */ jsx(Dot, { state: where.state }),
             " ",
             where.text
-          ] }),
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !title.trim() || !brief.trim() || !projectId, onClick: submit, children: approve ? "File and queue" : "File" })
+          ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: approve ? "The agent will be queued." : "Draft only \xB7 no agent starts." }),
+          /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !title.trim() || !brief.trim() || !projectId, onClick: submit, children: busy ? "Saving\u2026" : approve ? "Save and queue agent" : "Save draft" })
         ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Title", children: /* @__PURE__ */ jsx("input", { value: title, maxLength: 140, placeholder: "Fix the checkout total rounding", onChange: (e) => setTitle(e.target.value) }) }),
+        children: /* @__PURE__ */ jsxs("fieldset", { disabled: busy, style: { border: 0, padding: 0, margin: 0, minWidth: 0 }, children: [
+          /* @__PURE__ */ jsx(Field, { label: "Title", children: /* @__PURE__ */ jsx("input", { disabled: busy, value: title, maxLength: 140, placeholder: "Fix the checkout total rounding", onChange: (e) => setTitle(e.target.value) }) }),
           /* @__PURE__ */ jsx(Field, { label: "Brief", hint: "What to change, where, and how to check it.", children: /* @__PURE__ */ jsx(
             "textarea",
             {
+              disabled: busy,
               rows: 7,
               value: brief,
               onChange: (e) => setBrief(e.target.value),
-              onKeyDown: (e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && submit()
+              onKeyDown: (e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  void submit();
+                }
+              }
             }
           ) }),
           /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
@@ -6377,95 +9713,195 @@ button.aw-file:hover { border-color: currentColor; }
             ] }) }),
             /* @__PURE__ */ jsx(Field, { label: "Priority", children: /* @__PURE__ */ jsx(Segmented, { value: priority, options: PRIORITIES, onChange: setPriority }) }),
             /* @__PURE__ */ jsx(Field, { label: "Agent", children: /* @__PURE__ */ jsx(Segmented, { value: executor, options: AGENTS, onChange: setExecutor }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Start", children: /* @__PURE__ */ jsx(Segmented, { value: approve, options: [{ value: true, label: "Queue now" }, { value: false, label: "Hold in New" }], onChange: setApprove }) })
+            /* @__PURE__ */ jsx(Field, { label: "Start", children: /* @__PURE__ */ jsx(Segmented, { value: approve, disabled: busy, options: [{ value: false, label: "Save draft" }, { value: true, label: "Queue agent" }], onChange: setApprove }) })
           ] }),
           caps.length ? /* @__PURE__ */ jsx(Field, { label: "Needs", hint: "Only nodes with all of these take it.", children: /* @__PURE__ */ jsx(Chips, { value: requires, options: caps.map((c) => ({ value: c.id, label: c.label, hint: c.hint })), onChange: setRequires }) }) : null
-        ]
+        ] })
       }
     );
   }
   function ProjectModal({ onClose }) {
-    const { api, act } = useAdmin();
+    const { api, act, host, open, data, notify } = useAdmin();
     const [name, setName] = useState("");
     const [slug, setSlug] = useState("");
     const [edited, setEdited] = useState(false);
     const [kind, setKind] = useState("existing");
     const [code, setCode] = useState("create");
     const [repo, setRepo] = useState("");
-    const ready = name.trim() && slug && (code !== "repo" || repo.trim());
-    const submit = () => act(
-      () => api("POST", "/admin/projects", { name: name.trim(), slug, kind, code, repo: code === "repo" ? repo.trim() : void 0 }),
-      `Created ${name.trim()}.`
-    ).then(onClose, () => void 0);
+    const [what, setWhat] = useState("");
+    const [goal, setGoal] = useState("");
+    const [receipt, setReceipt] = useState(null);
+    const [localPath, setLocalPath] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [setupError, setSetupError] = useState(null);
+    const submission = useRef(null);
+    const busyRef = useRef(false);
+    if (!submission.current) submission.current = createProjectSubmission(
+      (input) => act(async () => {
+        const request = projectCreationRequest(input, data.access);
+        const result = await api("POST", request.path, request.body);
+        setReceipt(result);
+        if (result.repoError) notify?.(`Project created; repository setup needs attention: ${result.repoError}`, "error");
+        return result.project ?? result;
+      }),
+      (project, input) => input.localPath ? host.projectConfigureLocal({ projectId: project.id, path: input.localPath }) : Promise.resolve(),
+      { requireSlug: Boolean(data.access?.superAdmin) }
+    );
+    const created = submission.current.project;
+    const ready = name.trim() && (!data.access?.superAdmin || /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug)) && (code !== "repo" || repo.trim()) && (data.access?.superAdmin || what.trim() && goal.trim());
+    const go = (project) => {
+      onClose();
+      open(`p:${project.id}`);
+    };
+    const submit = async () => {
+      if (busyRef.current || !ready) return;
+      busyRef.current = true;
+      setBusy(true);
+      setSetupError(null);
+      try {
+        const project = await submission.current({ name, slug, kind, code, repo: code === "repo" ? repo.trim() : void 0, brief: { what: what.trim(), goal: goal.trim() }, localPath: localPath.trim() });
+        if (project) go(project);
+      } catch (error) {
+        setSetupError(errorText(error));
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
+      }
+    };
     return /* @__PURE__ */ jsxs(
       Modal,
       {
         title: "New project",
-        subtitle: "What clients file against. Work starts once a node holds its repo.",
-        onClose,
+        subtitle: "Create the project, then choose where to develop it.",
+        onClose: () => !busyRef.current && onClose(),
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !ready, onClick: submit, children: "Create" })
+          /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: () => created ? go(created) : onClose(), children: created ? "Open project" : "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !ready, onClick: submit, children: busy ? "Saving\u2026" : created ? "Retry local setup" : "Create project" })
         ] }),
         children: [
-          /* @__PURE__ */ jsx(Field, { label: "Name", children: /* @__PURE__ */ jsx(
-            "input",
-            {
-              value: name,
-              maxLength: 80,
-              placeholder: "Acme storefront",
-              onChange: (e) => {
-                setName(e.target.value);
-                if (!edited) setSlug(slugify(e.target.value));
-              }
-            }
-          ) }),
-          /* @__PURE__ */ jsx(Field, { label: "Slug", hint: "Lowercase and dashes.", children: /* @__PURE__ */ jsx(
-            "input",
-            {
-              className: "aw-mono",
-              value: slug,
-              maxLength: 63,
-              onChange: (e) => {
-                setEdited(true);
-                setSlug(e.target.value.toLowerCase());
-              }
-            }
-          ) }),
-          /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx(
-            Segmented,
-            {
-              value: kind,
-              options: [
-                { value: "existing", label: "Existing code or system" },
-                { value: "new", label: "New website" }
-              ],
-              onChange: setKind
-            }
-          ) }),
-          /* @__PURE__ */ jsx(
-            Field,
-            {
-              label: "Code",
-              hint: code === "create" ? kind === "new" ? "A node makes a private repo from the site template (main + preview)." : "A node makes a private repo with a README." : code === "repo" ? "Nodes clone this. A private repo needs a node whose git can reach it." : "A node with a folder named like the slug shares its origin.",
-              children: /* @__PURE__ */ jsx(
-                Segmented,
-                {
-                  value: code,
-                  options: [
-                    { value: "create", label: "Create a repo" },
-                    { value: "repo", label: "Use a repo URL" },
-                    { value: "folder", label: "Folder on a node" }
-                  ],
-                  onChange: setCode
+          receipt?.repoError ? /* @__PURE__ */ jsxs("p", { role: "status", className: "aw-callout", children: [
+            "Project created; repository setup needs attention: ",
+            String(receipt.repoError)
+          ] }) : null,
+          setupError ? /* @__PURE__ */ jsxs("p", { role: "alert", className: "aw-callout", children: [
+            created ? "Project created. Local setup failed; retry does not create another project. " : "",
+            setupError
+          ] }) : null,
+          /* @__PURE__ */ jsxs("fieldset", { disabled: busy || Boolean(created), style: { border: 0, padding: 0, margin: 0, minWidth: 0 }, children: [
+            /* @__PURE__ */ jsx(Field, { label: "Name", children: /* @__PURE__ */ jsx(
+              "input",
+              {
+                value: name,
+                maxLength: 80,
+                placeholder: "Acme storefront",
+                onChange: (e) => {
+                  setName(e.target.value);
+                  if (!edited) setSlug(slugify(e.target.value));
                 }
-              )
-            }
-          ),
-          code === "repo" ? /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) }) : null
+              }
+            ) }),
+            data.access?.superAdmin ? /* @__PURE__ */ jsx(Field, { label: "Slug", hint: "Lowercase and dashes.", children: /* @__PURE__ */ jsx(
+              "input",
+              {
+                className: "aw-mono",
+                value: slug,
+                maxLength: 63,
+                onChange: (e) => {
+                  setEdited(true);
+                  setSlug(e.target.value.toLowerCase());
+                }
+              }
+            ) }) : null,
+            !data.access?.superAdmin ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+              /* @__PURE__ */ jsx(Field, { label: "What are you building?", children: /* @__PURE__ */ jsx("textarea", { value: what, maxLength: 4e3, onChange: (e) => setWhat(e.target.value) }) }),
+              /* @__PURE__ */ jsx(Field, { label: "What should happen first?", children: /* @__PURE__ */ jsx("textarea", { value: goal, maxLength: 4e3, onChange: (e) => setGoal(e.target.value) }) })
+            ] }) : null,
+            /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx(
+              Segmented,
+              {
+                value: kind,
+                options: [
+                  { value: "existing", label: "Existing code or system" },
+                  { value: "new", label: "New website" }
+                ],
+                onChange: setKind
+              }
+            ) }),
+            /* @__PURE__ */ jsx(
+              Field,
+              {
+                label: "Code",
+                hint: code === "create" ? kind === "new" ? "A node makes a private repo from the site template (main + preview)." : "A node makes a private repo with a README." : code === "repo" ? "Nodes clone this. A private repo needs a node whose git can reach it." : data.access?.superAdmin ? "A node with a folder named like the slug shares its origin." : "Create the project without linking a repository yet.",
+                children: /* @__PURE__ */ jsx(
+                  Segmented,
+                  {
+                    value: code,
+                    options: [
+                      { value: "create", label: "Create a repo" },
+                      { value: "repo", label: "Use a repo URL" },
+                      { value: "folder", label: data.access?.superAdmin ? "Folder on a node" : "Not linked yet" }
+                    ],
+                    onChange: setCode
+                  }
+                )
+              }
+            ),
+            code === "repo" ? /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) }) : null
+          ] }),
+          host?.projectConfigureLocal ? /* @__PURE__ */ jsx(Field, { label: "Local checkout folder (optional)", hint: "Map an existing checkout on this computer. This does not clone a repository.", children: /* @__PURE__ */ jsx("input", { disabled: busy, value: localPath, placeholder: "/Users/you/Projects/acme", onChange: (e) => setLocalPath(e.target.value) }) }) : null
         ]
       }
     );
+  }
+  function ProjectPage({ api, id, host = null, files = null }) {
+    const [data, reload] = useAdminData(api);
+    const [navigation, setNavigation] = useState({ id, destination: `p:${id}` });
+    const destination = navigation.id === id ? navigation.destination : `p:${id}`;
+    const [modal, setModal] = useState(null);
+    const [question, setQuestion] = useState(null);
+    const [notice, setNotice] = useState(null);
+    const [boardProject, setBoardProject] = useState(id);
+    const open = useCallback((key) => {
+      if (key.startsWith("p:") && host?.openProject) return host.openProject(key.slice(2));
+      if (key.startsWith("t:") && host?.openTicket) return host.openTicket(Number(key.slice(2)));
+      setNavigation({ id, destination: key });
+    }, [host, id]);
+    const openTicket = useCallback((target) => open(`t:${target}`), [open]);
+    const notify = useCallback((text, kind = "ok") => {
+      setNotice({ text, kind });
+      host?.notify?.(text);
+    }, [host]);
+    const act = useCallback(async (run, done) => {
+      try {
+        const result = await run();
+        if (done) notify(typeof done === "function" ? done(result) : done);
+        void reload();
+        return result;
+      } catch (error) {
+        notify(errorText(error), "error");
+        throw error;
+      }
+    }, [notify, reload]);
+    const setStatus = useCallback((ticket, status) => {
+      const run = () => act(() => api("PATCH", `/admin/tickets/${ticket.id}`, { status }));
+      if (ticket.kind !== "system" && CLIENT_VISIBLE.includes(status)) {
+        setQuestion({ title: `${STATUS_LABEL[status]}: #${ticket.id}?`, text: "The client is emailed about this change.", confirm: STATUS_LABEL[status], run });
+        return Promise.resolve();
+      }
+      return run();
+    }, [act, api]);
+    const value = { api, files, host, platform: host ? "dsh" : "web", data, reload, open, openTicket, notify, act, setStatus, ask: setQuestion, setModal, boardProject, setBoardProject };
+    return /* @__PURE__ */ jsxs("div", { className: cx("aw", host && "aw--dsh"), style: { display: "block", height: "100%", overflowY: "auto" }, children: [
+      /* @__PURE__ */ jsx("style", { children: STYLES }),
+      /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
+        destination.startsWith("p:") ? /* @__PURE__ */ jsx(ProjectView, { id: destination.slice(2) }, destination) : destination.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(destination.slice(2)), active: true }, destination) : workbenchAllowed(destination, data.access) ? /* @__PURE__ */ jsx(View, { name: destination }) : /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "This destination requires administrator access." }),
+        notice ? /* @__PURE__ */ jsx("div", { role: "status", className: cx("aw-toast", notice.kind === "error" && "is-error"), onClick: () => setNotice(null), children: notice.text }) : null,
+        modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal(null) }) : null,
+        modal?.kind === "project" && data.access?.canUseWorkbench ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal(null) }) : null,
+        modal?.kind === "custom" ? modal.render(() => setModal(null)) : null,
+        question ? /* @__PURE__ */ jsx(Confirm, { ask: question, onClose: () => setQuestion(null) }) : null
+      ] })
+    ] });
   }
   function ticketContext({ api, data, reload, host, files }) {
     return {
@@ -6505,6 +9941,37 @@ ${question.text ?? ""}`)) {
       }
     };
   }
+  function TicketSidePanel({ api, host = null, ticketId, page = false }) {
+    const [data, reloadData] = useAdminData(api);
+    const [{ ticket, runs, land, loading }, reloadTicket] = useTicket(api, ticketId);
+    const meter = useMeter(api, ticket, Boolean(ticket));
+    const reload = useCallback(() => {
+      void reloadData();
+      void reloadTicket();
+    }, [reloadData, reloadTicket]);
+    const value = useMemo(() => ticketContext({ api, data, reload, host, files: null }), [api, data, reload, host]);
+    const scope = page ? { display: "block", padding: "18px 24px 28px", maxWidth: 820, margin: "0 auto" } : { display: "block", height: "100%", overflowY: "auto" };
+    if (loading && !ticket) {
+      return /* @__PURE__ */ jsxs("div", { className: "aw", style: scope, children: [
+        /* @__PURE__ */ jsx("style", { children: STYLES }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { padding: 12, fontSize: 12 }, children: "Loading ticket\u2026" })
+      ] });
+    }
+    if (!ticket) {
+      return /* @__PURE__ */ jsxs("div", { className: "aw", style: scope, children: [
+        /* @__PURE__ */ jsx("style", { children: STYLES }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { padding: 12, fontSize: 12 }, children: "That ticket is not available." })
+      ] });
+    }
+    return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: scope, children: [
+      /* @__PURE__ */ jsx("style", { children: STYLES }),
+      /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload, page }) })
+    ] });
+  }
+  function TicketPage({ api, host = null, files = null, ticketId, part = "thread", autoMeter = true }) {
+    if (part === "details") return /* @__PURE__ */ jsx(TicketSidePanel, { api, host, ticketId, page: true });
+    return /* @__PURE__ */ jsx(TicketThread, { api, host, files, ticketId, autoMeter });
+  }
   function ClientPage({ api, host = null, files = null, clientId }) {
     const [data, reloadData] = useAdminData(api);
     const reload = useCallback(() => {
@@ -6516,6 +9983,1076 @@ ${question.text ?? ""}`)) {
       /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: data.error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: errorText(data.error) }) : /* @__PURE__ */ jsx(ClientView, { id: clientId }) })
     ] });
   }
+  function TicketThread({ api, host, files, ticketId, autoMeter }) {
+    const [data, reloadData] = useAdminData(api);
+    const reload = useCallback(() => {
+      void reloadData();
+    }, [reloadData]);
+    const value = useMemo(() => ticketContext({ api, data, reload, host, files }), [api, data, reload, host, files]);
+    const scope = { display: "block", height: "100%", overflowY: "auto" };
+    return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: scope, children: [
+      /* @__PURE__ */ jsx("style", { children: STYLES }),
+      /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: /* @__PURE__ */ jsx(TicketView, { id: ticketId, active: autoMeter, details: false }) })
+    ] });
+  }
+
+  // packages/dsh-admin/native-project.mjs
+  async function openLocalProject({ projectId, mode = "session", appId }, { info, sessions, workspace, remote = {} }) {
+    const local = await info({ projectId });
+    if (!local.exists || !local.path) throw new Error("Configure an existing local checkout first.");
+    const unwrap = (result) => {
+      if (result?.ok === false) throw new Error(result.error?.message ?? result.error?.code ?? "Native workspace action failed.");
+      return result?.ok === true ? result.value : result;
+    };
+    if (mode === "session") {
+      if (typeof workspace?.openSession !== "function" || typeof sessions?.create !== "function") throw new Error("Native workspace sessions are unavailable in this host.");
+      let workspaceId;
+      if (typeof remote.workspace?.create === "function") {
+        const adopted = unwrap(await remote.workspace.create({ path: local.path }));
+        workspaceId = adopted?.workspace?.workspaceId;
+      }
+      const sessionId = await sessions.create(workspaceId ? { workspaceId } : { cwd: local.path });
+      await workspace.openSession(sessionId);
+      return { projectId, path: local.path, workspaceId, sessionId, opened: true };
+    }
+    if (!["reveal", "app"].includes(mode)) throw new Error("Unknown local open action.");
+    if (typeof remote.session?.openWorkspacePath !== "function") throw new Error("Native desktop opening is unavailable in this host.");
+    return unwrap(await remote.session.openWorkspacePath({ path: local.path, ...mode === "reveal" ? { action: "reveal" } : appId ? { application: appId } : {} }));
+  }
+
+  // packages/dsh-admin/src/sidebar-presentation.mjs
+  function sidebarTicketLabel(ticket) {
+    return ticket.title?.trim() || ticket.title_en?.trim() || `Ticket #${ticket.id}`;
+  }
+  function sidebarRunShortcut(run) {
+    return `Open ${run.kind === "task" ? "system task" : "client ticket"} #${run.ticketId}`;
+  }
+
+  // packages/dsh-admin/src/conversation-meter.mjs
+  var LOCK = "ptech-admin:conversation-time";
+  var IDLE_MS = 6e4;
+  var BATCH = 20;
+  var EMPTY2 = Object.freeze({ status: null, seconds: null, phase: "paused", notice: null, needsRead: false });
+  var closed = (status) => status === "done" || status === "declined";
+  var recorded = (seconds) => Number.isSafeInteger(seconds) && seconds >= 0;
+  function formatRecordedTime(seconds) {
+    return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map((value) => String(value).padStart(2, "0")).join(":");
+  }
+  function createConversationMeter({ api, locks, now, foreground }) {
+    const views = /* @__PURE__ */ new Map();
+    const listeners = /* @__PURE__ */ new Set();
+    let owner = null;
+    let lastInput2 = -Infinity;
+    let revision = 0;
+    function update(view, patch) {
+      if (!Object.keys(patch).some((key) => view.snapshot[key] !== patch[key])) return;
+      view.snapshot = { ...view.snapshot, ...patch };
+      for (const listener of listeners) listener();
+    }
+    function drain(lease) {
+      if (!lease.release || lease.saving) return;
+      if (lease.pending && (!lease.enabled || lease.pending >= BATCH)) {
+        void save(lease);
+      } else if (!lease.enabled) {
+        lease.release();
+      }
+    }
+    function stop(lease, { discard = false, notice = null } = {}) {
+      lease.enabled = false;
+      if (discard) lease.pending = 0;
+      const view = lease.view;
+      if (!closed(view.snapshot.status)) update(view, { phase: lease.saving || lease.pending ? "saving" : "paused", notice });
+      drain(lease);
+    }
+    async function save(lease) {
+      const { view } = lease;
+      if (closed(view.snapshot.status)) {
+        stop(lease, { discard: true });
+        return;
+      }
+      const seconds = lease.pending;
+      lease.pending = 0;
+      lease.saving = true;
+      try {
+        const result = await api("POST", `/admin/tickets/${view.id}/time`, { seconds });
+        if (!recorded(result?.humanSeconds)) throw new Error("Missing meter acknowledgement");
+        revision++;
+        for (const matching of views.values()) {
+          if (matching.id !== view.id || closed(matching.snapshot.status)) continue;
+          matching.savedAt = revision;
+          update(matching, { seconds: result.humanSeconds });
+        }
+      } catch {
+        ++revision;
+        for (const matching of views.values()) {
+          if (matching.id !== view.id || closed(matching.snapshot.status)) continue;
+          matching.savedAt = revision;
+          update(matching, { needsRead: true, notice: "unconfirmed" });
+        }
+        stop(lease, { discard: true, notice: "unconfirmed" });
+      } finally {
+        lease.saving = false;
+        drain(lease);
+      }
+    }
+    function retain(key, id, isCurrent = () => true) {
+      let view = views.get(key);
+      if (!view) {
+        view = { id: String(id), snapshots: /* @__PURE__ */ new Set(), snapshot: EMPTY2, savedAt: 0 };
+        views.set(key, view);
+      }
+      const mount = () => isCurrent();
+      view.snapshots.add(mount);
+      return () => {
+        view.snapshots.delete(mount);
+        if (view.snapshots.size || views.get(key) !== view) return;
+        views.delete(key);
+        if (owner?.view === view) stop(owner);
+      };
+    }
+    function observe(key, ticket, readAt) {
+      const view = views.get(key);
+      if (!view || String(ticket?.id) !== view.id || typeof ticket.status !== "string") return false;
+      for (const matching of views.values()) {
+        if (matching.id !== view.id) continue;
+        update(matching, {
+          status: ticket.status,
+          ...readAt >= matching.savedAt && recorded(ticket.human_seconds) ? {
+            seconds: ticket.human_seconds,
+            needsRead: false,
+            ...matching.snapshot.notice === "readFailed" ? { notice: null } : {}
+          } : {},
+          ...closed(ticket.status) ? { phase: "closed", notice: null } : matching.snapshot.phase === "closed" ? { phase: "paused" } : {}
+        });
+      }
+      if (closed(ticket.status) && owner?.view.id === view.id) stop(owner, { discard: true });
+      return true;
+    }
+    function readFailed(key) {
+      const view = views.get(key);
+      if (!view || closed(view.snapshot.status)) return;
+      update(view, { needsRead: true, notice: view.snapshot.notice ?? "readFailed" });
+      if (owner?.view === view) stop(owner, { discard: true, notice: view.snapshot.notice });
+    }
+    const current = (view) => [...view.snapshots].some((check) => check());
+    async function resume(key) {
+      const view = views.get(key);
+      if (!view?.snapshot.status || closed(view.snapshot.status) || view.snapshot.needsRead || view.snapshot.seconds === null || !current(view)) return;
+      if (owner) {
+        if (owner.view !== view) update(view, { notice: "occupied" });
+        return;
+      }
+      if (typeof locks?.request !== "function") {
+        update(view, { notice: "unavailable" });
+        return;
+      }
+      const lease = { view, enabled: true, release: null, pending: 0, saving: false, anchor: null };
+      owner = lease;
+      update(view, { phase: "starting", notice: null });
+      try {
+        await locks.request(LOCK, { ifAvailable: true }, (lock) => {
+          if (!lease.enabled || !current(view)) return void 0;
+          if (!lock) {
+            update(view, { notice: "occupied" });
+            return void 0;
+          }
+          lastInput2 = now();
+          if (foreground()) lease.anchor = lastInput2;
+          update(view, { phase: foreground() ? "running" : "waiting" });
+          return new Promise((resolve) => {
+            lease.release = resolve;
+          });
+        });
+      } catch {
+        update(view, { notice: "unavailable" });
+      } finally {
+        owner = null;
+        if (!closed(view.snapshot.status)) update(view, { phase: "paused" });
+      }
+    }
+    function tick() {
+      const lease = owner;
+      if (!lease?.enabled || !lease.release) return;
+      if (!current(lease.view)) {
+        stop(lease);
+        return;
+      }
+      const at = now();
+      const eligible = foreground() && at - lastInput2 < IDLE_MS;
+      update(lease.view, { phase: eligible ? "running" : "waiting" });
+      const elapsed = lease.anchor === null ? 0 : at - lease.anchor;
+      if (!eligible || elapsed >= 2e3) {
+        lease.anchor = eligible ? at : null;
+        return;
+      }
+      if (lease.anchor === null) lease.anchor = at;
+      if (elapsed < 1e3) return;
+      lease.anchor += 1e3;
+      if (lease.pending < BATCH) lease.pending++;
+      drain(lease);
+    }
+    function suspend() {
+      if (!owner?.enabled || !owner.release) return;
+      owner.anchor = null;
+      update(owner.view, { phase: "waiting" });
+    }
+    return {
+      retain,
+      observe,
+      readFailed,
+      resume,
+      tick,
+      suspend,
+      revision: () => revision,
+      snapshot: (key) => views.get(key)?.snapshot ?? EMPTY2,
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      input() {
+        const at = now();
+        if (at - lastInput2 >= IDLE_MS) suspend();
+        lastInput2 = at;
+      },
+      pause(key) {
+        if (views.get(key) === owner?.view && owner) stop(owner);
+      },
+      leave() {
+        if (owner) stop(owner);
+      }
+    };
+  }
+
+  // packages/dsh-admin/src/conversation-git-graph.mjs
+  async function graphEligibility(sessionId, signal, fetcher = globalThis.fetch) {
+    try {
+      const response = await fetcher("api/admin/command", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ operation: "git-graph-eligibility", sessionId }),
+        signal
+      });
+      if (response.ok) {
+        const { status } = await response.json();
+        if (status === "ready" || status === "no-repo") return status;
+      }
+    } catch {
+    }
+    return "unavailable";
+  }
+  function graphBody(sessionId, View2, status) {
+    let message;
+    if (typeof View2 !== "function") message = "Git Graph is unavailable. Enable the native Git Graph plugin to use this tab.";
+    else if (status === "ready") return createElement(View2, { key: sessionId, sessionId });
+    else if (status === "no-repo") message = "No Git repository was found for this conversation.";
+    else if (status === "checking") message = "Checking this conversation\u2019s workspace\u2026";
+    else message = "Git Graph is unavailable for this conversation.";
+    return createElement("p", { role: "status", style: { padding: "0 1rem" } }, message);
+  }
+  function SessionGraph({ sessionId }) {
+    const native = globalThis.__dshGitGraphNative;
+    const View2 = native?.version === 1 && typeof native.View === "function" ? native.View : void 0;
+    const [status, setStatus] = useState("checking");
+    useEffect(() => {
+      if (!View2) return;
+      const controller = new AbortController();
+      void graphEligibility(sessionId, controller.signal).then((next) => {
+        if (!controller.signal.aborted) setStatus(next);
+      });
+      return () => controller.abort();
+    }, [sessionId, View2]);
+    return createElement("div", {
+      style: {
+        width: "100%",
+        minWidth: 0,
+        minHeight: 0,
+        ...View2 && status === "ready" ? {
+          height: "max(12rem, calc(var(--dsh-conversation-viewport-height, 65vh) - var(--dsh-composer-height, 0px)))"
+        } : {}
+      }
+    }, graphBody(sessionId, View2, status));
+  }
+  function ConversationGitGraph({ sessionId }) {
+    if (typeof sessionId !== "string" || sessionId.length === 0) return graphBody(sessionId, void 0, "unavailable");
+    return createElement(SessionGraph, { key: sessionId, sessionId });
+  }
+
+  // packages/dsh-admin/src/panel-transport.mjs
+  function panelTransport(legacy, { desktop = false, fetcher = globalThis.fetch } = {}) {
+    async function quiet(line) {
+      try {
+        const response = await fetcher("/api/admin/command", {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ line }),
+          redirect: "error"
+        });
+        if (response.status === 200) {
+          const { kind, text } = await response.json();
+          if (kind === "success") return { ok: true, text: text || "Done." };
+          if (kind === "error") return { ok: false, text: text || "The command failed." };
+        }
+      } catch {
+      }
+      return { ok: false, text: "The Admin Host did not confirm the request. Check the current state before retrying." };
+    }
+    return Object.assign(desktop ? quiet : (line) => legacy(line), { quiet });
+  }
+
+  // packages/dsh-admin/src/conversation-history.mjs
+  var byNewest = (a, b) => b.at - a.at || (b.kind === "run") - (a.kind === "run") || b.item.id - a.item.id;
+  function taskHistoryEvents(messages = [], runs = []) {
+    return [
+      ...messages.filter((item) => item.author === "system").map((item) => ({ kind: "event", item, at: item.created_at })),
+      ...runs.map((item) => ({ kind: "run", item, at: item.started_at }))
+    ].sort(byNewest);
+  }
+  async function loadProjectTicketHistory(api, projectId) {
+    if (projectId == null || projectId === "") return [];
+    const { tickets } = await api("GET", `/admin/tickets?projectId=${encodeURIComponent(projectId)}`);
+    return tickets.filter((ticket) => String(ticket.project_id) === String(projectId)).sort((a, b) => b.updated_at - a.updated_at || b.id - a.id);
+  }
+  var STATUS_RE = /^Status changed to “([^”]+)”\.?\s*(.*)$/s;
+  function historyEntryType({ kind, item }) {
+    if (kind === "run") return { type: "run", title: `Run #${item.id}`, detail: item.status ?? "" };
+    const body = String(item?.body ?? "");
+    const status = STATUS_RE.exec(body);
+    if (status) return { type: "status", title: status[1], detail: status[2].trim() };
+    if (/^Landed on /.test(body)) return { type: "land", title: body.replace(/\.$/, ""), detail: "" };
+    return { type: "note", title: body, detail: "" };
+  }
+  function groupByDay(entries, locale = "en-GB") {
+    const groups = [];
+    for (const entry of entries) {
+      const date = entry.at ? new Date(entry.at * 1e3) : null;
+      const label = date ? date.toLocaleDateString(locale, { weekday: "short", day: "numeric", month: "short", year: date.getFullYear() === (/* @__PURE__ */ new Date()).getFullYear() ? void 0 : "numeric" }) : "Undated";
+      const last = groups.at(-1);
+      if (last?.label === label) last.entries.push(entry);
+      else groups.push({ label, entries: [entry] });
+    }
+    return groups;
+  }
+
+  // packages/dsh-admin/src/conversation-history.jsx
+  var clock2 = (unix) => unix ? new Date(unix * 1e3).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
+  function ConversationHistory({ api, ticketId, openTicket }) {
+    const [{ ticket, messages, runs, loading, error }, reload] = useTicket(api, ticketId);
+    const [mode, setMode] = useState("task");
+    const projectId = ticket?.project_id;
+    const scope = projectId == null ? "No project" : ticket.project_name || `Project #${projectId}`;
+    return /* @__PURE__ */ jsxs("section", { "aria-label": "History", className: "pta-hist", children: [
+      /* @__PURE__ */ jsxs("div", { className: "pta-hist__bar", children: [
+        /* @__PURE__ */ jsxs("div", { role: "group", "aria-label": "History scope", className: "pta-seg", children: [
+          /* @__PURE__ */ jsxs("button", { type: "button", "aria-pressed": mode === "task", onClick: () => setMode("task"), children: [
+            "Task #",
+            ticketId
+          ] }),
+          /* @__PURE__ */ jsx("button", { type: "button", "aria-pressed": mode === "project", onClick: () => setMode("project"), title: scope, children: "Project" })
+        ] }),
+        (mode === "task" || loading || error) && /* @__PURE__ */ jsx("button", { type: "button", className: "pta-hist__reload", onClick: reload, title: "Reload task history", children: "\u21BB Reload" })
+      ] }),
+      error ? /* @__PURE__ */ jsxs("p", { role: "alert", children: [
+        "Could not load task history. ",
+        errorText(error)
+      ] }) : loading && !ticket ? /* @__PURE__ */ jsx("p", { role: "status", children: "Loading task history\u2026" }) : !ticket ? /* @__PURE__ */ jsx("p", { children: "No task history is available." }) : mode === "task" ? /* @__PURE__ */ jsx(TaskEvents, { messages, runs }) : projectId == null || projectId === "" ? /* @__PURE__ */ jsx("p", { children: "This task is not linked to a project." }) : /* @__PURE__ */ jsx(ProjectTickets, { api, projectId, scope, openTicket }, String(projectId))
+    ] });
+  }
+  function TaskEvents({ messages, runs }) {
+    const entries = taskHistoryEvents(messages, runs);
+    if (!entries.length) return /* @__PURE__ */ jsx("p", { className: "pta-hist__empty", children: "No task events or runs yet." });
+    return groupByDay(entries).map((group) => /* @__PURE__ */ jsxs("section", { className: "pta-hist__day", "aria-label": group.label, children: [
+      /* @__PURE__ */ jsx("h3", { children: group.label }),
+      /* @__PURE__ */ jsx("ol", { children: group.entries.map((entry) => {
+        const { type, title, detail } = historyEntryType(entry);
+        return /* @__PURE__ */ jsxs("li", { className: "pta-hist__item", "data-type": type, "data-status": type === "status" ? title.toLowerCase() : void 0, children: [
+          /* @__PURE__ */ jsx("time", { title: when(entry.at), children: clock2(entry.at) }),
+          /* @__PURE__ */ jsx("span", { className: "pta-hist__dot", "aria-hidden": "true" }),
+          /* @__PURE__ */ jsxs("span", { className: "pta-hist__text", children: [
+            type === "status" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+              "Status \u2192 ",
+              /* @__PURE__ */ jsx("strong", { children: title })
+            ] }) : /* @__PURE__ */ jsx("strong", { children: title }),
+            detail ? /* @__PURE__ */ jsx("span", { className: "pta-hist__detail", children: type === "run" ? ` \xB7 ${detail}` : ` ${detail}` }) : null
+          ] })
+        ] }, `${entry.kind}-${entry.item.id}`);
+      }) })
+    ] }, group.label));
+  }
+  function ProjectTickets({ api, projectId, scope, openTicket }) {
+    const [revision, setRevision] = useState(0);
+    const [result, setResult] = useState(null);
+    useEffect(() => {
+      let live = true;
+      loadProjectTicketHistory(api, projectId).then(
+        (tickets) => {
+          if (live) setResult({ api, projectId, revision, tickets });
+        },
+        (error) => {
+          if (live) setResult({ api, projectId, revision, error });
+        }
+      );
+      return () => {
+        live = false;
+      };
+    }, [api, projectId, revision]);
+    const current = result?.api === api && result.projectId === projectId && result.revision === revision ? result : null;
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs("div", { className: "pta-hist__bar", children: [
+        /* @__PURE__ */ jsxs("h3", { className: "pta-hist__scope", children: [
+          "Recent tickets in ",
+          scope
+        ] }),
+        /* @__PURE__ */ jsx("button", { type: "button", className: "pta-hist__reload", onClick: () => setRevision((value) => value + 1), children: "\u21BB Reload project" })
+      ] }),
+      !current ? /* @__PURE__ */ jsx("p", { role: "status", children: "Loading project tickets\u2026" }) : current.error ? /* @__PURE__ */ jsxs("p", { role: "alert", children: [
+        "Could not load project tickets. ",
+        errorText(current.error)
+      ] }) : !current.tickets.length ? /* @__PURE__ */ jsx("p", { children: "No recent tickets in this project." }) : /* @__PURE__ */ jsx("ul", { className: "pta-hist__tickets", children: current.tickets.map((ticket) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => openTicket(ticket), children: [
+        /* @__PURE__ */ jsxs("span", { className: "pta-hist__tid", children: [
+          "#",
+          ticket.id
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "pta-hist__ttitle", children: ticket.title_en || ticket.title }),
+        ticket.status ? /* @__PURE__ */ jsx("span", { className: "pta-hist__tstatus", children: ticket.status.replace(/_/g, " ") }) : null,
+        /* @__PURE__ */ jsx("time", { children: when(ticket.updated_at) })
+      ] }) }, ticket.id)) })
+    ] });
+  }
+
+  // packages/dsh-admin/src/row-navigation.mjs
+  var NEXT_KEYS = /* @__PURE__ */ new Set(["j", "ArrowDown"]);
+  var PREV_KEYS = /* @__PURE__ */ new Set(["k", "ArrowUp"]);
+  function nextRowIndex(current, count, key) {
+    if (!Number.isInteger(count) || count <= 0) return null;
+    const index = Number.isInteger(current) && current >= 0 && current < count ? current : -1;
+    if (NEXT_KEYS.has(key)) return index < 0 ? 0 : Math.min(index + 1, count - 1);
+    if (PREV_KEYS.has(key)) return index < 0 ? 0 : Math.max(index - 1, 0);
+    if (key === "Home") return 0;
+    if (key === "End") return count - 1;
+    return null;
+  }
+
+  // packages/dsh-admin/src/project-park.mjs
+  var STALL_SECONDS = 45 * 60;
+  var ISO_TILE = Object.freeze({ width: 120, height: 60 });
+  var CLOSED_STATUSES = /* @__PURE__ */ new Set(["done", "declined"]);
+  var TERMINAL_RUN_STATUSES = /* @__PURE__ */ new Set(["done", "failed", "cancelled", "canceled", "completed"]);
+  var STATE_RANK = Object.freeze({ calm: 0, active: 1, attention: 2, bad: 3 });
+  function iso2(x, y, z = 0, options = {}) {
+    const tileW = Number.isFinite(options?.tileW) ? options.tileW : ISO_TILE.width;
+    const tileH = Number.isFinite(options?.tileH) ? options.tileH : ISO_TILE.height;
+    const originX = Number.isFinite(options?.originX) ? options.originX : 0;
+    const originY = Number.isFinite(options?.originY) ? options.originY : 0;
+    const nx = Number.isFinite(x) ? x : 0;
+    const ny = Number.isFinite(y) ? y : 0;
+    const nz = Number.isFinite(z) ? z : 0;
+    return {
+      x: originX + (nx - ny) * (tileW / 2),
+      y: originY + (nx + ny) * (tileH / 2) - nz
+    };
+  }
+  function toUnixSeconds(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return n > 1e11 ? n / 1e3 : n;
+  }
+  function isClosedTicket(ticket) {
+    return CLOSED_STATUSES.has(ticket?.status);
+  }
+  function isWaitingTicket(ticket) {
+    return Boolean(ticket) && Number(ticket.client_waiting_since ?? 0) > 0 && !isClosedTicket(ticket) && ticket.status !== "new";
+  }
+  function isNeedsYouTicket(ticket) {
+    if (!ticket || typeof ticket !== "object") return false;
+    return ticket.status === "new" || ticket.status === "review" || isWaitingTicket(ticket);
+  }
+  function isStalledTicket(ticket, nowSeconds) {
+    if (!ticket || ticket.status !== "in_progress") return false;
+    const updated = toUnixSeconds(ticket.updated_at);
+    return updated > 0 && nowSeconds - updated > STALL_SECONDS;
+  }
+  function activeRunTicketKeys(runs) {
+    const list = Array.isArray(runs) ? runs : Array.isArray(runs?.running) ? runs.running : [];
+    const keys = /* @__PURE__ */ new Set();
+    for (const run of list) {
+      if (!run || typeof run !== "object") continue;
+      if (typeof run.status === "string" && TERMINAL_RUN_STATUSES.has(run.status)) continue;
+      if (toUnixSeconds(run.finished_at) > 0) continue;
+      if (run.ticket_id === null || run.ticket_id === void 0 || run.ticket_id === "") continue;
+      keys.add(String(run.ticket_id));
+    }
+    return keys;
+  }
+  function countFailingSites(project) {
+    const sites = Array.isArray(project?.sites) ? project.sites : project?.site && typeof project.site === "object" ? [project.site] : [];
+    let failing = 0;
+    for (const site of sites) {
+      if (!site || typeof site !== "object") continue;
+      const failedState = site.state === "failed";
+      const rebuildFailed = typeof site.rebuildError === "string" && site.rebuildError.trim().length > 0;
+      if (failedState || rebuildFailed) failing += 1;
+    }
+    return failing;
+  }
+  function clientLabelFor(project, projectTickets) {
+    const names = [];
+    const seen = /* @__PURE__ */ new Set();
+    const push = (raw) => {
+      if (typeof raw !== "string") return;
+      const trimmed = raw.trim();
+      if (!trimmed) return;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      names.push(trimmed);
+    };
+    if (Array.isArray(project?.clients)) {
+      for (const person of project.clients) {
+        if (!person || typeof person !== "object") continue;
+        push(person.name || person.email);
+      }
+    }
+    if (names.length === 0) {
+      for (const ticket of projectTickets) {
+        if (ticket?.kind === "system") continue;
+        push(ticket?.client_name || ticket?.client_email);
+      }
+    }
+    if (names.length === 0) return "";
+    if (names.length <= 2) return names.join(", ");
+    return `${names[0]} +${names.length - 1}`;
+  }
+  function stateFromCounts(counts) {
+    if (counts.failing > 0 || counts.stalled > 0) return "bad";
+    if (counts.needsYou > 0) return "attention";
+    if (counts.running > 0) return "active";
+    return "calm";
+  }
+  function compareUrgency(a, b) {
+    return STATE_RANK[b.state] - STATE_RANK[a.state] || b.counts.failing - a.counts.failing || b.counts.stalled - a.counts.stalled || b.counts.needsYou - a.counts.needsYou || b.counts.running - a.counts.running || a.name.localeCompare(b.name, void 0, { sensitivity: "base" }) || String(a.id).localeCompare(String(b.id));
+  }
+  function parkPlots({ projects = [], tickets = [], runs = [], now = Date.now() } = {}) {
+    const projectList = Array.isArray(projects) ? projects : [];
+    if (projectList.length === 0) return [];
+    const ticketList = Array.isArray(tickets) ? tickets : [];
+    const nowSeconds = toUnixSeconds(now) || Date.now() / 1e3;
+    const activeRunTickets = activeRunTicketKeys(runs);
+    const ticketsByProject = /* @__PURE__ */ new Map();
+    for (const ticket of ticketList) {
+      if (!ticket || typeof ticket !== "object") continue;
+      if (ticket.project_id === null || ticket.project_id === void 0 || ticket.project_id === "") continue;
+      const key = String(ticket.project_id);
+      let bucket = ticketsByProject.get(key);
+      if (!bucket) {
+        bucket = [];
+        ticketsByProject.set(key, bucket);
+      }
+      bucket.push(ticket);
+    }
+    const seenIds = /* @__PURE__ */ new Set();
+    const rawPlots = [];
+    for (const project of projectList) {
+      if (!project || typeof project !== "object") continue;
+      const validId = typeof project.id === "string" && project.id.trim().length > 0 || typeof project.id === "number" && Number.isFinite(project.id);
+      if (!validId) continue;
+      const idKey = String(project.id);
+      if (seenIds.has(idKey)) continue;
+      seenIds.add(idKey);
+      const name = typeof project.name === "string" && project.name.trim() || typeof project.slug === "string" && project.slug.trim() || idKey;
+      const ownTickets = ticketsByProject.get(idKey) ?? [];
+      const needsYouIds = /* @__PURE__ */ new Set();
+      const stalledIds = /* @__PURE__ */ new Set();
+      const runningIds = /* @__PURE__ */ new Set();
+      for (let idx = 0; idx < ownTickets.length; idx += 1) {
+        const ticket = ownTickets[idx];
+        const ticketKey = ticket.id != null && ticket.id !== "" ? String(ticket.id) : `idx:${idx}`;
+        if (isNeedsYouTicket(ticket)) needsYouIds.add(ticketKey);
+        if (isStalledTicket(ticket, nowSeconds)) stalledIds.add(ticketKey);
+        if (ticket.status === "in_progress" && activeRunTickets.has(ticketKey)) runningIds.add(ticketKey);
+      }
+      const counts = {
+        needsYou: needsYouIds.size,
+        running: runningIds.size,
+        stalled: stalledIds.size,
+        failing: countFailingSites(project)
+      };
+      rawPlots.push({
+        id: project.id,
+        name,
+        client: clientLabelFor(project, ownTickets),
+        state: stateFromCounts(counts),
+        counts
+      });
+    }
+    rawPlots.sort(compareUrgency);
+    const rows = rawPlots.length > 1 ? 2 : 1;
+    const cols = Math.ceil(rawPlots.length / rows);
+    return rawPlots.map((plot, index) => {
+      const band = Math.floor(index / rows);
+      const depth = index % rows;
+      const x = band;
+      const y = cols - 1 - band + (rows - 1 - depth);
+      return {
+        id: plot.id,
+        name: plot.name,
+        client: plot.client,
+        state: plot.state,
+        counts: plot.counts,
+        x,
+        y
+      };
+    });
+  }
+  function countsSummary(counts) {
+    if (!counts) return "Calm, nothing waiting";
+    const parts = [];
+    if (counts.failing > 0) parts.push(`${counts.failing} failing ${counts.failing === 1 ? "site" : "sites"}`);
+    if (counts.stalled > 0) parts.push(`${counts.stalled} stalled`);
+    if (counts.needsYou > 0) parts.push(`${counts.needsYou} ${counts.needsYou === 1 ? "needs" : "need"} you`);
+    if (counts.running > 0) parts.push(`${counts.running} running`);
+    return parts.length > 0 ? parts.join(", ") : "Calm, nothing waiting";
+  }
+  function plotAriaLabel(plot) {
+    const who = plot.client ? `${plot.name} (${plot.client})` : plot.name;
+    return `${who} \u2014 ${plot.state}: ${countsSummary(plot.counts)}`;
+  }
+
+  // packages/dsh-admin/src/project-park.jsx
+  var STROKE_INK = 1.2;
+  function round1(value) {
+    return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
+  }
+  function pointsAttr(pts) {
+    return pts.map((p) => `${round1(p.x)},${round1(p.y)}`).join(" ");
+  }
+  function isoBoxFaces(x0, y0, z0, wx, wy, h, opts) {
+    const b10 = iso2(x0 + wx, y0, z0, opts);
+    const b11 = iso2(x0 + wx, y0 + wy, z0, opts);
+    const b01 = iso2(x0, y0 + wy, z0, opts);
+    const t00 = iso2(x0, y0, z0 + h, opts);
+    const t10 = iso2(x0 + wx, y0, z0 + h, opts);
+    const t11 = iso2(x0 + wx, y0 + wy, z0 + h, opts);
+    const t01 = iso2(x0, y0 + wy, z0 + h, opts);
+    return {
+      top: pointsAttr([t00, t10, t11, t01]),
+      left: pointsAttr([t01, t11, b11, b01]),
+      right: pointsAttr([t11, t10, b10, b11]),
+      corners: { b10, b11, b01, t00, t10, t11, t01 }
+    };
+  }
+  function shortName(name, max = 12) {
+    const clean = String(name ?? "").trim();
+    if (clean.length <= max) return clean;
+    return `${clean.slice(0, max - 1)}\u2026`;
+  }
+  function beaconsFor(counts) {
+    const list = [];
+    if (counts.failing > 0) list.push({ kind: "failing", value: counts.failing });
+    if (counts.stalled > 0) list.push({ kind: "stalled", value: counts.stalled });
+    if (counts.needsYou > 0) list.push({ kind: "needsYou", value: counts.needsYou });
+    if (counts.running > 0) list.push({ kind: "running", value: counts.running });
+    return list;
+  }
+  function IsoBox2({ faces, topFill, leftFill, rightFill, strokeClass = "pta-park__ink", strokeWidth = STROKE_INK }) {
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx("polygon", { points: faces.left, fill: leftFill, className: strokeClass, strokeWidth, strokeLinejoin: "round" }),
+      /* @__PURE__ */ jsx("polygon", { points: faces.right, fill: rightFill, className: strokeClass, strokeWidth, strokeLinejoin: "round" }),
+      /* @__PURE__ */ jsx("polygon", { points: faces.top, fill: topFill, className: strokeClass, strokeWidth, strokeLinejoin: "round" })
+    ] });
+  }
+  function BeaconPin({ x, y, stemBottomY, kind, value }) {
+    const text = value > 99 ? "99+" : String(value);
+    const rx = round1(x);
+    const ry = round1(y);
+    const sb = round1(stemBottomY);
+    const w = text.length > 2 ? 20 : text.length > 1 ? 16 : 14;
+    const hw = w / 2;
+    return /* @__PURE__ */ jsxs("g", { className: `pta-park__beacon pta-park__beacon--${kind}`, children: [
+      kind === "running" ? /* @__PURE__ */ jsx("circle", { cx: rx, cy: ry, r: "9", className: "pta-park__pulse", fill: "none", strokeWidth: "1.2" }) : null,
+      /* @__PURE__ */ jsx("line", { x1: rx, y1: ry + 5, x2: rx, y2: sb, className: "pta-park__ink", strokeWidth: STROKE_INK, strokeLinecap: "round" }),
+      /* @__PURE__ */ jsx("circle", { cx: rx, cy: sb, r: "1.6", className: "pta-park__pin-foot" }),
+      kind === "failing" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx(
+          "polygon",
+          {
+            points: pointsAttr([
+              { x: rx, y: ry - 6.5 },
+              { x: rx + hw + 1.5, y: ry + 2 },
+              { x: rx, y: ry + 9.5 },
+              { x: rx - hw - 1.5, y: ry + 2 }
+            ]),
+            className: "pta-park__beacon-side pta-park__ink",
+            strokeWidth: STROKE_INK,
+            strokeLinejoin: "round"
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          "polygon",
+          {
+            points: pointsAttr([
+              { x: rx, y: ry - 8.5 },
+              { x: rx + hw + 1.5, y: ry },
+              { x: rx, y: ry + 7.5 },
+              { x: rx - hw - 1.5, y: ry }
+            ]),
+            className: "pta-park__beacon-cap pta-park__ink",
+            strokeWidth: STROKE_INK,
+            strokeLinejoin: "round"
+          }
+        )
+      ] }) : kind === "stalled" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx(
+          "rect",
+          {
+            x: round1(rx - hw),
+            y: round1(ry - 5),
+            width: w,
+            height: "13",
+            rx: "2.5",
+            className: "pta-park__beacon-side pta-park__ink",
+            strokeWidth: STROKE_INK
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          "rect",
+          {
+            x: round1(rx - hw),
+            y: round1(ry - 7),
+            width: w,
+            height: "13",
+            rx: "2.5",
+            className: "pta-park__beacon-cap pta-park__ink",
+            strokeWidth: STROKE_INK
+          }
+        )
+      ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx(
+          "rect",
+          {
+            x: round1(rx - hw),
+            y: round1(ry - 5),
+            width: w,
+            height: "13",
+            rx: "6.5",
+            className: "pta-park__beacon-side pta-park__ink",
+            strokeWidth: STROKE_INK
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          "rect",
+          {
+            x: round1(rx - hw),
+            y: round1(ry - 7),
+            width: w,
+            height: "13",
+            rx: "6.5",
+            className: "pta-park__beacon-cap pta-park__ink",
+            strokeWidth: STROKE_INK
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsx("text", { x: rx, y: round1(ry + 2.5), textAnchor: "middle", className: "pta-park__beacon-num", children: text })
+    ] });
+  }
+  function PlotTile({ plot, opts, active, onActivate, onDeactivate, onSelect }) {
+    const { x, y, state, counts, name } = plot;
+    const center = iso2(x, y, 0, opts);
+    const pad = isoBoxFaces(x - 0.42, y - 0.42, 0, 0.84, 0.84, 4, opts);
+    const halo = [
+      iso2(x - 0.45, y - 0.45, 4, opts),
+      iso2(x + 0.45, y - 0.45, 4, opts),
+      iso2(x + 0.45, y + 0.45, 4, opts),
+      iso2(x - 0.45, y + 0.45, 4, opts)
+    ];
+    const bHeight = state === "calm" ? 16 : 19;
+    const building = isoBoxFaces(x - 0.31, y - 0.31, 4, 0.36, 0.34, bHeight, opts);
+    const roofCap = isoBoxFaces(x - 0.27, y - 0.27, 4 + bHeight, 0.28, 0.26, 3, opts);
+    const winL1a = iso2(x - 0.23, y + 0.03, 4 + bHeight - 5, opts);
+    const winL1b = iso2(x - 0.03, y + 0.03, 4 + bHeight - 5, opts);
+    const winL2a = iso2(x - 0.23, y + 0.03, 4 + bHeight - 10, opts);
+    const winL2b = iso2(x - 0.03, y + 0.03, 4 + bHeight - 10, opts);
+    const winR1a = iso2(x + 0.05, y - 0.23, 4 + bHeight - 5, opts);
+    const winR1b = iso2(x + 0.05, y - 0.04, 4 + bHeight - 5, opts);
+    const winR2a = iso2(x + 0.05, y - 0.23, 4 + bHeight - 10, opts);
+    const winR2b = iso2(x + 0.05, y - 0.04, 4 + bHeight - 10, opts);
+    const desk = isoBoxFaces(x + 0.12, y - 0.16, 4, 0.21, 0.44, 5.5, opts);
+    const ticks = [-0.05, 0.06, 0.17].map((dy) => ({
+      a: iso2(x + 0.15, y + dy, 9.5, opts),
+      b: iso2(x + 0.3, y + dy, 9.5, opts)
+    }));
+    const parcel = counts.running > 0 ? isoBoxFaces(x + 0.17, y + 0.01, 9.5, 0.11, 0.11, 5.5, opts) : null;
+    const beacons = beaconsFor(counts);
+    const anchorTop = iso2(x - 0.1, y - 0.1, 4 + bHeight + 3, opts);
+    const beaconY = anchorTop.y - 10;
+    const label = shortName(name, 11);
+    const pillW = Math.min(76, Math.max(34, label.length * 5.6 + 10));
+    const pillX = round1(center.x - pillW / 2);
+    const pillY = round1(center.y + 10);
+    const ariaLabel = plotAriaLabel(plot);
+    const open = () => onSelect?.(plot);
+    return /* @__PURE__ */ jsxs(
+      "g",
+      {
+        className: `pta-park__plot${active ? " is-active" : ""}`,
+        "data-state": state,
+        "data-plot-id": String(plot.id),
+        role: "button",
+        tabIndex: 0,
+        "aria-label": ariaLabel,
+        onClick: open,
+        onKeyDown: (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            open();
+          }
+        },
+        onMouseEnter: () => onActivate(plot.id),
+        onMouseLeave: () => onDeactivate(plot.id),
+        onFocus: () => onActivate(plot.id),
+        onBlur: () => onDeactivate(plot.id),
+        children: [
+          /* @__PURE__ */ jsx("title", { children: ariaLabel }),
+          /* @__PURE__ */ jsxs("g", { className: "pta-park__lift", children: [
+            /* @__PURE__ */ jsx(
+              IsoBox2,
+              {
+                faces: pad,
+                topFill: "var(--park-pad-top)",
+                leftFill: "var(--park-pad-left)",
+                rightFill: "var(--park-pad-right)",
+                strokeClass: "pta-park__pad-edge",
+                strokeWidth: STROKE_INK
+              }
+            ),
+            /* @__PURE__ */ jsx("polygon", { points: pointsAttr(halo), fill: "none", className: "pta-park__halo", strokeWidth: "1.6", strokeLinejoin: "round" }),
+            /* @__PURE__ */ jsx(
+              IsoBox2,
+              {
+                faces: desk,
+                topFill: "var(--park-desk-top)",
+                leftFill: "var(--park-desk-left)",
+                rightFill: "var(--park-desk-right)"
+              }
+            ),
+            ticks.map((tick, idx) => /* @__PURE__ */ jsx(
+              "line",
+              {
+                x1: round1(tick.a.x),
+                y1: round1(tick.a.y),
+                x2: round1(tick.b.x),
+                y2: round1(tick.b.y),
+                className: "pta-park__detail",
+                strokeWidth: "1",
+                strokeLinecap: "round"
+              },
+              idx
+            )),
+            parcel ? /* @__PURE__ */ jsx(
+              IsoBox2,
+              {
+                faces: parcel,
+                topFill: "var(--park-parcel-top)",
+                leftFill: "var(--park-parcel-left)",
+                rightFill: "var(--park-parcel-right)"
+              }
+            ) : null,
+            /* @__PURE__ */ jsx(
+              IsoBox2,
+              {
+                faces: building,
+                topFill: "var(--park-top)",
+                leftFill: "var(--park-left)",
+                rightFill: "var(--park-right)"
+              }
+            ),
+            /* @__PURE__ */ jsx("line", { x1: round1(winL1a.x), y1: round1(winL1a.y), x2: round1(winL1b.x), y2: round1(winL1b.y), className: "pta-park__detail", strokeWidth: "1.1", strokeLinecap: "round" }),
+            /* @__PURE__ */ jsx("line", { x1: round1(winL2a.x), y1: round1(winL2a.y), x2: round1(winL2b.x), y2: round1(winL2b.y), className: "pta-park__detail", strokeWidth: "1.1", strokeLinecap: "round" }),
+            /* @__PURE__ */ jsx("line", { x1: round1(winR1a.x), y1: round1(winR1a.y), x2: round1(winR1b.x), y2: round1(winR1b.y), className: "pta-park__detail", strokeWidth: "1.1", strokeLinecap: "round" }),
+            /* @__PURE__ */ jsx("line", { x1: round1(winR2a.x), y1: round1(winR2a.y), x2: round1(winR2b.x), y2: round1(winR2b.y), className: "pta-park__detail", strokeWidth: "1.1", strokeLinecap: "round" }),
+            /* @__PURE__ */ jsx(
+              IsoBox2,
+              {
+                faces: roofCap,
+                topFill: "var(--park-top)",
+                leftFill: "var(--park-left)",
+                rightFill: "var(--park-right)"
+              }
+            ),
+            beacons.map((beacon, idx) => {
+              const offset = (idx - (beacons.length - 1) / 2) * 18;
+              return /* @__PURE__ */ jsx(
+                BeaconPin,
+                {
+                  x: anchorTop.x + offset,
+                  y: beaconY,
+                  stemBottomY: anchorTop.y,
+                  kind: beacon.kind,
+                  value: beacon.value
+                },
+                beacon.kind
+              );
+            })
+          ] }),
+          /* @__PURE__ */ jsxs("g", { className: "pta-park__tag", children: [
+            /* @__PURE__ */ jsx("rect", { x: pillX, y: pillY, width: round1(pillW), height: "13", rx: "3", className: "pta-park__tag-bg", strokeWidth: "1" }),
+            /* @__PURE__ */ jsx("text", { x: round1(center.x), y: round1(pillY + 9.4), textAnchor: "middle", className: "pta-park__tag-text", children: label })
+          ] })
+        ]
+      }
+    );
+  }
+  function ProjectPark({ projects = [], tickets = [], runs = [], now = Date.now(), onSelect }) {
+    const [activeId, setActiveId] = useState(null);
+    const plots = useMemo(
+      () => parkPlots({ projects, tickets, runs, now }),
+      [projects, tickets, runs, now]
+    );
+    const painted = useMemo(
+      () => [...plots].sort((a, b) => a.x + a.y - (b.x + b.y) || a.x - a.y - (b.x - b.y)),
+      [plots]
+    );
+    const layout = useMemo(() => {
+      if (plots.length === 0) return null;
+      const rawPts = plots.map((plot) => iso2(plot.x, plot.y, 0));
+      const minX = Math.min(...rawPts.map((pt) => pt.x));
+      const maxX = Math.max(...rawPts.map((pt) => pt.x));
+      const minY = Math.min(...rawPts.map((pt) => pt.y));
+      const maxY = Math.max(...rawPts.map((pt) => pt.y));
+      const padLeft = 64;
+      const padRight = 64;
+      const padTop = 60;
+      const padBottom = 30;
+      const width = Math.max(240, Math.round(maxX - minX + padLeft + padRight));
+      const height = Math.round(maxY - minY + padTop + padBottom);
+      return {
+        width,
+        height,
+        opts: {
+          tileW: ISO_TILE.width,
+          tileH: ISO_TILE.height,
+          originX: padLeft - minX,
+          originY: padTop - minY
+        }
+      };
+    }, [plots]);
+    if (!layout || plots.length === 0) return null;
+    const activePlot = activeId !== null ? plots.find((plot) => plot.id === activeId) ?? null : null;
+    const activate = (id) => setActiveId(id);
+    const deactivate = (id) => setActiveId((prev) => prev === id ? null : prev);
+    return /* @__PURE__ */ jsxs("section", { className: "pta-park", "aria-label": "Project park", children: [
+      /* @__PURE__ */ jsxs("div", { className: "pta-park__head", children: [
+        /* @__PURE__ */ jsxs("div", { className: "pta-park__title", children: [
+          /* @__PURE__ */ jsx("span", { className: "pta-park__label", children: "Project park" }),
+          /* @__PURE__ */ jsx("span", { className: "pta-count", children: plots.length })
+        ] }),
+        activePlot ? /* @__PURE__ */ jsxs("div", { className: "pta-park__tip", role: "status", children: [
+          /* @__PURE__ */ jsx("strong", { children: activePlot.name }),
+          activePlot.client ? /* @__PURE__ */ jsxs("span", { className: "pta-park__tip-client", children: [
+            "\xB7 ",
+            activePlot.client
+          ] }) : null,
+          /* @__PURE__ */ jsx("span", { className: "pta-park__tip-counts", children: countsSummary(activePlot.counts) })
+        ] }) : /* @__PURE__ */ jsxs("div", { className: "pta-park__legend", "aria-hidden": "true", children: [
+          /* @__PURE__ */ jsxs("span", { className: "pta-park__leg", children: [
+            /* @__PURE__ */ jsx("i", { className: "pta-park__swatch pta-park__swatch--bad" }),
+            "Bad"
+          ] }),
+          /* @__PURE__ */ jsxs("span", { className: "pta-park__leg", children: [
+            /* @__PURE__ */ jsx("i", { className: "pta-park__swatch pta-park__swatch--attention" }),
+            "Attention"
+          ] }),
+          /* @__PURE__ */ jsxs("span", { className: "pta-park__leg", children: [
+            /* @__PURE__ */ jsx("i", { className: "pta-park__swatch pta-park__swatch--active" }),
+            "Active"
+          ] }),
+          /* @__PURE__ */ jsxs("span", { className: "pta-park__leg", children: [
+            /* @__PURE__ */ jsx("i", { className: "pta-park__swatch pta-park__swatch--calm" }),
+            "Calm"
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx("div", { className: "pta-park__scroll", children: /* @__PURE__ */ jsxs(
+        "svg",
+        {
+          className: "pta-park__svg",
+          width: layout.width,
+          height: layout.height,
+          viewBox: `0 0 ${layout.width} ${layout.height}`,
+          role: "img",
+          "aria-label": `Project park with ${plots.length} ${plots.length === 1 ? "project" : "projects"}, sorted most urgent front-left`,
+          children: [
+            /* @__PURE__ */ jsx("defs", { children: /* @__PURE__ */ jsxs("pattern", { id: "pta-park-dots", width: "20", height: "10", patternUnits: "userSpaceOnUse", children: [
+              /* @__PURE__ */ jsx("circle", { cx: "5", cy: "2.5", r: "0.9", className: "pta-park__dot" }),
+              /* @__PURE__ */ jsx("circle", { cx: "15", cy: "7.5", r: "0.9", className: "pta-park__dot" })
+            ] }) }),
+            /* @__PURE__ */ jsx("rect", { x: "0", y: "0", width: layout.width, height: layout.height, fill: "url(#pta-park-dots)" }),
+            painted.map((plot) => /* @__PURE__ */ jsx(
+              PlotTile,
+              {
+                plot,
+                opts: layout.opts,
+                active: activeId === plot.id,
+                onActivate: activate,
+                onDeactivate: deactivate,
+                onSelect
+              },
+              String(plot.id)
+            ))
+          ]
+        }
+      ) }),
+      /* @__PURE__ */ jsx("ul", { className: "pta-sr", "aria-label": "Projects by urgency", children: plots.map((plot) => /* @__PURE__ */ jsx("li", { children: plotAriaLabel(plot) }, String(plot.id))) })
+    ] });
+  }
+  var PROJECT_PARK_STYLES = `
+  .pta-park{position:relative;margin:0 0 14px;padding:7px 10px 6px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.24));border-radius:10px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.05));overflow:hidden}
+  .pta-park__head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:20px;margin:0 0 4px}
+  .pta-park__title{display:inline-flex;align-items:center;gap:2px;flex:0 0 auto}
+  .pta-park__label{font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--dsw-alias-label-secondary,inherit);opacity:.82}
+  .pta-park__legend{display:inline-flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:10.5px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.85))}
+  .pta-park__leg{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+  .pta-park__swatch{display:inline-block;width:7px;height:7px;border-radius:2px;border:1px solid rgba(20,24,30,.45)}
+  .pta-park__swatch--bad{background:var(--dsw-alias-state-danger-primary,#e5534b)}
+  .pta-park__swatch--attention{background:var(--dsw-alias-state-warning-primary,#d18f2e)}
+  .pta-park__swatch--active{background:var(--dsw-alias-state-business-primary,#4c8dff)}
+  .pta-park__swatch--calm{background:var(--dsw-alias-label-tertiary,#8a9099)}
+  .pta-park__tip{display:inline-flex;align-items:baseline;gap:6px;min-width:0;max-width:75%;padding:1px 8px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.35));border-radius:6px;background:rgba(128,134,142,.16);font-size:11px;line-height:18px;color:var(--dsw-alias-label-primary,inherit);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pta-park__tip strong{font-weight:600;flex:0 0 auto}
+  .pta-park__tip-client{color:var(--dsw-alias-label-secondary,inherit);opacity:.78;overflow:hidden;text-overflow:ellipsis}
+  .pta-park__tip-counts{color:var(--dsw-alias-label-secondary,inherit);margin-left:2px;overflow:hidden;text-overflow:ellipsis}
+  .pta-park__scroll{overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;max-height:150px;scrollbar-width:thin}
+  .pta-park__svg{display:block;user-select:none}
+  .pta-park__dot{fill:var(--dsw-alias-border-primary,rgba(127,127,127,.42));opacity:.65}
+  .pta-park__ink{stroke:var(--pta-park-ink,#1c2128)}
+  .pta-park__pad-edge{stroke:var(--dsw-alias-border-primary,rgba(127,127,127,.58))}
+  .pta-park__detail{stroke:var(--pta-park-ink,#1c2128);opacity:.5}
+  .pta-park__pin-foot{fill:var(--pta-park-ink,#1c2128)}
+  .pta-park__plot{cursor:pointer;outline:none;--park-desk-top:#dfe3e8;--park-desk-left:#b9c0ca;--park-desk-right:#8f98a6;--park-parcel-top:#a8c7ff;--park-parcel-left:#5d98ff;--park-parcel-right:#366bc9}
+  .pta-park__plot[data-state="calm"]{--park-top:#dde1e7;--park-left:#b8c0cb;--park-right:#8d96a4;--park-pad-top:rgba(138,144,153,.18);--park-pad-left:rgba(138,144,153,.28);--park-pad-right:rgba(138,144,153,.38);--park-halo:var(--dsw-alias-label-secondary,#8a9099)}
+  .pta-park__plot[data-state="active"]{--park-top:#9bc0ff;--park-left:#5895ff;--park-right:#3468c7;--park-top:color-mix(in srgb,var(--dsw-alias-state-business-primary,#4c8dff) 46%,#fff);--park-left:color-mix(in srgb,var(--dsw-alias-state-business-primary,#4c8dff) 84%,#fff);--park-right:color-mix(in srgb,var(--dsw-alias-state-business-primary,#4c8dff) 76%,#000);--park-pad-top:rgba(76,141,255,.18);--park-pad-left:rgba(76,141,255,.28);--park-pad-right:rgba(76,141,255,.38);--park-halo:var(--dsw-alias-state-business-primary,#4c8dff)}
+  .pta-park__plot[data-state="attention"]{--park-top:#f3cf90;--park-left:#dfa13e;--park-right:#a86f1c;--park-top:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#d18f2e) 46%,#fff);--park-left:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#d18f2e) 86%,#fff);--park-right:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#d18f2e) 76%,#000);--park-pad-top:rgba(209,143,46,.18);--park-pad-left:rgba(209,143,46,.28);--park-pad-right:rgba(209,143,46,.38);--park-halo:var(--dsw-alias-state-warning-primary,#d18f2e)}
+  .pta-park__plot[data-state="bad"]{--park-top:#f59e99;--park-left:#e55a52;--park-right:#ad352e;--park-top:color-mix(in srgb,var(--dsw-alias-state-danger-primary,#e5534b) 48%,#fff);--park-left:color-mix(in srgb,var(--dsw-alias-state-danger-primary,#e5534b) 86%,#fff);--park-right:color-mix(in srgb,var(--dsw-alias-state-danger-primary,#e5534b) 74%,#000);--park-pad-top:rgba(229,83,75,.18);--park-pad-left:rgba(229,83,75,.28);--park-pad-right:rgba(229,83,75,.38);--park-halo:var(--dsw-alias-state-danger-primary,#e5534b)}
+  .pta-park__lift{transition:transform .14s ease-out}
+  .pta-park__plot:hover .pta-park__lift,.pta-park__plot:focus-visible .pta-park__lift{transform:translateY(-2px)}
+  .pta-park__halo{stroke:var(--park-halo,var(--dsw-alias-brand-primary,#ff5a1f));opacity:0;transition:opacity .12s ease-out}
+  .pta-park__plot:hover .pta-park__halo{opacity:.75}
+  .pta-park__plot:focus-visible .pta-park__halo{opacity:1;stroke-width:2}
+  .pta-park__beacon--failing .pta-park__beacon-cap{fill:var(--dsw-alias-state-danger-primary,#e5534b)}
+  .pta-park__beacon--failing .pta-park__beacon-side{fill:#a83029}
+  .pta-park__beacon--stalled .pta-park__beacon-cap{fill:#d9483b}
+  .pta-park__beacon--stalled .pta-park__beacon-side{fill:#962920}
+  .pta-park__beacon--needsYou .pta-park__beacon-cap{fill:var(--dsw-alias-state-warning-primary,#d18f2e)}
+  .pta-park__beacon--needsYou .pta-park__beacon-side{fill:#996418}
+  .pta-park__beacon--running .pta-park__beacon-cap{fill:var(--dsw-alias-state-business-primary,#4c8dff)}
+  .pta-park__beacon--running .pta-park__beacon-side{fill:#2d5db5}
+  .pta-park__beacon-num{font-size:8.5px;font-weight:700;fill:#fff;font-variant-numeric:tabular-nums;pointer-events:none}
+  .pta-park__beacon--needsYou .pta-park__beacon-num{fill:#1c2128}
+  .pta-park__pulse{stroke:var(--dsw-alias-state-business-primary,#4c8dff);opacity:.65;transform-box:fill-box;transform-origin:center;animation:pta-park-pulse 2s ease-out infinite}
+  @keyframes pta-park-pulse{0%{transform:scale(.85);opacity:.75}70%{transform:scale(1.45);opacity:0}100%{transform:scale(1.45);opacity:0}}
+  .pta-park__tag-bg{fill:rgba(128,134,142,.24);stroke:var(--dsw-alias-border-secondary,rgba(127,127,127,.42))}
+  .pta-park__tag-text{font-size:9px;font-weight:550;fill:var(--dsw-alias-label-primary,currentColor);pointer-events:none}
+  @media (prefers-reduced-motion:reduce){.pta-park__pulse{animation:none;opacity:.45}.pta-park__lift,.pta-park__halo{transition:none}}
+`;
 
   // packages/dsh-admin/src/client.jsx
   var PANEL_ID = "admin";
@@ -6649,10 +11186,12 @@ ${question.text ?? ""}`)) {
   }
   var inject = ["slots", "sessions", "layout", "remote", "remote.commands", "sidebarRightTabs", "sidebarRight"];
   function apply(ctx) {
-    const command = makeTransport(makeCommand(ctx));
+    migrateTicketView(globalThis.localStorage);
+    const desktop = globalThis.location?.protocol === "dsh-app:" && globalThis.location?.hostname === "app";
+    const command = panelTransport(makeTransport(makeCommand(ctx)), { desktop });
     const desktopNotifications = typeof globalThis.dshDesktop?.notifications?.show === "function" ? globalThis.dshDesktop.notifications : null;
-    const json = async (line) => {
-      const r = await command(line);
+    const json = async (line, run = command) => {
+      const r = await run(line);
       let value = null;
       try {
         value = JSON.parse(r.text);
@@ -6684,9 +11223,10 @@ ${question.text ?? ""}`)) {
         "admin: uiWorkspace"
       );
     });
+    let nativeConversation = null;
     const conversation = {
       available: () => typeof workspace?.openSession === "function",
-      open: async ({ runId, sessionId, sessionDir }) => {
+      open: async ({ runId, sessionId, sessionDir, taskTicketId }) => {
         if (!sessionId || !sessionDir) throw new Error("This run did not record its Harness session.");
         const found = await json(`session ${runId} ${sessionId} ${sessionDir}`);
         const ws = workspace;
@@ -6696,6 +11236,12 @@ ${question.text ?? ""}`)) {
         opened.set(id, Date.now());
         if (archivedIds().includes(id) && typeof ws.unarchiveSession === "function") await ws.unarchiveSession(id).catch(() => void 0);
         await ws.openSession(id);
+        if (taskTicketId != null && nativeConversation?.selectView) {
+          const row = ctx.sessions?.list?.getSnapshot?.()?.byId?.[id];
+          if (ticketForSession(row)?.ticketId !== Number(taskTicketId) || !nativeConversation.selectView(id, "chat")) {
+            throw new Error("The opened conversation is not linked to this task.");
+          }
+        }
         return found;
       }
     };
@@ -6748,8 +11294,30 @@ ${question.text ?? ""}`)) {
         "admin: archive fleet sessions"
       );
     }
-    const host = { command, json, gitGraph, conversation, openTicket: (target) => openTicket(target) };
+    const localProject = (action, args) => json(`project-local ${action} ${JSON.stringify(args)}`);
+    const host = {
+      command,
+      json,
+      gitGraph,
+      conversation,
+      openTicket: (target) => openTicketRun({ id: target?.ticketId ?? target }),
+      projectLocalInfo: (args) => localProject("info", args),
+      projectConfigureLocal: (args) => localProject("configure", args),
+      projectCloneLocal: (args) => localProject("clone", args),
+      projectLocalOperation: (args) => localProject("operation", args),
+      projectFiles: (args) => localProject("files", args),
+      projectGitInfo: (args) => localProject("git", args),
+      projectOpenLocal: (args) => openLocalProject(args, {
+        info: (value) => localProject("info", value),
+        sessions: ctx.sessions,
+        workspace,
+        remote: ctx.remote
+      }),
+      // The workbench's project destination selects this panel instead of an in-panel copy.
+      openProject: (id) => openProjectPage({ id })
+    };
     const api = (method, path, body) => json(`api ${method} ${path}${body === void 0 ? "" : ` ${JSON.stringify(body)}`}`);
+    api.conversationMeter = desktop;
     const RUN_DIR_RE = /^(.+)-(task|ticket)-(\d+)(?:-run(\d+))?$/;
     const RUN_TITLE_RE = /^(Task|Ticket)?\s*#(\d+)(?: · run (\d+))?\s*(?:—|$)/;
     const SEP = "\0";
@@ -6763,6 +11331,19 @@ ${question.text ?? ""}`)) {
       if (!named) return null;
       return { slug: folder, kind: named[1] === "Ticket" ? "ticket" : "task", ticketId: Number(named[2]), runId: named[3] ? Number(named[3]) : null, cwd };
     }
+    function ticketForSession(row) {
+      return row?.cwd === void 0 ? null : ticketFromCwd(`${row.cwd}${SEP}${typeof row.title === "string" ? row.title : ""}`);
+    }
+    function NativeTask({ sessionId }) {
+      const ticket = ticketFromCwd(useSessionCwd(sessionId));
+      if (!ticket) return null;
+      return /* @__PURE__ */ jsx(TicketPage, { api, host, files, ticketId: ticket.ticketId, autoMeter: false }, `${sessionId}:${ticket.ticketId}`);
+    }
+    function NativeHistory({ sessionId }) {
+      const ticket = ticketFromCwd(useSessionCwd(sessionId));
+      if (!ticket) return null;
+      return /* @__PURE__ */ jsx(ConversationHistory, { api, ticketId: ticket.ticketId, openTicket: openTicketRun }, `${sessionId}:${ticket.ticketId}`);
+    }
     function useSessionCwd(sessionId) {
       const list = ctx.sessions?.list;
       return useSyncExternalStore(
@@ -6774,10 +11355,6 @@ ${question.text ?? ""}`)) {
         }
       );
     }
-    const TICKET_COLORS = {
-      task: "var(--dsw-alias-state-business-primary, #4c8dff)",
-      ticket: "var(--dsw-alias-state-warning-primary, #d18f2e)"
-    };
     function openTicket(run) {
       ctx.layout?.selectPanel?.("admin-workbench");
       const target = `#ticket=${run.ticketId}`;
@@ -6787,31 +11364,19 @@ ${question.text ?? ""}`)) {
     function TicketMark({ sessionId }) {
       const run = ticketFromCwd(useSessionCwd(sessionId));
       if (!run) return null;
-      const color = TICKET_COLORS[run.kind];
+      const label = sidebarRunShortcut(run);
       return /* @__PURE__ */ jsx(
-        "span",
+        "button",
         {
-          title: `${run.kind === "task" ? "System task" : "Client ticket"} #${run.ticketId}${run.runId ? ` \xB7 run ${run.runId}` : ""} \u2014 click opens the ticket`,
+          type: "button",
+          className: "pta-run-shortcut",
+          "aria-label": label,
+          title: label,
           onClick: (e) => {
             e.stopPropagation();
             void openTicketRun({ id: run.ticketId });
           },
-          style: {
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            minWidth: 14,
-            height: 14,
-            padding: "0 3px",
-            borderRadius: 4,
-            fontSize: 9,
-            fontWeight: 700,
-            lineHeight: 1,
-            color: "#fff",
-            background: color,
-            cursor: "pointer"
-          },
-          children: run.ticketId
+          children: /* @__PURE__ */ jsx("svg", { width: "12", height: "12", viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: run.kind === "task" ? /* @__PURE__ */ jsx("path", { d: "m4 8 2.5 2.5L12 5" }) : /* @__PURE__ */ jsx("path", { d: "M3 4.5h10v6H7l-2.5 2v-2H3z" }) })
         }
       );
     }
@@ -6898,7 +11463,7 @@ ${question.text ?? ""}`)) {
         }
         setNote(`Opening run ${run.id}\u2026`);
         try {
-          await conversation.open({ runId: run.id, sessionId: run.session_id, sessionDir: run.session_dir });
+          await conversation.open({ runId: run.id, sessionId: run.session_id, sessionDir: run.session_dir, taskTicketId: run.ticket_id });
           setNote("");
         } catch (error) {
           setNote(`Run ${run.id}: ${error?.message ?? "could not open its conversation"}`);
@@ -7434,6 +11999,19 @@ ${question.text ?? ""}`)) {
         return /* @__PURE__ */ jsx(ClientPage, { api, host, files, clientId });
       };
     }
+    const projectPages = /* @__PURE__ */ new Map();
+    function openProjectPage(project, selectPanel = (key) => ctx.layout?.selectPanel?.(key)) {
+      if (!project?.id || project.id === "__none__") return;
+      const key = `admin-project-${project.id}`;
+      if (!projectPages.has(project.id)) {
+        projectPages.set(project.id, ctx.slots.register({ name: "main", key, locale: NAMESPACE }, () => /* @__PURE__ */ jsx(ProjectPage, { api, host, files, id: project.id })));
+      }
+      selectPanel(key);
+    }
+    ctx.effect(() => () => {
+      for (const dispose of projectPages.values()) dispose();
+      projectPages.clear();
+    }, "admin: project pages");
     const clientPages = /* @__PURE__ */ new Map();
     function ensureClientPage(c) {
       if (clientPages.has(c.id)) return;
@@ -7549,9 +12127,9 @@ ${question.text ?? ""}`)) {
       done: "var(--dsw-alias-label-tertiary, #8a9099)",
       declined: "var(--dsw-alias-label-tertiary, #8a9099)"
     };
-    const isClosedTicket = (t) => t.status === "done" || t.status === "declined";
-    const openTicketCount = (tickets) => tickets.filter((t) => !isClosedTicket(t)).length;
-    const ticketOrder = (a, b) => Number(isClosedTicket(a)) - Number(isClosedTicket(b)) || (b.updated_at ?? 0) - (a.updated_at ?? 0);
+    const isClosedTicket2 = (t) => t.status === "done" || t.status === "declined";
+    const openTicketCount = (tickets) => tickets.filter((t) => !isClosedTicket2(t)).length;
+    const ticketOrder = (a, b) => Number(isClosedTicket2(a)) - Number(isClosedTicket2(b)) || (b.updated_at ?? 0) - (a.updated_at ?? 0);
     function copyTicketLink(ticket) {
       const link = `https://ptechsolutions.net/portal/admin#ticket=${ticket.id}`;
       void navigator.clipboard?.writeText(link).catch(() => void 0);
@@ -7578,7 +12156,7 @@ ${who} is emailed about this change.`)) return;
           const run = runs[i];
           if (!run?.session_id || !run?.session_dir) continue;
           if (!conversation.available()) break;
-          await conversation.open({ runId: run.id, sessionId: run.session_id, sessionDir: run.session_dir });
+          await conversation.open({ runId: run.id, sessionId: run.session_id, sessionDir: run.session_dir, taskTicketId: ticket.id });
           return;
         }
       } catch (error) {
@@ -7599,9 +12177,9 @@ ${who} is emailed about this change.`)) return;
     }
     function TicketList({ Row, tickets, changed }) {
       const [showClosed, setShowClosed] = useState(false);
-      const open = tickets.filter((t) => !isClosedTicket(t));
-      const closed = tickets.filter((t) => isClosedTicket(t));
-      const shown = showClosed ? [...open, ...closed] : open;
+      const open = tickets.filter((t) => !isClosedTicket2(t));
+      const closed2 = tickets.filter((t) => isClosedTicket2(t));
+      const shown = showClosed ? [...open, ...closed2] : open;
       const menu = (ticket) => {
         const items = [
           { id: "open", label: "Open conversation", onSelect: () => void openTicketRun(ticket) },
@@ -7616,27 +12194,25 @@ ${who} is emailed about this change.`)) return;
           Row,
           {
             dot: TICKET_DOT[ticket.status] ?? TICKET_DOT.done,
-            label: `#${ticket.id} ${ticket.title || ticket.title_en || "(untitled)"}`,
-            trailing: /* @__PURE__ */ jsxs("span", { className: "pta-trail", children: [
-              ago2(ticket.updated_at),
-              /* @__PURE__ */ jsx("span", { className: "pta-trail__go", "aria-hidden": "true", children: "\u2197" })
-            ] }),
+            label: sidebarTicketLabel(ticket),
+            trailing: ago2(ticket.updated_at),
             menuItems: menu(ticket),
             onClick: () => void openTicketRun(ticket)
           },
           ticket.id
         )),
-        closed.length > 0 && /* @__PURE__ */ jsx(
+        closed2.length > 0 && /* @__PURE__ */ jsx(
           Row,
           {
-            label: showClosed ? `Hide closed` : `Show closed \xB7 ${closed.length}`,
+            appearance: "secondary",
+            label: showClosed ? `Hide closed` : `Show closed \xB7 ${closed2.length}`,
             onClick: () => setShowClosed((value) => !value)
           }
         )
       ] });
     }
     function projectTint(tickets) {
-      const open = tickets.filter((ticket) => !isClosedTicket(ticket));
+      const open = tickets.filter((ticket) => !isClosedTicket2(ticket));
       if (open.some((ticket) => ticket.status === "new")) return TICKET_DOT.new;
       if (open.some((ticket) => ticket.status === "review")) return TICKET_DOT.review;
       if (open.some((ticket) => ticket.status === "in_progress")) return TICKET_DOT.in_progress;
@@ -7763,6 +12339,7 @@ ${who} is emailed about this change.`)) return;
           return /* @__PURE__ */ jsx(
             TreeRow,
             {
+              appearance: "container",
               icon: clientAvatar(client),
               label: client.name || client.email,
               badge: badge || void 0,
@@ -7777,14 +12354,18 @@ ${who} is emailed about this change.`)) return;
                 return /* @__PURE__ */ jsx(
                   TreeRow,
                   {
+                    appearance: "container",
                     icon: /* @__PURE__ */ jsx(ProjectGlyph, { color: projectTint(project.tickets) }),
                     label: project.name,
                     badge: openTicketCount(project.tickets) || void 0,
                     expanded: projectExpanded,
                     onToggle: (open) => setRowOpen(projectKey, open),
-                    onClick: () => toggleRow(projectKey, projectDefault),
-                    menuItems: [{ id: "open-project-tickets", label: "Show project tickets", onSelect: () => setRowOpen(projectKey, true) }],
-                    children: project.tickets.length > 0 ? /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: project.tickets, changed: () => void load() }) : /* @__PURE__ */ jsx(TreeNote, { nested: true, children: "No open tickets" })
+                    onClick: () => project.id === "__none__" ? toggleRow(projectKey, projectDefault) : openProjectPage(project, selectPanel),
+                    menuItems: [
+                      ...project.id === "__none__" ? [] : [{ id: "open-project", label: "Open project", onSelect: () => openProjectPage(project, selectPanel) }],
+                      ...project.tickets.length === 0 ? [] : [{ id: "open-project-tickets", label: "Show project tickets", onSelect: () => setRowOpen(projectKey, true) }]
+                    ],
+                    children: project.tickets.length > 0 ? /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: project.tickets, changed: () => void load() }) : void 0
                   },
                   `${client.id}:${project.id}`
                 );
@@ -7800,6 +12381,7 @@ ${who} is emailed about this change.`)) return;
           return /* @__PURE__ */ jsx(
             TreeRow,
             {
+              appearance: "group",
               label: "Unsorted",
               badge: openTicketCount(unsorted) || void 0,
               expanded,
@@ -7815,6 +12397,7 @@ ${who} is emailed about this change.`)) return;
           return /* @__PURE__ */ jsx(
             TreeRow,
             {
+              appearance: "group",
               label: "Mine",
               badge: openTicketCount(mine) || void 0,
               expanded,
@@ -7826,160 +12409,199 @@ ${who} is emailed about this change.`)) return;
         })()
       ] });
     }
-    function useTicketDetail(ticketId) {
-      const [state, setState] = useState({ ticket: null, messages: [], runs: [], loading: true, error: "" });
-      const load = useCallback(async () => {
-        if (ticketId === null || ticketId === void 0) return;
-        try {
-          const detail = await api("GET", `/admin/tickets/${ticketId}`);
-          setState({
-            ticket: detail?.ticket ?? null,
-            messages: Array.isArray(detail?.messages) ? detail.messages : [],
-            runs: Array.isArray(detail?.runs) ? detail.runs : [],
-            loading: false,
-            error: ""
-          });
-        } catch (error) {
-          setState((prev) => ({ ...prev, loading: false, error: error?.message ?? "Could not load the ticket." }));
-        }
-      }, [ticketId]);
+    const ticketCommandApi = (method, path, body) => desktop ? json(`api ${method} ${path}${body === void 0 ? "" : ` ${JSON.stringify(body)}`}`, command.quiet) : api(method, path, body);
+    function useLinkedTicketDetail(ticketId, sessionId) {
+      const key = ticketId && sessionId ? `${ticketId}:${sessionId}` : null;
+      const [state, setState] = useState(null);
       useEffect(() => {
-        setState({ ticket: null, messages: [], runs: [], loading: true, error: "" });
-      }, [ticketId]);
-      useEffect(() => {
-        let alive = true;
-        void load();
-        const changed = () => {
-          if (alive) void load();
+        if (!key) return;
+        const reader = createTicketDetailReader({ ticketId, sessionId, api: ticketCommandApi, update: (next) => setState({ ...next, key }) });
+        const changed = (event) => {
+          if (event.detail?.ticketId == null || Number(event.detail.ticketId) === ticketId) void reader.load();
         };
+        void reader.load();
         window.addEventListener("admin:changed", changed);
         window.addEventListener("focus", changed);
         return () => {
-          alive = false;
+          reader.dispose();
           window.removeEventListener("admin:changed", changed);
           window.removeEventListener("focus", changed);
         };
-      }, [load]);
-      return [state, load];
+      }, [key, ticketId, sessionId]);
+      return (state?.key === key ? state : null) ?? { detail: null, error: "" };
     }
-    const ticketFollow = { key: null, mounts: 0 };
-    function followTicket(ticketId, sessionId) {
-      const key = `${ticketId}:${sessionId}`;
-      if (ticketFollow.key !== key) {
-        ticketFollow.key = key;
-        ticketFollow.mounts = 0;
-      }
-      ticketFollow.mounts += 1;
-      if (ticketFollow.mounts === 1) void command(`follow ${ticketId} ${sessionId}`).catch(() => void 0);
+    function TicketActivityFrame({ sessionId, ActivityProvider, children }) {
+      const candidate = ticketFromCwd(useSessionCwd(sessionId));
+      const { detail } = useLinkedTicketDetail(candidate?.ticketId, sessionId);
+      const activity = useMemo(() => ticketActivity(detail), [detail]);
+      return /* @__PURE__ */ jsx(ActivityProvider, { value: activity, children });
+    }
+    const meterApi = (method, path, body) => json(`api ${method} ${path}${body === void 0 ? "" : ` ${JSON.stringify(body)}`}`, command.quiet);
+    const meter = createConversationMeter({
+      api: meterApi,
+      locks: desktop ? navigator.locks : null,
+      now: () => performance.now(),
+      foreground: () => document.visibilityState === "visible" && document.hasFocus()
+    });
+    if (desktop) ctx.effect(() => {
+      const input = ["pointermove", "pointerdown", "keydown", "scroll"];
+      const options = { capture: true, passive: true };
+      for (const event of input) window.addEventListener(event, meter.input, options);
+      window.addEventListener("blur", meter.suspend);
+      window.addEventListener("pagehide", meter.leave);
+      document.addEventListener("visibilitychange", meter.suspend);
+      const timer = setInterval(meter.tick, 250);
       return () => {
-        if (ticketFollow.key !== key) return;
-        ticketFollow.mounts -= 1;
-        if (ticketFollow.mounts > 0) return;
-        ticketFollow.key = null;
-        void command(`unfollow ${sessionId}`).catch(() => void 0);
+        clearInterval(timer);
+        for (const event of input) window.removeEventListener(event, meter.input, options);
+        window.removeEventListener("blur", meter.suspend);
+        window.removeEventListener("pagehide", meter.leave);
+        document.removeEventListener("visibilitychange", meter.suspend);
+        meter.leave();
       };
-    }
-    const ticketBriefs = /* @__PURE__ */ new Map();
-    const TICKET_BRIEF_MS = 3e4;
-    function useTicketBrief(ticketId) {
-      const [brief, setBrief] = useState(() => ticketId === null ? null : ticketBriefs.get(ticketId)?.ticket ?? null);
+    }, "admin: conversation time eligibility");
+    const meterNotices = {
+      occupied: "Time is already being recorded in another conversation or window.",
+      unavailable: "Time recording is unavailable in this window.",
+      unconfirmed: "Save not confirmed. Check the recorded total before resuming.",
+      readFailed: "Could not read the recorded time. Recording is paused."
+    };
+    function TicketHeaderReadout({ sessionId, run, titled = false }) {
+      const { ticketId } = run;
+      const key = `${ticketId}:${sessionId}`;
+      const root = useRef(null);
+      const refresh = useRef(null);
+      const [assistantApp, setAssistantApp] = useState(null);
+      const snapshot = useSyncExternalStore(meter.subscribe, () => meter.snapshot(key));
       useEffect(() => {
-        if (ticketId === null) return void 0;
-        const hit = ticketBriefs.get(ticketId);
-        if (hit && Date.now() - hit.at < TICKET_BRIEF_MS) {
-          setBrief(hit.ticket);
-          return void 0;
-        }
-        setBrief(null);
+        const isCurrent = () => {
+          const element = root.current;
+          return Boolean(element?.isConnected && (element.checkVisibility?.({ visibilityProperty: true }) ?? element.getClientRects().length));
+        };
+        const release = meter.retain(key, ticketId, isCurrent);
         let alive = true;
-        api("GET", `/admin/tickets/${ticketId}`).then(
-          (detail) => {
-            if (!alive) return;
-            const ticket = detail?.ticket ?? null;
-            if (ticket) ticketBriefs.set(ticketId, { at: Date.now(), ticket });
-            setBrief(ticket);
-          },
-          () => void 0
-        );
+        let inFlight = false;
+        let queued = false;
+        async function read(force = false) {
+          if (!alive || !force && (document.hidden || !isCurrent())) return;
+          if (inFlight) {
+            queued ||= force;
+            return;
+          }
+          inFlight = true;
+          const revision = meter.revision();
+          try {
+            const detail = await (desktop ? meterApi : api)("GET", `/admin/tickets/${ticketId}`);
+            if (alive && !meter.observe(key, detail?.ticket, revision)) meter.readFailed(key);
+            if (alive) setAssistantApp(typeof detail?.ticket?.assistant_app === "string" ? detail.ticket.assistant_app : null);
+          } catch {
+            if (alive) meter.readFailed(key);
+          } finally {
+            inFlight = false;
+            if (queued) {
+              queued = false;
+              void read(true);
+            }
+          }
+        }
+        const changed = (event) => {
+          if (event.detail?.ticketId == null || Number(event.detail.ticketId) === ticketId) void read(true);
+        };
+        const foreground = () => void read();
+        refresh.current = () => void read(true);
+        void read(true);
+        window.addEventListener("admin:changed", changed);
+        if (desktop) window.addEventListener("focus", foreground);
+        const timer = desktop ? setInterval(foreground, 3e4) : null;
         return () => {
           alive = false;
+          refresh.current = null;
+          clearInterval(timer);
+          window.removeEventListener("admin:changed", changed);
+          window.removeEventListener("focus", foreground);
+          release();
         };
-      }, [ticketId]);
-      return brief;
-    }
-    const headerActionStyle = {
-      height: 24,
-      padding: "0 8px",
-      borderRadius: 6,
-      border: "1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.35))",
-      background: "transparent",
-      color: "inherit",
-      font: "inherit",
-      fontSize: 12,
-      cursor: "pointer",
-      whiteSpace: "nowrap"
-    };
-    function TicketHeaderChip({ sessionId }) {
-      const run = ticketFromCwd(useSessionCwd(sessionId));
-      const ticketId = run?.ticketId ?? null;
-      const brief = useTicketBrief(ticketId);
+      }, [key, ticketId]);
       useEffect(() => {
-        if (ticketId === null || !sessionId) return void 0;
-        return followTicket(ticketId, sessionId);
-      }, [ticketId, sessionId]);
-      if (!run) return null;
-      return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 6 }, children: [
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            type: "button",
-            onClick: () => void openTicketRun({ id: run.ticketId }),
-            title: `Open ${run.kind === "task" ? "system task" : "client ticket"} #${run.ticketId}`,
-            style: {
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 5,
-              height: 24,
-              padding: "0 8px",
-              borderRadius: 6,
-              border: `1px solid ${TICKET_COLORS[run.kind]}`,
-              background: "transparent",
-              color: "inherit",
-              font: "inherit",
-              fontSize: 12,
-              cursor: "pointer",
-              whiteSpace: "nowrap"
-            },
-            children: [
-              /* @__PURE__ */ jsx(TicketGlyph, { size: 13 }),
-              /* @__PURE__ */ jsxs("span", { children: [
-                run.kind === "task" ? "Task" : "Ticket",
-                " #",
-                run.ticketId
-              ] })
-            ]
-          }
-        ),
-        brief ? /* @__PURE__ */ jsx(StatusPill2, { status: brief.status }) : null,
-        /* @__PURE__ */ jsx("button", { type: "button", style: headerActionStyle, onClick: () => openWorkbenchTicket(run.ticketId), title: "Open the full ticket in the workbench", children: "Workbench" })
+        if (snapshot.notice === "unconfirmed") refresh.current?.();
+      }, [snapshot.notice]);
+      const { phase, notice, seconds, status, needsRead } = snapshot;
+      const enabled = phase === "running" || phase === "waiting";
+      const busy = phase === "starting" || phase === "saving";
+      const recorded2 = seconds === null ? "\u2014" : formatRecordedTime(seconds);
+      const hint = meterNotices[notice] ?? (phase === "waiting" ? "Time waits while this conversation is idle or out of focus." : "Recorded human time");
+      const via = assistantBadge({ assistant_app: assistantApp });
+      return /* @__PURE__ */ jsxs("span", { ref: root, className: "pta-chat-ticket", title: hint, children: [
+        /* @__PURE__ */ jsxs("span", { className: `pta-chat-ticket__id${titled ? " pta-sr" : ""}`, children: [
+          run.kind === "task" ? "Task" : "Ticket",
+          " #",
+          ticketId
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "pta-chat-ticket__status", children: status ? STATUS_TEXT[status] ?? status : needsRead ? "Unavailable" : "Loading\u2026" }),
+        via ? /* @__PURE__ */ jsx("span", { className: "pta-tag pta-tag--client", title: assistantBadgeTitle({ assistant_app: assistantApp }), children: via }) : null,
+        desktop ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsxs("span", { className: "pta-chat-ticket__time", "aria-label": `Recorded human time: ${seconds === null ? "unavailable" : recorded2}`, children: [
+            /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "\u23F1 " }),
+            recorded2
+          ] }),
+          status && seconds !== null && phase !== "closed" ? /* @__PURE__ */ jsx(
+            PtaButton,
+            {
+              className: "pta-chat-ticket__action",
+              disabled: busy || needsRead,
+              onClick: () => enabled ? meter.pause(key) : void meter.resume(key),
+              children: enabled ? "Pause" : phase === "starting" ? "Starting\u2026" : phase === "saving" ? "Saving\u2026" : "Resume"
+            }
+          ) : null,
+          /* @__PURE__ */ jsx("span", { className: "pta-chat-ticket__feedback", role: "status", children: notice ? hint : "" })
+        ] }) : null
       ] });
+    }
+    function TicketHeaderChip({ sessionId }) {
+      const key = useSessionCwd(sessionId);
+      const run = ticketFromCwd(key);
+      if (!run || !sessionId) return null;
+      const titled = new RegExp(`#${run.ticketId}\\b`).test(String(key ?? "").split(SEP)[1] ?? "");
+      return /* @__PURE__ */ jsx(TicketHeaderReadout, { sessionId, run, titled }, `${run.ticketId}:${sessionId}`);
     }
     const files = { download: (path) => json(`download ${path}`) };
     function AdminPage() {
       return /* @__PURE__ */ jsx(AdminApp, { api, host, files, platform: "dsh" });
     }
     const NATIVE_STYLES = `
-    .pta-page{height:100%;overflow-y:auto;box-sizing:border-box;padding:26px 30px 56px;max-width:1120px;margin:0 auto;color:var(--dsw-alias-label-primary,inherit);font-size:13px;line-height:1.45}
+    .pta-ticket-form{display:grid;gap:6px;max-width:40rem}
+    .pta-ticket-form label{display:grid;gap:4px}
+    .pta-ticket-form textarea{min-height:4rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-translucent,currentColor);border-radius:6px}
+    .pta-ticket-form .pta-btn{justify-self:start}
+    .pta-ticket-form__row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .pta-dock .pta-ticket-form{max-width:none}
+    .pta-dock .pta-ticket-form textarea{min-height:0;resize:vertical;padding:4px 6px}
+    .pta-chat-ticket{display:inline-flex;align-items:center;flex-wrap:wrap;gap:3px 8px;min-width:0;max-width:100%;line-height:1.3;font-size:12px}
+    .pta-chat-ticket__id,.pta-chat-ticket__time{white-space:nowrap}
+    .pta-chat-ticket__status{color:var(--dsw-alias-label-secondary,currentColor);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pta-chat-ticket__time{font-variant-numeric:tabular-nums}
+    .pta-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+    [class*="_titleCluster"]:has(.pta-chat-ticket) [class*="_crumbCurrent"]{max-width:min(460px,42vw)}
+    .pta-chat-ticket .pta-chat-ticket__action{min-height:24px;padding:2px 7px}
+    .pta-chat-ticket__action:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,currentColor);outline-offset:2px}
+    .pta-chat-ticket__feedback{font-size:11px;max-width:100%;color:var(--dsw-alias-label-secondary,currentColor);overflow-wrap:anywhere}
+    .pta-chat-ticket__feedback:empty{position:absolute;width:1px;height:1px;overflow:hidden}
+    .pta-page{height:100%;overflow-y:auto;box-sizing:border-box;min-width:0;flex:1 1 auto;width:100%;padding:26px 30px 56px;max-width:1120px;margin:0 auto;color:var(--dsw-alias-label-primary,inherit);font-size:13px;line-height:1.45}
     .pta-head{display:flex;align-items:flex-start;gap:18px;margin:0 0 18px}
     .pta-head h1{margin:0;font-size:24px;line-height:1.15;font-weight:650;letter-spacing:-0.02em}
     .pta-head p{margin:6px 0 0;font-size:13px;opacity:.65;max-width:620px}
     .pta-head__actions{display:flex;align-items:center;gap:8px;margin-left:auto;padding-top:2px}
-    .pta-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 22px}
+    .pta-kpis{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 18px}
     .pta-kpi{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.22));border-radius:10px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.06));color:inherit;font:inherit;text-align:left;cursor:pointer}
     .pta-kpi:disabled{cursor:default}
     .pta-kpi:not(:disabled):hover{border-color:var(--dsw-alias-border-primary,rgba(127,127,127,.4))}
     .pta-kpi__value{font-size:22px;font-weight:650;line-height:1.1;font-variant-numeric:tabular-nums}
     .pta-kpi__label{font-size:11.5px;opacity:.7}
+    .pta-kpis .pta-kpi{flex-direction:row;align-items:baseline;gap:6px;padding:5px 11px;border-radius:999px}
+    .pta-kpis .pta-kpi__value{font-size:15px}
+    .pta-kpis .pta-kpi__label{font-size:12px}
+    .pta-kpis .pta-kpi.is-zero{opacity:.45;background:transparent}
+    .pta-row:not(:hover):not(:focus-within) .pta-btn--reveal{visibility:hidden}
     .pta-section{margin:0 0 22px}
     .pta-section__head{display:flex;align-items:baseline;gap:10px;padding:0 2px 7px}
     .pta-section__head h3{margin:0;font-size:13px;font-weight:600}
@@ -7996,6 +12618,7 @@ ${who} is emailed about this change.`)) return;
     .pta-tag{flex:0 0 auto;padding:1px 5px;border-radius:4px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));font-size:10px;opacity:.8;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .pta-tag--client{border-color:transparent;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.14));opacity:.75}
     .pta-meta{flex:0 0 auto;font-size:11px;opacity:.55;white-space:nowrap}
+    .pta-hint{margin:6px 2px 10px;font-size:10.5px;opacity:.45}
     .pta-warn{flex:0 0 auto;font-size:11px;color:var(--dsw-alias-state-warning-primary,#d18f2e);white-space:nowrap}
     .pta-fill{flex:1 1 auto;min-width:8px}
     .pta-actions{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto}
@@ -8021,8 +12644,9 @@ ${who} is emailed about this change.`)) return;
     .pta-filter:hover{opacity:.9;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.08))}
     .pta-filter.is-active{opacity:1;border-color:var(--dsw-alias-border-secondary,rgba(127,127,127,.32));background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.12))}
     .pta-tree-note{padding:5px 8px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));font-size:12px;line-height:18px;user-select:none}
-    .pta-trail{display:inline-flex;align-items:center;gap:4px}
-    .pta-trail__go{font-size:10px;line-height:1;opacity:.35}
+    .pta-run-shortcut{display:grid;place-items:center;width:16px;height:20px;padding:0;border:0;border-radius:3px;background:transparent;color:inherit;cursor:pointer}
+    .pta-run-shortcut:hover,.pta-run-shortcut:focus-visible{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-skeleton)}
+    .pta-run-shortcut:focus-visible{outline:1px solid currentColor;outline-offset:-1px}
     .pta-dock{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance,0px) - var(--dsh-composer-side-clearance,0px));max-width:var(--dsh-composer-card-max-width,760px);margin:0 auto 8px;border:0;border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-specific-menu,var(--dsw-alias-bg-elevated,#23252a));backdrop-filter:var(--dsw-menu-backdrop-filter,blur(12px));box-shadow:var(--dsw-elevation-panel,0 10px 30px rgba(0,0,0,.28));--dsw-elevation-stroke-color:var(--dsw-alias-border-l1,rgba(127,127,127,.24));overflow:hidden;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary,inherit);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}
     .pta-dock .pta-meta{font-size:12px;opacity:.58}
     .pta-dock .pta-btn{height:24px;font-size:12px;border-radius:var(--dsw-radius-sm,6px)}
@@ -8036,6 +12660,48 @@ ${who} is emailed about this change.`)) return;
     .pta-dock__body{border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));max-height:260px;overflow-y:auto;padding:8px 10px}
     .pta-dock__last{padding:0 10px 7px;font-size:12px;color:var(--dsw-alias-label-secondary,inherit);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .pta-dock__last .pta-meta{font-size:12px}
+    .pta-dock__row{flex-wrap:nowrap;padding:4px 8px;min-height:32px;gap:6px}
+    .pta-dock__row .pta-dock__title{flex:1 1 auto;max-width:none}
+    .pta-dock__ws{display:inline-flex;align-items:center;gap:4px;flex:none}
+    .pta-dock__chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 6px;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsw-alias-label-secondary,inherit);font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}
+    .pta-dock__chip:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.1))}
+    .pta-dock__chip:disabled{cursor:default}
+    .pta-dock__dot{width:7px;height:7px;border-radius:50%;background:#9aa0a6}
+    .pta-dock__ws[data-state=ready] .pta-dock__dot{background:#3fb950}
+    .pta-dock__ws[data-state=missing] .pta-dock__dot,.pta-dock__ws[data-state=conflict] .pta-dock__dot{background:#d29922}
+    .pta-dock__ws[data-state=unavailable] .pta-dock__dot{background:#f85149}
+    .pta-dock__actions{display:inline-flex;gap:2px;flex:none}
+    .pta-dock__toggle[aria-expanded=true]{color:var(--dsw-alias-label-primary,inherit);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
+    .pta-hist{height:100%;width:100%;overflow-y:auto;box-sizing:border-box;padding:18px 24px 140px;max-width:860px;margin:0 auto;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary,inherit)}
+    .pta-hist__bar{display:flex;align-items:center;gap:10px;margin:0 0 14px}
+    .pta-seg{display:inline-flex;padding:2px;border-radius:8px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.1))}
+    .pta-seg button{height:26px;padding:0 12px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary,inherit);font:inherit;font-size:12.5px;cursor:pointer}
+    .pta-seg button[aria-pressed=true]{background:var(--dsw-alias-bg-elevated,rgba(127,127,127,.22));color:var(--dsw-alias-label-primary,inherit);box-shadow:0 1px 2px rgba(0,0,0,.25)}
+    .pta-hist__reload{margin-left:auto;height:26px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary,inherit);font:inherit;font-size:12px;cursor:pointer}
+    .pta-hist__reload:hover,.pta-hist__tickets button:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.1))}
+    .pta-hist__day h3{margin:14px 0 4px;font-size:11.5px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.8))}
+    .pta-hist__day ol{list-style:none;margin:0;padding:0}
+    .pta-hist__item{position:relative;display:grid;grid-template-columns:44px 14px 1fr;align-items:baseline;gap:6px;padding:3px 0}
+    .pta-hist__item time{font-variant-numeric:tabular-nums;font-size:12px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.8))}
+    .pta-hist__item:not(:last-child)::after{content:"";position:absolute;left:56px;top:17px;bottom:-5px;width:1px;background:var(--dsw-alias-border-l1,rgba(127,127,127,.22))}
+    .pta-hist__dot{justify-self:center;width:8px;height:8px;border-radius:50%;background:#9aa0a6;transform:translateY(-1px)}
+    .pta-hist__item[data-type=run] .pta-hist__dot{background:#58a6ff}
+    .pta-hist__item[data-type=land] .pta-hist__dot{background:#3fb950}
+    .pta-hist__item[data-status=done] .pta-hist__dot{background:#3fb950}
+    .pta-hist__item[data-status="in review"] .pta-hist__dot{background:#a371f7}
+    .pta-hist__item[data-status="in progress"] .pta-hist__dot,.pta-hist__item[data-status=approved] .pta-hist__dot{background:#d29922}
+    .pta-hist__item[data-status=declined] .pta-hist__dot{background:#f85149}
+    .pta-hist__text{min-width:0;overflow-wrap:anywhere}
+    .pta-hist__text strong{font-weight:550}
+    .pta-hist__detail{color:var(--dsw-alias-label-secondary,inherit)}
+    .pta-hist__empty{color:var(--dsw-alias-label-secondary,inherit)}
+    .pta-hist__scope{margin:0;font-size:13px;font-weight:600}
+    .pta-hist__tickets{list-style:none;margin:0;padding:0}
+    .pta-hist__tickets button{display:flex;align-items:baseline;gap:8px;width:100%;padding:6px 8px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;text-align:start;cursor:pointer}
+    .pta-hist__tid{flex:none;font-variant-numeric:tabular-nums;font-size:12px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.8))}
+    .pta-hist__ttitle{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pta-hist__tstatus{flex:none;font-size:11.5px;color:var(--dsw-alias-label-secondary,inherit);text-transform:capitalize}
+    .pta-hist__tickets time{flex:none;font-size:12px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.8))}
     .pta-dock__compose{display:flex;align-items:center;gap:8px;padding:6px 10px;border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));flex-wrap:wrap}
     .pta-modes{display:inline-flex;padding:2px;gap:1px;border-radius:var(--dsw-radius-md,7px);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.13))}
     .pta-mode{height:22px;padding:0 8px;border:0;border-radius:calc(var(--dsw-radius-md,7px) - 2px);background:transparent;color:var(--dsw-alias-label-tertiary,inherit);font:inherit;font-size:12px;line-height:22px;cursor:pointer}
@@ -8054,6 +12720,7 @@ ${who} is emailed about this change.`)) return;
     .pta-runs{display:flex;flex-direction:column;gap:4px;margin-top:2px;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18))}
     .pta-run{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
     @media (max-width:760px){.pta-page{padding:18px 16px 40px}.pta-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.pta-head{flex-direction:column}.pta-head__actions{margin-left:0;width:100%}.pta-search{flex:1 1 auto;min-width:0}.pta-tag{max-width:120px}}
+    ${PROJECT_PARK_STYLES}
   `;
     const CLIENT_VISIBLE_STATUSES = /* @__PURE__ */ new Set(["approved", "declined", "done"]);
     let handledDeepLink = false;
@@ -8081,10 +12748,11 @@ ${who} is emailed about this change.`)) return;
     const tintOfStatus = (status) => STATUS_TINT[status] ?? STATUS_TINT.done;
     const ticketLabel = (ticket) => ticket?.title_en || ticket?.title || "(untitled)";
     const dollars = (cents) => Number.isFinite(Number(cents)) ? `$${(Number(cents) / 100).toFixed(2)}` : "";
-    const isWaiting = (ticket) => Boolean(ticket) && Number(ticket?.client_waiting_since ?? 0) > 0 && !isClosedTicket(ticket) && ticket?.status !== "new";
+    const isWaiting = (ticket) => Boolean(ticket) && Number(ticket?.client_waiting_since ?? 0) > 0 && !isClosedTicket2(ticket) && ticket?.status !== "new";
     function useLiveAdmin() {
       const [state, setState] = useState({
         tickets: [],
+        projects: [],
         running: [],
         recent: [],
         queue: [],
@@ -8098,7 +12766,8 @@ ${who} is emailed about this change.`)) return;
       const load = useCallback(async () => {
         try {
           const tickets = await api("GET", "/admin/tickets");
-          const [runs, queue, attentionNow] = await Promise.all([
+          const [projects, runs, queue, attentionNow] = await Promise.all([
+            api("GET", "/admin/projects").catch(() => null),
             api("GET", "/admin/runs").catch(() => null),
             api("GET", "/admin/queue").catch(() => null),
             api("GET", "/admin/attention").catch(() => null)
@@ -8106,6 +12775,7 @@ ${who} is emailed about this change.`)) return;
           if (!mounted.current) return;
           setState({
             tickets: Array.isArray(tickets?.tickets) ? tickets.tickets : [],
+            projects: Array.isArray(projects?.projects) ? projects.projects : [],
             running: Array.isArray(runs?.running) ? runs.running : [],
             recent: Array.isArray(runs?.recent) ? runs.recent : [],
             queue: Array.isArray(queue?.queue) ? queue.queue : [],
@@ -8165,6 +12835,13 @@ ${who} is emailed about this change.`)) return;
         failed: (Array.isArray(data.recent) ? data.recent : []).filter((run) => run.status === "failed" && nowSeconds - Number(run.finished_at ?? 0) < 86400).slice(0, 8)
       };
     }
+    const stalledReason = (ticket) => `no report for ${ago2(ticket.updated_at)}`;
+    let pendingInboxFilter = null;
+    function openInboxFilter(filter) {
+      pendingInboxFilter = filter;
+      window.dispatchEvent(new CustomEvent("pta:inbox-filter", { detail: { filter } }));
+      ctx.layout?.selectPanel?.(INBOX_PANEL);
+    }
     function actionableCount(groups) {
       const ids = /* @__PURE__ */ new Set();
       for (const list of [groups.approvals, groups.reviews, groups.waiting, groups.stalled, groups.stuck]) {
@@ -8173,7 +12850,9 @@ ${who} is emailed about this change.`)) return;
       return ids.size;
     }
     async function changeTicketStatus(ticket, status) {
-      if (CLIENT_VISIBLE_STATUSES.has(status) && ticket.kind !== "system") {
+      const requeue = status === "approved" && ticket.status !== "new";
+      if (requeue && !window.confirm(`Queue another Fleet run for #${ticket.id}? This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.`)) return false;
+      if (!requeue && CLIENT_VISIBLE_STATUSES.has(status) && ticket.kind !== "system") {
         const who = ticket.client_email || ticket.client_name || "The client";
         const what = status === "approved" ? "Approve" : status === "declined" ? "Decline" : "Mark done";
         if (!window.confirm(`${what} #${ticket.id}?
@@ -8181,7 +12860,6 @@ ${who} is emailed about this change.`)) return;
 ${who} is emailed about this change.`)) return false;
       }
       await api("PATCH", `/admin/tickets/${ticket.id}`, { status });
-      ticketBriefs.delete(ticket.id);
       window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "ticket.status", ticketId: ticket.id } }));
       return true;
     }
@@ -8198,15 +12876,15 @@ ${who} is emailed about this change.`)) return false;
       }
       if (ticket.status === "review") {
         return /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(PtaButton, { kind: "primary", onClick: () => void changeTicketStatus(ticket, "done"), children: "Done" }),
-          /* @__PURE__ */ jsx(PtaButton, { onClick: () => void changeTicketStatus(ticket, "approved"), children: "Run again" })
+          /* @__PURE__ */ jsx(PtaButton, { kind: "primary", onClick: () => void changeTicketStatus(ticket, "done"), children: "Mark done" }),
+          /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", className: "pta-btn--reveal", onClick: () => void changeTicketStatus(ticket, "approved"), children: "Queue another run" })
         ] });
       }
       if (isWaiting(ticket)) {
         return /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: () => void markTicketAnswered(ticket), children: "No reply needed" });
       }
       if (ticket.status === "in_progress") {
-        return /* @__PURE__ */ jsx(PtaButton, { onClick: () => void changeTicketStatus(ticket, "approved"), children: "Requeue" });
+        return /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", className: "pta-btn--reveal", onClick: () => void changeTicketStatus(ticket, "approved"), children: "Queue another run" });
       }
       return null;
     }
@@ -8217,8 +12895,9 @@ ${who} is emailed about this change.`)) return false;
       const tint = tintOfStatus(status);
       return /* @__PURE__ */ jsx("span", { className: "pta-pill", style: { color: tint, borderColor: tint }, children: STATUS_TEXT[status] ?? status ?? "unknown" });
     }
-    function TicketLine({ ticket, actions = null, reason = "", detail = "" }) {
+    function TicketLine({ ticket, actions = null, reason = "", detail = "", showAge = true }) {
       const open = () => void openTicketRun(ticket);
+      const via = assistantBadge(ticket);
       return /* @__PURE__ */ jsxs(
         "div",
         {
@@ -8240,18 +12919,43 @@ ${who} is emailed about this change.`)) return false;
             ] }),
             /* @__PURE__ */ jsx("span", { className: "pta-title", title: ticketLabel(ticket), children: ticketLabel(ticket) }),
             ticket.kind === "system" ? /* @__PURE__ */ jsx("span", { className: "pta-tag", children: "mine" }) : /* @__PURE__ */ jsx("span", { className: "pta-tag pta-tag--client", title: ticket.client_email ?? "", children: ticket.client_email || "client" }),
+            via ? /* @__PURE__ */ jsx("span", { className: "pta-tag pta-tag--client", title: assistantBadgeTitle(ticket), children: via }) : null,
             /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ticket.project_name || "no project" }),
             reason ? /* @__PURE__ */ jsx("span", { className: "pta-warn", children: reason }) : null,
             /* @__PURE__ */ jsx("span", { className: "pta-fill" }),
             detail ? /* @__PURE__ */ jsx("span", { className: "pta-meta", children: detail }) : null,
-            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ago2(ticket.updated_at) }),
+            showAge ? /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ago2(ticket.updated_at) }) : null,
             actions ? /* @__PURE__ */ jsx("span", { className: "pta-actions", onClick: (event) => event.stopPropagation(), children: actions }) : null
           ]
         }
       );
     }
+    function navigateRowFocus(root, event) {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return false;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return false;
+      if (!root?.isConnected || root.offsetParent === null) return false;
+      const rows = Array.from(root.querySelectorAll(".pta-row"));
+      const active = document.activeElement;
+      const focusedRow = active instanceof Element ? active.closest(".pta-row") : null;
+      const index = nextRowIndex(focusedRow ? rows.indexOf(focusedRow) : -1, rows.length, event.key);
+      if (index === null || index >= rows.length) return false;
+      event.preventDefault();
+      rows[index].focus({ preventScroll: true });
+      rows[index].scrollIntoView({ block: "nearest" });
+      return true;
+    }
+    function useRowNavigation(rootRef) {
+      useEffect(() => {
+        const onKeyDown = (event) => {
+          navigateRowFocus(rootRef.current, event);
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+      }, [rootRef]);
+    }
     function Kpi({ label, value, hint, tint, onClick }) {
-      return /* @__PURE__ */ jsxs("button", { type: "button", className: "pta-kpi", onClick, title: hint, disabled: !onClick, children: [
+      return /* @__PURE__ */ jsxs("button", { type: "button", className: `pta-kpi${Number(value) === 0 ? " is-zero" : ""}`, onClick, title: hint, disabled: !onClick || Number(value) === 0, children: [
         /* @__PURE__ */ jsx("span", { className: "pta-kpi__value", style: { color: tint }, children: value }),
         /* @__PURE__ */ jsx("span", { className: "pta-kpi__label", children: label })
       ] });
@@ -8327,13 +13031,15 @@ ${who} is emailed about this change.`)) return false;
     }
     function NeedsYouPage() {
       const data = useLiveAdmin();
+      const root = useRef(null);
+      useRowNavigation(root);
       const groups = useMemo(() => ticketGroups(data), [data]);
       const total = actionableCount(groups);
       const goInbox = () => ctx.layout?.selectPanel?.(INBOX_PANEL);
       const goWorkbench = () => ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
-      if (data.loading && data.at === 0) return /* @__PURE__ */ jsx("div", { className: "pta-page", children: /* @__PURE__ */ jsx("p", { className: "pta-empty", children: "Loading\u2026" }) });
+      if (data.loading && data.at === 0) return /* @__PURE__ */ jsx("div", { className: "pta-page", ref: root, children: /* @__PURE__ */ jsx("p", { className: "pta-empty", children: "Loading\u2026" }) });
       if (data.error) {
-        return /* @__PURE__ */ jsxs("div", { className: "pta-page", children: [
+        return /* @__PURE__ */ jsxs("div", { className: "pta-page", ref: root, children: [
           /* @__PURE__ */ jsx("header", { className: "pta-head", children: /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx("h1", { children: "Needs you" }),
             /* @__PURE__ */ jsx("p", { children: isAuthError(data.code) ? "Connect PTech Admin to the portal to see what is waiting." : "The portal could not be reached." })
@@ -8360,6 +13066,7 @@ ${who} is emailed about this change.`)) return false;
           {
             ticket,
             reason: reasonOf ? reasonOf(ticket) : "",
+            showAge: key !== "stalled",
             actions: actions ? actions(ticket) : /* @__PURE__ */ jsx(TicketRowActions, { ticket })
           },
           ticket.id
@@ -8368,7 +13075,7 @@ ${who} is emailed about this change.`)) return false;
       const stuckReason = new Map(
         data.queue.filter((item) => !(Array.isArray(item?.eligible) ? item.eligible.length > 0 : Boolean(item?.eligible))).map((item) => [Number(item.id), item.reason ?? "no eligible node"])
       );
-      return /* @__PURE__ */ jsxs("div", { className: "pta-page", children: [
+      return /* @__PURE__ */ jsxs("div", { className: "pta-page", ref: root, children: [
         /* @__PURE__ */ jsxs("header", { className: "pta-head", children: [
           /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx("h1", { children: "Needs you" }),
@@ -8379,16 +13086,27 @@ ${who} is emailed about this change.`)) return false;
             /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: goWorkbench, children: "Workbench" })
           ] })
         ] }),
+        /* @__PURE__ */ jsx(
+          ProjectPark,
+          {
+            projects: data.projects,
+            tickets: data.tickets,
+            runs: data.running,
+            now: data.at || Date.now(),
+            onSelect: (plot) => openProjectPage(plot)
+          }
+        ),
         /* @__PURE__ */ jsxs("div", { className: "pta-kpis", children: [
-          /* @__PURE__ */ jsx(Kpi, { label: "To approve", value: groups.approvals.length, tint: tintOfStatus("new"), onClick: goInbox, hint: "New requests; nothing runs until you approve." }),
-          /* @__PURE__ */ jsx(Kpi, { label: "To review", value: groups.reviews.length, tint: tintOfStatus("review"), onClick: goInbox, hint: "Finished runs waiting for your check." }),
-          /* @__PURE__ */ jsx(Kpi, { label: "Clients waiting", value: groups.waiting.length, tint: tintOfStatus("approved"), onClick: goInbox, hint: "They wrote last and have heard nothing since." }),
-          /* @__PURE__ */ jsx(Kpi, { label: "Running now", value: groups.running.length, tint: tintOfStatus("in_progress"), onClick: goInbox, hint: "Agents working right now." })
+          /* @__PURE__ */ jsx(Kpi, { label: "To approve", value: groups.approvals.length, tint: tintOfStatus("new"), onClick: () => openInboxFilter("approval"), hint: "New requests; nothing runs until you approve." }),
+          /* @__PURE__ */ jsx(Kpi, { label: "To review", value: groups.reviews.length, tint: tintOfStatus("review"), onClick: () => openInboxFilter("review"), hint: "Finished runs waiting for your check." }),
+          /* @__PURE__ */ jsx(Kpi, { label: "Clients waiting", value: groups.waiting.length, tint: tintOfStatus("approved"), onClick: () => openInboxFilter("reply"), hint: "They wrote last and have heard nothing since." }),
+          /* @__PURE__ */ jsx(Kpi, { label: "Stalled", value: groups.stalled.length, tint: tintOfStatus("in_progress"), onClick: () => openInboxFilter("stalled"), hint: "In progress for 45+ minutes without a report." }),
+          /* @__PURE__ */ jsx(Kpi, { label: "Running now", value: groups.running.length, tint: tintOfStatus("in_progress"), hint: "Agents working right now. Listed at the bottom of this page." })
         ] }),
         section("approvals", "Approve or decline", "New requests. Nothing runs until you decide.", groups.approvals),
         section("review", "Check the agent\u2019s work", "Finished runs waiting for you.", groups.reviews),
         section("waiting", "Answer the client", "They wrote last and have heard nothing since.", groups.waiting),
-        section("stalled", "Stalled", "In progress for 45+ minutes without a report.", groups.stalled),
+        section("stalled", "Stalled", "In progress for 45+ minutes without a report.", groups.stalled, null, stalledReason),
         section("stuck", "No node can take these", "Approved, but nothing eligible can run them.", groups.stuck, null, (ticket) => stuckReason.get(Number(ticket.id)) ?? ""),
         groups.running.length > 0 ? /* @__PURE__ */ jsxs("section", { className: "pta-section", children: [
           /* @__PURE__ */ jsxs("div", { className: "pta-section__head", children: [
@@ -8444,8 +13162,38 @@ ${who} is emailed about this change.`)) return false;
     function InboxPage() {
       const data = useLiveAdmin();
       const groups = useMemo(() => ticketGroups(data), [data]);
-      const [filter, setFilter] = useState("all");
+      const [filter, setFilter] = useState(() => {
+        const preset = pendingInboxFilter;
+        pendingInboxFilter = null;
+        return preset ?? "all";
+      });
       const [query, setQuery] = useState("");
+      const search = useRef(null);
+      const root = useRef(null);
+      useEffect(() => {
+        const onPreset = (event) => {
+          pendingInboxFilter = null;
+          setFilter(event.detail?.filter ?? "all");
+        };
+        const onKey = (event) => {
+          if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+            const target = event.target;
+            const typing = target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+            if (!typing && search.current?.isConnected && search.current.offsetParent !== null) {
+              event.preventDefault();
+              search.current.focus();
+              return;
+            }
+          }
+          navigateRowFocus(root.current, event);
+        };
+        window.addEventListener("pta:inbox-filter", onPreset);
+        window.addEventListener("keydown", onKey);
+        return () => {
+          window.removeEventListener("pta:inbox-filter", onPreset);
+          window.removeEventListener("keydown", onKey);
+        };
+      }, []);
       const goWorkbench = () => ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
       const all = useMemo(() => {
         const seen = /* @__PURE__ */ new Map();
@@ -8479,7 +13227,7 @@ ${who} is emailed about this change.`)) return false;
         return `${ticket.id} ${ticketLabel(ticket)} ${ticket.project_name ?? ""} ${ticket.client_email ?? ""}`.toLowerCase().includes(needle);
       });
       if (data.error && isAuthError(data.code)) {
-        return /* @__PURE__ */ jsxs("div", { className: "pta-page", children: [
+        return /* @__PURE__ */ jsxs("div", { className: "pta-page", ref: root, children: [
           /* @__PURE__ */ jsx("header", { className: "pta-head", children: /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx("h1", { children: "Inbox" }),
             /* @__PURE__ */ jsx("p", { children: "Connect PTech Admin to the portal to see what is waiting." })
@@ -8487,7 +13235,7 @@ ${who} is emailed about this change.`)) return false;
           /* @__PURE__ */ jsx(PortalSignIn, { onDone: () => void data.reload() })
         ] });
       }
-      return /* @__PURE__ */ jsxs("div", { className: "pta-page", children: [
+      return /* @__PURE__ */ jsxs("div", { className: "pta-page", ref: root, children: [
         /* @__PURE__ */ jsxs("header", { className: "pta-head", children: [
           /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx("h1", { children: "Inbox" }),
@@ -8497,10 +13245,17 @@ ${who} is emailed about this change.`)) return false;
             /* @__PURE__ */ jsx(
               "input",
               {
+                ref: search,
                 className: "pta-search",
                 value: query,
-                placeholder: "Search tickets, clients, projects\u2026",
+                placeholder: "Search tickets, clients, projects\u2026  /",
                 onChange: (event) => setQuery(event.target.value),
+                onKeyDown: (event) => {
+                  if (event.key === "Escape") {
+                    setQuery("");
+                    event.currentTarget.blur();
+                  }
+                },
                 "aria-label": "Search the inbox"
               }
             ),
@@ -8511,22 +13266,19 @@ ${who} is emailed about this change.`)) return false;
           item.label,
           item.count ? /* @__PURE__ */ jsx("span", { className: "pta-count", children: item.count }) : null
         ] }, item.key)) }),
-        shown.length === 0 ? /* @__PURE__ */ jsx(EmptyState, { title: all.length === 0 ? "Inbox zero" : "Nothing in this filter", text: all.length === 0 ? "New approvals, reviews and client replies will land here and notify you." : "Try another filter, or clear the search." }) : /* @__PURE__ */ jsx("div", { className: "pta-rows pta-rows--inbox", children: shown.map(({ ticket }) => /* @__PURE__ */ jsx(
+        /* @__PURE__ */ jsx("p", { className: "pta-meta pta-hint", children: "j/k to move \xB7 Enter to open \xB7 / to search" }),
+        shown.length === 0 ? /* @__PURE__ */ jsx(EmptyState, { title: all.length === 0 ? "Inbox zero" : "Nothing in this filter", text: all.length === 0 ? "New approvals, reviews and client replies will land here and notify you." : "Try another filter, or clear the search." }) : /* @__PURE__ */ jsx("div", { className: "pta-rows pta-rows--inbox", children: shown.map(({ ticket, kinds }) => /* @__PURE__ */ jsx(
           TicketLine,
           {
             ticket,
+            reason: kinds.has("stalled") ? stalledReason(ticket) : "",
+            showAge: !kinds.has("stalled"),
             actions: /* @__PURE__ */ jsx(TicketRowActions, { ticket }),
             detail: isWaiting(ticket) ? "waiting" : ""
           },
           ticket.id
         )) })
       ] });
-    }
-    function openWorkbenchTicket(ticketId) {
-      ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
-      const hash = `#ticket=${ticketId}`;
-      if (window.location.hash === hash) window.dispatchEvent(new HashChangeEvent("hashchange"));
-      else window.location.hash = hash;
     }
     function DeskPage({ children }) {
       const [toast, setToast] = useState(null);
@@ -8575,156 +13327,174 @@ ${who} is emailed about this change.`)) return false;
     function SeoPage() {
       return /* @__PURE__ */ jsx(DeskPage, { children: /* @__PURE__ */ jsx(SeoView, {}) });
     }
-    function TicketDock({ sessionId, input, inputActions }) {
-      const run = ticketFromCwd(useSessionCwd(sessionId));
-      const ticketId = run?.ticketId ?? null;
-      const [detail, reload] = useTicketDetail(ticketId);
-      const [expanded, setExpanded] = useState(false);
-      const [mode, setMode] = useState("chat");
-      const [busy, setBusy] = useState("");
-      const [note, setNote] = useState("");
+    const WORKSPACE_TEXT = {
+      ready: "Workspace ready.",
+      missing: "Workspace is missing. Restore it from the saved commit.",
+      conflict: "Restore is blocked by an existing checkout or local changes. Preserve that work before retrying.",
+      unavailable: "No verified workspace is available. Check that the run recorded its repository and commit.",
+      pending: "Checking or restoring this session\u2019s workspace\u2026",
+      unmanaged: "This session has no managed workspace to restore."
+    };
+    const WORKSPACE_LABEL = {
+      ready: "Workspace ready",
+      missing: "Workspace missing",
+      conflict: "Restore blocked",
+      unavailable: "No workspace",
+      pending: "Checking workspace\u2026",
+      unmanaged: "No managed workspace"
+    };
+    function TicketWorkspace({ sessionId }) {
+      const [result, setResult] = useState({ state: "pending" });
+      const active = useRef(null);
+      const request = useCallback(async (action) => {
+        active.current?.abort();
+        const controller = new AbortController();
+        active.current = controller;
+        setResult({ state: "pending" });
+        const next = await requestTicketWorkspace(sessionId, action, controller.signal);
+        if (!controller.signal.aborted) setResult(next);
+      }, [sessionId]);
       useEffect(() => {
-        setExpanded(false);
-        setMode("chat");
-        setBusy("");
-        setNote("");
-      }, [ticketId]);
-      if (!run) return null;
-      const ticket = detail.ticket;
-      const draft = typeof input?.draft === "string" ? input.draft : "";
-      const messages = Array.isArray(detail.messages) ? detail.messages : [];
-      const runs = Array.isArray(detail.runs) ? detail.runs : [];
-      const waiting = isWaiting(ticket);
-      const latestClient = [...messages].reverse().find((message) => message.author === "client" && !message.internal) ?? null;
-      const canReply = ticket?.kind !== "system";
-      const send = async (internal) => {
-        const body = draft.trim();
-        if (!ticket || body.length === 0) return;
-        setBusy(internal ? "note" : "reply");
-        setNote("");
+        void request("status");
+        return () => active.current?.abort();
+      }, [request]);
+      useEffect(() => {
+        if (result.state !== "pending") return;
+        const refresh = () => void request("status");
+        window.addEventListener("focus", refresh);
+        return () => window.removeEventListener("focus", refresh);
+      }, [result.state, request]);
+      const restore = () => {
+        if (window.confirm("Restore this workspace from its saved commit? Uncommitted edits are not recovered. This does not change the ticket or queue a Fleet run.")) void request("restore");
+      };
+      const detail = [WORKSPACE_TEXT[result.state], result.reason].filter(Boolean).join(" ");
+      const checkable = ["conflict", "unavailable", "pending", "ready"].includes(result.state);
+      return /* @__PURE__ */ jsxs("span", { className: "pta-dock__ws", "data-state": result.state, children: [
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            type: "button",
+            className: "pta-dock__chip",
+            title: checkable ? `${detail} Click to check again.` : detail,
+            "aria-label": detail,
+            disabled: !checkable,
+            onClick: () => void request("status"),
+            children: [
+              /* @__PURE__ */ jsx("span", { className: "pta-dock__dot", "aria-hidden": "true" }),
+              /* @__PURE__ */ jsx("span", { role: "status", children: WORKSPACE_LABEL[result.state] ?? result.state })
+            ]
+          }
+        ),
+        result.state === "missing" ? /* @__PURE__ */ jsx(PtaButton, { onClick: restore, children: "Restore" }) : null
+      ] });
+    }
+    function TicketMessageForm({ mode, ticket }) {
+      const [text, setText] = useState("");
+      const [busy, setBusy] = useState(false);
+      const [notice, setNotice] = useState("");
+      const internal = mode === "note";
+      const label = internal ? "Add private note" : "Reply by email";
+      const submit = async (event) => {
+        event.preventDefault();
+        if (busy) return;
+        setNotice("");
+        setBusy(true);
         try {
-          await api("POST", `/admin/tickets/${ticket.id}/messages`, { body, internal });
-          inputActions?.setDraft?.("");
-          setNote(internal ? "Note saved" : "Reply sent");
-          window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "ticket.reply", ticketId: ticket.id } }));
-          void reload();
-        } catch (error) {
-          setNote(error?.message ?? "Could not send it");
+          if (await sendTicketMessage({ api: ticketCommandApi, ticket, mode, text, confirm: (message) => window.confirm(message) })) {
+            setText("");
+            setNotice(internal ? "Private note saved." : "Email reply sent.");
+            window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "ticket.reply", ticketId: ticket.id } }));
+          }
+        } catch {
+          setNotice(internal ? "Could not save the private note." : "Could not send the email reply.");
         } finally {
-          setBusy("");
+          setBusy(false);
         }
       };
-      return /* @__PURE__ */ jsxs("section", { className: "pta-dock", "aria-label": `Ticket #${run.ticketId}`, children: [
-        /* @__PURE__ */ jsxs("div", { className: "pta-dock__head", children: [
-          /* @__PURE__ */ jsx(StatusPill2, { status: ticket?.status ?? "" }),
-          /* @__PURE__ */ jsxs("span", { className: "pta-dock__id", children: [
-            "#",
-            run.ticketId
-          ] }),
-          /* @__PURE__ */ jsx("span", { className: "pta-dock__title", title: ticketLabel(ticket), children: detail.loading && !ticket ? "Loading ticket\u2026" : ticketLabel(ticket) }),
-          ticket ? /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ticket.project_name || "no project" }) : null,
-          ticket && ticket.kind !== "system" ? /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ticket.client_email }) : null,
-          waiting ? /* @__PURE__ */ jsxs("span", { className: "pta-warn", children: [
-            "client waiting ",
-            ago2(ticket.client_waiting_since)
-          ] }) : null,
-          /* @__PURE__ */ jsx("span", { className: "pta-fill" }),
-          ticket ? /* @__PURE__ */ jsx(TicketRowActions, { ticket }) : null,
-          /* @__PURE__ */ jsxs(
-            "button",
-            {
-              type: "button",
-              className: "pta-dock__toggle",
-              "aria-expanded": expanded,
-              title: expanded ? "Hide the ticket thread and details" : "Show the client thread and ticket details",
-              onClick: () => setExpanded((value) => !value),
-              children: [
-                /* @__PURE__ */ jsx("span", { children: expanded ? "Hide ticket" : `Ticket${messages.length ? ` \xB7 ${messages.length}` : ""}` }),
-                /* @__PURE__ */ jsx("span", { className: "pta-dock__chev", "aria-hidden": "true", children: expanded ? "\u25BE" : "\u25B8" })
-              ]
-            }
-          ),
-          /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: () => openWorkbenchTicket(run.ticketId), children: "Workbench" })
-        ] }),
-        !expanded && latestClient ? /* @__PURE__ */ jsxs("div", { className: "pta-dock__last", title: latestClient.body, children: [
-          /* @__PURE__ */ jsx("span", { className: "pta-meta", children: "Client:" }),
-          " ",
-          latestClient.body
-        ] }) : null,
-        expanded ? /* @__PURE__ */ jsxs("div", { className: "pta-dock__body", children: [
-          ticket ? /* @__PURE__ */ jsxs("div", { className: "pta-facts", children: [
-            /* @__PURE__ */ jsxs("span", { children: [
-              "Priority ",
-              /* @__PURE__ */ jsx("strong", { children: ticket.priority ?? 0 })
-            ] }),
-            /* @__PURE__ */ jsxs("span", { children: [
-              "Agent ",
-              /* @__PURE__ */ jsx("strong", { children: ticket.executor || "auto" })
-            ] }),
-            ticket.attention ? /* @__PURE__ */ jsxs("span", { children: [
-              "Attention ",
-              /* @__PURE__ */ jsx("strong", { children: ticket.attention })
-            ] }) : null,
-            ticket.budget_cents !== null && ticket.budget_cents !== void 0 ? /* @__PURE__ */ jsxs("span", { children: [
-              "Budget ",
-              /* @__PURE__ */ jsx("strong", { children: dollars(ticket.budget_cents) })
-            ] }) : null,
-            ticket.price_cents !== null && ticket.price_cents !== void 0 ? /* @__PURE__ */ jsxs("span", { children: [
-              "Cost ",
-              /* @__PURE__ */ jsx("strong", { children: dollars(ticket.price_cents) })
-            ] }) : null,
-            ticket.requires ? /* @__PURE__ */ jsxs("span", { children: [
-              "Needs ",
-              /* @__PURE__ */ jsx("strong", { children: String(ticket.requires).replace(/^\[|\]$/g, "").replace(/"/g, "") || "nothing" })
-            ] }) : null
-          ] }) : null,
-          /* @__PURE__ */ jsxs("div", { className: "pta-thread", children: [
-            messages.length === 0 ? /* @__PURE__ */ jsx("p", { className: "pta-meta", children: "No messages yet." }) : null,
-            messages.slice(-12).map((message) => /* @__PURE__ */ jsxs("div", { className: `pta-msg pta-msg--${message.author}${message.internal ? " is-note" : ""}`, children: [
-              /* @__PURE__ */ jsxs("div", { className: "pta-msg__meta", children: [
-                message.author === "client" ? "Client" : message.author === "ali" ? "You" : "System",
-                message.internal ? " \xB7 private note" : "",
-                " \xB7 ",
-                ago2(message.created_at)
-              ] }),
-              /* @__PURE__ */ jsx("div", { className: "pta-msg__body", children: message.body })
-            ] }, message.id)),
-            runs.length > 0 ? /* @__PURE__ */ jsx("div", { className: "pta-runs", children: runs.slice(-4).map((ticketRun) => /* @__PURE__ */ jsxs("div", { className: "pta-run", children: [
-              /* @__PURE__ */ jsx("span", { className: "pta-dot", style: { background: ticketRun.status === "failed" ? "var(--dsw-alias-state-danger-primary, #e5534b)" : ticketRun.status === "running" ? tintOfStatus("in_progress") : "var(--dsw-alias-label-tertiary, #8a9099)" } }),
-              /* @__PURE__ */ jsxs("span", { children: [
-                "Run ",
-                ticketRun.id
-              ] }),
-              /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ticketRun.executor ?? "agent" }),
-              /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ticketRun.status }),
-              /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ago2(ticketRun.finished_at ?? ticketRun.started_at ?? ticketRun.created_at) })
-            ] }, ticketRun.id)) }) : null
-          ] })
-        ] }) : null,
-        /* @__PURE__ */ jsxs("div", { className: "pta-dock__compose", children: [
-          /* @__PURE__ */ jsx("div", { className: "pta-modes", role: "group", "aria-label": "Where the draft goes", children: [
-            ["chat", "Chat"],
-            ["reply", "Reply to client"],
-            ["note", "Private note"]
-          ].map(([key, label]) => /* @__PURE__ */ jsx(
-            "button",
-            {
-              type: "button",
-              className: `pta-mode${mode === key ? " is-active" : ""}`,
-              "aria-pressed": mode === key,
-              disabled: key !== "chat" && key === "reply" && !canReply,
-              onClick: () => setMode(key),
-              children: label
-            },
-            key
-          )) }),
-          /* @__PURE__ */ jsx("span", { className: "pta-hint", children: mode === "chat" ? "Typing here talks to the agent; the Host mirrors it to the ticket as a private note." : mode === "reply" ? "Type in the chat input, then send it to the client. This emails them." : "Type in the chat input, then save it as an internal note. The client never sees it." }),
-          /* @__PURE__ */ jsx("span", { className: "pta-fill" }),
-          mode === "reply" ? /* @__PURE__ */ jsx(PtaButton, { kind: "primary", disabled: !canReply || draft.trim().length === 0 || busy === "reply", onClick: () => void send(false), children: busy === "reply" ? "Sending\u2026" : "Send reply" }) : null,
-          mode === "note" ? /* @__PURE__ */ jsx(PtaButton, { kind: "primary", disabled: draft.trim().length === 0 || busy === "note", onClick: () => void send(true), children: busy === "note" ? "Saving\u2026" : "Save note" }) : null,
-          note ? /* @__PURE__ */ jsx("span", { className: "pta-meta", role: "status", children: note }) : null
+      return /* @__PURE__ */ jsxs("form", { className: "pta-dock__body pta-ticket-form", onSubmit: submit, children: [
+        /* @__PURE__ */ jsx(
+          "textarea",
+          {
+            "aria-label": label,
+            autoFocus: true,
+            rows: 2,
+            value: text,
+            onChange: (event) => setText(event.target.value),
+            disabled: busy,
+            placeholder: internal ? "Private to the team and future Fleet runs. Saving does not queue a run." : `Emails ${ticket.client_email} after confirmation.`
+          }
+        ),
+        /* @__PURE__ */ jsxs("div", { className: "pta-ticket-form__row", children: [
+          /* @__PURE__ */ jsx("span", { className: "pta-meta", role: "status", children: notice }),
+          /* @__PURE__ */ jsx(PtaButton, { type: "submit", disabled: busy || !text.trim(), children: internal ? "Save private note" : "Send email reply" })
         ] })
       ] });
+    }
+    function LinkedTicketDock({ sessionId, ticketId }) {
+      const { detail, error } = useLinkedTicketDetail(ticketId, sessionId);
+      const ticket = detail?.ticket;
+      const [open, setOpen] = useState(null);
+      const canReply = ticket && ticket.kind !== "system" && ticket.client_email;
+      const toggle = (mode, label) => /* @__PURE__ */ jsx(
+        "button",
+        {
+          type: "button",
+          className: "pta-dock__toggle",
+          "aria-expanded": open === mode,
+          onClick: () => setOpen(open === mode ? null : mode),
+          children: label
+        }
+      );
+      const title = error || (ticket ? ticketLabel(ticket) : "Loading linked ticket\u2026");
+      return /* @__PURE__ */ jsxs(
+        "section",
+        {
+          className: "pta-dock",
+          "aria-label": `Ticket #${ticketId}`,
+          title: "Type below to message the agent. That does not email the client or save a private note.",
+          children: [
+            /* @__PURE__ */ jsxs("div", { className: "pta-dock__head pta-dock__row", children: [
+              ticket ? /* @__PURE__ */ jsx(StatusPill2, { status: ticket.status }) : null,
+              /* @__PURE__ */ jsxs("span", { className: "pta-dock__id", children: [
+                "#",
+                ticketId
+              ] }),
+              /* @__PURE__ */ jsx("span", { className: "pta-dock__title", title, children: title }),
+              desktop ? /* @__PURE__ */ jsx(TicketWorkspace, { sessionId }) : null,
+              ticket ? /* @__PURE__ */ jsxs("span", { className: "pta-dock__actions", children: [
+                toggle("note", "Add private note"),
+                canReply ? toggle("reply", "Reply by email") : null
+              ] }) : null
+            ] }),
+            ticket && open === "note" ? /* @__PURE__ */ jsx(TicketMessageForm, { mode: "note", ticket }, "note") : null,
+            canReply && open === "reply" ? /* @__PURE__ */ jsx(TicketMessageForm, { mode: "reply", ticket }, "reply") : null
+          ]
+        }
+      );
+    }
+    function useChatViewActive(anchor, ready) {
+      const [active, setActive] = useState(true);
+      useEffect(() => {
+        let scope = anchor.current?.parentElement ?? null;
+        while (scope && !scope.querySelector("[data-conversation-tabs]")) scope = scope.parentElement;
+        if (!scope) return void 0;
+        const read = () => {
+          const strip = scope.querySelector("[data-conversation-tabs]");
+          setActive(!strip || strip.firstElementChild?.getAttribute("aria-selected") === "true");
+        };
+        read();
+        const observer = new MutationObserver(read);
+        observer.observe(scope, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-selected"] });
+        return () => observer.disconnect();
+      }, [anchor, ready]);
+      return active;
+    }
+    function TicketDock({ sessionId }) {
+      const run = ticketFromCwd(useSessionCwd(sessionId));
+      const anchor = useRef(null);
+      const chat = useChatViewActive(anchor, Boolean(run && sessionId));
+      if (!run || !sessionId) return null;
+      return /* @__PURE__ */ jsx("div", { ref: anchor, style: { display: "contents" }, children: chat ? /* @__PURE__ */ jsx(LinkedTicketDock, { ticketId: run.ticketId, sessionId }, `${run.ticketId}:${sessionId}`) : null });
     }
     function openAdminLink(url) {
       let parsed;
@@ -8819,6 +13589,19 @@ ${who} is emailed about this change.`)) return false;
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: INBOX_PANEL, order: 12, label: "Inbox" }, InboxEntryIcon));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: MARKETING_PANEL, order: 13, label: "Marketing" }, MarketingEntryIcon));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: SEO_PANEL, order: 14, label: "SEO" }, SeoEntryIcon));
+    ctx.inject(["conversation"], (scope) => {
+      nativeConversation = scope.conversation;
+      scope.effect(() => () => {
+        nativeConversation = null;
+      }, "admin: native view selection");
+      if (!nativeConversation?.selectView) return;
+      scope.slots.inject("conversation.view", function* () {
+        const visible2 = (row) => Boolean(ticketForSession(row));
+        yield scope.slots.register({ name: "conversation.view", id: "admin-task", order: 20, label: "Task", visible: visible2 }, NativeTask);
+        yield scope.slots.register({ name: "conversation.view", id: "admin-history", order: 21, label: "History", visible: visible2 }, NativeHistory);
+      });
+    });
+    ctx.slots.inject("conversation.chat.activity-frame", () => ctx.slots.register({ name: "conversation.chat.activity-frame", id: "admin-ticket-activity" }, TicketActivityFrame));
     ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({ name: "conversation.input.dock", id: "admin-ticket", order: 20, locale: NAMESPACE }, TicketDock));
     ctx.effect(() => {
       const style = document.createElement("style");
@@ -8884,6 +13667,7 @@ ${who} is emailed about this change.`)) return false;
     );
     ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({ name: "sidebar.right.pane.tab", key: "admin-tasks", locale: NAMESPACE }, TasksTab));
     ctx.slots.inject("sidebar.right.pane.tab.title", () => ctx.slots.register({ name: "sidebar.right.pane.tab.title", key: "admin-tasks", locale: NAMESPACE }, TasksTabTitle));
+    ctx.slots.inject("conversation.view", () => ctx.slots.register({ name: "conversation.view", id: "admin-git-graph", order: 22, label: "Git Graph" }, ConversationGitGraph));
     void command(`hello ${CLIENT_VERSION}`).catch(() => void 0);
     void command(`native-notify ${desktopNotifications ? "on" : "off"}`).catch(() => void 0);
   }

@@ -1493,6 +1493,10 @@ function normalizeSettings(config) {
     agents: resolveAgents(config),
     envMode: config.envMode === 'inherit' ? 'inherit' : 'minimal',
     allowAnthropicRouting: config.allowAnthropicRouting === true,
+    // Standing text added to every external agent's own `instructions`, for
+    // guidance that is the same for all of them (for example model routing).
+    // Typically fed from one file with a `!!js` read in the profile patch.
+    sharedInstructions: typeof config.sharedInstructions === 'string' ? config.sharedInstructions.trim() : '',
     xdgRoot: typeof config.xdgRoot === 'string' && config.xdgRoot.trim().length > 0 ? config.xdgRoot.trim() : null,
     maxTranscript: Number.isFinite(config.maxTranscript) ? config.maxTranscript : 400,
     // The workspace an external agent is pointed at. Prefer the initiating
@@ -1940,7 +1944,9 @@ export function apply(ctx, config = {}) {
           // `ask` (the default) routes the decision to that seam; `allow`,
           // `deny` and `cancel` answer directly for unattended runs.
           approvalPolicy: entry.approval,
-          instructions: entry.instructions,
+          instructions: [entry.instructions, settings.sharedInstructions]
+            .filter((text) => typeof text === 'string' && text.trim().length > 0)
+            .join('\n\n') || undefined,
           // Per-agent budget wins; otherwise the profile-wide default.
           primeMaxChars: Number.isFinite(entry.primeMaxChars) ? entry.primeMaxChars : settings.primeMaxChars,
           note,
