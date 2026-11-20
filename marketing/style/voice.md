@@ -5,29 +5,42 @@ read the way he talks. This file says how, as rules about the writing itself.
 Where it disagrees with the older "dry voice" wording in `kit.md` or
 `launch/social.md`, this file wins.
 
-## The offer comes first, and it is one thing
+## The shape: literal, questions first, steps, one action
 
-Plain and short. The whole pitch is three answers, in this order:
+Write for a reader who reads the first line, skims the rest, and acts only if
+the next step is obvious. Literal, blunt and flat. No warm-up, no rapport, no
+implied meaning: every sentence states one fact or asks one question.
 
-1. **What is it?** Vibe contracting: you connect to the service, and a veteran
-   programmer (Muhammet) helps you use AI and deploy your projects.
-2. **What does it cost?** $100 an hour, billed by the second, so most jobs come
-   to less than $10.
-3. **A question** they can answer in a line ("Reply with what you're working
-   on.").
+Every cold email, post and bio has this shape, in this order:
 
-The approved first email in `worker/src/marketing.ts` (`SEQUENCES`, `cold_a`)
-is the model: an opening question ("Do you want help using AI on your business
-and getting your projects online?"), then the three answers. Nothing else.
+1. **Direct yes/no questions that sort the reader.** One per line, the
+   reader's situation in their words. The model:
+   "Are you vibe coding? Do you have an agency? You want something in between?"
+2. **What happens, as numbered steps.** Who does what, in order. At most
+   three steps, one action each:
+   1. You write what you want in our portal.
+   2. A developer approves it. An AI agent does the work.
+   3. You check a preview. It goes live when you say yes.
+3. **The price as a number.** "$100 an hour, billed by the second. A
+   one-minute fix costs $1.67. No minimum."
+4. **One action.** A link or a one-word reply: "Try it: ptechsolutions.net/portal"
+   or "Reply yes."
 
-- **No example tasks.** Opening hours, contact forms, menus and the like were
-  pilot jobs, not what the service is. Do not list tasks to explain the offer.
-- **Never assume how their site was built, and never knock their tools.** It
-  may be hand-made, a builder site or vibe coded; it does not matter. No "your
-  AI probably has bugs", no "where the tool stops helping".
-- One idea per piece. If a sentence explains a second thing, cut it.
-- Read it as a busy shop owner: if any sentence needs a second read, rewrite it.
-- Email is signed **Muhammet**.
+Then stop. Sign email **Muhammet**, with **PTech Solutions** under it. The
+domain is **ptechsolutions.net**, never malipetek.dev.
+
+- Short lines. One fact per line. Line breaks instead of joining words.
+- Literal words only: "website change", "preview", "goes live", "price".
+  No metaphors, idioms or figures of speech ("last mile", "in check",
+  "front door", "get the ball rolling").
+- No hedging adverbs ("perhaps", "might", "just", "simply").
+- Numbers instead of size words: "$1.67", "one minute", "three steps", never
+  "a bit", "quick", "affordable".
+- **No example tasks.** Do not list jobs to explain the offer.
+- **Never assume how their site was built, and never knock their tools.**
+- One idea per piece. If a line explains a second thing, cut it.
+- When the desk wrote an observation about their site, the observation is the
+  first line and the question is "Do you want it fixed?".
 
 ## Show the style, never announce it
 
@@ -67,9 +80,8 @@ Inferred from how he talks. Apply them; do not quote them.
    by the reader's own AI tool. That he only needs the part it couldn't do.
    That the cheapest option is usually the right one. Saying these is the
    point; do not soften them.
-6. **Uneven rhythm.** Longer sentences joined with commas or semicolons, the
-   way someone talks while thinking, then a short one. Do not tidy it into
-   three neat paragraphs of equal length, and do not build lists of three.
+6. **Short and even.** Short lines, one fact each. Numbered steps when
+   something happens in order. Questions on their own lines.
 7. **Stops when done.** When the point is made, end. A flat close ("That's
    it.", a plain question, the link) is fine; a closing line built to be
    remembered is not.
