@@ -378,6 +378,15 @@ const groups = {
     const tickets = (await call('/portal/tickets', { auth: a.session })).data.tickets;
     const filed = tickets.find((t) => t.id !== created.data.id && /Order online/.test(t.title));
     check('it filed a real request', Boolean(filed), JSON.stringify(tickets));
+    {
+      // The client list carries the agent's run facts: how many passes, the open one's start, the last finish.
+      const ts = Math.floor(Date.now() / 1000);
+      const before = Number(filed.run_count ?? 0);
+      sql(`INSERT INTO ticket_runs (ticket_id, status, started_at, finished_at) VALUES (${filed.id}, 'ok', ${ts - 900}, ${ts - 600}), (${filed.id}, 'running', ${ts - 120}, NULL)`);
+      const row = (await call('/portal/tickets', { auth: a.session })).data.tickets.find((t) => t.id === filed.id);
+      check('a client ticket says how many runs, and when the open one started', row?.run_count === before + 2 && row.run_started_at === ts - 120 && row.run_finished_at === ts - 600, JSON.stringify(row));
+      sql(`DELETE FROM ticket_runs WHERE ticket_id = ${filed.id} AND started_at IN (${ts - 900}, ${ts - 120})`);
+    }
     // A new project's first request is the account's one free first preview: it
     // starts by itself, capped in AI cost and never published.
     check(

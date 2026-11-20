@@ -2084,6 +2084,9 @@ portal.get('/portal/tickets', async (c) => {
   // is visible, but read-only and without its bill.
   const { results } = await c.env.DB.prepare(
     `SELECT ${TICKET_COLUMNS},
+            (SELECT count(*) FROM ticket_runs r WHERE r.ticket_id = t.id) AS run_count,
+            (SELECT min(r.started_at) FROM ticket_runs r WHERE r.ticket_id = t.id AND r.status = 'running') AS run_started_at,
+            (SELECT max(r.finished_at) FROM ticket_runs r WHERE r.ticket_id = t.id AND r.status <> 'running') AS run_finished_at,
             (t.user_id = ?) AS mine,
             (t.user_id = ? AND EXISTS (SELECT 1 FROM ticket_messages m
                      WHERE m.ticket_id = t.id AND m.internal = 0
