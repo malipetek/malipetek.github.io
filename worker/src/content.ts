@@ -25,6 +25,12 @@ import { mailAli, siteUrl } from './portal.ts';
 const DAY = 86_400;
 const MINUTE = 60;
 
+const chunk = <T>(list: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
+};
+
 /** The repo whose worktree the agent works in. */
 export const CYCLE_PROJECT = 'ptechsolutions';
 /** How many posts one cycle writes. */
@@ -263,27 +269,72 @@ async function readPostHold(env: Env): Promise<number> {
 }
 
 /**
+ * Which slot each released draft gets. A draft whose slot is still in the
+ * future keeps it (it is simply absent from the result); one whose slot
+ * already passed — or that never had one — moves to the next free content
+ * slot, so a backlog of stale drafts does not all fire at once. `taken` is
+ * every slot a scheduled post or a still-held draft already owns.
+ */
+export function heldPostSlots(input: {
+  drafts: readonly { id: number; scheduledAt: number | null }[];
+  taken: ReadonlySet<number>;
+  t: number;
+  offsetMinutes: number;
+}): Map<number, number> {
+  const out = new Map<number, number>();
+  const passed = input.drafts
+    .filter((draft) => draft.scheduledAt === null || draft.scheduledAt <= input.t)
+    .sort((a, b) => a.id - b.id);
+  const fresh = nextSlots(input.t, passed.length, input.offsetMinutes, input.taken);
+  passed.forEach((draft, index) => {
+    const slot = fresh[index];
+    if (slot !== undefined) out.set(draft.id, slot);
+  });
+  return out;
+}
+
+/**
  * The cron's half of post approval: a cycle's drafts that have waited out the
  * hold schedule themselves, so a week of posts does not pile up unread. A
- * slot that already passed moves a quarter hour out. Hold 0 means Ali
- * approves every post, like before.
+ * slot that already passed moves to the next free content slot rather than
+ * firing late all at once. Hold 0 means Ali approves every post, like before.
  */
 export async function releaseHeldPosts(env: Env, t = now()): Promise<number> {
   const hold = await readPostHold(env);
   if (!hold) return 0;
-  const { results } = await env.DB.prepare(
-    `UPDATE marketing_messages
-        SET status = 'scheduled',
-            scheduled_at = CASE WHEN scheduled_at IS NULL OR scheduled_at <= ? THEN ? ELSE scheduled_at END,
-            updated_at = ?
+  const { results: drafts } = await env.DB.prepare(
+    `SELECT id, scheduled_at FROM marketing_messages
       WHERE channel IN ('x', 'linkedin') AND status = 'draft' AND kind = 'auto' AND created_at <= ?
-      RETURNING id`,
+      ORDER BY id`,
   )
-    .bind(t, t + 15 * 60, t, t - hold * 3600)
-    .all<{ id: number }>();
-  const released = results?.length ?? 0;
-  if (released) await event(env, 'auto_approved', `${released} post${released === 1 ? '' : 's'} released after the ${hold}h hold`);
-  return released;
+    .bind(t - hold * 3600)
+    .all<{ id: number; scheduled_at: number | null }>();
+  if (!drafts?.length) return 0;
+
+  const offset = await readOffset(env);
+  const { results: busy } = await env.DB.prepare(
+    `SELECT scheduled_at FROM marketing_messages
+      WHERE channel IN ('x', 'linkedin') AND status IN ('scheduled', 'draft') AND scheduled_at > ?`,
+  )
+    .bind(t)
+    .all<{ scheduled_at: number }>();
+  const taken = new Set((busy ?? []).map((row) => row.scheduled_at));
+  const slots = heldPostSlots({
+    drafts: drafts.map((row) => ({ id: row.id, scheduledAt: row.scheduled_at })),
+    taken,
+    t,
+    offsetMinutes: offset,
+  });
+
+  const updates = drafts.map((row) =>
+    env.DB.prepare(
+      `UPDATE marketing_messages SET status = 'scheduled', scheduled_at = COALESCE(?, scheduled_at), updated_at = ?
+        WHERE id = ? AND status = 'draft'`,
+    ).bind(slots.get(row.id) ?? null, t, row.id),
+  );
+  for (const batch of chunk(updates, 50)) await env.DB.batch(batch);
+  await event(env, 'auto_approved', `${drafts.length} post${drafts.length === 1 ? '' : 's'} released after the ${hold}h hold`);
+  return drafts.length;
 }
 
 async function readVoiceNotes(env: Env): Promise<string> {

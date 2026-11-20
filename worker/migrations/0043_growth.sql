@@ -19,3 +19,15 @@ CREATE TABLE marketing_domains (
 -- of gap it found ('none' and 'unreachable' are answers too).
 ALTER TABLE marketing_contacts ADD COLUMN observed_at INTEGER;
 ALTER TABLE marketing_contacts ADD COLUMN gap_kind TEXT;
+
+-- The desk paused itself on the 6 Nov health trip, before
+-- marketing_auto_paused_at existed, so the auto-resume would never see the
+-- pause. When the live switch still reads off and was last touched by that
+-- same pause, seed the stamp with the trip's time; anywhere else the
+-- statement matches nothing and does nothing.
+INSERT INTO settings (key, value, updated_at)
+SELECT 'marketing_auto_paused_at', CAST(e.t AS TEXT), e.t
+  FROM (SELECT MAX(created_at) AS t FROM marketing_events WHERE kind = 'auto_paused') AS e, settings AS s
+ WHERE s.key = 'marketing_live' AND s.value = 'false' AND e.t IS NOT NULL
+   AND s.updated_at BETWEEN e.t - 5 AND e.t + 5
+ON CONFLICT(key) DO NOTHING;
