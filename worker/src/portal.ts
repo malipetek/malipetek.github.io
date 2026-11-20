@@ -1166,6 +1166,8 @@ for (const prefix of ['/portal/admin', '/admin']) {
   });
 }
 
+// The catalog holds no secrets: clients read it to see what each connection needs and how to make one.
+portal.get('/portal/solutions', c => reply(c, { solutions: SOLUTION_CATALOG, integrations: INTEGRATION_CATALOG }));
 portal.get('/portal/projects/:id/integrations', requireBrowser, async c => integrationView(c, await memberSolutions(c)));
 portal.put('/portal/projects/:id/integrations/:integration', requireBrowser,
   bodyLimit({ maxSize: 512 * 1024, onError: c => c.json({ error: 'bad_fields' }, 413) }), async c => {
