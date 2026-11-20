@@ -1007,4 +1007,62 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-seo-events-form { margin-bottom: var(--aw-sp-3); }
 .aw-seo-savebar { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: var(--aw-sp-2); flex-wrap: wrap; padding: var(--aw-sp-3) var(--aw-sp-4); border: 1px solid var(--aw-border2); border-radius: var(--aw-r-lg); background: var(--aw-bg); box-shadow: 0 -6px 18px color-mix(in srgb, var(--aw-text) 8%, transparent); }
 .aw-seo-savebar__state { flex: 1; min-width: 160px; font-size: var(--aw-fs-sm); color: var(--aw-text2); }
+
+/* fleet2 */
+/* Fleet, clients and settings, tightened: one-line health, dense node cards,
+   28px table rows, 16px section rhythm. Scoped to the views it redesigns. */
+.aw-fleet .aw-hero, .aw-clients .aw-hero, .aw-client .aw-hero, .aw-settings .aw-hero { margin-bottom: var(--aw-sp-3); }
+.aw-fleet .aw-hero h2, .aw-clients .aw-hero h2, .aw-client .aw-hero h2, .aw-settings .aw-hero h2 { font-size: var(--aw-fs-xl); }
+.aw-fleet .aw-hero p, .aw-clients .aw-hero p, .aw-client .aw-hero p { margin: 2px 0 0; }
+.aw-fleet .aw-group, .aw-clients .aw-group, .aw-client .aw-group { margin: var(--aw-sp-5) 0; }
+.aw-fleet .aw-group > h3, .aw-clients .aw-group > h3, .aw-client .aw-group > h3 { font-size: var(--aw-fs-md); font-weight: 600; margin-bottom: var(--aw-sp-2); }
+
+/* Health on Fleet: a one-line summary, then a single bordered list of 28px rows. */
+.aw-health--compact { margin: 0 0 var(--aw-sp-5); }
+.aw-health--compact .aw-health__summary h3 { font-size: var(--aw-fs-md); font-weight: 600; }
+.aw-health__head { display: flex; align-items: center; gap: var(--aw-sp-3); }
+.aw-health__list { display: block; margin: var(--aw-sp-2) 0 0; padding: 0; border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); overflow: hidden; background: var(--aw-bg); }
+.aw-health__row { height: 28px; padding: 0 10px; gap: var(--aw-sp-2); border: 0; border-radius: 0; background: none; font-size: var(--aw-fs-sm); }
+.aw-health__row + .aw-health__row { border-top: 1px solid var(--aw-border); }
+.aw-health__row--bad { border-color: var(--aw-border); background: color-mix(in srgb, var(--aw-bad) 6%, transparent); }
+.aw-health__name { flex: none; font-size: var(--aw-fs-sm); font-weight: 600; white-space: nowrap; }
+.aw-health__detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-health__meta { flex: none; gap: var(--aw-sp-2); font-size: var(--aw-fs-xs); }
+.aw-health__pass { margin-top: var(--aw-sp-2); }
+.aw-health__pass > summary { cursor: pointer; padding: 2px 0; font-size: var(--aw-fs-sm); color: var(--aw-text2); }
+
+/* Node cards: 320px grid, one-line header, three short plain-text lines. */
+.aw-nodes { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--aw-sp-3); }
+.aw-node { padding: 9px 12px; }
+.aw-node > header { gap: 7px; margin-bottom: var(--aw-sp-2); flex-wrap: nowrap; }
+.aw-node > header .aw-btn { flex: none; }
+.aw-node > header .aw-btn--sm { padding: 0 7px; }
+.aw-node h3 { font-size: var(--aw-fs-md); flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-node__os { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--aw-fs-sm); }
+.aw-node__lines { display: grid; gap: 2px; margin-bottom: var(--aw-sp-2); }
+.aw-node__lines:last-child { margin-bottom: 0; }
+.aw-node__line { margin: 0; font-size: var(--aw-fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-node__bar { display: inline-block; width: 56px; height: 4px; margin-left: var(--aw-sp-2); vertical-align: -1px; border-radius: 2px; background: var(--aw-bg3); overflow: hidden; }
+.aw-node__bar i { display: block; height: 100%; background: var(--aw-info); }
+.aw-node .aw-rows .aw-row { padding: 4px 10px; flex-wrap: nowrap; gap: var(--aw-sp-2); }
+.aw-node .aw-row > .aw-live, .aw-node .aw-row > .aw-mono, .aw-node .aw-row > .aw-muted { flex: none; white-space: nowrap; }
+.aw-node .aw-row__title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-machine .aw-kv { margin-bottom: var(--aw-sp-2); }
+.aw-machine .aw-mexes { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 2px var(--aw-sp-4); }
+
+/* 28px table rows on the fleet and client pages. */
+.aw-fleet .aw-table td, .aw-client .aw-table td, .aw-clients .aw-table td { padding: 4px 8px; }
+.aw-fleet .aw-table th, .aw-client .aw-table th, .aw-clients .aw-table th { padding: 4px 8px; }
+.aw-clients .aw-row { padding: 6px 10px; flex-wrap: nowrap; }
+.aw-clients .aw-row > .aw-muted { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-clients .aw-row > .aw-muted:last-child { flex: none; }
+.aw-clients .aw-directory__name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-client .aw-toolbar { margin-bottom: var(--aw-sp-3); }
+
+/* Settings: tighter fields and toolbox, Save pinned to a sticky footer. */
+.aw-settings .aw-field { margin-bottom: 10px; }
+.aw-settings .aw-panel > h3 { margin-bottom: var(--aw-sp-3); }
+.aw-settings .aw-toolbox__row, .aw-settings .aw-toolbox__skills > li, .aw-settings .aw-toolbox__plugin { padding: 4px 8px; }
+.aw-settings .aw-toolbox__section { margin-top: var(--aw-sp-3); padding-top: var(--aw-sp-3); }
+.aw-settings__foot { position: sticky; bottom: 0; display: flex; align-items: center; gap: var(--aw-sp-3); margin: var(--aw-sp-5) -20px -40px; padding: var(--aw-sp-3) 20px; background: var(--aw-bg); border-top: 1px solid var(--aw-border); }
 `;

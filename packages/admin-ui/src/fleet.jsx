@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { LOCALES } from '../../../src/lib/locales.js';
 import { useAdmin, usePoll } from './store.js';
 import { EXECUTORS, PRIORITIES, ago, chargeOf, money, priorityName, span, usd } from './format.js';
-import { Button, Chips, Dot, Field, Modal, Segmented, StatusPill, Tag, cx } from './ui.jsx';
+import { Button, Chips, Dot, Empty, Field, Modal, Segmented, StatusPill, Tag, cx } from './ui.jsx';
 import { HealthView } from './health.jsx';
 import { MachinePanel, useMachine } from './machine.jsx';
 import { ToolboxPanel } from './toolbox.jsx';
@@ -20,19 +20,29 @@ function NodeCard({ node, local }) {
   const h = node.health ?? {};
   const sys = h.system;
   const state = !node.online ? 'bad' : node.draining ? 'warn' : 'ok';
+  const machine = sys
+    ? [
+        `load ${sys.load?.[0]?.toFixed?.(2) ?? '—'} / ${sys.cpus} cpu`,
+        sys.memFreePct != null ? `${100 - sys.memFreePct}% mem` : null,
+        sys.disk ? `${pct(sys.disk.totalGb - sys.disk.freeGb, sys.disk.totalGb)}% disk` : null,
+        sys.battery ? `battery ${sys.battery.percent}%${sys.battery.onPower ? ' ⚡' : ''}` : null,
+        `up ${span(sys.uptimeSec)}`,
+      ].filter(Boolean).join(' · ')
+    : '';
   return (
     <article className={cx('aw-node', `aw-node--${state}`)}>
       <header>
         <Dot state={state} />
         <h3>{node.id}</h3>
-        <span className="aw-muted">
-          {node.os} · v{node.version} · {node.online ? (node.draining ? 'draining' : 'online') : `offline ${ago(node.lastSeenAt)}`}
+        <span className="aw-muted aw-node__os">
+          {node.os} · v{node.version}
+          {node.online ? (node.draining ? ' · draining' : '') : ` · offline ${ago(node.lastSeenAt)}`}
         </span>
         <span className="aw-toolbar__fill" />
-        {!local ? <Button size="sm" onClick={() => act(() => api('PATCH', `/admin/nodes/${node.id}`, { draining: !node.draining }), node.draining ? `${node.id} takes work again.` : `${node.id} finishes what it has, then takes nothing new.`)}>
+        {!local ? <Button size="sm" kind="ghost" onClick={() => act(() => api('PATCH', `/admin/nodes/${node.id}`, { draining: !node.draining }), node.draining ? `${node.id} takes work again.` : `${node.id} finishes what it has, then takes nothing new.`)}>
           {node.draining ? 'Resume' : 'Drain'}
         </Button> : null}
-        <Button size="sm" onClick={() => setModal({ kind: 'custom', render: (close) => <NodeModal node={node} local={local} onClose={close} /> })}>
+        <Button size="sm" kind="ghost" onClick={() => setModal({ kind: 'custom', render: (close) => <NodeModal node={node} local={local} onClose={close} /> })}>
           Edit
         </Button>
         {!local && !node.online ? (
@@ -45,47 +55,36 @@ function NodeCard({ node, local }) {
           </Button>
         ) : null}
       </header>
-      <dl className="aw-kv">
-        {!local ? <>
-        <dt>Agents</dt>
-        <dd>
-          {node.executors.map((e) => {
-            const ex = h.executors?.[e];
-            return (
-              <Tag key={e} tone={ex && !ex.ok ? 'bad' : undefined}>
-                {e}
-                {ex?.version ? ` ${ex.version}` : ''}
-              </Tag>
-            );
-          })}
-        </dd>
-        </> : null}
-        <dt>Can do</dt>
-        <dd>{node.capabilities.map((c) => <Tag key={c} tone="dash">{capabilityLabel(c, caps)}</Tag>)}</dd>
-        <dt>Projects</dt>
-        <dd>{node.slugs.length ? node.slugs.map((s) => <Tag key={s}>{s}</Tag>) : <span className="aw-muted">none yet</span>}</dd>
-        <dt>Workload</dt>
-        <dd>
+      <div className="aw-node__lines">
+        {!local ? (
+          <p className="aw-node__line">
+            <span className="aw-muted">Agents: </span>
+            {node.executors.map((e, i) => {
+              const ex = h.executors?.[e];
+              return (
+                <span key={e} className={ex && !ex.ok ? 'aw-warn' : undefined} title={ex && !ex.ok ? (ex.error ?? 'not healthy') : ex?.version ? `${e} ${ex.version}` : undefined}>
+                  {i ? ', ' : ''}{e}
+                </span>
+              );
+            })}
+          </p>
+        ) : null}
+        <p className="aw-node__line">
+          <span className="aw-muted">Can do: </span>
+          {node.capabilities.length ? node.capabilities.map((c) => capabilityLabel(c, caps)).join(', ') : '—'}
+          <span className="aw-muted"> · </span>
+          <span className="aw-muted" title={node.slugs.length ? node.slugs.join(', ') : undefined}>
+            {node.slugs.length ? `${node.slugs.length} project${node.slugs.length === 1 ? '' : 's'}` : 'no projects yet'}
+          </span>
+        </p>
+        <p className="aw-node__line" title={machine || undefined}>
+          <span className="aw-muted">Workload: </span>
           {node.running.length} of {node.slots} runs busy
-        </dd>
-        {sys ? (
-          <>
-            <dt>Machine</dt>
-            <dd className="aw-muted">
-              load {sys.load?.[0]?.toFixed?.(2) ?? '—'} / {sys.cpus} cpu
-              {sys.memFreePct != null ? ` · ${100 - sys.memFreePct}% mem` : ''}
-              {sys.disk ? ` · ${pct(sys.disk.totalGb - sys.disk.freeGb, sys.disk.totalGb)}% disk` : ''}
-              {sys.battery ? ` · battery ${sys.battery.percent}%${sys.battery.onPower ? ' ⚡' : ''}` : ''} · up {span(sys.uptimeSec)}
-            </dd>
-          </>
-        ) : null}
-        {h.process?.lastError ? (
-          <>
-            <dt>Last error</dt>
-            <dd className="aw-warn">{h.process.lastError}</dd>
-          </>
-        ) : null}
-      </dl>
+          <span className="aw-node__bar" aria-hidden="true"><i style={{ width: `${pct(node.running.length, node.slots)}%` }} /></span>
+          {machine ? <span className="aw-muted aw-node__sys"> · {machine}</span> : null}
+        </p>
+        {h.process?.lastError ? <p className="aw-node__line aw-warn">Last error: {h.process.lastError}</p> : null}
+      </div>
       {!local && node.running.length ? (
         <ul className="aw-rows">
           {node.running.map((r) => (
@@ -148,8 +147,10 @@ export function FleetView() {
   return (
     <div className="aw-view aw-fleet">
       <header className="aw-hero">
-        <h2>Fleet</h2>
-        <p className="aw-muted">Nodes claim approved work they can do: the right project, capabilities and agent.</p>
+        <h2 title="Nodes claim approved work they can do: the right project, capabilities and agent.">Fleet</h2>
+        <p className="aw-muted">
+          {data.nodes.length} node{data.nodes.length === 1 ? '' : 's'} · {data.queue.length} waiting · {data.running.length} running
+        </p>
       </header>
       <HealthView compact />
       <div className="aw-nodes">
@@ -157,7 +158,7 @@ export function FleetView() {
         {data.nodes.map((n) => (
           <NodeCard key={n.id} node={n} local={machine.live && n.id === machine.nodeId} />
         ))}
-        {!data.nodes.length ? <p className="aw-empty">No node has connected yet. Turn on a worker from This Mac (desktop app).</p> : null}
+        {!data.nodes.length ? <Empty title="No node has connected yet." hint="Turn on a worker from This Mac (desktop app)." /> : null}
       </div>
 
       <section className="aw-group">
@@ -187,7 +188,7 @@ export function FleetView() {
               </tr>
             ))}
           </tbody>
-        </table></div> : <p className="aw-muted">Nothing is waiting.</p>}
+        </table></div> : <Empty title="Nothing is waiting." />}
       </section>
 
       <section className="aw-group">
@@ -220,7 +221,7 @@ export function FleetView() {
               </tr>
             ))}
           </tbody>
-        </table></div> : <p className="aw-muted">No runs yet</p>}
+        </table></div> : <Empty title="No runs yet" />}
       </section>
     </div>
   );
@@ -675,7 +676,7 @@ export function ClientView({ id }) {
     .sort((a, b) => closed(a) - closed(b) || b.updated_at - a.updated_at);
   const open = tickets.filter((t) => !closed(t)).length;
   return (
-    <div className="aw-view">
+    <div className="aw-view aw-client">
       <header className="aw-hero">
         <h2>{c.name || c.email}</h2>
         <p className="aw-muted">
@@ -730,7 +731,7 @@ export function ClientView({ id }) {
 export function ClientsView() {
   const { data, setModal, open } = useAdmin();
   return (
-    <div className="aw-view">
+    <div className="aw-view aw-clients">
       <header className="aw-hero">
         <h2>Clients & projects</h2>
         {data.usageTotal ? <p className="aw-muted">Across all clients: {usageLine(data.usageTotal)}.</p> : null}
@@ -1038,16 +1039,19 @@ export function SettingsView() {
               {textInput('first_preview_limit_usd', 'decimal')}
             </Field>
           </div>
-          <div className="aw-inline">
-            <span className="aw-toolbar__fill" />
-            <Button disabled={!changed || saving} onClick={() => setEdits({})}>Reset</Button>
-            <Button kind="primary" disabled={invalid || !Object.keys(patch).length || saving} onClick={submit}>
-              {saving ? 'Saving…' : 'Save'}
-            </Button>
-          </div>
         </>}
       </section>
       <TranslationsPanel />
+      {read.settings ? (
+        <footer className="aw-settings__foot">
+          {changed ? <span className="aw-muted">Unsaved changes</span> : null}
+          <span className="aw-toolbar__fill" />
+          <Button disabled={!changed || saving} onClick={() => setEdits({})}>Reset</Button>
+          <Button kind="primary" disabled={invalid || !Object.keys(patch).length || saving} onClick={submit}>
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+        </footer>
+      ) : null}
     </div>
   );
 }
