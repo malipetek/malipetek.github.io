@@ -761,4 +761,51 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   .aw-world__cable-flow { animation: none; }
   .aw-world__pad, .aw-world__chip { transition: none; }
 }
+
+/* Marketing desk: the autopilot rows, the needs list, the day chart, regrouped settings. */
+.aw-hero--mk { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.aw-hero--mk h2 { flex: none; }
+.aw-mk-state { display: inline-flex; align-items: center; gap: 7px; color: var(--aw-text2); font-size: 13px; }
+.aw-mk-state .aw-dot { width: 9px; height: 9px; }
+.aw-table-wrap { overflow-x: auto; }
+.aw-table--compact td, .aw-table--compact th { padding-top: 7px; padding-bottom: 7px; }
+.aw-table--static tbody tr, .aw-table--static th { cursor: default; }
+.aw-table--static tbody tr:hover { background: transparent; }
+.aw-table, .aw-mk-meter__num, .aw-chart__tick, .aw-chart__day, .aw-needs, .aw-mk-kinds { font-variant-numeric: tabular-nums; }
+.aw-mk-health { min-width: 190px; }
+.aw-mk-meter { display: inline-flex; align-items: center; gap: 8px; margin: 2px 14px 2px 0; white-space: nowrap; }
+.aw-mk-meter__label { color: var(--aw-text2); font-size: 12px; min-width: 62px; }
+.aw-mk-meter__track { position: relative; width: 72px; height: 5px; background: var(--aw-bg3); border-radius: 3px; flex: none; }
+.aw-mk-meter__fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 3px; background: var(--aw-ok); }
+.aw-mk-meter__fill--warn { background: var(--aw-warn); }
+.aw-mk-meter__fill--bad { background: var(--aw-bad); }
+.aw-mk-meter__limit { position: absolute; top: -2px; bottom: -2px; left: 80%; width: 1px; background: var(--aw-text2); opacity: .55; }
+.aw-mk-meter__num { color: var(--aw-text2); font-size: 12px; }
+.aw-mk-bad { color: var(--aw-bad); }
+.aw-mk-kinds-label { margin: 12px 0 2px; }
+.aw-mk-kinds { display: flex; flex-wrap: wrap; gap: 3px 16px; margin: 0; font-size: 12px; }
+.aw-mk-kind { display: flex; gap: 5px; }
+.aw-mk-kind dt { color: var(--aw-text2); }
+.aw-mk-kind dd { margin: 0; font-weight: 600; }
+.aw-needs { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.aw-needs li { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-top: 1px solid var(--aw-border); }
+.aw-needs li:first-child { border-top: 0; }
+.aw-needs li > span { flex: 1; min-width: 0; }
+.aw-needs .aw-btn { flex: none; }
+.aw-chart { margin: 0; }
+.aw-chart__totals { margin: 0 0 8px; color: var(--aw-text2); font-size: 12px; }
+.aw-chart__svg { display: block; width: 100%; height: auto; }
+.aw-chart__grid { stroke: var(--aw-border); stroke-width: 1; }
+.aw-chart__axis { stroke: var(--aw-border2); stroke-width: 1; }
+.aw-chart__tick, .aw-chart__day { fill: var(--aw-text2); font-size: 10px; }
+.aw-chart__bar { fill: var(--aw-bg3); }
+.aw-chart__bounce { fill: var(--aw-bad); }
+.aw-chart__reply { fill: var(--aw-ok); }
+.aw-chart__post { fill: var(--aw-violet); }
+.aw-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.aw-form2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+@media (max-width: 720px) { .aw-form2 { grid-template-columns: 1fr; } }
+.aw-mk-window input { flex: none; width: 58px; min-width: 0; }
+.aw-mk-window input[aria-label="Window offset minutes"] { width: 72px; }
+.aw-divider { border: 0; border-top: 1px solid var(--aw-border); margin: 18px 0 4px; }
 `;

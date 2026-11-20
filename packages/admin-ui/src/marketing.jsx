@@ -1,8 +1,8 @@
 /* The marketing desk: who we write to, what is queued, and the switch that sends it. */
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin, usePoll } from './store.js';
 import { ago, when } from './format.js';
-import { Button, Field, Modal, Segmented, Tag, cx } from './ui.jsx';
+import { Button, Dot, Field, Modal, Segmented, Tag, cx } from './ui.jsx';
 
 const CONTACT_TONE = { new: 'dash', queued: undefined, contacted: 'ok', replied: 'ok', opted_out: 'bad', bounced: 'bad', paused: 'warn' };
 const MESSAGE_TONE = { draft: 'dash', scheduled: undefined, sending: 'warn', sent: 'ok', failed: 'bad', cancelled: 'dash' };
@@ -47,6 +47,54 @@ const offsetLabel = (minutes) => `UTC${minutes >= 0 ? '+' : '−'}${Math.abs(min
 const snippet = (text, max = 90) => (text.length > max ? `${text.slice(0, max)}…` : text);
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const dateLabel = (unix) => (unix ? new Date(unix * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+
+/** The one-line state beside the Marketing title: running, paused, or blocked. */
+function deskState(overview) {
+  const { settings, bound, senderState, autoResume } = overview;
+  if (!bound) {
+    const reason = senderState?.reason;
+    const short =
+      reason === 'ses_unconfigured' ? 'SES has no keys' : reason === 'sender_unbound' ? 'no sender bound' : (REASONS[reason] ?? reason ?? 'no sender bound');
+    return { tone: 'bad', text: `Can't send: ${short}` };
+  }
+  if (!settings.postalAddress) return { tone: 'bad', text: "Can't send: no postal address in Settings" };
+  if (!settings.live) {
+    if (autoResume?.autoPausedAt) {
+      const back = autoResume.resumesAfter ? `, back on ${dateLabel(autoResume.resumesAfter)}` : '';
+      return { tone: 'warn', text: `Paused itself on ${dateLabel(autoResume.autoPausedAt)}${back} if the numbers stay clean` };
+    }
+    return { tone: 'warn', text: 'Paused by you' };
+  }
+  return { tone: 'ok', text: 'Running on its own' };
+}
+
+/** The next moment the send window opens, on the settings' own clock. */
+function nextWindowOpen(settings, nowSec) {
+  const offset = settings.offsetMinutes ?? 0;
+  const start = settings.startHour ?? 8;
+  const local = new Date((nowSec + offset * 60) * 1000);
+  for (let add = 0; add < 8; add += 1) {
+    const day = new Date(local.getTime() + add * 86400000);
+    const dow = day.getUTCDay();
+    if (settings.weekdaysOnly && (dow === 0 || dow === 6)) continue;
+    const open = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), start) - offset * 60000);
+    if (open.getTime() / 1000 > nowSec) return open.getTime() / 1000;
+  }
+  return null;
+}
+
+const obsEtaMinutes = (pending) => (pending * 5) / 12;
+
+function fmtEta(minutes) {
+  if (minutes < 90) return `~${Math.max(1, Math.round(minutes))}m`;
+  if (minutes < 60 * 36) return `~${Math.round(minutes / 60)}h`;
+  return `~${(minutes / 1440).toFixed(1)}d`;
+}
+
+const limitPct = (limit) => {
+  const v = limit * 100;
+  return `${v < 1 ? v.toFixed(2) : v < 10 ? v.toFixed(1) : Math.round(v)}%`;
+};
 
 export function MarketingView() {
   const { api, act, notify } = useAdmin();
@@ -102,17 +150,29 @@ export function MarketingView() {
   if (!overview) return <p className="aw-empty">Loading…</p>;
 
   const { settings, health } = overview;
-  const messagesToday = `${overview.today}/${settings.dailyCap} sent today`;
-  const providerName = settings.provider === 'ses' ? 'Amazon SES' : 'Cloudflare';
+  const state = deskState(overview);
 
   return (
     <div className="aw-view">
-      <header className="aw-hero">
+      <header className="aw-hero aw-hero--mk">
         <h2>Marketing</h2>
-        <p className="aw-muted">
-          Email sequences, X and LinkedIn posts, from <span className="aw-mono">{overview.sender}</span>. Replies to that
-          address land here; “no”, the unsubscribe button or a spam complaint stops everything queued for that contact.
-        </p>
+        <span className="aw-mk-state">
+          <Dot state={state.tone} />
+          <span>{state.text}</span>
+        </span>
+        <span className="aw-toolbar__fill" />
+        <Button size="sm" kind="ghost" onClick={() => run(() => api('POST', '/admin/marketing/run'), runMessage)}>
+          Run now
+        </Button>
+        {settings.live ? (
+          <Button size="sm" kind="ghost" onClick={() => run(() => api('PUT', '/admin/marketing/settings', { live: false }), 'Paused.')}>
+            Pause
+          </Button>
+        ) : (
+          <Button size="sm" onClick={() => run(() => api('PUT', '/admin/marketing/settings', { live: true }), 'Outreach is live.')}>
+            Go live
+          </Button>
+        )}
       </header>
 
       {!overview.bound ? (
@@ -125,41 +185,7 @@ export function MarketingView() {
         <div className="aw-banner aw-banner--bad">
           Set a postal address in Settings before a cold email goes out — anti-spam law asks for one on every send.
         </div>
-      ) : !settings.live ? (
-        <div className="aw-banner aw-banner--warn">
-          {overview.autoResume?.autoPausedAt ? (
-            <>
-              Paused itself on {dateLabel(overview.autoResume.autoPausedAt)}. It switches back on after{' '}
-              {overview.autoResume.resumesAfter ? dateLabel(overview.autoResume.resumesAfter) : 'the wait'} if bounces and complaints stay under the
-              limits.
-            </>
-          ) : (
-            <>
-              Paused. {overview.due.email ? `${overview.due.email} email${overview.due.email === 1 ? '' : 's'} are due.` : 'Nothing is due yet.'}
-            </>
-          )}
-          {health?.trip ? ` The desk paused itself: ${health.trip === 'bounce_rate' ? 'too many bounces' : 'too many complaints'}.` : ''}
-          <span className="aw-toolbar__fill" />
-          <Button size="sm" onClick={() => run(() => api('PUT', '/admin/marketing/settings', { live: true }), 'Outreach is live.')}>
-            Go live
-          </Button>
-        </div>
-      ) : (
-        <div className="aw-banner">
-          Live via {providerName} · {settings.startHour}:00–{settings.endHour}:00 {offsetLabel(settings.offsetMinutes)}
-          {settings.weekdaysOnly ? ', weekdays' : ''} · {messagesToday}
-          {overview.autoResume && overview.autoResume.cap < settings.dailyCap ? ` · ramping: ${overview.autoResume.cap}/day today` : ''}
-          {' '}· window{' '}
-          {overview.window.open ? 'open' : `closed (${WINDOW_REASON[overview.window.reason] ?? overview.window.reason})`}
-          <span className="aw-toolbar__fill" />
-          <Button size="sm" kind="ghost" onClick={() => run(() => api('POST', '/admin/marketing/run'), runMessage)}>
-            Run now
-          </Button>
-          <Button size="sm" kind="ghost" onClick={() => run(() => api('PUT', '/admin/marketing/settings', { live: false }), 'Paused.')}>
-            Pause
-          </Button>
-        </div>
-      )}
+      ) : null}
 
       {overview.postsAwaiting ? (
         <div className="aw-banner aw-banner--warn">
@@ -170,24 +196,6 @@ export function MarketingView() {
           </Button>
         </div>
       ) : null}
-
-      <div className="aw-tags">
-        <Tag>{plural(overview.counts.contacts.queued, 'queued contact', 'queued contacts')}</Tag>
-        <Tag>{overview.counts.contacts.replied} replied</Tag>
-        <Tag tone={overview.counts.contacts.opted_out ? 'bad' : 'dash'}>{overview.counts.contacts.opted_out} opted out</Tag>
-        <Tag tone={overview.counts.contacts.bounced ? 'bad' : 'dash'}>{overview.counts.contacts.bounced} bounced</Tag>
-        <Tag tone={overview.counts.messages.failed ? 'bad' : 'dash'}>{plural(overview.counts.messages.failed, 'failed send', 'failed sends')}</Tag>
-        <Tag tone={overview.due.email ? 'warn' : 'dash'}>{plural(overview.due.email, 'email due', 'emails due')}</Tag>
-        <Tag tone={overview.due.x + overview.due.linkedin ? 'warn' : 'dash'}>{plural(overview.due.x + overview.due.linkedin, 'post due', 'posts due')}</Tag>
-        {health ? (
-          <Tag
-            tone={health.trip ? 'bad' : health.bounceRate > health.maxBounceRate / 2 ? 'warn' : 'dash'}
-            title={`Last 14 days: ${health.sent} sent, ${health.bounces} bounced, ${health.complaints} complaints. The desk pauses itself above ${pct(health.maxBounceRate)} bounces or ${pct(health.maxComplaintRate)} complaints.`}
-          >
-            bounces {pct(health.bounceRate)} · complaints {pct(health.complaintRate)}
-          </Tag>
-        ) : null}
-      </div>
 
       <div className="aw-toolbar">
         <Segmented
@@ -255,7 +263,7 @@ export function MarketingView() {
       </div>
 
       {tab === 'overview' ? (
-        <OverviewTab api={api} tick={tick} health={health} overview={overview} onReview={() => setModal({ kind: 'review' })} onContact={(id) => setModal({ kind: 'person', id })} />
+        <OverviewTab api={api} tick={tick} health={health} overview={overview} onReview={() => setModal({ kind: 'review' })} onContact={(id) => setModal({ kind: 'person', id })} onTab={setTab} />
       ) : null}
 
       {tab === 'contacts' ? (
@@ -302,6 +310,7 @@ export function MarketingView() {
               </>
             ) : null}
           </div>
+          <div className="aw-table-wrap">
           <table className="aw-table">
             <thead>
               <tr>
@@ -385,6 +394,7 @@ export function MarketingView() {
               ))}
             </tbody>
           </table>
+          </div>
           {!contacts.length ? <p className="aw-muted">No contacts match. Import a CSV, or add one by hand.</p> : null}
         </section>
       ) : null}
@@ -462,11 +472,6 @@ const runMessage = (result) =>
 
 /* —— overview: what left, what came back —— */
 
-const dayName = (unix, offsetMinutes) => {
-  const d = new Date((unix + offsetMinutes * 60) * 1000);
-  return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()]} ${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
-};
-
 const REPLY_TONE = { reply: 'ok', opt_out: 'warn', complaint: 'bad' };
 const REPLY_LABEL = { reply: 'replied', opt_out: 'opted out', complaint: 'spam complaint' };
 
@@ -481,22 +486,405 @@ const OBSERVE_KIND = {
   unreachable: 'unreachable',
 };
 
-function OverviewTab({ api, tick, health, overview, onReview, onContact }) {
+const postChannelLabel = { x: 'X', linkedin: 'LinkedIn' };
+
+/** A thin meter for one health rate against its limit; the tick marks the limit. */
+function RateMeter({ label, rate, limit }) {
+  const pctOf = Math.min((rate ?? 0) / limit, 1);
+  const tone = (rate ?? 0) >= limit ? 'bad' : (rate ?? 0) >= limit / 2 ? 'warn' : 'ok';
+  return (
+    <span className="aw-mk-meter" title={`${label}: ${pct(rate ?? 0)} of the ${limitPct(limit)} limit`}>
+      <span className="aw-mk-meter__label">{label}</span>
+      <span className="aw-mk-meter__track">
+        <i className={cx('aw-mk-meter__fill', `aw-mk-meter__fill--${tone}`)} style={{ width: `${pctOf * 80}%` }} />
+        <i className="aw-mk-meter__limit" />
+      </span>
+      <span className="aw-mk-meter__num">
+        {pct(rate ?? 0)} of {limitPct(limit)}
+      </span>
+    </span>
+  );
+}
+
+/** One row per loop the desk runs on its own: what it is doing, what it did, what is next, and its health. */
+function AutopilotTable({ overview }) {
+  const { settings, window: win, health, observe, domains, due, today, pulse = {} } = overview;
+  const cap = Math.min(settings.dailyCap, overview.autoResume?.cap ?? settings.dailyCap);
+  const ramping = (overview.autoResume?.cap ?? settings.dailyCap) < settings.dailyCap;
+  const events = overview.events ?? [];
+  const newest = (kind) => events.filter((e) => e.kind === kind).map((e) => e.createdAt).sort((a, b) => b - a)[0] ?? null;
+  const lastSentAt = pulse.lastSentAt ?? newest('sent');
+  const lastPublishedAt = pulse.lastPublishedAt ?? newest('published');
+  const lastPublishedChannel = pulse.lastPublishedChannel ?? null;
+  const emailState = !settings.live
+    ? 'paused'
+    : win?.open
+      ? 'sending'
+      : `waiting: ${WINDOW_REASON[win?.reason] ?? win?.reason ?? 'outside the window'}`;
+  const nextOpen = win && !win.open ? nextWindowOpen(settings, Math.floor(Date.now() / 1000)) : null;
+  const emailNext = [
+    due?.email ? `${due.email} due` : 'queue clear',
+    !win?.open && nextOpen ? `opens ${when(nextOpen)}` : pulse.nextEmailAt ? `next ${when(pulse.nextEmailAt)}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const holdHours = settings.postHoldHours ?? 0;
+  const postState = holdHours > 0 ? `hold ${holdHours}h` : settings.postApproval ? 'approve by hand' : 'on schedule';
+  const postNext = [
+    pulse.nextPostAt ? `${when(pulse.nextPostAt)}${pulse.nextPostChannel ? ` · ${postChannelLabel[pulse.nextPostChannel] ?? pulse.nextPostChannel}` : ''}` : '',
+    pulse.postsQueued ? `${pulse.postsQueued} queued` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const pending = observe?.pending ?? 0;
+  const observed = observe?.observed ?? 0;
+  const withGap = observe?.withGap ?? 0;
+  const kindEntries = Object.entries(observe?.byKind ?? {}).sort((a, b) => b[1] - a[1]);
+  const bounceRate = health?.bounceRate ?? 0;
+  const complaintRate = health?.complaintRate ?? 0;
+  return (
+    <div>
+      <div className="aw-table-wrap">
+        <table className="aw-table aw-table--compact aw-table--static">
+          <thead>
+            <tr>
+              <th>Loop</th>
+              <th>State</th>
+              <th>Last</th>
+              <th>Next</th>
+              <th>Health</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Email</td>
+              <td>{emailState}</td>
+              <td>
+                {lastSentAt ? when(lastSentAt) : 'no sends yet'}
+                <span className="aw-muted">
+                  {' '}
+                  · {today ?? 0}/{cap} today{ramping ? ' · ramping' : ''}
+                </span>
+              </td>
+              <td>{emailNext || '—'}</td>
+              <td className="aw-mk-health">
+                <RateMeter label="bounces" rate={bounceRate} limit={health?.maxBounceRate ?? 0.04} />
+                <RateMeter label="complaints" rate={complaintRate} limit={health?.maxComplaintRate ?? 0.002} />
+              </td>
+            </tr>
+            <tr>
+              <td>Posts</td>
+              <td>{postState}</td>
+              <td>
+                {lastPublishedAt
+                  ? `${when(lastPublishedAt)}${lastPublishedChannel ? ` · ${postChannelLabel[lastPublishedChannel] ?? lastPublishedChannel}` : ''}`
+                  : 'none yet'}
+              </td>
+              <td>{postNext || '—'}</td>
+              <td className={pulse.postsFailed ? 'aw-mk-bad' : undefined}>{pulse.postsFailed == null ? '—' : `${pulse.postsFailed} failed`}</td>
+            </tr>
+            <tr>
+              <td>Site reading</td>
+              <td>{pending > 0 ? 'reading' : 'idle'}</td>
+              <td>
+                {observed} read
+                {pulse.lastObservedAt ? <span className="aw-muted"> · last {when(pulse.lastObservedAt)}</span> : null}
+              </td>
+              <td>{pending > 0 ? `${pending} waiting · ${fmtEta(obsEtaMinutes(pending))}` : 'all read'}</td>
+              <td>{observed > 0 ? `${pct(withGap / observed)} found something` : '—'}</td>
+            </tr>
+            <tr>
+              <td>Domain checks</td>
+              <td>checking</td>
+              <td>{domains?.checked ?? 0} domains</td>
+              <td>—</td>
+              <td className={domains?.undeliverable ? 'aw-mk-bad' : undefined}>{domains?.undeliverable ?? 0} undeliverable</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {kindEntries.length ? (
+        <>
+          <p className="aw-muted aw-mk-kinds-label">What the reader finds:</p>
+          <dl className="aw-mk-kinds">
+            {kindEntries.map(([kind, n]) => (
+              <div key={kind} className="aw-mk-kind">
+                <dt>{OBSERVE_KIND[kind] ?? kind}</dt>
+                <dd>{n}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** The handful of things only a person can do, each with the button that does it. */
+function NeedsYou({ api, tick, overview, replies, onTab, onReview, onContact }) {
+  const { settings, bound, senderState, pulse = {} } = overview;
+  const [queue, setQueue] = useState(null);
+  useEffect(() => {
+    if (!settings.reviewFirst) {
+      setQueue(null);
+      return undefined;
+    }
+    let live = true;
+    api('GET', '/admin/marketing/review?limit=100')
+      .then((r) => live && setQueue(r))
+      .catch(() => live && setQueue({ messages: [] }));
+    return () => {
+      live = false;
+    };
+  }, [api, settings.reviewFirst, tick]);
+  const items = [];
+  if (!bound) {
+    items.push({
+      key: 'sender',
+      text:
+        senderState?.reason === 'ses_unconfigured'
+          ? 'The sender is Amazon SES but the Worker has no SES keys.'
+          : 'No outreach sender is bound on the Worker.',
+      action: { label: 'Open Settings', run: () => onTab('settings') },
+    });
+  } else if (!settings.postalAddress) {
+    items.push({
+      key: 'postal',
+      text: 'Cold email cannot go out without a postal address.',
+      action: { label: 'Open Settings', run: () => onTab('settings') },
+    });
+  }
+  const cutoff = Math.floor(Date.now() / 1000) - 14 * 86400;
+  for (const r of (replies ?? []).filter((x) => x.kind === 'reply' && x.at >= cutoff && x.contact?.id)) {
+    items.push({
+      key: `reply-${r.id}`,
+      text: `${r.contact.business ?? r.contact.email} replied ${ago(r.at)} ago`,
+      action: { label: 'Open contact', run: () => onContact(r.contact.id) },
+    });
+  }
+  if (pulse.postsFailed > 0) {
+    items.push({
+      key: 'posts-failed',
+      text: `${pulse.postsFailed} post${pulse.postsFailed === 1 ? '' : 's'} failed to publish.`,
+      action: { label: 'Open Posts', run: () => onTab('posts') },
+    });
+  }
+  if (settings.reviewFirst && queue?.messages?.length) {
+    const n = queue.messages.length;
+    items.push({
+      key: 'review',
+      text: `${n >= 100 ? '100+' : n} first email${n === 1 ? '' : 's'} wait for review.`,
+      action: { label: 'Review next', run: onReview },
+    });
+  }
+  return (
+    <section className="aw-panel">
+      <h3>Needs you</h3>
+      {items.length ? (
+        <ul className="aw-needs">
+          {items.map((item) => (
+            <li key={item.key}>
+              <span>{item.text}</span>
+              <Button size="sm" kind="ghost" onClick={item.action.run}>
+                {item.action.label}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="aw-muted">Nothing needs you. The desk is running on its own.</p>
+      )}
+    </section>
+  );
+}
+
+const shortDay = (unix, offsetMinutes = 0) => {
+  const d = new Date((unix + offsetMinutes * 60) * 1000);
+  return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()]} ${d.getUTCDate()}`;
+};
+
+/** The last days as bars: sent, bounces on top, replies as a mark, posts under the axis. */
+function StatsChart({ stats }) {
+  const ref = useRef(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const update = () => setWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const days = useMemo(() => (stats?.days ? [...stats.days].reverse() : []), [stats]);
+  if (!days.length) return <p className="aw-muted">Loading…</p>;
+  const sum = (key) => days.reduce((n, d) => n + (d[key] ?? 0), 0);
+  const sent = sum('sent');
+  const replies = sum('reply');
+  const bounces = sum('bounce');
+  const optOuts = sum('opt_out');
+  const published = sum('published');
+  const offset = stats.offsetMinutes ?? 0;
+  const H = 168;
+  const padL = 40;
+  const padR = 10;
+  const padT = 12;
+  const padB = 26;
+  const w = Math.max(width, 280);
+  const plotW = w - padL - padR;
+  const plotH = H - padT - padB;
+  const baseY = padT + plotH;
+  const maxSent = Math.max(...days.map((d) => d.sent), 1);
+  const step = maxSent > 50 ? 10 : maxSent > 10 ? 5 : 1;
+  const yMax = Math.max(step, Math.ceil(maxSent / step) * step);
+  const slot = plotW / days.length;
+  const barW = Math.min(18, Math.max(3, slot * 0.6));
+  const y = (v) => baseY - (v / yMax) * plotH;
+  const aria = `${days.length} days: ${sent} sent, ${replies} replies, ${bounces} bounces, ${optOuts} opt-outs, ${published} posts published.`;
+  return (
+    <figure className="aw-chart">
+      <figcaption className="aw-chart__totals">
+        {sent} sent · {replies} replies · {bounces} bounces · {optOuts} opt-outs · {published} posts
+      </figcaption>
+      <svg className="aw-chart__svg" width={w} height={H} role="img" aria-label={aria}>
+        {[0, 0.5, 1].map((f) => {
+          const v = yMax * f;
+          return (
+            <g key={f}>
+              <line className="aw-chart__grid" x1={padL} x2={w - padR} y1={y(v)} y2={y(v)} />
+              <text className="aw-chart__tick" x={padL - 6} y={y(v) + 3} textAnchor="end">
+                {Math.round(v)}
+              </text>
+            </g>
+          );
+        })}
+        {days.map((d, i) => {
+          const cx = padL + i * slot + slot / 2;
+          const sentH = (d.sent / yMax) * plotH;
+          const bounceH = Math.min(((d.bounce ?? 0) / yMax) * plotH, sentH);
+          return (
+            <g key={d.day}>
+              <title>{`${shortDay(d.day, offset)}: ${d.sent} sent, ${d.reply} replies, ${d.bounce} bounces, ${d.opt_out} opt-outs, ${d.published ?? 0} posts`}</title>
+              {d.sent ? <rect className="aw-chart__bar" x={cx - barW / 2} y={y(d.sent)} width={barW} height={sentH} rx={1.5} /> : null}
+              {d.bounce && d.sent ? <rect className="aw-chart__bounce" x={cx - barW / 2} y={y(d.sent)} width={barW} height={bounceH} rx={1.5} /> : null}
+              {d.reply ? <circle className="aw-chart__reply" cx={cx} cy={padT + 4} r={3} /> : null}
+              {i % 2 === 0 ? (
+                <text className="aw-chart__day" x={cx} y={H - 8} textAnchor="middle">
+                  {shortDay(d.day, offset)}
+                </text>
+              ) : null}
+              {d.published
+                ? Array.from({ length: Math.min(d.published, 3) }).map((_, j) => (
+                    <rect key={j} className="aw-chart__post" x={cx - 5 + j * 4} y={baseY + 7} width={3} height={3} rx={1} />
+                  ))
+                : null}
+            </g>
+          );
+        })}
+        <line className="aw-chart__axis" x1={padL} x2={w - padR} y1={baseY} y2={baseY} />
+      </svg>
+      <table className="aw-sr-only">
+        <caption>Daily marketing numbers</caption>
+        <thead>
+          <tr>
+            <th>Day</th>
+            <th>Sent</th>
+            <th>Replies</th>
+            <th>Bounces</th>
+            <th>Opt-outs</th>
+            <th>Posts</th>
+          </tr>
+        </thead>
+        <tbody>
+          {days.map((d) => (
+            <tr key={d.day}>
+              <td>{shortDay(d.day, offset)}</td>
+              <td>{d.sent}</td>
+              <td>{d.reply}</td>
+              <td>{d.bounce}</td>
+              <td>{d.opt_out}</td>
+              <td>{d.published ?? 0}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </figure>
+  );
+}
+
+/** The cold A/B test: the control against the observation opener, honestly labelled. */
+function ExperimentPanel({ overview, onTab }) {
+  const rows = (overview.sequences ?? []).filter((s) => s.key === 'cold_a' || s.key === 'cold_obs');
+  if (rows.length < 2) return null;
+  const control = rows.find((s) => s.key === 'cold_a');
+  const challenger = rows.find((s) => s.key === 'cold_obs');
+  if (!control || !challenger) return null;
+  const rate = (s) => (s.stats.sent ? s.stats.replies / s.stats.sent : 0);
+  const enough = control.stats.sent >= 100 && challenger.stats.sent >= 100;
+  let verdict;
+  if (!enough) {
+    verdict = `Too early to call: ${control.stats.sent} and ${challenger.stats.sent} sends so far.`;
+  } else {
+    const diff = rate(challenger) - rate(control);
+    verdict =
+      Math.abs(diff) < 0.0005
+        ? 'Same reply rate so far.'
+        : `${diff > 0 ? challenger.key : control.key} leads: ${pct(Math.max(rate(challenger), rate(control)))} vs ${pct(Math.min(rate(challenger), rate(control)))} reply rate, ${(Math.abs(diff) * 100).toFixed(1)} pts apart.`;
+  }
+  return (
+    <section className="aw-panel">
+      <h3>Experiment</h3>
+      <div className="aw-table-wrap">
+        <table className="aw-table aw-table--compact aw-table--static">
+          <thead>
+            <tr>
+              <th>Sequence</th>
+              <th>Sent</th>
+              <th>Replies</th>
+              <th>Reply rate</th>
+              <th>Opt-outs</th>
+              <th>Bounces</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((s) => (
+              <tr key={s.key}>
+                <td>
+                  {s.label}{' '}
+                  {s.key === 'cold_a' ? <Tag>control</Tag> : null}
+                  {s.key === 'cold_obs' ? <Tag>challenger</Tag> : null}
+                </td>
+                <td>{s.stats.sent}</td>
+                <td>{s.stats.replies}</td>
+                <td>{pct(rate(s))}</td>
+                <td>{s.stats.optedOut}</td>
+                <td>{s.stats.bounced}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="aw-muted">{verdict}</p>
+      <p className="aw-muted">
+        {overview.settings.obsShare}% of observed contacts get the observation opener.{' '}
+        <Button size="sm" kind="ghost" onClick={() => onTab('settings')}>
+          Settings
+        </Button>
+      </p>
+    </section>
+  );
+}
+
+function OverviewTab({ api, tick, health, overview, onReview, onContact, onTab }) {
   const [stats, setStats] = useState(null);
   const [replies, setReplies] = useState(null);
-  const [review, setReview] = useState(null);
   useEffect(() => {
     let live = true;
-    Promise.all([
-      api('GET', '/admin/marketing/stats?days=14'),
-      api('GET', '/admin/marketing/replies'),
-      api('GET', '/admin/marketing/review?limit=1'),
-    ])
-      .then(([s, r, v]) => {
+    Promise.all([api('GET', '/admin/marketing/stats?days=14'), api('GET', '/admin/marketing/replies')])
+      .then(([s, r]) => {
         if (!live) return;
         setStats(s);
         setReplies(r.replies ?? []);
-        setReview(v.nextDay);
       })
       .catch(() => live && setReplies([]));
     return () => {
@@ -504,106 +892,35 @@ function OverviewTab({ api, tick, health, overview, onReview, onContact }) {
     };
   }, [api, tick]);
 
-  const sum = (key) => (stats?.days ?? []).reduce((n, d) => n + d[key], 0);
-  const sent = sum('sent');
+  const ordered = [...(replies ?? [])].sort((a, b) => Number(b.kind === 'reply') - Number(a.kind === 'reply') || b.at - a.at);
   return (
     <>
       <section className="aw-panel">
-        <div className="aw-inline">
-          <h3 style={{ margin: 0 }}>Next 24 hours</h3>
-          <span className="aw-muted">
-            {review ? `${review.reviewed} of ${plural(review.total, 'first email', 'first emails')} due by this time tomorrow are reviewed.` : '…'}
-          </span>
-          <span className="aw-toolbar__fill" />
-          <Button kind="primary" onClick={onReview}>
-            Review next
-          </Button>
-        </div>
+        <h3>Autopilot</h3>
+        <AutopilotTable overview={overview} />
       </section>
+
+      <NeedsYou api={api} tick={tick} overview={overview} replies={replies} onTab={onTab} onReview={onReview} onContact={onContact} />
+
+      <ExperimentPanel overview={overview} onTab={onTab} />
 
       <section className="aw-panel">
         <h3>Last 14 days</h3>
-        <div className="aw-tags">
-          <Tag>{sent.toLocaleString('en-US')} sent</Tag>
-          <Tag tone={sum('reply') ? 'ok' : 'dash'}>
-            {sum('reply')} replies {sent ? `(${pct(sum('reply') / sent)})` : ''}
-          </Tag>
-          <Tag tone={health?.trip === 'bounce_rate' ? 'bad' : 'dash'}>{sum('bounce')} bounces</Tag>
-          <Tag tone="dash">{sum('opt_out')} opt-outs</Tag>
-          <Tag tone={sum('complaint') ? 'bad' : 'dash'}>{sum('complaint')} complaints</Tag>
-          <Tag tone="dash">{sum('published')} posts published</Tag>
-        </div>
-        {stats ? (
-          <table className="aw-table">
-            <thead>
-              <tr>
-                <th>Day</th>
-                <th>Sent</th>
-                <th>Replies</th>
-                <th>Bounces</th>
-                <th>Opt-outs</th>
-                <th>Complaints</th>
-                <th>Posts</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stats.days.map((d) => (
-                <tr key={d.day}>
-                  <td className="aw-muted">{dayName(d.day, stats.offsetMinutes)}</td>
-                  <td>{d.sent || '·'}</td>
-                  <td>{d.reply || '·'}</td>
-                  <td className={d.bounce ? 'aw-warn' : undefined}>{d.bounce || '·'}</td>
-                  <td>{d.opt_out || '·'}</td>
-                  <td className={d.complaint ? 'aw-warn' : undefined}>{d.complaint || '·'}</td>
-                  <td>{d.published || '·'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="aw-muted">Loading…</p>
-        )}
-      </section>
-
-      <section className="aw-panel">
-        <h3>Site observations</h3>
-        <p className="aw-muted">
-          The desk opens each queued contact's site and writes down the first thing wrong with it; the observation sequence uses that as its
-          opener. Domains with no mail server are paused before they can bounce.
-        </p>
-        <div className="aw-tags">
-          <Tag>{overview.observe?.observed ?? 0} sites read</Tag>
-          <Tag tone={overview.observe?.pending ? 'warn' : 'dash'}>{overview.observe?.pending ?? 0} waiting to be read</Tag>
-          <Tag tone={overview.observe?.withGap ? 'ok' : 'dash'}>{overview.observe?.withGap ?? 0} with an observation</Tag>
-          <Tag tone={overview.domains?.undeliverable ? 'bad' : 'dash'}>
-            {overview.domains?.checked ?? 0} domains checked · {overview.domains?.undeliverable ?? 0} undeliverable
-          </Tag>
-        </div>
-        {Object.keys(overview.observe?.byKind ?? {}).length ? (
-          <div className="aw-tags" style={{ marginTop: 8 }}>
-            {Object.entries(overview.observe.byKind)
-              .sort((a, b) => b[1] - a[1])
-              .map(([kind, n]) => (
-                <Tag key={kind} tone={kind === 'none' ? 'ok' : kind === 'unreachable' ? 'dash' : 'warn'}>
-                  {OBSERVE_KIND[kind] ?? kind}: {n}
-                </Tag>
-              ))}
-          </div>
-        ) : null}
+        <StatsChart stats={stats} />
       </section>
 
       <section className="aw-panel">
         <h3>What came back</h3>
         <p className="aw-muted">Replies are also forwarded to your inbox; answer them from there. Opt-outs and complaints are closed already.</p>
-        {replies?.length ? (
+        {ordered.length ? (
           <ul className="aw-rows">
-            {replies.map((r) => (
+            {ordered.map((r) => (
               <li key={r.id} className="aw-row" style={{ alignItems: 'flex-start', cursor: 'pointer' }} onClick={() => onContact(r.contact.id)}>
                 <Tag tone={REPLY_TONE[r.kind]}>{REPLY_LABEL[r.kind] ?? r.kind}</Tag>
                 <span className="aw-row__title">
                   {r.contact.business ?? r.contact.email}
                   <div className="aw-muted" style={{ whiteSpace: 'pre-wrap', fontWeight: 'normal' }}>
-                    {snippet(r.text ?? '', 400)}
+                    {snippet(r.text ?? '', 220)}
                   </div>
                 </span>
                 <span className="aw-muted">{ago(r.at)} ago</span>
@@ -762,6 +1079,7 @@ function ReviewModal({ api, onClose }) {
 function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [showDmarc, setShowDmarc] = useState(false);
   useEffect(() => {
     let live = true;
     api('GET', `/admin/marketing/contacts/${id}`)
@@ -825,9 +1143,14 @@ function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
             </tbody>
           </table>
           {!data.messages.length ? <p className="aw-muted">Nothing queued or sent.</p> : null}
-          <h3>Events</h3>
+          <div className="aw-inline">
+            <h3>Events</h3>
+            <Button size="sm" kind="ghost" onClick={() => setShowDmarc((v) => !v)}>
+              {showDmarc ? 'Hide DMARC reports' : 'Show DMARC reports'}
+            </Button>
+          </div>
           <ul className="aw-rows">
-            {data.events.map((e) => (
+            {data.events.filter((e) => showDmarc || e.kind !== 'dmarc_report').map((e) => (
               <li key={e.id} className="aw-row">
                 <Tag tone={EVENT_BAD.has(e.kind) ? 'bad' : EVENT_GOOD.has(e.kind) ? 'ok' : 'dash'}>{EVENT_LABEL[e.kind] ?? e.kind.replaceAll('_', ' ')}</Tag>
                 <span className="aw-muted" style={{ whiteSpace: 'pre-wrap' }}>
@@ -837,7 +1160,7 @@ function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
               </li>
             ))}
           </ul>
-          {!data.events.length ? <p className="aw-muted">No events.</p> : null}
+          {!data.events.filter((e) => showDmarc || e.kind !== 'dmarc_report').length ? <p className="aw-muted">No events.</p> : null}
         </>
       ) : !error ? (
         <p className="aw-muted">Loading…</p>
@@ -852,6 +1175,8 @@ function EmailTab({ api, run, tick, events, onOpen }) {
   const [order, setOrder] = useState('next');
   const [status, setStatus] = useState('scheduled');
   const [messages, setMessages] = useState(null);
+  const [showDmarc, setShowDmarc] = useState(false);
+  const visibleEvents = events.filter((e) => showDmarc || e.kind !== 'dmarc_report');
 
   useEffect(() => {
     let live = true;
@@ -887,6 +1212,7 @@ function EmailTab({ api, run, tick, events, onOpen }) {
       </div>
       {messages === null ? <p className="aw-muted">Loading…</p> : null}
       {messages?.length ? (
+        <div className="aw-table-wrap">
         <table className="aw-table">
           <thead>
             <tr>
@@ -916,15 +1242,21 @@ function EmailTab({ api, run, tick, events, onOpen }) {
             ))}
           </tbody>
         </table>
+        </div>
       ) : messages ? (
         <p className="aw-muted">No email matches.</p>
       ) : null}
       {messages?.length === 200 ? <p className="aw-muted">The first 200 are shown.</p> : null}
 
       <div className="aw-group">
-        <h3>Recent events</h3>
+        <div className="aw-inline">
+          <h3>Recent events</h3>
+          <Button size="sm" kind="ghost" onClick={() => setShowDmarc((v) => !v)}>
+            {showDmarc ? 'Hide DMARC reports' : 'Show DMARC reports'}
+          </Button>
+        </div>
         <ul className="aw-rows">
-          {events.map((e) => (
+          {visibleEvents.map((e) => (
             <li key={e.id} className="aw-row">
               <Tag tone={EVENT_BAD.has(e.kind) ? 'bad' : EVENT_GOOD.has(e.kind) ? 'ok' : 'dash'}>{EVENT_LABEL[e.kind] ?? e.kind.replaceAll('_', ' ')}</Tag>
               <span className="aw-row__title">{e.email ?? '—'}</span>
@@ -933,7 +1265,7 @@ function EmailTab({ api, run, tick, events, onOpen }) {
             </li>
           ))}
         </ul>
-        {!events.length ? <p className="aw-muted">Nothing has happened yet.</p> : null}
+        {!visibleEvents.length ? <p className="aw-muted">Nothing has happened yet.</p> : null}
       </div>
     </section>
   );
@@ -1231,7 +1563,9 @@ function SequencesTab({ api, sequences }) {
           {sequences.map((s) => (
             <tr key={s.key}>
               <td className="aw-table__title">
-                {s.label}
+                {s.label}{' '}
+                {s.key === 'cold_a' ? <Tag>control</Tag> : null}
+                {s.key === 'cold_obs' ? <Tag>challenger</Tag> : null}
                 {s.needsGap ? <div className="aw-muted">needs a site observation</div> : null}
               </td>
               <td>{s.stats.sent || '·'}</td>
@@ -1301,6 +1635,7 @@ function SourcesTab({ api, tick, onPick }) {
         A source is the label given at import (the file name by default). Rates are per contact reached. A source whose bounces pass 4%
         will pause the whole desk, so drop or verify it first.
       </p>
+      <div className="aw-table-wrap">
       <table className="aw-table">
         <thead>
           <tr>
@@ -1337,6 +1672,7 @@ function SourcesTab({ api, tick, onPick }) {
           ))}
         </tbody>
       </table>
+      </div>
       {!sources.length ? <p className="aw-muted">No contacts yet.</p> : null}
     </section>
   );
@@ -1410,11 +1746,11 @@ function SettingsTab({ overview, run, api, contactsById }) {
 
   return (
     <>
-      <ModelHealth api={api} />
       <section className="aw-panel">
         <h3>Sending</h3>
-        <div className="aw-grid2">
-          <Field label="Outreach">
+        <p className="aw-muted">Who the mail comes from and whether it goes out.</p>
+        <div className="aw-form2">
+          <Field label="Outreach" hint="The master switch.">
             <Segmented
               value={Boolean(draft.live)}
               options={[
@@ -1424,18 +1760,14 @@ function SettingsTab({ overview, run, api, contactsById }) {
               onChange={(v) => set('live', v)}
             />
           </Field>
-          <Field label="Postal address" hint="On every cold email, as anti-spam law requires.">
-            <input value={draft.postalAddress} placeholder="Street, city, country" onChange={(e) => set('postalAddress', e.target.value)} />
-          </Field>
-          <Field label="From name">
-            <input value={draft.fromName} onChange={(e) => set('fromName', e.target.value)} />
-          </Field>
           <Field
             label="Sender"
             hint={
-              overview.providers.ses
-                ? 'Amazon SES: 50,000 a day, 14 a second, DKIM on ptechsolutions.net. Bounces and complaints come back to hello@ and are filed here.'
-                : 'Amazon SES needs AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY as Worker secrets first.'
+              draft.provider === 'ses'
+                ? overview.providers.ses
+                  ? 'Amazon SES: bounces and complaints file back to hello@.'
+                  : 'Needs AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY as Worker secrets.'
+                : 'The MARKETING binding on the Worker.'
             }
           >
             <Segmented
@@ -1447,9 +1779,76 @@ function SettingsTab({ overview, run, api, contactsById }) {
               onChange={(v) => set('provider', v)}
             />
           </Field>
+          <Field label="From name" hint="On the From line of every email.">
+            <input value={draft.fromName} onChange={(e) => set('fromName', e.target.value)} />
+          </Field>
+          <Field label="Postal address" hint="Required on every cold email.">
+            <input value={draft.postalAddress} placeholder="Street, city, country" onChange={(e) => set('postalAddress', e.target.value)} />
+          </Field>
+        </div>
+      </section>
+
+      <section className="aw-panel">
+        <h3>Schedule and volume</h3>
+        <p className="aw-muted">When mail may leave, and how much of it.</p>
+        <div className="aw-form2">
+          <Field label="Send window" hint="Local time on the offset clock; an end of 24 means midnight.">
+            <span className="aw-inline aw-mk-window">
+              From{' '}
+              <input
+                inputMode="numeric"
+                aria-label="Window start hour"
+                value={draft.startHour}
+                onChange={(e) => set('startHour', Number(e.target.value))}
+              />{' '}
+              to{' '}
+              <input
+                inputMode="numeric"
+                aria-label="Window end hour"
+                value={draft.endHour}
+                onChange={(e) => set('endHour', Number(e.target.value))}
+              />{' '}
+              · offset{' '}
+              <input
+                inputMode="numeric"
+                aria-label="Window offset minutes"
+                value={draft.offsetMinutes}
+                onChange={(e) => set('offsetMinutes', Number(e.target.value))}
+              />{' '}
+              min ({offsetLabel(draft.offsetMinutes)})
+            </span>
+          </Field>
+          <Field label="Weekdays only" hint="Skip Saturday and Sunday.">
+            <Segmented
+              value={Boolean(draft.weekdaysOnly)}
+              options={[
+                { value: true, label: 'Weekdays' },
+                { value: false, label: 'Every day' },
+              ]}
+              onChange={(v) => set('weekdaysOnly', v)}
+            />
+          </Field>
+          <Field label="Daily cap" hint="Emails a day across every sequence.">
+            <input
+              inputMode="numeric"
+              value={draft.dailyCap}
+              title={`At ${draft.perRun} per run the window allows about ${windowRoom(draft)} a day.`}
+              onChange={(e) => set('dailyCap', Number(e.target.value))}
+            />
+          </Field>
+          <Field label="Per run" hint="The cron runs every five minutes; up to 200.">
+            <input inputMode="numeric" value={draft.perRun} onChange={(e) => set('perRun', Number(e.target.value))} />
+          </Field>
+        </div>
+      </section>
+
+      <section className="aw-panel">
+        <h3>Safety</h3>
+        <p className="aw-muted">The checks that keep the list healthy.</p>
+        <div className="aw-form2">
           <Field
             label="Auto-resume"
-            hint="On: a pause the desk caused itself (bounces or complaints) switches back on after 7 quiet days, starting at 20 a day and ramping up. A pause you set by hand is never undone."
+            hint="A pause the desk caused itself lifts after 7 quiet days, ramping from 20 a day. A pause you set by hand is never undone."
           >
             <Segmented
               value={Boolean(draft.autoResume)}
@@ -1460,16 +1859,7 @@ function SettingsTab({ overview, run, api, contactsById }) {
               onChange={(v) => set('autoResume', v)}
             />
           </Field>
-          <Field
-            label="Observation sequence share (%)"
-            hint="Of the contacts the desk reads a site observation for, this percent get the observation opener instead of the plain one. 0 keeps the experiment off, 100 makes it the only cold opener."
-          >
-            <input inputMode="numeric" min="0" max="100" value={draft.obsShare ?? 50} onChange={(e) => set('obsShare', Number(e.target.value))} />
-          </Field>
-          <Field
-            label="Review first emails"
-            hint="On: a first email goes out only after you read it in Review next (or rewrote it). Follow-ups ride on the first. Off: everything queued goes at its time."
-          >
+          <Field label="Review first emails" hint="First emails send only after you read them in Review next.">
             <Segmented
               value={Boolean(draft.reviewFirst)}
               options={[
@@ -1479,54 +1869,7 @@ function SettingsTab({ overview, run, api, contactsById }) {
               onChange={(v) => set('reviewFirst', v)}
             />
           </Field>
-          <Field
-            label="Workshop GIF"
-            hint="HTML emails: the homepage how diagram at the top and the conveyor as a looping GIF above the signature (both linked from ptechsolutions.net/email/, the GIF about 470 KB). Emails without it go as plain text only."
-          >
-            <Segmented
-              value={draft.image ?? 'first'}
-              options={[
-                { value: 'off', label: 'Off' },
-                { value: 'first', label: 'First emails' },
-                { value: 'all', label: 'Every email' },
-              ]}
-              onChange={(v) => set('image', v)}
-            />
-          </Field>
-          <Field
-            label="Daily cap"
-            hint={`Emails per day across every sequence. Raise it in steps (for example 50, 100, 250, 500, 1,000 over two weeks) and watch the bounce rate in Sources between steps. At ${draft.perRun} per run, the window allows about ${windowRoom(draft)} a day.`}
-          >
-            <input inputMode="numeric" value={draft.dailyCap} onChange={(e) => set('dailyCap', Number(e.target.value))} />
-          </Field>
-          <Field label="Per run" hint="The cron runs every five minutes; up to 200.">
-            <input inputMode="numeric" value={draft.perRun} onChange={(e) => set('perRun', Number(e.target.value))} />
-          </Field>
-          <Field label="Weekdays only">
-            <Segmented
-              value={Boolean(draft.weekdaysOnly)}
-              options={[
-                { value: true, label: 'Weekdays' },
-                { value: false, label: 'Every day' },
-              ]}
-              onChange={(v) => set('weekdaysOnly', v)}
-            />
-          </Field>
-          <Field label="Send window (start)">
-            <input inputMode="numeric" value={draft.startHour} onChange={(e) => set('startHour', Number(e.target.value))} />
-          </Field>
-          <Field label="Send window (end)" hint="24 means midnight.">
-            <input inputMode="numeric" value={draft.endHour} onChange={(e) => set('endHour', Number(e.target.value))} />
-          </Field>
-          <Field label="Local offset (minutes)" hint={`${offsetLabel(draft.offsetMinutes)}. The window and the daily count use this clock.`}>
-            <input inputMode="numeric" value={draft.offsetMinutes} onChange={(e) => set('offsetMinutes', Number(e.target.value))} />
-          </Field>
         </div>
-        {actions}
-      </section>
-
-      <section className="aw-panel">
-        <h3>List health</h3>
         <p className="aw-muted">
           Last 14 days: {overview.health.sent} sent, {overview.health.bounces} bounced ({pct(overview.health.bounceRate)}), {overview.health.complaints}{' '}
           complaints ({pct(overview.health.complaintRate)}). The desk pauses itself and emails you above {pct(overview.health.maxBounceRate)} bounces or{' '}
@@ -1536,8 +1879,36 @@ function SettingsTab({ overview, run, api, contactsById }) {
       </section>
 
       <section className="aw-panel">
-        <h3>Written posts</h3>
-        <Field label="Approval" hint="On: posts the content cycle writes wait in Posts until you approve them, and you get an email with their text. Every post that goes out is also emailed to you.">
+        <h3>Experiment</h3>
+        <p className="aw-muted">The cold A/B test.</p>
+        <Field
+          label="Observation sequence share (%)"
+          hint="Of contacts with a site observation, this percent get the observation opener. 0 keeps the experiment off, 100 makes it the only cold opener."
+        >
+          <input inputMode="numeric" min="0" max="100" value={draft.obsShare ?? 50} onChange={(e) => set('obsShare', Number(e.target.value))} />
+        </Field>
+      </section>
+
+      <section className="aw-panel">
+        <h3>Email look</h3>
+        <p className="aw-muted">What the HTML version carries.</p>
+        <Field label="Workshop GIF" hint="Off sends plain text only; First emails and Every email add the workshop images.">
+          <Segmented
+            value={draft.image ?? 'first'}
+            options={[
+              { value: 'off', label: 'Off' },
+              { value: 'first', label: 'First emails' },
+              { value: 'all', label: 'Every email' },
+            ]}
+            onChange={(v) => set('image', v)}
+          />
+        </Field>
+      </section>
+
+      <section className="aw-panel">
+        <h3>Posts</h3>
+        <p className="aw-muted">How written posts reach X and LinkedIn.</p>
+        <Field label="Approval" hint="Drafted posts wait for approval or the hold; every post that goes out is also emailed to you.">
           <Segmented
             value={Boolean(draft.postApproval)}
             options={[
@@ -1547,16 +1918,10 @@ function SettingsTab({ overview, run, api, contactsById }) {
             onChange={(v) => set('postApproval', v)}
           />
         </Field>
-        <Field
-          label="Post hold (hours, 0 = approve by hand)"
-          hint="How long a drafted post waits before it goes out on its own. 0 keeps every post waiting for your approval in Posts. Up to 168."
-        >
+        <Field label="Post hold (hours)" hint="How long a drafted post waits before it goes out on its own. 0 means approve by hand. Up to 168.">
           <input inputMode="numeric" min="0" max="168" value={draft.postHoldHours ?? 24} onChange={(e) => set('postHoldHours', Number(e.target.value))} />
         </Field>
-        <Field
-          label="Voice notes"
-          hint="Added to every content brief, after the launch kit. Leave empty to follow the kit alone. The next cycle picks it up; Draft posts shows it at once."
-        >
+        <Field label="Voice notes" hint="Added to every content brief after the launch kit.">
           <textarea
             rows={3}
             value={draft.voiceNotes ?? ''}
@@ -1567,6 +1932,8 @@ function SettingsTab({ overview, run, api, contactsById }) {
         {actions}
       </section>
 
+      <div className="aw-divider" />
+      <ModelHealth api={api} />
       <section className="aw-panel">
         <h3>The publisher</h3>
         <p className="aw-muted">
