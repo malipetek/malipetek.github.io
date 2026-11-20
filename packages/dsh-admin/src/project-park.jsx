@@ -12,46 +12,7 @@ import {
   plotTickets,
   plotWaitLabel,
   runTrail,
-  fleetTicker,
-  shortAge,
 } from './project-park.mjs';
-
-/** One line: runs going now (ticking), and tickets waiting on a person. */
-function FleetTicker({ running, recent, tickets, onOpenTicket }) {
-  const [now, setNow] = useState(() => Date.now());
-  const ticker = fleetTicker({ running, recent, tickets, now });
-  const live = ticker.running.length > 0;
-  useEffect(() => {
-    if (!live) return undefined;
-    const id = setInterval(() => setNow(Date.now()), 15000);
-    return () => clearInterval(id);
-  }, [live]);
-  if (!live && !ticker.attention.length && !ticker.idle) return null;
-  const open = (item) => onOpenTicket?.({ id: item.ticketId, title: item.title });
-  return (
-    <div className="pta-park__ticker" role="status" aria-label="Fleet now">
-      {live ? (
-        ticker.running.map((item) => (
-          <button key={`r${item.ticketId}`} type="button" className="pta-park__chip is-running" onClick={() => open(item)} title="Open the ticket's conversation">
-            <i className="pta-park__run is-running" aria-hidden="true" />
-            #{item.ticketId} {item.title} · {shortAge(item.seconds)}
-          </button>
-        ))
-      ) : (
-        <span className="pta-park__ticker-idle">0 running{ticker.attention.length ? '' : ' · fleet clear'}{ticker.idle ? ` · ${ticker.idle}` : ''}</span>
-      )}
-      {ticker.attention.map((item) => (
-        <button key={`a${item.ticketId}`} type="button" className={`pta-park__chip is-${item.reason}`} onClick={() => open(item)} title="Open the ticket's conversation">
-          <i className={`pta-park__run is-${item.reason === 'failed' ? 'failed' : 'ok'}`} aria-hidden="true" />
-          {item.reason === 'failed' ? 'Failed' : 'Review'} #{item.ticketId} {item.title} · {shortAge(item.seconds)}
-        </button>
-      ))}
-      {ticker.attentionTotal > ticker.attention.length ? (
-        <span className="pta-park__ticker-idle">+{ticker.attentionTotal - ticker.attention.length} more</span>
-      ) : null}
-    </div>
-  );
-}
 
 /** A ticket's runs as small segments (oldest left), with a one-line summary. */
 function RunBand({ trail }) {
@@ -508,8 +469,6 @@ export function ProjectPark({ projects = [], tickets = [], runs = [], recentRuns
         )}
       </div>
 
-      <FleetTicker running={runs} recent={recentRuns} tickets={tickets} onOpenTicket={onOpenTicket} />
-
       <div className="pta-park__scroll">
         <svg
           className="pta-park__svg"
@@ -672,11 +631,6 @@ export const PROJECT_PARK_STYLES = `
   .pta-park__strip-via{flex:0 0 auto;padding:0 5px;border-radius:4px;background:rgba(128,134,142,.2);font-size:10px}
   .pta-park__strip-age{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary,inherit)}
   .pta-park__strip-age.is-wait{color:var(--dsw-alias-state-warning-primary,#d18f2e)}
-  .pta-park__ticker{display:flex;align-items:center;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 0 4px;font-size:10.5px;color:var(--dsw-alias-label-secondary,inherit)}
-  .pta-park__chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;max-width:260px;padding:1px 8px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:999px;background:rgba(128,134,142,.12);color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:10.5px;line-height:17px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .pta-park__chip:hover,.pta-park__chip:focus-visible{background:rgba(128,134,142,.24);outline:none}
-  .pta-park__chip.is-failed{border-color:color-mix(in srgb,var(--dsw-alias-state-danger-primary,#e5534b) 55%,transparent)}
-  .pta-park__ticker-idle{flex:0 0 auto;white-space:nowrap;opacity:.85}
   .pta-park__runs{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--dsw-alias-label-secondary,inherit);white-space:nowrap}
   .pta-park__runband{display:inline-flex;gap:2px}
   .pta-park__run{display:inline-block;width:8px;height:8px;border-radius:2px;background:rgba(128,134,142,.45)}

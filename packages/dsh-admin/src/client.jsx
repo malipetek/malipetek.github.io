@@ -23,6 +23,7 @@ import { MarketingView } from '../../admin-ui/src/marketing.jsx';
 import { SeoView } from '../../admin-ui/src/seo.jsx';
 import { STYLES } from '../../admin-ui/src/styles.js';
 import { assistantBadge, assistantBadgeTitle } from '../../admin-ui/src/ticket-assistant.mjs';
+import { STATUS_LABEL, needsYou } from '../../admin-ui/src/format.js';
 import { panelTransport } from './panel-transport.mjs';
 import { ConversationHistory } from './conversation-history.jsx';
 import { nextRowIndex } from './row-navigation.mjs';
@@ -34,6 +35,21 @@ const NAMESPACE = 'admin';
 /** Reported to the Host on activation, so "did the panel load?" has an answer. */
 const CLIENT_VERSION = '3.9.0';
 const DICTIONARY = { title: 'Admin' };
+
+/**
+ * The one ticket-status tint map: the task desk, the client tree and the
+ * native pages all read it, so a status has one colour in the whole plugin.
+ * The words are `STATUS_LABEL` from the shared workbench (packages/admin-ui).
+ */
+const STATUS_TINT = {
+  new: 'var(--dsw-alias-state-warning-primary, #d18f2e)',
+  approved: 'var(--dsw-alias-state-business-primary, #4c8dff)',
+  in_progress: 'var(--dsw-alias-state-success-primary, #2f9e5b)',
+  review: 'var(--dsw-alias-state-business-primary, #4c8dff)',
+  done: 'var(--dsw-alias-label-tertiary, #8a9099)',
+  declined: 'var(--dsw-alias-label-tertiary, #8a9099)',
+};
+const tintOfStatus = (status) => STATUS_TINT[status] ?? STATUS_TINT.done;
 
 /**
  * Rejections that mean "not this Session" rather than "this call failed".
@@ -492,7 +508,7 @@ function apply(ctx) {
     if (!run) return null;
     return (
       <div style={{ fontSize: 12, color: 'var(--dsw-alias-label-secondary, #adb2b8)' }}>
-        {run.kind === 'task' ? 'System task' : 'Client ticket'} #{run.ticketId}
+        {run.kind === 'task' ? 'My task' : 'Client ticket'} #{run.ticketId}
         {run.runId ? ` · run ${run.runId}` : ''} · {run.slug}
       </div>
     );
@@ -500,11 +516,6 @@ function apply(ctx) {
 
   /* ————— The task desk, as a right-pane tab ————— */
 
-  const TASK_TINT = {
-    new: 'var(--dsw-alias-state-warning-primary, #f0a13a)',
-    review: 'var(--dsw-alias-state-business-primary, #4c8bf5)',
-    in_progress: 'var(--dsw-alias-state-success-primary, #35c07a)',
-  };
   const taskRowStyle = {
     display: 'flex',
     alignItems: 'flex-start',
@@ -555,6 +566,8 @@ function apply(ctx) {
   function TasksTab() {
     const [state, setState] = useState({ tickets: [], runs: [], loading: true });
     const [note, setNote] = useState('');
+    const root = useRef(null);
+    useRowNavigation(root);
     /** Tickets showing all their runs; the rest show the newest RUNS_SHOWN. */
     const [expanded, setExpanded] = useState(() => new Set());
     useEffect(() => {
@@ -593,8 +606,8 @@ function apply(ctx) {
 
     const waiting = state.tickets.filter((t) => t.status === 'new' || t.status === 'review');
     const ticketRow = (ticket) => (
-      <button key={ticket.id} type="button" style={taskRowStyle} onClick={() => void openTicketRun(ticket)}>
-        {dot(TASK_TINT[ticket.status])}
+      <button key={ticket.id} type="button" className="pta-row pta-task-row" style={taskRowStyle} onClick={() => void openTicketRun(ticket)}>
+        {dot(tintOfStatus(ticket.status))}
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={lineStyle}>
             #{ticket.id} {ticket.title}
@@ -619,7 +632,7 @@ function apply(ctx) {
 
     if (state.loading) return <div style={{ padding: 12, fontSize: 13, opacity: 0.7 }}>Loading tasks…</div>;
     return (
-      <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 12 }} ref={root}>
         <section>
           <h4 style={taskHeadStyle}>Waiting on you · {waiting.length}</h4>
           {waiting.length > 0 ? waiting.map(ticketRow) : <p style={taskEmptyStyle}>Nothing waiting.</p>}
@@ -631,8 +644,8 @@ function apply(ctx) {
             <h4 style={taskHeadStyle}>{slug}</h4>
             {[...tickets].map(([ticketId, runs]) => (
               <div key={ticketId} style={{ marginBottom: 4 }}>
-                <button type="button" style={taskRowStyle} title="Open the ticket's conversation" onClick={() => void openTicketRun({ id: ticketId, title: runs[0].title })}>
-                  {dot(TASK_TINT[runs[0].ticket_status])}
+                <button type="button" className="pta-row pta-task-row" style={taskRowStyle} title="Open the ticket's conversation" onClick={() => void openTicketRun({ id: ticketId, title: runs[0].title })}>
+                  {dot(tintOfStatus(runs[0].ticket_status))}
                   <span style={{ ...lineStyle, flex: 1, minWidth: 0 }}>
                     #{ticketId} {runs[0].title}
                   </span>
@@ -641,6 +654,7 @@ function apply(ctx) {
                   <button
                     key={run.id}
                     type="button"
+                    className="pta-row pta-task-row pta-task-row--run"
                     style={{ ...taskRowStyle, padding: '3px 8px 3px 23px', fontSize: 11.5 }}
                     title={run.session_id ? 'Open this run’s conversation' : 'This run kept no conversation; opens the ticket'}
                     onClick={() => void openRun(run)}
@@ -657,6 +671,7 @@ function apply(ctx) {
                 {runs.length > RUNS_SHOWN ? (
                   <button
                     type="button"
+                    className="pta-row pta-task-row pta-task-row--more"
                     style={{ ...taskRowStyle, padding: '2px 8px 2px 23px', fontSize: 11, opacity: 0.6 }}
                     onClick={() =>
                       setExpanded((prev) => {
@@ -941,31 +956,17 @@ function apply(ctx) {
         setState((prev) => ({ ...prev, busy: false, error: error?.message ?? 'Could not save the setting.' }));
       }
     };
-    const rowStyle = { display: 'flex', alignItems: 'center', gap: 16, padding: '14px 0', borderTop: '1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.22))' };
-    const switchStyle = {
-      width: 38,
-      height: 22,
-      padding: 2,
-      borderRadius: 11,
-      border: 0,
-      cursor: state.busy ? 'wait' : 'pointer',
-      background: state.notify ? 'var(--dsw-alias-state-success-primary, #2f9e5b)' : 'var(--dsw-alias-bg-secondary, rgba(127,127,127,0.35))',
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: state.notify ? 'flex-end' : 'flex-start',
-      boxSizing: 'border-box',
-    };
     return (
-      <div style={{ padding: '20px 24px', maxWidth: 680 }}>
-        <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Admin</h2>
-        <p style={{ margin: '0 0 14px', fontSize: 12.5, opacity: 0.65, lineHeight: 1.45 }}>
+      <div className="pta-settings">
+        <h2>Admin</h2>
+        <p className="pta-settings__intro">
           The PTech client portal (ptechsolutions.net) inside the Harness: tickets, the work queue and its fleet, clients and projects.
           The Host refreshes every minute and notifies you about new work in the window and on this Mac.
         </p>
-        <div style={rowStyle}>
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: 'block', fontSize: 13 }}>Notify me about new work</span>
-            <span style={{ display: 'block', fontSize: 12, opacity: 0.6, marginTop: 2 }}>
+        <div className="pta-settings__row">
+          <span className="pta-settings__text">
+            <span className="pta-settings__label">Notify me about new work</span>
+            <span className="pta-settings__hint">
               A new ticket, one waiting for approval, a client reply, or a finished or failed run — in-app and as a
               macOS notification, never twice.
             </span>
@@ -973,20 +974,20 @@ function apply(ctx) {
           <button
             type="button"
             role="switch"
+            className="pta-switch"
             aria-checked={state.notify}
             aria-label="Notify me about new work"
             disabled={!state.loaded || state.busy}
             onClick={() => void toggle()}
-            style={switchStyle}
           >
-            <span style={{ width: 18, height: 18, borderRadius: 9, background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.3)' }} />
+            <span className="pta-switch__knob" />
           </button>
         </div>
-        {state.error ? <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--dsw-alias-state-danger-primary, #e5534b)' }}>{state.error}</p> : null}
-        <div style={rowStyle}>
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: 'block', fontSize: 13, marginBottom: 2 }}>Portal connection</span>
-            <span style={{ display: 'block', fontSize: 12, opacity: 0.6, marginBottom: 8 }}>
+        {state.error ? <p className="pta-settings__error">{state.error}</p> : null}
+        <div className="pta-settings__row">
+          <span className="pta-settings__text">
+            <span className="pta-settings__label">Portal connection</span>
+            <span className="pta-settings__hint">
               Sign in with a portal admin account. The browser approves this app; the token stays on this machine.
             </span>
             <PortalSignIn compact />
@@ -1362,14 +1363,6 @@ function apply(ctx) {
 
   /* ————— Clients → Projects → Tickets, in the workspace browser ————— */
 
-  const TICKET_DOT = {
-    new: 'var(--dsw-alias-state-warning-primary, #d18f2e)',
-    approved: 'var(--dsw-alias-state-business-primary, #4c8dff)',
-    in_progress: 'var(--dsw-alias-state-success-primary, #2f9e5b)',
-    review: 'var(--dsw-alias-state-business-primary, #4c8dff)',
-    done: 'var(--dsw-alias-label-tertiary, #8a9099)',
-    declined: 'var(--dsw-alias-label-tertiary, #8a9099)',
-  };
   const isClosedTicket = (t) => t.status === 'done' || t.status === 'declined';
   const openTicketCount = (tickets) => tickets.filter((t) => !isClosedTicket(t)).length;
   /** Open first, then newest; a closed ticket never outranks an open one. */
@@ -1387,7 +1380,12 @@ function apply(ctx) {
   async function approveTicket(ticket, changed) {
     if (ticket.kind !== 'system') {
       const who = ticket.client_email ?? 'The client';
-      if (!window.confirm(`Approve #${ticket.id}?\n\n${who} is emailed about this change.`)) return;
+      const ok = await confirmAsk({
+        title: `Approve #${ticket.id}?`,
+        text: `${who} is emailed about this change.`,
+        confirm: 'Approve',
+      });
+      if (!ok) return;
     }
     try {
       await api('PATCH', `/admin/tickets/${ticket.id}`, { status: 'approved' });
@@ -1434,7 +1432,7 @@ function apply(ctx) {
     return <div className="pta-tree-note" style={nested ? { paddingLeft: 30 } : undefined}>{children}</div>;
   }
 
-  /** The ticket rows of one project (or of Mine), with done/declined behind one row. */
+  /** The ticket rows of one project (or of my own tasks), with done/declined behind one row. */
   function TicketList({ Row, tickets, changed }) {
     const [showClosed, setShowClosed] = useState(false);
     const open = tickets.filter((t) => !isClosedTicket(t));
@@ -1454,7 +1452,7 @@ function apply(ctx) {
         {shown.map((ticket) => (
           <Row
             key={ticket.id}
-            dot={TICKET_DOT[ticket.status] ?? TICKET_DOT.done}
+            dot={tintOfStatus(ticket.status)}
             label={sidebarTicketLabel(ticket)}
             trailing={ago(ticket.updated_at)}
             menuItems={menu(ticket)}
@@ -1475,10 +1473,10 @@ function apply(ctx) {
   /** The status dot of a project row: its most urgent open ticket, if any. */
   function projectTint(tickets) {
     const open = tickets.filter((ticket) => !isClosedTicket(ticket));
-    if (open.some((ticket) => ticket.status === 'new')) return TICKET_DOT.new;
-    if (open.some((ticket) => ticket.status === 'review')) return TICKET_DOT.review;
-    if (open.some((ticket) => ticket.status === 'in_progress')) return TICKET_DOT.in_progress;
-    return open.length > 0 ? TICKET_DOT.approved : undefined;
+    if (open.some((ticket) => ticket.status === 'new')) return tintOfStatus('new');
+    if (open.some((ticket) => ticket.status === 'review')) return tintOfStatus('review');
+    if (open.some((ticket) => ticket.status === 'in_progress')) return tintOfStatus('in_progress');
+    return open.length > 0 ? tintOfStatus('approved') : undefined;
   }
 
   /**
@@ -1613,13 +1611,7 @@ function apply(ctx) {
       openTicketCount(unsorted) +
       openTicketCount(mine);
     const refresh = (
-      <button
-        type="button"
-        aria-label="Refresh clients"
-        title="Refresh clients"
-        onClick={() => void load()}
-        style={{ width: 24, height: 24, border: 0, borderRadius: 4, background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}
-      >
+      <button type="button" className="pta-iconbtn" aria-label="Refresh clients" title="Refresh clients" onClick={() => void load()}>
         ↻
       </button>
     );
@@ -1640,7 +1632,6 @@ function apply(ctx) {
               expanded={clientExpanded}
               onToggle={(open) => setRowOpen(clientKey, open)}
               onClick={() => openClientPage(client, selectPanel)}
-              menuItems={[{ id: 'open-client', label: 'Open client page', onSelect: () => openClientPage(client, selectPanel) }]}
               children={projects.length > 0 ? projects.map((project, projectIndex) => {
                 const projectKey = `project:${client.id}:${project.id}`;
                 const projectDefault = index === 0 && projectIndex === 0 && project.tickets.length > 0;
@@ -1655,10 +1646,9 @@ function apply(ctx) {
                     expanded={projectExpanded}
                     onToggle={(open) => setRowOpen(projectKey, open)}
                     onClick={() => project.id === '__none__' ? toggleRow(projectKey, projectDefault) : openProjectPage(project, selectPanel)}
-                    menuItems={[
-                      ...(project.id === '__none__' ? [] : [{ id: 'open-project', label: 'Open project', onSelect: () => openProjectPage(project, selectPanel) }]),
-                      ...(project.tickets.length === 0 ? [] : [{ id: 'open-project-tickets', label: 'Show project tickets', onSelect: () => setRowOpen(projectKey, true) }]),
-                    ]}
+                    menuItems={project.tickets.length === 0
+                      ? undefined
+                      : [{ id: 'open-project-tickets', label: 'Show project tickets', onSelect: () => setRowOpen(projectKey, true) }]}
                     children={project.tickets.length > 0
                       ? <TicketList Row={TreeRow} tickets={project.tickets} changed={() => void load()} />
                       : undefined}
@@ -1691,7 +1681,7 @@ function apply(ctx) {
           return (
             <TreeRow
               appearance="group"
-               label="Mine"
+               label="My task"
               badge={openTicketCount(mine) || undefined}
               expanded={expanded}
               onToggle={(open) => setRowOpen(key, open)}
@@ -1836,7 +1826,7 @@ function apply(ctx) {
     return (
       <span ref={root} className="pta-chat-ticket" title={hint}>
         <span className={`pta-chat-ticket__id${titled ? ' pta-sr' : ''}`}>{run.kind === 'task' ? 'Task' : 'Ticket'} #{ticketId}</span>
-        <span className="pta-chat-ticket__status">{status ? (STATUS_TEXT[status] ?? status) : needsRead ? 'Unavailable' : 'Loading…'}</span>
+        <span className="pta-chat-ticket__status">{status ? (STATUS_LABEL[status] ?? status) : needsRead ? 'Unavailable' : 'Loading…'}</span>
         {via ? <span className="pta-tag pta-tag--client" title={assistantBadgeTitle({ assistant_app: assistantApp })}>{via}</span> : null}
         {desktop ? (
           <>
@@ -1939,6 +1929,32 @@ function apply(ctx) {
     .pta-btn--primary{border-color:transparent;background:var(--dsw-alias-brand-primary,#ff5a1f);color:#fff}
     .pta-btn--primary:hover{filter:brightness(1.06);background:var(--dsw-alias-brand-primary,#ff5a1f)}
     .pta-btn--ghost{border-color:transparent;opacity:.72}
+    .pta-btn--danger{border-color:transparent;background:var(--dsw-alias-state-danger-primary,#e5534b);color:#fff}
+    .pta-btn--danger:hover{filter:brightness(1.06);background:var(--dsw-alias-state-danger-primary,#e5534b)}
+    .pta-iconbtn{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:14px;line-height:1;cursor:pointer}
+    .pta-iconbtn:hover{background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.1))}
+    .pta-settings{padding:20px 24px;max-width:680px}
+    .pta-settings h2{margin:0 0 4px;font-size:17px}
+    .pta-settings__intro{margin:0 0 14px;font-size:12.5px;opacity:.65;line-height:1.45}
+    .pta-settings__row{display:flex;align-items:center;gap:16px;padding:14px 0;border-top:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.22))}
+    .pta-settings__label{display:block;font-size:13px}
+    .pta-settings__hint{display:block;margin-top:2px;font-size:12px;opacity:.6}
+    .pta-settings__text{flex:1;min-width:0}
+    .pta-settings__error{margin:10px 0 0;font-size:12px;color:var(--dsw-alias-state-danger-primary,#e5534b)}
+    .pta-switch{display:inline-flex;align-items:center;box-sizing:border-box;width:38px;height:22px;padding:2px;border:0;border-radius:11px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.35));cursor:pointer}
+    .pta-switch[aria-checked=true]{justify-content:flex-end;background:var(--dsw-alias-state-success-primary,#2f9e5b)}
+    .pta-switch:disabled{cursor:wait}
+    .pta-switch__knob{width:18px;height:18px;border-radius:9px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+    .pta-confirm{position:fixed;inset:0;z-index:2147482999;display:grid;place-items:center;padding:20px;background:rgba(0,0,0,.35);pointer-events:auto}
+    .pta-confirm__box{width:min(440px,100%);padding:16px 18px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:12px;background:var(--dsw-alias-bg-elevated,#23252a);box-shadow:0 18px 50px rgba(0,0,0,.35);font-size:13px;line-height:1.45}
+    .pta-confirm__box h3{margin:0 0 6px;font-size:15px}
+    .pta-confirm__box p{margin:0;font-size:12.5px;color:var(--dsw-alias-label-secondary,inherit)}
+    .pta-confirm__actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+    .pta-dot--running{background:var(--dsw-alias-state-success-primary,#2f9e5b)}
+    .pta-dot--danger{background:var(--dsw-alias-state-danger-primary,#e5534b)}
+    .pta-task-row{border-bottom:0;border-radius:6px;padding:6px 8px;align-items:flex-start}
+    .pta-task-row--run{padding:3px 8px 3px 23px;font-size:11.5px}
+    .pta-task-row--more{padding:2px 8px 2px 23px;font-size:11px;opacity:.6}
     .pta-pill{display:inline-flex;align-items:center;height:19px;padding:0 7px;border:1px solid currentColor;border-radius:10px;font-size:10.5px;line-height:1;white-space:nowrap;opacity:.9}
     .pta-empty{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:28px 24px;border:1px dashed var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:12px}
     .pta-empty h3{margin:0;font-size:15px}
@@ -2043,23 +2059,6 @@ function apply(ctx) {
   const MARKETING_PANEL = 'admin-marketing';
   const SEO_PANEL = 'admin-seo';
 
-  const STATUS_TINT = {
-    new: 'var(--dsw-alias-state-warning-primary, #d18f2e)',
-    approved: 'var(--dsw-alias-state-business-primary, #4c8dff)',
-    in_progress: 'var(--dsw-alias-state-success-primary, #2f9e5b)',
-    review: 'var(--dsw-alias-state-business-primary, #4c8dff)',
-    done: 'var(--dsw-alias-label-tertiary, #8a9099)',
-    declined: 'var(--dsw-alias-label-tertiary, #8a9099)',
-  };
-  const STATUS_TEXT = {
-    new: 'Needs approval',
-    approved: 'Approved',
-    in_progress: 'Running',
-    review: 'Review',
-    done: 'Done',
-    declined: 'Declined',
-  };
-  const tintOfStatus = (status) => STATUS_TINT[status] ?? STATUS_TINT.done;
   const ticketLabel = (ticket) => ticket?.title_en || ticket?.title || '(untitled)';
   const dollars = (cents) => (Number.isFinite(Number(cents)) ? `$${(Number(cents) / 100).toFixed(2)}` : '');
   const isWaiting = (ticket) => Boolean(ticket) && Number(ticket?.client_waiting_since ?? 0) > 0 && !isClosedTicket(ticket) && ticket?.status !== 'new';
@@ -2132,22 +2131,28 @@ function apply(ctx) {
     return { ...state, reload: load };
   }
 
-  /** Group one live snapshot into what a person can act on, in urgency order. */
+  /**
+   * Group one live snapshot into what a person can act on, in urgency order.
+   * The ticket buckets come from the shared `needsYou` rule in admin-ui, so the
+   * desktop and the web workbench put a ticket under the same heading. Only the
+   * desktop's run lists (running now, failed runs) are additions after it.
+   */
   function ticketGroups(data) {
     const nowSeconds = Date.now() / 1000;
-    const tickets = Array.isArray(data.tickets) ? data.tickets : [];
-    const queue = Array.isArray(data.queue) ? data.queue : [];
-    const stuck = new Set(
-      queue
-        .filter((item) => !(Array.isArray(item?.eligible) ? item.eligible.length > 0 : Boolean(item?.eligible)))
-        .map((item) => Number(item?.id)),
-    );
+    const shared = needsYou({
+      tickets: Array.isArray(data.tickets) ? data.tickets : [],
+      queue: Array.isArray(data.queue) ? data.queue : [],
+      nodes: [],
+    });
+    // format.js's waiting rule does not exclude finished tickets yet; a done or
+    // declined ticket is never waiting on an answer.
+    const openWaiting = shared.waiting.filter((ticket) => !isClosedTicket(ticket));
     return {
-      approvals: tickets.filter((ticket) => ticket.status === 'new'),
-      reviews: tickets.filter((ticket) => ticket.status === 'review'),
-      waiting: tickets.filter(isWaiting),
-      stalled: tickets.filter((ticket) => ticket.status === 'in_progress' && nowSeconds - Number(ticket.updated_at ?? 0) > 45 * 60),
-      stuck: tickets.filter((ticket) => ticket.status === 'approved' && stuck.has(Number(ticket.id))),
+      approvals: shared.new,
+      reviews: shared.review,
+      waiting: openWaiting,
+      stalled: shared.stalled,
+      stuck: shared.stuck,
       running: Array.isArray(data.running) ? data.running : [],
       failed: (Array.isArray(data.recent) ? data.recent : [])
         .filter((run) => run.status === 'failed' && nowSeconds - Number(run.finished_at ?? 0) < 86_400)
@@ -2181,11 +2186,24 @@ function apply(ctx) {
   /** Set a ticket's status, confirming the moves that email the client. */
   async function changeTicketStatus(ticket, status) {
     const requeue = status === 'approved' && ticket.status !== 'new';
-    if (requeue && !window.confirm(`Queue another Fleet run for #${ticket.id}? This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.`)) return false;
+    if (requeue) {
+      const ok = await confirmAsk({
+        title: `Queue another Fleet run for #${ticket.id}?`,
+        text: 'This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.',
+        confirm: 'Queue another run',
+      });
+      if (!ok) return false;
+    }
     if (!requeue && CLIENT_VISIBLE_STATUSES.has(status) && ticket.kind !== 'system') {
       const who = ticket.client_email || ticket.client_name || 'The client';
       const what = status === 'approved' ? 'Approve' : status === 'declined' ? 'Decline' : 'Mark done';
-      if (!window.confirm(`${what} #${ticket.id}?\n\n${who} is emailed about this change.`)) return false;
+      const ok = await confirmAsk({
+        title: `${what} #${ticket.id}?`,
+        text: `${who} is emailed about this change.`,
+        confirm: what,
+        danger: status === 'declined',
+      });
+      if (!ok) return false;
     }
     await api('PATCH', `/admin/tickets/${ticket.id}`, { status });
     window.dispatchEvent(new CustomEvent('admin:changed', { detail: { kind: 'ticket.status', ticketId: ticket.id } }));
@@ -2232,8 +2250,63 @@ function apply(ctx) {
     const tint = tintOfStatus(status);
     return (
       <span className="pta-pill" style={{ color: tint, borderColor: tint }}>
-        {STATUS_TEXT[status] ?? status ?? 'unknown'}
+        {STATUS_LABEL[status] ?? status ?? 'unknown'}
       </span>
+    );
+  }
+
+  /**
+   * One in-app confirm for every ask that emails a client or restores a
+   * workspace: never the browser's `window.confirm`. The dialog lives in the
+   * frame overlay (`ConfirmHost`), so a confirm survives a page switch; a host
+   * without that slot falls back to the browser dialog rather than losing the ask.
+   */
+  const confirmHost = { open: null };
+  function confirmAsk(ask) {
+    return new Promise((resolve) => {
+      if (!confirmHost.open) {
+        resolve(window.confirm([ask.title, ask.text].filter(Boolean).join('\n\n')));
+        return;
+      }
+      confirmHost.open({ ...ask, resolve });
+    });
+  }
+
+  function ConfirmHost() {
+    const [ask, setAsk] = useState(null);
+    const close = useCallback((answer) => {
+      setAsk((current) => {
+        if (current) current.resolve(answer);
+        return null;
+      });
+    }, []);
+    useEffect(() => {
+      confirmHost.open = (next) => setAsk((current) => {
+        if (current) current.resolve(false);
+        return next;
+      });
+      return () => { confirmHost.open = null; };
+    }, []);
+    useEffect(() => {
+      if (!ask) return undefined;
+      const onKey = (event) => {
+        if (event.key === 'Escape') close(false);
+      };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }, [ask, close]);
+    if (!ask) return null;
+    return (
+      <div className="pta-confirm" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && close(false)}>
+        <div className="pta-confirm__box" role="dialog" aria-modal="true" aria-label={ask.title}>
+          <h3>{ask.title}</h3>
+          {ask.text ? <p>{ask.text}</p> : null}
+          <div className="pta-confirm__actions">
+            <PtaButton onClick={() => close(false)}>Cancel</PtaButton>
+            <PtaButton kind={ask.danger ? 'danger' : 'primary'} onClick={() => close(true)} autoFocus>{ask.confirm ?? 'Confirm'}</PtaButton>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -2258,7 +2331,7 @@ function apply(ctx) {
         <span className="pta-id">#{ticket.id}</span>
         <span className="pta-title" title={ticketLabel(ticket)}>{ticketLabel(ticket)}</span>
         {ticket.kind === 'system'
-          ? <span className="pta-tag">mine</span>
+          ? <span className="pta-tag">My task</span>
           : <span className="pta-tag pta-tag--client" title={ticket.client_email ?? ''}>{ticket.client_email || 'client'}</span>}
         {via ? <span className="pta-tag pta-tag--client" title={assistantBadgeTitle(ticket)}>{via}</span> : null}
         <span className="pta-meta">{ticket.project_name || 'no project'}</span>
@@ -2417,7 +2490,7 @@ function apply(ctx) {
           <header className="pta-head">
             <div>
               <h1>Needs you</h1>
-              <p>{isAuthError(data.code) ? 'Connect PTech Admin to the portal to see what is waiting.' : 'The portal could not be reached.'}</p>
+              <p>{isAuthError(data.code) ? data.error || 'Connect PTech Admin to the portal to see what is waiting.' : 'The portal could not be reached.'}</p>
             </div>
           </header>
           {isAuthError(data.code) ? (
@@ -2429,7 +2502,6 @@ function apply(ctx) {
               <PtaButton onClick={() => void data.reload()}>Try again</PtaButton>
             </div>
           )}
-          <p className="pta-meta" style={{ marginTop: 10 }}>{data.error}</p>
         </div>
       );
     }
@@ -2504,7 +2576,7 @@ function apply(ctx) {
             <div className="pta-rows">
               {groups.running.map((run) => (
                 <button key={run.id} type="button" className="pta-row" onClick={() => void openTicketRun({ id: run.ticket_id, title: run.title })}>
-                  <span className="pta-dot" style={{ background: tintOfStatus('in_progress') }} />
+                  <span className="pta-dot pta-dot--running" />
                   <span className="pta-id">#{run.ticket_id}</span>
                   <span className="pta-title">{run.title || 'run'}</span>
                   <span className="pta-meta">{run.executor}</span>
@@ -2523,7 +2595,7 @@ function apply(ctx) {
             <div className="pta-rows">
               {groups.failed.map((run) => (
                 <button key={run.id} type="button" className="pta-row" onClick={() => void openTicketRun({ id: run.ticket_id, title: run.title })}>
-                  <span className="pta-dot" style={{ background: 'var(--dsw-alias-state-danger-primary, #e5534b)' }} />
+                  <span className="pta-dot pta-dot--danger" />
                   <span className="pta-id">#{run.ticket_id}</span>
                   <span className="pta-title">{run.title || 'run'}</span>
                   <span className="pta-meta">{run.executor}</span>
@@ -2771,8 +2843,14 @@ function apply(ctx) {
       window.addEventListener('focus', refresh);
       return () => window.removeEventListener('focus', refresh);
     }, [result.state, request]);
-    const restore = () => {
-      if (window.confirm('Restore this workspace from its saved commit? Uncommitted edits are not recovered. This does not change the ticket or queue a Fleet run.')) void request('restore');
+    const restore = async () => {
+      const ok = await confirmAsk({
+        title: 'Restore this workspace?',
+        text: 'It is rebuilt from its saved commit. Uncommitted edits are not recovered. This does not change the ticket or queue a Fleet run.',
+        confirm: 'Restore',
+        danger: true,
+      });
+      if (ok) void request('restore');
     };
     const detail = [WORKSPACE_TEXT[result.state], result.reason].filter(Boolean).join(' ');
     const checkable = ['conflict', 'unavailable', 'pending', 'ready'].includes(result.state);
@@ -2782,7 +2860,7 @@ function apply(ctx) {
         <span className="pta-dock__dot" aria-hidden="true" />
         <span role="status">{WORKSPACE_LABEL[result.state] ?? result.state}</span>
       </button>
-      {result.state === 'missing' ? <PtaButton onClick={restore}>Restore</PtaButton> : null}
+      {result.state === 'missing' ? <PtaButton onClick={() => void restore()}>Restore</PtaButton> : null}
     </span>;
   }
 
@@ -2798,7 +2876,8 @@ function apply(ctx) {
       setNotice('');
       setBusy(true);
       try {
-        if (await sendTicketMessage({ api: ticketCommandApi, ticket, mode, text, confirm: message => window.confirm(message) })) {
+        const confirmed = (message) => confirmAsk({ title: 'Email this reply?', text: message, confirm: 'Send reply' });
+        if (await sendTicketMessage({ api: ticketCommandApi, ticket, mode, text, confirm: confirmed })) {
           setText('');
           setNotice(internal ? 'Private note saved.' : 'Email reply sent.');
           window.dispatchEvent(new CustomEvent('admin:changed', { detail: { kind: 'ticket.reply', ticketId: ticket.id } }));
@@ -3085,6 +3164,10 @@ function apply(ctx) {
   // panels and pages and never sits inside a column's scroll container.
   ctx.slots.inject('shell.overlay', () =>
     ctx.slots.register({ name: 'shell.overlay', id: 'admin-notifications', order: 40 }, NotificationHost));
+  // The in-app confirm: one dialog for every ask that emails a client or
+  // restores a workspace, instead of the browser's `window.confirm`.
+  ctx.slots.inject('shell.overlay', () =>
+    ctx.slots.register({ name: 'shell.overlay', id: 'admin-confirm', order: 45 }, ConfirmHost));
   // One page in Settings for the switch the /admin notify command reads.
   ctx.slots.inject('settings.section', () =>
     ctx.slots.register({ name: 'settings.section', id: 'admin', order: 60, label: 'Admin' }, AdminSettingsSection));

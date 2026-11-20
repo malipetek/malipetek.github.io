@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useTicket } from '../../admin-ui/src/store.js';
-import { errorText, when } from '../../admin-ui/src/format.js';
+import { STATUS_LABEL, errorText, when } from '../../admin-ui/src/format.js';
 import { groupByDay, historyEntryType, loadProjectTicketHistory, taskHistoryEvents } from './conversation-history.mjs';
 
 const clock = (unix) => (unix ? new Date(unix * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
 
 export function ConversationHistory({ api, ticketId, openTicket }) {
-  const [{ ticket, messages, runs, loading, error }, reload] = useTicket(api, ticketId);
+  // The host polls the ticket (5s while a run is live, 20s otherwise), so the
+  // task history refreshes itself; the project list below has no poll and reloads by hand.
+  const [{ ticket, messages, runs, loading, error }] = useTicket(api, ticketId);
   const [mode, setMode] = useState('task');
   const projectId = ticket?.project_id;
   const scope = projectId == null ? 'No project' : ticket.project_name || `Project #${projectId}`;
@@ -17,7 +19,6 @@ export function ConversationHistory({ api, ticketId, openTicket }) {
           <button type="button" aria-pressed={mode === 'task'} onClick={() => setMode('task')}>Task #{ticketId}</button>
           <button type="button" aria-pressed={mode === 'project'} onClick={() => setMode('project')} title={scope}>Project</button>
         </div>
-        {(mode === 'task' || loading || error) && <button type="button" className="pta-hist__reload" onClick={reload} title="Reload task history">↻ Reload</button>}
       </div>
       {error ? <p role="alert">Could not load task history. {errorText(error)}</p> : loading && !ticket ? (
         <p role="status">Loading task history…</p>
@@ -73,7 +74,7 @@ function ProjectTickets({ api, projectId, scope, openTicket }) {
     <>
       <div className="pta-hist__bar">
         <h3 className="pta-hist__scope">Recent tickets in {scope}</h3>
-        <button type="button" className="pta-hist__reload" onClick={() => setRevision(value => value + 1)}>↻ Reload project</button>
+        <button type="button" className="pta-hist__reload" onClick={() => setRevision(value => value + 1)}>Reload</button>
       </div>
       {!current ? <p role="status">Loading project tickets…</p> : current.error ? (
         <p role="alert">Could not load project tickets. {errorText(current.error)}</p>
@@ -84,7 +85,7 @@ function ProjectTickets({ api, projectId, scope, openTicket }) {
               <button type="button" onClick={() => openTicket(ticket)}>
                 <span className="pta-hist__tid">#{ticket.id}</span>
                 <span className="pta-hist__ttitle">{ticket.title_en || ticket.title}</span>
-                {ticket.status ? <span className="pta-hist__tstatus">{ticket.status.replace(/_/g, ' ')}</span> : null}
+                {ticket.status ? <span className="pta-hist__tstatus">{STATUS_LABEL[ticket.status] ?? ticket.status.replace(/_/g, ' ')}</span> : null}
                 <time>{when(ticket.updated_at)}</time>
               </button>
             </li>

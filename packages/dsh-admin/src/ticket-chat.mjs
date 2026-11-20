@@ -50,7 +50,8 @@ export function ticketActivity(detail) {
 export async function sendTicketMessage({ api, ticket, mode, text, confirm }) {
   if (!Number.isSafeInteger(ticket?.id) || ticket.id <= 0 || !text.trim() || !['note', 'reply'].includes(mode)) return false;
   const internal = mode === 'note';
-  if (!internal && (!ticket.client_email || ticket.kind === 'system' || !confirm(`Email this reply to ${ticket.client_email}?`))) return false;
+  // `confirm` may answer a Promise (the in-app dialog); a plain boolean still works.
+  if (!internal && (!ticket.client_email || ticket.kind === 'system' || !(await confirm(`Email this reply to ${ticket.client_email}?`)))) return false;
   await api('POST', `/admin/tickets/${ticket.id}/messages`, { body: text.trim(), internal });
   return true;
 }
