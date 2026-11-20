@@ -120,7 +120,7 @@ function makeCommand(ctx) {
  */
 const FALLBACK_READ_MS = 5 * 60_000;
 const BRIDGE_RETRY_MS = 15_000;
-const isRead = (line) => line.startsWith('api GET ') || line === 'localinfo';
+const isRead = (line) => line.startsWith('api GET ') || line === 'localinfo' || line === 'machine-consent get';
 
 /** What to say when every Session refused and the bridge is not up yet. */
 const BUSY_TEXT =

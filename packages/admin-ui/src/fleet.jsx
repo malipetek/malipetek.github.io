@@ -5,6 +5,7 @@ import { useAdmin, usePoll } from './store.js';
 import { EXECUTORS, PRIORITIES, ago, chargeOf, money, priorityName, span, usd } from './format.js';
 import { Button, Chips, Dot, Field, Modal, Segmented, StatusPill, Tag, cx } from './ui.jsx';
 import { SitePanel } from './ticket.jsx';
+import { MachinePanel } from './machine.jsx';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
@@ -130,57 +131,6 @@ function NodeModal({ node, onClose }) {
   );
 }
 
-/** The Harness only: this machine's node, through the Host half. */
-function ThisMachine() {
-  const { host, notify, reload } = useAdmin();
-  const [info, setInfo] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const load = () => host.json('localinfo').then(setInfo, (e) => notify(e.message, 'error'));
-  useEffect(() => {
-    void load();
-    const id = setInterval(load, 15_000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const control = async (verb) => {
-    setBusy(true);
-    const r = await host.command(`node ${verb}`);
-    notify(r.text, r.ok ? 'ok' : 'error');
-    setBusy(false);
-    void load();
-    void reload();
-  };
-  const svc = info?.local?.service;
-  const up = svc?.state === 'running';
-  return (
-    <article className={cx('aw-node', `aw-node--${up ? 'ok' : 'bad'}`)}>
-      <header>
-        <Dot state={up ? 'ok' : 'bad'} />
-        <h3>This machine</h3>
-        <span className="aw-muted">
-          {info ? `${info.localConfig?.nodeId || 'node'} · ${svc?.state ?? 'unknown'}${svc?.pid ? ` · pid ${svc.pid}` : ''}` : 'reading…'}
-        </span>
-        <span className="aw-toolbar__fill" />
-        {svc?.loaded ? (
-          <>
-            <Button size="sm" disabled={busy} onClick={() => control('restart')}>
-              Restart
-            </Button>
-            <Button size="sm" kind="ghost" disabled={busy} onClick={() => control('stop')}>
-              Stop
-            </Button>
-          </>
-        ) : (
-          <Button size="sm" kind="primary" disabled={busy} onClick={() => control(svc ? 'start' : 'install')}>
-            Start
-          </Button>
-        )}
-      </header>
-      {info?.local?.log ? <pre className="aw-log">{info.local.log}</pre> : null}
-    </article>
-  );
-}
-
 export function FleetView() {
   const { data, openTicket, platform, host } = useAdmin();
   return (
@@ -190,7 +140,7 @@ export function FleetView() {
         <p className="aw-muted">Nodes claim approved work they can do: the right project, capabilities and agent.</p>
       </header>
       <div className="aw-nodes">
-        {platform === 'dsh' && host ? <ThisMachine /> : null}
+        {platform === 'dsh' && host ? <MachinePanel /> : null}
         {data.nodes.map((n) => (
           <NodeCard key={n.id} node={n} />
         ))}
