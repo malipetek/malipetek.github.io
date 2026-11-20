@@ -43,7 +43,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { ACCOUNT, DSH_FAMILY, DSH_MODELS, EXECUTORS, agentProfileReady, fallbackChain, findSessionLog, isQuotaError, routeTask, run } from './executors.mjs';
 import { landWork, mainBranch, pushTarget, shareWork } from './share.mjs';
 import { health } from './health.mjs';
-import { buildFollowUp, buildPrompt } from './prompt.mjs';
+import { buildFollowUp, buildPrompt, credentialSection } from './prompt.mjs';
 import { capture } from './shot.mjs';
 
 const VERSION = '2.11.0';
@@ -716,6 +716,42 @@ async function git(cwd, ...args) {
   return res.stdout.trim();
 }
 
+/**
+ * A run's client credentials from /node/runs/:id/credentials. Values are kept
+ * in memory for the agent's environment only; the log names integrations, not
+ * values. Any failure means the run goes on without them.
+ * @returns {{ env: Record<string,string>, integrations: {id:string,label:string,names:string[]}[] }}
+ */
+export async function fetchCredentials(config, claim, ticket, fetchImpl = fetch, say = log) {
+  const none = { env: {}, integrations: [] };
+  if (!claim?.runId) return none;
+  try {
+    const res = await fetchImpl(`${config.endpoint}/node/runs/${claim.runId}/credentials?nodeId=${encodeURIComponent(config.nodeId)}`, {
+      headers: { authorization: `Bearer ${config.token}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    // 404: no project, or a Worker that predates the endpoint.
+    if (res.status === 404) return none;
+    if (!res.ok) {
+      say(`#${ticket?.id} credentials: refused (${res.status})`);
+      return none;
+    }
+    const data = await res.json();
+    const env = {};
+    for (const [name, value] of Object.entries(data?.env ?? {})) {
+      if (/^[A-Z][A-Z0-9_]{0,63}$/.test(name) && typeof value === 'string') env[name] = value;
+    }
+    const integrations = Array.isArray(data?.integrations)
+      ? data.integrations.filter((i) => i && typeof i.label === 'string' && Array.isArray(i.names))
+      : [];
+    if (integrations.length) say(`#${ticket?.id} credentials: ${integrations.map((i) => i.id).join(', ')} (${Object.keys(env).length} vars)`);
+    return { env, integrations };
+  } catch (error) {
+    say(`#${ticket?.id} credentials: unavailable (${error.message})`);
+    return none;
+  }
+}
+
 async function api(config, method, path, body) {
   const res = await fetch(`${config.endpoint}${path}`, {
     method,
@@ -880,7 +916,12 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
 
   // A usage limit is not the task failing: hand the same worktree to the next
   // executor this node runs, skipping any that spends the exhausted account.
-  const prompt = buildPrompt(ticket, attached.messages, previousRuns, checkout);
+  // The client's connected accounts, when the project uses any: the values go
+  // only into the agent's environment, the prompt names them.
+  const credentials = await fetchCredentials(config, claim, ticket);
+  if (credentials.integrations.length) steps.push('node', `Client accounts: ${credentials.integrations.map((i) => i.label).join(', ')}`);
+  const accounts = credentialSection(credentials.integrations);
+  const prompt = [buildPrompt(ticket, attached.messages, previousRuns, checkout), accounts].filter(Boolean).join('\n\n');
   // A rerun continues the ticket's own conversation when it can, so one ticket
   // is one thread in the sidebar rather than one per run.
   const resume = resumableSession(config, previousRuns, dir);
@@ -907,7 +948,8 @@ async function work(config, claim, signal, available = [], steps = stepSink(conf
     const exConfig = config.executors[name] ?? {};
     const resumeSessionId = resume && resume.executor === name ? resume.sessionId : undefined;
     result = await EXECUTORS[name]({
-      prompt: resumeSessionId ? buildFollowUp(ticket, attached.messages, previousRuns, checkout) : prompt,
+      prompt: resumeSessionId ? [buildFollowUp(ticket, attached.messages, previousRuns, checkout), accounts].filter(Boolean).join('\n\n') : prompt,
+      extraEnv: credentials.env,
       resumeSessionId,
       cwd: dir,
       // The sidebar names a session after its system prompt's first line. Make

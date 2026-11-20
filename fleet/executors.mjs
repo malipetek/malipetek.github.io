@@ -37,6 +37,19 @@ import readline from 'node:readline';
  * sees each complete stdout line as it arrives — how a live step log reads an
  * agent's event stream without waiting for it to finish.
  */
+/**
+ * A run's child environment: this process's, plus the client credentials the
+ * run fetched (fleet/node.mjs `fetchCredentials`). The values exist only in the
+ * child's environment; DSH_PASS_ENV names them so the Harness's external agents
+ * (minimal env by default) pass them on. process.env itself is never changed.
+ * @param extra - NAME → value, or undefined.
+ */
+export function runEnv(extra) {
+  const names = extra ? Object.keys(extra) : [];
+  if (!names.length) return { ...process.env };
+  return { ...process.env, ...extra, DSH_PASS_ENV: names.join(',') };
+}
+
 export function run(cmd, args, { cwd, input, signal, env, finishOn, onLine } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd, env: env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -174,7 +187,7 @@ export const CLIENT_TOOLS = [
 /** Ali's own work may run commands — tests, builds — but still not push. */
 export const SYSTEM_TOOLS = [...CLIENT_TOOLS, 'Bash'];
 
-async function claude({ prompt, cwd, system, kind, config, signal, onStep }) {
+async function claude({ prompt, cwd, system, kind, config, signal, onStep, extraEnv }) {
   const tools = kind === 'client' ? config.allowedTools ?? CLIENT_TOOLS : config.systemAllowedTools ?? SYSTEM_TOOLS;
   const args = [
     '-p',
@@ -192,7 +205,7 @@ async function claude({ prompt, cwd, system, kind, config, signal, onStep }) {
     '--max-budget-usd', String(config.maxBudgetUsd ?? 5),
   ];
   if (config.model) args.push('--model', config.model);
-  const res = await run(config.bin ?? 'claude', args, { cwd, input: prompt, signal, onLine: stepLines('claude', onStep) });
+  const res = await run(config.bin ?? 'claude', args, { cwd, input: prompt, signal, env: runEnv(extraEnv), onLine: stepLines('claude', onStep) });
   const result = claudeResult(res.stdout);
   return {
     ok: res.code === 0 && result.is_error !== true,
@@ -247,12 +260,12 @@ async function opencodeAutoFlag(bin) {
   return autoFlags.get(bin);
 }
 
-async function opencode({ prompt, cwd, system, config, signal, onStep }) {
+async function opencode({ prompt, cwd, system, config, signal, onStep, extraEnv }) {
   const args = ['run', '--format', 'json'];
   if (config.auto !== false) args.push(await opencodeAutoFlag(config.bin ?? 'opencode'));
   if (config.model) args.push('-m', config.model);
   args.push(`${system}\n\n${prompt}`);
-  const res = await run(config.bin ?? 'opencode', args, { cwd, signal, onLine: stepLines('opencode', onStep) });
+  const res = await run(config.bin ?? 'opencode', args, { cwd, signal, env: runEnv(extraEnv), onLine: stepLines('opencode', onStep) });
   const texts = [];
   let cost = 0;
   for (const line of res.stdout.split('\n')) {
@@ -453,7 +466,7 @@ function writeOverlay(name, text, config) {
  * the official app's state and the admin build's apart. Unset falls back to the
  * node's own `DSH_HOME`, then the Harness default (~/.dsh).
  */
-async function dsh({ prompt, cwd, system, config, signal, onStep, resumeSessionId }, agent) {
+async function dsh({ prompt, cwd, system, config, signal, onStep, resumeSessionId, extraEnv }, agent) {
   const args = ['--profile', config.profile ?? (agent ? AGENT_PROFILE : 'headless')];
   if (agent) args.push('--patch', writeOverlay(`dsh-agent-${agent}`, dshAgentOverlay(agent, config), config));
   else if (config.provider) args.push('--patch', writeOverlay(`dsh-model-${config.provider}`, dshModelOverlay(config), config));
@@ -464,7 +477,7 @@ async function dsh({ prompt, cwd, system, config, signal, onStep, resumeSessionI
   const dshHome = config.dshHome || process.env.DSH_HOME || join(homedir(), '.dsh');
   const res = await run(config.bin ?? 'dsh', args, {
     cwd,
-    env: { ...process.env, DSH_HOME: dshHome },
+    env: { ...runEnv(extraEnv), DSH_HOME: dshHome },
     // `-` reads the task from stdin, so a long thread stays out of argv.
     input: resumeSessionId ? prompt : `${system}\n\n${prompt}`,
     signal,
@@ -637,8 +650,8 @@ function devinApiKey() {
  * costs a few seconds and buys isolation — the old bridge shared one process
  * and had to grow a stall watchdog to unwedge it.
  */
-async function devin({ prompt, cwd, system, config, signal, onStep }) {
-  const proc = spawn(config.bin ?? 'devin', ['acp'], { cwd, env: process.env });
+async function devin({ prompt, cwd, system, config, signal, onStep, extraEnv }) {
+  const proc = spawn(config.bin ?? 'devin', ['acp'], { cwd, env: runEnv(extraEnv) });
   const pending = new Map();
   let nextId = 1;
   let text = '';

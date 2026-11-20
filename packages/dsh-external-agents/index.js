@@ -231,6 +231,18 @@ export function findCommand(command) {
  * @param allowAnthropicRouting - forward the routing variables in `inherit` mode.
  * @returns the child's environment.
  */
+/**
+ * The extra variable names a run asked to pass to its agent in minimal mode.
+ * @param list - a comma-separated list, as in DSH_PASS_ENV.
+ * @returns valid upper-case names, never a routing key.
+ */
+export function passEnvNames(list) {
+  if (typeof list !== 'string') return [];
+  return [...new Set(list.split(',').map((name) => name.trim()))]
+    .filter((name) => /^[A-Z][A-Z0-9_]{0,63}$/.test(name) && !ROUTING_KEYS.includes(name))
+    .slice(0, 64);
+}
+
 export function buildEnv(mode, extra = {}, allowAnthropicRouting = false) {
   let base;
   if (mode === 'inherit') {
@@ -238,6 +250,12 @@ export function buildEnv(mode, extra = {}, allowAnthropicRouting = false) {
   } else {
     base = {};
     for (const key of MINIMAL_ENV_KEYS) {
+      if (process.env[key] !== undefined) base[key] = process.env[key];
+    }
+    // A fleet run hands the client's connected accounts to its agent by name:
+    // DSH_PASS_ENV lists them (the node sets it next to the values, in this
+    // process's environment only, never on disk). Routing keys never pass.
+    for (const key of passEnvNames(process.env.DSH_PASS_ENV)) {
       if (process.env[key] !== undefined) base[key] = process.env[key];
     }
   }

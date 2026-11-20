@@ -21,6 +21,14 @@
  *   PUT  /node/sites/:slug/deploys/:id/files/:sha   raw bytes of one blob.
  *   POST /node/sites/:slug/deploys/:id/finish  { ticketId?, commitSha? } → all
  *                                   blobs present → preview points at it.
+ *   GET  /node/runs/:runId/credentials?nodeId=…
+ *                                   the run's client integration secrets —
+ *                                   only the fields the project's solutions
+ *                                   use and the client stored, decrypted with
+ *                                   openProjectSecret. Only while the run is
+ *                                   the calling node's and still running; every
+ *                                   successful fetch is written to
+ *                                   credential_access.
  *   POST /node/runs/:runId/result   { ok, summary, branch?, diffStat?, diff?,
  *                                   costUsd?, executor?, model? } → private
  *                                   run note, status → review, Ali gets an email.
@@ -51,6 +59,8 @@ import { finishGuideCycle, finishSeoCycle } from './seo.ts';
 import { createDeploy, finishDeploy, reportSiteRepo } from './sites.ts';
 import { uploadDeployBlob, DEPLOY_LIMITS } from './sites.ts';
 import { cleanRepo, parseBrief } from './setup.ts';
+import { INTEGRATION_CATALOG, integrationsFor, parseSolutions } from './solutions.ts';
+import { openProjectSecret } from './projectAccess.ts';
 
 /** A node creating a repo holds the job this long before another may take it. */
 const REPO_CLAIM_SECONDS = 15 * 60;
@@ -527,9 +537,66 @@ node.post('/node/runs/:runId/release', async (c) => {
 });
 
 /**
- * An attachment on a ticket the node is working on. Only while one of its runs
- * holds the ticket: a node token is not a key to every client's files.
+ * A run's client integration credentials — the narrow, auditable path a fleet
+ * agent has to the client's connected accounts (AWS keys, a Shopify token).
+ * Only the node whose run it is, only while that run is still running (a
+ * finished run is done with the client's accounts), and only the fields of
+ * the integrations the ticket's project uses that the client actually stored.
+ * Every successful fetch — including one that finds nothing — is written to
+ * `credential_access`, which the admin project view reads back.
  */
+node.get('/node/runs/:runId/credentials', async (c) => {
+  const runId = Number(c.req.param('runId'));
+  const nodeId = (c.req.query('nodeId') ?? '').trim().toLowerCase();
+  if (!Number.isInteger(runId) || runId <= 0 || !nodeId) return c.json({ error: 'not_found' }, 404);
+  const run = await c.env.DB.prepare('SELECT ticket_id, node_id, status FROM ticket_runs WHERE id = ?')
+    .bind(runId)
+    .first<{ ticket_id: number; node_id: string | null; status: string }>();
+  if (!run) return c.json({ error: 'not_found' }, 404);
+  // Same identity as /node/runs/:runId/release: the node names itself, and it
+  // must match the run's holder while the run is live.
+  if (run.status !== 'running' || run.node_id !== nodeId) return c.json({ error: 'forbidden' }, 403);
+  const project = await c.env.DB.prepare('SELECT p.id, p.solutions FROM tickets t JOIN projects p ON p.id = t.project_id WHERE t.id = ?')
+    .bind(run.ticket_id)
+    .first<{ id: string; solutions: string }>();
+  // A ticket without a project has no client accounts to hand out.
+  if (!project) return c.json({ error: 'not_found' }, 404);
+
+  // Only what the project's own solutions ask for, and only what the client
+  // actually stored: an integration with no stored field hands out nothing,
+  // and a secret of an integration the project does not use is never read.
+  const catalog = new Map(INTEGRATION_CATALOG.map((entry) => [entry.id, entry]));
+  const wanted = integrationsFor(parseSolutions(project.solutions))
+    .map(({ id }) => catalog.get(id))
+    .filter((entry): entry is (typeof INTEGRATION_CATALOG)[number] => Boolean(entry));
+  const names = [...new Set(wanted.flatMap((entry) => entry.fields.map((field) => field.name)))];
+  const rows = names.length
+    ? (await c.env.DB.prepare(
+        `SELECT name, value_enc FROM project_secrets WHERE project_id = ? AND name IN (${names.map(() => '?').join(', ')})`,
+      ).bind(project.id, ...names).all<{ name: string; value_enc: string }>()).results ?? []
+    : [];
+  if (rows.length && !c.env.SESSION_SECRET) return c.json({ error: 'secrets_unavailable' }, 503);
+  const stored = new Map(rows.map((row) => [row.name, row.value_enc]));
+  const env: Record<string, string> = {};
+  const integrations: { id: string; label: string; names: string[] }[] = [];
+  try {
+    for (const entry of wanted) {
+      const present = entry.fields.map((field) => field.name).filter((name) => stored.has(name));
+      if (!present.length) continue;
+      // A sealed value is bound to its project and name. One row that cannot
+      // be opened fails the whole fetch rather than handing out a partial set.
+      for (const name of present) env[name] = await openProjectSecret(c.env, project.id, name, stored.get(name)!);
+      integrations.push({ id: entry.id, label: entry.label, names: present });
+    }
+  } catch {
+    return c.json({ error: 'secrets_unavailable' }, 503);
+  }
+  await c.env.DB.prepare('INSERT INTO credential_access (project_id, run_id, node_id, integrations, at) VALUES (?, ?, ?, ?, ?)')
+    .bind(project.id, runId, nodeId, JSON.stringify(integrations.map((entry) => entry.id)), now())
+    .run();
+  c.header('Cache-Control', 'no-store');
+  return c.json({ env, integrations });
+});
 node.get('/node/tickets/:ticketId/files/:fileId', async (c) => {
   const ticketId = Number(c.req.param('ticketId'));
   const nodeId = (c.req.query('nodeId') ?? '').trim().toLowerCase();
