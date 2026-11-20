@@ -6812,6 +6812,15 @@ button.aw-file:hover { border-color: currentColor; }
   --aw-w-warn-soft: color-mix(in srgb, var(--aw-w-warn) 24%, var(--aw-w-surface));
 }
 .aw-world__journeys { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+.aw-world__drift { margin: 0 0 6px; font-size: 12px; }
+.aw-world__drift-toggle { appearance: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--aw-warn, #d99a16) 45%, transparent); background: color-mix(in srgb, var(--aw-warn, #d99a16) 12%, transparent); color: var(--aw-text, inherit); font: inherit; cursor: pointer; }
+.aw-world__drift-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--aw-warn, #d99a16); }
+.aw-world__drift-list { list-style: none; margin: 4px 0 0; padding: 0 0 0 4px; display: grid; gap: 2px; }
+.aw-world__drift-list li { display: flex; align-items: baseline; gap: 8px; }
+.aw-world__drift-item { appearance: none; border: 0; background: none; padding: 0; color: var(--aw-text, inherit); font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+span.aw-world__drift-item { cursor: default; color: var(--aw-text2, inherit); }
+button.aw-world__drift-item:hover { text-decoration: underline; }
+.aw-world__drift-age { flex: 0 0 auto; color: var(--aw-warn, #d99a16); font-variant-numeric: tabular-nums; }
 .aw-world__journey-pill { appearance: none; display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font: inherit; font-size: 11px; line-height: 1.4; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .aw-world__journey-pill[aria-pressed="true"] { border-color: color-mix(in srgb, var(--aw-w-accent) 60%, var(--aw-w-rule)); background: var(--aw-w-tint); color: var(--aw-w-ink); }
 .aw-world__journey-pill.is-all { border-style: dashed; }
@@ -7809,6 +7818,56 @@ button.aw-file:hover { border-color: currentColor; }
     }
     return pills;
   }
+  function spanShort(ms) {
+    const s = Math.max(0, Math.floor(ms / 1e3));
+    if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h`;
+    return `${Math.floor(s / 86400)}d`;
+  }
+  function unshippedPreview({ project = null, sites = [], deploys = null, tickets = [], t = (k) => k, now } = {}) {
+    const site = pickSite(project, sites);
+    if (!site || site.state !== "ready" || !site.previewDeploy) return null;
+    if (site.productionDeploy && String(site.previewDeploy) === String(site.productionDeploy)) return null;
+    const list = (Array.isArray(deploys) ? deploys : []).filter((d) => d && d.id !== void 0 && d.id !== null);
+    const at = (d) => normalizeTimestampMs(d?.created_at) ?? 0;
+    const preview = list.find((d) => String(d.id) === String(site.previewDeploy));
+    if (!preview) return null;
+    const live = site.productionDeploy ? list.find((d) => String(d.id) === String(site.productionDeploy)) : null;
+    if (site.productionDeploy && !live) return null;
+    const from = live ? at(live) : -Infinity;
+    const nowMs = normalizeTimestampMs(now) ?? Date.now();
+    const byTicket = new Map((Array.isArray(tickets) ? tickets : []).filter(Boolean).map((tk) => [String(tk.id), tk]));
+    const seen = /* @__PURE__ */ new Set();
+    const items = [];
+    for (const d of [...list].sort((a, b) => at(b) - at(a))) {
+      if (at(d) <= from || at(d) > at(preview)) continue;
+      const hasTicket = d.ticket_id !== null && d.ticket_id !== void 0;
+      const key = hasTicket ? `t:${d.ticket_id}` : `d:${d.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const tk = hasTicket ? byTicket.get(String(d.ticket_id)) : null;
+      const title = hasTicket ? cleanString(tk?.title) ? `#${d.ticket_id} ${cleanString(tk.title)}` : `#${d.ticket_id}` : tx(t, "world.drift.direct", "Direct site update");
+      items.push({ key, ticketId: hasTicket ? d.ticket_id : null, title, stamp: at(d), age: at(d) ? spanShort(nowMs - at(d)) : null });
+    }
+    if (!items.length) return null;
+    let rows = items;
+    const direct = items.filter((i) => i.ticketId === null);
+    if (direct.length > 1) {
+      const first = items.indexOf(direct[0]);
+      const oldestDirect = direct.reduce((a, b) => b.stamp && (!a.stamp || b.stamp < a.stamp) ? b : a);
+      const folded = { ...oldestDirect, key: "direct", title: tx(t, "world.drift.directMany", "{n} direct site updates", { n: direct.length }) };
+      const rest = items.filter((i) => i.ticketId !== null);
+      rest.splice(first, 0, folded);
+      rows = rest;
+    }
+    const oldest = items.reduce((a, b) => b.stamp && (!a.stamp || b.stamp < a.stamp) ? b : a);
+    const parts = [tx(t, items.length === 1 ? "world.drift.one" : "world.drift.many", items.length === 1 ? "1 change on preview" : "{n} changes on preview", { n: items.length })];
+    if (oldest.stamp) {
+      const age = spanShort(nowMs - oldest.stamp);
+      parts.push(oldest.ticketId !== null ? tx(t, "world.drift.sinceTicket", "unshipped {age} (since #{id})", { age, id: oldest.ticketId }) : tx(t, "world.drift.since", "unshipped {age}", { age }));
+    }
+    return { count: items.length, text: parts.join(" \xB7 "), items: rows.map(({ stamp, ...rest }) => rest) };
+  }
 
   // packages/admin-ui/src/project-world.jsx
   var VIEW_WIDTH = 760;
@@ -8251,6 +8310,22 @@ button.aw-file:hover { border-color: currentColor; }
     if (station.meta?.stalled != null) parts.push(`Stalled: ${station.meta.stalled}`);
     return parts.length ? ` Operator: ${parts.join(", ")}.` : "";
   }
+  function DriftLine({ drift, onPick, t }) {
+    const [open, setOpen] = useState(false);
+    if (!drift) return null;
+    return /* @__PURE__ */ jsxs("div", { className: "aw-world__drift", role: "status", children: [
+      /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-world__drift-toggle", "aria-expanded": open, onClick: () => setOpen((v) => !v), children: [
+        /* @__PURE__ */ jsx("span", { className: "aw-world__drift-dot", "aria-hidden": "true" }),
+        drift.text,
+        " ",
+        open ? "\u25B4" : "\u25BE"
+      ] }),
+      open ? /* @__PURE__ */ jsx("ul", { className: "aw-world__drift-list", children: drift.items.map((item) => /* @__PURE__ */ jsxs("li", { children: [
+        item.ticketId !== null ? /* @__PURE__ */ jsx("button", { type: "button", className: "aw-world__drift-item", onClick: () => onPick?.(item.ticketId), children: item.title }) : /* @__PURE__ */ jsx("span", { className: "aw-world__drift-item", children: item.title }),
+        item.age ? /* @__PURE__ */ jsx("span", { className: "aw-world__drift-age", children: tx(t, "world.drift.onPreview", "On preview {age}", { age: item.age }) }) : null
+      ] }, item.key)) }) : null
+    ] });
+  }
   function ProjectWorld({
     project,
     sites = [],
@@ -8270,6 +8345,10 @@ button.aw-file:hover { border-color: currentColor; }
       [stations]
     );
     const cables = useMemo(() => cablesFor(stations), [stations]);
+    const drift = useMemo(
+      () => unshippedPreview({ project, sites, deploys, tickets: tickets ?? [], t, now }),
+      [project, sites, deploys, tickets, t, now]
+    );
     const dots = useMemo(() => floorDots(stations, 0.42), [stations]);
     const [selectedKey, setSelectedKey] = useState(initialStation);
     const [journeyId, setJourneyId] = useState(void 0);
@@ -8328,6 +8407,7 @@ button.aw-file:hover { border-color: currentColor; }
           }
         )
       ] }) : null,
+      /* @__PURE__ */ jsx(DriftLine, { drift, onPick: (id) => setJourneyId(id), t }),
       /* @__PURE__ */ jsxs("figure", { className: "aw-world", children: [
         /* @__PURE__ */ jsx("div", { className: "aw-world__stage", children: /* @__PURE__ */ jsxs(
           "svg",
@@ -8732,7 +8812,7 @@ button.aw-file:hover { border-color: currentColor; }
     ] }, id);
   }
   function Overview({ project, refresh, setTab }) {
-    const { data } = useAdmin();
+    const { data, api } = useAdmin();
     const work = projectWork(data.tickets, project.id);
     const projectTickets = useMemo(
       () => (data.tickets ?? []).filter((ticket) => ticket && ticket.project_id != null && String(ticket.project_id) === String(project.id)),
@@ -8742,10 +8822,17 @@ button.aw-file:hover { border-color: currentColor; }
       () => Array.isArray(project.sites) && project.sites.length ? project.sites : project.site ? [project.site] : [],
       [project.sites, project.site]
     );
+    const deploySiteId = sites.find((site) => site?.state === "ready" && site?.id)?.id ?? null;
+    const loadDeploys = useCallback(
+      () => deploySiteId ? api("GET", `${pathFor(project)}/site/deploys?siteId=${encodeURIComponent(deploySiteId)}`) : Promise.resolve(null),
+      [api, project.id, deploySiteId]
+    );
+    const [deployState] = useProjectResource(loadDeploys);
+    const deploys = Array.isArray(deployState.value?.deploys) ? deployState.value.deploys : null;
     const active = work.filter((ticket) => !["done", "declined"].includes(ticket.status));
     const review = active.filter((ticket) => ticket.status === "review");
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsx("section", { className: "aw-project__section aw-project__world", "aria-label": "Project world", children: /* @__PURE__ */ jsx(ProjectWorld, { project, sites, tickets: projectTickets }) }),
+      /* @__PURE__ */ jsx("section", { className: "aw-project__section aw-project__world", "aria-label": "Project world", children: /* @__PURE__ */ jsx(ProjectWorld, { project, sites, tickets: projectTickets, deploys }) }),
       /* @__PURE__ */ jsxs("div", { className: "aw-project__overview", children: [
         /* @__PURE__ */ jsx("section", { className: "aw-project__section", children: /* @__PURE__ */ jsx(Brief, { project, refresh }) }),
         /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [

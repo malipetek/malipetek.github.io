@@ -29,6 +29,7 @@ import {
   journeyPillTickets,
   stationsFor,
   tx,
+  unshippedPreview,
 } from './project-world-model.mjs';
 
 const VIEW_WIDTH = 760;
@@ -602,6 +603,34 @@ function operatorSummaryText(station) {
   return parts.length ? ` Operator: ${parts.join(', ')}.` : '';
 }
 
+/** Changes on the preview that production does not have yet; the list opens on demand. */
+function DriftLine({ drift, onPick, t }) {
+  const [open, setOpen] = useState(false);
+  if (!drift) return null;
+  return (
+    <div className="aw-world__drift" role="status">
+      <button type="button" className="aw-world__drift-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span className="aw-world__drift-dot" aria-hidden="true" />
+        {drift.text} {open ? '▴' : '▾'}
+      </button>
+      {open ? (
+        <ul className="aw-world__drift-list">
+          {drift.items.map((item) => (
+            <li key={item.key}>
+              {item.ticketId !== null ? (
+                <button type="button" className="aw-world__drift-item" onClick={() => onPick?.(item.ticketId)}>{item.title}</button>
+              ) : (
+                <span className="aw-world__drift-item">{item.title}</span>
+              )}
+              {item.age ? <span className="aw-world__drift-age">{tx(t, 'world.drift.onPreview', 'On preview {age}', { age: item.age })}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Interactive isometric "project world" map for the admin project overview.
  * No browser HTTPS probe is performed.
@@ -628,6 +657,10 @@ export function ProjectWorld({
   );
 
   const cables = useMemo(() => cablesFor(stations), [stations]);
+  const drift = useMemo(
+    () => unshippedPreview({ project, sites, deploys, tickets: tickets ?? [], t, now }),
+    [project, sites, deploys, tickets, t, now],
+  );
   const dots = useMemo(() => floorDots(stations, 0.42), [stations]);
 
   const [selectedKey, setSelectedKey] = useState(initialStation);
@@ -700,6 +733,7 @@ export function ProjectWorld({
           </button>
         </div>
       ) : null}
+      <DriftLine drift={drift} onPick={(id) => setJourneyId(id)} t={t} />
       <figure className="aw-world">
         <div className="aw-world__stage">
           <svg

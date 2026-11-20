@@ -57,6 +57,10 @@ export function renderProjectOverview(){
 export function renderProjectWorldStandalone(initialStation='hosting'){
   return renderToStaticMarkup(React.createElement(ProjectWorld,{project:sampleProject,sites:sampleProject.sites,tickets:sampleTickets.filter(t=>t.project_id==='p-world'),now:sampleNow,initialStation}));
 }
+export function renderProjectWorldWithDeploys(){
+  const deploys=[{id:'d2',created_at:Math.floor((sampleNow-4*3600_000)/1000),ticket_id:11},{id:'d1',created_at:Math.floor((sampleNow-3*86400_000)/1000)}];
+  return renderToStaticMarkup(React.createElement(ProjectWorld,{project:sampleProject,sites:sampleProject.sites,tickets:sampleTickets.filter(t=>t.project_id==='p-world'),deploys,now:sampleNow}));
+}
 const evidenceRuns=[{id:73,status:'ok',executor:'dsh-go',verify_ok:null,summary:'**What I did** - Fetched \\\`https://example.test\\\` and fixed [the bug](https://example.test/b).\\n\\n- added the guard\\n- kept the path <script>alert(1)</script>'},{id:72,status:'failed',executor:'dsh-go'}];
 export function renderEvidence(open){return renderToStaticMarkup(React.createElement(RecordedEvidence,{runs:evidenceRuns,review:{runId:73,verdict:'attention',headline:'Tighten the retry loop'},initialOpen:open}));}
 `;
@@ -142,4 +146,12 @@ test('ProjectWorld follows the most recent open request, as the client sees it',
   assert.match(html,/aw-world__station--hosting[^"]*is-journey-ahead/);
   assert.doesNotMatch(html,/\bNaN\b/);
   assert.doesNotMatch(html,/\bundefined\b/);
+});
+
+test('the map names changes on the preview that are not live yet, and stays quiet without history',()=>{
+  const html=rendered.renderProjectWorldWithDeploys();
+  assert.match(html,/class="aw-world__drift"/);
+  assert.match(html,/1 change on preview · unshipped 4h \(since #11\)/);
+  assert.doesNotMatch(html,/\bNaN\b|\bundefined\b/);
+  assert.doesNotMatch(rendered.renderProjectWorldStandalone('hosting'),/aw-world__drift/);
 });

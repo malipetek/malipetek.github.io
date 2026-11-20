@@ -716,6 +716,15 @@ button.aw-file:hover { border-color: currentColor; }
   --aw-w-warn-soft: color-mix(in srgb, var(--aw-w-warn) 24%, var(--aw-w-surface));
 }
 .aw-world__journeys { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+.aw-world__drift { margin: 0 0 6px; font-size: 12px; }
+.aw-world__drift-toggle { appearance: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--aw-warn, #d99a16) 45%, transparent); background: color-mix(in srgb, var(--aw-warn, #d99a16) 12%, transparent); color: var(--aw-text, inherit); font: inherit; cursor: pointer; }
+.aw-world__drift-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--aw-warn, #d99a16); }
+.aw-world__drift-list { list-style: none; margin: 4px 0 0; padding: 0 0 0 4px; display: grid; gap: 2px; }
+.aw-world__drift-list li { display: flex; align-items: baseline; gap: 8px; }
+.aw-world__drift-item { appearance: none; border: 0; background: none; padding: 0; color: var(--aw-text, inherit); font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+span.aw-world__drift-item { cursor: default; color: var(--aw-text2, inherit); }
+button.aw-world__drift-item:hover { text-decoration: underline; }
+.aw-world__drift-age { flex: 0 0 auto; color: var(--aw-warn, #d99a16); font-variant-numeric: tabular-nums; }
 .aw-world__journey-pill { appearance: none; display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font: inherit; font-size: 11px; line-height: 1.4; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .aw-world__journey-pill[aria-pressed="true"] { border-color: color-mix(in srgb, var(--aw-w-accent) 60%, var(--aw-w-rule)); background: var(--aw-w-tint); color: var(--aw-w-ink); }
 .aw-world__journey-pill.is-all { border-style: dashed; }

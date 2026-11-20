@@ -1179,3 +1179,70 @@ export function agentReceipt(project, tickets, { t = (k) => k } = {}) {
   }
   return parts.join(' · ');
 }
+
+/* ————— unshipped preview: what is on the preview and not live yet ————— */
+
+function spanShort(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
+/**
+ * The operator's view of preview drift: every change on the site's preview
+ * that production does not have yet, one row per request (newest first), and
+ * how long the oldest of them has waited to ship.
+ *   { count, text: "2 changes on preview · unshipped 4h (since #42)", items }
+ * Null when preview and live are the same version, when the site is not
+ * ready, or when the deploy history cannot place both versions.
+ */
+export function unshippedPreview({ project = null, sites = [], deploys = null, tickets = [], t = (k) => k, now } = {}) {
+  const site = pickSite(project, sites);
+  if (!site || site.state !== 'ready' || !site.previewDeploy) return null;
+  if (site.productionDeploy && String(site.previewDeploy) === String(site.productionDeploy)) return null;
+  const list = (Array.isArray(deploys) ? deploys : []).filter((d) => d && d.id !== undefined && d.id !== null);
+  const at = (d) => normalizeTimestampMs(d?.created_at) ?? 0;
+  const preview = list.find((d) => String(d.id) === String(site.previewDeploy));
+  if (!preview) return null;
+  const live = site.productionDeploy ? list.find((d) => String(d.id) === String(site.productionDeploy)) : null;
+  if (site.productionDeploy && !live) return null;
+  const from = live ? at(live) : -Infinity;
+  const nowMs = normalizeTimestampMs(now) ?? Date.now();
+  const byTicket = new Map((Array.isArray(tickets) ? tickets : []).filter(Boolean).map((tk) => [String(tk.id), tk]));
+  const seen = new Set();
+  const items = [];
+  for (const d of [...list].sort((a, b) => at(b) - at(a))) {
+    if (at(d) <= from || at(d) > at(preview)) continue;
+    const hasTicket = d.ticket_id !== null && d.ticket_id !== undefined;
+    const key = hasTicket ? `t:${d.ticket_id}` : `d:${d.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const tk = hasTicket ? byTicket.get(String(d.ticket_id)) : null;
+    const title = hasTicket
+      ? (cleanString(tk?.title) ? `#${d.ticket_id} ${cleanString(tk.title)}` : `#${d.ticket_id}`)
+      : tx(t, 'world.drift.direct', 'Direct site update');
+    items.push({ key, ticketId: hasTicket ? d.ticket_id : null, title, stamp: at(d), age: at(d) ? spanShort(nowMs - at(d)) : null });
+  }
+  if (!items.length) return null;
+  // Direct updates (no request behind them) fold into one row, newest position, oldest age.
+  let rows = items;
+  const direct = items.filter((i) => i.ticketId === null);
+  if (direct.length > 1) {
+    const first = items.indexOf(direct[0]);
+    const oldestDirect = direct.reduce((a, b) => (b.stamp && (!a.stamp || b.stamp < a.stamp) ? b : a));
+    const folded = { ...oldestDirect, key: 'direct', title: tx(t, 'world.drift.directMany', '{n} direct site updates', { n: direct.length }) };
+    const rest = items.filter((i) => i.ticketId !== null);
+    rest.splice(first, 0, folded);
+    rows = rest;
+  }
+  const oldest = items.reduce((a, b) => (b.stamp && (!a.stamp || b.stamp < a.stamp) ? b : a));
+  const parts = [tx(t, items.length === 1 ? 'world.drift.one' : 'world.drift.many', items.length === 1 ? '1 change on preview' : '{n} changes on preview', { n: items.length })];
+  if (oldest.stamp) {
+    const age = spanShort(nowMs - oldest.stamp);
+    parts.push(oldest.ticketId !== null
+      ? tx(t, 'world.drift.sinceTicket', 'unshipped {age} (since #{id})', { age, id: oldest.ticketId })
+      : tx(t, 'world.drift.since', 'unshipped {age}', { age }));
+  }
+  return { count: items.length, text: parts.join(' · '), items: rows.map(({ stamp, ...rest }) => rest) };
+}

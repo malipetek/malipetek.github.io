@@ -93,7 +93,7 @@ export function ProjectView({id}) {
 }
 
 function Overview({project, refresh, setTab}) {
-  const {data} = useAdmin();
+  const {data, api} = useAdmin();
   const work = projectWork(data.tickets, project.id);
   const projectTickets = useMemo(
     () => (data.tickets ?? []).filter(ticket => ticket && ticket.project_id != null && String(ticket.project_id) === String(project.id)),
@@ -103,11 +103,19 @@ function Overview({project, refresh, setTab}) {
     () => (Array.isArray(project.sites) && project.sites.length ? project.sites : project.site ? [project.site] : []),
     [project.sites, project.site],
   );
+  // The ready site's deploy history lets the map place preview vs live and list unshipped changes.
+  const deploySiteId = sites.find(site => site?.state === 'ready' && site?.id)?.id ?? null;
+  const loadDeploys = useCallback(
+    () => (deploySiteId ? api('GET', `${pathFor(project)}/site/deploys?siteId=${encodeURIComponent(deploySiteId)}`) : Promise.resolve(null)),
+    [api, project.id, deploySiteId],
+  );
+  const [deployState] = useProjectResource(loadDeploys);
+  const deploys = Array.isArray(deployState.value?.deploys) ? deployState.value.deploys : null;
   const active = work.filter(ticket => !['done','declined'].includes(ticket.status));
   const review = active.filter(ticket => ticket.status === 'review');
   return <>
     <section className="aw-project__section aw-project__world" aria-label="Project world">
-      <ProjectWorld project={project} sites={sites} tickets={projectTickets} />
+      <ProjectWorld project={project} sites={sites} tickets={projectTickets} deploys={deploys} />
     </section>
     <div className="aw-project__overview">
       <section className="aw-project__section"><Brief project={project} refresh={refresh} /></section>
