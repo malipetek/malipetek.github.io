@@ -885,4 +885,27 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-psol__tags { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .aw-psol__steps { margin: 0 0 10px; padding-left: 20px; }
 .aw-psol__steps li { margin: 3px 0; font-size: 12px; color: var(--aw-text2); }
+
+/* shell */
+.aw-tablist { display: flex; flex: 1; align-items: stretch; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.aw-tablist::-webkit-scrollbar { display: none; }
+.aw-tabs__toggle { flex: none; height: 100%; padding: 0 9px; border: 0; border-right: 1px solid var(--aw-border); border-radius: 0; color: var(--aw-text2); }
+.aw-tabs__toggle:hover:not(:disabled) { background: var(--aw-hover); color: var(--aw-text); }
+.aw-tab:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: -2px; }
+.aw-tab__close:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: -1px; }
+.aw-banner { position: absolute; z-index: 5; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: color-mix(in srgb, var(--aw-bad) 12%, var(--aw-bg)); border-bottom: 1px solid color-mix(in srgb, var(--aw-bad) 45%, var(--aw-border)); color: var(--aw-text); font-size: 12px; }
+.aw-banner > span { flex: 1; min-width: 0; }
+.aw-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--aw-text2); font-size: 12px; }
+.aw-spinner { width: 14px; height: 14px; border: 2px solid var(--aw-border2); border-top-color: var(--aw-accent); border-radius: 50%; animation: aw-spin .7s linear infinite; }
+@keyframes aw-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .aw-spinner { animation-duration: 2.4s; } }
+.aw-toast { display: flex; align-items: flex-start; gap: 10px; }
+.aw-toast__close { flex: none; border: 0; background: none; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; opacity: .75; }
+.aw-toast__close:hover { opacity: 1; }
+.aw-palette__count { margin: 2px 12px 8px; color: var(--aw-text2); font-size: 11px; }
+.aw-drawer-scrim { position: fixed; inset: 0; z-index: 59; background: rgba(0, 0, 0, .28); }
+@media (max-width: 900px) {
+  .aw-explorer--drawer { display: block; position: fixed; z-index: 60; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); padding-top: 8px; box-shadow: 0 0 40px rgba(0, 0, 0, .3); }
+  .aw--inset .aw-explorer--drawer { padding-top: 44px; }
+}
 `;

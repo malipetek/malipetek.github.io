@@ -29,18 +29,25 @@ const VIEWS = [
   { key: 'list', label: 'All work', icon: 'list' },
   { key: 'marketing', label: 'Marketing', icon: 'megaphone' },
   { key: 'seo', label: 'SEO', icon: 'seo' },
-  { key: 'health', label: 'Health', icon: 'pulse' },
   { key: 'fleet', label: 'Fleet', icon: 'fleet' },
-  { key: 'clients', label: 'Clients & projects', icon: 'clients' },
+  { key: 'clients', label: 'Clients', icon: 'clients' },
   { key: 'settings', label: 'Settings', icon: 'settings' },
 ];
 const viewOf = (key) => VIEWS.find((v) => v.key === key);
+// Health is folded into Fleet: an old tab or hash still lands somewhere.
+const aliasView = (key) => (key === 'health' ? 'fleet' : key);
 const TABS_KEY = 'aw-tabs-v1';
+const NARROW_WIDTH = '(max-width: 900px)';
+const domId = (prefix, key) => `${prefix}-${String(key).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 
 function loadTabs() {
   try {
     const saved = JSON.parse(localStorage.getItem(TABS_KEY) ?? 'null');
-    if (saved && Array.isArray(saved.tabs) && saved.tabs.length) return saved;
+    if (saved && Array.isArray(saved.tabs) && saved.tabs.length) {
+      const tabs = saved.tabs.map(aliasView);
+      const active = aliasView(saved.active ?? tabs[0]);
+      return { tabs, active: tabs.includes(active) ? active : tabs[0] };
+    }
   } catch {
     /* fresh */
   }
@@ -76,63 +83,22 @@ function useUnderWindowButtons(ref, enabled) {
   return under;
 }
 
-export function AdminApp({ api, platform = 'web', host = null, fullscreen = false, files = null }) {
-  const rootRef = useRef(null);
-  const underButtons = useUnderWindowButtons(rootRef, platform === 'dsh');
-  const [data, reload] = useAdminData(api);
-  const [{ tabs, active }, setTabs] = useState(loadTabs);
-  const [boardProject, setBoardProject] = useState('all');
-  const [modal, setModal] = useState(null);
-  const [ask, setAsk] = useState(null);
+/**
+ * The actions every admin surface shares: report a result as a toast, confirm a
+ * client-visible status change, and reload after either. One implementation, so
+ * the shell, a standalone project page and a ticket pane cannot drift.
+ */
+function useWorkbenchActions({ api, reload, setAsk, onNotify }) {
   const [toast, setToast] = useState(null);
-  const [palette, setPalette] = useState(false);
-  const [sidebar, setSidebar] = useState(true);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(TABS_KEY, JSON.stringify({ tabs, active }));
-    } catch {
-      /* private mode */
-    }
-  }, [tabs, active]);
-
-  const open = useCallback((key) => {
-    if (key.startsWith('p:') && host?.openProject) return host.openProject(key.slice(2));
-    setTabs((s) => ({ tabs: s.tabs.includes(key) ? s.tabs : [...s.tabs, key], active: key }));
-  }, [host]);
-  const close = useCallback(
-    (key) =>
-      setTabs((s) => {
-        const i = s.tabs.indexOf(key);
-        const next = s.tabs.filter((t) => t !== key);
-        if (!next.length) return { tabs: ['inbox'], active: 'inbox' };
-        return { tabs: next, active: s.active === key ? next[Math.max(0, i - 1)] : s.active };
-      }),
-    [],
-  );
-  const openTicket = useCallback((id) => open(`t:${id}`), [open]);
-
-  // Links in Ali's notification mail end in #ticket=<id>: open that ticket.
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-    const fromHash = () => {
-      const hash = window.location.hash.slice(1);
-      const destination = destinationFromHash(hash);
-      if (destination) open(destination);
-      // Notification mail links to #marketing; a view name is a valid target too.
-      if (viewOf(hash)) open(hash);
-    };
-    fromHash();
-    window.addEventListener('hashchange', fromHash);
-    return () => window.removeEventListener('hashchange', fromHash);
-  }, [open, openTicket]);
-
   const notify = useCallback((text, kind = 'ok') => {
     setToast({ text, kind, at: Date.now() });
-  }, []);
+    onNotify?.(text, kind);
+  }, [onNotify]);
+  const dismissToast = useCallback(() => setToast(null), []);
   useEffect(() => {
-    if (!toast) return undefined;
-    const id = setTimeout(() => setToast(null), toast.kind === 'error' ? 8000 : 3500);
+    // An error stays until dismissed; a result goes away on its own.
+    if (!toast || toast.kind === 'error') return undefined;
+    const id = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(id);
   }, [toast]);
 
@@ -160,7 +126,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
         return new Promise((resolve) =>
           setAsk({
             title: `${STATUS_LABEL[status]}: #${ticket.id}?`,
-            text: `${ticket.client_email ?? 'The client'} is emailed about this change.`,
+            text: `${ticket.client_email ?? ticket.clientEmail ?? 'The client'} is emailed about this change.`,
             confirm: STATUS_LABEL[status],
             run: () => run().then(resolve, resolve),
           }),
@@ -168,24 +134,132 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
       }
       return run().catch(() => undefined);
     },
-    [act, api],
+    [act, api, setAsk],
   );
 
-  // ⌘K / Ctrl+K: the palette. ⌘B: the explorer.
+  return { notify, act, setStatus, toast, dismissToast };
+}
+
+/** One result line: an error stays until dismissed, anything else times out. */
+function Toast({ toast, onDismiss }) {
+  if (!toast) return null;
+  return (
+    <div className={cx('aw-toast', toast.kind === 'error' && 'is-error')} role={toast.kind === 'error' ? 'alert' : 'status'}>
+      <span>{toast.text}</span>
+      <button type="button" className="aw-toast__close" aria-label="Dismiss" onClick={onDismiss}>
+        ×
+      </button>
+    </div>
+  );
+}
+
+export function AdminApp({ api, platform = 'web', host = null, fullscreen = false, files = null }) {
+  const rootRef = useRef(null);
+  const underButtons = useUnderWindowButtons(rootRef, platform === 'dsh');
+  const [data, reload] = useAdminData(api);
+  const [{ tabs, active }, setTabs] = useState(loadTabs);
+  const [boardProject, setBoardProject] = useState('all');
+  const [modal, setModal] = useState(null);
+  const [ask, setAsk] = useState(null);
+  const [palette, setPalette] = useState(false);
+  const [sidebar, setSidebar] = useState(true);
+  const [drawer, setDrawer] = useState(false);
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && Boolean(window.matchMedia?.(NARROW_WIDTH).matches));
+  const tabRefs = useRef({});
+  const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk });
+  const signedOut = data.error && ['unauthorized', 'signed_out', 'forbidden'].includes(data.error.code);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(TABS_KEY, JSON.stringify({ tabs, active }));
+    } catch {
+      /* private mode */
+    }
+  }, [tabs, active]);
+
+  // The explorer is a column on a wide window and an overlay drawer on a narrow one.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+    const query = window.matchMedia(NARROW_WIDTH);
+    const sync = () => setNarrow(query.matches);
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
+
+  const open = useCallback((key) => {
+    const target = aliasView(key);
+    if (!target) return undefined;
+    setDrawer(false);
+    if (target.startsWith('p:') && host?.openProject) return host.openProject(target.slice(2));
+    setTabs((s) => ({ tabs: s.tabs.includes(target) ? s.tabs : [...s.tabs, target], active: target }));
+    return undefined;
+  }, [host]);
+  const close = useCallback(
+    (key) =>
+      setTabs((s) => {
+        const i = s.tabs.indexOf(key);
+        const next = s.tabs.filter((t) => t !== key);
+        if (!next.length) return { tabs: ['inbox'], active: 'inbox' };
+        return { tabs: next, active: s.active === key ? next[Math.max(0, i - 1)] : s.active };
+      }),
+    [],
+  );
+  const openTicket = useCallback((id) => open(`t:${id}`), [open]);
+
+  // Links in Ali's notification mail end in #ticket=<id>: open that ticket.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const fromHash = () => {
+      const hash = window.location.hash.slice(1);
+      const destination = destinationFromHash(hash);
+      if (destination) open(destination);
+      // Notification mail links to #marketing; a view name is a valid target too.
+      const view = aliasView(hash);
+      if (viewOf(view)) open(view);
+    };
+    fromHash();
+    window.addEventListener('hashchange', fromHash);
+    return () => window.removeEventListener('hashchange', fromHash);
+  }, [open, openTicket]);
+
+  const toggleExplorer = useCallback(() => {
+    if (narrow) setDrawer((d) => !d);
+    else setSidebar((s) => !s);
+  }, [narrow]);
+
+  // ⌘K the palette, ⌘B the explorer, N a new task; Escape puts the drawer away.
+  const shell = useRef({});
+  shell.current = { palette, modal, ask, ready: data.loaded && !signedOut };
   useEffect(() => {
     const onKey = (e) => {
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === 'k') {
+      const key = e.key.toLowerCase();
+      if (mod && key === 'k') {
         e.preventDefault();
         setPalette((p) => !p);
-      } else if (mod && e.key.toLowerCase() === 'b') {
+        return;
+      }
+      if (mod && key === 'b') {
         e.preventDefault();
-        setSidebar((s) => !s);
+        toggleExplorer();
+        return;
+      }
+      if (e.key === 'Escape') {
+        setDrawer(false);
+        return;
+      }
+      const el = e.target;
+      const typing = el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT' || el?.isContentEditable;
+      const state = shell.current;
+      if (!mod && !e.altKey && key === 'n' && !typing && state.ready && !state.palette && !state.modal && !state.ask) {
+        e.preventDefault();
+        setModal({ kind: 'task' });
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [toggleExplorer]);
 
   useEffect(() => {
     if (data.loaded && !workbenchAllowed(active, data.access)) open('board');
@@ -212,7 +286,22 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
     return viewOf(key)?.label ?? key;
   };
 
-  const signedOut = data.error && ['unauthorized', 'signed_out', 'forbidden'].includes(data.error.code);
+  const visibleTabs = tabs.filter((key) => workbenchAllowed(key, data.access));
+
+  // A tablist behaves like a tablist: arrows move and activate, Home/End jump.
+  const shiftTab = (e, key) => {
+    const i = visibleTabs.indexOf(key);
+    if (i < 0) return;
+    let next = null;
+    if (e.key === 'ArrowRight') next = visibleTabs[(i + 1) % visibleTabs.length];
+    else if (e.key === 'ArrowLeft') next = visibleTabs[(i - 1 + visibleTabs.length) % visibleTabs.length];
+    else if (e.key === 'Home') next = visibleTabs[0];
+    else if (e.key === 'End') next = visibleTabs[visibleTabs.length - 1];
+    if (next == null) return;
+    e.preventDefault();
+    setTabs((s) => ({ ...s, active: next }));
+    tabRefs.current[next]?.focus();
+  };
 
   return (
     <AdminContext.Provider value={ctx}>
@@ -220,51 +309,65 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
       <div ref={rootRef} className={cx('aw', fullscreen && 'aw--fullscreen', `aw--${platform}`, underButtons && 'aw--inset')}>
         <nav className="aw-activity" aria-label="Views">
           {VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => (
-            <button key={v.key} type="button" title={v.label} aria-pressed={active === v.key} onClick={() => open(v.key)}>
+            <button key={v.key} type="button" title={v.label} aria-label={v.label} aria-pressed={active === v.key} onClick={() => open(v.key)}>
               <Icon name={v.icon} size={20} />
               {v.key === 'inbox' && inboxCount ? <span className="aw-badge">{inboxCount}</span> : null}
             </button>
           ))}
           <span className="aw-activity__spacer" />
-          <button type="button" title="New task (N)" onClick={() => setModal({ kind: 'task' })}>
+          <button type="button" title="New task (N)" aria-label="New task" aria-keyshortcuts="N" onClick={() => setModal({ kind: 'task' })}>
             <Icon name="plus" size={20} />
           </button>
-          <button type="button" title="Search and commands (⌘K)" onClick={() => setPalette(true)}>
+          <button type="button" title="Search and commands (⌘K)" aria-label="Search and commands" aria-keyshortcuts="Meta+K Control+K" onClick={() => setPalette(true)}>
             <Icon name="search" size={20} />
           </button>
         </nav>
 
-        {sidebar ? <Explorer /> : null}
-        {sidebar ? <Resizer host=".aw" cssVar="--aw-explorer-w" def={260} min={180} max={520} storage="aw.explorer.w" className="aw-resize--explorer" /> : null}
+        {narrow && drawer ? <div className="aw-drawer-scrim" onClick={() => setDrawer(false)} /> : null}
+        {(!narrow && sidebar) || (narrow && drawer) ? <Explorer drawer={narrow} /> : null}
+        {!narrow && sidebar ? <Resizer host=".aw" cssVar="--aw-explorer-w" def={260} min={180} max={520} storage="aw.explorer.w" className="aw-resize--explorer" /> : null}
 
         <main className="aw-main">
-          <div className="aw-tabs" role="tablist">
-            {tabs.filter((key) => workbenchAllowed(key, data.access)).map((key) => (
-              <div
-                key={key}
-                role="tab"
-                aria-selected={key === active}
-                className={cx('aw-tab', key === active && 'is-active')}
-                onClick={() => setTabs((s) => ({ ...s, active: key }))}
-                onAuxClick={(e) => e.button === 1 && close(key)}
-                title={tabLabel(key)}
-              >
-                <Icon name={key.startsWith('p:') ? 'folder' : key.startsWith('t:') ? 'ticket' : key.startsWith('c:') ? 'clients' : viewOf(key)?.icon ?? 'list'} size={14} />
-                <span className="aw-tab__label">{tabLabel(key)}</span>
-                <button
-                  type="button"
-                  className="aw-tab__close"
-                  aria-label="Close tab"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    close(key);
+          <div className="aw-tabs">
+            <Button kind="ghost" size="sm" className="aw-tabs__toggle" title="Toggle explorer (⌘B)" aria-label="Toggle explorer" aria-keyshortcuts="Meta+B Control+B" onClick={toggleExplorer}>
+              <Icon name="board" size={14} />
+            </Button>
+            <div className="aw-tablist" role="tablist" aria-label="Open views">
+              {visibleTabs.map((key) => (
+                <div
+                  key={key}
+                  ref={(node) => {
+                    if (node) tabRefs.current[key] = node;
+                    else delete tabRefs.current[key];
                   }}
+                  role="tab"
+                  id={domId('aw-tab', key)}
+                  aria-selected={key === active}
+                  aria-controls={domId('aw-pane', key)}
+                  tabIndex={key === active ? 0 : -1}
+                  className={cx('aw-tab', key === active && 'is-active')}
+                  onClick={() => setTabs((s) => ({ ...s, active: key }))}
+                  onAuxClick={(e) => e.button === 1 && close(key)}
+                  onKeyDown={(e) => shiftTab(e, key)}
+                  title={tabLabel(key)}
                 >
-                  ×
-                </button>
-              </div>
-            ))}
-            <span className="aw-tabs__fill" />
+                  <Icon name={key.startsWith('p:') ? 'folder' : key.startsWith('t:') ? 'ticket' : key.startsWith('c:') ? 'clients' : viewOf(key)?.icon ?? 'list'} size={14} />
+                  <span className="aw-tab__label">{tabLabel(key)}</span>
+                  <button
+                    type="button"
+                    className="aw-tab__close"
+                    aria-label="Close tab"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      close(key);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <span className="aw-tabs__fill" />
+            </div>
             <MachineStatusPill />
             <Button kind="ghost" size="sm" title="Refresh" onClick={() => void reload()}>
               <Icon name="refresh" size={14} />
@@ -272,13 +375,24 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
           </div>
 
           <div className="aw-content">
+            {!signedOut && data.error ? (
+              <div className="aw-banner" role="alert">
+                <span>{errorText(data.error)}</span>
+                <Button size="sm" onClick={() => void reload()}>
+                  Retry
+                </Button>
+              </div>
+            ) : null}
             {signedOut ? (
               <SignedOut />
             ) : !data.loaded ? (
-              <p className="aw-empty">Loading…</p>
+              <div className="aw-loading" role="status">
+                <span className="aw-spinner" aria-hidden="true" />
+                <span>Loading…</span>
+              </div>
             ) : (
-              tabs.filter((key) => workbenchAllowed(key, data.access)).map((key) => (
-                <section key={key} className="aw-pane" hidden={key !== active}>
+              visibleTabs.map((key) => (
+                <section key={key} id={domId('aw-pane', key)} role="tabpanel" aria-labelledby={domId('aw-tab', key)} className="aw-pane" hidden={key !== active}>
                   {key.startsWith('t:') ? (
                     <TicketView id={Number(key.slice(2))} active={key === active} />
                   ) : key.startsWith('p:') ? (
@@ -296,11 +410,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
 
         <StatusBar />
 
-        {toast ? (
-          <div className={cx('aw-toast', toast.kind === 'error' && 'is-error')} role="status">
-            {toast.text}
-          </div>
-        ) : null}
+        <Toast toast={toast} onDismiss={dismissToast} />
         {palette ? <Palette onClose={() => setPalette(false)} /> : null}
         <MachineOnboarding />
         {modal?.kind === 'task' ? <TaskModal preset={modal} onClose={() => setModal(null)} /> : null}
@@ -354,9 +464,9 @@ function SignedOut() {
   );
 }
 
-/* ————— the explorer: projects as folders, live work, nodes ————— */
+/* ————— the explorer: projects as folders, their open work ————— */
 
-function Explorer() {
+function Explorer({ drawer = false }) {
   const { data, open, openTicket, setModal, setBoardProject, boardProject } = useAdminCtx();
   const [openSlug, setOpenSlug] = useState({});
   const byProject = new Map();
@@ -368,7 +478,7 @@ function Explorer() {
   const live = (t) => !['done', 'declined'].includes(t.status);
   const runningTicket = new Set(data.running.map((r) => r.ticket_id));
   return (
-    <aside className="aw-explorer" aria-label="Explorer">
+    <aside className={cx('aw-explorer', drawer && 'aw-explorer--drawer')} aria-label="Explorer">
       <h3>Projects {data.access?.canUseWorkbench ? <Button kind="ghost" size="sm" title="New project" onClick={() => setModal({ kind: 'project' })}><Icon name="plus" size={12} /></Button> : null}</h3>
       <ul className="aw-tree">
         {data.projects.map((p) => {
@@ -411,35 +521,6 @@ function Explorer() {
           );
         })}
       </ul>
-
-      <h3>Running now</h3>
-      <ul className="aw-tree">
-        {data.running.length ? (
-          data.running.map((r) => (
-            <li key={r.id}>
-              <button type="button" className="aw-tree__leaf" onClick={() => openTicket(r.ticket_id)}>
-                <span className="aw-live" /> #{r.ticket_id} {r.executor} · {r.node_id ?? 'Harness'}
-              </button>
-            </li>
-          ))
-        ) : (
-          <li className="aw-tree__none">Nothing</li>
-        )}
-      </ul>
-
-      {data.access?.superAdmin ? <>
-      <h3>Nodes</h3>
-      <ul className="aw-tree">
-        {data.nodes.map((n) => (
-          <li key={n.id}>
-            <button type="button" className="aw-tree__leaf" onClick={() => open('fleet')}>
-              <Dot state={!n.online ? 'bad' : n.draining ? 'warn' : 'ok'} /> {n.id}
-              <span className="aw-muted"> {n.running.length}/{n.slots}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      </> : null}
     </aside>
   );
 }
@@ -451,17 +532,12 @@ function StatusBar() {
   const stuck = data.queue.filter((q) => !q.eligible.length).length;
   return (
     <footer className="aw-status">
-      {data.access?.superAdmin ? <>
-      <button type="button" onClick={() => open('fleet')}>
-        <Dot state={online === data.nodes.length && online ? 'ok' : online ? 'warn' : 'bad'} /> {online}/{data.nodes.length} nodes online
-      </button>
-      <button type="button" onClick={() => open('fleet')}>
-        {data.running.length} running
-      </button>
-      <button type="button" onClick={() => open('fleet')}>
-        {waiting} queued{stuck ? ` · ${stuck} stuck` : ''}
-      </button>
-      </> : <span>{data.projects.length} projects</span>}
+      {data.access?.superAdmin ? (
+        <button type="button" onClick={() => open('fleet')} title="Fleet, nodes and the queue">
+          <Dot state={online === data.nodes.length && online ? 'ok' : online ? 'warn' : 'bad'} />
+          {online} {online === 1 ? 'node' : 'nodes'} · {data.running.length} running · {waiting} queued{stuck ? ` · ${stuck} stuck` : ''}
+        </button>
+      ) : <span>{data.projects.length} projects</span>}
       <span className="aw-status__fill" />
       {data.error ? <span className="aw-status__err">{errorText(data.error)}</span> : null}
       <span>{data.fetchedAt ? `updated ${new Date(data.fetchedAt).toLocaleTimeString()}` : ''}</span>
@@ -478,7 +554,7 @@ function Palette({ onClose }) {
   const [i, setI] = useState(0);
   const input = useRef(null);
   useEffect(() => input.current?.focus(), []);
-  const items = useMemo(() => {
+  const { items, total } = useMemo(() => {
     const cmds = [
       { label: 'New task…', hint: 'command', run: () => setModal({ kind: 'task' }) },
       ...(data.access?.canUseWorkbench ? [{ label: 'New project…', hint: 'command', run: () => setModal({ kind: 'project' }) }] : []),
@@ -488,8 +564,8 @@ function Palette({ onClose }) {
       ...data.tickets.map((t) => ({ label: `#${t.id} ${t.title}`, hint: `${STATUS_LABEL[t.status]} · ${t.project_name ?? 'no project'}`, run: () => openTicket(t.id) })),
     ];
     const needle = q.trim().toLowerCase();
-    if (!needle) return cmds.slice(0, 40);
-    return cmds.filter((c) => `${c.label} ${c.hint}`.toLowerCase().includes(needle)).slice(0, 40);
+    const matched = needle ? cmds.filter((c) => `${c.label} ${c.hint}`.toLowerCase().includes(needle)) : cmds;
+    return { items: matched.slice(0, 40), total: matched.length };
   }, [q, data, open, openTicket, setModal, reload]);
   const pick = (item) => {
     onClose();
@@ -500,6 +576,12 @@ function Palette({ onClose }) {
       <div className="aw-palette" role="dialog" aria-label="Command palette">
         <input
           ref={input}
+          role="combobox"
+          aria-label="Search tickets, views and commands"
+          aria-expanded="true"
+          aria-controls="aw-palette-list"
+          aria-autocomplete="list"
+          aria-activedescendant={items[i] ? `aw-palette-option-${i}` : undefined}
           value={q}
           placeholder="Search tickets, views and commands…"
           onChange={(e) => {
@@ -513,15 +595,24 @@ function Palette({ onClose }) {
             else if (e.key === 'Enter') pick(items[i]);
           }}
         />
-        <ul>
+        <ul id="aw-palette-list" role="listbox" aria-label="Results">
           {items.map((item, n) => (
-            <li key={item.label + n} className={n === i ? 'is-active' : ''} onMouseEnter={() => setI(n)} onMouseDown={() => pick(item)}>
+            <li
+              key={item.label + n}
+              id={`aw-palette-option-${n}`}
+              role="option"
+              aria-selected={n === i}
+              className={n === i ? 'is-active' : ''}
+              onMouseEnter={() => setI(n)}
+              onMouseDown={() => pick(item)}
+            >
               <span>{item.label}</span>
               <small>{item.hint}</small>
             </li>
           ))}
-          {!items.length ? <li className="aw-muted">No matches</li> : null}
+          {!items.length ? <li className="aw-muted" role="presentation">No matches</li> : null}
         </ul>
+        {total > items.length ? <p className="aw-palette__count">Showing {items.length} of {total}</p> : null}
       </div>
     </div>
   );
@@ -603,7 +694,13 @@ export function TaskModal({ preset = {}, onClose }) {
           <Segmented value={priority} options={PRIORITIES} onChange={setPriority} />
         </Field>
         <Field label="Agent">
-          <Segmented value={executor} options={AGENTS} onChange={setExecutor} />
+          <select value={executor ?? ''} onChange={(e) => setExecutor(e.target.value || null)}>
+            {AGENTS.map((agent) => (
+              <option key={String(agent.value)} value={agent.value ?? ''} title={agent.hint}>
+                {agent.label}
+              </option>
+            ))}
+          </select>
         </Field>
         <Field label="Start">
           <Segmented value={approve} disabled={busy} options={[{ value: false, label: 'Save draft' }, { value: true, label: 'Queue agent' }]} onChange={setApprove} />
@@ -754,7 +851,6 @@ export function ProjectPage({ api, id, host = null, files = null }) {
   const destination = navigation.id === id ? navigation.destination : `p:${id}`;
   const [modal, setModal] = useState(null);
   const [question, setQuestion] = useState(null);
-  const [notice, setNotice] = useState(null);
   const [boardProject, setBoardProject] = useState(id);
   const open = useCallback((key) => {
     if (key.startsWith('p:') && host?.openProject) return host.openProject(key.slice(2));
@@ -762,29 +858,14 @@ export function ProjectPage({ api, id, host = null, files = null }) {
     setNavigation({ id, destination: key });
   }, [host, id]);
   const openTicket = useCallback((target) => open(`t:${target}`), [open]);
-  const notify = useCallback((text, kind = 'ok') => { setNotice({ text, kind }); host?.notify?.(text); }, [host]);
-  const act = useCallback(async (run, done) => {
-    try {
-      const result = await run();
-      if (done) notify(typeof done === 'function' ? done(result) : done);
-      void reload();
-      return result;
-    } catch (error) { notify(errorText(error), 'error'); throw error; }
-  }, [notify, reload]);
-  const setStatus = useCallback((ticket, status) => {
-    const run = () => act(() => api('PATCH', `/admin/tickets/${ticket.id}`, { status }));
-    if (ticket.kind !== 'system' && CLIENT_VISIBLE.includes(status)) {
-      setQuestion({ title: `${STATUS_LABEL[status]}: #${ticket.id}?`, text: 'The client is emailed about this change.', confirm: STATUS_LABEL[status], run });
-      return Promise.resolve();
-    }
-    return run();
-  }, [act, api]);
+  const onNotify = useCallback((text, kind) => host?.notify?.(text, kind), [host]);
+  const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk: setQuestion, onNotify });
   const value = { api, files, host, platform: host ? 'dsh' : 'web', data, reload, open, openTicket, notify, act, setStatus, ask: setQuestion, setModal, boardProject, setBoardProject };
   return <div className={cx('aw', host && 'aw--dsh')} style={{ display: 'block', height: '100%', overflowY: 'auto' }}>
     <style>{STYLES}</style>
     <AdminContext.Provider value={value}>
       {destination.startsWith('p:') ? <ProjectView key={destination} id={destination.slice(2)} /> : destination.startsWith('t:') ? <TicketView key={destination} id={Number(destination.slice(2))} active /> : workbenchAllowed(destination, data.access) ? <View name={destination} /> : <p className="aw-empty">This destination requires administrator access.</p>}
-      {notice ? <div role="status" className={cx('aw-toast', notice.kind === 'error' && 'is-error')} onClick={() => setNotice(null)}>{notice.text}</div> : null}
+      <Toast toast={toast} onDismiss={dismissToast} />
       {modal?.kind === 'task' ? <TaskModal preset={modal} onClose={() => setModal(null)} /> : null}
       {modal?.kind === 'project' && data.access?.canUseWorkbench ? <ProjectModal onClose={() => setModal(null)} /> : null}
       {modal?.kind === 'custom' ? modal.render(() => setModal(null)) : null}
@@ -796,42 +877,40 @@ export function ProjectPage({ api, id, host = null, files = null }) {
 
 /**
  * The AdminContext a standalone ticket host has to supply, gathered once so the
- * details pane and the whole page cannot answer differently. `files` is how the
- * host saves attachments (a download); `host.upload` is how it sends them, and
- * a host without one simply gets no attach control.
+ * details pane and the whole page cannot answer differently — through the same
+ * actions the shell uses. `files` is how the host saves attachments (a download);
+ * `host.upload` is how it sends them, and a host without one gets no attach
+ * control. A host without a dialog asks with `window.confirm` instead.
  */
-function ticketContext({ api, data, reload, host, files }) {
-  return {
-    api,
-    files: files ?? null,
-    data,
-    reload,
-    platform: 'dsh',
-    host,
-    open: () => {},
-    openTicket: (target) => host?.openTicket?.(target),
-    setStatus: async (target, status) => {
-      await api('PATCH', `/admin/tickets/${target.id}`, { status });
-      reload();
-    },
-    act: async (run, done) => {
-      try {
-        await run();
-        if (done) host?.notify?.(done);
-      } finally {
-        reload();
-      }
-    },
-    notify: (text) => host?.notify?.(text),
-    ask: (question) => {
-      if (typeof window !== 'undefined' && window.confirm(`${question.title}\n\n${question.text ?? ''}`)) {
-        void question.run?.();
-      }
-    },
-    setModal: () => {},
-    boardProject: 'all',
-    setBoardProject: () => {},
-  };
+function useTicketContext({ api, data, reload, host, files }) {
+  const ask = useCallback((question) => {
+    if (typeof window !== 'undefined' && window.confirm(`${question.title}\n\n${question.text ?? ''}`)) {
+      void question.run?.();
+    }
+  }, []);
+  const onNotify = useCallback((text, kind) => host?.notify?.(text, kind), [host]);
+  const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk: ask, onNotify });
+  const value = useMemo(
+    () => ({
+      api,
+      files: files ?? null,
+      data,
+      reload,
+      platform: 'dsh',
+      host,
+      open: () => {},
+      openTicket: (target) => host?.openTicket?.(target),
+      setStatus,
+      act,
+      notify,
+      ask,
+      setModal: () => {},
+      boardProject: 'all',
+      setBoardProject: () => {},
+    }),
+    [api, files, data, reload, host, setStatus, act, notify, ask],
+  );
+  return { value, toast, dismissToast };
 }
 
 /**
@@ -851,7 +930,7 @@ export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
 
   // The host as given: the pane offers what its host can do (Git Graph, the
   // Admin copy of the ticket) and nothing it cannot.
-  const value = useMemo(() => ticketContext({ api, data, reload, host, files: null }), [api, data, reload, host]);
+  const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files: null });
 
   // The theme lives on `.aw` (every `--aw-*` variable is defined there). Without
   // it the panel renders with no accent, no panel background and the wrong ink —
@@ -882,6 +961,7 @@ export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
       <style>{STYLES}</style>
       <AdminContext.Provider value={value}>
         <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} page={page} />
+        <Toast toast={toast} onDismiss={dismissToast} />
       </AdminContext.Provider>
     </div>
   );
@@ -909,12 +989,13 @@ export function ClientPage({ api, host = null, files = null, clientId }) {
   const reload = useCallback(() => {
     void reloadData();
   }, [reloadData]);
-  const value = useMemo(() => ticketContext({ api, data, reload, host, files }), [api, data, reload, host, files]);
+  const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files });
   return (
     <div className="aw aw--dsh" style={{ display: 'block', height: '100%', overflowY: 'auto' }}>
       <style>{STYLES}</style>
       <AdminContext.Provider value={value}>
         {data.error ? <p className="aw-empty">{errorText(data.error)}</p> : <ClientView id={clientId} />}
+        <Toast toast={toast} onDismiss={dismissToast} />
       </AdminContext.Provider>
     </div>
   );
@@ -925,7 +1006,7 @@ function TicketThread({ api, host, files, ticketId, autoMeter }) {
   const reload = useCallback(() => {
     void reloadData();
   }, [reloadData]);
-  const value = useMemo(() => ticketContext({ api, data, reload, host, files }), [api, data, reload, host, files]);
+  const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files });
   // `.aw` scopes the panel's variables; block layout, because `.aw` is also the
   // app shell's grid. The page scrolls inside the tab, not the conversation.
   const scope = { display: 'block', height: '100%', overflowY: 'auto' };
@@ -934,6 +1015,7 @@ function TicketThread({ api, host, files, ticketId, autoMeter }) {
       <style>{STYLES}</style>
       <AdminContext.Provider value={value}>
         <TicketView id={ticketId} active={autoMeter} details={false} />
+        <Toast toast={toast} onDismiss={dismissToast} />
       </AdminContext.Provider>
     </div>
   );
