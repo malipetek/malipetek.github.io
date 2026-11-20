@@ -2551,8 +2551,8 @@ export function guideBrief(options: { target: string; kind: 'keyword' | 'questio
     `  ${target}`,
     '',
     'It is a content collection entry in PTechGroup/ptechsolutions: create exactly one',
-    `new file src/content/guides/${slug || '<slug>'}.md — the slug is kebab-case made`,
-    'from the target, 60 characters or fewer — and touch no other file.',
+    `new file src/content/guides/${slug || '<slug>'}.md (the slug is kebab-case made`,
+    'from the target, 60 characters or fewer) and touch no other file.',
     '',
     'Frontmatter, exactly this shape:',
     '---',
@@ -2575,7 +2575,7 @@ export function guideBrief(options: { target: string; kind: 'keyword' | 'questio
     'works in a sealed copy, and changes are shown on a preview before going',
     'live. Never invent clients, results, statistics, testimonials or other',
     "companies' prices. Link outside pages only ones you actually fetched.",
-    'End with a short section pointing to /portal — the request form is',
+    'End with a short section pointing to /portal; the request form is',
     '/portal#/new.',
     '',
     'Voice: marketing/style/README.md and marketing/style/voice.md set the',
@@ -2583,7 +2583,7 @@ export function guideBrief(options: { target: string; kind: 'keyword' | 'questio
     'patterns the post cycle refuses apply here: no em dash, no "not X, but Y",',
     'no stock AI words, no throat-clearing, no invented audiences.',
     '',
-    'Guides that already exist — link one to three where relevant and do not',
+    'Guides that already exist: link one to three where relevant and do not',
     'duplicate them:',
     existing,
     '',
@@ -2737,6 +2737,35 @@ function frontmatterTitle(markdown: string): string | null {
   return title ? title.slice(0, 120) : null;
 }
 
+const unquote = (value: string): string => value.trim().replace(/^["']|["']$/g, '');
+
+/**
+ * The faq: block as {q, a} pairs. Each `- q:` opens an entry and the `a:`
+ * line that follows it answers; an entry whose a: never comes keeps an
+ * empty answer so the check can refuse it. An inline `faq: []` is no block.
+ */
+function frontmatterFaq(raw: string): { q: string; a: string }[] {
+  const lines = raw.split('\n');
+  const start = lines.findIndex((line) => /^faq:[ \t]*/.test(line));
+  if (start < 0) return [];
+  if (/^faq:[ \t]*\S/.test(lines[start])) return [];
+  const out: { q: string; a: string }[] = [];
+  let current: { q: string; a: string } | null = null;
+  for (const line of lines.slice(start + 1)) {
+    if (/^\S/.test(line)) break;
+    const q = /^\s*-\s*q:[ \t]*(.+)$/.exec(line);
+    const a = /^\s*a:[ \t]*(.+)$/.exec(line);
+    if (q) {
+      if (current) out.push(current);
+      current = { q: unquote(q[1]), a: '' };
+    } else if (a && current && !current.a) {
+      current.a = unquote(a[1]);
+    }
+  }
+  if (current) out.push(current);
+  return out;
+}
+
 /**
  * The contract a guide must meet before it merges: the frontmatter the site
  * renders, a body long enough to answer, and the same machine-tell checks a
@@ -2752,6 +2781,8 @@ export function checkGuide(markdown: string): { ok: true } | { ok: false; reason
   if (description.length < 50 || description.length > 170) return fail('description must be 50-170 characters');
   if (!frontmatterList(fm.raw, 'targets').length) return fail('targets empty');
   if (!frontmatterField(fm.raw, 'summary')) return fail('summary missing');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(frontmatterField(fm.raw, 'published'))) return fail('published must be YYYY-MM-DD');
+  if (frontmatterFaq(fm.raw).some((entry) => !entry.q || !entry.a)) return fail('every faq entry needs a question and an answer');
 
   const prose = fm.body.replace(/```[\s\S]*?```/g, ' ');
   const words = (prose.match(/[A-Za-z0-9]+(?:['’\-][A-Za-z0-9]+)*/g) ?? []).length;
