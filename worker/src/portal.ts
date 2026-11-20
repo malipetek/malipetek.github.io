@@ -40,6 +40,9 @@
  * lives in D1, same for magic-link tokens.
  */
 import { Hono, type Context } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
+import { SOLUTION_CATALOG, INTEGRATION_CATALOG, cleanSolutions, fieldBelongs, integrationStatus, integrationsFor, parseSolutions, requiresFor } from './solutions.ts';
+import { verifyIntegration } from './integrations.ts';
 import { ATTENTION_KEYS, billOf, DEFAULT_ATTENTION, money, priceLine, priceOf } from '../../src/lib/pricing.js';
 import { claimTicketById, finishRun, normalizeReport, sessionKey, sharedLine, ticketRuns } from './runs.ts';
 import { finishContentCycle } from './content.ts';
@@ -604,6 +607,7 @@ export async function sessionUser(env: Env, token: string): Promise<User | null>
 
 /** A project row, with the onboarding columns the portal needs to describe it. */
 type ProjectRow = {
+  solutions: string;
   id: string;
   slug: string;
   name: string;
@@ -621,7 +625,7 @@ type ProjectRow = {
 async function userProjects(env: Env, userId: string) {
   const { results } = await env.DB.prepare(
     `SELECT p.id, p.slug, p.name, p.kind, p.brief, p.repo, p.repo_kind, p.repo_wanted, p.repo_error,
-            p.github_installation_id, p.created_by, p.created_at
+            p.github_installation_id, p.created_by, p.created_at, p.solutions
        FROM projects p
       WHERE EXISTS (SELECT 1 FROM user_projects up WHERE up.project_id=p.id AND up.user_id=?)
          OR p.owner_user_id=? OR EXISTS (SELECT 1 FROM project_memberships pm WHERE pm.project_id=p.id AND pm.user_id=? AND pm.member_type='trusted_developer')
@@ -1066,13 +1070,135 @@ portal.use('/portal/*', (c, next) => (PUBLIC_PORTAL_PATHS.has(c.req.path) ? next
 portal.use('/portal/agent-tokens', requireBrowser);
 portal.use('/portal/agent-tokens/*', requireBrowser);
 // Scoped work routes are explicit; unknown/global routes remain super-admin only.
-portal.use('/admin/*', requireUser, async (c, next) => {
-  if (c.get('viaAgent') || !await authorizeWorkbenchRoute(c.env, c.get('user'), c.req.method, c.req.path)) {
+const requireWorkbenchRoute = async (c: Ctx, next: () => Promise<void>) => {
+  const path = c.req.path.startsWith('/portal/admin/') ? c.req.path.slice('/portal'.length) : c.req.path;
+  if (c.get('viaAgent') || !await authorizeWorkbenchRoute(c.env, c.get('user'), c.req.method, path)) {
     return reply(c, { error: 'forbidden' }, 403);
   }
   return next();
-});
+};
+portal.use('/admin/*', requireUser, requireWorkbenchRoute);
+portal.use('/portal/admin/*', requireWorkbenchRoute);
 registerProjectCollaborationRoutes(portal, { sendMail: mailClient });
+
+const integrationCatalog = new Map(INTEGRATION_CATALOG.map(entry => [entry.id, entry]));
+const projectSolutions = (env: Env, id: string) => env.DB.prepare('SELECT solutions FROM projects WHERE id = ?').bind(id).first<{ solutions: string }>();
+const projectRequires = async (env: Env, id: string) => requiresFor(parseSolutions((await projectSolutions(env, id))?.solutions));
+// AWS offers two complete credential sets. The generic catalog helper only
+// considers nonoptional fields, so handle the alternatives at the API boundary.
+function projectIntegrationStatus(entry: (typeof INTEGRATION_CATALOG)[number], names: Set<string>) {
+  if (entry.id !== 'aws') return integrationStatus(entry, names);
+  const preferred = ['AWS_ROLE_ARN', 'AWS_EXTERNAL_ID'];
+  const alternate = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'];
+  const missingPreferred = preferred.filter(name => !names.has(name));
+  const missingAlternate = alternate.filter(name => !names.has(name));
+  if (!missingPreferred.length || !missingAlternate.length) return { connected: true, missing: [] };
+  return { connected: false, missing: missingAlternate.length < missingPreferred.length ? missingAlternate : missingPreferred };
+}
+const memberSolutions = (c: Ctx) => c.env.DB.prepare(
+  'SELECT p.solutions FROM projects p JOIN user_projects up ON up.project_id = p.id WHERE p.id = ? AND up.user_id = ?',
+).bind(c.req.param('id'), c.get('user').id).first<{ solutions: string }>();
+async function integrationView(c: Ctx, project: { solutions: string } | null) {
+  if (!project) return reply(c, { error: 'not_found' }, 404);
+  const solutions = parseSolutions(project.solutions);
+  const id = c.req.param('id');
+  const [secrets, checks] = await Promise.all([
+    c.env.DB.prepare('SELECT name FROM project_secrets WHERE project_id = ?').bind(id).all<{ name: string }>(),
+    c.env.DB.prepare('SELECT integration, ok, detail, checked_at FROM project_integration_checks WHERE project_id = ?').bind(id).all<{ integration: string; ok: number; detail: string | null; checked_at: number }>(),
+  ]);
+  const names = new Set((secrets.results ?? []).map(row => row.name));
+  const checked = new Map((checks.results ?? []).map(row => [row.integration, row]));
+  c.header('Cache-Control', 'no-store');
+  return reply(c, { solutions, integrations: integrationsFor(solutions).map(({ id, optional }) => {
+    const entry = integrationCatalog.get(id)!;
+    const check = checked.get(id);
+    return { id, label: entry.label, required: !optional, ...projectIntegrationStatus(entry, names), verifiedAt: check?.checked_at ?? null, verifyError: check?.ok === 0 ? check.detail : null };
+  }) });
+}
+
+// The explicit portal paths serve the public contract; the aliases match the workbench conventions.
+for (const prefix of ['/portal/admin', '/admin']) {
+  portal.get(`${prefix}/solutions`, c => reply(c, { solutions: SOLUTION_CATALOG, integrations: INTEGRATION_CATALOG }));
+  portal.put(`${prefix}/projects/:id/solutions`, async c => {
+    const body = await readJson<{ solutions?: unknown }>(c);
+    if (!Array.isArray(body?.solutions)) return reply(c, { error: 'bad_solutions' }, 400);
+    const solutions = cleanSolutions(body.solutions);
+    const result = await c.env.DB.prepare('UPDATE projects SET solutions = ? WHERE id = ?')
+      .bind(JSON.stringify(solutions), c.req.param('id')).run();
+    return result.meta.changes ? reply(c, { ok: true, solutions }) : reply(c, { error: 'not_found' }, 404);
+  });
+  portal.get(`${prefix}/projects/:id/integrations`, async c => integrationView(c, await projectSolutions(c.env, c.req.param('id'))));
+  portal.post(`${prefix}/projects/:id/integrations/:integration/verify`, async c => {
+    const id = c.req.param('id'), integration = c.req.param('integration');
+    const project = await projectSolutions(c.env, id);
+    const entry = integrationCatalog.get(integration);
+    if (!project || !entry || !integrationsFor(parseSolutions(project.solutions)).some(ref => ref.id === integration)) {
+      return reply(c, { ok: false, error: 'not_found' }, 404);
+    }
+    if (!c.env.SESSION_SECRET) return reply(c, { ok: false, error: 'secrets_unavailable' }, 503);
+    const names = entry.fields.map(field => field.name);
+    const rows = (await c.env.DB.prepare(`SELECT name,value_enc FROM project_secrets WHERE project_id = ? AND name IN (${names.map(() => '?').join(', ')}) ORDER BY name`)
+      .bind(id, ...names).all<{ name: string; value_enc: string }>()).results ?? [];
+    let result: { ok: boolean; error?: string; detail?: string } = { ok: false, error: 'missing_fields' };
+    if (projectIntegrationStatus(entry, new Set(rows.map(row => row.name))).connected) {
+      try {
+        const fields = Object.fromEntries(await Promise.all(rows.map(async row => [row.name, await openProjectSecret(c.env, id, row.name, row.value_enc)] as const)));
+        const checked = await verifyIntegration(integration, fields);
+        // Never forward exception or response bodies. As a backstop, discard any
+        // verifier message that contains an input credential.
+        const message = checked.ok ? checked.detail : checked.error;
+        const safe = message && !Object.values(fields).some(value => value && message.includes(value)) ? message.slice(0, 512) : undefined;
+        result = checked.ok ? { ok: true, detail: safe ?? 'verified' } : { ok: false, error: safe ?? 'verification_failed' };
+      } catch {
+        result = { ok: false, error: 'verification_failed' };
+      }
+    }
+    // An in-flight check must not restore an old result after credential rotation.
+    const recorded = await c.env.DB.prepare(`INSERT INTO project_integration_checks (project_id, integration, ok, detail, checked_at)
+      SELECT id, ?, ?, ?, ? FROM projects WHERE id = ? AND solutions = ? AND (
+        SELECT json_group_array(json_array(name,value_enc)) FROM (
+          SELECT name,value_enc FROM project_secrets WHERE project_id = ? AND name IN (${names.map(() => '?').join(', ')}) ORDER BY name
+        )
+      ) = ? ON CONFLICT(project_id, integration) DO UPDATE SET ok=excluded.ok, detail=excluded.detail, checked_at=excluded.checked_at`)
+      .bind(integration, result.ok ? 1 : 0, result.detail ?? result.error ?? null, now(), id, project.solutions, id, ...names, JSON.stringify(rows.map(row => [row.name, row.value_enc]))).run();
+    c.header('Cache-Control', 'no-store');
+    return recorded.meta.changes ? reply(c, result) : reply(c, { ok: false, error: 'credentials_changed' }, 409);
+  });
+}
+
+portal.get('/portal/projects/:id/integrations', requireBrowser, async c => integrationView(c, await memberSolutions(c)));
+portal.put('/portal/projects/:id/integrations/:integration', requireBrowser,
+  bodyLimit({ maxSize: 512 * 1024, onError: c => c.json({ error: 'bad_fields' }, 413) }), async c => {
+    const id = c.req.param('id'), integration = c.req.param('integration');
+    const project = await memberSolutions(c);
+    if (!project || !integrationsFor(parseSolutions(project.solutions)).some(ref => ref.id === integration)) {
+      return reply(c, { error: 'not_found' }, 404);
+    }
+    if (!c.env.SESSION_SECRET) return reply(c, { error: 'secrets_unavailable' }, 503);
+    const fields = (await readJson<{ fields?: unknown }>(c))?.fields;
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return reply(c, { error: 'bad_fields' }, 400);
+    const entries = Object.entries(fields);
+    if (!entries.length || entries.some(([name, value]) => !fieldBelongs(integration, name) || typeof value !== 'string' || !value.trim() || value.length > 16384)) {
+      return reply(c, { error: 'bad_fields' }, 400);
+    }
+    const timestamp = now();
+    const userId = c.get('user').id;
+    const statements = await Promise.all(entries.map(async ([name, value]) => {
+      const sealed = await sealProjectSecret(c.env, id, name, value);
+      return c.env.DB.prepare(`INSERT INTO project_secrets (project_id, name, value_enc, updated_by, updated_at)
+        SELECT p.id, ?, ?, ?, ? FROM projects p JOIN user_projects up ON up.project_id = p.id
+        WHERE p.id = ? AND up.user_id = ? AND p.solutions = ?
+        ON CONFLICT(project_id, name) DO UPDATE SET value_enc=excluded.value_enc, updated_by=excluded.updated_by, updated_at=excluded.updated_at`)
+        .bind(name, sealed, userId, timestamp, id, userId, project.solutions);
+    }));
+    const results = await c.env.DB.batch([...statements, c.env.DB.prepare(`DELETE FROM project_integration_checks
+      WHERE project_id = ? AND integration = ? AND EXISTS (
+        SELECT 1 FROM projects p JOIN user_projects up ON up.project_id = p.id WHERE p.id = ? AND up.user_id = ? AND p.solutions = ?
+      )`).bind(id, integration, id, userId, project.solutions)]);
+    results.pop(); // The check may not yet exist; only the credential writes must change rows.
+    c.header('Cache-Control', 'no-store');
+    return results.every(row => row.meta.changes) ? reply(c, { ok: true }) : reply(c, { error: 'not_found' }, 404);
+  });
 
 
 portal.post('/auth/logout', async (c) => {
@@ -1230,6 +1356,7 @@ portal.get('/portal/me', async (c) => {
         slug: project.slug,
         name: project.name,
         kind,
+        solutions: parseSolutions(project.solutions),
         repoKind,
         repo: project.repo,
         repoWanted: Boolean(project.repo_wanted),
@@ -1524,10 +1651,10 @@ portal.post('/portal/projects', async (c) => {
   const title = (kind === 'new' ? `Build ${name}` : `First look: ${name}`).slice(0, MAX_TITLE_CHARS);
   const text = `Set up from the onboarding form.\n\n${briefText(brief, kind)}`;
   const ticket = await env.DB.prepare(
-    `INSERT INTO tickets (user_id, project_id, title, status, attention, budget_cents, created_at, updated_at)
-     VALUES (?, ?, ?, 'new', ?, ?, ?, ?) RETURNING id`,
+    `INSERT INTO tickets (user_id, project_id, title, status, attention, budget_cents, requires, created_at, updated_at)
+     VALUES (?, ?, ?, 'new', ?, ?, ?, ?, ?) RETURNING id`,
   )
-    .bind(user.id, id, title, attention, budget ?? null, t, t)
+    .bind(user.id, id, title, attention, budget ?? null, JSON.stringify(await projectRequires(env, id)), t, t)
     .first<{ id: number }>();
   if (!ticket) return reply(c, { error: 'insert_failed' }, 500);
 
@@ -1967,10 +2094,10 @@ portal.post('/portal/changes', async (c) => {
   const app = await agentApp(c);
   const t = now();
   const ticket = await env.DB.prepare(
-    `INSERT INTO tickets (user_id, project_id, title, status, attention, kind, worked_by, source, assistant_app, created_at, updated_at)
-     VALUES (?, ?, ?, 'in_progress', 'auto', 'client', 'client_agent', 'assistant', ?, ?, ?) RETURNING id`,
+    `INSERT INTO tickets (user_id, project_id, title, status, attention, kind, worked_by, source, assistant_app, requires, created_at, updated_at)
+     VALUES (?, ?, ?, 'in_progress', 'auto', 'client', 'client_agent', 'assistant', ?, ?, ?, ?) RETURNING id`,
   )
-    .bind(user.id, projectId, title, app, t, t)
+    .bind(user.id, projectId, title, app, JSON.stringify(await projectRequires(env, projectId)), t, t)
     .first<{ id: number }>();
   if (!ticket) return reply(c, { error: 'insert_failed' }, 500);
   await env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 0, ?)`)
@@ -2151,8 +2278,8 @@ portal.post('/portal/tickets', async (c) => {
   const filedBy = c.get('viaAgent') ? await agentApp(c) : null;
   const t = now();
   const ticket = await env.DB.prepare(
-    `INSERT INTO tickets (user_id, project_id, title, status, attention, budget_cents, kind, worked_by, assistant_app, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+    `INSERT INTO tickets (user_id, project_id, title, status, attention, budget_cents, kind, worked_by, assistant_app, requires, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
   )
     .bind(
       user.id,
@@ -2166,6 +2293,7 @@ portal.post('/portal/tickets', async (c) => {
       // Which assistant filed it (MCP key or ChatGPT), for the client's start
       // page. Only a label: source stays 'portal', so review is never skipped.
       filedBy,
+      JSON.stringify(!intake && projectId ? await projectRequires(env, projectId) : []),
       t,
       t,
     )
@@ -2321,10 +2449,10 @@ portal.post('/portal/preview-feedback', async (c) => {
 
   const t = now();
   const ticket = await env.DB.prepare(
-    `INSERT INTO tickets (user_id, project_id, site_id, title, status, attention, kind, worked_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'new', ?, 'client', 'fleet', ?, ?) RETURNING id`,
+    `INSERT INTO tickets (user_id, project_id, site_id, title, status, attention, kind, worked_by, requires, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'new', ?, 'client', 'fleet', ?, ?, ?) RETURNING id`,
   )
-    .bind(client.id, site.project_id, site.id, title, DEFAULT_ATTENTION, t, t)
+    .bind(client.id, site.project_id, site.id, title, DEFAULT_ATTENTION, JSON.stringify(await projectRequires(env, site.project_id)), t, t)
     .first<{ id: number }>();
   if (!ticket) return out({ error: 'insert_failed' }, 500);
 
@@ -3004,7 +3132,7 @@ portal.post('/admin/health/run', async (c) => {
 
 /** System-wide settings, plus the catalogs the views build their buttons from. */
 portal.get('/admin/settings', async (c) =>
-  reply(c, { settings: await getSettings(c.env), catalog: { capabilities: CAPABILITY_CATALOG, executors: EXECUTOR_CATALOG } }),
+  reply(c, { settings: await getSettings(c.env), catalog: { capabilities: CAPABILITY_CATALOG, executors: EXECUTOR_CATALOG, solutions: SOLUTION_CATALOG, integrations: INTEGRATION_CATALOG } }),
 );
 
 portal.patch('/admin/settings', async (c) => {
@@ -3049,9 +3177,9 @@ portal.post('/admin/work', async (c) => {
 
   const project =
     typeof body?.projectId === 'string'
-      ? await env.DB.prepare('SELECT id FROM projects WHERE id = ?').bind(body.projectId).first<{ id: string }>()
+      ? await env.DB.prepare('SELECT id, solutions FROM projects WHERE id = ?').bind(body.projectId).first<{ id: string; solutions: string }>()
       : typeof body?.slug === 'string'
-        ? await env.DB.prepare('SELECT id FROM projects WHERE slug = ?').bind(body.slug.trim().toLowerCase()).first<{ id: string }>()
+        ? await env.DB.prepare('SELECT id, solutions FROM projects WHERE slug = ?').bind(body.slug.trim().toLowerCase()).first<{ id: string; solutions: string }>()
         : null;
   if (!project) return reply(c, { error: 'bad_project' }, 400);
   if (!await canWorkProject(env, c.get('user'), project.id)) return reply(c, { error: 'forbidden' }, 403);
@@ -3070,7 +3198,7 @@ portal.post('/admin/work', async (c) => {
       status,
       source,
       routing.priority ?? (await getSettings(env)).defaultPriority,
-      JSON.stringify(routing.requires ?? []),
+      JSON.stringify(routing.requires ?? requiresFor(parseSolutions(project.solutions))),
       routing.executor ?? null,
       t,
       t,
@@ -3339,7 +3467,7 @@ portal.get('/admin/projects', async (c) => {
     getSettings(c.env),
     c.env.DB.prepare(
       `SELECT id, slug, name, kind, brief, repo, repo_kind, repo_wanted, repo_error, repo_claim_node, repo_claim_at,
-              github_installation_id, created_by, owner_user_id, onboarded_at, created_at
+              github_installation_id, created_by, owner_user_id, onboarded_at, created_at, solutions
          FROM projects p WHERE ${scope.sql} ORDER BY name`,
     ).bind(...scope.bindings).all<ProjectRow & { repo_wanted: number; repo_error: string | null; repo_claim_node: string | null; repo_claim_at: number | null; github_installation_id: number | null }>(),
     onlineSlugs(c.env),
@@ -3397,6 +3525,7 @@ portal.get('/admin/projects', async (c) => {
         : clientInstallation;
       return {
         ...project,
+        solutions: parseSolutions(project.solutions),
         brief,
         kind,
         repoKind,
@@ -3527,7 +3656,9 @@ portal.post('/admin/projects/:id/site/rollback', async (c) => {
  *   folder  a folder that already exists on a node; that node shares its origin
  */
 portal.post('/admin/projects', async (c) => {
-  const body = await readJson<{ name?: unknown; slug?: unknown; code?: unknown; repo?: unknown; kind?: unknown }>(c);
+  const body = await readJson<{ name?: unknown; slug?: unknown; code?: unknown; repo?: unknown; kind?: unknown; solutions?: unknown }>(c);
+  if (body?.solutions !== undefined && !Array.isArray(body.solutions)) return reply(c, { error: 'bad_solutions' }, 400);
+  const solutions = cleanSolutions(body?.solutions);
   const name = cleanText(body?.name, MAX_NAME_CHARS);
   const slug = typeof body?.slug === 'string' ? body.slug.trim().toLowerCase() : '';
   // The slug is what the local runner maps to a folder — keep it path-safe.
@@ -3539,14 +3670,14 @@ portal.post('/admin/projects', async (c) => {
   const id = crypto.randomUUID();
   try {
     await c.env.DB.prepare(
-      `INSERT INTO projects (id, slug, name, kind, repo, repo_kind, repo_wanted, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO projects (id, slug, name, kind, repo, repo_kind, repo_wanted, created_at, solutions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind(id, slug, name, kind, repo, repo ? 'repo' : 'none', code === 'create' ? 1 : 0, now())
+      .bind(id, slug, name, kind, repo, repo ? 'repo' : 'none', code === 'create' ? 1 : 0, now(), JSON.stringify(solutions))
       .run();
   } catch {
     return reply(c, { error: 'slug_taken' }, 409);
   }
-  return reply(c, { id, slug, name }, 201);
+  return reply(c, { id, slug, name, solutions }, 201);
 });
 
 /**
@@ -3554,8 +3685,8 @@ portal.post('/admin/projects', async (c) => {
  * The slug stays: nodes map it to a folder and the first site is named after it.
  */
 portal.get('/admin/projects/:id', async (c) => {
-  const project = await c.env.DB.prepare('SELECT id,slug,name,kind,brief,repo,owner_user_id FROM projects WHERE id=?').bind(c.req.param('id')).first<{brief:string}>();
-  return project ? reply(c,{project:{...project,brief:parseBrief(project.brief)}}) : reply(c,{error:'not_found'},404);
+  const project = await c.env.DB.prepare('SELECT id,slug,name,kind,brief,repo,owner_user_id,solutions FROM projects WHERE id=?').bind(c.req.param('id')).first<{brief:string;solutions:string}>();
+  return project ? reply(c,{project:{...project,brief:parseBrief(project.brief),solutions:parseSolutions(project.solutions)}}) : reply(c,{error:'not_found'},404);
 });
 
 portal.get('/admin/projects/:id/memberships', async (c) => {
@@ -3585,6 +3716,9 @@ portal.delete('/admin/projects/:id/memberships/:userId', async (c) => {
   return reply(c,{ok:true});
 });
 const secretName = (name:string) => /^[A-Za-z_][A-Za-z0-9_.-]{0,127}$/.test(name);
+const invalidateSecretChecks = (env: Env, id: string, name: string) => INTEGRATION_CATALOG
+  .filter(entry => fieldBelongs(entry.id, name))
+  .map(entry => env.DB.prepare('DELETE FROM project_integration_checks WHERE project_id=? AND integration=?').bind(id, entry.id));
 portal.get('/admin/projects/:id/secrets', async (c) => {
   if (!c.env.SESSION_SECRET) return reply(c,{error:'secrets_unavailable'},503);
   const rows=await c.env.DB.prepare('SELECT name,updated_at AS updatedAt FROM project_secrets WHERE project_id=? ORDER BY name').bind(c.req.param('id')).all();
@@ -3596,7 +3730,10 @@ portal.put('/admin/projects/:id/secrets/:name', async (c) => {
   const body=await readJson<{value?:unknown}>(c);
   if (!secretName(name) || typeof body?.value!=='string' || body.value.length>16384) return reply(c,{error:'bad_secret'},400);
   const value=await sealProjectSecret(c.env,id,name,body.value);
-  await c.env.DB.prepare('INSERT INTO project_secrets(project_id,name,value_enc,updated_by,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(project_id,name) DO UPDATE SET value_enc=excluded.value_enc,updated_by=excluded.updated_by,updated_at=excluded.updated_at').bind(id,name,value,c.get('user').id,now()).run();
+  await c.env.DB.batch([
+    c.env.DB.prepare('INSERT INTO project_secrets(project_id,name,value_enc,updated_by,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(project_id,name) DO UPDATE SET value_enc=excluded.value_enc,updated_by=excluded.updated_by,updated_at=excluded.updated_at').bind(id,name,value,c.get('user').id,now()),
+    ...invalidateSecretChecks(c.env,id,name),
+  ]);
   return reply(c,{ok:true});
 });
 portal.post('/admin/projects/:id/secrets/:name/reveal', async (c) => {
@@ -3610,7 +3747,11 @@ portal.post('/admin/projects/:id/secrets/:name/reveal', async (c) => {
 });
 portal.delete('/admin/projects/:id/secrets/:name', async (c) => {
   if (!c.env.SESSION_SECRET) return reply(c,{error:'secrets_unavailable'},503);
-  await c.env.DB.prepare('DELETE FROM project_secrets WHERE project_id=? AND name=?').bind(c.req.param('id'),c.req.param('name')).run();
+  const id=c.req.param('id'),name=c.req.param('name');
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM project_secrets WHERE project_id=? AND name=?').bind(id,name),
+    ...invalidateSecretChecks(c.env,id,name),
+  ]);
   return reply(c,{ok:true});
 });
 portal.post('/admin/projects/:id/git-token', async (c) => {
@@ -3627,10 +3768,14 @@ portal.post('/admin/projects/:id/git-token', async (c) => {
 });
 
 portal.patch('/admin/projects/:id', async (c) => {
-  const body = await readJson<{ name?: unknown; kind?: unknown; brief?: unknown }>(c);
+  const body = await readJson<{ name?: unknown; kind?: unknown; brief?: unknown; solutions?: unknown }>(c);
   const current = await c.env.DB.prepare('SELECT kind FROM projects WHERE id = ?').bind(c.req.param('id')).first<{kind:string}>();
   if (!current) return reply(c, { error: 'not_found' }, 404);
   const sets: [string, unknown][] = [];
+  if (body?.solutions !== undefined) {
+    if (!Array.isArray(body.solutions)) return reply(c, { error: 'bad_solutions' }, 400);
+    sets.push(['solutions', JSON.stringify(cleanSolutions(body.solutions))]);
+  }
   if (body?.brief !== undefined) {
     const kind = body.kind ?? current.kind;
     if (!isProjectKind(kind)) return reply(c, {error:'bad_kind'},400);

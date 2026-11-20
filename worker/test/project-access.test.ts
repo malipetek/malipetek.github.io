@@ -92,6 +92,63 @@ async function authenticatedFixture(identity = 'dev') {
   return {...f,request};
 }
 
+test('project solutions and credentials honor admin scope and client membership', async () => {
+  const { sql, env, request: admin } = await authenticatedFixture('admin');
+  const requestFor = async (id: string) => {
+    const token = `session-${id}`;
+    sql.prepare('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)').run(await sha256(token), id, Math.floor(Date.now() / 1000) + 3600, 1);
+    return (method: string, path: string, body?: unknown) => portal.request(path, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }, env, { waitUntil() {}, passThroughOnException() {} } as any);
+  };
+  const member = await requestFor('owner');
+  const other = await requestFor('other');
+  const dev = await requestFor('dev');
+  const base = '/portal/admin/projects/a';
+  const integrations = '/portal/projects/a/integrations';
+  assert.equal((await admin('GET', '/portal/admin/solutions')).status, 200);
+  assert.equal((await member('PUT', `${base}/solutions`, { solutions: ['shopify'] })).status, 403);
+  const set = await admin('PUT', `${base}/solutions`, { solutions: ['shopify', 'shopify', 'mobile-ios', 'unknown'] });
+  assert.equal(set.status, 200);
+  assert.deepEqual(await set.json(), { ok: true, solutions: ['shopify', 'mobile-ios'] });
+  assert.equal((await dev('GET', `${base}/integrations`)).status, 200);
+  assert.equal((await dev('GET', '/portal/admin/projects/b/integrations')).status, 403);
+  assert.equal((await other('GET', integrations)).status, 404);
+  assert.equal((await other('PUT', `${integrations}/shopify`, { fields: { SHOPIFY_ADMIN_TOKEN: 'blocked' } })).status, 404);
+  for (const fields of [{ SHOPIFY_ADMIN_TOKEN: 'exposed', OTHER_SECRET: 'bad' }, { SHOPIFY_ADMIN_TOKEN: ' ' }, { SHOPIFY_ADMIN_TOKEN: 'x'.repeat(16385) }]) {
+    assert.equal((await member('PUT', `${integrations}/shopify`, { fields })).status, 400);
+  }
+  assert.equal(sql.prepare('SELECT count(*) AS n FROM project_secrets').get()?.n, 0);
+  // Missing credentials never invoke a provider verifier.
+  const result = await admin('POST', `${base}/integrations/shopify/verify`);
+  assert.equal(result.status, 200);
+  assert.deepEqual(await result.json(), { ok: false, error: 'missing_fields' });
+  const verified = await (await member('GET', integrations)).json() as any;
+  assert.equal(verified.integrations[0].verifyError, 'missing_fields');
+  assert.ok(verified.integrations[0].verifiedAt > 0);
+  const secret = 'test-only-shopify-token';
+  const put = await member('PUT', `${integrations}/shopify`, { fields: { SHOPIFY_STORE_DOMAIN: 'test.myshopify.com', SHOPIFY_ADMIN_TOKEN: secret } });
+  assert.equal(put.status, 200);
+  assert.ok(!(await put.text()).includes(secret));
+  const stored = sql.prepare("SELECT value_enc FROM project_secrets WHERE project_id='a' AND name='SHOPIFY_ADMIN_TOKEN'").get()!;
+  assert.notEqual(stored.value_enc, secret);
+  assert.equal(await openProjectSecret(env, 'a', 'SHOPIFY_ADMIN_TOKEN', String(stored.value_enc)), secret);
+  const view = await member('GET', integrations);
+  assert.equal(view.status, 200);
+  const text = await view.text();
+  assert.ok(!text.includes(secret));
+  const data = JSON.parse(text) as any;
+  assert.deepEqual(data.integrations[0], { id: 'shopify', label: 'Shopify', required: true, connected: true, missing: [], verifiedAt: null, verifyError: null });
+
+  for (const [input, required] of [[{}, ['os:macos', 'xcode']], [{ requires: [] }, []], [{ requires: ['docker'] }, ['docker']]] as const) {
+    const work = await admin('POST', '/admin/work', { projectId: 'a', title: 'Work', brief: 'Test routing', ...input });
+    assert.equal(work.status, 201);
+    const id = (await work.json() as any).id;
+    assert.deepEqual(JSON.parse(String(sql.prepare('SELECT requires FROM tickets WHERE id=?').get(id)?.requires)), required);
+  }
+  const ticket = await member('POST', '/portal/tickets', { projectId: 'a', title: 'Request', body: 'Test project default' });
+  assert.equal(ticket.status, 201);
+  assert.deepEqual(JSON.parse(String(sql.prepare("SELECT requires FROM tickets WHERE title='Request'").get()?.requires)), ['os:macos', 'xcode']);
+});
+
 test('actual ticket search/list/runs SQL and counters exclude inaccessible records',async()=>{
   const {sql,request}=await authenticatedFixture();
   sql.exec("INSERT INTO ticket_messages(ticket_id,author,body,created_at) VALUES(1,'client','searchneedle allowed',1),(2,'client','searchneedle hidden',1)");
