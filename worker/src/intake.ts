@@ -10,6 +10,7 @@
  * summarised in the thread.
  */
 import { now, type Env } from './shared.ts';
+import { parseSolutions, requiresFor } from './solutions.ts';
 import { portalLinks } from './links.ts';
 import { briefText, cleanBrief, cleanRepo, parseBrief, uniqueSlug } from './setup.ts';
 import { ensureRepo, repoParts, useClientRepo } from './ghapp.ts';
@@ -506,10 +507,10 @@ async function tool(ctx: ToolContext, name: string, args: Record<string, unknown
       }
       const t = now();
       const ticket = await env.DB.prepare(
-        `INSERT INTO tickets (user_id, project_id, site_id, title, status, attention, budget_cents, kind, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'new', ?, NULL, 'client', ?, ?) RETURNING id`,
+        `INSERT INTO tickets (user_id, project_id, site_id, title, status, attention, budget_cents, kind, requires, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'new', ?, NULL, 'client', ?, ?, ?) RETURNING id`,
       )
-        .bind(userId, project.id, siteId, title, DEFAULT_ATTENTION, t, t)
+        .bind(userId, project.id, siteId, title, DEFAULT_ATTENTION, JSON.stringify(requiresFor(parseSolutions(project.solutions))), t, t)
         .first<{ id: number }>();
       if (!ticket) return { result: { error: 'insert_failed' } };
       await env.DB.prepare(
