@@ -11,11 +11,18 @@ Write for a reader who reads the first line, skims the rest, and acts only if
 the next step is obvious. Literal, blunt and flat. No warm-up, no rapport, no
 implied meaning: every sentence states one fact or asks one question.
 
+Who we write to: people who are leaving their agency because one ticket takes
+a week, and who now rebuild their website or a custom tool themselves with
+Claude Code or ChatGPT (vibe coding). We are the middle: they keep vibe coding,
+and a developer checks the work and puts it live, billed by the second. Every
+piece speaks to that situation.
+
 Every cold email, post and bio has this shape, in this order:
 
 1. **Direct yes/no questions that sort the reader.** One per line, the
    reader's situation in their words. The model:
-   "Are you vibe coding? Do you have an agency? You want something in between?"
+   "Are you rebuilding your website with Claude Code? Did you leave your agency
+   because one ticket took a week? Do you want something in between?"
 2. **What happens, as numbered steps.** Who does what, in order. At most
    three steps, one action each:
    1. You write what you want in our portal.

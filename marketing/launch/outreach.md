@@ -89,12 +89,12 @@ breaks.
 
 > Hi {name},
 >
-> Are you vibe coding your website or app?
-> Do you pay an agency for it?
+> Are you rebuilding your website with Claude Code or ChatGPT?
+> Did you leave your agency because one ticket took a week?
 > Do you want something in between?
 >
 > That is our portal:
-> 1. You write what you want in the portal.
+> 1. You write what you want in the portal, or send it from Claude or ChatGPT.
 > 2. A developer approves it. An AI agent does the work.
 > 3. You check a preview. It goes live when you say yes.
 >
@@ -109,12 +109,12 @@ Without a written observation, the queue sends this instead (it makes no claim a
 
 > Hi {name},
 >
-> Are you vibe coding your website or app?
-> Do you pay an agency for it?
+> Are you rebuilding your website with Claude Code or ChatGPT?
+> Did you leave your agency because one ticket took a week?
 > Do you want something in between?
 >
 > That is our portal:
-> 1. You write what you want in the portal.
+> 1. You write what you want in the portal, or send it from Claude or ChatGPT.
 > 2. A developer approves it. An AI agent does the work.
 > 3. You check a preview. It goes live when you say yes.
 >
@@ -191,7 +191,7 @@ site that is mostly fine and a list of small things that never get done.
 > Hi {name},
 >
 > Do you want to change something on {site}?
-> Do you not want to hire an agency for one change?
+> Do you want to do it with AI, without waiting a week for an agency?
 >
 > Use our portal:
 > 1. You write the change in one sentence.
@@ -210,7 +210,7 @@ Without a written observation, the queue sends this instead (it makes no claim a
 > Hi {name},
 >
 > Do you want to change something on {site}?
-> Do you not want to hire an agency for one change?
+> Do you want to do it with AI, without waiting a week for an agency?
 >
 > Use our portal:
 > 1. You write the change in one sentence.

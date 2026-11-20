@@ -257,12 +257,12 @@ export const SEQUENCES: Record<SequenceKind, SequenceStep[]> = {
       subject: 'vibe coding or an agency?',
       body: `{{greeting}}
 
-Are you vibe coding your website or app?
-Do you pay an agency for it?
+Are you rebuilding your website with Claude Code or ChatGPT?
+Did you leave your agency because one ticket took a week?
 Do you want something in between?
 
 That is our portal:
-1. You write what you want in the portal.
+1. You write what you want in the portal, or send it from Claude or ChatGPT.
 2. A developer approves it. An AI agent does the work.
 3. You check a preview. It goes live when you say yes.
 
@@ -274,12 +274,12 @@ Muhammet
 PTech Solutions`,
       plain: `{{greeting}}
 
-Are you vibe coding your website or app?
-Do you pay an agency for it?
+Are you rebuilding your website with Claude Code or ChatGPT?
+Did you leave your agency because one ticket took a week?
 Do you want something in between?
 
 That is our portal:
-1. You write what you want in the portal.
+1. You write what you want in the portal, or send it from Claude or ChatGPT.
 2. A developer approves it. An AI agent does the work.
 3. You check a preview. It goes live when you say yes.
 
@@ -345,7 +345,7 @@ PTech Solutions`,
       body: `{{greeting}}
 
 Do you want to change something on {{site}}?
-Do you not want to hire an agency for one change?
+Do you want to do it with AI, without waiting a week for an agency?
 
 Use our portal:
 1. You write the change in one sentence.
@@ -361,7 +361,7 @@ PTech Solutions`,
       plain: `{{greeting}}
 
 Do you want to change something on {{site}}?
-Do you not want to hire an agency for one change?
+Do you want to do it with AI, without waiting a week for an agency?
 
 Use our portal:
 1. You write the change in one sentence.

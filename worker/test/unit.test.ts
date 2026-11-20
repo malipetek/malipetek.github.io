@@ -2167,7 +2167,7 @@ test('content: cleanPost allows one ptechsolutions.net link and refuses the rest
 
 test('content: the literal post shape passes the checks', () => {
   const linkedin =
-    'Are you vibe coding your website?\nDo you pay an agency for it?\n\n1. You write what you want in the portal.\n2. An AI agent does the work.\n3. You check a preview.\n\n$100 an hour, billed by the second.\n\nhttps://ptechsolutions.net/portal';
+    'Are you rebuilding your website with Claude Code?\nDid you leave your agency because one ticket took a week?\n\n1. You write what you want in the portal.\n2. An AI agent does the work.\n3. You check a preview.\n\n$100 an hour, billed by the second.\n\nhttps://ptechsolutions.net/portal';
   assert.equal(cleanPost(linkedin, 'linkedin').ok, true);
   const x = 'Are you vibe coding?\nDo you pay an agency?\n\nAn agent does the work; a developer checks it. $100 an hour.\n\nhttps://ptechsolutions.net/portal';
   assert.equal(cleanPost(x, 'x').ok, true);
