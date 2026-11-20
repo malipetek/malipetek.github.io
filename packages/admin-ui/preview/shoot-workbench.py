@@ -91,6 +91,23 @@ def capture(browser, base, theme, viewport, narrow, diagnostics, paths):
                 for group, marker in (('Safety', 'text=Review first emails'), ('Content', 'text=How publishing works')):
                     marketing.get_by_role('radio', name=group, exact=True).click()
                     shot(f'marketing-settings-{group.lower()}', marketing.locator(marker).first)
+        # Every SEO tab, on the same page: the segmented control is the only change.
+        activity.get_by_title('SEO', exact=True).click()
+        shot('seo', pane.get_by_text('Guide coverage').first)
+        desk = pane.get_by_role('radiogroup', name='SEO desk section')
+        for name, label, marker in (
+            ('seo-audit-pages', 'Audit', '.aw-seo-pages tbody tr'),
+            ('seo-answers', 'AI answers', '.aw-seo-chart'),
+            ('seo-ranks', 'Rankings', '.aw-seo-ranks tbody tr'),
+            ('seo-citations', 'Citations', '.aw-seo-citations tbody tr'),
+            ('seo-settings', 'Settings', 'text=Buyer questions'),
+        ):
+            desk.get_by_role('radio', name=label, exact=True).click()
+            shot(name, pane.locator(marker).first)
+        desk.get_by_role('radio', name='Audit', exact=True).click()
+        pane.get_by_role('radio', name='Per finding', exact=True).click()
+        shot('seo-audit-findings', pane.locator('.aw-table tbody tr').first)
+        desk.get_by_role('radio', name='Overview', exact=True).click()
         ticket()
         # The project destination: Overview leads with needs-attention rows;
         # the world map sits behind Show map (collapsed by default).

@@ -1071,36 +1071,30 @@ const seoSeries = (base, spread, n = 14) =>
     return { day: d.toISOString().slice(0, 10), averageScore: base + Math.round(Math.sin(i * 0.9) * spread), pages: 41 };
   });
 
+const seoDay = (back) => new Date(Date.now() - back * D * 1000).toISOString().slice(0, 10);
+
 const SEO_OVERVIEW = {
-  day: new Date(Date.now() - D * 1000).toISOString().slice(0, 10),
+  day: seoDay(1),
   hosts: [
     {
       host: 'ptechsolutions.net',
       averageScore: 87,
       pages: 41,
-      day: new Date(Date.now() - D * 1000).toISOString().slice(0, 10),
+      day: seoDay(1),
       findings: { high: 2, medium: 4, low: 6, open: 12 },
       series: seoSeries(86, 5),
     },
   ],
-  state: {
-    lastAuditAt: NOW - 20 * H,
-    lastGeoAt: NOW - 3 * D,
-    lastCitationsAt: NOW - 4 * D,
-    lastRanksAt: NOW - 5 * D,
-  },
-  cycle: {
-    auto: true,
-    openFindings: 12,
-    wouldFile: false,
-    openTicketId: 17,
-    held: { held: false },
-  },
+  state: { lastAuditAt: NOW - 20 * H, lastGeoAt: NOW - 3 * D, lastCitationsAt: NOW - 4 * D, lastRanksAt: NOW - 11 * D },
+  cycle: { auto: true, openFindings: 12, wouldFile: false, openTicketId: 17, held: { held: true, until: seoDay(-6), since: seoDay(3) } },
   coverage: [
     { kind: 'keyword', target: 'website maintenance', guide: { url: 'https://ptechsolutions.net/guides/website-maintenance', title: 'Website maintenance' } },
     { kind: 'keyword', target: 'vibe contracting', inProgress: 17 },
     { kind: 'question', target: 'who builds small business websites fast', lastAttemptAt: NOW - 9 * D },
     { kind: 'question', target: 'ai developer for small business', guide: null },
+    { kind: 'keyword', target: 'small business website developer', guide: { url: 'https://ptechsolutions.net/guides/small-business-website', title: 'Small business websites' } },
+    { kind: 'question', target: 'what does a website cost for a bakery', guide: null },
+    { kind: 'keyword', target: 'contract software developer', guide: null },
   ],
   geo: {
     rate: 0.42,
@@ -1114,67 +1108,95 @@ const SEO_OVERVIEW = {
     }),
   },
   citations: { todo: 3, drafted: 1, live: 2, verified: 4, skipped: 2 },
-  rank: { rankReady: true, latestDay: new Date(Date.now() - 5 * D * 1000).toISOString().slice(0, 10), avgPosition: 23, inTop10: 2, inTop100: 6, swing: 4, keywords: 8, pending: 0 },
-  settings: { autoCycle: true, volatilityHold: true },
+  rank: { rankReady: true, latestDay: seoDay(11), avgPosition: 23, inTop10: 2, inTop100: 6, swing: 4, keywords: 8, pending: 2 },
+  settings: {
+    autoCycle: true,
+    volatilityHold: true,
+    guidesAuto: true,
+    guidesPerWeek: 2,
+    guidesAutoMerge: true,
+    geoQuestions: ['who builds small business websites fast', 'what is vibe contracting'],
+    rankKeywords: ['vibe contracting', 'website maintenance', 'small business website developer'],
+    rankLocation: { locationCode: 2840, languageCode: 'en' },
+  },
   events: [
-    { id: 'ev-1', kind: 'fix', day: new Date(Date.now() - 8 * D * 1000).toISOString().slice(0, 10), label: 'Missing meta descriptions on /guides' },
-    { id: 'ev-2', kind: 'guide', day: new Date(Date.now() - 12 * D * 1000).toISOString().slice(0, 10), label: 'Guide: small business website cost' },
-    { id: 'ev-3', kind: 'core_update', day: new Date(Date.now() - 16 * D * 1000).toISOString().slice(0, 10), label: 'Google core update noticed' },
+    { id: 'ev-1', kind: 'fix', day: seoDay(8), label: 'Missing meta descriptions on /guides', source: 'cycle' },
+    { id: 'ev-2', kind: 'guide', day: seoDay(12), label: 'Guide: small business website cost' },
+    { id: 'ev-3', kind: 'core_update', day: seoDay(16), label: 'Google core update noticed', source: 'note' },
   ],
   guidesAt: NOW - 20 * H,
 };
 
+const seoRankSeries = Array.from({ length: 10 }, (_, i) => ({
+  day: seoDay((9 - i) * 7),
+  avgPosition: 31 - i,
+  inTop10: i > 5 ? 2 : 1,
+  inTop100: 4 + Math.min(3, Math.round(i / 3)),
+}));
+
 const SEO_RANKS = {
-  ranks: [
-    { keyword: 'vibe contracting', position: 1, url: 'https://ptechsolutions.net/', top: ['ptechsolutions.net'], day: new Date(Date.now() - 5 * D * 1000).toISOString().slice(0, 10), costMicros: 2100 },
-    { keyword: 'website maintenance', position: 7, url: 'https://ptechsolutions.net/guides/website-maintenance', top: ['ptechsolutions.net', 'wpbeginner.com'], day: new Date(Date.now() - 5 * D * 1000).toISOString().slice(0, 10), costMicros: 2100 },
-    { keyword: 'small business website developer', position: 34, url: 'https://ptechsolutions.net/', top: ['upwork.com', 'fiverr.com', 'squarespace.com'], day: new Date(Date.now() - 5 * D * 1000).toISOString().slice(0, 10), costMicros: 2100 },
-    { keyword: 'ai developer for small business', position: null, url: null, top: ['clutch.co', 'upwork.com'], day: new Date(Date.now() - 5 * D * 1000).toISOString().slice(0, 10), costMicros: 2100 },
+  rows: [
+    { keyword: 'vibe contracting', position: 1, prevPosition: 2, change: 1, url: 'https://ptechsolutions.net/', topDomains: ['ptechsolutions.net', 'wix.com', 'squarespace.com'] },
+    { keyword: 'website maintenance', position: 7, prevPosition: 9, change: 2, url: 'https://ptechsolutions.net/guides/website-maintenance', topDomains: ['ptechsolutions.net', 'wpbeginner.com'] },
+    { keyword: 'small business website developer', position: 34, prevPosition: 30, change: -4, url: 'https://ptechsolutions.net/', topDomains: ['upwork.com', 'fiverr.com', 'squarespace.com', 'clutch.co'] },
+    { keyword: 'ai developer for small business', position: null, prevPosition: null, change: null, url: null, topDomains: ['clutch.co', 'upwork.com'] },
+    { keyword: 'contract software developer', position: 61, prevPosition: 61, change: 0, url: 'https://ptechsolutions.net/', topDomains: ['toptal.com'] },
   ],
-  keywords: [
-    { keyword: 'vibe contracting', addedAt: NOW - 60 * D },
-    { keyword: 'website maintenance', addedAt: NOW - 40 * D },
-    { keyword: 'small business website developer', addedAt: NOW - 40 * D },
-    { keyword: 'ai developer for small business', addedAt: NOW - 30 * D },
-  ],
-  pending: 0,
+  keywords: ['vibe contracting', 'website maintenance', 'small business website developer', 'ai developer for small business', 'contract software developer'],
+  series: seoRankSeries,
+  avgPosition: 23,
+  inTop10: 2,
+  inTop100: 5,
+  swing: 4,
+  pending: 2,
+  latestDay: seoDay(11),
+  rankReady: true,
+  location: { locationCode: 2840, languageCode: 'en' },
 };
 
 const SEO_PAGES = {
+  day: seoDay(1),
+  days: [seoDay(1), seoDay(2), seoDay(3)],
+  averageScore: 78,
   pages: [
-    { host: 'ptechsolutions.net', path: '/', title: 'PTech — AI work, shipped', description: 'Small software jobs, done by an agent, checked by a person.', score: 94, issues: [], day: new Date(Date.now() - D * 1000).toISOString().slice(0, 10), bytes: 18234, ms: 210 },
-    { host: 'ptechsolutions.net', path: '/guides/website-maintenance', title: 'Website maintenance pricing', description: 'What a maintenance plan covers and what it should cost.', score: 88, issues: ['h1_count:2'], day: new Date(Date.now() - D * 1000).toISOString().slice(0, 10), bytes: 22100, ms: 190 },
-    { host: 'ptechsolutions.net', path: '/pricing', title: 'Pricing', description: 'Billed by the second at $100 an hour.', score: 76, issues: ['no_description', 'llms_not_covered'], day: new Date(Date.now() - D * 1000).toISOString().slice(0, 10), bytes: 12400, ms: 180 },
-    { host: 'ptechsolutions.net', path: '/old-page', title: 'Old page', description: null, score: 52, issues: ['no_description', 'no_jsonld', 'title_short'], day: new Date(Date.now() - D * 1000).toISOString().slice(0, 10), bytes: 8400, ms: 160 },
+    { id: 'p1', host: 'ptechsolutions.net', path: '/', status: 200, title: 'PTech — AI work, shipped', titleLen: 28, description: 'Small software jobs, done by an agent, checked by a person.', descLen: 66, canonical: 'https://ptechsolutions.net', score: 94, issues: [], hreflangCount: 0, jsonldTypes: ['Organization', 'WebSite'], h1Count: 1, ms: 210, inSitemap: true, inLlms: true },
+    { id: 'p2', host: 'ptechsolutions.net', path: '/guides/website-maintenance', status: 200, title: 'Website maintenance pricing', titleLen: 27, description: 'What a maintenance plan covers and what it should cost.', descLen: 60, canonical: 'https://ptechsolutions.net/guides/website-maintenance', score: 88, issues: [{ code: 'h1_count:2', severity: 'medium', detail: 'Two h1 elements on the page.' }], hreflangCount: 0, jsonldTypes: ['Article', 'FAQPage'], h1Count: 2, ms: 190, inSitemap: true, inLlms: false },
+    { id: 'p3', host: 'ptechsolutions.net', path: '/pricing', status: 200, title: 'Pricing', titleLen: 7, description: null, descLen: 0, canonical: null, score: 61, issues: [{ code: 'no_description', severity: 'high', detail: 'The page has no meta description.' }, { code: 'title_short', severity: 'low', detail: 'Title is under 15 characters.' }], hreflangCount: 0, jsonldTypes: [], h1Count: 1, ms: 1800, inSitemap: true, inLlms: false },
+    { id: 'p4', host: 'ptechsolutions.net', path: '/old-page', status: 200, title: 'Old page that still answers', titleLen: 29, description: 'A page kept for an old link.', descLen: 32, canonical: 'https://ptechsolutions.net/old-page', score: 52, issues: [{ code: 'no_jsonld', severity: 'medium', detail: 'No JSON-LD block found.' }], hreflangCount: 0, jsonldTypes: [], h1Count: 0, ms: 160, inSitemap: false, inLlms: false },
   ],
 };
 
 const SEO_FINDINGS = {
+  counts: { high: 2, medium: 4, low: 6, open: 12, resolved: 4 },
   findings: [
-    { id: 'f-1', host: 'ptechsolutions.net', path: '/pricing', code: 'no_description', severity: 'high', detail: 'The page has no meta description; results show whatever Google picks.', first_seen: NOW - 20 * D, last_seen: NOW - D, resolved_at: null, ticket_id: 9 },
-    { id: 'f-2', host: 'ptechsolutions.net', path: '/old-page', code: 'no_jsonld', severity: 'medium', detail: 'No JSON-LD block found.', first_seen: NOW - 20 * D, last_seen: NOW - D, resolved_at: null, ticket_id: null },
-    { id: 'f-3', host: 'ptechsolutions.net', path: '/guides/website-maintenance', code: 'h1_count:2', severity: 'medium', detail: 'Two h1 elements on the page.', first_seen: NOW - 6 * D, last_seen: NOW - D, resolved_at: null, ticket_id: null },
-    { id: 'f-4', host: 'ptechsolutions.net', path: '/about', code: 'title_short', severity: 'low', detail: 'Title is under 30 characters.', first_seen: NOW - 20 * D, last_seen: NOW - D, resolved_at: null, ticket_id: null },
-    { id: 'f-5', host: 'ptechsolutions.net', path: '/old-contact', code: '404_in_sitemap', severity: 'high', detail: 'Sitemap lists a page that answers 404.', first_seen: NOW - 14 * D, last_seen: NOW - 4 * D, resolved_at: NOW - 4 * D, ticket_id: 19 },
+    { id: 'f-1', host: 'ptechsolutions.net', path: '/pricing', code: 'no_description', severity: 'high', detail: 'The page has no meta description; results show whatever Google picks.', firstSeen: NOW - 20 * D, lastSeen: NOW - D, resolvedAt: null, ticketId: 9 },
+    { id: 'f-2', host: 'ptechsolutions.net', path: '/old-page', code: 'no_jsonld', severity: 'medium', detail: 'No JSON-LD block found.', firstSeen: NOW - 20 * D, lastSeen: NOW - D, resolvedAt: null, ticketId: null },
+    { id: 'f-3', host: 'ptechsolutions.net', path: '/guides/website-maintenance', code: 'h1_count:2', severity: 'medium', detail: 'Two h1 elements on the page.', firstSeen: NOW - 6 * D, lastSeen: NOW - D, resolvedAt: null, ticketId: null },
+    { id: 'f-4', host: 'ptechsolutions.net', path: '/about', code: 'title_short', severity: 'low', detail: 'Title is under 30 characters.', firstSeen: NOW - 20 * D, lastSeen: NOW - D, resolvedAt: null, ticketId: null },
+    { id: 'f-5', host: 'ptechsolutions.net', path: '/old-contact', code: '404_in_sitemap', severity: 'high', detail: 'Sitemap lists a page that answers 404.', firstSeen: NOW - 14 * D, lastSeen: NOW - 4 * D, resolvedAt: NOW - 4 * D, ticketId: 19 },
   ],
 };
 
 const SEO_GEO = {
-  runs: [
-    { question: 'Who builds small business websites fast?', named: true, cited: ['ptechsolutions.net'], competitors: ['wix.com', 'squarespace.com'], at: NOW - 3 * D },
-    { question: 'Is there a service that does tiny website changes without a retainer?', named: true, cited: ['ptechsolutions.net'], competitors: [], at: NOW - 3 * D },
-    { question: 'Who offers AI-assisted web development for small businesses?', named: false, cited: [], competitors: ['upwork.com', 'toptal.com'], at: NOW - 3 * D },
-    { question: 'What is vibe contracting?', named: true, cited: ['ptechsolutions.net'], competitors: [], at: NOW - 3 * D },
-  ],
+  engineReady: true,
+  summary: { rate: 0.42, mentions: 5, runs: 12 },
+  weeks: SEO_OVERVIEW.geo.weeks,
   questions: ['Who builds small business websites fast?', 'Is there a service that does tiny website changes without a retainer?', 'Who offers AI-assisted web development for small businesses?', 'What is vibe contracting?'],
+  runs: [
+    { id: 'g-1', day: seoDay(3), question: 'Who builds small business websites fast?', mentionsUs: true, competitors: ['wix.com', 'squarespace.com'], citedUrls: ['https://ptechsolutions.net/', 'https://ptechsolutions.net/guides/website-maintenance'], engine: 'deepseek', answerExcerpt: 'PTech is a small studio that ships websites quickly…' },
+    { id: 'g-2', day: seoDay(3), question: 'Who offers AI-assisted web development for small businesses?', mentionsUs: false, competitors: ['upwork.com', 'toptal.com'], citedUrls: ['https://www.upwork.com/', 'https://www.toptal.com/'], engine: 'deepseek', answerExcerpt: 'Several marketplaces list vetted AI developers…' },
+    { id: 'g-3', day: seoDay(3), question: 'What is vibe contracting?', mentionsUs: true, competitors: [], citedUrls: ['https://ptechsolutions.net/'], engine: 'deepseek', answerExcerpt: 'A way of buying small software jobs by the second…' },
+  ],
 };
 
 const SEO_CITATIONS = {
+  counts: { todo: 3, drafted: 1, live: 2, verified: 4, skipped: 2, total: 12 },
+  statuses: ['todo', 'drafted', 'live', 'verified', 'skipped'],
   citations: [
-    { id: 'c-1', name: 'Bing Places', url: 'https://www.bingplaces.com/', profile_url: 'https://www.bing.com/maps/?cid=demo', status: 'verified', link_verified_at: NOW - 4 * D, note: null, created_at: NOW - 60 * D },
-    { id: 'c-2', name: 'Apple Maps', url: 'https://mapsconnect.apple.com/', profile_url: null, status: 'todo', link_verified_at: null, note: 'Needs a business phone number.', created_at: NOW - 60 * D },
-    { id: 'c-3', name: 'Foursquare', url: 'https://foursquare.com/', profile_url: 'https://foursquare.com/v/ptech-demo', status: 'live', link_verified_at: NOW - 9 * D, note: null, created_at: NOW - 60 * D },
-    { id: 'c-4', name: 'Yellow Pages', url: 'https://www.yellowpages.com/', profile_url: null, status: 'drafted', link_verified_at: null, note: 'Draft description saved by the last fix cycle.', created_at: NOW - 60 * D },
+    { id: 'c-1', platform: 'Bing Places', domain: 'bingplaces.com', dr: 92, profileUrl: 'https://www.bing.com/maps/?cid=demo', status: 'verified', lastChecked: NOW - 4 * D, linkVerifiedAt: NOW - 4 * D, note: null },
+    { id: 'c-2', platform: 'Apple Maps', domain: 'mapsconnect.apple.com', dr: 95, profileUrl: null, status: 'todo', lastChecked: null, linkVerifiedAt: null, note: 'Needs a business phone number.' },
+    { id: 'c-3', platform: 'Foursquare', domain: 'foursquare.com', dr: 86, profileUrl: 'https://foursquare.com/v/ptech-demo', status: 'live', lastChecked: NOW - 9 * D, linkVerifiedAt: NOW - 9 * D, note: null },
+    { id: 'c-4', platform: 'Yellow Pages', domain: 'yellowpages.com', dr: 83, profileUrl: null, status: 'drafted', lastChecked: null, linkVerifiedAt: null, note: 'Draft description saved by the last fix cycle.' },
   ],
 };
 
@@ -1773,7 +1795,7 @@ export const api = async (method, url, body) => {
     if (status === 'open') rows = rows.filter((f) => !f.resolved_at);
     if (status === 'resolved') rows = rows.filter((f) => f.resolved_at);
     if (host) rows = rows.filter((f) => f.host === host);
-    return { findings: rows };
+    return { status, findings: rows, counts: SEO_FINDINGS.counts };
   }
   if (p === '/admin/seo/geo') return SEO_GEO;
   if (p === '/admin/seo/citations') return SEO_CITATIONS;
