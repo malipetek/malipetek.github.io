@@ -6,12 +6,16 @@ import { useAdmin, useMeter, useTicket } from './store.js';
 import {
   ATTENTION,
   AGENTS,
-  agentOptions,
+  MINE_LABEL,
   PRIORITIES,
+  REQUEUE_WARNING,
+  RUN_AGAIN,
+  agentOptions,
   STATUSES,
   STATUS_LABEL,
   ago,
   billOf,
+  clientWaiting,
   clock,
   errorText,
   listOf,
@@ -21,9 +25,9 @@ import {
   when,
 } from './format.js';
 import { Button, Chips, Dot, Field, Modal, Resizer, Segmented, StatusPill, Tag, cx } from './ui.jsx';
-import { ReviewButton, RecordedEvidence } from './review.jsx';
+import { ReviewButton } from './review.jsx';
 import { createSubmission } from './submit-state.js';
-import { recordedPatch, sortedRuns } from './run-evidence.js';
+import { sortedRuns } from './run-evidence.js';
 import { createStepRequest } from './request-state.js';
 import { MentionRecipients } from './mention-recipients.jsx';
 import { createMentionDelivery } from './mention-delivery.js';
@@ -38,9 +42,9 @@ const PRIMARY = {
   approved: [['new', 'Hold', 'ghost']],
   review: [
     ['done', 'Mark done', 'primary'],
-    ['approved', 'Queue another run', 'ghost'],
+    ['approved', RUN_AGAIN, 'ghost'],
   ],
-  done: [['approved', 'Queue another run', 'ghost']],
+  done: [['approved', RUN_AGAIN, 'ghost']],
   declined: [['new', 'Reopen', 'ghost']],
 };
 
@@ -54,6 +58,8 @@ export function TicketView({ id, active, details = true }) {
   const { api, act } = useAdmin();
   const [{ ticket, messages, runs, review, screenshots, land, error, loading, fetchedAt }, reload] = useTicket(api, id);
   const meter = useMeter(api, ticket, active);
+  // The waiting banner's Reply button aims the composer: reply mode, then focus.
+  const [replyAt, setReplyAt] = useState(0);
   if (loading && !ticket) return <p className="aw-empty">Loading #{id}…</p>;
   if (!ticket) return <div className="aw-empty" role="alert">{errorText(error)} <Button onClick={reload}>Retry loading ticket</Button></div>;
   const isClient = ticket.kind !== 'system';
@@ -70,7 +76,7 @@ export function TicketView({ id, active, details = true }) {
           <div className="aw-ticket__crumbs">
             <span className="aw-mono">#{ticket.id}</span>
             <span>{ticket.project_name ?? 'no project'}</span>
-            <span>{isClient ? `${ticket.client_name ? `${ticket.client_name} · ` : ''}${ticket.client_email}` : 'your task'}{via ? <>{' '}<Tag title={assistantBadgeTitle(ticket)}>{via}</Tag></> : null}</span>
+            <span>{isClient ? `${ticket.client_name ? `${ticket.client_name} · ` : ''}${ticket.client_email}` : MINE_LABEL}{via ? <>{' '}<Tag title={assistantBadgeTitle(ticket)}>{via}</Tag></> : null}</span>
             <span>opened {when(ticket.created_at)}</span>
             {isClient && ticket.client_locale && !isEnglish(ticket.client_locale) ? (
               <span title="Their messages are machine-translated for you; your replies reach them translated.">
@@ -79,10 +85,13 @@ export function TicketView({ id, active, details = true }) {
             ) : null}
           </div>
           <h2 title={ticket.title_en ? `Original: ${ticket.title}` : undefined}>{ticket.title_en || ticket.title}</h2>
-          {ticket.client_waiting_since && ticket.status !== 'new' ? (
+          {clientWaiting(ticket) ? (
             <div className="aw-banner aw-banner--warn">
               The client wrote {ago(ticket.client_waiting_since)} ago and is waiting for an answer.
               <span className="aw-toolbar__fill" />
+              <Button size="sm" kind="primary" onClick={() => setReplyAt(Date.now())}>
+                Reply
+              </Button>
               <Button
                 size="sm"
                 kind="ghost"
@@ -99,14 +108,17 @@ export function TicketView({ id, active, details = true }) {
           )}
         </header>
 
-        <ReviewCard
-          review={review}
-          latestRunId={sortedRuns(runs)[0]?.id}
-          screenshots={screenshots.filter((shot) => review?.runId != null && String(shot.runId) === String(review.runId))}
-        />
-        <RecordedEvidence key={`evidence-${ticket.id}`} runs={runs} review={review} screenshots={screenshots} />
+        {ticket.status === 'review' ? (
+          <ReviewCard
+            review={review}
+            ticket={ticket}
+            runs={runs}
+            latestRunId={sortedRuns(runs)[0]?.id}
+            screenshots={screenshots.filter((shot) => review?.runId != null && String(shot.runId) === String(review.runId))}
+          />
+        ) : null}
         <Timeline key={`timeline-${ticket.id}`} ticket={ticket} messages={messages} runs={runs} />
-        <Composer key={ticket.id} ticket={ticket} onSent={reload} />
+        <Composer key={ticket.id} ticket={ticket} onSent={reload} replyAt={replyAt} />
       </div>
       {details ? <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} /> : null}
     </div>
@@ -122,11 +134,13 @@ function TicketActions({ ticket, runs, land, reload }) {
   const { api, setStatus, act, ask } = useAdmin();
   const live = runs.find((r) => r.status === 'running');
   const move = (s) => {
-    if (s === 'approved' && ticket.status !== 'new') {
+    // Queueing again is deliberate: the fleet may resume the old session. System
+    // work has no client to notify, so it just goes back to the queue.
+    if (s === 'approved' && ticket.status !== 'new' && ticket.kind !== 'system') {
       ask({
-        title: `Queue another run for #${ticket.id}?`,
-        text: 'This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.',
-        confirm: 'Queue another run',
+        title: `${RUN_AGAIN} for #${ticket.id}?`,
+        text: REQUEUE_WARNING,
+        confirm: RUN_AGAIN,
         run: () => act(() => api('PATCH', `/admin/tickets/${ticket.id}`, { status: 'approved' })).then(reload),
       });
       return;
@@ -148,7 +162,14 @@ function TicketActions({ ticket, runs, land, reload }) {
           kind="danger"
           size="sm"
           onClick={() =>
-            act(() => api('POST', `/admin/runs/${live.id}/cancel`), 'Stopping the run; it goes to review.').then(reload, () => undefined)
+            ask({
+              title: 'Stop this run?',
+              text: 'The agent stops now; its partial work stays on the branch.',
+              confirm: 'Stop run',
+              danger: true,
+              run: () =>
+                act(() => api('POST', `/admin/runs/${live.id}/cancel`), 'Stopping the run; it goes to review.').then(reload, () => undefined),
+            })
           }
         >
           Stop run
@@ -180,7 +201,6 @@ function TicketActions({ ticket, runs, land, reload }) {
           Land on main
         </Button>
       ) : null}
-      <ReviewButton ticket={ticket} runs={runs} />
       {land?.requestedAt ? (
         <span className="aw-running">
           <span className="aw-live" /> landing…
@@ -196,8 +216,12 @@ function TicketActions({ ticket, runs, land, reload }) {
   );
 }
 
-/** The pre-review's one screen: verdict, why, and the build it was based on. */
-function ReviewCard({ review, latestRunId, screenshots = [] }) {
+/**
+ * The pre-review's one screen: verdict, why, and the build it was based on.
+ * The one place the work is reviewed from — its action opens Git Graph when
+ * the host has it, else the newest run's recorded diff.
+ */
+function ReviewCard({ review, ticket, runs, latestRunId, screenshots = [] }) {
   if (!review) return null;
   const tone = review.verdict === 'pass' ? 'ok' : review.verdict === 'attention' ? 'warn' : 'bad';
   const label = review.verdict === 'pass' ? 'pass' : review.verdict === 'attention' ? 'check' : 'fail';
@@ -241,6 +265,8 @@ function ReviewCard({ review, latestRunId, screenshots = [] }) {
           <Tag tone="bad">build failed</Tag>
         )}
         <span className="aw-muted">A cheap agent's read; you still decide.</span>
+        <span className="aw-toolbar__fill" />
+        <ReviewButton ticket={ticket} runs={runs} />
       </footer>
     </section>
   );
@@ -248,7 +274,6 @@ function ReviewCard({ review, latestRunId, screenshots = [] }) {
 
 /** Messages and runs in one stream, oldest first. */
 function Timeline({ ticket, messages, runs }) {
-  const [diff, setDiff] = useState(null);
   const items = [
     ...messages.filter((m) => m.author !== 'runner').map((m) => ({ at: m.created_at, kind: 'msg', m })),
     ...runs.map((r) => ({ at: r.started_at, kind: 'run', r })),
@@ -265,7 +290,7 @@ function Timeline({ ticket, messages, runs }) {
     <ol className="aw-timeline">
       {items.map((item) =>
         item.kind === 'run' ? (
-          <RunCard key={`r${item.r.id}`} run={item.r} latest={item === latest} onDiff={() => setDiff(item.r)} />
+          <RunCard key={`r${item.r.id}`} run={item.r} latest={item === latest} />
         ) : item.m.author === 'system' ? (
           <li key={`m${item.m.id}`} className="aw-event">
             <span>{item.m.body}</span>
@@ -275,11 +300,6 @@ function Timeline({ ticket, messages, runs }) {
           <Message key={`m${item.m.id}`} ticket={ticket} m={item.m} latest={item === latest} />
         ),
       )}
-      {diff ? (
-        <Modal title={`Run ${diff.id}: changes`} subtitle={`Recorded evidence for run #${diff.id}${diff.branch ? ` · branch ${diff.branch} is mutable` : ''}; not the current repository state`} onClose={() => setDiff(null)} wide>
-          <pre className="aw-diff">{recordedPatch(diff) ?? 'No patch or statistics recorded.'}</pre>
-        </Modal>
-      ) : null}
     </ol>
   );
 }
@@ -459,7 +479,7 @@ function RunSteps({ run, live }) {
   );
 }
 
-function RunCard({ run, latest, onDiff }) {
+function RunCard({ run, latest }) {
   const live = run.status === 'running';
   const summary = run.summary ?? '';
   const fold = useFold(summary, latest);
@@ -488,11 +508,6 @@ function RunCard({ run, latest, onDiff }) {
       <footer>
         {fold.long ? <FoldMore fold={fold} text={summary} /> : null}
         {run.diff_stat ? <code className="aw-muted">{run.diff_stat.split('\n').pop()}</code> : null}
-        {recordedPatch(run) ? (
-          <button type="button" className="aw-link" onClick={onDiff}>
-            View changes
-          </button>
-        ) : null}
         {run.shared_to === 'origin' ? (
           <Tag tone="ok" title="The next run starts from it on any node">pushed · {run.shared_ref}</Tag>
         ) : run.shared_to === 'bundle' ? (
@@ -550,7 +565,7 @@ function ConversationButton({ run }) {
 }
 
 /** Reply to the client, or steer the agent with a private note. */
-function Composer({ ticket, onSent }) {
+function Composer({ ticket, onSent, replyAt = 0 }) {
   const { api, act, ask, notify, files: host } = useAdmin();
   const isClient = ticket.kind !== 'system';
   const [mode, setMode] = useState(isClient ? 'note' : 'note');
@@ -563,8 +578,15 @@ function Composer({ ticket, onSent }) {
   const [mentionJobs, setMentionJobs] = useState([]);
   const [mentionVersion, setMentionVersion] = useState(0);
   const picker = useRef(null);
+  const body = useRef(null);
   const note = mode === 'note' || !isClient;
   const canRerun = ['review', 'done', 'approved', 'new'].includes(ticket.status);
+  // The waiting banner's Reply button aims this composer.
+  useEffect(() => {
+    if (!replyAt) return;
+    setMode('reply');
+    body.current?.focus();
+  }, [replyAt]);
 
   const checkMention = async (job, saved) => {
     setMentionJobs(previous => previous.map(value => value.key === job.key ? {...value,status:'checking'} : value));
@@ -597,7 +619,7 @@ function Composer({ ticket, onSent }) {
           onSaved: saved => {
             setText(''); setPicked([]); if (picker.current) picker.current.value = ''; void onSent();
             if (recipientUserIds.length) {
-              const job = {key:globalThis.crypto.randomUUID(),messageId:saved?.messageId,deliver:createMentionDelivery({api,projectId:ticket.project_id,ticketId:ticket.id,recipientUserIds}),status:'checking'};
+              const job = {key:globalThis.crypto.randomUUID(),messageId:saved?.messageId,count:recipientUserIds.length,deliver:createMentionDelivery({api,projectId:ticket.project_id,ticketId:ticket.id,recipientUserIds}),status:'checking'};
               setMentionJobs(previous => [...previous,job]);
               void checkMention(job,saved);
             }
@@ -639,6 +661,7 @@ function Composer({ ticket, onSent }) {
         <span className="aw-muted">{note ? 'Only you and the agent see this. It is trusted guidance on the next run.' : 'Emailed to the client.'}</span>
       </div>
       <textarea
+        ref={body}
         rows={4}
         value={text}
         disabled={busy}
@@ -648,9 +671,19 @@ function Composer({ ticket, onSent }) {
       />
       <MentionRecipients key={mentionVersion} api={api} projectId={ticket.project_id} onChange={setRecipientUserIds} disabled={busy} internal={note} />
       {mentionJobs.map(job => <div key={job.key} role="status" className="aw-muted">
-        Message #{job.messageId ?? 'unknown'} saved. {job.status === 'checking' ? 'Checking notification delivery…' : job.error ? `Notification status unavailable: ${errorText(job.error)}` : job.result?.ok ? 'All selected notification emails sent.' : 'Some notifications were not confirmed sent.'}
-        {job.result?.deliveries?.map(delivery => <p key={delivery.userId}>Recipient #{delivery.userId}: {delivery.status === 'sent' ? 'Email sent' : delivery.status === 'failed' ? 'Email could not be sent' : delivery.status === 'sending' ? 'Delivery status unknown' : delivery.status === 'cancelled' ? 'Notification cancelled' : 'Delivery pending'}.</p>)}
-        {job.status !== 'checking' && (job.error || !job.result?.ok) ? <Button size="sm" onClick={() => void checkMention(job)}>Check notification status</Button> : null}
+        {job.status === 'checking'
+          ? `Notifying ${job.count}…`
+          : job.error
+            ? `Notified ${job.count} · status unknown`
+            : `Notified ${job.count}${job.result?.ok ? '' : ' · some not confirmed'}`}
+        {job.status === 'checking' ? null : job.error || !job.result?.ok ? <Button size="sm" onClick={() => void checkMention(job)}>Check notification status</Button> : null}
+        {job.result?.deliveries?.length ? (
+          <details className="aw-notified">
+            <summary>Details</summary>
+            <p>Message #{job.messageId ?? 'unknown'} saved.</p>
+            {job.result.deliveries.map(delivery => <p key={delivery.userId}>Recipient #{delivery.userId}: {delivery.status === 'sent' ? 'Email sent' : delivery.status === 'failed' ? 'Email could not be sent' : delivery.status === 'sending' ? 'Delivery status unknown' : delivery.status === 'cancelled' ? 'Notification cancelled' : 'Delivery pending'}.</p>)}
+          </details>
+        ) : null}
       </div>)}
       {sendError ? <p role="alert" className="aw-error">{submission.current.pendingQueue ? 'Message saved. Queue failed; retry queues only, without another message. ' : 'Message was not saved. '}{errorText(sendError)}</p> : null}
       {submission.current.pendingQueue ? <Button disabled={busy} onClick={retryQueue}>{busy ? 'Queuing…' : 'Retry queue only'}</Button> : null}
@@ -828,10 +861,10 @@ export function TicketDetails({ ticket, runs, land, meter, reload, page = false 
   return (
     <aside className={cx('aw-details', page && 'aw-details--page')} aria-label="Details">
       <TicketActions ticket={ticket} runs={runs} land={land} reload={reload} />
-      <SitePanel project={data.projects.find((p) => p.id === ticket.project_id)} />
       <Field label="Status">
         <select value={ticket.status} onChange={(e) => void setStatus(ticket, e.target.value).then(reload)}>
-          {STATUSES.map((s) => (
+          {/* Approving is its own button, with its own confirmation. */}
+          {STATUSES.filter((s) => s !== 'approved' || ticket.status === 'approved').map((s) => (
             <option key={s} value={s}>
               {STATUS_LABEL[s]}
             </option>
@@ -868,70 +901,57 @@ export function TicketDetails({ ticket, runs, land, meter, reload, page = false 
           onChange={(v) => void patch({ executor: v }, `Agent: ${AGENTS.find((a) => a.value === v)?.label ?? v ?? 'auto'}.`)}
         />
       </Field>
-      {caps.length ? (
-        <Field label="Needs">
-          <Chips value={requires} options={caps.map((c) => ({ value: c.id, label: c.label, hint: c.hint }))} onChange={(v) => void patch({ requires: v }, 'Saved.')} />
-        </Field>
-      ) : null}
       {['approved', 'new'].includes(ticket.status) ? (
         <p className={`aw-predict aw-predict--${queued && !queued.eligible.length ? 'bad' : where.state}`}>
           <Dot state={queued && !queued.eligible.length ? 'bad' : where.state} /> {queued?.reason ?? where.text}
         </p>
       ) : null}
 
-      {isClient ? (
-        <>
-          <Field label="Attention">
-            <select value={ticket.attention} onChange={(e) => void patch({ attention: e.target.value }, 'Attention saved.')}>
-              {ATTENTION.map((a) => (
-                <option key={a.key} value={a.key}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
+      {/* The rare controls, folded away: the everyday loop is status, agent and priority. */}
+      <details className="aw-details__more">
+        <summary>More</summary>
+        <SitePanel project={data.projects.find((p) => p.id === ticket.project_id)} />
+        {isClient ? (
+          <>
+            <Field label="Attention">
+              <select value={ticket.attention} onChange={(e) => void patch({ attention: e.target.value }, 'Attention saved.')}>
+                {ATTENTION.map((a) => (
+                  <option key={a.key} value={a.key}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Budget">
+              <BudgetInput cents={ticket.budget_cents} onSave={(budgetCents) => void patch({ budgetCents }, 'Budget saved.')} />
+            </Field>
+          </>
+        ) : null}
+        {caps.length ? (
+          <Field label="Needs">
+            <Chips value={requires} options={caps.map((c) => ({ value: c.id, label: c.label, hint: c.hint }))} onChange={(v) => void patch({ requires: v }, 'Saved.')} />
           </Field>
-          <Field label="Budget">
-            <BudgetInput cents={ticket.budget_cents} onSave={(budgetCents) => void patch({ budgetCents }, 'Budget saved.')} />
-          </Field>
-        </>
-      ) : null}
-
-      <div className="aw-cost">
-        <div>
-          <span className="aw-field__label">Your time</span>
-          <strong>{clock(meter.seconds)}</strong>
-          <small className="aw-muted">{!meter.open ? 'meter closed' : meter.running ? 'meter running' : 'meter paused'}</small>
+        ) : null}
+        <div className="aw-cost">
+          <div>
+            <span className="aw-field__label">Your time</span>
+            <strong>{clock(meter.seconds)}</strong>
+            <small className="aw-muted">{!meter.open ? 'meter closed' : meter.running ? 'meter running' : 'meter paused'}</small>
+          </div>
+          <div>
+            <span className="aw-field__label">AI</span>
+            <strong>{usd(ticket.ai_micro_usd ?? 0)}</strong>
+          </div>
+          <div>
+            <span className="aw-field__label">{ticket.first_preview ? 'First preview' : ticket.price_cents != null ? 'Billed' : 'So far'}</span>
+            <strong>{ticket.first_preview ? 'on us' : money(ticket.price_cents ?? price.totalCents)}</strong>
+            {ticket.first_preview ? <small className="aw-muted">client billed {money(0)}</small> : null}
+          </div>
+          <button type="button" className="aw-link" onClick={() => setFixing(true)}>
+            Correct time…
+          </button>
         </div>
-        <div>
-          <span className="aw-field__label">AI</span>
-          <strong>{usd(ticket.ai_micro_usd ?? 0)}</strong>
-        </div>
-        <div>
-          <span className="aw-field__label">{ticket.first_preview ? 'First preview' : ticket.price_cents != null ? 'Billed' : 'So far'}</span>
-          <strong>{ticket.first_preview ? 'on us' : money(ticket.price_cents ?? price.totalCents)}</strong>
-          {ticket.first_preview ? <small className="aw-muted">client billed {money(0)}</small> : null}
-        </div>
-        <button type="button" className="aw-link" onClick={() => setFixing(true)}>
-          Correct time…
-        </button>
-      </div>
-
-      <h4 className="aw-details__h">Runs</h4>
-      <ul className="aw-runlist">
-        {runs.length ? (
-          [...runs].reverse().map((r) => (
-            <li key={r.id}>
-              {r.status === 'running' ? <span className="aw-live" /> : <Dot state={r.status === 'ok' ? 'ok' : 'bad'} />}
-              <span>{r.executor}</span>
-              <span className="aw-muted">{r.node_id ?? 'Harness'}</span>
-              <span className="aw-toolbar__fill" />
-              <span className="aw-muted">{usd(r.cost_micro_usd)}</span>
-            </li>
-          ))
-        ) : (
-          <li className="aw-muted">No runs yet</li>
-        )}
-      </ul>
+      </details>
 
       {fixing ? (
         <TimeModal

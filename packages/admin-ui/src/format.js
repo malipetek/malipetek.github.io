@@ -32,6 +32,21 @@ export const STATUS_HINT = {
 /** Moves the client is emailed about. */
 export const CLIENT_VISIBLE = ['approved', 'declined', 'done'];
 
+/**
+ * The client wrote last on a filed ticket and no one has answered. Closed
+ * work (done or declined) is not waiting on anyone.
+ */
+export const clientWaiting = (t) =>
+  Boolean(t.client_waiting_since) && !['new', 'done', 'declined'].includes(t.status);
+
+/** One label for sending work back to the queue, wherever it appears. */
+export const RUN_AGAIN = 'Run again';
+/** Why queueing again asks first: the fleet may resume the old session. */
+export const REQUEUE_WARNING =
+  'This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.';
+/** Work Ali filed for himself, one label wherever it is tagged. */
+export const MINE_LABEL = 'My task';
+
 export const PRIORITIES = [
   { value: -10, label: 'Low' },
   { value: 0, label: 'Normal' },
@@ -134,7 +149,7 @@ export function needsYou(data) {
   const stuckRun = new Set(data.queue.filter((q) => !q.eligible.length).map((q) => q.id));
   return {
     // The client wrote last on a filed ticket and has had no answer.
-    waiting: data.tickets.filter((x) => x.client_waiting_since && x.status !== 'new'),
+    waiting: data.tickets.filter(clientWaiting),
     review: data.tickets.filter((x) => x.status === 'review'),
     new: data.tickets.filter((x) => x.status === 'new'),
     stalled: data.tickets.filter((x) => x.status === 'in_progress' && t - x.updated_at > 45 * 60),
