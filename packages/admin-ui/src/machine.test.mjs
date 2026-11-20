@@ -71,13 +71,13 @@ test('the pill says not set up, with no pause control, until the admin answers',
 
 test('the pill counts live work and names the subscriptions it lends', () => {
   const html = view.pill({ ...UP, consent: ACCEPTED }, { running: RUNNING });
-  assert.match(html, /This Mac: working 1\/2 · Flash, Opus/);
+  assert.match(html, /This Mac: 1 of 2 runs busy · Flash, Opus/);
   assert.match(html, /title="Pause: what is running finishes, nothing new starts"/);
 });
 
 test('a drained machine with work left says pausing, and idle says paused, both with a one-click resume', () => {
   const pausing = view.pill({ ...UP, consent: ACCEPTED }, { draining: true, running: RUNNING });
-  assert.match(pausing, /This Mac: pausing 1\/2/);
+  assert.match(pausing, /This Mac: pausing · 1 of 2 runs busy/);
   assert.match(pausing, /title="Resume: this Mac takes work again"/);
   const paused = view.pill({ ...UP, consent: ACCEPTED }, { draining: true });
   assert.match(paused, /This Mac: paused/);
@@ -94,14 +94,14 @@ test('a service that is not running says off, whatever the node says', () => {
 test('the panel shows the state, the running item, per-subscription health and the consent date', () => {
   const html = view.panel({ ...UP, consent: ACCEPTED }, { running: RUNNING });
   assert.match(html, /This Mac<\/h3>/);
-  assert.match(html, /Working — 1 of 2 slots busy, lending Flash, Opus\./);
+  assert.match(html, /Working — 1 of 2 runs busy, lending Flash, Opus\./);
   assert.match(html, />Pause<\/button>/);
   assert.match(html, />Stop now<\/button>/);
   assert.match(html, /#12/);
   assert.match(html, /Fix the menu/);
   assert.match(html, /dsh-go 1\.2/);
   assert.match(html, /Lent since/);
-  assert.match(html, /Withdraw consent/);
+  assert.match(html, /Stop lending/);
   assert.match(html, /<details class="aw-mlog">/);
   assert.doesNotMatch(html, /No lending record yet/);
 });
@@ -122,7 +122,7 @@ test('a declined machine says so, keeps the history, and offers the way back in'
   assert.match(html, /Declined/);
   assert.match(html, /previously lent/);
   assert.match(html, /Lend this Mac…/);
-  assert.doesNotMatch(html, /Withdraw consent/);
+  assert.doesNotMatch(html, /Stop lending/);
 });
 
 test('with no record, the panel asks for the one decision instead of showing toggles', () => {
@@ -130,7 +130,7 @@ test('with no record, the panel asks for the one decision instead of showing tog
   assert.match(html, /Not set up — no lending record yet/);
   assert.match(html, /No lending record yet/);
   assert.match(html, /Decide now…/);
-  assert.doesNotMatch(html, /Withdraw consent/);
+  assert.doesNotMatch(html, /Stop lending/);
 });
 
 test('the onboarding explains what runs here, per subscription, and offers both answers', () => {
@@ -142,7 +142,10 @@ test('the onboarding explains what runs here, per subscription, and offers both 
   assert.match(html, /checked=""[^>]*\/><span class="aw-mexe__name">Flash/);
   assert.match(html, /checked=""[^>]*\/><span class="aw-mexe__name">Opus/);
   assert.match(html, /pause it any time from the “This Mac” pill/);
-  assert.match(html, /<button[^>]*>Not now<\/button>/);
+  assert.match(html, /<button[^>]*>Ask me later<\/button>/);
+  assert.match(html, /Don(?:'|&#x27;)t use this Mac/);
+  assert.match(html, /Show all agents/);
+  assert.doesNotMatch(html, /Claude Code CLI/);
   assert.match(html, /<button[^>]*>Lend this Mac<\/button>/);
 });
 
@@ -151,4 +154,17 @@ test('the onboarding never shows itself once the record has an answer', () => {
   assert.equal(accepted, '');
   const declined = view.onboarding({ ...UP, consent: { version: 1, acceptedAt: null, declinedAt: 1_700_864_000, lend: [] } });
   assert.equal(declined, '');
+});
+
+
+test('the machine distinguishes a pending read from a failed lending record', () => {
+  const loading = { loaded: false };
+  assert.match(view.pill(loading), /Checking this Mac…/);
+  assert.match(view.panel(loading), /Checking this Mac…/);
+  const error = { ...UP, consent: ACCEPTED, consentError: 'offline' };
+  const panel = view.panel(error);
+  assert.match(panel, /Could not read the lending record/);
+  assert.match(panel, />Retry<\/button>/);
+  assert.doesNotMatch(panel, /Stop lending/);
+  assert.equal(view.onboarding(error), '');
 });

@@ -12,7 +12,9 @@ import { Button, Dot, Tag, cx } from './ui.jsx';
 
 const tone = (status) => (status === 'ok' ? 'ok' : status === 'fail' ? 'bad' : 'warn');
 
-export function HealthView() {
+export function HealthView({ compact = false }) {
+  const Container = compact ? 'section' : 'div';
+  const Heading = compact ? 'h3' : 'h2';
   const { api, act } = useAdmin();
   const [state, setState] = useState({ loading: true, checks: [], failing: 0, ranAt: null, error: null });
   const [busy, setBusy] = useState(false);
@@ -34,15 +36,15 @@ export function HealthView() {
   }, [load]);
 
   return (
-    <div className="aw-view aw-health">
-      <header className="aw-hero">
-        <h2>Health</h2>
+    <Container className={compact ? "aw-group aw-health--compact" : "aw-view aw-health"}>
+      <header className={compact ? "aw-row-h" : "aw-hero"}>
+        <Heading>Health</Heading>
         <span className="aw-toolbar__fill" />
-        {state.failing ? (
+        {!state.loading && !state.error && state.checks.length ? (state.failing ? (
           <Tag tone="bad">{state.failing} failing</Tag>
         ) : (
           <Tag tone="ok">all green</Tag>
-        )}
+        )) : null}
         <Button
           disabled={busy}
           onClick={() => {
@@ -57,12 +59,13 @@ export function HealthView() {
       </header>
 
       <p className="aw-muted aw-health__intro">
-        Every check runs every five minutes. A failing check mails you once, and mails again only when it recovers.
-        {state.ranAt ? ` Last run ${ago(state.ranAt)}.` : ''}
+        {!compact ? "Every check runs every five minutes. A failing check mails you once, and mails again only when it recovers." : null}
+        {state.ranAt ? ` Last run ${ago(state.ranAt)} ago.` : null}
       </p>
 
       {state.error ? <p className="aw-empty">{state.error.message ?? 'Could not read the checks.'}</p> : null}
-      {state.loading && !state.checks.length ? <p className="aw-empty">Running the checks…</p> : null}
+      {state.loading ? <p className="aw-empty">Reading health checks…</p> : null}
+      {!state.loading && !state.error && !state.checks.length ? <p className="aw-empty">No checks reported</p> : null}
 
       <ul className="aw-health__list">
         {state.checks.map((check) => (
@@ -83,6 +86,6 @@ export function HealthView() {
           </li>
         ))}
       </ul>
-    </div>
+    </Container>
   );
 }

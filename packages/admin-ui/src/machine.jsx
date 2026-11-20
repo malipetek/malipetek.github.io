@@ -31,6 +31,14 @@ const LEND = {
 const lendLabel = (e) => LEND[e]?.label ?? e;
 
 /** The dsh family a machine with no narrower list offers by default. */
+const DEFER_LENDING_KEY = 'aw.deferMachineLending';
+const lendingDeferred = () => {
+  try { return globalThis.sessionStorage?.getItem(DEFER_LENDING_KEY) === '1'; } catch { return false; }
+};
+const deferLending = () => {
+  try { globalThis.sessionStorage?.setItem(DEFER_LENDING_KEY, '1'); } catch { /* The modal still closes when storage is restricted. */ }
+};
+
 const DEFAULT_LEND = ['dsh-go', 'dsh-claude', 'dsh', 'dsh-devin'];
 
 const STATE_DOT = { working: 'ok', ready: 'ok', pausing: 'warn', paused: 'warn', off: 'bad', unset: null };
@@ -219,12 +227,24 @@ export function useMachine() {
       if (!serviceUp) await hostMust(`node ${svc?.loaded ? 'start' : 'install'}`);
     }, 'This Mac is a fleet worker now. Pause it any time from the header.');
 
-  /** Say no — now, or again after lending: record it and stop taking work. */
-  const decline = () =>
-    act(async () => {
-      await saveConsent({ acceptedAt: consent?.acceptedAt ?? null, declinedAt: nowSec(), lend: consent?.lend ?? [] });
-      if (node) await api('PATCH', `/admin/nodes/${node.id}`, { draining: true }).catch(() => undefined);
-    }, 'Noted. This Mac takes no new work.').then(refresh, () => undefined);
+  /** Drain before recording a decline, so a failed drain never looks like a withdrawal. */
+  const decline = async () => {
+    try {
+      await act(async () => {
+        if (node) await api('PATCH', `/admin/nodes/${node.id}`, { draining: true });
+        await saveConsent({ acceptedAt: consent?.acceptedAt ?? null, declinedAt: nowSec(), lend: consent?.lend ?? [] });
+      }, 'Noted. This Mac takes no new work.');
+    } finally {
+      refresh();
+    }
+  };
+  const withdraw = () => ask({
+    title: 'Stop lending this Mac?',
+    text: 'Running work finishes; nothing new starts here.',
+    confirm: 'Stop lending',
+    danger: true,
+    run: () => decline().catch(() => undefined),
+  });
 
   const offered = notEmpty(node?.executors) ?? notEmpty(read.info?.localConfig?.executors) ?? DEFAULT_LEND;
   const lending = consent?.lend ?? notEmpty(node?.executors) ?? [];
@@ -256,6 +276,7 @@ export function useMachine() {
     setLend,
     accept,
     decline,
+    withdraw,
     refresh,
     signedOut,
   };
@@ -269,19 +290,22 @@ const lendNames = (m) => {
 };
 
 const pillText = (m) => {
+  if (m.consentError) return 'This Mac: lending record unavailable';
+  if (!m.loaded) return 'Checking this Mac…';
+  const prefix = 'This Mac: ';
   switch (m.state) {
     case 'working':
-      return `working ${m.running.length}/${m.slots} · ${lendNames(m)}`;
+      return `${prefix}${m.running.length} of ${m.slots} runs busy · ${lendNames(m)}`;
     case 'pausing':
-      return `pausing ${m.running.length}/${m.slots}`;
+      return `${prefix}pausing · ${m.running.length} of ${m.slots} runs busy`;
     case 'paused':
-      return 'paused';
+      return `${prefix}paused`;
     case 'off':
-      return 'off';
+      return `${prefix}off`;
     case 'ready':
-      return `ready · ${lendNames(m)}`;
+      return `${prefix}ready · ${lendNames(m)}`;
     default:
-      return 'not set up';
+      return `${prefix}not set up`;
   }
 };
 
@@ -302,22 +326,22 @@ export function MachineStatusPill() {
   const m = useMachine();
   const { setModal } = useAdmin();
   if (!m.live) return null;
-  const open = () => setModal({ kind: 'custom', render: (close) => <MachineModal m={m} onClose={close} /> });
+  const open = () => setModal({ kind: 'custom', render: (close) => <MachineModal onClose={close} /> });
   const toggle =
-    m.state === 'working' || m.state === 'ready' ? (
+    !m.loaded || m.consentError ? null : m.state === 'working' || m.state === 'ready' ? (
       <Button kind="ghost" size="sm" title="Pause: what is running finishes, nothing new starts" onClick={() => void m.pause()}>
         <PauseIcon />
       </Button>
-    ) : m.state === 'pausing' || m.state === 'paused' ? (
+    ) : m.consented && (m.state === 'pausing' || m.state === 'paused') ? (
       <Button kind="ghost" size="sm" title="Resume: this Mac takes work again" onClick={() => void m.resume()}>
         <Icon name="play" size={13} />
       </Button>
     ) : null;
   return (
     <span className="aw-mpillbar">
-      <button type="button" className="aw-mpill" title={`${HINT[m.state] ?? ''} Click for the panel.`} onClick={open}>
+      <button type="button" className="aw-mpill" title={m.loaded && !m.consentError ? `${HINT[m.state] ?? ''} Click for the panel.` : 'Open this Mac’s worker panel'} onClick={open}>
         <Dot state={STATE_DOT[m.state]} />
-        This Mac: {pillText(m)}
+        {pillText(m)}
       </button>
       {toggle}
     </span>
@@ -333,15 +357,18 @@ export function MachineStatusPill() {
  */
 export function MachineOnboarding() {
   const m = useMachine();
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(lendingDeferred);
   const show =
     m.live && m.loaded && !dismissed && !m.signedOut && !m.consentError && m.consent && !m.consent.acceptedAt && !m.consent.declinedAt;
   return show ? <OnboardingModal m={m} onClose={() => setDismissed(true)} /> : null;
 }
 
 function OnboardingModal({ m, onClose }) {
-  const [lend, setLend] = useState(() => m.offered.slice());
+  const [lend, setLend] = useState(() => DEFAULT_LEND.slice());
+  const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState(false);
+  const options = showAll ? [...new Set([...Object.keys(LEND), ...m.offered])] : DEFAULT_LEND;
+  const later = () => { deferLending(); onClose(); };
   const go = async (fn) => {
     if (busy) return;
     setBusy(true);
@@ -355,12 +382,11 @@ function OnboardingModal({ m, onClose }) {
   return (
     <Modal
       title="Lend this Mac to the fleet?"
-      onClose={() => !busy && onClose()}
+      onClose={() => !busy && later()}
       actions={
         <>
-          <Button disabled={busy} onClick={() => void go(() => m.decline())}>
-            Not now
-          </Button>
+          <Button disabled={busy} onClick={later}>Ask me later</Button>
+          <Button disabled={busy} kind="ghost" onClick={() => void go(m.decline)}>Don't use this Mac</Button>
           <Button kind="primary" disabled={busy || !lend.length} onClick={() => void go(() => m.accept(lend))}>
             {busy ? 'Saving…' : 'Lend this Mac'}
           </Button>
@@ -368,13 +394,13 @@ function OnboardingModal({ m, onClose }) {
       }
     >
       <p>
-        When you approve a client ticket, a fleet worker picks it up. This Mac can be one: it works in its own checkout under{' '}
+        Lending lets the fleet run approved client work on this Mac. It works in its own checkout under{' '}
         <span className="aw-mono">~/.cache/malipetek-runner</span>, using CPU, battery and network, and every run is a Harness
         conversation saved on this machine. Only tickets you approved run here.
       </p>
       <p className="aw-muted">Pick which subscriptions it may use. Each one runs tickets with that plan, and its usage counts against that plan’s own limits.</p>
       <div className="aw-mexes">
-        {m.offered.map((e) => (
+        {options.map((e) => (
           <label key={e} className="aw-mexe">
             <input
               type="checkbox"
@@ -388,6 +414,9 @@ function OnboardingModal({ m, onClose }) {
           </label>
         ))}
       </div>
+      <Button size="sm" kind="ghost" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
+        {showAll ? 'Show recommended agents' : 'Show all agents'}
+      </Button>
       <p className="aw-muted">
         You can pause it any time from the “This Mac” pill in the header — running work finishes, nothing new starts — and lend or
         un-lend single subscriptions from the Fleet view.
@@ -399,10 +428,10 @@ function OnboardingModal({ m, onClose }) {
 /* ————— the panel ————— */
 
 /** The pill’s modal: the panel with a frame. */
-function MachineModal({ m, onClose }) {
+function MachineModal({ onClose }) {
   return (
     <Modal title="This Mac as a fleet worker" onClose={onClose}>
-      <MachinePanel m={m} />
+      <MachinePanel />
     </Modal>
   );
 }
@@ -410,7 +439,7 @@ function MachineModal({ m, onClose }) {
 const stateLine = (m) => {
   switch (m.state) {
     case 'working':
-      return `Working — ${m.running.length} of ${m.slots} slots busy, lending ${lendNames(m)}.`;
+      return `Working — ${m.running.length} of ${m.slots} runs busy, lending ${lendNames(m)}.`;
     case 'pausing':
       return `Pausing — ${m.running.length} to finish, then nothing new.`;
     case 'paused':
@@ -420,21 +449,31 @@ const stateLine = (m) => {
     case 'off':
       return `Off — the launchd service is ${m.svc?.state ?? 'unknown'}${m.svc?.lastExit ? `, last exit ${m.svc.lastExit}` : ''}.`;
     default:
-      return 'Not set up — no lending record yet. The worker runs by default once it is installed; say yes or no once.';
+      return 'Not set up — no lending record yet.';
   }
 };
 
 /**
  * This machine's worker, in full: the state, Pause/Resume/Stop/Start, the
  * subscriptions it lends, what is running, the consent record, and the log.
- * The Fleet view shows it as the first card; the header pill opens it in a
- * modal. Pass the pill's `m` to share its poll.
+ * Fleet shows it as the first node card; the header pill opens the same panel
+ * in a modal. Both share the same machine store.
  */
-export function MachinePanel({ m: given }) {
-  const own = useMachine();
-  const m = given ?? own;
+export function MachinePanel() {
+  const m = useMachine();
   const { openTicket, setModal } = useAdmin();
   if (!m.live) return null;
+  if (!m.loaded || m.consentError) return (
+    <article className="aw-node aw-machine">
+      <header><h3>This Mac</h3></header>
+      {!m.loaded ? <p className="aw-muted">Checking this Mac…</p> : (
+        <div className="aw-inline">
+          <span className="aw-warn" role="alert">Could not read the lending record</span>
+          <Button size="sm" onClick={m.refresh}>Retry</Button>
+        </div>
+      )}
+    </article>
+  );
   const askAgain = () => setModal({ kind: 'custom', render: (close) => <OnboardingModal m={m} onClose={close} /> });
   return (
     <article className={cx('aw-node', 'aw-machine', `aw-node--${STATE_DOT[m.state] ?? 'warn'}`)}>
@@ -451,7 +490,7 @@ export function MachinePanel({ m: given }) {
             Pause
           </Button>
         ) : null}
-        {m.state === 'pausing' || m.state === 'paused' ? (
+        {m.consented && (m.state === 'pausing' || m.state === 'paused') ? (
           <Button size="sm" onClick={() => void m.resume()}>
             Resume
           </Button>
@@ -465,11 +504,11 @@ export function MachinePanel({ m: given }) {
               Stop now
             </Button>
           </>
-        ) : (
+        ) : m.consented ? (
           <Button size="sm" kind="primary" onClick={() => void m.start()}>
-            Start
+            {m.svc?.loaded ? 'Start worker' : 'Install worker'}
           </Button>
-        )}
+        ) : null}
       </header>
 
       <p className={cx('aw-mstate', (m.state === 'off' || m.state === 'unset') && 'aw-warn')}>{stateLine(m)}</p>
@@ -480,7 +519,7 @@ export function MachinePanel({ m: given }) {
           <dt>Lends</dt>
           <dd>
             <div className="aw-mexes">
-              {m.offered.map((e) => {
+              {[...new Set([...DEFAULT_LEND, ...m.offered, ...m.lending])].map((e) => {
                 const health = m.node?.health?.executors?.[e];
                 const on = m.lending.includes(e);
                 return (
@@ -523,8 +562,8 @@ export function MachinePanel({ m: given }) {
         {m.consented ? (
           <>
             Lent since {when(m.consent.acceptedAt)}.
-            <Button size="sm" kind="ghost" title="Record a no and drain the node; running work finishes" onClick={() => void m.decline()}>
-              Withdraw consent
+            <Button size="sm" kind="ghost" title="Record a no and drain the node; running work finishes" onClick={m.withdraw}>
+              Stop lending
             </Button>
           </>
         ) : m.consent?.declinedAt ? (
@@ -535,8 +574,6 @@ export function MachinePanel({ m: given }) {
               Lend this Mac…
             </Button>
           </>
-        ) : m.consentError ? (
-          <span className="aw-warn">The consent record could not be read: {m.consentError}</span>
         ) : (
           <>
             No lending record yet.
