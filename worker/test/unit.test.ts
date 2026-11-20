@@ -65,6 +65,9 @@ import {
   shouldAutoResume,
   siteLabel,
   emailHtml,
+  outdatedEmail,
+  requeueSequence,
+  templateHash,
   validEmail,
   wantsImage,
 } from '../src/marketing.ts';
@@ -513,10 +516,10 @@ test('marketing: a sequence is three steps on days 0, 4 and 10', () => {
 });
 
 test('marketing: "no" is an opt-out, a question is not', () => {
-  for (const body of ['no', 'No.', 'no thanks', 'STOP', 'unsubscribe', 'please remove me', "don't email me again", 'take me off this list']) {
+  for (const body of ['no', 'No.', 'NO', 'No!', 'no thanks', 'STOP', 'unsubscribe', 'please remove me', "don't email me again", 'take me off this list']) {
     assert.equal(isOptOut(body), true, body);
   }
-  for (const body of ['Not interested in that one, but tell me about the other', 'No rush, next week works', 'How much is a small fix?', 'yes', '']) {
+  for (const body of ['Not interested in that one, but tell me about the other', 'No rush, next week works', 'How much is a small fix?', 'yes', 'Yes.', 'yes please', '']) {
     assert.equal(isOptOut(body), false, body);
   }
 });
@@ -2098,7 +2101,7 @@ test('marketing: cold_obs is a three-step gap sequence on the same days', () => 
   assert.equal(SEQUENCE_NEEDS_GAP.cold_obs, true);
   assert.match(SEQUENCES.cold_obs[0].subject, /\{\{site\}\}/);
   assert.match(SEQUENCES.cold_obs[0].body, /\{\{gap\}\}/);
-  assert.match(SEQUENCES.cold_obs[0].body, /vibe contracting/);
+  assert.match(SEQUENCES.cold_obs[0].body, /Do you want it fixed\?/);
   // Follow-ups are not threaded (deliverEmail sends no In-Reply-To), so no "Re:".
   assert.equal(SEQUENCES.cold_obs[1].subject.includes('Re:'), false);
 });
@@ -2107,9 +2110,39 @@ test('marketing: sequenceOfSubject reads the observation sequence by its domain 
   assert.equal(sequenceOfSubject('corroof.com'), 'cold_obs');
   assert.equal(sequenceOfSubject('Re: corroof.com'), 'cold_obs');
   assert.equal(sequenceOfSubject('Vibe contracting'), 'cold_a');
+  assert.equal(sequenceOfSubject('Re: Vibe contracting'), 'cold_a');
+  assert.equal(sequenceOfSubject('The last mile of corroof.com'), 'cold_a');
   assert.equal(sequenceOfSubject('Vibe contracting for corroof.com'), 'cold_b');
+  assert.equal(sequenceOfSubject('A small fix on corroof.com'), 'cold_b');
   assert.equal(sequenceOfSubject('A website for Lee Plumbing'), 'nosite');
+  assert.equal(sequenceOfSubject('Re: A website for Lee Plumbing'), 'nosite');
+  assert.equal(sequenceOfSubject('A small experiment (and a favour)'), 'warm');
+  // The literal-voice subjects.
+  assert.equal(sequenceOfSubject('vibe coding or an agency?'), 'cold_a');
+  assert.equal(sequenceOfSubject('a change on corroof.com?'), 'cold_b');
+  assert.equal(sequenceOfSubject('a website for Lee Plumbing?'), 'nosite');
+  assert.equal(sequenceOfSubject('a favour?'), 'warm');
+  // None of them is only a hostname, so the domain rule cannot swallow them.
   assert.equal(sequenceOfSubject(null), null);
+  assert.equal(sequenceOfSubject('Your summer menu'), null);
+});
+
+test('marketing: template sync fingerprints the templates and spots outdated mail', async () => {
+  const hash = await templateHash();
+  assert.match(hash, /^[0-9a-f]{16}$/);
+  assert.equal(await templateHash(), hash);
+  // Outdated: a subject no sequence claims, or old-domain wording left in the body.
+  assert.equal(outdatedEmail({ subject: 'Your summer menu', body: 'Hi Sara,' }), true);
+  assert.equal(outdatedEmail({ subject: 'vibe coding or an agency?', body: 'old copy on malipetek.dev' }), true);
+  assert.equal(outdatedEmail({ subject: 'vibe coding or an agency?', body: 'Hi Sara,\n\nAre you vibe coding' }), false);
+  assert.equal(outdatedEmail({ subject: 'corroof.com', body: 'The footer on corroof.com still says © 2019.' }), false);
+  // Re-queue picks: mail-only lists without a site get nosite, the obs share
+  // gets the challenger when a gap exists, everyone else the control.
+  assert.equal(requeueSequence({ id: 7, site: null, gap: null, source_kind: 'osm-co-mail-only' }, 50), 'nosite');
+  assert.equal(requeueSequence({ id: 7, site: 'corroof.com', gap: null, source_kind: 'osm-co-mail-only' }, 50), 'cold_a');
+  assert.equal(requeueSequence({ id: 3, site: 'corroof.com', gap: 'The footer still says © 2019.', source_kind: 'first-import' }, 50), 'cold_obs');
+  assert.equal(requeueSequence({ id: 53, site: 'corroof.com', gap: 'The footer still says © 2019.', source_kind: 'first-import' }, 50), 'cold_a');
+  assert.equal(requeueSequence({ id: 3, site: 'corroof.com', gap: null, source_kind: 'first-import' }, 50), 'cold_a');
 });
 
 /* —— content: opener memory and the one allowed link —— */
@@ -2129,6 +2162,14 @@ test('content: cleanPost allows one ptechsolutions.net link and refuses the rest
   assert.equal(cleanPost('Read https://example.com/page', 'x').ok, false);
   assert.equal(cleanPost('Read http://ptechsolutions.net/x', 'x').ok, false);
   assert.equal(cleanPost('https://ptechsolutions.net/a and https://ptechsolutions.net/b', 'linkedin').ok, false);
+});
+
+test('content: the literal post shape passes the checks', () => {
+  const linkedin =
+    'Are you vibe coding your website?\nDo you pay an agency for it?\n\n1. You write what you want in the portal.\n2. An AI agent does the work.\n3. You check a preview.\n\n$100 an hour, billed by the second.\n\nhttps://ptechsolutions.net/portal';
+  assert.equal(cleanPost(linkedin, 'linkedin').ok, true);
+  const x = 'Are you vibe coding?\nDo you pay an agency?\n\nAn agent does the work; a developer checks it. $100 an hour.\n\nhttps://ptechsolutions.net/portal';
+  assert.equal(cleanPost(x, 'x').ok, true);
 });
 
 test('content: an X post counts a link as 23 characters', () => {

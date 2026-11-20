@@ -22,7 +22,7 @@ const intro = {
   nosite: ['## No website: an email on the map, no site', 'For a business OpenStreetMap lists with an email and no website\n(`marketing/prospector/osm.mjs` writes these to a `-mail-only-` CSV).'],
 };
 const names = { first: 'First email', followup_1: 'Follow-up, day 4', followup_2: 'Follow-up, day 10' };
-let out = '<!-- Generated from SEQUENCES in worker/src/marketing.ts (the copy that is sent). Edit the templates there, then run `node --experimental-strip-types --no-warnings scripts/build-outreach.mjs` in worker/ and press "Re-render scheduled" in Admin → Marketing. -->\n\n';
+let out = '<!-- Generated from SEQUENCES in worker/src/marketing.ts (the copy that is sent). Edit the templates there, then run `node --experimental-strip-types --no-warnings scripts/build-outreach.mjs` in worker/; the cron re-renders the queue by itself on the next tick. -->\n\n';
 for (const kind of ['warm', 'cold_a', 'cold_b', 'cold_obs', 'nosite']) {
   const [h, who] = intro[kind];
   out += `${h}\n\n${who}\n\n`;

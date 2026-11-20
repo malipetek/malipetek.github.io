@@ -4,7 +4,7 @@
  */
 import { handleInbound } from './inbound.ts';
 import { runAndNotifyHealth } from './portal.ts';
-import { runMarketing, sweepDomains } from './marketing.ts';
+import { runMarketing, sweepDomains, syncTemplates } from './marketing.ts';
 import { ensureContentCycle, releaseHeldPosts } from './content.ts';
 import { ensureGuideCycle, ensureSeoCycle, runSeo, sweepGuidePrs } from './seo.ts';
 import { observeContacts } from './observe.ts';
@@ -44,6 +44,8 @@ export default {
         watchSites(env),
         runAndNotifyHealth(env),
         runMarketing(env),
+        // A SEQUENCES or footer edit re-renders the whole queue by itself.
+        syncTemplates(env).catch((error) => console.error('template_sync_failed', error)),
         ensureContentCycle(env),
         // The SEO desk: the audit is daily, the probe and the citation check
         // weekly, the cycle files itself when there is something to fix, and

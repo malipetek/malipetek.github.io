@@ -23,7 +23,7 @@ If the observation is not true, the whole email is spam. Check the site.
 
 ---
 
-<!-- Generated from SEQUENCES in worker/src/marketing.ts (the copy that is sent). Edit the templates there, then run `node --experimental-strip-types --no-warnings scripts/build-outreach.mjs` in worker/ and press "Re-render scheduled" in Admin → Marketing. -->
+<!-- Generated from SEQUENCES in worker/src/marketing.ts (the copy that is sent). Edit the templates there, then run `node --experimental-strip-types --no-warnings scripts/build-outreach.mjs` in worker/; the cron re-renders the queue by itself on the next tick. -->
 
 ## Warm: past collaborators and people who know the work
 
@@ -31,37 +31,49 @@ Use for Customily, TRUTH NYC, PAX Digital, Bemeir, and personal contacts.
 
 ### First email
 
-**Subject:** A small experiment (and a favour)
+**Subject:** a favour?
 
 > Hi {name},
 >
-> I've started something I call vibe contracting: you connect to my service, and I help you use AI and deploy what you build.
+> I started PTech Solutions. A developer checks what an AI agent builds, and clients pay by the second.
 >
-> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+> Do you have a website change you want done?
+> Do you know someone who does?
 >
-> I'm looking for the first few jobs to put through it. Is there something on {site} you have been putting off? If not, an introduction to someone who could use it would help just as much.
+> 1. They write it at ptechsolutions.net/portal.
+> 2. A developer approves it. An AI agent does the work.
+> 3. They check a preview. It goes live when they say yes.
+>
+> $100 an hour, billed by the second. No minimum.
 >
 > Muhammet
+> PTech Solutions
 
 ### Follow-up, day 4
 
-**Subject:** Re: A small experiment (and a favour)
+**Subject:** a favour?
 
 > Hi {name},
 >
-> What is the smallest thing on {site} you have been meaning to fix? Small jobs are where this costs least: you pay for the minutes I spend, and the agent's part costs cents.
+> Is there one change you want on {site}?
+> Or one person I should write to?
+>
+> Reply with it.
 >
 > Muhammet
 
 ### Follow-up, day 10
 
-**Subject:** Re: A small experiment (and a favour)
+**Subject:** a favour?
 
 > Hi {name},
 >
-> I will stop filling your inbox. If something small comes up, the door is open: ptechsolutions.net/portal.
+> This is my last email.
+>
+> If you need a website change later: ptechsolutions.net/portal
 >
 > Muhammet
+> PTech Solutions
 
 ---
 
@@ -73,71 +85,97 @@ breaks.
 
 ### First email
 
-**Subject:** Vibe contracting
+**Subject:** vibe coding or an agency?
 
 > Hi {name},
 >
-> Do you want help using AI on your business and getting your projects online?
+> Are you vibe coding your website or app?
+> Do you pay an agency for it?
+> Do you want something in between?
 >
-> It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
+> That is our portal:
+> 1. You write what you want in the portal.
+> 2. A developer approves it. An AI agent does the work.
+> 3. You check a preview. It goes live when you say yes.
 >
-> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+> Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
 >
-> Reply with what you're working on and I'll tell you how I'd help.
+> Try it: ptechsolutions.net/portal
 >
 > Muhammet
-> ptechsolutions.net
+> PTech Solutions
 
 Without a written observation, the queue sends this instead (it makes no claim about the site):
 
 > Hi {name},
 >
-> Do you want help using AI on your business and getting your projects online?
+> Are you vibe coding your website or app?
+> Do you pay an agency for it?
+> Do you want something in between?
 >
-> It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
+> That is our portal:
+> 1. You write what you want in the portal.
+> 2. A developer approves it. An AI agent does the work.
+> 3. You check a preview. It goes live when you say yes.
 >
-> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+> Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
 >
-> Reply with what you're working on and I'll tell you how I'd help.
+> Try it: ptechsolutions.net/portal
 >
 > Muhammet
-> ptechsolutions.net
+> PTech Solutions
 
 ### Follow-up, day 4
 
-**Subject:** Re: Vibe contracting
+**Subject:** vibe coding or an agency?
 
 > Hi {name},
 >
-> Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
+> Is there one change you want on {site}?
+>
+> Write it in one sentence: ptechsolutions.net/portal
+> You set a budget. Work stops at the budget.
+> You see a preview before anything goes live.
 >
 > Muhammet
+> PTech Solutions
 
 Without a written observation, the queue sends this instead (it makes no claim about the site):
 
 > Hi {name},
 >
-> Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
+> Is there one change you want on {site}?
+>
+> Write it in one sentence: ptechsolutions.net/portal
+> You set a budget. Work stops at the budget.
+> You see a preview before anything goes live.
 >
 > Muhammet
+> PTech Solutions
 
 ### Follow-up, day 10
 
-**Subject:** Re: Vibe contracting
+**Subject:** vibe coding or an agency?
 
 > Hi {name},
 >
-> Last note from me. If you want help with AI or getting a project online later, you can ask at ptechsolutions.net/portal, with no call or quote first.
+> This is my last email.
+>
+> If you need a website change later: ptechsolutions.net/portal
 >
 > Muhammet
+> PTech Solutions
 
 Without a written observation, the queue sends this instead (it makes no claim about the site):
 
 > Hi {name},
 >
-> Last note from me. If you want help with AI or getting a project online later, you can ask at ptechsolutions.net/portal, with no call or quote first.
+> This is my last email.
+>
+> If you need a website change later: ptechsolutions.net/portal
 >
 > Muhammet
+> PTech Solutions
 
 ---
 
@@ -148,55 +186,82 @@ site that is mostly fine and a list of small things that never get done.
 
 ### First email
 
-**Subject:** Vibe contracting for {site}
+**Subject:** a change on {site}?
 
 > Hi {name},
 >
-> Do you want help using AI on your business and getting your projects online?
+> Do you want to change something on {site}?
+> Do you not want to hire an agency for one change?
 >
-> It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
+> Use our portal:
+> 1. You write the change in one sentence.
+> 2. A developer approves it. An AI agent does the work.
+> 3. You check a preview. It goes live when you say yes.
 >
-> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+> Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
 >
-> Reply with what you're working on and I'll tell you how I'd help.
+> Try it: ptechsolutions.net/portal
 >
 > Muhammet
-> ptechsolutions.net
+> PTech Solutions
 
 Without a written observation, the queue sends this instead (it makes no claim about the site):
 
 > Hi {name},
 >
-> Do you want help using AI on your business and getting your projects online?
+> Do you want to change something on {site}?
+> Do you not want to hire an agency for one change?
 >
-> It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
+> Use our portal:
+> 1. You write the change in one sentence.
+> 2. A developer approves it. An AI agent does the work.
+> 3. You check a preview. It goes live when you say yes.
 >
-> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+> Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
 >
-> Reply with what you're working on and I'll tell you how I'd help.
+> Try it: ptechsolutions.net/portal
 >
 > Muhammet
-> ptechsolutions.net
+> PTech Solutions
 
 ### Follow-up, day 4
 
-**Subject:** Re: Vibe contracting for {site}
+**Subject:** a change on {site}?
 
 > Hi {name},
 >
-> Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
+> Is there one change you want on {site}?
+>
+> Write it in one sentence: ptechsolutions.net/portal
+> You set a budget. Work stops at the budget.
+> You see a preview before anything goes live.
 >
 > Muhammet
+> PTech Solutions
 
 ### Follow-up, day 10
 
-**Subject:** Re: Vibe contracting for {site}
+**Subject:** a change on {site}?
 
 > Hi {name},
 >
-> Last note from me. If you want help with AI or getting a project online later, you can ask at ptechsolutions.net/portal, with no call or quote first.
+> This is my last email.
+>
+> If you need a website change later: ptechsolutions.net/portal
 >
 > Muhammet
+> PTech Solutions
+
+Without a written observation, the queue sends this instead (it makes no claim about the site):
+
+> Hi {name},
+>
+> This is my last email.
+>
+> If you need a website change later: ptechsolutions.net/portal
+>
+> Muhammet
+> PTech Solutions
 
 ---
 
@@ -214,13 +279,16 @@ observation writer has reached get this sequence.
 >
 > {gap}
 >
-> I can fix that for you. It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy the change.
+> Do you want it fixed?
 >
-> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+> 1. Reply "yes".
+> 2. An AI agent makes the fix. A developer checks it.
+> 3. You check a preview. It goes live when you say yes.
 >
-> Want me to fix it?
+> Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
 >
 > Muhammet
+> PTech Solutions
 > ptechsolutions.net
 
 Without a written observation, the queue sends this instead (it makes no claim about the site):
@@ -229,13 +297,16 @@ Without a written observation, the queue sends this instead (it makes no claim a
 >
 > {gap}
 >
-> I can fix that for you. It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy the change.
+> Do you want it fixed?
 >
-> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+> 1. Reply "yes".
+> 2. An AI agent makes the fix. A developer checks it.
+> 3. You check a preview. It goes live when you say yes.
 >
-> Want me to fix it?
+> Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
 >
 > Muhammet
+> PTech Solutions
 > ptechsolutions.net
 
 ### Follow-up, day 4
@@ -244,9 +315,11 @@ Without a written observation, the queue sends this instead (it makes no claim a
 
 > Hi {name},
 >
-> Should I go ahead with the fix on {site}? A one-line reply is enough.
+> Do you want the fix on {site}?
+> Reply "yes" or "no".
 >
 > Muhammet
+> PTech Solutions
 
 ### Follow-up, day 10
 
@@ -254,9 +327,12 @@ Without a written observation, the queue sends this instead (it makes no claim a
 
 > Hi {name},
 >
-> Last note from me. If you want it fixed later, you can ask at ptechsolutions.net/portal, with no call or quote first.
+> This is my last email.
+>
+> If you need a website change later: ptechsolutions.net/portal
 >
 > Muhammet
+> PTech Solutions
 
 ---
 
@@ -267,38 +343,48 @@ For a business OpenStreetMap lists with an email and no website
 
 ### First email
 
-**Subject:** A website for {business}
+**Subject:** a website for {business}?
 
 > Hi {name},
 >
-> I found {business} on OpenStreetMap. The listing has your email but no website.
+> {business} is on OpenStreetMap with an email address and no website.
 >
-> I build small business sites. An AI agent does the typing, and I approve the job and check the result before anything goes live. You pay for my time by the second, at $100 an hour, with no quote and no minimum. A one-page site with your services, hours and phone number is a short job.
+> Do you want a website?
 >
-> If you want one, reply with a line about the business and I will tell you what it would take.
+> 1. Reply "yes" with one line about the business.
+> 2. We build a preview. The first preview of a new site is free.
+> 3. It goes live only when you say yes.
+>
+> After that: $100 an hour, billed by the second. No minimum.
 >
 > Muhammet
+> PTech Solutions
 > ptechsolutions.net
 
 ### Follow-up, day 4
 
-**Subject:** Re: A website for {business}
+**Subject:** a website for {business}?
 
 > Hi {name},
 >
-> Should I sketch a one-page site for {business}, or is it not worth it right now? Either answer helps me.
+> Do you want a website for {business}?
+> Reply "yes" or "no".
 >
 > Muhammet
+> PTech Solutions
 
 ### Follow-up, day 10
 
-**Subject:** Re: A website for {business}
+**Subject:** a website for {business}?
 
 > Hi {name},
 >
-> Last note from me. If you want a site later, you can ask through ptechsolutions.net/portal, with no call or quote first.
+> This is my last email.
+>
+> If you need a website change later: ptechsolutions.net/portal
 >
 > Muhammet
+> PTech Solutions
 
 ---
 

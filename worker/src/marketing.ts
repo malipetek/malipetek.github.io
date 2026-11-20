@@ -244,121 +244,172 @@ interface SequenceStep {
 }
 
 /*
- * The copy from marketing/launch/outreach.md, with placeholders. `{{gap}}` is
- * the one true observation; without it a cold email is spam, so a contact that
- * lacks one is held rather than sent.
+ * The copy in marketing/style/voice.md's shape: sorting questions first,
+ * numbered steps, the price as a number, one action, literal words. `{{gap}}`
+ * is the one true observation; without it a cold email is spam, so a contact
+ * that lacks one is held rather than sent.
  */
 export const SEQUENCES: Record<SequenceKind, SequenceStep[]> = {
   cold_a: [
     {
       kind: 'first',
       day: 0,
-      subject: 'Vibe contracting',
+      subject: 'vibe coding or an agency?',
       body: `{{greeting}}
 
-Do you want help using AI on your business and getting your projects online?
+Are you vibe coding your website or app?
+Do you pay an agency for it?
+Do you want something in between?
 
-It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
+That is our portal:
+1. You write what you want in the portal.
+2. A developer approves it. An AI agent does the work.
+3. You check a preview. It goes live when you say yes.
 
-It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
 
-Reply with what you're working on and I'll tell you how I'd help.
+Try it: ptechsolutions.net/portal
 
 Muhammet
-ptechsolutions.net`,
+PTech Solutions`,
       plain: `{{greeting}}
 
-Do you want help using AI on your business and getting your projects online?
+Are you vibe coding your website or app?
+Do you pay an agency for it?
+Do you want something in between?
 
-It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
+That is our portal:
+1. You write what you want in the portal.
+2. A developer approves it. An AI agent does the work.
+3. You check a preview. It goes live when you say yes.
 
-It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
 
-Reply with what you're working on and I'll tell you how I'd help.
+Try it: ptechsolutions.net/portal
 
 Muhammet
-ptechsolutions.net`,
+PTech Solutions`,
     },
     {
       kind: 'followup_1',
       day: 4,
-      subject: 'Re: Vibe contracting',
+      subject: 'vibe coding or an agency?',
       body: `{{greeting}}
 
-Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
+Is there one change you want on {{site}}?
 
-Muhammet`,
+Write it in one sentence: ptechsolutions.net/portal
+You set a budget. Work stops at the budget.
+You see a preview before anything goes live.
+
+Muhammet
+PTech Solutions`,
       plain: `{{greeting}}
 
-Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
+Is there one change you want on {{site}}?
 
-Muhammet`,
+Write it in one sentence: ptechsolutions.net/portal
+You set a budget. Work stops at the budget.
+You see a preview before anything goes live.
+
+Muhammet
+PTech Solutions`,
     },
     {
       kind: 'followup_2',
       day: 10,
-      subject: 'Re: Vibe contracting',
+      subject: 'vibe coding or an agency?',
       body: `{{greeting}}
 
-Last note from me. If you want help with AI or getting a project online later, you can ask at ptechsolutions.net/portal, with no call or quote first.
+This is my last email.
 
-Muhammet`,
+If you need a website change later: ptechsolutions.net/portal
+
+Muhammet
+PTech Solutions`,
       plain: `{{greeting}}
 
-Last note from me. If you want help with AI or getting a project online later, you can ask at ptechsolutions.net/portal, with no call or quote first.
+This is my last email.
 
-Muhammet`,
+If you need a website change later: ptechsolutions.net/portal
+
+Muhammet
+PTech Solutions`,
     },
   ],
   cold_b: [
     {
       kind: 'first',
       day: 0,
-      subject: 'Vibe contracting for {{site}}',
+      subject: 'a change on {{site}}?',
       body: `{{greeting}}
 
-Do you want help using AI on your business and getting your projects online?
+Do you want to change something on {{site}}?
+Do you not want to hire an agency for one change?
 
-It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
+Use our portal:
+1. You write the change in one sentence.
+2. A developer approves it. An AI agent does the work.
+3. You check a preview. It goes live when you say yes.
 
-It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
 
-Reply with what you're working on and I'll tell you how I'd help.
+Try it: ptechsolutions.net/portal
 
 Muhammet
-ptechsolutions.net`,
+PTech Solutions`,
       plain: `{{greeting}}
 
-Do you want help using AI on your business and getting your projects online?
+Do you want to change something on {{site}}?
+Do you not want to hire an agency for one change?
 
-It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy what you build.
+Use our portal:
+1. You write the change in one sentence.
+2. A developer approves it. An AI agent does the work.
+3. You check a preview. It goes live when you say yes.
 
-It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
 
-Reply with what you're working on and I'll tell you how I'd help.
+Try it: ptechsolutions.net/portal
 
 Muhammet
-ptechsolutions.net`,
+PTech Solutions`,
     },
     {
       kind: 'followup_1',
       day: 4,
-      subject: 'Re: Vibe contracting for {{site}}',
+      subject: 'a change on {{site}}?',
       body: `{{greeting}}
 
-Did you see my note about vibe contracting? If you are working on something, reply with a line and I'll tell you how I'd help.
+Is there one change you want on {{site}}?
 
-Muhammet`,
+Write it in one sentence: ptechsolutions.net/portal
+You set a budget. Work stops at the budget.
+You see a preview before anything goes live.
+
+Muhammet
+PTech Solutions`,
     },
     {
       kind: 'followup_2',
       day: 10,
-      subject: 'Re: Vibe contracting for {{site}}',
+      subject: 'a change on {{site}}?',
       body: `{{greeting}}
 
-Last note from me. If you want help with AI or getting a project online later, you can ask at ptechsolutions.net/portal, with no call or quote first.
+This is my last email.
 
-Muhammet`,
+If you need a website change later: ptechsolutions.net/portal
+
+Muhammet
+PTech Solutions`,
+      plain: `{{greeting}}
+
+This is my last email.
+
+If you need a website change later: ptechsolutions.net/portal
+
+Muhammet
+PTech Solutions`,
     },
   ],
   /*
@@ -377,25 +428,31 @@ Muhammet`,
 
 {{gap}}
 
-I can fix that for you. It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy the change.
+Do you want it fixed?
 
-It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+1. Reply "yes".
+2. An AI agent makes the fix. A developer checks it.
+3. You check a preview. It goes live when you say yes.
 
-Want me to fix it?
+Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
 
 Muhammet
+PTech Solutions
 ptechsolutions.net`,
       plain: `{{greeting}}
 
 {{gap}}
 
-I can fix that for you. It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy the change.
+Do you want it fixed?
 
-It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+1. Reply "yes".
+2. An AI agent makes the fix. A developer checks it.
+3. You check a preview. It goes live when you say yes.
 
-Want me to fix it?
+Price: $100 an hour, billed by the second. A one-minute fix costs $1.67. No minimum.
 
 Muhammet
+PTech Solutions
 ptechsolutions.net`,
     },
     {
@@ -404,9 +461,11 @@ ptechsolutions.net`,
       subject: '{{site}}',
       body: `{{greeting}}
 
-Should I go ahead with the fix on {{site}}? A one-line reply is enough.
+Do you want the fix on {{site}}?
+Reply "yes" or "no".
 
-Muhammet`,
+Muhammet
+PTech Solutions`,
     },
     {
       kind: 'followup_2',
@@ -414,9 +473,12 @@ Muhammet`,
       subject: '{{site}}',
       body: `{{greeting}}
 
-Last note from me. If you want it fixed later, you can ask at ptechsolutions.net/portal, with no call or quote first.
+This is my last email.
 
-Muhammet`,
+If you need a website change later: ptechsolutions.net/portal
+
+Muhammet
+PTech Solutions`,
     },
   ],
   // For a business a mapper recorded with an email and no website
@@ -426,80 +488,102 @@ Muhammet`,
     {
       kind: 'first',
       day: 0,
-      subject: 'A website for {{business}}',
+      subject: 'a website for {{business}}?',
       body: `{{greeting}}
 
-I found {{business}} on OpenStreetMap. The listing has your email but no website.
+{{business}} is on OpenStreetMap with an email address and no website.
 
-I build small business sites. An AI agent does the typing, and I approve the job and check the result before anything goes live. You pay for my time by the second, at $100 an hour, with no quote and no minimum. A one-page site with your services, hours and phone number is a short job.
+Do you want a website?
 
-If you want one, reply with a line about the business and I will tell you what it would take.
+1. Reply "yes" with one line about the business.
+2. We build a preview. The first preview of a new site is free.
+3. It goes live only when you say yes.
+
+After that: $100 an hour, billed by the second. No minimum.
 
 Muhammet
+PTech Solutions
 ptechsolutions.net`,
     },
     {
       kind: 'followup_1',
       day: 4,
-      subject: 'Re: A website for {{business}}',
+      subject: 'a website for {{business}}?',
       body: `{{greeting}}
 
-Should I sketch a one-page site for {{business}}, or is it not worth it right now? Either answer helps me.
+Do you want a website for {{business}}?
+Reply "yes" or "no".
 
-Muhammet`,
+Muhammet
+PTech Solutions`,
     },
     {
       kind: 'followup_2',
       day: 10,
-      subject: 'Re: A website for {{business}}',
+      subject: 'a website for {{business}}?',
       body: `{{greeting}}
 
-Last note from me. If you want a site later, you can ask through ptechsolutions.net/portal, with no call or quote first.
+This is my last email.
 
-Muhammet`,
+If you need a website change later: ptechsolutions.net/portal
+
+Muhammet
+PTech Solutions`,
     },
   ],
   warm: [
     {
       kind: 'first',
       day: 0,
-      subject: 'A small experiment (and a favour)',
+      subject: 'a favour?',
       body: `{{greeting}}
 
-I've started something I call vibe contracting: you connect to my service, and I help you use AI and deploy what you build.
+I started PTech Solutions. A developer checks what an AI agent builds, and clients pay by the second.
 
-It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+Do you have a website change you want done?
+Do you know someone who does?
 
-I'm looking for the first few jobs to put through it. Is there something on {{site}} you have been putting off? If not, an introduction to someone who could use it would help just as much.
+1. They write it at ptechsolutions.net/portal.
+2. A developer approves it. An AI agent does the work.
+3. They check a preview. It goes live when they say yes.
 
-Muhammet`,
+$100 an hour, billed by the second. No minimum.
+
+Muhammet
+PTech Solutions`,
     },
     {
       kind: 'followup_1',
       day: 4,
-      subject: 'Re: A small experiment (and a favour)',
+      subject: 'a favour?',
       body: `{{greeting}}
 
-What is the smallest thing on {{site}} you have been meaning to fix? Small jobs are where this costs least: you pay for the minutes I spend, and the agent's part costs cents.
+Is there one change you want on {{site}}?
+Or one person I should write to?
+
+Reply with it.
 
 Muhammet`,
     },
     {
       kind: 'followup_2',
       day: 10,
-      subject: 'Re: A small experiment (and a favour)',
+      subject: 'a favour?',
       body: `{{greeting}}
 
-I will stop filling your inbox. If something small comes up, the door is open: ptechsolutions.net/portal.
+This is my last email.
 
-Muhammet`,
+If you need a website change later: ptechsolutions.net/portal
+
+Muhammet
+PTech Solutions`,
     },
   ],
 };
 
 export const SEQUENCE_LABELS: Record<SequenceKind, string> = {
-  cold_a: 'Cold A: someone who built it with AI',
-  cold_b: 'Cold B: a business owner with a small list',
+  cold_a: 'Cold A: vibe coding or an agency',
+  cold_b: 'Cold B: a change on their site',
   cold_obs: 'Cold: opens on the observation of their site',
   nosite: 'No website: an email on the map, no site',
   warm: 'Warm: past collaborators',
@@ -690,6 +774,11 @@ export function sequenceOfSubject(subject: string | null): SequenceKind | null {
   if (/^(Re: )?(The smallest thing on |A small fix on |Vibe contracting for )/.test(s)) return 'cold_b';
   if (/^(Re: )?A small experiment/.test(s)) return 'warm';
   if (/^(Re: )?A website for /.test(s)) return 'nosite';
+  // The literal-voice subjects: one per sequence, no "Re:" threading.
+  if (/^vibe coding or an agency\?$/.test(s)) return 'cold_a';
+  if (/^a change on .+\?$/.test(s)) return 'cold_b';
+  if (/^a website for .+\?$/.test(s)) return 'nosite';
+  if (/^a favour\?$/.test(s)) return 'warm';
   // The observation sequence's subject is the bare domain ("corroof.com",
   // "Re: corroof.com"); no other sequence's subject is only a hostname.
   if (/^(Re: )?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(s)) return 'cold_obs';
@@ -835,6 +924,131 @@ async function queueSequence(
 ): Promise<number> {
   const out = await queueContacts(env, [contact], kind, campaign, startAt, genericGap);
   return out.messages;
+}
+
+/* —— template sync —— */
+
+/**
+ * A fingerprint of everything the queue's wording depends on: the sequences
+ * and the footer skeleton (the names inside it are settings, not templates).
+ * When it changes, the cron re-renders the queue by itself.
+ */
+export async function templateHash(): Promise<string> {
+  const material = JSON.stringify({
+    sequences: SEQUENCES,
+    footer: footerFor({ fromName: '{{fromName}}', postalAddress: '{{postalAddress}}' } as MarketingSettings),
+  });
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(material));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+}
+
+async function readTextSetting(env: Env, key: string): Promise<string | null> {
+  const row = await env.DB.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+  if (!row) return null;
+  try {
+    const value = JSON.parse(row.value);
+    return typeof value === 'string' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeTextSetting(env: Env, key: string, value: string): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  )
+    .bind(key, JSON.stringify(value), now())
+    .run();
+}
+
+/**
+ * A scheduled email the re-render cannot save: its subject maps to no
+ * sequence, or its body still carries the retired domain. Exported for tests.
+ */
+export function outdatedEmail(row: { subject: string | null; body: string | null }): boolean {
+  return sequenceOfSubject(row.subject) === null || (row.body ?? '').includes('malipetek.dev');
+}
+
+/**
+ * Which sequence a contact whose queue was deleted gets back: the mail-only
+ * lists (an email on the map, no site) get nosite, the deterministic share of
+ * contacts with a written observation gets the challenger, everyone else the
+ * control. Mirrors how the desk and the observation writer pick arms.
+ */
+export function requeueSequence(
+  contact: { id: number; site: string | null; gap: string | null; source_kind?: string | null; notes?: string | null; source_url?: string | null },
+  obsShare: number,
+): SequenceKind {
+  const mailOnly = [contact.source_kind, contact.notes, contact.source_url].some((v) => v && /mail-only/i.test(v));
+  if (mailOnly && !contact.site?.trim()) return 'nosite';
+  if (contact.gap?.trim() && contact.id % 100 < obsShare) return 'cold_obs';
+  return 'cold_a';
+}
+
+export interface TemplateSyncResult {
+  synced: boolean;
+  rendered: number;
+  deleted: number;
+  requeued: number;
+  editedLeft: number;
+  skipped: number;
+}
+
+/**
+ * The cron's half of a template change: when the wording fingerprint moves,
+ * every scheduled unedited email is re-rendered, leftovers no sequence can
+ * claim are deleted, and contacts left with an empty queue are queued again.
+ * Hand-edited mail (`edited_at`) is never touched. Idempotent: the stored
+ * hash makes a second tick a no-op, and every step is safe to repeat.
+ */
+export async function syncTemplates(env: Env): Promise<TemplateSyncResult> {
+  const empty = { synced: false, rendered: 0, deleted: 0, requeued: 0, editedLeft: 0, skipped: 0 };
+  const hash = await templateHash();
+  if ((await readTextSetting(env, 'marketing_template_hash')) === hash) return empty;
+
+  const rerendered = await rerenderScheduled(env);
+
+  const { results: scheduled } = await env.DB.prepare(
+    `SELECT id, subject, body FROM marketing_messages
+      WHERE channel = 'email' AND status = 'scheduled' AND edited_at IS NULL`,
+  ).all<{ id: number; subject: string | null; body: string | null }>();
+  const doomed = (scheduled ?? []).filter(outdatedEmail).map((row) => row.id);
+  for (const part of chunk(doomed, 50)) {
+    await env.DB.batch(
+      part.map((id) => env.DB.prepare(`DELETE FROM marketing_messages WHERE id = ? AND status = 'scheduled'`).bind(id)),
+    );
+  }
+
+  // Ali's own wording is left alone even when it still names the old domain.
+  const editedLeft = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM marketing_messages
+      WHERE channel = 'email' AND status = 'scheduled' AND edited_at IS NOT NULL AND body LIKE '%malipetek.dev%'`,
+  ).first<{ n: number }>();
+
+  const { results: emptied } = await env.DB.prepare(
+    `SELECT c.* FROM marketing_contacts c
+      WHERE c.status = 'queued'
+        AND NOT EXISTS (SELECT 1 FROM marketing_messages m WHERE m.contact_id = c.id AND m.channel = 'email' AND m.status = 'scheduled')
+        AND NOT EXISTS (SELECT 1 FROM marketing_messages m WHERE m.contact_id = c.id AND m.channel = 'email' AND m.status = 'sent')`,
+  ).all<Contact>();
+  const settings = await readMarketingSettings(env);
+  const groups = new Map<SequenceKind, Contact[]>();
+  for (const contact of emptied ?? []) {
+    const kind = requeueSequence(contact, settings.obsShare);
+    groups.set(kind, [...(groups.get(kind) ?? []), contact]);
+  }
+  let requeued = 0;
+  for (const [kind, contacts] of groups) {
+    requeued += (await queueContacts(env, contacts, kind, 'launch', now())).contacts;
+  }
+
+  await writeTextSetting(env, 'marketing_template_hash', hash);
+  await logEvent(env, {
+    kind: 'templates_synced',
+    detail: `${rerendered.updated} re-rendered, ${doomed.length} deleted, ${requeued} re-queued, ${editedLeft?.n ?? 0} hand-edited left`,
+  });
+  return { synced: true, rendered: rerendered.updated, deleted: doomed.length, requeued, editedLeft: editedLeft?.n ?? 0, skipped: rerendered.skipped };
 }
 
 /* ——————————————————————— sending ——————————————————————— */
