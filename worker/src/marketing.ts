@@ -2003,6 +2003,46 @@ async function sequenceStats(env: Env): Promise<Record<SequenceKind, SequenceSta
   return out;
 }
 
+/** The desk's autopilot rows: newest and next stamps per loop, a few cheap aggregates. */
+async function pulseStats(env: Env, t: number) {
+  const [email, postSent, postNext, postCounts, observed] = await Promise.all([
+    env.DB.prepare(
+      `SELECT MAX(sent_at) AS last_sent,
+              MIN(CASE WHEN status = 'scheduled' AND scheduled_at > ? THEN scheduled_at END) AS next_at
+         FROM marketing_messages WHERE channel = 'email'`,
+    )
+      .bind(t)
+      .first<{ last_sent: number | null; next_at: number | null }>(),
+    env.DB.prepare(
+      `SELECT sent_at, channel FROM marketing_messages
+        WHERE channel IN ('x', 'linkedin') AND status = 'sent' ORDER BY sent_at DESC LIMIT 1`,
+    ).first<{ sent_at: number; channel: string }>(),
+    env.DB.prepare(
+      `SELECT scheduled_at, channel FROM marketing_messages
+        WHERE channel IN ('x', 'linkedin') AND status = 'scheduled' AND scheduled_at > ?
+        ORDER BY scheduled_at LIMIT 1`,
+    )
+      .bind(t)
+      .first<{ scheduled_at: number; channel: string }>(),
+    env.DB.prepare(
+      `SELECT SUM(status = 'scheduled') AS queued, SUM(status = 'failed') AS failed
+         FROM marketing_messages WHERE channel IN ('x', 'linkedin')`,
+    ).first<{ queued: number | null; failed: number | null }>(),
+    env.DB.prepare('SELECT MAX(observed_at) AS at FROM marketing_contacts').first<{ at: number | null }>(),
+  ]);
+  return {
+    lastSentAt: email?.last_sent ?? null,
+    nextEmailAt: email?.next_at ?? null,
+    lastPublishedAt: postSent?.sent_at ?? null,
+    lastPublishedChannel: postSent?.channel ?? null,
+    nextPostAt: postNext?.scheduled_at ?? null,
+    nextPostChannel: postNext?.channel ?? null,
+    postsQueued: postCounts?.queued ?? 0,
+    postsFailed: postCounts?.failed ?? 0,
+    lastObservedAt: observed?.at ?? null,
+  };
+}
+
 marketing.get('/admin/marketing', async (c) => {
   const env = c.env;
   const settings = await readMarketingSettings(env);
@@ -2035,7 +2075,7 @@ marketing.get('/admin/marketing', async (c) => {
 
   const dueCounts = Object.fromEntries(['email', 'x', 'linkedin'].map((channel) => [channel, due.results?.find((r) => r.channel === channel)?.n ?? 0]));
 
-  const [autoPausedAt, resumedAt, observe, observeKinds, domains, seqStats] = await Promise.all([
+  const [autoPausedAt, resumedAt, observe, observeKinds, domains, seqStats, pulse] = await Promise.all([
     readStamp(env, 'marketing_auto_paused_at'),
     readStamp(env, 'marketing_resumed_at'),
     env.DB.prepare(
@@ -2053,6 +2093,7 @@ marketing.get('/admin/marketing', async (c) => {
       undeliverable: number | null;
     }>(),
     sequenceStats(env),
+    pulseStats(env, t),
   ]);
 
   return out(c, {
@@ -2064,6 +2105,7 @@ marketing.get('/admin/marketing', async (c) => {
     providers: { cloudflare: Boolean(env.MARKETING), ses: sesConfigured(env) },
     health: { ...health, maxBounceRate: MAX_BOUNCE_RATE, maxComplaintRate: MAX_COMPLAINT_RATE },
     postsAwaiting: awaiting?.n ?? 0,
+    pulse,
     window: sendWindow(settings, t),
     today,
     autoResume: {
