@@ -741,7 +741,7 @@ export function ProjectWorld({
             viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
             preserveAspectRatio="xMidYMid meet"
             role="img"
-            aria-label={tx(t, 'world.mapLabel', 'Interactive map showing how your website works')}
+            aria-label={tx(t, 'world.mapLabel', 'Project health: how requests, code and deploys fit together')}
           >
             {/* Dot-matrix isometric floor */}
             <polygon className="aw-world__floor-plate" points={floorPlate} />
@@ -884,7 +884,7 @@ export function ProjectWorld({
 
         <figcaption className="aw-world__caption" aria-live="polite">
           <div className="aw-world__eyebrow">
-            <span>{tx(t, 'world.eyebrow', 'Project world')}</span>
+            <span>{tx(t, 'world.eyebrow', 'Project health')}</span>
             {project?.name ? <span className="aw-world__project-name">{project.name}</span> : null}
           </div>
 
@@ -941,7 +941,7 @@ export function ProjectWorld({
         </figcaption>
 
         {/* Full text summary of every station and its state for screen readers */}
-        <ul className="aw-world__sr-only" aria-label={tx(t, 'world.summaryLabel', 'Website map station status')}>
+        <ul className="aw-world__sr-only" aria-label={tx(t, 'world.summaryLabel', 'Project health station status')}>
           {stations.map((s) => (
             <li key={s.key}>
               {s.title}: {s.stateText}. {s.explain}

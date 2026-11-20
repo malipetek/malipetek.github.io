@@ -77,8 +77,17 @@ def capture(browser, base, theme, viewport, narrow, diagnostics, paths):
         for entry in VIEWS:
             view(*entry)
         ticket()
+        # The project destination: Overview leads with needs-attention rows;
+        # the world map sits behind Show map (collapsed by default).
         explorer.locator('.aw-tree__name').first.click()
-        shot('project', pane.get_by_role('region', name='Project world'))
+        shot('project', pane.get_by_role('region', name='Needs attention'))
+        pane.get_by_role('button', name='Show map').click()
+        shot('project-map', pane.locator('.aw-world'))
+        tabs = pane.locator('.aw-project__tabs button')
+        tabs.filter(has_text='Work').click()
+        shot('project-work', pane.get_by_role('heading', name='Project work'))
+        tabs.filter(has_text='Setup').click()
+        shot('project-setup', pane.locator('.aw-psol'))
         activity.get_by_title('Clients', exact=True).click()
         pane.locator('.aw-directory__open').first.click()
         shot('client', pane.locator('h2').first)

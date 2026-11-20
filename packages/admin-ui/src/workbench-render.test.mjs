@@ -107,16 +107,28 @@ test('expanded evidence keeps the controls, every field and formatted markdown',
   assert.match(html,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(html,/<script>/);
 });
-test('ProjectWorld renders in ProjectView Overview without NaN or undefined',()=>{
+test('ProjectView Overview leads with what needs attention; the map waits behind Show map',()=>{
   const overviewHtml=rendered.renderProjectOverview();
-  assert.match(overviewHtml,/class="aw-world"/);
-  assert.match(overviewHtml,/class="aw-world__svg"/);
-  assert.match(overviewHtml,/class="aw-world__sr-only"/);
-  assert.match(overviewHtml,/Cloudflare \(your account\)/);
-  assert.match(overviewHtml,/Operator: Needs you: 2, Stalled: 1\./);
+  assert.match(overviewHtml,/aria-label="Needs attention"/);
+  // Review waits on a decision, so it comes before the newer plain request.
+  assert.match(overviewHtml,/class="aw-mono">#11<\/span><strong>Menu layout<\/strong>/);
+  assert.match(overviewHtml,/class="aw-mono">#10<\/span><strong>Update hours<\/strong>/);
+  assert.match(overviewHtml,/aria-label="Project health"/);
+  assert.match(overviewHtml,/Live at bakery\.example\.com · 1 stalled build · 0\/1 checks ok/);
+  assert.match(overviewHtml,/>Show map<\/button>/);
+  // Collapsed by default: the heavy map never blocks the first screen.
+  assert.doesNotMatch(overviewHtml,/class="aw-world"/);
   assert.doesNotMatch(overviewHtml,/\bNaN\b/);
   assert.doesNotMatch(overviewHtml,/\bundefined\b/);
+});
+
+test('ProjectWorld renders its stations, checks and operator counts without NaN or undefined',()=>{
   const worldHtml=rendered.renderProjectWorldStandalone('hosting');
+  assert.match(worldHtml,/class="aw-world"/);
+  assert.match(worldHtml,/class="aw-world__svg"/);
+  assert.match(worldHtml,/class="aw-world__sr-only"/);
+  assert.match(worldHtml,/Cloudflare \(your account\)/);
+  assert.match(worldHtml,/Operator: Needs you: 2, Stalled: 1\./);
   assert.match(worldHtml,/class="aw-world__station aw-world__station--hosting/);
   assert.match(worldHtml,/class="aw-world__station aw-world__station--preview/);
   assert.match(worldHtml,/class="aw-world__station aw-world__station--agent/);

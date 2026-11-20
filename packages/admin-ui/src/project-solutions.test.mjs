@@ -87,16 +87,19 @@ test('a required connection with missing fields is bad, names them, and offers e
   assert.match(html, /needs ASC_ISSUER_ID, ASC_KEY_ID, ASC_PRIVATE_KEY/);
   assert.match(html, /<span class="aw-tag">required<\/span>/);
   assert.match(html, />Verify<\/button>/);
-  assert.match(html, />Enter<\/button>/);
+  assert.match(html, />Connect values<\/button>/);
+  assert.match(html, /aw-btn--primary[^>]*>Connect values<\/button>/);
   assert.match(html, />Copy client steps<\/button>/);
 });
 
-test('no online machine that can build it warns with the missing capability; a capable one is a quiet note', () => {
+test('the fleet note speaks of needs and machines, never of raw capability ids', () => {
   const warn = view.psol({ solutions: ['mobile-ios'] }, { data: { access: { superAdmin: true }, nodes: [{ id: 'g500', online: false, capabilities: ['docker'] }] } });
-  assert.match(warn, /class="aw-psol__fleet aw-psol__fleet--warn"[^>]*>No online machine can build this yet \(needs os:macos, xcode\)\./);
+  assert.match(warn, /class="aw-psol__fleet aw-psol__fleet--warn"[^>]*>Needs a Mac with Xcode · no online machine can build it yet\./);
   const ok = view.psol({ solutions: ['mobile-ios'] }, { data: { access: { superAdmin: true }, nodes: [{ id: 'mac', online: true, capabilities: ['os:macos', 'xcode'] }] } });
-  assert.match(ok, /class="aw-psol__fleet"[^>]*>Fleet needs os:macos, xcode — mac can build it\./);
+  assert.match(ok, /class="aw-psol__fleet"[^>]*>Needs a Mac with Xcode · mac is online\./);
   assert.doesNotMatch(ok, /No online machine/);
+  const offline = view.psol({ solutions: ['mobile-ios'] }, { data: { access: { superAdmin: true }, nodes: [{ id: 'old-imac', online: false, capabilities: ['os:macos', 'xcode'] }] } });
+  assert.match(offline, /no online machine can build it yet — old-imac is offline\./);
   const web = view.psol({ solutions: ['web'] }, { data: { access: { superAdmin: true }, nodes: [] } });
   assert.doesNotMatch(web, /aw-psol__fleet/);
 });
@@ -154,16 +157,23 @@ test('the enter modal shows the steps as a list, the docs link, and a field per 
   assert.match(secret, /type="password"/);
 });
 
-test('the project page carries the tags in its header and its own Solutions tab', () => {
-  const html = view.projectPage(['mobile-ios', 'aws'], 'Solutions');
+test('the project page carries the tags in its header and its Setup tab; old tab keys still resolve', () => {
+  const html = view.projectPage(['mobile-ios', 'aws'], 'Setup');
   assert.match(html, /aw-psol__tags/);
   assert.match(html, /title="iOS app"[^>]*>iOS<\/span>/);
   assert.match(html, /title="AWS"[^>]*>AWS<\/span>/);
-  assert.match(html, /<h3>Kind of work and client connections<\/h3>/);
-  assert.match(html, />Solutions<\/button>/);
+  assert.doesNotMatch(html, /<h3>Kind of work and client connections<\/h3>/);
+  assert.match(html, />Overview<\/button>/);
+  assert.match(html, />Work<\/button>/);
+  assert.match(html, /aria-current="page"[^>]*>Setup<\/button>/);
   assert.match(html, /Kind of work/);
   assert.match(html, /aria-pressed="true"[^>]*>iOS app<\/button>/);
-  const quiet = view.projectPage([], 'Solutions');
+  // Stored tab keys from before the collapse land on their new home.
+  for (const legacy of ['Solutions', 'Resources', 'People', 'Activity & review']) {
+    assert.match(view.projectPage(['mobile-ios'], legacy), /aria-current="page"[^>]*>(Setup|Work)<\/button>/);
+  }
+  const quiet = view.projectPage([], 'Setup');
   assert.doesNotMatch(quiet, /aw-psol__tags/);
+  assert.match(quiet, /Website · GitHub not connected · rosa-florist/);
   assert.doesNotMatch(quiet, /\bundefined\b/);
 });

@@ -22,8 +22,6 @@ export default `
 .aw-project__section { padding: 28px 0; border-bottom: 1px solid var(--aw-border); min-width: 0; }
 .aw-project__section > :first-child { margin-top: 0; }
 .aw-project__section > :last-child { margin-bottom: 0; }
-.aw-project__overview { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(250px, 1fr); gap: 42px; }
-.aw-project__overview > section { border-bottom: 0; }
 .aw-project__brief { margin: 8px 0 0; }
 .aw-project__brief dt { color: var(--aw-text2); font-size: 11px; font-weight: 600; margin: 22px 0 6px; }
 .aw-project__brief dt:first-child { margin-top: 0; }
@@ -48,11 +46,9 @@ export default `
 .aw-project__worklink strong { font-weight: 500; overflow-wrap: anywhere; }
 .aw-project__worklink > .aw-muted { margin-left: auto; font-size: 11px; white-space: nowrap; }
 .aw-project__run { overflow-wrap: anywhere; }
-.aw-project__note { margin-top: 22px; font-size: 12px; }
 .aw-project__error { color: var(--aw-bad); line-height: 1.6; margin-block: 12px; overflow-wrap: anywhere; }
 .aw-project__success { color: var(--aw-ok); margin-block: 12px; }
 .aw-project__empty { color: var(--aw-text2); padding: 20px 0; }
-.aw-project__subheading { margin-top: 32px !important; }
 .aw-project__handoff { max-width: 75ch; }
 .aw-project details { padding: 12px 0; }
 .aw-project summary { cursor: pointer; color: var(--aw-text); font-weight: 500; padding: 5px 0; }
@@ -65,16 +61,40 @@ export default `
 .aw-project__file, .aw-project__reveal { background: var(--aw-bg2); padding: 14px; margin-top: 12px; min-width: 0; }
 .aw-project pre { overflow: auto; font-family: var(--aw-mono); font-size: 12px; line-height: 1.6; tab-size: 2; max-height: 480px; }
 .aw-project__reveal pre { white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+/* Overview: the health line and its collapsed map. */
+.aw-project__health { margin: 0; font-size: 13px; color: var(--aw-text); min-width: 0; }
+.aw-project__world { margin-top: 8px; }
+/* Compact work rows: the needs-attention list stays scannable. */
+.aw-project__work > li { padding: 10px 0; }
+.aw-project__worklink strong { font-size: 13px; }
+/* Connect a checkout: one heading, one choice, one form. */
+.aw-project__connect { border-top: 1px solid var(--aw-border); padding-top: 14px; margin-top: 4px; }
+.aw-project__connect h4 { margin: 0; font-size: 13px; font-weight: 650; }
+.aw-project__connect .aw-seg button { font-size: 12px; }
+/* The client-steps affordance stays a small link next to the row's buttons. */
+.aw-project .aw-psol__copy { font-size: 12px; }
+/* People: one table for clients and trusted developers. */
+.aw-project__people { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+.aw-project__people th { text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); padding: 6px 12px 6px 0; border-bottom: 1px solid var(--aw-border); }
+.aw-project__people td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--aw-border); vertical-align: middle; }
+.aw-project__people tr:last-child td { border-bottom: 0; }
+.aw-project__peoplewho { min-width: 0; overflow-wrap: anywhere; }
+.aw-project__peopleact { text-align: right; white-space: nowrap; }
+.aw-project__peopleact .aw-check { font-size: 12px; color: var(--aw-text2); }
 @media (max-width: 760px) {
   .aw-project__header { flex-direction: column; gap: 14px; }
-  .aw-project__overview, .aw-project__fields { grid-template-columns: minmax(0,1fr); gap: 0; }
+  .aw-project__fields { grid-template-columns: minmax(0,1fr); gap: 0; }
   .aw-project__topology { grid-template-columns: minmax(0,1fr); gap: 22px; }
   .aw-project__tabs { gap: 20px; }
-  .aw-project__overview > section { border-bottom: 1px solid var(--aw-border); }
   .aw-project__work > li { flex-wrap: wrap; }
   .aw-project__worklink { flex-basis: calc(100% - 100px); flex-wrap: wrap; gap: 6px 10px; }
   .aw-project__worklink > .aw-muted { margin-left: 0; }
   .aw-project__invite { align-items: stretch; flex-direction: column; }
   .aw-project .aw-row-h { flex-wrap: wrap; gap: 8px; }
+  .aw-project__people, .aw-project__people td, .aw-project__people th { display: block; }
+  .aw-project__people thead { display: none; }
+  .aw-project__people td { border-bottom: 0; padding: 6px 0; }
+  .aw-project__people tr { border-bottom: 1px solid var(--aw-border); }
+  .aw-project__peopleact { text-align: left; }
 }
 `;

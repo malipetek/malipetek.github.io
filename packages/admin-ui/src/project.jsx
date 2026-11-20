@@ -1,18 +1,31 @@
 /* Project destination shared by the web workbench and the native host. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin } from './store.js';
-import { Button, Field, Icon, Modal, StatusPill, Tag } from './ui.jsx';
-import { RepoModal, ProjectEditModal, ProjectPeople } from './fleet.jsx';
+import { Button, Empty, ErrorNote, Field, Icon, Modal, Segmented, StatusPill, Tag } from './ui.jsx';
+import { RepoModal, ProjectEditModal } from './fleet.jsx';
+import { LOCALES } from '../../../src/lib/locales.js';
 import { ProjectSolutions, SolutionTags } from './project-solutions.jsx';
 import { SitePanel } from './ticket.jsx';
 import { ago } from './format.js';
-import { briefPayload, createProjectResource, projectTopology, projectWork, resourceUrl, singleFlight } from './project-model.js';
+import { briefPayload, createProjectResource, projectTickets, projectWork, projectTopology, resourceUrl, singleFlight } from './project-model.js';
+import { operatorTicketCounts, stationsFor, unshippedPreview } from './project-world-model.mjs';
 import { ProjectWorld } from './project-world.jsx';
 import projectStyles from './project-styles.js';
 
 const errorText = error => error?.message || String(error || 'Request failed');
 const pathFor = project => `/admin/projects/${encodeURIComponent(project.id)}`;
-const TABS = ['Overview', 'Solutions', 'Resources', 'Work', 'Activity & review', 'People'];
+
+/* Three tabs. Old stored tab keys (Solutions, Resources, People, Activity & review) still resolve. */
+const TABS = ['Overview', 'Work', 'Setup'];
+const TAB_ALIASES = {Solutions:'Setup', Resources:'Setup', People:'Setup', 'Activity & review':'Work'};
+const TABS_KEY = 'aw-project-tab-v1';
+const MAP_KEY = 'aw-project-map';
+const normalizeTab = value => TABS.includes(value) ? value : (TAB_ALIASES[value] ?? 'Overview');
+const readTabs = () => { try { return JSON.parse(localStorage.getItem(TABS_KEY) ?? '{}') ?? {}; } catch { return {}; } };
+const storedTab = id => normalizeTab(readTabs()[String(id)]);
+const writeTab = (id, tab) => { try { const all = readTabs(); all[String(id)] = tab; localStorage.setItem(TABS_KEY, JSON.stringify(all)); } catch { /* storage unavailable here */ } };
+const readMapOpen = () => { try { return localStorage.getItem(MAP_KEY) === '1'; } catch { return false; } };
+const writeMapOpen = open => { try { localStorage.setItem(MAP_KEY, open ? '1' : '0'); } catch { /* storage unavailable here */ } };
 
 function useProjectResource(load) {
   const [state, setState] = useState({load:null, value:null, loading:true, error:null});
@@ -57,7 +70,6 @@ function ResourceState({state, refresh, children}) {
 
 export function ProjectView({id, initialTab = 'Overview'}) {
   const {api, data, host, setModal, reload} = useAdmin();
-  const [tab, setTab] = useState(initialTab);
   const load = useCallback(async () => {
     const result = await api('GET', '/admin/projects');
     return {project:(result.projects ?? []).find(project => project.id === id) ?? null};
@@ -67,7 +79,11 @@ export function ProjectView({id, initialTab = 'Overview'}) {
   useEffect(() => {
     if (lastInventory.current !== data.projects) {lastInventory.current = data.projects; void refresh();}
   }, [data.projects, refresh]);
-  useEffect(() => setTab(initialTab), [id]);
+  // A caller's tab wins; otherwise the last tab this project was left on (old keys mapped).
+  const resolveTab = useCallback(() => initialTab && initialTab !== 'Overview' ? normalizeTab(initialTab) : storedTab(id), [id, initialTab]);
+  const [tab, setTab] = useState(resolveTab);
+  useEffect(() => {setTab(resolveTab());}, [id, resolveTab]);
+  const switchTab = useCallback(next => {setTab(next); writeTab(id, next);}, [id]);
   // Inventory supplies immediate context; an authoritative missing result never falls back.
   const project = remote.value ? remote.value.project : (data.projects ?? []).find(project => project.id === id);
   const refreshAll = useCallback(async () => { await refresh(); await reload?.(); }, [refresh, reload]);
@@ -75,32 +91,44 @@ export function ProjectView({id, initialTab = 'Overview'}) {
   return <div className="aw-view aw-project" key={id}>
     <style>{projectStyles}</style>
     <header className="aw-project__header">
-      <div><h2>{project.name}</h2><p className="aw-muted">{project.slug} · {project.kind === 'new' ? 'New project' : 'Existing project'}{project.githubAccount ? ` · GitHub @${project.githubAccount}` : ''}{project.solutions?.length ? <> · <SolutionTags solutions={project.solutions} /></> : null}</p></div>
+      <div>
+        <h2>{project.name}</h2>
+        <p className="aw-muted">{project.solutions?.length ? <SolutionTags solutions={project.solutions} catalog={data.catalog?.solutions} /> : 'Website'} · {project.githubAccount ? 'GitHub connected' : 'GitHub not connected'} · {project.slug}</p>
+      </div>
       <div className="aw-project__actions">
-        <Button onClick={() => setModal({kind:'custom', render:close => <ProjectEditModal project={project} onClose={() => {close(); void refreshAll();}} />})}>Edit project</Button>
         <Button kind="primary" onClick={() => setModal({kind:'task',projectId:id})}><Icon name="plus" /> Add work</Button>
+        <Button onClick={() => setModal({kind:'custom', render:close => <ProjectEditModal project={project} onClose={() => {close(); void refreshAll();}} />})}>Edit project</Button>
       </div>
     </header>
     {remote.error ? <div role="alert" className="aw-project__error">Project refresh failed. {errorText(remote.error)} <Button size="sm" onClick={refresh}>Retry</Button></div> : null}
-    <nav className="aw-project__tabs" aria-label="Project sections">{TABS.map(label => <button type="button" key={label} aria-current={tab === label ? 'page' : undefined} onClick={() => setTab(label)}>{label}</button>)}</nav>
+    <nav className="aw-project__tabs" aria-label="Project sections">{TABS.map(label => <button type="button" key={label} aria-current={tab === label ? 'page' : undefined} onClick={() => switchTab(label)}>{label}</button>)}</nav>
     <div className="aw-project__body" key={`${id}:${tab}`}>
-      {tab === 'Overview' ? <Overview project={project} refresh={refreshAll} setTab={setTab} /> : null}
-      {tab === 'Solutions' ? <section className="aw-project__section"><h3>Kind of work and client connections</h3><ProjectSolutions project={project} /></section> : null}
-      {tab === 'Resources' ? <Resources project={project} refresh={refreshAll} host={host} /> : null}
+      {tab === 'Overview' ? <Overview project={project} refresh={refreshAll} setTab={switchTab} /> : null}
       {tab === 'Work' ? <Work project={project} /> : null}
-      {tab === 'Activity & review' ? <Activity project={project} /> : null}
-      {tab === 'People' ? <People project={project} refresh={refreshAll} /> : null}
+      {tab === 'Setup' ? <Setup project={project} refresh={refreshAll} host={host} /> : null}
     </div>
   </div>;
+}
+
+/** One honest line from the world model: live state, unshipped preview changes, setup checks. */
+function healthSummary({project, sites, tickets, deploys}) {
+  const stations = stationsFor({project, sites, tickets, deploys});
+  const domain = stations.find(station => station.key === 'domain');
+  const drift = unshippedPreview({project, sites, deploys, tickets: tickets ?? []});
+  const counts = operatorTicketCounts(project, tickets, Date.now());
+  const checks = Array.isArray(project?.setup?.checks) ? project.setup.checks.filter(check => check && check.state && check.state !== 'unknown') : [];
+  const parts = [domain?.stateText || 'Site state unknown'];
+  if (drift) parts.push(`preview has ${drift.count === 1 ? '1 unshipped change' : `${drift.count} unshipped changes`}`);
+  if (counts.stalled) parts.push(`${counts.stalled} stalled ${counts.stalled === 1 ? 'build' : 'builds'}`);
+  if (checks.length) parts.push(`${checks.filter(check => check.state === 'ready').length}/${checks.length} checks ok`);
+  return parts.join(' · ');
 }
 
 function Overview({project, refresh, setTab}) {
   const {data, api} = useAdmin();
   const work = projectWork(data.tickets, project.id);
-  const projectTickets = useMemo(
-    () => (data.tickets ?? []).filter(ticket => ticket && ticket.project_id != null && String(ticket.project_id) === String(project.id)),
-    [data.tickets, project.id],
-  );
+  // The map counts system work too (content, SEO, guide cycles); the lists never do.
+  const mapTickets = useMemo(() => projectTickets(data.tickets, project.id, {includeSystem:true}), [data.tickets, project.id]);
   const sites = useMemo(
     () => (Array.isArray(project.sites) && project.sites.length ? project.sites : project.site ? [project.site] : []),
     [project.sites, project.site],
@@ -111,30 +139,30 @@ function Overview({project, refresh, setTab}) {
     () => (deploySiteId ? api('GET', `${pathFor(project)}/site/deploys?siteId=${encodeURIComponent(deploySiteId)}`) : Promise.resolve(null)),
     [api, project.id, deploySiteId],
   );
-  const [deployState] = useProjectResource(loadDeploys);
+  const [deployState, refreshDeploys] = useProjectResource(loadDeploys);
   const deploys = Array.isArray(deployState.value?.deploys) ? deployState.value.deploys : null;
-  const active = work.filter(ticket => !['done','declined'].includes(ticket.status));
-  const review = active.filter(ticket => ticket.status === 'review');
+  const [mapOpen, setMapOpen] = useState(readMapOpen);
+  const toggleMap = () => setMapOpen(open => {writeMapOpen(!open); return !open;});
+  const health = useMemo(() => healthSummary({project, sites, tickets: mapTickets, deploys}), [project, sites, mapTickets, deploys]);
+  // Review rows first (they wait on a decision), then new ones, each newest first.
+  const needs = work
+    .filter(ticket => ['new','review'].includes(ticket.status))
+    .sort((a,b) => (a.status === 'review' ? 0 : 1) - (b.status === 'review' ? 0 : 1) || (b.updated_at ?? 0) - (a.updated_at ?? 0));
   return <>
-    <section className="aw-project__section aw-project__world" aria-label="Project world">
-      <ProjectWorld project={project} sites={sites} tickets={projectTickets} deploys={deploys} />
+    <section className="aw-project__section" aria-label="Needs attention">
+      <div className="aw-row-h"><h3>Needs attention</h3><span className="aw-toolbar__fill" /><Button size="sm" onClick={() => setTab('Work')}>All work →</Button></div>
+      {needs.length ? <WorkList tickets={needs.slice(0, 5)} /> : <Empty title="Nothing needs you" hint="Every open request is moving. New and review requests appear here." />}
     </section>
-    <div className="aw-project__overview">
-      {!project.solutions?.length ? <section className="aw-project__section"><p className="aw-muted">No kind of work set yet (website, app, Shopify, AWS…). <Button size="sm" onClick={() => setTab('Solutions')}>Set it</Button></p></section> : null}
-      <section className="aw-project__section"><Brief project={project} refresh={refresh} /></section>
-      <section className="aw-project__section">
-        <h3>Next actions</h3>
-        {review.length ? <p>{review.length} {review.length === 1 ? 'request is' : 'requests are'} ready for review. Inspect the recorded changes and checks before deciding what to land.</p> : <p className="aw-muted">{active.length ? `${active.length} open ${active.length === 1 ? 'request' : 'requests'}. Continue locally or add a clear next step for an agent.` : 'No open work yet. Add your first request, save a draft, or continue in a local checkout.'}</p>}
-        <WorkList tickets={(review.length ? review : active).slice(0, 4)} />
-        <div className="aw-project__actions"><Button onClick={() => setTab('Work')}>All work</Button><Button onClick={() => setTab('Resources')}>Set up development</Button></div>
-        <p className="aw-muted aw-project__note">You control this project. Agent help is optional; saving a draft never starts an agent.</p>
-      </section>
-    </div>
-    <section className="aw-project__section"><h3>Project connections</h3><Topology project={project} /><Button onClick={() => setTab('Resources')}>Manage resources</Button></section>
+    <section className="aw-project__section" aria-label="Project health">
+      <div className="aw-row-h"><p className="aw-project__health">{health}</p><span className="aw-toolbar__fill" /><Button size="sm" aria-expanded={mapOpen} onClick={toggleMap}>{mapOpen ? 'Hide map' : 'Show map'}</Button></div>
+      {deploySiteId && deployState.error ? <ErrorNote error={deployState.error} onRetry={refreshDeploys} /> : null}
+      {mapOpen ? <div className="aw-project__world"><ProjectWorld project={project} sites={sites} tickets={mapTickets} deploys={deploys} /></div> : null}
+    </section>
+    <section className="aw-project__section"><Brief project={project} refresh={refresh} setTab={setTab} /></section>
   </>;
 }
 
-function Brief({project, refresh}) {
+function Brief({project, refresh, setTab}) {
   const {api} = useAdmin();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(project.brief ?? {what:'',goal:''});
@@ -151,16 +179,21 @@ function Brief({project, refresh}) {
       setEditing(false);
       // Persistence succeeded even if a later inventory refresh fails.
       void refresh();
-    }, 'Expectations saved.');
+    }, 'Brief saved.');
   };
+  const notWritten = <span className="aw-muted">Not written yet</span>;
   return <>
-    <div className="aw-row-h"><h3>Expectations</h3><span className="aw-toolbar__fill" />{!editing ? <Button size="sm" onClick={() => {setDraft(saved ?? {what:'',goal:''});setEditing(true);}}>Edit expectations</Button> : null}</div>
+    <div className="aw-row-h">
+      <h3>Project brief</h3><span className="aw-toolbar__fill" />
+      {!editing && !project.solutions?.length ? <Button size="sm" onClick={() => setTab('Setup')}>Add kind of work</Button> : null}
+      {!editing ? <Button size="sm" onClick={() => {setDraft(saved ?? {what:'',goal:''});setEditing(true);}}>Edit</Button> : null}
+    </div>
     {editing ? <form onSubmit={save} className="aw-project__form">
       <Field label="What it is"><textarea aria-label="What it is" required rows={3} maxLength={1200} value={draft.what ?? ''} onChange={event => setDraft({...draft,what:event.target.value})} /></Field>
       <Field label="What done looks like"><textarea aria-label="What done looks like" required rows={3} maxLength={1200} value={draft.goal ?? ''} onChange={event => setDraft({...draft,goal:event.target.value})} /></Field>
-      {project.kind === 'new' ? <Field label="Done by hand today" hint="Optional"><textarea rows={2} maxLength={1200} value={draft.manual ?? ''} onChange={event => setDraft({...draft,manual:event.target.value})} /></Field> : <Field label="Where the code lives" hint="Context only; configure the actual repository in Resources."><textarea rows={2} maxLength={1200} value={draft.where ?? ''} onChange={event => setDraft({...draft,where:event.target.value})} /></Field>}
-      <div className="aw-project__actions"><Button disabled={state.busy} onClick={() => setEditing(false)}>Cancel</Button><Button type="submit" kind="primary" disabled={state.busy || !payload}>{state.busy ? 'Saving…' : 'Save expectations'}</Button></div>
-    </form> : <dl className="aw-project__brief"><dt>What it is</dt><dd>{saved?.what || 'Describe the project so the next person can pick it up.'}</dd><dt>What done looks like</dt><dd>{saved?.goal || 'Add an outcome and a clear definition of done.'}</dd>{saved?.where ? <><dt>Code context</dt><dd>{saved.where}</dd></> : null}{saved?.manual ? <><dt>Done by hand today</dt><dd>{saved.manual}</dd></> : null}</dl>}
+      {project.kind === 'new' ? <Field label="Done by hand today" hint="Optional"><textarea rows={2} maxLength={1200} value={draft.manual ?? ''} onChange={event => setDraft({...draft,manual:event.target.value})} /></Field> : <Field label="Where the code lives" hint="Context only; connect the actual repository in Setup."><textarea rows={2} maxLength={1200} value={draft.where ?? ''} onChange={event => setDraft({...draft,where:event.target.value})} /></Field>}
+      <div className="aw-project__actions"><Button disabled={state.busy} onClick={() => setEditing(false)}>Cancel</Button><Button type="submit" kind="primary" disabled={state.busy || !payload}>{state.busy ? 'Saving…' : 'Save brief'}</Button></div>
+    </form> : <dl className="aw-project__brief"><dt>What it is</dt><dd>{saved?.what || notWritten}</dd><dt>What done looks like</dt><dd>{saved?.goal || notWritten}</dd>{saved?.where ? <><dt>Code context</dt><dd>{saved.where}</dd></> : null}{saved?.manual ? <><dt>Done by hand today</dt><dd>{saved.manual}</dd></> : null}</dl>}
     <Feedback state={state} />
   </>;
 }
@@ -177,6 +210,15 @@ function Topology({project, local, git}) {
     <li><ProjectIcon name="branch" /><div><strong>Repository & ref</strong>{topology.repoUrl ? <a href={topology.repoUrl} target="_blank" rel="noreferrer">{topology.repoUrl}</a> : <span>{project.repo ? 'Repository configured; open it with your Git client.' : 'No repository linked'}</span>}<span className="aw-mono">{topology.branch}</span>{git?.remotes?.length ? <span>Remotes: {git.remotes.map(remote => remote.name).join(', ')}</span> : null}</div></li>
     <li><ProjectIcon name="globe" /><div><strong>Preview & production</strong>{topology.sites.length ? topology.sites.map(site => <div className="aw-project__destination" key={site.id}><span>{site.name || project.name} · {site.state || 'State unknown'}</span><span>{site.previewUrl ? <a href={site.previewUrl} target="_blank" rel="noreferrer">Preview</a> : 'No preview address'} · {site.productionUrl ? <a href={site.productionUrl} target="_blank" rel="noreferrer">Production</a> : 'No production address'}</span><span>{site.deployment}</span></div>) : <span>No hosted destinations yet</span>}</div></li>
   </ol>;
+}
+
+/** Everything that makes the project work: kinds of work, connections, code, hosting, secrets, people. */
+function Setup({project, refresh, host}) {
+  return <>
+    <section className="aw-project__section"><ProjectSolutions project={project} /></section>
+    <Resources project={project} refresh={refresh} host={host} />
+    <People project={project} refresh={refresh} />
+  </>;
 }
 
 function Resources({project, refresh, host}) {
@@ -248,14 +290,21 @@ function LocalDevelopment({project, local, host, refresh}) {
     if (!parentPath.trim() || cloning || !host.projectCloneLocal) return;
     void write(async () => {setOperation(null);const result = await host.projectCloneLocal({projectId:project.id,parentPath:parentPath.trim(),directoryName:directoryName.trim() || undefined});setOperationId(result.operationId);});
   };
+  // One block, one choice: point at a folder that already exists, or clone the repository.
+  const connectExisting = Boolean(host.projectConfigureLocal);
+  const connectClone = Boolean(project.repo && host.projectCloneLocal && host.projectLocalOperation);
+  const [connectMode, setConnectMode] = useState('existing');
+  useEffect(() => { if (connectMode === 'clone' && !connectClone) setConnectMode('existing'); }, [connectMode, connectClone]);
   return <>
     {found && host.projectOpenLocal ? <div className="aw-project__actions"><Button kind="primary" disabled={state.busy} onClick={() => void write(() => host.projectOpenLocal({projectId:project.id,mode:'session'}), 'Development conversation opened.')}>Continue locally</Button><Button disabled={state.busy} onClick={() => void write(() => host.projectOpenLocal({projectId:project.id,mode:'reveal'}))}>Show folder</Button></div> : null}
-    {host.projectConfigureLocal ? <details open={!found}><summary>{found ? 'Change checkout & development settings' : 'Connect an existing checkout'}</summary><form onSubmit={configure} className="aw-project__form">
-      <Field label="Local folder" hint="An existing folder on this device. Connecting does not clone or overwrite it."><input required value={path} onChange={event => setPath(event.target.value)} placeholder="/Users/you/Projects/site" /></Field>
-      <div className="aw-project__fields"><Field label="Base ref" hint="Optional Git ref for review"><input value={baseRef} onChange={event => setBaseRef(event.target.value)} placeholder="main" /></Field><Field label="Verification command" hint="Saved for deliberate local execution"><input value={verify} onChange={event => setVerify(event.target.value)} placeholder="npm test" /></Field></div>
-      <Button type="submit" disabled={state.busy || !path.trim() || Boolean(cloning)}>{state.busy ? 'Connecting…' : 'Connect folder'}</Button>
-    </form></details> : null}
-    {project.repo && host.projectCloneLocal && host.projectLocalOperation ? <details><summary>Clone the linked repository</summary><form onSubmit={clone} className="aw-project__form"><p className="aw-muted">Creates a new folder; an existing destination is never overwritten. Private repositories use the project’s authorized Git connection.</p><Field label="Parent folder"><input required value={parentPath} onChange={event => setParentPath(event.target.value)} placeholder="/Users/you/Projects" /></Field><Field label="New folder name"><input value={directoryName} onChange={event => setDirectoryName(event.target.value)} /></Field><Button type="submit" disabled={state.busy || Boolean(cloning) || !parentPath.trim()}>{cloning ? 'Cloning…' : 'Clone repository'}</Button></form></details> : null}
+    {connectExisting || connectClone ? <div className="aw-project__connect">
+      <div className="aw-row-h"><h4>Connect a checkout</h4><span className="aw-toolbar__fill" /><Segmented value={connectMode} onChange={setConnectMode} label="Connect a checkout" options={[{value:'existing',label:'Existing folder',disabled:!connectExisting},{value:'clone',label:'Clone',disabled:!connectClone}]} /></div>
+      {connectMode === 'existing' ? <form onSubmit={configure} className="aw-project__form">
+        <Field label="Local folder" hint="An existing folder on this device. Connecting does not clone or overwrite it."><input required value={path} onChange={event => setPath(event.target.value)} placeholder="/Users/you/Projects/site" /></Field>
+        <div className="aw-project__fields"><Field label="Base ref" hint="Optional Git ref for review"><input value={baseRef} onChange={event => setBaseRef(event.target.value)} placeholder="main" /></Field><Field label="Verification command" hint="Saved for deliberate local execution"><input value={verify} onChange={event => setVerify(event.target.value)} placeholder="npm test" /></Field></div>
+        <Button type="submit" disabled={state.busy || !path.trim() || Boolean(cloning)}>{state.busy ? 'Connecting…' : 'Connect folder'}</Button>
+      </form> : <form onSubmit={clone} className="aw-project__form"><p className="aw-muted">Creates a new folder; an existing destination is never overwritten. Private repositories use the project’s authorized Git connection.</p><Field label="Parent folder"><input required value={parentPath} onChange={event => setParentPath(event.target.value)} placeholder="/Users/you/Projects" /></Field><Field label="New folder name"><input value={directoryName} onChange={event => setDirectoryName(event.target.value)} /></Field><Button type="submit" disabled={state.busy || Boolean(cloning) || !parentPath.trim()}>{cloning ? 'Cloning…' : 'Clone repository'}</Button></form>}
+    </div> : null}
     {operation ? <p className={operation.status === 'failed' ? 'aw-project__error' : 'aw-muted'} role={operation.status === 'failed' ? 'alert' : 'status'}>{operation.status === 'failed' ? `Clone failed: ${errorText(operation.error)}. Check the destination and Git connection, then retry.` : operation.status === 'succeeded' ? `Clone ready: ${operation.receipt?.path || 'checkout connected'}` : `Cloning: ${operation.phase || 'working'}`}</p> : null}
     <Feedback state={state} />
     {found && host.projectFiles ? <LocalFiles project={project} host={host} /> : null}
@@ -309,10 +358,35 @@ function DeployHistory({project, site, refresh}) {
   return <details><summary>{site.name || project.name}: deployment history & rollback</summary><ResourceState state={state} refresh={refreshDeploys}>{(state.value?.deploys ?? []).length ? <ul className="aw-project__work">{state.value.deploys.map(deploy => <li key={deploy.id}><div><strong>{deploy.id}</strong><span className="aw-muted">{deploy.branch || deploy.kind || 'Recorded deploy'}{deploy.created_at ? ` · ${ago(deploy.created_at)}` : ''}</span></div><Button disabled={writeState.busy} size="sm" onClick={() => ask({title:'Roll production back?',text:`Replace ${site.productionUrl || site.name || project.name} with recorded deploy ${deploy.id}. This changes what visitors see.`,confirm:'Roll back',run:() => write(async () => {await api('POST', `${pathFor(project)}/site/rollback`, {deployId:deploy.id,siteId:site.id});void refresh();void refreshDeploys();}, 'Production rolled back.')})}>Roll back</Button></li>)}</ul> : <p className="aw-muted">No recorded deployments yet.</p>}</ResourceState><Feedback state={writeState} /></details>;
 }
 
+const WORK_FILTERS = {
+  open: ticket => !['done','declined'].includes(ticket.status),
+  review: ticket => ticket.status === 'review',
+  done: ticket => ['done','declined'].includes(ticket.status),
+  all: () => true,
+};
+const WORK_FILTER_EMPTY = {open:'Nothing open', review:'Nothing waiting for review', done:'Nothing finished yet', all:'No work yet'};
+
+/** The one ticket list, with the recorded agent activity under it. */
 function Work({project}) {
   const {data, setModal} = useAdmin();
   const tickets = projectWork(data.tickets, project.id);
-  return <section className="aw-project__section"><div className="aw-row-h"><h3>Project work</h3><span className="aw-toolbar__fill" /><Button kind="primary" onClick={() => setModal({kind:'task',projectId:project.id})}>Add work</Button></div><p className="aw-muted">Save a draft for later, queue an agent deliberately, or continue the same work locally. Open a request for its conversation and evidence.</p><WorkList tickets={tickets} />{!tickets.length ? <p className="aw-project__empty">No work yet. Add the first outcome you want to deliver.</p> : null}</section>;
+  const [filter, setFilter] = useState('open');
+  const shown = useMemo(() => tickets.filter(WORK_FILTERS[filter] ?? WORK_FILTERS.open), [tickets, filter]);
+  return <>
+    <section className="aw-project__section">
+      <div className="aw-row-h">
+        <h3>Project work</h3><span className="aw-toolbar__fill" />
+        <Segmented value={filter} onChange={setFilter} label="Work filter" options={[{value:'open',label:'Open'},{value:'review',label:'Review'},{value:'done',label:'Done'},{value:'all',label:'All'}]} />
+        <Button kind="primary" onClick={() => setModal({kind:'task',projectId:project.id})}><Icon name="plus" /> Add work</Button>
+      </div>
+      <p className="aw-muted">Save a draft for later, queue an agent deliberately, or continue the same work locally. Open a request for its conversation and evidence.</p>
+      <WorkList tickets={shown} />
+      {!shown.length ? (tickets.length
+        ? <Empty title={WORK_FILTER_EMPTY[filter] ?? WORK_FILTER_EMPTY.open} hint="Switch the filter to see the rest of this project's work." />
+        : <Empty title="No work yet" hint="Add the first outcome you want to deliver." action={<Button size="sm" onClick={() => setModal({kind:'task',projectId:project.id})}>Add work</Button>} />) : null}
+    </section>
+    <Activity project={project} />
+  </>;
 }
 
 function WorkList({tickets}) {
@@ -325,11 +399,102 @@ function Activity({project}) {
   const tickets = projectWork(data.tickets, project.id);
   const ids = new Set(tickets.map(ticket => String(ticket.id)));
   const runs = [...(data.running ?? []),...(data.recent ?? [])].filter((run,index,all) => ids.has(String(run.ticket_id)) && all.findIndex(other => other.id === run.id) === index).sort((a,b) => (b.started_at ?? b.created_at ?? 0) - (a.started_at ?? a.created_at ?? 0));
-  return <section className="aw-project__section"><h3>Activity & review</h3><p className="aw-muted">Recent recorded attempts are listed below. Open a request to select any historical run and inspect its changes, checks and agent session. Missing checks mean unknown, not passing.</p>{runs.length ? <ul className="aw-project__work">{runs.map(run => <li key={run.id}><div className="aw-project__run"><button type="button" className="aw-link" onClick={() => openTicket(run.ticket_id)}>#{run.ticket_id} · {tickets.find(ticket => String(ticket.id) === String(run.ticket_id))?.title}</button><span className="aw-mono">Run {run.id}</span><span className="aw-muted">{run.executor || 'Agent'} · {run.started_at ? ago(run.started_at) : 'Start time unknown'} · checks available in request review</span></div><StatusPill status={run.status} /><Button size="sm" onClick={() => openTicket(run.ticket_id)}>Inspect attempts</Button></li>)}</ul> : <p className="aw-project__empty">No recent agent attempts. Older evidence, when available, remains inside each request.</p>}<h3 className="aw-project__subheading">Requests with history</h3><WorkList tickets={tickets} /></section>;
+  return <section className="aw-project__section"><h3>Activity & review</h3><p className="aw-muted">Recent recorded attempts are listed below. Open a request to select any historical run and inspect its changes, checks and agent session. Missing checks mean unknown, not passing.</p>{runs.length ? <ul className="aw-project__work">{runs.map(run => <li key={run.id}><div className="aw-project__run"><button type="button" className="aw-link" onClick={() => openTicket(run.ticket_id)}>#{run.ticket_id} · {tickets.find(ticket => String(ticket.id) === String(run.ticket_id))?.title}</button><span className="aw-mono">Run {run.id}</span><span className="aw-muted">{run.executor || 'Agent'} · {run.started_at ? ago(run.started_at) : 'Start time unknown'} · checks available in request review</span></div><StatusPill status={run.status} /><Button size="sm" onClick={() => openTicket(run.ticket_id)}>Inspect attempts</Button></li>)}</ul> : <p className="aw-project__empty">No recent agent attempts. Older evidence, when available, remains inside each request.</p>}</section>;
+}
+
+const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+const emailsIn = text => [...new Set(text.split(/[\s,;]+/).map(part => part.trim().toLowerCase()).filter(Boolean))];
+
+/**
+ * The invite the Clients desk offers, kept available from the project page:
+ * each new address becomes an ordinary project invite (one-time link).
+ * (fleet.jsx keeps its own copy private, so this mirrors it here.)
+ */
+function ProjectInviteModal({project, onClose}) {
+  const {api, act, notify} = useAdmin();
+  const [text, setText] = useState('');
+  const [copy, setCopy] = useState(true);
+  const [locale, setLocale] = useState('en-US');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const emails = emailsIn(text);
+  const bad = emails.filter(email => !EMAIL_RE.test(email));
+  const already = new Set((project.clients ?? []).map(client => client.email.toLowerCase()));
+  const fresh = emails.filter(email => EMAIL_RE.test(email) && !already.has(email));
+  const send = async () => {
+    setBusy(true);
+    const failed = [];
+    let unsent = 0;
+    try {
+      await act(async () => {
+        for (const email of fresh) {
+          try {
+            const out = await api('POST', '/admin/clients', {email, locale, projectIds:[project.id], copy, note:note.trim() || undefined});
+            if (out?.invite?.sent === false) unsent += 1;
+          } catch { failed.push(email); }
+        }
+      });
+      const added = fresh.length - failed.length;
+      if (failed.length) notify(`Added ${added} of ${fresh.length}. Not added: ${failed.join(', ')}`, 'error');
+      else notify(`Added ${added} to ${project.name}.${unsent ? ` ${unsent} email${unsent === 1 ? '' : 's'} not sent; use Resend on their card.` : ''}`);
+      if (!failed.length) onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <Modal title={`Add people to ${project.name}`} subtitle="Each address gets a link that signs them in (one use, 7 days). They see every request on this project; prices stay with whoever filed." onClose={onClose}
+    actions={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" disabled={busy || !fresh.length || bad.length > 0} onClick={() => void send()}>{busy ? 'Adding…' : `Add ${fresh.length || ''}`.trim()}</Button></>}>
+    <Field label="Emails" hint={bad.length ? `Not an address: ${bad.join(', ')}` : emails.length > fresh.length ? `${emails.length - fresh.length} already on the project.` : 'One or more, separated by commas, spaces or new lines.'}>
+      <textarea rows={3} value={text} placeholder="owner@example.com, office@example.com" onChange={event => setText(event.target.value)} />
+    </Field>
+    <Field label="Emails about requests"><label className="aw-check"><input type="checkbox" checked={copy} onChange={event => setCopy(event.target.checked)} />Send them a copy of every request on this project (new requests, replies, status changes)</label></Field>
+    <Field label="Language" hint="For new accounts: the invite email and the portal. Existing accounts keep theirs.">
+      <select value={locale} onChange={event => setLocale(event.target.value)}>{LOCALES.map(locale => <option key={locale.code} value={locale.code}>{locale.english}</option>)}</select>
+    </Field>
+    <Field label="Note" hint="Optional. Added under the link. Not translated."><textarea rows={2} value={note} maxLength={1000} onChange={event => setNote(event.target.value)} /></Field>
+  </Modal>;
+}
+
+/**
+ * One table for everyone attached to the project: clients (with their
+ * invite, all-emails and remove controls) and trusted developers, told apart
+ * by a role column instead of two lists naming the same people.
+ */
+function PeopleTable({project, recipients, clients, canManage, onPeopleChanged}) {
+  const {api, act, ask, open} = useAdmin();
+  const byKey = new Map();
+  for (const person of Array.isArray(recipients) ? recipients : []) {
+    if (!person?.email && !person?.userId) continue;
+    const key = String(person.userId ?? person.email);
+    byKey.set(key, {key, userId:person.userId ?? null, name:person.name || null, email:person.email, role:person.memberType === 'trusted_developer' ? 'Trusted developer' : 'Client', client:null});
+  }
+  for (const client of Array.isArray(clients) ? clients : []) {
+    if (!client?.id && !client?.email) continue;
+    const key = String(client.id ?? client.email);
+    const row = byKey.get(key);
+    if (row) {row.client = client; if (!row.name) row.name = client.name || null; continue;}
+    byKey.set(key, {key, userId:client.id ?? null, name:client.name || null, email:client.email, role:'Client', client});
+  }
+  const rows = [...byKey.values()];
+  if (!rows.length) return <p className="aw-muted">Nobody yet. Only you see this project.</p>;
+  return <table className="aw-project__people">
+    <thead><tr><th>Person</th><th>Role</th>{canManage ? <th aria-label="Manage" /> : null}</tr></thead>
+    <tbody>{rows.map(row => <tr key={row.key}>
+      <td className="aw-project__peoplewho">{row.userId && row.role === 'Client' ? <button type="button" className="aw-link aw-people__who" title={row.email} onClick={() => open(`c:${row.userId}`)}>{row.name ? `${row.name} · ` : ''}{row.email}</button> : <span className="aw-people__who" title={row.email}>{row.name ? `${row.name} · ` : ''}{row.email}</span>}</td>
+      <td><Tag tone={row.role === 'Trusted developer' ? undefined : 'dash'}>{row.role}</Tag>{row.client?.pending ? <Tag tone="warn">invited</Tag> : null}</td>
+      {canManage ? <td className="aw-project__peopleact">{row.client ? <>
+        <label className="aw-check" title="Mail them about every request on this project, not only the ones they filed">
+          <input type="checkbox" checked={Boolean(row.client.copy)} onChange={event => void act(() => api('PUT', `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`, {copy:event.target.checked}), event.target.checked ? `${row.client.email} gets every request on ${project.name}.` : `${row.client.email} gets only their own requests.`).then(onPeopleChanged)} />
+          all emails
+        </label>
+        <Button size="sm" kind="ghost" title="Take them off this project" onClick={() => ask({title:`Remove ${row.client.email} from ${project.name}?`, text:'They stop seeing its requests and stop getting its emails. Their account and their own requests stay.', confirm:'Remove', danger:true, run:() => act(() => api('DELETE', `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`), `Removed ${row.client.email}.`).then(onPeopleChanged).catch(() => undefined)})}>✕</Button>
+      </> : null}</td> : null}
+    </tr>)}</tbody>
+  </table>;
 }
 
 function People({project, refresh}) {
-  const {api, data, ask} = useAdmin();
+  const {api, data, ask, setModal} = useAdmin();
   const load = useCallback(() => api('GET', `${pathFor(project)}/memberships`), [api, project.id]);
   const [state, refreshPeople] = useProjectResource(load);
   const loadRecipients = useCallback(() => api('GET', `${pathFor(project)}/recipients`), [api, project.id]);
@@ -340,14 +505,18 @@ function People({project, refresh}) {
   const admin = data.access?.superAdmin === true || data.identity?.access?.superAdmin === true || user?.role === 'admin';
   const owner = state.value?.ownerUserId && state.value.ownerUserId === user?.id;
   const ownerPerson = (state.value?.clients ?? project.clients ?? []).find(person => person.id === state.value?.ownerUserId);
-  const grant = event => {event.preventDefault();if (!email.trim() || !admin) return;void write(async () => {await api('POST', `${pathFor(project)}/memberships`, {email:email.trim()});setEmail('');void refreshPeople();void refreshRecipients();void refresh();}, 'Trusted project access granted.');};
+  const peopleChanged = useCallback(() => { void refreshPeople(); void refreshRecipients(); void refresh(); }, [refreshPeople, refreshRecipients, refresh]);
+  const grant = event => {event.preventDefault();if (!email.trim() || !admin) return;void write(async () => {await api('POST', `${pathFor(project)}/memberships`, {email:email.trim()});setEmail('');void peopleChanged();}, 'Trusted project access granted.');};
   return <>
     <section className="aw-project__section"><h3>Project ownership</h3><p>{state.value?.ownerUserId ? `Owned by ${ownerPerson?.name || ownerPerson?.email || state.value.ownerUserId}.` : 'An owner has not been verified for this project.'}</p><p className="aw-muted">The client owns the project and can act independently. Agent help and agency support are optional.</p></section>
-    <section className="aw-project__section"><h3>Trusted developers</h3><p className="aw-muted">Trusted developers can work across the project: context, integrations, configuration, code and deployments. Access does not extend to other projects or global administration.</p><ResourceState state={state} refresh={refreshPeople}><ul className="aw-project__work">{(state.value?.memberships ?? []).map(person => <li key={person.userId}><div><strong>{person.name || person.email}</strong>{person.name ? <span className="aw-muted">{person.email}</span> : null}<Tag>Trusted developer</Tag></div>{admin || owner ? <Button size="sm" disabled={writeState.busy} onClick={() => ask({title:`Remove ${person.email} from this project?`,text:'Their trusted access ends immediately. Their account and access to other projects stay unchanged.',confirm:'Remove access',danger:true,run:() => write(async () => {await api('DELETE', `${pathFor(project)}/memberships/${encodeURIComponent(person.userId)}`);void refreshPeople();void refreshRecipients();}, 'Trusted access removed.')})}>Remove access</Button> : null}</li>)}</ul>{!state.value?.memberships?.length ? <p className="aw-muted">No trusted developers assigned.</p> : null}</ResourceState>
+    <section className="aw-project__section"><h3>Trusted developers</h3><p className="aw-muted">Trusted developers can work across the project: context, integrations, configuration, code and deployments. Access does not extend to other projects or global administration.</p><ResourceState state={state} refresh={refreshPeople}><ul className="aw-project__work">{(state.value?.memberships ?? []).map(person => <li key={person.userId}><div><strong>{person.name || person.email}</strong>{person.name ? <span className="aw-muted">{person.email}</span> : null}<Tag>Trusted developer</Tag></div>{admin || owner ? <Button size="sm" disabled={writeState.busy} onClick={() => ask({title:`Remove ${person.email} from this project?`,text:'Their trusted access ends immediately. Their account and access to other projects stay unchanged.',confirm:'Remove access',danger:true,run:() => write(async () => {await api('DELETE', `${pathFor(project)}/memberships/${encodeURIComponent(person.userId)}`);void peopleChanged();}, 'Trusted access removed.')})}>Remove access</Button> : null}</li>)}</ul>{!state.value?.memberships?.length ? <p className="aw-muted">No trusted developers assigned.</p> : null}</ResourceState>
       {admin ? <form onSubmit={grant} className="aw-project__invite"><Field label="Existing account email"><input type="email" required maxLength={254} value={email} onChange={event => setEmail(event.target.value)} /></Field><Button type="submit" disabled={writeState.busy || !email.trim()}>{writeState.busy ? 'Granting…' : 'Grant project access'}</Button></form> : <p className="aw-muted">A workspace administrator can grant trusted developer access.{owner ? ' As project owner, you can remove it.' : ''}</p>}<Feedback state={writeState} />
     </section>
-    <section className="aw-project__section"><h3>Client participants</h3>{admin ? <ProjectPeople project={project} /> : <ul className="aw-project__work">{(state.value?.clients ?? project.clients ?? []).map(person => <li key={person.id}><div><strong>{person.name || person.email}</strong>{person.name ? <span className="aw-muted">{person.email}</span> : null}</div></li>)}</ul>}<p className="aw-muted">Client participation is separate from trusted developer access. Select recipients in a work conversation to notify them; typed @names alone do not send notifications.</p></section>
-    <section className="aw-project__section"><h3>Conversation recipients</h3><ResourceState state={recipients} refresh={refreshRecipients}><ul className="aw-project__work">{(recipients.value?.recipients ?? []).map(person => <li key={person.userId}><div><strong>{person.name || person.email}</strong>{person.name ? <span className="aw-muted">{person.email}</span> : null}</div><Tag>{person.memberType === 'trusted_developer' ? 'Trusted developer' : 'Client'}</Tag></li>)}</ul>{!recipients.value?.recipients?.length ? <p className="aw-muted">No eligible recipients returned. Recipient selection is available inside a saved work conversation.</p> : null}</ResourceState></section>
+    <section className="aw-project__section">
+      <div className="aw-row-h"><h3>People on this project</h3><span className="aw-toolbar__fill" />{admin ? <Button size="sm" onClick={() => setModal({kind:'custom', render:close => <ProjectInviteModal project={project} onClose={() => {close(); void peopleChanged();}} />})}>Add people</Button> : null}</div>
+      <p className="aw-muted">Everyone who can read this project's requests. Client participation is separate from trusted developer access; select recipients in a work conversation to notify them — typed @names alone do not send notifications.</p>
+      <ResourceState state={recipients} refresh={refreshRecipients}><PeopleTable project={project} recipients={recipients.value?.recipients} clients={project.clients ?? state.value?.clients ?? []} canManage={admin || owner} onPeopleChanged={peopleChanged} /></ResourceState>
+    </section>
   </>;
 }
 

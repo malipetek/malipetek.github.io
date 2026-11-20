@@ -36,9 +36,23 @@ export function projectTopology(project = {}, local, git) {
   };
 }
 
-export function projectWork(tickets = [], projectId) {
+/**
+ * The one ticket selector every list uses. `includeSystem` keeps the
+ * operator's own system work (content, SEO, guide cycles) in — only the
+ * world map counts it; the work lists never show it.
+ */
+export function projectTickets(tickets = [], projectId, { includeSystem = false } = {}) {
+  if (projectId === null || projectId === undefined) return [];
+  return tickets.filter(ticket =>
+    ticket && ticket.project_id != null
+    && String(ticket.project_id) === String(projectId)
+    && (includeSystem || ticket.kind !== 'system'));
+}
+
+export function projectWork(tickets = [], projectId, options) {
   const closed = ticket => ['done', 'declined'].includes(ticket.status);
-  return tickets.filter(ticket => ticket.project_id === projectId && ticket.kind !== 'system').sort((a,b) => closed(a) - closed(b) || (b.updated_at ?? 0) - (a.updated_at ?? 0));
+  return projectTickets(tickets, projectId, options)
+    .sort((a, b) => closed(a) - closed(b) || (b.updated_at ?? 0) - (a.updated_at ?? 0));
 }
 
 /** Latest response wins; cached same-project data survives a failed refresh. */

@@ -10,7 +10,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { useAdmin } from './store.js';
 import { SOLUTION_CATALOG, INTEGRATION_CATALOG } from './solutions.js';
 import { ago, errorText } from './format.js';
-import { Button, Chips, Dot, Field, Modal, Tag } from './ui.jsx';
+import { Button, Chips, Dot, ErrorNote, Field, Modal, Tag } from './ui.jsx';
 
 const pathFor = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
 
@@ -25,6 +25,25 @@ const SHORT = {
 };
 
 const list = (value) => (Array.isArray(value) ? value.filter((id) => typeof id === 'string') : []);
+
+/**
+ * Capabilities named the way a person says them, so the fleet note never leaks
+ * machine ids like "os:macos". The live catalog's label wins when present.
+ */
+const REQUIRE_WORDS = {
+  'os:macos': 'a Mac', 'os:linux': 'Linux', 'xcode': 'Xcode', 'android': 'Android',
+  docker: 'Docker', gpu: 'a GPU', 'always-on': 'an always-on machine', sandbox: 'a sandbox',
+};
+const requirementWords = (requires, catalog) => {
+  const catalogLabel = (id) => catalog?.capabilities?.find((c) => c.id === id)?.label;
+  return requires.map((id) => REQUIRE_WORDS[id] ?? catalogLabel(id) ?? id);
+};
+const requirementText = (words) =>
+  words.length > 1 ? `${words[0]} with ${words.slice(1).join(' and ')}` : String(words[0] ?? '');
+const machineText = (nodes, state = 'online') => {
+  const names = nodes.map((n) => n.id).join(' or ');
+  return `${names} ${nodes.length > 1 ? 'are' : 'is'} ${state}`;
+};
 
 const VERIFY_ERRORS = {
   missing_fields: 'values are still missing',
@@ -152,7 +171,7 @@ export function ProjectSolutions({ project }) {
       await navigator.clipboard.writeText(clientStepsText(project, entry));
       notify(`${entry.label} client steps copied.`);
     } catch {
-      notify('Could not copy. Open Enter and read the steps from there.', 'error');
+      notify('Could not copy. Open Connect values and read the steps from there.', 'error');
     }
   };
 
@@ -163,11 +182,12 @@ export function ProjectSolutions({ project }) {
   const canBuild = (node) => requires.every((r) => (node.capabilities ?? []).includes(r));
   const capable = requires.length ? nodes.filter((node) => node.online && canBuild(node)) : [];
   const offlineCapable = requires.length ? nodes.filter((node) => !node.online && canBuild(node)) : [];
+  const needsText = requirementText(requirementWords(requires, catalog?.capabilities));
   const fleetNote = !requires.length ? null : capable.length
-    ? <p className="aw-psol__fleet">Fleet needs {requires.join(', ')} — {capable.map((n) => n.id).join(' or ')} can build it.</p>
+    ? <p className="aw-psol__fleet">Needs {needsText} · {machineText(capable)}.</p>
     : fleetKnown
-      ? <p className="aw-psol__fleet aw-psol__fleet--warn">No online machine can build this yet (needs {requires.join(', ')}){offlineCapable.length ? ` — ${offlineCapable.map((n) => n.id).join(' or ')} has it offline.` : '.'}</p>
-      : <p className="aw-psol__fleet">Fleet needs {requires.join(', ')}.</p>;
+      ? <p className="aw-psol__fleet aw-psol__fleet--warn">Needs {needsText} · no online machine can build it yet{offlineCapable.length ? ` — ${machineText(offlineCapable, 'offline')}` : ''}.</p>
+      : <p className="aw-psol__fleet">Needs {needsText}.</p>;
 
   const rows = status.integrations;
   return <div className="aw-psol">
@@ -175,13 +195,14 @@ export function ProjectSolutions({ project }) {
     <Chips value={selected} options={solutionsCatalog.map((s) => ({ value: s.id, label: s.label, hint: s.summary }))} onChange={choose} disabled={busy} />
     {fleetNote}
     <p className="aw-psol__h">Connections</p>
-    {status.error && !rows
-      ? <p className="aw-psol__err" role="alert">Connections failed to load. <Button size="sm" onClick={refreshStatus}>Retry</Button></p>
-      : rows === null || rows === undefined
-        ? <p className="aw-muted">Loading connections…</p>
-        : !rows.length
-          ? <p className="aw-muted">No connections needed for the chosen kinds.</p>
-          : <ul className="aw-psol__rows">
+    {status.error
+      ? <ErrorNote error={status.error} onRetry={refreshStatus} />
+      : null}
+    {rows === null || rows === undefined
+      ? <p className="aw-muted">Loading connections…</p>
+      : !rows.length && !status.error
+        ? <p className="aw-muted">No connections needed for the chosen kinds.</p>
+        : <ul className="aw-psol__rows">
             {rows.map((row) => {
               const entry = integrationById.get(row.id);
               return <li className="aw-psol__row" key={row.id}>
@@ -196,9 +217,9 @@ export function ProjectSolutions({ project }) {
                     : row.verifiedAt ? <span className="aw-muted">verified {ago(row.verifiedAt)} ago</span> : null}
                 </div>
                 <div className="aw-psol__rowact">
+                  {entry ? <Button size="sm" kind="primary" onClick={() => setEntering(entry)}>Connect values</Button> : null}
                   <Button size="sm" disabled={verifying === row.id} onClick={() => verify(row)}>{verifying === row.id ? 'Verifying…' : 'Verify'}</Button>
-                  {entry ? <Button size="sm" onClick={() => setEntering(entry)}>Enter</Button> : null}
-                  {entry ? <Button size="sm" onClick={() => void copySteps(entry)}>Copy client steps</Button> : null}
+                  {entry ? <button type="button" className="aw-link aw-psol__copy" onClick={() => void copySteps(entry)}>Copy client steps</button> : null}
                 </div>
               </li>;
             })}
@@ -220,11 +241,13 @@ export function ProjectSolutions({ project }) {
 }
 
 /** The project's kinds of work as compact tags, for the header and list rows. */
-export function SolutionTags({ solutions }) {
+export function SolutionTags({ solutions, catalog }) {
   const ids = list(solutions);
   if (!ids.length) return null;
+  // The live catalog wins over the static one; labels and hints stay current.
+  const entries = Array.isArray(catalog) && catalog.length ? catalog : SOLUTION_CATALOG;
   return <span className="aw-psol__tags">{ids.map((id) => {
-    const entry = SOLUTION_CATALOG.find((s) => s.id === id);
+    const entry = entries.find((s) => s.id === id);
     return <Tag key={id} title={entry?.label ?? id}>{SHORT[id] ?? entry?.label ?? id}</Tag>;
   })}</span>;
 }
@@ -268,7 +291,7 @@ export function IntegrationFieldsModal({ project, entry, onClose, onSaved }) {
   const edit = (field) => (event) => setValues({ ...values, [field.name]: event.target.value });
   return (
     <Modal
-      title={`Enter ${entry.label} values`}
+      title={`Connect ${entry.label} values`}
       subtitle={entry.scope}
       onClose={onClose}
       actions={<>
