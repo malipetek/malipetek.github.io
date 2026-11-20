@@ -12,7 +12,7 @@ import projectStyles from './project-styles.js';
 
 const errorText = error => error?.message || String(error || 'Request failed');
 const pathFor = project => `/admin/projects/${encodeURIComponent(project.id)}`;
-const TABS = ['Overview', 'Resources', 'Work', 'Activity & review', 'People'];
+const TABS = ['Overview', 'Solutions', 'Resources', 'Work', 'Activity & review', 'People'];
 
 function useProjectResource(load) {
   const [state, setState] = useState({load:null, value:null, loading:true, error:null});
@@ -85,6 +85,7 @@ export function ProjectView({id, initialTab = 'Overview'}) {
     <nav className="aw-project__tabs" aria-label="Project sections">{TABS.map(label => <button type="button" key={label} aria-current={tab === label ? 'page' : undefined} onClick={() => setTab(label)}>{label}</button>)}</nav>
     <div className="aw-project__body" key={`${id}:${tab}`}>
       {tab === 'Overview' ? <Overview project={project} refresh={refreshAll} setTab={setTab} /> : null}
+      {tab === 'Solutions' ? <section className="aw-project__section"><h3>Kind of work and client connections</h3><ProjectSolutions project={project} /></section> : null}
       {tab === 'Resources' ? <Resources project={project} refresh={refreshAll} host={host} /> : null}
       {tab === 'Work' ? <Work project={project} /> : null}
       {tab === 'Activity & review' ? <Activity project={project} /> : null}
@@ -119,6 +120,7 @@ function Overview({project, refresh, setTab}) {
       <ProjectWorld project={project} sites={sites} tickets={projectTickets} deploys={deploys} />
     </section>
     <div className="aw-project__overview">
+      {!project.solutions?.length ? <section className="aw-project__section"><p className="aw-muted">No kind of work set yet (website, app, Shopify, AWS…). <Button size="sm" onClick={() => setTab('Solutions')}>Set it</Button></p></section> : null}
       <section className="aw-project__section"><Brief project={project} refresh={refresh} /></section>
       <section className="aw-project__section">
         <h3>Next actions</h3>
@@ -340,7 +342,6 @@ function People({project, refresh}) {
   const ownerPerson = (state.value?.clients ?? project.clients ?? []).find(person => person.id === state.value?.ownerUserId);
   const grant = event => {event.preventDefault();if (!email.trim() || !admin) return;void write(async () => {await api('POST', `${pathFor(project)}/memberships`, {email:email.trim()});setEmail('');void refreshPeople();void refreshRecipients();void refresh();}, 'Trusted project access granted.');};
   return <>
-    <section className="aw-project__section"><h3>Solutions</h3><ProjectSolutions project={project} /></section>
     <section className="aw-project__section"><h3>Project ownership</h3><p>{state.value?.ownerUserId ? `Owned by ${ownerPerson?.name || ownerPerson?.email || state.value.ownerUserId}.` : 'An owner has not been verified for this project.'}</p><p className="aw-muted">The client owns the project and can act independently. Agent help and agency support are optional.</p></section>
     <section className="aw-project__section"><h3>Trusted developers</h3><p className="aw-muted">Trusted developers can work across the project: context, integrations, configuration, code and deployments. Access does not extend to other projects or global administration.</p><ResourceState state={state} refresh={refreshPeople}><ul className="aw-project__work">{(state.value?.memberships ?? []).map(person => <li key={person.userId}><div><strong>{person.name || person.email}</strong>{person.name ? <span className="aw-muted">{person.email}</span> : null}<Tag>Trusted developer</Tag></div>{admin || owner ? <Button size="sm" disabled={writeState.busy} onClick={() => ask({title:`Remove ${person.email} from this project?`,text:'Their trusted access ends immediately. Their account and access to other projects stay unchanged.',confirm:'Remove access',danger:true,run:() => write(async () => {await api('DELETE', `${pathFor(project)}/memberships/${encodeURIComponent(person.userId)}`);void refreshPeople();void refreshRecipients();}, 'Trusted access removed.')})}>Remove access</Button> : null}</li>)}</ul>{!state.value?.memberships?.length ? <p className="aw-muted">No trusted developers assigned.</p> : null}</ResourceState>
       {admin ? <form onSubmit={grant} className="aw-project__invite"><Field label="Existing account email"><input type="email" required maxLength={254} value={email} onChange={event => setEmail(event.target.value)} /></Field><Button type="submit" disabled={writeState.busy || !email.trim()}>{writeState.busy ? 'Granting…' : 'Grant project access'}</Button></form> : <p className="aw-muted">A workspace administrator can grant trusted developer access.{owner ? ' As project owner, you can remove it.' : ''}</p>}<Feedback state={writeState} />

@@ -154,15 +154,16 @@ test('the enter modal shows the steps as a list, the docs link, and a field per 
   assert.match(secret, /type="password"/);
 });
 
-test('the project page carries the tags in its header and the section on the People tab', () => {
-  const html = view.projectPage(['mobile-ios', 'aws'], 'People');
+test('the project page carries the tags in its header and its own Solutions tab', () => {
+  const html = view.projectPage(['mobile-ios', 'aws'], 'Solutions');
   assert.match(html, /aw-psol__tags/);
   assert.match(html, /title="iOS app"[^>]*>iOS<\/span>/);
   assert.match(html, /title="AWS"[^>]*>AWS<\/span>/);
-  assert.match(html, /<h3>Solutions<\/h3>/);
+  assert.match(html, /<h3>Kind of work and client connections<\/h3>/);
+  assert.match(html, />Solutions<\/button>/);
   assert.match(html, /Kind of work/);
   assert.match(html, /aria-pressed="true"[^>]*>iOS app<\/button>/);
-  const quiet = view.projectPage([], 'People');
+  const quiet = view.projectPage([], 'Solutions');
   assert.doesNotMatch(quiet, /aw-psol__tags/);
   assert.doesNotMatch(quiet, /\bundefined\b/);
 });

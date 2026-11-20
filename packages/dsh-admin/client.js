@@ -10302,7 +10302,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   // packages/admin-ui/src/project.jsx
   var errorText3 = (error) => error?.message || String(error || "Request failed");
   var pathFor2 = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
-  var TABS = ["Overview", "Resources", "Work", "Activity & review", "People"];
+  var TABS = ["Overview", "Solutions", "Resources", "Work", "Activity & review", "People"];
   function useProjectResource(load) {
     const [state, setState] = useState({ load: null, value: null, loading: true, error: null });
     const resource = useRef(null);
@@ -10420,6 +10420,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       /* @__PURE__ */ jsx("nav", { className: "aw-project__tabs", "aria-label": "Project sections", children: TABS.map((label) => /* @__PURE__ */ jsx("button", { type: "button", "aria-current": tab === label ? "page" : void 0, onClick: () => setTab(label), children: label }, label)) }),
       /* @__PURE__ */ jsxs("div", { className: "aw-project__body", children: [
         tab === "Overview" ? /* @__PURE__ */ jsx(Overview, { project, refresh: refreshAll, setTab }) : null,
+        tab === "Solutions" ? /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+          /* @__PURE__ */ jsx("h3", { children: "Kind of work and client connections" }),
+          /* @__PURE__ */ jsx(ProjectSolutions, { project })
+        ] }) : null,
         tab === "Resources" ? /* @__PURE__ */ jsx(Resources, { project, refresh: refreshAll, host }) : null,
         tab === "Work" ? /* @__PURE__ */ jsx(Work, { project }) : null,
         tab === "Activity & review" ? /* @__PURE__ */ jsx(Activity, { project }) : null,
@@ -10450,6 +10454,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       /* @__PURE__ */ jsx("section", { className: "aw-project__section aw-project__world", "aria-label": "Project world", children: /* @__PURE__ */ jsx(ProjectWorld, { project, sites, tickets: projectTickets, deploys }) }),
       /* @__PURE__ */ jsxs("div", { className: "aw-project__overview", children: [
+        !project.solutions?.length ? /* @__PURE__ */ jsx("section", { className: "aw-project__section", children: /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+          "No kind of work set yet (website, app, Shopify, AWS\u2026). ",
+          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setTab("Solutions"), children: "Set it" })
+        ] }) }) : null,
         /* @__PURE__ */ jsx("section", { className: "aw-project__section", children: /* @__PURE__ */ jsx(Brief, { project, refresh }) }),
         /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
           /* @__PURE__ */ jsx("h3", { children: "Next actions" }),
@@ -10939,10 +10947,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }, "Trusted project access granted.");
     };
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Solutions" }),
-        /* @__PURE__ */ jsx(ProjectSolutions, { project })
-      ] }),
       /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
         /* @__PURE__ */ jsx("h3", { children: "Project ownership" }),
         /* @__PURE__ */ jsx("p", { children: state.value?.ownerUserId ? `Owned by ${ownerPerson?.name || ownerPerson?.email || state.value.ownerUserId}.` : "An owner has not been verified for this project." }),
