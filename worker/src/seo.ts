@@ -29,6 +29,7 @@ import { Hono, type Context } from 'hono';
 import { json, now, type Env } from './shared.ts';
 import { mailAli, siteUrl, type PortalEnv } from './portal.ts';
 import { SLOP } from './content.ts';
+import { GH_API, ghHeaders, installationToken, projectInstallation, repoParts } from './ghapp.ts';
 
 const DAY = 86_400;
 
@@ -602,6 +603,12 @@ export interface SeoSettings {
   rankKeywords: string[];
   /** Where the rank check asks Google: the SERP API's location and language. */
   rankLocation: RankLocation;
+  /** The guide cycle files itself while a desk target has no guide. */
+  guidesAuto: boolean;
+  /** How many guide cycles a week at most; 0 keeps them all for a manual run. */
+  guidesPerWeek: number;
+  /** A finished guide PR is checked and squash-merged without Ali. */
+  guidesAutoMerge: boolean;
 }
 
 /** The seed in 0036_seo.sql, repeated so a missing row reads the same as the desk. */
@@ -654,6 +661,9 @@ const SETTING_DEFAULTS: SeoSettings = {
   volatilityHold: true,
   rankKeywords: RANK_KEYWORD_SEED,
   rankLocation: RANK_LOCATION_SEED,
+  guidesAuto: true,
+  guidesPerWeek: 2,
+  guidesAutoMerge: true,
 };
 
 const SETTING_KEYS: Record<keyof SeoSettings, string> = {
@@ -662,6 +672,9 @@ const SETTING_KEYS: Record<keyof SeoSettings, string> = {
   volatilityHold: 'seo_volatility_hold',
   rankKeywords: 'seo_rank_keywords',
   rankLocation: 'seo_rank_location',
+  guidesAuto: 'seo_guides_auto',
+  guidesPerWeek: 'seo_guides_per_week',
+  guidesAutoMerge: 'seo_guides_auto_merge',
 };
 
 const FIELD_OF_KEY: Record<string, keyof SeoSettings> = Object.fromEntries(
@@ -670,6 +683,11 @@ const FIELD_OF_KEY: Record<string, keyof SeoSettings> = Object.fromEntries(
 
 const bool = (raw: unknown): unknown =>
   typeof raw === 'boolean' ? raw : raw === 'on' ? true : raw === 'off' ? false : undefined;
+
+const bounded = (min: number, max: number) => (raw: unknown) => {
+  const value = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() ? Number(raw) : NaN;
+  return Number.isInteger(value) && value >= min && value <= max ? value : undefined;
+};
 
 /** A list of short strings, deduped, capped. Shared by questions and keywords. */
 function cleanList(raw: unknown, max: number, maxLength: number): string[] | undefined {
@@ -688,6 +706,9 @@ function cleanList(raw: unknown, max: number, maxLength: number): string[] | und
 const RULES: Record<keyof SeoSettings, (raw: unknown) => unknown> = {
   autoCycle: bool,
   volatilityHold: bool,
+  guidesAuto: bool,
+  guidesAutoMerge: bool,
+  guidesPerWeek: bounded(0, 7),
   geoQuestions: (raw) => cleanList(raw, MAX_GEO_QUESTIONS, 200),
   rankKeywords: (raw) => cleanList(raw, MAX_RANK_KEYWORDS, 120),
   rankLocation: (raw) => {
@@ -913,13 +934,21 @@ export async function auditHost(env: Env, host: SeoHost, t = now()): Promise<Hos
     ? undefined
     : (request: Request): Promise<Response> => env.SITE!.fetch(request);
 
-  const [sitemap, robots, llms] = await Promise.all([
+  const [sitemap, robots, llms, guidesJson] = await Promise.all([
     readSitemaps(host, via),
     fetchText(`${origin}/robots.txt`, via),
     fetchText(`${origin}/llms.txt`, via),
+    // The site's guide list is a generated endpoint; a 404 means it has none.
+    host === 'ptechsolutions.net' ? fetchText(`${origin}/guides.json`, via) : Promise.resolve(null),
   ]);
   const robotsText = robots && robots.status >= 200 && robots.status < 300 ? robots.text : null;
   const llmsText = llms && llms.status >= 200 && llms.status < 300 ? llms.text : null;
+
+  if (host === 'ptechsolutions.net') {
+    await syncGuides(env, guidesJson, t);
+    // Tell IndexNow about URLs the sitemap names that it has not seen.
+    await pingIndexNow(env, host, sitemap.paths, t);
+  }
 
   const sitemapPaths = sitemap.paths.slice(0, MAX_PAGES_PER_HOST);
   // The homepage is audited even when the sitemap forgets it: that is the page
@@ -1079,6 +1108,18 @@ export async function runAudit(env: Env, t = now()): Promise<AuditSummary> {
     } catch (error) {
       console.error('seo_audit_failed', host, String(error));
     }
+  }
+  // A host that left SEO_HOSTS is never audited again, so nothing would ever
+  // resolve its open findings; they would drive cycles forever. Close them here.
+  try {
+    await env.DB.prepare(
+      `UPDATE seo_findings SET resolved_at = ? WHERE resolved_at IS NULL
+        AND host NOT IN (${SEO_HOSTS.map(() => '?').join(', ')})`,
+    )
+      .bind(t, ...SEO_HOSTS)
+      .run();
+  } catch (error) {
+    console.error('seo_stale_findings_failed', String(error));
   }
   return { day: dayKey(t), hosts };
 }
@@ -1784,23 +1825,27 @@ export interface RankBrief {
   checked: boolean;
 }
 
-/** The five worst open findings the agent should fix, worst first. */
+/** The five worst open findings the agent should fix, worst first. Only audited hosts count. */
 async function topFindings(env: Env, limit = CYCLE_FINDINGS): Promise<FindingBrief[]> {
   const { results } = await env.DB.prepare(
     `SELECT id, host, path, code, severity, detail FROM seo_findings
       WHERE resolved_at IS NULL AND severity IN ('high', 'medium')
+        AND host IN (${SEO_HOSTS.map(() => '?').join(', ')})
       ORDER BY CASE severity WHEN 'high' THEN 0 ELSE 1 END, last_seen DESC, id
       LIMIT ?`,
   )
-    .bind(limit)
+    .bind(...SEO_HOSTS, limit)
     .all<FindingBrief>();
   return results ?? [];
 }
 
 async function openFindingCount(env: Env): Promise<number> {
   const row = await env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM seo_findings WHERE resolved_at IS NULL AND severity IN ('high', 'medium')`,
-  ).first<{ n: number }>();
+    `SELECT COUNT(*) AS n FROM seo_findings WHERE resolved_at IS NULL AND severity IN ('high', 'medium')
+      AND host IN (${SEO_HOSTS.map(() => '?').join(', ')})`,
+  )
+    .bind(...SEO_HOSTS)
+    .first<{ n: number }>();
   return row?.n ?? 0;
 }
 
@@ -1849,17 +1894,21 @@ export function seoBrief(options: {
   const lines = [
     'Fix the search and assistant visibility issues below on our own host.',
     '',
-    'The site, from DEPLOY.md:',
+    'The site, from DEPLOY.md (repo PTechGroup/ptechsolutions, branch main):',
     '- ptechsolutions.net is the company site and the client portal: one Astro build,',
     '  served by one Worker.',
-    '- src/pages/: index.astro, privacy.astro, refunds.astro, and the prerendered',
-    '  portal pages under src/pages/portal/.',
+    '- src/pages/: index.astro, privacy.astro, refunds.astro, terms.astro,',
+    '  data-deletion.astro, the portal pages under src/pages/portal/, and the',
+    '  generated endpoints sitemap.xml, llms.txt and guides.json. The guides',
+    '  themselves are src/content/guides/*.md, rendered by src/pages/guides/.',
     '- src/layouts/: SiteLayout.astro for the company pages, PortalBase.astro for the',
     '  portal. src/components/site/ and src/lib/site.ts feed the homepage sections.',
-    '- public/: fonts, me.webp, favicon.svg, .well-known/mcp-server.json, robots.txt,',
-    '  llms.txt and sitemap.xml. Astro copies public/ into dist/ unchanged.',
+    '- public/ holds fonts and images only; Astro copies it into dist/ unchanged.',
+    '  robots.txt, llms.txt, sitemap.xml and guides.json are routes in src/pages,',
+    '  not files in public/.',
     '- Portal pages are behind the client session; do not add them to the public',
-    '  sitemap. The company pages and their assets are the crawlable surface.',
+    '  sitemap. The company pages, the guides and their assets are the crawlable',
+    '  surface.',
     '',
     'Findings to fix, worst first:',
     ...findings.map(
@@ -1913,10 +1962,12 @@ export function seoBrief(options: {
         ]
       : []),
     'Rules:',
-    '- Work in your own worktree on a branch, commit there, open a PR. Never push to',
-    '  master: master is the deploy branch and Cloudflare deploys every push.',
-    '- `pnpm install --frozen-lockfile` once, then `pnpm --dir worker test` (typecheck',
-    '  plus unit) before the PR. The Cloudflare build does not run the tests.',
+    '- Work in your own worktree on a branch, commit there, open a PR against',
+    '  main of PTechGroup/ptechsolutions. Never push to main: it is the deploy',
+    '  branch and Workers Builds deploys every push.',
+    '- `pnpm install --frozen-lockfile && pnpm build` must pass before the PR.',
+    '  There is no worker/ package in this repo, and the Cloudflare build does',
+    '  not run tests.',
     '- Fix the code, not the database: the desk reads the live pages after a deploy.',
     '  Do not touch migrations unless a finding cannot be fixed without one.',
     '- One finding is one change where you can. If two share a cause, one commit is fine.',
@@ -1925,7 +1976,7 @@ export function seoBrief(options: {
     'End your reply with this block, and nothing after it:',
     '',
     '<<<OUTBOX',
-    '{"fixed":[{"finding_id":1,"files":["src/pages/index.astro"],"note":"added the missing description"}],"skipped":[{"finding_id":2,"reason":"needs a copy decision from Ali"}],"drafts":[{"citation_id":3,"bio":"...","link_text":"..."}],"pr":"https://github.com/malipetek/malipetek.github.io/pull/0"}',
+    '{"fixed":[{"finding_id":1,"files":["src/pages/index.astro"],"note":"added the missing description"}],"skipped":[{"finding_id":2,"reason":"needs a copy decision from Ali"}],"drafts":[{"citation_id":3,"bio":"...","link_text":"..."}],"pr":"https://github.com/PTechGroup/ptechsolutions/pull/0"}',
     'OUTBOX>>>',
     '',
     `Keep the prose before it to a few lines: the report keeps the first 8,000 characters,`,
@@ -2243,6 +2294,758 @@ export async function finishSeoCycle(env: Env, ticketId: number, summary: string
   return { handled: true, fixed, drafts: drafted, skipped: outbox.skipped.length };
 }
 
+/* ——————————————————————— guides ——————————————————————— */
+
+/**
+ * The guide engine: every desk target (rank keywords, then GEO questions)
+ * eventually gets a guide page on ptechsolutions.net. A fleet agent writes it
+ * in the site repo, the desk checks the diff and merges it, IndexNow hears
+ * about the new URL on the next audit, and the coverage list in the overview
+ * shows what is still missing.
+ */
+
+/** Public by design: the site serves it at /<key>.txt for IndexNow to verify. */
+export const INDEXNOW_KEY = '5f0c3a9e7b2d4c18a6e1f9d3b7c2a845';
+
+/** The one normal form a desk target and a guide's targets list share. */
+export function normalizeTarget(value: string): string {
+  return value.toLowerCase().trim().replace(/\s+/g, ' ').replace(/[?.!]+$/, '');
+}
+
+export interface GuideEntry {
+  slug: string;
+  url: string;
+  title: string;
+  targets: string[];
+  published: string | null;
+}
+
+export interface GuideTarget {
+  target: string;
+  kind: 'keyword' | 'question';
+}
+
+/** A guide-cycle ticket, as coverage reads it. */
+export interface GuideAttempt {
+  id: number;
+  target: string;
+  at: number;
+  /** guide_cycle = 1 on a ticket still approved or in progress. */
+  open: boolean;
+}
+
+export interface GuideCoverage {
+  target: string;
+  kind: 'keyword' | 'question';
+  guide: GuideEntry | null;
+  inProgress: number | null;
+  lastAttemptAt: number | null;
+}
+
+const GUIDE_SLUG = /^[a-z0-9][a-z0-9-]{0,119}$/;
+
+/** The guides.json shape, sanitized: anything malformed is dropped, not stored. */
+export function cleanGuides(input: unknown): GuideEntry[] {
+  const list = Array.isArray(input) ? input : ((input as { guides?: unknown })?.guides ?? null);
+  if (!Array.isArray(list)) return [];
+  const out: GuideEntry[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const slug = typeof row.slug === 'string' ? row.slug.trim() : '';
+    const url = typeof row.url === 'string' ? row.url.trim().slice(0, 300) : '';
+    const title = typeof row.title === 'string' ? row.title.trim().slice(0, 200) : '';
+    if (!GUIDE_SLUG.test(slug) || !/^https?:\/\/[^\s]+$/.test(url) || !title) continue;
+    const targets = Array.isArray(row.targets)
+      ? [...new Set(row.targets.filter((t): t is string => typeof t === 'string').map((t) => t.trim().slice(0, 200)).filter(Boolean))].slice(0, 40)
+      : [];
+    const published = typeof row.published === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(row.published) ? row.published : null;
+    out.push({ slug, url, title, targets, published });
+  }
+  return out;
+}
+
+function parseJsonSetting<T>(raw: string | null | undefined, fallback: T): T {
+  try {
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+interface GuideState {
+  guides: GuideEntry[];
+  guidesAt: number | null;
+  attempts: GuideAttempt[];
+}
+
+/** What the desk knows about guides: the site's list, when it was read, and every cycle ticket. */
+async function readGuideState(env: Env): Promise<GuideState> {
+  const [guidesRow, atRow, attempts] = await Promise.all([
+    env.DB.prepare(`SELECT value FROM settings WHERE key = 'seo_guides'`).first<{ value: string }>(),
+    env.DB.prepare(`SELECT value FROM settings WHERE key = 'seo_guides_at'`).first<{ value: string }>(),
+    env.DB.prepare(`SELECT id, guide_target, guide_cycle, status, created_at FROM tickets WHERE guide_cycle > 0`).all<{
+      id: number;
+      guide_target: string | null;
+      guide_cycle: number;
+      status: string;
+      created_at: number;
+    }>(),
+  ]);
+  const guidesAt = Number(parseJsonSetting<unknown>(atRow?.value, null));
+  return {
+    guides: cleanGuides(parseJsonSetting<unknown>(guidesRow?.value, [])),
+    guidesAt: Number.isFinite(guidesAt) && guidesAt > 0 ? guidesAt : null,
+    attempts: (attempts.results ?? [])
+      .filter((row) => row.guide_target)
+      .map((row) => ({
+        id: row.id,
+        target: row.guide_target as string,
+        at: row.created_at,
+        open: row.guide_cycle === 1 && (row.status === 'approved' || row.status === 'in_progress'),
+      })),
+  };
+}
+
+/** Rank keywords first, then GEO questions; coverage dedupes by normalized target. */
+function guideTargets(settings: SeoSettings): GuideTarget[] {
+  return [
+    ...settings.rankKeywords.map((target) => ({ target, kind: 'keyword' as const })),
+    ...settings.geoQuestions.map((target) => ({ target, kind: 'question' as const })),
+  ];
+}
+
+/**
+ * Which desk targets a guide already answers. A guide covers a target when one
+ * of its normalized targets equals the normalized desk target; a target an
+ * open cycle ticket is writing counts as in progress, and every guide-cycle
+ * ticket is an attempt for the retry window.
+ */
+export function guideCoverage(
+  targets: readonly GuideTarget[],
+  guides: readonly GuideEntry[],
+  attempts: readonly GuideAttempt[],
+): GuideCoverage[] {
+  const seen = new Set<string>();
+  const unique: GuideTarget[] = [];
+  for (const item of targets) {
+    const key = normalizeTarget(item.target);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push({ target: item.target.trim(), kind: item.kind });
+  }
+  const guideKeys = guides.map((guide) => ({ guide, keys: new Set(guide.targets.map(normalizeTarget)) }));
+  const attemptBy = new Map<string, { open: number | null; last: number }>();
+  for (const attempt of attempts) {
+    const key = normalizeTarget(attempt.target);
+    if (!key) continue;
+    const cur = attemptBy.get(key) ?? { open: null, last: 0 };
+    if (attempt.open) cur.open = cur.open === null ? attempt.id : Math.min(cur.open, attempt.id);
+    cur.last = Math.max(cur.last, attempt.at);
+    attemptBy.set(key, cur);
+  }
+  return unique.map(({ target, kind }) => {
+    const key = normalizeTarget(target);
+    const guide = guideKeys.find((entry) => entry.keys.has(key))?.guide ?? null;
+    const attempt = attemptBy.get(key);
+    return { target, kind, guide, inProgress: attempt?.open ?? null, lastAttemptAt: attempt?.last || null };
+  });
+}
+
+/**
+ * What a guides.json read means for the desk: null leaves the stored list
+ * alone (a bad answer is not "no guides"), [] is a real "the site has none".
+ */
+export function guideListFromFetch(status: number, text: string): GuideEntry[] | null {
+  if (status === 404) return [];
+  if (status < 200 || status >= 300) return null;
+  try {
+    return cleanGuides(JSON.parse(text));
+  } catch {
+    return null;
+  }
+}
+
+/** The audit's guides.json read becomes the desk's guide list; 404 means the site has none. */
+async function syncGuides(env: Env, fetched: Fetched | null, t: number): Promise<void> {
+  if (!fetched) return;
+  const guides = guideListFromFetch(fetched.status, fetched.text);
+  if (guides === null) return;
+  await saveGuideList(env, guides, t);
+}
+
+async function saveGuideList(env: Env, guides: GuideEntry[], t: number): Promise<void> {
+  const write = (key: string, value: string) =>
+    env.DB.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).bind(key, value, t);
+  await env.DB.batch([write('seo_guides', JSON.stringify(guides)), write('seo_guides_at', JSON.stringify(t))]);
+}
+
+/**
+ * Tell IndexNow about the URLs the sitemap names that it has not seen. The
+ * known list only grows on a 200/202, so a refused submission is retried on
+ * the next audit; a failure here is a log line, never an audit failure.
+ */
+async function pingIndexNow(env: Env, host: string, paths: readonly string[], t: number): Promise<void> {
+  const origin = `https://${host}`;
+  const urls = paths.map((path) => `${origin}${path}`);
+  if (!urls.length) return;
+  const knownRow = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'seo_indexnow_known'`).first<{ value: string }>();
+  const known = parseJsonSetting<unknown>(knownRow?.value, []);
+  const seen = new Set(Array.isArray(known) ? known.filter((u): u is string => typeof u === 'string') : []);
+  const fresh = urls.filter((url) => !seen.has(url));
+  if (!fresh.length) return;
+
+  const submitted: string[] = [];
+  for (let i = 0; i < fresh.length; i += 100) {
+    const urlList = fresh.slice(i, i + 100);
+    try {
+      const res = await fetch('https://api.indexnow.org/indexnow', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ host, key: INDEXNOW_KEY, keyLocation: `${origin}/${INDEXNOW_KEY}.txt`, urlList }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (res.status === 200 || res.status === 202) submitted.push(...urlList);
+      else console.log('indexnow_rejected', res.status);
+    } catch (error) {
+      console.log('indexnow_failed', String(error));
+    }
+  }
+  if (!submitted.length) return;
+
+  const merged = [...new Set([...seen, ...submitted])];
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('seo_indexnow_known', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).bind(JSON.stringify(merged), t),
+    env.DB.prepare('INSERT INTO seo_events (day, kind, label, source, created_at) VALUES (?, ?, ?, ?, ?)').bind(
+      dayKey(t),
+      'indexnow',
+      `${submitted.length} URL${submitted.length === 1 ? '' : 's'} submitted`,
+      'audit',
+      t,
+    ),
+  ]);
+}
+
+/** The brief a guide cycle ticket opens with. */
+export function guideBrief(options: { target: string; kind: 'keyword' | 'question'; guides: readonly GuideEntry[] }): string {
+  const { target, kind, guides } = options;
+  // The contract's targets are the normalized desk target: lowercase, one space.
+  const exact = normalizeTarget(target);
+  const slug = exact
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/g, '');
+  const existing = guides.length
+    ? guides.map((guide) => `- ${guide.title}: ${guide.url}`).join('\n')
+    : 'No guides exist yet; this is the first one.';
+  return [
+    `Write ONE new guide page for ptechsolutions.net that answers this ${kind === 'keyword' ? 'search keyword' : 'buyer question'}:`,
+    '',
+    `  ${target}`,
+    '',
+    'It is a content collection entry in PTechGroup/ptechsolutions: create exactly one',
+    `new file src/content/guides/${slug || '<slug>'}.md — the slug is kebab-case made`,
+    'from the target, 60 characters or fewer — and touch no other file.',
+    '',
+    'Frontmatter, exactly this shape:',
+    '---',
+    'title: ...              # 60 characters or fewer',
+    'description: ...        # 70-160 characters',
+    `targets: ["${exact}"]   # the exact desk target, lowercase`,
+    'summary: ...            # 40-90 words, the answer first',
+    'faq:                    # 0-6 pairs',
+    '  - q: ...',
+    '    a: ...',
+    'published: YYYY-MM-DD',
+    '---',
+    '',
+    'Body: 700-1,800 words of markdown. The H2s are phrased as the questions a',
+    'buyer asks, and each H2 is answered in its first two sentences; then',
+    'evidence, steps or a table where that is honest. Facts about PTech come',
+    'only from src/lib/site.ts and src/lib/pricing.js: $100 an hour billed by',
+    'the second, AI at cost, no minimum, a budget pause, the free first preview',
+    'of a new site or app, a developer approves every request, the AI agent',
+    'works in a sealed copy, and changes are shown on a preview before going',
+    'live. Never invent clients, results, statistics, testimonials or other',
+    "companies' prices. Link outside pages only ones you actually fetched.",
+    'End with a short section pointing to /portal — the request form is',
+    '/portal#/new.',
+    '',
+    'Voice: marketing/style/README.md and marketing/style/voice.md set the',
+    'tone, but the guide speaks as the company ("we", never "I"). The same',
+    'patterns the post cycle refuses apply here: no em dash, no "not X, but Y",',
+    'no stock AI words, no throat-clearing, no invented audiences.',
+    '',
+    'Guides that already exist — link one to three where relevant and do not',
+    'duplicate them:',
+    existing,
+    '',
+    'Then: pnpm install --frozen-lockfile && pnpm build must pass. Work on a',
+    'branch, commit, and open a PR against main of PTechGroup/ptechsolutions;',
+    'main is the deploy branch and Workers Builds deploys every push, so never',
+    'push to it directly.',
+    '',
+    'End your reply with this block, and nothing after it:',
+    '',
+    '<<<OUTBOX',
+    `{"guide":{"slug":"${slug || 'slug'}","target":"${exact.replace(/"/g, "'")}","pr":"https://github.com/PTechGroup/ptechsolutions/pull/N"}}`,
+    'or {"skipped":"reason"} when the target cannot honestly be answered.',
+    'OUTBOX>>>',
+  ].join('\n');
+}
+
+/**
+ * File one guide cycle ticket: the first desk target no guide answers and no
+ * cycle attempted in the last three weeks. Same shape as ensureSeoCycle.
+ */
+export async function ensureGuideCycle(env: Env, t = now(), options: { force?: boolean } = {}): Promise<SeoCycleResult> {
+  const settings = await readSeoSettings(env);
+  if (!settings.guidesAuto && !options.force) return { filed: false, reason: 'auto_off' };
+
+  const open = await env.DB.prepare(
+    `SELECT id FROM tickets WHERE guide_cycle = 1 AND status IN ('approved', 'in_progress') LIMIT 1`,
+  ).first<{ id: number }>();
+  if (open) return { filed: false, reason: 'open_cycle', id: open.id };
+
+  if (!options.force) {
+    const recent = await env.DB.prepare(
+      `SELECT id, created_at FROM tickets WHERE guide_cycle > 0 ORDER BY created_at DESC LIMIT 1`,
+    ).first<{ id: number; created_at: number }>();
+    if (recent) {
+      const week = await env.DB.prepare(`SELECT COUNT(*) AS n FROM tickets WHERE guide_cycle > 0 AND created_at > ?`)
+        .bind(t - 7 * DAY)
+        .first<{ n: number }>();
+      if ((week?.n ?? 0) >= settings.guidesPerWeek) return { filed: false, reason: 'weekly_cap', id: recent.id };
+      if (t - recent.created_at < 2 * DAY) return { filed: false, reason: 'recent_cycle', id: recent.id };
+    }
+  }
+
+  const [state, project, admin] = await Promise.all([
+    readGuideState(env),
+    env.DB.prepare('SELECT id FROM projects WHERE slug = ?').bind(CYCLE_PROJECT).first<{ id: string }>(),
+    env.DB.prepare(`SELECT id FROM users WHERE role = 'admin' ORDER BY created_at LIMIT 1`).first<{ id: string }>(),
+  ]);
+  if (!project) return { filed: false, reason: 'no_project' };
+  if (!admin) return { filed: false, reason: 'no_admin' };
+
+  const coverage = guideCoverage(guideTargets(settings), state.guides, state.attempts);
+  const pick = coverage.find(
+    (entry) => !entry.guide && entry.inProgress === null && (entry.lastAttemptAt === null || t - entry.lastAttemptAt >= 21 * DAY),
+  );
+  if (!pick) return { filed: false, reason: 'all_covered' };
+
+  const ticket = await env.DB.prepare(
+    `INSERT INTO tickets (user_id, project_id, title, status, kind, source, priority, requires, executor, attention, guide_cycle, guide_target, created_at, updated_at)
+     VALUES (?, ?, ?, 'approved', 'system', 'dsh', 0, '[]', NULL, 'auto', 1, ?, ?, ?) RETURNING id`,
+  )
+    .bind(admin.id, project.id, `Guide: ${pick.target}`, pick.target, t, t)
+    .first<{ id: number }>();
+  if (!ticket) return { filed: false, reason: 'insert_failed' };
+
+  await env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'ali', ?, 1, ?)`)
+    .bind(ticket.id, guideBrief({ target: pick.target, kind: pick.kind, guides: state.guides }), t)
+    .run();
+  return { filed: true, id: ticket.id };
+}
+
+/* —— the guide OUTBOX —— */
+
+export interface GuideOutbox {
+  guide: { slug: string; target: string; pr: string } | null;
+  skipped: string | null;
+}
+
+/** The block at the end of a guide run's reply: one guide's PR, or a skip. */
+export function parseGuideOutbox(summary: string): GuideOutbox | null {
+  const start = summary.lastIndexOf('<<<OUTBOX');
+  if (start < 0) return null;
+  const end = summary.indexOf('OUTBOX>>>', start + 9);
+  if (end < 0) return null;
+  const raw = summary
+    .slice(start + 9, end)
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```$/, '')
+    .trim();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const data = parsed as { guide?: unknown; skipped?: unknown };
+
+  let guide: GuideOutbox['guide'] = null;
+  if (data.guide && typeof data.guide === 'object') {
+    const row = data.guide as { slug?: unknown; target?: unknown; pr?: unknown };
+    const slug = text(row.slug, 120);
+    const target = text(row.target, 200);
+    const pr = text(row.pr, 400);
+    if (GUIDE_SLUG.test(slug) && target && /^https?:\/\//i.test(pr)) guide = { slug, target, pr };
+  }
+  const skipped = text(data.skipped, 300) || null;
+  if (!guide && !skipped) return null;
+  return { guide, skipped };
+}
+
+/* —— the guide itself, checked before it merges —— */
+
+/** The frontmatter block and the body after it, or null when there is none. */
+function frontmatterOf(markdown: string): { raw: string; body: string } | null {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/.exec(markdown);
+  return match ? { raw: match[1], body: markdown.slice(match[0].length) } : null;
+}
+
+function frontmatterField(raw: string, key: string): string {
+  const match = new RegExp(`^${key}:[ \\t]*(.+)$`, 'm').exec(raw);
+  return match ? match[1].trim().replace(/^["']|["']$/g, '') : '';
+}
+
+/** A YAML list under `key`: inline [a, b] or a block of `- item` lines. */
+function frontmatterList(raw: string, key: string): string[] {
+  const inline = new RegExp(`^${key}:[ \\t]*\\[([^\\]]*)\\]`, 'm').exec(raw);
+  if (inline) {
+    return inline[1]
+      .split(',')
+      .map((item) => item.trim().replace(/^["']|["']$/g, ''))
+      .filter(Boolean);
+  }
+  const lines = raw.split('\n');
+  const start = lines.findIndex((line) => new RegExp(`^${key}:[ \\t]*$`).test(line));
+  if (start < 0) return [];
+  const out: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\S/.test(line)) break;
+    const item = /^\s*-\s*(.+)$/.exec(line);
+    if (item) out.push(item[1].trim().replace(/^["']|["']$/g, ''));
+  }
+  return out.filter(Boolean);
+}
+
+function frontmatterTitle(markdown: string): string | null {
+  const fm = frontmatterOf(markdown);
+  if (!fm) return null;
+  const title = frontmatterField(fm.raw, 'title');
+  return title ? title.slice(0, 120) : null;
+}
+
+/**
+ * The contract a guide must meet before it merges: the frontmatter the site
+ * renders, a body long enough to answer, and the same machine-tell checks a
+ * post gets (fenced code is not prose, so it is skipped).
+ */
+export function checkGuide(markdown: string): { ok: true } | { ok: false; reason: string } {
+  const fail = (reason: string) => ({ ok: false as const, reason });
+  const fm = frontmatterOf(markdown);
+  if (!fm) return fail('no frontmatter');
+  const title = frontmatterField(fm.raw, 'title');
+  if (!title || title.length > 70) return fail('title missing or over 70 characters');
+  const description = frontmatterField(fm.raw, 'description');
+  if (description.length < 50 || description.length > 170) return fail('description must be 50-170 characters');
+  if (!frontmatterList(fm.raw, 'targets').length) return fail('targets empty');
+  if (!frontmatterField(fm.raw, 'summary')) return fail('summary missing');
+
+  const prose = fm.body.replace(/```[\s\S]*?```/g, ' ');
+  const words = (prose.match(/[A-Za-z0-9]+(?:['’\-][A-Za-z0-9]+)*/g) ?? []).length;
+  if (words < 500 || words > 2500) return fail(`body is ${words} words, 500-2500 allowed`);
+
+  const checked = `${fm.raw}\n${prose}`;
+  for (const rule of SLOP) if (rule.pattern.test(checked)) return fail(`reads as machine-written: ${rule.reason}`);
+  return { ok: true };
+}
+
+/* —— merging the PR —— */
+
+interface PendingGuide {
+  ticket: number;
+  pr: string;
+  slug: string;
+  target: string;
+  at: number;
+}
+
+/** Guide PRs whose checks were still running; the cron sweep retries them. */
+async function readPendingGuides(env: Env): Promise<PendingGuide[]> {
+  const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'seo_guide_pending'`).first<{ value: string }>();
+  const parsed = parseJsonSetting<unknown>(row?.value, []);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(
+    (entry): entry is PendingGuide =>
+      Boolean(entry) &&
+      typeof entry === 'object' &&
+      Number.isInteger((entry as PendingGuide).ticket) &&
+      typeof (entry as PendingGuide).pr === 'string' &&
+      typeof (entry as PendingGuide).slug === 'string' &&
+      typeof (entry as PendingGuide).target === 'string' &&
+      Number.isFinite((entry as PendingGuide).at),
+  );
+}
+
+async function writePendingGuides(env: Env, list: readonly PendingGuide[]): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('seo_guide_pending', ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  )
+    .bind(JSON.stringify(list), now())
+    .run();
+}
+
+async function addPendingGuide(env: Env, entry: PendingGuide): Promise<void> {
+  const list = await readPendingGuides(env);
+  if (!list.some((item) => item.ticket === entry.ticket)) list.push(entry);
+  await writePendingGuides(env, list);
+}
+
+export type GuideMerge = { status: 'merged' | 'pending' | 'refused' | 'error'; reason?: string };
+
+const GH_CHECK_FAILURES = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure']);
+
+/**
+ * Check a guide PR and squash-merge it when everything is clean. The token is
+ * the ptechsolutions project's GitHub App installation — the same one a node
+ * gets from /node/git-token — scoped to the repo. Anything that is not
+ * exactly one new guide file on main is refused before it can merge.
+ */
+export async function mergeGuidePr(
+  env: Env,
+  prUrl: string,
+  guide: { ticket: number; slug: string; target: string },
+): Promise<GuideMerge> {
+  try {
+    const match = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(prUrl.trim());
+    if (!match) return { status: 'refused', reason: 'not a GitHub pull request URL' };
+    const [, owner, repo, num] = match;
+
+    const project = await env.DB.prepare('SELECT repo, github_installation_id FROM projects WHERE slug = ?')
+      .bind(CYCLE_PROJECT)
+      .first<{ repo: string | null; github_installation_id: number | null }>();
+    const expected = repoParts(project?.repo ?? null);
+    if (!project?.github_installation_id || !expected || expected.owner !== owner || expected.name !== repo) {
+      return { status: 'refused', reason: 'the PR is not on the ptechsolutions repository' };
+    }
+    const { token } = await installationToken(env, project.github_installation_id, [repo]);
+
+    const api = `${GH_API}/repos/${owner}/${repo}`;
+    const get = (path: string, accept?: string) =>
+      fetch(`${api}${path}`, {
+        headers: { ...ghHeaders(token), ...(accept ? { accept } : {}) },
+        signal: AbortSignal.timeout(15_000),
+      });
+
+    const prRes = await get(`/pulls/${num}`);
+    if (!prRes.ok) return { status: prRes.status >= 500 ? 'error' : 'refused', reason: `pull request lookup failed (${prRes.status})` };
+    const pr = (await prRes.json()) as { state?: string; base?: { ref?: string }; head?: { sha?: string } };
+    if (pr.state !== 'open') return { status: 'refused', reason: `pull request is ${pr.state ?? 'not open'}` };
+    if (pr.base?.ref !== 'main') return { status: 'refused', reason: `base branch is ${pr.base?.ref ?? '?'}, not main` };
+    const sha = pr.head?.sha;
+    if (!sha) return { status: 'error', reason: 'pull request has no head commit' };
+
+    const filesRes = await get(`/pulls/${num}/files?per_page=100`);
+    if (!filesRes.ok) return { status: filesRes.status >= 500 ? 'error' : 'refused', reason: `files lookup failed (${filesRes.status})` };
+    const files = (await filesRes.json()) as { filename?: string; status?: string }[];
+    if (!Array.isArray(files) || files.length !== 1) {
+      return { status: 'refused', reason: `the PR changes ${Array.isArray(files) ? files.length : '?'} files; a guide changes exactly one` };
+    }
+    const file = files[0];
+    const path = file.filename ?? '';
+    if (!/^src\/content\/guides\/[a-z0-9-]+\.md$/.test(path) || !['added', 'modified'].includes(file.status ?? '')) {
+      return { status: 'refused', reason: `unexpected file ${path || '?'} (${file.status ?? '?'})` };
+    }
+    const slug = path.replace(/^src\/content\/guides\//, '').replace(/\.md$/, '');
+
+    const rawRes = await get(`/contents/${path}?ref=${encodeURIComponent(sha)}`, 'application/vnd.github.raw');
+    if (!rawRes.ok) return { status: rawRes.status >= 500 ? 'error' : 'refused', reason: `guide fetch failed (${rawRes.status})` };
+    const markdown = await rawRes.text();
+    const check = checkGuide(markdown);
+    if (!check.ok) return { status: 'refused', reason: `guide check: ${check.reason}` };
+
+    // Checks still running mean "not yet", never "no": the sweep asks again.
+    const [runsRes, statusRes] = await Promise.all([get(`/commits/${sha}/check-runs?per_page=100`), get(`/commits/${sha}/status`)]);
+    if (runsRes.ok) {
+      const runs = (await runsRes.json()) as { check_runs?: { status?: string; conclusion?: string | null }[] };
+      const checks = runs.check_runs ?? [];
+      if (checks.some((run) => run.status !== 'completed')) return { status: 'pending', reason: 'checks still running' };
+      if (checks.some((run) => GH_CHECK_FAILURES.has(run.conclusion ?? ''))) return { status: 'refused', reason: 'a check failed' };
+    }
+    if (statusRes.ok) {
+      const combined = (await statusRes.json()) as { statuses?: { state?: string }[] };
+      // Only real statuses count: a repo whose CI is check-runs-only reports
+      // state "pending" with an empty list forever, which would never merge.
+      const statuses = combined.statuses ?? [];
+      if (statuses.some((s) => s.state === 'pending')) return { status: 'pending', reason: 'checks still running' };
+      if (statuses.some((s) => s.state === 'failure' || s.state === 'error')) {
+        return { status: 'refused', reason: 'a status check failed' };
+      }
+    }
+
+    const mergeRes = await fetch(`${api}/pulls/${num}/merge`, {
+      method: 'PUT',
+      headers: { ...ghHeaders(token), 'content-type': 'application/json' },
+      body: JSON.stringify({ merge_method: 'squash' }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!mergeRes.ok) {
+      const detail = (await mergeRes.json().catch(() => null)) as { message?: string } | null;
+      return { status: mergeRes.status >= 500 ? 'error' : 'refused', reason: detail?.message ?? `merge refused (${mergeRes.status})` };
+    }
+    const merged = (await mergeRes.json().catch(() => null)) as { merged?: boolean } | null;
+    if (!merged?.merged) return { status: 'refused', reason: 'GitHub did not merge it' };
+
+    const title = frontmatterTitle(markdown) ?? slug;
+    await seoEvent(env, { kind: 'guide', label: `Published guide: ${title} (${guide.target})`, source: 'agent' });
+    await mailAli(env, {
+      subject: `Guide published: ${title}`,
+      text: [
+        `The guide PR merged: ${prUrl}`,
+        `It goes live at https://ptechsolutions.net/guides/${slug} on the next deploy.`,
+        '',
+        `${siteUrl(env)}/portal/admin#seo`,
+      ].join('\n'),
+    });
+    return { status: 'merged' };
+  } catch (error) {
+    return { status: 'error', reason: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * The cron half of guide merging: retry every handled guide ticket whose PR
+ * was still waiting on checks or hit a transient error. Three days is the
+ * give-up line; after that Ali gets the PR and the reason.
+ */
+export async function sweepGuidePrs(env: Env, t = now()): Promise<number> {
+  const pending = await readPendingGuides(env);
+  if (!pending.length) return 0;
+  const keep: PendingGuide[] = [];
+  let done = 0;
+  for (const entry of pending) {
+    if (t - entry.at > 3 * DAY) {
+      await note(env, entry.ticket, 'The merge sweep gave up after 3 days; the PR still waits for a person.');
+      await mailAli(env, {
+        subject: `Guide PR gave up waiting: ${entry.slug}`,
+        text: [`The guide PR was still not merged after 3 days: ${entry.pr}`, '', `${siteUrl(env)}/portal/admin#seo`].join('\n'),
+      });
+      done += 1;
+      continue;
+    }
+    const result = await mergeGuidePr(env, entry.pr, entry).catch(() => ({ status: 'error' as const, reason: 'unexpected' }));
+    if (result.status === 'merged') {
+      done += 1;
+      continue;
+    }
+    if (result.status === 'pending' || result.status === 'error') {
+      keep.push(entry);
+      continue;
+    }
+    await note(env, entry.ticket, `The merge was refused: ${result.reason ?? 'no reason'}.`);
+    await mailAli(env, {
+      subject: `Guide PR waiting for you: ${entry.slug}`,
+      text: [`The guide PR was not merged: ${result.reason ?? 'refused'}.`, '', entry.pr, '', `${siteUrl(env)}/portal/admin#seo`].join('\n'),
+    });
+    done += 1;
+  }
+  await writePendingGuides(env, keep);
+  return done;
+}
+
+export interface GuideFinish {
+  handled: boolean;
+  merged?: boolean;
+  reason?: string;
+}
+
+/**
+ * A guide cycle's reply, recorded: the outbox decides skip or PR, an open PR
+ * is checked and merged when the desk allows it, and the ticket closes with
+ * what happened. Called after finishRun, next to finishSeoCycle.
+ */
+export async function finishGuideCycle(env: Env, ticketId: number, summary: string, ok: boolean): Promise<GuideFinish> {
+  const ticket = await env.DB.prepare('SELECT id, guide_cycle, guide_target FROM tickets WHERE id = ?').bind(ticketId).first<{
+    id: number;
+    guide_cycle: number;
+    guide_target: string | null;
+  }>();
+  if (!ticket || ticket.guide_cycle !== 1) return { handled: false };
+
+  const t = now();
+  if (!ok) {
+    await note(env, ticketId, 'The run failed, so no guide was recorded. The target waits out its retry window.');
+    await seoEvent(env, { kind: 'cycle_failed', label: `#${ticketId}: guide run failed`, source: 'fleet' }, t);
+    return { handled: true, reason: 'run_failed' };
+  }
+
+  const outbox = parseGuideOutbox(summary);
+  if (!outbox) {
+    await note(env, ticketId, 'The reply had no readable outbox block, so nothing was recorded. The cycle tries again later.');
+    await seoEvent(env, { kind: 'cycle_failed', label: `#${ticketId}: no outbox`, source: 'fleet' }, t);
+    return { handled: true, reason: 'no_outbox' };
+  }
+
+  const close = async (lines: string[]) => {
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE tickets SET status = 'done', guide_cycle = 2, updated_at = ? WHERE id = ?`).bind(t, ticketId),
+      env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'system', ?, 1, ?)`).bind(
+        ticketId,
+        lines.join('\n'),
+        t,
+      ),
+      env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, created_at) VALUES (?, 'system', ?, ?)`).bind(
+        ticketId,
+        'Status changed to “Done”.',
+        t,
+      ),
+    ]);
+  };
+
+  if (outbox.skipped !== null) {
+    await close([`Skipped: ${outbox.skipped}`, '', 'The target waits out its retry window before another guide is filed.']);
+    return { handled: true, reason: 'skipped' };
+  }
+
+  const guide = outbox.guide as NonNullable<GuideOutbox['guide']>;
+  const target = ticket.guide_target ?? guide.target;
+  const settings = await readSeoSettings(env);
+
+  if (!settings.guidesAutoMerge) {
+    await close([`Guide PR: ${guide.pr}`, '', 'Auto-merge is off, so the PR waits for review in GitHub.']);
+    return { handled: true, reason: 'merge_off' };
+  }
+
+  const result = await mergeGuidePr(env, guide.pr, { ticket: ticketId, slug: guide.slug, target }).catch(
+    (error) => ({ status: 'error' as const, reason: error instanceof Error ? error.message : String(error) }),
+  );
+  if (result.status === 'merged') {
+    await close([`Guide PR: ${guide.pr}`, '', 'Checks passed and the PR was squash-merged. The guide is live on the next deploy.']);
+    return { handled: true, merged: true };
+  }
+  if (result.status === 'pending' || result.status === 'error') {
+    await addPendingGuide(env, { ticket: ticketId, pr: guide.pr, slug: guide.slug, target, at: t });
+    await close([
+      `Guide PR: ${guide.pr}`,
+      '',
+      result.status === 'pending'
+        ? 'Checks are still running; the merge sweep retries on the cron.'
+        : `The merge hit an error (${result.reason ?? 'unknown'}); the sweep retries.`,
+    ]);
+    return { handled: true, reason: result.status };
+  }
+
+  await close([`Guide PR: ${guide.pr}`, '', `Not merged: ${result.reason ?? 'refused'}.`]);
+  await mailAli(env, {
+    subject: `Guide PR waiting for you: ${guide.slug}`,
+    text: [`The guide PR was not merged: ${result.reason ?? 'refused'}.`, '', guide.pr, '', `${siteUrl(env)}/portal/admin#seo`].join('\n'),
+  });
+  return { handled: true, reason: 'refused' };
+}
+
 /* ——————————————————————— HTTP ——————————————————————— */
 
 type Ctx = Context<PortalEnv>;
@@ -2402,11 +3205,12 @@ async function geoWeeks(env: Env, t: number) {
 }
 
 async function findingsBySeverity(env: Env, host?: string) {
-  const where = host ? 'AND host = ?' : '';
+  // Open findings only ever count on audited hosts; a retired host's rows are history.
+  const where = `AND host IN (${SEO_HOSTS.map(() => '?').join(', ')})${host ? ' AND host = ?' : ''}`;
   const statement = env.DB.prepare(
     `SELECT severity, COUNT(*) AS n FROM seo_findings WHERE resolved_at IS NULL ${where} GROUP BY severity`,
   );
-  const { results } = await (host ? statement.bind(host) : statement).all<{ severity: string; n: number }>();
+  const { results } = await statement.bind(...SEO_HOSTS, ...(host ? [host] : [])).all<{ severity: string; n: number }>();
   const counts = { high: 0, medium: 0, low: 0 };
   for (const row of results ?? []) if (row.severity in counts) counts[row.severity as keyof typeof counts] = row.n;
   return { ...counts, open: counts.high + counts.medium + counts.low };
@@ -2426,7 +3230,7 @@ export const seo = new Hono<PortalEnv>();
 seo.get('/admin/seo/overview', async (c) => {
   const env = c.env;
   const t = now();
-  const [settings, state, cycleTicket, events, geo, citations, ranks] = await Promise.all([
+  const [settings, state, cycleTicket, events, geo, citations, ranks, guideState] = await Promise.all([
     readSeoSettings(env),
     readSeoState(env),
     env.DB.prepare(`SELECT id FROM tickets WHERE seo_cycle = 1 AND status IN ('approved', 'in_progress') ORDER BY id DESC LIMIT 1`).first<{
@@ -2436,6 +3240,7 @@ seo.get('/admin/seo/overview', async (c) => {
     geoWeeks(env, t),
     env.DB.prepare('SELECT status, COUNT(*) AS n FROM seo_citations GROUP BY status').all<{ status: string; n: number }>(),
     rankSnapshot(env, t),
+    readGuideState(env),
   ]);
 
   const since = dayKey(t - 30 * DAY);
@@ -2511,6 +3316,8 @@ seo.get('/admin/seo/overview', async (c) => {
       source: event.source,
     })),
     settings,
+    guidesAt: guideState.guidesAt,
+    coverage: guideCoverage(guideTargets(settings), guideState.guides, guideState.attempts),
     cycle: {
       auto: settings.autoCycle,
       openTicketId: cycleTicket?.id ?? null,
@@ -2792,4 +3599,10 @@ seo.post('/admin/seo/run', async (c) => {
     return out(c, { what, ...result }, result.filed ? 201 : 200);
   }
   return out(c, { error: 'bad_what', allowed: ['audit', 'geo', 'citations', 'ranks', 'cycle'] }, 400);
+});
+
+/** File a guide cycle now, past the weekly gates (never past an open one). */
+seo.post('/admin/seo/guide-cycle', async (c) => {
+  const result = await ensureGuideCycle(c.env, now(), { force: c.req.query('force') === '1' });
+  return out(c, result, result.filed ? 201 : 200);
 });

@@ -4,9 +4,10 @@
  */
 import { handleInbound } from './inbound.ts';
 import { runAndNotifyHealth } from './portal.ts';
-import { runMarketing } from './marketing.ts';
-import { ensureContentCycle } from './content.ts';
-import { ensureSeoCycle, runSeo } from './seo.ts';
+import { runMarketing, sweepDomains } from './marketing.ts';
+import { ensureContentCycle, releaseHeldPosts } from './content.ts';
+import { ensureGuideCycle, ensureSeoCycle, runSeo, sweepGuidePrs } from './seo.ts';
+import { observeContacts } from './observe.ts';
 import { reapExpired } from './queue.ts';
 import { sweepFirstPreviews } from './firstPreview.ts';
 import { runI18nSync } from './i18nSync.ts';
@@ -45,9 +46,19 @@ export default {
         runMarketing(env),
         ensureContentCycle(env),
         // The SEO desk: the audit is daily, the probe and the citation check
-        // weekly, and the cycle files itself when there is something to fix.
+        // weekly, the cycle files itself when there is something to fix, and
+        // the guide cycle writes the pages the targets are owed.
         runSeo(env),
         ensureSeoCycle(env),
+        ensureGuideCycle(env),
+        // A guide PR whose checks were still running gets retried here.
+        sweepGuidePrs(env).catch((error) => console.error('guide_sweep_failed', error)),
+        // Drafted posts whose hold ran out schedule themselves.
+        releaseHeldPosts(env),
+        // Site observations for queued contacts, and the domain MX sweep —
+        // both run whether or not outreach is live.
+        observeContacts(env),
+        sweepDomains(env),
         // The interface catalogs: translated and committed when English changes, or when Ali asks.
         runI18nSync(env).catch((error) => console.error('i18n_sync_failed', error)),
       ]),
