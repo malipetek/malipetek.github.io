@@ -46,7 +46,9 @@ import {
   cleanCountry,
   cleanSourceKind,
   complainedAddresses,
+  effectiveCap,
   fillTemplate,
+  isAutomatedReport,
   isBounceMessage,
   isComplaintReport,
   isOptOut,
@@ -57,10 +59,14 @@ import {
   sendWindow,
   sequenceOfSubject,
   SEQUENCES,
+  SEQUENCE_NEEDS_GAP,
+  shouldAutoResume,
   siteLabel,
   emailHtml,
+  validEmail,
   wantsImage,
 } from '../src/marketing.ts';
+import { observeSite } from '../src/observe.ts';
 import { sesBody, signV4 } from '../src/ses.ts';
 import {
   cleanDraft,
@@ -74,6 +80,13 @@ import {
   parseRankTask,
   parseRankTasks,
   parseRobots,
+  checkGuide,
+  cleanGuides,
+  guideBrief,
+  guideCoverage,
+  guideListFromFetch,
+  normalizeTarget,
+  parseGuideOutbox,
   parseSeoOutbox,
   parseSitemap,
   rankSwing,
@@ -89,7 +102,7 @@ import {
   type FindingRow,
   type PageFacts,
 } from '../src/seo.ts';
-import { cleanPost, nextSlots, parseOutbox, slotLabel } from '../src/content.ts';
+import { cleanPost, nextSlots, parseOutbox, repeatsOpener, slotLabel } from '../src/content.ts';
 import { autoApproveDecision } from '../src/approve.ts';
 import { healthMail, parseFleetVersion } from '../src/health.ts';
 import { parseReview, reviewLine } from '../src/review.ts';
@@ -1325,9 +1338,14 @@ test('seo: the brief carries the rules, the findings and the hold', () => {
   });
   assert.match(brief, /finding_id 12 — ptechsolutions\.net\/contact — missing_description \(high\)/);
   assert.match(brief, /ptechsolutions\.net is the company site and the client portal/);
-  assert.match(brief, /public\/: fonts, me\.webp, favicon\.svg/);
+  assert.match(brief, /src\/pages\//);
+  assert.match(brief, /src\/content\/guides\/\*\.md/);
+  assert.match(brief, /guides\.json/);
+  assert.match(brief, /public\/ holds fonts and images only/);
+  assert.match(brief, /PTechGroup\/ptechsolutions/);
+  assert.match(brief, /deploy\s+branch/);
+  assert.match(brief, /pnpm install --frozen-lockfile && pnpm build/);
   assert.match(brief, /Never push to/);
-  assert.match(brief, /pnpm --dir worker test/);
   assert.match(brief, /Volatility hold/);
   assert.match(brief, /technical fixes only/);
   assert.match(brief, /citation_id 3: DEV \(dev\.to, DR 90\)/);
@@ -1818,4 +1836,275 @@ test('device routes: public start, admin-only approve, one-time token, agent tok
     auth: agentToken,
   });
   assert.equal(viaAgent.status, 403);
+});
+
+/* —— seo: the guide engine —— */
+
+test('seo: normalizeTarget is the one normal form a target and a guide share', () => {
+  assert.equal(normalizeTarget('  Vibe Contracting? '), 'vibe contracting');
+  assert.equal(normalizeTarget('what   is\nAI?'), 'what is ai');
+  assert.equal(normalizeTarget('astro developer for hire...'), 'astro developer for hire');
+});
+
+test('seo: guideCoverage marks covered, in-progress and attempted targets', () => {
+  const coverage = guideCoverage(
+    [
+      { target: 'Vibe Contracting?', kind: 'keyword' },
+      { target: 'vibe contracting', kind: 'keyword' }, // deduped away
+      { target: 'what is vibe contracting', kind: 'question' },
+      { target: 'astro developer for hire', kind: 'keyword' },
+    ],
+    [
+      {
+        slug: 'vibe-contracting',
+        url: 'https://ptechsolutions.net/guides/vibe-contracting',
+        title: 'Vibe contracting',
+        targets: ['vibe contracting'],
+        published: '2026-11-20',
+      },
+    ],
+    [
+      { id: 7, target: 'what is vibe contracting', at: 1_000, open: true },
+      { id: 9, target: 'astro developer for hire', at: 500, open: false },
+    ],
+  );
+  assert.equal(coverage.length, 3);
+  assert.equal(coverage[0].target, 'Vibe Contracting?');
+  assert.equal(coverage[0].guide?.slug, 'vibe-contracting');
+  assert.equal(coverage[0].inProgress, null);
+  assert.equal(coverage[1].inProgress, 7);
+  assert.equal(coverage[1].guide, null);
+  assert.equal(coverage[2].lastAttemptAt, 500);
+  assert.equal(coverage[2].guide, null);
+});
+
+test('seo: cleanGuides keeps well-formed entries and drops the rest', () => {
+  const guides = cleanGuides({
+    guides: [
+      { slug: 'a-guide', url: 'https://ptechsolutions.net/guides/a-guide', title: 'A guide', targets: ['x'], published: '2026-11-20' },
+      { slug: 'Bad Slug!', url: 'https://ptechsolutions.net/guides/bad', title: 'Bad', targets: [] },
+      { slug: 'no-url', title: 'No url' },
+      'not an object',
+    ],
+  });
+  assert.equal(guides.length, 1);
+  assert.equal(guides[0].slug, 'a-guide');
+  assert.deepEqual(cleanGuides('garbage'), []);
+});
+
+const GUIDE_OK = `---
+title: What a small business website costs
+description: What a small business website really costs when an AI agent does the typing and a developer approves every change.
+targets: ["small business website cost"]
+summary: A small business website costs what the developer's time costs: $100 an hour billed by the second, most jobs under $10.
+faq:
+  - q: Is there a monthly fee?
+    a: No, you pay only for the time spent.
+published: 2026-11-20
+---
+
+${'A useful sentence about websites and costs. '.repeat(90)}
+`;
+
+test('seo: checkGuide accepts a contract-shaped guide', () => {
+  const check = checkGuide(GUIDE_OK);
+  assert.equal(check.ok, true);
+});
+
+test('seo: checkGuide refuses the ways a guide goes wrong', () => {
+  assert.equal(checkGuide('# just markdown').ok, false);
+  assert.equal(checkGuide(GUIDE_OK.replace('title: What a small business website costs', 'title:')).ok, false);
+  assert.equal(
+    checkGuide(GUIDE_OK.replace(/description: .*/, 'description: too short')).ok,
+    false,
+  );
+  assert.equal(checkGuide(GUIDE_OK.replace('targets: ["small business website cost"]', 'targets: []')).ok, false);
+  assert.equal(checkGuide(`${GUIDE_OK.split('---\n\n')[0]}---\n\nshort body`).ok, false);
+  assert.equal(checkGuide(GUIDE_OK.replace('useful sentence', 'useful — sentence')).ok, false);
+});
+
+test('seo: parseGuideOutbox reads the PR block and the skip', () => {
+  const pr = parseGuideOutbox('done\n<<<OUTBOX\n{"guide":{"slug":"a-guide","target":"vibe contracting","pr":"https://github.com/PTechGroup/ptechsolutions/pull/12"}}\nOUTBOX>>>');
+  assert.equal(pr?.guide?.pr, 'https://github.com/PTechGroup/ptechsolutions/pull/12');
+  const skip = parseGuideOutbox('<<<OUTBOX\n{"skipped":"cannot answer honestly"}\nOUTBOX>>>');
+  assert.equal(skip?.skipped, 'cannot answer honestly');
+  assert.equal(parseGuideOutbox('no block here'), null);
+  assert.equal(parseGuideOutbox('<<<OUTBOX\nnot json\nOUTBOX>>>'), null);
+});
+
+test('seo: guideListFromFetch treats 404 as none and a bad answer as unchanged', () => {
+  assert.deepEqual(guideListFromFetch(404, ''), []);
+  assert.equal(guideListFromFetch(500, 'oops'), null);
+  assert.equal(guideListFromFetch(200, 'not json'), null);
+  const guides = guideListFromFetch(
+    200,
+    JSON.stringify({ guides: [{ slug: 'a-guide', url: 'https://ptechsolutions.net/guides/a-guide', title: 'A', targets: ['x'], published: '2026-11-20' }] }),
+  );
+  assert.equal(guides?.length, 1);
+});
+
+test('seo: guideBrief names the file, the contract and the repo rules', () => {
+  const brief = guideBrief({
+    target: 'What is vibe contracting?',
+    kind: 'question',
+    guides: [{ slug: 'a', url: 'https://ptechsolutions.net/guides/a', title: 'A', targets: [], published: null }],
+  });
+  assert.match(brief, /src\/content\/guides\/what-is-vibe-contracting\.md/);
+  assert.match(brief, /targets: \["what is vibe contracting"\]/);
+  assert.match(brief, /pnpm install --frozen-lockfile && pnpm build/);
+  assert.match(brief, /PTechGroup\/ptechsolutions/);
+  assert.match(brief, /never\s+push to it directly|never push/i);
+  assert.match(brief, /A: https:\/\/ptechsolutions\.net\/guides\/a/);
+  assert.match(brief, /<<<OUTBOX/);
+});
+
+/* —— observe: the site check that writes the gap —— */
+
+const OBS_NOW = Math.floor(Date.UTC(2026, 10, 20) / 1000); // 2026-11-20
+const CLEAN_PAGE = `<!doctype html><html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A small business does useful work.">
+</head><body><footer>© 2026 Example Co</footer></body></html>`;
+const observe = (over: Partial<Parameters<typeof observeSite>[0]>) =>
+  observeSite({ html: CLEAN_PAGE, requestedUrl: 'https://example.com/', finalUrl: 'https://example.com/', ms: 400, now: OBS_NOW, ...over });
+
+test('observe: a clean modern page yields no observation', () => {
+  assert.equal(observe({}), null);
+});
+
+test('observe: each problem kind in priority order', () => {
+  const http = observe({ finalUrl: 'http://example.com/', requestedUrl: 'http://example.com/' });
+  assert.equal(http?.kind, 'no_https');
+  assert.match(http?.gap ?? '', /example\.com still opens over plain http/);
+
+  const noViewport = observe({ html: CLEAN_PAGE.replace(/<meta name="viewport"[^>]*>/, '') });
+  assert.equal(noViewport?.kind, 'no_viewport');
+  assert.match(noViewport?.gap ?? '', /On a phone, example\.com/);
+
+  const old = observe({ html: CLEAN_PAGE.replace('© 2026', '© 2019') });
+  assert.equal(old?.kind, 'old_copyright');
+  assert.match(old?.gap ?? '', /still says © 2019/);
+
+  const pdf = observe({ html: `${CLEAN_PAGE}<a href="/assets/menu.pdf">Our menu</a>` });
+  assert.equal(pdf?.kind, 'pdf_menu');
+
+  const slow = observe({ ms: 5000 });
+  assert.equal(slow?.kind, 'slow');
+  assert.match(slow?.gap ?? '', /about 5 seconds/);
+
+  const noDesc = observe({ html: CLEAN_PAGE.replace(/<meta name="description"[^>]*>/, '') });
+  assert.equal(noDesc?.kind, 'no_description');
+});
+
+test('observe: priority means the loudest problem wins', () => {
+  // No viewport AND plain http: http is checked first.
+  const both = observe({
+    html: CLEAN_PAGE.replace(/<meta name="viewport"[^>]*>/, ''),
+    finalUrl: 'http://example.com/',
+    requestedUrl: 'http://example.com/',
+  });
+  assert.equal(both?.kind, 'no_https');
+  // Slow AND no description: slow is checked first.
+  const slowDesc = observe({ ms: 9000, html: CLEAN_PAGE.replace(/<meta name="description"[^>]*>/, '') });
+  assert.equal(slowDesc?.kind, 'slow');
+});
+
+/* —— marketing: the unstuck loops —— */
+
+test('marketing: validEmail refuses what SES refuses', () => {
+  assert.equal(validEmail('ali@example.com'), true);
+  assert.equal(validEmail('a.b+tag@mail.example.co.uk'), true);
+  assert.equal(validEmail('no-at-sign.com'), false);
+  assert.equal(validEmail('two@@example.com'), false);
+  assert.equal(validEmail('@example.com'), false);
+  assert.equal(validEmail('local@localhost'), false);
+  assert.equal(validEmail('has space@example.com'), false);
+  assert.equal(validEmail('tab\there@example.com'), false);
+  assert.equal(validEmail(`a@${'x'.repeat(250)}.com`), false);
+  assert.equal(validEmail(''), false);
+});
+
+test('marketing: DMARC and report-subject mail is automated, not a reply', () => {
+  for (const from of [
+    'noreply-dmarc-support@google.com',
+    'dmarcreport@microsoft.com',
+    'noreply@dmarc.yahoo.com',
+    'dmarcreports@secureserver.net',
+    'noreply-dmarc@zoho.com',
+  ]) {
+    assert.equal(isAutomatedReport({ headerFrom: from, subject: 'Report' }), true, from);
+  }
+  assert.equal(isAutomatedReport({ headerFrom: 'someone@example.com', subject: 'Report domain: example.com' }), true);
+  assert.equal(isAutomatedReport({ headerFrom: 'someone@example.com', subject: '[preview] report domain: x' }), true);
+  assert.equal(isAutomatedReport({ headerFrom: 'lead@example.com', subject: 'Sounds interesting' }), false);
+});
+
+test('marketing: effectiveCap ramps the daily cap back after a resume', () => {
+  const t = 1_000_000_000;
+  assert.equal(effectiveCap(50, null, t), 50);
+  assert.equal(effectiveCap(50, t - 3600, t), 20); // day zero of the ramp
+  assert.equal(effectiveCap(50, t - 86400, t), 40);
+  assert.equal(effectiveCap(50, t - 13 * 86400, t), 50); // 280 wanted, the cap wins
+  assert.equal(effectiveCap(500, t - 13 * 86400, t), 280);
+  assert.equal(effectiveCap(500, t - 14 * 86400, t), 500); // ramp over
+  assert.equal(effectiveCap(500, t + 3600, t), 500); // before the resume stamp
+});
+
+test('marketing: shouldAutoResume needs a week of calm and no repeat trip', () => {
+  const t = 1_000_000_000;
+  const base = { enabled: true, pausedAt: t - 8 * 86400, t, trip: null, pausesLast30d: 1 };
+  assert.equal(shouldAutoResume(base), true);
+  assert.equal(shouldAutoResume({ ...base, enabled: false }), false);
+  assert.equal(shouldAutoResume({ ...base, pausedAt: t - 6 * 86400 }), false);
+  assert.equal(shouldAutoResume({ ...base, pausedAt: null }), false);
+  assert.equal(shouldAutoResume({ ...base, trip: 'bounce_rate' }), false);
+  assert.equal(shouldAutoResume({ ...base, pausesLast30d: 2 }), false);
+});
+
+test('marketing: cold_obs is a three-step gap sequence on the same days', () => {
+  assert.deepEqual(SEQUENCES.cold_obs.map((s) => s.day), [0, 4, 10]);
+  assert.equal(SEQUENCE_NEEDS_GAP.cold_obs, true);
+  assert.match(SEQUENCES.cold_obs[0].subject, /\{\{site\}\}/);
+  assert.match(SEQUENCES.cold_obs[0].body, /\{\{gap\}\}/);
+  assert.match(SEQUENCES.cold_obs[0].body, /vibe contracting/);
+  // Follow-ups are not threaded (deliverEmail sends no In-Reply-To), so no "Re:".
+  assert.equal(SEQUENCES.cold_obs[1].subject.includes('Re:'), false);
+});
+
+test('marketing: sequenceOfSubject reads the observation sequence by its domain subject', () => {
+  assert.equal(sequenceOfSubject('corroof.com'), 'cold_obs');
+  assert.equal(sequenceOfSubject('Re: corroof.com'), 'cold_obs');
+  assert.equal(sequenceOfSubject('Vibe contracting'), 'cold_a');
+  assert.equal(sequenceOfSubject('Vibe contracting for corroof.com'), 'cold_b');
+  assert.equal(sequenceOfSubject('A website for Lee Plumbing'), 'nosite');
+  assert.equal(sequenceOfSubject(null), null);
+});
+
+/* —— content: opener memory and the one allowed link —— */
+
+test('content: repeatsOpener catches the same first four words', () => {
+  const recent = ['Vibe contracting is a service for small fixes.'];
+  assert.equal(repeatsOpener('Vibe contracting is a new thing!', recent), true);
+  assert.equal(repeatsOpener('vibe, contracting is a platform', recent), true);
+  assert.equal(repeatsOpener('Your menu is a PDF on phones.', recent), false);
+  assert.equal(repeatsOpener('', recent), false);
+  // Earlier posts of the same batch count too.
+  assert.equal(repeatsOpener('First post opens like this.', ['First post opens like that.']), true);
+});
+
+test('content: cleanPost allows one ptechsolutions.net link and refuses the rest', () => {
+  assert.equal(cleanPost('A guide for you: https://ptechsolutions.net/guides/x', 'x').ok, true);
+  assert.equal(cleanPost('Read https://example.com/page', 'x').ok, false);
+  assert.equal(cleanPost('Read http://ptechsolutions.net/x', 'x').ok, false);
+  assert.equal(cleanPost('https://ptechsolutions.net/a and https://ptechsolutions.net/b', 'linkedin').ok, false);
+});
+
+test('content: an X post counts a link as 23 characters', () => {
+  const link = ' https://ptechsolutions.net/guides/a-rather-long-slug';
+  const body = `${'x'.repeat(250)}${link}`;
+  assert.ok(body.length > 280);
+  const clean = cleanPost(body, 'x');
+  assert.equal(clean.ok, true);
+  // The same length without the link still fails.
+  assert.equal(cleanPost(`${'x'.repeat(281)}`, 'x').ok, false);
 });
