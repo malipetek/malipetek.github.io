@@ -61,11 +61,11 @@ export const EXECUTORS = ['dsh-go', 'dsh', 'dsh-claude', 'dsh-devin', 'dsh-openc
  * conversation. Auto: Flash reads the task and sends hard work to Opus.
  */
 export const AGENTS = [
-  { value: null, label: 'Auto', hint: 'Flash reads the task and picks Flash or Opus; a spent plan falls back' },
-  { value: 'dsh-go', label: 'Flash', hint: 'OpenCode Go, DeepSeek v4.1 flash: near unlimited, the everyday choice' },
-  { value: 'dsh-claude', label: 'Opus', hint: 'Claude Code on Opus, through the Harness: for hard work' },
-  { value: 'dsh', label: 'DeepSeek', hint: 'The DeepSeek account, pay as you go' },
-  { value: 'dsh-devin', label: 'SWE-2', hint: 'Devin SWE-2, free' },
+  { value: null, label: 'Auto', hint: 'Flash reads the brief and picks Flash or Opus.' },
+  { value: 'dsh-go', label: 'Flash', hint: 'DeepSeek v4.1 flash: the everyday choice.' },
+  { value: 'dsh-claude', label: 'Opus', hint: 'Claude Code on Opus: for hard work.' },
+  { value: 'dsh', label: 'DeepSeek', hint: 'The DeepSeek account, pay as you go.' },
+  { value: 'dsh-devin', label: 'SWE-2', hint: 'Devin SWE-2, free.' },
 ];
 /** AGENTS, plus a ticket's older pin so it still shows as selected. */
 export const agentOptions = (current) =>

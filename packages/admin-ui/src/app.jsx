@@ -507,7 +507,7 @@ function Explorer({ drawer = false }) {
                   {items.map((t) => (
                     <li key={t.id}>
                       <button type="button" className="aw-tree__leaf" onClick={() => openTicket(t.id)} title={t.title}>
-                        <span className={`aw-sq aw-sq--${t.status}`} />
+                        <span className={`aw-sq aw-sq--${t.status}`} title={STATUS_LABEL[t.status] ?? t.status} />
                         <span className="aw-tree__id">#{t.id}</span> {t.title}
                         {runningTicket.has(t.id) ? <span className="aw-live" title="An agent is running" /> : null}
                       </button>
@@ -672,13 +672,13 @@ export function TaskModal({ preset = {}, onClose }) {
       <Field label="Brief" hint="What to change, where, and how to check it.">
         <textarea
           disabled={busy}
-          rows={7}
+          rows={4}
           value={brief}
           onChange={(e) => setBrief(e.target.value)}
           onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void submit(); } }}
         />
       </Field>
-      <div className="aw-grid2">
+      <div className="aw-grid2 aw-taskform">
         <Field label="Project">
           <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
             <option value="">Pick a project…</option>
