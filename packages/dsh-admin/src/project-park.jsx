@@ -10,6 +10,7 @@ import {
   plotHeadline,
   plotMatches,
   plotTickets,
+  plotWaitLabel,
   runTrail,
   fleetTicker,
   shortAge,
@@ -459,9 +460,11 @@ export function ProjectPark({ projects = [], tickets = [], runs = [], recentRuns
   if (!layout || plots.length === 0) return null;
 
   const activePlot = activeId !== null ? plots.find((plot) => plot.id === activeId) ?? null : null;
-  const activeHeadline = activePlot ? plotHeadline(activePlot, tickets, runs, now) : null;
+  const activeHeadline = activePlot
+    ? [plotWaitLabel(activePlot, tickets, runs, now, recentRuns), plotHeadline(activePlot, tickets, runs, now)].filter(Boolean).join(' · ') || null
+    : null;
   const pickedPlot = pickedId !== null ? plots.find((plot) => plot.id === pickedId) ?? null : null;
-  const pickedRows = pickedPlot ? plotTickets(pickedPlot, tickets, runs, now).slice(0, 4) : [];
+  const pickedRows = pickedPlot ? plotTickets(pickedPlot, tickets, runs, now, recentRuns).slice(0, 4) : [];
   const pickedProject = pickedPlot ? projects.find((p) => String(p?.id) === String(pickedPlot.id)) : null;
   const pickedSite = pickedProject ? (Array.isArray(pickedProject.sites) ? pickedProject.sites[0] : pickedProject.site) : null;
   const pickedUrl = pickedSite?.customDomain
@@ -567,7 +570,11 @@ export function ProjectPark({ projects = [], tickets = [], runs = [], recentRuns
                     <span className="pta-park__strip-title">#{row.id} {row.title}</span>
                     {row.via ? <span className="pta-park__strip-via">via {row.via}</span> : null}
                     <RunBand trail={runTrail(row.id, runs, recentRuns, now)} />
-                    {row.age ? <span className="pta-park__strip-age">{row.age}</span> : null}
+                    {row.wait ? (
+                      <span className="pta-park__strip-age is-wait" title={row.wait.text}>{row.wait.text}</span>
+                    ) : row.age ? (
+                      <span className="pta-park__strip-age">{row.age}</span>
+                    ) : null}
                   </button>
                 </li>
               ))}
@@ -664,6 +671,7 @@ export const PROJECT_PARK_STYLES = `
   .pta-park__strip-title{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pta-park__strip-via{flex:0 0 auto;padding:0 5px;border-radius:4px;background:rgba(128,134,142,.2);font-size:10px}
   .pta-park__strip-age{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary,inherit)}
+  .pta-park__strip-age.is-wait{color:var(--dsw-alias-state-warning-primary,#d18f2e)}
   .pta-park__ticker{display:flex;align-items:center;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 0 4px;font-size:10.5px;color:var(--dsw-alias-label-secondary,inherit)}
   .pta-park__chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;max-width:260px;padding:1px 8px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:999px;background:rgba(128,134,142,.12);color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:10.5px;line-height:17px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pta-park__chip:hover,.pta-park__chip:focus-visible{background:rgba(128,134,142,.24);outline:none}

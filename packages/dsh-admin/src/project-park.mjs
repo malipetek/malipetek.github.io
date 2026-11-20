@@ -319,7 +319,7 @@ function runStartsByTicket(runs) {
  * is listed, how long it has been in that state and, when the client's
  * assistant filed it, which assistant (the field may be absent on older data).
  */
-export function plotTickets(plot, tickets = [], runs = [], now = Date.now()) {
+export function plotTickets(plot, tickets = [], runs = [], now = Date.now(), recent = []) {
   if (!plot) return [];
   const nowSeconds = toUnixSeconds(now) || Date.now() / 1000;
   const running = activeRunTicketKeys(runs);
@@ -346,6 +346,7 @@ export function plotTickets(plot, tickets = [], runs = [], now = Date.now()) {
       age: since ? shortAge(nowSeconds - since) : null,
       ageSeconds: since ? Math.max(0, nowSeconds - since) : 0,
       via: app,
+      wait: ticketWait(ticket, recent, now),
     });
   }
   rows.sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || b.ageSeconds - a.ageSeconds);
@@ -465,3 +466,57 @@ export function fleetTicker({ running = [], recent = [], tickets = [], now = Dat
   return { running: runningNow.slice(0, limit), attention: attention.slice(0, limit), attentionTotal: attention.length, idle };
 }
 
+
+/* ————— wait time: how long a ticket has been waiting on a person ————— */
+
+/** "3h 10m", "45m", "2d 4h": two units, for waits shown in full. */
+export function longAge(seconds) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) {
+    const m = Math.floor((s % 3600) / 60);
+    return `${Math.floor(s / 3600)}h${m ? ` ${m}m` : ''}`;
+  }
+  const h = Math.floor((s % 86400) / 3600);
+  return `${Math.floor(s / 86400)}d${h ? ` ${h}h` : ''}`;
+}
+
+/**
+ * Who a ticket is waiting on and since when, or null when it is not waiting
+ * on a person. A review waits from the end of its latest finished run (when
+ * that run is in the loaded window), else from the ticket's last update. A new
+ * ticket waits for approval from when it was filed. A client reply waits from
+ * `client_waiting_since`. Nothing is claimed without a timestamp.
+ */
+export function ticketWait(ticket, recent = [], now = Date.now()) {
+  if (!ticket || isClosedTicket(ticket)) return null;
+  const nowSeconds = toUnixSeconds(now) || Date.now() / 1000;
+  const key = String(ticket.id);
+  let since = 0;
+  let label = null;
+  if (ticket.status === 'review') {
+    for (const run of Array.isArray(recent) ? recent : []) {
+      if (!run || String(run.ticket_id) !== key) continue;
+      const finished = toUnixSeconds(run.finished_at);
+      if (finished > since) since = finished;
+    }
+    if (!since) since = toUnixSeconds(ticket.updated_at);
+    label = 'on you';
+  } else if (ticket.status === 'new') {
+    since = toUnixSeconds(ticket.created_at ?? ticket.updated_at);
+    label = 'for approval';
+  } else if (isWaitingTicket(ticket)) {
+    since = toUnixSeconds(ticket.client_waiting_since);
+    label = 'on your reply';
+  }
+  if (!label || !since || since > nowSeconds) return null;
+  const seconds = nowSeconds - since;
+  return { seconds, text: `waiting ${longAge(seconds)} ${label}` };
+}
+
+/** The longest a ticket on this plot has waited on a person, e.g. "Needs you · 3h"; null when none waits. */
+export function plotWaitLabel(plot, tickets = [], runs = [], now = Date.now(), recent = []) {
+  const longest = plotTickets(plot, tickets, runs, now, recent).reduce((max, row) => Math.max(max, row.wait?.seconds ?? 0), 0);
+  return longest > 0 ? `Needs you · ${shortAge(longest)}` : null;
+}

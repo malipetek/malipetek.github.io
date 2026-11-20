@@ -10862,7 +10862,7 @@ ${question.text ?? ""}`)) {
     }
     return starts;
   }
-  function plotTickets(plot, tickets = [], runs = [], now = Date.now()) {
+  function plotTickets(plot, tickets = [], runs = [], now = Date.now(), recent = []) {
     if (!plot) return [];
     const nowSeconds = toUnixSeconds(now) || Date.now() / 1e3;
     const running = activeRunTicketKeys(runs);
@@ -10882,7 +10882,8 @@ ${question.text ?? ""}`)) {
         kind,
         age: since ? shortAge(nowSeconds - since) : null,
         ageSeconds: since ? Math.max(0, nowSeconds - since) : 0,
-        via: app
+        via: app,
+        wait: ticketWait(ticket, recent, now)
       });
     }
     rows.sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || b.ageSeconds - a.ageSeconds);
@@ -10973,6 +10974,46 @@ ${question.text ?? ""}`)) {
       idle = last ? `last run finished ${shortAge(nowSeconds - last)} ago` : null;
     }
     return { running: runningNow.slice(0, limit), attention: attention.slice(0, limit), attentionTotal: attention.length, idle };
+  }
+  function longAge(seconds) {
+    const s = Math.max(0, Math.floor(Number(seconds) || 0));
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m`;
+    if (s < 86400) {
+      const m = Math.floor(s % 3600 / 60);
+      return `${Math.floor(s / 3600)}h${m ? ` ${m}m` : ""}`;
+    }
+    const h = Math.floor(s % 86400 / 3600);
+    return `${Math.floor(s / 86400)}d${h ? ` ${h}h` : ""}`;
+  }
+  function ticketWait(ticket, recent = [], now = Date.now()) {
+    if (!ticket || isClosedTicket(ticket)) return null;
+    const nowSeconds = toUnixSeconds(now) || Date.now() / 1e3;
+    const key = String(ticket.id);
+    let since = 0;
+    let label = null;
+    if (ticket.status === "review") {
+      for (const run of Array.isArray(recent) ? recent : []) {
+        if (!run || String(run.ticket_id) !== key) continue;
+        const finished = toUnixSeconds(run.finished_at);
+        if (finished > since) since = finished;
+      }
+      if (!since) since = toUnixSeconds(ticket.updated_at);
+      label = "on you";
+    } else if (ticket.status === "new") {
+      since = toUnixSeconds(ticket.created_at ?? ticket.updated_at);
+      label = "for approval";
+    } else if (isWaitingTicket(ticket)) {
+      since = toUnixSeconds(ticket.client_waiting_since);
+      label = "on your reply";
+    }
+    if (!label || !since || since > nowSeconds) return null;
+    const seconds = nowSeconds - since;
+    return { seconds, text: `waiting ${longAge(seconds)} ${label}` };
+  }
+  function plotWaitLabel(plot, tickets = [], runs = [], now = Date.now(), recent = []) {
+    const longest = plotTickets(plot, tickets, runs, now, recent).reduce((max, row) => Math.max(max, row.wait?.seconds ?? 0), 0);
+    return longest > 0 ? `Needs you \xB7 ${shortAge(longest)}` : null;
   }
 
   // packages/dsh-admin/src/project-park.jsx
@@ -11376,9 +11417,9 @@ ${question.text ?? ""}`)) {
     }, [plots]);
     if (!layout || plots.length === 0) return null;
     const activePlot = activeId !== null ? plots.find((plot) => plot.id === activeId) ?? null : null;
-    const activeHeadline = activePlot ? plotHeadline(activePlot, tickets, runs, now) : null;
+    const activeHeadline = activePlot ? [plotWaitLabel(activePlot, tickets, runs, now, recentRuns), plotHeadline(activePlot, tickets, runs, now)].filter(Boolean).join(" \xB7 ") || null : null;
     const pickedPlot = pickedId !== null ? plots.find((plot) => plot.id === pickedId) ?? null : null;
-    const pickedRows = pickedPlot ? plotTickets(pickedPlot, tickets, runs, now).slice(0, 4) : [];
+    const pickedRows = pickedPlot ? plotTickets(pickedPlot, tickets, runs, now, recentRuns).slice(0, 4) : [];
     const pickedProject = pickedPlot ? projects.find((p) => String(p?.id) === String(pickedPlot.id)) : null;
     const pickedSite = pickedProject ? Array.isArray(pickedProject.sites) ? pickedProject.sites[0] : pickedProject.site : null;
     const pickedUrl = pickedSite?.customDomain ? `https://${String(pickedSite.customDomain).replace(/^https?:\/\//, "")}` : pickedSite?.productionUrl ?? null;
@@ -11479,7 +11520,7 @@ ${question.text ?? ""}`)) {
                 row.via
               ] }) : null,
               /* @__PURE__ */ jsx(RunBand, { trail: runTrail(row.id, runs, recentRuns, now) }),
-              row.age ? /* @__PURE__ */ jsx("span", { className: "pta-park__strip-age", children: row.age }) : null
+              row.wait ? /* @__PURE__ */ jsx("span", { className: "pta-park__strip-age is-wait", title: row.wait.text, children: row.wait.text }) : row.age ? /* @__PURE__ */ jsx("span", { className: "pta-park__strip-age", children: row.age }) : null
             ]
           }
         ) }, String(row.id))) }) : /* @__PURE__ */ jsx("p", { className: "pta-park__strip-empty", children: "Nothing open on this project." })
@@ -11563,6 +11604,7 @@ ${question.text ?? ""}`)) {
   .pta-park__strip-title{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pta-park__strip-via{flex:0 0 auto;padding:0 5px;border-radius:4px;background:rgba(128,134,142,.2);font-size:10px}
   .pta-park__strip-age{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary,inherit)}
+  .pta-park__strip-age.is-wait{color:var(--dsw-alias-state-warning-primary,#d18f2e)}
   .pta-park__ticker{display:flex;align-items:center;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 0 4px;font-size:10.5px;color:var(--dsw-alias-label-secondary,inherit)}
   .pta-park__chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;max-width:260px;padding:1px 8px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:999px;background:rgba(128,134,142,.12);color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:10.5px;line-height:17px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pta-park__chip:hover,.pta-park__chip:focus-visible{background:rgba(128,134,142,.24);outline:none}
