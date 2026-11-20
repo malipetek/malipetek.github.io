@@ -469,7 +469,7 @@ const groups = {
 
   async marketing({ admin }) {
     const desk = await call('/admin/marketing', { auth: admin });
-    check('the desk starts paused, with the outreach sender', desk.status === 200 && desk.data.settings.live === false && desk.data.sender === 'hello@malipetek.dev');
+    check('the desk starts paused, with the outreach sender', desk.status === 200 && desk.data.settings.live === false && desk.data.sender === 'hello@ptechsolutions.net');
     check('a paused desk sends nothing', (await call('/admin/marketing/run', { method: 'POST', auth: admin })).data.reason === 'paused');
 
     const csv = 'email,name,business,site,gap\nsara@bakery-nine.test,Sara,Bakery Nine,bakerynine.test,menu still says summer\nnobody@example.test,,,,';
@@ -596,7 +596,7 @@ const groups = {
     const preview = await call(`/admin/marketing/messages/${firstEmail.id}`, { auth: admin });
     check(
       'an email preview shows the footer and the unsubscribe headers',
-      preview.status === 200 && /Reply "no"/.test(preview.data.preview.text) && /mailto:hello@malipetek\.dev/.test(preview.data.preview.headers['List-Unsubscribe'] ?? ''),
+      preview.status === 200 && /Reply "no"/.test(preview.data.preview.text) && /mailto:hello@ptechsolutions\.net/.test(preview.data.preview.headers['List-Unsubscribe'] ?? ''),
       JSON.stringify(preview.data.preview ?? preview.data).slice(0, 400),
     );
     const handEdit = await call(`/admin/marketing/messages/${firstEmail.id}`, {
@@ -650,7 +650,7 @@ const groups = {
   async content({ admin }) {
     // The dev-site project the cycle ticket is filed against.
     sql(
-      `INSERT INTO projects (id, slug, name, created_at) VALUES ('e2e-dev-site', 'malipetek-dev-site', 'malipetek.dev', ${Math.floor(Date.now() / 1000)})`,
+      `INSERT INTO projects (id, slug, name, created_at) VALUES ('e2e-dev-site', 'ptechsolutions', 'ptechsolutions.net', ${Math.floor(Date.now() / 1000)})`,
     );
 
     await call('/admin/marketing/settings', { method: 'PUT', auth: admin, body: { voiceNotes: 'Keep it dry.' } });
@@ -662,7 +662,7 @@ const groups = {
     const ticket = (await call(`/admin/tickets/${filed.data.id}`, { auth: admin })).data;
     check(
       'the cycle ticket is approved, autonomous and on the dev-site project',
-      ticket.ticket.status === 'approved' && ticket.ticket.kind === 'system' && ticket.ticket.source === 'dsh' && ticket.ticket.attention === 'auto' && ticket.ticket.project_slug === 'malipetek-dev-site',
+      ticket.ticket.status === 'approved' && ticket.ticket.kind === 'system' && ticket.ticket.source === 'dsh' && ticket.ticket.attention === 'auto' && ticket.ticket.project_slug === 'ptechsolutions',
       JSON.stringify(ticket.ticket),
     );
     const brief = ticket.messages.find((m) => m.author === 'ali')?.body ?? '';
@@ -927,7 +927,10 @@ const groups = {
     // Deleting: refused while a request is open; closed requests survive, unlinked.
     const del = (await newProject(a.session, { kind: 'new', name: `Dup Bakery ${stamp}`, brief: NEW_BRIEF })).data;
     await call(`/admin/projects/${del.project.id}/site`, { method: 'POST', auth: admin });
-    check('a client cannot delete a project', (await call(`/admin/projects/${del.project.id}`, { method: 'DELETE', auth: a.session })).status === 403);
+    const stranger = account(`repos-other-${stamp}@example.com`);
+    check('a client cannot delete someone else\'s project', (await call(`/admin/projects/${del.project.id}`, { method: 'DELETE', auth: stranger.session })).status === 403);
+    const ownerTry = await call(`/admin/projects/${del.project.id}`, { method: 'DELETE', auth: a.session });
+    check('the owner may delete, but not while a request is open', ownerTry.status === 409 && ownerTry.data.error === 'open_tickets', JSON.stringify(ownerTry.data));
     const refused = await call(`/admin/projects/${del.project.id}`, { method: 'DELETE', auth: admin });
     check('delete is refused while a request is open', refused.status === 409 && refused.data.error === 'open_tickets' && refused.data.count === 1, JSON.stringify(refused.data));
     await call(`/admin/tickets/${del.ticketId}`, { method: 'PATCH', auth: admin, body: { status: 'declined' } });
