@@ -541,7 +541,7 @@ const groups = {
       sql(`SELECT body FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
             WHERE c.email = 'bulk7@example.test' AND m.step = 0 AND m.status = 'scheduled'`).toString();
     const plainFirst = firstOf();
-    check('a contact without an observation gets the plain opener, not "I looked at…"', /Are you vibe coding your website or app\?/.test(plainFirst) && !/I looked at/.test(plainFirst), plainFirst.slice(0, 300));
+    check('a contact without an observation gets the plain opener, not "I looked at…"', /Are you rebuilding your website with Claude Code or ChatGPT\?/.test(plainFirst) && !/I looked at/.test(plainFirst), plainFirst.slice(0, 300));
     sql(`UPDATE marketing_messages SET body = 'stale wording' WHERE status = 'scheduled' AND to_email = 'bulk7@example.test';`);
     const rerendered = await call('/admin/marketing/messages/rerender', { method: 'POST', auth: admin });
     check('re-render brings scheduled emails back to the current templates', rerendered.status === 200 && rerendered.data.updated >= 1500 && !/stale wording/.test(firstOf()), JSON.stringify(rerendered.data));
