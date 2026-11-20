@@ -77,7 +77,7 @@ var __awPlugin = (() => {
   async function sendTicketMessage({ api, ticket, mode, text, confirm }) {
     if (!Number.isSafeInteger(ticket?.id) || ticket.id <= 0 || !text.trim() || !["note", "reply"].includes(mode)) return false;
     const internal = mode === "note";
-    if (!internal && (!ticket.client_email || ticket.kind === "system" || !confirm(`Email this reply to ${ticket.client_email}?`))) return false;
+    if (!internal && (!ticket.client_email || ticket.kind === "system" || !await confirm(`Email this reply to ${ticket.client_email}?`))) return false;
     await api("POST", `/admin/tickets/${ticket.id}/messages`, { body: text.trim(), internal });
     return true;
   }
@@ -134,9 +134,7 @@ var __awPlugin = (() => {
 
   // packages/admin-ui/src/run-evidence.js
   var sortedRuns = (runs = []) => [...runs].sort((a, b) => Number(b.id) - Number(a.id));
-  var selectedRun = (runs, id) => id == null ? sortedRuns(runs)[0] ?? null : runs.find((run) => String(run.id) === String(id)) ?? null;
   var recordedPatch = (run) => [run?.diff, run?.diff_stat].find((text) => typeof text === "string" && text.trim()) ?? null;
-  var verification = (value) => value == null ? "unknown" : value === true || value === 1 ? "passed" : "failed";
   var mergeSteps = (previous = [], fresh = []) => [...new Map([...previous, ...fresh].map((step) => [step.seq, step])).values()].sort((a, b) => a.seq - b.seq);
   function reviewTarget(runs) {
     const sorted = sortedRuns(runs);
@@ -414,6 +412,10 @@ var __awPlugin = (() => {
     declined: "Closed without work"
   };
   var CLIENT_VISIBLE = ["approved", "declined", "done"];
+  var clientWaiting = (t) => Boolean(t.client_waiting_since) && !["new", "done", "declined"].includes(t.status);
+  var RUN_AGAIN = "Run again";
+  var REQUEUE_WARNING = "This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.";
+  var MINE_LABEL = "My task";
   var PRIORITIES = [
     { value: -10, label: "Low" },
     { value: 0, label: "Normal" },
@@ -423,11 +425,11 @@ var __awPlugin = (() => {
   var priorityName = (v) => PRIORITIES.find((p) => p.value === v)?.label ?? `p${v}`;
   var EXECUTORS = ["dsh-go", "dsh", "dsh-claude", "dsh-devin", "dsh-opencode", "claude", "opencode", "devin"];
   var AGENTS = [
-    { value: null, label: "Auto", hint: "Flash reads the task and picks Flash or Opus; a spent plan falls back" },
-    { value: "dsh-go", label: "Flash", hint: "OpenCode Go, DeepSeek v4.1 flash: near unlimited, the everyday choice" },
-    { value: "dsh-claude", label: "Opus", hint: "Claude Code on Opus, through the Harness: for hard work" },
-    { value: "dsh", label: "DeepSeek", hint: "The DeepSeek account, pay as you go" },
-    { value: "dsh-devin", label: "SWE-2", hint: "Devin SWE-2, free" }
+    { value: null, label: "Auto", hint: "Flash reads the brief and picks Flash or Opus." },
+    { value: "dsh-go", label: "Flash", hint: "DeepSeek v4.1 flash: the everyday choice." },
+    { value: "dsh-claude", label: "Opus", hint: "Claude Code on Opus: for hard work." },
+    { value: "dsh", label: "DeepSeek", hint: "The DeepSeek account, pay as you go." },
+    { value: "dsh-devin", label: "SWE-2", hint: "Devin SWE-2, free." }
   ];
   var agentOptions = (current) => current && !AGENTS.some((a) => a.value === current) ? [...AGENTS, { value: current, label: current, hint: "An older pin" }] : AGENTS;
   function span(seconds) {
@@ -496,7 +498,7 @@ var __awPlugin = (() => {
     const stuckRun = new Set(data.queue.filter((q) => !q.eligible.length).map((q) => q.id));
     return {
       // The client wrote last on a filed ticket and has had no answer.
-      waiting: data.tickets.filter((x) => x.client_waiting_since && x.status !== "new"),
+      waiting: data.tickets.filter(clientWaiting),
       review: data.tickets.filter((x) => x.status === "review"),
       new: data.tickets.filter((x) => x.status === "new"),
       stalled: data.tickets.filter((x) => x.status === "in_progress" && t - x.updated_at > 45 * 60),
@@ -517,6 +519,7 @@ var __awPlugin = (() => {
   }
 
   // packages/admin-ui/src/ui.jsx
+  var modalSeq = 0;
   var cx = (...parts) => parts.filter(Boolean).join(" ");
   function Button({ kind = "default", size, className, ...props }) {
     return /* @__PURE__ */ jsx("button", { type: "button", className: cx("aw-btn", `aw-btn--${kind}`, size && `aw-btn--${size}`, className), ...props });
@@ -524,6 +527,56 @@ var __awPlugin = (() => {
   var StatusPill = ({ status }) => /* @__PURE__ */ jsx("span", { className: `aw-pill aw-pill--${status}`, children: STATUS_LABEL[status] ?? status });
   var Dot = ({ state }) => /* @__PURE__ */ jsx("span", { className: `aw-dot aw-dot--${state}`, "aria-hidden": "true" });
   var Tag = ({ children, tone: tone2, title }) => /* @__PURE__ */ jsx("span", { className: cx("aw-tag", tone2 && `aw-tag--${tone2}`), title, children });
+  var BADGE_TONES = { neutral: null, info: "aw-tag--info", ok: "aw-tag--ok", warn: "aw-tag--warn", bad: "aw-tag--bad", accent: "aw-tag--accent" };
+  function Badge({ tone: tone2 = "neutral", children }) {
+    return /* @__PURE__ */ jsx("span", { className: cx("aw-tag", "aw-tag--pill", BADGE_TONES[tone2] ?? null), children });
+  }
+  function Empty({ title, hint, action }) {
+    return /* @__PURE__ */ jsxs("div", { className: "aw-emptybox", children: [
+      /* @__PURE__ */ jsx("strong", { children: title }),
+      hint ? /* @__PURE__ */ jsx("span", { className: "aw-emptybox__hint", children: hint }) : null,
+      action ? /* @__PURE__ */ jsx("div", { className: "aw-emptybox__action", children: action }) : null
+    ] });
+  }
+  function Loading({ label = "Loading\u2026" }) {
+    return /* @__PURE__ */ jsx("div", { className: "aw-loading", role: "status", children: label });
+  }
+  function ErrorNote({ error, onRetry }) {
+    return /* @__PURE__ */ jsxs("div", { className: "aw-errornote", role: "alert", children: [
+      /* @__PURE__ */ jsx("span", { className: "aw-errornote__text", children: errorText(error) }),
+      onRetry ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: onRetry, children: "Retry" }) : null
+    ] });
+  }
+  function Panel({ title, subtitle, actions, children }) {
+    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+      title || actions ? /* @__PURE__ */ jsxs("header", { className: "aw-panel__head", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-panel__titles", children: [
+          title ? /* @__PURE__ */ jsx("h3", { children: title }) : null,
+          subtitle ? /* @__PURE__ */ jsx("p", { title: typeof subtitle === "string" ? subtitle : void 0, children: subtitle }) : null
+        ] }),
+        actions ? /* @__PURE__ */ jsx("div", { className: "aw-panel__actions", children: actions }) : null
+      ] }) : null,
+      children
+    ] });
+  }
+  function PageHeader({ title, subtitle, meta, actions }) {
+    return /* @__PURE__ */ jsxs("header", { className: "aw-pagehead", children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-pagehead__titles", children: [
+        /* @__PURE__ */ jsx("h2", { children: title }),
+        subtitle ? /* @__PURE__ */ jsx("p", { children: subtitle }) : null
+      ] }),
+      meta || actions ? /* @__PURE__ */ jsxs("div", { className: "aw-pagehead__side", children: [
+        meta ? /* @__PURE__ */ jsx("div", { className: "aw-pagehead__meta", children: meta }) : null,
+        actions ? /* @__PURE__ */ jsx("div", { className: "aw-pagehead__actions", children: actions }) : null
+      ] }) : null
+    ] });
+  }
+  function StatRow({ items }) {
+    return /* @__PURE__ */ jsx("div", { className: "aw-statrow", children: (items ?? []).map((it, i) => /* @__PURE__ */ jsxs("div", { className: cx("aw-statrow__item", it.tone && `aw-statrow__item--${it.tone}`), title: it.hint, children: [
+      /* @__PURE__ */ jsx("strong", { children: it.value }),
+      /* @__PURE__ */ jsx("small", { children: it.label })
+    ] }, i)) });
+  }
   function Resizer({ host, cssVar, def, min, max, invert = false, storage, className }) {
     const ref = useRef(null);
     useEffect(() => {
@@ -558,21 +611,47 @@ var __awPlugin = (() => {
         window.addEventListener("pointermove", move);
         window.addEventListener("pointerup", up);
       };
+      const key = (e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        const grow = (e.key === "ArrowRight" ? 1 : -1) * (invert ? -1 : 1);
+        const w = Math.min(max, Math.max(min, Math.round(read()) + grow * 16));
+        pane.style.setProperty(cssVar, `${w}px`);
+        if (storage && w >= min && w <= max) localStorage.setItem(storage, String(w));
+      };
       el.addEventListener("pointerdown", down);
+      el.addEventListener("keydown", key);
       return () => {
         el.removeEventListener("pointerdown", down);
+        el.removeEventListener("keydown", key);
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
       };
     }, [host, cssVar, def, min, max, invert, storage]);
-    return /* @__PURE__ */ jsx("div", { ref, className: cx("aw-resize", className), role: "separator", "aria-orientation": "vertical" });
+    return /* @__PURE__ */ jsx("div", { ref, className: cx("aw-resize", className), role: "separator", "aria-orientation": "vertical", "aria-label": "Resize pane", tabIndex: 0 });
   }
-  function Segmented({ value, options, onChange, disabled }) {
-    return /* @__PURE__ */ jsx("div", { className: "aw-seg", role: "group", children: options.map((o) => /* @__PURE__ */ jsx(
+  function Segmented({ value, options, onChange, disabled, label }) {
+    const ref = useRef(null);
+    const onKey = (e) => {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      const btns = ref.current ? [...ref.current.querySelectorAll("button:not(:disabled)")] : [];
+      if (!btns.length) return;
+      e.preventDefault();
+      const idx = btns.indexOf(document.activeElement);
+      const dir = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
+      const next = btns[idx === -1 ? dir === 1 ? 0 : btns.length - 1 : (idx + dir + btns.length) % btns.length];
+      next.focus();
+      const opt = options.find((o) => String(o.value) === next.dataset.value);
+      if (opt && opt.value !== value) onChange(opt.value);
+    };
+    return /* @__PURE__ */ jsx("div", { className: "aw-seg", role: "radiogroup", "aria-label": label, ref, onKeyDown: onKey, children: options.map((o) => /* @__PURE__ */ jsx(
       "button",
       {
         type: "button",
+        role: "radio",
+        "data-value": String(o.value),
         disabled: disabled || o.disabled,
+        "aria-checked": o.value === value,
         "aria-pressed": o.value === value,
         title: o.hint,
         onClick: () => onChange(o.value),
@@ -581,9 +660,43 @@ var __awPlugin = (() => {
       String(o.value)
     )) });
   }
-  function Chips({ value, options, onChange, disabled }) {
+  function Chips({ value, options, onChange, disabled, label }) {
     const toggle = (v) => onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
-    return /* @__PURE__ */ jsx("div", { className: "aw-chips", children: options.map((o) => /* @__PURE__ */ jsx("button", { type: "button", disabled, title: o.hint, "aria-pressed": value.includes(o.value), onClick: () => toggle(o.value), children: o.label }, o.value)) });
+    return /* @__PURE__ */ jsx("div", { className: "aw-chips", role: "group", "aria-label": label, children: options.map((o) => /* @__PURE__ */ jsx("button", { type: "button", disabled, title: o.hint, "aria-pressed": value.includes(o.value), onClick: () => toggle(o.value), children: o.label }, o.value)) });
+  }
+  function PageTabs({ value, onChange, items, ariaLabel }) {
+    const ref = useRef(null);
+    const list2 = items ?? [];
+    const hasActive = list2.some((it) => it.value === value);
+    const onKey = (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "Home" && e.key !== "End") return;
+      const btns = ref.current ? [...ref.current.querySelectorAll("button")] : [];
+      if (!btns.length) return;
+      e.preventDefault();
+      const idx = btns.indexOf(document.activeElement);
+      const next = e.key === "Home" ? 0 : e.key === "End" ? btns.length - 1 : (idx === -1 ? 0 : idx + (e.key === "ArrowRight" ? 1 : -1) + btns.length) % btns.length;
+      btns[next].focus();
+      const item = list2[next];
+      if (item && item.value !== value) onChange(item.value);
+    };
+    return /* @__PURE__ */ jsx("div", { className: "aw-pagetabs", role: "tablist", "aria-label": ariaLabel, ref, onKeyDown: onKey, children: list2.map((it, i) => {
+      const active = it.value === value;
+      return /* @__PURE__ */ jsxs(
+        "button",
+        {
+          type: "button",
+          role: "tab",
+          "aria-selected": active,
+          tabIndex: active || !hasActive && i === 0 ? 0 : -1,
+          onClick: () => onChange(it.value),
+          children: [
+            it.label,
+            it.badge != null && it.badge !== "" ? /* @__PURE__ */ jsx("span", { className: "aw-pagetabs__badge", children: it.badge }) : null
+          ]
+        },
+        String(it.value)
+      );
+    }) });
   }
   function Field({ label, hint, children }) {
     return /* @__PURE__ */ jsxs("label", { className: "aw-field", children: [
@@ -592,18 +705,43 @@ var __awPlugin = (() => {
       hint ? /* @__PURE__ */ jsx("span", { className: "aw-field__hint", children: hint }) : null
     ] });
   }
-  function Modal({ title, subtitle, onClose, children, actions, wide, full }) {
+  var FOCUSABLE = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+  function Modal({ title, subtitle, onClose, children, actions, wide, full, focus }) {
     const ref = useRef(null);
+    const [titleId] = useState(() => `aw-modal-title-${++modalSeq}`);
     useEffect(() => {
-      const onKey = (e) => e.key === "Escape" && onClose();
+      const root = ref.current;
+      const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const first = (focus ? root?.querySelector(focus) : null) ?? root?.querySelector(FOCUSABLE);
+      first?.focus();
+      return () => opener?.focus();
+    }, []);
+    useEffect(() => {
+      const root = ref.current;
+      const onKey = (e) => {
+        if (e.key === "Escape") {
+          onClose();
+          return;
+        }
+        if (e.key !== "Tab" || !root) return;
+        const items = [...root.querySelectorAll(FOCUSABLE)];
+        if (!items.length) return;
+        const inside = root.contains(document.activeElement);
+        if (e.shiftKey && (!inside || document.activeElement === items[0])) {
+          e.preventDefault();
+          items[items.length - 1].focus();
+        } else if (!e.shiftKey && (!inside || document.activeElement === items[items.length - 1])) {
+          e.preventDefault();
+          items[0].focus();
+        }
+      };
       window.addEventListener("keydown", onKey);
-      ref.current?.querySelector("input, textarea, select, button")?.focus();
       return () => window.removeEventListener("keydown", onKey);
     }, [onClose]);
-    return /* @__PURE__ */ jsx("div", { className: "aw-scrim", onMouseDown: (e) => e.target === e.currentTarget && onClose(), children: /* @__PURE__ */ jsxs("div", { className: cx("aw-modal", wide && "aw-modal--wide", full && "aw-modal--full"), role: "dialog", "aria-modal": "true", "aria-label": title, ref, children: [
+    return /* @__PURE__ */ jsx("div", { className: "aw-scrim", onMouseDown: (e) => e.target === e.currentTarget && onClose(), children: /* @__PURE__ */ jsxs("div", { className: cx("aw-modal", wide && "aw-modal--wide", full && "aw-modal--full"), role: "dialog", "aria-modal": "true", "aria-labelledby": titleId, ref, children: [
       /* @__PURE__ */ jsxs("header", { className: "aw-modal__head", children: [
         /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("h2", { children: title }),
+          /* @__PURE__ */ jsx("h2", { id: titleId, children: title }),
           subtitle ? /* @__PURE__ */ jsx("p", { children: subtitle }) : null
         ] }),
         /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", onClick: onClose, "aria-label": "Close", children: "\u2715" })
@@ -613,26 +751,37 @@ var __awPlugin = (() => {
     ] }) });
   }
   function Confirm({ ask, onClose }) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    const close = () => {
+      if (!busy) onClose();
+    };
+    const run = async () => {
+      if (busy) return;
+      setBusy(true);
+      setError("");
+      try {
+        await ask.run();
+        close();
+      } catch (err) {
+        setBusy(false);
+        setError(errorText(err));
+      }
+    };
     return /* @__PURE__ */ jsx(
       Modal,
       {
         title: ask.title,
         subtitle: ask.text,
-        onClose,
+        onClose: close,
+        focus: ".aw-confirm",
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              kind: ask.danger ? "danger" : "primary",
-              onClick: () => {
-                onClose();
-                ask.run();
-              },
-              children: ask.confirm
-            }
-          )
-        ] })
+          /* @__PURE__ */ jsx(Button, { onClick: close, disabled: busy, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { className: "aw-confirm", kind: ask.danger ? "danger" : "primary", disabled: busy, "aria-busy": busy, onClick: () => {
+            void run();
+          }, children: ask.confirm })
+        ] }),
+        children: error ? /* @__PURE__ */ jsx("p", { className: "aw-error", role: "alert", children: error }) : null
       }
     );
   }
@@ -657,6 +806,19 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] }) });
   }
 
+  // packages/dsh-admin/src/row-navigation.mjs
+  var NEXT_KEYS = /* @__PURE__ */ new Set(["j", "ArrowDown"]);
+  var PREV_KEYS = /* @__PURE__ */ new Set(["k", "ArrowUp"]);
+  function nextRowIndex(current, count, key) {
+    if (!Number.isInteger(count) || count <= 0) return null;
+    const index = Number.isInteger(current) && current >= 0 && current < count ? current : -1;
+    if (NEXT_KEYS.has(key)) return index < 0 ? 0 : Math.min(index + 1, count - 1);
+    if (PREV_KEYS.has(key)) return index < 0 ? 0 : Math.max(index - 1, 0);
+    if (key === "Home") return 0;
+    if (key === "End") return count - 1;
+    return null;
+  }
+
   // packages/admin-ui/src/board.jsx
   function useFilters() {
     const { api, boardProject, setBoardProject } = useAdmin();
@@ -668,7 +830,9 @@ var __awPlugin = (() => {
       if (needle.length < 3) return void setHits(/* @__PURE__ */ new Map());
       let live = true;
       const timer = setTimeout(() => {
-        api("GET", `/admin/search?q=${encodeURIComponent(needle)}`).then((r) => live && setHits(new Map((r.hits ?? []).map((h) => [h.id, h.snippet])))).catch(() => void 0);
+        api("GET", `/admin/search?q=${encodeURIComponent(needle)}`).then((r) => live && setHits(new Map((r.hits ?? []).map((h) => [h.id, h.snippet])))).catch(() => {
+          if (live) setHits(/* @__PURE__ */ new Map());
+        });
       }, 300);
       return () => {
         live = false;
@@ -684,7 +848,19 @@ var __awPlugin = (() => {
     return { boardProject, setBoardProject, kind, setKind, q, setQ, apply: apply2, hits };
   }
   function FilterBar({ f, extra }) {
-    const { data, setModal } = useAdmin();
+    const { data, setModal, platform } = useAdmin();
+    const search = useRef(null);
+    useEffect(() => {
+      if (platform !== "web") return void 0;
+      const onKey = (e) => {
+        if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+        if (e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
+        e.preventDefault();
+        search.current?.focus();
+      };
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }, [platform]);
     return /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
       /* @__PURE__ */ jsxs("select", { value: f.boardProject, onChange: (e) => f.setBoardProject(e.target.value), "aria-label": "Project", children: [
         /* @__PURE__ */ jsx("option", { value: "all", children: "All projects" }),
@@ -697,12 +873,12 @@ var __awPlugin = (() => {
           options: [
             { value: "all", label: "All" },
             { value: "client", label: "Client" },
-            { value: "system", label: "Mine" }
+            { value: "system", label: MINE_LABEL }
           ],
           onChange: f.setKind
         }
       ),
-      /* @__PURE__ */ jsx("input", { className: "aw-search", value: f.q, placeholder: "Filter, or search threads\u2026", onChange: (e) => f.setQ(e.target.value) }),
+      /* @__PURE__ */ jsx("input", { ref: search, className: "aw-search", value: f.q, placeholder: "Filter, or search threads\u2026", onChange: (e) => f.setQ(e.target.value) }),
       /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
       extra,
       /* @__PURE__ */ jsxs(Button, { kind: "primary", size: "sm", onClick: () => setModal({ kind: "task", projectId: f.boardProject === "all" ? void 0 : f.boardProject }), children: [
@@ -711,7 +887,48 @@ var __awPlugin = (() => {
       ] })
     ] });
   }
-  function TicketCard({ t, draggable }) {
+  function useMove() {
+    const { api, setStatus, act, ask } = useAdmin();
+    return (t, s) => {
+      if (s === "approved" && t.status !== "new" && t.kind !== "system") {
+        ask({
+          title: `${RUN_AGAIN} for #${t.id}?`,
+          text: REQUEUE_WARNING,
+          confirm: RUN_AGAIN,
+          run: () => act(() => api("PATCH", `/admin/tickets/${t.id}`, { status: "approved" }))
+        });
+        return;
+      }
+      return setStatus(t, s);
+    };
+  }
+  function useRowNav(count, open) {
+    const { platform } = useAdmin();
+    const cells = useRef(/* @__PURE__ */ new Map());
+    const cell = (index) => (el) => {
+      if (el) cells.current.set(index, el);
+      else cells.current.delete(index);
+    };
+    const onKey = (e, index) => {
+      if (e.target !== e.currentTarget) return;
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open(index);
+        return;
+      }
+      if (platform !== "web" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const next = nextRowIndex(index, count, e.key);
+      if (next == null) return;
+      e.preventDefault();
+      cells.current.get(next)?.focus();
+    };
+    return { cell, onKey };
+  }
+  var titleLinkClick = (e) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) e.stopPropagation();
+    else e.preventDefault();
+  };
+  function TicketCard({ t, draggable, cell, onKey }) {
     const { data, openTicket } = useAdmin();
     const run = data.running.find((r) => r.ticket_id === t.id);
     const queued = data.queue.find((q) => q.id === t.id);
@@ -719,6 +936,7 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsxs(
       "article",
       {
+        ref: cell ?? void 0,
         className: cx("aw-card", run && "is-running", queued && !queued.eligible.length && "is-stuck"),
         draggable,
         onDragStart: (e) => {
@@ -726,7 +944,7 @@ var __awPlugin = (() => {
           e.dataTransfer.effectAllowed = "move";
         },
         onClick: () => openTicket(t.id),
-        onKeyDown: (e) => e.key === "Enter" && openTicket(t.id),
+        onKeyDown: onKey ?? ((e) => e.key === "Enter" && openTicket(t.id)),
         tabIndex: 0,
         children: [
           /* @__PURE__ */ jsxs("div", { className: "aw-card__top", children: [
@@ -734,13 +952,13 @@ var __awPlugin = (() => {
               "#",
               t.id
             ] }),
-            t.kind === "system" ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "mine" }) : /* @__PURE__ */ jsx(Tag, { tone: "client", children: "client" }),
+            t.kind === "system" ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: MINE_LABEL }) : /* @__PURE__ */ jsx(Tag, { tone: "client", children: "client" }),
             t.source === "assistant" ? /* @__PURE__ */ jsx(Tag, { tone: "ok", title: "The client\u2019s own assistant (ChatGPT, \u2026) made this change on their subscription", children: "their AI" }) : null,
             (t.priority ?? 0) > 0 ? /* @__PURE__ */ jsx(Tag, { tone: "hot", children: priorityName(t.priority) }) : null,
-            t.client_waiting_since && t.status !== "new" ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "awaiting reply" }) : null,
+            clientWaiting(t) ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "awaiting reply" }) : null,
             /* @__PURE__ */ jsx("span", { className: "aw-card__age", children: ago(t.updated_at) })
           ] }),
-          /* @__PURE__ */ jsx("h4", { children: t.title }),
+          /* @__PURE__ */ jsx("h4", { children: /* @__PURE__ */ jsx("a", { className: "aw-titlelink", href: `#ticket=${t.id}`, tabIndex: -1, onClick: titleLinkClick, children: t.title }) }),
           /* @__PURE__ */ jsxs("div", { className: "aw-card__meta", children: [
             /* @__PURE__ */ jsx("span", { children: t.project_name ?? "no project" }),
             t.kind !== "system" && t.client_email ? /* @__PURE__ */ jsx("span", { children: t.client_email }) : null
@@ -762,8 +980,14 @@ var __awPlugin = (() => {
       }
     );
   }
+  function ColumnCards({ items }) {
+    const { openTicket } = useAdmin();
+    const nav = useRowNav(items.length, (i) => openTicket(items[i].id));
+    return /* @__PURE__ */ jsx(Fragment2, { children: items.map((t, i) => /* @__PURE__ */ jsx(TicketCard, { t, draggable: true, cell: nav.cell(i), onKey: (e) => nav.onKey(e, i) }, t.id)) });
+  }
   function BoardView() {
-    const { data, setStatus } = useAdmin();
+    const { data } = useAdmin();
+    const move = useMove();
     const f = useFilters();
     const [showClosed, setShowClosed] = useState(false);
     const [over, setOver] = useState(null);
@@ -771,6 +995,7 @@ var __awPlugin = (() => {
     const columns = showClosed ? STATUSES : STATUSES.filter((s) => s !== "declined");
     const byId = new Map(data.tickets.map((t) => [t.id, t]));
     return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-view--board", children: [
+      /* @__PURE__ */ jsx(PageHeader, { title: "Board", subtitle: "Every request by status. Drag a card to another column to move it." }),
       /* @__PURE__ */ jsx(FilterBar, { f, extra: /* @__PURE__ */ jsx(Segmented, { value: showClosed, options: [{ value: false, label: "Open" }, { value: true, label: "+ Declined" }], onChange: setShowClosed }) }),
       /* @__PURE__ */ jsx("div", { className: "aw-board", children: columns.map((s) => {
         let items = tickets.filter((t) => t.status === s);
@@ -789,7 +1014,7 @@ var __awPlugin = (() => {
               e.preventDefault();
               setOver(null);
               const t = byId.get(Number(e.dataTransfer.getData("text/x-ticket")));
-              if (t) void setStatus(t, s);
+              if (t) void move(t, s);
             },
             children: [
               /* @__PURE__ */ jsxs("header", { title: STATUS_HINT[s], children: [
@@ -798,7 +1023,7 @@ var __awPlugin = (() => {
                 /* @__PURE__ */ jsx("span", { className: "aw-count", children: tickets.filter((t) => t.status === s).length })
               ] }),
               /* @__PURE__ */ jsxs("div", { className: "aw-col__body", children: [
-                items.map((t) => /* @__PURE__ */ jsx(TicketCard, { t, draggable: true }, t.id)),
+                /* @__PURE__ */ jsx(ColumnCards, { items }),
                 more ? /* @__PURE__ */ jsxs("p", { className: "aw-muted aw-center", children: [
                   "+",
                   more,
@@ -833,7 +1058,9 @@ var __awPlugin = (() => {
       const col = COLUMNS.find((c) => c.key === sort.key);
       return f.apply(data.tickets).filter((t) => status === "all" || (status === "open" ? !["done", "declined"].includes(t.status) : t.status === status)).sort((a, b) => (col.get(a) > col.get(b) ? 1 : col.get(a) < col.get(b) ? -1 : 0) * sort.dir);
     }, [data.tickets, f, status, sort]);
+    const nav = useRowNav(rows.length, (i) => openTicket(rows[i].id));
     return /* @__PURE__ */ jsxs("div", { className: "aw-view", children: [
+      /* @__PURE__ */ jsx(PageHeader, { title: "All work", subtitle: "Every request in one table. Click a column to sort; click a row to open it." }),
       /* @__PURE__ */ jsx(
         FilterBar,
         {
@@ -851,20 +1078,20 @@ var __awPlugin = (() => {
             c.label,
             sort.key === c.key ? sort.dir > 0 ? " \u2191" : " \u2193" : ""
           ] }, c.key)) }) }),
-          /* @__PURE__ */ jsx("tbody", { children: rows.map((t) => /* @__PURE__ */ jsxs("tr", { onClick: () => openTicket(t.id), tabIndex: 0, onKeyDown: (e) => e.key === "Enter" && openTicket(t.id), children: [
+          /* @__PURE__ */ jsx("tbody", { children: rows.map((t, i) => /* @__PURE__ */ jsxs("tr", { ref: nav.cell(i), onClick: () => openTicket(t.id), tabIndex: 0, onKeyDown: (e) => nav.onKey(e, i), children: [
             /* @__PURE__ */ jsxs("td", { className: "aw-mono", children: [
               "#",
               t.id
             ] }),
             /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
-              t.title,
+              /* @__PURE__ */ jsx("a", { className: "aw-titlelink", href: `#ticket=${t.id}`, tabIndex: -1, onClick: titleLinkClick, children: t.title }),
               f.hits.get(t.id) ? /* @__PURE__ */ jsx("small", { className: "aw-muted aw-snippet", children: f.hits.get(t.id) }) : null
             ] }),
             /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(StatusPill, { status: t.status }) }),
             /* @__PURE__ */ jsx("td", { children: t.project_name ?? "\u2014" }),
-            /* @__PURE__ */ jsx("td", { children: t.kind === "system" ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "mine" }) : t.client_email }),
-            /* @__PURE__ */ jsx("td", { children: priorityName(t.priority ?? 0) }),
-            /* @__PURE__ */ jsx("td", { children: t.source === "assistant" ? "their assistant" : t.executor ?? (t.kind === "system" ? "any" : "claude") }),
+            /* @__PURE__ */ jsx("td", { children: t.kind === "system" ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: MINE_LABEL }) : t.client_email }),
+            /* @__PURE__ */ jsx("td", { children: t.priority ? priorityName(t.priority) : "\u2014" }),
+            /* @__PURE__ */ jsx("td", { children: t.source === "assistant" ? "their assistant" : t.executor ?? "Auto" }),
             /* @__PURE__ */ jsx("td", { children: money(chargeOf(t).totalCents) }),
             /* @__PURE__ */ jsxs("td", { className: "aw-muted", children: [
               ago(t.updated_at),
@@ -877,25 +1104,35 @@ var __awPlugin = (() => {
     ] });
   }
   function InboxView() {
-    const { data, open, openTicket, setStatus, api, act, reload } = useAdmin();
+    const { data, open, openTicket, act, api, reload } = useAdmin();
+    const move = useMove();
     const n = needsYou(data);
     const answered = (t) => act(() => api("POST", `/admin/tickets/${t.id}/answered`), `#${t.id}: no reply needed.`).then(reload, () => void 0);
     const failed = data.recent.filter((r) => r.status === "failed" && Date.now() / 1e3 - (r.finished_at ?? 0) < 86400).slice(0, 8);
     const groups = [
       { key: "waiting", title: "Answer the client", hint: "They wrote last and have heard nothing since.", items: n.waiting, actions: () => [], extra: (t) => [["No reply needed", () => answered(t)]] },
-      { key: "review", title: "Check the agent\u2019s work", hint: "Finished runs waiting for you.", items: n.review, actions: (t) => [["done", "Done"], ["approved", "Run again"]] },
-      { key: "new", title: "Approve or decline", hint: "New requests. Nothing runs until you approve.", items: n.new, actions: (t) => [["approved", "Approve"], ["declined", "Decline"]] },
-      { key: "stalled", title: "Stalled", hint: "In progress for 45+ minutes without a report.", items: n.stalled, actions: () => [["approved", "Requeue"]] },
+      { key: "review", title: "Check the agent\u2019s work", hint: "Finished runs waiting for you.", items: n.review, actions: () => [["done", "Done"], ["approved", RUN_AGAIN]] },
+      { key: "new", title: "Approve or decline", hint: "New requests. Nothing runs until you approve.", items: n.new, actions: () => [["approved", "Approve"], ["declined", "Decline"]] },
+      { key: "stalled", title: "Stalled", hint: "In progress for 45+ minutes without a report.", items: n.stalled, actions: () => [["approved", RUN_AGAIN]] },
       { key: "stuck", title: "No node can take these", hint: "Approved, but nothing eligible.", items: n.stuck, actions: () => [] }
     ];
+    const ids = [];
+    const at = /* @__PURE__ */ new Map();
+    for (const g of groups) for (const t of g.items) at.set(t, ids.push(t.id) - 1);
+    for (const r of failed) at.set(r, ids.push(r.ticket_id) - 1);
+    const nav = useRowNav(ids.length, (i) => openTicket(ids[i]));
     const empty = groups.every((g) => !g.items.length) && !n.offline.length;
+    const total = groups.reduce((a, g) => a + g.items.length, 0);
     return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-inbox", children: [
-      /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
-        /* @__PURE__ */ jsx("h2", { children: "Needs you" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: empty ? "Nothing is waiting on you. Agents are on it." : `${groups.reduce((a, g) => a + g.items.length, 0)} item(s) waiting on you.` })
-      ] }),
-      data.access?.superAdmin && n.offline.length ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--bad", children: [
-        /* @__PURE__ */ jsx(Dot, { state: "bad" }),
+      /* @__PURE__ */ jsx(
+        PageHeader,
+        {
+          title: "Needs you",
+          subtitle: empty ? "Nothing is waiting on you. Agents are on it." : `${total} ${total === 1 ? "item needs" : "items need"} you.`
+        }
+      ),
+      data.access?.superAdmin && n.offline.length ? /* @__PURE__ */ jsxs("div", { className: "aw-inbox__offline", children: [
+        /* @__PURE__ */ jsx(Dot, { state: "warn" }),
         " Offline: ",
         n.offline.map((x) => x.id).join(", "),
         ".",
@@ -907,74 +1144,80 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsxs("h3", { children: [
             g.title,
             " ",
-            /* @__PURE__ */ jsx("span", { className: "aw-count", children: g.items.length })
+            /* @__PURE__ */ jsx("span", { className: "aw-count", children: g.items.length }),
+            /* @__PURE__ */ jsx("span", { className: "aw-group__hint", children: g.hint })
           ] }),
-          /* @__PURE__ */ jsx("p", { className: "aw-muted", children: g.hint }),
           /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: g.items.map((t) => {
             const q = data.queue.find((x) => x.id === t.id);
-            return /* @__PURE__ */ jsxs("li", { className: "aw-row", onClick: () => openTicket(t.id), children: [
+            const i = at.get(t);
+            return /* @__PURE__ */ jsxs("li", { className: "aw-row", tabIndex: 0, ref: nav.cell(i), onKeyDown: (e) => nav.onKey(e, i), onClick: () => openTicket(t.id), children: [
               /* @__PURE__ */ jsxs("span", { className: "aw-mono aw-muted", children: [
                 "#",
                 t.id
               ] }),
-              /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: t.title }),
-              t.kind === "system" ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "mine" }) : /* @__PURE__ */ jsx(Tag, { tone: "client", children: t.client_email }),
+              /* @__PURE__ */ jsx("a", { className: "aw-titlelink aw-row__title", href: `#ticket=${t.id}`, tabIndex: -1, onClick: titleLinkClick, title: t.title, children: t.title }),
+              t.kind === "system" ? /* @__PURE__ */ jsx(Badge, { children: MINE_LABEL }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: t.client_email }),
               /* @__PURE__ */ jsx("span", { className: "aw-muted", children: t.project_name ?? "no project" }),
               g.key === "stuck" && q ? /* @__PURE__ */ jsx("span", { className: "aw-warn", children: q.reason }) : null,
               /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
               /* @__PURE__ */ jsx("span", { className: "aw-muted", children: g.key === "waiting" ? `waiting ${ago(t.client_waiting_since)}` : ago(t.updated_at) }),
-              (g.extra?.(t) ?? []).map(([label, run]) => /* @__PURE__ */ jsx(
-                Button,
-                {
-                  size: "sm",
-                  kind: "ghost",
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    void run();
+              /* @__PURE__ */ jsxs("span", { className: "aw-row__actions", children: [
+                (g.extra?.(t) ?? []).map(([label, run]) => /* @__PURE__ */ jsx(
+                  Button,
+                  {
+                    size: "sm",
+                    kind: "ghost",
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      void run();
+                    },
+                    children: label
                   },
-                  children: label
-                },
-                label
-              )),
-              g.actions(t).map(([s, label]) => /* @__PURE__ */ jsx(
-                Button,
-                {
-                  size: "sm",
-                  kind: s === "declined" ? "ghost" : "default",
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    void setStatus(t, s);
+                  label
+                )),
+                g.actions(t).map(([s, label]) => /* @__PURE__ */ jsx(
+                  Button,
+                  {
+                    size: "sm",
+                    kind: s === "declined" ? "ghost" : "default",
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      void move(t, s);
+                    },
+                    children: label
                   },
-                  children: label
-                },
-                s
-              ))
+                  s
+                ))
+              ] })
             ] }, t.id);
           }) })
         ] }, g.key) : null
       ),
       failed.length ? /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
         /* @__PURE__ */ jsx("h3", { children: "Failed runs, last 24h" }),
-        /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: failed.map((r) => /* @__PURE__ */ jsxs("li", { className: "aw-row", onClick: () => openTicket(r.ticket_id), children: [
-          /* @__PURE__ */ jsx(Dot, { state: "bad" }),
-          /* @__PURE__ */ jsxs("span", { className: "aw-mono aw-muted", children: [
-            "#",
-            r.ticket_id
-          ] }),
-          /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: r.title }),
-          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-            r.executor,
-            " on ",
-            r.node_id ?? "Harness",
-            " \xB7 ",
-            usd(r.cost_micro_usd)
-          ] }),
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-            ago(r.finished_at),
-            " ago"
-          ] })
-        ] }, r.id)) })
+        /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: failed.map((r) => {
+          const i = at.get(r);
+          return /* @__PURE__ */ jsxs("li", { className: "aw-row", tabIndex: 0, ref: nav.cell(i), onKeyDown: (e) => nav.onKey(e, i), onClick: () => openTicket(r.ticket_id), children: [
+            /* @__PURE__ */ jsx(Dot, { state: "bad" }),
+            /* @__PURE__ */ jsxs("span", { className: "aw-mono aw-muted", children: [
+              "#",
+              r.ticket_id
+            ] }),
+            /* @__PURE__ */ jsx("a", { className: "aw-titlelink aw-row__title", href: `#ticket=${r.ticket_id}`, tabIndex: -1, onClick: titleLinkClick, children: r.title }),
+            /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+              r.executor,
+              " on ",
+              r.node_id ?? "Harness",
+              " \xB7 ",
+              usd(r.cost_micro_usd)
+            ] }),
+            /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+            /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+              ago(r.finished_at),
+              " ago"
+            ] })
+          ] }, r.id);
+        }) })
       ] }) : null
     ] });
   }
@@ -1074,89 +1317,6 @@ var __awPlugin = (() => {
     return typeof code === "string" && /^en(-|$)/i.test(code);
   }
 
-  // packages/admin-ui/src/markdown.js
-  var MAX_INLINE_DEPTH = 4;
-  function markdownInline(input, depth = 0) {
-    const text = String(input ?? "");
-    if (!text) return [];
-    if (depth >= MAX_INLINE_DEPTH) return [{ type: "text", text }];
-    const token = /`([^`\n]+)`|\*\*([^\s*](?:[^*\n]*[^\s*])?)\*\*|\*([^\s*](?:[^*\n]*[^\s*])?)\*|\[([^\]\n]+)\]\(([^)\s]+)\)|<((?:https?|mailto):[^>\s]+)>|\\([\\`*_[\]()<>])/g;
-    const spans = [];
-    const pushText = (value) => {
-      if (!value) return;
-      const last = spans[spans.length - 1];
-      if (last?.type === "text") last.text += value;
-      else spans.push({ type: "text", text: value });
-    };
-    let match;
-    let at = 0;
-    while (match = token.exec(text)) {
-      pushText(text.slice(at, match.index));
-      at = token.lastIndex;
-      const [, code, strong, em, label, href, autolink, escaped] = match;
-      if (code != null) spans.push({ type: "code", text: code });
-      else if (strong != null) spans.push({ type: "strong", spans: markdownInline(strong, depth + 1) });
-      else if (em != null) spans.push({ type: "em", spans: markdownInline(em, depth + 1) });
-      else if (label != null) spans.push({ type: "link", href: href ?? "", spans: markdownInline(label, depth + 1) });
-      else if (autolink != null) spans.push({ type: "link", href: autolink, spans: [{ type: "text", text: autolink }] });
-      else if (escaped != null) pushText(escaped);
-      else pushText(match[0]);
-    }
-    pushText(text.slice(at));
-    return spans;
-  }
-  var LIST_ITEM = /^\s{0,3}(?:([-*+])|(\d+)[.)])\s+(.*)$/;
-  var HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
-  var FENCE = /^\s{0,3}```([\w-]*)\s*$/;
-  function markdownBlocks(input) {
-    const lines = String(input ?? "").replace(/\r\n?/g, "\n").split("\n");
-    const blocks = [];
-    let paragraph = [];
-    const flush = () => {
-      if (!paragraph.length) return;
-      blocks.push({ type: "paragraph", spans: markdownInline(paragraph.join(" ")) });
-      paragraph = [];
-    };
-    for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i];
-      const fence = line.match(FENCE);
-      if (fence) {
-        flush();
-        const body = [];
-        i += 1;
-        while (i < lines.length && !FENCE.test(lines[i])) {
-          body.push(lines[i]);
-          i += 1;
-        }
-        blocks.push({ type: "code", lang: fence[1] || null, text: body.join("\n") });
-        continue;
-      }
-      if (!line.trim()) {
-        flush();
-        continue;
-      }
-      const heading = line.match(HEADING);
-      if (heading) {
-        flush();
-        blocks.push({ type: "heading", level: heading[1].length, spans: markdownInline(heading[2]) });
-        continue;
-      }
-      const item = line.match(LIST_ITEM);
-      if (item) {
-        flush();
-        const ordered = item[2] != null;
-        const last = blocks[blocks.length - 1];
-        const target = last?.type === "list" && last.ordered === ordered ? last : null;
-        if (target) target.items.push({ spans: markdownInline(item[3]) });
-        else blocks.push({ type: "list", ordered, items: [{ spans: markdownInline(item[3]) }] });
-        continue;
-      }
-      paragraph.push(line.replace(/^\s{0,3}>\s?/, ""));
-    }
-    flush();
-    return blocks;
-  }
-
   // packages/admin-ui/src/review.jsx
   var portalTicketUrl = (id) => `https://ptechsolutions.net/portal/admin#ticket=${id}`;
   function newestDiff(runs) {
@@ -1246,167 +1406,6 @@ var __awPlugin = (() => {
       state.status === "failed" ? /* @__PURE__ */ jsx(Button, { onClick: () => setRetry((n) => n + 1), children: "Retry repository review" }) : null
     ] }) }) });
   }
-  function RecordedEvidence({ runs = [], screenshots = [], review, initialOpen = false }) {
-    const [runId, setRunId] = useState(null);
-    const [compareId, setCompareId] = useState("");
-    const [open, setOpen] = useState(initialOpen);
-    useEffect(() => {
-      if (runId == null && runs.length) setRunId(sortedRuns(runs)[0].id);
-    }, [runs, runId]);
-    if (!runs.length) return null;
-    const selected = selectedRun(runs, runId);
-    const comparison = compareId ? selectedRun(runs, compareId) : null;
-    const options = sortedRuns(runs);
-    const checks = selected ? verification(selected.verify_ok) : null;
-    const line = selected ? [`Run #${selected.id}`, selected.status, selected.commit_sha ? `commit ${String(selected.commit_sha).slice(0, 8)}` : "no commit recorded", `verification ${checks}`, comparison ? `comparing #${comparison.id}` : compareId ? `comparing #${compareId}` : null].filter(Boolean).join(" \xB7 ") : `Run #${runId} \xB7 unavailable`;
-    const panelId = `aw-evidence-panel-${runId ?? "none"}`;
-    return /* @__PURE__ */ jsxs("section", { className: "aw-prereview aw-evidence", "aria-label": "Recorded run evidence", children: [
-      /* @__PURE__ */ jsxs("header", { className: "aw-evidence__head", children: [
-        /* @__PURE__ */ jsx("strong", { children: "Recorded evidence" }),
-        /* @__PURE__ */ jsxs("span", { className: "aw-muted aw-evidence__line", children: [
-          "\xB7 ",
-          line
-        ] }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(
-          "button",
-          {
-            type: "button",
-            className: "aw-link aw-evidence__toggle",
-            "aria-expanded": open,
-            "aria-controls": open ? panelId : void 0,
-            onClick: () => setOpen((value) => !value),
-            children: open ? "Hide details" : "Show details"
-          }
-        )
-      ] }),
-      open ? /* @__PURE__ */ jsxs("div", { className: "aw-evidence__body", id: panelId, children: [
-        /* @__PURE__ */ jsx("p", { className: "aw-muted aw-evidence__hint", children: "One column per run\u2019s saved evidence, not a code diff between runs. Selection does not change what runs or lands next." }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-inline", style: { flexWrap: "wrap" }, children: [
-          /* @__PURE__ */ jsxs("label", { children: [
-            "Run ",
-            /* @__PURE__ */ jsxs("select", { "aria-label": "Evidence run", value: runId ?? "", onChange: (e) => setRunId(e.target.value), children: [
-              runId != null && !selected ? /* @__PURE__ */ jsxs("option", { value: runId, children: [
-                "Run #",
-                runId,
-                " \xB7 unavailable"
-              ] }) : null,
-              options.map((run) => /* @__PURE__ */ jsxs("option", { value: run.id, children: [
-                "Run #",
-                run.id,
-                " \xB7 ",
-                run.status
-              ] }, run.id))
-            ] })
-          ] }),
-          /* @__PURE__ */ jsxs("label", { children: [
-            "Compare with ",
-            /* @__PURE__ */ jsxs("select", { "aria-label": "Comparison run", value: compareId, onChange: (e) => setCompareId(e.target.value), children: [
-              /* @__PURE__ */ jsx("option", { value: "", children: "No comparison" }),
-              compareId && !comparison ? /* @__PURE__ */ jsxs("option", { value: compareId, children: [
-                "Run #",
-                compareId,
-                " \xB7 unavailable"
-              ] }) : null,
-              options.map((run) => /* @__PURE__ */ jsxs("option", { value: run.id, children: [
-                "Run #",
-                run.id,
-                " \xB7 ",
-                run.status
-              ] }, run.id))
-            ] })
-          ] })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 16 }, children: [
-          /* @__PURE__ */ jsx(EvidenceColumn, { run: selected, runId, screenshots, review }),
-          compareId ? /* @__PURE__ */ jsx(EvidenceColumn, { run: comparison, runId: compareId, screenshots, review }) : null
-        ] })
-      ] }) : null
-    ] });
-  }
-  function EvidenceColumn({ run, runId, screenshots, review }) {
-    if (!run) return /* @__PURE__ */ jsxs("p", { role: "status", children: [
-      "Run #",
-      runId,
-      " evidence is unavailable."
-    ] });
-    const checks = verification(run.verify_ok);
-    const shots = screenshots.filter((shot) => String(shot.runId) === String(run.id));
-    return /* @__PURE__ */ jsxs("div", { style: { flex: "1 1 280px", minWidth: 0 }, children: [
-      /* @__PURE__ */ jsxs("h3", { children: [
-        "Run #",
-        run.id
-      ] }),
-      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-        run.status,
-        " \xB7 ",
-        run.executor,
-        " \xB7 ",
-        run.branch ? `Recorded branch: ${run.branch} (mutable)` : "No branch recorded"
-      ] }),
-      run.commit_sha ? /* @__PURE__ */ jsxs("p", { children: [
-        "Recorded commit: ",
-        /* @__PURE__ */ jsx("code", { children: run.commit_sha })
-      ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No immutable commit recorded." }),
-      /* @__PURE__ */ jsxs("p", { children: [
-        "Verification: ",
-        checks,
-        checks === "unknown" ? " \xB7 no result recorded" : ""
-      ] }),
-      run.verify_command ? /* @__PURE__ */ jsxs("p", { children: [
-        "Recorded check: ",
-        /* @__PURE__ */ jsx("code", { children: run.verify_command })
-      ] }) : null,
-      run.verify_output ? /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: run.verify_output }) : null,
-      review && String(review.runId) === String(run.id) ? /* @__PURE__ */ jsxs("p", { children: [
-        "Pre-review for run #",
-        run.id,
-        ": ",
-        review.verdict,
-        " \xB7 ",
-        review.headline
-      ] }) : /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-        "No pre-review recorded for run #",
-        run.id,
-        "."
-      ] }),
-      run.summary ? /* @__PURE__ */ jsx("div", { className: "aw-md", children: /* @__PURE__ */ jsx(MarkdownReport, { text: run.summary }) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No summary recorded." }),
-      /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: recordedPatch(run) || "No patch or statistics recorded." }),
-      shots.length ? shots.map((shot) => /* @__PURE__ */ jsxs("figure", { children: [
-        /* @__PURE__ */ jsx("a", { href: shot.url, target: "_blank", rel: "noreferrer", children: /* @__PURE__ */ jsx("img", { style: { maxWidth: "100%" }, src: shot.url, alt: `Run #${run.id} \xB7 ${shot.kind}`, loading: "lazy" }) }),
-        /* @__PURE__ */ jsxs("figcaption", { children: [
-          "Run #",
-          run.id,
-          " \xB7 ",
-          shot.kind
-        ] })
-      ] }, `${shot.runId}-${shot.kind}`)) : /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-        "No screenshots recorded for run #",
-        run.id,
-        "."
-      ] })
-    ] });
-  }
-  function MarkdownReport({ text }) {
-    return markdownBlocks(text).map((block, index) => {
-      if (block.type === "code") return /* @__PURE__ */ jsx("pre", { className: "aw-diff aw-md__code", children: block.text }, index);
-      if (block.type === "list") {
-        const items = block.items.map((item, at) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsx(Inline, { spans: item.spans }) }, at));
-        return block.ordered ? /* @__PURE__ */ jsx("ol", { className: "aw-md__list", children: items }, index) : /* @__PURE__ */ jsx("ul", { className: "aw-md__list", children: items }, index);
-      }
-      if (block.type === "heading") return /* @__PURE__ */ jsx("p", { className: "aw-md__heading", children: /* @__PURE__ */ jsx("strong", { children: /* @__PURE__ */ jsx(Inline, { spans: block.spans }) }) }, index);
-      return /* @__PURE__ */ jsx("p", { children: /* @__PURE__ */ jsx(Inline, { spans: block.spans }) }, index);
-    });
-  }
-  function Inline({ spans }) {
-    return spans.map((span2, index) => {
-      if (span2.type === "strong") return /* @__PURE__ */ jsx("strong", { children: /* @__PURE__ */ jsx(Inline, { spans: span2.spans }) }, index);
-      if (span2.type === "em") return /* @__PURE__ */ jsx("em", { children: /* @__PURE__ */ jsx(Inline, { spans: span2.spans }) }, index);
-      if (span2.type === "code") return /* @__PURE__ */ jsx("code", { children: span2.text }, index);
-      if (span2.type === "link") return /* @__PURE__ */ jsx("span", { title: span2.href, children: /* @__PURE__ */ jsx(Inline, { spans: span2.spans }) }, index);
-      return span2.text;
-    });
-  }
 
   // packages/admin-ui/src/submit-state.js
   function createSubmission() {
@@ -1469,10 +1468,13 @@ var __awPlugin = (() => {
 
   // packages/admin-ui/src/mention-recipients.jsx
   function MentionRecipients({ api, projectId, onChange, disabled = false, internal = false }) {
+    const [open, setOpen] = useState(false);
     const [state, setState] = useState({ projectId: null, internal: null, recipients: [], loading: true, error: false });
     const [selected, setSelected] = useState([]);
     const [version, setVersion] = useState(0);
     useEffect(() => {
+      if (!open) return () => {
+      };
       let alive = true;
       setSelected([]);
       onChange([]);
@@ -1491,7 +1493,7 @@ var __awPlugin = (() => {
       return () => {
         alive = false;
       };
-    }, [api, projectId, internal, version]);
+    }, [api, projectId, internal, version, open]);
     const current = state.projectId === projectId && state.internal === internal ? { ...state, recipients: visibleRecipients(state.recipients, internal) } : { recipients: [], loading: true };
     const toggle = (userId) => {
       const next = selected.includes(userId) ? selected.filter((id) => id !== userId) : [...selected, userId];
@@ -1499,18 +1501,19 @@ var __awPlugin = (() => {
       onChange(next);
     };
     if (!projectId) return null;
+    if (!open) return /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link aw-mentions__open", disabled, onClick: () => setOpen(true), children: "Notify people\u2026" });
     return /* @__PURE__ */ jsxs("fieldset", { className: "aw-mentions", disabled: disabled || current.loading, children: [
       /* @__PURE__ */ jsx("legend", { children: "Notify people about this note" }),
       /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
         "Email contains a link, not the note. ",
         internal ? "Only trusted developers can receive internal notes." : "Clients can receive public notes."
       ] }),
-      current.loading ? /* @__PURE__ */ jsx("p", { role: "status", children: "Loading project people\u2026" }) : null,
-      current.error ? /* @__PURE__ */ jsxs("p", { role: "alert", children: [
+      current.loading ? /* @__PURE__ */ jsx("p", { className: "aw-empty", role: "status", children: "Loading project people\u2026" }) : null,
+      current.error ? /* @__PURE__ */ jsxs("p", { className: "aw-empty", role: "alert", children: [
         "Could not load project people. ",
         /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setVersion((value) => value + 1), children: "Retry loading people" })
       ] }) : null,
-      !current.loading && !current.error && !current.recipients.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No eligible project people." }) : null,
+      !current.loading && !current.error && !current.recipients.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No eligible project people." }) : null,
       current.recipients.map((person) => /* @__PURE__ */ jsxs("label", { className: "aw-check", children: [
         /* @__PURE__ */ jsx("input", { type: "checkbox", checked: selected.includes(person.userId), disabled: disabled || !selected.includes(person.userId) && selected.length >= 25, onChange: () => toggle(person.userId) }),
         /* @__PURE__ */ jsxs("span", { children: [
@@ -1550,15 +1553,16 @@ var __awPlugin = (() => {
     approved: [["new", "Hold", "ghost"]],
     review: [
       ["done", "Mark done", "primary"],
-      ["approved", "Queue another run", "ghost"]
+      ["approved", RUN_AGAIN, "ghost"]
     ],
-    done: [["approved", "Queue another run", "ghost"]],
+    done: [["approved", RUN_AGAIN, "ghost"]],
     declined: [["new", "Reopen", "ghost"]]
   };
   function TicketView({ id, active, details = true }) {
     const { api, act } = useAdmin();
     const [{ ticket, messages, runs, review, screenshots, land, error, loading, fetchedAt }, reload] = useTicket(api, id);
     const meter = useMeter(api, ticket, active);
+    const [replyAt, setReplyAt] = useState(0);
     if (loading && !ticket) return /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
       "Loading #",
       id,
@@ -1590,7 +1594,10 @@ var __awPlugin = (() => {
             ] }),
             /* @__PURE__ */ jsx("span", { children: ticket.project_name ?? "no project" }),
             /* @__PURE__ */ jsxs("span", { children: [
-              isClient ? `${ticket.client_name ? `${ticket.client_name} \xB7 ` : ""}${ticket.client_email}` : "your task",
+              isClient ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                ticket.client_name ? `${ticket.client_name} \xB7 ` : "",
+                /* @__PURE__ */ jsx("a", { className: "aw-mailto", href: `mailto:${ticket.client_email}`, children: ticket.client_email })
+              ] }) : MINE_LABEL,
               via ? /* @__PURE__ */ jsxs(Fragment2, { children: [
                 " ",
                 /* @__PURE__ */ jsx(Tag, { title: assistantBadgeTitle(ticket), children: via })
@@ -1606,11 +1613,12 @@ var __awPlugin = (() => {
             ] }) : null
           ] }),
           /* @__PURE__ */ jsx("h2", { title: ticket.title_en ? `Original: ${ticket.title}` : void 0, children: ticket.title_en || ticket.title }),
-          ticket.client_waiting_since && ticket.status !== "new" ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
+          clientWaiting(ticket) ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
             "The client wrote ",
             ago(ticket.client_waiting_since),
             " ago and is waiting for an answer.",
             /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+            /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => setReplyAt(Date.now()), children: "Reply" }),
             /* @__PURE__ */ jsx(
               Button,
               {
@@ -1623,17 +1631,18 @@ var __awPlugin = (() => {
           ] }) : null,
           details ? null : /* @__PURE__ */ jsx("div", { className: "aw-ticket__quick", children: /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload }) })
         ] }),
-        /* @__PURE__ */ jsx(
+        ticket.status === "review" ? /* @__PURE__ */ jsx(
           ReviewCard,
           {
             review,
+            ticket,
+            runs,
             latestRunId: sortedRuns(runs)[0]?.id,
             screenshots: screenshots.filter((shot) => review?.runId != null && String(shot.runId) === String(review.runId))
           }
-        ),
-        /* @__PURE__ */ jsx(RecordedEvidence, { runs, review, screenshots }, `evidence-${ticket.id}`),
+        ) : null,
         /* @__PURE__ */ jsx(Timeline, { ticket, messages, runs }, `timeline-${ticket.id}`),
-        /* @__PURE__ */ jsx(Composer, { ticket, onSent: reload }, ticket.id)
+        /* @__PURE__ */ jsx(Composer, { ticket, onSent: reload, replyAt }, ticket.id)
       ] }),
       details ? /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload }) : null
     ] });
@@ -1642,11 +1651,11 @@ var __awPlugin = (() => {
     const { api, setStatus, act, ask } = useAdmin();
     const live = runs.find((r) => r.status === "running");
     const move = (s) => {
-      if (s === "approved" && ticket.status !== "new") {
+      if (s === "approved" && ticket.status !== "new" && ticket.kind !== "system") {
         ask({
-          title: `Queue another run for #${ticket.id}?`,
-          text: "This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.",
-          confirm: "Queue another run",
+          title: `${RUN_AGAIN} for #${ticket.id}?`,
+          text: REQUEUE_WARNING,
+          confirm: RUN_AGAIN,
           run: () => act(() => api("PATCH", `/admin/tickets/${ticket.id}`, { status: "approved" })).then(reload)
         });
         return;
@@ -1662,7 +1671,13 @@ var __awPlugin = (() => {
         {
           kind: "danger",
           size: "sm",
-          onClick: () => act(() => api("POST", `/admin/runs/${live.id}/cancel`), "Stopping the run; it goes to review.").then(reload, () => void 0),
+          onClick: () => ask({
+            title: "Stop this run?",
+            text: "The agent stops now; its partial work stays on the branch.",
+            confirm: "Stop run",
+            danger: true,
+            run: () => act(() => api("POST", `/admin/runs/${live.id}/cancel`), "Stopping the run; it goes to review.").then(reload, () => void 0)
+          }),
           children: "Stop run"
         }
       ) : null,
@@ -1689,7 +1704,6 @@ var __awPlugin = (() => {
           children: "Land on main"
         }
       ) : null,
-      /* @__PURE__ */ jsx(ReviewButton, { ticket, runs }),
       land?.requestedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-running", children: [
         /* @__PURE__ */ jsx("span", { className: "aw-live" }),
         " landing\u2026"
@@ -1702,7 +1716,7 @@ var __awPlugin = (() => {
       ] }) : null
     ] });
   }
-  function ReviewCard({ review, latestRunId, screenshots = [] }) {
+  function ReviewCard({ review, ticket, runs, latestRunId, screenshots = [] }) {
     if (!review) return null;
     const tone2 = review.verdict === "pass" ? "ok" : review.verdict === "attention" ? "warn" : "bad";
     const label = review.verdict === "pass" ? "pass" : review.verdict === "attention" ? "check" : "fail";
@@ -1730,12 +1744,13 @@ var __awPlugin = (() => {
       ] }, `${shot.runId}-${shot.kind}`)) }) : null,
       /* @__PURE__ */ jsxs("footer", { children: [
         review.buildOk == null ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "build result unknown" }) : review.buildOk ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "build passed" }) : /* @__PURE__ */ jsx(Tag, { tone: "bad", children: "build failed" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "A cheap agent's read; you still decide." })
+        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "A cheap agent's read; you still decide." }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(ReviewButton, { ticket, runs })
       ] })
     ] });
   }
   function Timeline({ ticket, messages, runs }) {
-    const [diff, setDiff] = useState(null);
     const items = [
       ...messages.filter((m) => m.author !== "runner").map((m) => ({ at: m.created_at, kind: "msg", m })),
       ...runs.map((r) => ({ at: r.started_at, kind: "run", r }))
@@ -1746,15 +1761,12 @@ var __awPlugin = (() => {
     const seq = (x) => x.kind === "msg" ? x.m.id : x.r.id;
     items.sort((a, b) => a.at - b.at || rank(a) - rank(b) || seq(a) - seq(b));
     const latest = items[items.length - 1];
-    return /* @__PURE__ */ jsxs("ol", { className: "aw-timeline", children: [
-      items.map(
-        (item) => item.kind === "run" ? /* @__PURE__ */ jsx(RunCard, { run: item.r, latest: item === latest, onDiff: () => setDiff(item.r) }, `r${item.r.id}`) : item.m.author === "system" ? /* @__PURE__ */ jsxs("li", { className: "aw-event", children: [
-          /* @__PURE__ */ jsx("span", { children: item.m.body }),
-          /* @__PURE__ */ jsx("time", { children: when(item.m.created_at) })
-        ] }, `m${item.m.id}`) : /* @__PURE__ */ jsx(Message, { ticket, m: item.m, latest: item === latest }, `m${item.m.id}`)
-      ),
-      diff ? /* @__PURE__ */ jsx(Modal, { title: `Run ${diff.id}: changes`, subtitle: `Recorded evidence for run #${diff.id}${diff.branch ? ` \xB7 branch ${diff.branch} is mutable` : ""}; not the current repository state`, onClose: () => setDiff(null), wide: true, children: /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: recordedPatch(diff) ?? "No patch or statistics recorded." }) }) : null
-    ] });
+    return /* @__PURE__ */ jsx("ol", { className: "aw-timeline", children: items.map(
+      (item) => item.kind === "run" ? /* @__PURE__ */ jsx(RunCard, { run: item.r, latest: item === latest }, `r${item.r.id}`) : item.m.author === "system" ? /* @__PURE__ */ jsxs("li", { className: "aw-event", children: [
+        /* @__PURE__ */ jsx("span", { children: item.m.body }),
+        /* @__PURE__ */ jsx("time", { children: when(item.m.created_at) })
+      ] }, `m${item.m.id}`) : /* @__PURE__ */ jsx(Message, { ticket, m: item.m, latest: item === latest }, `m${item.m.id}`)
+    ) });
   }
   var isLong = (text) => (text ?? "").length > 320 || (text ?? "").split("\n").length > 6;
   function useFold(text, latest) {
@@ -1896,7 +1908,7 @@ var __awPlugin = (() => {
       live ? null : /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", style: { fontSize: 12 }, onClick: () => setOpen(false), children: "Hide steps" })
     ] });
   }
-  function RunCard({ run, latest, onDiff }) {
+  function RunCard({ run, latest }) {
     const live = run.status === "running";
     const summary = run.summary ?? "";
     const fold = useFold(summary, latest);
@@ -1931,7 +1943,6 @@ var __awPlugin = (() => {
       /* @__PURE__ */ jsxs("footer", { children: [
         fold.long ? /* @__PURE__ */ jsx(FoldMore, { fold, text: summary }) : null,
         run.diff_stat ? /* @__PURE__ */ jsx("code", { className: "aw-muted", children: run.diff_stat.split("\n").pop() }) : null,
-        recordedPatch(run) ? /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", onClick: onDiff, children: "View changes" }) : null,
         run.shared_to === "origin" ? /* @__PURE__ */ jsxs(Tag, { tone: "ok", title: "The next run starts from it on any node", children: [
           "pushed \xB7 ",
           run.shared_ref
@@ -1980,7 +1991,7 @@ var __awPlugin = (() => {
       state.error ? /* @__PURE__ */ jsx("span", { className: "aw-warn", children: state.error }) : null
     ] });
   }
-  function Composer({ ticket, onSent }) {
+  function Composer({ ticket, onSent, replyAt = 0 }) {
     const { api, act, ask, notify, files: host } = useAdmin();
     const isClient = ticket.kind !== "system";
     const [mode, setMode] = useState(isClient ? "note" : "note");
@@ -1993,8 +2004,25 @@ var __awPlugin = (() => {
     const [mentionJobs, setMentionJobs] = useState([]);
     const [mentionVersion, setMentionVersion] = useState(0);
     const picker = useRef(null);
+    const body = useRef(null);
     const note = mode === "note" || !isClient;
     const canRerun = ["review", "done", "approved", "new"].includes(ticket.status);
+    useEffect(() => {
+      if (!replyAt) return;
+      setMode("reply");
+      body.current?.focus();
+    }, [replyAt]);
+    useEffect(() => {
+      const el = body.current;
+      if (!el) return;
+      el.style.height = "auto";
+      const style = getComputedStyle(el);
+      const line = parseFloat(style.lineHeight) || 18;
+      const frame = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      const max = line * 12 + frame;
+      el.style.height = `${Math.min(el.scrollHeight, max)}px`;
+      el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
+    }, [text]);
     const checkMention = async (job, saved) => {
       setMentionJobs((previous) => previous.map((value) => value.key === job.key ? { ...value, status: "checking" } : value));
       try {
@@ -2006,16 +2034,16 @@ var __awPlugin = (() => {
     };
     const send = async (rerun) => {
       if (submission.current.busy || submission.current.pendingQueue) return;
-      const body = text.trim();
-      if (!body && !picked.length) return;
+      const body2 = text.trim();
+      if (!body2 && !picked.length) return;
       const save = async () => {
         if (picked.length) {
           const form = new FormData();
-          form.append("body", body);
+          form.append("body", body2);
           form.append("internal", String(note));
           for (const file of picked) form.append("files", file);
           return host.upload(`/admin/tickets/${ticket.id}/messages`, form);
-        } else return api("POST", `/admin/tickets/${ticket.id}/messages`, { body, internal: note });
+        } else return api("POST", `/admin/tickets/${ticket.id}/messages`, { body: body2, internal: note });
       };
       const go = async () => {
         if (submission.current.busy || submission.current.pendingQueue) return;
@@ -2031,7 +2059,7 @@ var __awPlugin = (() => {
               if (picker.current) picker.current.value = "";
               void onSent();
               if (recipientUserIds.length) {
-                const job = { key: globalThis.crypto.randomUUID(), messageId: saved?.messageId, deliver: createMentionDelivery({ api, projectId: ticket.project_id, ticketId: ticket.id, recipientUserIds }), status: "checking" };
+                const job = { key: globalThis.crypto.randomUUID(), messageId: saved?.messageId, count: recipientUserIds.length, deliver: createMentionDelivery({ api, projectId: ticket.project_id, ticketId: ticket.id, recipientUserIds }), status: "checking" };
                 setMentionJobs((previous) => [...previous, job]);
                 void checkMention(job, saved);
               }
@@ -2083,7 +2111,8 @@ var __awPlugin = (() => {
       /* @__PURE__ */ jsx(
         "textarea",
         {
-          rows: 4,
+          ref: body,
+          rows: 3,
           value: text,
           disabled: busy,
           placeholder: note ? "Steer the agent: what to change, what to avoid, how to check\u2026" : "Write to the client\u2026",
@@ -2098,18 +2127,23 @@ var __awPlugin = (() => {
       ),
       /* @__PURE__ */ jsx(MentionRecipients, { api, projectId: ticket.project_id, onChange: setRecipientUserIds, disabled: busy, internal: note }, mentionVersion),
       mentionJobs.map((job) => /* @__PURE__ */ jsxs("div", { role: "status", className: "aw-muted", children: [
-        "Message #",
-        job.messageId ?? "unknown",
-        " saved. ",
-        job.status === "checking" ? "Checking notification delivery\u2026" : job.error ? `Notification status unavailable: ${errorText(job.error)}` : job.result?.ok ? "All selected notification emails sent." : "Some notifications were not confirmed sent.",
-        job.result?.deliveries?.map((delivery) => /* @__PURE__ */ jsxs("p", { children: [
-          "Recipient #",
-          delivery.userId,
-          ": ",
-          delivery.status === "sent" ? "Email sent" : delivery.status === "failed" ? "Email could not be sent" : delivery.status === "sending" ? "Delivery status unknown" : delivery.status === "cancelled" ? "Notification cancelled" : "Delivery pending",
-          "."
-        ] }, delivery.userId)),
-        job.status !== "checking" && (job.error || !job.result?.ok) ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void checkMention(job), children: "Check notification status" }) : null
+        job.status === "checking" ? `Notifying ${job.count}\u2026` : job.error ? `Notified ${job.count} \xB7 status unknown` : `Notified ${job.count}${job.result?.ok ? "" : " \xB7 some not confirmed"}`,
+        job.status === "checking" ? null : job.error || !job.result?.ok ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void checkMention(job), children: "Check notification status" }) : null,
+        job.result?.deliveries?.length ? /* @__PURE__ */ jsxs("details", { className: "aw-notified", children: [
+          /* @__PURE__ */ jsx("summary", { children: "Details" }),
+          /* @__PURE__ */ jsxs("p", { children: [
+            "Message #",
+            job.messageId ?? "unknown",
+            " saved."
+          ] }),
+          job.result.deliveries.map((delivery) => /* @__PURE__ */ jsxs("p", { children: [
+            "Recipient #",
+            delivery.userId,
+            ": ",
+            delivery.status === "sent" ? "Email sent" : delivery.status === "failed" ? "Email could not be sent" : delivery.status === "sending" ? "Delivery status unknown" : delivery.status === "cancelled" ? "Notification cancelled" : "Delivery pending",
+            "."
+          ] }, delivery.userId))
+        ] }) : null
       ] }, job.key)),
       sendError ? /* @__PURE__ */ jsxs("p", { role: "alert", className: "aw-error", children: [
         submission.current.pendingQueue ? "Message saved. Queue failed; retry queues only, without another message. " : "Message was not saved. ",
@@ -2258,63 +2292,63 @@ var __awPlugin = (() => {
     const price = billOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0, firstPreview: Boolean(ticket.first_preview) });
     return /* @__PURE__ */ jsxs("aside", { className: cx("aw-details", page && "aw-details--page"), "aria-label": "Details", children: [
       /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload }),
-      /* @__PURE__ */ jsx(SitePanel, { project: data.projects.find((p) => p.id === ticket.project_id) }),
-      /* @__PURE__ */ jsx(Field, { label: "Status", children: /* @__PURE__ */ jsx("select", { value: ticket.status, onChange: (e) => void setStatus(ticket, e.target.value).then(reload), children: STATUSES.map((s) => /* @__PURE__ */ jsx("option", { value: s, children: STATUS_LABEL[s] }, s)) }) }),
-      /* @__PURE__ */ jsx(Field, { label: "Project", children: /* @__PURE__ */ jsxs("select", { value: ticket.project_id ?? "", onChange: (e) => void patch({ projectId: e.target.value || null }, "Project saved."), children: [
-        /* @__PURE__ */ jsx("option", { value: "", children: "No project" }),
-        data.projects.map((p) => /* @__PURE__ */ jsx("option", { value: p.id, children: p.name }, p.id))
-      ] }) }),
-      /* @__PURE__ */ jsx(Field, { label: "Site", children: /* @__PURE__ */ jsxs("select", { value: ticket.site_id ?? "", onChange: (e) => void patch({ siteId: e.target.value || null }, "Site saved."), children: [
-        /* @__PURE__ */ jsx("option", { value: "", children: "Main site" }),
-        projectSites.map((s) => /* @__PURE__ */ jsx("option", { value: s.id, children: s.name || s.slug }, s.id))
-      ] }) }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-details__pair", children: [
+        /* @__PURE__ */ jsx(Field, { label: "Project", children: /* @__PURE__ */ jsxs("select", { value: ticket.project_id ?? "", onChange: (e) => void patch({ projectId: e.target.value || null }, "Project saved."), children: [
+          /* @__PURE__ */ jsx("option", { value: "", children: "No project" }),
+          data.projects.map((p) => /* @__PURE__ */ jsx("option", { value: p.id, children: p.name }, p.id))
+        ] }) }),
+        /* @__PURE__ */ jsx(Field, { label: "Site", children: /* @__PURE__ */ jsxs("select", { value: ticket.site_id ?? "", onChange: (e) => void patch({ siteId: e.target.value || null }, "Site saved."), children: [
+          /* @__PURE__ */ jsx("option", { value: "", children: "Main site" }),
+          projectSites.map((s) => /* @__PURE__ */ jsx("option", { value: s.id, children: s.name || s.slug }, s.id))
+        ] }) })
+      ] }),
       /* @__PURE__ */ jsx(Field, { label: "Priority", children: /* @__PURE__ */ jsx(Segmented, { value: ticket.priority ?? 0, options: PRIORITIES, onChange: (v) => void patch({ priority: v }, "Priority saved.") }) }),
-      /* @__PURE__ */ jsx(Field, { label: "Agent", hint: "Auto lets Flash pick: Flash for everyday work, Opus for hard work.", children: /* @__PURE__ */ jsx(
-        Segmented,
+      /* @__PURE__ */ jsx(Field, { label: "Agent", hint: agentOptions(ticket.executor).find((a) => a.value === (ticket.executor ?? null))?.hint, children: /* @__PURE__ */ jsx(
+        "select",
         {
-          value: ticket.executor ?? null,
-          options: agentOptions(ticket.executor),
-          onChange: (v) => void patch({ executor: v }, `Agent: ${AGENTS.find((a) => a.value === v)?.label ?? v ?? "auto"}.`)
+          value: ticket.executor ?? "",
+          onChange: (e) => {
+            const v = e.target.value || null;
+            void patch({ executor: v }, `Agent: ${AGENTS.find((a) => a.value === v)?.label ?? v ?? "auto"}.`);
+          },
+          children: agentOptions(ticket.executor).map((a) => /* @__PURE__ */ jsx("option", { value: a.value ?? "", title: a.hint, children: a.label }, String(a.value)))
         }
       ) }),
-      caps.length ? /* @__PURE__ */ jsx(Field, { label: "Needs", children: /* @__PURE__ */ jsx(Chips, { value: requires, options: caps.map((c) => ({ value: c.id, label: c.label, hint: c.hint })), onChange: (v) => void patch({ requires: v }, "Saved.") }) }) : null,
       ["approved", "new"].includes(ticket.status) ? /* @__PURE__ */ jsxs("p", { className: `aw-predict aw-predict--${queued && !queued.eligible.length ? "bad" : where.state}`, children: [
         /* @__PURE__ */ jsx(Dot, { state: queued && !queued.eligible.length ? "bad" : where.state }),
         " ",
         queued?.reason ?? where.text
       ] }) : null,
-      isClient ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-        /* @__PURE__ */ jsx(Field, { label: "Attention", children: /* @__PURE__ */ jsx("select", { value: ticket.attention, onChange: (e) => void patch({ attention: e.target.value }, "Attention saved."), children: ATTENTION.map((a) => /* @__PURE__ */ jsx("option", { value: a.key, children: a.name }, a.key)) }) }),
-        /* @__PURE__ */ jsx(Field, { label: "Budget", children: /* @__PURE__ */ jsx(BudgetInput, { cents: ticket.budget_cents, onSave: (budgetCents) => void patch({ budgetCents }, "Budget saved.") }) })
-      ] }) : null,
-      /* @__PURE__ */ jsxs("div", { className: "aw-cost", children: [
-        /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: "Your time" }),
-          /* @__PURE__ */ jsx("strong", { children: clock(meter.seconds) }),
-          /* @__PURE__ */ jsx("small", { className: "aw-muted", children: !meter.open ? "meter closed" : meter.running ? "meter running" : "meter paused" })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: "AI" }),
-          /* @__PURE__ */ jsx("strong", { children: usd(ticket.ai_micro_usd ?? 0) })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: ticket.first_preview ? "First preview" : ticket.price_cents != null ? "Billed" : "So far" }),
-          /* @__PURE__ */ jsx("strong", { children: ticket.first_preview ? "on us" : money(ticket.price_cents ?? price.totalCents) }),
-          ticket.first_preview ? /* @__PURE__ */ jsxs("small", { className: "aw-muted", children: [
-            "client billed ",
-            money(0)
-          ] }) : null
-        ] }),
-        /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", onClick: () => setFixing(true), children: "Correct time\u2026" })
+      /* @__PURE__ */ jsxs("details", { className: "aw-details__more", children: [
+        /* @__PURE__ */ jsx("summary", { children: "More" }),
+        /* @__PURE__ */ jsx(Field, { label: "Change status", children: /* @__PURE__ */ jsx("select", { value: ticket.status, onChange: (e) => void setStatus(ticket, e.target.value).then(reload), children: STATUSES.filter((s) => s !== "approved" || ticket.status === "approved").map((s) => /* @__PURE__ */ jsx("option", { value: s, children: STATUS_LABEL[s] }, s)) }) }),
+        /* @__PURE__ */ jsx(SitePanel, { project: data.projects.find((p) => p.id === ticket.project_id) }),
+        isClient ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Field, { label: "Attention", children: /* @__PURE__ */ jsx("select", { value: ticket.attention, onChange: (e) => void patch({ attention: e.target.value }, "Attention saved."), children: ATTENTION.map((a) => /* @__PURE__ */ jsx("option", { value: a.key, children: a.name }, a.key)) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Budget", children: /* @__PURE__ */ jsx(BudgetInput, { cents: ticket.budget_cents, onSave: (budgetCents) => void patch({ budgetCents }, "Budget saved.") }) })
+        ] }) : null,
+        caps.length ? /* @__PURE__ */ jsx(Field, { label: "Needs", children: /* @__PURE__ */ jsx(Chips, { value: requires, options: caps.map((c) => ({ value: c.id, label: c.label, hint: c.hint })), onChange: (v) => void patch({ requires: v }, "Saved.") }) }) : null,
+        /* @__PURE__ */ jsxs("div", { className: "aw-cost", children: [
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: "Your time" }),
+            /* @__PURE__ */ jsx("strong", { children: clock(meter.seconds) }),
+            /* @__PURE__ */ jsx("small", { className: "aw-muted", children: !meter.open ? "meter closed" : meter.running ? "meter running" : "meter paused" })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: "AI" }),
+            /* @__PURE__ */ jsx("strong", { children: usd(ticket.ai_micro_usd ?? 0) })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: ticket.first_preview ? "First preview" : ticket.price_cents != null ? "Billed" : "So far" }),
+            /* @__PURE__ */ jsx("strong", { children: ticket.first_preview ? "on us" : money(ticket.price_cents ?? price.totalCents) }),
+            ticket.first_preview ? /* @__PURE__ */ jsxs("small", { className: "aw-muted", children: [
+              "client billed ",
+              money(0)
+            ] }) : null
+          ] }),
+          /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", onClick: () => setFixing(true), children: "Correct time\u2026" })
+        ] })
       ] }),
-      /* @__PURE__ */ jsx("h4", { className: "aw-details__h", children: "Runs" }),
-      /* @__PURE__ */ jsx("ul", { className: "aw-runlist", children: runs.length ? [...runs].reverse().map((r) => /* @__PURE__ */ jsxs("li", { children: [
-        r.status === "running" ? /* @__PURE__ */ jsx("span", { className: "aw-live" }) : /* @__PURE__ */ jsx(Dot, { state: r.status === "ok" ? "ok" : "bad" }),
-        /* @__PURE__ */ jsx("span", { children: r.executor }),
-        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: r.node_id ?? "Harness" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: usd(r.cost_micro_usd) })
-      ] }, r.id)) : /* @__PURE__ */ jsx("li", { className: "aw-muted", children: "No runs yet" }) }),
       fixing ? /* @__PURE__ */ jsx(
         TimeModal,
         {
@@ -2359,6 +2393,106 @@ var __awPlugin = (() => {
     );
   }
 
+  // packages/admin-ui/src/health.jsx
+  var tone = (status) => status === "ok" ? "ok" : status === "fail" ? "bad" : "warn";
+  function CheckRow({ check }) {
+    return /* @__PURE__ */ jsxs("li", { className: cx("aw-health__row", `aw-health__row--${tone(check.status)}`), children: [
+      /* @__PURE__ */ jsx(Dot, { state: tone(check.status) }),
+      /* @__PURE__ */ jsx("strong", { className: "aw-health__name", children: check.label }),
+      /* @__PURE__ */ jsx("span", { className: "aw-health__detail aw-muted", title: check.detail, children: check.detail }),
+      /* @__PURE__ */ jsxs("span", { className: "aw-health__meta aw-muted", children: [
+        check.status === "skip" ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "skipped" }) : null,
+        check.failingSince ? /* @__PURE__ */ jsxs(Tag, { tone: "bad", children: [
+          "failing ",
+          ago(check.failingSince)
+        ] }) : null,
+        check.latencyMs !== null ? `${check.latencyMs} ms \xB7 ` : "",
+        ago(check.checkedAt)
+      ] })
+    ] });
+  }
+  function HealthView({ compact = false }) {
+    const { api, act } = useAdmin();
+    const [state, setState] = useState({ loading: true, checks: [], failing: 0, ranAt: null, error: null });
+    const [busy, setBusy] = useState(false);
+    const load = useCallback(
+      () => api("GET", "/admin/health").then((d) => setState({ loading: false, checks: d.checks ?? [], failing: d.failing ?? 0, ranAt: d.ranAt ?? null, error: null })).catch((error) => setState((s) => ({ ...s, loading: false, error }))),
+      [api]
+    );
+    useEffect(() => {
+      void load();
+      const id = setInterval(() => {
+        if (typeof document === "undefined" || document.visibilityState === "visible") void load();
+      }, 15e3);
+      return () => clearInterval(id);
+    }, [load]);
+    const runNow = /* @__PURE__ */ jsx(
+      Button,
+      {
+        size: "sm",
+        disabled: busy,
+        onClick: () => {
+          setBusy(true);
+          void act(() => api("POST", "/admin/health/run"), "Checks rerun.").then(load, load).finally(() => setBusy(false));
+        },
+        children: busy ? "Running\u2026" : "Run now"
+      }
+    );
+    const failing = state.checks.filter((c) => c.status === "fail");
+    const passing = state.checks.filter((c) => c.status !== "fail");
+    const okCount = state.checks.filter((c) => c.status === "ok").length;
+    const list2 = (checks) => /* @__PURE__ */ jsx("ul", { className: "aw-health__list", children: checks.map((check) => /* @__PURE__ */ jsx(CheckRow, { check }, check.name)) });
+    const body = /* @__PURE__ */ jsxs(Fragment2, { children: [
+      state.error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: state.error.message ?? "Could not read the checks." }) : null,
+      state.loading ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Reading health checks\u2026" }) : null,
+      !state.loading && !state.error && !state.checks.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No checks reported" }) : null,
+      compact ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        failing.length ? list2(failing) : null,
+        passing.length ? /* @__PURE__ */ jsxs("details", { className: "aw-health__pass", children: [
+          /* @__PURE__ */ jsxs("summary", { children: [
+            passing.length,
+            " passing"
+          ] }),
+          list2(passing)
+        ] }) : null
+      ] }) : list2(state.checks)
+    ] });
+    if (compact) {
+      return /* @__PURE__ */ jsxs("section", { className: "aw-group aw-health--compact", children: [
+        /* @__PURE__ */ jsxs("header", { className: "aw-row-h aw-health__summary", title: "Every check runs every five minutes. A failing check mails you once, and again when it recovers.", children: [
+          /* @__PURE__ */ jsx(Dot, { state: state.loading || state.error ? "warn" : failing.length ? "bad" : "ok" }),
+          /* @__PURE__ */ jsx("h3", { children: "Health" }),
+          !state.loading && !state.error && state.checks.length ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            okCount,
+            " of ",
+            state.checks.length,
+            " ok",
+            state.ranAt ? ` \xB7 last run ${ago(state.ranAt)} ago` : ""
+          ] }) : null,
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          runNow
+        ] }),
+        body
+      ] });
+    }
+    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-health", children: [
+      /* @__PURE__ */ jsxs("header", { className: "aw-hero aw-health__head", children: [
+        /* @__PURE__ */ jsx("h2", { children: "Health" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        !state.loading && !state.error && state.checks.length ? state.failing ? /* @__PURE__ */ jsxs(Tag, { tone: "bad", children: [
+          state.failing,
+          " failing"
+        ] }) : /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "all green" }) : null,
+        runNow
+      ] }),
+      /* @__PURE__ */ jsxs("p", { className: "aw-muted aw-health__intro", children: [
+        "Every check runs every five minutes. A failing check mails you once, and mails again only when it recovers.",
+        state.ranAt ? ` Last run ${ago(state.ranAt)} ago.` : null
+      ] }),
+      body
+    ] });
+  }
+
   // packages/admin-ui/src/machine.jsx
   var CONSENT_VERSION = 1;
   var LEND = {
@@ -2372,6 +2506,20 @@ var __awPlugin = (() => {
     devin: { label: "Devin CLI", plan: "Devin on its own login", note: "billed to the Devin account" }
   };
   var lendLabel = (e) => LEND[e]?.label ?? e;
+  var DEFER_LENDING_KEY = "aw.deferMachineLending";
+  var lendingDeferred = () => {
+    try {
+      return globalThis.sessionStorage?.getItem(DEFER_LENDING_KEY) === "1";
+    } catch {
+      return false;
+    }
+  };
+  var deferLending = () => {
+    try {
+      globalThis.sessionStorage?.setItem(DEFER_LENDING_KEY, "1");
+    } catch {
+    }
+  };
   var DEFAULT_LEND = ["dsh-go", "dsh-claude", "dsh", "dsh-devin"];
   var STATE_DOT = { working: "ok", ready: "ok", pausing: "warn", paused: "warn", off: "bad", unset: null };
   var HINT = {
@@ -2503,10 +2651,23 @@ var __awPlugin = (() => {
       }
       if (!serviceUp) await hostMust(`node ${svc?.loaded ? "start" : "install"}`);
     }, "This Mac is a fleet worker now. Pause it any time from the header.");
-    const decline = () => act(async () => {
-      await saveConsent({ acceptedAt: consent?.acceptedAt ?? null, declinedAt: nowSec(), lend: consent?.lend ?? [] });
-      if (node) await api("PATCH", `/admin/nodes/${node.id}`, { draining: true }).catch(() => void 0);
-    }, "Noted. This Mac takes no new work.").then(refresh, () => void 0);
+    const decline = async () => {
+      try {
+        await act(async () => {
+          if (node) await api("PATCH", `/admin/nodes/${node.id}`, { draining: true });
+          await saveConsent({ acceptedAt: consent?.acceptedAt ?? null, declinedAt: nowSec(), lend: consent?.lend ?? [] });
+        }, "Noted. This Mac takes no new work.");
+      } finally {
+        refresh();
+      }
+    };
+    const withdraw = () => ask({
+      title: "Stop lending this Mac?",
+      text: "Running work finishes; nothing new starts here.",
+      confirm: "Stop lending",
+      danger: true,
+      run: () => decline().catch(() => void 0)
+    });
     const offered = notEmpty(node?.executors) ?? notEmpty(read.info?.localConfig?.executors) ?? DEFAULT_LEND;
     const lending = consent?.lend ?? notEmpty(node?.executors) ?? [];
     const signedOut = Boolean(data.error && ["unauthorized", "signed_out", "forbidden"].includes(data.error.code));
@@ -2535,6 +2696,7 @@ var __awPlugin = (() => {
       setLend,
       accept,
       decline,
+      withdraw,
       refresh,
       signedOut
     };
@@ -2544,19 +2706,22 @@ var __awPlugin = (() => {
     return names || "nothing";
   };
   var pillText = (m) => {
+    if (m.consentError) return "This Mac: lending record unavailable";
+    if (!m.loaded) return "Checking this Mac\u2026";
+    const prefix = "This Mac: ";
     switch (m.state) {
       case "working":
-        return `working ${m.running.length}/${m.slots} \xB7 ${lendNames(m)}`;
+        return `${prefix}${m.running.length} of ${m.slots} runs busy \xB7 ${lendNames(m)}`;
       case "pausing":
-        return `pausing ${m.running.length}/${m.slots}`;
+        return `${prefix}pausing \xB7 ${m.running.length} of ${m.slots} runs busy`;
       case "paused":
-        return "paused";
+        return `${prefix}paused`;
       case "off":
-        return "off";
+        return `${prefix}off`;
       case "ready":
-        return `ready \xB7 ${lendNames(m)}`;
+        return `${prefix}ready \xB7 ${lendNames(m)}`;
       default:
-        return "not set up";
+        return `${prefix}not set up`;
     }
   };
   function PauseIcon({ size = 13 }) {
@@ -2566,12 +2731,11 @@ var __awPlugin = (() => {
     const m = useMachine();
     const { setModal } = useAdmin();
     if (!m.live) return null;
-    const open = () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(MachineModal, { m, onClose: close }) });
-    const toggle = m.state === "working" || m.state === "ready" ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "Pause: what is running finishes, nothing new starts", onClick: () => void m.pause(), children: /* @__PURE__ */ jsx(PauseIcon, {}) }) : m.state === "pausing" || m.state === "paused" ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "Resume: this Mac takes work again", onClick: () => void m.resume(), children: /* @__PURE__ */ jsx(Icon, { name: "play", size: 13 }) }) : null;
+    const open = () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(MachineModal, { onClose: close }) });
+    const toggle = !m.loaded || m.consentError ? null : m.state === "working" || m.state === "ready" ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "Pause: what is running finishes, nothing new starts", onClick: () => void m.pause(), children: /* @__PURE__ */ jsx(PauseIcon, {}) }) : m.consented && (m.state === "pausing" || m.state === "paused") ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "Resume: this Mac takes work again", onClick: () => void m.resume(), children: /* @__PURE__ */ jsx(Icon, { name: "play", size: 13 }) }) : null;
     return /* @__PURE__ */ jsxs("span", { className: "aw-mpillbar", children: [
-      /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-mpill", title: `${HINT[m.state] ?? ""} Click for the panel.`, onClick: open, children: [
+      /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-mpill", title: m.loaded && !m.consentError ? `${HINT[m.state] ?? ""} Click for the panel.` : "Open this Mac\u2019s worker panel", onClick: open, children: [
         /* @__PURE__ */ jsx(Dot, { state: STATE_DOT[m.state] }),
-        "This Mac: ",
         pillText(m)
       ] }),
       toggle
@@ -2579,13 +2743,19 @@ var __awPlugin = (() => {
   }
   function MachineOnboarding() {
     const m = useMachine();
-    const [dismissed, setDismissed] = useState(false);
+    const [dismissed, setDismissed] = useState(lendingDeferred);
     const show = m.live && m.loaded && !dismissed && !m.signedOut && !m.consentError && m.consent && !m.consent.acceptedAt && !m.consent.declinedAt;
     return show ? /* @__PURE__ */ jsx(OnboardingModal, { m, onClose: () => setDismissed(true) }) : null;
   }
   function OnboardingModal({ m, onClose }) {
-    const [lend, setLend] = useState(() => m.offered.slice());
+    const [lend, setLend] = useState(() => DEFAULT_LEND.slice());
+    const [showAll, setShowAll] = useState(false);
     const [busy, setBusy] = useState(false);
+    const options = showAll ? [.../* @__PURE__ */ new Set([...Object.keys(LEND), ...m.offered])] : DEFAULT_LEND;
+    const later = () => {
+      deferLending();
+      onClose();
+    };
     const go = async (fn) => {
       if (busy) return;
       setBusy(true);
@@ -2600,20 +2770,21 @@ var __awPlugin = (() => {
       Modal,
       {
         title: "Lend this Mac to the fleet?",
-        onClose: () => !busy && onClose(),
+        onClose: () => !busy && later(),
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: () => void go(() => m.decline()), children: "Not now" }),
+          /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: later, children: "Ask me later" }),
+          /* @__PURE__ */ jsx(Button, { disabled: busy, kind: "ghost", onClick: () => void go(m.decline), children: "Don't use this Mac" }),
           /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !lend.length, onClick: () => void go(() => m.accept(lend)), children: busy ? "Saving\u2026" : "Lend this Mac" })
         ] }),
         children: [
           /* @__PURE__ */ jsxs("p", { children: [
-            "When you approve a client ticket, a fleet worker picks it up. This Mac can be one: it works in its own checkout under",
+            "Lending lets the fleet run approved client work on this Mac. It works in its own checkout under",
             " ",
             /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "~/.cache/malipetek-runner" }),
             ", using CPU, battery and network, and every run is a Harness conversation saved on this machine. Only tickets you approved run here."
           ] }),
           /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Pick which subscriptions it may use. Each one runs tickets with that plan, and its usage counts against that plan\u2019s own limits." }),
-          /* @__PURE__ */ jsx("div", { className: "aw-mexes", children: m.offered.map((e) => /* @__PURE__ */ jsxs("label", { className: "aw-mexe", children: [
+          /* @__PURE__ */ jsx("div", { className: "aw-mexes", children: options.map((e) => /* @__PURE__ */ jsxs("label", { className: "aw-mexe", children: [
             /* @__PURE__ */ jsx(
               "input",
               {
@@ -2629,18 +2800,19 @@ var __awPlugin = (() => {
               LEND[e]?.note ?? "counts against that subscription"
             ] })
           ] }, e)) }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", "aria-expanded": showAll, onClick: () => setShowAll(!showAll), children: showAll ? "Show recommended agents" : "Show all agents" }),
           /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "You can pause it any time from the \u201CThis Mac\u201D pill in the header \u2014 running work finishes, nothing new starts \u2014 and lend or un-lend single subscriptions from the Fleet view." })
         ]
       }
     );
   }
-  function MachineModal({ m, onClose }) {
-    return /* @__PURE__ */ jsx(Modal, { title: "This Mac as a fleet worker", onClose, children: /* @__PURE__ */ jsx(MachinePanel, { m }) });
+  function MachineModal({ onClose }) {
+    return /* @__PURE__ */ jsx(Modal, { title: "This Mac as a fleet worker", onClose, children: /* @__PURE__ */ jsx(MachinePanel, {}) });
   }
   var stateLine = (m) => {
     switch (m.state) {
       case "working":
-        return `Working \u2014 ${m.running.length} of ${m.slots} slots busy, lending ${lendNames(m)}.`;
+        return `Working \u2014 ${m.running.length} of ${m.slots} runs busy, lending ${lendNames(m)}.`;
       case "pausing":
         return `Pausing \u2014 ${m.running.length} to finish, then nothing new.`;
       case "paused":
@@ -2650,14 +2822,20 @@ var __awPlugin = (() => {
       case "off":
         return `Off \u2014 the launchd service is ${m.svc?.state ?? "unknown"}${m.svc?.lastExit ? `, last exit ${m.svc.lastExit}` : ""}.`;
       default:
-        return "Not set up \u2014 no lending record yet. The worker runs by default once it is installed; say yes or no once.";
+        return "Not set up \u2014 no lending record yet.";
     }
   };
-  function MachinePanel({ m: given }) {
-    const own = useMachine();
-    const m = given ?? own;
+  function MachinePanel() {
+    const m = useMachine();
     const { openTicket, setModal } = useAdmin();
     if (!m.live) return null;
+    if (!m.loaded || m.consentError) return /* @__PURE__ */ jsxs("article", { className: "aw-node aw-machine", children: [
+      /* @__PURE__ */ jsx("header", { children: /* @__PURE__ */ jsx("h3", { children: "This Mac" }) }),
+      !m.loaded ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Checking this Mac\u2026" }) : /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+        /* @__PURE__ */ jsx("span", { className: "aw-warn", role: "alert", children: "Could not read the lending record" }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: m.refresh, children: "Retry" })
+      ] })
+    ] });
     const askAgain = () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(OnboardingModal, { m, onClose: close }) });
     return /* @__PURE__ */ jsxs("article", { className: cx("aw-node", "aw-machine", `aw-node--${STATE_DOT[m.state] ?? "warn"}`), children: [
       /* @__PURE__ */ jsxs("header", { children: [
@@ -2671,11 +2849,11 @@ var __awPlugin = (() => {
         ] }),
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
         m.state === "working" || m.state === "ready" ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void m.pause(), children: "Pause" }) : null,
-        m.state === "pausing" || m.state === "paused" ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void m.resume(), children: "Resume" }) : null,
+        m.consented && (m.state === "pausing" || m.state === "paused") ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void m.resume(), children: "Resume" }) : null,
         m.serviceUp ? /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", title: "Restart the worker service", onClick: () => void m.restart(), children: "Restart" }),
           /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => m.stopNow(), children: "Stop now" })
-        ] }) : /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => void m.start(), children: "Start" })
+        ] }) : m.consented ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => void m.start(), children: m.svc?.loaded ? "Start worker" : "Install worker" }) : null
       ] }),
       /* @__PURE__ */ jsx("p", { className: cx("aw-mstate", (m.state === "off" || m.state === "unset") && "aw-warn"), children: stateLine(m) }),
       m.error ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
@@ -2685,7 +2863,7 @@ var __awPlugin = (() => {
       m.consented ? /* @__PURE__ */ jsxs("dl", { className: "aw-kv", children: [
         /* @__PURE__ */ jsx("dt", { children: "Lends" }),
         /* @__PURE__ */ jsxs("dd", { children: [
-          /* @__PURE__ */ jsx("div", { className: "aw-mexes", children: m.offered.map((e) => {
+          /* @__PURE__ */ jsx("div", { className: "aw-mexes", children: [.../* @__PURE__ */ new Set([...DEFAULT_LEND, ...m.offered, ...m.lending])].map((e) => {
             const health = m.node?.health?.executors?.[e];
             const on = m.lending.includes(e);
             return /* @__PURE__ */ jsxs("label", { className: "aw-mexe", title: LEND[e]?.note ?? void 0, children: [
@@ -2725,16 +2903,13 @@ var __awPlugin = (() => {
         "Lent since ",
         when(m.consent.acceptedAt),
         ".",
-        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", title: "Record a no and drain the node; running work finishes", onClick: () => void m.decline(), children: "Withdraw consent" })
+        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", title: "Record a no and drain the node; running work finishes", onClick: m.withdraw, children: "Stop lending" })
       ] }) : m.consent?.declinedAt ? /* @__PURE__ */ jsxs(Fragment2, { children: [
         "Declined ",
         when(m.consent.declinedAt),
         m.consent.acceptedAt ? ` (previously lent ${when(m.consent.acceptedAt)})` : "",
         ".",
         /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: askAgain, children: "Lend this Mac\u2026" })
-      ] }) : m.consentError ? /* @__PURE__ */ jsxs("span", { className: "aw-warn", children: [
-        "The consent record could not be read: ",
-        m.consentError
       ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
         "No lending record yet.",
         /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: askAgain, children: "Decide now\u2026" })
@@ -2847,14 +3022,14 @@ var __awPlugin = (() => {
     const [busy, setBusy] = useState(false);
     const [adding, setAdding] = useState(false);
     const load = useCallback(async () => {
-      if (!host) return;
+      if (platform !== "dsh" || !host) return;
       try {
         setData(await host.json("toolbox list"));
         setError("");
       } catch (failure) {
         setError(failure.message);
       }
-    }, [host]);
+    }, [host, platform]);
     useEffect(() => {
       void load();
     }, [load]);
@@ -2882,19 +3057,19 @@ var __awPlugin = (() => {
       danger: true,
       run: () => void apply2(`toolbox remove-mcp ${JSON.stringify({ target, name })}`)
     });
-    if (platform !== "dsh" || !host) {
-      return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "MCP servers and skills on this machine are listed in the desktop app, where the files are." });
-    }
+    if (platform !== "dsh" || !host) return null;
     return /* @__PURE__ */ jsxs("div", { className: "aw-toolbox", children: [
       /* @__PURE__ */ jsxs("div", { className: "aw-toolbox__head", children: [
         /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Fleet agents on this machine use these." }),
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", disabled: busy, onClick: () => void load(), children: "Refresh" }),
         /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", disabled: busy || !data, onClick: () => setAdding(true), children: "Add MCP server" })
       ] }),
-      error ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
-        "Could not read the toolbox: ",
-        error
+      error ? /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+        /* @__PURE__ */ jsxs("p", { className: "aw-warn", role: "alert", children: [
+          "Could not read the toolbox: ",
+          error
+        ] }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void load(), children: "Retry" })
       ] }) : null,
       !data && !error ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Reading\u2026" }) : null,
       data?.warnings?.length ? /* @__PURE__ */ jsx("ul", { className: "aw-toolbox__warnings", children: data.warnings.map((warning) => /* @__PURE__ */ jsx("li", { className: "aw-warn", children: warning }, warning)) }) : null,
@@ -2932,6 +3107,5099 @@ var __awPlugin = (() => {
       ) : null
     ] });
   }
+
+  // packages/admin-ui/src/fleet.jsx
+  var pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+  var capabilityLabel = (id, caps) => caps.find((c) => c.id === id)?.label ?? ({
+    "os:darwin": "macOS",
+    "os:linux": "Linux",
+    "os:win32": "Windows"
+  }[id] ?? id.replace(/^os:/, ""));
+  function NodeCard({ node, local }) {
+    const { api, act, ask, data, setModal, openTicket } = useAdmin();
+    const caps = data.catalog?.capabilities ?? [];
+    const h = node.health ?? {};
+    const sys = h.system;
+    const state = !node.online ? "bad" : node.draining ? "warn" : "ok";
+    const machine = sys ? [
+      `load ${sys.load?.[0]?.toFixed?.(2) ?? "\u2014"} / ${sys.cpus} cpu`,
+      sys.memFreePct != null ? `${100 - sys.memFreePct}% mem` : null,
+      sys.disk ? `${pct(sys.disk.totalGb - sys.disk.freeGb, sys.disk.totalGb)}% disk` : null,
+      sys.battery ? `battery ${sys.battery.percent}%${sys.battery.onPower ? " \u26A1" : ""}` : null,
+      `up ${span(sys.uptimeSec)}`
+    ].filter(Boolean).join(" \xB7 ") : "";
+    return /* @__PURE__ */ jsxs("article", { className: cx("aw-node", `aw-node--${state}`), children: [
+      /* @__PURE__ */ jsxs("header", { children: [
+        /* @__PURE__ */ jsx(Dot, { state }),
+        /* @__PURE__ */ jsx("h3", { children: node.id }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-muted aw-node__os", children: [
+          node.os,
+          " \xB7 v",
+          node.version,
+          node.online ? node.draining ? " \xB7 draining" : "" : ` \xB7 offline ${ago(node.lastSeenAt)}`
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        !local ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => act(() => api("PATCH", `/admin/nodes/${node.id}`, { draining: !node.draining }), node.draining ? `${node.id} takes work again.` : `${node.id} finishes what it has, then takes nothing new.`), children: node.draining ? "Resume" : "Drain" }) : null,
+        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(NodeModal, { node, local, onClose: close }) }), children: "Edit" }),
+        !local && !node.online ? /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
+            kind: "ghost",
+            onClick: () => ask({ title: `Forget ${node.id}?`, text: "It re-registers on its next heartbeat if it is still alive.", confirm: "Forget", danger: true, run: () => act(() => api("DELETE", `/admin/nodes/${node.id}`), `Forgot ${node.id}.`) }),
+            children: "Forget"
+          }
+        ) : null
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-node__lines", children: [
+        !local ? /* @__PURE__ */ jsxs("p", { className: "aw-node__line", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "Agents: " }),
+          node.executors.map((e, i) => {
+            const ex = h.executors?.[e];
+            return /* @__PURE__ */ jsxs("span", { className: ex && !ex.ok ? "aw-warn" : void 0, title: ex && !ex.ok ? ex.error ?? "not healthy" : ex?.version ? `${e} ${ex.version}` : void 0, children: [
+              i ? ", " : "",
+              e
+            ] }, e);
+          })
+        ] }) : null,
+        /* @__PURE__ */ jsxs("p", { className: "aw-node__line", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "Can do: " }),
+          node.capabilities.length ? node.capabilities.map((c) => capabilityLabel(c, caps)).join(", ") : "\u2014",
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: " \xB7 " }),
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", title: node.slugs.length ? node.slugs.join(", ") : void 0, children: node.slugs.length ? `${node.slugs.length} project${node.slugs.length === 1 ? "" : "s"}` : "no projects yet" })
+        ] }),
+        /* @__PURE__ */ jsxs("p", { className: "aw-node__line", title: machine || void 0, children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "Workload: " }),
+          node.running.length,
+          " of ",
+          node.slots,
+          " runs busy",
+          /* @__PURE__ */ jsx("span", { className: "aw-node__bar", "aria-hidden": "true", children: /* @__PURE__ */ jsx("i", { style: { width: `${pct(node.running.length, node.slots)}%` } }) }),
+          machine ? /* @__PURE__ */ jsxs("span", { className: "aw-muted aw-node__sys", children: [
+            " \xB7 ",
+            machine
+          ] }) : null
+        ] }),
+        h.process?.lastError ? /* @__PURE__ */ jsxs("p", { className: "aw-node__line aw-warn", children: [
+          "Last error: ",
+          h.process.lastError
+        ] }) : null
+      ] }),
+      !local && node.running.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: node.running.map((r) => /* @__PURE__ */ jsxs("li", { className: "aw-row", onClick: () => openTicket(r.ticket_id), children: [
+        /* @__PURE__ */ jsx("span", { className: "aw-live" }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-mono aw-muted", children: [
+          "#",
+          r.ticket_id
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: r.title }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+          r.executor,
+          " \xB7 ",
+          ago(r.started_at)
+        ] })
+      ] }, r.id)) }) : null
+    ] });
+  }
+  function NodeModal({ node, local, onClose }) {
+    const { api, act, data } = useAdmin();
+    const caps = data.catalog?.capabilities ?? [];
+    const [slots, setSlots] = useState(node.overrides?.slots ?? node.slots);
+    const [executors, setExecutors] = useState(node.overrides?.executors ?? node.executors);
+    const [capabilities, setCapabilities] = useState(node.overrides?.capabilities ?? node.capabilities.filter((c) => !c.startsWith("os:")));
+    const save = () => act(() => api("PATCH", `/admin/nodes/${node.id}`, { overrides: { slots, capabilities, ...!local ? { executors } : {} } }), `${node.id} picks this up on its next heartbeat.`).then(onClose, () => void 0);
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: `Node ${node.id}`,
+        subtitle: "Overrides from here win over the node\u2019s own config file.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: save, children: "Save" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Slots", hint: "How many items it runs at once.", children: /* @__PURE__ */ jsx(Segmented, { value: slots, options: [1, 2, 3, 4].map((n) => ({ value: n, label: String(n) })), onChange: setSlots }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Agents it offers", children: local ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Manage the agents this Mac lends from This Mac." }) : /* @__PURE__ */ jsx(Chips, { value: executors, options: EXECUTORS.map((e) => ({ value: e, label: e })), onChange: setExecutors }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Capabilities", children: /* @__PURE__ */ jsx(Chips, { value: capabilities, options: caps.map((c) => ({ value: c.id, label: capabilityLabel(c.id, caps), hint: c.hint })), onChange: setCapabilities }) })
+        ]
+      }
+    );
+  }
+  function FleetView() {
+    const { data, openTicket } = useAdmin();
+    const machine = useMachine();
+    const runs = [...data.running, ...data.recent].slice(0, 8);
+    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-fleet", children: [
+      /* @__PURE__ */ jsx(
+        PageHeader,
+        {
+          title: "Fleet",
+          subtitle: `${data.nodes.length} node${data.nodes.length === 1 ? "" : "s"} \xB7 ${data.queue.length} waiting \xB7 ${data.running.length} running`
+        }
+      ),
+      /* @__PURE__ */ jsx(HealthView, { compact: true }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-nodes", children: [
+        machine.live ? /* @__PURE__ */ jsx(MachinePanel, {}) : null,
+        data.nodes.map((n) => /* @__PURE__ */ jsx(NodeCard, { node: n, local: machine.live && n.id === machine.nodeId }, n.id)),
+        !data.nodes.length ? /* @__PURE__ */ jsx(Empty, { title: "No node has connected yet.", hint: "Turn on a worker from This Mac (desktop app)." }) : null
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
+        /* @__PURE__ */ jsxs("h3", { children: [
+          "Queue ",
+          /* @__PURE__ */ jsx("span", { className: "aw-count", children: data.queue.length })
+        ] }),
+        data.queue.length ? /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("th", { children: "#" }),
+            /* @__PURE__ */ jsx("th", { children: "Title" }),
+            /* @__PURE__ */ jsx("th", { children: "Project" }),
+            /* @__PURE__ */ jsx("th", { children: "Priority" }),
+            /* @__PURE__ */ jsx("th", { children: "Waiting" }),
+            /* @__PURE__ */ jsx("th", { children: "Why waiting" })
+          ] }) }),
+          /* @__PURE__ */ jsx("tbody", { children: data.queue.map((q) => /* @__PURE__ */ jsxs("tr", { onClick: () => openTicket(q.id), children: [
+            /* @__PURE__ */ jsxs("td", { className: "aw-mono", children: [
+              "#",
+              q.id
+            ] }),
+            /* @__PURE__ */ jsx("td", { className: "aw-table__title", children: q.title }),
+            /* @__PURE__ */ jsx("td", { children: q.slug ?? "\u2014" }),
+            /* @__PURE__ */ jsx("td", { children: priorityName(q.priority) }),
+            /* @__PURE__ */ jsx("td", { children: span(q.waitingSeconds) }),
+            /* @__PURE__ */ jsx("td", { className: q.eligible.length ? "" : "aw-warn", children: q.reason })
+          ] }, q.id)) })
+        ] }) }) : /* @__PURE__ */ jsx(Empty, { title: "Nothing is waiting." })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Recent runs" }),
+        runs.length ? /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("th", {}),
+            /* @__PURE__ */ jsx("th", { children: "#" }),
+            /* @__PURE__ */ jsx("th", { children: "Title" }),
+            /* @__PURE__ */ jsx("th", { children: "Agent" }),
+            /* @__PURE__ */ jsx("th", { children: "Node" }),
+            /* @__PURE__ */ jsx("th", { children: "Cost" }),
+            /* @__PURE__ */ jsx("th", { children: "Finished" })
+          ] }) }),
+          /* @__PURE__ */ jsx("tbody", { children: runs.map((r) => /* @__PURE__ */ jsxs("tr", { onClick: () => openTicket(r.ticket_id), children: [
+            /* @__PURE__ */ jsx("td", { children: r.status === "running" || !r.status ? /* @__PURE__ */ jsx("span", { className: "aw-live" }) : /* @__PURE__ */ jsx(Dot, { state: r.status === "ok" ? "ok" : "bad" }) }),
+            /* @__PURE__ */ jsxs("td", { className: "aw-mono", children: [
+              "#",
+              r.ticket_id
+            ] }),
+            /* @__PURE__ */ jsx("td", { className: "aw-table__title", children: r.title }),
+            /* @__PURE__ */ jsxs("td", { children: [
+              r.executor,
+              r.model ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                " ",
+                r.model
+              ] }) : null
+            ] }),
+            /* @__PURE__ */ jsx("td", { children: r.node_id ?? "this Mac" }),
+            /* @__PURE__ */ jsx("td", { children: usd(r.cost_micro_usd) }),
+            /* @__PURE__ */ jsx("td", { className: "aw-muted", children: r.finished_at ? `${ago(r.finished_at)} ago` : "running" })
+          ] }, r.id)) })
+        ] }) }) : /* @__PURE__ */ jsx(Empty, { title: "No runs yet" })
+      ] })
+    ] });
+  }
+  var usageLine = (u) => u ? [
+    u.billedCents && `${money(u.billedCents)} billed`,
+    u.openCents && `${money(u.openCents)} open`,
+    u.aiCents && `AI ${money(u.aiCents)}`,
+    u.ourCents && `first previews ${money(u.ourCents)} on us`
+  ].filter(Boolean).join(" \xB7 ") || "nothing owed" : "";
+  function RepoModal({ project, onClose }) {
+    const { api, act } = useAdmin();
+    const [repo, setRepo] = useState(project.repo ?? "");
+    const submit = () => act(() => api("PUT", `/admin/projects/${project.id}/repo`, { repo: repo.trim() }), "Repo saved.").then(onClose, () => void 0);
+    return /* @__PURE__ */ jsx(
+      Modal,
+      {
+        title: `Repo for ${project.name}`,
+        subtitle: "Nodes clone this on their next sync. A private repo needs a node whose git can reach it.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !repo.trim(), onClick: submit, children: "Save" })
+        ] }),
+        children: /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) })
+      }
+    );
+  }
+  function FirstPreviewControl({ c }) {
+    const { api, act, data } = useAdmin();
+    const globalLimit = data.settings?.first_preview_limit_usd;
+    const [usd2, setUsd] = useState(c.firstPreviewLimitUsd ?? "");
+    useEffect(() => setUsd(c.firstPreviewLimitUsd ?? ""), [c.id, c.firstPreviewLimitUsd]);
+    const save = () => {
+      const raw = String(usd2).trim();
+      const value = raw === "" ? null : Number(raw);
+      if (value !== null && (!Number.isFinite(value) || value < 0 || value > 1e3)) return;
+      if (value === (c.firstPreviewLimitUsd ?? null)) return;
+      void act(() => api("PATCH", `/admin/clients/${c.id}`, { firstPreviewLimitUsd: value }), "First preview limit saved.");
+    };
+    return /* @__PURE__ */ jsx(
+      Field,
+      {
+        label: "First preview limit (USD)",
+        hint: `Blank follows the setting (${globalLimit ?? 2}). 0 turns the first preview off for this client.`,
+        children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              inputMode: "decimal",
+              value: usd2,
+              placeholder: String(globalLimit ?? 2),
+              "aria-label": "First preview limit in dollars",
+              onChange: (e) => setUsd(e.target.value),
+              onBlur: save
+            }
+          ),
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: c.first_preview_at ? `used ${ago(c.first_preview_at)} ago` : "not used yet" }),
+          c.first_preview_at ? /* @__PURE__ */ jsx(
+            Button,
+            {
+              size: "sm",
+              title: "Give this account its free first preview again",
+              onClick: () => void act(() => api("PATCH", `/admin/clients/${c.id}`, { grantFirstPreview: true }), "First preview granted again."),
+              children: "Grant again"
+            }
+          ) : null
+        ] })
+      }
+    );
+  }
+  function ClientControls({ c }) {
+    const { api, act, data } = useAdmin();
+    const toggle = (ids) => {
+      const added = ids.filter((x) => !c.projectIds.includes(x));
+      const removed = c.projectIds.filter((x) => !ids.includes(x));
+      return act(async () => {
+        for (const p of added) await api("PUT", `/admin/clients/${c.id}/projects/${p}`);
+        for (const p of removed) await api("DELETE", `/admin/clients/${c.id}/projects/${p}`);
+      }, "Saved.");
+    };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: usageLine(c.usage) }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+        /* @__PURE__ */ jsx(
+          "select",
+          {
+            "aria-label": "Language",
+            value: c.locale ?? "en-US",
+            onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { locale: e.target.value }), "Language saved."),
+            children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code))
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "select",
+          {
+            "aria-label": "Translation",
+            title: "Who translates this client\u2019s messages. They can change it themselves.",
+            value: c.translation ?? "deepseek",
+            onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { translation: e.target.value }), "Saved."),
+            children: [
+              /* @__PURE__ */ jsx("option", { value: "deepseek", children: "DeepSeek" }),
+              /* @__PURE__ */ jsx("option", { value: "cloudflare", children: "Workers AI" }),
+              /* @__PURE__ */ jsx("option", { value: "off", children: "no translation" })
+            ]
+          }
+        )
+      ] }),
+      c.role !== "admin" ? /* @__PURE__ */ jsx(FirstPreviewControl, { c }) : null,
+      /* @__PURE__ */ jsx(InviteControls, { c }),
+      /* @__PURE__ */ jsx(Chips, { value: c.projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: (ids) => void toggle(ids) })
+    ] });
+  }
+  function InviteControls({ c }) {
+    const { api, act, ask } = useAdmin();
+    if (!c.pending && !c.inviteExpiresAt) return null;
+    const left = c.inviteExpiresAt ? Math.max(0, c.inviteExpiresAt - Date.now() / 1e3) : 0;
+    return /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+      /* @__PURE__ */ jsx(Tag, { tone: c.pending ? "warn" : void 0, title: c.email, children: c.pending ? "Invited, not signed in yet" : "Invite link live" }),
+      left > 0 ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+        "link expires in ",
+        span(left)
+      ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "link expired" }),
+      /* @__PURE__ */ jsx(
+        Button,
+        {
+          size: "sm",
+          title: "Send a fresh link. The old unused links stop working.",
+          onClick: () => void act(() => api("POST", `/admin/clients/${c.id}/invite`, {}), `Invite resent to ${c.email}.`),
+          children: "Resend"
+        }
+      ),
+      /* @__PURE__ */ jsx(
+        Button,
+        {
+          size: "sm",
+          kind: "ghost",
+          title: "Every unused invite link stops working. A signed-in session is not touched.",
+          onClick: () => ask({
+            title: `Revoke invite for ${c.name || c.email}?`,
+            text: `Unused invite links for ${c.email} stop working. Existing signed-in sessions are not affected.`,
+            confirm: "Revoke link",
+            danger: true,
+            run: () => act(() => api("DELETE", `/admin/clients/${c.id}/invite`), "Invite link revoked.").catch(() => void 0)
+          }),
+          children: "Revoke"
+        }
+      )
+    ] });
+  }
+  function InviteClientModal({ onClose }) {
+    const { api, act, data } = useAdmin();
+    const [email, setEmail] = useState("");
+    const [name, setName] = useState("");
+    const [locale, setLocale] = useState("en-US");
+    const [projectIds, setProjectIds] = useState(data.projects.length === 1 ? [data.projects[0].id] : []);
+    const [note, setNote] = useState("");
+    const ready = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && projectIds.length > 0;
+    const send = () => act(
+      () => api("POST", "/admin/clients", {
+        email: email.trim(),
+        name: name.trim() || void 0,
+        locale,
+        projectIds,
+        note: note.trim() || void 0
+      }),
+      (out) => out.invite?.sent === false ? `Added ${email.trim()}, but the email could not be sent. Use Resend on their card.` : out.user?.verified_at ? `${email.trim()} now has ${projectIds.length} more project${projectIds.length === 1 ? "" : "s"} and a new link.` : `Invited ${email.trim()}.`
+    ).then(onClose, () => void 0);
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: "Invite a client",
+        subtitle: "They get a link that signs them in for the projects you pick. No sign-up needed; the link works once and lasts 7 days.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !ready, onClick: send, children: "Send invite" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Email", children: /* @__PURE__ */ jsx("input", { type: "email", value: email, maxLength: 254, placeholder: "client@example.com", onChange: (e) => setEmail(e.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Name", hint: "Optional. The account keeps its own name if it already exists.", children: /* @__PURE__ */ jsx("input", { value: name, maxLength: 80, placeholder: "Their name", onChange: (e) => setName(e.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Language", hint: "The language of the invite email and the portal. They can change it.", children: /* @__PURE__ */ jsx("select", { value: locale, onChange: (e) => setLocale(e.target.value), children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code)) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Projects", hint: "At least one. An existing account gains these and keeps the rest. They see every request on them.", children: data.projects.length ? /* @__PURE__ */ jsx(Chips, { value: projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: setProjectIds }) : /* @__PURE__ */ jsx("span", { className: "aw-warn", children: "No projects yet. Make one first." }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Note", hint: "Optional. Your own words, added under the link. Not translated.", children: /* @__PURE__ */ jsx("textarea", { rows: 3, value: note, maxLength: 1e3, placeholder: "Anything you want them to read first", onChange: (e) => setNote(e.target.value) }) })
+        ]
+      }
+    );
+  }
+  function ProjectEditModal({ project, onClose }) {
+    const { api, act } = useAdmin();
+    const [name, setName] = useState(project.name);
+    const [kind, setKind] = useState(project.kind ?? "existing");
+    const changed = name.trim() !== project.name || kind !== (project.kind ?? "existing");
+    const save = () => act(
+      () => api("PATCH", `/admin/projects/${project.id}`, {
+        ...name.trim() !== project.name ? { name: name.trim() } : {},
+        ...kind !== (project.kind ?? "existing") ? { kind } : {}
+      }),
+      "Project saved."
+    ).then(onClose, () => void 0);
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: `Edit ${project.name}`,
+        subtitle: `Slug ${project.slug} stays: nodes keep its folder under that name, and its first site is named after it.`,
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !name.trim() || !changed, onClick: save, children: "Save" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Name", hint: "What the client sees in the portal and in their emails.", children: /* @__PURE__ */ jsx("input", { value: name, maxLength: 80, onChange: (e) => setName(e.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              value: kind,
+              options: [
+                { value: "existing", label: "Existing code or system" },
+                { value: "new", label: "New website" }
+              ],
+              onChange: setKind
+            }
+          ) })
+        ]
+      }
+    );
+  }
+  function ClientView({ id }) {
+    const { data, openTicket } = useAdmin();
+    const c = data.clients.find((x) => x.id === id);
+    if (!c) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: data.loaded ? "No such client." : "Loading\u2026" });
+    const closed2 = (t) => ["done", "declined"].includes(t.status);
+    const tickets = data.tickets.filter((t) => t.kind !== "system" && t.client_email === c.email).sort((a, b) => closed2(a) - closed2(b) || b.updated_at - a.updated_at);
+    const open = tickets.filter((t) => !closed2(t)).length;
+    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-client", children: [
+      /* @__PURE__ */ jsx(
+        PageHeader,
+        {
+          title: c.name || c.email,
+          subtitle: `${c.name ? `${c.email} \xB7 ` : ""}${open} open of ${tickets.length} \xB7 client for ${ago(c.created_at)}${c.handoff ? ` \xB7 hand-off: ${c.handoff}` : ""}`
+        }
+      ),
+      /* @__PURE__ */ jsx("section", { className: "aw-group", children: /* @__PURE__ */ jsx(ClientControls, { c }) }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
+        /* @__PURE__ */ jsxs("h3", { children: [
+          "Requests ",
+          /* @__PURE__ */ jsx("span", { className: "aw-count", children: tickets.length })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-tablewrap", children: [
+          /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+            /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+              /* @__PURE__ */ jsx("th", { children: "#" }),
+              /* @__PURE__ */ jsx("th", { children: "Title" }),
+              /* @__PURE__ */ jsx("th", { children: "Status" }),
+              /* @__PURE__ */ jsx("th", { children: "Project" }),
+              /* @__PURE__ */ jsx("th", { children: "Cost" }),
+              /* @__PURE__ */ jsx("th", { children: "Updated" })
+            ] }) }),
+            /* @__PURE__ */ jsx("tbody", { children: tickets.map((t) => /* @__PURE__ */ jsxs("tr", { onClick: () => openTicket(t.id), tabIndex: 0, onKeyDown: (e) => e.key === "Enter" && openTicket(t.id), children: [
+              /* @__PURE__ */ jsxs("td", { className: "aw-mono", children: [
+                "#",
+                t.id
+              ] }),
+              /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
+                t.client_waiting_since && !closed2(t) ? /* @__PURE__ */ jsx(Dot, { state: "warn" }) : null,
+                " ",
+                t.title
+              ] }),
+              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(StatusPill, { status: t.status }) }),
+              /* @__PURE__ */ jsx("td", { children: t.project_name ?? "\u2014" }),
+              /* @__PURE__ */ jsx("td", { children: money(chargeOf(t).totalCents) }),
+              /* @__PURE__ */ jsxs("td", { className: "aw-muted", children: [
+                ago(t.updated_at),
+                " ago"
+              ] })
+            ] }, t.id)) })
+          ] }),
+          !tickets.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No requests yet." }) : null
+        ] })
+      ] })
+    ] });
+  }
+  function ClientsView() {
+    const { data, setModal, open } = useAdmin();
+    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-clients", children: [
+      /* @__PURE__ */ jsx(PageHeader, { title: "Clients & projects", subtitle: data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : void 0 }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-split aw-directory", children: [
+        /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
+          /* @__PURE__ */ jsxs("header", { className: "aw-row-h", children: [
+            /* @__PURE__ */ jsx("h3", { children: "Clients" }),
+            /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+            /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(InviteClientModal, { onClose: close }) }), children: "Invite client" })
+          ] }),
+          data.clients.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: data.clients.map((c) => {
+            const count = c.projectIds?.length ?? 0;
+            const lastSeen = c.lastSeenAt ?? c.last_seen_at;
+            return /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-row aw-directory__open", onClick: () => open(`c:${c.id}`), children: [
+              /* @__PURE__ */ jsxs("span", { className: "aw-directory__name", children: [
+                /* @__PURE__ */ jsx("strong", { children: c.name || c.email }),
+                c.name ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: c.email }) : null
+              ] }),
+              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                count,
+                " ",
+                count === 1 ? "project" : "projects"
+              ] }),
+              /* @__PURE__ */ jsx("span", { className: "aw-muted", children: c.usage ? usageLine(c.usage) || "No usage" : "Usage unavailable" }),
+              /* @__PURE__ */ jsx("span", { className: "aw-muted", children: lastSeen ? `Seen ${ago(lastSeen)} ago` : "Last seen unavailable" })
+            ] }) }, c.id);
+          }) }) : /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No clients yet." })
+        ] }),
+        /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
+          /* @__PURE__ */ jsxs("header", { className: "aw-row-h", children: [
+            /* @__PURE__ */ jsx("h3", { children: "Projects" }),
+            /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+            /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => setModal({ kind: "project" }), children: "New project" })
+          ] }),
+          data.projects.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: data.projects.map((p) => {
+            const holders = data.nodes.filter((n) => n.slugs.includes(p.slug));
+            const nodeState = holders.some((n) => n.online && !n.draining) ? "ok" : holders.length ? "warn" : "bad";
+            const nodeLabel = nodeState === "ok" ? "Node available" : nodeState === "warn" ? "Nodes offline or draining" : "No node has this project";
+            const people = p.clients?.length ?? 0;
+            const sites = p.sites ?? (p.site ? [p.site] : []);
+            const siteStates = [...new Set(sites.map((site) => site.state?.replaceAll("_", " ")).filter(Boolean))];
+            const siteState = sites.length ? siteStates.join(", ") || "Site status unavailable" : "No site";
+            return /* @__PURE__ */ jsxs("li", { className: "aw-row aw-directory__project", children: [
+              /* @__PURE__ */ jsx("span", { title: nodeLabel, role: "img", "aria-label": nodeLabel, children: /* @__PURE__ */ jsx(Dot, { state: nodeState }) }),
+              /* @__PURE__ */ jsxs("span", { className: "aw-directory__name", children: [
+                /* @__PURE__ */ jsx("strong", { children: p.name }),
+                /* @__PURE__ */ jsx("span", { className: "aw-muted aw-mono", children: p.slug })
+              ] }),
+              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                people,
+                " ",
+                people === 1 ? "person" : "people"
+              ] }),
+              /* @__PURE__ */ jsx("span", { className: "aw-muted", children: siteState }),
+              /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", "aria-label": `Open ${p.name}`, onClick: () => open(`p:${p.id}`), children: "Open" })
+            ] }, p.id);
+          }) }) : /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No projects yet." })
+        ] })
+      ] })
+    ] });
+  }
+  function TranslationsPanel() {
+    const { api, act } = useAdmin();
+    const [status, setStatus] = useState(null);
+    const load = useCallback(() => api("GET", "/admin/i18n").then(setStatus, () => void 0), [api]);
+    usePoll(load, status?.requestedAt || status?.runningSince ? 15e3 : 12e4, [load, status?.requestedAt, status?.runningSince]);
+    useEffect(() => void load(), [load]);
+    const last = status?.last;
+    const rejected = last ? Object.entries(last.rejected ?? {}) : [];
+    const failed = last ? Object.entries(last.failed ?? {}) : [];
+    const busy = Boolean(status?.requestedAt || status?.runningSince);
+    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+      /* @__PURE__ */ jsxs("h3", { className: "aw-row-h", children: [
+        "Translations",
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
+            kind: "primary",
+            disabled: !status?.ready || busy,
+            title: "Translate every interface and email string that is missing or out of date, in all languages, and commit it to master",
+            onClick: () => void act(() => api("POST", "/admin/i18n/sync", {}), "Translation starts within 5 minutes.").then(setStatus, () => void 0),
+            children: status?.runningSince ? "Translating\u2026" : status?.requestedAt ? "Queued" : "Translate now"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "Translates every interface and email string that is new or re-worded, in all languages, with DeepSeek, and commits it to ",
+        status?.repo ?? "the repo",
+        ". That push deploys like any other. Until then, untranslated strings show in English."
+      ] }),
+      status?.englishChanged && !busy ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        "English changed on master since the last translation",
+        status.checkedAt ? ` (checked ${ago(status.checkedAt)} ago)` : "",
+        "."
+      ] }) : null,
+      status ? /* @__PURE__ */ jsxs("label", { className: "aw-check", children: [
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "checkbox",
+            checked: Boolean(status.auto),
+            onChange: (e) => void act(
+              () => api("PUT", "/admin/i18n", { auto: e.target.checked }),
+              e.target.checked ? "Translations now follow every English change." : "Translations run only from the button."
+            ).then(setStatus, () => void 0)
+          }
+        ),
+        "Translate automatically whenever English changes"
+      ] }) : null,
+      status && !status.ready ? /* @__PURE__ */ jsx("p", { className: "aw-warn", children: "Needs DEEPSEEK_API_KEY and the GitHub App secrets on the Worker." }) : null,
+      status?.runningSince ? /* @__PURE__ */ jsxs("p", { children: [
+        "Translating since ",
+        ago(status.runningSince),
+        " ago."
+      ] }) : status?.requestedAt ? /* @__PURE__ */ jsxs("p", { children: [
+        "Queued ",
+        ago(status.requestedAt),
+        " ago; the next five-minute tick runs it."
+      ] }) : null,
+      last ? /* @__PURE__ */ jsxs("p", { className: last.ok ? "aw-muted" : "aw-warn", children: [
+        "Last run ",
+        ago(last.at),
+        " ago (",
+        last.trigger === "manual" ? "by hand" : "English changed",
+        "):",
+        " ",
+        last.error ? last.error : last.keys || last.removed ? `${last.keys} string${last.keys === 1 ? "" : "s"} in ${last.locales} language${last.locales === 1 ? "" : "s"}${last.removed ? `, ${last.removed} old removed` : ""}${last.commit ? `, commit ${last.commit.slice(0, 7)}` : ""}.` : "everything was already translated."
+      ] }) : status ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No run yet." }) : null,
+      failed.length ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        "Failed: ",
+        failed.map(([code, why]) => `${code} (${why})`).join("; ")
+      ] }) : null,
+      rejected.length ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "Kept in English (the placeholders did not survive): ",
+        rejected.map(([code, keys]) => `${code}: ${keys.join(", ")}`).join("; ")
+      ] }) : null
+    ] });
+  }
+  var SETTING_NUMBERS = {
+    stallMinutes: { max: 1440, min: 0, error: "Enter a whole number from 0 to 1,440." },
+    maxAttempts: { max: 10, min: 1, error: "Enter a whole number from 1 to 10." },
+    autoApproveCents: { max: 1e5, min: 0, decimal: true, error: "Enter USD from 0 to 100,000, with at most two decimal places." },
+    first_preview_limit_usd: { max: 1e3, min: 0, decimal: true, error: "Enter USD from 0 to 1,000, with at most two decimal places." }
+  };
+  var SITES_HOST = /^(?=.{3,100}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+  function settingsText(settings) {
+    return Object.fromEntries(Object.entries(settings).map(([key, value]) => [
+      key,
+      key === "autoApproveCents" ? (value / 100).toFixed(2) : key in SETTING_NUMBERS ? String(value) : value
+    ]));
+  }
+  function validateSettings(draft, current) {
+    const parsed = { ...draft };
+    const errors = {};
+    for (const [key, { min, max, decimal, error }] of Object.entries(SETTING_NUMBERS)) {
+      const input = (draft[key] ?? "").trim();
+      const numeric = Number(input);
+      const valid = decimal ? /^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(input) : /^\d+$/.test(input);
+      if (!valid || numeric < min || numeric > max) errors[key] = error;
+      else parsed[key] = key === "autoApproveCents" ? Math.round(numeric * 100) : numeric;
+    }
+    parsed.sitesDomain = (draft.sitesDomain ?? "").trim().toLowerCase();
+    if (!SITES_HOST.test(parsed.sitesDomain)) errors.sitesDomain = "Enter a hostname like ptechsolutions.dev, without a protocol or path.";
+    const patch = Object.fromEntries(Object.entries(parsed).filter(([key, value]) => value !== current[key]));
+    return { patch, errors };
+  }
+  function SettingsView() {
+    const { api, act, ask, platform, host, notify, reload } = useAdmin();
+    const [edits, setEdits] = useState({});
+    const [saving, setSaving] = useState(false);
+    const [read, setRead] = useState({ loading: true, settings: null });
+    const [readAttempt, setReadAttempt] = useState(0);
+    useEffect(() => {
+      let current = true;
+      api("GET", "/admin/settings").then(({ settings }) => {
+        if (current) setRead({ loading: false, settings: settings ?? null });
+      }, () => {
+        if (current) setRead({ loading: false, settings: null });
+      });
+      return () => {
+        current = false;
+      };
+    }, [api, readAttempt]);
+    const baseline = settingsText(read.settings ?? {});
+    const draft = { ...baseline, ...edits };
+    const set = (key, value) => setEdits((previous) => ({ ...previous, [key]: value }));
+    const changed = Object.keys(edits).some((key) => edits[key] !== baseline[key]);
+    const { patch, errors } = validateSettings(draft, read.settings ?? {});
+    const invalid = Object.keys(errors).length > 0;
+    const [token, setToken] = useState("");
+    const textInput = (key, mode) => /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          inputMode: mode,
+          value: draft[key] ?? "",
+          disabled: saving,
+          "aria-invalid": errors[key] ? true : void 0,
+          "aria-describedby": errors[key] ? `aw-settings-error-${key}` : void 0,
+          onChange: (e) => set(key, e.target.value)
+        }
+      ),
+      errors[key] ? /* @__PURE__ */ jsx("span", { id: `aw-settings-error-${key}`, className: "aw-warn", children: errors[key] }) : null
+    ] });
+    const save = async () => {
+      setSaving(true);
+      try {
+        const { settings } = await act(() => api("PATCH", "/admin/settings", patch), "Settings saved.");
+        setRead({ loading: false, settings });
+        setEdits({});
+      } catch {
+      } finally {
+        setSaving(false);
+      }
+    };
+    const submit = () => {
+      if (invalid || saving || !Object.keys(patch).length) return;
+      if (!Object.hasOwn(patch, "sitesDomain")) return void save();
+      ask({
+        title: `Change sites domain to ${patch.sitesDomain}?`,
+        text: "This changes the default addresses shown for existing managed sites as well as new sites. Make sure the new domain is ready before saving.",
+        confirm: "Change domain",
+        run: save
+      });
+    };
+    const retry = () => {
+      setRead({ loading: true, settings: null });
+      setReadAttempt((attempt) => attempt + 1);
+    };
+    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-settings", children: [
+      /* @__PURE__ */ jsx(PageHeader, { title: "Settings" }),
+      platform === "dsh" && host ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+          /* @__PURE__ */ jsx("h3", { children: "Portal connection" }),
+          /* @__PURE__ */ jsx(Field, { label: "Session token", hint: "Sign in on ptechsolutions.net/portal, then paste the session token here. It stays on this machine.", children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+            /* @__PURE__ */ jsx("input", { type: "password", value: token, placeholder: "paste token", onChange: (e) => setToken(e.target.value) }),
+            /* @__PURE__ */ jsx(
+              Button,
+              {
+                kind: "primary",
+                disabled: !token.trim(),
+                onClick: async () => {
+                  const r = await host.command(`login ${token.trim()}`);
+                  notify(r.text, r.ok ? "ok" : "error");
+                  setToken("");
+                  void reload();
+                },
+                children: "Save"
+              }
+            ),
+            /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: async () => notify((await host.command("logout")).text), children: "Sign out" })
+          ] }) })
+        ] }),
+        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+          /* @__PURE__ */ jsx("h3", { children: "This machine\u2019s tools" }),
+          /* @__PURE__ */ jsx(ToolboxPanel, {})
+        ] })
+      ] }) : null,
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Work queue" }),
+        !read.settings ? read.loading ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Reading settings\u2026" }) : /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+          /* @__PURE__ */ jsx("p", { className: "aw-warn", role: "alert", children: "Could not read settings." }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: retry, children: "Retry" })
+        ] }) : /* @__PURE__ */ jsx(Fragment2, { children: /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Stalled after (minutes)", hint: "An in-progress item with no report for this long is flagged.", children: textInput("stallMinutes", "numeric") }),
+          /* @__PURE__ */ jsx(Field, { label: "Attempts before review", hint: "Node restarts do not count.", children: textInput("maxAttempts", "numeric") }),
+          /* @__PURE__ */ jsx(Field, { label: "Default priority", children: /* @__PURE__ */ jsx(Segmented, { value: draft.defaultPriority ?? 0, options: PRIORITIES, onChange: (v) => !saving && set("defaultPriority", v) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Email me when a run finishes", children: /* @__PURE__ */ jsx(Segmented, { value: Boolean(draft.notifyRunFinished), options: [{ value: true, label: "On" }, { value: false, label: "Off" }], onChange: (v) => !saving && set("notifyRunFinished", v) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Auto-approve runs under (USD)", hint: "An Autopilot request with its own budget at or below this starts without you. 0 turns it off.", children: textInput("autoApproveCents", "decimal") }),
+          /* @__PURE__ */ jsx(Field, { label: "Sites domain", children: textInput("sitesDomain", "url") }),
+          /* @__PURE__ */ jsx(Field, { label: "Clients may publish their site", children: /* @__PURE__ */ jsx(Segmented, { value: Boolean(draft.clientPublish), options: [{ value: true, label: "Yes" }, { value: false, label: "No" }], onChange: (v) => !saving && set("clientPublish", v) }) }),
+          /* @__PURE__ */ jsx(
+            Field,
+            {
+              label: "First preview limit (USD)",
+              hint: "A new client's first request starts by itself, with its AI run capped at this many dollars. Free to the client. 0 turns it off.",
+              children: textInput("first_preview_limit_usd", "decimal")
+            }
+          )
+        ] }) })
+      ] }),
+      /* @__PURE__ */ jsx(TranslationsPanel, {}),
+      read.settings ? /* @__PURE__ */ jsxs("footer", { className: "aw-settings__foot", children: [
+        changed ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "Unsaved changes" }) : null,
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(Button, { disabled: !changed || saving, onClick: () => setEdits({}), children: "Reset" }),
+        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: invalid || !Object.keys(patch).length || saving, onClick: submit, children: saving ? "Saving\u2026" : "Save" })
+      ] }) : null
+    ] });
+  }
+
+  // packages/admin-ui/src/marketing.jsx
+  var CONTACT_TONE = { new: "dash", queued: void 0, contacted: "ok", replied: "ok", opted_out: "bad", bounced: "bad", paused: "warn" };
+  var MESSAGE_TONE = { draft: "dash", scheduled: void 0, sending: "warn", sent: "ok", failed: "bad", cancelled: "dash" };
+  var CHANNELS = [
+    { value: "", label: "All" },
+    { value: "email", label: "Email" },
+    { value: "x", label: "X" },
+    { value: "linkedin", label: "LinkedIn" }
+  ];
+  var REASONS = {
+    paused: "Paused: nothing is sent while the switch is off.",
+    sender_unbound: "The outreach sender is not bound on the Worker.",
+    postal_address_unset: "Add a postal address before anything goes out.",
+    outside_hours: "Outside the send window \u2014 it waits for the next one.",
+    weekend: "Weekends are off in the settings.",
+    daily_cap: "Today\u2019s cap is used up. It resumes tomorrow.",
+    ses_unconfigured: "The sender is Amazon SES, but the Worker has no SES keys.",
+    bounce_rate: "Paused itself: the bounce rate passed 4%.",
+    complaint_rate: "Paused itself: the complaint rate passed 0.2%."
+  };
+  var WINDOW_REASON = {
+    outside_hours: "outside the send window",
+    weekend: "weekend",
+    daily_cap: "the day\u2019s cap is used"
+  };
+  var CYCLE_SKIP = {
+    open_cycle: "A cycle ticket is already open \u2014 its agent is writing.",
+    recent_cycle: "The last cycle was filed less than a day ago.",
+    weekly_cycle: "This week\u2019s cycle is already queued.",
+    stocked: "The next week already has three posts queued.",
+    no_project: "No project is set up to run the agent in.",
+    no_admin: "No admin account to file the ticket for."
+  };
+  var cycleMessage = (result) => result?.filed ? `Filed #${result.id}: an agent writes the posts and the desk queues them.` : CYCLE_SKIP[result?.reason] ?? `Nothing filed: ${result?.reason ?? "unknown reason"}`;
+  var offsetLabel = (minutes) => `UTC${minutes >= 0 ? "+" : "\u2212"}${Math.abs(minutes) / 60}`;
+  var snippet = (text, max = 90) => text.length > max ? `${text.slice(0, max)}\u2026` : text;
+  var plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  var dateLabel = (unix) => unix ? new Date(unix * 1e3).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+  function deskState(overview) {
+    const { settings, bound, senderState, autoResume } = overview;
+    if (!bound) {
+      const reason = senderState?.reason;
+      const short = reason === "ses_unconfigured" ? "SES has no keys" : reason === "sender_unbound" ? "no sender bound" : REASONS[reason] ?? reason ?? "no sender bound";
+      return { tone: "bad", text: `Can't send: ${short}` };
+    }
+    if (!settings.postalAddress) return { tone: "bad", text: "Can't send: no postal address in Settings" };
+    if (!settings.live) {
+      if (autoResume?.autoPausedAt) {
+        const back = autoResume.resumesAfter ? `, back on ${dateLabel(autoResume.resumesAfter)}` : "";
+        return { tone: "warn", text: `Paused itself on ${dateLabel(autoResume.autoPausedAt)}${back} if the numbers stay clean` };
+      }
+      return { tone: "warn", text: "Paused by you" };
+    }
+    return { tone: "ok", text: "Running on its own" };
+  }
+  function nextWindowOpen(settings, nowSec2) {
+    const offset = settings.offsetMinutes ?? 0;
+    const start = settings.startHour ?? 8;
+    const local = new Date((nowSec2 + offset * 60) * 1e3);
+    for (let add = 0; add < 8; add += 1) {
+      const day = new Date(local.getTime() + add * 864e5);
+      const dow = day.getUTCDay();
+      if (settings.weekdaysOnly && (dow === 0 || dow === 6)) continue;
+      const open = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), start) - offset * 6e4);
+      if (open.getTime() / 1e3 > nowSec2) return open.getTime() / 1e3;
+    }
+    return null;
+  }
+  var obsEtaMinutes = (pending) => pending * 5 / 12;
+  function fmtEta(minutes) {
+    if (minutes < 90) return `~${Math.max(1, Math.round(minutes))}m`;
+    if (minutes < 60 * 36) return `~${Math.round(minutes / 60)}h`;
+    return `~${(minutes / 1440).toFixed(1)}d`;
+  }
+  var percentNumber = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+  var pct2 = (rate) => `${percentNumber.format(rate * 100)}%`;
+  function useResource(load, deps, { keepOnError = false } = {}) {
+    const request = useCallback(load, deps);
+    const [version, setVersion] = useState(0);
+    const [result, setResult] = useState(null);
+    const reload = useCallback(() => setVersion((n) => n + 1), []);
+    useEffect(() => {
+      let current = true;
+      Promise.resolve().then(request).then(
+        (data) => {
+          if (current) setResult({ request, version, data, error: null });
+        },
+        (error) => {
+          if (current) setResult((prior) => ({ request, version, data: keepOnError && prior?.request === request ? prior.data : null, error }));
+        }
+      );
+      return () => {
+        current = false;
+      };
+    }, [request, version, keepOnError]);
+    const latest = result?.request === request ? result : null;
+    return {
+      data: latest?.data ?? null,
+      error: latest?.version === version ? latest.error : null,
+      loading: latest?.version !== version,
+      reload
+    };
+  }
+  function ResourceNote({ resource, label, empty }) {
+    if (resource.error) return /* @__PURE__ */ jsx(ErrorNote, { error: resource.error, onRetry: resource.reload });
+    if (resource.loading) return /* @__PURE__ */ jsx(Loading, { label });
+    return empty ? /* @__PURE__ */ jsx(Empty, { title: empty }) : null;
+  }
+  function MarketingView() {
+    const { api, act, ask, notify } = useAdmin();
+    const sendingControl = useRef(null);
+    const [sendingBusy, setSendingBusy] = useState(false);
+    const [selected, setSelected] = useState(() => /* @__PURE__ */ new Set());
+    const [tab, setTab] = useState("overview");
+    const [modal, setModal] = useState(null);
+    const [filters, setFilters] = useState({ status: "", q: "", source: "", offset: 0 });
+    const filter = (patch) => {
+      setSelected(/* @__PURE__ */ new Set());
+      setFilters((f) => ({ ...f, offset: 0, ...patch }));
+    };
+    const [tick, setTick] = useState(0);
+    const desk = useResource(() => api("GET", "/admin/marketing"), [api], { keepOnError: true });
+    const people = useResource(() => {
+      const search = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString();
+      return api("GET", `/admin/marketing/contacts${search ? `?${search}` : ""}`);
+    }, [api, filters]);
+    const overview = desk.data;
+    const contacts = people.data?.contacts ?? [];
+    const paging = { total: people.data?.total ?? contacts.length, page: people.data?.page ?? 200 };
+    const { reload: reloadDesk } = desk;
+    const { reload: reloadPeople } = people;
+    const load = useCallback(() => {
+      reloadDesk();
+      reloadPeople();
+    }, [reloadDesk, reloadPeople]);
+    usePoll(load, 3e4, [load]);
+    const refresh = useCallback(() => {
+      setTick((n) => n + 1);
+      load();
+    }, [load]);
+    const mutate = useCallback(async (fn, message) => {
+      const result = await act(fn, message);
+      refresh();
+      return result;
+    }, [act, refresh]);
+    const run = useCallback((fn, message) => mutate(fn, message).catch(() => void 0), [mutate]);
+    const done = useCallback(
+      (message) => {
+        setModal(null);
+        notify(message);
+        void refresh();
+      },
+      [refresh, notify]
+    );
+    if (!overview) return /* @__PURE__ */ jsx(ResourceNote, { resource: desk, label: "Loading Marketing\u2026" });
+    const { settings, health } = overview;
+    const state = deskState(overview);
+    const changeSending = async (live) => {
+      setSendingBusy(true);
+      try {
+        await mutate(async () => {
+          const out = await api("PUT", "/admin/marketing/settings", { live });
+          if (out.rejected?.includes("live")) throw new Error("The server rejected the sending change.");
+          return out;
+        }, live ? "Outreach is live." : "Paused.");
+      } finally {
+        setSendingBusy(false);
+      }
+    };
+    const startSending = () => {
+      const cap = settings.dailyCap;
+      const currentCap = overview.autoResume?.cap ?? cap;
+      const ramp = overview.autoResume?.resumedAt ? `The active ramp currently limits sending to ${currentCap}/day.` : "No send ramp is active.";
+      ask({
+        title: "Start sending cold email?",
+        text: `The five-minute cron can start sending eligible emails on its next run. Saved daily cap: ${cap}/day. ${ramp}`,
+        confirm: "Go live",
+        danger: true,
+        run: () => changeSending(true)
+      });
+    };
+    const bulk = (action) => {
+      void mutate(
+        () => api("POST", "/admin/marketing/contacts/bulk", { action, ids: [...selected] }),
+        (out) => `${out.changed} ${action === "pause" ? "paused" : "opted out"}; their queued mail was cancelled.`
+      ).then(() => setSelected(/* @__PURE__ */ new Set()), () => void 0);
+    };
+    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-mk", children: [
+      /* @__PURE__ */ jsx("div", { ref: sendingControl, tabIndex: -1, className: "aw-mk-anchor", children: /* @__PURE__ */ jsx(
+        PageHeader,
+        {
+          title: "Marketing",
+          subtitle: "Manage email outreach, contact lists, and social publishing.",
+          meta: /* @__PURE__ */ jsx(Badge, { tone: state.tone, children: state.text }),
+          actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => run(() => api("POST", "/admin/marketing/run"), runMessage), children: "Run now" }),
+            /* @__PURE__ */ jsx(
+              Button,
+              {
+                kind: settings.live ? void 0 : "primary",
+                disabled: sendingBusy || desk.loading || Boolean(desk.error),
+                onClick: settings.live ? () => void changeSending(false).catch(() => void 0) : startSending,
+                children: settings.live ? "Pause sending" : "Go live"
+              }
+            )
+          ] })
+        }
+      ) }),
+      desk.error ? /* @__PURE__ */ jsx(ResourceNote, { resource: desk }) : null,
+      /* @__PURE__ */ jsx(
+        PageTabs,
+        {
+          ariaLabel: "Marketing tabs",
+          value: tab,
+          onChange: setTab,
+          items: [
+            { value: "overview", label: "Overview" },
+            { value: "contacts", label: "Contacts" },
+            { value: "email", label: "Email" },
+            { value: "posts", label: "Posts" },
+            { value: "sequences", label: "Sequences" },
+            { value: "sources", label: "Sources" },
+            { value: "settings", label: "Settings" }
+          ]
+        }
+      ),
+      tab === "contacts" ? /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx("input", { className: "aw-search", value: filters.q, placeholder: "Search email, name, business\u2026", onChange: (e) => filter({ q: e.target.value }) }),
+        /* @__PURE__ */ jsxs("select", { value: filters.status, onChange: (e) => filter({ status: e.target.value }), children: [
+          /* @__PURE__ */ jsx("option", { value: "", children: "Every status" }),
+          Object.keys(CONTACT_TONE).map((s) => /* @__PURE__ */ jsx("option", { value: s, children: s }, s))
+        ] }),
+        filters.source ? /* @__PURE__ */ jsxs(Button, { size: "sm", kind: "ghost", onClick: () => filter({ source: "" }), title: "Show every source", children: [
+          "Source: ",
+          filters.source,
+          " \u2715"
+        ] }) : null,
+        /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "import" }), children: "Import CSV" }),
+        /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "bulkqueue" }), children: "Queue everyone" }),
+        /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => setModal({ kind: "contact" }), children: "Add contact" })
+      ] }) : null,
+      tab === "email" ? /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => setModal({ kind: "review" }), title: "Read the next first emails one by one: let each go, rewrite it, or cancel it.", children: "Review next" }),
+        /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "compose", channel: "email" }), children: "Compose" }),
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            title: "The desk re-renders scheduled emails by itself when the templates change; this does it now. Emails you edited by hand are left alone.",
+            onClick: () => run(() => api("POST", "/admin/marketing/messages/rerender"), "Scheduled emails now use the current wording."),
+            children: "Re-render scheduled"
+          }
+        )
+      ] }) : null,
+      tab === "posts" ? /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "compose", channel: "x" }), children: "Compose" }),
+        /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => run(() => api("POST", "/admin/marketing/cycle?force=1"), cycleMessage), children: "Draft posts" })
+      ] }) : null,
+      tab === "overview" ? /* @__PURE__ */ jsx(OverviewTab, { api, tick, health, overview, onReview: () => setModal({ kind: "review" }), onContact: (id) => setModal({ kind: "person", id }), onTab: setTab }) : null,
+      tab === "contacts" ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-inline aw-mk-controls", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: paging.total ? `${(filters.offset + 1).toLocaleString("en-US")}\u2013${Math.min(filters.offset + paging.page, paging.total).toLocaleString("en-US")} of ${paging.total.toLocaleString("en-US")}` : "None" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: !filters.offset, onClick: () => filter({ offset: Math.max(0, filters.offset - paging.page) }), children: "Previous" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: filters.offset + paging.page >= paging.total, onClick: () => filter({ offset: filters.offset + paging.page }), children: "Next" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          selected.size ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx("span", { children: plural(selected.size, "contact selected", "contacts selected") }),
+            /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => bulk("pause"), children: "Pause" }),
+            /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => bulk("opt_out"), children: "Opt out" }),
+            /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setSelected(/* @__PURE__ */ new Set()), children: "Clear" })
+          ] }) : null
+        ] }),
+        contacts.length ? /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("th", { children: /* @__PURE__ */ jsx(
+              "input",
+              {
+                type: "checkbox",
+                "aria-label": "Select this page",
+                checked: contacts.length > 0 && contacts.every((c) => selected.has(c.id)),
+                onChange: (e) => setSelected(e.target.checked ? new Set(contacts.map((c) => c.id)) : /* @__PURE__ */ new Set())
+              }
+            ) }),
+            /* @__PURE__ */ jsx("th", { children: "Contact" }),
+            /* @__PURE__ */ jsx("th", { children: "Business / site" }),
+            /* @__PURE__ */ jsx("th", { children: "Source" }),
+            /* @__PURE__ */ jsx("th", { children: "Status" }),
+            /* @__PURE__ */ jsx("th", { children: "Sent" }),
+            /* @__PURE__ */ jsx("th", { children: "Next" }),
+            /* @__PURE__ */ jsx("th", {})
+          ] }) }),
+          /* @__PURE__ */ jsx("tbody", { children: contacts.map((c) => /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(
+              "input",
+              {
+                type: "checkbox",
+                "aria-label": `Select ${c.email}`,
+                checked: selected.has(c.id),
+                onChange: (e) => setSelected((prev) => {
+                  const next = new Set(prev);
+                  if (e.target.checked) next.add(c.id);
+                  else next.delete(c.id);
+                  return next;
+                })
+              }
+            ) }),
+            /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
+              /* @__PURE__ */ jsx("span", { className: "aw-mono", children: c.email }),
+              c.name ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                " ",
+                c.name
+              ] }) : null,
+              c.gap ? /* @__PURE__ */ jsx("div", { className: "aw-muted", children: snippet(c.gap, 110) }) : null
+            ] }),
+            /* @__PURE__ */ jsxs("td", { children: [
+              c.business ?? "\u2014",
+              c.site ? /* @__PURE__ */ jsx("div", { className: "aw-muted", children: c.site }) : null
+            ] }),
+            /* @__PURE__ */ jsxs("td", { className: "aw-muted", children: [
+              c.sourceKind ?? "\u2014",
+              c.country ? /* @__PURE__ */ jsx("div", { children: c.country }) : null
+            ] }),
+            /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Badge, { tone: CONTACT_TONE[c.status], children: c.status }) }),
+            /* @__PURE__ */ jsx("td", { children: c.sentCount }),
+            /* @__PURE__ */ jsx("td", { className: "aw-muted", children: c.nextAt ? when(c.nextAt) : "\u2014" }),
+            /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "person", id: c.id }), "aria-label": `Open ${c.email}`, children: "Open" }) })
+          ] }, c.id)) })
+        ] }) }) : /* @__PURE__ */ jsx(ResourceNote, { resource: people, label: "Loading contacts\u2026", empty: "No contacts match. Import a CSV or add one by hand." })
+      ] }) : null,
+      tab === "email" ? /* @__PURE__ */ jsx(EmailTab, { api, run, tick, events: overview.events, onOpen: (m) => setModal({ kind: "message", id: m.id }) }) : null,
+      tab === "posts" ? /* @__PURE__ */ jsx(PostsTab, { api, run, mutate, ask, tick, holdHours: settings.postHoldHours ?? 0, onEdit: (m) => setModal({ kind: "edit", message: m }) }) : null,
+      tab === "sequences" ? /* @__PURE__ */ jsx(SequencesTab, { api, sequences: overview.sequences }) : null,
+      tab === "sources" ? /* @__PURE__ */ jsx(
+        SourcesTab,
+        {
+          api,
+          tick,
+          onPick: (source) => {
+            filter({ source });
+            setTab("contacts");
+          }
+        }
+      ) : null,
+      tab === "settings" ? /* @__PURE__ */ jsx(SettingsTab, { overview, mutate, api, onShowSending: () => sendingControl.current?.focus() }) : null,
+      modal?.kind === "import" ? /* @__PURE__ */ jsx(ImportModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
+      modal?.kind === "bulkqueue" ? /* @__PURE__ */ jsx(BulkQueueModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
+      modal?.kind === "contact" ? /* @__PURE__ */ jsx(ContactModal, { contact: modal.contact, sequences: overview.sequences, api, onClose: () => setModal(null), onSaved: done }) : null,
+      modal?.kind === "queue" ? /* @__PURE__ */ jsx(
+        QueueModal,
+        {
+          contact: modal.contact,
+          sequences: overview.sequences,
+          api,
+          onClose: () => setModal(null),
+          onQueued: (count) => done(`${count} emails queued for ${modal.contact.email}.`)
+        }
+      ) : null,
+      modal?.kind === "compose" ? /* @__PURE__ */ jsx(
+        ComposeModal,
+        {
+          initialChannel: modal.channel,
+          contacts: contacts.filter((c) => !["opted_out", "bounced"].includes(c.status)),
+          api,
+          onClose: () => setModal(null),
+          onSaved: done
+        }
+      ) : null,
+      modal?.kind === "edit" ? /* @__PURE__ */ jsx(EditPostModal, { message: modal.message, api, onClose: () => setModal(null), onSaved: done }) : null,
+      modal?.kind === "message" ? /* @__PURE__ */ jsx(MessageModal, { id: modal.id, api, onClose: () => setModal(null), onDone: done }) : null,
+      modal?.kind === "review" ? /* @__PURE__ */ jsx(ReviewModal, { api, onClose: () => done("Review saved.") }) : null,
+      modal?.kind === "person" ? /* @__PURE__ */ jsx(
+        PersonModal,
+        {
+          id: modal.id,
+          api,
+          onClose: () => setModal(null),
+          onQueue: (contact) => setModal({ kind: "queue", contact }),
+          onOptOut: (contact) => mutate(() => api("PATCH", `/admin/marketing/contacts/${contact.id}`, { status: "opted_out" }), `${contact.email} opted out; queued mail cancelled.`),
+          onEdit: (contact) => setModal({ kind: "contact", contact }),
+          onOpenMessage: (id) => setModal({ kind: "message", id })
+        }
+      ) : null
+    ] });
+  }
+  var runMessage = (result) => result?.reason ? REASONS[result.reason] ?? `Nothing sent: ${result.reason}` : `Sent ${result?.sent ?? 0}${result?.failed ? `, ${result.failed} failed` : ""}.`;
+  var REPLY_TONE = { reply: "ok", opt_out: "warn", complaint: "bad" };
+  var REPLY_LABEL = { reply: "replied", opt_out: "opted out", complaint: "spam complaint" };
+  var OBSERVE_KIND = {
+    no_https: "opens over http",
+    no_viewport: "no mobile tag",
+    old_copyright: "old copyright",
+    pdf_menu: "PDF menu",
+    slow: "slow to load",
+    no_description: "no description",
+    none: "clean",
+    unreachable: "unreachable"
+  };
+  var postChannelLabel = { x: "X", linkedin: "LinkedIn" };
+  function RateMeter({ label, rate, limit }) {
+    const pctOf = Math.min((rate ?? 0) / limit, 1);
+    const tone2 = (rate ?? 0) >= limit ? "bad" : (rate ?? 0) >= limit / 2 ? "warn" : "ok";
+    return /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter", title: `${label}: ${pct2(rate ?? 0)} of the ${pct2(limit)} limit`, children: [
+      /* @__PURE__ */ jsx("span", { className: "aw-mk-meter__label", children: label }),
+      /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter__track", children: [
+        /* @__PURE__ */ jsx("i", { className: cx("aw-mk-meter__fill", `aw-mk-meter__fill--${tone2}`), style: { width: `${pctOf * 80}%` } }),
+        /* @__PURE__ */ jsx("i", { className: "aw-mk-meter__limit" })
+      ] }),
+      /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter__num", children: [
+        pct2(rate ?? 0),
+        " of ",
+        pct2(limit)
+      ] })
+    ] });
+  }
+  function AutopilotTable({ overview }) {
+    const { settings, window: win, health, observe, domains, due, today, pulse = {} } = overview;
+    const cap = Math.min(settings.dailyCap, overview.autoResume?.cap ?? settings.dailyCap);
+    const ramping = (overview.autoResume?.cap ?? settings.dailyCap) < settings.dailyCap;
+    const events = overview.events ?? [];
+    const newest = (kind) => events.filter((e) => e.kind === kind).map((e) => e.createdAt).sort((a, b) => b - a)[0] ?? null;
+    const lastSentAt = pulse.lastSentAt ?? newest("sent");
+    const lastPublishedAt = pulse.lastPublishedAt ?? newest("published");
+    const lastPublishedChannel = pulse.lastPublishedChannel ?? null;
+    const emailState = !settings.live ? "paused" : win?.open ? "sending" : `waiting: ${WINDOW_REASON[win?.reason] ?? win?.reason ?? "outside the window"}`;
+    const nextOpen = win && !win.open ? nextWindowOpen(settings, Math.floor(Date.now() / 1e3)) : null;
+    const emailNext = [
+      due?.email ? `${due.email} due` : "queue clear",
+      !win?.open && nextOpen ? `opens ${when(nextOpen)}` : pulse.nextEmailAt ? `next ${when(pulse.nextEmailAt)}` : ""
+    ].filter(Boolean).join(" \xB7 ");
+    const holdHours = settings.postHoldHours ?? 0;
+    const postState = holdHours > 0 ? `hold ${holdHours}h` : settings.postApproval ? "approve by hand" : "on schedule";
+    const postNext = [
+      pulse.nextPostAt ? `${when(pulse.nextPostAt)}${pulse.nextPostChannel ? ` \xB7 ${postChannelLabel[pulse.nextPostChannel] ?? pulse.nextPostChannel}` : ""}` : "",
+      pulse.postsQueued ? `${pulse.postsQueued} queued` : ""
+    ].filter(Boolean).join(" \xB7 ");
+    const pending = observe?.pending ?? 0;
+    const observed = observe?.observed ?? 0;
+    const withGap = observe?.withGap ?? 0;
+    const kindEntries = Object.entries(observe?.byKind ?? {}).sort((a, b) => b[1] - a[1]);
+    const bounceRate = health?.bounceRate ?? 0;
+    const complaintRate = health?.complaintRate ?? 0;
+    return /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--compact aw-table--static aw-table--stack", children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Loop" }),
+          /* @__PURE__ */ jsx("th", { children: "State" }),
+          /* @__PURE__ */ jsx("th", { children: "Last" }),
+          /* @__PURE__ */ jsx("th", { children: "Next" }),
+          /* @__PURE__ */ jsx("th", { children: "Health" })
+        ] }) }),
+        /* @__PURE__ */ jsxs("tbody", { children: [
+          /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("td", { children: "Email" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "State", children: emailState }),
+            /* @__PURE__ */ jsxs("td", { "data-label": "Last", children: [
+              lastSentAt ? when(lastSentAt) : "no sends yet",
+              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                " ",
+                "\xB7 ",
+                today ?? 0,
+                "/",
+                cap,
+                " today",
+                ramping ? " \xB7 ramping" : ""
+              ] })
+            ] }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Next", children: emailNext || "\u2014" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Health", children: /* @__PURE__ */ jsxs("div", { className: "aw-mk-health", children: [
+              /* @__PURE__ */ jsx(RateMeter, { label: "bounces", rate: bounceRate, limit: health?.maxBounceRate ?? 0.04 }),
+              /* @__PURE__ */ jsx(RateMeter, { label: "complaints", rate: complaintRate, limit: health?.maxComplaintRate ?? 2e-3 })
+            ] }) })
+          ] }),
+          /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("td", { children: "Posts" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "State", children: postState }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Last", children: lastPublishedAt ? `${when(lastPublishedAt)}${lastPublishedChannel ? ` \xB7 ${postChannelLabel[lastPublishedChannel] ?? lastPublishedChannel}` : ""}` : "none yet" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Next", children: postNext || "\u2014" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Health", className: pulse.postsFailed ? "aw-mk-bad" : void 0, children: pulse.postsFailed == null ? "\u2014" : `${pulse.postsFailed} failed` })
+          ] }),
+          /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("td", { children: "Site reading" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "State", children: pending > 0 ? "reading" : "idle" }),
+            /* @__PURE__ */ jsxs("td", { "data-label": "Last", children: [
+              observed,
+              " read",
+              pulse.lastObservedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                " \xB7 last ",
+                when(pulse.lastObservedAt)
+              ] }) : null
+            ] }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Next", children: pending > 0 ? `${pending} waiting \xB7 ${fmtEta(obsEtaMinutes(pending))}` : "all read" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Health", children: observed > 0 ? `${pct2(withGap / observed)} found something` : "\u2014" })
+          ] }),
+          /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("td", { children: "Domain checks" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "State", children: "checking" }),
+            /* @__PURE__ */ jsxs("td", { "data-label": "Last", children: [
+              domains?.checked ?? 0,
+              " domains"
+            ] }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Next", children: "\u2014" }),
+            /* @__PURE__ */ jsxs("td", { "data-label": "Health", className: domains?.undeliverable ? "aw-mk-bad" : void 0, children: [
+              domains?.undeliverable ?? 0,
+              " undeliverable"
+            ] })
+          ] })
+        ] })
+      ] }) }),
+      kindEntries.length ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx("p", { className: "aw-muted aw-mk-kinds-label", children: "What the reader finds:" }),
+        /* @__PURE__ */ jsx(StatRow, { items: kindEntries.map(([kind, value]) => ({ label: OBSERVE_KIND[kind] ?? kind, value })) })
+      ] }) : null
+    ] });
+  }
+  function NeedsYou({ api, tick, overview, replies, onTab, onReview, onContact }) {
+    const { settings, bound, senderState, postsAwaiting, pulse = {} } = overview;
+    const review = useResource(
+      () => settings.reviewFirst ? api("GET", "/admin/marketing/review?limit=100") : null,
+      [api, settings.reviewFirst, tick]
+    );
+    const queue = review.data;
+    const items = [];
+    if (!bound) {
+      items.push({
+        key: "sender",
+        text: senderState?.reason === "ses_unconfigured" ? "The sender is Amazon SES but the Worker has no SES keys." : "No outreach sender is bound on the Worker.",
+        action: { label: "Open Settings", run: () => onTab("settings") }
+      });
+    } else if (!settings.postalAddress) {
+      items.push({
+        key: "postal",
+        text: "Cold email cannot go out without a postal address.",
+        action: { label: "Open Settings", run: () => onTab("settings") }
+      });
+    }
+    const cutoff = Math.floor(Date.now() / 1e3) - 14 * 86400;
+    for (const r of (replies ?? []).filter((x) => x.kind === "reply" && x.at >= cutoff && x.contact?.id)) {
+      items.push({
+        key: `reply-${r.id}`,
+        text: `${r.contact.business ?? r.contact.email} replied ${ago(r.at)} ago`,
+        action: { label: "Open contact", run: () => onContact(r.contact.id) }
+      });
+    }
+    if (postsAwaiting > 0) {
+      items.push({
+        key: "posts-awaiting",
+        text: `${plural(postsAwaiting, "post awaits", "posts await")} approval.`,
+        action: { label: "Review posts", run: () => onTab("posts") }
+      });
+    }
+    if (pulse.postsFailed > 0) {
+      items.push({
+        key: "posts-failed",
+        text: `${plural(pulse.postsFailed, "post", "posts")} failed to publish.`,
+        action: { label: "Open Posts", run: () => onTab("posts") }
+      });
+    }
+    if (settings.reviewFirst && queue?.messages?.length) {
+      const n = queue.messages.length;
+      items.push({
+        key: "review",
+        text: `${plural(n >= 100 ? "100+" : n, "first email waits", "first emails wait")} for review.`,
+        action: { label: "Review next", run: onReview }
+      });
+    }
+    return /* @__PURE__ */ jsxs(Panel, { title: "Needs you", children: [
+      settings.reviewFirst && !queue ? /* @__PURE__ */ jsx(ResourceNote, { resource: review, label: "Loading review queue\u2026" }) : null,
+      items.length ? /* @__PURE__ */ jsx("ul", { className: "aw-needs", children: items.map((item) => /* @__PURE__ */ jsxs("li", { children: [
+        /* @__PURE__ */ jsx("span", { children: item.text }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: item.action.run, children: item.action.label })
+      ] }, item.key)) }) : (!settings.reviewFirst || queue) && replies ? /* @__PURE__ */ jsx(Empty, { title: "All caught up" }) : null
+    ] });
+  }
+  var shortDay = (unix, offsetMinutes = 0) => {
+    const d = new Date((unix + offsetMinutes * 60) * 1e3);
+    return `${d.getUTCDate()} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()]}`;
+  };
+  function StatsChart({ stats }) {
+    const ref = useRef(null);
+    const [width, setWidth] = useState(0);
+    const days = useMemo(() => stats?.days ? [...stats.days].reverse() : [], [stats]);
+    useEffect(() => {
+      const el = ref.current;
+      if (!el) return void 0;
+      const update = () => setWidth(el.clientWidth);
+      update();
+      const ro = new ResizeObserver(update);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }, [days.length]);
+    if (!days.length) return /* @__PURE__ */ jsx(Empty, { title: "No outreach activity yet" });
+    const sum = (key) => days.reduce((n, d) => n + (d[key] ?? 0), 0);
+    const sent = sum("sent");
+    const replies = sum("reply");
+    const bounces = sum("bounce");
+    const optOuts = sum("opt_out");
+    const published = sum("published");
+    const offset = stats.offsetMinutes ?? 0;
+    const H = 180;
+    const padL = 40;
+    const padR = 10;
+    const padT = 12;
+    const padB = 26;
+    const measured = width > 0;
+    const w = measured ? Math.max(width, 200) : 720;
+    const plotW = w - padL - padR;
+    const plotH = H - padT - padB;
+    const baseY = padT + plotH;
+    const maxSent = Math.max(...days.map((d) => d.sent), 1);
+    const step = maxSent > 50 ? 10 : maxSent > 10 ? 5 : 1;
+    const yMax = Math.max(step, Math.ceil(maxSent / step) * step);
+    const slot = plotW / days.length;
+    const barW = Math.min(18, Math.max(3, slot * 0.6));
+    const labelEvery = Math.max(1, Math.ceil(56 / slot));
+    const y = (v) => baseY - v / yMax * plotH;
+    const aria = `${days.length} days: ${sent} sent, ${replies} replies, ${bounces} bounces, ${optOuts} opt-outs, ${published} posts published.`;
+    return /* @__PURE__ */ jsxs("figure", { className: "aw-chart", children: [
+      /* @__PURE__ */ jsxs("figcaption", { className: "aw-chart__totals", children: [
+        sent,
+        " sent \xB7 ",
+        replies,
+        " replies \xB7 ",
+        bounces,
+        " bounces \xB7 ",
+        optOuts,
+        " opt-outs \xB7 ",
+        published,
+        " posts"
+      ] }),
+      /* @__PURE__ */ jsx("div", { ref, className: "aw-chart__box", children: /* @__PURE__ */ jsxs(
+        "svg",
+        {
+          className: "aw-chart__svg",
+          width: measured ? w : "100%",
+          height: H,
+          viewBox: measured ? void 0 : `0 0 ${w} ${H}`,
+          preserveAspectRatio: measured ? void 0 : "xMidYMid meet",
+          role: "img",
+          "aria-label": aria,
+          children: [
+            [0, 0.5, 1].map((f) => {
+              const v = yMax * f;
+              return /* @__PURE__ */ jsxs("g", { children: [
+                /* @__PURE__ */ jsx("line", { className: "aw-chart__grid", x1: padL, x2: w - padR, y1: y(v), y2: y(v) }),
+                /* @__PURE__ */ jsx("text", { className: "aw-chart__tick", x: padL - 6, y: y(v) + 3, textAnchor: "end", children: Math.round(v) })
+              ] }, f);
+            }),
+            days.map((d, i) => {
+              const cx2 = padL + i * slot + slot / 2;
+              const sentH = d.sent / yMax * plotH;
+              const bounceH = Math.min((d.bounce ?? 0) / yMax * plotH, sentH);
+              return /* @__PURE__ */ jsxs("g", { children: [
+                /* @__PURE__ */ jsx("title", { children: `${shortDay(d.day, offset)}: ${d.sent} sent, ${d.reply} replies, ${d.bounce} bounces, ${d.opt_out} opt-outs, ${d.published ?? 0} posts` }),
+                d.sent ? /* @__PURE__ */ jsx("rect", { className: "aw-chart__bar", x: cx2 - barW / 2, y: y(d.sent), width: barW, height: sentH, rx: 1.5 }) : null,
+                d.bounce && d.sent ? /* @__PURE__ */ jsx("rect", { className: "aw-chart__bounce", x: cx2 - barW / 2, y: y(d.sent), width: barW, height: bounceH, rx: 1.5 }) : null,
+                d.reply ? /* @__PURE__ */ jsx("circle", { className: "aw-chart__reply", cx: cx2, cy: padT + 4, r: 3 }) : null,
+                i % labelEvery === 0 ? /* @__PURE__ */ jsx("text", { className: "aw-chart__day", x: cx2, y: H - 8, textAnchor: "middle", children: shortDay(d.day, offset) }) : null,
+                d.published ? Array.from({ length: Math.min(d.published, 3) }).map((_, j) => /* @__PURE__ */ jsx("rect", { className: "aw-chart__post", x: cx2 - 5 + j * 4, y: baseY + 7, width: 3, height: 3, rx: 1 }, j)) : null
+              ] }, d.day);
+            }),
+            /* @__PURE__ */ jsx("line", { className: "aw-chart__axis", x1: padL, x2: w - padR, y1: baseY, y2: baseY })
+          ]
+        }
+      ) }),
+      /* @__PURE__ */ jsxs("table", { className: "aw-sr-only", children: [
+        /* @__PURE__ */ jsx("caption", { children: "Daily marketing numbers" }),
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Day" }),
+          /* @__PURE__ */ jsx("th", { children: "Sent" }),
+          /* @__PURE__ */ jsx("th", { children: "Replies" }),
+          /* @__PURE__ */ jsx("th", { children: "Bounces" }),
+          /* @__PURE__ */ jsx("th", { children: "Opt-outs" }),
+          /* @__PURE__ */ jsx("th", { children: "Posts" })
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: days.map((d) => /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("td", { children: shortDay(d.day, offset) }),
+          /* @__PURE__ */ jsx("td", { children: d.sent }),
+          /* @__PURE__ */ jsx("td", { children: d.reply }),
+          /* @__PURE__ */ jsx("td", { children: d.bounce }),
+          /* @__PURE__ */ jsx("td", { children: d.opt_out }),
+          /* @__PURE__ */ jsx("td", { children: d.published ?? 0 })
+        ] }, d.day)) })
+      ] })
+    ] });
+  }
+  function ExperimentPanel({ overview, onTab }) {
+    const rows = (overview.sequences ?? []).filter((s) => s.key === "cold_a" || s.key === "cold_obs");
+    if (rows.length < 2) return null;
+    const control = rows.find((s) => s.key === "cold_a");
+    const challenger = rows.find((s) => s.key === "cold_obs");
+    if (!control || !challenger) return null;
+    const rate = (s) => s.stats.sent ? s.stats.replies / s.stats.sent : 0;
+    const enough = control.stats.sent >= 100 && challenger.stats.sent >= 100;
+    let verdict;
+    if (!enough) {
+      verdict = `Too early to call: ${control.stats.sent} and ${challenger.stats.sent} sends so far.`;
+    } else {
+      const diff = rate(challenger) - rate(control);
+      verdict = Math.abs(diff) < 5e-4 ? "Same reply rate so far." : `${diff > 0 ? challenger.key : control.key} leads: ${pct2(Math.max(rate(challenger), rate(control)))} vs ${pct2(Math.min(rate(challenger), rate(control)))} reply rate, ${percentNumber.format(Math.abs(diff) * 100)} pts apart.`;
+    }
+    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+      /* @__PURE__ */ jsx("h3", { children: "Experiment" }),
+      /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--compact aw-table--static aw-table--stack", children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Sequence" }),
+          /* @__PURE__ */ jsx("th", { children: "Sent" }),
+          /* @__PURE__ */ jsx("th", { children: "Replies" }),
+          /* @__PURE__ */ jsx("th", { children: "Reply rate" }),
+          /* @__PURE__ */ jsx("th", { children: "Opt-outs" }),
+          /* @__PURE__ */ jsx("th", { children: "Bounces" })
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: rows.map((s) => /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsxs("td", { children: [
+            s.label,
+            " ",
+            s.key === "cold_a" ? /* @__PURE__ */ jsx(Badge, { children: "control" }) : null,
+            s.key === "cold_obs" ? /* @__PURE__ */ jsx(Badge, { children: "challenger" }) : null
+          ] }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Sent", children: s.stats.sent }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Replies", children: s.stats.replies }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Reply rate", children: pct2(rate(s)) }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Opt-outs", children: s.stats.optedOut }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Bounces", children: s.stats.bounced })
+        ] }, s.key)) })
+      ] }) }),
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: verdict }),
+      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        overview.settings.obsShare,
+        "% of observed contacts get the observation opener.",
+        " ",
+        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => onTab("settings"), children: "Settings" })
+      ] })
+    ] });
+  }
+  function OverviewTab({ api, tick, health, overview, onReview, onContact, onTab }) {
+    const stats = useResource(() => api("GET", "/admin/marketing/stats?days=14"), [api, tick]);
+    const replies = useResource(() => api("GET", "/admin/marketing/replies").then((out) => out.replies ?? []), [api, tick]);
+    const ordered = [...replies.data ?? []].sort((a, b) => Number(b.kind === "reply") - Number(a.kind === "reply") || b.at - a.at);
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx(Panel, { title: "Autopilot", children: /* @__PURE__ */ jsx(AutopilotTable, { overview }) }),
+      /* @__PURE__ */ jsx(NeedsYou, { api, tick, overview, replies: replies.data, onTab, onReview, onContact }),
+      /* @__PURE__ */ jsx(ExperimentPanel, { overview, onTab }),
+      /* @__PURE__ */ jsxs(Panel, { title: "Last 14 days", children: [
+        /* @__PURE__ */ jsx(ResourceNote, { resource: stats, label: "Loading outreach stats\u2026" }),
+        stats.data ? stats.data.days?.length ? /* @__PURE__ */ jsx(StatsChart, { stats: stats.data }) : /* @__PURE__ */ jsx(Empty, { title: "No outreach stats yet" }) : null
+      ] }),
+      /* @__PURE__ */ jsx(Panel, { title: "What came back", subtitle: "Replies are forwarded to your inbox. Opt-outs and complaints are already closed.", children: ordered.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: ordered.map((r) => /* @__PURE__ */ jsxs("li", { className: "aw-row aw-mk-click aw-mk-row-start", onClick: () => onContact(r.contact.id), children: [
+        /* @__PURE__ */ jsx(Badge, { tone: REPLY_TONE[r.kind], children: REPLY_LABEL[r.kind] ?? r.kind }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-row__title", children: [
+          r.contact.business ?? r.contact.email,
+          /* @__PURE__ */ jsx("div", { className: "aw-muted aw-mk-copy", children: snippet(r.text ?? "", 220) })
+        ] }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+          ago(r.at),
+          " ago"
+        ] })
+      ] }, r.id)) }) : /* @__PURE__ */ jsx(ResourceNote, { resource: replies, label: "Loading replies\u2026", empty: "No replies or opt-outs yet" }) })
+    ] });
+  }
+  function ReviewModal({ api, onClose }) {
+    const [queue, setQueue] = useState(null);
+    const [nextDay, setNextDay] = useState(null);
+    const [index, setIndex] = useState(0);
+    const [draft, setDraft] = useState(null);
+    const [done, setDone] = useState({ ok: 0, rewritten: 0, cancelled: 0 });
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const loadQueue = useCallback(
+      () => {
+        setError(null);
+        return api("GET", "/admin/marketing/review?limit=50").then((out) => {
+          setQueue(out.messages ?? []);
+          setNextDay(out.nextDay);
+          setIndex(0);
+        });
+      },
+      [api]
+    );
+    useEffect(() => {
+      void loadQueue().catch(setError);
+    }, [loadQueue]);
+    const current = queue?.[index] ?? null;
+    const detailResource = useResource(() => current ? api("GET", `/admin/marketing/messages/${current.id}`) : null, [api, current]);
+    const detail = detailResource.data;
+    useEffect(() => setDraft(null), [current]);
+    const step = async (fn, counter) => {
+      setBusy(true);
+      setError(null);
+      try {
+        if (fn) await fn();
+        if (counter) setDone((d) => ({ ...d, [counter]: d[counter] + 1 }));
+        if (index + 1 < queue.length) setIndex(index + 1);
+        else await loadQueue();
+      } catch (err) {
+        setError(errorText(err));
+      } finally {
+        setBusy(false);
+      }
+    };
+    const progress = `${done.ok} let go \xB7 ${done.rewritten} rewritten \xB7 ${done.cancelled} cancelled${nextDay ? ` \xB7 next 24h: ${nextDay.reviewed + done.ok + done.rewritten}/${nextDay.total} reviewed` : ""}`;
+    if (queue && !current) {
+      return /* @__PURE__ */ jsx(Modal, { title: "Review", subtitle: progress, onClose, actions: /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: onClose, children: "Done" }), children: /* @__PURE__ */ jsx(Empty, { title: "No first emails waiting for review", detail: "Follow-ups go with their first email." }) });
+    }
+    const contact = detail?.contact;
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: current ? `${index + 1} of ${queue.length}: ${current.contactEmail}` : "Review",
+        subtitle: progress,
+        onClose,
+        wide: true,
+        actions: draft ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: () => setDraft(null), children: "Back" }),
+          /* @__PURE__ */ jsx(
+            Button,
+            {
+              kind: "primary",
+              disabled: busy || !draft.subject.trim() || !draft.body.trim(),
+              onClick: () => step(() => api("PATCH", `/admin/marketing/messages/${current.id}`, draft), "rewritten"),
+              children: "Save and next"
+            }
+          )
+        ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { kind: "ghost", disabled: busy || !current, onClick: () => step(() => api("POST", `/admin/marketing/messages/${current.id}/cancel`), "cancelled"), children: "Cancel this email" }),
+          /* @__PURE__ */ jsx(Button, { disabled: busy || !current, onClick: () => step(null, null), children: "Skip" }),
+          /* @__PURE__ */ jsx(Button, { disabled: busy || !detail, onClick: () => setDraft({ subject: current.subject ?? "", body: current.body }), children: "Rewrite" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !detail, onClick: () => step(() => api("POST", `/admin/marketing/messages/${current.id}/review`), "ok"), children: "Looks good, next" })
+        ] }),
+        children: [
+          contact ? /* @__PURE__ */ jsxs("p", { className: "aw-muted aw-mk-no-top", children: [
+            [contact.business, contact.site, contact.sourceKind, contact.country].filter(Boolean).join(" \xB7 "),
+            current?.scheduledAt ? ` \xB7 goes ${when(current.scheduledAt)}` : "",
+            contact.site ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+              " \xB7 ",
+              /* @__PURE__ */ jsx("a", { href: /^https?:/.test(contact.site) ? contact.site : `https://${contact.site}`, target: "_blank", rel: "noreferrer", children: "open site" })
+            ] }) : null
+          ] }) : null,
+          draft ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx(Field, { label: "Subject", children: /* @__PURE__ */ jsx("input", { value: draft.subject, maxLength: 200, onChange: (e) => setDraft((d) => ({ ...d, subject: e.target.value })) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Body", hint: "The footer is added when it sends.", children: /* @__PURE__ */ jsx("textarea", { rows: 16, value: draft.body, onChange: (e) => setDraft((d) => ({ ...d, body: e.target.value })), autoFocus: true }) })
+          ] }) : detail ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx("p", { className: "aw-mk-subject", children: detail.preview.subject }),
+            /* @__PURE__ */ jsx("pre", { className: "aw-mk-copy aw-mk-preview", children: detail.preview.text })
+          ] }) : current ? /* @__PURE__ */ jsx(ResourceNote, { resource: detailResource, label: "Loading email\u2026" }) : !error ? /* @__PURE__ */ jsx(Loading, { label: "Loading review queue\u2026" }) : null,
+          error ? /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: !queue ? () => void loadQueue().catch(setError) : void 0 }) : null
+        ]
+      }
+    );
+  }
+  function PersonModal({ id, api, onClose, onEdit, onQueue, onOptOut, onOpenMessage }) {
+    const resource = useResource(() => api("GET", `/admin/marketing/contacts/${id}`), [api, id]);
+    const data = resource.data;
+    const [showDmarc, setShowDmarc] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const optOut = async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        await onOptOut(data.contact);
+        resource.reload();
+      } catch (err) {
+        setError(err);
+      } finally {
+        setBusy(false);
+      }
+    };
+    const c = data?.contact;
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: c?.email ?? "Contact",
+        subtitle: c ? [c.name, c.business, c.site].filter(Boolean).join(" \xB7 ") : void 0,
+        onClose,
+        wide: true,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Close" }),
+          c && ["new", "paused", "contacted"].includes(c.status) && !c.nextAt ? /* @__PURE__ */ jsx(Button, { disabled: busy || resource.loading, onClick: () => onQueue(c), children: "Queue" }) : null,
+          c && c.status !== "opted_out" ? /* @__PURE__ */ jsx(Button, { disabled: busy || resource.loading, onClick: optOut, children: "Opt out" }) : null,
+          c ? /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => onEdit(c), children: "Edit contact" }) : null
+        ] }),
+        children: [
+          error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null,
+          c && resource.error ? /* @__PURE__ */ jsx(ResourceNote, { resource }) : null,
+          c ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
+              /* @__PURE__ */ jsx(Badge, { tone: CONTACT_TONE[c.status], children: c.status }),
+              c.sourceKind ? /* @__PURE__ */ jsx(Badge, { tone: "neutral", children: c.sourceKind }) : null,
+              c.country ? /* @__PURE__ */ jsx(Badge, { tone: "neutral", children: c.country }) : null,
+              /* @__PURE__ */ jsxs(Badge, { tone: "neutral", children: [
+                "added ",
+                ago(c.createdAt),
+                " ago"
+              ] })
+            ] }),
+            c.gap ? /* @__PURE__ */ jsxs("p", { children: [
+              "Observation: ",
+              c.gap
+            ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No observation written; the plain versions are used." }),
+            c.sourceUrl ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+              "Found on",
+              " ",
+              /* @__PURE__ */ jsx("a", { href: c.sourceUrl, target: "_blank", rel: "noreferrer", children: c.sourceUrl })
+            ] }) : null,
+            c.notes ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: c.notes }) : null,
+            /* @__PURE__ */ jsx("h3", { children: "Messages" }),
+            /* @__PURE__ */ jsx("table", { className: "aw-table", children: /* @__PURE__ */ jsx("tbody", { children: data.messages.map((m) => /* @__PURE__ */ jsxs("tr", { onClick: () => onOpenMessage(m.id), className: "aw-mk-click", children: [
+              /* @__PURE__ */ jsx("td", { className: "aw-muted", children: m.sentAt ? `${ago(m.sentAt)} ago` : m.scheduledAt ? when(m.scheduledAt) : "\u2014" }),
+              /* @__PURE__ */ jsxs("td", { children: [
+                m.subject,
+                " ",
+                m.editedAt ? /* @__PURE__ */ jsx(Badge, { tone: "ok", children: "edited" }) : m.reviewedAt ? /* @__PURE__ */ jsx(Badge, { tone: "ok", children: "reviewed" }) : null
+              ] }),
+              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Badge, { tone: MESSAGE_TONE[m.status], children: m.status }) })
+            ] }, m.id)) }) }),
+            !data.messages.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing queued or sent." }) : null,
+            /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+              /* @__PURE__ */ jsx("h3", { children: "Events" }),
+              /* @__PURE__ */ jsx(Chips, { label: "Event filters", value: showDmarc ? ["dmarc"] : [], options: [{ value: "dmarc", label: "Show DMARC reports" }], onChange: (values) => setShowDmarc(values.includes("dmarc")) })
+            ] }),
+            /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: data.events.filter((e) => showDmarc || e.kind !== "dmarc_report").map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
+              /* @__PURE__ */ jsx(Badge, { tone: EVENT_BAD.has(e.kind) ? "bad" : EVENT_GOOD.has(e.kind) ? "ok" : "neutral", children: EVENT_LABEL[e.kind] ?? e.kind.replaceAll("_", " ") }),
+              /* @__PURE__ */ jsx("span", { className: "aw-muted aw-mk-copy", children: snippet(e.detail ?? "", 300) }),
+              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                ago(e.createdAt),
+                " ago"
+              ] })
+            ] }, e.id)) }),
+            !data.events.filter((e) => showDmarc || e.kind !== "dmarc_report").length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No events." }) : null
+          ] }) : /* @__PURE__ */ jsx(ResourceNote, { resource, label: "Loading contact history\u2026", empty: "No contact found" })
+        ]
+      }
+    );
+  }
+  function EmailTab({ api, run, tick, events, onOpen }) {
+    const [order, setOrder] = useState("next");
+    const [status, setStatus] = useState("scheduled");
+    const [showDmarc, setShowDmarc] = useState(false);
+    const [showAll, setShowAll] = useState(false);
+    const visibleEvents = events.filter((e) => showDmarc || e.kind !== "dmarc_report");
+    const resource = useResource(() => {
+      const search = new URLSearchParams({ channel: "email", ...status ? { status } : {}, ...order === "next" ? { order: "next" } : {} });
+      return api("GET", `/admin/marketing/messages?${search}`).then((out) => out.messages ?? []);
+    }, [api, order, status, tick]);
+    const messages = resource.data;
+    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-inline aw-mk-controls", children: [
+        /* @__PURE__ */ jsx(
+          Segmented,
+          {
+            value: order,
+            options: [
+              { value: "next", label: "Next to send" },
+              { value: "recent", label: "Latest first" }
+            ],
+            onChange: setOrder
+          }
+        ),
+        /* @__PURE__ */ jsxs("select", { value: status, onChange: (e) => setStatus(e.target.value), children: [
+          /* @__PURE__ */ jsx("option", { value: "", children: "Every status" }),
+          Object.keys(MESSAGE_TONE).map((s) => /* @__PURE__ */ jsx("option", { value: s, children: s }, s))
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "Click an email to read it exactly as it leaves, rewrite it, or send yourself a test." })
+      ] }),
+      messages?.length ? /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "When" }),
+          /* @__PURE__ */ jsx("th", { children: "To" }),
+          /* @__PURE__ */ jsx("th", { children: "Email" }),
+          /* @__PURE__ */ jsx("th", { children: "Status" })
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: messages.map((m) => /* @__PURE__ */ jsxs("tr", { onClick: () => onOpen(m), className: "aw-mk-click", children: [
+          /* @__PURE__ */ jsx("td", { className: "aw-muted", children: m.sentAt ? `${ago(m.sentAt)} ago` : m.scheduledAt ? when(m.scheduledAt) : "draft" }),
+          /* @__PURE__ */ jsx("td", { className: "aw-mono", children: m.contactEmail ?? "\u2014" }),
+          /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
+            /* @__PURE__ */ jsxs("div", { children: [
+              m.subject,
+              " ",
+              m.editedAt ? /* @__PURE__ */ jsx(Badge, { tone: "ok", children: "edited" }) : m.reviewedAt ? /* @__PURE__ */ jsx(Badge, { tone: "ok", children: "reviewed" }) : null,
+              " ",
+              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                "\xB7 step ",
+                m.step + 1
+              ] })
+            ] }),
+            /* @__PURE__ */ jsx("div", { className: "aw-muted", children: snippet(m.body.replace(/\s+/g, " "), 140) }),
+            m.error ? /* @__PURE__ */ jsx("div", { className: "aw-warn", children: m.error }) : null
+          ] }),
+          /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Badge, { tone: MESSAGE_TONE[m.status], children: m.status }) })
+        ] }, m.id)) })
+      ] }) }) : /* @__PURE__ */ jsx(ResourceNote, { resource, label: "Loading email\u2026", empty: "No email matches these filters" }),
+      messages?.length === 200 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "The first 200 are shown." }) : null,
+      /* @__PURE__ */ jsxs("div", { className: "aw-group", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+          /* @__PURE__ */ jsx("h3", { children: "Recent events" }),
+          visibleEvents.length > 10 ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setShowAll((v) => !v), children: showAll ? "Show less" : `Show all (${visibleEvents.length})` }) : null,
+          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setShowDmarc((v) => !v), children: showDmarc ? "Hide DMARC reports" : "Show DMARC reports" })
+        ] }),
+        /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: visibleEvents.slice(0, showAll ? void 0 : 10).map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
+          /* @__PURE__ */ jsx(Badge, { tone: EVENT_BAD.has(e.kind) ? "bad" : EVENT_GOOD.has(e.kind) ? "ok" : "neutral", children: EVENT_LABEL[e.kind] ?? e.kind.replaceAll("_", " ") }),
+          /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: e.email ?? "\u2014" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: snippet(e.detail ?? "", 100) }),
+          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            ago(e.createdAt),
+            " ago"
+          ] })
+        ] }, e.id)) }),
+        !visibleEvents.length ? /* @__PURE__ */ jsx(Empty, { title: "No recent events" }) : null
+      ] })
+    ] });
+  }
+  var EVENT_BAD = /* @__PURE__ */ new Set(["failed", "bounce", "opt_out", "complaint", "cycle_failed", "auto_paused", "blocked", "undeliverable"]);
+  var EVENT_GOOD = /* @__PURE__ */ new Set(["reply", "sent", "published", "cycle", "approved", "auto_resumed", "auto_approved"]);
+  var EVENT_LABEL = { dmarc_report: "DMARC report", auto_resumed: "auto-resumed", auto_approved: "auto-approved", auto_paused: "auto-paused" };
+  function MessageModal({ id, api, onClose, onDone }) {
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    const [draft, setDraft] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const load = useCallback(
+      () => api("GET", `/admin/marketing/messages/${id}`).then(setData).catch((err) => setError(errorText(err))),
+      [api, id]
+    );
+    const retry = () => {
+      setError(null);
+      void load();
+    };
+    useEffect(() => {
+      void load();
+    }, [load]);
+    const doing = async (fn, message, close = true) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const out = await fn();
+        if (close) onDone(typeof message === "function" ? message(out) : message);
+        else {
+          await load();
+          setDraft(null);
+        }
+      } catch (err) {
+        setError(errorText(err));
+      } finally {
+        setBusy(false);
+      }
+    };
+    if (!data) {
+      return /* @__PURE__ */ jsx(Modal, { title: "Email", onClose, children: error ? /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: retry }) : /* @__PURE__ */ jsx(Loading, { label: "Loading email\u2026" }) });
+    }
+    const { message: m, preview, contact } = data;
+    const editable = ["draft", "scheduled", "failed"].includes(m.status);
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: m.subject ?? "Email",
+        subtitle: `${m.status}${m.scheduledAt && !m.sentAt ? ` for ${when(m.scheduledAt)}` : ""}${m.sentAt ? `, sent ${ago(m.sentAt)} ago` : ""}${m.provider ? ` via ${m.provider}` : ""}${m.editedAt ? " \xB7 edited by hand" : ""}`,
+        onClose,
+        wide: true,
+        actions: draft ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: () => setDraft(null), children: "Discard" }),
+          /* @__PURE__ */ jsx(
+            Button,
+            {
+              kind: "primary",
+              disabled: busy || !draft.subject.trim() || !draft.body.trim(),
+              onClick: () => doing(() => api("PATCH", `/admin/marketing/messages/${m.id}`, draft), null, false),
+              children: "Save wording"
+            }
+          )
+        ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+          editable ? /* @__PURE__ */ jsx(Button, { kind: "ghost", disabled: busy, onClick: () => doing(() => api("POST", `/admin/marketing/messages/${m.id}/cancel`), "Cancelled."), children: "Cancel email" }) : null,
+          /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: () => doing(() => api("POST", `/admin/marketing/messages/${m.id}/test`), (out) => `Test sent to ${out.to} via ${out.provider}.`), children: "Send me a test" }),
+          editable ? /* @__PURE__ */ jsx(Button, { onClick: () => setDraft({ subject: m.subject ?? "", body: m.body }), children: "Rewrite" }) : null,
+          editable ? /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy, onClick: () => doing(() => api("POST", `/admin/marketing/messages/${m.id}/send`), "Sent."), children: "Send now" }) : null
+        ] }),
+        children: [
+          draft ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx(Field, { label: "Subject", children: /* @__PURE__ */ jsx("input", { value: draft.subject, maxLength: 200, onChange: (e) => setDraft((d) => ({ ...d, subject: e.target.value })) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Body", hint: "The footer (your name, postal address and the opt-out line) is added when it sends. Re-render will not overwrite a hand edit.", children: /* @__PURE__ */ jsx("textarea", { rows: 16, value: draft.body, onChange: (e) => setDraft((d) => ({ ...d, body: e.target.value })) }) })
+          ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsxs("dl", { className: "aw-mono aw-mk-message-meta", children: [
+              /* @__PURE__ */ jsx("dt", { className: "aw-muted", children: "From" }),
+              /* @__PURE__ */ jsx("dd", { children: preview.from }),
+              /* @__PURE__ */ jsx("dt", { className: "aw-muted", children: "To" }),
+              /* @__PURE__ */ jsxs("dd", { children: [
+                preview.to,
+                contact?.business ? ` (${contact.business})` : ""
+              ] }),
+              /* @__PURE__ */ jsx("dt", { className: "aw-muted", children: "Reply-To" }),
+              /* @__PURE__ */ jsx("dd", { children: preview.replyTo }),
+              Object.entries(preview.headers ?? {}).map(([name, value]) => /* @__PURE__ */ jsxs(Fragment, { children: [
+                /* @__PURE__ */ jsx("dt", { className: "aw-muted", children: name }),
+                /* @__PURE__ */ jsx("dd", { children: value })
+              ] }, name)),
+              /* @__PURE__ */ jsx("dt", { className: "aw-muted", children: "Subject" }),
+              /* @__PURE__ */ jsx("dd", { children: preview.subject })
+            ] }),
+            /* @__PURE__ */ jsx("pre", { className: "aw-mk-copy aw-mk-preview aw-mk-preview-spaced", children: preview.text }),
+            preview.image ? /* @__PURE__ */ jsxs("figure", { className: "aw-mk-figure", children: [
+              /* @__PURE__ */ jsx("img", { src: preview.image, alt: "", width: 280, className: "aw-mk-preview-image" }),
+              /* @__PURE__ */ jsx("figcaption", { className: "aw-muted", children: "Sent as HTML with this GIF above the signature; the text above is the plain-text part." })
+            ] }) : null,
+            contact ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+              contact.site ? `Site ${contact.site}. ` : "",
+              contact.sourceKind ? `Source ${contact.sourceKind}. ` : "",
+              contact.gap ? `Observation: ${contact.gap}` : "No observation on this contact, so the plain version is used."
+            ] }) : null,
+            data.events?.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: data.events.map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
+              /* @__PURE__ */ jsx(Badge, { tone: EVENT_BAD.has(e.kind) ? "bad" : EVENT_GOOD.has(e.kind) ? "ok" : "neutral", children: e.kind }),
+              /* @__PURE__ */ jsx("span", { className: "aw-muted", children: snippet(e.detail ?? "", 100) }),
+              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                ago(e.createdAt),
+                " ago"
+              ] })
+            ] }, e.id)) }) : null
+          ] }),
+          error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null
+        ]
+      }
+    );
+  }
+  var POST_MAX = { x: 280, linkedin: 3e3 };
+  function PostsTab({ api, run, mutate, ask, tick, holdHours = 0, onEdit }) {
+    const resource = useResource(
+      () => Promise.all(["x", "linkedin"].map((channel) => api("GET", `/admin/marketing/messages?channel=${channel}`))).then((lists) => lists.flatMap((out) => out.messages ?? [])),
+      [api, tick]
+    );
+    if (!resource.data) return /* @__PURE__ */ jsx(ResourceNote, { resource, label: "Loading posts\u2026" });
+    const posts = resource.data;
+    const at = (m) => m.scheduledAt ?? m.createdAt;
+    const groups = [
+      { title: "Waiting for your approval", hint: holdHours > 0 ? "Approve a draft to schedule it, or let its hold expire." : "Approve a draft to schedule it.", list: posts.filter((m) => m.status === "draft").sort((a, b) => at(a) - at(b)) },
+      { title: "Scheduled", hint: "The publisher posts these at their time from your browser profile. You get an email when each goes out.", list: posts.filter((m) => m.status === "scheduled" || m.status === "sending").sort((a, b) => at(a) - at(b)) },
+      { title: "Failed", list: posts.filter((m) => m.status === "failed") },
+      { title: "Published", list: posts.filter((m) => m.status === "sent").sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0)) }
+    ];
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      groups.map(
+        (group) => group.list.length ? /* @__PURE__ */ jsx(Panel, { title: `${group.title} (${group.list.length})`, subtitle: group.hint, children: group.list.map((m) => /* @__PURE__ */ jsx(PostCard, { post: m, api, run, mutate, ask, holdHours, onEdit }, m.id)) }, group.title) : null
+      ),
+      !groups.some((group) => group.list.length) ? /* @__PURE__ */ jsx(ResourceNote, { resource, label: "Loading posts\u2026", empty: "No posts to review, schedule or track" }) : null
+    ] });
+  }
+  function PostCard({ post: m, api, run, mutate, ask, holdHours = 0, onEdit }) {
+    const open = ["draft", "scheduled", "failed"].includes(m.status);
+    const max = POST_MAX[m.channel] ?? 3e3;
+    const releaseAt = m.status === "draft" && holdHours > 0 ? Math.max((m.createdAt ?? 0) + holdHours * 3600, m.scheduledAt ?? 0) : null;
+    return /* @__PURE__ */ jsxs("article", { className: "aw-mk-entry", children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+        /* @__PURE__ */ jsx(Badge, { children: m.channel === "x" ? "X" : "LinkedIn" }),
+        /* @__PURE__ */ jsx(Badge, { tone: MESSAGE_TONE[m.status], children: m.status === "draft" ? "to approve" : m.status }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+          m.sentAt ? `posted ${ago(m.sentAt)} ago` : m.scheduledAt ? `slot ${when(m.scheduledAt)}` : "no slot",
+          " \xB7 ",
+          m.body.length,
+          "/",
+          max,
+          " characters",
+          m.kind === "auto" ? " \xB7 written by the content cycle" : ""
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        m.url ? /* @__PURE__ */ jsx("a", { href: m.url, target: "_blank", rel: "noreferrer", children: "Open post" }) : null
+      ] }),
+      /* @__PURE__ */ jsx("p", { className: "aw-mk-copy aw-mk-post-body", children: m.body }),
+      releaseAt ? /* @__PURE__ */ jsxs("div", { className: "aw-muted", children: [
+        "Goes out automatically ",
+        when(releaseAt),
+        " unless you cancel it first."
+      ] }) : null,
+      m.error ? /* @__PURE__ */ jsx("div", { className: "aw-warn", children: m.error }) : null,
+      open ? /* @__PURE__ */ jsxs("div", { className: "aw-inline aw-mk-post-actions", children: [
+        m.status === "draft" ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => run(() => api("POST", `/admin/marketing/messages/${m.id}/approve`), "Approved: it goes out in its slot."), children: "Approve" }) : m.status === "failed" ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => run(() => api("POST", `/admin/marketing/messages/${m.id}/retry`), "Queued again."), children: "Retry" }) : /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => onEdit(m), children: "Edit" }),
+        /* @__PURE__ */ jsxs("details", { className: "aw-mk-more", children: [
+          /* @__PURE__ */ jsx("summary", { children: "More" }),
+          /* @__PURE__ */ jsxs("div", { className: "aw-inline aw-mk-post-actions", children: [
+            m.status !== "scheduled" ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => onEdit(m), children: "Edit" }) : null,
+            /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => ask({
+              title: `Post publicly on ${postChannelLabel[m.channel] ?? m.channel} now?`,
+              text: "The publisher can post this as soon as it next checks the queue.",
+              confirm: "Post now",
+              danger: true,
+              run: () => mutate(() => api("POST", `/admin/marketing/messages/${m.id}/send`), "Due now: the publisher posts it within 15 minutes.")
+            }), children: "Post now" }),
+            /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => ask({
+              title: m.status === "draft" ? "Reject this draft?" : "Cancel this post?",
+              text: "This removes it from the publishing queue.",
+              confirm: m.status === "draft" ? "Reject" : "Cancel post",
+              danger: true,
+              run: () => mutate(() => api("POST", `/admin/marketing/messages/${m.id}/cancel`), m.status === "draft" ? "Draft rejected." : "Post cancelled.")
+            }), children: m.status === "draft" ? "Reject" : "Cancel" })
+          ] })
+        ] })
+      ] }) : null
+    ] });
+  }
+  function SequencesTab({ api, sequences }) {
+    const [sequence, setSequence] = useState(sequences[0]?.key ?? "cold_a");
+    const resource = useResource(
+      () => api("GET", `/admin/marketing/sequences/preview?sequence=${sequence}`),
+      [api, sequence]
+    );
+    const data = resource.data;
+    const replyRate = (s) => s.sent ? pct2(s.replies / s.sent) : "\u2014";
+    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+      /* @__PURE__ */ jsx("h3", { children: "How each sequence is doing" }),
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Sent, replies and outcomes per sequence, counted on the contact's latest send." }),
+      /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Sequence" }),
+          /* @__PURE__ */ jsx("th", { children: "Sent" }),
+          /* @__PURE__ */ jsx("th", { children: "Replies" }),
+          /* @__PURE__ */ jsx("th", { children: "Reply rate" }),
+          /* @__PURE__ */ jsx("th", { children: "Opt-outs" }),
+          /* @__PURE__ */ jsx("th", { children: "Bounces" })
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: sequences.map((s) => /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
+            s.label,
+            " ",
+            s.key === "cold_a" ? /* @__PURE__ */ jsx(Badge, { children: "control" }) : null,
+            s.key === "cold_obs" ? /* @__PURE__ */ jsx(Badge, { children: "challenger" }) : null,
+            s.needsGap ? /* @__PURE__ */ jsx("div", { className: "aw-muted", children: "needs a site observation" }) : null
+          ] }),
+          /* @__PURE__ */ jsx("td", { children: s.stats.sent || "\xB7" }),
+          /* @__PURE__ */ jsx("td", { children: s.stats.replies || "\xB7" }),
+          /* @__PURE__ */ jsx("td", { children: replyRate(s.stats) }),
+          /* @__PURE__ */ jsx("td", { className: s.stats.optedOut ? "aw-warn" : void 0, children: s.stats.optedOut || "\xB7" }),
+          /* @__PURE__ */ jsx("td", { className: s.stats.bounced ? "aw-warn" : void 0, children: s.stats.bounced || "\xB7" })
+        ] }, s.key)) })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-inline aw-mk-sequence-tools", children: [
+        /* @__PURE__ */ jsx("select", { value: sequence, onChange: (e) => setSequence(e.target.value), children: sequences.map((s) => /* @__PURE__ */ jsx("option", { value: s.key, children: s.label }, s.key)) }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: resource.reload, disabled: resource.loading, children: "Another contact" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: data?.contact ? `Filled in for ${data.contact.email}${data.contact.business ? ` (${data.contact.business})` : ""}.` : data ? "Filled in for a sample contact." : "" })
+      ] }),
+      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "The wording lives in ",
+        /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "SEQUENCES" }),
+        " in ",
+        /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "worker/src/marketing.ts" }),
+        "; the desk re-renders the queue by itself when it changes. To change it for one person, open their email in the Email tab and rewrite it there."
+      ] }),
+      resource.loading || !data?.steps?.length ? /* @__PURE__ */ jsx(ResourceNote, { resource, label: "Loading sequence preview\u2026", empty: "No steps in this sequence" }) : null,
+      data?.steps?.map((step) => /* @__PURE__ */ jsxs("article", { className: "aw-mk-entry", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+          /* @__PURE__ */ jsxs(Badge, { children: [
+            "day ",
+            step.day
+          ] }),
+          /* @__PURE__ */ jsx("strong", { children: step.subject }),
+          step.usesPlain ? /* @__PURE__ */ jsx(Badge, { tone: "neutral", children: "plain version: no observation" }) : null
+        ] }),
+        /* @__PURE__ */ jsxs("pre", { className: "aw-mk-copy", children: [
+          step.body,
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: data.footer })
+        ] })
+      ] }, step.kind))
+    ] });
+  }
+  function SourcesTab({ api, tick, onPick }) {
+    const resource = useResource(() => api("GET", "/admin/marketing/sources").then((out) => out.sources ?? []), [api, tick]);
+    if (!resource.data?.length) return /* @__PURE__ */ jsx(Panel, { title: "Sources", children: /* @__PURE__ */ jsx(ResourceNote, { resource, label: "Loading sources\u2026", empty: "No contact sources yet" }) });
+    const sources = resource.data;
+    const rate = (n, d) => d ? pct2(n / d) : "\u2014";
+    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "A source is the label given at import (the file name by default). Rates are per contact reached. A source whose bounces pass 4% will pause the whole desk, so drop or verify it first." }),
+      /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Source" }),
+          /* @__PURE__ */ jsx("th", { children: "Contacts" }),
+          /* @__PURE__ */ jsx("th", { children: "Queued" }),
+          /* @__PURE__ */ jsx("th", { children: "Reached" }),
+          /* @__PURE__ */ jsx("th", { children: "Replied" }),
+          /* @__PURE__ */ jsx("th", { children: "Bounced" }),
+          /* @__PURE__ */ jsx("th", { children: "Opted out" }),
+          /* @__PURE__ */ jsx("th", { children: "Complaints" })
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: sources.map((s) => /* @__PURE__ */ jsxs("tr", { onClick: () => onPick(s.source), className: "aw-mk-click", title: "Show these contacts", children: [
+          /* @__PURE__ */ jsx("td", { className: "aw-mono", children: s.source }),
+          /* @__PURE__ */ jsx("td", { children: s.contacts }),
+          /* @__PURE__ */ jsx("td", { children: s.queued }),
+          /* @__PURE__ */ jsx("td", { children: s.reached }),
+          /* @__PURE__ */ jsxs("td", { children: [
+            s.replied,
+            " ",
+            /* @__PURE__ */ jsx("span", { className: "aw-muted", children: rate(s.replied, s.reached) })
+          ] }),
+          /* @__PURE__ */ jsxs("td", { children: [
+            s.bounced,
+            " ",
+            /* @__PURE__ */ jsx("span", { className: s.reached && s.bounced / s.reached > 0.04 ? "aw-warn" : "aw-muted", children: rate(s.bounced, s.reached) })
+          ] }),
+          /* @__PURE__ */ jsxs("td", { children: [
+            s.optedOut,
+            " ",
+            /* @__PURE__ */ jsx("span", { className: "aw-muted", children: rate(s.optedOut, s.reached) })
+          ] }),
+          /* @__PURE__ */ jsxs("td", { children: [
+            s.complaints,
+            " ",
+            /* @__PURE__ */ jsx("span", { className: s.complaints ? "aw-warn" : "aw-muted", children: rate(s.complaints, s.reached) })
+          ] })
+        ] }, s.source)) })
+      ] }) })
+    ] });
+  }
+  function windowRoom(settings) {
+    const hours = settings.startHour === settings.endHour ? 24 : (settings.endHour - settings.startHour + 24) % 24 || 24;
+    return (hours * 12 * settings.perRun).toLocaleString("en-US");
+  }
+  function ModelHealth({ api }) {
+    const resource = useResource(() => api("GET", "/admin/health/deepseek"), [api]);
+    const state = resource.data;
+    if (!state) return /* @__PURE__ */ jsx(ResourceNote, { resource, label: "Checking model health\u2026", empty: "No model health report" });
+    const tone2 = state.chat ? "ok" : state.bridge ? "warn" : "bad";
+    const label = state.chat ? "DeepSeek up" : state.bridge ? "Workers AI fallback" : "both engines down";
+    return /* @__PURE__ */ jsx(Badge, { tone: tone2, children: label });
+  }
+  function SettingsTab({ overview, mutate, api, onShowSending }) {
+    const [group, setGroup] = useState("Sending");
+    const [edits, setEdits] = useState({});
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const saved = overview.settings;
+    const draft = { ...saved, ...edits };
+    const set = (key, value) => setEdits((before) => {
+      const next = { ...before };
+      if (value === saved[key]) delete next[key];
+      else next[key] = value;
+      return next;
+    });
+    const changed = Object.keys(edits).length > 0;
+    const save = async () => {
+      const { live: _live, ...patch } = edits;
+      setBusy(true);
+      setError(null);
+      try {
+        const out = await mutate(() => api("PUT", "/admin/marketing/settings", patch), (result) => result.rejected?.length ? "Settings were not fully saved." : "Marketing settings saved.");
+        const rejected = out?.rejected ?? [];
+        setEdits(Object.fromEntries(Object.entries(patch).filter(([key]) => rejected.includes(key))));
+        if (rejected.length) setError(`Could not save: ${rejected.join(", ")}.`);
+      } catch (err) {
+        setError(err);
+      } finally {
+        setBusy(false);
+      }
+    };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx(Panel, { title: "Marketing settings", actions: /* @__PURE__ */ jsx(ModelHealth, { api }), children: /* @__PURE__ */ jsx(Segmented, { label: "Settings group", value: group, options: ["Sending", "Safety", "Content"].map((label) => ({ value: label, label })), onChange: setGroup }) }),
+      /* @__PURE__ */ jsx("fieldset", { disabled: busy, className: "aw-mk-settings-fields", children: group === "Sending" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx(Panel, { title: "Sender", subtitle: "Who the mail comes from.", children: /* @__PURE__ */ jsxs("div", { className: "aw-form2", children: [
+          /* @__PURE__ */ jsxs("div", { className: "aw-field", children: [
+            /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: "Outreach" }),
+            /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+              /* @__PURE__ */ jsx(Badge, { tone: saved.live ? "ok" : "warn", children: saved.live ? "Live" : "Paused" }),
+              /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: onShowSending, children: "Go to sending control" })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsx(
+            Field,
+            {
+              label: "Sender",
+              hint: draft.provider === "ses" ? overview.providers.ses ? "Amazon SES: bounces and complaints file back to hello@." : "Needs AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY as Worker secrets." : "The MARKETING binding on the Worker.",
+              children: /* @__PURE__ */ jsx(
+                Segmented,
+                {
+                  value: draft.provider,
+                  options: [
+                    { value: "cloudflare", label: "Cloudflare" },
+                    { value: "ses", label: "Amazon SES" }
+                  ],
+                  onChange: (v) => set("provider", v)
+                }
+              )
+            }
+          ),
+          /* @__PURE__ */ jsx(Field, { label: "From name", hint: "On the From line of every email.", children: /* @__PURE__ */ jsx("input", { value: draft.fromName, onChange: (e) => set("fromName", e.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Postal address", hint: "Required on every cold email.", children: /* @__PURE__ */ jsx("input", { value: draft.postalAddress, placeholder: "Street, city, country", onChange: (e) => set("postalAddress", e.target.value) }) })
+        ] }) }),
+        /* @__PURE__ */ jsx(Panel, { title: "Schedule and volume", subtitle: "When mail may leave, and how much of it.", children: /* @__PURE__ */ jsxs("div", { className: "aw-form2", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Send window", hint: "Local time on the offset clock; an end of 24 means midnight.", children: /* @__PURE__ */ jsxs("span", { className: "aw-inline aw-mk-window", children: [
+            "From",
+            " ",
+            /* @__PURE__ */ jsx(
+              "input",
+              {
+                inputMode: "numeric",
+                "aria-label": "Window start hour",
+                value: draft.startHour,
+                onChange: (e) => set("startHour", Number(e.target.value))
+              }
+            ),
+            " ",
+            "to",
+            " ",
+            /* @__PURE__ */ jsx(
+              "input",
+              {
+                inputMode: "numeric",
+                "aria-label": "Window end hour",
+                value: draft.endHour,
+                onChange: (e) => set("endHour", Number(e.target.value))
+              }
+            ),
+            " ",
+            "\xB7 offset",
+            " ",
+            /* @__PURE__ */ jsx(
+              "input",
+              {
+                inputMode: "numeric",
+                "aria-label": "Window offset minutes",
+                value: draft.offsetMinutes,
+                onChange: (e) => set("offsetMinutes", Number(e.target.value))
+              }
+            ),
+            " ",
+            "min (",
+            offsetLabel(draft.offsetMinutes),
+            ")"
+          ] }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Weekdays only", hint: "Skip Saturday and Sunday.", children: /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              value: Boolean(draft.weekdaysOnly),
+              options: [
+                { value: true, label: "Weekdays" },
+                { value: false, label: "Every day" }
+              ],
+              onChange: (v) => set("weekdaysOnly", v)
+            }
+          ) }),
+          /* @__PURE__ */ jsx(Field, { label: "Daily cap", hint: "Emails a day across every sequence.", children: /* @__PURE__ */ jsx(
+            "input",
+            {
+              inputMode: "numeric",
+              value: draft.dailyCap,
+              title: `At ${draft.perRun} per run the window allows about ${windowRoom(draft)} a day.`,
+              onChange: (e) => set("dailyCap", Number(e.target.value))
+            }
+          ) }),
+          /* @__PURE__ */ jsx(Field, { label: "Per run", hint: "The cron runs every five minutes; up to 200.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.perRun, onChange: (e) => set("perRun", Number(e.target.value)) }) })
+        ] }) })
+      ] }) : group === "Safety" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsxs(Panel, { title: "Safety", subtitle: "The checks that keep the list healthy.", children: [
+          /* @__PURE__ */ jsxs("div", { className: "aw-form2", children: [
+            /* @__PURE__ */ jsx(
+              Field,
+              {
+                label: "Auto-resume",
+                hint: "A pause the desk caused itself lifts after 7 quiet days, ramping from 20 a day. A pause you set by hand is never undone.",
+                children: /* @__PURE__ */ jsx(
+                  Segmented,
+                  {
+                    value: Boolean(draft.autoResume),
+                    options: [
+                      { value: true, label: "On" },
+                      { value: false, label: "Off" }
+                    ],
+                    onChange: (v) => set("autoResume", v)
+                  }
+                )
+              }
+            ),
+            /* @__PURE__ */ jsx(Field, { label: "Review first emails", hint: "First emails send only after you read them in Review next.", children: /* @__PURE__ */ jsx(
+              Segmented,
+              {
+                value: Boolean(draft.reviewFirst),
+                options: [
+                  { value: true, label: "Only reviewed" },
+                  { value: false, label: "Send all" }
+                ],
+                onChange: (v) => set("reviewFirst", v)
+              }
+            ) })
+          ] }),
+          /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+            "Last 14 days: ",
+            overview.health.sent,
+            " sent, ",
+            overview.health.bounces,
+            " bounced (",
+            pct2(overview.health.bounceRate),
+            "), ",
+            overview.health.complaints,
+            " ",
+            "complaints (",
+            pct2(overview.health.complaintRate),
+            "). The desk pauses itself and emails you above ",
+            pct2(overview.health.maxBounceRate),
+            " bounces or",
+            " ",
+            pct2(overview.health.maxComplaintRate),
+            " complaints, before SES would review the account (5% and 0.1%). Every email carries a one-click unsubscribe header."
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx(Panel, { title: "Experiment", subtitle: "The cold A/B test.", children: /* @__PURE__ */ jsx(
+          Field,
+          {
+            label: "Observation sequence share (%)",
+            hint: "Of contacts with a site observation, this percent get the observation opener. 0 keeps the experiment off, 100 makes it the only cold opener.",
+            children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "100", value: draft.obsShare ?? 50, onChange: (e) => set("obsShare", Number(e.target.value)) })
+          }
+        ) })
+      ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx(Panel, { title: "Email look", subtitle: "What the HTML version carries.", children: /* @__PURE__ */ jsx(Field, { label: "Workshop GIF", hint: "Off sends plain text only; First emails and Every email add the workshop images.", children: /* @__PURE__ */ jsx(
+          Segmented,
+          {
+            value: draft.image ?? "first",
+            options: [
+              { value: "off", label: "Off" },
+              { value: "first", label: "First emails" },
+              { value: "all", label: "Every email" }
+            ],
+            onChange: (v) => set("image", v)
+          }
+        ) }) }),
+        /* @__PURE__ */ jsxs(Panel, { title: "Posts", subtitle: "How written posts reach X and LinkedIn.", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Approval", hint: "Drafted posts wait for approval or the hold; every post that goes out is also emailed to you.", children: /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              value: Boolean(draft.postApproval),
+              options: [
+                { value: true, label: "Approve each post" },
+                { value: false, label: "Post on schedule" }
+              ],
+              onChange: (v) => set("postApproval", v)
+            }
+          ) }),
+          /* @__PURE__ */ jsx(Field, { label: "Post hold (hours)", hint: "How long a drafted post waits before it goes out on its own. 0 means approve by hand. Up to 168.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "168", value: draft.postHoldHours ?? 24, onChange: (e) => set("postHoldHours", Number(e.target.value)) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Voice notes", hint: "Added to every content brief after the launch kit.", children: /* @__PURE__ */ jsx(
+            "textarea",
+            {
+              rows: 3,
+              value: draft.voiceNotes ?? "",
+              placeholder: "Shorter sentences. No exclamation marks. Talk about the client's week, not the machine.",
+              onChange: (e) => set("voiceNotes", e.target.value)
+            }
+          ) })
+        ] }),
+        /* @__PURE__ */ jsx(Panel, { title: "Publisher", children: /* @__PURE__ */ jsxs("details", { className: "aw-mk-publisher", children: [
+          /* @__PURE__ */ jsx("summary", { children: "How publishing works" }),
+          /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+            "X and LinkedIn have no affordable posting API, so the machine posts from a real browser profile:",
+            /* @__PURE__ */ jsx("span", { className: "aw-mono", children: " marketing/publisher/publish.mjs" }),
+            ". It polls this desk with",
+            " ",
+            /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "MARKETING_TOKEN" }),
+            ", opens the composer with the queued text, and reports back. Keep it launched from this machine \u2014 it uses that browser session, not a password."
+          ] })
+        ] }) })
+      ] }) }),
+      /* @__PURE__ */ jsxs("footer", { className: "aw-inline aw-mk-settings-footer", children: [
+        /* @__PURE__ */ jsx("span", { className: "aw-muted", role: "status", children: busy ? "Saving\u2026" : changed ? "Unsaved changes" : "No unsaved changes" }),
+        error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null,
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(Button, { disabled: busy || !changed, onClick: () => {
+          setEdits({});
+          setError(null);
+        }, children: "Reset" }),
+        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !changed, onClick: save, children: "Save" })
+      ] })
+    ] });
+  }
+  function ImportModal({ api, sequences, onClose, onDone }) {
+    const [csv, setCsv] = useState("");
+    const [file, setFile] = useState(null);
+    const [sequence, setSequence] = useState("none");
+    const [campaign, setCampaign] = useState("launch");
+    const [genericGap, setGenericGap] = useState(false);
+    const [sourceKind, setSourceKind] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const chosen = sequences.find((s) => s.key === sequence);
+    const needsGap = Boolean(chosen?.needsGap);
+    const pick = async (event) => {
+      const picked = event.target.files?.[0] ?? null;
+      setFile(picked);
+      setCsv(picked ? await picked.text() : "");
+      if (picked) setSourceKind(picked.name.replace(/\.csv$/i, "").toLowerCase().replace(/[^a-z0-9._-]+/g, "-"));
+      if (picked && /mail-only/i.test(picked.name)) setSequence("nosite");
+    };
+    const submit = async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        const result = await api("POST", "/admin/marketing/contacts/import", { csv, sequence, campaign, genericGap, sourceKind });
+        onDone(
+          `${result.added} added${result.queued ? `, ${result.queued} queued (${result.emails} emails)` : ""}${result.paused ? `, ${result.paused} held for a missing observation` : ""}${result.skipped.length ? `, ${result.skipped.length} skipped` : ""}.`
+        );
+      } catch (err) {
+        setError(errorText(err));
+      } finally {
+        setBusy(false);
+      }
+    };
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: "Import contacts",
+        subtitle: "Upload a CSV. Columns: email, name, business, site, gap, source_url, notes, and optionally source_kind and country (two letters; DE, AT, CH, IT, ES, PL, DK, NO and TR are never mailed cold). The gap is the one specific, true observation the first email opens with.",
+        onClose,
+        wide: true,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !csv.trim(), onClick: submit, children: busy ? "Importing\u2026" : "Import" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "CSV file", hint: "A file with a header row. It is read in the browser and sent as text, so a large export does not have to be pasted.", children: /* @__PURE__ */ jsx("input", { type: "file", accept: ".csv,text/csv", onChange: pick }) }),
+          file ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+            file.name,
+            " \xB7 ",
+            Math.round(file.size / 1024),
+            " KB"
+          ] }) : null,
+          /* @__PURE__ */ jsx(Field, { label: "Sequence", hint: "Choose \u201CImport only\u201D to review the list first; the bulk Queue action can queue everyone later.", children: /* @__PURE__ */ jsxs("select", { value: sequence, onChange: (e) => setSequence(e.target.value), children: [
+            /* @__PURE__ */ jsx("option", { value: "none", children: "Import only \u2014 do not queue yet" }),
+            sequences.map((s) => /* @__PURE__ */ jsx("option", { value: s.key, children: s.label }, s.key))
+          ] }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Campaign", hint: "Kept on every message so a later read can tell batches apart.", children: /* @__PURE__ */ jsx("input", { value: campaign, maxLength: 40, onChange: (e) => setCampaign(e.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Source", hint: "Which list this is. Sources shows reply, bounce and complaint rates per source, so you know which kind of list to build more of.", children: /* @__PURE__ */ jsx("input", { value: sourceKind, maxLength: 60, placeholder: "osm-colorado-mail-only", onChange: (e) => setSourceKind(e.target.value) }) }),
+          needsGap ? /* @__PURE__ */ jsx(Field, { label: "Contacts without an observation", hint: "A cold email without one is usually spam. Leave this off to hold them; turn it on to use a general, true opener instead.", children: /* @__PURE__ */ jsxs("label", { className: "aw-inline", children: [
+            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: genericGap, onChange: (e) => setGenericGap(e.target.checked) }),
+            "Use a general opener when the gap is empty"
+          ] }) }) : null,
+          error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null
+        ]
+      }
+    );
+  }
+  function ContactModal({ api, contact, sequences, onClose, onSaved }) {
+    const editing = Boolean(contact);
+    const [form, setForm] = useState({
+      email: contact?.email ?? "",
+      name: contact?.name ?? "",
+      business: contact?.business ?? "",
+      site: contact?.site ?? "",
+      gap: contact?.gap ?? "",
+      notes: contact?.notes ?? ""
+    });
+    const [queue, setQueue] = useState(!editing);
+    const [sequence, setSequence] = useState("cold_a");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+    const submit = async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        if (editing) {
+          const patch = Object.fromEntries(Object.entries(form).filter(([key, value]) => value !== (contact[key] ?? "")));
+          await api("PATCH", `/admin/marketing/contacts/${contact.id}`, patch);
+          onSaved(`${contact.email} saved.`);
+        } else {
+          const out = await api("POST", "/admin/marketing/contacts", { ...form, sequence: queue ? sequence : void 0 });
+          onSaved(`${out.contact.email} added${queue ? " and queued" : ""}.`);
+        }
+      } catch (err) {
+        setError(errorText(err));
+        setBusy(false);
+      }
+    };
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: editing ? contact.email : "Add a contact",
+        subtitle: editing ? "The gap is what the cold email opens with; leave it blank and the sequence will not queue." : "Only someone you chose to write to. There is no list building in here.",
+        onClose,
+        wide: true,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !form.email.trim(), onClick: submit, children: editing ? "Save" : "Add" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
+            /* @__PURE__ */ jsx(Field, { label: "Email", children: /* @__PURE__ */ jsx("input", { value: form.email, disabled: editing, onChange: (e) => set("email", e.target.value) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Name", children: /* @__PURE__ */ jsx("input", { value: form.name, onChange: (e) => set("name", e.target.value) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Business", children: /* @__PURE__ */ jsx("input", { value: form.business, onChange: (e) => set("business", e.target.value) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Site", children: /* @__PURE__ */ jsx("input", { value: form.site, onChange: (e) => set("site", e.target.value) }) })
+          ] }),
+          /* @__PURE__ */ jsx(Field, { label: "The gap", hint: "One specific, true observation. If it is not true, the whole email is spam.", children: /* @__PURE__ */ jsx("textarea", { rows: 3, value: form.gap, onChange: (e) => set("gap", e.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Notes", children: /* @__PURE__ */ jsx("textarea", { rows: 2, value: form.notes, onChange: (e) => set("notes", e.target.value) }) }),
+          !editing ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx(Field, { label: "Queue now", children: /* @__PURE__ */ jsx(
+              Segmented,
+              {
+                value: queue,
+                options: [
+                  { value: true, label: "Queue a sequence" },
+                  { value: false, label: "Keep as a contact" }
+                ],
+                onChange: setQueue
+              }
+            ) }),
+            queue ? /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx(Segmented, { value: sequence, options: sequences.map((s) => ({ value: s.key, label: s.label })), onChange: setSequence }) }) : null
+          ] }) : null,
+          error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null
+        ]
+      }
+    );
+  }
+  function QueueModal({ api, contact, sequences, onClose, onQueued }) {
+    const [sequence, setSequence] = useState("cold_a");
+    const [genericGap, setGenericGap] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const chosen = sequences.find((s) => s.key === sequence);
+    const submit = async () => {
+      setBusy(true);
+      try {
+        const out = await api("POST", `/admin/marketing/contacts/${contact.id}/queue`, { sequence, genericGap });
+        onQueued(out.queued);
+      } catch (err) {
+        setError(errorText(err));
+        setBusy(false);
+      }
+    };
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: `Queue for ${contact.email}`,
+        subtitle: "Three emails, days 0, 4 and 10. A reply or \u201Cno\u201D cancels the rest.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy, onClick: submit, children: "Queue" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx(Segmented, { value: sequence, options: sequences.map((s) => ({ value: s.key, label: s.label })), onChange: setSequence }) }),
+          chosen?.needsGap && !contact.gap ? /* @__PURE__ */ jsx(Field, { label: "No observation on this contact", hint: "A cold email without one is usually spam.", children: /* @__PURE__ */ jsxs("label", { className: "aw-inline", children: [
+            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: genericGap, onChange: (e) => setGenericGap(e.target.checked) }),
+            "Queue with a general opener"
+          ] }) }) : null,
+          error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null
+        ]
+      }
+    );
+  }
+  function BulkQueueModal({ api, sequences, onClose, onDone }) {
+    const [sequence, setSequence] = useState("cold_a");
+    const [campaign, setCampaign] = useState("launch");
+    const [genericGap, setGenericGap] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const chosen = sequences.find((s) => s.key === sequence);
+    const submit = async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        const result = await api("POST", "/admin/marketing/contacts/queue", { sequence, campaign, genericGap });
+        onDone(
+          `${result.queued} contacts queued (${result.emails} emails)${result.skippedNoGap ? `, ${result.skippedNoGap} skipped without an observation` : ""}.`
+        );
+      } catch (err) {
+        setError(errorText(err));
+        setBusy(false);
+      }
+    };
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: "Queue everyone",
+        subtitle: "Every new or paused contact without mail already queued. Contacts with an observation are queued; the rest are skipped unless you choose the general opener.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy, onClick: submit, children: busy ? "Queueing\u2026" : "Queue everyone" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx("select", { value: sequence, onChange: (e) => setSequence(e.target.value), children: sequences.map((s) => /* @__PURE__ */ jsx("option", { value: s.key, children: s.label }, s.key)) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Campaign", children: /* @__PURE__ */ jsx("input", { value: campaign, maxLength: 40, onChange: (e) => setCampaign(e.target.value) }) }),
+          chosen?.needsGap ? /* @__PURE__ */ jsx(Field, { label: "Contacts without an observation", hint: "Leave this off to skip them; turn it on to use a general, true opener.", children: /* @__PURE__ */ jsxs("label", { className: "aw-inline", children: [
+            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: genericGap, onChange: (e) => setGenericGap(e.target.checked) }),
+            "Queue them anyway with a general opener"
+          ] }) }) : null,
+          error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null
+        ]
+      }
+    );
+  }
+  function EditPostModal({ api, message, onClose, onSaved }) {
+    const [body, setBody] = useState(message.body);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const max = POST_MAX[message.channel] ?? 3e3;
+    const submit = async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        await api("PATCH", `/admin/marketing/messages/${message.id}`, { body });
+        onSaved("Post saved.");
+      } catch (err) {
+        setError(errorText(err));
+        setBusy(false);
+      }
+    };
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: `Edit ${message.channel === "x" ? "X" : "LinkedIn"} post`,
+        subtitle: message.scheduledAt ? `Slot ${when(message.scheduledAt)}. Editing keeps the slot and the approval state.` : void 0,
+        onClose,
+        wide: true,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !body.trim() || body.length > max, onClick: submit, children: "Save" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Text", hint: `${body.length}/${max} characters. No em dashes, no stock AI phrasing: marketing/style/README.md.`, children: /* @__PURE__ */ jsx("textarea", { rows: message.channel === "x" ? 5 : 14, value: body, onChange: (e) => setBody(e.target.value) }) }),
+          error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null
+        ]
+      }
+    );
+  }
+  function ComposeModal({ api, contacts, initialChannel = "x", onClose, onSaved }) {
+    const [channel, setChannel] = useState(initialChannel);
+    const [contactId, setContactId] = useState("");
+    const [subject, setSubject] = useState("");
+    const [body, setBody] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const submit = async (queueNow) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const out = await api("POST", "/admin/marketing/messages", {
+          channel,
+          contactId: channel === "email" ? Number(contactId) : void 0,
+          subject: channel === "email" ? subject : void 0,
+          body
+        });
+        if (queueNow) await api("POST", `/admin/marketing/messages/${out.message.id}/send`);
+        onSaved(queueNow ? channel === "email" ? "Sent." : "Queued for the publisher." : "Saved as a draft.");
+      } catch (err) {
+        setError(errorText(err));
+        setBusy(false);
+      }
+    };
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: "Compose",
+        subtitle: channel === "email" ? "One-off email to a contact. The footer and opt-out line are added when it sends." : "A post for the local publisher. It posts from your own X or LinkedIn session.",
+        onClose,
+        wide: true,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { disabled: busy || !body.trim(), onClick: () => submit(false), children: "Save draft" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !body.trim(), onClick: () => submit(true), children: channel === "email" ? "Send now" : "Queue now" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Channel", children: /* @__PURE__ */ jsx(Segmented, { value: channel, options: CHANNELS.filter((c) => c.value).map((c) => ({ value: c.value, label: c.label })), onChange: setChannel }) }),
+          channel === "email" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx(Field, { label: "Contact", children: /* @__PURE__ */ jsxs("select", { value: contactId, onChange: (e) => setContactId(e.target.value), children: [
+              /* @__PURE__ */ jsx("option", { value: "", children: "Pick a contact\u2026" }),
+              contacts.map((c) => /* @__PURE__ */ jsxs("option", { value: c.id, children: [
+                c.email,
+                c.business ? ` \u2014 ${c.business}` : ""
+              ] }, c.id))
+            ] }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Subject", children: /* @__PURE__ */ jsx("input", { value: subject, maxLength: 200, onChange: (e) => setSubject(e.target.value) }) })
+          ] }) : null,
+          /* @__PURE__ */ jsx(Field, { label: "Text", hint: "X allows 280 characters; LinkedIn a little over 3,000.", children: /* @__PURE__ */ jsx("textarea", { rows: 10, value: body, maxLength: 2e4, onChange: (e) => setBody(e.target.value) }) }),
+          channel !== "email" ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Drafts do not reach the publisher until you queue them." }) : null,
+          error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null
+        ]
+      }
+    );
+  }
+
+  // packages/admin-ui/src/seo.jsx
+  var DAY = 864e5;
+  var SEVERITY_TONE = { high: "bad", medium: "warn", low: "dash" };
+  var SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
+  var CITATION_STATUSES = ["todo", "drafted", "live", "verified", "skipped"];
+  var CITATION_RANK = { todo: 0, drafted: 1, live: 2, verified: 3, skipped: 4 };
+  var EVENT_KINDS = [
+    { value: "core_update", label: "Core update" },
+    { value: "algorithm_update", label: "Algorithm update" },
+    { value: "fix", label: "Fix" },
+    { value: "note", label: "Note" }
+  ];
+  var EVENT_TONE = { core_update: "warn", algorithm_update: "warn", fix: "ok", note: "dash", guide: "ok", indexnow: "dash" };
+  var EVENT_LABEL2 = {
+    core_update: "core update",
+    algorithm_update: "algorithm update",
+    fix: "fix",
+    note: "note",
+    guide: "guide",
+    indexnow: "IndexNow"
+  };
+  var CYCLE_REASON = {
+    auto_off: "automatic cycles are off",
+    open_cycle: "a cycle ticket is already open",
+    no_findings: "there are no open findings at medium or above",
+    recent_cycle: "a cycle was filed in the last day",
+    no_project: "the ptechsolutions project is missing",
+    no_admin: "there is no admin account to file it for",
+    insert_failed: "the ticket could not be written"
+  };
+  var GUIDE_REASON = {
+    auto_off: "automatic guide cycles are off; force still files one",
+    open_cycle: "a guide ticket is already open",
+    weekly_cap: "this week\u2019s guide cycles are used up",
+    recent_cycle: "a guide cycle was filed in the last two days",
+    all_covered: "every target already has a guide or a fresh attempt",
+    no_project: "the ptechsolutions project is missing",
+    no_admin: "there is no admin account to file it for",
+    insert_failed: "the ticket could not be written"
+  };
+  var plural2 = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  var OUR_DOMAINS = ["malipetek.dev", "ptechsolutions.net"];
+  var isOurDomain = (domain) => OUR_DOMAINS.some((host) => domain === host || domain.endsWith(`.${host}`));
+  var pct3 = (rate) => `${Number(((rate ?? 0) * 100).toFixed(1))}%`;
+  var dayNumber = (day) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day ?? "");
+    return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / DAY : NaN;
+  };
+  var dayOfNumber = (n) => new Date(n * DAY).toISOString().slice(0, 10);
+  var shortDay2 = (day) => {
+    const n = dayNumber(day);
+    if (!Number.isFinite(n)) return day ?? "";
+    return new Date(n * DAY).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+  };
+  var longDay = (day) => {
+    const n = dayNumber(day);
+    if (!Number.isFinite(n)) return day ?? "";
+    return new Date(n * DAY).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  };
+  var instantDay = (unix) => unix ? new Date(unix * 1e3).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "-";
+  var scoreTone = (score) => score >= 90 ? "ok" : score >= 70 ? "warn" : "bad";
+  var positionTone = (position) => position === null || position === void 0 ? "dash" : position <= 10 ? "ok" : position <= 30 ? "warn" : "dash";
+  var swingTone = (swing) => swing === null || swing === void 0 ? "dash" : swing >= 8 ? "bad" : swing >= 3 ? "warn" : "ok";
+  var swingText = (swing) => swing === null || swing === void 0 ? "no swing yet" : `\xB1${swing} position${swing === 1 ? "" : "s"} week over week`;
+  var RUN_ASK = {
+    audit: {
+      title: "Run the audit now?",
+      text: "Reads our own hosts\u2019 sitemaps and up to 200 pages, then opens or resolves findings. No paid API is called.",
+      confirm: "Run audit"
+    },
+    geo: {
+      title: "Run the GEO probe now?",
+      text: "Asks DeepSeek every buyer question once (one paid API call per question) and keeps whether the answer named us.",
+      confirm: "Run probe"
+    },
+    citations: {
+      title: "Check citations now?",
+      text: "Re-reads every profile URL once. A page that no longer links back loses its verified date; a page we cannot read keeps it.",
+      confirm: "Check citations"
+    },
+    cycle: {
+      title: "Run a fix cycle now?",
+      text: "Files a system ticket on ptechsolutions for the worst open findings; an agent then works it. This cannot be undone from here.",
+      confirm: "File the cycle"
+    },
+    ranks: {
+      title: "Check rankings now?",
+      text: "Posts every tracked keyword to DataForSEO, which charges about $0.006 per keyword at depth 100.",
+      confirm: "Check rankings"
+    }
+  };
+  var runTone = (at, days) => !at ? "warn" : Date.now() / 1e3 - at > days * 86400 ? "warn" : "ok";
+  function TicketLink({ id, openTicket }) {
+    if (!id) return /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "-" });
+    return /* @__PURE__ */ jsxs(
+      "a",
+      {
+        href: `#ticket=${id}`,
+        className: "aw-link",
+        onClick: (event) => {
+          event.preventDefault();
+          openTicket?.(id);
+        },
+        children: [
+          "#",
+          id
+        ]
+      }
+    );
+  }
+  function SeoView() {
+    const { api, ask, notify, openTicket } = useAdmin();
+    const [overview, setOverview] = useState(null);
+    const [error, setError] = useState(null);
+    const [tab, setTab] = useState("overview");
+    const [tick, setTick] = useState(0);
+    const [busy, setBusy] = useState(null);
+    const load = useCallback(
+      () => api("GET", "/admin/seo/overview").then((data) => {
+        setOverview(data);
+        setError(null);
+      }).catch(setError),
+      [api]
+    );
+    useEffect(() => {
+      void load();
+    }, [load]);
+    usePoll(load, 6e4, [load]);
+    const refresh = useCallback(() => {
+      setTick((n) => n + 1);
+      return load();
+    }, [load]);
+    const run = useCallback(
+      (what) => ask({
+        ...RUN_ASK[what],
+        run: async () => {
+          setBusy(what);
+          try {
+            const out = await api("POST", "/admin/seo/run", { what });
+            setTick((n) => n + 1);
+            await load();
+            notify?.(runText(out));
+          } finally {
+            setBusy(null);
+          }
+        }
+      }),
+      [api, ask, load, notify]
+    );
+    if (error && !overview) return /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: load });
+    if (!overview) return /* @__PURE__ */ jsx(Loading, { label: "Loading the SEO desk\u2026" });
+    const hosts = overview.hostsAvailable ?? overview.hosts.map((h) => h.host);
+    const state = overview.state ?? {};
+    const runs = [
+      { key: "audit", at: state.lastAuditAt, days: 2 },
+      { key: "GEO probe", at: state.lastGeoAt, days: 8 },
+      { key: "citations", at: state.lastCitationsAt, days: 8 },
+      { key: "rankings", at: state.lastRanksAt, days: 8 }
+    ];
+    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-seo", children: [
+      /* @__PURE__ */ jsx(
+        PageHeader,
+        {
+          title: "SEO",
+          subtitle: "Our own hosts, checked daily: search scores, open fixes, the questions buyers ask assistants, and the profiles that link back.",
+          meta: runs.map((last) => /* @__PURE__ */ jsxs(Badge, { tone: runTone(last.at, last.days), children: [
+            last.key,
+            " \xB7 ",
+            last.at ? `${ago(last.at)} ago` : "not yet"
+          ] }, last.key)),
+          actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: Boolean(busy), onClick: () => run("audit"), children: busy === "audit" ? "Running\u2026" : "Run audit" }),
+            /* @__PURE__ */ jsx(Button, { disabled: Boolean(busy), onClick: () => run("geo"), children: busy === "geo" ? "Running\u2026" : "Run GEO probe" }),
+            /* @__PURE__ */ jsx(Button, { disabled: Boolean(busy), onClick: () => run("citations"), children: busy === "citations" ? "Checking\u2026" : "Check citations" }),
+            /* @__PURE__ */ jsx(Button, { disabled: Boolean(busy), onClick: () => run("cycle"), children: busy === "cycle" ? "Filing\u2026" : "Run cycle now" })
+          ] })
+        }
+      ),
+      error ? /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: load }) : null,
+      /* @__PURE__ */ jsx(
+        PageTabs,
+        {
+          ariaLabel: "SEO desk section",
+          value: tab,
+          onChange: setTab,
+          items: [
+            { value: "overview", label: "Overview" },
+            { value: "audit", label: "Audit" },
+            { value: "answers", label: "AI answers" },
+            { value: "ranks", label: "Rankings" },
+            { value: "citations", label: "Citations" },
+            { value: "settings", label: "Settings" }
+          ]
+        }
+      ),
+      tab === "overview" ? /* @__PURE__ */ jsx(OverviewTab2, { overview, api, ask, notify, refresh, openTicket }) : null,
+      tab === "audit" ? /* @__PURE__ */ jsx(AuditTab, { api, hosts, tick, openTicket, refresh, notify }) : null,
+      tab === "answers" ? /* @__PURE__ */ jsx(GeoTab, { api, tick }) : null,
+      tab === "ranks" ? /* @__PURE__ */ jsx(RankingsTab, { api, overview, refresh, tick, ask, notify }) : null,
+      tab === "citations" ? /* @__PURE__ */ jsx(CitationsTab, { api, tick, notify }) : null,
+      tab === "settings" ? /* @__PURE__ */ jsx(SettingsTab2, { api, overview, refresh, notify }) : null
+    ] });
+  }
+  function runText(result) {
+    if (!result || typeof result !== "object") return "Done.";
+    if (result.what === "audit") {
+      const hosts = result.hosts ?? [];
+      if (!hosts.length) return "The audit ran but no host answered.";
+      return hosts.map((h) => `${h.host}: ${h.pages ?? 0} pages, average ${h.averageScore ?? 0}, ${h.opened ?? 0} opened, ${h.resolved ?? 0} resolved`).join(". ").concat(".");
+    }
+    if (result.what === "geo") {
+      if (result.skipped === "no_key") return "Skipped: the Worker has no DEEPSEEK_API_KEY.";
+      return `Asked ${result.questions ?? 0} questions, kept ${result.runs ?? 0} answers, ${result.mentions ?? 0} named us.`;
+    }
+    if (result.what === "citations") {
+      return `Checked ${result.checked ?? 0} profiles: ${result.verified ?? 0} verified, ${result.dropped ?? 0} dropped.`;
+    }
+    if (result.what === "ranks") {
+      if (result.skipped === "no_key") return "Skipped: the Worker has no DATAFORSEO_API_KEY.";
+      if (result.skipped === "no_keywords") return "No keywords tracked. Add some in Settings first.";
+      if (result.skipped === "api_failed") return "DataForSEO did not answer; nothing was queued or charged.";
+      if (result.posted) {
+        return `Queued ${plural2(result.posted, "keyword", "keywords")} on the standard queue (~$${(result.cost ?? 0).toFixed(4)}). Results land on later cron ticks.`;
+      }
+      return `Collected ${plural2(result.collected ?? 0, "keyword", "keywords")}; ${result.pending ?? 0} still queued.`;
+    }
+    if (result.what === "cycle") {
+      if (result.filed) return `Filed #${result.id}. An agent takes the worst findings next.`;
+      const reason = CYCLE_REASON[result.reason] ?? result.reason ?? "unknown reason";
+      return `Nothing filed: ${reason}${result.id ? ` (#${result.id})` : ""}.`;
+    }
+    return "Done.";
+  }
+  function guideCycleText(result) {
+    if (!result || typeof result !== "object") return "Done.";
+    if (result.filed) return `Filed #${result.id}: an agent writes the guide and the desk merges it.`;
+    const reason = GUIDE_REASON[result.reason] ?? result.reason ?? "unknown reason";
+    return `Nothing filed: ${reason}${result.id ? ` (#${result.id})` : ""}.`;
+  }
+  function OverviewTab2({ overview, api, ask, notify, refresh, openTicket }) {
+    const [guideBusy, setGuideBusy] = useState(false);
+    const [showAllGuides, setShowAllGuides] = useState(false);
+    const held = overview.cycle?.held;
+    const writeGuide = () => ask({
+      title: "Write a guide now?",
+      text: "Files a guide-cycle ticket on ptechsolutions, bypassing the weekly cadence. An agent writes the page and the desk merges it.",
+      confirm: "File the guide cycle",
+      run: async () => {
+        setGuideBusy(true);
+        try {
+          const out = await api("POST", "/admin/seo/guide-cycle?force=1");
+          await refresh();
+          notify?.(guideCycleText(out));
+        } finally {
+          setGuideBusy(false);
+        }
+      }
+    });
+    const coverage = overview.coverage ?? [];
+    const covered = coverage.filter((entry) => entry.guide).length;
+    const guideShown = showAllGuides ? coverage : coverage.slice(0, 5);
+    const rank = overview.rank ?? {};
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      held?.held ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
+        "Google core update in progress: content rewrites paused until ",
+        longDay(held.until),
+        ".",
+        held.since ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+          " Started ",
+          longDay(held.since),
+          "."
+        ] }) : null
+      ] }) : null,
+      /* @__PURE__ */ jsx("div", { className: "aw-grid2", children: overview.hosts.map((host) => /* @__PURE__ */ jsxs(
+        Panel,
+        {
+          title: host.host,
+          subtitle: host.day ? `Audited ${shortDay2(host.day)}` : "No audit yet",
+          actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsxs(Badge, { tone: scoreTone(host.averageScore), children: [
+              host.averageScore,
+              " average"
+            ] }),
+            /* @__PURE__ */ jsx(Badge, { children: plural2(host.pages, "page", "pages") })
+          ] }),
+          children: [
+            /* @__PURE__ */ jsx(ScoreChart, { series: host.series ?? [], events: overview.events ?? [], today: overview.day }),
+            /* @__PURE__ */ jsx(
+              StatRow,
+              {
+                items: [
+                  { label: "high", value: host.findings.high, tone: host.findings.high ? "bad" : void 0 },
+                  { label: "medium", value: host.findings.medium, tone: host.findings.medium ? "warn" : void 0 },
+                  { label: "low", value: host.findings.low },
+                  { label: "open", value: host.findings.open, tone: host.findings.open ? "warn" : "ok" }
+                ]
+              }
+            )
+          ]
+        },
+        host.host
+      )) }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
+        /* @__PURE__ */ jsxs(
+          Panel,
+          {
+            title: "Assistant mentions",
+            subtitle: "Whether the assistants name us when buyers ask",
+            actions: /* @__PURE__ */ jsxs(Badge, { tone: overview.geo.rate ? "ok" : "neutral", children: [
+              pct3(overview.geo.rate),
+              " mention rate"
+            ] }),
+            children: [
+              /* @__PURE__ */ jsx(
+                StatRow,
+                {
+                  items: [
+                    { label: "mentions", value: overview.geo.mentions, hint: overview.geo.mentions ? "Answers that named us" : void 0 },
+                    { label: "answers", value: overview.geo.runs }
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsx(GeoChart, { weeks: overview.geo.weeks ?? [] })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsx(Panel, { title: "Citations", subtitle: "Profile placements that can link back. A weekly check keeps the verified ones honest.", children: /* @__PURE__ */ jsx(
+          StatRow,
+          {
+            items: [
+              { label: "to do", value: overview.citations.todo, tone: overview.citations.todo ? "warn" : void 0 },
+              { label: "drafted", value: overview.citations.drafted },
+              { label: "live", value: overview.citations.live },
+              { label: "verified", value: overview.citations.verified, tone: overview.citations.verified ? "ok" : void 0 },
+              { label: "skipped", value: overview.citations.skipped }
+            ]
+          }
+        ) })
+      ] }),
+      /* @__PURE__ */ jsxs(
+        Panel,
+        {
+          title: "Google rankings",
+          actions: /* @__PURE__ */ jsx(Badge, { tone: rank.rankReady ? "ok" : "bad", children: rank.rankReady ? "tracking on" : "no API key" }),
+          children: [
+            /* @__PURE__ */ jsx(
+              StatRow,
+              {
+                items: [
+                  {
+                    label: "average position",
+                    value: rank.avgPosition === null || rank.avgPosition === void 0 ? "\u2014" : rank.avgPosition,
+                    tone: rank.avgPosition === null || rank.avgPosition === void 0 ? void 0 : rank.avgPosition <= 20 ? "ok" : "warn"
+                  },
+                  { label: "in the top 10", value: rank.inTop10 ?? 0, tone: rank.inTop10 ? "ok" : void 0 },
+                  { label: "in the top 100", value: rank.inTop100 ?? 0, tone: rank.inTop100 ? void 0 : "warn" },
+                  { label: "swing", value: swingText(rank.swing), hint: "Week over week; a few positions is normal" },
+                  { label: "keywords", value: plural2(rank.keywords ?? 0, "keyword", "keywords") },
+                  ...rank.pending ? [{ label: "queued", value: plural2(rank.pending, "task", "tasks"), tone: "warn" }] : []
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsx("p", { className: "aw-muted aw-seo-note", children: rank.rankReady ? `Weekly Google positions for the keywords we sell against, last checked ${rank.latestDay ? shortDay2(rank.latestDay) : "never"}.` : "Add the DATAFORSEO_API_KEY secret to the intercom Worker to turn rank tracking on." })
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsxs(Panel, { title: "Fix cycle", children: [
+        /* @__PURE__ */ jsx(
+          StatRow,
+          {
+            items: [
+              { label: "auto cycle", value: overview.cycle.auto ? "on" : "off", tone: overview.cycle.auto ? "ok" : void 0 },
+              {
+                label: "open at medium or above",
+                value: overview.cycle.openFindings,
+                tone: overview.cycle.openFindings ? "warn" : "ok"
+              },
+              { label: "due", value: overview.cycle.wouldFile ? "a cycle would file" : "no cycle due", tone: overview.cycle.wouldFile ? "warn" : void 0 }
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs("p", { children: [
+          "Open ticket:",
+          " ",
+          overview.cycle.openTicketId ? /* @__PURE__ */ jsx(TicketLink, { id: overview.cycle.openTicketId, openTicket }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "none" }),
+          held?.held ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            " \xB7 rewrites pause until ",
+            longDay(held.until)
+          ] }) : null
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs(
+        Panel,
+        {
+          title: "Guide coverage",
+          actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsxs(Badge, { tone: coverage.length && covered === coverage.length ? "ok" : "warn", children: [
+              covered,
+              " of ",
+              coverage.length,
+              " targets have a page"
+            ] }),
+            /* @__PURE__ */ jsx(Button, { size: "sm", disabled: guideBusy, onClick: writeGuide, children: guideBusy ? "Filing\u2026" : "Write a guide now" })
+          ] }),
+          children: [
+            /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+              "Every rank keyword and buyer question gets a guide on ptechsolutions.net.",
+              " ",
+              overview.guidesAt ? `guides.json was read ${ago(overview.guidesAt)} ago.` : "The site has not been read for guides yet."
+            ] }),
+            coverage.length ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+              /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: guideShown.map((entry) => /* @__PURE__ */ jsxs("li", { className: "aw-seo-row", children: [
+                /* @__PURE__ */ jsx(Tag, { tone: entry.kind === "keyword" ? "dash" : "warn", children: entry.kind }),
+                /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: entry.target }),
+                /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+                entry.guide ? /* @__PURE__ */ jsx("a", { href: entry.guide.url, target: "_blank", rel: "noreferrer", children: entry.guide.title }) : entry.inProgress ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                  "writing ",
+                  /* @__PURE__ */ jsx(TicketLink, { id: entry.inProgress, openTicket })
+                ] }) : entry.lastAttemptAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                  "attempted ",
+                  instantDay(entry.lastAttemptAt)
+                ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "No page yet" })
+              ] }, `${entry.kind}:${entry.target}`)) }),
+              coverage.length > 5 ? /* @__PURE__ */ jsx("div", { className: "aw-seo-guides__more", children: /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", "aria-expanded": showAllGuides, onClick: () => setShowAllGuides((shown) => !shown), children: showAllGuides ? "Show fewer" : `Show all (${coverage.length})` }) }) : null
+            ] }) : /* @__PURE__ */ jsx(Empty, { title: "No guide targets yet", hint: "Add rank keywords or buyer questions in Settings and the desk starts filing guide cycles." })
+          ]
+        }
+      )
+    ] });
+  }
+  function ScoreChart({ series, events, today }) {
+    const end = today ?? series.at(-1)?.day;
+    const endNumber = dayNumber(end);
+    if (!series.length || !Number.isFinite(endNumber)) return /* @__PURE__ */ jsx(Empty, { title: "No audit series yet", hint: "The chart fills in once a daily audit has run." });
+    const width = 560;
+    const height = 170;
+    const left = 30;
+    const right = 8;
+    const top = 10;
+    const bottom = 24;
+    const innerW = width - left - right;
+    const innerH = height - top - bottom;
+    const start = endNumber - 29;
+    const xOf = (n) => left + (n - start) / 29 * innerW;
+    const yOf = (score) => top + (1 - Math.max(0, Math.min(100, score)) / 100) * innerH;
+    const points = series.map((point) => ({ ...point, n: dayNumber(point.day) })).filter((point) => Number.isFinite(point.n) && point.n >= start && point.n <= endNumber).sort((a, b) => a.n - b.n);
+    const path = points.map((point, index) => `${index ? "L" : "M"}${xOf(point.n).toFixed(1)},${yOf(point.averageScore).toFixed(1)}`).join(" ");
+    const marks = (events ?? []).map((event) => ({ ...event, n: dayNumber(event.day) })).filter((event) => Number.isFinite(event.n) && event.n >= start && event.n <= endNumber);
+    const markColour = (kind) => kind === "fix" || kind === "guide" ? "var(--aw-ok)" : kind === "note" || kind === "indexnow" ? "var(--aw-text2)" : "var(--aw-warn)";
+    return /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart", children: [
+      /* @__PURE__ */ jsxs("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Average score, last 30 days", children: [
+        [0, 50, 100].map((value) => /* @__PURE__ */ jsxs("g", { children: [
+          /* @__PURE__ */ jsx("line", { x1: left, x2: width - right, y1: yOf(value), y2: yOf(value), stroke: "var(--aw-border)", strokeWidth: "1" }),
+          /* @__PURE__ */ jsx("text", { x: left - 5, y: yOf(value) + 3, textAnchor: "end", fontSize: "9", fill: "var(--aw-text2)", children: value })
+        ] }, value)),
+        [0, 7, 14, 21, 29].map((offset) => {
+          const n = start + offset;
+          return /* @__PURE__ */ jsx("text", { x: xOf(n), y: height - 6, textAnchor: offset === 0 ? "start" : offset === 29 ? "end" : "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay2(dayOfNumber(n)) }, offset);
+        }),
+        marks.map((event) => /* @__PURE__ */ jsxs("g", { children: [
+          /* @__PURE__ */ jsx("title", { children: `${event.label} (${EVENT_LABEL2[event.kind] ?? event.kind}) on ${longDay(event.day)}` }),
+          /* @__PURE__ */ jsx("line", { x1: xOf(event.n), x2: xOf(event.n), y1: top, y2: height - bottom, stroke: markColour(event.kind), strokeWidth: "1", strokeDasharray: "3 3", opacity: "0.65" }),
+          /* @__PURE__ */ jsx("circle", { cx: xOf(event.n), cy: height - bottom - 4, r: "3", fill: markColour(event.kind) })
+        ] }, event.id)),
+        path ? /* @__PURE__ */ jsx("path", { d: path, fill: "none", stroke: "var(--aw-accent)", strokeWidth: "2", strokeLinejoin: "round", strokeLinecap: "round" }) : null,
+        points.map((point) => /* @__PURE__ */ jsx("circle", { cx: xOf(point.n), cy: yOf(point.averageScore), r: "2.6", fill: "var(--aw-accent)", children: /* @__PURE__ */ jsx("title", { children: `${longDay(point.day)}: ${point.averageScore} average over ${point.pages} pages` }) }, point.day))
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart__legend", children: [
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot aw-seo-chart__dot--accent" }),
+          " score"
+        ] }),
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot aw-seo-chart__dot--warn" }),
+          " core or algorithm update"
+        ] }),
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot aw-seo-chart__dot--ok" }),
+          " our fix"
+        ] })
+      ] })
+    ] });
+  }
+  function GeoChart({ weeks }) {
+    if (!weeks.length) return /* @__PURE__ */ jsx(Empty, { title: "No probe answers yet", hint: "Run the GEO probe from the header after the next audit." });
+    const width = 520;
+    const height = 150;
+    const left = 12;
+    const right = 12;
+    const top = 10;
+    const bottom = 24;
+    const innerW = width - left - right;
+    const innerH = height - top - bottom;
+    const gap = 5;
+    const barW = Math.max(6, (innerW - gap * (weeks.length - 1)) / weeks.length);
+    return /* @__PURE__ */ jsx("div", { className: "aw-seo-chart", children: /* @__PURE__ */ jsxs("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Mention rate per week, last 12 weeks", children: [
+      /* @__PURE__ */ jsx("line", { x1: left, x2: width - right, y1: top + innerH, y2: top + innerH, stroke: "var(--aw-border2)", strokeWidth: "1" }),
+      [0, 0.5, 1].map((value) => /* @__PURE__ */ jsx("line", { x1: left, x2: width - right, y1: top + innerH * (1 - value), y2: top + innerH * (1 - value), stroke: "var(--aw-border)", strokeWidth: "1", strokeDasharray: "2 4" }, value)),
+      weeks.map((week, index) => {
+        const x = left + index * (barW + gap);
+        const barH = Math.max(1, innerH * Math.max(0, Math.min(1, week.rate ?? 0)));
+        return /* @__PURE__ */ jsxs("g", { children: [
+          /* @__PURE__ */ jsx("title", { children: `Week of ${longDay(week.week)}: ${week.mentions} of ${week.runs} answers named us (${pct3(week.rate)})` }),
+          /* @__PURE__ */ jsx("rect", { x, y: top + innerH - barH, width: barW, height: barH, rx: "2", fill: "var(--aw-accent)", opacity: week.runs ? 0.85 : 0.25 }),
+          index % 3 === 0 || index === weeks.length - 1 ? /* @__PURE__ */ jsx("text", { x: x + barW / 2, y: height - 6, textAnchor: "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay2(week.week) }) : null
+        ] }, week.week);
+      }),
+      /* @__PURE__ */ jsx("text", { x: left, y: top - 1, fontSize: "9", fill: "var(--aw-text2)", children: "100%" }),
+      /* @__PURE__ */ jsx("text", { x: left, y: top + innerH + 9, fontSize: "9", fill: "var(--aw-text2)", children: "0%" })
+    ] }) });
+  }
+  function RankingsTab({ api, overview, refresh, tick, ask, notify }) {
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const [expanded, setExpanded] = useState(null);
+    const load = useCallback(
+      () => api("GET", "/admin/seo/ranks").then((out) => {
+        setData(out);
+        setError(null);
+      }).catch(setError),
+      [api]
+    );
+    useEffect(() => {
+      void load();
+    }, [load, tick]);
+    const check = () => ask({
+      ...RUN_ASK.ranks,
+      run: async () => {
+        setBusy(true);
+        try {
+          const out = await api("POST", "/admin/seo/run", { what: "ranks" });
+          await load();
+          await refresh();
+          notify?.(runText(out));
+        } finally {
+          setBusy(false);
+        }
+      }
+    });
+    if (error && !data) return /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: load });
+    if (!data) return /* @__PURE__ */ jsx(Loading, { label: "Loading rankings\u2026" });
+    const rows = data.rows ?? [];
+    const location = data.location ?? { locationCode: 2840, languageCode: "en" };
+    const noPosition = data.avgPosition === null || data.avgPosition === void 0;
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      !data.rankReady ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
+        "Rank tracking is off. Add the DATAFORSEO_API_KEY secret to the intercom Worker (",
+        /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "npx wrangler secret put DATAFORSEO_API_KEY" }),
+        ", run in ",
+        /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "worker/" }),
+        ") and the weekly check starts on the next cron tick."
+      ] }) : null,
+      /* @__PURE__ */ jsx("div", { className: "aw-seo-statrow", children: /* @__PURE__ */ jsx(
+        StatRow,
+        {
+          items: [
+            {
+              label: "average position",
+              value: noPosition ? "\u2014" : data.avgPosition,
+              tone: noPosition ? void 0 : data.avgPosition <= 20 ? "ok" : "warn"
+            },
+            { label: "in the top 10", value: data.inTop10 ?? 0, tone: data.inTop10 ? "ok" : void 0 },
+            { label: "in the top 100", value: data.inTop100 ?? 0, tone: data.inTop100 ? void 0 : "warn" },
+            { label: "swing", value: swingText(data.swing), tone: swingTone(data.swing) === "ok" ? "ok" : swingTone(data.swing) === "warn" ? "warn" : swingTone(data.swing) === "bad" ? "bad" : void 0 },
+            {
+              label: "keywords",
+              value: plural2((data.keywords ?? []).length, "keyword", "keywords"),
+              hint: `DataForSEO location ${location.locationCode}/${location.languageCode}`
+            },
+            ...data.pending ? [{ label: "queued", value: plural2(data.pending, "task", "tasks"), tone: "warn" }] : []
+          ]
+        }
+      ) }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: data.latestDay ? `checked ${longDay(data.latestDay)}` : "not checked yet" }),
+        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy, onClick: check, children: busy ? "Checking\u2026" : "Check rankings now" })
+      ] }),
+      error ? /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: load }) : null,
+      /* @__PURE__ */ jsx(Panel, { title: "Average position", subtitle: "Last 90 days, lower is better", actions: /* @__PURE__ */ jsx(Badge, { tone: swingTone(data.swing), children: swingText(data.swing) }), children: /* @__PURE__ */ jsx(RankChart, { series: data.series ?? [], events: overview.events ?? [], today: overview.day }) }),
+      !rows.length ? /* @__PURE__ */ jsx(
+        Empty,
+        {
+          title: "No rank check yet",
+          hint: data.rankReady ? 'Press "Check rankings now" or wait for the weekly cron.' : "Add the DATAFORSEO_API_KEY secret, then check rankings."
+        }
+      ) : /* @__PURE__ */ jsxs(Panel, { children: [
+        /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--stack aw-seo-ranks", children: [
+          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("th", { children: "Keyword" }),
+            /* @__PURE__ */ jsx("th", { children: "Position" }),
+            /* @__PURE__ */ jsx("th", { children: "Change" }),
+            /* @__PURE__ */ jsx("th", { children: "Ranking URL" }),
+            /* @__PURE__ */ jsx("th", { children: "Top competitors" })
+          ] }) }),
+          /* @__PURE__ */ jsx("tbody", { children: rows.map((row) => {
+            const open = expanded === row.keyword;
+            const top = row.topDomains ?? [];
+            return /* @__PURE__ */ jsxs(Fragment, { children: [
+              /* @__PURE__ */ jsxs("tr", { onClick: () => setExpanded(open ? null : row.keyword), "aria-expanded": open, title: open ? "Hide competitors" : "Show competitors", children: [
+                /* @__PURE__ */ jsx("td", { className: "aw-table__title", children: row.keyword }),
+                /* @__PURE__ */ jsx("td", { "data-label": "Position", children: row.position === null ? /* @__PURE__ */ jsx(Tag, { tone: "dash", title: "Not in the top 100", children: "not in top 100" }) : /* @__PURE__ */ jsxs(Tag, { tone: positionTone(row.position), children: [
+                  "#",
+                  row.position
+                ] }) }),
+                /* @__PURE__ */ jsx("td", { "data-label": "Change", title: row.prevPosition === null ? "No check last week" : `Was #${row.prevPosition} last week`, children: row.change === null ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "\u2013" }) : row.change > 0 ? /* @__PURE__ */ jsxs(Tag, { tone: "ok", children: [
+                  "\u25B2 ",
+                  row.change
+                ] }) : row.change < 0 ? /* @__PURE__ */ jsxs(Tag, { tone: "bad", children: [
+                  "\u25BC ",
+                  Math.abs(row.change)
+                ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "no change" }) }),
+                /* @__PURE__ */ jsx("td", { "data-label": "Ranking URL", className: "aw-seo-ranks__url", children: row.url ? /* @__PURE__ */ jsx("a", { href: row.url, target: "_blank", rel: "noreferrer", className: "aw-link", onClick: (event) => event.stopPropagation(), children: row.url }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "\u2014" }) }),
+                /* @__PURE__ */ jsx("td", { "data-label": "Top competitors", className: "aw-seo-types", title: top.join(", ") || "no organic results", children: top.length ? `${top.slice(0, 3).join(", ")}${top.length > 3 ? ` +${top.length - 3}` : ""}` : "\u2014" })
+              ] }),
+              open ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: 5, className: "aw-seo-cell--detail", children: /* @__PURE__ */ jsx("div", { className: "aw-seo-issues", children: top.length ? top.map((domain, index) => /* @__PURE__ */ jsxs("div", { className: "aw-seo-issue", children: [
+                /* @__PURE__ */ jsx(Tag, { tone: "dash", children: index + 1 }),
+                /* @__PURE__ */ jsx("span", { className: "aw-mono", children: domain }),
+                isOurDomain(domain) ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "us" }) : null
+              ] }, domain)) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "No organic results were in the top 100." }) }) }) }) : null
+            ] }, row.keyword);
+          }) })
+        ] }) }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted aw-seo-note", children: "The weekly check asks Google Organic for every tracked keyword (United States, English, top 100). A keyword we are not in the top 100 for is kept as a row with no position, so the swing stays honest." })
+      ] })
+    ] });
+  }
+  function RankChart({ series, events, today }) {
+    const end = today ?? series.at(-1)?.day;
+    const endNumber = dayNumber(end);
+    if (!series.length || !Number.isFinite(endNumber)) return /* @__PURE__ */ jsx(Empty, { title: "No rank checks yet", hint: "The first weekly check fills in the line." });
+    const width = 560;
+    const height = 170;
+    const left = 30;
+    const right = 8;
+    const top = 10;
+    const bottom = 24;
+    const innerW = width - left - right;
+    const innerH = height - top - bottom;
+    const span2 = 89;
+    const start = endNumber - span2;
+    const xOf = (n) => left + (n - start) / span2 * innerW;
+    const yOf = (position) => top + (Math.max(1, Math.min(100, position ?? 100)) - 1) / 99 * innerH;
+    const points = series.map((point) => ({ ...point, n: dayNumber(point.day) })).filter((point) => Number.isFinite(point.n) && point.n >= start && point.n <= endNumber).sort((a, b) => a.n - b.n);
+    const path = points.map((point, index) => `${index ? "L" : "M"}${xOf(point.n).toFixed(1)},${yOf(point.avgPosition).toFixed(1)}`).join(" ");
+    const marks = (events ?? []).map((event) => ({ ...event, n: dayNumber(event.day) })).filter((event) => Number.isFinite(event.n) && event.n >= start && event.n <= endNumber);
+    const markColour = (kind) => kind === "fix" || kind === "guide" ? "var(--aw-ok)" : kind === "note" || kind === "indexnow" ? "var(--aw-text2)" : "var(--aw-warn)";
+    return /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart", children: [
+      /* @__PURE__ */ jsxs("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Average Google position, last 90 days", children: [
+        [1, 50, 100].map((value) => /* @__PURE__ */ jsxs("g", { children: [
+          /* @__PURE__ */ jsx("line", { x1: left, x2: width - right, y1: yOf(value), y2: yOf(value), stroke: "var(--aw-border)", strokeWidth: "1" }),
+          /* @__PURE__ */ jsx("text", { x: left - 5, y: yOf(value) + 3, textAnchor: "end", fontSize: "9", fill: "var(--aw-text2)", children: value })
+        ] }, value)),
+        [0, 30, 60, 89].map((offset) => {
+          const n = start + offset;
+          return /* @__PURE__ */ jsx("text", { x: xOf(n), y: height - 6, textAnchor: offset === 0 ? "start" : offset === 89 ? "end" : "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay2(dayOfNumber(n)) }, offset);
+        }),
+        marks.map((event) => /* @__PURE__ */ jsxs("g", { children: [
+          /* @__PURE__ */ jsx("title", { children: `${event.label} (${EVENT_LABEL2[event.kind] ?? event.kind}) on ${longDay(event.day)}` }),
+          /* @__PURE__ */ jsx("line", { x1: xOf(event.n), x2: xOf(event.n), y1: top, y2: height - bottom, stroke: markColour(event.kind), strokeWidth: "1", strokeDasharray: "3 3", opacity: "0.65" }),
+          /* @__PURE__ */ jsx("circle", { cx: xOf(event.n), cy: height - bottom - 4, r: "3", fill: markColour(event.kind) })
+        ] }, event.id)),
+        path ? /* @__PURE__ */ jsx("path", { d: path, fill: "none", stroke: "var(--aw-accent)", strokeWidth: "2", strokeLinejoin: "round", strokeLinecap: "round" }) : null,
+        points.map((point) => /* @__PURE__ */ jsx("circle", { cx: xOf(point.n), cy: yOf(point.avgPosition), r: "2.6", fill: "var(--aw-accent)", children: /* @__PURE__ */ jsx("title", { children: `${longDay(point.day)}: ${point.avgPosition} average (${point.inTop10} in the top 10, ${point.inTop100} in the top 100)` }) }, point.day))
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart__legend", children: [
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot aw-seo-chart__dot--accent" }),
+          " average position"
+        ] }),
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot aw-seo-chart__dot--warn" }),
+          " core or algorithm update"
+        ] }),
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot aw-seo-chart__dot--ok" }),
+          " our fix"
+        ] })
+      ] })
+    ] });
+  }
+  function AuditTab({ api, hosts, tick, openTicket, refresh, notify }) {
+    const [view, setView] = useState("pages");
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx("div", { className: "aw-toolbar", children: /* @__PURE__ */ jsx(
+        Segmented,
+        {
+          label: "Audit view",
+          value: view,
+          options: [
+            { value: "pages", label: "Per page" },
+            { value: "findings", label: "Per finding" }
+          ],
+          onChange: setView
+        }
+      ) }),
+      view === "pages" ? /* @__PURE__ */ jsx(PagesTab, { api, hosts, tick }) : /* @__PURE__ */ jsx(FindingsTab, { api, hosts, tick, openTicket, refresh, notify })
+    ] });
+  }
+  var canonicalOk = (page) => {
+    if (!page.canonical) return false;
+    const expected = `https://${page.host}${page.path}`.replace(/\/$/, "");
+    return page.canonical.replace(/\/$/, "") === expected;
+  };
+  function PagesTab({ api, hosts, tick }) {
+    const [host, setHost] = useState(hosts[0] ?? "ptechsolutions.net");
+    const [day, setDay] = useState("");
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    const [expanded, setExpanded] = useState(null);
+    const load = useCallback(
+      () => api("GET", `/admin/seo/pages?host=${encodeURIComponent(host)}${day ? `&day=${encodeURIComponent(day)}` : ""}`).then((out) => {
+        setData(out);
+        setError(null);
+      }).catch((err) => setError(err)),
+      [api, host, day]
+    );
+    useEffect(() => {
+      void load();
+    }, [load, tick]);
+    const selectedDay = day || data?.day || "";
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+        /* @__PURE__ */ jsx(
+          "select",
+          {
+            value: host,
+            "aria-label": "Host",
+            onChange: (event) => {
+              setHost(event.target.value);
+              setDay("");
+              setExpanded(null);
+            },
+            children: hosts.map((name) => /* @__PURE__ */ jsx("option", { value: name, children: name }, name))
+          }
+        ),
+        /* @__PURE__ */ jsxs("select", { value: selectedDay, "aria-label": "Day", onChange: (event) => setDay(event.target.value), children: [
+          (data?.days ?? []).map((value) => /* @__PURE__ */ jsx("option", { value, children: longDay(value) }, value)),
+          data && !(data.days ?? []).includes(data.day) ? /* @__PURE__ */ jsx("option", { value: data.day, children: longDay(data.day) }) : null
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        data ? /* @__PURE__ */ jsxs(Badge, { tone: scoreTone(data.averageScore), children: [
+          data.averageScore,
+          " average"
+        ] }) : null,
+        data ? /* @__PURE__ */ jsx(Badge, { children: plural2(data.pages?.length ?? 0, "page", "pages") }) : null
+      ] }),
+      error ? /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: load }) : null,
+      !data && !error ? /* @__PURE__ */ jsx(Loading, { label: "Loading pages\u2026" }) : null,
+      data && !data.pages.length ? /* @__PURE__ */ jsx(Empty, { title: "No audit for this day", hint: "Pick another day, or run an audit from the page header." }) : null,
+      data && data.pages.length ? /* @__PURE__ */ jsx(Panel, { children: /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--stack aw-seo-pages", children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Path" }),
+          /* @__PURE__ */ jsx("th", { children: "Score" }),
+          /* @__PURE__ */ jsx("th", { children: "Title" }),
+          /* @__PURE__ */ jsx("th", { children: "Desc" }),
+          /* @__PURE__ */ jsx("th", { children: "Canonical" }),
+          /* @__PURE__ */ jsx("th", { children: "Hreflang" }),
+          /* @__PURE__ */ jsx("th", { children: "JSON-LD" }),
+          /* @__PURE__ */ jsx("th", { children: "H1" }),
+          /* @__PURE__ */ jsx("th", { children: "ms" }),
+          /* @__PURE__ */ jsx("th", { children: "Sitemap" }),
+          /* @__PURE__ */ jsx("th", { children: "llms" })
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: data.pages.map((page) => {
+          const open = expanded === page.id;
+          return /* @__PURE__ */ jsxs(Fragment, { children: [
+            /* @__PURE__ */ jsxs("tr", { onClick: () => setExpanded(open ? null : page.id), "aria-expanded": open, title: open ? "Hide issues" : "Show issues", children: [
+              /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
+                /* @__PURE__ */ jsx(
+                  "a",
+                  {
+                    href: `https://${page.host}${page.path}`,
+                    target: "_blank",
+                    rel: "noreferrer",
+                    className: "aw-link",
+                    onClick: (event) => event.stopPropagation(),
+                    children: page.path
+                  }
+                ),
+                page.status !== 200 ? /* @__PURE__ */ jsx(Tag, { tone: "bad", children: page.status }) : null
+              ] }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Score", children: /* @__PURE__ */ jsx(Tag, { tone: scoreTone(page.score), children: page.score }) }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Title", className: page.titleLen > 65 || page.titleLen < 15 ? "aw-warn" : void 0, title: page.title ?? "", children: page.titleLen }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Desc", className: page.descLen > 160 ? "aw-warn" : void 0, title: page.description ?? "", children: page.descLen }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Canonical", children: /* @__PURE__ */ jsx(Tag, { tone: canonicalOk(page) ? "ok" : "bad", title: page.canonical ?? "No canonical link", children: canonicalOk(page) ? "ok" : "no" }) }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Hreflang", children: page.hreflangCount }),
+              /* @__PURE__ */ jsx("td", { "data-label": "JSON-LD", className: "aw-seo-types", title: (page.jsonldTypes ?? []).join(", ") || "none", children: (page.jsonldTypes ?? []).length ? page.jsonldTypes.join(", ") : "none" }),
+              /* @__PURE__ */ jsx("td", { "data-label": "H1", className: page.h1Count === 1 ? void 0 : "aw-warn", children: page.h1Count }),
+              /* @__PURE__ */ jsx("td", { "data-label": "ms", className: page.ms > 1500 ? "aw-warn" : void 0, children: page.ms }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Sitemap", children: page.inSitemap ? "yes" : "no" }),
+              /* @__PURE__ */ jsx("td", { "data-label": "llms", children: page.inLlms ? "yes" : "no" })
+            ] }),
+            open ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: 11, className: "aw-seo-cell--detail", children: /* @__PURE__ */ jsx("div", { className: "aw-seo-issues", children: (page.issues ?? []).length ? page.issues.map((issue) => /* @__PURE__ */ jsxs("div", { className: "aw-seo-issue", children: [
+              /* @__PURE__ */ jsx(Tag, { tone: SEVERITY_TONE[issue.severity] ?? "dash", children: issue.severity }),
+              /* @__PURE__ */ jsx("span", { className: "aw-mono", children: issue.code }),
+              /* @__PURE__ */ jsx("span", { children: issue.detail })
+            ] }, issue.code)) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "No issues on this page." }) }) }) }) : null
+          ] }, page.id);
+        }) })
+      ] }) }) }) : null
+    ] });
+  }
+  function FindingsTab({ api, hosts, tick, openTicket, refresh, notify }) {
+    const [status, setStatus] = useState("open");
+    const [host, setHost] = useState(hosts[0] ?? "");
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    const [busy, setBusy] = useState(null);
+    const load = useCallback(
+      () => api("GET", `/admin/seo/findings?status=${status}${host ? `&host=${encodeURIComponent(host)}` : ""}`).then((out) => {
+        setData(out);
+        setError(null);
+      }).catch((err) => setError(err)),
+      [api, status, host]
+    );
+    useEffect(() => {
+      void load();
+    }, [load, tick]);
+    const dismiss = async (finding) => {
+      setBusy(finding.id);
+      try {
+        await api("POST", `/admin/seo/findings/${finding.id}/dismiss`);
+        await load();
+        await refresh();
+        notify?.("Finding dismissed.");
+      } catch (err) {
+        setError(err);
+      } finally {
+        setBusy(null);
+      }
+    };
+    const counts = data?.counts ?? { high: 0, medium: 0, low: 0, open: 0, resolved: 0 };
+    const resolved = status === "resolved";
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+        /* @__PURE__ */ jsx(
+          Segmented,
+          {
+            label: "Finding status",
+            value: status,
+            options: [
+              { value: "open", label: "Open" },
+              { value: "resolved", label: "Resolved" }
+            ],
+            onChange: (value) => {
+              setStatus(value);
+              setError(null);
+            }
+          }
+        ),
+        /* @__PURE__ */ jsxs("select", { value: host, "aria-label": "Host", onChange: (event) => setHost(event.target.value), children: [
+          /* @__PURE__ */ jsx("option", { value: "", children: "All hosts" }),
+          hosts.map((name) => /* @__PURE__ */ jsx("option", { value: name, children: name }, name))
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx("div", { className: "aw-seo-statrow", children: /* @__PURE__ */ jsx(
+        StatRow,
+        {
+          items: [
+            { label: "high", value: counts.high, tone: counts.high ? "bad" : void 0 },
+            { label: "medium", value: counts.medium, tone: counts.medium ? "warn" : void 0 },
+            { label: "low", value: counts.low },
+            { label: "open", value: counts.open, tone: counts.open ? "warn" : "ok" },
+            { label: "resolved", value: counts.resolved }
+          ]
+        }
+      ) }),
+      error ? /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: load }) : null,
+      !data && !error ? /* @__PURE__ */ jsx(Loading, { label: "Loading findings\u2026" }) : null,
+      data && !data.findings.length ? /* @__PURE__ */ jsx(
+        Empty,
+        {
+          title: resolved ? "No resolved findings for this filter" : "No open findings for this filter",
+          hint: resolved ? "Findings land here once a later audit no longer sees them." : "A clean host: the next audit opens new findings as they appear."
+        }
+      ) : null,
+      data && data.findings.length ? /* @__PURE__ */ jsx(Panel, { children: /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--stack", children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Severity" }),
+          /* @__PURE__ */ jsx("th", { children: "Host" }),
+          /* @__PURE__ */ jsx("th", { children: "Path" }),
+          /* @__PURE__ */ jsx("th", { children: "Code" }),
+          /* @__PURE__ */ jsx("th", { children: "Detail" }),
+          /* @__PURE__ */ jsx("th", { children: "First seen" }),
+          resolved ? /* @__PURE__ */ jsx("th", { children: "Resolved" }) : null,
+          /* @__PURE__ */ jsx("th", { children: "Ticket" }),
+          !resolved ? /* @__PURE__ */ jsx("th", { children: "Dismiss" }) : null
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: (data.findings ?? []).slice().sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9) || (b.lastSeen ?? 0) - (a.lastSeen ?? 0)).map((finding) => /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("td", { "data-label": "Severity", children: /* @__PURE__ */ jsx(Tag, { tone: SEVERITY_TONE[finding.severity] ?? "dash", children: finding.severity }) }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Host", className: "aw-muted", children: finding.host }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Path", className: "aw-seo-path", title: finding.path, children: /* @__PURE__ */ jsx(
+            "a",
+            {
+              href: `https://${finding.host}${finding.path}`,
+              target: "_blank",
+              rel: "noreferrer",
+              className: "aw-link",
+              onClick: (event) => event.stopPropagation(),
+              children: finding.path
+            }
+          ) }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Code", className: "aw-mono", children: finding.code }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Detail", className: "aw-table__title aw-seo-cell--wide", children: finding.detail }),
+          /* @__PURE__ */ jsxs("td", { "data-label": "First seen", className: "aw-muted", title: when(finding.firstSeen), children: [
+            ago(finding.firstSeen),
+            " ago"
+          ] }),
+          resolved ? /* @__PURE__ */ jsx("td", { "data-label": "Resolved", className: "aw-muted", children: finding.resolvedAt ? `${ago(finding.resolvedAt)} ago` : "-" }) : null,
+          /* @__PURE__ */ jsx("td", { "data-label": "Ticket", children: /* @__PURE__ */ jsx(TicketLink, { id: finding.ticketId, openTicket }) }),
+          !resolved ? /* @__PURE__ */ jsx("td", { "data-label": "Dismiss", children: /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", disabled: busy === finding.id, onClick: () => dismiss(finding), children: busy === finding.id ? "Dismissing\u2026" : "Dismiss" }) }) : null
+        ] }, finding.id)) })
+      ] }) }) }) : null
+    ] });
+  }
+  function GeoTab({ api, tick }) {
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    const [expanded, setExpanded] = useState(null);
+    const [attempt, setAttempt] = useState(0);
+    useEffect(() => {
+      let live = true;
+      api("GET", "/admin/seo/geo").then((out) => {
+        if (!live) return;
+        setData(out);
+        setError(null);
+      }).catch((err) => live && setError(err));
+      return () => {
+        live = false;
+      };
+    }, [api, tick, attempt]);
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      error ? /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: () => setAttempt((n) => n + 1) }) : null,
+      !data && !error ? /* @__PURE__ */ jsx(Loading, { label: "Loading the probe answers\u2026" }) : null,
+      data ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        data.engineReady === false ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--warn", children: "The probe is off: the Worker has no DEEPSEEK_API_KEY. The desk keeps the questions, and the probe runs once the key is set." }) : null,
+        /* @__PURE__ */ jsx("div", { className: "aw-seo-statrow", children: /* @__PURE__ */ jsx(
+          StatRow,
+          {
+            items: [
+              { label: "mention rate", value: pct3(data.summary.rate), tone: data.summary.rate ? "ok" : void 0 },
+              { label: "mentions", value: data.summary.mentions },
+              { label: "answers", value: data.summary.runs },
+              { label: "questions asked weekly", value: data.questions.length }
+            ]
+          }
+        ) }),
+        /* @__PURE__ */ jsx(Panel, { title: "Last 12 weeks", children: /* @__PURE__ */ jsx(GeoChart, { weeks: data.weeks ?? [] }) }),
+        /* @__PURE__ */ jsx(
+          Panel,
+          {
+            title: "Questions",
+            subtitle: "Each weekly probe asks every question once and keeps whether the answer named us, the URLs it cited and the companies it named instead.",
+            children: data.questions.length ? /* @__PURE__ */ jsx("div", { className: "aw-tags", children: data.questions.map((question) => /* @__PURE__ */ jsx(Tag, { tone: "dash", title: question, children: question }, question)) }) : /* @__PURE__ */ jsx(Empty, { title: "No questions set", hint: "Add buyer questions in Settings and the weekly probe asks them." })
+          }
+        ),
+        /* @__PURE__ */ jsx(Panel, { title: "Runs", children: (data.runs ?? []).length ? /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--stack", children: [
+          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("th", { children: "Day" }),
+            /* @__PURE__ */ jsx("th", { children: "Question" }),
+            /* @__PURE__ */ jsx("th", { children: "Us" }),
+            /* @__PURE__ */ jsx("th", { children: "Competitors" }),
+            /* @__PURE__ */ jsx("th", { children: "Cited URLs" })
+          ] }) }),
+          /* @__PURE__ */ jsx("tbody", { children: data.runs.map((run) => {
+            const open = expanded === run.id;
+            return /* @__PURE__ */ jsxs(Fragment, { children: [
+              /* @__PURE__ */ jsxs("tr", { onClick: () => setExpanded(open ? null : run.id), "aria-expanded": open, title: open ? "Hide the answer" : "Show the answer", children: [
+                /* @__PURE__ */ jsx("td", { "data-label": "Day", className: "aw-muted", children: shortDay2(run.day) }),
+                /* @__PURE__ */ jsx("td", { "data-label": "Question", className: "aw-table__title aw-seo-cell--wider", children: run.question }),
+                /* @__PURE__ */ jsx("td", { "data-label": "Us", children: /* @__PURE__ */ jsx(Tag, { tone: run.mentionsUs ? "ok" : "bad", children: run.mentionsUs ? "yes" : "no" }) }),
+                /* @__PURE__ */ jsx("td", { "data-label": "Competitors", className: "aw-seo-types", title: (run.competitors ?? []).join(", "), children: (run.competitors ?? []).length ? run.competitors.join(", ") : "none" }),
+                /* @__PURE__ */ jsx("td", { "data-label": "Cited URLs", className: "aw-seo-types aw-seo-cell--detail", children: (run.citedUrls ?? []).length ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                  run.citedUrls.slice(0, 2).map((url) => /* @__PURE__ */ jsx("a", { href: url, target: "_blank", rel: "noreferrer", className: "aw-link aw-seo-cited-url", onClick: (event) => event.stopPropagation(), children: url }, url)),
+                  run.citedUrls.length > 2 ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                    "+",
+                    run.citedUrls.length - 2,
+                    " more"
+                  ] }) : null
+                ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "none" }) })
+              ] }),
+              open ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsxs("td", { colSpan: 5, className: "aw-seo-cell--detail", children: [
+                /* @__PURE__ */ jsxs("p", { className: "aw-muted aw-seo-note", children: [
+                  run.engine ?? "engine",
+                  " answer"
+                ] }),
+                /* @__PURE__ */ jsx("p", { className: "aw-seo-answer", children: run.answerExcerpt || "No answer kept." })
+              ] }) }) : null
+            ] }, run.id);
+          }) })
+        ] }) }) : /* @__PURE__ */ jsx(Empty, { title: "No runs yet", hint: "Run the GEO probe from the page header; its answers land here." }) })
+      ] }) : null
+    ] });
+  }
+  function CitationsTab({ api, tick, notify }) {
+    const [data, setData] = useState(null);
+    const [drafts, setDrafts] = useState({});
+    const [error, setError] = useState(null);
+    const [saving, setSaving] = useState(null);
+    const load = useCallback(
+      () => api("GET", "/admin/seo/citations").then((out) => {
+        setData(out);
+        setError(null);
+      }).catch((err) => setError(err)),
+      [api]
+    );
+    useEffect(() => {
+      void load();
+    }, [load, tick]);
+    const draftFor = (citation) => drafts[citation.id] ?? { status: citation.status, profile_url: citation.profileUrl ?? "", note: citation.note ?? "" };
+    const edit = (citation, patch) => setDrafts((prev) => ({ ...prev, [citation.id]: { ...draftFor(citation), ...patch } }));
+    const dirty = (citation) => {
+      const draft = draftFor(citation);
+      return draft.status !== citation.status || draft.profile_url !== (citation.profileUrl ?? "") || draft.note !== (citation.note ?? "");
+    };
+    const save = async (citation) => {
+      const draft = draftFor(citation);
+      setSaving(citation.id);
+      try {
+        await api("POST", `/admin/seo/citations/${citation.id}`, {
+          status: draft.status,
+          profile_url: draft.profile_url,
+          note: draft.note
+        });
+        setDrafts((prev) => {
+          const next = { ...prev };
+          delete next[citation.id];
+          return next;
+        });
+        await load();
+        notify?.(`${citation.platform} saved.`);
+      } catch (err) {
+        setError(err);
+      } finally {
+        setSaving(null);
+      }
+    };
+    const copy = async (text) => {
+      if (!text) return notify?.("Nothing to copy yet.");
+      try {
+        await navigator.clipboard.writeText(text);
+        notify?.("Draft copied.");
+      } catch {
+        notify?.("Could not copy. Select the text and copy it by hand.", "error");
+      }
+    };
+    const ordered = useMemo(() => {
+      const list2 = [...data?.citations ?? []];
+      return list2.sort(
+        (a, b) => (CITATION_RANK[a.status] ?? 9) - (CITATION_RANK[b.status] ?? 9) || (b.dr ?? -1) - (a.dr ?? -1) || a.platform.localeCompare(b.platform)
+      );
+    }, [data]);
+    const counts = data?.counts ?? { todo: 0, drafted: 0, live: 0, verified: 0, skipped: 0, total: 0 };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx("div", { className: "aw-seo-statrow", children: /* @__PURE__ */ jsx(
+        StatRow,
+        {
+          items: [
+            { label: "to do", value: counts.todo, tone: counts.todo ? "warn" : void 0 },
+            { label: "drafted", value: counts.drafted },
+            { label: "live", value: counts.live },
+            { label: "verified", value: counts.verified, tone: counts.verified ? "ok" : void 0 },
+            { label: "skipped", value: counts.skipped },
+            { label: "placements", value: counts.total ?? ordered.length }
+          ]
+        }
+      ) }),
+      error ? /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: load }) : null,
+      !data && !error ? /* @__PURE__ */ jsx(Loading, { label: "Loading citations\u2026" }) : null,
+      data && !ordered.length ? /* @__PURE__ */ jsx(Empty, { title: "No placements seeded", hint: "The desk seeds its own profile placements; nothing to show yet." }) : null,
+      ordered.length ? /* @__PURE__ */ jsxs(Panel, { children: [
+        /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--stack aw-seo-citations", children: [
+          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("th", { children: "Platform" }),
+            /* @__PURE__ */ jsx("th", { children: "DR" }),
+            /* @__PURE__ */ jsx("th", { children: "Status" }),
+            /* @__PURE__ */ jsx("th", { children: "Profile URL" }),
+            /* @__PURE__ */ jsx("th", { children: "Link verified" }),
+            /* @__PURE__ */ jsx("th", { children: "Note or draft" }),
+            /* @__PURE__ */ jsx("th", { children: "Actions" })
+          ] }) }),
+          /* @__PURE__ */ jsx("tbody", { children: ordered.map((citation) => {
+            const draft = draftFor(citation);
+            const changed = dirty(citation);
+            return /* @__PURE__ */ jsxs("tr", { className: "aw-seo-row", children: [
+              /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
+                citation.platform,
+                /* @__PURE__ */ jsx("div", { className: "aw-muted", children: citation.domain })
+              ] }),
+              /* @__PURE__ */ jsx("td", { "data-label": "DR", children: citation.dr ?? "-" }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Status", children: /* @__PURE__ */ jsx("select", { value: draft.status, "aria-label": `Status for ${citation.platform}`, onChange: (event) => edit(citation, { status: event.target.value }), children: (data.statuses ?? CITATION_STATUSES).map((status) => /* @__PURE__ */ jsx("option", { value: status, children: status }, status)) }) }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Profile URL", className: "aw-seo-cell--url", children: /* @__PURE__ */ jsx(
+                "input",
+                {
+                  type: "url",
+                  value: draft.profile_url,
+                  placeholder: "https://\u2026",
+                  "aria-label": `Profile URL for ${citation.platform}`,
+                  onChange: (event) => edit(citation, { profile_url: event.target.value })
+                }
+              ) }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Link verified", className: "aw-muted", title: citation.lastChecked ? `Last checked ${when(citation.lastChecked)}` : "Not checked yet", children: citation.linkVerifiedAt ? instantDay(citation.linkVerifiedAt) : "-" }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Note or draft", className: "aw-seo-cell--note", children: /* @__PURE__ */ jsx(
+                "textarea",
+                {
+                  rows: 3,
+                  value: draft.note,
+                  placeholder: "Draft bio or link text",
+                  "aria-label": `Note or draft for ${citation.platform}`,
+                  onChange: (event) => edit(citation, { note: event.target.value })
+                }
+              ) }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Actions", children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+                /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => copy(draft.note), children: "Copy" }),
+                /* @__PURE__ */ jsx(Button, { size: "sm", kind: changed ? "primary" : "default", disabled: !changed || saving === citation.id, onClick: () => save(citation), children: saving === citation.id ? "Saving\u2026" : "Save" })
+              ] }) })
+            ] }, citation.id);
+          }) })
+        ] }) }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted aw-seo-note", children: "To do and drafted rows come first, then the higher DR. The weekly check reads each profile URL; a page that no longer links back loses its verified date, a page that cannot be read keeps it." })
+      ] }) : null
+    ] });
+  }
+  function SettingsTab2({ api, overview, refresh, notify }) {
+    const [draft, setDraft] = useState(overview.settings);
+    const [touched, setTouched] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [message, setMessage] = useState(null);
+    const [eventForm, setEventForm] = useState({ kind: "core_update", label: "", day: "" });
+    const [eventBusy, setEventBusy] = useState(false);
+    useEffect(() => {
+      if (!touched) setDraft(overview.settings);
+    }, [overview.settings, touched]);
+    const set = (key, value) => {
+      setTouched(true);
+      setDraft((current) => ({ ...current, [key]: value }));
+    };
+    const questions = draft.geoQuestions ?? [];
+    const usedQuestions = questions.filter((question) => question.trim()).length;
+    const keywords = draft.rankKeywords ?? [];
+    const location = draft.rankLocation ?? { locationCode: 2840, languageCode: "en" };
+    const changed = draft.autoCycle !== overview.settings.autoCycle || draft.volatilityHold !== overview.settings.volatilityHold || Boolean(draft.guidesAuto) !== Boolean(overview.settings.guidesAuto) || Number(draft.guidesPerWeek) !== Number(overview.settings.guidesPerWeek) || Boolean(draft.guidesAutoMerge) !== Boolean(overview.settings.guidesAutoMerge) || (draft.geoQuestions ?? []).join("\n") !== (overview.settings.geoQuestions ?? []).join("\n") || keywords.join("\n") !== (overview.settings.rankKeywords ?? []).join("\n") || location.locationCode !== overview.settings.rankLocation?.locationCode || location.languageCode !== overview.settings.rankLocation?.languageCode;
+    const save = async () => {
+      setSaving(true);
+      setMessage(null);
+      try {
+        const out = await api("POST", "/admin/seo/settings", {
+          autoCycle: draft.autoCycle,
+          volatilityHold: draft.volatilityHold,
+          guidesAuto: draft.guidesAuto,
+          guidesPerWeek: draft.guidesPerWeek,
+          guidesAutoMerge: draft.guidesAutoMerge,
+          geoQuestions: draft.geoQuestions,
+          rankKeywords: draft.rankKeywords,
+          rankLocation: draft.rankLocation
+        });
+        setDraft(out.settings);
+        setTouched(false);
+        if (out.rejected?.length) setMessage({ tone: "warn", text: `Saved, but these fields were rejected: ${out.rejected.join(", ")}.` });
+        await refresh();
+        notify?.("SEO settings saved.");
+      } catch (error) {
+        setMessage({ tone: "bad", text: errorText(error) });
+      } finally {
+        setSaving(false);
+      }
+    };
+    const reset = () => {
+      setDraft(overview.settings);
+      setTouched(false);
+      setMessage(null);
+    };
+    const addEvent = async () => {
+      if (!eventForm.label.trim()) {
+        setMessage({ tone: "bad", text: "Write a label for the event first." });
+        return;
+      }
+      setEventBusy(true);
+      try {
+        const body = { kind: eventForm.kind, label: eventForm.label.trim() };
+        if (eventForm.day) body.day = eventForm.day;
+        await api("POST", "/admin/seo/events", body);
+        setEventForm({ kind: "core_update", label: "", day: "" });
+        setMessage({ tone: "ok", text: "Event added." });
+        await refresh();
+      } catch (error) {
+        setMessage({ tone: "bad", text: errorText(error) });
+      } finally {
+        setEventBusy(false);
+      }
+    };
+    const removeEvent = async (event) => {
+      try {
+        await api("DELETE", `/admin/seo/events/${event.id}`);
+        setMessage({ tone: "ok", text: "Event deleted." });
+        await refresh();
+      } catch (error) {
+        setMessage({ tone: "bad", text: errorText(error) });
+      }
+    };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx(Panel, { title: "Cycle", subtitle: "What the desk does on its own, and when it holds off.", children: /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
+        /* @__PURE__ */ jsx(Field, { label: "Automatic cycles", hint: "On: the desk files a ticket for the worst open findings when none is open.", children: /* @__PURE__ */ jsx(
+          Segmented,
+          {
+            label: "Automatic cycles",
+            value: Boolean(draft.autoCycle),
+            options: [
+              { value: true, label: "On" },
+              { value: false, label: "Off" }
+            ],
+            onChange: (value) => set("autoCycle", value)
+          }
+        ) }),
+        /* @__PURE__ */ jsx(
+          Field,
+          {
+            label: "Volatility hold",
+            hint: "On: after a Google core update the agent only does technical fixes, because rankings swing during the update and a rewrite hides what worked.",
+            children: /* @__PURE__ */ jsx(
+              Segmented,
+              {
+                label: "Volatility hold",
+                value: Boolean(draft.volatilityHold),
+                options: [
+                  { value: true, label: "On" },
+                  { value: false, label: "Off" }
+                ],
+                onChange: (value) => set("volatilityHold", value)
+              }
+            )
+          }
+        )
+      ] }) }),
+      /* @__PURE__ */ jsx(Panel, { title: "Guides", subtitle: "One guide per rank keyword and buyer question, filed within the weekly limit.", children: /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
+        /* @__PURE__ */ jsx(Field, { label: "Automatic guide cycles", hint: "On: the desk files a ticket for the first target no guide answers, within the weekly limit below.", children: /* @__PURE__ */ jsx(
+          Segmented,
+          {
+            label: "Automatic guide cycles",
+            value: Boolean(draft.guidesAuto),
+            options: [
+              { value: true, label: "On" },
+              { value: false, label: "Off" }
+            ],
+            onChange: (value) => set("guidesAuto", value)
+          }
+        ) }),
+        /* @__PURE__ */ jsx(Field, { label: "Guides per week", hint: "How many guide cycles a week at most, 0 to 7. A target waits three weeks between attempts.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "7", value: draft.guidesPerWeek ?? 2, onChange: (event) => set("guidesPerWeek", Number(event.target.value)) }) }),
+        /* @__PURE__ */ jsx(Field, { label: "Auto-merge guide PRs", hint: "On: a guide PR that passes the checks and the content gate merges itself and pings IndexNow. Off: it waits for you on GitHub.", children: /* @__PURE__ */ jsx(
+          Segmented,
+          {
+            label: "Auto-merge guide PRs",
+            value: Boolean(draft.guidesAutoMerge),
+            options: [
+              { value: true, label: "On" },
+              { value: false, label: "Off" }
+            ],
+            onChange: (value) => set("guidesAutoMerge", value)
+          }
+        ) })
+      ] }) }),
+      /* @__PURE__ */ jsx(Panel, { title: "Buyer questions", children: /* @__PURE__ */ jsx(Field, { label: "Questions for the weekly GEO probe", hint: `One per line, at most 20. ${usedQuestions} used.`, children: /* @__PURE__ */ jsx("textarea", { rows: 10, value: questions.join("\n"), onChange: (event) => set("geoQuestions", event.target.value.split("\n").slice(0, 20)) }) }) }),
+      /* @__PURE__ */ jsxs(
+        Panel,
+        {
+          title: "Google ranks",
+          actions: /* @__PURE__ */ jsx(Badge, { tone: overview.rank?.rankReady ? "ok" : "bad", children: overview.rank?.rankReady ? "tracking on" : "no API key" }),
+          children: [
+            !overview.rank?.rankReady ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+              "Rank tracking is off. Add the DATAFORSEO_API_KEY secret to the intercom Worker (",
+              /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "npx wrangler secret put DATAFORSEO_API_KEY" }),
+              ", run in ",
+              /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "worker/" }),
+              ")."
+            ] }) : null,
+            /* @__PURE__ */ jsx(
+              Field,
+              {
+                label: "Keywords to track on Google",
+                hint: `One per line, at most 25. ${keywords.filter((keyword) => keyword.trim()).length} used. DataForSEO charges about $0.006 per keyword at depth 100.`,
+                children: /* @__PURE__ */ jsx("textarea", { rows: 10, value: keywords.join("\n"), onChange: (event) => set("rankKeywords", event.target.value.split("\n").slice(0, 25)) })
+              }
+            ),
+            /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
+              /* @__PURE__ */ jsx(Field, { label: "Location code", hint: "DataForSEO's Google location: 2840 is the United States.", children: /* @__PURE__ */ jsx(
+                "input",
+                {
+                  type: "number",
+                  min: "1",
+                  value: location.locationCode ?? 2840,
+                  onChange: (event) => set("rankLocation", { ...location, locationCode: Number(event.target.value) })
+                }
+              ) }),
+              /* @__PURE__ */ jsx(Field, { label: "Language code", hint: "The search language, for example en.", children: /* @__PURE__ */ jsx("input", { value: location.languageCode ?? "en", onChange: (event) => set("rankLocation", { ...location, languageCode: event.target.value }) }) })
+            ] })
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsxs(
+        Panel,
+        {
+          title: "Events",
+          subtitle: "Core updates, algorithm updates, fixes and notes. The score line marks them, and a core update in the last 14 days holds content rewrites.",
+          children: [
+            /* @__PURE__ */ jsxs("div", { className: "aw-inline aw-seo-events-form", children: [
+              /* @__PURE__ */ jsx("select", { value: eventForm.kind, "aria-label": "Event kind", onChange: (event) => setEventForm((form) => ({ ...form, kind: event.target.value })), children: EVENT_KINDS.map((kind) => /* @__PURE__ */ jsx("option", { value: kind.value, children: kind.label }, kind.value)) }),
+              /* @__PURE__ */ jsx(
+                "input",
+                {
+                  value: eventForm.label,
+                  placeholder: "Label, for example Google core update started",
+                  "aria-label": "Event label",
+                  onChange: (event) => setEventForm((form) => ({ ...form, label: event.target.value }))
+                }
+              ),
+              /* @__PURE__ */ jsx("input", { type: "date", value: eventForm.day, "aria-label": "Event day", onChange: (event) => setEventForm((form) => ({ ...form, day: event.target.value })) }),
+              /* @__PURE__ */ jsx(Button, { disabled: eventBusy, onClick: addEvent, children: eventBusy ? "Adding\u2026" : "Add event" })
+            ] }),
+            (overview.events ?? []).length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: overview.events.map((event) => /* @__PURE__ */ jsxs("li", { className: "aw-seo-row", children: [
+              /* @__PURE__ */ jsx(Tag, { tone: EVENT_TONE[event.kind] ?? "dash", children: EVENT_LABEL2[event.kind] ?? event.kind }),
+              /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: event.label }),
+              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                longDay(event.day),
+                event.source ? ` \xB7 ${event.source}` : ""
+              ] }),
+              /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+              /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => removeEvent(event), children: "Delete" })
+            ] }, event.id)) }) : /* @__PURE__ */ jsx(Empty, { title: "No events yet", hint: "Add a core update so the score chart shows when the SERP was moving." })
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsxs("div", { className: "aw-seo-savebar", children: [
+        /* @__PURE__ */ jsxs("span", { className: "aw-seo-savebar__state", role: "status", children: [
+          changed ? "Unsaved changes" : "All changes saved",
+          message ? /* @__PURE__ */ jsxs("span", { className: message.tone === "bad" ? "aw-warn" : message.tone === "warn" ? "aw-warn" : "aw-muted", children: [
+            " \xB7 ",
+            message.text
+          ] }) : null
+        ] }),
+        /* @__PURE__ */ jsx(Button, { disabled: !changed || saving, onClick: reset, children: "Reset" }),
+        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !changed || saving, onClick: save, children: saving ? "Saving\u2026" : "Save settings" })
+      ] })
+    ] });
+  }
+
+  // packages/admin-ui/src/styles.js
+  var STYLES = `
+.aw {
+  --aw-bg: var(--dsw-alias-bg-base, var(--bone, #fff));
+  --aw-bg2: var(--dsw-alias-bg-layer-1, var(--paper, #f8f7f4));
+  --aw-bg3: var(--dsw-alias-bg-layer-2, var(--rule, #efebe4));
+  --aw-hover: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.12));
+  --aw-text: var(--dsw-alias-label-primary, var(--ink, #16140f));
+  --aw-text2: var(--dsw-alias-label-secondary, var(--ink-soft, #5d5850));
+  --aw-border: var(--dsw-alias-border-l2, var(--rule, #e8e4dd));
+  --aw-border2: var(--dsw-alias-border-l3, var(--rule-strong, #d2ccc2));
+  --aw-accent: var(--orange, #ff5a1f);
+  --aw-ok: var(--dsw-alias-state-success-primary, #2f9e5b);
+  --aw-warn: var(--dsw-alias-state-warn-primary, #d99a16);
+  --aw-bad: var(--dsw-alias-state-error-primary, #d6453d);
+  --aw-info: var(--dsw-alias-state-business-primary, #3b7bd9);
+  --aw-violet: #8a63d2;
+  --aw-mono: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  /* one design system: the one scale; every size in this sheet snaps to it */
+  --aw-r-sm: 4px;
+  --aw-r-md: 6px;
+  --aw-r-lg: 8px;
+  --aw-r-pill: 999px;
+  --aw-sp-1: 4px;
+  --aw-sp-2: 6px;
+  --aw-sp-3: 8px;
+  --aw-sp-4: 12px;
+  --aw-sp-5: 16px;
+  --aw-sp-6: 24px;
+  --aw-fs-xs: 11px;
+  --aw-fs-sm: 12px;
+  --aw-fs-md: 13px;
+  --aw-fs-lg: 15px;
+  --aw-fs-xl: 18px;
+  --aw-text3: color-mix(in srgb, var(--aw-text2) 70%, var(--aw-bg));
+  --aw-line: var(--aw-border);
+  display: grid;
+  grid-template-columns: 48px auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 22px;
+  height: 100%;
+  min-height: 0;
+  background: var(--aw-bg);
+  color: var(--aw-text);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+.aw *, .aw *::before, .aw *::after { box-sizing: border-box; }
+.aw--fullscreen { position: fixed; inset: 0; z-index: 50; height: 100dvh; }
+.aw h2, .aw h3, .aw h4 { font-family: inherit; margin: 0; letter-spacing: 0; }
+.aw button { font: inherit; color: inherit; }
+.aw input, .aw select, .aw textarea {
+  font: inherit; color: var(--aw-text); background: var(--aw-bg);
+  border: 1px solid var(--aw-border2); border-radius: 6px; padding: 6px 8px; min-width: 0;
+}
+.aw textarea { width: 100%; resize: vertical; line-height: 1.5; }
+.aw input:focus, .aw select:focus, .aw textarea:focus { outline: 2px solid color-mix(in srgb, var(--aw-accent) 50%, transparent); outline-offset: -1px; }
+/* One focus ring for everything; inputs keep their inset ring below it. */
+.aw :is(button, a, input, select, textarea, summary, [role=tab], [tabindex]):focus-visible { outline: 2px solid var(--aw-accent); outline-offset: 2px; }
+.aw :is(input, select, textarea):focus-visible { outline: 2px solid color-mix(in srgb, var(--aw-accent) 50%, transparent); outline-offset: -1px; }
+.aw [hidden] { display: none !important; }
+.aw-mono { font-family: var(--aw-mono); font-size: 12px; }
+.aw-muted { color: var(--aw-text2); }
+.aw-warn { color: color-mix(in srgb, var(--aw-warn) 70%, var(--aw-text)); }
+.aw-bad { color: var(--aw-bad); }
+.aw-center { text-align: center; }
+.aw-link { background: none; border: 0; padding: 0; color: var(--aw-accent); cursor: pointer; }
+.aw-link:hover { text-decoration: underline; }
+.aw-empty { padding: 40px; text-align: center; color: var(--aw-text2); }
+/* Bordered tinted info box, and the inline error text (after .aw-empty so it wins there). */
+.aw-callout { display: flex; align-items: flex-start; gap: var(--aw-sp-2); padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--aw-info) 30%, transparent); border-radius: var(--aw-r-lg); background: color-mix(in srgb, var(--aw-info) 8%, transparent); margin: 10px 0; overflow-wrap: anywhere; }
+.aw-error { color: var(--aw-bad); font-size: var(--aw-fs-sm); }
+.aw-toolbar__fill, .aw-tabs__fill, .aw-status__fill { flex: 1; }
+
+/* activity bar */
+.aw-activity { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0; background: var(--aw-bg2); border-right: 1px solid var(--aw-border); }
+.aw-activity button { position: relative; width: 34px; height: 34px; display: grid; place-items: center; border: 0; background: none; border-radius: 8px; color: var(--aw-text2); cursor: pointer; }
+.aw-activity button:hover { background: var(--aw-hover); color: var(--aw-text); }
+.aw-activity button[aria-pressed="true"] { color: var(--aw-text); box-shadow: inset 2px 0 0 var(--aw-accent); border-radius: 0 8px 8px 0; }
+.aw-activity__spacer { flex: 1; }
+/* Under the macOS window buttons: start below them. */
+.aw--inset .aw-activity { padding-top: 40px; }
+.aw--inset .aw-explorer { padding-top: 32px; }
+.aw-badge { position: absolute; top: 4px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--aw-accent); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; }
+
+/* explorer */
+.aw-explorer { grid-column: 2; grid-row: 1; width: var(--aw-explorer-w, 260px); overflow: auto; background: var(--aw-bg2); border-right: 1px solid var(--aw-border); padding: 6px 0 16px; }
+.aw-explorer h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--aw-text2); padding: 12px 12px 4px; }
+.aw-tree, .aw-tree ul { list-style: none; margin: 0; padding: 0; }
+.aw-tree ul { padding-left: 18px; }
+.aw-tree__row { display: flex; align-items: center; padding-right: 10px; }
+.aw-tree__row.is-active { background: var(--aw-hover); }
+.aw-tree__twist { width: 20px; border: 0; background: none; color: var(--aw-text2); cursor: pointer; padding: 0 0 0 6px; }
+.aw-tree__name, .aw-tree__leaf { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; border: 0; background: none; padding: 4px 10px 4px 4px; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 4px; }
+.aw-tree__leaf { width: 100%; padding-left: 12px; color: var(--aw-text); }
+.aw-tree__name { font-weight: 600; }
+.aw-tree__name:hover, .aw-tree__leaf:hover { background: var(--aw-hover); }
+.aw-tree__id { color: var(--aw-text2); font-family: var(--aw-mono); font-size: 11px; }
+.aw-tree__none { padding: 3px 12px; color: var(--aw-text2); font-size: 12px; }
+.aw-count { margin-left: 6px; padding: 0 6px; border-radius: var(--aw-r-lg); background: var(--aw-bg3); color: var(--aw-text2); font-size: 11px; font-weight: 600; }
+
+/* main + tabs */
+.aw-main { grid-column: 3; grid-row: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.aw-tabs { display: flex; align-items: stretch; height: 32px; background: var(--aw-bg2); border-bottom: 1px solid var(--aw-border); overflow-x: auto; scrollbar-width: none; }
+.aw-tab { display: flex; align-items: center; gap: 6px; max-width: 240px; padding: 0 6px 0 12px; border-right: 1px solid var(--aw-border); color: var(--aw-text2); cursor: pointer; white-space: nowrap; user-select: none; }
+.aw-tab:hover { background: var(--aw-hover); }
+.aw-tab.is-active { background: var(--aw-bg); color: var(--aw-text); box-shadow: inset 0 2px 0 var(--aw-accent); }
+.aw-tab__label { overflow: hidden; text-overflow: ellipsis; }
+.aw-tab__close { border: 0; background: none; width: 20px; height: 20px; border-radius: 4px; color: var(--aw-text2); cursor: pointer; opacity: .5; font-size: 15px; line-height: 1; }
+.aw-tab:hover .aw-tab__close, .aw-tab.is-active .aw-tab__close { opacity: 1; }
+.aw-tab__close:hover { background: var(--aw-hover); }
+.aw-content { flex: 1; min-height: 0; position: relative; }
+.aw-pane { position: absolute; inset: 0; overflow: auto; container-type: size; }
+.aw-view { padding: 16px 20px 40px; }
+.aw-hero { margin-bottom: 14px; }
+.aw-hero h2 { font-size: 20px; font-weight: 700; }
+
+/* status bar */
+.aw-status { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 14px; padding: 0 10px; background: var(--aw-bg2); border-top: 1px solid var(--aw-border); color: var(--aw-text2); font-size: 12px; }
+.aw-status button { border: 0; background: none; padding: 0 4px; height: 100%; display: flex; align-items: center; gap: 6px; cursor: pointer; color: inherit; }
+.aw-status button:hover { background: var(--aw-hover); color: var(--aw-text); }
+.aw-status__err { color: var(--aw-bad); }
+
+/* controls */
+.aw-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--aw-border2); background: var(--aw-bg); cursor: pointer; white-space: nowrap; font-weight: 500; }
+.aw-btn:hover:not(:disabled) { background: var(--aw-hover); }
+.aw-btn:disabled { opacity: .45; cursor: default; }
+.aw-btn--sm { height: 26px; padding: 0 9px; font-size: 12px; }
+.aw-btn--primary { background: var(--aw-accent); color: #fff !important; border-color: var(--aw-accent); }
+.aw-btn--primary:hover:not(:disabled) { background: color-mix(in srgb, var(--aw-accent) 85%, #fff); border-color: color-mix(in srgb, var(--aw-accent) 85%, #fff); }
+.aw-btn--danger { color: var(--aw-bad) !important; border-color: color-mix(in srgb, var(--aw-bad) 50%, transparent); }
+.aw-btn--ghost { border-color: transparent; background: none; }
+.aw-seg { display: inline-flex; border: 1px solid var(--aw-border2); border-radius: 6px; overflow: hidden; flex-wrap: wrap; }
+.aw-seg button { border: 0; background: none; padding: 4px 10px; cursor: pointer; font-size: 12px; color: var(--aw-text2); }
+.aw-seg button + button { border-left: 1px solid var(--aw-border); }
+.aw-seg button:is([aria-pressed="true"], [aria-checked="true"]) { background: var(--aw-bg3); color: var(--aw-text); font-weight: 600; }
+.aw-seg button:disabled { cursor: default; }
+.aw-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.aw-chips button { border: 1px dashed var(--aw-border2); background: none; border-radius: var(--aw-r-pill); padding: 3px 10px; font-size: 12px; cursor: pointer; color: var(--aw-text2); }
+.aw-chips button[aria-pressed="true"] { border-style: solid; border-color: var(--aw-text); color: var(--aw-text); background: var(--aw-bg3); }
+.aw-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.aw-field__label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); }
+.aw-field__hint { font-size: 12px; color: var(--aw-text2); }
+.aw-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 18px; }
+.aw-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aw-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.aw-check input { flex: none; width: auto; min-width: 0; margin: 0; }
+.aw-people { margin: 6px 0; }
+.aw-people ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
+.aw-people li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.aw-people__who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.aw-people .aw-check { font-size: 12px; color: var(--aw-text2); white-space: nowrap; }
+.aw-inline input { flex: 1; min-width: 120px; }
+.aw-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.aw-search { width: 200px; }
+
+.aw-pill { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: var(--aw-r-pill); font-size: 12px; font-weight: 600; background: var(--aw-bg3); }
+.aw-pill--new { background: color-mix(in srgb, var(--aw-info) 16%, transparent); color: var(--aw-info); }
+.aw-pill--approved { background: color-mix(in srgb, var(--aw-violet) 16%, transparent); color: var(--aw-violet); }
+.aw-pill--in_progress { background: color-mix(in srgb, var(--aw-warn) 20%, transparent); color: color-mix(in srgb, var(--aw-warn) 80%, var(--aw-text)); }
+.aw-pill--review { background: color-mix(in srgb, var(--aw-accent) 16%, transparent); color: var(--aw-accent); }
+.aw-pill--done { background: color-mix(in srgb, var(--aw-ok) 16%, transparent); color: var(--aw-ok); }
+.aw-pill--declined { background: color-mix(in srgb, var(--aw-text2) 12%, transparent); color: var(--aw-text2); }
+.aw-sq { width: 9px; height: 9px; border-radius: var(--aw-r-sm); flex: none; background: var(--aw-text2); display: inline-block; }
+.aw-sq--new { background: var(--aw-info); } .aw-sq--approved { background: var(--aw-violet); } .aw-sq--in_progress { background: var(--aw-warn); }
+.aw-sq--review { background: var(--aw-accent); } .aw-sq--done { background: var(--aw-ok); } .aw-sq--declined { background: var(--aw-border2); }
+.aw-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: var(--aw-text2); }
+.aw-dot--ok { background: var(--aw-ok); } .aw-dot--warn { background: var(--aw-warn); } .aw-dot--bad { background: var(--aw-bad); }
+.aw-live { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: var(--aw-warn); animation: aw-pulse 1.4s ease-in-out infinite; }
+@keyframes aw-pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--aw-warn) 60%, transparent); } 50% { box-shadow: 0 0 0 4px transparent; } }
+@media (prefers-reduced-motion: reduce) { .aw-live { animation: none; } }
+.aw-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; background: var(--aw-bg3); font-size: 11px; color: var(--aw-text2); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.aw-tag--dash { background: none; border: 1px dashed var(--aw-border2); }
+.aw-tag--client, .aw-tag--info { background: color-mix(in srgb, var(--aw-info) 12%, transparent); color: var(--aw-info); }
+.aw-tag--hot, .aw-tag--accent { background: color-mix(in srgb, var(--aw-accent) 15%, transparent); color: var(--aw-accent); }
+.aw-tag--warn { background: color-mix(in srgb, var(--aw-warn) 18%, transparent); color: color-mix(in srgb, var(--aw-warn) 75%, var(--aw-text)); }
+.aw-tag--ok { background: color-mix(in srgb, var(--aw-ok) 14%, transparent); color: var(--aw-ok); }
+.aw-tag--bad { background: color-mix(in srgb, var(--aw-bad) 14%, transparent); color: var(--aw-bad); }
+.aw-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.aw-running { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--aw-text2); }
+
+/* board */
+.aw-view--board { display: flex; flex-direction: column; height: 100%; padding-bottom: 0; }
+.aw-board { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(230px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 16px; }
+.aw-col { display: flex; flex-direction: column; min-height: 0; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); }
+.aw-col.is-over { border-color: var(--aw-accent); background: color-mix(in srgb, var(--aw-accent) 6%, var(--aw-bg2)); }
+.aw-col > header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-weight: 700; font-size: 12px; }
+.aw-col__body { flex: 1; overflow-y: auto; padding: 0 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+.aw-col__empty { margin: 8px 4px; font-size: 12px; color: var(--aw-text2); }
+.aw-card { background: var(--aw-bg); border: 1px solid var(--aw-border); border-radius: 8px; padding: 9px 10px; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.aw-card:hover { border-color: var(--aw-border2); box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.aw-card:focus-visible { outline: 2px solid var(--aw-accent); }
+.aw-card.is-running { border-left: 3px solid var(--aw-warn); }
+.aw-card.is-stuck { border-left: 3px solid var(--aw-bad); }
+.aw-card__top { display: flex; align-items: center; gap: 6px; }
+.aw-card__id { font-family: var(--aw-mono); font-size: 11px; color: var(--aw-text2); }
+.aw-card__age { margin-left: auto; font-size: 11px; color: var(--aw-text2); }
+.aw-card h4 { font-size: 13px; font-weight: 600; margin: 5px 0 4px; line-height: 1.35; }
+.aw-card__meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--aw-text2); }
+.aw-card__foot { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 7px; font-size: 11px; }
+.aw-card__foot:empty { display: none; }
+.aw-card__warn { margin: 6px 0 0; font-size: 11px; color: var(--aw-bad); }
+
+/* list + tables */
+.aw-tablewrap, .aw-table-wrap { overflow-x: auto; }
+.aw-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.aw-table th { text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--aw-text2); padding: 6px 8px; border-bottom: 1px solid var(--aw-border2); cursor: pointer; white-space: nowrap; user-select: none; }
+.aw-table td { padding: 7px 8px; border-bottom: 1px solid var(--aw-border); white-space: nowrap; }
+.aw-table tbody tr { cursor: pointer; }
+.aw-table tbody tr:hover { background: var(--aw-hover); }
+.aw-table__title { white-space: normal !important; min-width: 220px; font-weight: 500; }
+
+/* needs you */
+.aw-inbox { max-width: 1100px; }
+.aw-group { margin: 22px 0; }
+.aw-group > h3 { font-size: var(--aw-fs-lg); font-weight: 700; display: flex; align-items: center; }
+.aw-group > p { margin: 2px 0 8px; }
+.aw-row-h { display: flex; align-items: center; gap: 8px; }
+.aw-rows { list-style: none; margin: 0; padding: 0; border: 1px solid var(--aw-border); border-radius: 8px; overflow: hidden; }
+.aw-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; flex-wrap: wrap; }
+.aw-row + .aw-row { border-top: 1px solid var(--aw-border); }
+.aw-row:hover { background: var(--aw-hover); }
+.aw-row__title { font-weight: 600; }
+.aw-banner { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 8px; margin: 10px 0; }
+.aw-banner--bad { background: color-mix(in srgb, var(--aw-bad) 10%, transparent); }
+.aw-snippet { display: block; font-weight: 400; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
+.aw-files { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.aw-file { font: inherit; font-size: 12px; display: inline-flex; gap: 6px; align-items: baseline; padding: 3px 8px; border: 1px solid var(--aw-border2); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; max-width: 100%; overflow-wrap: anywhere; }
+button.aw-file:hover { border-color: currentColor; }
+.aw-banner--warn { background: color-mix(in srgb, var(--aw-warn) 12%, transparent); }
+.aw-banner--ok { background: color-mix(in srgb, var(--aw-ok) 12%, transparent); }
+
+/* ticket */
+.aw-ticket { display: grid; grid-template-columns: minmax(0, 1fr) var(--aw-details-w, 300px); min-height: 100%; position: relative; }
+/* No details column: the thread gets the whole width, and the moves the column
+   used to hold sit under the title instead. */
+.aw-ticket--solo { grid-template-columns: minmax(0, 1fr); }
+.aw-ticket__quick { margin-top: 12px; }
+.aw-ticket__quick .aw-ticket__actions { padding-bottom: 0; border-bottom: 0; }
+.aw-ticket__main { padding: 18px 24px 24px; min-width: 0; display: flex; flex-direction: column; }
+.aw-ticket__head h2 { font-size: var(--aw-fs-xl); font-weight: 700; margin: 4px 0 10px; line-height: 1.25; }
+.aw-ticket__head { padding-bottom: 4px; border-bottom: 1px solid var(--aw-border); margin-bottom: 4px; }
+.aw-ticket__crumbs { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--aw-text2); }
+.aw-ticket__crumbs span + span::before { content: '\xB7'; margin-right: 10px; }
+.aw-ticket__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--aw-border); }
+.aw-timeline { list-style: none; margin: 0; padding: 16px 0; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+.aw-event { display: flex; gap: 10px; font-size: 12px; color: var(--aw-text2); padding-left: 12px; border-left: 2px solid var(--aw-border); }
+.aw-event time { margin-left: auto; white-space: nowrap; }
+.aw-msg { border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); padding: 10px 14px; background: var(--aw-bg); }
+.aw-msg--client { border-left: 3px solid var(--aw-info); }
+.aw-msg--ali { border-left: 3px solid var(--aw-text); }
+.aw-msg.is-private { background: color-mix(in srgb, var(--aw-warn) 7%, var(--aw-bg)); border-style: dashed; border-left-style: solid; border-left-color: var(--aw-warn); }
+.aw-msg header, .aw-run header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 5px; font-size: 12px; }
+.aw-msg header time { margin-left: auto; color: var(--aw-text2); }
+.aw-msg__body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.aw-msg__body.is-clipped, .aw-run__summary.is-clipped { max-height: 7.5em; overflow: hidden; mask-image: linear-gradient(#000 55%, transparent); -webkit-mask-image: linear-gradient(#000 55%, transparent); }
+.aw-fold { cursor: pointer; user-select: none; }
+.aw-fold__chev { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: -4px; border: 0; padding: 0; background: none; color: var(--aw-text2); cursor: pointer; border-radius: 4px; transition: transform .12s; }
+.aw-fold__chev:hover { background: var(--aw-hover); color: var(--aw-text); }
+.aw-fold__chev.is-open { transform: rotate(90deg); }
+.aw-fold__more { margin-top: 4px; font-size: 12px; }
+.aw-run { border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); padding: 10px 14px; background: var(--aw-bg2); }
+.aw-run--live { border-color: color-mix(in srgb, var(--aw-warn) 60%, transparent); }
+.aw-run--failed { border-left: 3px solid var(--aw-bad); }
+.aw-run--ok { border-left: 3px solid var(--aw-ok); }
+.aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-fs-sm); }
+.aw-steps { list-style: none; margin: 6px 0 2px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; border: 1px solid var(--aw-border); border-radius: 6px; background: var(--aw-bg); font-size: 12px; }
+.aw-steps li { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.aw-steps time { flex: none; color: var(--aw-text2); font-family: var(--aw-mono); font-size: var(--aw-fs-xs); }
+.aw-steps span { min-width: 0; overflow-wrap: anywhere; }
+.aw-step--tool span { font-family: var(--aw-mono); font-size: var(--aw-fs-xs); }
+.aw-step--node span { color: var(--aw-text2); }
+.aw-step--error span { color: var(--aw-bad); }
+.aw-step__mark { flex: none; width: 1em; text-align: center; color: var(--aw-text2); }
+.aw-run footer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; }
+.aw-diff, .aw-log { font-family: var(--aw-mono); font-size: var(--aw-fs-xs); line-height: 1.5; white-space: pre; overflow: auto; max-height: 65vh; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: 6px; padding: 10px; margin: 0; }
+.aw-log { max-height: 220px; margin-top: 10px; }
+.aw-composer { position: sticky; bottom: 0; border: 1px solid var(--aw-border2); border-radius: var(--aw-r-lg); background: var(--aw-bg); padding: 10px; box-shadow: 0 -6px 16px var(--aw-bg); }
+.aw-composer.is-note { border-style: dashed; border-color: var(--aw-warn); }
+.aw-composer__head, .aw-composer__foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+.aw-composer__head { margin-bottom: 8px; }
+.aw-composer__foot { margin-top: 8px; }
+.aw-composer textarea { border: 0; padding: 4px 2px; background: none; outline: none !important; }
+.aw-details { border-left: 1px solid var(--aw-border); background: var(--aw-bg2); padding: 16px; overflow-y: auto; position: sticky; top: 0; height: 100cqh; align-self: start; }
+.aw-details select, .aw-details input { width: 100%; }
+.aw-site { display: flex; flex-direction: column; gap: 6px; padding: 10px 0 14px; margin-bottom: 4px; border-bottom: 1px solid var(--aw-border); }
+.aw-site p { margin: 0; }
+.aw-site__links { display: flex; gap: 14px; font-weight: 600; }
+.aw-details .aw-ticket__actions { flex-direction: column; align-items: stretch; gap: 6px; padding-bottom: 14px; margin-bottom: 4px; }
+.aw-details .aw-ticket__actions > button { width: 100%; justify-content: center; }
+.aw-details .aw-ticket__actions > :first-child { align-self: flex-start; }
+.aw-details .aw-ticket__actions > .aw-running, .aw-details .aw-ticket__actions > .aw-muted { justify-content: center; text-align: center; }
+/* The same fields as a full page (a tab of their own): no column furniture,
+   a readable measure, and the moves in a row instead of a stack. */
+.aw-details--page { border-left: 0; background: none; padding: 0; position: static; height: auto; overflow: visible; }
+.aw-details--page .aw-ticket__actions { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.aw-details--page .aw-ticket__actions > button { width: auto; }
+.aw-details--page .aw-field { max-width: 520px; }
+.aw-details__h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); margin: 18px 0 6px !important; }
+.aw-cost { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 0; border-top: 1px solid var(--aw-border); border-bottom: 1px solid var(--aw-border); }
+.aw-cost > div { display: flex; flex-direction: column; gap: 2px; }
+.aw-cost strong { font-size: 15px; }
+.aw-cost small { font-size: 11px; }
+.aw-cost .aw-link { grid-column: 1 / -1; text-align: left; font-size: 12px; }
+.aw-runlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.aw-runlist li { display: flex; align-items: center; gap: 6px; }
+.aw-predict { display: flex; align-items: flex-start; gap: 7px; font-size: 12px; margin: 0 0 14px; color: var(--aw-text2); }
+.aw-predict .aw-dot { margin-top: 4px; }
+.aw-predict--bad { color: var(--aw-bad); }
+
+/* fleet + directory */
+.aw-nodes { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }
+.aw-node { border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); padding: 12px 14px; background: var(--aw-bg); }
+.aw-node--bad { border-left: 3px solid var(--aw-bad); } .aw-node--warn { border-left: 3px solid var(--aw-warn); } .aw-node--ok { border-left: 3px solid var(--aw-ok); }
+.aw-node > header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.aw-node h3 { font-size: 15px; font-weight: 700; }
+.aw-kv { display: grid; grid-template-columns: 80px 1fr; gap: 5px 10px; margin: 0 0 8px; font-size: 12px; }
+.aw-kv dt { color: var(--aw-text2); }
+.aw-kv dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.aw-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
+.aw-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.aw-panel { border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); padding: var(--aw-sp-4); background: var(--aw-bg); margin-bottom: 12px; }
+.aw-panel > header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aw-panel > h3 { font-size: var(--aw-fs-md); margin-bottom: 12px; }
+.aw-panel p { margin: 6px 0; }
+.aw-settings { max-width: 900px; }
+
+/* this machine as a worker: the header pill, then the panel's own bits */
+.aw-mpillbar { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; }
+.aw-mpill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 1px solid var(--aw-border2); border-radius: var(--aw-r-pill); background: var(--aw-bg); color: var(--aw-text2); font-size: 12px; white-space: nowrap; cursor: pointer; }
+.aw-mpill:hover { background: var(--aw-hover); color: var(--aw-text); }
+.aw-mpillbar .aw-btn--ghost { height: 24px; width: 26px; padding: 0; justify-content: center; }
+.aw-mstate { margin: 0 0 8px; font-size: var(--aw-fs-sm); }
+.aw-mexes { display: flex; flex-direction: column; gap: 2px; }
+.aw-mexe { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--aw-fs-sm); cursor: pointer; }
+.aw-mexe .aw-tag { font-size: 11px; }
+.aw-mexe__name { font-weight: 600; }
+.aw-mlog { margin-top: 8px; }
+.aw-mlog summary { cursor: pointer; color: var(--aw-text2); font-size: 12px; }
+.aw-mlog[open] summary { margin-bottom: 4px; }
+.aw-machine p > .aw-btn { margin-left: 8px; }
+/* Settings \u2192 This machine's tools (MCP servers and skills fleet agents read). */
+.aw-toolbox__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.aw-toolbox__head p { margin: 0; }
+.aw-toolbox__warnings { list-style: none; margin: 4px 0 8px; padding: 0; display: grid; gap: 2px; font-size: 12px; }
+.aw-toolbox__section { border-top: 1px solid var(--aw-border); margin-top: 10px; padding-top: 10px; }
+.aw-toolbox__section > h4 { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
+.aw-toolbox__subhead { font-size: 12px; font-weight: 600; color: var(--aw-text2); margin: 10px 0 4px; }
+.aw-toolbox__rows, .aw-toolbox__skills, .aw-toolbox__plugins { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.aw-toolbox__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--aw-border); border-radius: 8px; background: var(--aw-bg2); }
+.aw-toolbox__row.is-off { opacity: .72; }
+.aw-toolbox__main { min-width: 0; }
+.aw-toolbox__title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.aw-toolbox__meta { color: var(--aw-text2); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-toolbox__actions { display: flex; gap: 4px; }
+.aw-toolbox__skills > li, .aw-toolbox__plugin { padding: 6px 8px; border: 1px solid var(--aw-border); border-radius: 8px; background: var(--aw-bg2); }
+.aw-toolbox__plugin { display: flex; align-items: center; gap: 6px; }
+.aw-toolbox__skilldesc { margin: 2px 0 0; color: var(--aw-text2); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+
+/* overlays */
+.aw-scrim { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.35); display: grid; place-items: center; padding: 20px; }
+.aw-scrim--top { place-items: start center; padding-top: 12vh; }
+.aw-modal { width: min(520px, 100%); max-height: 88%; display: flex; flex-direction: column; background: var(--aw-bg); color: var(--aw-text); border: 1px solid var(--aw-border2); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+.aw-modal--wide { width: min(760px, 100%); }
+.aw-modal--full { width: 96%; height: 92%; max-height: 92%; }
+.aw-modal--full .aw-modal__body { flex: 1; min-height: 0; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.aw-review { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.aw-review > * { flex: 1; min-height: 0; }
+.aw-modal__head { display: flex; align-items: flex-start; gap: 10px; padding: 16px 18px 6px; }
+.aw-modal__head > div { flex: 1; }
+.aw-modal__head h2 { font-size: 16px; font-weight: 700; }
+.aw-modal__head p { margin: 4px 0 0; color: var(--aw-text2); }
+.aw-modal__body { padding: 10px 18px; overflow-y: auto; }
+.aw-modal__foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--aw-border); flex-wrap: wrap; }
+.aw-modal__foot .aw-predict { margin: 0 auto 0 0; }
+.aw-palette { width: min(620px, 100%); background: var(--aw-bg); border: 1px solid var(--aw-border2); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.3); overflow: hidden; }
+.aw-palette input { width: 100%; border: 0 !important; border-bottom: 1px solid var(--aw-border) !important; border-radius: 0 !important; padding: 14px 16px !important; font-size: 15px !important; outline: none !important; }
+.aw-palette ul { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow-y: auto; }
+.aw-palette li { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; cursor: pointer; }
+.aw-palette li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-palette li small { color: var(--aw-text2); white-space: nowrap; }
+.aw-palette li.is-active { background: var(--aw-hover); }
+.aw-toast { position: absolute; z-index: 30; right: 16px; bottom: 38px; max-width: 420px; padding: 10px 14px; border-radius: 8px; background: var(--aw-text); color: var(--aw-bg); box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+.aw-toast.is-error { background: var(--aw-bad); color: #fff; }
+
+/* pane resize handles */
+.aw-resize { position: absolute; top: 0; bottom: 0; width: 9px; cursor: col-resize; z-index: 8; touch-action: none; }
+.aw-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; }
+.aw-resize:hover::after, .aw-resize.is-drag::after { background: var(--aw-accent); }
+.aw-resize--explorer { bottom: 22px; left: calc(48px + var(--aw-explorer-w, 260px) - 5px); }
+.aw-resize--details { right: calc(var(--aw-details-w, 300px) - 5px); }
+
+@media (max-width: 900px) {
+  .aw-explorer { display: none; }
+  .aw-resize { display: none; }
+  .aw-ticket { grid-template-columns: 1fr; }
+  .aw-details { border-left: 0; border-top: 1px solid var(--aw-border); position: static; height: auto; }
+}
+
+/* \u2014\u2014\u2014\u2014\u2014 The details panel: sections, and what you can act on \u2014\u2014\u2014\u2014\u2014 */
+
+/* One block per concern, separated by a rule, so the eye can find "where do I
+   change the agent" without reading every label. */
+.aw-details > .aw-field,
+.aw-details > .aw-cost,
+.aw-details > .aw-runlist,
+.aw-details > .aw-site,
+.aw-details > .aw-predict,
+.aw-details > .aw-details__h {
+  border-top: 1px solid var(--aw-border);
+  padding-top: 14px;
+  margin-top: 14px;
+}
+
+.aw-details__h {
+  font-size: var(--aw-fs-xs);
+  letter-spacing: .1em;
+  color: var(--aw-text2);
+  margin-bottom: 8px !important;
+}
+
+/* Labels read as labels, not as another line of body text. */
+.aw-details .aw-field__label {
+  font-size: var(--aw-fs-xs);
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--aw-text3, var(--aw-text2));
+  opacity: .85;
+  margin-bottom: 2px;
+}
+
+/* Chips and segments: the chosen one is tinted, the rest stay quiet. */
+.aw-details .aw-seg { width: 100%; }
+.aw-details .aw-seg button { flex: 1; padding: 5px 6px; }
+.aw-details .aw-seg button:is([aria-pressed="true"], [aria-checked="true"]) {
+  background: color-mix(in srgb, var(--aw-accent) 18%, var(--aw-bg3));
+  color: var(--aw-text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--aw-accent) 55%, transparent);
+}
+.aw-details .aw-chips button[aria-pressed="true"] {
+  border-color: var(--aw-accent);
+  color: var(--aw-text);
+  background: color-mix(in srgb, var(--aw-accent) 14%, transparent);
+}
+
+/* The money block: three figures on one card, the one that is billed in accent. */
+.aw-details .aw-cost {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--aw-border);
+  border-radius: 8px;
+  background: var(--aw-bg);
+}
+.aw-details .aw-cost > div { display: flex; flex-direction: column; gap: 2px; }
+.aw-details .aw-cost strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+.aw-details .aw-cost > div:last-child strong { color: var(--aw-accent); }
+
+/* Runs: one line each, separated, with the node and cost quiet. */
+.aw-details .aw-runlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.aw-details .aw-runlist > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px dashed var(--aw-border);
+  font-size: 12px;
+}
+.aw-details .aw-runlist > li:first-child { border-top: 0; }
+
+/* Status and the "why nothing can take this" note get their own weight. */
+.aw-details .aw-predict { font-size: 12px; line-height: 1.45; }
+
+/* Health: one row per end-to-end check, red only when something is wrong. */
+.aw-health { max-width: 1000px; }
+.aw-health__intro { margin: 0 0 14px; }
+.aw-health__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.aw-health__row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); background: var(--aw-bg); }
+.aw-health__row--bad { border-color: color-mix(in srgb, var(--aw-bad) 45%, var(--aw-border)); }
+.aw-health__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.aw-health__body strong { font-size: 13px; }
+.aw-health__body span { font-size: 12px; }
+.aw-health__meta { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+
+/* Pre-review: one screen instead of the diff. */
+.aw-prereview { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--aw-border); border-left: 3px solid var(--aw-border2); border-radius: 8px; background: var(--aw-bg); }
+.aw-prereview--ok { border-left-color: var(--aw-ok); }
+.aw-prereview--warn { border-left-color: var(--aw-warn); }
+.aw-prereview--bad { border-left-color: var(--aw-bad); }
+.aw-prereview header, .aw-prereview footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aw-prereview__headline { margin: 8px 0 4px; font-size: var(--aw-fs-lg); }
+.aw-prereview ul { margin: 4px 0 8px; padding-left: 20px; font-size: 13px; }
+.aw-prereview footer { margin-top: 6px; }
+
+/* Recorded evidence: one summary row; the run and compare controls open on demand. */
+.aw-evidence { padding: 8px 12px; }
+.aw-evidence header { align-items: baseline; }
+.aw-evidence__line { font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-evidence__toggle { flex: none; font-size: 12px; }
+.aw-evidence__body { margin-top: 8px; }
+.aw-evidence__hint { margin: 0 0 8px; font-size: 12px; }
+.aw-md { margin: 6px 0 8px; overflow-wrap: anywhere; }
+.aw-md p { margin: 0 0 6px; }
+.aw-md p:last-child, .aw-md ul:last-child, .aw-md ol:last-child, .aw-md pre:last-child { margin-bottom: 0; }
+.aw-md__heading { margin: 10px 0 4px; font-size: 13px; }
+.aw-md ul, .aw-md ol { margin: 4px 0 8px; padding-left: 20px; font-size: var(--aw-fs-sm); }
+.aw-md li { margin: 2px 0; }
+.aw-md code { font-family: var(--aw-mono); font-size: var(--aw-fs-xs); background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
+.aw-md__code { margin: 4px 0 8px; max-height: 32vh; }
+
+/* Before/after preview shots: evidence, not decoration. */
+.aw-shots { display: flex; gap: 8px; margin-top: 10px; }
+.aw-shots figure { flex: 1; min-width: 0; margin: 0; }
+.aw-shots img { display: block; width: 100%; height: auto; border: 1px solid var(--aw-border); border-radius: 6px; background: var(--aw-bg2); }
+.aw-shots figcaption { margin-top: 3px; font-size: 11px; color: var(--aw-text3); text-transform: uppercase; letter-spacing: .04em; }
+
+/* SEO: small inline charts, wide tables that scroll, drafts that stay readable. */
+.aw-seo-chart { margin: 8px 0 4px; }
+.aw-seo-chart svg { display: block; width: 100%; height: auto; max-height: 190px; }
+.aw-seo-chart__legend { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--aw-text2); }
+.aw-seo-chart__dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.aw-seo-pages td.aw-seo-types, .aw-seo-citations td { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.aw-seo-path { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.aw-seo-ranks td { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.aw-seo-ranks__url { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-seo-citations textarea { min-width: 240px; }
+.aw-seo-citations input { min-width: 200px; }
+.aw-seo-issues { display: grid; gap: 4px; padding: 2px 0; }
+.aw-seo-issue { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.aw-seo-issue span:last-child { color: var(--aw-text2); }
+
+/* ProjectWorld \u2014 compact isometric map ported from client portal; works in dark & light themes. */
+.aw-world-wrap { container-type: inline-size; min-width: 0; }
+.aw-project__world { padding: 16px 0 20px; }
+.aw-world {
+  --aw-w-ink: var(--aw-text, var(--dsw-alias-label-primary, currentColor));
+  --aw-w-ink-soft: var(--aw-text2, var(--dsw-alias-label-secondary, rgba(128,134,142,.92)));
+  --aw-w-surface: var(--aw-bg, rgba(128,134,142,.06));
+  --aw-w-stage: var(--aw-bg2, rgba(128,134,142,.09));
+  --aw-w-chip: rgba(128,134,142,.16);
+  --aw-w-rule: var(--aw-border, rgba(128,134,142,.24));
+  --aw-w-rule-strong: var(--aw-border2, rgba(128,134,142,.38));
+  --aw-w-accent: var(--aw-accent, #ff5a1f);
+  --aw-w-ok: var(--aw-ok, #2f9e5b);
+  --aw-w-warn: var(--aw-warn, #d99a16);
+  --aw-w-bad: var(--aw-bad, #d6453d);
+  --aw-w-hover: var(--aw-hover, rgba(128,134,142,.14));
+  --aw-w-tint: color-mix(in srgb, var(--aw-w-accent) 14%, transparent);
+  --aw-w-mono: var(--aw-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+
+  --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 90%, var(--aw-w-ink) 10%);
+  --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 78%, var(--aw-w-ink) 22%);
+  --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 64%, var(--aw-w-ink) 36%);
+
+  --aw-w-accent-top: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface));
+  --aw-w-accent-left: color-mix(in srgb, var(--aw-w-accent) 36%, var(--aw-w-surface));
+  --aw-w-accent-right: color-mix(in srgb, var(--aw-w-accent) 50%, var(--aw-w-surface));
+
+  --aw-w-ok-soft: color-mix(in srgb, var(--aw-w-ok) 22%, var(--aw-w-surface));
+  --aw-w-bad-soft: color-mix(in srgb, var(--aw-w-bad) 22%, var(--aw-w-surface));
+  --aw-w-warn-soft: color-mix(in srgb, var(--aw-w-warn) 24%, var(--aw-w-surface));
+
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(240px, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  padding: 10px;
+  border-radius: var(--aw-r-lg);
+  border: 1px solid var(--aw-w-rule);
+  background: var(--aw-w-stage);
+  color: var(--aw-w-ink);
+}
+@media (prefers-color-scheme: dark) {
+  .aw-world, .aw-world__journeys {
+    --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
+    --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
+    --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
+  }
+}
+:root[data-theme='dark'] .aw-world, :root[data-theme='dark'] .aw-world__journeys {
+  --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
+  --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
+  --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
+}
+.aw-world__stage {
+  position: relative;
+  border-radius: 8px;
+  background: var(--aw-w-surface);
+  border: 1px solid var(--aw-w-rule);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 4px;
+}
+.aw-world__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 260px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.aw-world__floor-plate { fill: color-mix(in srgb, var(--aw-w-stage) 65%, var(--aw-w-surface)); stroke: var(--aw-w-rule-strong); stroke-width: 1; }
+.aw-world__dot { fill: color-mix(in srgb, var(--aw-w-ink) 20%, transparent); }
+.aw-world__dot--active { fill: var(--aw-w-accent); opacity: .72; }
+.aw-world__zone-label { font: 600 9px/1 var(--aw-w-mono); letter-spacing: .12em; text-transform: uppercase; fill: var(--aw-w-ink-soft); opacity: .78; }
+
+.aw-world__cable-base { fill: none; stroke: var(--aw-w-rule-strong); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.aw-world__cable-base.is-connected { stroke: color-mix(in srgb, var(--aw-w-ink) 45%, transparent); }
+.aw-world__cable-flow { fill: none; stroke: var(--aw-w-accent); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 5 7; animation: aw-world-dash-flow 1.35s linear infinite; }
+.aw-world__cable-arrow { fill: var(--aw-w-ink-soft); }
+.aw-world__cable-arrow.is-active { fill: var(--aw-w-accent); }
+@keyframes aw-world-dash-flow { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+
+.aw-world__station { cursor: pointer; outline: none; }
+.aw-world__hit { fill: transparent; stroke: none; }
+.aw-world__pad { fill: color-mix(in srgb, var(--aw-w-surface) 80%, var(--aw-w-stage)); stroke: var(--aw-w-rule-strong); stroke-width: 1; transition: fill 150ms ease, stroke 150ms ease; }
+.aw-world__station.is-active .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-accent) 12%, var(--aw-w-surface)); stroke: color-mix(in srgb, var(--aw-w-accent) 55%, var(--aw-w-ink)); }
+.aw-world__station.is-warn .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-warn) 12%, var(--aw-w-surface)); stroke: color-mix(in srgb, var(--aw-w-warn) 60%, var(--aw-w-ink)); }
+.aw-world__station.is-selected .aw-world__pad,
+.aw-world__station:hover .aw-world__pad { fill: var(--aw-w-tint); stroke: var(--aw-w-accent); stroke-width: 1.5; }
+.aw-world__station:focus-visible .aw-world__pad { stroke: var(--aw-w-accent); stroke-width: 2.2; }
+
+.aw-world__face-top { fill: var(--aw-w-face-top); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
+.aw-world__face-left { fill: var(--aw-w-face-left); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
+.aw-world__face-right { fill: var(--aw-w-face-right); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
+.aw-world__face-accent-top { fill: var(--aw-w-accent-top); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-accent-left { fill: var(--aw-w-accent-left); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-accent-right { fill: var(--aw-w-accent-right); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-ok { fill: var(--aw-w-ok-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-bad { fill: var(--aw-w-bad-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-warn { fill: var(--aw-w-warn-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__ink-line { fill: none; stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.aw-world__detail-line { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 55%, transparent); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+.aw-world__window { fill: color-mix(in srgb, var(--aw-w-ink) 14%, var(--aw-w-surface)); stroke: var(--aw-w-ink); stroke-width: 1.1; stroke-linejoin: round; }
+.aw-world__window--lit { fill: var(--aw-w-accent-left); }
+.aw-world__window--ok { fill: var(--aw-w-ok-soft); }
+
+.aw-world__cloche-rim-back { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 32%, transparent); stroke-width: 1; stroke-dasharray: 2.5 2; }
+.aw-world__cloche-glass { fill: rgba(128,134,142,.18); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__cloche-glass--active { fill: color-mix(in srgb, var(--aw-w-accent) 18%, transparent); }
+.aw-world__cloche-glass--warn { fill: color-mix(in srgb, var(--aw-w-warn) 18%, transparent); }
+.aw-world__cloche-shine { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 32%, transparent); stroke-width: 1.8; stroke-linecap: round; }
+
+.aw-world__station.is-unknown .aw-world__face-top,
+.aw-world__station.is-unknown .aw-world__face-left,
+.aw-world__station.is-unknown .aw-world__face-right,
+.aw-world__station.is-unknown .aw-world__ink-line { stroke-dasharray: 3.5 2.5; stroke: var(--aw-w-ink-soft); fill-opacity: .55; }
+.aw-world__station.is-off .aw-world__object { opacity: .66; }
+.aw-world__station.is-off:hover .aw-world__object,
+.aw-world__station.is-off.is-selected .aw-world__object,
+.aw-world__station.is-off:focus-visible .aw-world__object { opacity: .92; }
+
+.aw-world__beacon { stroke: var(--aw-w-ink); stroke-width: 1.2; }
+.aw-world__beacon--ok { fill: var(--aw-w-ok); }
+.aw-world__beacon--active { fill: var(--aw-w-accent); }
+.aw-world__beacon--warn { fill: var(--aw-w-warn); }
+.aw-world__beacon--bad { fill: var(--aw-w-bad); }
+.aw-world__beacon--off,
+.aw-world__beacon--unknown { fill: var(--aw-w-stage); }
+.aw-world__badge-bg { fill: var(--aw-w-accent); stroke: var(--aw-w-ink); stroke-width: 1.2; }
+.aw-world__badge-text { font: 700 10px/1 var(--aw-w-mono); fill: #fff; text-anchor: middle; dominant-baseline: central; }
+
+.aw-world__tag-bg { fill: var(--aw-w-chip); stroke: var(--aw-w-rule-strong); stroke-width: 1; }
+.aw-world__station.is-selected .aw-world__tag-bg,
+.aw-world__station:hover .aw-world__tag-bg { stroke: var(--aw-w-accent); }
+.aw-world__tag-text { font: 600 10px/1 inherit; fill: var(--aw-w-ink); text-anchor: middle; dominant-baseline: central; }
+.aw-world__micro { font: 500 9px/1 var(--aw-w-mono); fill: var(--aw-w-ink-soft); text-anchor: middle; }
+
+.aw-world__caption { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.aw-world__eyebrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 600 10px/1.2 var(--aw-w-mono); text-transform: uppercase; letter-spacing: .09em; color: var(--aw-w-ink-soft); }
+.aw-world__project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+.aw-world__card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--aw-w-surface); border: 1px solid var(--aw-w-rule); flex: 1; }
+.aw-world__card-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.aw-world__pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.3; border: 1px solid var(--aw-w-rule-strong); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); }
+.aw-world__pill-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-ink-soft); flex: none; }
+.aw-world__pill--ok { border-color: color-mix(in srgb, var(--aw-w-ok) 45%, transparent); background: color-mix(in srgb, var(--aw-w-ok) 14%, transparent); color: var(--aw-w-ok); }
+.aw-world__pill--ok .aw-world__pill-dot { background: var(--aw-w-ok); }
+.aw-world__pill--active { border-color: color-mix(in srgb, var(--aw-w-accent) 45%, transparent); background: var(--aw-w-tint); color: var(--aw-w-accent); }
+.aw-world__pill--active .aw-world__pill-dot { background: var(--aw-w-accent); }
+.aw-world__pill--warn { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 14%, transparent); color: var(--aw-w-warn); }
+.aw-world__pill--warn .aw-world__pill-dot { background: var(--aw-w-warn); }
+.aw-world__pill--bad { border-color: color-mix(in srgb, var(--aw-w-bad) 45%, transparent); background: color-mix(in srgb, var(--aw-w-bad) 14%, transparent); color: var(--aw-w-bad); }
+.aw-world__pill--bad .aw-world__pill-dot { background: var(--aw-w-bad); }
+.aw-world__pill--unknown { border-style: dashed; }
+
+.aw-world .aw-world__title { margin: 0; font-size: var(--aw-fs-lg); font-weight: 700; line-height: 1.25; letter-spacing: -.01em; color: var(--aw-w-ink); }
+.aw-world .aw-world__explain { margin: 0; font-size: 12px; line-height: 1.4; color: var(--aw-w-ink-soft); max-width: none; }
+.aw-world__status-box { margin-top: auto; padding-top: 7px; border-top: 1px dashed var(--aw-w-rule-strong); display: flex; flex-direction: column; gap: 2px; }
+.aw-world__status-label { font: 600 9.5px/1.2 var(--aw-w-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--aw-w-ink-soft); }
+.aw-world .aw-world__status-value { margin: 0; font-size: var(--aw-fs-sm); font-weight: 600; line-height: 1.35; color: var(--aw-w-ink); word-break: break-word; max-width: none; }
+
+.aw-world__ops { padding-top: 7px; border-top: 1px dashed var(--aw-w-rule-strong); display: flex; flex-direction: column; gap: 4px; }
+.aw-world__op-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.aw-world__op-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font-size: 11px; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.aw-world__op-chip strong { color: var(--aw-w-ink); font-weight: 650; }
+.aw-world__op-chip--warn { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 14%, transparent); color: var(--aw-w-warn); }
+.aw-world__op-chip--warn strong { color: var(--aw-w-warn); }
+.aw-world__op-chip--bad { border-color: color-mix(in srgb, var(--aw-w-bad) 45%, transparent); background: color-mix(in srgb, var(--aw-w-bad) 14%, transparent); color: var(--aw-w-bad); }
+.aw-world__op-chip--bad strong { color: var(--aw-w-bad); }
+
+.aw-world__checks { padding-top: 7px; border-top: 1px dashed var(--aw-w-rule-strong); display: flex; flex-direction: column; gap: 5px; }
+.aw-world__check-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.aw-world__check-item { display: flex; align-items: flex-start; gap: 7px; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); font-size: var(--aw-fs-xs); line-height: 1.35; }
+.aw-world__check-item.is-pending { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 10%, transparent); }
+.aw-world__check-item.is-ready { border-color: color-mix(in srgb, var(--aw-w-ok) 35%, transparent); background: color-mix(in srgb, var(--aw-w-ok) 9%, transparent); }
+.aw-world__check-mark { flex: none; width: 15px; height: 15px; margin-top: 1px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font: 700 10px/1 var(--aw-w-mono); color: var(--aw-w-ink-soft); background: var(--aw-w-chip); }
+.aw-world__check-item.is-pending .aw-world__check-mark { color: var(--aw-w-warn); background: color-mix(in srgb, var(--aw-w-warn) 18%, transparent); }
+.aw-world__check-item.is-ready .aw-world__check-mark { color: var(--aw-w-ok); background: color-mix(in srgb, var(--aw-w-ok) 18%, transparent); }
+.aw-world__check-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.aw-world__check-label { font-weight: 600; color: var(--aw-w-ink); }
+.aw-world .aw-world__check-detail { margin: 0; font-size: var(--aw-fs-xs); line-height: 1.35; color: var(--aw-w-ink-soft); word-break: break-word; max-width: none; }
+.aw-world__check-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 1px; font: 500 var(--aw-fs-xs)/1.25 var(--aw-w-mono); color: var(--aw-w-ink-soft); }
+.aw-world__check-who { color: var(--aw-w-ink); }
+
+.aw-world__nav { display: flex; flex-wrap: wrap; gap: 4px; }
+.aw-world__journeys {
+  --aw-w-ink: var(--aw-text, var(--dsw-alias-label-primary, currentColor));
+  --aw-w-ink-soft: var(--aw-text2, var(--dsw-alias-label-secondary, rgba(128,134,142,.92)));
+  --aw-w-surface: var(--aw-bg, rgba(128,134,142,.06));
+  --aw-w-stage: var(--aw-bg2, rgba(128,134,142,.09));
+  --aw-w-chip: rgba(128,134,142,.16);
+  --aw-w-rule: var(--aw-border, rgba(128,134,142,.24));
+  --aw-w-rule-strong: var(--aw-border2, rgba(128,134,142,.38));
+  --aw-w-accent: var(--aw-accent, #ff5a1f);
+  --aw-w-ok: var(--aw-ok, #2f9e5b);
+  --aw-w-warn: var(--aw-warn, #d99a16);
+  --aw-w-bad: var(--aw-bad, #d6453d);
+  --aw-w-hover: var(--aw-hover, rgba(128,134,142,.14));
+  --aw-w-tint: color-mix(in srgb, var(--aw-w-accent) 14%, transparent);
+  --aw-w-mono: var(--aw-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 90%, var(--aw-w-ink) 10%);
+  --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 78%, var(--aw-w-ink) 22%);
+  --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 64%, var(--aw-w-ink) 36%);
+  --aw-w-accent-top: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface));
+  --aw-w-accent-left: color-mix(in srgb, var(--aw-w-accent) 36%, var(--aw-w-surface));
+  --aw-w-accent-right: color-mix(in srgb, var(--aw-w-accent) 50%, var(--aw-w-surface));
+  --aw-w-ok-soft: color-mix(in srgb, var(--aw-w-ok) 22%, var(--aw-w-surface));
+  --aw-w-bad-soft: color-mix(in srgb, var(--aw-w-bad) 22%, var(--aw-w-surface));
+  --aw-w-warn-soft: color-mix(in srgb, var(--aw-w-warn) 24%, var(--aw-w-surface));
+}
+.aw-world__journeys { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+.aw-world__drift { margin: 0 0 6px; font-size: 12px; }
+.aw-world__drift-toggle { appearance: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--aw-warn, #d99a16) 45%, transparent); background: color-mix(in srgb, var(--aw-warn, #d99a16) 12%, transparent); color: var(--aw-text, inherit); font: inherit; cursor: pointer; }
+.aw-world__drift-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--aw-warn, #d99a16); }
+.aw-world__drift-list { list-style: none; margin: 4px 0 0; padding: 0 0 0 4px; display: grid; gap: 2px; }
+.aw-world__drift-list li { display: flex; align-items: baseline; gap: 8px; }
+.aw-world__drift-item { appearance: none; border: 0; background: none; padding: 0; color: var(--aw-text, inherit); font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+span.aw-world__drift-item { cursor: default; color: var(--aw-text2, inherit); }
+button.aw-world__drift-item:hover { text-decoration: underline; }
+.aw-world__drift-age { flex: 0 0 auto; color: var(--aw-warn, #d99a16); font-variant-numeric: tabular-nums; }
+.aw-world__journey-pill { appearance: none; display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font: inherit; font-size: 11px; line-height: 1.4; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-world__journey-pill[aria-pressed="true"] { border-color: color-mix(in srgb, var(--aw-w-accent) 60%, var(--aw-w-rule)); background: var(--aw-w-tint); color: var(--aw-w-ink); }
+.aw-world__journey-pill.is-all { border-style: dashed; }
+.aw-world__journey-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-ink-soft); flex: 0 0 auto; }
+.aw-world__journey-pill.is-in_progress .aw-world__journey-dot, .aw-world__journey-pill.is-review .aw-world__journey-dot { background: var(--aw-w-accent); }
+.aw-world__journey-pill.is-done .aw-world__journey-dot { background: var(--aw-w-ok, #2f9e5b); }
+.aw-world__journey { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: var(--aw-w-tint); }
+.aw-world__journey-sentence { margin: 2px 0 6px; font-size: 13px; line-height: 1.4; color: var(--aw-w-ink); }
+.aw-world__journey-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--aw-w-accent) 55%, var(--aw-w-rule)); color: var(--aw-w-ink); font-size: 11px; text-decoration: none; }
+.aw-world__station.is-journey-ahead { opacity: .35; }
+.aw-world__station.is-journey-current .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface)); stroke: var(--aw-w-accent); stroke-width: 1.6; }
+@media (prefers-reduced-motion: no-preference) { .aw-world__station.is-journey-current .aw-world__pad { animation: aw-world-journey-pulse 2.4s ease-in-out infinite; } }
+@keyframes aw-world-journey-pulse { 50% { stroke-opacity: .45; } }
+.aw-world__chip { appearance: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font-size: 11px; font-weight: 500; line-height: 1.25; cursor: pointer; transition: border-color 120ms ease, background 120ms ease, color 120ms ease; }
+.aw-world__chip:hover { background: var(--aw-w-hover); color: var(--aw-w-ink); }
+.aw-world__chip[aria-pressed='true'] { border-color: var(--aw-w-accent); background: var(--aw-w-tint); color: var(--aw-w-ink); font-weight: 600; }
+.aw-world__chip:focus-visible { outline: 2px solid var(--aw-w-accent); outline-offset: 1px; }
+.aw-world__chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-rule-strong); flex: none; }
+.aw-world__chip-dot--ok { background: var(--aw-w-ok); }
+.aw-world__chip-dot--active { background: var(--aw-w-accent); }
+.aw-world__chip-dot--warn { background: var(--aw-w-warn); }
+.aw-world__chip-dot--bad { background: var(--aw-w-bad); }
+.aw-world__chip-dot--unknown { background: transparent; border: 1px dashed var(--aw-w-ink-soft); }
+
+.aw-sr-only, .aw-world__sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+@media (max-width: 720px) {
+  .aw-world { grid-template-columns: minmax(0, 1fr); }
+}
+@container (max-width: 720px) {
+  .aw-world { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aw-world__cable-flow { animation: none; }
+  .aw-world__pad, .aw-world__chip { transition: none; }
+}
+
+/* Marketing desk: the autopilot rows, the needs list, the day chart, regrouped settings. */
+.aw-table--compact td, .aw-table--compact th { padding-top: 7px; padding-bottom: 7px; }
+.aw-table--static tbody tr, .aw-table--static th { cursor: default; }
+.aw-table--static tbody tr:hover { background: transparent; }
+.aw-table, .aw-mk-meter__num, .aw-chart__tick, .aw-chart__day, .aw-needs, .aw-mk-kinds { font-variant-numeric: tabular-nums; }
+.aw-mk-health { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 250px; }
+.aw-mk-health .aw-mk-meter { margin: 0; }
+.aw-mk-meter { display: inline-flex; align-items: center; gap: 8px; margin: 2px 14px 2px 0; white-space: nowrap; }
+.aw-mk-meter__label { color: var(--aw-text2); font-size: 12px; min-width: 62px; }
+.aw-mk-meter__track { position: relative; width: 72px; height: 5px; background: var(--aw-bg3); border-radius: var(--aw-r-sm); flex: none; }
+.aw-mk-meter__fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: var(--aw-r-sm); background: var(--aw-ok); }
+.aw-mk-meter__fill--warn { background: var(--aw-warn); }
+.aw-mk-meter__fill--bad { background: var(--aw-bad); }
+.aw-mk-meter__limit { position: absolute; top: -2px; bottom: -2px; left: 80%; width: 1px; background: var(--aw-text2); opacity: .55; }
+.aw-mk-meter__num { color: var(--aw-text2); font-size: 12px; }
+.aw-mk-bad { color: var(--aw-bad); }
+.aw-mk-kinds-label { margin: 12px 0 2px; }
+.aw-mk-kinds { display: flex; flex-wrap: wrap; gap: 3px 16px; margin: 0; font-size: 12px; }
+.aw-mk-kind { display: flex; gap: 5px; }
+.aw-mk-kind dt { color: var(--aw-text2); }
+.aw-mk-kind dd { margin: 0; font-weight: 600; }
+.aw-needs { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.aw-needs li { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-top: 1px solid var(--aw-border); }
+.aw-needs li:first-child { border-top: 0; }
+.aw-needs li > span { flex: 1; min-width: 0; }
+.aw-needs .aw-btn { flex: none; }
+.aw-chart { margin: 0; }
+.aw-chart__totals { margin: 0 0 8px; color: var(--aw-text2); font-size: 12px; }
+.aw-chart__svg { display: block; }
+.aw-chart__grid { stroke: var(--aw-border); stroke-width: 1; }
+.aw-chart__axis { stroke: var(--aw-border2); stroke-width: 1; }
+.aw-chart__tick, .aw-chart__day { fill: var(--aw-text2); font-size: 10px; }
+.aw-chart__bar { fill: var(--aw-bg3); }
+.aw-chart__bounce { fill: var(--aw-bad); }
+.aw-chart__reply { fill: var(--aw-ok); }
+.aw-chart__post { fill: var(--aw-violet); }
+.aw-form2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+@media (max-width: 720px) {
+  .aw-form2 { grid-template-columns: 1fr; }
+  .aw-table--stack thead { display: none; }
+  .aw-table--stack, .aw-table--stack tbody, .aw-table--stack tr, .aw-table--stack td { display: block; width: 100%; }
+  .aw-table--stack tr { padding: 8px 4px; border-top: 1px solid var(--aw-border); }
+  .aw-table--stack tbody tr:first-child { border-top: 0; }
+  .aw-table--stack td { padding: 3px 8px; border-bottom: 0; white-space: normal; }
+  .aw-table--stack td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 1px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--aw-text2);
+  }
+  .aw-table--stack td:first-child { font-weight: 600; }
+  .aw-table--stack td:first-child::before { content: none; }
+  .aw-table--stack .aw-mk-meter { display: flex; margin: 2px 0; }
+}
+.aw-mk-window input { flex: none; width: 58px; min-width: 0; }
+.aw-mk-window input[aria-label="Window offset minutes"] { width: 72px; }
+.aw-divider { border: 0; border-top: 1px solid var(--aw-border); margin: 18px 0 4px; }
+
+/* Project solutions: kinds of work, the fleet note, and the client's connections. */
+.aw-dot--muted { background: var(--aw-border2); }
+.aw-psol { margin: 2px 0; }
+.aw-psol__h { margin: 12px 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); }
+.aw-psol__h:first-child { margin-top: 0; }
+.aw-psol__fleet { margin: 6px 0 0; font-size: 12px; color: var(--aw-text2); }
+.aw-psol__fleet--warn { color: color-mix(in srgb, var(--aw-warn) 80%, var(--aw-text)); font-weight: 600; }
+.aw-psol__rows { list-style: none; margin: 0; padding: 0; }
+.aw-psol__row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--aw-border); }
+.aw-psol__row:first-child { border-top: 0; }
+.aw-psol__rowmain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aw-psol__miss { font-family: var(--aw-mono); font-size: 11px; color: var(--aw-text2); }
+.aw-psol__err { font-size: 12px; color: var(--aw-bad); }
+.aw-psol__rowact { flex: none; display: flex; align-items: center; gap: 6px; }
+.aw-psol__brief { margin-top: 12px; }
+.aw-psol__brief > summary { cursor: pointer; color: var(--aw-text2); font-size: 12px; }
+.aw-psol__brief[open] > summary { margin-bottom: 4px; }
+.aw-psol__briefitem { padding: 6px 0; border-top: 1px solid var(--aw-border); font-size: 12px; }
+.aw-psol__briefitem ul { margin: 2px 0 8px; padding-left: 18px; color: var(--aw-text2); }
+.aw-psol__tags { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.aw-psol__steps { margin: 0 0 10px; padding-left: 20px; }
+.aw-psol__steps li { margin: 3px 0; font-size: 12px; color: var(--aw-text2); }
+
+/* \u2014\u2014\u2014\u2014\u2014 Shared primitives (ui.jsx): one shape each, for every view \u2014\u2014\u2014\u2014\u2014 */
+.aw-emptybox { padding: var(--aw-sp-6); display: flex; flex-direction: column; align-items: center; gap: var(--aw-sp-2); text-align: center; color: var(--aw-text2); }
+.aw-emptybox strong { font-size: var(--aw-fs-md); font-weight: 600; }
+.aw-emptybox__hint { font-size: var(--aw-fs-sm); max-width: 52ch; }
+.aw-emptybox__action { margin-top: var(--aw-sp-2); }
+.aw-loading { display: flex; align-items: center; justify-content: center; gap: var(--aw-sp-2); padding: var(--aw-sp-6) var(--aw-sp-4); color: var(--aw-text2); font-size: var(--aw-fs-sm); }
+.aw-loading::before { content: ''; flex: none; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--aw-border2); border-top-color: var(--aw-accent); animation: aw-spin .7s linear infinite; }
+@keyframes aw-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .aw-loading::before { animation: none; } }
+.aw-errornote { display: flex; align-items: center; gap: var(--aw-sp-3); flex-wrap: wrap; padding: 10px 12px; border-radius: var(--aw-r-lg); margin: 10px 0; background: color-mix(in srgb, var(--aw-bad) 10%, transparent); color: var(--aw-bad); font-size: var(--aw-fs-sm); }
+.aw-errornote__text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.aw-panel__head { display: flex; align-items: center; gap: var(--aw-sp-3); flex-wrap: wrap; margin-bottom: var(--aw-sp-3); }
+.aw-panel__titles { flex: 1; min-width: 0; }
+.aw-panel__titles h3 { font-size: var(--aw-fs-md); font-weight: 600; margin: 0; }
+.aw-panel__titles p { margin: 2px 0 0; color: var(--aw-text2); font-size: var(--aw-fs-sm); }
+.aw-panel__actions { display: flex; align-items: center; gap: var(--aw-sp-1); flex: none; }
+.aw-statrow { display: flex; flex-wrap: wrap; gap: var(--aw-sp-3); font-variant-numeric: tabular-nums; }
+.aw-statrow__item { display: flex; flex-direction: column; gap: 1px; min-width: 64px; padding: var(--aw-sp-2) var(--aw-sp-4); border: 1px solid var(--aw-border); border-radius: var(--aw-r-md); background: var(--aw-bg); }
+.aw-statrow__item strong { font-size: var(--aw-fs-lg); font-weight: 600; }
+.aw-statrow__item small { font-size: var(--aw-fs-xs); color: var(--aw-text2); }
+.aw-statrow__item--ok strong { color: var(--aw-ok); }
+.aw-statrow__item--warn strong { color: color-mix(in srgb, var(--aw-warn) 70%, var(--aw-text)); }
+.aw-statrow__item--bad strong { color: var(--aw-bad); }
+.aw-statrow__item--info strong { color: var(--aw-info); }
+.aw-statrow__item--accent strong { color: var(--aw-accent); }
+.aw-tag--pill { height: 18px; padding: 0 6px; border-radius: var(--aw-r-pill); }
+/* One page header for every view (PageHeader): h2 and a one-line muted
+   subtitle on the left, badges then buttons on the right; it wraps when the
+   pane is narrow, and no box or border competes with the page. */
+.aw-pagehead { display: flex; align-items: center; gap: var(--aw-sp-3) var(--aw-sp-5); flex-wrap: wrap; margin-bottom: var(--aw-sp-4); }
+.aw-pagehead__titles { flex: 1; min-width: 0; }
+.aw-pagehead__titles h2 { margin: 0; font-size: var(--aw-fs-xl); font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.aw-pagehead__titles p { margin: 2px 0 0; color: var(--aw-text2); font-size: var(--aw-fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-pagehead__side { display: flex; align-items: center; gap: var(--aw-sp-2); flex-wrap: wrap; }
+.aw-pagehead__meta { display: flex; align-items: center; gap: var(--aw-sp-1); flex-wrap: wrap; }
+.aw-pagehead__actions { display: flex; align-items: center; gap: var(--aw-sp-1); flex-wrap: wrap; }
+/* One tab strip for a page's sections (PageTabs): 32px underline tabs on one
+   rule, the chosen one inked with a 2px accent underline; roving focus. */
+.aw-pagetabs { display: flex; align-items: flex-end; gap: var(--aw-sp-5); border-bottom: 1px solid var(--aw-border); margin-bottom: var(--aw-sp-3); overflow-x: auto; scrollbar-width: none; }
+.aw-pagetabs::-webkit-scrollbar { display: none; }
+.aw-pagetabs button { appearance: none; flex: none; display: inline-flex; align-items: center; gap: var(--aw-sp-2); height: 32px; padding: 0 2px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--aw-text2); font: inherit; font-size: var(--aw-fs-md); cursor: pointer; white-space: nowrap; }
+.aw-pagetabs button:hover { color: var(--aw-text); }
+.aw-pagetabs button[aria-selected="true"] { color: var(--aw-text); border-bottom-color: var(--aw-accent); font-weight: 600; }
+.aw-pagetabs__badge { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: var(--aw-r-pill); background: var(--aw-bg3); color: var(--aw-text2); font-size: 10px; font-weight: 600; }
+.aw-pagetabs button[aria-selected="true"] .aw-pagetabs__badge { background: color-mix(in srgb, var(--aw-accent) 16%, transparent); color: var(--aw-accent); }
+/* shell */
+.aw-tablist { display: flex; flex: 1; align-items: stretch; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.aw-tablist::-webkit-scrollbar { display: none; }
+.aw-tabs__toggle { flex: none; height: 100%; padding: 0 9px; border: 0; border-right: 1px solid var(--aw-border); border-radius: 0; color: var(--aw-text2); }
+.aw-tabs__toggle:hover:not(:disabled) { background: var(--aw-hover); color: var(--aw-text); }
+.aw-tab:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: -2px; }
+.aw-tab__close:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: -1px; }
+.aw-topbanner { position: absolute; z-index: 5; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: color-mix(in srgb, var(--aw-bad) 12%, var(--aw-bg)); border-bottom: 1px solid color-mix(in srgb, var(--aw-bad) 45%, var(--aw-border)); color: var(--aw-text); font-size: 12px; }
+.aw-topbanner > span { flex: 1; min-width: 0; }
+.aw-loading--fill { position: absolute; inset: 0; padding: 0; }
+.aw-toast { display: flex; align-items: flex-start; gap: 10px; }
+.aw-toast__close { flex: none; border: 0; background: none; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; opacity: .75; }
+.aw-toast__close:hover { opacity: 1; }
+.aw-palette__count { margin: 2px 12px 8px; color: var(--aw-text2); font-size: 11px; }
+.aw-drawer-scrim { position: fixed; inset: 0; z-index: 59; background: rgba(0, 0, 0, .28); }
+@media (max-width: 900px) {
+  .aw-explorer--drawer { display: block; position: fixed; z-index: 60; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); padding-top: 8px; box-shadow: 0 0 40px rgba(0, 0, 0, .3); }
+  .aw--inset .aw-explorer--drawer { padding-top: 44px; }
+}
+/* loop */
+/* Keyboard rows: visible focus wherever a row can receive it. */
+.aw-table tbody tr:focus-visible, .aw-row:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: -2px; }
+/* A row's title is a real link that keeps the row's ink until it is hovered. */
+.aw-titlelink { color: inherit; text-decoration: none; }
+.aw-titlelink:hover { text-decoration: underline; }
+/* The right rail's rare controls, folded behind one summary. */
+.aw-details > details.aw-details__more { border-top: 1px solid var(--aw-border); padding-top: 14px; margin-top: 14px; }
+.aw-details__more > summary { cursor: pointer; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--aw-text2); }
+.aw-details__more[open] > summary { margin-bottom: 8px; }
+.aw-details__more .aw-field, .aw-details__more .aw-cost, .aw-details__more .aw-site { border-top: 1px solid var(--aw-border); padding-top: 14px; margin-top: 14px; }
+.aw-details__more .aw-site:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+/* The composer's notify fold and its one-line delivery status. */
+.aw-mentions__open { font-size: 12px; }
+.aw-notified { margin-top: 2px; }
+.aw-notified summary { cursor: pointer; font-size: 11px; }
+.aw-notified p { margin: 2px 0; }
+/* fleet */
+.aw-directory { grid-template-columns: repeat(auto-fit, minmax(min(100%, 410px), 1fr)); }
+.aw-directory .aw-rows > li + li { border-top: 1px solid var(--aw-border); }
+.aw-directory__open { width: 100%; text-align: left; color: inherit; font: inherit; border: 0; background: transparent; }
+.aw-directory__open:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: -2px; }
+.aw-directory__project { cursor: default; }
+.aw-directory__project:hover { background: transparent; }
+.aw-directory__name { display: grid; flex: 1 1 9rem; min-width: 0; overflow-wrap: anywhere; }
+.aw-health--compact .aw-health__row { padding-block: 6px; }
+/* marketing */
+.aw-mk-anchor { scroll-margin-block: var(--aw-sp-4); }
+.aw-mk-controls { margin-bottom: var(--aw-sp-3); }
+.aw-mk-click { cursor: pointer; }
+.aw-mk-row-start { align-items: flex-start; }
+.aw-mk-copy { white-space: pre-wrap; font: inherit; line-height: 1.5; overflow-wrap: anywhere; }
+.aw-mk-preview { padding: var(--aw-sp-4); border: 1px solid var(--aw-border); border-radius: var(--aw-r-md); margin: 0; }
+.aw-mk-preview-spaced { margin-top: var(--aw-sp-4); }
+.aw-mk-no-top { margin-top: 0; }
+.aw-mk-subject { font-weight: 600; margin: 0 0 var(--aw-sp-3); }
+.aw-mk-message-meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--aw-sp-1) var(--aw-sp-4); font-size: var(--aw-fs-xs); margin: 0; }
+.aw-mk-message-meta dd { margin: 0; overflow-wrap: anywhere; }
+.aw-mk-figure { margin: 0 0 var(--aw-sp-4); }
+.aw-mk-preview-image { display: block; height: auto; max-width: 100%; border: 1px solid var(--aw-border); border-radius: var(--aw-r-md); }
+.aw-mk-entry { border-top: 1px solid var(--aw-border); padding-block: var(--aw-sp-3); }
+.aw-mk-post-body { margin: var(--aw-sp-3) 0; }
+.aw-mk-post-actions { align-items: baseline; flex-wrap: wrap; }
+.aw-mk-more summary, .aw-mk-publisher summary { cursor: pointer; }
+.aw-mk-more[open] summary { margin-bottom: var(--aw-sp-2); }
+.aw-mk-sequence-tools { margin-top: var(--aw-sp-4); }
+.aw-mk-settings-fields { display: grid; gap: var(--aw-sp-4); min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.aw-mk-settings-footer { position: sticky; bottom: 0; z-index: 1; flex-wrap: wrap; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: var(--aw-r-md); padding: var(--aw-sp-3) var(--aw-sp-4); }
+
+/* seo */
+.aw-seo-statrow { margin-bottom: var(--aw-sp-4); }
+.aw-seo-statrow .aw-statrow__item { min-width: 56px; padding: var(--aw-sp-1) var(--aw-sp-3); }
+.aw-seo-chart__dot--accent { background: var(--aw-accent); }
+.aw-seo-chart__dot--warn { background: var(--aw-warn); }
+.aw-seo-chart__dot--ok { background: var(--aw-ok); }
+.aw-seo-note, .aw-panel p.aw-seo-note { margin: 0; }
+.aw-panel p.aw-seo-answer { margin: 4px 0 0; white-space: pre-wrap; }
+.aw-seo-cell--detail { white-space: normal; }
+.aw-seo-cell--wide { min-width: 200px; white-space: normal; }
+.aw-seo-cell--wider { min-width: 240px; }
+.aw-seo-cell--url { min-width: 220px; }
+.aw-seo-cell--note { min-width: 280px; white-space: normal; }
+.aw-seo-cited-url { display: block; }
+.aw-table tbody tr.aw-seo-row, .aw-seo-row { cursor: default; }
+.aw-table tbody tr.aw-seo-row:hover { background: transparent; }
+.aw-seo-guides__more { margin-top: var(--aw-sp-2); }
+.aw-seo-events-form { margin-bottom: var(--aw-sp-3); }
+.aw-seo-savebar { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: var(--aw-sp-2); flex-wrap: wrap; padding: var(--aw-sp-3) var(--aw-sp-4); border: 1px solid var(--aw-border2); border-radius: var(--aw-r-lg); background: var(--aw-bg); box-shadow: 0 -6px 18px color-mix(in srgb, var(--aw-text) 8%, transparent); }
+.aw-seo-savebar__state { flex: 1; min-width: 160px; font-size: var(--aw-fs-sm); color: var(--aw-text2); }
+
+/* fleet2 */
+/* Fleet, clients and settings, tightened: one-line health, dense node cards,
+   28px table rows, 16px section rhythm. Scoped to the views it redesigns. */
+.aw-fleet .aw-group, .aw-clients .aw-group, .aw-client .aw-group { margin: var(--aw-sp-5) 0; }
+.aw-fleet .aw-group > h3, .aw-clients .aw-group > h3, .aw-client .aw-group > h3 { font-size: var(--aw-fs-md); font-weight: 600; margin-bottom: var(--aw-sp-2); }
+
+/* Health on Fleet: a one-line summary, then a single bordered list of 28px rows. */
+.aw-health--compact { margin: 0 0 var(--aw-sp-5); }
+.aw-health--compact .aw-health__summary h3 { font-size: var(--aw-fs-md); font-weight: 600; }
+.aw-health__head { display: flex; align-items: center; gap: var(--aw-sp-3); }
+.aw-health__list { display: block; margin: var(--aw-sp-2) 0 0; padding: 0; border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); overflow: hidden; background: var(--aw-bg); }
+.aw-health__row { height: 28px; padding: 0 10px; gap: var(--aw-sp-2); border: 0; border-radius: 0; background: none; font-size: var(--aw-fs-sm); }
+.aw-health__row + .aw-health__row { border-top: 1px solid var(--aw-border); }
+.aw-health__row--bad { border-color: var(--aw-border); background: color-mix(in srgb, var(--aw-bad) 6%, transparent); }
+.aw-health__name { flex: none; font-size: var(--aw-fs-sm); font-weight: 600; white-space: nowrap; }
+.aw-health__detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-health__meta { flex: none; gap: var(--aw-sp-2); font-size: var(--aw-fs-xs); }
+.aw-health__pass { margin-top: var(--aw-sp-2); }
+.aw-health__pass > summary { cursor: pointer; padding: 2px 0; font-size: var(--aw-fs-sm); color: var(--aw-text2); }
+
+/* Node cards: 320px grid, one-line header, three short plain-text lines. */
+.aw-nodes { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--aw-sp-3); }
+.aw-node { padding: 9px 12px; }
+.aw-node > header { gap: 7px; margin-bottom: var(--aw-sp-2); flex-wrap: nowrap; }
+.aw-node > header .aw-btn { flex: none; }
+.aw-node > header .aw-btn--sm { padding: 0 7px; }
+.aw-node h3 { font-size: var(--aw-fs-md); flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-node__os { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--aw-fs-sm); }
+.aw-node__lines { display: grid; gap: 2px; margin-bottom: var(--aw-sp-2); }
+.aw-node__lines:last-child { margin-bottom: 0; }
+.aw-node__line { margin: 0; font-size: var(--aw-fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-node__bar { display: inline-block; width: 56px; height: 4px; margin-left: var(--aw-sp-2); vertical-align: -1px; border-radius: 2px; background: var(--aw-bg3); overflow: hidden; }
+.aw-node__bar i { display: block; height: 100%; background: var(--aw-info); }
+.aw-node .aw-rows .aw-row { padding: 4px 10px; flex-wrap: nowrap; gap: var(--aw-sp-2); }
+.aw-node .aw-row > .aw-live, .aw-node .aw-row > .aw-mono, .aw-node .aw-row > .aw-muted { flex: none; white-space: nowrap; }
+.aw-node .aw-row__title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-machine .aw-kv { margin-bottom: var(--aw-sp-2); }
+.aw-machine .aw-mexes { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 2px var(--aw-sp-4); }
+
+/* 28px table rows on the fleet and client pages. */
+.aw-fleet .aw-table td, .aw-client .aw-table td, .aw-clients .aw-table td { padding: 4px 8px; }
+.aw-fleet .aw-table th, .aw-client .aw-table th, .aw-clients .aw-table th { padding: 4px 8px; }
+.aw-clients .aw-row { padding: 6px 10px; flex-wrap: nowrap; }
+.aw-clients .aw-row > .aw-muted { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-clients .aw-row > .aw-muted:last-child { flex: none; }
+.aw-clients .aw-directory__name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-client .aw-toolbar { margin-bottom: var(--aw-sp-3); }
+
+/* Settings: tighter fields and toolbox, Save pinned to a sticky footer. */
+.aw-settings .aw-field { margin-bottom: 10px; }
+.aw-settings .aw-panel > h3 { margin-bottom: var(--aw-sp-3); }
+.aw-settings .aw-toolbox__row, .aw-settings .aw-toolbox__skills > li, .aw-settings .aw-toolbox__plugin { padding: 4px 8px; }
+.aw-settings .aw-toolbox__section { margin-top: var(--aw-sp-3); padding-top: var(--aw-sp-3); }
+.aw-settings__foot { position: sticky; bottom: 0; display: flex; align-items: center; gap: var(--aw-sp-3); margin: var(--aw-sp-5) -20px -40px; padding: var(--aw-sp-3) 20px; background: var(--aw-bg); border-top: 1px solid var(--aw-border); }
+/* loop2 */
+/* The ticket rail: one status pill at the top, fields 12px apart and no
+   rule between every one of them; labels stay small and quiet. */
+.aw-details > .aw-field { border-top: 0; padding-top: 0; margin-top: 0; margin-bottom: var(--aw-sp-4); }
+.aw-details > .aw-predict { border-top: 0; padding-top: 0; margin-top: 0; margin-bottom: var(--aw-sp-4); }
+.aw-details .aw-field { gap: var(--aw-sp-1); }
+.aw-details .aw-field__hint { font-size: var(--aw-fs-xs); line-height: 1.4; }
+.aw-details__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--aw-sp-3); margin-bottom: var(--aw-sp-4); }
+.aw-details__pair > .aw-field { margin-bottom: 0; }
+.aw-details__pair select { font-size: var(--aw-fs-sm); padding-inline: var(--aw-sp-2); }
+/* Priority: full-width, equal columns (the Agent choice is a select now). */
+.aw-details .aw-seg { display: flex; width: 100%; }
+.aw-details .aw-seg button { flex: 1 1 0; padding-inline: var(--aw-sp-1); }
+/* A primary button that cannot be pressed reads as disabled, not as a faded brand. */
+.aw-btn--primary:disabled { background: var(--aw-bg3); border-color: var(--aw-border); color: var(--aw-text2) !important; opacity: 1; }
+/* The composer starts at three rows and the script grows it up to twelve. */
+.aw-composer textarea { min-height: calc(3 * 1.5em + 8px); resize: none; }
+/* The header's mail address is a link, not a chip. */
+.aw-mailto { color: inherit; text-decoration: none; }
+.aw-mailto:hover { text-decoration: underline; }
+/* A run's branch line is context, so it is a plain muted line, not a chip. */
+.aw-run footer .aw-tag--dash { border: 0; background: none; padding-inline: 0; height: auto; color: var(--aw-text2); font-size: var(--aw-fs-xs); }
+/* Inbox: one count line, a slim warn notice, the hint on the group line, and
+   one fixed action column so the buttons line up down every group. */
+.aw-inbox .aw-group { margin: var(--aw-sp-5) 0; }
+.aw-group__hint { margin-left: var(--aw-sp-2); font-size: var(--aw-fs-sm); font-weight: 400; color: var(--aw-text2); }
+.aw-inbox__offline { display: flex; align-items: center; gap: var(--aw-sp-2); margin: 0 0 var(--aw-sp-4); padding: var(--aw-sp-1) var(--aw-sp-3); border: 1px solid color-mix(in srgb, var(--aw-warn) 25%, transparent); border-radius: var(--aw-r-md); background: color-mix(in srgb, var(--aw-warn) 9%, transparent); font-size: var(--aw-fs-sm); color: var(--aw-text2); }
+.aw-inbox .aw-row { gap: var(--aw-sp-3); }
+.aw-inbox .aw-row .aw-btn--ghost { border-color: var(--aw-border2); }
+.aw-inbox .aw-row__actions { display: flex; flex: 0 0 144px; justify-content: flex-end; gap: var(--aw-sp-1); margin-left: auto; }
+.aw-inbox .aw-row__actions > .aw-btn { flex: none; }
+/* New task: four fields in two columns and a shorter brief. */
+.aw-taskform { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.aw-taskform .aw-field { margin-bottom: var(--aw-sp-4); }
+.aw-taskform .aw-field:nth-last-child(-n + 2) { margin-bottom: 0; }
+.aw-taskform + .aw-field { margin-top: var(--aw-sp-3); }
+
+`;
 
   // packages/admin-ui/src/solutions.js
   var SOLUTION_CATALOG = [
@@ -3169,6 +8437,25 @@ var __awPlugin = (() => {
     "ai-workspace": "AI workspace"
   };
   var list = (value) => Array.isArray(value) ? value.filter((id) => typeof id === "string") : [];
+  var REQUIRE_WORDS = {
+    "os:macos": "a Mac",
+    "os:linux": "Linux",
+    "xcode": "Xcode",
+    "android": "Android",
+    docker: "Docker",
+    gpu: "a GPU",
+    "always-on": "an always-on machine",
+    sandbox: "a sandbox"
+  };
+  var requirementWords = (requires, catalog) => {
+    const catalogLabel = (id) => catalog?.capabilities?.find((c) => c.id === id)?.label;
+    return requires.map((id) => REQUIRE_WORDS[id] ?? catalogLabel(id) ?? id);
+  };
+  var requirementText = (words) => words.length > 1 ? `${words[0]} with ${words.slice(1).join(" and ")}` : String(words[0] ?? "");
+  var machineText = (nodes, state = "online") => {
+    const names = nodes.map((n) => n.id).join(" or ");
+    return `${names} ${nodes.length > 1 ? "are" : "is"} ${state}`;
+  };
   var VERIFY_ERRORS = {
     missing_fields: "values are still missing",
     verification_failed: "verification failed",
@@ -3263,7 +8550,7 @@ var __awPlugin = (() => {
         await navigator.clipboard.writeText(clientStepsText(project, entry));
         notify(`${entry.label} client steps copied.`);
       } catch {
-        notify("Could not copy. Open Enter and read the steps from there.", "error");
+        notify("Could not copy. Open Connect values and read the steps from there.", "error");
       }
     };
     const chosen = selected.map((sid) => solutionById.get(sid)).filter(Boolean);
@@ -3273,20 +8560,22 @@ var __awPlugin = (() => {
     const canBuild = (node) => requires.every((r) => (node.capabilities ?? []).includes(r));
     const capable = requires.length ? nodes.filter((node) => node.online && canBuild(node)) : [];
     const offlineCapable = requires.length ? nodes.filter((node) => !node.online && canBuild(node)) : [];
+    const needsText = requirementText(requirementWords(requires, catalog?.capabilities));
     const fleetNote = !requires.length ? null : capable.length ? /* @__PURE__ */ jsxs("p", { className: "aw-psol__fleet", children: [
-      "Fleet needs ",
-      requires.join(", "),
-      " \u2014 ",
-      capable.map((n) => n.id).join(" or "),
-      " can build it."
+      "Needs ",
+      needsText,
+      " \xB7 ",
+      machineText(capable),
+      "."
     ] }) : fleetKnown ? /* @__PURE__ */ jsxs("p", { className: "aw-psol__fleet aw-psol__fleet--warn", children: [
-      "No online machine can build this yet (needs ",
-      requires.join(", "),
-      ")",
-      offlineCapable.length ? ` \u2014 ${offlineCapable.map((n) => n.id).join(" or ")} has it offline.` : "."
+      "Needs ",
+      needsText,
+      " \xB7 no online machine can build it yet",
+      offlineCapable.length ? ` \u2014 ${machineText(offlineCapable, "offline")}` : "",
+      "."
     ] }) : /* @__PURE__ */ jsxs("p", { className: "aw-psol__fleet", children: [
-      "Fleet needs ",
-      requires.join(", "),
+      "Needs ",
+      needsText,
       "."
     ] });
     const rows = status.integrations;
@@ -3295,10 +8584,8 @@ var __awPlugin = (() => {
       /* @__PURE__ */ jsx(Chips, { value: selected, options: solutionsCatalog.map((s) => ({ value: s.id, label: s.label, hint: s.summary })), onChange: choose, disabled: busy }),
       fleetNote,
       /* @__PURE__ */ jsx("p", { className: "aw-psol__h", children: "Connections" }),
-      status.error && !rows ? /* @__PURE__ */ jsxs("p", { className: "aw-psol__err", role: "alert", children: [
-        "Connections failed to load. ",
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: refreshStatus, children: "Retry" })
-      ] }) : rows === null || rows === void 0 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading connections\u2026" }) : !rows.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No connections needed for the chosen kinds." }) : /* @__PURE__ */ jsx("ul", { className: "aw-psol__rows", children: rows.map((row) => {
+      status.error ? /* @__PURE__ */ jsx(ErrorNote, { error: status.error, onRetry: refreshStatus }) : null,
+      rows === null || rows === void 0 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading connections\u2026" }) : !rows.length && !status.error ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No connections needed for the chosen kinds." }) : /* @__PURE__ */ jsx("ul", { className: "aw-psol__rows", children: rows.map((row) => {
         const entry = integrationById.get(row.id);
         return /* @__PURE__ */ jsxs("li", { className: "aw-psol__row", children: [
           /* @__PURE__ */ jsx(Dot, { state: dotState(row) }),
@@ -3317,9 +8604,9 @@ var __awPlugin = (() => {
             ] }) : null
           ] }),
           /* @__PURE__ */ jsxs("div", { className: "aw-psol__rowact", children: [
+            entry ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => setEntering(entry), children: "Connect values" }) : null,
             /* @__PURE__ */ jsx(Button, { size: "sm", disabled: verifying === row.id, onClick: () => verify(row), children: verifying === row.id ? "Verifying\u2026" : "Verify" }),
-            entry ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setEntering(entry), children: "Enter" }) : null,
-            entry ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void copySteps(entry), children: "Copy client steps" }) : null
+            entry ? /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link aw-psol__copy", onClick: () => void copySteps(entry), children: "Copy client steps" }) : null
           ] })
         ] }, row.id);
       }) }),
@@ -3336,11 +8623,12 @@ var __awPlugin = (() => {
       entering ? /* @__PURE__ */ jsx(IntegrationFieldsModal, { project, entry: entering, onClose: () => setEntering(null), onSaved: refreshStatus }) : null
     ] });
   }
-  function SolutionTags({ solutions }) {
+  function SolutionTags({ solutions, catalog }) {
     const ids = list(solutions);
     if (!ids.length) return null;
+    const entries = Array.isArray(catalog) && catalog.length ? catalog : SOLUTION_CATALOG;
     return /* @__PURE__ */ jsx("span", { className: "aw-psol__tags", children: ids.map((id) => {
-      const entry = SOLUTION_CATALOG.find((s) => s.id === id);
+      const entry = entries.find((s) => s.id === id);
       return /* @__PURE__ */ jsx(Tag, { title: entry?.label ?? id, children: SHORT[id] ?? entry?.label ?? id }, id);
     }) });
   }
@@ -3374,7 +8662,7 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsxs(
       Modal,
       {
-        title: `Enter ${entry.label} values`,
+        title: `Connect ${entry.label} values`,
         subtitle: entry.scope,
         onClose,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
@@ -3389,5087 +8677,6 @@ var __awPlugin = (() => {
       }
     );
   }
-
-  // packages/admin-ui/src/fleet.jsx
-  var pct = (a, b) => b ? Math.round(a / b * 100) : 0;
-  function NodeCard({ node }) {
-    const { api, act, ask, setModal, openTicket } = useAdmin();
-    const h = node.health ?? {};
-    const sys = h.system;
-    const state = !node.online ? "bad" : node.draining ? "warn" : "ok";
-    return /* @__PURE__ */ jsxs("article", { className: cx("aw-node", `aw-node--${state}`), children: [
-      /* @__PURE__ */ jsxs("header", { children: [
-        /* @__PURE__ */ jsx(Dot, { state }),
-        /* @__PURE__ */ jsx("h3", { children: node.id }),
-        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-          node.os,
-          " \xB7 v",
-          node.version,
-          " \xB7 ",
-          node.online ? node.draining ? "draining" : "online" : `offline ${ago(node.lastSeenAt)}`
-        ] }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => act(() => api("PATCH", `/admin/nodes/${node.id}`, { draining: !node.draining }), node.draining ? `${node.id} takes work again.` : `${node.id} finishes what it has, then takes nothing new.`), children: node.draining ? "Resume" : "Drain" }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(NodeModal, { node, onClose: close }) }), children: "Edit" }),
-        !node.online ? /* @__PURE__ */ jsx(
-          Button,
-          {
-            size: "sm",
-            kind: "ghost",
-            onClick: () => ask({ title: `Forget ${node.id}?`, text: "It re-registers on its next heartbeat if it is still alive.", confirm: "Forget", danger: true, run: () => act(() => api("DELETE", `/admin/nodes/${node.id}`), `Forgot ${node.id}.`) }),
-            children: "Forget"
-          }
-        ) : null
-      ] }),
-      /* @__PURE__ */ jsxs("dl", { className: "aw-kv", children: [
-        /* @__PURE__ */ jsx("dt", { children: "Agents" }),
-        /* @__PURE__ */ jsx("dd", { children: node.executors.map((e) => {
-          const ex = h.executors?.[e];
-          return /* @__PURE__ */ jsxs(Tag, { tone: ex && !ex.ok ? "bad" : void 0, children: [
-            e,
-            ex?.version ? ` ${ex.version}` : ""
-          ] }, e);
-        }) }),
-        /* @__PURE__ */ jsx("dt", { children: "Can do" }),
-        /* @__PURE__ */ jsx("dd", { children: node.capabilities.map((c) => /* @__PURE__ */ jsx(Tag, { tone: "dash", children: c }, c)) }),
-        /* @__PURE__ */ jsx("dt", { children: "Projects" }),
-        /* @__PURE__ */ jsx("dd", { children: node.slugs.length ? node.slugs.map((s) => /* @__PURE__ */ jsx(Tag, { children: s }, s)) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "none yet" }) }),
-        /* @__PURE__ */ jsx("dt", { children: "Slots" }),
-        /* @__PURE__ */ jsxs("dd", { children: [
-          node.running.length,
-          "/",
-          node.slots,
-          " busy"
-        ] }),
-        sys ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx("dt", { children: "Machine" }),
-          /* @__PURE__ */ jsxs("dd", { className: "aw-muted", children: [
-            "load ",
-            sys.load?.[0]?.toFixed?.(2) ?? "\u2014",
-            " / ",
-            sys.cpus,
-            " cpu",
-            sys.memFreePct != null ? ` \xB7 ${100 - sys.memFreePct}% mem` : "",
-            sys.disk ? ` \xB7 ${pct(sys.disk.totalGb - sys.disk.freeGb, sys.disk.totalGb)}% disk` : "",
-            sys.battery ? ` \xB7 battery ${sys.battery.percent}%${sys.battery.onPower ? " \u26A1" : ""}` : "",
-            " \xB7 up ",
-            span(sys.uptimeSec)
-          ] })
-        ] }) : null,
-        h.process?.lastError ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx("dt", { children: "Last error" }),
-          /* @__PURE__ */ jsx("dd", { className: "aw-warn", children: h.process.lastError })
-        ] }) : null
-      ] }),
-      node.running.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: node.running.map((r) => /* @__PURE__ */ jsxs("li", { className: "aw-row", onClick: () => openTicket(r.ticket_id), children: [
-        /* @__PURE__ */ jsx("span", { className: "aw-live" }),
-        /* @__PURE__ */ jsxs("span", { className: "aw-mono aw-muted", children: [
-          "#",
-          r.ticket_id
-        ] }),
-        /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: r.title }),
-        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-          r.executor,
-          " \xB7 ",
-          ago(r.started_at)
-        ] })
-      ] }, r.id)) }) : null
-    ] });
-  }
-  function NodeModal({ node, onClose }) {
-    const { api, act, data } = useAdmin();
-    const caps = data.catalog?.capabilities ?? [];
-    const [slots, setSlots] = useState(node.overrides?.slots ?? node.slots);
-    const [executors, setExecutors] = useState(node.overrides?.executors ?? node.executors);
-    const [capabilities, setCapabilities] = useState(node.overrides?.capabilities ?? node.capabilities.filter((c) => !c.startsWith("os:")));
-    const save = () => act(() => api("PATCH", `/admin/nodes/${node.id}`, { overrides: { slots, executors, capabilities } }), `${node.id} picks this up on its next heartbeat.`).then(onClose, () => void 0);
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: `Node ${node.id}`,
-        subtitle: "Overrides from here win over the node\u2019s own config file.",
-        onClose,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: save, children: "Save" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Slots", hint: "How many items it runs at once.", children: /* @__PURE__ */ jsx(Segmented, { value: slots, options: [1, 2, 3, 4].map((n) => ({ value: n, label: String(n) })), onChange: setSlots }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Agents it offers", children: /* @__PURE__ */ jsx(Chips, { value: executors, options: EXECUTORS.map((e) => ({ value: e, label: e })), onChange: setExecutors }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Capabilities", children: /* @__PURE__ */ jsx(Chips, { value: capabilities, options: caps.map((c) => ({ value: c.id, label: c.label, hint: c.hint })), onChange: setCapabilities }) })
-        ]
-      }
-    );
-  }
-  function FleetView() {
-    const { data, openTicket, platform, host } = useAdmin();
-    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-fleet", children: [
-      /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
-        /* @__PURE__ */ jsx("h2", { children: "Fleet" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nodes claim approved work they can do: the right project, capabilities and agent." })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "aw-nodes", children: [
-        platform === "dsh" && host ? /* @__PURE__ */ jsx(MachinePanel, {}) : null,
-        data.nodes.map((n) => /* @__PURE__ */ jsx(NodeCard, { node: n }, n.id)),
-        !data.nodes.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No node has connected yet. Run fleet/install.sh on a machine." }) : null
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
-        /* @__PURE__ */ jsxs("h3", { children: [
-          "Queue ",
-          /* @__PURE__ */ jsx("span", { className: "aw-count", children: data.queue.length })
-        ] }),
-        /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
-          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("th", { children: "#" }),
-            /* @__PURE__ */ jsx("th", { children: "Title" }),
-            /* @__PURE__ */ jsx("th", { children: "Project" }),
-            /* @__PURE__ */ jsx("th", { children: "Priority" }),
-            /* @__PURE__ */ jsx("th", { children: "Waiting" }),
-            /* @__PURE__ */ jsx("th", { children: "Goes to" })
-          ] }) }),
-          /* @__PURE__ */ jsx("tbody", { children: data.queue.map((q) => /* @__PURE__ */ jsxs("tr", { onClick: () => openTicket(q.id), children: [
-            /* @__PURE__ */ jsxs("td", { className: "aw-mono", children: [
-              "#",
-              q.id
-            ] }),
-            /* @__PURE__ */ jsx("td", { className: "aw-table__title", children: q.title }),
-            /* @__PURE__ */ jsx("td", { children: q.slug ?? "\u2014" }),
-            /* @__PURE__ */ jsx("td", { children: priorityName(q.priority) }),
-            /* @__PURE__ */ jsx("td", { children: span(q.waitingSeconds) }),
-            /* @__PURE__ */ jsx("td", { className: q.eligible.length ? "" : "aw-warn", children: q.reason })
-          ] }, q.id)) })
-        ] }),
-        !data.queue.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing is waiting." }) : null
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Recent runs" }),
-        /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
-          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("th", {}),
-            /* @__PURE__ */ jsx("th", { children: "#" }),
-            /* @__PURE__ */ jsx("th", { children: "Title" }),
-            /* @__PURE__ */ jsx("th", { children: "Agent" }),
-            /* @__PURE__ */ jsx("th", { children: "Node" }),
-            /* @__PURE__ */ jsx("th", { children: "Cost" }),
-            /* @__PURE__ */ jsx("th", { children: "Finished" })
-          ] }) }),
-          /* @__PURE__ */ jsx("tbody", { children: [...data.running, ...data.recent].slice(0, 30).map((r) => /* @__PURE__ */ jsxs("tr", { onClick: () => openTicket(r.ticket_id), children: [
-            /* @__PURE__ */ jsx("td", { children: r.status === "running" || !r.status ? /* @__PURE__ */ jsx("span", { className: "aw-live" }) : /* @__PURE__ */ jsx(Dot, { state: r.status === "ok" ? "ok" : "bad" }) }),
-            /* @__PURE__ */ jsxs("td", { className: "aw-mono", children: [
-              "#",
-              r.ticket_id
-            ] }),
-            /* @__PURE__ */ jsx("td", { className: "aw-table__title", children: r.title }),
-            /* @__PURE__ */ jsxs("td", { children: [
-              r.executor,
-              r.model ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-                " ",
-                r.model
-              ] }) : null
-            ] }),
-            /* @__PURE__ */ jsx("td", { children: r.node_id ?? "Harness" }),
-            /* @__PURE__ */ jsx("td", { children: usd(r.cost_micro_usd) }),
-            /* @__PURE__ */ jsx("td", { className: "aw-muted", children: r.finished_at ? `${ago(r.finished_at)} ago` : "running" })
-          ] }, r.id)) })
-        ] })
-      ] })
-    ] });
-  }
-  var usageLine = (u) => u ? [
-    u.billedCents && `${money(u.billedCents)} billed`,
-    u.openCents && `${money(u.openCents)} open`,
-    u.aiCents && `AI ${money(u.aiCents)}`,
-    u.ourCents && `first previews ${money(u.ourCents)} on us`
-  ].filter(Boolean).join(" \xB7 ") || "nothing owed" : "";
-  function RepoModal({ project, onClose }) {
-    const { api, act } = useAdmin();
-    const [repo, setRepo] = useState(project.repo ?? "");
-    const submit = () => act(() => api("PUT", `/admin/projects/${project.id}/repo`, { repo: repo.trim() }), "Repo saved.").then(onClose, () => void 0);
-    return /* @__PURE__ */ jsx(
-      Modal,
-      {
-        title: `Repo for ${project.name}`,
-        subtitle: "Nodes clone this on their next sync. A private repo needs a node whose git can reach it.",
-        onClose,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !repo.trim(), onClick: submit, children: "Save" })
-        ] }),
-        children: /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) })
-      }
-    );
-  }
-  function FirstPreviewControl({ c }) {
-    const { api, act, data } = useAdmin();
-    const globalLimit = data.settings?.first_preview_limit_usd;
-    const [usd2, setUsd] = useState(c.firstPreviewLimitUsd ?? "");
-    useEffect(() => setUsd(c.firstPreviewLimitUsd ?? ""), [c.id, c.firstPreviewLimitUsd]);
-    const save = () => {
-      const raw = String(usd2).trim();
-      const value = raw === "" ? null : Number(raw);
-      if (value !== null && (!Number.isFinite(value) || value < 0 || value > 1e3)) return;
-      if (value === (c.firstPreviewLimitUsd ?? null)) return;
-      void act(() => api("PATCH", `/admin/clients/${c.id}`, { firstPreviewLimitUsd: value }), "First preview limit saved.");
-    };
-    return /* @__PURE__ */ jsx(
-      Field,
-      {
-        label: "First preview limit (USD)",
-        hint: `Blank follows the setting (${globalLimit ?? 2}). 0 turns the first preview off for this client.`,
-        children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-          /* @__PURE__ */ jsx(
-            "input",
-            {
-              inputMode: "decimal",
-              value: usd2,
-              placeholder: String(globalLimit ?? 2),
-              "aria-label": "First preview limit in dollars",
-              onChange: (e) => setUsd(e.target.value),
-              onBlur: save
-            }
-          ),
-          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: c.first_preview_at ? `used ${ago(c.first_preview_at)} ago` : "not used yet" }),
-          c.first_preview_at ? /* @__PURE__ */ jsx(
-            Button,
-            {
-              size: "sm",
-              title: "Give this account its free first preview again",
-              onClick: () => void act(() => api("PATCH", `/admin/clients/${c.id}`, { grantFirstPreview: true }), "First preview granted again."),
-              children: "Grant again"
-            }
-          ) : null
-        ] })
-      }
-    );
-  }
-  function ClientControls({ c }) {
-    const { api, act, data } = useAdmin();
-    const toggle = (ids) => {
-      const added = ids.filter((x) => !c.projectIds.includes(x));
-      const removed = c.projectIds.filter((x) => !ids.includes(x));
-      return act(async () => {
-        for (const p of added) await api("PUT", `/admin/clients/${c.id}/projects/${p}`);
-        for (const p of removed) await api("DELETE", `/admin/clients/${c.id}/projects/${p}`);
-      }, "Saved.");
-    };
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: usageLine(c.usage) }),
-      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
-        /* @__PURE__ */ jsx(
-          "select",
-          {
-            "aria-label": "Language",
-            value: c.locale ?? "en-US",
-            onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { locale: e.target.value }), "Language saved."),
-            children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code))
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "select",
-          {
-            "aria-label": "Translation",
-            title: "Who translates this client\u2019s messages. They can change it themselves.",
-            value: c.translation ?? "deepseek",
-            onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { translation: e.target.value }), "Saved."),
-            children: [
-              /* @__PURE__ */ jsx("option", { value: "deepseek", children: "DeepSeek" }),
-              /* @__PURE__ */ jsx("option", { value: "cloudflare", children: "Workers AI" }),
-              /* @__PURE__ */ jsx("option", { value: "off", children: "no translation" })
-            ]
-          }
-        )
-      ] }),
-      c.role !== "admin" ? /* @__PURE__ */ jsx(FirstPreviewControl, { c }) : null,
-      /* @__PURE__ */ jsx(InviteControls, { c }),
-      /* @__PURE__ */ jsx(Chips, { value: c.projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: (ids) => void toggle(ids) })
-    ] });
-  }
-  function InviteControls({ c }) {
-    const { api, act } = useAdmin();
-    if (!c.pending && !c.inviteExpiresAt) return null;
-    const left = c.inviteExpiresAt ? Math.max(0, c.inviteExpiresAt - Date.now() / 1e3) : 0;
-    return /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-      /* @__PURE__ */ jsx(Tag, { tone: c.pending ? "warn" : void 0, title: c.email, children: c.pending ? "Invited, not signed in yet" : "Invite link live" }),
-      left > 0 ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-        "link expires in ",
-        span(left)
-      ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "link expired" }),
-      /* @__PURE__ */ jsx(
-        Button,
-        {
-          size: "sm",
-          title: "Send a fresh link. The old unused links stop working.",
-          onClick: () => void act(() => api("POST", `/admin/clients/${c.id}/invite`, {}), `Invite resent to ${c.email}.`),
-          children: "Resend"
-        }
-      ),
-      /* @__PURE__ */ jsx(
-        Button,
-        {
-          size: "sm",
-          kind: "ghost",
-          title: "Every unused invite link stops working. A signed-in session is not touched.",
-          onClick: () => void act(() => api("DELETE", `/admin/clients/${c.id}/invite`), "Invite link revoked."),
-          children: "Revoke"
-        }
-      )
-    ] });
-  }
-  function InviteClientModal({ onClose }) {
-    const { api, act, data } = useAdmin();
-    const [email, setEmail] = useState("");
-    const [name, setName] = useState("");
-    const [locale, setLocale] = useState("en-US");
-    const [projectIds, setProjectIds] = useState(data.projects.length === 1 ? [data.projects[0].id] : []);
-    const [note, setNote] = useState("");
-    const ready = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && projectIds.length > 0;
-    const send = () => act(
-      () => api("POST", "/admin/clients", {
-        email: email.trim(),
-        name: name.trim() || void 0,
-        locale,
-        projectIds,
-        note: note.trim() || void 0
-      }),
-      (out) => out.invite?.sent === false ? `Added ${email.trim()}, but the email could not be sent. Use Resend on their card.` : out.user?.verified_at ? `${email.trim()} now has ${projectIds.length} more project${projectIds.length === 1 ? "" : "s"} and a new link.` : `Invited ${email.trim()}.`
-    ).then(onClose, () => void 0);
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: "Invite a client",
-        subtitle: "They get a link that signs them in for the projects you pick. No sign-up needed; the link works once and lasts 7 days.",
-        onClose,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !ready, onClick: send, children: "Send invite" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Email", children: /* @__PURE__ */ jsx("input", { type: "email", value: email, maxLength: 254, placeholder: "client@example.com", onChange: (e) => setEmail(e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Name", hint: "Optional. The account keeps its own name if it already exists.", children: /* @__PURE__ */ jsx("input", { value: name, maxLength: 80, placeholder: "Their name", onChange: (e) => setName(e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Language", hint: "The language of the invite email and the portal. They can change it.", children: /* @__PURE__ */ jsx("select", { value: locale, onChange: (e) => setLocale(e.target.value), children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Projects", hint: "At least one. An existing account gains these and keeps the rest. They see every request on them.", children: data.projects.length ? /* @__PURE__ */ jsx(Chips, { value: projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: setProjectIds }) : /* @__PURE__ */ jsx("span", { className: "aw-warn", children: "No projects yet. Make one first." }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Note", hint: "Optional. Your own words, added under the link. Not translated.", children: /* @__PURE__ */ jsx("textarea", { rows: 3, value: note, maxLength: 1e3, placeholder: "Anything you want them to read first", onChange: (e) => setNote(e.target.value) }) })
-        ]
-      }
-    );
-  }
-  function ProjectEditModal({ project, onClose }) {
-    const { api, act } = useAdmin();
-    const [name, setName] = useState(project.name);
-    const [kind, setKind] = useState(project.kind ?? "existing");
-    const changed = name.trim() !== project.name || kind !== (project.kind ?? "existing");
-    const save = () => act(
-      () => api("PATCH", `/admin/projects/${project.id}`, {
-        ...name.trim() !== project.name ? { name: name.trim() } : {},
-        ...kind !== (project.kind ?? "existing") ? { kind } : {}
-      }),
-      "Project saved."
-    ).then(onClose, () => void 0);
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: `Edit ${project.name}`,
-        subtitle: `Slug ${project.slug} stays: nodes keep its folder under that name, and its first site is named after it.`,
-        onClose,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !name.trim() || !changed, onClick: save, children: "Save" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Name", hint: "What the client sees in the portal and in their emails.", children: /* @__PURE__ */ jsx("input", { value: name, maxLength: 80, onChange: (e) => setName(e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx(
-            Segmented,
-            {
-              value: kind,
-              options: [
-                { value: "existing", label: "Existing code or system" },
-                { value: "new", label: "New website" }
-              ],
-              onChange: setKind
-            }
-          ) })
-        ]
-      }
-    );
-  }
-  var EMAIL = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
-  var emailsIn = (text) => [...new Set(text.split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter(Boolean))];
-  function AddPeopleModal({ project, onClose }) {
-    const { api, act, notify } = useAdmin();
-    const [text, setText] = useState("");
-    const [copy, setCopy] = useState(true);
-    const [locale, setLocale] = useState("en-US");
-    const [note, setNote] = useState("");
-    const [busy, setBusy] = useState(false);
-    const emails = emailsIn(text);
-    const bad = emails.filter((e) => !EMAIL.test(e));
-    const already = new Set((project.clients ?? []).map((c) => c.email.toLowerCase()));
-    const fresh = emails.filter((e) => EMAIL.test(e) && !already.has(e));
-    const send = async () => {
-      setBusy(true);
-      const failed = [];
-      let unsent = 0;
-      try {
-        await act(async () => {
-          for (const email of fresh) {
-            try {
-              const out = await api("POST", "/admin/clients", {
-                email,
-                locale,
-                projectIds: [project.id],
-                copy,
-                note: note.trim() || void 0
-              });
-              if (out?.invite?.sent === false) unsent += 1;
-            } catch {
-              failed.push(email);
-            }
-          }
-        });
-        const added = fresh.length - failed.length;
-        if (failed.length) notify(`Added ${added} of ${fresh.length}. Not added: ${failed.join(", ")}`, "error");
-        else notify(`Added ${added} to ${project.name}.${unsent ? ` ${unsent} email${unsent === 1 ? "" : "s"} not sent; use Resend on their card.` : ""}`);
-        if (!failed.length) onClose();
-      } finally {
-        setBusy(false);
-      }
-    };
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: `Add people to ${project.name}`,
-        subtitle: "Each address gets a link that signs them in (one use, 7 days). They see every request on this project; prices stay with whoever filed.",
-        onClose,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !fresh.length || bad.length > 0, onClick: () => void send(), children: busy ? "Adding\u2026" : `Add ${fresh.length || ""}`.trim() })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(
-            Field,
-            {
-              label: "Emails",
-              hint: bad.length ? `Not an address: ${bad.join(", ")}` : emails.length > fresh.length ? `${emails.length - fresh.length} already on the project.` : "One or more, separated by commas, spaces or new lines.",
-              children: /* @__PURE__ */ jsx("textarea", { rows: 3, value: text, placeholder: "owner@example.com, office@example.com", onChange: (e) => setText(e.target.value) })
-            }
-          ),
-          /* @__PURE__ */ jsx(Field, { label: "Emails about requests", children: /* @__PURE__ */ jsxs("label", { className: "aw-check", children: [
-            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: copy, onChange: (e) => setCopy(e.target.checked) }),
-            "Send them a copy of every request on this project (new requests, Ali\u2019s replies, status changes)"
-          ] }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Language", hint: "For new accounts: the invite email and the portal. Existing accounts keep theirs.", children: /* @__PURE__ */ jsx("select", { value: locale, onChange: (e) => setLocale(e.target.value), children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Note", hint: "Optional. Added under the link. Not translated.", children: /* @__PURE__ */ jsx("textarea", { rows: 2, value: note, maxLength: 1e3, onChange: (e) => setNote(e.target.value) }) })
-        ]
-      }
-    );
-  }
-  function ProjectPeople({ project: p }) {
-    const { api, act, ask, setModal, open } = useAdmin();
-    const people = p.clients ?? [];
-    return /* @__PURE__ */ jsxs("div", { className: "aw-people", children: [
-      /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
-        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-          "People ",
-          people.length ? `(${people.length})` : ""
-        ] }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(AddPeopleModal, { project: p, onClose: close }) }), children: "Add people" })
-      ] }),
-      people.length ? /* @__PURE__ */ jsx("ul", { children: people.map((person) => /* @__PURE__ */ jsxs("li", { children: [
-        /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-link aw-people__who", title: person.email, onClick: () => open(`c:${person.id}`), children: [
-          person.name ? `${person.name} \xB7 ` : "",
-          person.email
-        ] }),
-        person.pending ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "invited" }) : null,
-        /* @__PURE__ */ jsxs("label", { className: "aw-check", title: "Mail them about every request on this project, not only the ones they filed", children: [
-          /* @__PURE__ */ jsx(
-            "input",
-            {
-              type: "checkbox",
-              checked: person.copy,
-              onChange: (e) => void act(
-                () => api("PUT", `/admin/clients/${person.id}/projects/${p.id}`, { copy: e.target.checked }),
-                e.target.checked ? `${person.email} gets every request on ${p.name}.` : `${person.email} gets only their own requests.`
-              )
-            }
-          ),
-          "all emails"
-        ] }),
-        /* @__PURE__ */ jsx(
-          Button,
-          {
-            size: "sm",
-            kind: "ghost",
-            title: "Take them off this project",
-            onClick: () => ask({
-              title: `Remove ${person.email} from ${p.name}?`,
-              text: "They stop seeing its requests and stop getting its emails. Their account and their own requests stay.",
-              confirm: "Remove",
-              danger: true,
-              run: () => act(() => api("DELETE", `/admin/clients/${person.id}/projects/${p.id}`), `Removed ${person.email}.`).catch(() => void 0)
-            }),
-            children: "\u2715"
-          }
-        )
-      ] }, person.id)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nobody yet. Only you see it." })
-    ] });
-  }
-  function ClientView({ id }) {
-    const { data, openTicket } = useAdmin();
-    const c = data.clients.find((x) => x.id === id);
-    if (!c) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: data.loaded ? "No such client." : "Loading\u2026" });
-    const closed2 = (t) => ["done", "declined"].includes(t.status);
-    const tickets = data.tickets.filter((t) => t.kind !== "system" && t.client_email === c.email).sort((a, b) => closed2(a) - closed2(b) || b.updated_at - a.updated_at);
-    const open = tickets.filter((t) => !closed2(t)).length;
-    return /* @__PURE__ */ jsxs("div", { className: "aw-view", children: [
-      /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
-        /* @__PURE__ */ jsx("h2", { children: c.name || c.email }),
-        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          c.name ? `${c.email} \xB7 ` : "",
-          open,
-          " open of ",
-          tickets.length,
-          " \xB7 client for ",
-          ago(c.created_at),
-          c.handoff ? ` \xB7 hand-off: ${c.handoff}` : ""
-        ] })
-      ] }),
-      /* @__PURE__ */ jsx("section", { className: "aw-group", children: /* @__PURE__ */ jsx(ClientControls, { c }) }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
-        /* @__PURE__ */ jsxs("h3", { children: [
-          "Requests ",
-          /* @__PURE__ */ jsx("span", { className: "aw-count", children: tickets.length })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-tablewrap", children: [
-          /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
-            /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-              /* @__PURE__ */ jsx("th", { children: "#" }),
-              /* @__PURE__ */ jsx("th", { children: "Title" }),
-              /* @__PURE__ */ jsx("th", { children: "Status" }),
-              /* @__PURE__ */ jsx("th", { children: "Project" }),
-              /* @__PURE__ */ jsx("th", { children: "Cost" }),
-              /* @__PURE__ */ jsx("th", { children: "Updated" })
-            ] }) }),
-            /* @__PURE__ */ jsx("tbody", { children: tickets.map((t) => /* @__PURE__ */ jsxs("tr", { onClick: () => openTicket(t.id), tabIndex: 0, onKeyDown: (e) => e.key === "Enter" && openTicket(t.id), children: [
-              /* @__PURE__ */ jsxs("td", { className: "aw-mono", children: [
-                "#",
-                t.id
-              ] }),
-              /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
-                t.client_waiting_since && !closed2(t) ? /* @__PURE__ */ jsx(Dot, { state: "warn" }) : null,
-                " ",
-                t.title
-              ] }),
-              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(StatusPill, { status: t.status }) }),
-              /* @__PURE__ */ jsx("td", { children: t.project_name ?? "\u2014" }),
-              /* @__PURE__ */ jsx("td", { children: money(chargeOf(t).totalCents) }),
-              /* @__PURE__ */ jsxs("td", { className: "aw-muted", children: [
-                ago(t.updated_at),
-                " ago"
-              ] })
-            ] }, t.id)) })
-          ] }),
-          !tickets.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No requests yet." }) : null
-        ] })
-      ] })
-    ] });
-  }
-  function ClientsView() {
-    const { api, act, ask, data, setModal, setBoardProject, open } = useAdmin();
-    return /* @__PURE__ */ jsxs("div", { className: "aw-view", children: [
-      /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
-        /* @__PURE__ */ jsx("h2", { children: "Clients & projects" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : "" }),
-        /* @__PURE__ */ jsx(
-          Button,
-          {
-            size: "sm",
-            kind: "primary",
-            onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(InviteClientModal, { onClose: close }) }),
-            children: "Invite client"
-          }
-        ),
-        /* @__PURE__ */ jsx(
-          Button,
-          {
-            size: "sm",
-            title: "List the GitHub App\u2019s installations from GitHub and record any the callback missed",
-            onClick: () => void act(() => api("POST", "/admin/github/reconcile", {}), "GitHub installations reconciled."),
-            children: "Reconcile GitHub"
-          }
-        )
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "aw-split", children: [
-        /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
-          /* @__PURE__ */ jsx("h3", { children: "Clients" }),
-          /* @__PURE__ */ jsx("ul", { className: "aw-cards", children: data.clients.map((c) => /* @__PURE__ */ jsxs("li", { className: "aw-panel", children: [
-            /* @__PURE__ */ jsxs("header", { children: [
-              c.role === "admin" ? /* @__PURE__ */ jsx("strong", { children: c.email }) : /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", title: "Open this client\u2019s page", onClick: () => open(`c:${c.id}`), children: /* @__PURE__ */ jsx("strong", { children: c.email }) }),
-              /* @__PURE__ */ jsx("span", { className: "aw-muted", children: c.role === "admin" ? "admin" : `${c.ticket_count} ticket(s)` })
-            ] }),
-            c.role !== "admin" ? /* @__PURE__ */ jsx(ClientControls, { c }) : null
-          ] }, c.id)) })
-        ] }),
-        /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
-          /* @__PURE__ */ jsxs("h3", { className: "aw-row-h", children: [
-            "Projects",
-            /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-            /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => setModal({ kind: "project" }), children: "New project" })
-          ] }),
-          /* @__PURE__ */ jsx("ul", { className: "aw-cards", children: data.projects.map((p) => {
-            const holders = data.nodes.filter((n) => n.slugs.includes(p.slug));
-            return /* @__PURE__ */ jsxs("li", { className: "aw-panel", children: [
-              /* @__PURE__ */ jsxs("header", { children: [
-                /* @__PURE__ */ jsx("strong", { children: p.name }),
-                /* @__PURE__ */ jsx("span", { className: "aw-mono aw-muted", children: p.slug }),
-                p.kind === "new" ? /* @__PURE__ */ jsx(Tag, { children: "new site" }) : null,
-                p.solutions?.length ? /* @__PURE__ */ jsx(SolutionTags, { solutions: p.solutions }) : null,
-                /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-                /* @__PURE__ */ jsx(
-                  Button,
-                  {
-                    size: "sm",
-                    kind: "ghost",
-                    title: "Rename it or change what it is",
-                    onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(ProjectEditModal, { project: p, onClose: close }) }),
-                    children: "Edit"
-                  }
-                ),
-                /* @__PURE__ */ jsx(
-                  Button,
-                  {
-                    size: "sm",
-                    kind: "ghost",
-                    onClick: () => {
-                      setBoardProject(p.id);
-                      open("board");
-                    },
-                    children: "Board \u2192"
-                  }
-                )
-              ] }),
-              /* @__PURE__ */ jsx("p", { className: p.repoStatus && !["ready", "creating", "queued"].includes(p.repoStatus.state) ? "aw-warn" : "aw-muted", children: p.repoStatus?.detail ?? p.repo ?? "no repo yet" }),
-              p.githubAccount ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-                "GitHub: @",
-                p.githubAccount
-              ] }) : null,
-              /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
-                holders.length ? holders.map((n) => /* @__PURE__ */ jsx(Tag, { tone: n.online ? void 0 : "bad", children: n.id }, n.id)) : /* @__PURE__ */ jsx("span", { className: "aw-warn", children: "No node has it yet." }),
-                p.sites?.length ? /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-                  p.sites.length,
-                  " site",
-                  p.sites.length === 1 ? "" : "s"
-                ] }) : null
-              ] }),
-              /* @__PURE__ */ jsx(ProjectPeople, { project: p }),
-              /* @__PURE__ */ jsx(SitePanel, { project: p }),
-              /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-                !p.repo ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => void act(() => api("POST", `/admin/projects/${p.id}/repo/create`), `Creating a repo for ${p.name}.`), children: p.repoStatus?.state === "failed" ? "Retry repo" : "Create repo" }) : null,
-                !p.repo && p.githubInstallationId ? /* @__PURE__ */ jsx(
-                  Button,
-                  {
-                    size: "sm",
-                    onClick: () => void act(
-                      () => api("POST", `/admin/projects/${p.id}/repo/github`, {}),
-                      `Creating ${p.slug} in @${p.githubAccount ?? "the client\u2019s GitHub"}.`
-                    ),
-                    children: "Create in GitHub"
-                  }
-                ) : null,
-                /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project: p, onClose: close }) }), children: p.repo ? "Change repo" : "Use a repo URL" }),
-                /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void act(() => api("POST", `/admin/projects/${p.id}/site`, {}), `Adding a site to ${p.name}.`), children: p.sites?.length ? "Add a site" : "Start hosting" }),
-                /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-                /* @__PURE__ */ jsx(
-                  Button,
-                  {
-                    size: "sm",
-                    kind: "ghost",
-                    onClick: () => ask({
-                      title: `Delete ${p.name}?`,
-                      text: [
-                        "Its finished requests stay, with their threads, but no longer belong to a project.",
-                        "Clients lose access to it.",
-                        p.sites?.length ? `${p.sites.length} hosted site${p.sites.length === 1 ? "" : "s"} go offline.` : null,
-                        p.repo ? `The repo is not deleted: ${p.repo}.` : null,
-                        "This cannot be undone."
-                      ].filter(Boolean).join(" "),
-                      confirm: "Delete project",
-                      danger: true,
-                      run: () => act(() => api("DELETE", `/admin/projects/${p.id}`), `Deleted ${p.name}.`).catch(() => void 0)
-                    }),
-                    children: "Delete"
-                  }
-                )
-              ] })
-            ] }, p.id);
-          }) })
-        ] })
-      ] })
-    ] });
-  }
-  function TranslationsPanel() {
-    const { api, act } = useAdmin();
-    const [status, setStatus] = useState(null);
-    const load = useCallback(() => api("GET", "/admin/i18n").then(setStatus, () => void 0), [api]);
-    usePoll(load, status?.requestedAt || status?.runningSince ? 15e3 : 12e4, [load, status?.requestedAt, status?.runningSince]);
-    useEffect(() => void load(), [load]);
-    const last = status?.last;
-    const rejected = last ? Object.entries(last.rejected ?? {}) : [];
-    const failed = last ? Object.entries(last.failed ?? {}) : [];
-    const busy = Boolean(status?.requestedAt || status?.runningSince);
-    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-      /* @__PURE__ */ jsxs("h3", { className: "aw-row-h", children: [
-        "Translations",
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(
-          Button,
-          {
-            size: "sm",
-            kind: "primary",
-            disabled: !status?.ready || busy,
-            title: "Translate every interface and email string that is missing or out of date, in all languages, and commit it to master",
-            onClick: () => void act(() => api("POST", "/admin/i18n/sync", {}), "Translation starts within 5 minutes.").then(setStatus, () => void 0),
-            children: status?.runningSince ? "Translating\u2026" : status?.requestedAt ? "Queued" : "Translate now"
-          }
-        )
-      ] }),
-      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-        "Translates every interface and email string that is new or re-worded, in all languages, with DeepSeek, and commits it to ",
-        status?.repo ?? "the repo",
-        ". That push deploys like any other. Until then, untranslated strings show in English."
-      ] }),
-      status?.englishChanged && !busy ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
-        "English changed on master since the last translation",
-        status.checkedAt ? ` (checked ${ago(status.checkedAt)} ago)` : "",
-        "."
-      ] }) : null,
-      status ? /* @__PURE__ */ jsxs("label", { className: "aw-check", children: [
-        /* @__PURE__ */ jsx(
-          "input",
-          {
-            type: "checkbox",
-            checked: Boolean(status.auto),
-            onChange: (e) => void act(
-              () => api("PUT", "/admin/i18n", { auto: e.target.checked }),
-              e.target.checked ? "Translations now follow every English change." : "Translations run only from the button."
-            ).then(setStatus, () => void 0)
-          }
-        ),
-        "Translate automatically whenever English changes"
-      ] }) : null,
-      status && !status.ready ? /* @__PURE__ */ jsx("p", { className: "aw-warn", children: "Needs DEEPSEEK_API_KEY and the GitHub App secrets on the Worker." }) : null,
-      status?.runningSince ? /* @__PURE__ */ jsxs("p", { children: [
-        "Translating since ",
-        ago(status.runningSince),
-        " ago."
-      ] }) : status?.requestedAt ? /* @__PURE__ */ jsxs("p", { children: [
-        "Queued ",
-        ago(status.requestedAt),
-        " ago; the next five-minute tick runs it."
-      ] }) : null,
-      last ? /* @__PURE__ */ jsxs("p", { className: last.ok ? "aw-muted" : "aw-warn", children: [
-        "Last run ",
-        ago(last.at),
-        " ago (",
-        last.trigger === "manual" ? "by hand" : "English changed",
-        "):",
-        " ",
-        last.error ? last.error : last.keys || last.removed ? `${last.keys} string${last.keys === 1 ? "" : "s"} in ${last.locales} language${last.locales === 1 ? "" : "s"}${last.removed ? `, ${last.removed} old removed` : ""}${last.commit ? `, commit ${last.commit.slice(0, 7)}` : ""}.` : "everything was already translated."
-      ] }) : status ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No run yet." }) : null,
-      failed.length ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
-        "Failed: ",
-        failed.map(([code, why]) => `${code} (${why})`).join("; ")
-      ] }) : null,
-      rejected.length ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-        "Kept in English (the placeholders did not survive): ",
-        rejected.map(([code, keys]) => `${code}: ${keys.join(", ")}`).join("; ")
-      ] }) : null
-    ] });
-  }
-  function SettingsView() {
-    const { api, act, data, platform, host, notify, reload } = useAdmin();
-    const [draft, setDraft] = useState(data.settings ?? {});
-    useEffect(() => setDraft(data.settings ?? {}), [data.settings]);
-    const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
-    const changed = data.settings && Object.keys(draft).some((k) => draft[k] !== data.settings[k]);
-    const [token, setToken] = useState("");
-    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-settings", children: [
-      /* @__PURE__ */ jsx("header", { className: "aw-hero", children: /* @__PURE__ */ jsx("h2", { children: "Settings" }) }),
-      platform === "dsh" && host ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Portal connection" }),
-        /* @__PURE__ */ jsx(Field, { label: "Session token", hint: "Sign in on ptechsolutions.net/portal, then paste the session token here. It stays on this machine.", children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-          /* @__PURE__ */ jsx("input", { type: "password", value: token, placeholder: "paste token", onChange: (e) => setToken(e.target.value) }),
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              kind: "primary",
-              disabled: !token.trim(),
-              onClick: async () => {
-                const r = await host.command(`login ${token.trim()}`);
-                notify(r.text, r.ok ? "ok" : "error");
-                setToken("");
-                void reload();
-              },
-              children: "Save"
-            }
-          ),
-          /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: async () => notify((await host.command("logout")).text), children: "Sign out" })
-        ] }) })
-      ] }) : null,
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "This machine\u2019s tools" }),
-        /* @__PURE__ */ jsx(ToolboxPanel, {})
-      ] }),
-      data.settings ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Work queue" }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
-          /* @__PURE__ */ jsx(Field, { label: "Stalled after (minutes)", hint: "An in-progress item with no report for this long is flagged.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.stallMinutes ?? "", onChange: (e) => set("stallMinutes", Number(e.target.value)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Attempts before review", hint: "Node restarts do not count.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.maxAttempts ?? "", onChange: (e) => set("maxAttempts", Number(e.target.value)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Default priority", children: /* @__PURE__ */ jsx(Segmented, { value: draft.defaultPriority ?? 0, options: PRIORITIES, onChange: (v) => set("defaultPriority", v) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Email me when a run finishes", children: /* @__PURE__ */ jsx(Segmented, { value: Boolean(draft.notifyRunFinished), options: [{ value: true, label: "On" }, { value: false, label: "Off" }], onChange: (v) => set("notifyRunFinished", v) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Autopilot cap (cents)", hint: "An Autopilot request with its own budget at or below this starts without you. 0 turns it off.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.autoApproveCents ?? "", onChange: (e) => set("autoApproveCents", Number(e.target.value)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Sites domain", children: /* @__PURE__ */ jsx("input", { value: draft.sitesDomain ?? "", onChange: (e) => set("sitesDomain", e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Clients may publish their site", children: /* @__PURE__ */ jsx(Segmented, { value: Boolean(draft.clientPublish), options: [{ value: true, label: "Yes" }, { value: false, label: "No" }], onChange: (v) => set("clientPublish", v) }) }),
-          /* @__PURE__ */ jsx(
-            Field,
-            {
-              label: "First preview limit (USD)",
-              hint: "A new client's first request starts by itself, with its AI run capped at this many dollars. Free to the client. 0 turns it off.",
-              children: /* @__PURE__ */ jsx(
-                "input",
-                {
-                  inputMode: "decimal",
-                  value: draft.first_preview_limit_usd ?? "",
-                  onChange: (e) => set("first_preview_limit_usd", e.target.value === "" ? 0 : Number(e.target.value))
-                }
-              )
-            }
-          )
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { disabled: !changed, onClick: () => setDraft(data.settings), children: "Reset" }),
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              kind: "primary",
-              disabled: !changed,
-              onClick: () => {
-                const patch = Object.fromEntries(Object.entries(draft).filter(([k, v]) => v !== data.settings[k]));
-                void act(() => api("PATCH", "/admin/settings", patch), "Settings saved.").catch(() => void 0);
-              },
-              children: "Save"
-            }
-          )
-        ] })
-      ] }) : null,
-      /* @__PURE__ */ jsx(TranslationsPanel, {})
-    ] });
-  }
-
-  // packages/admin-ui/src/marketing.jsx
-  var CONTACT_TONE = { new: "dash", queued: void 0, contacted: "ok", replied: "ok", opted_out: "bad", bounced: "bad", paused: "warn" };
-  var MESSAGE_TONE = { draft: "dash", scheduled: void 0, sending: "warn", sent: "ok", failed: "bad", cancelled: "dash" };
-  var CHANNELS = [
-    { value: "", label: "All" },
-    { value: "email", label: "Email" },
-    { value: "x", label: "X" },
-    { value: "linkedin", label: "LinkedIn" }
-  ];
-  var REASONS = {
-    paused: "Paused: nothing is sent while the switch is off.",
-    sender_unbound: "The outreach sender is not bound on the Worker.",
-    postal_address_unset: "Add a postal address before anything goes out.",
-    outside_hours: "Outside the send window \u2014 it waits for the next one.",
-    weekend: "Weekends are off in the settings.",
-    daily_cap: "Today\u2019s cap is used up. It resumes tomorrow.",
-    ses_unconfigured: "The sender is Amazon SES, but the Worker has no SES keys.",
-    bounce_rate: "Paused itself: the bounce rate passed 4%.",
-    complaint_rate: "Paused itself: the complaint rate passed 0.2%."
-  };
-  var WINDOW_REASON = {
-    outside_hours: "outside the send window",
-    weekend: "weekend",
-    daily_cap: "the day\u2019s cap is used"
-  };
-  var CYCLE_SKIP = {
-    open_cycle: "A cycle ticket is already open \u2014 its agent is writing.",
-    recent_cycle: "The last cycle was filed less than a day ago.",
-    weekly_cycle: "This week\u2019s cycle is already queued.",
-    stocked: "The next week already has three posts queued.",
-    no_project: "No project is set up to run the agent in.",
-    no_admin: "No admin account to file the ticket for."
-  };
-  var cycleMessage = (result) => result?.filed ? `Filed #${result.id}: an agent writes the posts and the desk queues them.` : CYCLE_SKIP[result?.reason] ?? `Nothing filed: ${result?.reason ?? "unknown reason"}`;
-  var offsetLabel = (minutes) => `UTC${minutes >= 0 ? "+" : "\u2212"}${Math.abs(minutes) / 60}`;
-  var snippet = (text, max = 90) => text.length > max ? `${text.slice(0, max)}\u2026` : text;
-  var plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  var dateLabel = (unix) => unix ? new Date(unix * 1e3).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
-  function deskState(overview) {
-    const { settings, bound, senderState, autoResume } = overview;
-    if (!bound) {
-      const reason = senderState?.reason;
-      const short = reason === "ses_unconfigured" ? "SES has no keys" : reason === "sender_unbound" ? "no sender bound" : REASONS[reason] ?? reason ?? "no sender bound";
-      return { tone: "bad", text: `Can't send: ${short}` };
-    }
-    if (!settings.postalAddress) return { tone: "bad", text: "Can't send: no postal address in Settings" };
-    if (!settings.live) {
-      if (autoResume?.autoPausedAt) {
-        const back = autoResume.resumesAfter ? `, back on ${dateLabel(autoResume.resumesAfter)}` : "";
-        return { tone: "warn", text: `Paused itself on ${dateLabel(autoResume.autoPausedAt)}${back} if the numbers stay clean` };
-      }
-      return { tone: "warn", text: "Paused by you" };
-    }
-    return { tone: "ok", text: "Running on its own" };
-  }
-  function nextWindowOpen(settings, nowSec2) {
-    const offset = settings.offsetMinutes ?? 0;
-    const start = settings.startHour ?? 8;
-    const local = new Date((nowSec2 + offset * 60) * 1e3);
-    for (let add = 0; add < 8; add += 1) {
-      const day = new Date(local.getTime() + add * 864e5);
-      const dow = day.getUTCDay();
-      if (settings.weekdaysOnly && (dow === 0 || dow === 6)) continue;
-      const open = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), start) - offset * 6e4);
-      if (open.getTime() / 1e3 > nowSec2) return open.getTime() / 1e3;
-    }
-    return null;
-  }
-  var obsEtaMinutes = (pending) => pending * 5 / 12;
-  function fmtEta(minutes) {
-    if (minutes < 90) return `~${Math.max(1, Math.round(minutes))}m`;
-    if (minutes < 60 * 36) return `~${Math.round(minutes / 60)}h`;
-    return `~${(minutes / 1440).toFixed(1)}d`;
-  }
-  var limitPct = (limit) => {
-    const v = limit * 100;
-    return `${v < 1 ? v.toFixed(2) : v < 10 ? v.toFixed(1) : Math.round(v)}%`;
-  };
-  function MarketingView() {
-    const { api, act, notify } = useAdmin();
-    const [overview, setOverview] = useState(null);
-    const [contacts, setContacts] = useState([]);
-    const [paging, setPaging] = useState({ total: 0, page: 200 });
-    const [selected, setSelected] = useState(() => /* @__PURE__ */ new Set());
-    const [error, setError] = useState(null);
-    const [tab, setTab] = useState("overview");
-    const [modal, setModal] = useState(null);
-    const [filters, setFilters] = useState({ status: "", q: "", source: "", offset: 0 });
-    const filter = (patch) => {
-      setSelected(/* @__PURE__ */ new Set());
-      setFilters((f) => ({ ...f, offset: 0, ...patch }));
-    };
-    const [tick, setTick] = useState(0);
-    const load = useCallback(() => {
-      const search = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString();
-      return Promise.all([api("GET", "/admin/marketing"), api("GET", `/admin/marketing/contacts${search ? `?${search}` : ""}`)]).then(([o, c]) => {
-        setOverview(o);
-        setContacts(c.contacts ?? []);
-        setPaging({ total: c.total ?? (c.contacts ?? []).length, page: c.page ?? 200 });
-        setError(null);
-      }).catch(setError);
-    }, [api, filters]);
-    useEffect(() => {
-      void load();
-    }, [load]);
-    usePoll(load, 3e4, [load]);
-    const refresh = useCallback(() => {
-      setTick((n) => n + 1);
-      return load();
-    }, [load]);
-    const run = useCallback((fn, message) => act(fn, message).then(refresh, () => void 0), [act, refresh]);
-    const done = useCallback(
-      (message) => {
-        setModal(null);
-        notify(message);
-        void refresh();
-      },
-      [refresh, notify]
-    );
-    if (error) return /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
-      "Could not load the desk: ",
-      error.message ?? error.code
-    ] });
-    if (!overview) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading\u2026" });
-    const { settings, health } = overview;
-    const state = deskState(overview);
-    return /* @__PURE__ */ jsxs("div", { className: "aw-view", children: [
-      /* @__PURE__ */ jsxs("header", { className: "aw-hero aw-hero--mk", children: [
-        /* @__PURE__ */ jsx("h2", { children: "Marketing" }),
-        /* @__PURE__ */ jsxs("span", { className: "aw-mk-state", children: [
-          /* @__PURE__ */ jsx(Dot, { state: state.tone }),
-          /* @__PURE__ */ jsx("span", { children: state.text })
-        ] }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => run(() => api("POST", "/admin/marketing/run"), runMessage), children: "Run now" }),
-        settings.live ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => run(() => api("PUT", "/admin/marketing/settings", { live: false }), "Paused."), children: "Pause" }) : /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => run(() => api("PUT", "/admin/marketing/settings", { live: true }), "Outreach is live."), children: "Go live" })
-      ] }),
-      !overview.bound ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: overview.senderState?.reason === "ses_unconfigured" ? "The sender is set to Amazon SES, but the Worker has no SES keys (AWS_SES_ACCESS_KEY_ID / AWS_SES_SECRET_ACCESS_KEY). Nothing can send." : "No outreach sender is bound on the Worker (MARKETING). Nothing can send." }) : !settings.postalAddress ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: "Set a postal address in Settings before a cold email goes out \u2014 anti-spam law asks for one on every send." }) : null,
-      overview.postsAwaiting ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
-        plural(overview.postsAwaiting, "post waits", "posts wait"),
-        " for your approval. Nothing is posted until you approve it.",
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setTab("posts"), children: "Review posts" })
-      ] }) : null,
-      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
-        /* @__PURE__ */ jsx(
-          Segmented,
-          {
-            value: tab,
-            options: [
-              { value: "overview", label: "Overview" },
-              { value: "contacts", label: `Contacts (${paging.total.toLocaleString("en-US")})` },
-              { value: "email", label: "Email" },
-              { value: "posts", label: overview.postsAwaiting ? `Posts (${overview.postsAwaiting} to approve)` : "Posts" },
-              { value: "sequences", label: "Sequences" },
-              { value: "sources", label: "Sources" },
-              { value: "settings", label: "Settings" }
-            ],
-            onChange: setTab
-          }
-        ),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        tab === "contacts" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx("input", { className: "aw-search", value: filters.q, placeholder: "Search email, name, business\u2026", onChange: (e) => filter({ q: e.target.value }) }),
-          /* @__PURE__ */ jsxs("select", { value: filters.status, onChange: (e) => filter({ status: e.target.value }), children: [
-            /* @__PURE__ */ jsx("option", { value: "", children: "Every status" }),
-            Object.keys(CONTACT_TONE).map((s) => /* @__PURE__ */ jsx("option", { value: s, children: s }, s))
-          ] }),
-          filters.source ? /* @__PURE__ */ jsxs(Button, { size: "sm", kind: "ghost", onClick: () => filter({ source: "" }), title: "Show every source", children: [
-            "Source: ",
-            filters.source,
-            " \u2715"
-          ] }) : null,
-          /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "import" }), children: "Import CSV" }),
-          /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "bulkqueue" }), children: "Queue everyone" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => setModal({ kind: "contact" }), children: "Add contact" })
-        ] }) : null,
-        tab === "email" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => setModal({ kind: "review" }), title: "Read the next first emails one by one: let each go, rewrite it, or cancel it.", children: "Review next" }),
-          /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "compose", channel: "email" }), children: "Compose" }),
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              title: "The desk re-renders scheduled emails by itself when the templates change; this does it now. Emails you edited by hand are left alone.",
-              onClick: () => run(() => api("POST", "/admin/marketing/messages/rerender"), "Scheduled emails now use the current wording."),
-              children: "Re-render scheduled"
-            }
-          )
-        ] }) : null,
-        tab === "posts" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "compose", channel: "x" }), children: "Compose" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => run(() => api("POST", "/admin/marketing/cycle?force=1"), cycleMessage), children: "Draft posts" })
-        ] }) : null
-      ] }),
-      tab === "overview" ? /* @__PURE__ */ jsx(OverviewTab, { api, tick, health, overview, onReview: () => setModal({ kind: "review" }), onContact: (id) => setModal({ kind: "person", id }), onTab: setTab }) : null,
-      tab === "contacts" ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsxs("div", { className: "aw-inline", style: { marginBottom: 8 }, children: [
-          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: paging.total ? `${(filters.offset + 1).toLocaleString("en-US")}\u2013${Math.min(filters.offset + paging.page, paging.total).toLocaleString("en-US")} of ${paging.total.toLocaleString("en-US")}` : "None" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: !filters.offset, onClick: () => setFilters((f) => ({ ...f, offset: Math.max(0, f.offset - paging.page) })), children: "Previous" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: filters.offset + paging.page >= paging.total, onClick: () => setFilters((f) => ({ ...f, offset: f.offset + paging.page })), children: "Next" }),
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          selected.size ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx("span", { children: plural(selected.size, "contact selected", "contacts selected") }),
-            /* @__PURE__ */ jsx(
-              Button,
-              {
-                size: "sm",
-                onClick: () => run(() => api("POST", "/admin/marketing/contacts/bulk", { action: "pause", ids: [...selected] }), (out) => `${out.changed} paused; their queued mail was cancelled.`).then(
-                  () => setSelected(/* @__PURE__ */ new Set())
-                ),
-                children: "Pause"
-              }
-            ),
-            /* @__PURE__ */ jsx(
-              Button,
-              {
-                size: "sm",
-                onClick: () => run(() => api("POST", "/admin/marketing/contacts/bulk", { action: "opt_out", ids: [...selected] }), (out) => `${out.changed} opted out; their queued mail was cancelled.`).then(
-                  () => setSelected(/* @__PURE__ */ new Set())
-                ),
-                children: "Opt out"
-              }
-            ),
-            /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setSelected(/* @__PURE__ */ new Set()), children: "Clear" })
-          ] }) : null
-        ] }),
-        /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
-          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("th", { children: /* @__PURE__ */ jsx(
-              "input",
-              {
-                type: "checkbox",
-                "aria-label": "Select this page",
-                checked: contacts.length > 0 && contacts.every((c) => selected.has(c.id)),
-                onChange: (e) => setSelected(e.target.checked ? new Set(contacts.map((c) => c.id)) : /* @__PURE__ */ new Set())
-              }
-            ) }),
-            /* @__PURE__ */ jsx("th", { children: "Contact" }),
-            /* @__PURE__ */ jsx("th", { children: "Business / site" }),
-            /* @__PURE__ */ jsx("th", { children: "Source" }),
-            /* @__PURE__ */ jsx("th", { children: "Status" }),
-            /* @__PURE__ */ jsx("th", { children: "Sent" }),
-            /* @__PURE__ */ jsx("th", { children: "Next" }),
-            /* @__PURE__ */ jsx("th", {})
-          ] }) }),
-          /* @__PURE__ */ jsx("tbody", { children: contacts.map((c) => /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(
-              "input",
-              {
-                type: "checkbox",
-                "aria-label": `Select ${c.email}`,
-                checked: selected.has(c.id),
-                onChange: (e) => setSelected((prev) => {
-                  const next = new Set(prev);
-                  if (e.target.checked) next.add(c.id);
-                  else next.delete(c.id);
-                  return next;
-                })
-              }
-            ) }),
-            /* @__PURE__ */ jsxs("td", { className: "aw-table__title", onClick: () => setModal({ kind: "person", id: c.id }), style: { cursor: "pointer" }, title: "Open the contact's history", children: [
-              /* @__PURE__ */ jsx("span", { className: "aw-mono", children: c.email }),
-              c.name ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-                " ",
-                c.name
-              ] }) : null,
-              c.gap ? /* @__PURE__ */ jsx("div", { className: "aw-muted", children: snippet(c.gap, 110) }) : null
-            ] }),
-            /* @__PURE__ */ jsxs("td", { children: [
-              c.business ?? "\u2014",
-              c.site ? /* @__PURE__ */ jsx("div", { className: "aw-muted", children: c.site }) : null
-            ] }),
-            /* @__PURE__ */ jsxs("td", { className: "aw-muted", children: [
-              c.sourceKind ?? "\u2014",
-              c.country ? /* @__PURE__ */ jsx("div", { children: c.country }) : null
-            ] }),
-            /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: CONTACT_TONE[c.status], children: c.status }) }),
-            /* @__PURE__ */ jsx("td", { children: c.sentCount }),
-            /* @__PURE__ */ jsx("td", { className: "aw-muted", children: c.nextAt ? when(c.nextAt) : "\u2014" }),
-            /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-              ["new", "paused", "contacted"].includes(c.status) && !c.nextAt ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "queue", contact: c }), children: "Queue" }) : null,
-              /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setModal({ kind: "contact", contact: c }), children: "Edit" }),
-              c.status !== "opted_out" ? /* @__PURE__ */ jsx(
-                Button,
-                {
-                  size: "sm",
-                  kind: "ghost",
-                  onClick: () => run(() => api("PATCH", `/admin/marketing/contacts/${c.id}`, { status: "opted_out" }), `${c.email} opted out; queued mail cancelled.`),
-                  children: "Opt out"
-                }
-              ) : null
-            ] }) })
-          ] }, c.id)) })
-        ] }) }),
-        !contacts.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No contacts match. Import a CSV, or add one by hand." }) : null
-      ] }) : null,
-      tab === "email" ? /* @__PURE__ */ jsx(EmailTab, { api, run, tick, events: overview.events, onOpen: (m) => setModal({ kind: "message", id: m.id }) }) : null,
-      tab === "posts" ? /* @__PURE__ */ jsx(PostsTab, { api, run, tick, holdHours: settings.postHoldHours ?? 0, onEdit: (m) => setModal({ kind: "edit", message: m }) }) : null,
-      tab === "sequences" ? /* @__PURE__ */ jsx(SequencesTab, { api, sequences: overview.sequences }) : null,
-      tab === "sources" ? /* @__PURE__ */ jsx(
-        SourcesTab,
-        {
-          api,
-          tick,
-          onPick: (source) => {
-            filter({ source });
-            setTab("contacts");
-          }
-        }
-      ) : null,
-      tab === "settings" ? /* @__PURE__ */ jsx(SettingsTab, { overview, run, api }) : null,
-      modal?.kind === "import" ? /* @__PURE__ */ jsx(ImportModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
-      modal?.kind === "bulkqueue" ? /* @__PURE__ */ jsx(BulkQueueModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
-      modal?.kind === "contact" ? /* @__PURE__ */ jsx(ContactModal, { contact: modal.contact, sequences: overview.sequences, api, onClose: () => setModal(null), onSaved: done }) : null,
-      modal?.kind === "queue" ? /* @__PURE__ */ jsx(
-        QueueModal,
-        {
-          contact: modal.contact,
-          sequences: overview.sequences,
-          api,
-          onClose: () => setModal(null),
-          onQueued: (count) => done(`${count} emails queued for ${modal.contact.email}.`)
-        }
-      ) : null,
-      modal?.kind === "compose" ? /* @__PURE__ */ jsx(
-        ComposeModal,
-        {
-          initialChannel: modal.channel,
-          contacts: contacts.filter((c) => !["opted_out", "bounced"].includes(c.status)),
-          api,
-          onClose: () => setModal(null),
-          onSaved: done
-        }
-      ) : null,
-      modal?.kind === "edit" ? /* @__PURE__ */ jsx(EditPostModal, { message: modal.message, api, onClose: () => setModal(null), onSaved: done }) : null,
-      modal?.kind === "message" ? /* @__PURE__ */ jsx(MessageModal, { id: modal.id, api, onClose: () => setModal(null), onDone: done }) : null,
-      modal?.kind === "review" ? /* @__PURE__ */ jsx(ReviewModal, { api, onClose: () => done("Review saved.") }) : null,
-      modal?.kind === "person" ? /* @__PURE__ */ jsx(
-        PersonModal,
-        {
-          id: modal.id,
-          api,
-          onClose: () => setModal(null),
-          onEdit: (contact) => setModal({ kind: "contact", contact }),
-          onOpenMessage: (id) => setModal({ kind: "message", id })
-        }
-      ) : null
-    ] });
-  }
-  var pct2 = (rate) => `${(rate * 100).toFixed(rate && rate < 0.01 ? 2 : 1)}%`;
-  var runMessage = (result) => result?.reason ? REASONS[result.reason] ?? `Nothing sent: ${result.reason}` : `Sent ${result?.sent ?? 0}${result?.failed ? `, ${result.failed} failed` : ""}.`;
-  var REPLY_TONE = { reply: "ok", opt_out: "warn", complaint: "bad" };
-  var REPLY_LABEL = { reply: "replied", opt_out: "opted out", complaint: "spam complaint" };
-  var OBSERVE_KIND = {
-    no_https: "opens over http",
-    no_viewport: "no mobile tag",
-    old_copyright: "old copyright",
-    pdf_menu: "PDF menu",
-    slow: "slow to load",
-    no_description: "no description",
-    none: "clean",
-    unreachable: "unreachable"
-  };
-  var postChannelLabel = { x: "X", linkedin: "LinkedIn" };
-  function RateMeter({ label, rate, limit }) {
-    const pctOf = Math.min((rate ?? 0) / limit, 1);
-    const tone2 = (rate ?? 0) >= limit ? "bad" : (rate ?? 0) >= limit / 2 ? "warn" : "ok";
-    return /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter", title: `${label}: ${pct2(rate ?? 0)} of the ${limitPct(limit)} limit`, children: [
-      /* @__PURE__ */ jsx("span", { className: "aw-mk-meter__label", children: label }),
-      /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter__track", children: [
-        /* @__PURE__ */ jsx("i", { className: cx("aw-mk-meter__fill", `aw-mk-meter__fill--${tone2}`), style: { width: `${pctOf * 80}%` } }),
-        /* @__PURE__ */ jsx("i", { className: "aw-mk-meter__limit" })
-      ] }),
-      /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter__num", children: [
-        pct2(rate ?? 0),
-        " of ",
-        limitPct(limit)
-      ] })
-    ] });
-  }
-  function AutopilotTable({ overview }) {
-    const { settings, window: win, health, observe, domains, due, today, pulse = {} } = overview;
-    const cap = Math.min(settings.dailyCap, overview.autoResume?.cap ?? settings.dailyCap);
-    const ramping = (overview.autoResume?.cap ?? settings.dailyCap) < settings.dailyCap;
-    const events = overview.events ?? [];
-    const newest = (kind) => events.filter((e) => e.kind === kind).map((e) => e.createdAt).sort((a, b) => b - a)[0] ?? null;
-    const lastSentAt = pulse.lastSentAt ?? newest("sent");
-    const lastPublishedAt = pulse.lastPublishedAt ?? newest("published");
-    const lastPublishedChannel = pulse.lastPublishedChannel ?? null;
-    const emailState = !settings.live ? "paused" : win?.open ? "sending" : `waiting: ${WINDOW_REASON[win?.reason] ?? win?.reason ?? "outside the window"}`;
-    const nextOpen = win && !win.open ? nextWindowOpen(settings, Math.floor(Date.now() / 1e3)) : null;
-    const emailNext = [
-      due?.email ? `${due.email} due` : "queue clear",
-      !win?.open && nextOpen ? `opens ${when(nextOpen)}` : pulse.nextEmailAt ? `next ${when(pulse.nextEmailAt)}` : ""
-    ].filter(Boolean).join(" \xB7 ");
-    const holdHours = settings.postHoldHours ?? 0;
-    const postState = holdHours > 0 ? `hold ${holdHours}h` : settings.postApproval ? "approve by hand" : "on schedule";
-    const postNext = [
-      pulse.nextPostAt ? `${when(pulse.nextPostAt)}${pulse.nextPostChannel ? ` \xB7 ${postChannelLabel[pulse.nextPostChannel] ?? pulse.nextPostChannel}` : ""}` : "",
-      pulse.postsQueued ? `${pulse.postsQueued} queued` : ""
-    ].filter(Boolean).join(" \xB7 ");
-    const pending = observe?.pending ?? 0;
-    const observed = observe?.observed ?? 0;
-    const withGap = observe?.withGap ?? 0;
-    const kindEntries = Object.entries(observe?.byKind ?? {}).sort((a, b) => b[1] - a[1]);
-    const bounceRate = health?.bounceRate ?? 0;
-    const complaintRate = health?.complaintRate ?? 0;
-    return /* @__PURE__ */ jsxs("div", { children: [
-      /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--compact aw-table--static aw-table--stack", children: [
-        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-          /* @__PURE__ */ jsx("th", { children: "Loop" }),
-          /* @__PURE__ */ jsx("th", { children: "State" }),
-          /* @__PURE__ */ jsx("th", { children: "Last" }),
-          /* @__PURE__ */ jsx("th", { children: "Next" }),
-          /* @__PURE__ */ jsx("th", { children: "Health" })
-        ] }) }),
-        /* @__PURE__ */ jsxs("tbody", { children: [
-          /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("td", { children: "Email" }),
-            /* @__PURE__ */ jsx("td", { "data-label": "State", children: emailState }),
-            /* @__PURE__ */ jsxs("td", { "data-label": "Last", children: [
-              lastSentAt ? when(lastSentAt) : "no sends yet",
-              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-                " ",
-                "\xB7 ",
-                today ?? 0,
-                "/",
-                cap,
-                " today",
-                ramping ? " \xB7 ramping" : ""
-              ] })
-            ] }),
-            /* @__PURE__ */ jsx("td", { "data-label": "Next", children: emailNext || "\u2014" }),
-            /* @__PURE__ */ jsx("td", { "data-label": "Health", children: /* @__PURE__ */ jsxs("div", { className: "aw-mk-health", children: [
-              /* @__PURE__ */ jsx(RateMeter, { label: "bounces", rate: bounceRate, limit: health?.maxBounceRate ?? 0.04 }),
-              /* @__PURE__ */ jsx(RateMeter, { label: "complaints", rate: complaintRate, limit: health?.maxComplaintRate ?? 2e-3 })
-            ] }) })
-          ] }),
-          /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("td", { children: "Posts" }),
-            /* @__PURE__ */ jsx("td", { "data-label": "State", children: postState }),
-            /* @__PURE__ */ jsx("td", { "data-label": "Last", children: lastPublishedAt ? `${when(lastPublishedAt)}${lastPublishedChannel ? ` \xB7 ${postChannelLabel[lastPublishedChannel] ?? lastPublishedChannel}` : ""}` : "none yet" }),
-            /* @__PURE__ */ jsx("td", { "data-label": "Next", children: postNext || "\u2014" }),
-            /* @__PURE__ */ jsx("td", { "data-label": "Health", className: pulse.postsFailed ? "aw-mk-bad" : void 0, children: pulse.postsFailed == null ? "\u2014" : `${pulse.postsFailed} failed` })
-          ] }),
-          /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("td", { children: "Site reading" }),
-            /* @__PURE__ */ jsx("td", { "data-label": "State", children: pending > 0 ? "reading" : "idle" }),
-            /* @__PURE__ */ jsxs("td", { "data-label": "Last", children: [
-              observed,
-              " read",
-              pulse.lastObservedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-                " \xB7 last ",
-                when(pulse.lastObservedAt)
-              ] }) : null
-            ] }),
-            /* @__PURE__ */ jsx("td", { "data-label": "Next", children: pending > 0 ? `${pending} waiting \xB7 ${fmtEta(obsEtaMinutes(pending))}` : "all read" }),
-            /* @__PURE__ */ jsx("td", { "data-label": "Health", children: observed > 0 ? `${pct2(withGap / observed)} found something` : "\u2014" })
-          ] }),
-          /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("td", { children: "Domain checks" }),
-            /* @__PURE__ */ jsx("td", { "data-label": "State", children: "checking" }),
-            /* @__PURE__ */ jsxs("td", { "data-label": "Last", children: [
-              domains?.checked ?? 0,
-              " domains"
-            ] }),
-            /* @__PURE__ */ jsx("td", { "data-label": "Next", children: "\u2014" }),
-            /* @__PURE__ */ jsxs("td", { "data-label": "Health", className: domains?.undeliverable ? "aw-mk-bad" : void 0, children: [
-              domains?.undeliverable ?? 0,
-              " undeliverable"
-            ] })
-          ] })
-        ] })
-      ] }) }),
-      kindEntries.length ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-        /* @__PURE__ */ jsx("p", { className: "aw-muted aw-mk-kinds-label", children: "What the reader finds:" }),
-        /* @__PURE__ */ jsx("dl", { className: "aw-mk-kinds", children: kindEntries.map(([kind, n]) => /* @__PURE__ */ jsxs("div", { className: "aw-mk-kind", children: [
-          /* @__PURE__ */ jsx("dt", { children: OBSERVE_KIND[kind] ?? kind }),
-          /* @__PURE__ */ jsx("dd", { children: n })
-        ] }, kind)) })
-      ] }) : null
-    ] });
-  }
-  function NeedsYou({ api, tick, overview, replies, onTab, onReview, onContact }) {
-    const { settings, bound, senderState, pulse = {} } = overview;
-    const [queue, setQueue] = useState(null);
-    useEffect(() => {
-      if (!settings.reviewFirst) {
-        setQueue(null);
-        return void 0;
-      }
-      let live = true;
-      api("GET", "/admin/marketing/review?limit=100").then((r) => live && setQueue(r)).catch(() => live && setQueue({ messages: [] }));
-      return () => {
-        live = false;
-      };
-    }, [api, settings.reviewFirst, tick]);
-    const items = [];
-    if (!bound) {
-      items.push({
-        key: "sender",
-        text: senderState?.reason === "ses_unconfigured" ? "The sender is Amazon SES but the Worker has no SES keys." : "No outreach sender is bound on the Worker.",
-        action: { label: "Open Settings", run: () => onTab("settings") }
-      });
-    } else if (!settings.postalAddress) {
-      items.push({
-        key: "postal",
-        text: "Cold email cannot go out without a postal address.",
-        action: { label: "Open Settings", run: () => onTab("settings") }
-      });
-    }
-    const cutoff = Math.floor(Date.now() / 1e3) - 14 * 86400;
-    for (const r of (replies ?? []).filter((x) => x.kind === "reply" && x.at >= cutoff && x.contact?.id)) {
-      items.push({
-        key: `reply-${r.id}`,
-        text: `${r.contact.business ?? r.contact.email} replied ${ago(r.at)} ago`,
-        action: { label: "Open contact", run: () => onContact(r.contact.id) }
-      });
-    }
-    if (pulse.postsFailed > 0) {
-      items.push({
-        key: "posts-failed",
-        text: `${pulse.postsFailed} post${pulse.postsFailed === 1 ? "" : "s"} failed to publish.`,
-        action: { label: "Open Posts", run: () => onTab("posts") }
-      });
-    }
-    if (settings.reviewFirst && queue?.messages?.length) {
-      const n = queue.messages.length;
-      items.push({
-        key: "review",
-        text: `${n >= 100 ? "100+" : n} first email${n === 1 ? "" : "s"} wait for review.`,
-        action: { label: "Review next", run: onReview }
-      });
-    }
-    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-      /* @__PURE__ */ jsx("h3", { children: "Needs you" }),
-      items.length ? /* @__PURE__ */ jsx("ul", { className: "aw-needs", children: items.map((item) => /* @__PURE__ */ jsxs("li", { children: [
-        /* @__PURE__ */ jsx("span", { children: item.text }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: item.action.run, children: item.action.label })
-      ] }, item.key)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing needs you. The desk is running on its own." })
-    ] });
-  }
-  var shortDay = (unix, offsetMinutes = 0) => {
-    const d = new Date((unix + offsetMinutes * 60) * 1e3);
-    return `${d.getUTCDate()} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()]}`;
-  };
-  function StatsChart({ stats }) {
-    const ref = useRef(null);
-    const [width, setWidth] = useState(0);
-    const days = useMemo(() => stats?.days ? [...stats.days].reverse() : [], [stats]);
-    useEffect(() => {
-      const el = ref.current;
-      if (!el) return void 0;
-      const update = () => setWidth(el.clientWidth);
-      update();
-      const ro = new ResizeObserver(update);
-      ro.observe(el);
-      return () => ro.disconnect();
-    }, [days.length]);
-    if (!days.length) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" });
-    const sum = (key) => days.reduce((n, d) => n + (d[key] ?? 0), 0);
-    const sent = sum("sent");
-    const replies = sum("reply");
-    const bounces = sum("bounce");
-    const optOuts = sum("opt_out");
-    const published = sum("published");
-    const offset = stats.offsetMinutes ?? 0;
-    const H = 180;
-    const padL = 40;
-    const padR = 10;
-    const padT = 12;
-    const padB = 26;
-    const measured = width > 0;
-    const w = measured ? Math.max(width, 200) : 720;
-    const plotW = w - padL - padR;
-    const plotH = H - padT - padB;
-    const baseY = padT + plotH;
-    const maxSent = Math.max(...days.map((d) => d.sent), 1);
-    const step = maxSent > 50 ? 10 : maxSent > 10 ? 5 : 1;
-    const yMax = Math.max(step, Math.ceil(maxSent / step) * step);
-    const slot = plotW / days.length;
-    const barW = Math.min(18, Math.max(3, slot * 0.6));
-    const labelEvery = Math.max(1, Math.ceil(56 / slot));
-    const y = (v) => baseY - v / yMax * plotH;
-    const aria = `${days.length} days: ${sent} sent, ${replies} replies, ${bounces} bounces, ${optOuts} opt-outs, ${published} posts published.`;
-    return /* @__PURE__ */ jsxs("figure", { className: "aw-chart", children: [
-      /* @__PURE__ */ jsxs("figcaption", { className: "aw-chart__totals", children: [
-        sent,
-        " sent \xB7 ",
-        replies,
-        " replies \xB7 ",
-        bounces,
-        " bounces \xB7 ",
-        optOuts,
-        " opt-outs \xB7 ",
-        published,
-        " posts"
-      ] }),
-      /* @__PURE__ */ jsx("div", { ref, className: "aw-chart__box", children: /* @__PURE__ */ jsxs(
-        "svg",
-        {
-          className: "aw-chart__svg",
-          width: measured ? w : "100%",
-          height: H,
-          viewBox: measured ? void 0 : `0 0 ${w} ${H}`,
-          preserveAspectRatio: measured ? void 0 : "xMidYMid meet",
-          role: "img",
-          "aria-label": aria,
-          children: [
-            [0, 0.5, 1].map((f) => {
-              const v = yMax * f;
-              return /* @__PURE__ */ jsxs("g", { children: [
-                /* @__PURE__ */ jsx("line", { className: "aw-chart__grid", x1: padL, x2: w - padR, y1: y(v), y2: y(v) }),
-                /* @__PURE__ */ jsx("text", { className: "aw-chart__tick", x: padL - 6, y: y(v) + 3, textAnchor: "end", children: Math.round(v) })
-              ] }, f);
-            }),
-            days.map((d, i) => {
-              const cx2 = padL + i * slot + slot / 2;
-              const sentH = d.sent / yMax * plotH;
-              const bounceH = Math.min((d.bounce ?? 0) / yMax * plotH, sentH);
-              return /* @__PURE__ */ jsxs("g", { children: [
-                /* @__PURE__ */ jsx("title", { children: `${shortDay(d.day, offset)}: ${d.sent} sent, ${d.reply} replies, ${d.bounce} bounces, ${d.opt_out} opt-outs, ${d.published ?? 0} posts` }),
-                d.sent ? /* @__PURE__ */ jsx("rect", { className: "aw-chart__bar", x: cx2 - barW / 2, y: y(d.sent), width: barW, height: sentH, rx: 1.5 }) : null,
-                d.bounce && d.sent ? /* @__PURE__ */ jsx("rect", { className: "aw-chart__bounce", x: cx2 - barW / 2, y: y(d.sent), width: barW, height: bounceH, rx: 1.5 }) : null,
-                d.reply ? /* @__PURE__ */ jsx("circle", { className: "aw-chart__reply", cx: cx2, cy: padT + 4, r: 3 }) : null,
-                i % labelEvery === 0 ? /* @__PURE__ */ jsx("text", { className: "aw-chart__day", x: cx2, y: H - 8, textAnchor: "middle", children: shortDay(d.day, offset) }) : null,
-                d.published ? Array.from({ length: Math.min(d.published, 3) }).map((_, j) => /* @__PURE__ */ jsx("rect", { className: "aw-chart__post", x: cx2 - 5 + j * 4, y: baseY + 7, width: 3, height: 3, rx: 1 }, j)) : null
-              ] }, d.day);
-            }),
-            /* @__PURE__ */ jsx("line", { className: "aw-chart__axis", x1: padL, x2: w - padR, y1: baseY, y2: baseY })
-          ]
-        }
-      ) }),
-      /* @__PURE__ */ jsxs("table", { className: "aw-sr-only", children: [
-        /* @__PURE__ */ jsx("caption", { children: "Daily marketing numbers" }),
-        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-          /* @__PURE__ */ jsx("th", { children: "Day" }),
-          /* @__PURE__ */ jsx("th", { children: "Sent" }),
-          /* @__PURE__ */ jsx("th", { children: "Replies" }),
-          /* @__PURE__ */ jsx("th", { children: "Bounces" }),
-          /* @__PURE__ */ jsx("th", { children: "Opt-outs" }),
-          /* @__PURE__ */ jsx("th", { children: "Posts" })
-        ] }) }),
-        /* @__PURE__ */ jsx("tbody", { children: days.map((d) => /* @__PURE__ */ jsxs("tr", { children: [
-          /* @__PURE__ */ jsx("td", { children: shortDay(d.day, offset) }),
-          /* @__PURE__ */ jsx("td", { children: d.sent }),
-          /* @__PURE__ */ jsx("td", { children: d.reply }),
-          /* @__PURE__ */ jsx("td", { children: d.bounce }),
-          /* @__PURE__ */ jsx("td", { children: d.opt_out }),
-          /* @__PURE__ */ jsx("td", { children: d.published ?? 0 })
-        ] }, d.day)) })
-      ] })
-    ] });
-  }
-  function ExperimentPanel({ overview, onTab }) {
-    const rows = (overview.sequences ?? []).filter((s) => s.key === "cold_a" || s.key === "cold_obs");
-    if (rows.length < 2) return null;
-    const control = rows.find((s) => s.key === "cold_a");
-    const challenger = rows.find((s) => s.key === "cold_obs");
-    if (!control || !challenger) return null;
-    const rate = (s) => s.stats.sent ? s.stats.replies / s.stats.sent : 0;
-    const enough = control.stats.sent >= 100 && challenger.stats.sent >= 100;
-    let verdict;
-    if (!enough) {
-      verdict = `Too early to call: ${control.stats.sent} and ${challenger.stats.sent} sends so far.`;
-    } else {
-      const diff = rate(challenger) - rate(control);
-      verdict = Math.abs(diff) < 5e-4 ? "Same reply rate so far." : `${diff > 0 ? challenger.key : control.key} leads: ${pct2(Math.max(rate(challenger), rate(control)))} vs ${pct2(Math.min(rate(challenger), rate(control)))} reply rate, ${(Math.abs(diff) * 100).toFixed(1)} pts apart.`;
-    }
-    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-      /* @__PURE__ */ jsx("h3", { children: "Experiment" }),
-      /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--compact aw-table--static aw-table--stack", children: [
-        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-          /* @__PURE__ */ jsx("th", { children: "Sequence" }),
-          /* @__PURE__ */ jsx("th", { children: "Sent" }),
-          /* @__PURE__ */ jsx("th", { children: "Replies" }),
-          /* @__PURE__ */ jsx("th", { children: "Reply rate" }),
-          /* @__PURE__ */ jsx("th", { children: "Opt-outs" }),
-          /* @__PURE__ */ jsx("th", { children: "Bounces" })
-        ] }) }),
-        /* @__PURE__ */ jsx("tbody", { children: rows.map((s) => /* @__PURE__ */ jsxs("tr", { children: [
-          /* @__PURE__ */ jsxs("td", { children: [
-            s.label,
-            " ",
-            s.key === "cold_a" ? /* @__PURE__ */ jsx(Tag, { children: "control" }) : null,
-            s.key === "cold_obs" ? /* @__PURE__ */ jsx(Tag, { children: "challenger" }) : null
-          ] }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Sent", children: s.stats.sent }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Replies", children: s.stats.replies }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Reply rate", children: pct2(rate(s)) }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Opt-outs", children: s.stats.optedOut }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Bounces", children: s.stats.bounced })
-        ] }, s.key)) })
-      ] }) }),
-      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: verdict }),
-      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-        overview.settings.obsShare,
-        "% of observed contacts get the observation opener.",
-        " ",
-        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => onTab("settings"), children: "Settings" })
-      ] })
-    ] });
-  }
-  function OverviewTab({ api, tick, health, overview, onReview, onContact, onTab }) {
-    const [stats, setStats] = useState(null);
-    const [replies, setReplies] = useState(null);
-    useEffect(() => {
-      let live = true;
-      Promise.all([api("GET", "/admin/marketing/stats?days=14"), api("GET", "/admin/marketing/replies")]).then(([s, r]) => {
-        if (!live) return;
-        setStats(s);
-        setReplies(r.replies ?? []);
-      }).catch(() => live && setReplies([]));
-      return () => {
-        live = false;
-      };
-    }, [api, tick]);
-    const ordered = [...replies ?? []].sort((a, b) => Number(b.kind === "reply") - Number(a.kind === "reply") || b.at - a.at);
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Autopilot" }),
-        /* @__PURE__ */ jsx(AutopilotTable, { overview })
-      ] }),
-      /* @__PURE__ */ jsx(NeedsYou, { api, tick, overview, replies, onTab, onReview, onContact }),
-      /* @__PURE__ */ jsx(ExperimentPanel, { overview, onTab }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Last 14 days" }),
-        /* @__PURE__ */ jsx(StatsChart, { stats })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "What came back" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Replies are also forwarded to your inbox; answer them from there. Opt-outs and complaints are closed already." }),
-        ordered.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: ordered.map((r) => /* @__PURE__ */ jsxs("li", { className: "aw-row", style: { alignItems: "flex-start", cursor: "pointer" }, onClick: () => onContact(r.contact.id), children: [
-          /* @__PURE__ */ jsx(Tag, { tone: REPLY_TONE[r.kind], children: REPLY_LABEL[r.kind] ?? r.kind }),
-          /* @__PURE__ */ jsxs("span", { className: "aw-row__title", children: [
-            r.contact.business ?? r.contact.email,
-            /* @__PURE__ */ jsx("div", { className: "aw-muted", style: { whiteSpace: "pre-wrap", fontWeight: "normal" }, children: snippet(r.text ?? "", 220) })
-          ] }),
-          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-            ago(r.at),
-            " ago"
-          ] })
-        ] }, r.id)) }) : replies ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing yet." }) : null
-      ] })
-    ] });
-  }
-  function ReviewModal({ api, onClose }) {
-    const [queue, setQueue] = useState(null);
-    const [nextDay, setNextDay] = useState(null);
-    const [index, setIndex] = useState(0);
-    const [detail, setDetail] = useState(null);
-    const [draft, setDraft] = useState(null);
-    const [done, setDone] = useState({ ok: 0, rewritten: 0, cancelled: 0 });
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState(null);
-    const loadQueue = useCallback(
-      () => api("GET", "/admin/marketing/review?limit=50").then((out) => {
-        setQueue(out.messages ?? []);
-        setNextDay(out.nextDay);
-        setIndex(0);
-      }),
-      [api]
-    );
-    useEffect(() => {
-      void loadQueue().catch((err) => setError(err.message ?? err.code));
-    }, [loadQueue]);
-    const current = queue?.[index] ?? null;
-    useEffect(() => {
-      if (!current) return void 0;
-      let live = true;
-      setDetail(null);
-      setDraft(null);
-      api("GET", `/admin/marketing/messages/${current.id}`).then((out) => live && setDetail(out)).catch((err) => live && setError(err.message ?? err.code));
-      return () => {
-        live = false;
-      };
-    }, [api, current]);
-    const step = async (fn, counter) => {
-      setBusy(true);
-      setError(null);
-      try {
-        if (fn) await fn();
-        if (counter) setDone((d) => ({ ...d, [counter]: d[counter] + 1 }));
-        if (index + 1 < queue.length) setIndex(index + 1);
-        else await loadQueue();
-      } catch (err) {
-        setError(err.message ?? err.code);
-      } finally {
-        setBusy(false);
-      }
-    };
-    const progress = `${done.ok} let go \xB7 ${done.rewritten} rewritten \xB7 ${done.cancelled} cancelled${nextDay ? ` \xB7 next 24h: ${nextDay.reviewed + done.ok + done.rewritten}/${nextDay.total} reviewed` : ""}`;
-    if (queue && !current) {
-      return /* @__PURE__ */ jsx(Modal, { title: "Review", subtitle: progress, onClose, actions: /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: onClose, children: "Done" }), children: /* @__PURE__ */ jsx("p", { children: "Every queued first email is reviewed. Follow-ups go with their first email." }) });
-    }
-    const contact = detail?.contact;
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: current ? `${index + 1} of ${queue.length}: ${current.contactEmail}` : "Review",
-        subtitle: progress,
-        onClose,
-        wide: true,
-        actions: draft ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: () => setDraft(null), children: "Back" }),
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              kind: "primary",
-              disabled: busy || !draft.subject.trim() || !draft.body.trim(),
-              onClick: () => step(() => api("PATCH", `/admin/marketing/messages/${current.id}`, draft), "rewritten"),
-              children: "Save and next"
-            }
-          )
-        ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { kind: "ghost", disabled: busy || !current, onClick: () => step(() => api("POST", `/admin/marketing/messages/${current.id}/cancel`), "cancelled"), children: "Cancel this email" }),
-          /* @__PURE__ */ jsx(Button, { disabled: busy || !current, onClick: () => step(null, null), children: "Skip" }),
-          /* @__PURE__ */ jsx(Button, { disabled: busy || !detail, onClick: () => setDraft({ subject: current.subject ?? "", body: current.body }), children: "Rewrite" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !current, onClick: () => step(() => api("POST", `/admin/marketing/messages/${current.id}/review`), "ok"), children: "Looks good, next" })
-        ] }),
-        children: [
-          contact ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", style: { marginTop: 0 }, children: [
-            [contact.business, contact.site, contact.sourceKind, contact.country].filter(Boolean).join(" \xB7 "),
-            current?.scheduledAt ? ` \xB7 goes ${when(current.scheduledAt)}` : "",
-            contact.site ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-              " \xB7 ",
-              /* @__PURE__ */ jsx("a", { href: /^https?:/.test(contact.site) ? contact.site : `https://${contact.site}`, target: "_blank", rel: "noreferrer", children: "open site" })
-            ] }) : null
-          ] }) : null,
-          draft ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx(Field, { label: "Subject", children: /* @__PURE__ */ jsx("input", { value: draft.subject, maxLength: 200, onChange: (e) => setDraft((d) => ({ ...d, subject: e.target.value })) }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Body", hint: "The footer is added when it sends.", children: /* @__PURE__ */ jsx("textarea", { rows: 16, value: draft.body, onChange: (e) => setDraft((d) => ({ ...d, body: e.target.value })), autoFocus: true }) })
-          ] }) : detail ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx("p", { style: { fontWeight: 600, margin: "0 0 8px" }, children: detail.preview.subject }),
-            /* @__PURE__ */ jsx("pre", { style: { whiteSpace: "pre-wrap", font: "inherit", lineHeight: 1.5, padding: 12, border: "1px solid var(--aw-line, #ddd)", borderRadius: 6, margin: 0 }, children: detail.preview.text })
-          ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" }),
-          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
-        ]
-      }
-    );
-  }
-  function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
-    const [data, setData] = useState(null);
-    const [error, setError] = useState(null);
-    const [showDmarc, setShowDmarc] = useState(false);
-    useEffect(() => {
-      let live = true;
-      api("GET", `/admin/marketing/contacts/${id}`).then((out) => live && setData(out)).catch((err) => live && setError(err.message ?? err.code));
-      return () => {
-        live = false;
-      };
-    }, [api, id]);
-    const c = data?.contact;
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: c?.email ?? "Contact",
-        subtitle: c ? [c.name, c.business, c.site].filter(Boolean).join(" \xB7 ") : void 0,
-        onClose,
-        wide: true,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Close" }),
-          c ? /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => onEdit(c), children: "Edit contact" }) : null
-        ] }),
-        children: [
-          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null,
-          c ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
-              /* @__PURE__ */ jsx(Tag, { tone: CONTACT_TONE[c.status], children: c.status }),
-              c.sourceKind ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: c.sourceKind }) : null,
-              c.country ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: c.country }) : null,
-              /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-                "added ",
-                ago(c.createdAt),
-                " ago"
-              ] })
-            ] }),
-            c.gap ? /* @__PURE__ */ jsxs("p", { children: [
-              "Observation: ",
-              c.gap
-            ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No observation written; the plain versions are used." }),
-            c.sourceUrl ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-              "Found on",
-              " ",
-              /* @__PURE__ */ jsx("a", { href: c.sourceUrl, target: "_blank", rel: "noreferrer", children: c.sourceUrl })
-            ] }) : null,
-            c.notes ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: c.notes }) : null,
-            /* @__PURE__ */ jsx("h3", { children: "Messages" }),
-            /* @__PURE__ */ jsx("table", { className: "aw-table", children: /* @__PURE__ */ jsx("tbody", { children: data.messages.map((m) => /* @__PURE__ */ jsxs("tr", { onClick: () => onOpenMessage(m.id), style: { cursor: "pointer" }, children: [
-              /* @__PURE__ */ jsx("td", { className: "aw-muted", children: m.sentAt ? `${ago(m.sentAt)} ago` : m.scheduledAt ? when(m.scheduledAt) : "\u2014" }),
-              /* @__PURE__ */ jsxs("td", { children: [
-                m.subject,
-                " ",
-                m.editedAt ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "edited" }) : m.reviewedAt ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "reviewed" }) : null
-              ] }),
-              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: MESSAGE_TONE[m.status], children: m.status }) })
-            ] }, m.id)) }) }),
-            !data.messages.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing queued or sent." }) : null,
-            /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-              /* @__PURE__ */ jsx("h3", { children: "Events" }),
-              /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setShowDmarc((v) => !v), children: showDmarc ? "Hide DMARC reports" : "Show DMARC reports" })
-            ] }),
-            /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: data.events.filter((e) => showDmarc || e.kind !== "dmarc_report").map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
-              /* @__PURE__ */ jsx(Tag, { tone: EVENT_BAD.has(e.kind) ? "bad" : EVENT_GOOD.has(e.kind) ? "ok" : "dash", children: EVENT_LABEL[e.kind] ?? e.kind.replaceAll("_", " ") }),
-              /* @__PURE__ */ jsx("span", { className: "aw-muted", style: { whiteSpace: "pre-wrap" }, children: snippet(e.detail ?? "", 300) }),
-              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-                ago(e.createdAt),
-                " ago"
-              ] })
-            ] }, e.id)) }),
-            !data.events.filter((e) => showDmarc || e.kind !== "dmarc_report").length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No events." }) : null
-          ] }) : !error ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" }) : null
-        ]
-      }
-    );
-  }
-  function EmailTab({ api, run, tick, events, onOpen }) {
-    const [order, setOrder] = useState("next");
-    const [status, setStatus] = useState("scheduled");
-    const [messages, setMessages] = useState(null);
-    const [showDmarc, setShowDmarc] = useState(false);
-    const visibleEvents = events.filter((e) => showDmarc || e.kind !== "dmarc_report");
-    useEffect(() => {
-      let live = true;
-      const search = new URLSearchParams({ channel: "email", ...status ? { status } : {}, ...order === "next" ? { order: "next" } : {} });
-      api("GET", `/admin/marketing/messages?${search}`).then((out) => live && setMessages(out.messages ?? [])).catch(() => live && setMessages([]));
-      return () => {
-        live = false;
-      };
-    }, [api, order, status, tick]);
-    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-      /* @__PURE__ */ jsxs("div", { className: "aw-inline", style: { marginBottom: 8 }, children: [
-        /* @__PURE__ */ jsx(
-          Segmented,
-          {
-            value: order,
-            options: [
-              { value: "next", label: "Next to send" },
-              { value: "recent", label: "Latest first" }
-            ],
-            onChange: setOrder
-          }
-        ),
-        /* @__PURE__ */ jsxs("select", { value: status, onChange: (e) => setStatus(e.target.value), children: [
-          /* @__PURE__ */ jsx("option", { value: "", children: "Every status" }),
-          Object.keys(MESSAGE_TONE).map((s) => /* @__PURE__ */ jsx("option", { value: s, children: s }, s))
-        ] }),
-        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "Click an email to read it exactly as it leaves, rewrite it, or send yourself a test." })
-      ] }),
-      messages === null ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" }) : null,
-      messages?.length ? /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
-        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-          /* @__PURE__ */ jsx("th", { children: "When" }),
-          /* @__PURE__ */ jsx("th", { children: "To" }),
-          /* @__PURE__ */ jsx("th", { children: "Email" }),
-          /* @__PURE__ */ jsx("th", { children: "Status" })
-        ] }) }),
-        /* @__PURE__ */ jsx("tbody", { children: messages.map((m) => /* @__PURE__ */ jsxs("tr", { onClick: () => onOpen(m), style: { cursor: "pointer" }, children: [
-          /* @__PURE__ */ jsx("td", { className: "aw-muted", children: m.sentAt ? `${ago(m.sentAt)} ago` : m.scheduledAt ? when(m.scheduledAt) : "draft" }),
-          /* @__PURE__ */ jsx("td", { className: "aw-mono", children: m.contactEmail ?? "\u2014" }),
-          /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
-            /* @__PURE__ */ jsxs("div", { children: [
-              m.subject,
-              " ",
-              m.editedAt ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "edited" }) : m.reviewedAt ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "reviewed" }) : null,
-              " ",
-              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-                "\xB7 step ",
-                m.step + 1
-              ] })
-            ] }),
-            /* @__PURE__ */ jsx("div", { className: "aw-muted", children: snippet(m.body.replace(/\s+/g, " "), 140) }),
-            m.error ? /* @__PURE__ */ jsx("div", { className: "aw-warn", children: m.error }) : null
-          ] }),
-          /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: MESSAGE_TONE[m.status], children: m.status }) })
-        ] }, m.id)) })
-      ] }) }) : messages ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No email matches." }) : null,
-      messages?.length === 200 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "The first 200 are shown." }) : null,
-      /* @__PURE__ */ jsxs("div", { className: "aw-group", children: [
-        /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-          /* @__PURE__ */ jsx("h3", { children: "Recent events" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setShowDmarc((v) => !v), children: showDmarc ? "Hide DMARC reports" : "Show DMARC reports" })
-        ] }),
-        /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: visibleEvents.map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
-          /* @__PURE__ */ jsx(Tag, { tone: EVENT_BAD.has(e.kind) ? "bad" : EVENT_GOOD.has(e.kind) ? "ok" : "dash", children: EVENT_LABEL[e.kind] ?? e.kind.replaceAll("_", " ") }),
-          /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: e.email ?? "\u2014" }),
-          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: snippet(e.detail ?? "", 100) }),
-          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-            ago(e.createdAt),
-            " ago"
-          ] })
-        ] }, e.id)) }),
-        !visibleEvents.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing has happened yet." }) : null
-      ] })
-    ] });
-  }
-  var EVENT_BAD = /* @__PURE__ */ new Set(["failed", "bounce", "opt_out", "complaint", "cycle_failed", "auto_paused", "blocked", "undeliverable"]);
-  var EVENT_GOOD = /* @__PURE__ */ new Set(["reply", "sent", "published", "cycle", "approved", "auto_resumed", "auto_approved"]);
-  var EVENT_LABEL = { dmarc_report: "DMARC report", auto_resumed: "auto-resumed", auto_approved: "auto-approved", auto_paused: "auto-paused" };
-  function MessageModal({ id, api, onClose, onDone }) {
-    const [data, setData] = useState(null);
-    const [error, setError] = useState(null);
-    const [draft, setDraft] = useState(null);
-    const [busy, setBusy] = useState(false);
-    const load = useCallback(
-      () => api("GET", `/admin/marketing/messages/${id}`).then(setData).catch((err) => setError(err.message ?? err.code)),
-      [api, id]
-    );
-    useEffect(() => {
-      void load();
-    }, [load]);
-    const doing = async (fn, message, close = true) => {
-      setBusy(true);
-      setError(null);
-      try {
-        const out = await fn();
-        if (close) onDone(typeof message === "function" ? message(out) : message);
-        else {
-          await load();
-          setDraft(null);
-        }
-      } catch (err) {
-        setError(err.message ?? err.code);
-      } finally {
-        setBusy(false);
-      }
-    };
-    if (!data) {
-      return /* @__PURE__ */ jsx(Modal, { title: "Email", onClose, children: error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" }) });
-    }
-    const { message: m, preview, contact } = data;
-    const editable = ["draft", "scheduled", "failed"].includes(m.status);
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: m.subject ?? "Email",
-        subtitle: `${m.status}${m.scheduledAt && !m.sentAt ? ` for ${when(m.scheduledAt)}` : ""}${m.sentAt ? `, sent ${ago(m.sentAt)} ago` : ""}${m.provider ? ` via ${m.provider}` : ""}${m.editedAt ? " \xB7 edited by hand" : ""}`,
-        onClose,
-        wide: true,
-        actions: draft ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: () => setDraft(null), children: "Discard" }),
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              kind: "primary",
-              disabled: busy || !draft.subject.trim() || !draft.body.trim(),
-              onClick: () => doing(() => api("PATCH", `/admin/marketing/messages/${m.id}`, draft), null, false),
-              children: "Save wording"
-            }
-          )
-        ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
-          editable ? /* @__PURE__ */ jsx(Button, { kind: "ghost", disabled: busy, onClick: () => doing(() => api("POST", `/admin/marketing/messages/${m.id}/cancel`), "Cancelled."), children: "Cancel email" }) : null,
-          /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: () => doing(() => api("POST", `/admin/marketing/messages/${m.id}/test`), (out) => `Test sent to ${out.to} via ${out.provider}.`), children: "Send me a test" }),
-          editable ? /* @__PURE__ */ jsx(Button, { onClick: () => setDraft({ subject: m.subject ?? "", body: m.body }), children: "Rewrite" }) : null,
-          editable ? /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy, onClick: () => doing(() => api("POST", `/admin/marketing/messages/${m.id}/send`), "Sent."), children: "Send now" }) : null
-        ] }),
-        children: [
-          draft ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx(Field, { label: "Subject", children: /* @__PURE__ */ jsx("input", { value: draft.subject, maxLength: 200, onChange: (e) => setDraft((d) => ({ ...d, subject: e.target.value })) }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Body", hint: "The footer (your name, postal address and the opt-out line) is added when it sends. Re-render will not overwrite a hand edit.", children: /* @__PURE__ */ jsx("textarea", { rows: 16, value: draft.body, onChange: (e) => setDraft((d) => ({ ...d, body: e.target.value })) }) })
-          ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsxs("dl", { className: "aw-mono", style: { display: "grid", gridTemplateColumns: "max-content 1fr", gap: "2px 12px", fontSize: 12, margin: 0 }, children: [
-              /* @__PURE__ */ jsx("dt", { className: "aw-muted", children: "From" }),
-              /* @__PURE__ */ jsx("dd", { style: { margin: 0 }, children: preview.from }),
-              /* @__PURE__ */ jsx("dt", { className: "aw-muted", children: "To" }),
-              /* @__PURE__ */ jsxs("dd", { style: { margin: 0 }, children: [
-                preview.to,
-                contact?.business ? ` (${contact.business})` : ""
-              ] }),
-              /* @__PURE__ */ jsx("dt", { className: "aw-muted", children: "Reply-To" }),
-              /* @__PURE__ */ jsx("dd", { style: { margin: 0 }, children: preview.replyTo }),
-              Object.entries(preview.headers ?? {}).map(([name, value]) => /* @__PURE__ */ jsxs(Fragment, { children: [
-                /* @__PURE__ */ jsx("dt", { className: "aw-muted", children: name }),
-                /* @__PURE__ */ jsx("dd", { style: { margin: 0, wordBreak: "break-all" }, children: value })
-              ] }, name)),
-              /* @__PURE__ */ jsx("dt", { className: "aw-muted", children: "Subject" }),
-              /* @__PURE__ */ jsx("dd", { style: { margin: 0 }, children: preview.subject })
-            ] }),
-            /* @__PURE__ */ jsx("pre", { style: { whiteSpace: "pre-wrap", font: "inherit", lineHeight: 1.5, padding: 12, border: "1px solid var(--aw-line, #ddd)", borderRadius: 6, marginTop: 12 }, children: preview.text }),
-            preview.image ? /* @__PURE__ */ jsxs("figure", { style: { margin: "0 0 12px" }, children: [
-              /* @__PURE__ */ jsx("img", { src: preview.image, alt: "", width: 280, style: { display: "block", height: "auto", border: "1px solid var(--aw-line, #ddd)", borderRadius: 6 } }),
-              /* @__PURE__ */ jsx("figcaption", { className: "aw-muted", style: { fontSize: 12 }, children: "Sent as HTML with this GIF above the signature; the text above is the plain-text part." })
-            ] }) : null,
-            contact ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-              contact.site ? `Site ${contact.site}. ` : "",
-              contact.sourceKind ? `Source ${contact.sourceKind}. ` : "",
-              contact.gap ? `Observation: ${contact.gap}` : "No observation on this contact, so the plain version is used."
-            ] }) : null,
-            data.events?.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: data.events.map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
-              /* @__PURE__ */ jsx(Tag, { tone: EVENT_BAD.has(e.kind) ? "bad" : EVENT_GOOD.has(e.kind) ? "ok" : "dash", children: e.kind }),
-              /* @__PURE__ */ jsx("span", { className: "aw-muted", children: snippet(e.detail ?? "", 100) }),
-              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-                ago(e.createdAt),
-                " ago"
-              ] })
-            ] }, e.id)) }) : null
-          ] }),
-          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
-        ]
-      }
-    );
-  }
-  var POST_MAX = { x: 280, linkedin: 3e3 };
-  function PostsTab({ api, run, tick, holdHours = 0, onEdit }) {
-    const [posts, setPosts] = useState(null);
-    useEffect(() => {
-      let live = true;
-      Promise.all(["x", "linkedin"].map((channel) => api("GET", `/admin/marketing/messages?channel=${channel}`))).then((lists) => live && setPosts(lists.flatMap((out) => out.messages ?? []))).catch(() => live && setPosts([]));
-      return () => {
-        live = false;
-      };
-    }, [api, tick]);
-    if (!posts) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" });
-    const at = (m) => m.scheduledAt ?? m.createdAt;
-    const groups = [
-      { title: "Waiting for your approval", hint: "Written by the content cycle. Nothing here is posted until you approve it.", list: posts.filter((m) => m.status === "draft").sort((a, b) => at(a) - at(b)) },
-      { title: "Scheduled", hint: "The publisher posts these at their time from your browser profile. You get an email when each goes out.", list: posts.filter((m) => m.status === "scheduled" || m.status === "sending").sort((a, b) => at(a) - at(b)) },
-      { title: "Failed", list: posts.filter((m) => m.status === "failed") },
-      { title: "Published", list: posts.filter((m) => m.status === "sent").sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0)) }
-    ];
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      groups.map(
-        (group) => group.list.length ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-          /* @__PURE__ */ jsxs("h3", { children: [
-            group.title,
-            " (",
-            group.list.length,
-            ")"
-          ] }),
-          group.hint ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: group.hint }) : null,
-          group.list.map((m) => /* @__PURE__ */ jsx(PostCard, { post: m, api, run, holdHours, onEdit }, m.id))
-        ] }, group.title) : null
-      ),
-      !posts.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No posts yet. Draft posts files a content cycle; Compose writes one by hand." }) : null
-    ] });
-  }
-  function PostCard({ post: m, api, run, holdHours = 0, onEdit }) {
-    const open = ["draft", "scheduled", "failed"].includes(m.status);
-    const max = POST_MAX[m.channel] ?? 3e3;
-    const releaseAt = m.status === "draft" && holdHours > 0 ? Math.max((m.createdAt ?? 0) + holdHours * 3600, m.scheduledAt ?? 0) : null;
-    return /* @__PURE__ */ jsxs("article", { style: { borderTop: "1px solid var(--aw-line, #e5e5e5)", padding: "10px 0" }, children: [
-      /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-        /* @__PURE__ */ jsx(Tag, { children: m.channel === "x" ? "X" : "LinkedIn" }),
-        /* @__PURE__ */ jsx(Tag, { tone: MESSAGE_TONE[m.status], children: m.status === "draft" ? "to approve" : m.status }),
-        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-          m.sentAt ? `posted ${ago(m.sentAt)} ago` : m.scheduledAt ? `slot ${when(m.scheduledAt)}` : "no slot",
-          " \xB7 ",
-          m.body.length,
-          "/",
-          max,
-          " characters",
-          m.kind === "auto" ? " \xB7 written by the content cycle" : ""
-        ] }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        m.url ? /* @__PURE__ */ jsx("a", { href: m.url, target: "_blank", rel: "noreferrer", children: "Open post" }) : null
-      ] }),
-      /* @__PURE__ */ jsx("p", { style: { whiteSpace: "pre-wrap", margin: "8px 0" }, children: m.body }),
-      releaseAt ? /* @__PURE__ */ jsxs("div", { className: "aw-muted", children: [
-        "Goes out automatically ",
-        when(releaseAt),
-        " unless you cancel it first."
-      ] }) : null,
-      m.error ? /* @__PURE__ */ jsx("div", { className: "aw-warn", children: m.error }) : null,
-      open ? /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-        m.status === "draft" ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => run(() => api("POST", `/admin/marketing/messages/${m.id}/approve`), "Approved: it goes out in its slot."), children: "Approve" }) : null,
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => onEdit(m), children: "Edit" }),
-        m.status === "failed" ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => run(() => api("POST", `/admin/marketing/messages/${m.id}/retry`), "Queued again."), children: "Retry" }) : null,
-        /* @__PURE__ */ jsx(
-          Button,
-          {
-            size: "sm",
-            onClick: () => run(() => api("POST", `/admin/marketing/messages/${m.id}/send`), "Due now: the publisher posts it within 15 minutes."),
-            children: "Post now"
-          }
-        ),
-        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => run(() => api("POST", `/admin/marketing/messages/${m.id}/cancel`), "Cancelled."), children: m.status === "draft" ? "Reject" : "Cancel" })
-      ] }) : null
-    ] });
-  }
-  function SequencesTab({ api, sequences }) {
-    const [sequence, setSequence] = useState(sequences[0]?.key ?? "cold_a");
-    const [data, setData] = useState(null);
-    const [nonce, setNonce] = useState(0);
-    useEffect(() => {
-      let live = true;
-      setData(null);
-      api("GET", `/admin/marketing/sequences/preview?sequence=${sequence}`).then((out) => live && setData(out)).catch(() => live && setData({ steps: [] }));
-      return () => {
-        live = false;
-      };
-    }, [api, sequence, nonce]);
-    const replyRate = (s) => s.sent ? pct2(s.replies / s.sent) : "\u2014";
-    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-      /* @__PURE__ */ jsx("h3", { children: "How each sequence is doing" }),
-      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Sent, replies and outcomes per sequence, counted on the contact's latest send." }),
-      /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
-        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-          /* @__PURE__ */ jsx("th", { children: "Sequence" }),
-          /* @__PURE__ */ jsx("th", { children: "Sent" }),
-          /* @__PURE__ */ jsx("th", { children: "Replies" }),
-          /* @__PURE__ */ jsx("th", { children: "Reply rate" }),
-          /* @__PURE__ */ jsx("th", { children: "Opt-outs" }),
-          /* @__PURE__ */ jsx("th", { children: "Bounces" })
-        ] }) }),
-        /* @__PURE__ */ jsx("tbody", { children: sequences.map((s) => /* @__PURE__ */ jsxs("tr", { children: [
-          /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
-            s.label,
-            " ",
-            s.key === "cold_a" ? /* @__PURE__ */ jsx(Tag, { children: "control" }) : null,
-            s.key === "cold_obs" ? /* @__PURE__ */ jsx(Tag, { children: "challenger" }) : null,
-            s.needsGap ? /* @__PURE__ */ jsx("div", { className: "aw-muted", children: "needs a site observation" }) : null
-          ] }),
-          /* @__PURE__ */ jsx("td", { children: s.stats.sent || "\xB7" }),
-          /* @__PURE__ */ jsx("td", { children: s.stats.replies || "\xB7" }),
-          /* @__PURE__ */ jsx("td", { children: replyRate(s.stats) }),
-          /* @__PURE__ */ jsx("td", { className: s.stats.optedOut ? "aw-warn" : void 0, children: s.stats.optedOut || "\xB7" }),
-          /* @__PURE__ */ jsx("td", { className: s.stats.bounced ? "aw-warn" : void 0, children: s.stats.bounced || "\xB7" })
-        ] }, s.key)) })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "aw-inline", style: { marginTop: 14 }, children: [
-        /* @__PURE__ */ jsx("select", { value: sequence, onChange: (e) => setSequence(e.target.value), children: sequences.map((s) => /* @__PURE__ */ jsx("option", { value: s.key, children: s.label }, s.key)) }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setNonce((n) => n + 1), children: "Another contact" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: data?.contact ? `Filled in for ${data.contact.email}${data.contact.business ? ` (${data.contact.business})` : ""}.` : data ? "Filled in for a sample contact." : "" })
-      ] }),
-      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-        "The wording lives in ",
-        /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "SEQUENCES" }),
-        " in ",
-        /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "worker/src/marketing.ts" }),
-        "; the desk re-renders the queue by itself when it changes. To change it for one person, open their email in the Email tab and rewrite it there."
-      ] }),
-      data?.steps.map((step) => /* @__PURE__ */ jsxs("article", { style: { borderTop: "1px solid var(--aw-line, #e5e5e5)", padding: "10px 0" }, children: [
-        /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-          /* @__PURE__ */ jsxs(Tag, { children: [
-            "day ",
-            step.day
-          ] }),
-          /* @__PURE__ */ jsx("strong", { children: step.subject }),
-          step.usesPlain ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "plain version: no observation" }) : null
-        ] }),
-        /* @__PURE__ */ jsxs("pre", { style: { whiteSpace: "pre-wrap", font: "inherit", lineHeight: 1.5 }, children: [
-          step.body,
-          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: data.footer })
-        ] })
-      ] }, step.kind))
-    ] });
-  }
-  function SourcesTab({ api, tick, onPick }) {
-    const [sources, setSources] = useState(null);
-    useEffect(() => {
-      let live = true;
-      api("GET", "/admin/marketing/sources").then((out) => live && setSources(out.sources ?? [])).catch(() => live && setSources([]));
-      return () => {
-        live = false;
-      };
-    }, [api, tick]);
-    if (!sources) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" });
-    const rate = (n, d) => d ? pct2(n / d) : "\u2014";
-    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "A source is the label given at import (the file name by default). Rates are per contact reached. A source whose bounces pass 4% will pause the whole desk, so drop or verify it first." }),
-      /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
-        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-          /* @__PURE__ */ jsx("th", { children: "Source" }),
-          /* @__PURE__ */ jsx("th", { children: "Contacts" }),
-          /* @__PURE__ */ jsx("th", { children: "Queued" }),
-          /* @__PURE__ */ jsx("th", { children: "Reached" }),
-          /* @__PURE__ */ jsx("th", { children: "Replied" }),
-          /* @__PURE__ */ jsx("th", { children: "Bounced" }),
-          /* @__PURE__ */ jsx("th", { children: "Opted out" }),
-          /* @__PURE__ */ jsx("th", { children: "Complaints" })
-        ] }) }),
-        /* @__PURE__ */ jsx("tbody", { children: sources.map((s) => /* @__PURE__ */ jsxs("tr", { onClick: () => onPick(s.source), style: { cursor: "pointer" }, title: "Show these contacts", children: [
-          /* @__PURE__ */ jsx("td", { className: "aw-mono", children: s.source }),
-          /* @__PURE__ */ jsx("td", { children: s.contacts }),
-          /* @__PURE__ */ jsx("td", { children: s.queued }),
-          /* @__PURE__ */ jsx("td", { children: s.reached }),
-          /* @__PURE__ */ jsxs("td", { children: [
-            s.replied,
-            " ",
-            /* @__PURE__ */ jsx("span", { className: "aw-muted", children: rate(s.replied, s.reached) })
-          ] }),
-          /* @__PURE__ */ jsxs("td", { children: [
-            s.bounced,
-            " ",
-            /* @__PURE__ */ jsx("span", { className: s.reached && s.bounced / s.reached > 0.04 ? "aw-warn" : "aw-muted", children: rate(s.bounced, s.reached) })
-          ] }),
-          /* @__PURE__ */ jsxs("td", { children: [
-            s.optedOut,
-            " ",
-            /* @__PURE__ */ jsx("span", { className: "aw-muted", children: rate(s.optedOut, s.reached) })
-          ] }),
-          /* @__PURE__ */ jsxs("td", { children: [
-            s.complaints,
-            " ",
-            /* @__PURE__ */ jsx("span", { className: s.complaints ? "aw-warn" : "aw-muted", children: rate(s.complaints, s.reached) })
-          ] })
-        ] }, s.source)) })
-      ] }) }),
-      !sources.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No contacts yet." }) : null
-    ] });
-  }
-  function windowRoom(settings) {
-    const hours = settings.startHour === settings.endHour ? 24 : (settings.endHour - settings.startHour + 24) % 24 || 24;
-    return (hours * 12 * settings.perRun).toLocaleString("en-US");
-  }
-  function ModelHealth({ api }) {
-    const [state, setState] = useState(null);
-    useEffect(() => {
-      let live = true;
-      api("GET", "/admin/health/deepseek").then((out) => {
-        if (live) setState(out);
-      }).catch(() => {
-        if (live) setState({ bridge: false, chat: false });
-      });
-      return () => {
-        live = false;
-      };
-    }, [api]);
-    if (!state) return null;
-    const tone2 = state.chat ? "ok" : state.bridge ? "warn" : "bad";
-    const label = state.chat ? "DeepSeek up" : state.bridge ? "Workers AI fallback" : "both engines down";
-    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-      /* @__PURE__ */ jsx("h3", { children: "The model" }),
-      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }, children: [
-        /* @__PURE__ */ jsx(Tag, { tone: tone2, children: label }),
-        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: state.chat ? "The site chat and the ticket bridge both use DeepSeek." : state.bridge ? `DeepSeek is out of balance. The ticket bridge is on ${state.engine ?? "Workers AI"}; the site chat is handing visitors to email until it is topped up.` : "The site chat and the ticket bridge are both handing off." })
-      ] })
-    ] });
-  }
-  function SettingsTab({ overview, run, api }) {
-    const [draft, setDraft] = useState(overview.settings);
-    useEffect(() => setDraft(overview.settings), [overview.settings]);
-    const set = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
-    const changed = Object.keys(draft).some((key) => draft[key] !== overview.settings[key]);
-    const save = () => {
-      const patch = Object.fromEntries(Object.entries(draft).filter(([key, value]) => value !== overview.settings[key]));
-      void run(() => api("PUT", "/admin/marketing/settings", patch), "Marketing settings saved.");
-    };
-    const actions = /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-      /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-      /* @__PURE__ */ jsx(Button, { disabled: !changed, onClick: () => setDraft(overview.settings), children: "Reset" }),
-      /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !changed, onClick: save, children: "Save" })
-    ] });
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Sending" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Who the mail comes from and whether it goes out." }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-form2", children: [
-          /* @__PURE__ */ jsx(Field, { label: "Outreach", hint: "The master switch.", children: /* @__PURE__ */ jsx(
-            Segmented,
-            {
-              value: Boolean(draft.live),
-              options: [
-                { value: true, label: "Live" },
-                { value: false, label: "Paused" }
-              ],
-              onChange: (v) => set("live", v)
-            }
-          ) }),
-          /* @__PURE__ */ jsx(
-            Field,
-            {
-              label: "Sender",
-              hint: draft.provider === "ses" ? overview.providers.ses ? "Amazon SES: bounces and complaints file back to hello@." : "Needs AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY as Worker secrets." : "The MARKETING binding on the Worker.",
-              children: /* @__PURE__ */ jsx(
-                Segmented,
-                {
-                  value: draft.provider,
-                  options: [
-                    { value: "cloudflare", label: "Cloudflare" },
-                    { value: "ses", label: "Amazon SES" }
-                  ],
-                  onChange: (v) => set("provider", v)
-                }
-              )
-            }
-          ),
-          /* @__PURE__ */ jsx(Field, { label: "From name", hint: "On the From line of every email.", children: /* @__PURE__ */ jsx("input", { value: draft.fromName, onChange: (e) => set("fromName", e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Postal address", hint: "Required on every cold email.", children: /* @__PURE__ */ jsx("input", { value: draft.postalAddress, placeholder: "Street, city, country", onChange: (e) => set("postalAddress", e.target.value) }) })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Schedule and volume" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "When mail may leave, and how much of it." }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-form2", children: [
-          /* @__PURE__ */ jsx(Field, { label: "Send window", hint: "Local time on the offset clock; an end of 24 means midnight.", children: /* @__PURE__ */ jsxs("span", { className: "aw-inline aw-mk-window", children: [
-            "From",
-            " ",
-            /* @__PURE__ */ jsx(
-              "input",
-              {
-                inputMode: "numeric",
-                "aria-label": "Window start hour",
-                value: draft.startHour,
-                onChange: (e) => set("startHour", Number(e.target.value))
-              }
-            ),
-            " ",
-            "to",
-            " ",
-            /* @__PURE__ */ jsx(
-              "input",
-              {
-                inputMode: "numeric",
-                "aria-label": "Window end hour",
-                value: draft.endHour,
-                onChange: (e) => set("endHour", Number(e.target.value))
-              }
-            ),
-            " ",
-            "\xB7 offset",
-            " ",
-            /* @__PURE__ */ jsx(
-              "input",
-              {
-                inputMode: "numeric",
-                "aria-label": "Window offset minutes",
-                value: draft.offsetMinutes,
-                onChange: (e) => set("offsetMinutes", Number(e.target.value))
-              }
-            ),
-            " ",
-            "min (",
-            offsetLabel(draft.offsetMinutes),
-            ")"
-          ] }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Weekdays only", hint: "Skip Saturday and Sunday.", children: /* @__PURE__ */ jsx(
-            Segmented,
-            {
-              value: Boolean(draft.weekdaysOnly),
-              options: [
-                { value: true, label: "Weekdays" },
-                { value: false, label: "Every day" }
-              ],
-              onChange: (v) => set("weekdaysOnly", v)
-            }
-          ) }),
-          /* @__PURE__ */ jsx(Field, { label: "Daily cap", hint: "Emails a day across every sequence.", children: /* @__PURE__ */ jsx(
-            "input",
-            {
-              inputMode: "numeric",
-              value: draft.dailyCap,
-              title: `At ${draft.perRun} per run the window allows about ${windowRoom(draft)} a day.`,
-              onChange: (e) => set("dailyCap", Number(e.target.value))
-            }
-          ) }),
-          /* @__PURE__ */ jsx(Field, { label: "Per run", hint: "The cron runs every five minutes; up to 200.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.perRun, onChange: (e) => set("perRun", Number(e.target.value)) }) })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Safety" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "The checks that keep the list healthy." }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-form2", children: [
-          /* @__PURE__ */ jsx(
-            Field,
-            {
-              label: "Auto-resume",
-              hint: "A pause the desk caused itself lifts after 7 quiet days, ramping from 20 a day. A pause you set by hand is never undone.",
-              children: /* @__PURE__ */ jsx(
-                Segmented,
-                {
-                  value: Boolean(draft.autoResume),
-                  options: [
-                    { value: true, label: "On" },
-                    { value: false, label: "Off" }
-                  ],
-                  onChange: (v) => set("autoResume", v)
-                }
-              )
-            }
-          ),
-          /* @__PURE__ */ jsx(Field, { label: "Review first emails", hint: "First emails send only after you read them in Review next.", children: /* @__PURE__ */ jsx(
-            Segmented,
-            {
-              value: Boolean(draft.reviewFirst),
-              options: [
-                { value: true, label: "Only reviewed" },
-                { value: false, label: "Send all" }
-              ],
-              onChange: (v) => set("reviewFirst", v)
-            }
-          ) })
-        ] }),
-        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          "Last 14 days: ",
-          overview.health.sent,
-          " sent, ",
-          overview.health.bounces,
-          " bounced (",
-          pct2(overview.health.bounceRate),
-          "), ",
-          overview.health.complaints,
-          " ",
-          "complaints (",
-          pct2(overview.health.complaintRate),
-          "). The desk pauses itself and emails you above ",
-          pct2(overview.health.maxBounceRate),
-          " bounces or",
-          " ",
-          pct2(overview.health.maxComplaintRate),
-          " complaints, before SES would review the account (5% and 0.1%). Every email carries a one-click unsubscribe header."
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Experiment" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "The cold A/B test." }),
-        /* @__PURE__ */ jsx(
-          Field,
-          {
-            label: "Observation sequence share (%)",
-            hint: "Of contacts with a site observation, this percent get the observation opener. 0 keeps the experiment off, 100 makes it the only cold opener.",
-            children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "100", value: draft.obsShare ?? 50, onChange: (e) => set("obsShare", Number(e.target.value)) })
-          }
-        )
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Email look" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "What the HTML version carries." }),
-        /* @__PURE__ */ jsx(Field, { label: "Workshop GIF", hint: "Off sends plain text only; First emails and Every email add the workshop images.", children: /* @__PURE__ */ jsx(
-          Segmented,
-          {
-            value: draft.image ?? "first",
-            options: [
-              { value: "off", label: "Off" },
-              { value: "first", label: "First emails" },
-              { value: "all", label: "Every email" }
-            ],
-            onChange: (v) => set("image", v)
-          }
-        ) })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Posts" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "How written posts reach X and LinkedIn." }),
-        /* @__PURE__ */ jsx(Field, { label: "Approval", hint: "Drafted posts wait for approval or the hold; every post that goes out is also emailed to you.", children: /* @__PURE__ */ jsx(
-          Segmented,
-          {
-            value: Boolean(draft.postApproval),
-            options: [
-              { value: true, label: "Approve each post" },
-              { value: false, label: "Post on schedule" }
-            ],
-            onChange: (v) => set("postApproval", v)
-          }
-        ) }),
-        /* @__PURE__ */ jsx(Field, { label: "Post hold (hours)", hint: "How long a drafted post waits before it goes out on its own. 0 means approve by hand. Up to 168.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "168", value: draft.postHoldHours ?? 24, onChange: (e) => set("postHoldHours", Number(e.target.value)) }) }),
-        /* @__PURE__ */ jsx(Field, { label: "Voice notes", hint: "Added to every content brief after the launch kit.", children: /* @__PURE__ */ jsx(
-          "textarea",
-          {
-            rows: 3,
-            value: draft.voiceNotes ?? "",
-            placeholder: "Shorter sentences. No exclamation marks. Talk about the client's week, not the machine.",
-            onChange: (e) => set("voiceNotes", e.target.value)
-          }
-        ) }),
-        actions
-      ] }),
-      /* @__PURE__ */ jsx("div", { className: "aw-divider" }),
-      /* @__PURE__ */ jsx(ModelHealth, { api }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "The publisher" }),
-        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          "X and LinkedIn have no affordable posting API, so the machine posts from a real browser profile:",
-          /* @__PURE__ */ jsx("span", { className: "aw-mono", children: " marketing/publisher/publish.mjs" }),
-          ". It polls this desk with",
-          " ",
-          /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "MARKETING_TOKEN" }),
-          ", opens the composer with the queued text, and reports back. Keep it launched from this machine \u2014 it uses that browser session, not a password."
-        ] }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Replies to the outreach address are filed here. A reply or \u201Cno\u201D from a contact cancels every queued email for them; strangers are forwarded to your inbox and never added to the list." }),
-        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          "Contacts on file:",
-          " ",
-          Object.values(overview.counts?.contacts ?? {}).reduce((a, b) => a + (b ?? 0), 0).toLocaleString("en-US"),
-          ". Sender: ",
-          overview.sender,
-          ". Inbox: ",
-          overview.inbox,
-          "."
-        ] })
-      ] })
-    ] });
-  }
-  function ImportModal({ api, sequences, onClose, onDone }) {
-    const [csv, setCsv] = useState("");
-    const [file, setFile] = useState(null);
-    const [sequence, setSequence] = useState("none");
-    const [campaign, setCampaign] = useState("launch");
-    const [genericGap, setGenericGap] = useState(false);
-    const [sourceKind, setSourceKind] = useState("");
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState(null);
-    const chosen = sequences.find((s) => s.key === sequence);
-    const needsGap = Boolean(chosen?.needsGap);
-    const pick = async (event) => {
-      const picked = event.target.files?.[0] ?? null;
-      setFile(picked);
-      setCsv(picked ? await picked.text() : "");
-      if (picked) setSourceKind(picked.name.replace(/\.csv$/i, "").toLowerCase().replace(/[^a-z0-9._-]+/g, "-"));
-      if (picked && /mail-only/i.test(picked.name)) setSequence("nosite");
-    };
-    const submit = async () => {
-      setBusy(true);
-      setError(null);
-      try {
-        const result = await api("POST", "/admin/marketing/contacts/import", { csv, sequence, campaign, genericGap, sourceKind });
-        onDone(
-          `${result.added} added${result.queued ? `, ${result.queued} queued (${result.emails} emails)` : ""}${result.paused ? `, ${result.paused} held for a missing observation` : ""}${result.skipped.length ? `, ${result.skipped.length} skipped` : ""}.`
-        );
-      } catch (err) {
-        setError(err.message ?? err.code);
-      } finally {
-        setBusy(false);
-      }
-    };
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: "Import contacts",
-        subtitle: "Upload a CSV. Columns: email, name, business, site, gap, source_url, notes, and optionally source_kind and country (two letters; DE, AT, CH, IT, ES, PL, DK, NO and TR are never mailed cold). The gap is the one specific, true observation the first email opens with.",
-        onClose,
-        wide: true,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !csv.trim(), onClick: submit, children: busy ? "Importing\u2026" : "Import" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "CSV file", hint: "A file with a header row. It is read in the browser and sent as text, so a large export does not have to be pasted.", children: /* @__PURE__ */ jsx("input", { type: "file", accept: ".csv,text/csv", onChange: pick }) }),
-          file ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-            file.name,
-            " \xB7 ",
-            Math.round(file.size / 1024),
-            " KB"
-          ] }) : null,
-          /* @__PURE__ */ jsx(Field, { label: "Sequence", hint: "Choose \u201CImport only\u201D to review the list first; the bulk Queue action can queue everyone later.", children: /* @__PURE__ */ jsxs("select", { value: sequence, onChange: (e) => setSequence(e.target.value), children: [
-            /* @__PURE__ */ jsx("option", { value: "none", children: "Import only \u2014 do not queue yet" }),
-            sequences.map((s) => /* @__PURE__ */ jsx("option", { value: s.key, children: s.label }, s.key))
-          ] }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Campaign", hint: "Kept on every message so a later read can tell batches apart.", children: /* @__PURE__ */ jsx("input", { value: campaign, maxLength: 40, onChange: (e) => setCampaign(e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Source", hint: "Which list this is. Sources shows reply, bounce and complaint rates per source, so you know which kind of list to build more of.", children: /* @__PURE__ */ jsx("input", { value: sourceKind, maxLength: 60, placeholder: "osm-colorado-mail-only", onChange: (e) => setSourceKind(e.target.value) }) }),
-          needsGap ? /* @__PURE__ */ jsx(Field, { label: "Contacts without an observation", hint: "A cold email without one is usually spam. Leave this off to hold them; turn it on to use a general, true opener instead.", children: /* @__PURE__ */ jsxs("label", { className: "aw-inline", children: [
-            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: genericGap, onChange: (e) => setGenericGap(e.target.checked) }),
-            "Use a general opener when the gap is empty"
-          ] }) }) : null,
-          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
-        ]
-      }
-    );
-  }
-  function ContactModal({ api, contact, sequences, onClose, onSaved }) {
-    const editing = Boolean(contact);
-    const [form, setForm] = useState({
-      email: contact?.email ?? "",
-      name: contact?.name ?? "",
-      business: contact?.business ?? "",
-      site: contact?.site ?? "",
-      gap: contact?.gap ?? "",
-      notes: contact?.notes ?? ""
-    });
-    const [queue, setQueue] = useState(!editing);
-    const [sequence, setSequence] = useState("cold_a");
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState(null);
-    const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
-    const submit = async () => {
-      setBusy(true);
-      setError(null);
-      try {
-        if (editing) {
-          const patch = Object.fromEntries(Object.entries(form).filter(([key, value]) => value !== (contact[key] ?? "")));
-          await api("PATCH", `/admin/marketing/contacts/${contact.id}`, patch);
-          onSaved(`${contact.email} saved.`);
-        } else {
-          const out = await api("POST", "/admin/marketing/contacts", { ...form, sequence: queue ? sequence : void 0 });
-          onSaved(`${out.contact.email} added${queue ? " and queued" : ""}.`);
-        }
-      } catch (err) {
-        setError(err.message ?? err.code);
-        setBusy(false);
-      }
-    };
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: editing ? contact.email : "Add a contact",
-        subtitle: editing ? "The gap is what the cold email opens with; leave it blank and the sequence will not queue." : "Only someone you chose to write to. There is no list building in here.",
-        onClose,
-        wide: true,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !form.email.trim(), onClick: submit, children: editing ? "Save" : "Add" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
-            /* @__PURE__ */ jsx(Field, { label: "Email", children: /* @__PURE__ */ jsx("input", { value: form.email, disabled: editing, onChange: (e) => set("email", e.target.value) }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Name", children: /* @__PURE__ */ jsx("input", { value: form.name, onChange: (e) => set("name", e.target.value) }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Business", children: /* @__PURE__ */ jsx("input", { value: form.business, onChange: (e) => set("business", e.target.value) }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Site", children: /* @__PURE__ */ jsx("input", { value: form.site, onChange: (e) => set("site", e.target.value) }) })
-          ] }),
-          /* @__PURE__ */ jsx(Field, { label: "The gap", hint: "One specific, true observation. If it is not true, the whole email is spam.", children: /* @__PURE__ */ jsx("textarea", { rows: 3, value: form.gap, onChange: (e) => set("gap", e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Notes", children: /* @__PURE__ */ jsx("textarea", { rows: 2, value: form.notes, onChange: (e) => set("notes", e.target.value) }) }),
-          !editing ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx(Field, { label: "Queue now", children: /* @__PURE__ */ jsx(
-              Segmented,
-              {
-                value: queue,
-                options: [
-                  { value: true, label: "Queue a sequence" },
-                  { value: false, label: "Keep as a contact" }
-                ],
-                onChange: setQueue
-              }
-            ) }),
-            queue ? /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx(Segmented, { value: sequence, options: sequences.map((s) => ({ value: s.key, label: s.label })), onChange: setSequence }) }) : null
-          ] }) : null,
-          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
-        ]
-      }
-    );
-  }
-  function QueueModal({ api, contact, sequences, onClose, onQueued }) {
-    const [sequence, setSequence] = useState("cold_a");
-    const [genericGap, setGenericGap] = useState(false);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState(null);
-    const chosen = sequences.find((s) => s.key === sequence);
-    const submit = async () => {
-      setBusy(true);
-      try {
-        const out = await api("POST", `/admin/marketing/contacts/${contact.id}/queue`, { sequence, genericGap });
-        onQueued(out.queued);
-      } catch (err) {
-        setError(err.message ?? err.code);
-        setBusy(false);
-      }
-    };
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: `Queue for ${contact.email}`,
-        subtitle: "Three emails, days 0, 4 and 10. A reply or \u201Cno\u201D cancels the rest.",
-        onClose,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy, onClick: submit, children: "Queue" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx(Segmented, { value: sequence, options: sequences.map((s) => ({ value: s.key, label: s.label })), onChange: setSequence }) }),
-          chosen?.needsGap && !contact.gap ? /* @__PURE__ */ jsx(Field, { label: "No observation on this contact", hint: "A cold email without one is usually spam.", children: /* @__PURE__ */ jsxs("label", { className: "aw-inline", children: [
-            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: genericGap, onChange: (e) => setGenericGap(e.target.checked) }),
-            "Queue with a general opener"
-          ] }) }) : null,
-          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
-        ]
-      }
-    );
-  }
-  function BulkQueueModal({ api, sequences, onClose, onDone }) {
-    const [sequence, setSequence] = useState("cold_a");
-    const [campaign, setCampaign] = useState("launch");
-    const [genericGap, setGenericGap] = useState(false);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState(null);
-    const chosen = sequences.find((s) => s.key === sequence);
-    const submit = async () => {
-      setBusy(true);
-      setError(null);
-      try {
-        const result = await api("POST", "/admin/marketing/contacts/queue", { sequence, campaign, genericGap });
-        onDone(
-          `${result.queued} contacts queued (${result.emails} emails)${result.skippedNoGap ? `, ${result.skippedNoGap} skipped without an observation` : ""}.`
-        );
-      } catch (err) {
-        setError(err.message ?? err.code);
-        setBusy(false);
-      }
-    };
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: "Queue everyone",
-        subtitle: "Every new or paused contact without mail already queued. Contacts with an observation are queued; the rest are skipped unless you choose the general opener.",
-        onClose,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy, onClick: submit, children: busy ? "Queueing\u2026" : "Queue everyone" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Sequence", children: /* @__PURE__ */ jsx("select", { value: sequence, onChange: (e) => setSequence(e.target.value), children: sequences.map((s) => /* @__PURE__ */ jsx("option", { value: s.key, children: s.label }, s.key)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Campaign", children: /* @__PURE__ */ jsx("input", { value: campaign, maxLength: 40, onChange: (e) => setCampaign(e.target.value) }) }),
-          chosen?.needsGap ? /* @__PURE__ */ jsx(Field, { label: "Contacts without an observation", hint: "Leave this off to skip them; turn it on to use a general, true opener.", children: /* @__PURE__ */ jsxs("label", { className: "aw-inline", children: [
-            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: genericGap, onChange: (e) => setGenericGap(e.target.checked) }),
-            "Queue them anyway with a general opener"
-          ] }) }) : null,
-          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
-        ]
-      }
-    );
-  }
-  function EditPostModal({ api, message, onClose, onSaved }) {
-    const [body, setBody] = useState(message.body);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState(null);
-    const max = POST_MAX[message.channel] ?? 3e3;
-    const submit = async () => {
-      setBusy(true);
-      setError(null);
-      try {
-        await api("PATCH", `/admin/marketing/messages/${message.id}`, { body });
-        onSaved("Post saved.");
-      } catch (err) {
-        setError(err.message ?? err.code);
-        setBusy(false);
-      }
-    };
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: `Edit ${message.channel === "x" ? "X" : "LinkedIn"} post`,
-        subtitle: message.scheduledAt ? `Slot ${when(message.scheduledAt)}. Editing keeps the slot and the approval state.` : void 0,
-        onClose,
-        wide: true,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !body.trim() || body.length > max, onClick: submit, children: "Save" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Text", hint: `${body.length}/${max} characters. No em dashes, no stock AI phrasing: marketing/style/README.md.`, children: /* @__PURE__ */ jsx("textarea", { rows: message.channel === "x" ? 5 : 14, value: body, onChange: (e) => setBody(e.target.value) }) }),
-          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
-        ]
-      }
-    );
-  }
-  function ComposeModal({ api, contacts, initialChannel = "x", onClose, onSaved }) {
-    const [channel, setChannel] = useState(initialChannel);
-    const [contactId, setContactId] = useState("");
-    const [subject, setSubject] = useState("");
-    const [body, setBody] = useState("");
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState(null);
-    const submit = async (queueNow) => {
-      setBusy(true);
-      setError(null);
-      try {
-        const out = await api("POST", "/admin/marketing/messages", {
-          channel,
-          contactId: channel === "email" ? Number(contactId) : void 0,
-          subject: channel === "email" ? subject : void 0,
-          body
-        });
-        if (queueNow) await api("POST", `/admin/marketing/messages/${out.message.id}/send`);
-        onSaved(queueNow ? channel === "email" ? "Sent." : "Queued for the publisher." : "Saved as a draft.");
-      } catch (err) {
-        setError(err.message ?? err.code);
-        setBusy(false);
-      }
-    };
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: "Compose",
-        subtitle: channel === "email" ? "One-off email to a contact. The footer and opt-out line are added when it sends." : "A post for the local publisher. It posts from your own X or LinkedIn session.",
-        onClose,
-        wide: true,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { disabled: busy || !body.trim(), onClick: () => submit(false), children: "Save draft" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !body.trim(), onClick: () => submit(true), children: channel === "email" ? "Send now" : "Queue now" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Channel", children: /* @__PURE__ */ jsx(Segmented, { value: channel, options: CHANNELS.filter((c) => c.value).map((c) => ({ value: c.value, label: c.label })), onChange: setChannel }) }),
-          channel === "email" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx(Field, { label: "Contact", children: /* @__PURE__ */ jsxs("select", { value: contactId, onChange: (e) => setContactId(e.target.value), children: [
-              /* @__PURE__ */ jsx("option", { value: "", children: "Pick a contact\u2026" }),
-              contacts.map((c) => /* @__PURE__ */ jsxs("option", { value: c.id, children: [
-                c.email,
-                c.business ? ` \u2014 ${c.business}` : ""
-              ] }, c.id))
-            ] }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Subject", children: /* @__PURE__ */ jsx("input", { value: subject, maxLength: 200, onChange: (e) => setSubject(e.target.value) }) })
-          ] }) : null,
-          /* @__PURE__ */ jsx(Field, { label: "Text", hint: "X allows 280 characters; LinkedIn a little over 3,000.", children: /* @__PURE__ */ jsx("textarea", { rows: 10, value: body, maxLength: 2e4, onChange: (e) => setBody(e.target.value) }) }),
-          channel !== "email" ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Drafts do not reach the publisher until you queue them." }) : null,
-          error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: error }) : null
-        ]
-      }
-    );
-  }
-
-  // packages/admin-ui/src/seo.jsx
-  var DAY = 864e5;
-  var SEVERITY_TONE = { high: "bad", medium: "warn", low: "dash" };
-  var SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
-  var CITATION_STATUSES = ["todo", "drafted", "live", "verified", "skipped"];
-  var CITATION_RANK = { todo: 0, drafted: 1, live: 2, verified: 3, skipped: 4 };
-  var EVENT_KINDS = [
-    { value: "core_update", label: "Core update" },
-    { value: "algorithm_update", label: "Algorithm update" },
-    { value: "fix", label: "Fix" },
-    { value: "note", label: "Note" }
-  ];
-  var EVENT_TONE = { core_update: "warn", algorithm_update: "warn", fix: "ok", note: "dash", guide: "ok", indexnow: "dash" };
-  var EVENT_LABEL2 = {
-    core_update: "core update",
-    algorithm_update: "algorithm update",
-    fix: "fix",
-    note: "note",
-    guide: "guide",
-    indexnow: "IndexNow"
-  };
-  var CYCLE_REASON = {
-    auto_off: "automatic cycles are off",
-    open_cycle: "a cycle ticket is already open",
-    no_findings: "there are no open findings at medium or above",
-    recent_cycle: "a cycle was filed in the last day",
-    no_project: "the ptechsolutions project is missing",
-    no_admin: "there is no admin account to file it for",
-    insert_failed: "the ticket could not be written"
-  };
-  var GUIDE_REASON = {
-    auto_off: "automatic guide cycles are off; force still files one",
-    open_cycle: "a guide ticket is already open",
-    weekly_cap: "this week\u2019s guide cycles are used up",
-    recent_cycle: "a guide cycle was filed in the last two days",
-    all_covered: "every target already has a guide or a fresh attempt",
-    no_project: "the ptechsolutions project is missing",
-    no_admin: "there is no admin account to file it for",
-    insert_failed: "the ticket could not be written"
-  };
-  var RUN_LABEL = { audit: "Run audit", geo: "Run GEO probe", citations: "Check citations", ranks: "Check rankings now", cycle: "Run cycle now" };
-  var plural2 = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  var OUR_DOMAINS = ["malipetek.dev", "ptechsolutions.net"];
-  var isOurDomain = (domain) => OUR_DOMAINS.some((host) => domain === host || domain.endsWith(`.${host}`));
-  var pct3 = (rate) => `${Math.round((rate ?? 0) * 100)}%`;
-  var dayNumber = (day) => {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day ?? "");
-    return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / DAY : NaN;
-  };
-  var dayOfNumber = (n) => new Date(n * DAY).toISOString().slice(0, 10);
-  var shortDay2 = (day) => {
-    const n = dayNumber(day);
-    if (!Number.isFinite(n)) return day ?? "";
-    return new Date(n * DAY).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-  };
-  var longDay = (day) => {
-    const n = dayNumber(day);
-    if (!Number.isFinite(n)) return day ?? "";
-    return new Date(n * DAY).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-  };
-  var instantDay = (unix) => unix ? new Date(unix * 1e3).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "-";
-  var scoreTone = (score) => score >= 90 ? "ok" : score >= 70 ? "warn" : "bad";
-  var positionTone = (position) => position === null || position === void 0 ? "dash" : position <= 10 ? "ok" : position <= 30 ? "warn" : "dash";
-  var swingTone = (swing) => swing === null || swing === void 0 ? "dash" : swing >= 8 ? "bad" : swing >= 3 ? "warn" : "ok";
-  var swingText = (swing) => swing === null || swing === void 0 ? "no swing yet" : `\xB1${swing} position${swing === 1 ? "" : "s"} week over week`;
-  var errorText2 = (error) => error?.message ?? error?.code ?? "Something went wrong.";
-  function TicketLink({ id, openTicket }) {
-    if (!id) return /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "-" });
-    return /* @__PURE__ */ jsxs(
-      "a",
-      {
-        href: `#ticket=${id}`,
-        className: "aw-link",
-        onClick: (event) => {
-          event.preventDefault();
-          openTicket?.(id);
-        },
-        children: [
-          "#",
-          id
-        ]
-      }
-    );
-  }
-  function SeoView() {
-    const { api, openTicket, notify } = useAdmin();
-    const [overview, setOverview] = useState(null);
-    const [error, setError] = useState(null);
-    const [tab, setTab] = useState("overview");
-    const [tick, setTick] = useState(0);
-    const load = useCallback(
-      () => api("GET", "/admin/seo/overview").then((data) => {
-        setOverview(data);
-        setError(null);
-      }).catch(setError),
-      [api]
-    );
-    useEffect(() => {
-      void load();
-    }, [load]);
-    usePoll(load, 6e4, [load]);
-    const refresh = useCallback(() => {
-      setTick((n) => n + 1);
-      return load();
-    }, [load]);
-    if (error && !overview) return /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
-      "Could not load the SEO desk: ",
-      errorText2(error)
-    ] });
-    if (!overview) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading\u2026" });
-    const hosts = overview.hostsAvailable ?? overview.hosts.map((h) => h.host);
-    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-seo", children: [
-      /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
-        /* @__PURE__ */ jsx("h2", { children: "SEO" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Our own host, checked daily. Scores, open fixes, the questions buyers ask assistants, and the profiles that link back." }),
-        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          "Last audit ",
-          overview.state?.lastAuditAt ? `${ago(overview.state.lastAuditAt)} ago` : "not yet",
-          " \xB7 last GEO probe",
-          " ",
-          overview.state?.lastGeoAt ? `${ago(overview.state.lastGeoAt)} ago` : "not yet",
-          " \xB7 last citation check",
-          " ",
-          overview.state?.lastCitationsAt ? `${ago(overview.state.lastCitationsAt)} ago` : "not yet",
-          " \xB7 last rank check",
-          " ",
-          overview.state?.lastRanksAt ? `${ago(overview.state.lastRanksAt)} ago` : "not yet"
-        ] })
-      ] }),
-      error && overview ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--bad", children: [
-        "Could not refresh: ",
-        errorText2(error)
-      ] }) : null,
-      /* @__PURE__ */ jsx("div", { className: "aw-toolbar", children: /* @__PURE__ */ jsx(
-        Segmented,
-        {
-          value: tab,
-          options: [
-            { value: "overview", label: "Overview" },
-            { value: "pages", label: "Pages" },
-            { value: "findings", label: `Findings (${overview.hosts.reduce((sum, h) => sum + h.findings.open, 0)})` },
-            { value: "geo", label: "GEO" },
-            { value: "ranks", label: "Rankings" },
-            { value: "citations", label: "Citations" },
-            { value: "settings", label: "Settings" }
-          ],
-          onChange: setTab
-        }
-      ) }),
-      tab === "overview" ? /* @__PURE__ */ jsx(OverviewTab2, { overview, api, refresh, openTicket }) : null,
-      tab === "pages" ? /* @__PURE__ */ jsx(PagesTab, { api, hosts, tick }) : null,
-      tab === "findings" ? /* @__PURE__ */ jsx(FindingsTab, { api, hosts, tick, openTicket, refresh }) : null,
-      tab === "geo" ? /* @__PURE__ */ jsx(GeoTab, { api, tick }) : null,
-      tab === "ranks" ? /* @__PURE__ */ jsx(RankingsTab, { api, overview, refresh, tick }) : null,
-      tab === "citations" ? /* @__PURE__ */ jsx(CitationsTab, { api, tick, notify }) : null,
-      tab === "settings" ? /* @__PURE__ */ jsx(SettingsTab2, { api, overview, refresh, notify }) : null
-    ] });
-  }
-  function runText(result) {
-    if (!result || typeof result !== "object") return "Done.";
-    if (result.what === "audit") {
-      const hosts = result.hosts ?? [];
-      if (!hosts.length) return "The audit ran but no host answered.";
-      return hosts.map((h) => `${h.host}: ${h.pages ?? 0} pages, average ${h.averageScore ?? 0}, ${h.opened ?? 0} opened, ${h.resolved ?? 0} resolved`).join(". ").concat(".");
-    }
-    if (result.what === "geo") {
-      if (result.skipped === "no_key") return "Skipped: the Worker has no DEEPSEEK_API_KEY.";
-      return `Asked ${result.questions ?? 0} questions, kept ${result.runs ?? 0} answers, ${result.mentions ?? 0} named us.`;
-    }
-    if (result.what === "citations") {
-      return `Checked ${result.checked ?? 0} profiles: ${result.verified ?? 0} verified, ${result.dropped ?? 0} dropped.`;
-    }
-    if (result.what === "ranks") {
-      if (result.skipped === "no_key") return "Skipped: the Worker has no DATAFORSEO_API_KEY.";
-      if (result.skipped === "no_keywords") return "No keywords tracked. Add some in Settings first.";
-      if (result.skipped === "api_failed") return "DataForSEO did not answer; nothing was queued or charged.";
-      if (result.posted) {
-        return `Queued ${plural2(result.posted, "keyword", "keywords")} on the standard queue (~$${(result.cost ?? 0).toFixed(4)}). Results land on later cron ticks.`;
-      }
-      return `Collected ${plural2(result.collected ?? 0, "keyword", "keywords")}; ${result.pending ?? 0} still queued.`;
-    }
-    if (result.what === "cycle") {
-      if (result.filed) return `Filed #${result.id}. An agent takes the worst findings next.`;
-      const reason = CYCLE_REASON[result.reason] ?? result.reason ?? "unknown reason";
-      return `Nothing filed: ${reason}${result.id ? ` (#${result.id})` : ""}.`;
-    }
-    return "Done.";
-  }
-  function guideCycleText(result) {
-    if (!result || typeof result !== "object") return "Done.";
-    if (result.filed) return `Filed #${result.id}: an agent writes the guide and the desk merges it.`;
-    const reason = GUIDE_REASON[result.reason] ?? result.reason ?? "unknown reason";
-    return `Nothing filed: ${reason}${result.id ? ` (#${result.id})` : ""}.`;
-  }
-  function OverviewTab2({ overview, api, refresh, openTicket }) {
-    const [busy, setBusy] = useState(null);
-    const [result, setResult] = useState(null);
-    const [guideBusy, setGuideBusy] = useState(false);
-    const held = overview.cycle?.held;
-    const run = async (what) => {
-      setBusy(what);
-      setResult(null);
-      try {
-        const out = await api("POST", "/admin/seo/run", { what });
-        setResult({ ok: true, text: runText(out) });
-        await refresh();
-      } catch (error) {
-        setResult({ ok: false, text: errorText2(error) });
-      } finally {
-        setBusy(null);
-      }
-    };
-    const writeGuide = async () => {
-      setGuideBusy(true);
-      setResult(null);
-      try {
-        const out = await api("POST", "/admin/seo/guide-cycle?force=1");
-        setResult({ ok: true, text: guideCycleText(out) });
-        await refresh();
-      } catch (error) {
-        setResult({ ok: false, text: errorText2(error) });
-      } finally {
-        setGuideBusy(false);
-      }
-    };
-    const coverage = overview.coverage ?? [];
-    const covered = coverage.filter((entry) => entry.guide).length;
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      held?.held ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
-        "Google core update in progress: content rewrites paused until ",
-        longDay(held.until),
-        ".",
-        held.since ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-          " Started ",
-          longDay(held.since),
-          "."
-        ] }) : null
-      ] }) : null,
-      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
-        ["audit", "geo", "citations", "cycle"].map((what) => /* @__PURE__ */ jsx(Button, { kind: what === "audit" ? "primary" : "default", disabled: Boolean(busy), onClick: () => run(what), children: busy === what ? "Running\u2026" : RUN_LABEL[what] }, what)),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsxs(Tag, { tone: overview.settings?.autoCycle ? "ok" : "dash", children: [
-          "auto cycle ",
-          overview.settings?.autoCycle ? "on" : "off"
-        ] }),
-        /* @__PURE__ */ jsx(Tag, { tone: held?.held ? "warn" : "dash", children: held?.held ? "held" : "not held" })
-      ] }),
-      result ? /* @__PURE__ */ jsx("div", { className: cx("aw-banner", result.ok ? "aw-banner--ok" : "aw-banner--bad"), role: "status", children: result.text }) : null,
-      /* @__PURE__ */ jsx("div", { className: "aw-grid2", children: overview.hosts.map((host) => /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsxs("header", { children: [
-          /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: host.host }),
-          /* @__PURE__ */ jsxs(Tag, { tone: scoreTone(host.averageScore), children: [
-            host.averageScore,
-            " average"
-          ] }),
-          /* @__PURE__ */ jsx(Tag, { tone: "dash", children: plural2(host.pages, "page", "pages") }),
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: host.day ? shortDay2(host.day) : "no audit yet" })
-        ] }),
-        /* @__PURE__ */ jsx(ScoreChart, { series: host.series ?? [], events: overview.events ?? [], today: overview.day }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-tags", style: { marginTop: 8 }, children: [
-          /* @__PURE__ */ jsxs(Tag, { tone: host.findings.high ? "bad" : "dash", children: [
-            host.findings.high,
-            " high"
-          ] }),
-          /* @__PURE__ */ jsxs(Tag, { tone: host.findings.medium ? "warn" : "dash", children: [
-            host.findings.medium,
-            " medium"
-          ] }),
-          /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-            host.findings.low,
-            " low"
-          ] }),
-          /* @__PURE__ */ jsxs(Tag, { tone: host.findings.open ? "warn" : "ok", children: [
-            host.findings.open,
-            " open"
-          ] })
-        ] })
-      ] }, host.host)) }),
-      /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
-        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-          /* @__PURE__ */ jsxs("header", { children: [
-            /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: "Assistant mentions" }),
-            /* @__PURE__ */ jsxs(Tag, { tone: overview.geo.rate ? "ok" : "dash", children: [
-              pct3(overview.geo.rate),
-              " overall"
-            ] }),
-            /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-            /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-              plural2(overview.geo.mentions, "mention", "mentions"),
-              " in ",
-              plural2(overview.geo.runs, "answer", "answers")
-            ] })
-          ] }),
-          /* @__PURE__ */ jsx(GeoChart, { weeks: overview.geo.weeks ?? [] })
-        ] }),
-        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-          /* @__PURE__ */ jsx("h3", { children: "Citations" }),
-          /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
-            /* @__PURE__ */ jsxs(Tag, { tone: overview.citations.todo ? "warn" : "dash", children: [
-              overview.citations.todo,
-              " to do"
-            ] }),
-            /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-              overview.citations.drafted,
-              " drafted"
-            ] }),
-            /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-              overview.citations.live,
-              " live"
-            ] }),
-            /* @__PURE__ */ jsxs(Tag, { tone: overview.citations.verified ? "ok" : "dash", children: [
-              overview.citations.verified,
-              " verified"
-            ] }),
-            /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-              overview.citations.skipped,
-              " skipped"
-            ] })
-          ] }),
-          /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Profile and directory placements that can link back. A weekly check keeps the verified ones honest." })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsxs("header", { children: [
-          /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: "Google rankings" }),
-          /* @__PURE__ */ jsx(Tag, { tone: overview.rank?.rankReady ? "ok" : "bad", children: overview.rank?.rankReady ? "tracking on" : "no API key" }),
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: overview.rank?.latestDay ? `checked ${shortDay2(overview.rank.latestDay)}` : "not checked yet" })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
-          /* @__PURE__ */ jsx(Tag, { tone: overview.rank?.avgPosition === null || overview.rank?.avgPosition === void 0 ? "dash" : overview.rank.avgPosition <= 20 ? "ok" : "warn", children: overview.rank?.avgPosition === null || overview.rank?.avgPosition === void 0 ? "no average yet" : `${overview.rank.avgPosition} average position` }),
-          /* @__PURE__ */ jsxs(Tag, { tone: overview.rank?.inTop10 ? "ok" : "dash", children: [
-            overview.rank?.inTop10 ?? 0,
-            " in the top 10"
-          ] }),
-          /* @__PURE__ */ jsxs(Tag, { tone: overview.rank?.inTop100 ? "dash" : "warn", children: [
-            overview.rank?.inTop100 ?? 0,
-            " in the top 100"
-          ] }),
-          /* @__PURE__ */ jsx(Tag, { tone: swingTone(overview.rank?.swing), children: swingText(overview.rank?.swing) }),
-          /* @__PURE__ */ jsx(Tag, { tone: "dash", children: plural2(overview.rank?.keywords ?? 0, "keyword", "keywords") }),
-          overview.rank?.pending ? /* @__PURE__ */ jsxs(Tag, { tone: "warn", children: [
-            plural2(overview.rank.pending, "task", "tasks"),
-            " queued"
-          ] }) : null
-        ] }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { marginBottom: 0 }, children: overview.rank?.rankReady ? "Weekly Google positions for the keywords we sell against, read against core updates." : "Add the DATAFORSEO_API_KEY secret to the intercom Worker to turn rank tracking on." })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Fix cycle" }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
-          /* @__PURE__ */ jsxs(Tag, { tone: overview.cycle.auto ? "ok" : "dash", children: [
-            "auto ",
-            overview.cycle.auto ? "on" : "off"
-          ] }),
-          /* @__PURE__ */ jsxs(Tag, { tone: overview.cycle.openFindings ? "warn" : "ok", children: [
-            plural2(overview.cycle.openFindings, "open finding", "open findings"),
-            " at medium or above"
-          ] }),
-          /* @__PURE__ */ jsx(Tag, { tone: overview.cycle.wouldFile ? "warn" : "dash", children: overview.cycle.wouldFile ? "a cycle would file now" : "no cycle due" })
-        ] }),
-        /* @__PURE__ */ jsxs("p", { children: [
-          "Open ticket:",
-          " ",
-          overview.cycle.openTicketId ? /* @__PURE__ */ jsx(TicketLink, { id: overview.cycle.openTicketId, openTicket }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "none" }),
-          held?.held ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-            " \xB7 rewrites pause until ",
-            longDay(held.until)
-          ] }) : null
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsxs("header", { children: [
-          /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: "Guide coverage" }),
-          /* @__PURE__ */ jsxs(Tag, { tone: coverage.length && covered === coverage.length ? "ok" : "warn", children: [
-            covered,
-            " of ",
-            coverage.length,
-            " targets have a page"
-          ] }),
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: guideBusy, onClick: writeGuide, children: guideBusy ? "Filing\u2026" : "Write a guide now" })
-        ] }),
-        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          "Every rank keyword and buyer question gets a guide on ptechsolutions.net.",
-          " ",
-          overview.guidesAt ? `guides.json was read ${ago(overview.guidesAt)} ago.` : "The site has not been read for guides yet."
-        ] }),
-        coverage.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: coverage.map((entry) => /* @__PURE__ */ jsxs("li", { className: "aw-row", style: { cursor: "default" }, children: [
-          /* @__PURE__ */ jsx(Tag, { tone: entry.kind === "keyword" ? "dash" : "warn", children: entry.kind }),
-          /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: entry.target }),
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          entry.guide ? /* @__PURE__ */ jsx("a", { href: entry.guide.url, target: "_blank", rel: "noreferrer", children: entry.guide.title }) : entry.inProgress ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-            "writing ",
-            /* @__PURE__ */ jsx(TicketLink, { id: entry.inProgress, openTicket })
-          ] }) : entry.lastAttemptAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-            "attempted ",
-            instantDay(entry.lastAttemptAt)
-          ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "No page yet" })
-        ] }, `${entry.kind}:${entry.target}`)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No targets yet: add rank keywords or buyer questions in Settings." })
-      ] })
-    ] });
-  }
-  function ScoreChart({ series, events, today }) {
-    const end = today ?? series.at(-1)?.day;
-    const endNumber = dayNumber(end);
-    if (!series.length || !Number.isFinite(endNumber)) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No audit series yet." });
-    const width = 560;
-    const height = 170;
-    const left = 30;
-    const right = 8;
-    const top = 10;
-    const bottom = 24;
-    const innerW = width - left - right;
-    const innerH = height - top - bottom;
-    const start = endNumber - 29;
-    const xOf = (n) => left + (n - start) / 29 * innerW;
-    const yOf = (score) => top + (1 - Math.max(0, Math.min(100, score)) / 100) * innerH;
-    const points = series.map((point) => ({ ...point, n: dayNumber(point.day) })).filter((point) => Number.isFinite(point.n) && point.n >= start && point.n <= endNumber).sort((a, b) => a.n - b.n);
-    const path = points.map((point, index) => `${index ? "L" : "M"}${xOf(point.n).toFixed(1)},${yOf(point.averageScore).toFixed(1)}`).join(" ");
-    const marks = (events ?? []).map((event) => ({ ...event, n: dayNumber(event.day) })).filter((event) => Number.isFinite(event.n) && event.n >= start && event.n <= endNumber);
-    const markColour = (kind) => kind === "fix" || kind === "guide" ? "var(--aw-ok)" : kind === "note" || kind === "indexnow" ? "var(--aw-text2)" : "var(--aw-warn)";
-    return /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart", children: [
-      /* @__PURE__ */ jsxs("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Average score, last 30 days", children: [
-        [0, 50, 100].map((value) => /* @__PURE__ */ jsxs("g", { children: [
-          /* @__PURE__ */ jsx("line", { x1: left, x2: width - right, y1: yOf(value), y2: yOf(value), stroke: "var(--aw-border)", strokeWidth: "1" }),
-          /* @__PURE__ */ jsx("text", { x: left - 5, y: yOf(value) + 3, textAnchor: "end", fontSize: "9", fill: "var(--aw-text2)", children: value })
-        ] }, value)),
-        [0, 7, 14, 21, 29].map((offset) => {
-          const n = start + offset;
-          return /* @__PURE__ */ jsx("text", { x: xOf(n), y: height - 6, textAnchor: offset === 0 ? "start" : offset === 29 ? "end" : "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay2(dayOfNumber(n)) }, offset);
-        }),
-        marks.map((event) => /* @__PURE__ */ jsxs("g", { children: [
-          /* @__PURE__ */ jsx("title", { children: `${event.label} (${EVENT_LABEL2[event.kind] ?? event.kind}) on ${longDay(event.day)}` }),
-          /* @__PURE__ */ jsx("line", { x1: xOf(event.n), x2: xOf(event.n), y1: top, y2: height - bottom, stroke: markColour(event.kind), strokeWidth: "1", strokeDasharray: "3 3", opacity: "0.65" }),
-          /* @__PURE__ */ jsx("circle", { cx: xOf(event.n), cy: height - bottom - 4, r: "3", fill: markColour(event.kind) })
-        ] }, event.id)),
-        path ? /* @__PURE__ */ jsx("path", { d: path, fill: "none", stroke: "var(--aw-accent)", strokeWidth: "2", strokeLinejoin: "round", strokeLinecap: "round" }) : null,
-        points.map((point) => /* @__PURE__ */ jsx("circle", { cx: xOf(point.n), cy: yOf(point.averageScore), r: "2.6", fill: "var(--aw-accent)", children: /* @__PURE__ */ jsx("title", { children: `${longDay(point.day)}: ${point.averageScore} average over ${point.pages} pages` }) }, point.day))
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart__legend", children: [
-        /* @__PURE__ */ jsxs("span", { children: [
-          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot", style: { background: "var(--aw-accent)" } }),
-          " score"
-        ] }),
-        /* @__PURE__ */ jsxs("span", { children: [
-          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot", style: { background: "var(--aw-warn)" } }),
-          " core or algorithm update"
-        ] }),
-        /* @__PURE__ */ jsxs("span", { children: [
-          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot", style: { background: "var(--aw-ok)" } }),
-          " our fix"
-        ] })
-      ] })
-    ] });
-  }
-  function GeoChart({ weeks }) {
-    if (!weeks.length) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No probe answers yet. Run the GEO probe after the next audit." });
-    const width = 520;
-    const height = 150;
-    const left = 12;
-    const right = 12;
-    const top = 10;
-    const bottom = 24;
-    const innerW = width - left - right;
-    const innerH = height - top - bottom;
-    const gap = 5;
-    const barW = Math.max(6, (innerW - gap * (weeks.length - 1)) / weeks.length);
-    return /* @__PURE__ */ jsx("div", { className: "aw-seo-chart", children: /* @__PURE__ */ jsxs("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Mention rate per week, last 12 weeks", children: [
-      /* @__PURE__ */ jsx("line", { x1: left, x2: width - right, y1: top + innerH, y2: top + innerH, stroke: "var(--aw-border2)", strokeWidth: "1" }),
-      [0, 0.5, 1].map((value) => /* @__PURE__ */ jsx("line", { x1: left, x2: width - right, y1: top + innerH * (1 - value), y2: top + innerH * (1 - value), stroke: "var(--aw-border)", strokeWidth: "1", strokeDasharray: "2 4" }, value)),
-      weeks.map((week, index) => {
-        const x = left + index * (barW + gap);
-        const barH = Math.max(1, innerH * Math.max(0, Math.min(1, week.rate ?? 0)));
-        return /* @__PURE__ */ jsxs("g", { children: [
-          /* @__PURE__ */ jsx("title", { children: `Week of ${longDay(week.week)}: ${week.mentions} of ${week.runs} answers named us (${pct3(week.rate)})` }),
-          /* @__PURE__ */ jsx("rect", { x, y: top + innerH - barH, width: barW, height: barH, rx: "2", fill: "var(--aw-accent)", opacity: week.runs ? 0.85 : 0.25 }),
-          index % 3 === 0 || index === weeks.length - 1 ? /* @__PURE__ */ jsx("text", { x: x + barW / 2, y: height - 6, textAnchor: "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay2(week.week) }) : null
-        ] }, week.week);
-      }),
-      /* @__PURE__ */ jsx("text", { x: left, y: top - 1, fontSize: "9", fill: "var(--aw-text2)", children: "100%" }),
-      /* @__PURE__ */ jsx("text", { x: left, y: top + innerH + 9, fontSize: "9", fill: "var(--aw-text2)", children: "0%" })
-    ] }) });
-  }
-  function RankingsTab({ api, overview, refresh, tick }) {
-    const [data, setData] = useState(null);
-    const [error, setError] = useState(null);
-    const [busy, setBusy] = useState(false);
-    const [result, setResult] = useState(null);
-    const [expanded, setExpanded] = useState(null);
-    const load = useCallback(
-      () => api("GET", "/admin/seo/ranks").then((out) => {
-        setData(out);
-        setError(null);
-      }).catch(setError),
-      [api]
-    );
-    useEffect(() => {
-      void load();
-    }, [load, tick]);
-    const check = async () => {
-      setBusy(true);
-      setResult(null);
-      try {
-        const out = await api("POST", "/admin/seo/run", { what: "ranks" });
-        setResult({ ok: true, text: runText(out) });
-        await load();
-        await refresh();
-      } catch (err) {
-        setResult({ ok: false, text: errorText2(err) });
-      } finally {
-        setBusy(false);
-      }
-    };
-    if (error && !data) return /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
-      "Could not load rankings: ",
-      errorText2(error)
-    ] });
-    if (!data) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading rankings\u2026" });
-    const rows = data.rows ?? [];
-    const location = data.location ?? { locationCode: 2840, languageCode: "en" };
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      !data.rankReady ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
-        "Rank tracking is off. Add the DATAFORSEO_API_KEY secret to the intercom Worker (",
-        /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "npx wrangler secret put DATAFORSEO_API_KEY" }),
-        ", run in ",
-        /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "worker/" }),
-        ") and the weekly check starts on the next cron tick."
-      ] }) : null,
-      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
-        /* @__PURE__ */ jsx(Tag, { tone: data.avgPosition === null ? "dash" : data.avgPosition <= 20 ? "ok" : "warn", children: data.avgPosition === null ? "no average yet" : `${data.avgPosition} average position` }),
-        /* @__PURE__ */ jsxs(Tag, { tone: data.inTop10 ? "ok" : "dash", children: [
-          data.inTop10 ?? 0,
-          " in the top 10"
-        ] }),
-        /* @__PURE__ */ jsxs(Tag, { tone: data.inTop100 ? "dash" : "warn", children: [
-          data.inTop100 ?? 0,
-          " in the top 100"
-        ] }),
-        /* @__PURE__ */ jsx(Tag, { tone: swingTone(data.swing), children: swingText(data.swing) }),
-        /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-          plural2((data.keywords ?? []).length, "keyword", "keywords"),
-          " \xB7 location ",
-          location.locationCode,
-          "/",
-          location.languageCode
-        ] }),
-        data.pending ? /* @__PURE__ */ jsxs(Tag, { tone: "warn", children: [
-          plural2(data.pending, "task", "tasks"),
-          " queued"
-        ] }) : null,
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: data.latestDay ? `checked ${longDay(data.latestDay)}` : "not checked yet" }),
-        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy, onClick: check, children: busy ? "Checking\u2026" : "Check rankings now" })
-      ] }),
-      result ? /* @__PURE__ */ jsx("div", { className: cx("aw-banner", result.ok ? "aw-banner--ok" : "aw-banner--bad"), role: "status", children: result.text }) : null,
-      error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: errorText2(error) }) : null,
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsxs("header", { children: [
-          /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: "Average position" }),
-          /* @__PURE__ */ jsx(Tag, { tone: swingTone(data.swing), children: swingText(data.swing) }),
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "last 90 days, lower is better" })
-        ] }),
-        /* @__PURE__ */ jsx(RankChart, { series: data.series ?? [], events: overview.events ?? [], today: overview.day })
-      ] }),
-      !rows.length ? /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
-        "No rank check yet. ",
-        data.rankReady ? 'Press "Check rankings now" or wait for the weekly cron.' : "Add the secret first."
-      ] }) : /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-seo-ranks", children: [
-          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("th", { children: "Keyword" }),
-            /* @__PURE__ */ jsx("th", { children: "Position" }),
-            /* @__PURE__ */ jsx("th", { children: "Change" }),
-            /* @__PURE__ */ jsx("th", { children: "Ranking URL" }),
-            /* @__PURE__ */ jsx("th", { children: "Top competitors" })
-          ] }) }),
-          /* @__PURE__ */ jsx("tbody", { children: rows.map((row) => {
-            const open = expanded === row.keyword;
-            const top = row.topDomains ?? [];
-            return /* @__PURE__ */ jsxs(Fragment, { children: [
-              /* @__PURE__ */ jsxs("tr", { onClick: () => setExpanded(open ? null : row.keyword), "aria-expanded": open, title: open ? "Hide competitors" : "Show competitors", children: [
-                /* @__PURE__ */ jsx("td", { className: "aw-table__title", children: row.keyword }),
-                /* @__PURE__ */ jsx("td", { children: row.position === null ? /* @__PURE__ */ jsx(Tag, { tone: "dash", title: "Not in the top 100", children: "not in top 100" }) : /* @__PURE__ */ jsxs(Tag, { tone: positionTone(row.position), children: [
-                  "#",
-                  row.position
-                ] }) }),
-                /* @__PURE__ */ jsx("td", { title: row.prevPosition === null ? "No check last week" : `Was #${row.prevPosition} last week`, children: row.change === null ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "\u2013" }) : row.change > 0 ? /* @__PURE__ */ jsxs(Tag, { tone: "ok", children: [
-                  "\u25B2 ",
-                  row.change
-                ] }) : row.change < 0 ? /* @__PURE__ */ jsxs(Tag, { tone: "bad", children: [
-                  "\u25BC ",
-                  Math.abs(row.change)
-                ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "no change" }) }),
-                /* @__PURE__ */ jsx("td", { className: "aw-seo-ranks__url", children: row.url ? /* @__PURE__ */ jsx("a", { href: row.url, target: "_blank", rel: "noreferrer", className: "aw-link", onClick: (event) => event.stopPropagation(), children: row.url }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "\u2014" }) }),
-                /* @__PURE__ */ jsx("td", { className: "aw-seo-types", title: top.join(", ") || "no organic results", children: top.length ? `${top.slice(0, 3).join(", ")}${top.length > 3 ? ` +${top.length - 3}` : ""}` : "\u2014" })
-              ] }),
-              open ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: 5, style: { whiteSpace: "normal" }, children: /* @__PURE__ */ jsx("div", { className: "aw-seo-issues", children: top.length ? top.map((domain, index) => /* @__PURE__ */ jsxs("div", { className: "aw-seo-issue", children: [
-                /* @__PURE__ */ jsx(Tag, { tone: "dash", children: index + 1 }),
-                /* @__PURE__ */ jsx("span", { className: "aw-mono", children: domain }),
-                isOurDomain(domain) ? /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "us" }) : null
-              ] }, domain)) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "No organic results were in the top 100." }) }) }) }) : null
-            ] }, row.keyword);
-          }) })
-        ] }) }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { marginBottom: 0 }, children: "The weekly check asks Google Organic for every tracked keyword (United States, English, top 100). A keyword we are not in the top 100 for is kept as a row with no position, so the swing stays honest." })
-      ] })
-    ] });
-  }
-  function RankChart({ series, events, today }) {
-    const end = today ?? series.at(-1)?.day;
-    const endNumber = dayNumber(end);
-    if (!series.length || !Number.isFinite(endNumber)) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No rank checks yet." });
-    const width = 560;
-    const height = 170;
-    const left = 30;
-    const right = 8;
-    const top = 10;
-    const bottom = 24;
-    const innerW = width - left - right;
-    const innerH = height - top - bottom;
-    const span2 = 89;
-    const start = endNumber - span2;
-    const xOf = (n) => left + (n - start) / span2 * innerW;
-    const yOf = (position) => top + (Math.max(1, Math.min(100, position ?? 100)) - 1) / 99 * innerH;
-    const points = series.map((point) => ({ ...point, n: dayNumber(point.day) })).filter((point) => Number.isFinite(point.n) && point.n >= start && point.n <= endNumber).sort((a, b) => a.n - b.n);
-    const path = points.map((point, index) => `${index ? "L" : "M"}${xOf(point.n).toFixed(1)},${yOf(point.avgPosition).toFixed(1)}`).join(" ");
-    const marks = (events ?? []).map((event) => ({ ...event, n: dayNumber(event.day) })).filter((event) => Number.isFinite(event.n) && event.n >= start && event.n <= endNumber);
-    const markColour = (kind) => kind === "fix" || kind === "guide" ? "var(--aw-ok)" : kind === "note" || kind === "indexnow" ? "var(--aw-text2)" : "var(--aw-warn)";
-    return /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart", children: [
-      /* @__PURE__ */ jsxs("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Average Google position, last 90 days", children: [
-        [1, 50, 100].map((value) => /* @__PURE__ */ jsxs("g", { children: [
-          /* @__PURE__ */ jsx("line", { x1: left, x2: width - right, y1: yOf(value), y2: yOf(value), stroke: "var(--aw-border)", strokeWidth: "1" }),
-          /* @__PURE__ */ jsx("text", { x: left - 5, y: yOf(value) + 3, textAnchor: "end", fontSize: "9", fill: "var(--aw-text2)", children: value })
-        ] }, value)),
-        [0, 30, 60, 89].map((offset) => {
-          const n = start + offset;
-          return /* @__PURE__ */ jsx("text", { x: xOf(n), y: height - 6, textAnchor: offset === 0 ? "start" : offset === 89 ? "end" : "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay2(dayOfNumber(n)) }, offset);
-        }),
-        marks.map((event) => /* @__PURE__ */ jsxs("g", { children: [
-          /* @__PURE__ */ jsx("title", { children: `${event.label} (${EVENT_LABEL2[event.kind] ?? event.kind}) on ${longDay(event.day)}` }),
-          /* @__PURE__ */ jsx("line", { x1: xOf(event.n), x2: xOf(event.n), y1: top, y2: height - bottom, stroke: markColour(event.kind), strokeWidth: "1", strokeDasharray: "3 3", opacity: "0.65" }),
-          /* @__PURE__ */ jsx("circle", { cx: xOf(event.n), cy: height - bottom - 4, r: "3", fill: markColour(event.kind) })
-        ] }, event.id)),
-        path ? /* @__PURE__ */ jsx("path", { d: path, fill: "none", stroke: "var(--aw-accent)", strokeWidth: "2", strokeLinejoin: "round", strokeLinecap: "round" }) : null,
-        points.map((point) => /* @__PURE__ */ jsx("circle", { cx: xOf(point.n), cy: yOf(point.avgPosition), r: "2.6", fill: "var(--aw-accent)", children: /* @__PURE__ */ jsx("title", { children: `${longDay(point.day)}: ${point.avgPosition} average (${point.inTop10} in the top 10, ${point.inTop100} in the top 100)` }) }, point.day))
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart__legend", children: [
-        /* @__PURE__ */ jsxs("span", { children: [
-          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot", style: { background: "var(--aw-accent)" } }),
-          " average position"
-        ] }),
-        /* @__PURE__ */ jsxs("span", { children: [
-          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot", style: { background: "var(--aw-warn)" } }),
-          " core or algorithm update"
-        ] }),
-        /* @__PURE__ */ jsxs("span", { children: [
-          /* @__PURE__ */ jsx("i", { className: "aw-seo-chart__dot", style: { background: "var(--aw-ok)" } }),
-          " our fix"
-        ] })
-      ] })
-    ] });
-  }
-  var canonicalOk = (page) => {
-    if (!page.canonical) return false;
-    const expected = `https://${page.host}${page.path}`.replace(/\/$/, "");
-    return page.canonical.replace(/\/$/, "") === expected;
-  };
-  function PagesTab({ api, hosts, tick }) {
-    const [host, setHost] = useState(hosts[0] ?? "ptechsolutions.net");
-    const [day, setDay] = useState("");
-    const [data, setData] = useState(null);
-    const [error, setError] = useState(null);
-    const [expanded, setExpanded] = useState(null);
-    const load = useCallback(
-      () => api("GET", `/admin/seo/pages?host=${encodeURIComponent(host)}${day ? `&day=${encodeURIComponent(day)}` : ""}`).then((out) => {
-        setData(out);
-        setError(null);
-      }).catch((err) => setError(err)),
-      [api, host, day]
-    );
-    useEffect(() => {
-      void load();
-    }, [load, tick]);
-    const selectedDay = day || data?.day || "";
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
-        /* @__PURE__ */ jsx(
-          "select",
-          {
-            value: host,
-            "aria-label": "Host",
-            onChange: (event) => {
-              setHost(event.target.value);
-              setDay("");
-              setExpanded(null);
-            },
-            children: hosts.map((name) => /* @__PURE__ */ jsx("option", { value: name, children: name }, name))
-          }
-        ),
-        /* @__PURE__ */ jsxs("select", { value: selectedDay, "aria-label": "Day", onChange: (event) => setDay(event.target.value), children: [
-          (data?.days ?? []).map((value) => /* @__PURE__ */ jsx("option", { value, children: longDay(value) }, value)),
-          data && !(data.days ?? []).includes(data.day) ? /* @__PURE__ */ jsx("option", { value: data.day, children: longDay(data.day) }) : null
-        ] }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        data ? /* @__PURE__ */ jsxs(Tag, { tone: scoreTone(data.averageScore), children: [
-          data.averageScore,
-          " average"
-        ] }) : null,
-        data ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: plural2(data.pages?.length ?? 0, "page", "pages") }) : null
-      ] }),
-      error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: errorText2(error) }) : null,
-      !data && !error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading pages\u2026" }) : null,
-      data && !data.pages.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No audit for this host on this day. Pick another day or run an audit." }) : null,
-      data && data.pages.length ? /* @__PURE__ */ jsx("section", { className: "aw-panel", children: /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-seo-pages", children: [
-        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-          /* @__PURE__ */ jsx("th", { children: "Path" }),
-          /* @__PURE__ */ jsx("th", { children: "Score" }),
-          /* @__PURE__ */ jsx("th", { children: "Title" }),
-          /* @__PURE__ */ jsx("th", { children: "Desc" }),
-          /* @__PURE__ */ jsx("th", { children: "Canonical" }),
-          /* @__PURE__ */ jsx("th", { children: "Hreflang" }),
-          /* @__PURE__ */ jsx("th", { children: "JSON-LD" }),
-          /* @__PURE__ */ jsx("th", { children: "H1" }),
-          /* @__PURE__ */ jsx("th", { children: "ms" }),
-          /* @__PURE__ */ jsx("th", { children: "Sitemap" }),
-          /* @__PURE__ */ jsx("th", { children: "llms" })
-        ] }) }),
-        /* @__PURE__ */ jsx("tbody", { children: data.pages.map((page) => {
-          const open = expanded === page.id;
-          return /* @__PURE__ */ jsxs(Fragment, { children: [
-            /* @__PURE__ */ jsxs("tr", { onClick: () => setExpanded(open ? null : page.id), "aria-expanded": open, title: open ? "Hide issues" : "Show issues", children: [
-              /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
-                /* @__PURE__ */ jsx(
-                  "a",
-                  {
-                    href: `https://${page.host}${page.path}`,
-                    target: "_blank",
-                    rel: "noreferrer",
-                    className: "aw-link",
-                    onClick: (event) => event.stopPropagation(),
-                    children: page.path
-                  }
-                ),
-                page.status !== 200 ? /* @__PURE__ */ jsx(Tag, { tone: "bad", children: page.status }) : null
-              ] }),
-              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: scoreTone(page.score), children: page.score }) }),
-              /* @__PURE__ */ jsx("td", { className: page.titleLen > 65 || page.titleLen < 15 ? "aw-warn" : void 0, title: page.title ?? "", children: page.titleLen }),
-              /* @__PURE__ */ jsx("td", { className: page.descLen > 160 ? "aw-warn" : void 0, title: page.description ?? "", children: page.descLen }),
-              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: canonicalOk(page) ? "ok" : "bad", title: page.canonical ?? "No canonical link", children: canonicalOk(page) ? "ok" : "no" }) }),
-              /* @__PURE__ */ jsx("td", { children: page.hreflangCount }),
-              /* @__PURE__ */ jsx("td", { className: "aw-seo-types", title: (page.jsonldTypes ?? []).join(", ") || "none", children: (page.jsonldTypes ?? []).length ? page.jsonldTypes.join(", ") : "none" }),
-              /* @__PURE__ */ jsx("td", { className: page.h1Count === 1 ? void 0 : "aw-warn", children: page.h1Count }),
-              /* @__PURE__ */ jsx("td", { className: page.ms > 1500 ? "aw-warn" : void 0, children: page.ms }),
-              /* @__PURE__ */ jsx("td", { children: page.inSitemap ? "yes" : "no" }),
-              /* @__PURE__ */ jsx("td", { children: page.inLlms ? "yes" : "no" })
-            ] }),
-            open ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: 11, style: { whiteSpace: "normal" }, children: /* @__PURE__ */ jsx("div", { className: "aw-seo-issues", children: (page.issues ?? []).length ? page.issues.map((issue) => /* @__PURE__ */ jsxs("div", { className: "aw-seo-issue", children: [
-              /* @__PURE__ */ jsx(Tag, { tone: SEVERITY_TONE[issue.severity] ?? "dash", children: issue.severity }),
-              /* @__PURE__ */ jsx("span", { className: "aw-mono", children: issue.code }),
-              /* @__PURE__ */ jsx("span", { children: issue.detail })
-            ] }, issue.code)) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "No issues on this page." }) }) }) }) : null
-          ] }, page.id);
-        }) })
-      ] }) }) }) : null
-    ] });
-  }
-  function FindingsTab({ api, hosts, tick, openTicket, refresh }) {
-    const [status, setStatus] = useState("open");
-    const [host, setHost] = useState(hosts[0] ?? "");
-    const [data, setData] = useState(null);
-    const [error, setError] = useState(null);
-    const [busy, setBusy] = useState(null);
-    const load = useCallback(
-      () => api("GET", `/admin/seo/findings?status=${status}${host ? `&host=${encodeURIComponent(host)}` : ""}`).then((out) => {
-        setData(out);
-        setError(null);
-      }).catch((err) => setError(err)),
-      [api, status, host]
-    );
-    useEffect(() => {
-      void load();
-    }, [load, tick]);
-    const dismiss = async (finding) => {
-      setBusy(finding.id);
-      try {
-        await api("POST", `/admin/seo/findings/${finding.id}/dismiss`);
-        await load();
-        await refresh();
-      } catch (err) {
-        setError(err);
-      } finally {
-        setBusy(null);
-      }
-    };
-    const counts = data?.counts ?? { high: 0, medium: 0, low: 0, open: 0, resolved: 0 };
-    const resolved = status === "resolved";
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
-        /* @__PURE__ */ jsx(
-          Segmented,
-          {
-            value: status,
-            options: [
-              { value: "open", label: "Open" },
-              { value: "resolved", label: "Resolved" }
-            ],
-            onChange: (value) => {
-              setStatus(value);
-              setError(null);
-            }
-          }
-        ),
-        /* @__PURE__ */ jsxs("select", { value: host, "aria-label": "Host", onChange: (event) => setHost(event.target.value), children: [
-          /* @__PURE__ */ jsx("option", { value: "", children: "All hosts" }),
-          hosts.map((name) => /* @__PURE__ */ jsx("option", { value: name, children: name }, name))
-        ] }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsxs(Tag, { tone: counts.high ? "bad" : "dash", children: [
-          counts.high,
-          " high"
-        ] }),
-        /* @__PURE__ */ jsxs(Tag, { tone: counts.medium ? "warn" : "dash", children: [
-          counts.medium,
-          " medium"
-        ] }),
-        /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-          counts.low,
-          " low"
-        ] }),
-        /* @__PURE__ */ jsxs(Tag, { tone: counts.open ? "warn" : "ok", children: [
-          counts.open,
-          " open"
-        ] }),
-        /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-          counts.resolved,
-          " resolved"
-        ] })
-      ] }),
-      error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: errorText2(error) }) : null,
-      !data && !error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading findings\u2026" }) : null,
-      data && !data.findings.length ? /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
-        "No ",
-        resolved ? "resolved" : "open",
-        " findings for this filter."
-      ] }) : null,
-      data && data.findings.length ? /* @__PURE__ */ jsx("section", { className: "aw-panel", children: /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
-        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-          /* @__PURE__ */ jsx("th", { children: "Severity" }),
-          /* @__PURE__ */ jsx("th", { children: "Host" }),
-          /* @__PURE__ */ jsx("th", { children: "Path" }),
-          /* @__PURE__ */ jsx("th", { children: "Code" }),
-          /* @__PURE__ */ jsx("th", { children: "Detail" }),
-          /* @__PURE__ */ jsx("th", { children: "First seen" }),
-          resolved ? /* @__PURE__ */ jsx("th", { children: "Resolved" }) : null,
-          /* @__PURE__ */ jsx("th", { children: "Ticket" }),
-          !resolved ? /* @__PURE__ */ jsx("th", {}) : null
-        ] }) }),
-        /* @__PURE__ */ jsx("tbody", { children: (data.findings ?? []).slice().sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9) || (b.lastSeen ?? 0) - (a.lastSeen ?? 0)).map((finding) => /* @__PURE__ */ jsxs("tr", { children: [
-          /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: SEVERITY_TONE[finding.severity] ?? "dash", children: finding.severity }) }),
-          /* @__PURE__ */ jsx("td", { className: "aw-muted", children: finding.host }),
-          /* @__PURE__ */ jsx("td", { className: "aw-seo-path", title: finding.path, children: /* @__PURE__ */ jsx(
-            "a",
-            {
-              href: `https://${finding.host}${finding.path}`,
-              target: "_blank",
-              rel: "noreferrer",
-              className: "aw-link",
-              onClick: (event) => event.stopPropagation(),
-              children: finding.path
-            }
-          ) }),
-          /* @__PURE__ */ jsx("td", { className: "aw-mono", children: finding.code }),
-          /* @__PURE__ */ jsx("td", { className: "aw-table__title", style: { minWidth: 200 }, children: finding.detail }),
-          /* @__PURE__ */ jsxs("td", { className: "aw-muted", title: when(finding.firstSeen), children: [
-            ago(finding.firstSeen),
-            " ago"
-          ] }),
-          resolved ? /* @__PURE__ */ jsx("td", { className: "aw-muted", children: finding.resolvedAt ? `${ago(finding.resolvedAt)} ago` : "-" }) : null,
-          /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(TicketLink, { id: finding.ticketId, openTicket }) }),
-          !resolved ? /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", disabled: busy === finding.id, onClick: () => dismiss(finding), children: busy === finding.id ? "Dismissing\u2026" : "Dismiss" }) }) : null
-        ] }, finding.id)) })
-      ] }) }) }) : null
-    ] });
-  }
-  function GeoTab({ api, tick }) {
-    const [data, setData] = useState(null);
-    const [error, setError] = useState(null);
-    const [expanded, setExpanded] = useState(null);
-    useEffect(() => {
-      let live = true;
-      api("GET", "/admin/seo/geo").then((out) => {
-        if (!live) return;
-        setData(out);
-        setError(null);
-      }).catch((err) => live && setError(err));
-      return () => {
-        live = false;
-      };
-    }, [api, tick]);
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: errorText2(error) }) : null,
-      !data && !error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading the probe answers\u2026" }) : null,
-      data ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-        data.engineReady === false ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--warn", children: "The probe is off: the Worker has no DEEPSEEK_API_KEY. The desk keeps the questions, and the probe runs once the key is set." }) : null,
-        /* @__PURE__ */ jsxs("div", { className: "aw-tags", style: { marginBottom: 12 }, children: [
-          /* @__PURE__ */ jsxs(Tag, { tone: data.summary.rate ? "ok" : "dash", children: [
-            pct3(data.summary.rate),
-            " mention rate"
-          ] }),
-          /* @__PURE__ */ jsx(Tag, { tone: "dash", children: plural2(data.summary.mentions, "mention", "mentions") }),
-          /* @__PURE__ */ jsx(Tag, { tone: "dash", children: plural2(data.summary.runs, "answer", "answers") }),
-          /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-            plural2(data.questions.length, "question", "questions"),
-            " asked weekly"
-          ] })
-        ] }),
-        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-          /* @__PURE__ */ jsx("h3", { children: "Last 12 weeks" }),
-          /* @__PURE__ */ jsx(GeoChart, { weeks: data.weeks ?? [] })
-        ] }),
-        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-          /* @__PURE__ */ jsx("h3", { children: "Questions" }),
-          data.questions.length ? /* @__PURE__ */ jsx("div", { className: "aw-tags", children: data.questions.map((question) => /* @__PURE__ */ jsx(Tag, { tone: "dash", title: question, children: question }, question)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No questions set. Add them in Settings." }),
-          /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { marginBottom: 0 }, children: "Each weekly probe asks every question once and keeps whether the answer named us, the URLs it cited and the companies it named instead." })
-        ] }),
-        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-          /* @__PURE__ */ jsx("h3", { children: "Runs" }),
-          (data.runs ?? []).length ? /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
-            /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-              /* @__PURE__ */ jsx("th", { children: "Day" }),
-              /* @__PURE__ */ jsx("th", { children: "Question" }),
-              /* @__PURE__ */ jsx("th", { children: "Us" }),
-              /* @__PURE__ */ jsx("th", { children: "Competitors" }),
-              /* @__PURE__ */ jsx("th", { children: "Cited URLs" })
-            ] }) }),
-            /* @__PURE__ */ jsx("tbody", { children: data.runs.map((run) => {
-              const open = expanded === run.id;
-              return /* @__PURE__ */ jsxs(Fragment, { children: [
-                /* @__PURE__ */ jsxs("tr", { onClick: () => setExpanded(open ? null : run.id), "aria-expanded": open, title: open ? "Hide the answer" : "Show the answer", children: [
-                  /* @__PURE__ */ jsx("td", { className: "aw-muted", children: shortDay2(run.day) }),
-                  /* @__PURE__ */ jsx("td", { className: "aw-table__title", style: { minWidth: 240 }, children: run.question }),
-                  /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: run.mentionsUs ? "ok" : "bad", children: run.mentionsUs ? "yes" : "no" }) }),
-                  /* @__PURE__ */ jsx("td", { className: "aw-seo-types", title: (run.competitors ?? []).join(", "), children: (run.competitors ?? []).length ? run.competitors.join(", ") : "none" }),
-                  /* @__PURE__ */ jsx("td", { className: "aw-seo-types", style: { whiteSpace: "normal" }, children: (run.citedUrls ?? []).length ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-                    run.citedUrls.slice(0, 2).map((url) => /* @__PURE__ */ jsx("a", { href: url, target: "_blank", rel: "noreferrer", className: "aw-link", onClick: (event) => event.stopPropagation(), style: { display: "block" }, children: url }, url)),
-                    run.citedUrls.length > 2 ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-                      "+",
-                      run.citedUrls.length - 2,
-                      " more"
-                    ] }) : null
-                  ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "none" }) })
-                ] }),
-                open ? /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsxs("td", { colSpan: 5, style: { whiteSpace: "normal" }, children: [
-                  /* @__PURE__ */ jsxs("p", { className: "aw-muted", style: { margin: 0 }, children: [
-                    run.engine ?? "engine",
-                    " answer"
-                  ] }),
-                  /* @__PURE__ */ jsx("p", { style: { whiteSpace: "pre-wrap", margin: "4px 0 0" }, children: run.answerExcerpt || "No answer kept." })
-                ] }) }) : null
-              ] }, run.id);
-            }) })
-          ] }) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No runs yet. Run the GEO probe from the Overview." })
-        ] })
-      ] }) : null
-    ] });
-  }
-  function CitationsTab({ api, tick, notify }) {
-    const [data, setData] = useState(null);
-    const [drafts, setDrafts] = useState({});
-    const [error, setError] = useState(null);
-    const [saving, setSaving] = useState(null);
-    const load = useCallback(
-      () => api("GET", "/admin/seo/citations").then((out) => {
-        setData(out);
-        setError(null);
-      }).catch((err) => setError(err)),
-      [api]
-    );
-    useEffect(() => {
-      void load();
-    }, [load, tick]);
-    const draftFor = (citation) => drafts[citation.id] ?? { status: citation.status, profile_url: citation.profileUrl ?? "", note: citation.note ?? "" };
-    const edit = (citation, patch) => setDrafts((prev) => ({ ...prev, [citation.id]: { ...draftFor(citation), ...patch } }));
-    const dirty = (citation) => {
-      const draft = draftFor(citation);
-      return draft.status !== citation.status || draft.profile_url !== (citation.profileUrl ?? "") || draft.note !== (citation.note ?? "");
-    };
-    const save = async (citation) => {
-      const draft = draftFor(citation);
-      setSaving(citation.id);
-      try {
-        await api("POST", `/admin/seo/citations/${citation.id}`, {
-          status: draft.status,
-          profile_url: draft.profile_url,
-          note: draft.note
-        });
-        setDrafts((prev) => {
-          const next = { ...prev };
-          delete next[citation.id];
-          return next;
-        });
-        await load();
-        notify?.(`${citation.platform} saved.`);
-      } catch (err) {
-        setError(err);
-      } finally {
-        setSaving(null);
-      }
-    };
-    const copy = async (text) => {
-      if (!text) return notify?.("Nothing to copy yet.");
-      try {
-        await navigator.clipboard.writeText(text);
-        notify?.("Draft copied.");
-      } catch {
-        notify?.("Could not copy. Select the text and copy it by hand.", "error");
-      }
-    };
-    const ordered = useMemo(() => {
-      const list2 = [...data?.citations ?? []];
-      return list2.sort(
-        (a, b) => (CITATION_RANK[a.status] ?? 9) - (CITATION_RANK[b.status] ?? 9) || (b.dr ?? -1) - (a.dr ?? -1) || a.platform.localeCompare(b.platform)
-      );
-    }, [data]);
-    const counts = data?.counts ?? { todo: 0, drafted: 0, live: 0, verified: 0, skipped: 0, total: 0 };
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
-        /* @__PURE__ */ jsxs(Tag, { tone: counts.todo ? "warn" : "dash", children: [
-          counts.todo,
-          " to do"
-        ] }),
-        /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-          counts.drafted,
-          " drafted"
-        ] }),
-        /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-          counts.live,
-          " live"
-        ] }),
-        /* @__PURE__ */ jsxs(Tag, { tone: counts.verified ? "ok" : "dash", children: [
-          counts.verified,
-          " verified"
-        ] }),
-        /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-          counts.skipped,
-          " skipped"
-        ] }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: plural2(counts.total ?? ordered.length, "placement", "placements") })
-      ] }),
-      error ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: errorText2(error) }) : null,
-      !data && !error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading citations\u2026" }) : null,
-      data && !ordered.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No placements seeded." }) : null,
-      ordered.length ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-seo-citations", children: [
-          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("th", { children: "Platform" }),
-            /* @__PURE__ */ jsx("th", { children: "DR" }),
-            /* @__PURE__ */ jsx("th", { children: "Status" }),
-            /* @__PURE__ */ jsx("th", { children: "Profile URL" }),
-            /* @__PURE__ */ jsx("th", { children: "Link verified" }),
-            /* @__PURE__ */ jsx("th", { children: "Note or draft" }),
-            /* @__PURE__ */ jsx("th", {})
-          ] }) }),
-          /* @__PURE__ */ jsx("tbody", { children: ordered.map((citation) => {
-            const draft = draftFor(citation);
-            const changed = dirty(citation);
-            return /* @__PURE__ */ jsxs("tr", { style: { cursor: "default" }, children: [
-              /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
-                citation.platform,
-                /* @__PURE__ */ jsx("div", { className: "aw-muted", children: citation.domain })
-              ] }),
-              /* @__PURE__ */ jsx("td", { children: citation.dr ?? "-" }),
-              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx("select", { value: draft.status, "aria-label": `Status for ${citation.platform}`, onChange: (event) => edit(citation, { status: event.target.value }), children: (data.statuses ?? CITATION_STATUSES).map((status) => /* @__PURE__ */ jsx("option", { value: status, children: status }, status)) }) }),
-              /* @__PURE__ */ jsx("td", { style: { minWidth: 220 }, children: /* @__PURE__ */ jsx(
-                "input",
-                {
-                  type: "url",
-                  value: draft.profile_url,
-                  placeholder: "https://\u2026",
-                  "aria-label": `Profile URL for ${citation.platform}`,
-                  onChange: (event) => edit(citation, { profile_url: event.target.value })
-                }
-              ) }),
-              /* @__PURE__ */ jsx("td", { className: "aw-muted", title: citation.lastChecked ? `Last checked ${when(citation.lastChecked)}` : "Not checked yet", children: citation.linkVerifiedAt ? instantDay(citation.linkVerifiedAt) : "-" }),
-              /* @__PURE__ */ jsx("td", { style: { minWidth: 280, whiteSpace: "normal" }, children: /* @__PURE__ */ jsx(
-                "textarea",
-                {
-                  rows: 3,
-                  value: draft.note,
-                  placeholder: "Draft bio or link text",
-                  "aria-label": `Note or draft for ${citation.platform}`,
-                  onChange: (event) => edit(citation, { note: event.target.value })
-                }
-              ) }),
-              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-                /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => copy(draft.note), children: "Copy" }),
-                /* @__PURE__ */ jsx(Button, { size: "sm", kind: changed ? "primary" : "default", disabled: !changed || saving === citation.id, onClick: () => save(citation), children: saving === citation.id ? "Saving\u2026" : "Save" })
-              ] }) })
-            ] }, citation.id);
-          }) })
-        ] }) }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { marginBottom: 0 }, children: "To do and drafted rows come first, then the higher DR. The weekly check reads each profile URL; a page that no longer links back loses its verified date, a page that cannot be read keeps it." })
-      ] }) : null
-    ] });
-  }
-  function SettingsTab2({ api, overview, refresh, notify }) {
-    const [draft, setDraft] = useState(overview.settings);
-    const [touched, setTouched] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [message, setMessage] = useState(null);
-    const [eventForm, setEventForm] = useState({ kind: "core_update", label: "", day: "" });
-    const [eventBusy, setEventBusy] = useState(false);
-    useEffect(() => {
-      if (!touched) setDraft(overview.settings);
-    }, [overview.settings, touched]);
-    const set = (key, value) => {
-      setTouched(true);
-      setDraft((current) => ({ ...current, [key]: value }));
-    };
-    const questions = draft.geoQuestions ?? [];
-    const usedQuestions = questions.filter((question) => question.trim()).length;
-    const keywords = draft.rankKeywords ?? [];
-    const location = draft.rankLocation ?? { locationCode: 2840, languageCode: "en" };
-    const changed = draft.autoCycle !== overview.settings.autoCycle || draft.volatilityHold !== overview.settings.volatilityHold || Boolean(draft.guidesAuto) !== Boolean(overview.settings.guidesAuto) || Number(draft.guidesPerWeek) !== Number(overview.settings.guidesPerWeek) || Boolean(draft.guidesAutoMerge) !== Boolean(overview.settings.guidesAutoMerge) || (draft.geoQuestions ?? []).join("\n") !== (overview.settings.geoQuestions ?? []).join("\n") || keywords.join("\n") !== (overview.settings.rankKeywords ?? []).join("\n") || location.locationCode !== overview.settings.rankLocation?.locationCode || location.languageCode !== overview.settings.rankLocation?.languageCode;
-    const save = async () => {
-      setSaving(true);
-      setMessage(null);
-      try {
-        const out = await api("POST", "/admin/seo/settings", {
-          autoCycle: draft.autoCycle,
-          volatilityHold: draft.volatilityHold,
-          guidesAuto: draft.guidesAuto,
-          guidesPerWeek: draft.guidesPerWeek,
-          guidesAutoMerge: draft.guidesAutoMerge,
-          geoQuestions: draft.geoQuestions,
-          rankKeywords: draft.rankKeywords,
-          rankLocation: draft.rankLocation
-        });
-        setDraft(out.settings);
-        setTouched(false);
-        if (out.rejected?.length) setMessage({ tone: "warn", text: `Saved, but these fields were rejected: ${out.rejected.join(", ")}.` });
-        else setMessage({ tone: "ok", text: "Settings saved." });
-        await refresh();
-        notify?.("SEO settings saved.");
-      } catch (error) {
-        setMessage({ tone: "bad", text: errorText2(error) });
-      } finally {
-        setSaving(false);
-      }
-    };
-    const addEvent = async () => {
-      if (!eventForm.label.trim()) {
-        setMessage({ tone: "bad", text: "Write a label for the event first." });
-        return;
-      }
-      setEventBusy(true);
-      try {
-        const body = { kind: eventForm.kind, label: eventForm.label.trim() };
-        if (eventForm.day) body.day = eventForm.day;
-        await api("POST", "/admin/seo/events", body);
-        setEventForm({ kind: "core_update", label: "", day: "" });
-        setMessage({ tone: "ok", text: "Event added." });
-        await refresh();
-      } catch (error) {
-        setMessage({ tone: "bad", text: errorText2(error) });
-      } finally {
-        setEventBusy(false);
-      }
-    };
-    const removeEvent = async (event) => {
-      try {
-        await api("DELETE", `/admin/seo/events/${event.id}`);
-        setMessage({ tone: "ok", text: "Event deleted." });
-        await refresh();
-      } catch (error) {
-        setMessage({ tone: "bad", text: errorText2(error) });
-      }
-    };
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Cycle" }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
-          /* @__PURE__ */ jsx(Field, { label: "Automatic cycles", hint: "On: the desk files a ticket for the worst open findings when none is open.", children: /* @__PURE__ */ jsx(
-            Segmented,
-            {
-              value: Boolean(draft.autoCycle),
-              options: [
-                { value: true, label: "On" },
-                { value: false, label: "Off" }
-              ],
-              onChange: (value) => set("autoCycle", value)
-            }
-          ) }),
-          /* @__PURE__ */ jsx(
-            Field,
-            {
-              label: "Volatility hold",
-              hint: "On: after a Google core update the agent only does technical fixes, because rankings swing during the update and a rewrite hides what worked.",
-              children: /* @__PURE__ */ jsx(
-                Segmented,
-                {
-                  value: Boolean(draft.volatilityHold),
-                  options: [
-                    { value: true, label: "On" },
-                    { value: false, label: "Off" }
-                  ],
-                  onChange: (value) => set("volatilityHold", value)
-                }
-              )
-            }
-          )
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Guides" }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
-          /* @__PURE__ */ jsx(Field, { label: "Automatic guide cycles", hint: "On: the desk files a ticket for the first target no guide answers, within the weekly limit below.", children: /* @__PURE__ */ jsx(
-            Segmented,
-            {
-              value: Boolean(draft.guidesAuto),
-              options: [
-                { value: true, label: "On" },
-                { value: false, label: "Off" }
-              ],
-              onChange: (value) => set("guidesAuto", value)
-            }
-          ) }),
-          /* @__PURE__ */ jsx(Field, { label: "Guides per week", hint: "How many guide cycles a week at most, 0 to 7. A target waits three weeks between attempts.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "7", value: draft.guidesPerWeek ?? 2, onChange: (event) => set("guidesPerWeek", Number(event.target.value)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Auto-merge guide PRs", hint: "On: a guide PR that passes the checks and the content gate merges itself and pings IndexNow. Off: it waits for you on GitHub.", children: /* @__PURE__ */ jsx(
-            Segmented,
-            {
-              value: Boolean(draft.guidesAutoMerge),
-              options: [
-                { value: true, label: "On" },
-                { value: false, label: "Off" }
-              ],
-              onChange: (value) => set("guidesAutoMerge", value)
-            }
-          ) })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Buyer questions" }),
-        /* @__PURE__ */ jsx(Field, { label: "Questions for the weekly GEO probe", hint: `One per line, at most 20. ${usedQuestions} used.`, children: /* @__PURE__ */ jsx(
-          "textarea",
-          {
-            rows: 10,
-            value: questions.join("\n"),
-            onChange: (event) => set("geoQuestions", event.target.value.split("\n").slice(0, 20))
-          }
-        ) }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              disabled: !changed || saving,
-              onClick: () => {
-                setDraft(overview.settings);
-                setTouched(false);
-                setMessage(null);
-              },
-              children: "Reset"
-            }
-          ),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !changed || saving, onClick: save, children: saving ? "Saving\u2026" : "Save settings" })
-        ] }),
-        message ? /* @__PURE__ */ jsx("div", { className: cx("aw-banner", message.tone === "bad" ? "aw-banner--bad" : message.tone === "ok" ? "aw-banner--ok" : "aw-banner--warn"), children: message.text }) : null
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsxs("header", { children: [
-          /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: "Google ranks" }),
-          /* @__PURE__ */ jsx(Tag, { tone: overview.rank?.rankReady ? "ok" : "bad", children: overview.rank?.rankReady ? "tracking on" : "no API key" })
-        ] }),
-        !overview.rank?.rankReady ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          "Rank tracking is off. Add the DATAFORSEO_API_KEY secret to the intercom Worker (",
-          /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "npx wrangler secret put DATAFORSEO_API_KEY" }),
-          ", run in ",
-          /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "worker/" }),
-          ")."
-        ] }) : null,
-        /* @__PURE__ */ jsx(
-          Field,
-          {
-            label: "Keywords to track on Google",
-            hint: `One per line, at most 25. ${keywords.filter((keyword) => keyword.trim()).length} used. DataForSEO charges about $0.006 per keyword at depth 100.`,
-            children: /* @__PURE__ */ jsx(
-              "textarea",
-              {
-                rows: 10,
-                value: keywords.join("\n"),
-                onChange: (event) => set("rankKeywords", event.target.value.split("\n").slice(0, 25))
-              }
-            )
-          }
-        ),
-        /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
-          /* @__PURE__ */ jsx(Field, { label: "Location code", hint: "DataForSEO's Google location: 2840 is the United States.", children: /* @__PURE__ */ jsx(
-            "input",
-            {
-              type: "number",
-              min: "1",
-              value: location.locationCode ?? 2840,
-              onChange: (event) => set("rankLocation", { ...location, locationCode: Number(event.target.value) })
-            }
-          ) }),
-          /* @__PURE__ */ jsx(Field, { label: "Language code", hint: "The search language, for example en.", children: /* @__PURE__ */ jsx(
-            "input",
-            {
-              value: location.languageCode ?? "en",
-              onChange: (event) => set("rankLocation", { ...location, languageCode: event.target.value })
-            }
-          ) })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              disabled: !changed || saving,
-              onClick: () => {
-                setDraft(overview.settings);
-                setTouched(false);
-                setMessage(null);
-              },
-              children: "Reset"
-            }
-          ),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !changed || saving, onClick: save, children: saving ? "Saving\u2026" : "Save settings" })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Events" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Core updates, algorithm updates, fixes and notes. The score line marks them, and a core update in the last 14 days holds content rewrites." }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-inline", style: { marginBottom: 10 }, children: [
-          /* @__PURE__ */ jsx("select", { value: eventForm.kind, "aria-label": "Event kind", onChange: (event) => setEventForm((form) => ({ ...form, kind: event.target.value })), children: EVENT_KINDS.map((kind) => /* @__PURE__ */ jsx("option", { value: kind.value, children: kind.label }, kind.value)) }),
-          /* @__PURE__ */ jsx(
-            "input",
-            {
-              value: eventForm.label,
-              placeholder: "Label, for example Google core update started",
-              "aria-label": "Event label",
-              onChange: (event) => setEventForm((form) => ({ ...form, label: event.target.value }))
-            }
-          ),
-          /* @__PURE__ */ jsx("input", { type: "date", value: eventForm.day, "aria-label": "Event day", onChange: (event) => setEventForm((form) => ({ ...form, day: event.target.value })) }),
-          /* @__PURE__ */ jsx(Button, { disabled: eventBusy, onClick: addEvent, children: eventBusy ? "Adding\u2026" : "Add event" })
-        ] }),
-        (overview.events ?? []).length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: overview.events.map((event) => /* @__PURE__ */ jsxs("li", { className: "aw-row", style: { cursor: "default" }, children: [
-          /* @__PURE__ */ jsx(Tag, { tone: EVENT_TONE[event.kind] ?? "dash", children: EVENT_LABEL2[event.kind] ?? event.kind }),
-          /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: event.label }),
-          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-            longDay(event.day),
-            event.source ? ` \xB7 ${event.source}` : ""
-          ] }),
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => removeEvent(event), children: "Delete" })
-        ] }, event.id)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No events yet." })
-      ] })
-    ] });
-  }
-
-  // packages/admin-ui/src/health.jsx
-  var tone = (status) => status === "ok" ? "ok" : status === "fail" ? "bad" : "warn";
-  function HealthView() {
-    const { api, act } = useAdmin();
-    const [state, setState] = useState({ loading: true, checks: [], failing: 0, ranAt: null, error: null });
-    const [busy, setBusy] = useState(false);
-    const load = useCallback(
-      () => api("GET", "/admin/health").then((d) => setState({ loading: false, checks: d.checks ?? [], failing: d.failing ?? 0, ranAt: d.ranAt ?? null, error: null })).catch((error) => setState((s) => ({ ...s, loading: false, error }))),
-      [api]
-    );
-    useEffect(() => {
-      void load();
-      const id = setInterval(() => {
-        if (typeof document === "undefined" || document.visibilityState === "visible") void load();
-      }, 15e3);
-      return () => clearInterval(id);
-    }, [load]);
-    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-health", children: [
-      /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
-        /* @__PURE__ */ jsx("h2", { children: "Health" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        state.failing ? /* @__PURE__ */ jsxs(Tag, { tone: "bad", children: [
-          state.failing,
-          " failing"
-        ] }) : /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "all green" }),
-        /* @__PURE__ */ jsx(
-          Button,
-          {
-            disabled: busy,
-            onClick: () => {
-              setBusy(true);
-              void act(() => api("POST", "/admin/health/run"), "Checks rerun.").then(load, load).finally(() => setBusy(false));
-            },
-            children: busy ? "Running\u2026" : "Run now"
-          }
-        )
-      ] }),
-      /* @__PURE__ */ jsxs("p", { className: "aw-muted aw-health__intro", children: [
-        "Every check runs every five minutes. A failing check mails you once, and mails again only when it recovers.",
-        state.ranAt ? ` Last run ${ago(state.ranAt)}.` : ""
-      ] }),
-      state.error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: state.error.message ?? "Could not read the checks." }) : null,
-      state.loading && !state.checks.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Running the checks\u2026" }) : null,
-      /* @__PURE__ */ jsx("ul", { className: "aw-health__list", children: state.checks.map((check) => /* @__PURE__ */ jsxs("li", { className: cx("aw-health__row", `aw-health__row--${tone(check.status)}`), children: [
-        /* @__PURE__ */ jsx(Dot, { state: tone(check.status) }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-health__body", children: [
-          /* @__PURE__ */ jsx("strong", { children: check.label }),
-          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: check.detail })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-health__meta", children: [
-          check.status === "skip" ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: "skipped" }) : null,
-          check.failingSince ? /* @__PURE__ */ jsxs(Tag, { tone: "bad", children: [
-            "failing ",
-            ago(check.failingSince)
-          ] }) : null,
-          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-            check.latencyMs !== null ? `${check.latencyMs} ms \xB7 ` : "",
-            ago(check.checkedAt)
-          ] })
-        ] })
-      ] }, check.name)) })
-    ] });
-  }
-
-  // packages/admin-ui/src/styles.js
-  var STYLES = `
-.aw {
-  --aw-bg: var(--dsw-alias-bg-base, var(--bone, #fff));
-  --aw-bg2: var(--dsw-alias-bg-layer-1, var(--paper, #f8f7f4));
-  --aw-bg3: var(--dsw-alias-bg-layer-2, var(--rule, #efebe4));
-  --aw-hover: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.12));
-  --aw-text: var(--dsw-alias-label-primary, var(--ink, #16140f));
-  --aw-text2: var(--dsw-alias-label-secondary, var(--ink-soft, #5d5850));
-  --aw-border: var(--dsw-alias-border-l2, var(--rule, #e8e4dd));
-  --aw-border2: var(--dsw-alias-border-l3, var(--rule-strong, #d2ccc2));
-  --aw-accent: var(--orange, #ff5a1f);
-  --aw-ok: var(--dsw-alias-state-success-primary, #2f9e5b);
-  --aw-warn: var(--dsw-alias-state-warn-primary, #d99a16);
-  --aw-bad: var(--dsw-alias-state-error-primary, #d6453d);
-  --aw-info: var(--dsw-alias-state-business-primary, #3b7bd9);
-  --aw-violet: #8a63d2;
-  --aw-mono: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
-  display: grid;
-  grid-template-columns: 48px auto minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) 26px;
-  height: 100%;
-  min-height: 0;
-  background: var(--aw-bg);
-  color: var(--aw-text);
-  font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
-  position: relative;
-  overflow: hidden;
-}
-.aw *, .aw *::before, .aw *::after { box-sizing: border-box; }
-.aw--fullscreen { position: fixed; inset: 0; z-index: 50; height: 100dvh; }
-.aw h2, .aw h3, .aw h4 { font-family: inherit; margin: 0; letter-spacing: 0; }
-.aw button { font: inherit; color: inherit; }
-.aw input, .aw select, .aw textarea {
-  font: inherit; color: var(--aw-text); background: var(--aw-bg);
-  border: 1px solid var(--aw-border2); border-radius: 6px; padding: 6px 8px; min-width: 0;
-}
-.aw textarea { width: 100%; resize: vertical; line-height: 1.5; }
-.aw input:focus, .aw select:focus, .aw textarea:focus { outline: 2px solid color-mix(in srgb, var(--aw-accent) 50%, transparent); outline-offset: -1px; }
-.aw [hidden] { display: none !important; }
-.aw-mono { font-family: var(--aw-mono); font-size: 12px; }
-.aw-muted { color: var(--aw-text2); }
-.aw-warn { color: var(--aw-bad); }
-.aw-center { text-align: center; }
-.aw-link { background: none; border: 0; padding: 0; color: var(--aw-accent); cursor: pointer; }
-.aw-link:hover { text-decoration: underline; }
-.aw-empty { padding: 40px; text-align: center; color: var(--aw-text2); }
-.aw-toolbar__fill, .aw-tabs__fill, .aw-status__fill { flex: 1; }
-
-/* activity bar */
-.aw-activity { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0; background: var(--aw-bg2); border-right: 1px solid var(--aw-border); }
-.aw-activity button { position: relative; width: 40px; height: 40px; display: grid; place-items: center; border: 0; background: none; border-radius: 8px; color: var(--aw-text2); cursor: pointer; }
-.aw-activity button:hover { background: var(--aw-hover); color: var(--aw-text); }
-.aw-activity button[aria-pressed="true"] { color: var(--aw-text); box-shadow: inset 2px 0 0 var(--aw-accent); border-radius: 0 8px 8px 0; }
-.aw-activity__spacer { flex: 1; }
-/* Under the macOS window buttons: start below them. */
-.aw--inset .aw-activity { padding-top: 40px; }
-.aw--inset .aw-explorer { padding-top: 32px; }
-.aw-badge { position: absolute; top: 4px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--aw-accent); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; }
-
-/* explorer */
-.aw-explorer { grid-column: 2; grid-row: 1; width: var(--aw-explorer-w, 260px); overflow: auto; background: var(--aw-bg2); border-right: 1px solid var(--aw-border); padding: 6px 0 16px; }
-.aw-explorer h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--aw-text2); padding: 12px 12px 4px; }
-.aw-tree, .aw-tree ul { list-style: none; margin: 0; padding: 0; }
-.aw-tree ul { padding-left: 18px; }
-.aw-tree__row { display: flex; align-items: center; padding-right: 10px; }
-.aw-tree__row.is-active { background: var(--aw-hover); }
-.aw-tree__twist { width: 20px; border: 0; background: none; color: var(--aw-text2); cursor: pointer; padding: 0 0 0 6px; }
-.aw-tree__name, .aw-tree__leaf { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; border: 0; background: none; padding: 4px 10px 4px 4px; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 4px; }
-.aw-tree__leaf { width: 100%; padding-left: 12px; color: var(--aw-text); }
-.aw-tree__name { font-weight: 600; }
-.aw-tree__name:hover, .aw-tree__leaf:hover { background: var(--aw-hover); }
-.aw-tree__id { color: var(--aw-text2); font-family: var(--aw-mono); font-size: 11px; }
-.aw-tree__none { padding: 3px 12px; color: var(--aw-text2); font-size: 12px; }
-.aw-count { margin-left: 6px; padding: 0 6px; border-radius: 9px; background: var(--aw-bg3); color: var(--aw-text2); font-size: 11px; font-weight: 600; }
-
-/* main + tabs */
-.aw-main { grid-column: 3; grid-row: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.aw-tabs { display: flex; align-items: stretch; height: 36px; background: var(--aw-bg2); border-bottom: 1px solid var(--aw-border); overflow-x: auto; scrollbar-width: none; }
-.aw-tab { display: flex; align-items: center; gap: 6px; max-width: 240px; padding: 0 6px 0 12px; border-right: 1px solid var(--aw-border); color: var(--aw-text2); cursor: pointer; white-space: nowrap; user-select: none; }
-.aw-tab:hover { background: var(--aw-hover); }
-.aw-tab.is-active { background: var(--aw-bg); color: var(--aw-text); box-shadow: inset 0 2px 0 var(--aw-accent); }
-.aw-tab__label { overflow: hidden; text-overflow: ellipsis; }
-.aw-tab__close { border: 0; background: none; width: 20px; height: 20px; border-radius: 4px; color: var(--aw-text2); cursor: pointer; opacity: .5; font-size: 15px; line-height: 1; }
-.aw-tab:hover .aw-tab__close, .aw-tab.is-active .aw-tab__close { opacity: 1; }
-.aw-tab__close:hover { background: var(--aw-hover); }
-.aw-content { flex: 1; min-height: 0; position: relative; }
-.aw-pane { position: absolute; inset: 0; overflow: auto; container-type: size; }
-.aw-view { padding: 16px 20px 40px; }
-.aw-hero { margin-bottom: 14px; }
-.aw-hero h2 { font-size: 20px; font-weight: 700; }
-
-/* status bar */
-.aw-status { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 14px; padding: 0 10px; background: var(--aw-bg2); border-top: 1px solid var(--aw-border); color: var(--aw-text2); font-size: 12px; }
-.aw-status button { border: 0; background: none; padding: 0 4px; height: 100%; display: flex; align-items: center; gap: 6px; cursor: pointer; color: inherit; }
-.aw-status button:hover { background: var(--aw-hover); color: var(--aw-text); }
-.aw-status__err { color: var(--aw-bad); }
-
-/* controls */
-.aw-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--aw-border2); background: var(--aw-bg); cursor: pointer; white-space: nowrap; font-weight: 500; }
-.aw-btn:hover:not(:disabled) { background: var(--aw-hover); }
-.aw-btn:disabled { opacity: .45; cursor: default; }
-.aw-btn--sm { height: 26px; padding: 0 9px; font-size: 12px; }
-.aw-btn--primary { background: var(--aw-text); color: var(--aw-bg) !important; border-color: var(--aw-text); }
-.aw-btn--primary:hover:not(:disabled) { background: var(--aw-text); opacity: .88; }
-.aw-btn--danger { color: var(--aw-bad) !important; border-color: color-mix(in srgb, var(--aw-bad) 50%, transparent); }
-.aw-btn--ghost { border-color: transparent; background: none; }
-.aw-seg { display: inline-flex; border: 1px solid var(--aw-border2); border-radius: 6px; overflow: hidden; flex-wrap: wrap; }
-.aw-seg button { border: 0; background: none; padding: 4px 10px; cursor: pointer; font-size: 12px; color: var(--aw-text2); }
-.aw-seg button + button { border-left: 1px solid var(--aw-border); }
-.aw-seg button[aria-pressed="true"] { background: var(--aw-bg3); color: var(--aw-text); font-weight: 600; }
-.aw-seg button:disabled { cursor: default; }
-.aw-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.aw-chips button { border: 1px dashed var(--aw-border2); background: none; border-radius: 14px; padding: 3px 10px; font-size: 12px; cursor: pointer; color: var(--aw-text2); }
-.aw-chips button[aria-pressed="true"] { border-style: solid; border-color: var(--aw-text); color: var(--aw-text); background: var(--aw-bg3); }
-.aw-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
-.aw-field__label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); }
-.aw-field__hint { font-size: 12px; color: var(--aw-text2); }
-.aw-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 18px; }
-.aw-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.aw-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-.aw-check input { flex: none; width: auto; min-width: 0; margin: 0; }
-.aw-people { margin: 6px 0; }
-.aw-people ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
-.aw-people li { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.aw-people__who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.aw-people .aw-check { font-size: 12px; color: var(--aw-text2); white-space: nowrap; }
-.aw-inline input { flex: 1; min-width: 120px; }
-.aw-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-.aw-search { width: 200px; }
-
-.aw-pill { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 11px; font-size: 12px; font-weight: 600; background: var(--aw-bg3); }
-.aw-pill--new { background: color-mix(in srgb, var(--aw-info) 16%, transparent); color: var(--aw-info); }
-.aw-pill--approved { background: color-mix(in srgb, var(--aw-violet) 16%, transparent); color: var(--aw-violet); }
-.aw-pill--in_progress { background: color-mix(in srgb, var(--aw-warn) 20%, transparent); color: color-mix(in srgb, var(--aw-warn) 80%, var(--aw-text)); }
-.aw-pill--review { background: color-mix(in srgb, var(--aw-accent) 16%, transparent); color: var(--aw-accent); }
-.aw-pill--done { background: color-mix(in srgb, var(--aw-ok) 16%, transparent); color: var(--aw-ok); }
-.aw-sq { width: 9px; height: 9px; border-radius: 3px; flex: none; background: var(--aw-text2); display: inline-block; }
-.aw-sq--new { background: var(--aw-info); } .aw-sq--approved { background: var(--aw-violet); } .aw-sq--in_progress { background: var(--aw-warn); }
-.aw-sq--review { background: var(--aw-accent); } .aw-sq--done { background: var(--aw-ok); } .aw-sq--declined { background: var(--aw-border2); }
-.aw-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: var(--aw-text2); }
-.aw-dot--ok { background: var(--aw-ok); } .aw-dot--warn { background: var(--aw-warn); } .aw-dot--bad { background: var(--aw-bad); }
-.aw-live { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: var(--aw-warn); animation: aw-pulse 1.4s ease-in-out infinite; }
-@keyframes aw-pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--aw-warn) 60%, transparent); } 50% { box-shadow: 0 0 0 4px transparent; } }
-@media (prefers-reduced-motion: reduce) { .aw-live { animation: none; } }
-.aw-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; background: var(--aw-bg3); font-size: 11px; color: var(--aw-text2); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-.aw-tag--dash { background: none; border: 1px dashed var(--aw-border2); }
-.aw-tag--client { background: color-mix(in srgb, var(--aw-info) 12%, transparent); color: var(--aw-info); }
-.aw-tag--hot { background: color-mix(in srgb, var(--aw-accent) 15%, transparent); color: var(--aw-accent); }
-.aw-tag--warn { background: color-mix(in srgb, var(--aw-warn) 18%, transparent); color: color-mix(in srgb, var(--aw-warn) 75%, var(--aw-text)); }
-.aw-tag--ok { background: color-mix(in srgb, var(--aw-ok) 14%, transparent); color: var(--aw-ok); }
-.aw-tag--bad { background: color-mix(in srgb, var(--aw-bad) 14%, transparent); color: var(--aw-bad); }
-.aw-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.aw-running { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--aw-text2); }
-
-/* board */
-.aw-view--board { display: flex; flex-direction: column; height: 100%; padding-bottom: 0; }
-.aw-board { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(230px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 16px; }
-.aw-col { display: flex; flex-direction: column; min-height: 0; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: 10px; }
-.aw-col.is-over { border-color: var(--aw-accent); background: color-mix(in srgb, var(--aw-accent) 6%, var(--aw-bg2)); }
-.aw-col > header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-weight: 700; font-size: 12px; }
-.aw-col__body { flex: 1; overflow-y: auto; padding: 0 8px 10px; display: flex; flex-direction: column; gap: 8px; }
-.aw-col__empty { margin: 8px 4px; font-size: 12px; color: var(--aw-text2); }
-.aw-card { background: var(--aw-bg); border: 1px solid var(--aw-border); border-radius: 8px; padding: 9px 10px; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
-.aw-card:hover { border-color: var(--aw-border2); box-shadow: 0 2px 8px rgba(0,0,0,.06); }
-.aw-card:focus-visible { outline: 2px solid var(--aw-accent); }
-.aw-card.is-running { border-left: 3px solid var(--aw-warn); }
-.aw-card.is-stuck { border-left: 3px solid var(--aw-bad); }
-.aw-card__top { display: flex; align-items: center; gap: 6px; }
-.aw-card__id { font-family: var(--aw-mono); font-size: 11px; color: var(--aw-text2); }
-.aw-card__age { margin-left: auto; font-size: 11px; color: var(--aw-text2); }
-.aw-card h4 { font-size: 13px; font-weight: 600; margin: 5px 0 4px; line-height: 1.35; }
-.aw-card__meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--aw-text2); }
-.aw-card__foot { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 7px; font-size: 11px; }
-.aw-card__foot:empty { display: none; }
-.aw-card__warn { margin: 6px 0 0; font-size: 11px; color: var(--aw-bad); }
-
-/* list + tables */
-.aw-tablewrap { overflow-x: auto; }
-.aw-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.aw-table th { text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--aw-text2); padding: 6px 8px; border-bottom: 1px solid var(--aw-border2); cursor: pointer; white-space: nowrap; user-select: none; }
-.aw-table td { padding: 7px 8px; border-bottom: 1px solid var(--aw-border); white-space: nowrap; }
-.aw-table tbody tr { cursor: pointer; }
-.aw-table tbody tr:hover { background: var(--aw-hover); }
-.aw-table__title { white-space: normal !important; min-width: 220px; font-weight: 500; }
-
-/* needs you */
-.aw-inbox { max-width: 1100px; }
-.aw-group { margin: 22px 0; }
-.aw-group > h3 { font-size: 14px; font-weight: 700; display: flex; align-items: center; }
-.aw-group > p { margin: 2px 0 8px; }
-.aw-row-h { display: flex; align-items: center; gap: 8px; }
-.aw-rows { list-style: none; margin: 0; padding: 0; border: 1px solid var(--aw-border); border-radius: 8px; overflow: hidden; }
-.aw-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; flex-wrap: wrap; }
-.aw-row + .aw-row { border-top: 1px solid var(--aw-border); }
-.aw-row:hover { background: var(--aw-hover); }
-.aw-row__title { font-weight: 600; }
-.aw-banner { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 8px; margin: 10px 0; }
-.aw-banner--bad { background: color-mix(in srgb, var(--aw-bad) 10%, transparent); }
-.aw-snippet { display: block; font-weight: 400; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
-.aw-files { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.aw-file { font: inherit; font-size: 12px; display: inline-flex; gap: 6px; align-items: baseline; padding: 3px 8px; border: 1px solid var(--aw-border2); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; max-width: 100%; overflow-wrap: anywhere; }
-button.aw-file:hover { border-color: currentColor; }
-.aw-banner--warn { background: color-mix(in srgb, var(--aw-warn) 12%, transparent); }
-.aw-banner--ok { background: color-mix(in srgb, var(--aw-ok) 12%, transparent); }
-
-/* ticket */
-.aw-ticket { display: grid; grid-template-columns: minmax(0, 1fr) var(--aw-details-w, 300px); min-height: 100%; position: relative; }
-/* No details column: the thread gets the whole width, and the moves the column
-   used to hold sit under the title instead. */
-.aw-ticket--solo { grid-template-columns: minmax(0, 1fr); }
-.aw-ticket__quick { margin-top: 12px; }
-.aw-ticket__quick .aw-ticket__actions { padding-bottom: 0; border-bottom: 0; }
-.aw-ticket__main { padding: 18px 24px 24px; min-width: 0; display: flex; flex-direction: column; }
-.aw-ticket__head h2 { font-size: 22px; font-weight: 700; margin: 4px 0 10px; line-height: 1.25; }
-.aw-ticket__head { padding-bottom: 4px; border-bottom: 1px solid var(--aw-border); margin-bottom: 4px; }
-.aw-ticket__crumbs { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--aw-text2); }
-.aw-ticket__crumbs span + span::before { content: '\xB7'; margin-right: 10px; }
-.aw-ticket__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--aw-border); }
-.aw-timeline { list-style: none; margin: 0; padding: 16px 0; display: flex; flex-direction: column; gap: 12px; flex: 1; }
-.aw-event { display: flex; gap: 10px; font-size: 12px; color: var(--aw-text2); padding-left: 12px; border-left: 2px solid var(--aw-border); }
-.aw-event time { margin-left: auto; white-space: nowrap; }
-.aw-msg { border: 1px solid var(--aw-border); border-radius: 10px; padding: 10px 14px; background: var(--aw-bg); }
-.aw-msg--client { border-left: 3px solid var(--aw-info); }
-.aw-msg--ali { border-left: 3px solid var(--aw-text); }
-.aw-msg.is-private { background: color-mix(in srgb, var(--aw-warn) 7%, var(--aw-bg)); border-style: dashed; border-left-style: solid; border-left-color: var(--aw-warn); }
-.aw-msg header, .aw-run header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 5px; font-size: 12px; }
-.aw-msg header time { margin-left: auto; color: var(--aw-text2); }
-.aw-msg__body { white-space: pre-wrap; overflow-wrap: anywhere; }
-.aw-msg__body.is-clipped, .aw-run__summary.is-clipped { max-height: 7.5em; overflow: hidden; mask-image: linear-gradient(#000 55%, transparent); -webkit-mask-image: linear-gradient(#000 55%, transparent); }
-.aw-fold { cursor: pointer; user-select: none; }
-.aw-fold__chev { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: -4px; border: 0; padding: 0; background: none; color: var(--aw-text2); cursor: pointer; border-radius: 4px; transition: transform .12s; }
-.aw-fold__chev:hover { background: var(--aw-hover); color: var(--aw-text); }
-.aw-fold__chev.is-open { transform: rotate(90deg); }
-.aw-fold__more { margin-top: 4px; font-size: 12px; }
-.aw-run { border: 1px solid var(--aw-border); border-radius: 10px; padding: 10px 14px; background: var(--aw-bg2); }
-.aw-run--live { border-color: color-mix(in srgb, var(--aw-warn) 60%, transparent); }
-.aw-run--failed { border-left: 3px solid var(--aw-bad); }
-.aw-run--ok { border-left: 3px solid var(--aw-ok); }
-.aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; }
-.aw-steps { list-style: none; margin: 6px 0 2px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; border: 1px solid var(--aw-border); border-radius: 6px; background: var(--aw-bg); font-size: 12px; }
-.aw-steps li { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
-.aw-steps time { flex: none; color: var(--aw-text2); font-family: var(--aw-mono); font-size: 10.5px; }
-.aw-steps span { min-width: 0; overflow-wrap: anywhere; }
-.aw-step--tool span { font-family: var(--aw-mono); font-size: 11.5px; }
-.aw-step--node span { color: var(--aw-text2); }
-.aw-step--error span { color: var(--aw-bad); }
-.aw-step__mark { flex: none; width: 1em; text-align: center; color: var(--aw-text2); }
-.aw-run footer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; }
-.aw-diff, .aw-log { font-family: var(--aw-mono); font-size: 11.5px; line-height: 1.5; white-space: pre; overflow: auto; max-height: 65vh; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: 6px; padding: 10px; margin: 0; }
-.aw-log { max-height: 220px; margin-top: 10px; }
-.aw-composer { position: sticky; bottom: 0; border: 1px solid var(--aw-border2); border-radius: 10px; background: var(--aw-bg); padding: 10px; box-shadow: 0 -6px 16px var(--aw-bg); }
-.aw-composer.is-note { border-style: dashed; border-color: var(--aw-warn); }
-.aw-composer__head, .aw-composer__foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; }
-.aw-composer__head { margin-bottom: 8px; }
-.aw-composer__foot { margin-top: 8px; }
-.aw-composer textarea { border: 0; padding: 4px 2px; background: none; outline: none !important; }
-.aw-details { border-left: 1px solid var(--aw-border); background: var(--aw-bg2); padding: 16px; overflow-y: auto; position: sticky; top: 0; height: 100cqh; align-self: start; }
-.aw-details select, .aw-details input { width: 100%; }
-.aw-site { display: flex; flex-direction: column; gap: 6px; padding: 10px 0 14px; margin-bottom: 4px; border-bottom: 1px solid var(--aw-border); }
-.aw-site p { margin: 0; }
-.aw-site__links { display: flex; gap: 14px; font-weight: 600; }
-.aw-details .aw-ticket__actions { flex-direction: column; align-items: stretch; gap: 6px; padding-bottom: 14px; margin-bottom: 4px; }
-.aw-details .aw-ticket__actions > button { width: 100%; justify-content: center; }
-.aw-details .aw-ticket__actions > :first-child { align-self: flex-start; }
-.aw-details .aw-ticket__actions > .aw-running, .aw-details .aw-ticket__actions > .aw-muted { justify-content: center; text-align: center; }
-/* The same fields as a full page (a tab of their own): no column furniture,
-   a readable measure, and the moves in a row instead of a stack. */
-.aw-details--page { border-left: 0; background: none; padding: 0; position: static; height: auto; overflow: visible; }
-.aw-details--page .aw-ticket__actions { flex-direction: row; flex-wrap: wrap; align-items: center; }
-.aw-details--page .aw-ticket__actions > button { width: auto; }
-.aw-details--page .aw-field { max-width: 520px; }
-.aw-details__h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); margin: 18px 0 6px !important; }
-.aw-cost { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 0; border-top: 1px solid var(--aw-border); border-bottom: 1px solid var(--aw-border); }
-.aw-cost > div { display: flex; flex-direction: column; gap: 2px; }
-.aw-cost strong { font-size: 15px; }
-.aw-cost small { font-size: 11px; }
-.aw-cost .aw-link { grid-column: 1 / -1; text-align: left; font-size: 12px; }
-.aw-runlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-.aw-runlist li { display: flex; align-items: center; gap: 6px; }
-.aw-predict { display: flex; align-items: flex-start; gap: 7px; font-size: 12px; margin: 0 0 14px; color: var(--aw-text2); }
-.aw-predict .aw-dot { margin-top: 4px; }
-.aw-predict--bad { color: var(--aw-bad); }
-
-/* fleet + directory */
-.aw-nodes { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }
-.aw-node { border: 1px solid var(--aw-border); border-radius: 10px; padding: 12px 14px; background: var(--aw-bg); }
-.aw-node--bad { border-left: 3px solid var(--aw-bad); } .aw-node--warn { border-left: 3px solid var(--aw-warn); } .aw-node--ok { border-left: 3px solid var(--aw-ok); }
-.aw-node > header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.aw-node h3 { font-size: 15px; font-weight: 700; }
-.aw-kv { display: grid; grid-template-columns: 80px 1fr; gap: 5px 10px; margin: 0 0 8px; font-size: 12px; }
-.aw-kv dt { color: var(--aw-text2); }
-.aw-kv dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px; }
-.aw-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
-.aw-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.aw-panel { border: 1px solid var(--aw-border); border-radius: 10px; padding: 12px 14px; background: var(--aw-bg); margin-bottom: 12px; }
-.aw-panel > header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.aw-panel > h3 { font-size: 14px; margin-bottom: 12px; }
-.aw-panel p { margin: 6px 0; }
-.aw-settings { max-width: 900px; }
-
-/* this machine as a worker: the header pill, then the panel's own bits */
-.aw-mpillbar { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; }
-.aw-mpill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 1px solid var(--aw-border2); border-radius: 12px; background: var(--aw-bg); color: var(--aw-text2); font-size: 12px; white-space: nowrap; cursor: pointer; }
-.aw-mpill:hover { background: var(--aw-hover); color: var(--aw-text); }
-.aw-mpillbar .aw-btn--ghost { height: 24px; width: 26px; padding: 0; justify-content: center; }
-.aw-mstate { margin: 0 0 8px; font-size: 12.5px; }
-.aw-mexes { display: flex; flex-direction: column; gap: 2px; }
-.aw-mexe { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; cursor: pointer; }
-.aw-mexe .aw-tag { font-size: 11px; }
-.aw-mexe__name { font-weight: 600; }
-.aw-mlog { margin-top: 8px; }
-.aw-mlog summary { cursor: pointer; color: var(--aw-text2); font-size: 12px; }
-.aw-mlog[open] summary { margin-bottom: 4px; }
-.aw-machine p > .aw-btn { margin-left: 8px; }
-/* Settings \u2192 This machine's tools (MCP servers and skills fleet agents read). */
-.aw-toolbox__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.aw-toolbox__head p { margin: 0; }
-.aw-toolbox__warnings { list-style: none; margin: 4px 0 8px; padding: 0; display: grid; gap: 2px; font-size: 12px; }
-.aw-toolbox__section { border-top: 1px solid var(--aw-border); margin-top: 10px; padding-top: 10px; }
-.aw-toolbox__section > h4 { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
-.aw-toolbox__subhead { font-size: 12px; font-weight: 600; color: var(--aw-text2); margin: 10px 0 4px; }
-.aw-toolbox__rows, .aw-toolbox__skills, .aw-toolbox__plugins { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.aw-toolbox__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--aw-border); border-radius: 8px; background: var(--aw-bg2); }
-.aw-toolbox__row.is-off { opacity: .72; }
-.aw-toolbox__main { min-width: 0; }
-.aw-toolbox__title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
-.aw-toolbox__meta { color: var(--aw-text2); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aw-toolbox__actions { display: flex; gap: 4px; }
-.aw-toolbox__skills > li, .aw-toolbox__plugin { padding: 6px 8px; border: 1px solid var(--aw-border); border-radius: 8px; background: var(--aw-bg2); }
-.aw-toolbox__plugin { display: flex; align-items: center; gap: 6px; }
-.aw-toolbox__skilldesc { margin: 2px 0 0; color: var(--aw-text2); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-
-
-/* overlays */
-.aw-scrim { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.35); display: grid; place-items: center; padding: 20px; }
-.aw-scrim--top { place-items: start center; padding-top: 12vh; }
-.aw-modal { width: min(520px, 100%); max-height: 88%; display: flex; flex-direction: column; background: var(--aw-bg); color: var(--aw-text); border: 1px solid var(--aw-border2); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
-.aw-modal--wide { width: min(760px, 100%); }
-.aw-modal--full { width: 96%; height: 92%; max-height: 92%; }
-.aw-modal--full .aw-modal__body { flex: 1; min-height: 0; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
-.aw-review { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.aw-review > * { flex: 1; min-height: 0; }
-.aw-modal__head { display: flex; align-items: flex-start; gap: 10px; padding: 16px 18px 6px; }
-.aw-modal__head > div { flex: 1; }
-.aw-modal__head h2 { font-size: 16px; font-weight: 700; }
-.aw-modal__head p { margin: 4px 0 0; color: var(--aw-text2); }
-.aw-modal__body { padding: 10px 18px; overflow-y: auto; }
-.aw-modal__foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--aw-border); flex-wrap: wrap; }
-.aw-modal__foot .aw-predict { margin: 0 auto 0 0; }
-.aw-palette { width: min(620px, 100%); background: var(--aw-bg); border: 1px solid var(--aw-border2); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.3); overflow: hidden; }
-.aw-palette input { width: 100%; border: 0 !important; border-bottom: 1px solid var(--aw-border) !important; border-radius: 0 !important; padding: 14px 16px !important; font-size: 15px !important; outline: none !important; }
-.aw-palette ul { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow-y: auto; }
-.aw-palette li { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; cursor: pointer; }
-.aw-palette li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aw-palette li small { color: var(--aw-text2); white-space: nowrap; }
-.aw-palette li.is-active { background: var(--aw-hover); }
-.aw-toast { position: absolute; z-index: 30; right: 16px; bottom: 38px; max-width: 420px; padding: 10px 14px; border-radius: 8px; background: var(--aw-text); color: var(--aw-bg); box-shadow: 0 8px 24px rgba(0,0,0,.25); }
-.aw-toast.is-error { background: var(--aw-bad); color: #fff; }
-
-/* pane resize handles */
-.aw-resize { position: absolute; top: 0; bottom: 0; width: 9px; cursor: col-resize; z-index: 8; touch-action: none; }
-.aw-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; }
-.aw-resize:hover::after, .aw-resize.is-drag::after { background: var(--aw-accent); }
-.aw-resize--explorer { bottom: 26px; left: calc(48px + var(--aw-explorer-w, 260px) - 5px); }
-.aw-resize--details { right: calc(var(--aw-details-w, 300px) - 5px); }
-
-@media (max-width: 900px) {
-  .aw-explorer { display: none; }
-  .aw-resize { display: none; }
-  .aw-ticket { grid-template-columns: 1fr; }
-  .aw-details { border-left: 0; border-top: 1px solid var(--aw-border); position: static; height: auto; }
-}
-
-/* \u2014\u2014\u2014\u2014\u2014 The details panel: sections, and what you can act on \u2014\u2014\u2014\u2014\u2014 */
-
-/* One block per concern, separated by a rule, so the eye can find "where do I
-   change the agent" without reading every label. */
-.aw-details > .aw-field,
-.aw-details > .aw-cost,
-.aw-details > .aw-runlist,
-.aw-details > .aw-site,
-.aw-details > .aw-predict,
-.aw-details > .aw-details__h {
-  border-top: 1px solid var(--aw-border);
-  padding-top: 14px;
-  margin-top: 14px;
-}
-
-.aw-details__h {
-  font-size: 10.5px;
-  letter-spacing: .1em;
-  color: var(--aw-text2);
-  margin-bottom: 8px !important;
-}
-
-/* Labels read as labels, not as another line of body text. */
-.aw-details .aw-field__label {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: var(--aw-text3, var(--aw-text2));
-  opacity: .85;
-  margin-bottom: 2px;
-}
-
-/* Anything clickable looks clickable: a real border and a hover, and the
-   primary move wears the accent so "Mark done" cannot be mistaken for a label. */
-.aw-details .aw-btn {
-  border-width: 1px;
-  border-style: solid;
-  border-color: var(--aw-border2);
-  background: var(--aw-bg3);
-}
-.aw-details .aw-btn:hover:not(:disabled) {
-  border-color: var(--aw-accent);
-  background: var(--aw-hover);
-}
-.aw-details .aw-btn--primary {
-  background: var(--aw-accent);
-  border-color: var(--aw-accent);
-  color: #fff !important;
-}
-.aw-details .aw-btn--primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--aw-accent) 85%, #fff);
-  border-color: color-mix(in srgb, var(--aw-accent) 85%, #fff);
-}
-.aw-details .aw-btn--danger {
-  background: color-mix(in srgb, var(--aw-bad) 12%, transparent);
-}
-
-/* Chips and segments: the chosen one is tinted, the rest stay quiet. */
-.aw-details .aw-seg { width: 100%; }
-.aw-details .aw-seg button { flex: 1; padding: 5px 6px; }
-.aw-details .aw-seg button[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--aw-accent) 18%, var(--aw-bg3));
-  color: var(--aw-text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--aw-accent) 55%, transparent);
-}
-.aw-details .aw-chips button[aria-pressed="true"] {
-  border-color: var(--aw-accent);
-  color: var(--aw-text);
-  background: color-mix(in srgb, var(--aw-accent) 14%, transparent);
-}
-
-/* The money block: three figures on one card, the one that is billed in accent. */
-.aw-details .aw-cost {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--aw-border);
-  border-radius: 8px;
-  background: var(--aw-bg);
-}
-.aw-details .aw-cost > div { display: flex; flex-direction: column; gap: 2px; }
-.aw-details .aw-cost strong { font-size: 16px; font-variant-numeric: tabular-nums; }
-.aw-details .aw-cost > div:last-child strong { color: var(--aw-accent); }
-
-/* Runs: one line each, separated, with the node and cost quiet. */
-.aw-details .aw-runlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
-.aw-details .aw-runlist > li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 0;
-  border-top: 1px dashed var(--aw-border);
-  font-size: 12px;
-}
-.aw-details .aw-runlist > li:first-child { border-top: 0; }
-
-/* Status and the "why nothing can take this" note get their own weight. */
-.aw-details .aw-predict { font-size: 12px; line-height: 1.45; }
-
-/* Health: one row per end-to-end check, red only when something is wrong. */
-.aw-health { max-width: 1000px; }
-.aw-health__intro { margin: 0 0 14px; }
-.aw-health__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.aw-health__row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--aw-border); border-radius: 9px; background: var(--aw-bg); }
-.aw-health__row--bad { border-color: color-mix(in srgb, var(--aw-bad) 45%, var(--aw-border)); }
-.aw-health__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.aw-health__body strong { font-size: 13px; }
-.aw-health__body span { font-size: 12px; }
-.aw-health__meta { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-
-/* Pre-review: one screen instead of the diff. */
-.aw-prereview { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--aw-border); border-left: 3px solid var(--aw-border2); border-radius: 8px; background: var(--aw-bg); }
-.aw-prereview--ok { border-left-color: var(--aw-ok); }
-.aw-prereview--warn { border-left-color: var(--aw-warn); }
-.aw-prereview--bad { border-left-color: var(--aw-bad); }
-.aw-prereview header, .aw-prereview footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.aw-prereview__headline { margin: 8px 0 4px; font-size: 14px; }
-.aw-prereview ul { margin: 4px 0 8px; padding-left: 20px; font-size: 13px; }
-.aw-prereview footer { margin-top: 6px; }
-
-/* Recorded evidence: one summary row; the run and compare controls open on demand. */
-.aw-evidence { padding: 8px 12px; }
-.aw-evidence header { align-items: baseline; }
-.aw-evidence__line { font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aw-evidence__toggle { flex: none; font-size: 12px; }
-.aw-evidence__body { margin-top: 8px; }
-.aw-evidence__hint { margin: 0 0 8px; font-size: 12px; }
-.aw-md { margin: 6px 0 8px; overflow-wrap: anywhere; }
-.aw-md p { margin: 0 0 6px; }
-.aw-md p:last-child, .aw-md ul:last-child, .aw-md ol:last-child, .aw-md pre:last-child { margin-bottom: 0; }
-.aw-md__heading { margin: 10px 0 4px; font-size: 13px; }
-.aw-md ul, .aw-md ol { margin: 4px 0 8px; padding-left: 20px; font-size: 12.5px; }
-.aw-md li { margin: 2px 0; }
-.aw-md code { font-family: var(--aw-mono); font-size: 11.5px; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
-.aw-md__code { margin: 4px 0 8px; max-height: 32vh; }
-
-/* Before/after preview shots: evidence, not decoration. */
-.aw-shots { display: flex; gap: 8px; margin-top: 10px; }
-.aw-shots figure { flex: 1; min-width: 0; margin: 0; }
-.aw-shots img { display: block; width: 100%; height: auto; border: 1px solid var(--aw-border); border-radius: 6px; background: var(--aw-bg2); }
-.aw-shots figcaption { margin-top: 3px; font-size: 11px; color: var(--aw-text3); text-transform: uppercase; letter-spacing: .04em; }
-
-/* SEO: small inline charts, wide tables that scroll, drafts that stay readable. */
-.aw-seo-chart { margin: 8px 0 4px; }
-.aw-seo-chart svg { display: block; width: 100%; height: auto; max-height: 190px; }
-.aw-seo-chart__legend { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--aw-text2); }
-.aw-seo-chart__dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
-.aw-seo-pages td.aw-seo-types, .aw-seo-citations td { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
-.aw-seo-path { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
-.aw-seo-ranks td { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
-.aw-seo-ranks__url { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aw-seo-citations textarea { min-width: 240px; }
-.aw-seo-citations input { min-width: 200px; }
-.aw-seo-issues { display: grid; gap: 4px; padding: 2px 0; }
-.aw-seo-issue { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.aw-seo-issue span:last-child { color: var(--aw-text2); }
-
-/* ProjectWorld \u2014 compact isometric map ported from client portal; works in dark & light themes. */
-.aw-world-wrap { container-type: inline-size; min-width: 0; }
-.aw-project__world { padding: 16px 0 20px; }
-.aw-world {
-  --aw-w-ink: var(--aw-text, var(--dsw-alias-label-primary, currentColor));
-  --aw-w-ink-soft: var(--aw-text2, var(--dsw-alias-label-secondary, rgba(128,134,142,.92)));
-  --aw-w-surface: var(--aw-bg, rgba(128,134,142,.06));
-  --aw-w-stage: var(--aw-bg2, rgba(128,134,142,.09));
-  --aw-w-chip: rgba(128,134,142,.16);
-  --aw-w-rule: var(--aw-border, rgba(128,134,142,.24));
-  --aw-w-rule-strong: var(--aw-border2, rgba(128,134,142,.38));
-  --aw-w-accent: var(--aw-accent, #ff5a1f);
-  --aw-w-ok: var(--aw-ok, #2f9e5b);
-  --aw-w-warn: var(--aw-warn, #d99a16);
-  --aw-w-bad: var(--aw-bad, #d6453d);
-  --aw-w-hover: var(--aw-hover, rgba(128,134,142,.14));
-  --aw-w-tint: color-mix(in srgb, var(--aw-w-accent) 14%, transparent);
-  --aw-w-mono: var(--aw-mono, ui-monospace, 'SF Mono', Menlo, monospace);
-
-  --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 90%, var(--aw-w-ink) 10%);
-  --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 78%, var(--aw-w-ink) 22%);
-  --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 64%, var(--aw-w-ink) 36%);
-
-  --aw-w-accent-top: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface));
-  --aw-w-accent-left: color-mix(in srgb, var(--aw-w-accent) 36%, var(--aw-w-surface));
-  --aw-w-accent-right: color-mix(in srgb, var(--aw-w-accent) 50%, var(--aw-w-surface));
-
-  --aw-w-ok-soft: color-mix(in srgb, var(--aw-w-ok) 22%, var(--aw-w-surface));
-  --aw-w-bad-soft: color-mix(in srgb, var(--aw-w-bad) 22%, var(--aw-w-surface));
-  --aw-w-warn-soft: color-mix(in srgb, var(--aw-w-warn) 24%, var(--aw-w-surface));
-
-  margin: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(240px, 1fr);
-  gap: 12px;
-  align-items: stretch;
-  padding: 10px;
-  border-radius: 10px;
-  border: 1px solid var(--aw-w-rule);
-  background: var(--aw-w-stage);
-  color: var(--aw-w-ink);
-}
-@media (prefers-color-scheme: dark) {
-  .aw-world, .aw-world__journeys {
-    --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
-    --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
-    --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
-  }
-}
-:root[data-theme='dark'] .aw-world, :root[data-theme='dark'] .aw-world__journeys {
-  --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
-  --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
-  --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
-}
-.aw-world__stage {
-  position: relative;
-  border-radius: 8px;
-  background: var(--aw-w-surface);
-  border: 1px solid var(--aw-w-rule);
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  padding: 4px;
-}
-.aw-world__svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-height: 260px;
-  user-select: none;
-  -webkit-user-select: none;
-}
-.aw-world__floor-plate { fill: color-mix(in srgb, var(--aw-w-stage) 65%, var(--aw-w-surface)); stroke: var(--aw-w-rule-strong); stroke-width: 1; }
-.aw-world__dot { fill: color-mix(in srgb, var(--aw-w-ink) 20%, transparent); }
-.aw-world__dot--active { fill: var(--aw-w-accent); opacity: .72; }
-.aw-world__zone-label { font: 600 9px/1 var(--aw-w-mono); letter-spacing: .12em; text-transform: uppercase; fill: var(--aw-w-ink-soft); opacity: .78; }
-
-.aw-world__cable-base { fill: none; stroke: var(--aw-w-rule-strong); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-.aw-world__cable-base.is-connected { stroke: color-mix(in srgb, var(--aw-w-ink) 45%, transparent); }
-.aw-world__cable-flow { fill: none; stroke: var(--aw-w-accent); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 5 7; animation: aw-world-dash-flow 1.35s linear infinite; }
-.aw-world__cable-arrow { fill: var(--aw-w-ink-soft); }
-.aw-world__cable-arrow.is-active { fill: var(--aw-w-accent); }
-@keyframes aw-world-dash-flow { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
-
-.aw-world__station { cursor: pointer; outline: none; }
-.aw-world__hit { fill: transparent; stroke: none; }
-.aw-world__pad { fill: color-mix(in srgb, var(--aw-w-surface) 80%, var(--aw-w-stage)); stroke: var(--aw-w-rule-strong); stroke-width: 1; transition: fill 150ms ease, stroke 150ms ease; }
-.aw-world__station.is-active .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-accent) 12%, var(--aw-w-surface)); stroke: color-mix(in srgb, var(--aw-w-accent) 55%, var(--aw-w-ink)); }
-.aw-world__station.is-warn .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-warn) 12%, var(--aw-w-surface)); stroke: color-mix(in srgb, var(--aw-w-warn) 60%, var(--aw-w-ink)); }
-.aw-world__station.is-selected .aw-world__pad,
-.aw-world__station:hover .aw-world__pad { fill: var(--aw-w-tint); stroke: var(--aw-w-accent); stroke-width: 1.5; }
-.aw-world__station:focus-visible .aw-world__pad { stroke: var(--aw-w-accent); stroke-width: 2.2; }
-
-.aw-world__face-top { fill: var(--aw-w-face-top); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
-.aw-world__face-left { fill: var(--aw-w-face-left); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
-.aw-world__face-right { fill: var(--aw-w-face-right); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
-.aw-world__face-accent-top { fill: var(--aw-w-accent-top); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__face-accent-left { fill: var(--aw-w-accent-left); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__face-accent-right { fill: var(--aw-w-accent-right); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__face-ok { fill: var(--aw-w-ok-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__face-bad { fill: var(--aw-w-bad-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__face-warn { fill: var(--aw-w-warn-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__ink-line { fill: none; stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
-.aw-world__detail-line { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 55%, transparent); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
-.aw-world__window { fill: color-mix(in srgb, var(--aw-w-ink) 14%, var(--aw-w-surface)); stroke: var(--aw-w-ink); stroke-width: 1.1; stroke-linejoin: round; }
-.aw-world__window--lit { fill: var(--aw-w-accent-left); }
-.aw-world__window--ok { fill: var(--aw-w-ok-soft); }
-
-.aw-world__cloche-rim-back { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 32%, transparent); stroke-width: 1; stroke-dasharray: 2.5 2; }
-.aw-world__cloche-glass { fill: rgba(128,134,142,.18); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__cloche-glass--active { fill: color-mix(in srgb, var(--aw-w-accent) 18%, transparent); }
-.aw-world__cloche-glass--warn { fill: color-mix(in srgb, var(--aw-w-warn) 18%, transparent); }
-.aw-world__cloche-shine { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 32%, transparent); stroke-width: 1.8; stroke-linecap: round; }
-
-.aw-world__station.is-unknown .aw-world__face-top,
-.aw-world__station.is-unknown .aw-world__face-left,
-.aw-world__station.is-unknown .aw-world__face-right,
-.aw-world__station.is-unknown .aw-world__ink-line { stroke-dasharray: 3.5 2.5; stroke: var(--aw-w-ink-soft); fill-opacity: .55; }
-.aw-world__station.is-off .aw-world__object { opacity: .66; }
-.aw-world__station.is-off:hover .aw-world__object,
-.aw-world__station.is-off.is-selected .aw-world__object,
-.aw-world__station.is-off:focus-visible .aw-world__object { opacity: .92; }
-
-.aw-world__beacon { stroke: var(--aw-w-ink); stroke-width: 1.2; }
-.aw-world__beacon--ok { fill: var(--aw-w-ok); }
-.aw-world__beacon--active { fill: var(--aw-w-accent); }
-.aw-world__beacon--warn { fill: var(--aw-w-warn); }
-.aw-world__beacon--bad { fill: var(--aw-w-bad); }
-.aw-world__beacon--off,
-.aw-world__beacon--unknown { fill: var(--aw-w-stage); }
-.aw-world__badge-bg { fill: var(--aw-w-accent); stroke: var(--aw-w-ink); stroke-width: 1.2; }
-.aw-world__badge-text { font: 700 10px/1 var(--aw-w-mono); fill: #fff; text-anchor: middle; dominant-baseline: central; }
-
-.aw-world__tag-bg { fill: var(--aw-w-chip); stroke: var(--aw-w-rule-strong); stroke-width: 1; }
-.aw-world__station.is-selected .aw-world__tag-bg,
-.aw-world__station:hover .aw-world__tag-bg { stroke: var(--aw-w-accent); }
-.aw-world__tag-text { font: 600 10px/1 inherit; fill: var(--aw-w-ink); text-anchor: middle; dominant-baseline: central; }
-.aw-world__micro { font: 500 9px/1 var(--aw-w-mono); fill: var(--aw-w-ink-soft); text-anchor: middle; }
-
-.aw-world__caption { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.aw-world__eyebrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 600 10px/1.2 var(--aw-w-mono); text-transform: uppercase; letter-spacing: .09em; color: var(--aw-w-ink-soft); }
-.aw-world__project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
-.aw-world__card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--aw-w-surface); border: 1px solid var(--aw-w-rule); flex: 1; }
-.aw-world__card-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
-.aw-world__pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.3; border: 1px solid var(--aw-w-rule-strong); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); }
-.aw-world__pill-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-ink-soft); flex: none; }
-.aw-world__pill--ok { border-color: color-mix(in srgb, var(--aw-w-ok) 45%, transparent); background: color-mix(in srgb, var(--aw-w-ok) 14%, transparent); color: var(--aw-w-ok); }
-.aw-world__pill--ok .aw-world__pill-dot { background: var(--aw-w-ok); }
-.aw-world__pill--active { border-color: color-mix(in srgb, var(--aw-w-accent) 45%, transparent); background: var(--aw-w-tint); color: var(--aw-w-accent); }
-.aw-world__pill--active .aw-world__pill-dot { background: var(--aw-w-accent); }
-.aw-world__pill--warn { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 14%, transparent); color: var(--aw-w-warn); }
-.aw-world__pill--warn .aw-world__pill-dot { background: var(--aw-w-warn); }
-.aw-world__pill--bad { border-color: color-mix(in srgb, var(--aw-w-bad) 45%, transparent); background: color-mix(in srgb, var(--aw-w-bad) 14%, transparent); color: var(--aw-w-bad); }
-.aw-world__pill--bad .aw-world__pill-dot { background: var(--aw-w-bad); }
-.aw-world__pill--unknown { border-style: dashed; }
-
-.aw-world .aw-world__title { margin: 0; font-size: 14px; font-weight: 700; line-height: 1.25; letter-spacing: -.01em; color: var(--aw-w-ink); }
-.aw-world .aw-world__explain { margin: 0; font-size: 12px; line-height: 1.4; color: var(--aw-w-ink-soft); max-width: none; }
-.aw-world__status-box { margin-top: auto; padding-top: 7px; border-top: 1px dashed var(--aw-w-rule-strong); display: flex; flex-direction: column; gap: 2px; }
-.aw-world__status-label { font: 600 9.5px/1.2 var(--aw-w-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--aw-w-ink-soft); }
-.aw-world .aw-world__status-value { margin: 0; font-size: 12.5px; font-weight: 600; line-height: 1.35; color: var(--aw-w-ink); word-break: break-word; max-width: none; }
-
-.aw-world__ops { padding-top: 7px; border-top: 1px dashed var(--aw-w-rule-strong); display: flex; flex-direction: column; gap: 4px; }
-.aw-world__op-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.aw-world__op-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font-size: 11px; line-height: 1.3; font-variant-numeric: tabular-nums; }
-.aw-world__op-chip strong { color: var(--aw-w-ink); font-weight: 650; }
-.aw-world__op-chip--warn { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 14%, transparent); color: var(--aw-w-warn); }
-.aw-world__op-chip--warn strong { color: var(--aw-w-warn); }
-.aw-world__op-chip--bad { border-color: color-mix(in srgb, var(--aw-w-bad) 45%, transparent); background: color-mix(in srgb, var(--aw-w-bad) 14%, transparent); color: var(--aw-w-bad); }
-.aw-world__op-chip--bad strong { color: var(--aw-w-bad); }
-
-.aw-world__checks { padding-top: 7px; border-top: 1px dashed var(--aw-w-rule-strong); display: flex; flex-direction: column; gap: 5px; }
-.aw-world__check-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
-.aw-world__check-item { display: flex; align-items: flex-start; gap: 7px; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); font-size: 11.5px; line-height: 1.35; }
-.aw-world__check-item.is-pending { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 10%, transparent); }
-.aw-world__check-item.is-ready { border-color: color-mix(in srgb, var(--aw-w-ok) 35%, transparent); background: color-mix(in srgb, var(--aw-w-ok) 9%, transparent); }
-.aw-world__check-mark { flex: none; width: 15px; height: 15px; margin-top: 1px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font: 700 10px/1 var(--aw-w-mono); color: var(--aw-w-ink-soft); background: var(--aw-w-chip); }
-.aw-world__check-item.is-pending .aw-world__check-mark { color: var(--aw-w-warn); background: color-mix(in srgb, var(--aw-w-warn) 18%, transparent); }
-.aw-world__check-item.is-ready .aw-world__check-mark { color: var(--aw-w-ok); background: color-mix(in srgb, var(--aw-w-ok) 18%, transparent); }
-.aw-world__check-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
-.aw-world__check-label { font-weight: 600; color: var(--aw-w-ink); }
-.aw-world .aw-world__check-detail { margin: 0; font-size: 11.5px; line-height: 1.35; color: var(--aw-w-ink-soft); word-break: break-word; max-width: none; }
-.aw-world__check-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 1px; font: 500 10.5px/1.25 var(--aw-w-mono); color: var(--aw-w-ink-soft); }
-.aw-world__check-who { color: var(--aw-w-ink); }
-
-.aw-world__nav { display: flex; flex-wrap: wrap; gap: 4px; }
-.aw-world__journeys {
-  --aw-w-ink: var(--aw-text, var(--dsw-alias-label-primary, currentColor));
-  --aw-w-ink-soft: var(--aw-text2, var(--dsw-alias-label-secondary, rgba(128,134,142,.92)));
-  --aw-w-surface: var(--aw-bg, rgba(128,134,142,.06));
-  --aw-w-stage: var(--aw-bg2, rgba(128,134,142,.09));
-  --aw-w-chip: rgba(128,134,142,.16);
-  --aw-w-rule: var(--aw-border, rgba(128,134,142,.24));
-  --aw-w-rule-strong: var(--aw-border2, rgba(128,134,142,.38));
-  --aw-w-accent: var(--aw-accent, #ff5a1f);
-  --aw-w-ok: var(--aw-ok, #2f9e5b);
-  --aw-w-warn: var(--aw-warn, #d99a16);
-  --aw-w-bad: var(--aw-bad, #d6453d);
-  --aw-w-hover: var(--aw-hover, rgba(128,134,142,.14));
-  --aw-w-tint: color-mix(in srgb, var(--aw-w-accent) 14%, transparent);
-  --aw-w-mono: var(--aw-mono, ui-monospace, 'SF Mono', Menlo, monospace);
-  --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 90%, var(--aw-w-ink) 10%);
-  --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 78%, var(--aw-w-ink) 22%);
-  --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 64%, var(--aw-w-ink) 36%);
-  --aw-w-accent-top: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface));
-  --aw-w-accent-left: color-mix(in srgb, var(--aw-w-accent) 36%, var(--aw-w-surface));
-  --aw-w-accent-right: color-mix(in srgb, var(--aw-w-accent) 50%, var(--aw-w-surface));
-  --aw-w-ok-soft: color-mix(in srgb, var(--aw-w-ok) 22%, var(--aw-w-surface));
-  --aw-w-bad-soft: color-mix(in srgb, var(--aw-w-bad) 22%, var(--aw-w-surface));
-  --aw-w-warn-soft: color-mix(in srgb, var(--aw-w-warn) 24%, var(--aw-w-surface));
-}
-.aw-world__journeys { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
-.aw-world__drift { margin: 0 0 6px; font-size: 12px; }
-.aw-world__drift-toggle { appearance: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--aw-warn, #d99a16) 45%, transparent); background: color-mix(in srgb, var(--aw-warn, #d99a16) 12%, transparent); color: var(--aw-text, inherit); font: inherit; cursor: pointer; }
-.aw-world__drift-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--aw-warn, #d99a16); }
-.aw-world__drift-list { list-style: none; margin: 4px 0 0; padding: 0 0 0 4px; display: grid; gap: 2px; }
-.aw-world__drift-list li { display: flex; align-items: baseline; gap: 8px; }
-.aw-world__drift-item { appearance: none; border: 0; background: none; padding: 0; color: var(--aw-text, inherit); font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-span.aw-world__drift-item { cursor: default; color: var(--aw-text2, inherit); }
-button.aw-world__drift-item:hover { text-decoration: underline; }
-.aw-world__drift-age { flex: 0 0 auto; color: var(--aw-warn, #d99a16); font-variant-numeric: tabular-nums; }
-.aw-world__journey-pill { appearance: none; display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font: inherit; font-size: 11px; line-height: 1.4; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.aw-world__journey-pill[aria-pressed="true"] { border-color: color-mix(in srgb, var(--aw-w-accent) 60%, var(--aw-w-rule)); background: var(--aw-w-tint); color: var(--aw-w-ink); }
-.aw-world__journey-pill.is-all { border-style: dashed; }
-.aw-world__journey-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-ink-soft); flex: 0 0 auto; }
-.aw-world__journey-pill.is-in_progress .aw-world__journey-dot, .aw-world__journey-pill.is-review .aw-world__journey-dot { background: var(--aw-w-accent); }
-.aw-world__journey-pill.is-done .aw-world__journey-dot { background: var(--aw-w-ok, #2f9e5b); }
-.aw-world__journey { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: var(--aw-w-tint); }
-.aw-world__journey-sentence { margin: 2px 0 6px; font-size: 13px; line-height: 1.4; color: var(--aw-w-ink); }
-.aw-world__journey-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--aw-w-accent) 55%, var(--aw-w-rule)); color: var(--aw-w-ink); font-size: 11px; text-decoration: none; }
-.aw-world__station.is-journey-ahead { opacity: .35; }
-.aw-world__station.is-journey-current .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface)); stroke: var(--aw-w-accent); stroke-width: 1.6; }
-@media (prefers-reduced-motion: no-preference) { .aw-world__station.is-journey-current .aw-world__pad { animation: aw-world-journey-pulse 2.4s ease-in-out infinite; } }
-@keyframes aw-world-journey-pulse { 50% { stroke-opacity: .45; } }
-.aw-world__chip { appearance: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font-size: 11px; font-weight: 500; line-height: 1.25; cursor: pointer; transition: border-color 120ms ease, background 120ms ease, color 120ms ease; }
-.aw-world__chip:hover { background: var(--aw-w-hover); color: var(--aw-w-ink); }
-.aw-world__chip[aria-pressed='true'] { border-color: var(--aw-w-accent); background: var(--aw-w-tint); color: var(--aw-w-ink); font-weight: 600; }
-.aw-world__chip:focus-visible { outline: 2px solid var(--aw-w-accent); outline-offset: 1px; }
-.aw-world__chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-rule-strong); flex: none; }
-.aw-world__chip-dot--ok { background: var(--aw-w-ok); }
-.aw-world__chip-dot--active { background: var(--aw-w-accent); }
-.aw-world__chip-dot--warn { background: var(--aw-w-warn); }
-.aw-world__chip-dot--bad { background: var(--aw-w-bad); }
-.aw-world__chip-dot--unknown { background: transparent; border: 1px dashed var(--aw-w-ink-soft); }
-
-.aw-world__sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-
-@media (max-width: 719px) {
-  .aw-world { grid-template-columns: minmax(0, 1fr); }
-}
-@container (max-width: 719px) {
-  .aw-world { grid-template-columns: minmax(0, 1fr); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .aw-world__cable-flow { animation: none; }
-  .aw-world__pad, .aw-world__chip { transition: none; }
-}
-
-/* Marketing desk: the autopilot rows, the needs list, the day chart, regrouped settings. */
-.aw-hero--mk { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.aw-hero--mk h2 { flex: none; }
-.aw-mk-state { display: inline-flex; align-items: center; gap: 7px; color: var(--aw-text2); font-size: 13px; }
-.aw-mk-state .aw-dot { width: 9px; height: 9px; }
-.aw-table-wrap { overflow-x: auto; }
-.aw-table--compact td, .aw-table--compact th { padding-top: 7px; padding-bottom: 7px; }
-.aw-table--static tbody tr, .aw-table--static th { cursor: default; }
-.aw-table--static tbody tr:hover { background: transparent; }
-.aw-table, .aw-mk-meter__num, .aw-chart__tick, .aw-chart__day, .aw-needs, .aw-mk-kinds { font-variant-numeric: tabular-nums; }
-.aw-mk-health { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 250px; }
-.aw-mk-health .aw-mk-meter { margin: 0; }
-.aw-mk-meter { display: inline-flex; align-items: center; gap: 8px; margin: 2px 14px 2px 0; white-space: nowrap; }
-.aw-mk-meter__label { color: var(--aw-text2); font-size: 12px; min-width: 62px; }
-.aw-mk-meter__track { position: relative; width: 72px; height: 5px; background: var(--aw-bg3); border-radius: 3px; flex: none; }
-.aw-mk-meter__fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 3px; background: var(--aw-ok); }
-.aw-mk-meter__fill--warn { background: var(--aw-warn); }
-.aw-mk-meter__fill--bad { background: var(--aw-bad); }
-.aw-mk-meter__limit { position: absolute; top: -2px; bottom: -2px; left: 80%; width: 1px; background: var(--aw-text2); opacity: .55; }
-.aw-mk-meter__num { color: var(--aw-text2); font-size: 12px; }
-.aw-mk-bad { color: var(--aw-bad); }
-.aw-mk-kinds-label { margin: 12px 0 2px; }
-.aw-mk-kinds { display: flex; flex-wrap: wrap; gap: 3px 16px; margin: 0; font-size: 12px; }
-.aw-mk-kind { display: flex; gap: 5px; }
-.aw-mk-kind dt { color: var(--aw-text2); }
-.aw-mk-kind dd { margin: 0; font-weight: 600; }
-.aw-needs { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.aw-needs li { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-top: 1px solid var(--aw-border); }
-.aw-needs li:first-child { border-top: 0; }
-.aw-needs li > span { flex: 1; min-width: 0; }
-.aw-needs .aw-btn { flex: none; }
-.aw-chart { margin: 0; }
-.aw-chart__totals { margin: 0 0 8px; color: var(--aw-text2); font-size: 12px; }
-.aw-chart__svg { display: block; }
-.aw-chart__grid { stroke: var(--aw-border); stroke-width: 1; }
-.aw-chart__axis { stroke: var(--aw-border2); stroke-width: 1; }
-.aw-chart__tick, .aw-chart__day { fill: var(--aw-text2); font-size: 10px; }
-.aw-chart__bar { fill: var(--aw-bg3); }
-.aw-chart__bounce { fill: var(--aw-bad); }
-.aw-chart__reply { fill: var(--aw-ok); }
-.aw-chart__post { fill: var(--aw-violet); }
-.aw-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-.aw-form2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
-@media (max-width: 720px) {
-  .aw-form2 { grid-template-columns: 1fr; }
-  .aw-table--stack thead { display: none; }
-  .aw-table--stack, .aw-table--stack tbody, .aw-table--stack tr, .aw-table--stack td { display: block; width: 100%; }
-  .aw-table--stack tr { padding: 8px 4px; border-top: 1px solid var(--aw-border); }
-  .aw-table--stack tbody tr:first-child { border-top: 0; }
-  .aw-table--stack td { padding: 3px 8px; border-bottom: 0; white-space: normal; }
-  .aw-table--stack td::before {
-    content: attr(data-label);
-    display: block;
-    margin-bottom: 1px;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .05em;
-    color: var(--aw-text2);
-  }
-  .aw-table--stack td:first-child { font-weight: 600; }
-  .aw-table--stack td:first-child::before { content: none; }
-  .aw-table--stack .aw-mk-meter { display: flex; margin: 2px 0; }
-}
-.aw-mk-window input { flex: none; width: 58px; min-width: 0; }
-.aw-mk-window input[aria-label="Window offset minutes"] { width: 72px; }
-.aw-divider { border: 0; border-top: 1px solid var(--aw-border); margin: 18px 0 4px; }
-
-/* Project solutions: kinds of work, the fleet note, and the client's connections. */
-.aw-dot--muted { background: var(--aw-border2); }
-.aw-psol { margin: 2px 0; }
-.aw-psol__h { margin: 12px 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); }
-.aw-psol__h:first-child { margin-top: 0; }
-.aw-psol__fleet { margin: 6px 0 0; font-size: 12px; color: var(--aw-text2); }
-.aw-psol__fleet--warn { color: color-mix(in srgb, var(--aw-warn) 80%, var(--aw-text)); font-weight: 600; }
-.aw-psol__rows { list-style: none; margin: 0; padding: 0; }
-.aw-psol__row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--aw-border); }
-.aw-psol__row:first-child { border-top: 0; }
-.aw-psol__rowmain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.aw-psol__miss { font-family: var(--aw-mono); font-size: 11px; color: var(--aw-text2); }
-.aw-psol__err { font-size: 12px; color: var(--aw-bad); }
-.aw-psol__rowact { flex: none; display: flex; align-items: center; gap: 6px; }
-.aw-psol__brief { margin-top: 12px; }
-.aw-psol__brief > summary { cursor: pointer; color: var(--aw-text2); font-size: 12px; }
-.aw-psol__brief[open] > summary { margin-bottom: 4px; }
-.aw-psol__briefitem { padding: 6px 0; border-top: 1px solid var(--aw-border); font-size: 12px; }
-.aw-psol__briefitem ul { margin: 2px 0 8px; padding-left: 18px; color: var(--aw-text2); }
-.aw-psol__tags { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.aw-psol__steps { margin: 0 0 10px; padding-left: 20px; }
-.aw-psol__steps li { margin: 3px 0; font-size: 12px; color: var(--aw-text2); }
-`;
 
   // packages/admin-ui/src/project-model.js
   function briefPayload(raw = {}, kind = "existing") {
@@ -8507,9 +8714,13 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }))
     };
   }
-  function projectWork(tickets = [], projectId) {
+  function projectTickets(tickets = [], projectId, { includeSystem = false } = {}) {
+    if (projectId === null || projectId === void 0) return [];
+    return tickets.filter((ticket) => ticket && ticket.project_id != null && String(ticket.project_id) === String(projectId) && (includeSystem || ticket.kind !== "system"));
+  }
+  function projectWork(tickets = [], projectId, options) {
     const closed2 = (ticket) => ["done", "declined"].includes(ticket.status);
-    return tickets.filter((ticket) => ticket.project_id === projectId && ticket.kind !== "system").sort((a, b) => closed2(a) - closed2(b) || (b.updated_at ?? 0) - (a.updated_at ?? 0));
+    return projectTickets(tickets, projectId, options).sort((a, b) => closed2(a) - closed2(b) || (b.updated_at ?? 0) - (a.updated_at ?? 0));
   }
   function createProjectResource(load, publish) {
     let generation = 0, disposed = false;
@@ -8785,14 +8996,14 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     if (!Array.isArray(tickets)) {
       return { needsYou: null, stalled: null, newCount: null, reviewCount: null };
     }
-    const projectTickets = filterProjectTickets(project, tickets);
+    const projectTickets2 = filterProjectTickets(project, tickets);
     const nowMs = normalizeTimestampMs(now) ?? Date.now();
     let newCount = 0;
     let reviewCount = 0;
     let inProgressTotal = 0;
     let inProgressTimed = 0;
     let stalledCount = 0;
-    for (const tk of projectTickets) {
+    for (const tk of projectTickets2) {
       if (tk.status === "new") {
         newCount += 1;
       } else if (tk.status === "review") {
@@ -8922,7 +9133,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   function stationsFor({ project = null, sites = [], tickets = void 0, deploys = null, t = (k) => k, now } = {}) {
     const site = pickSite(project, sites);
     const addr = extractAddress(site);
-    const projectTickets = filterProjectTickets(project, tickets ?? []);
+    const projectTickets2 = filterProjectTickets(project, tickets ?? []);
     const opCounts = operatorTicketCounts(project, tickets, now);
     const checksByStation = normalizeSetupChecks(project, t, now);
     const siteReady = site?.state === "ready";
@@ -9034,8 +9245,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       deployState = "warn";
       deployText = tx(t, "world.deploy.state.previewAhead", "New preview ready to publish");
     }
-    const inProgressCount = projectTickets.filter((tk) => tk.status === "in_progress").length;
-    const inReviewCount = projectTickets.filter((tk) => tk.status === "review").length;
+    const inProgressCount = projectTickets2.filter((tk) => tk.status === "in_progress").length;
+    const inReviewCount = projectTickets2.filter((tk) => tk.status === "review").length;
     const workingCount = inProgressCount + inReviewCount;
     let agentState = "off";
     let agentText = tx(t, "world.agent.state.idle", "Standing by \u2014 no active build");
@@ -9054,7 +9265,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         agentText = inProgressCount === 1 ? tx(t, "world.agent.state.buildOne", "Building 1 request") : tx(t, "world.agent.state.buildMany", "Building {count} requests", { count: inProgressCount });
       }
     }
-    const openCount = projectTickets.filter((tk) => OPEN_TICKET_STATUSES.has(tk.status)).length;
+    const openCount = projectTickets2.filter((tk) => OPEN_TICKET_STATUSES.has(tk.status)).length;
     const requestState = openCount > 0 ? "active" : "off";
     const requestText = openCount === 0 ? tx(t, "world.request.state.none", "No open requests") : openCount === 1 ? tx(t, "world.request.state.one", "1 open request") : tx(t, "world.request.state.many", "{count} open requests", { count: openCount });
     let previewState = "off";
@@ -10028,7 +10239,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             viewBox: `0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`,
             preserveAspectRatio: "xMidYMid meet",
             role: "img",
-            "aria-label": tx(t, "world.mapLabel", "Interactive map showing how your website works"),
+            "aria-label": tx(t, "world.mapLabel", "Project health: how requests, code and deploys fit together"),
             children: [
               /* @__PURE__ */ jsx("polygon", { className: "aw-world__floor-plate", points: floorPlate }),
               /* @__PURE__ */ jsx("g", { "aria-hidden": "true", children: dots.map((d) => /* @__PURE__ */ jsx(
@@ -10155,7 +10366,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         ) }),
         /* @__PURE__ */ jsxs("figcaption", { className: "aw-world__caption", "aria-live": "polite", children: [
           /* @__PURE__ */ jsxs("div", { className: "aw-world__eyebrow", children: [
-            /* @__PURE__ */ jsx("span", { children: tx(t, "world.eyebrow", "Project world") }),
+            /* @__PURE__ */ jsx("span", { children: tx(t, "world.eyebrow", "Project health") }),
             project?.name ? /* @__PURE__ */ jsx("span", { className: "aw-world__project-name", children: project.name }) : null
           ] }),
           journey ? /* @__PURE__ */ jsxs("div", { className: "aw-world__journey", children: [
@@ -10204,7 +10415,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             s.key
           )) })
         ] }),
-        /* @__PURE__ */ jsx("ul", { className: "aw-world__sr-only", "aria-label": tx(t, "world.summaryLabel", "Website map station status"), children: stations.map((s) => /* @__PURE__ */ jsxs("li", { children: [
+        /* @__PURE__ */ jsx("ul", { className: "aw-world__sr-only", "aria-label": tx(t, "world.summaryLabel", "Project health station status"), children: stations.map((s) => /* @__PURE__ */ jsxs("li", { children: [
           s.title,
           ": ",
           s.stateText,
@@ -10220,7 +10431,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   // packages/admin-ui/src/project-styles.js
   var project_styles_default = `
 .aw-project { max-width: 1440px; margin: 0 auto; width: 100%; min-width: 0; box-sizing: border-box; }
-.aw-project h2 { margin: 0 0 5px; font-size: 24px; line-height: 1.25; letter-spacing: -.025em; }
+/* The unavailable notice keeps its own big heading; the live page's title and
+   tabs come from the shared PageHeader and PageTabs primitives. */
+.aw-project > h2 { margin: 0 0 5px; font-size: 24px; line-height: 1.25; letter-spacing: -.025em; overflow-wrap: anywhere; }
 .aw-project h3 { margin: 0 0 14px; font-size: 15px; line-height: 1.4; font-weight: 650; }
 .aw-project p { line-height: 1.6; max-width: 75ch; }
 .aw-project a { color: var(--aw-accent); text-underline-offset: 3px; overflow-wrap: anywhere; }
@@ -10228,27 +10441,16 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-project :is(button, a, input, textarea, summary):focus-visible { outline: 2px solid var(--aw-accent); outline-offset: 3px; }
 .aw-project :is(input, textarea) { caret-color: var(--aw-accent); }
 .aw-project ::selection { background: var(--aw-accent); color: var(--aw-bg); }
-.aw-project__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding: 6px 0 22px; }
-.aw-project__header > div { min-width: 0; }
-.aw-project__header h2 { overflow-wrap: anywhere; }
-.aw-project__header p { margin: 0; }
 .aw-project__actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.aw-project__tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--aw-border); overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--aw-border2) var(--aw-bg); }
-.aw-project__tabs button { appearance: none; flex: 0 0 auto; background: none; border: 0; color: var(--aw-text2); font: inherit; padding: 13px 0; border-bottom: 2px solid transparent; cursor: pointer; }
-.aw-project__tabs button:hover { color: var(--aw-text); }
-.aw-project__tabs button[aria-current] { color: var(--aw-accent); border-bottom-color: var(--aw-accent); }
 .aw-project__body { min-width: 0; }
 .aw-project__section { padding: 28px 0; border-bottom: 1px solid var(--aw-border); min-width: 0; }
 .aw-project__section > :first-child { margin-top: 0; }
 .aw-project__section > :last-child { margin-bottom: 0; }
-.aw-project__overview { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(250px, 1fr); gap: 42px; }
-.aw-project__overview > section { border-bottom: 0; }
 .aw-project__brief { margin: 8px 0 0; }
 .aw-project__brief dt { color: var(--aw-text2); font-size: 11px; font-weight: 600; margin: 22px 0 6px; }
 .aw-project__brief dt:first-child { margin-top: 0; }
 .aw-project__brief dd { margin: 0; white-space: pre-wrap; line-height: 1.65; overflow-wrap: anywhere; max-width: 72ch; }
 .aw-project__form { display: grid; gap: 14px; margin: 14px 0; max-width: 760px; }
-.aw-project__form > .aw-button { justify-self: start; }
 .aw-project__fields { display: grid; grid-template-columns: 1fr 1.5fr; gap: 16px; }
 .aw-project__topology { display: grid; grid-template-columns: 1fr 1.1fr 1.2fr; gap: 26px; list-style: none; padding: 0; margin: 16px 0 22px; }
 .aw-project__topology > li { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
@@ -10268,11 +10470,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-project__worklink strong { font-weight: 500; overflow-wrap: anywhere; }
 .aw-project__worklink > .aw-muted { margin-left: auto; font-size: 11px; white-space: nowrap; }
 .aw-project__run { overflow-wrap: anywhere; }
-.aw-project__note { margin-top: 22px; font-size: 12px; }
 .aw-project__error { color: var(--aw-bad); line-height: 1.6; margin-block: 12px; overflow-wrap: anywhere; }
 .aw-project__success { color: var(--aw-ok); margin-block: 12px; }
 .aw-project__empty { color: var(--aw-text2); padding: 20px 0; }
-.aw-project__subheading { margin-top: 32px !important; }
 .aw-project__handoff { max-width: 75ch; }
 .aw-project details { padding: 12px 0; }
 .aw-project summary { cursor: pointer; color: var(--aw-text); font-weight: 500; padding: 5px 0; }
@@ -10285,24 +10485,79 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-project__file, .aw-project__reveal { background: var(--aw-bg2); padding: 14px; margin-top: 12px; min-width: 0; }
 .aw-project pre { overflow: auto; font-family: var(--aw-mono); font-size: 12px; line-height: 1.6; tab-size: 2; max-height: 480px; }
 .aw-project__reveal pre { white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+/* Overview: the health line and its collapsed map. */
+.aw-project__health { margin: 0; font-size: 13px; color: var(--aw-text); min-width: 0; }
+.aw-project__world { margin-top: 8px; }
+/* Compact work rows: the needs-attention list stays scannable. */
+.aw-project__work > li { padding: 10px 0; }
+.aw-project__worklink strong { font-size: 13px; }
+/* Connect a checkout: one heading, one choice, one form. */
+.aw-project__connect { border-top: 1px solid var(--aw-border); padding-top: 14px; margin-top: 4px; }
+.aw-project__connect h4 { margin: 0; font-size: 13px; font-weight: 650; }
+.aw-project__connect .aw-seg button { font-size: 12px; }
+/* The client-steps affordance stays a small link next to the row's buttons. */
+.aw-project .aw-psol__copy { font-size: 12px; }
+/* People: one table for clients and trusted developers. */
+.aw-project__people { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+.aw-project__people th { text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); padding: 6px 12px 6px 0; border-bottom: 1px solid var(--aw-border); }
+.aw-project__people td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--aw-border); vertical-align: middle; }
+.aw-project__people tr:last-child td { border-bottom: 0; }
+.aw-project__peoplewho { min-width: 0; overflow-wrap: anywhere; }
+.aw-project__peopleact { text-align: right; white-space: nowrap; }
+.aw-project__peopleact .aw-check { font-size: 12px; color: var(--aw-text2); }
 @media (max-width: 760px) {
-  .aw-project__header { flex-direction: column; gap: 14px; }
-  .aw-project__overview, .aw-project__fields { grid-template-columns: minmax(0,1fr); gap: 0; }
+  .aw-project__fields { grid-template-columns: minmax(0,1fr); gap: 0; }
   .aw-project__topology { grid-template-columns: minmax(0,1fr); gap: 22px; }
-  .aw-project__tabs { gap: 20px; }
-  .aw-project__overview > section { border-bottom: 1px solid var(--aw-border); }
   .aw-project__work > li { flex-wrap: wrap; }
   .aw-project__worklink { flex-basis: calc(100% - 100px); flex-wrap: wrap; gap: 6px 10px; }
   .aw-project__worklink > .aw-muted { margin-left: 0; }
   .aw-project__invite { align-items: stretch; flex-direction: column; }
   .aw-project .aw-row-h { flex-wrap: wrap; gap: 8px; }
+  .aw-project__people, .aw-project__people td, .aw-project__people th { display: block; }
+  .aw-project__people thead { display: none; }
+  .aw-project__people td { border-bottom: 0; padding: 6px 0; }
+  .aw-project__people tr { border-bottom: 1px solid var(--aw-border); }
+  .aw-project__peopleact { text-align: left; }
 }
 `;
 
   // packages/admin-ui/src/project.jsx
-  var errorText3 = (error) => error?.message || String(error || "Request failed");
+  var errorText2 = (error) => error?.message || String(error || "Request failed");
   var pathFor2 = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
-  var TABS = ["Overview", "Solutions", "Resources", "Work", "Activity & review", "People"];
+  var TABS = ["Overview", "Work", "Setup"];
+  var TAB_ALIASES = { Solutions: "Setup", Resources: "Setup", People: "Setup", "Activity & review": "Work" };
+  var TABS_KEY = "aw-project-tab-v1";
+  var MAP_KEY = "aw-project-map";
+  var normalizeTab = (value) => TABS.includes(value) ? value : TAB_ALIASES[value] ?? "Overview";
+  var readTabs = () => {
+    try {
+      return JSON.parse(localStorage.getItem(TABS_KEY) ?? "{}") ?? {};
+    } catch {
+      return {};
+    }
+  };
+  var storedTab = (id) => normalizeTab(readTabs()[String(id)]);
+  var writeTab = (id, tab) => {
+    try {
+      const all = readTabs();
+      all[String(id)] = tab;
+      localStorage.setItem(TABS_KEY, JSON.stringify(all));
+    } catch {
+    }
+  };
+  var readMapOpen = () => {
+    try {
+      return localStorage.getItem(MAP_KEY) === "1";
+    } catch {
+      return false;
+    }
+  };
+  var writeMapOpen = (open) => {
+    try {
+      localStorage.setItem(MAP_KEY, open ? "1" : "0");
+    } catch {
+    }
+  };
   function useProjectResource(load) {
     const [state, setState] = useState({ load: null, value: null, loading: true, error: null });
     const resource = useRef(null);
@@ -10339,7 +10594,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   }
   function Feedback({ state }) {
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      state.error ? /* @__PURE__ */ jsx("p", { className: "aw-project__error", role: "alert", children: errorText3(state.error) }) : null,
+      state.error ? /* @__PURE__ */ jsx("p", { className: "aw-project__error", role: "alert", children: errorText2(state.error) }) : null,
       state.success ? /* @__PURE__ */ jsx("p", { className: "aw-project__success", role: "status", children: state.success }) : null
     ] });
   }
@@ -10348,7 +10603,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       state.error ? /* @__PURE__ */ jsxs("div", { className: "aw-project__error", role: "alert", children: [
         state.value ? "Showing the last successful response. " : "",
-        errorText3(state.error),
+        errorText2(state.error),
         " ",
         /* @__PURE__ */ jsx(Button, { size: "sm", disabled: state.refreshing, onClick: refresh, children: "Retry" })
       ] }) : null,
@@ -10357,7 +10612,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   }
   function ProjectView({ id, initialTab = "Overview" }) {
     const { api, data, host, setModal, reload } = useAdmin();
-    const [tab, setTab] = useState(initialTab);
     const load = useCallback(async () => {
       const result = await api("GET", "/admin/projects");
       return { project: (result.projects ?? []).find((project2) => project2.id === id) ?? null };
@@ -10370,7 +10624,15 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         void refresh();
       }
     }, [data.projects, refresh]);
-    useEffect(() => setTab(initialTab), [id]);
+    const resolveTab = useCallback(() => initialTab && initialTab !== "Overview" ? normalizeTab(initialTab) : storedTab(id), [id, initialTab]);
+    const [tab, setTab] = useState(resolveTab);
+    useEffect(() => {
+      setTab(resolveTab());
+    }, [id, resolveTab]);
+    const switchTab = useCallback((next) => {
+      setTab(next);
+      writeTab(id, next);
+    }, [id]);
     const project = remote.value ? remote.value.project : (data.projects ?? []).find((project2) => project2.id === id);
     const refreshAll = useCallback(async () => {
       await refresh();
@@ -10386,58 +10648,59 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
     return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-project", children: [
       /* @__PURE__ */ jsx("style", { children: project_styles_default }),
-      /* @__PURE__ */ jsxs("header", { className: "aw-project__header", children: [
-        /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("h2", { children: project.name }),
-          /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-            project.slug,
+      /* @__PURE__ */ jsx(
+        PageHeader,
+        {
+          title: project.name,
+          subtitle: /* @__PURE__ */ jsxs(Fragment2, { children: [
+            project.solutions?.length ? /* @__PURE__ */ jsx(SolutionTags, { solutions: project.solutions, catalog: data.catalog?.solutions }) : "Website",
             " \xB7 ",
-            project.kind === "new" ? "New project" : "Existing project",
-            project.githubAccount ? ` \xB7 GitHub @${project.githubAccount}` : "",
-            project.solutions?.length ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-              " \xB7 ",
-              /* @__PURE__ */ jsx(SolutionTags, { solutions: project.solutions })
-            ] }) : null
+            project.githubAccount ? "GitHub connected" : "GitHub not connected",
+            " \xB7 ",
+            project.slug
+          ] }),
+          actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsxs(Button, { kind: "primary", onClick: () => setModal({ kind: "task", projectId: id }), children: [
+              /* @__PURE__ */ jsx(Icon, { name: "plus" }),
+              " Add work"
+            ] }),
+            /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(ProjectEditModal, { project, onClose: () => {
+              close();
+              void refreshAll();
+            } }) }), children: "Edit project" })
           ] })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
-          /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(ProjectEditModal, { project, onClose: () => {
-            close();
-            void refreshAll();
-          } }) }), children: "Edit project" }),
-          /* @__PURE__ */ jsxs(Button, { kind: "primary", onClick: () => setModal({ kind: "task", projectId: id }), children: [
-            /* @__PURE__ */ jsx(Icon, { name: "plus" }),
-            " Add work"
-          ] })
-        ] })
-      ] }),
+        }
+      ),
       remote.error ? /* @__PURE__ */ jsxs("div", { role: "alert", className: "aw-project__error", children: [
         "Project refresh failed. ",
-        errorText3(remote.error),
+        errorText2(remote.error),
         " ",
         /* @__PURE__ */ jsx(Button, { size: "sm", onClick: refresh, children: "Retry" })
       ] }) : null,
-      /* @__PURE__ */ jsx("nav", { className: "aw-project__tabs", "aria-label": "Project sections", children: TABS.map((label) => /* @__PURE__ */ jsx("button", { type: "button", "aria-current": tab === label ? "page" : void 0, onClick: () => setTab(label), children: label }, label)) }),
+      /* @__PURE__ */ jsx(PageTabs, { ariaLabel: "Project sections", value: tab, onChange: switchTab, items: TABS.map((label) => ({ value: label, label })) }),
       /* @__PURE__ */ jsxs("div", { className: "aw-project__body", children: [
-        tab === "Overview" ? /* @__PURE__ */ jsx(Overview, { project, refresh: refreshAll, setTab }) : null,
-        tab === "Solutions" ? /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
-          /* @__PURE__ */ jsx("h3", { children: "Kind of work and client connections" }),
-          /* @__PURE__ */ jsx(ProjectSolutions, { project })
-        ] }) : null,
-        tab === "Resources" ? /* @__PURE__ */ jsx(Resources, { project, refresh: refreshAll, host }) : null,
+        tab === "Overview" ? /* @__PURE__ */ jsx(Overview, { project, refresh: refreshAll, setTab: switchTab }) : null,
         tab === "Work" ? /* @__PURE__ */ jsx(Work, { project }) : null,
-        tab === "Activity & review" ? /* @__PURE__ */ jsx(Activity, { project }) : null,
-        tab === "People" ? /* @__PURE__ */ jsx(People, { project, refresh: refreshAll }) : null
+        tab === "Setup" ? /* @__PURE__ */ jsx(Setup, { project, refresh: refreshAll, host }) : null
       ] }, `${id}:${tab}`)
     ] }, id);
+  }
+  function healthSummary({ project, sites, tickets, deploys }) {
+    const stations = stationsFor({ project, sites, tickets, deploys });
+    const domain = stations.find((station) => station.key === "domain");
+    const drift = unshippedPreview({ project, sites, deploys, tickets: tickets ?? [] });
+    const counts = operatorTicketCounts(project, tickets, Date.now());
+    const checks = Array.isArray(project?.setup?.checks) ? project.setup.checks.filter((check) => check && check.state && check.state !== "unknown") : [];
+    const parts = [domain?.stateText || "Site state unknown"];
+    if (drift) parts.push(`preview has ${drift.count === 1 ? "1 unshipped change" : `${drift.count} unshipped changes`}`);
+    if (counts.stalled) parts.push(`${counts.stalled} stalled ${counts.stalled === 1 ? "build" : "builds"}`);
+    if (checks.length) parts.push(`${checks.filter((check) => check.state === "ready").length}/${checks.length} checks ok`);
+    return parts.join(" \xB7 ");
   }
   function Overview({ project, refresh, setTab }) {
     const { data, api } = useAdmin();
     const work = projectWork(data.tickets, project.id);
-    const projectTickets = useMemo(
-      () => (data.tickets ?? []).filter((ticket) => ticket && ticket.project_id != null && String(ticket.project_id) === String(project.id)),
-      [data.tickets, project.id]
-    );
+    const mapTickets = useMemo(() => projectTickets(data.tickets, project.id, { includeSystem: true }), [data.tickets, project.id]);
     const sites = useMemo(
       () => Array.isArray(project.sites) && project.sites.length ? project.sites : project.site ? [project.site] : [],
       [project.sites, project.site]
@@ -10447,42 +10710,37 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       () => deploySiteId ? api("GET", `${pathFor2(project)}/site/deploys?siteId=${encodeURIComponent(deploySiteId)}`) : Promise.resolve(null),
       [api, project.id, deploySiteId]
     );
-    const [deployState] = useProjectResource(loadDeploys);
+    const [deployState, refreshDeploys] = useProjectResource(loadDeploys);
     const deploys = Array.isArray(deployState.value?.deploys) ? deployState.value.deploys : null;
-    const active = work.filter((ticket) => !["done", "declined"].includes(ticket.status));
-    const review = active.filter((ticket) => ticket.status === "review");
+    const [mapOpen, setMapOpen] = useState(readMapOpen);
+    const toggleMap = () => setMapOpen((open) => {
+      writeMapOpen(!open);
+      return !open;
+    });
+    const health = useMemo(() => healthSummary({ project, sites, tickets: mapTickets, deploys }), [project, sites, mapTickets, deploys]);
+    const needs = work.filter((ticket) => ["new", "review"].includes(ticket.status)).sort((a, b) => (a.status === "review" ? 0 : 1) - (b.status === "review" ? 0 : 1) || (b.updated_at ?? 0) - (a.updated_at ?? 0));
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsx("section", { className: "aw-project__section aw-project__world", "aria-label": "Project world", children: /* @__PURE__ */ jsx(ProjectWorld, { project, sites, tickets: projectTickets, deploys }) }),
-      /* @__PURE__ */ jsxs("div", { className: "aw-project__overview", children: [
-        !project.solutions?.length ? /* @__PURE__ */ jsx("section", { className: "aw-project__section", children: /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          "No kind of work set yet (website, app, Shopify, AWS\u2026). ",
-          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setTab("Solutions"), children: "Set it" })
-        ] }) }) : null,
-        /* @__PURE__ */ jsx("section", { className: "aw-project__section", children: /* @__PURE__ */ jsx(Brief, { project, refresh }) }),
-        /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
-          /* @__PURE__ */ jsx("h3", { children: "Next actions" }),
-          review.length ? /* @__PURE__ */ jsxs("p", { children: [
-            review.length,
-            " ",
-            review.length === 1 ? "request is" : "requests are",
-            " ready for review. Inspect the recorded changes and checks before deciding what to land."
-          ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: active.length ? `${active.length} open ${active.length === 1 ? "request" : "requests"}. Continue locally or add a clear next step for an agent.` : "No open work yet. Add your first request, save a draft, or continue in a local checkout." }),
-          /* @__PURE__ */ jsx(WorkList, { tickets: (review.length ? review : active).slice(0, 4) }),
-          /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
-            /* @__PURE__ */ jsx(Button, { onClick: () => setTab("Work"), children: "All work" }),
-            /* @__PURE__ */ jsx(Button, { onClick: () => setTab("Resources"), children: "Set up development" })
-          ] }),
-          /* @__PURE__ */ jsx("p", { className: "aw-muted aw-project__note", children: "You control this project. Agent help is optional; saving a draft never starts an agent." })
-        ] })
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", "aria-label": "Needs attention", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+          /* @__PURE__ */ jsx("h3", { children: "Needs attention" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setTab("Work"), children: "All work \u2192" })
+        ] }),
+        needs.length ? /* @__PURE__ */ jsx(WorkList, { tickets: needs.slice(0, 5) }) : /* @__PURE__ */ jsx(Empty, { title: "Nothing needs you", hint: "Every open request is moving. New and review requests appear here." })
       ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Project connections" }),
-        /* @__PURE__ */ jsx(Topology, { project }),
-        /* @__PURE__ */ jsx(Button, { onClick: () => setTab("Resources"), children: "Manage resources" })
-      ] })
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", "aria-label": "Project health", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+          /* @__PURE__ */ jsx("p", { className: "aw-project__health", children: health }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", "aria-expanded": mapOpen, onClick: toggleMap, children: mapOpen ? "Hide map" : "Show map" })
+        ] }),
+        deploySiteId && deployState.error ? /* @__PURE__ */ jsx(ErrorNote, { error: deployState.error, onRetry: refreshDeploys }) : null,
+        mapOpen ? /* @__PURE__ */ jsx("div", { className: "aw-project__world", children: /* @__PURE__ */ jsx(ProjectWorld, { project, sites, tickets: mapTickets, deploys }) }) : null
+      ] }),
+      /* @__PURE__ */ jsx("section", { className: "aw-project__section", children: /* @__PURE__ */ jsx(Brief, { project, refresh, setTab }) })
     ] });
   }
-  function Brief({ project, refresh }) {
+  function Brief({ project, refresh, setTab }) {
     const { api } = useAdmin();
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(project.brief ?? { what: "", goal: "" });
@@ -10501,30 +10759,32 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         setSaved(result.project?.brief ?? payload);
         setEditing(false);
         void refresh();
-      }, "Expectations saved.");
+      }, "Brief saved.");
     };
+    const notWritten = /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "Not written yet" });
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Expectations" }),
+        /* @__PURE__ */ jsx("h3", { children: "Project brief" }),
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        !editing && !project.solutions?.length ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setTab("Setup"), children: "Add kind of work" }) : null,
         !editing ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => {
           setDraft(saved ?? { what: "", goal: "" });
           setEditing(true);
-        }, children: "Edit expectations" }) : null
+        }, children: "Edit" }) : null
       ] }),
       editing ? /* @__PURE__ */ jsxs("form", { onSubmit: save, className: "aw-project__form", children: [
         /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx("textarea", { "aria-label": "What it is", required: true, rows: 3, maxLength: 1200, value: draft.what ?? "", onChange: (event) => setDraft({ ...draft, what: event.target.value }) }) }),
         /* @__PURE__ */ jsx(Field, { label: "What done looks like", children: /* @__PURE__ */ jsx("textarea", { "aria-label": "What done looks like", required: true, rows: 3, maxLength: 1200, value: draft.goal ?? "", onChange: (event) => setDraft({ ...draft, goal: event.target.value }) }) }),
-        project.kind === "new" ? /* @__PURE__ */ jsx(Field, { label: "Done by hand today", hint: "Optional", children: /* @__PURE__ */ jsx("textarea", { rows: 2, maxLength: 1200, value: draft.manual ?? "", onChange: (event) => setDraft({ ...draft, manual: event.target.value }) }) }) : /* @__PURE__ */ jsx(Field, { label: "Where the code lives", hint: "Context only; configure the actual repository in Resources.", children: /* @__PURE__ */ jsx("textarea", { rows: 2, maxLength: 1200, value: draft.where ?? "", onChange: (event) => setDraft({ ...draft, where: event.target.value }) }) }),
+        project.kind === "new" ? /* @__PURE__ */ jsx(Field, { label: "Done by hand today", hint: "Optional", children: /* @__PURE__ */ jsx("textarea", { rows: 2, maxLength: 1200, value: draft.manual ?? "", onChange: (event) => setDraft({ ...draft, manual: event.target.value }) }) }) : /* @__PURE__ */ jsx(Field, { label: "Where the code lives", hint: "Context only; connect the actual repository in Setup.", children: /* @__PURE__ */ jsx("textarea", { rows: 2, maxLength: 1200, value: draft.where ?? "", onChange: (event) => setDraft({ ...draft, where: event.target.value }) }) }),
         /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
           /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => setEditing(false), children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { type: "submit", kind: "primary", disabled: state.busy || !payload, children: state.busy ? "Saving\u2026" : "Save expectations" })
+          /* @__PURE__ */ jsx(Button, { type: "submit", kind: "primary", disabled: state.busy || !payload, children: state.busy ? "Saving\u2026" : "Save brief" })
         ] })
       ] }) : /* @__PURE__ */ jsxs("dl", { className: "aw-project__brief", children: [
         /* @__PURE__ */ jsx("dt", { children: "What it is" }),
-        /* @__PURE__ */ jsx("dd", { children: saved?.what || "Describe the project so the next person can pick it up." }),
+        /* @__PURE__ */ jsx("dd", { children: saved?.what || notWritten }),
         /* @__PURE__ */ jsx("dt", { children: "What done looks like" }),
-        /* @__PURE__ */ jsx("dd", { children: saved?.goal || "Add an outcome and a clear definition of done." }),
+        /* @__PURE__ */ jsx("dd", { children: saved?.goal || notWritten }),
         saved?.where ? /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx("dt", { children: "Code context" }),
           /* @__PURE__ */ jsx("dd", { children: saved.where })
@@ -10584,6 +10844,13 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       ] })
     ] });
   }
+  function Setup({ project, refresh, host }) {
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx("section", { className: "aw-project__section", children: /* @__PURE__ */ jsx(ProjectSolutions, { project }) }),
+      /* @__PURE__ */ jsx(Resources, { project, refresh, host }),
+      /* @__PURE__ */ jsx(People, { project, refresh })
+    ] });
+  }
   function Resources({ project, refresh, host }) {
     const { api, setModal } = useAdmin();
     const [state, write] = useWrite();
@@ -10617,7 +10884,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         native ? /* @__PURE__ */ jsxs(ResourceState, { state: localState, refresh: refreshLocal, children: [
           topology?.gitError ? /* @__PURE__ */ jsxs("p", { className: "aw-project__error", role: "alert", children: [
             "Git inspection failed: ",
-            errorText3(topology.gitError),
+            errorText2(topology.gitError),
             " ",
             /* @__PURE__ */ jsx(Button, { size: "sm", onClick: refreshLocal, children: "Retry" })
           ] }) : null,
@@ -10689,7 +10956,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           if (next.status === "running") timer = setTimeout(poll, 1200);
           else if (next.status === "succeeded") void refresh();
         } catch (error) {
-          if (alive) setOperation({ status: "failed", error: errorText3(error) });
+          if (alive) setOperation({ status: "failed", error: errorText2(error) });
         }
       };
       void poll();
@@ -10716,32 +10983,38 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         setOperationId(result.operationId);
       });
     };
+    const connectExisting = Boolean(host.projectConfigureLocal);
+    const connectClone = Boolean(project.repo && host.projectCloneLocal && host.projectLocalOperation);
+    const [connectMode, setConnectMode] = useState("existing");
+    useEffect(() => {
+      if (connectMode === "clone" && !connectClone) setConnectMode("existing");
+    }, [connectMode, connectClone]);
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       found && host.projectOpenLocal ? /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
         /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: state.busy, onClick: () => void write(() => host.projectOpenLocal({ projectId: project.id, mode: "session" }), "Development conversation opened."), children: "Continue locally" }),
         /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => void write(() => host.projectOpenLocal({ projectId: project.id, mode: "reveal" })), children: "Show folder" })
       ] }) : null,
-      host.projectConfigureLocal ? /* @__PURE__ */ jsxs("details", { open: !found, children: [
-        /* @__PURE__ */ jsx("summary", { children: found ? "Change checkout & development settings" : "Connect an existing checkout" }),
-        /* @__PURE__ */ jsxs("form", { onSubmit: configure, className: "aw-project__form", children: [
+      connectExisting || connectClone ? /* @__PURE__ */ jsxs("div", { className: "aw-project__connect", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+          /* @__PURE__ */ jsx("h4", { children: "Connect a checkout" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx(Segmented, { value: connectMode, onChange: setConnectMode, label: "Connect a checkout", options: [{ value: "existing", label: "Existing folder", disabled: !connectExisting }, { value: "clone", label: "Clone", disabled: !connectClone }] })
+        ] }),
+        connectMode === "existing" ? /* @__PURE__ */ jsxs("form", { onSubmit: configure, className: "aw-project__form", children: [
           /* @__PURE__ */ jsx(Field, { label: "Local folder", hint: "An existing folder on this device. Connecting does not clone or overwrite it.", children: /* @__PURE__ */ jsx("input", { required: true, value: path, onChange: (event) => setPath(event.target.value), placeholder: "/Users/you/Projects/site" }) }),
           /* @__PURE__ */ jsxs("div", { className: "aw-project__fields", children: [
             /* @__PURE__ */ jsx(Field, { label: "Base ref", hint: "Optional Git ref for review", children: /* @__PURE__ */ jsx("input", { value: baseRef, onChange: (event) => setBaseRef(event.target.value), placeholder: "main" }) }),
             /* @__PURE__ */ jsx(Field, { label: "Verification command", hint: "Saved for deliberate local execution", children: /* @__PURE__ */ jsx("input", { value: verify, onChange: (event) => setVerify(event.target.value), placeholder: "npm test" }) })
           ] }),
           /* @__PURE__ */ jsx(Button, { type: "submit", disabled: state.busy || !path.trim() || Boolean(cloning), children: state.busy ? "Connecting\u2026" : "Connect folder" })
-        ] })
-      ] }) : null,
-      project.repo && host.projectCloneLocal && host.projectLocalOperation ? /* @__PURE__ */ jsxs("details", { children: [
-        /* @__PURE__ */ jsx("summary", { children: "Clone the linked repository" }),
-        /* @__PURE__ */ jsxs("form", { onSubmit: clone, className: "aw-project__form", children: [
+        ] }) : /* @__PURE__ */ jsxs("form", { onSubmit: clone, className: "aw-project__form", children: [
           /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Creates a new folder; an existing destination is never overwritten. Private repositories use the project\u2019s authorized Git connection." }),
           /* @__PURE__ */ jsx(Field, { label: "Parent folder", children: /* @__PURE__ */ jsx("input", { required: true, value: parentPath, onChange: (event) => setParentPath(event.target.value), placeholder: "/Users/you/Projects" }) }),
           /* @__PURE__ */ jsx(Field, { label: "New folder name", children: /* @__PURE__ */ jsx("input", { value: directoryName, onChange: (event) => setDirectoryName(event.target.value) }) }),
           /* @__PURE__ */ jsx(Button, { type: "submit", disabled: state.busy || Boolean(cloning) || !parentPath.trim(), children: cloning ? "Cloning\u2026" : "Clone repository" })
         ] })
       ] }) : null,
-      operation ? /* @__PURE__ */ jsx("p", { className: operation.status === "failed" ? "aw-project__error" : "aw-muted", role: operation.status === "failed" ? "alert" : "status", children: operation.status === "failed" ? `Clone failed: ${errorText3(operation.error)}. Check the destination and Git connection, then retry.` : operation.status === "succeeded" ? `Clone ready: ${operation.receipt?.path || "checkout connected"}` : `Cloning: ${operation.phase || "working"}` }) : null,
+      operation ? /* @__PURE__ */ jsx("p", { className: operation.status === "failed" ? "aw-project__error" : "aw-muted", role: operation.status === "failed" ? "alert" : "status", children: operation.status === "failed" ? `Clone failed: ${errorText2(operation.error)}. Check the destination and Git connection, then retry.` : operation.status === "succeeded" ? `Clone ready: ${operation.receipt?.path || "checkout connected"}` : `Cloning: ${operation.phase || "working"}` }) : null,
       /* @__PURE__ */ jsx(Feedback, { state }),
       found && host.projectFiles ? /* @__PURE__ */ jsx(LocalFiles, { project, host }) : null,
       found && host.gitGraph ? /* @__PURE__ */ jsx(GitGraph, { project, host }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Git Graph is optional. Use your repository, local conversation or recorded work review without it." })
@@ -10861,18 +11134,34 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       /* @__PURE__ */ jsx(Feedback, { state: writeState })
     ] });
   }
+  var WORK_FILTERS = {
+    open: (ticket) => !["done", "declined"].includes(ticket.status),
+    review: (ticket) => ticket.status === "review",
+    done: (ticket) => ["done", "declined"].includes(ticket.status),
+    all: () => true
+  };
+  var WORK_FILTER_EMPTY = { open: "Nothing open", review: "Nothing waiting for review", done: "Nothing finished yet", all: "No work yet" };
   function Work({ project }) {
     const { data, setModal } = useAdmin();
     const tickets = projectWork(data.tickets, project.id);
-    return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
-      /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Project work" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => setModal({ kind: "task", projectId: project.id }), children: "Add work" })
+    const [filter, setFilter] = useState("open");
+    const shown = useMemo(() => tickets.filter(WORK_FILTERS[filter] ?? WORK_FILTERS.open), [tickets, filter]);
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+          /* @__PURE__ */ jsx("h3", { children: "Project work" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx(Segmented, { value: filter, onChange: setFilter, label: "Work filter", options: [{ value: "open", label: "Open" }, { value: "review", label: "Review" }, { value: "done", label: "Done" }, { value: "all", label: "All" }] }),
+          /* @__PURE__ */ jsxs(Button, { kind: "primary", onClick: () => setModal({ kind: "task", projectId: project.id }), children: [
+            /* @__PURE__ */ jsx(Icon, { name: "plus" }),
+            " Add work"
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Save a draft for later, queue an agent deliberately, or continue the same work locally. Open a request for its conversation and evidence." }),
+        /* @__PURE__ */ jsx(WorkList, { tickets: shown }),
+        !shown.length ? tickets.length ? /* @__PURE__ */ jsx(Empty, { title: WORK_FILTER_EMPTY[filter] ?? WORK_FILTER_EMPTY.open, hint: "Switch the filter to see the rest of this project's work." }) : /* @__PURE__ */ jsx(Empty, { title: "No work yet", hint: "Add the first outcome you want to deliver.", action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "task", projectId: project.id }), children: "Add work" }) }) : null
       ] }),
-      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Save a draft for later, queue an agent deliberately, or continue the same work locally. Open a request for its conversation and evidence." }),
-      /* @__PURE__ */ jsx(WorkList, { tickets }),
-      !tickets.length ? /* @__PURE__ */ jsx("p", { className: "aw-project__empty", children: "No work yet. Add the first outcome you want to deliver." }) : null
+      /* @__PURE__ */ jsx(Activity, { project })
     ] });
   }
   function WorkList({ tickets }) {
@@ -10918,13 +11207,118 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         ] }),
         /* @__PURE__ */ jsx(StatusPill, { status: run.status }),
         /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => openTicket(run.ticket_id), children: "Inspect attempts" })
-      ] }, run.id)) }) : /* @__PURE__ */ jsx("p", { className: "aw-project__empty", children: "No recent agent attempts. Older evidence, when available, remains inside each request." }),
-      /* @__PURE__ */ jsx("h3", { className: "aw-project__subheading", children: "Requests with history" }),
-      /* @__PURE__ */ jsx(WorkList, { tickets })
+      ] }, run.id)) }) : /* @__PURE__ */ jsx("p", { className: "aw-project__empty", children: "No recent agent attempts. Older evidence, when available, remains inside each request." })
+    ] });
+  }
+  var EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+  var emailsIn = (text) => [...new Set(text.split(/[\s,;]+/).map((part) => part.trim().toLowerCase()).filter(Boolean))];
+  function ProjectInviteModal({ project, onClose }) {
+    const { api, act, notify } = useAdmin();
+    const [text, setText] = useState("");
+    const [copy, setCopy] = useState(true);
+    const [locale, setLocale] = useState("en-US");
+    const [note, setNote] = useState("");
+    const [busy, setBusy] = useState(false);
+    const emails = emailsIn(text);
+    const bad = emails.filter((email) => !EMAIL_RE.test(email));
+    const already = new Set((project.clients ?? []).map((client) => client.email.toLowerCase()));
+    const fresh = emails.filter((email) => EMAIL_RE.test(email) && !already.has(email));
+    const send = async () => {
+      setBusy(true);
+      const failed = [];
+      let unsent = 0;
+      try {
+        await act(async () => {
+          for (const email of fresh) {
+            try {
+              const out = await api("POST", "/admin/clients", { email, locale, projectIds: [project.id], copy, note: note.trim() || void 0 });
+              if (out?.invite?.sent === false) unsent += 1;
+            } catch {
+              failed.push(email);
+            }
+          }
+        });
+        const added = fresh.length - failed.length;
+        if (failed.length) notify(`Added ${added} of ${fresh.length}. Not added: ${failed.join(", ")}`, "error");
+        else notify(`Added ${added} to ${project.name}.${unsent ? ` ${unsent} email${unsent === 1 ? "" : "s"} not sent; use Resend on their card.` : ""}`);
+        if (!failed.length) onClose();
+      } finally {
+        setBusy(false);
+      }
+    };
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: `Add people to ${project.name}`,
+        subtitle: "Each address gets a link that signs them in (one use, 7 days). They see every request on this project; prices stay with whoever filed.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !fresh.length || bad.length > 0, onClick: () => void send(), children: busy ? "Adding\u2026" : `Add ${fresh.length || ""}`.trim() })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Emails", hint: bad.length ? `Not an address: ${bad.join(", ")}` : emails.length > fresh.length ? `${emails.length - fresh.length} already on the project.` : "One or more, separated by commas, spaces or new lines.", children: /* @__PURE__ */ jsx("textarea", { rows: 3, value: text, placeholder: "owner@example.com, office@example.com", onChange: (event) => setText(event.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Emails about requests", children: /* @__PURE__ */ jsxs("label", { className: "aw-check", children: [
+            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: copy, onChange: (event) => setCopy(event.target.checked) }),
+            "Send them a copy of every request on this project (new requests, replies, status changes)"
+          ] }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Language", hint: "For new accounts: the invite email and the portal. Existing accounts keep theirs.", children: /* @__PURE__ */ jsx("select", { value: locale, onChange: (event) => setLocale(event.target.value), children: LOCALES.map((locale2) => /* @__PURE__ */ jsx("option", { value: locale2.code, children: locale2.english }, locale2.code)) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Note", hint: "Optional. Added under the link. Not translated.", children: /* @__PURE__ */ jsx("textarea", { rows: 2, value: note, maxLength: 1e3, onChange: (event) => setNote(event.target.value) }) })
+        ]
+      }
+    );
+  }
+  function PeopleTable({ project, recipients, clients, canManage, onPeopleChanged }) {
+    const { api, act, ask, open } = useAdmin();
+    const byKey = /* @__PURE__ */ new Map();
+    for (const person of Array.isArray(recipients) ? recipients : []) {
+      if (!person?.email && !person?.userId) continue;
+      const key = String(person.userId ?? person.email);
+      byKey.set(key, { key, userId: person.userId ?? null, name: person.name || null, email: person.email, role: person.memberType === "trusted_developer" ? "Trusted developer" : "Client", client: null });
+    }
+    for (const client of Array.isArray(clients) ? clients : []) {
+      if (!client?.id && !client?.email) continue;
+      const key = String(client.id ?? client.email);
+      const row = byKey.get(key);
+      if (row) {
+        row.client = client;
+        if (!row.name) row.name = client.name || null;
+        continue;
+      }
+      byKey.set(key, { key, userId: client.id ?? null, name: client.name || null, email: client.email, role: "Client", client });
+    }
+    const rows = [...byKey.values()];
+    if (!rows.length) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nobody yet. Only you see this project." });
+    return /* @__PURE__ */ jsxs("table", { className: "aw-project__people", children: [
+      /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+        /* @__PURE__ */ jsx("th", { children: "Person" }),
+        /* @__PURE__ */ jsx("th", { children: "Role" }),
+        canManage ? /* @__PURE__ */ jsx("th", { "aria-label": "Manage" }) : null
+      ] }) }),
+      /* @__PURE__ */ jsx("tbody", { children: rows.map((row) => /* @__PURE__ */ jsxs("tr", { children: [
+        /* @__PURE__ */ jsx("td", { className: "aw-project__peoplewho", children: row.userId && row.role === "Client" ? /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-link aw-people__who", title: row.email, onClick: () => open(`c:${row.userId}`), children: [
+          row.name ? `${row.name} \xB7 ` : "",
+          row.email
+        ] }) : /* @__PURE__ */ jsxs("span", { className: "aw-people__who", title: row.email, children: [
+          row.name ? `${row.name} \xB7 ` : "",
+          row.email
+        ] }) }),
+        /* @__PURE__ */ jsxs("td", { children: [
+          /* @__PURE__ */ jsx(Tag, { tone: row.role === "Trusted developer" ? void 0 : "dash", children: row.role }),
+          row.client?.pending ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "invited" }) : null
+        ] }),
+        canManage ? /* @__PURE__ */ jsx("td", { className: "aw-project__peopleact", children: row.client ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsxs("label", { className: "aw-check", title: "Mail them about every request on this project, not only the ones they filed", children: [
+            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: Boolean(row.client.copy), onChange: (event) => void act(() => api("PUT", `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`, { copy: event.target.checked }), event.target.checked ? `${row.client.email} gets every request on ${project.name}.` : `${row.client.email} gets only their own requests.`).then(onPeopleChanged) }),
+            "all emails"
+          ] }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", title: "Take them off this project", onClick: () => ask({ title: `Remove ${row.client.email} from ${project.name}?`, text: "They stop seeing its requests and stop getting its emails. Their account and their own requests stay.", confirm: "Remove", danger: true, run: () => act(() => api("DELETE", `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`), `Removed ${row.client.email}.`).then(onPeopleChanged).catch(() => void 0) }), children: "\u2715" })
+        ] }) : null }) : null
+      ] }, row.key)) })
     ] });
   }
   function People({ project, refresh }) {
-    const { api, data, ask } = useAdmin();
+    const { api, data, ask, setModal } = useAdmin();
     const load = useCallback(() => api("GET", `${pathFor2(project)}/memberships`), [api, project.id]);
     const [state, refreshPeople] = useProjectResource(load);
     const loadRecipients = useCallback(() => api("GET", `${pathFor2(project)}/recipients`), [api, project.id]);
@@ -10935,15 +11329,18 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const admin = data.access?.superAdmin === true || data.identity?.access?.superAdmin === true || user?.role === "admin";
     const owner = state.value?.ownerUserId && state.value.ownerUserId === user?.id;
     const ownerPerson = (state.value?.clients ?? project.clients ?? []).find((person) => person.id === state.value?.ownerUserId);
+    const peopleChanged = useCallback(() => {
+      void refreshPeople();
+      void refreshRecipients();
+      void refresh();
+    }, [refreshPeople, refreshRecipients, refresh]);
     const grant = (event) => {
       event.preventDefault();
       if (!email.trim() || !admin) return;
       void write(async () => {
         await api("POST", `${pathFor2(project)}/memberships`, { email: email.trim() });
         setEmail("");
-        void refreshPeople();
-        void refreshRecipients();
-        void refresh();
+        void peopleChanged();
       }, "Trusted project access granted.");
     };
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
@@ -10964,8 +11361,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             ] }),
             admin || owner ? /* @__PURE__ */ jsx(Button, { size: "sm", disabled: writeState.busy, onClick: () => ask({ title: `Remove ${person.email} from this project?`, text: "Their trusted access ends immediately. Their account and access to other projects stay unchanged.", confirm: "Remove access", danger: true, run: () => write(async () => {
               await api("DELETE", `${pathFor2(project)}/memberships/${encodeURIComponent(person.userId)}`);
-              void refreshPeople();
-              void refreshRecipients();
+              void peopleChanged();
             }, "Trusted access removed.") }), children: "Remove access" }) : null
           ] }, person.userId)) }),
           !state.value?.memberships?.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No trusted developers assigned." }) : null
@@ -10980,25 +11376,16 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         /* @__PURE__ */ jsx(Feedback, { state: writeState })
       ] }),
       /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Client participants" }),
-        admin ? /* @__PURE__ */ jsx(ProjectPeople, { project }) : /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: (state.value?.clients ?? project.clients ?? []).map((person) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("strong", { children: person.name || person.email }),
-          person.name ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: person.email }) : null
-        ] }) }, person.id)) }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Client participation is separate from trusted developer access. Select recipients in a work conversation to notify them; typed @names alone do not send notifications." })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Conversation recipients" }),
-        /* @__PURE__ */ jsxs(ResourceState, { state: recipients, refresh: refreshRecipients, children: [
-          /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: (recipients.value?.recipients ?? []).map((person) => /* @__PURE__ */ jsxs("li", { children: [
-            /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("strong", { children: person.name || person.email }),
-              person.name ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: person.email }) : null
-            ] }),
-            /* @__PURE__ */ jsx(Tag, { children: person.memberType === "trusted_developer" ? "Trusted developer" : "Client" })
-          ] }, person.userId)) }),
-          !recipients.value?.recipients?.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No eligible recipients returned. Recipient selection is available inside a saved work conversation." }) : null
-        ] })
+        /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+          /* @__PURE__ */ jsx("h3", { children: "People on this project" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          admin ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(ProjectInviteModal, { project, onClose: () => {
+            close();
+            void peopleChanged();
+          } }) }), children: "Add people" }) : null
+        ] }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Everyone who can read this project's requests. Client participation is separate from trusted developer access; select recipients in a work conversation to notify them \u2014 typed @names alone do not send notifications." }),
+        /* @__PURE__ */ jsx(ResourceState, { state: recipients, refresh: refreshRecipients, children: /* @__PURE__ */ jsx(PeopleTable, { project, recipients: recipients.value?.recipients, clients: project.clients ?? state.value?.clients ?? [], canManage: admin || owner, onPeopleChanged: peopleChanged }) })
       ] })
     ] });
   }
@@ -11135,17 +11522,23 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     { key: "list", label: "All work", icon: "list" },
     { key: "marketing", label: "Marketing", icon: "megaphone" },
     { key: "seo", label: "SEO", icon: "seo" },
-    { key: "health", label: "Health", icon: "pulse" },
     { key: "fleet", label: "Fleet", icon: "fleet" },
-    { key: "clients", label: "Clients & projects", icon: "clients" },
+    { key: "clients", label: "Clients", icon: "clients" },
     { key: "settings", label: "Settings", icon: "settings" }
   ];
   var viewOf = (key) => VIEWS.find((v) => v.key === key);
-  var TABS_KEY = "aw-tabs-v1";
+  var aliasView = (key) => key === "health" ? "fleet" : key;
+  var TABS_KEY2 = "aw-tabs-v1";
+  var NARROW_WIDTH = "(max-width: 900px)";
+  var domId = (prefix, key) => `${prefix}-${String(key).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   function loadTabs() {
     try {
-      const saved = JSON.parse(localStorage.getItem(TABS_KEY) ?? "null");
-      if (saved && Array.isArray(saved.tabs) && saved.tabs.length) return saved;
+      const saved = JSON.parse(localStorage.getItem(TABS_KEY2) ?? "null");
+      if (saved && Array.isArray(saved.tabs) && saved.tabs.length) {
+        const tabs = saved.tabs.map(aliasView);
+        const active = aliasView(saved.active ?? tabs[0]);
+        return { tabs, active: tabs.includes(active) ? active : tabs[0] };
+      }
     } catch {
     }
     return { tabs: ["inbox", "board"], active: "inbox" };
@@ -11170,55 +11563,16 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     }, [ref, enabled2]);
     return under;
   }
-  function AdminApp({ api, platform = "web", host = null, fullscreen = false, files = null }) {
-    const rootRef = useRef(null);
-    const underButtons = useUnderWindowButtons(rootRef, platform === "dsh");
-    const [data, reload] = useAdminData(api);
-    const [{ tabs, active }, setTabs] = useState(loadTabs);
-    const [boardProject, setBoardProject] = useState("all");
-    const [modal, setModal] = useState(null);
-    const [ask, setAsk] = useState(null);
+  function useWorkbenchActions({ api, reload, setAsk, onNotify }) {
     const [toast, setToast] = useState(null);
-    const [palette, setPalette] = useState(false);
-    const [sidebar, setSidebar] = useState(true);
-    useEffect(() => {
-      try {
-        localStorage.setItem(TABS_KEY, JSON.stringify({ tabs, active }));
-      } catch {
-      }
-    }, [tabs, active]);
-    const open = useCallback((key) => {
-      if (key.startsWith("p:") && host?.openProject) return host.openProject(key.slice(2));
-      setTabs((s) => ({ tabs: s.tabs.includes(key) ? s.tabs : [...s.tabs, key], active: key }));
-    }, [host]);
-    const close = useCallback(
-      (key) => setTabs((s) => {
-        const i = s.tabs.indexOf(key);
-        const next = s.tabs.filter((t) => t !== key);
-        if (!next.length) return { tabs: ["inbox"], active: "inbox" };
-        return { tabs: next, active: s.active === key ? next[Math.max(0, i - 1)] : s.active };
-      }),
-      []
-    );
-    const openTicket = useCallback((id) => open(`t:${id}`), [open]);
-    useEffect(() => {
-      if (typeof window === "undefined") return void 0;
-      const fromHash = () => {
-        const hash = window.location.hash.slice(1);
-        const destination = destinationFromHash(hash);
-        if (destination) open(destination);
-        if (viewOf(hash)) open(hash);
-      };
-      fromHash();
-      window.addEventListener("hashchange", fromHash);
-      return () => window.removeEventListener("hashchange", fromHash);
-    }, [open, openTicket]);
     const notify = useCallback((text, kind = "ok") => {
       setToast({ text, kind, at: Date.now() });
-    }, []);
+      onNotify?.(text, kind);
+    }, [onNotify]);
+    const dismissToast = useCallback(() => setToast(null), []);
     useEffect(() => {
-      if (!toast) return void 0;
-      const id = setTimeout(() => setToast(null), toast.kind === "error" ? 8e3 : 3500);
+      if (!toast || toast.kind === "error") return void 0;
+      const id = setTimeout(() => setToast(null), 3e3);
       return () => clearTimeout(id);
     }, [toast]);
     const act = useCallback(
@@ -11243,7 +11597,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           return new Promise(
             (resolve) => setAsk({
               title: `${STATUS_LABEL[status]}: #${ticket.id}?`,
-              text: `${ticket.client_email ?? "The client"} is emailed about this change.`,
+              text: `${ticket.client_email ?? ticket.clientEmail ?? "The client"} is emailed about this change.`,
               confirm: STATUS_LABEL[status],
               run: () => run().then(resolve, resolve)
             })
@@ -11251,22 +11605,112 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         }
         return run().catch(() => void 0);
       },
-      [act, api]
+      [act, api, setAsk]
     );
+    return { notify, act, setStatus, toast, dismissToast };
+  }
+  function Toast({ toast, onDismiss }) {
+    if (!toast) return null;
+    return /* @__PURE__ */ jsxs("div", { className: cx("aw-toast", toast.kind === "error" && "is-error"), role: toast.kind === "error" ? "alert" : "status", children: [
+      /* @__PURE__ */ jsx("span", { children: toast.text }),
+      /* @__PURE__ */ jsx("button", { type: "button", className: "aw-toast__close", "aria-label": "Dismiss", onClick: onDismiss, children: "\xD7" })
+    ] });
+  }
+  function AdminApp({ api, platform = "web", host = null, fullscreen = false, files = null }) {
+    const rootRef = useRef(null);
+    const underButtons = useUnderWindowButtons(rootRef, platform === "dsh");
+    const [data, reload] = useAdminData(api);
+    const [{ tabs, active }, setTabs] = useState(loadTabs);
+    const [boardProject, setBoardProject] = useState("all");
+    const [modal, setModal] = useState(null);
+    const [ask, setAsk] = useState(null);
+    const [palette, setPalette] = useState(false);
+    const [sidebar, setSidebar] = useState(true);
+    const [drawer, setDrawer] = useState(false);
+    const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && Boolean(window.matchMedia?.(NARROW_WIDTH).matches));
+    const tabRefs = useRef({});
+    const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk });
+    const signedOut = data.error && ["unauthorized", "signed_out", "forbidden"].includes(data.error.code);
+    useEffect(() => {
+      try {
+        localStorage.setItem(TABS_KEY2, JSON.stringify({ tabs, active }));
+      } catch {
+      }
+    }, [tabs, active]);
+    useEffect(() => {
+      if (typeof window === "undefined" || !window.matchMedia) return void 0;
+      const query = window.matchMedia(NARROW_WIDTH);
+      const sync = () => setNarrow(query.matches);
+      sync();
+      query.addEventListener("change", sync);
+      return () => query.removeEventListener("change", sync);
+    }, []);
+    const open = useCallback((key) => {
+      const target = aliasView(key);
+      if (!target) return void 0;
+      setDrawer(false);
+      if (target.startsWith("p:") && host?.openProject) return host.openProject(target.slice(2));
+      setTabs((s) => ({ tabs: s.tabs.includes(target) ? s.tabs : [...s.tabs, target], active: target }));
+      return void 0;
+    }, [host]);
+    const close = useCallback(
+      (key) => setTabs((s) => {
+        const i = s.tabs.indexOf(key);
+        const next = s.tabs.filter((t) => t !== key);
+        if (!next.length) return { tabs: ["inbox"], active: "inbox" };
+        return { tabs: next, active: s.active === key ? next[Math.max(0, i - 1)] : s.active };
+      }),
+      []
+    );
+    const openTicket = useCallback((id) => open(`t:${id}`), [open]);
+    useEffect(() => {
+      if (typeof window === "undefined") return void 0;
+      const fromHash = () => {
+        const hash = window.location.hash.slice(1);
+        const destination = destinationFromHash(hash);
+        if (destination) open(destination);
+        const view = aliasView(hash);
+        if (viewOf(view)) open(view);
+      };
+      fromHash();
+      window.addEventListener("hashchange", fromHash);
+      return () => window.removeEventListener("hashchange", fromHash);
+    }, [open, openTicket]);
+    const toggleExplorer = useCallback(() => {
+      if (narrow) setDrawer((d) => !d);
+      else setSidebar((s) => !s);
+    }, [narrow]);
+    const shell = useRef({});
+    shell.current = { palette, modal, ask, ready: data.loaded && !signedOut };
     useEffect(() => {
       const onKey = (e) => {
         const mod = e.metaKey || e.ctrlKey;
-        if (mod && e.key.toLowerCase() === "k") {
+        const key = e.key.toLowerCase();
+        if (mod && key === "k") {
           e.preventDefault();
           setPalette((p) => !p);
-        } else if (mod && e.key.toLowerCase() === "b") {
+          return;
+        }
+        if (mod && key === "b") {
           e.preventDefault();
-          setSidebar((s) => !s);
+          toggleExplorer();
+          return;
+        }
+        if (e.key === "Escape") {
+          setDrawer(false);
+          return;
+        }
+        const el = e.target;
+        const typing = el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.tagName === "SELECT" || el?.isContentEditable;
+        const state = shell.current;
+        if (!mod && !e.altKey && key === "n" && !typing && state.ready && !state.palette && !state.modal && !state.ask) {
+          e.preventDefault();
+          setModal({ kind: "task" });
         }
       };
       window.addEventListener("keydown", onKey);
       return () => window.removeEventListener("keydown", onKey);
-    }, []);
+    }, [toggleExplorer]);
     useEffect(() => {
       if (data.loaded && !workbenchAllowed(active, data.access)) open("board");
     }, [data.loaded, data.access, active, open]);
@@ -11289,60 +11733,91 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }
       return viewOf(key)?.label ?? key;
     };
-    const signedOut = data.error && ["unauthorized", "signed_out", "forbidden"].includes(data.error.code);
+    const visibleTabs = tabs.filter((key) => workbenchAllowed(key, data.access));
+    const shiftTab = (e, key) => {
+      const i = visibleTabs.indexOf(key);
+      if (i < 0) return;
+      let next = null;
+      if (e.key === "ArrowRight") next = visibleTabs[(i + 1) % visibleTabs.length];
+      else if (e.key === "ArrowLeft") next = visibleTabs[(i - 1 + visibleTabs.length) % visibleTabs.length];
+      else if (e.key === "Home") next = visibleTabs[0];
+      else if (e.key === "End") next = visibleTabs[visibleTabs.length - 1];
+      if (next == null) return;
+      e.preventDefault();
+      setTabs((s) => ({ ...s, active: next }));
+      tabRefs.current[next]?.focus();
+    };
     return /* @__PURE__ */ jsxs(AdminContext.Provider, { value: ctx, children: [
       /* @__PURE__ */ jsx("style", { children: STYLES }),
       /* @__PURE__ */ jsxs("div", { ref: rootRef, className: cx("aw", fullscreen && "aw--fullscreen", `aw--${platform}`, underButtons && "aw--inset"), children: [
         /* @__PURE__ */ jsxs("nav", { className: "aw-activity", "aria-label": "Views", children: [
-          VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => /* @__PURE__ */ jsxs("button", { type: "button", title: v.label, "aria-pressed": active === v.key, onClick: () => open(v.key), children: [
+          VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => /* @__PURE__ */ jsxs("button", { type: "button", title: v.label, "aria-label": v.label, "aria-pressed": active === v.key, onClick: () => open(v.key), children: [
             /* @__PURE__ */ jsx(Icon, { name: v.icon, size: 20 }),
             v.key === "inbox" && inboxCount ? /* @__PURE__ */ jsx("span", { className: "aw-badge", children: inboxCount }) : null
           ] }, v.key)),
           /* @__PURE__ */ jsx("span", { className: "aw-activity__spacer" }),
-          /* @__PURE__ */ jsx("button", { type: "button", title: "New task (N)", onClick: () => setModal({ kind: "task" }), children: /* @__PURE__ */ jsx(Icon, { name: "plus", size: 20 }) }),
-          /* @__PURE__ */ jsx("button", { type: "button", title: "Search and commands (\u2318K)", onClick: () => setPalette(true), children: /* @__PURE__ */ jsx(Icon, { name: "search", size: 20 }) })
+          /* @__PURE__ */ jsx("button", { type: "button", title: "New task (N)", "aria-label": "New task", "aria-keyshortcuts": "N", onClick: () => setModal({ kind: "task" }), children: /* @__PURE__ */ jsx(Icon, { name: "plus", size: 20 }) }),
+          /* @__PURE__ */ jsx("button", { type: "button", title: "Search and commands (\u2318K)", "aria-label": "Search and commands", "aria-keyshortcuts": "Meta+K Control+K", onClick: () => setPalette(true), children: /* @__PURE__ */ jsx(Icon, { name: "search", size: 20 }) })
         ] }),
-        sidebar ? /* @__PURE__ */ jsx(Explorer, {}) : null,
-        sidebar ? /* @__PURE__ */ jsx(Resizer, { host: ".aw", cssVar: "--aw-explorer-w", def: 260, min: 180, max: 520, storage: "aw.explorer.w", className: "aw-resize--explorer" }) : null,
+        narrow && drawer ? /* @__PURE__ */ jsx("div", { className: "aw-drawer-scrim", onClick: () => setDrawer(false) }) : null,
+        !narrow && sidebar || narrow && drawer ? /* @__PURE__ */ jsx(Explorer, { drawer: narrow }) : null,
+        !narrow && sidebar ? /* @__PURE__ */ jsx(Resizer, { host: ".aw", cssVar: "--aw-explorer-w", def: 260, min: 180, max: 520, storage: "aw.explorer.w", className: "aw-resize--explorer" }) : null,
         /* @__PURE__ */ jsxs("main", { className: "aw-main", children: [
-          /* @__PURE__ */ jsxs("div", { className: "aw-tabs", role: "tablist", children: [
-            tabs.filter((key) => workbenchAllowed(key, data.access)).map((key) => /* @__PURE__ */ jsxs(
-              "div",
-              {
-                role: "tab",
-                "aria-selected": key === active,
-                className: cx("aw-tab", key === active && "is-active"),
-                onClick: () => setTabs((s) => ({ ...s, active: key })),
-                onAuxClick: (e) => e.button === 1 && close(key),
-                title: tabLabel(key),
-                children: [
-                  /* @__PURE__ */ jsx(Icon, { name: key.startsWith("p:") ? "folder" : key.startsWith("t:") ? "ticket" : key.startsWith("c:") ? "clients" : viewOf(key)?.icon ?? "list", size: 14 }),
-                  /* @__PURE__ */ jsx("span", { className: "aw-tab__label", children: tabLabel(key) }),
-                  /* @__PURE__ */ jsx(
-                    "button",
-                    {
-                      type: "button",
-                      className: "aw-tab__close",
-                      "aria-label": "Close tab",
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        close(key);
-                      },
-                      children: "\xD7"
-                    }
-                  )
-                ]
-              },
-              key
-            )),
-            /* @__PURE__ */ jsx("span", { className: "aw-tabs__fill" }),
+          /* @__PURE__ */ jsxs("div", { className: "aw-tabs", children: [
+            /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", className: "aw-tabs__toggle", title: "Toggle explorer (\u2318B)", "aria-label": "Toggle explorer", "aria-keyshortcuts": "Meta+B Control+B", onClick: toggleExplorer, children: /* @__PURE__ */ jsx(Icon, { name: "board", size: 14 }) }),
+            /* @__PURE__ */ jsxs("div", { className: "aw-tablist", role: "tablist", "aria-label": "Open views", children: [
+              visibleTabs.map((key) => /* @__PURE__ */ jsxs(
+                "div",
+                {
+                  ref: (node) => {
+                    if (node) tabRefs.current[key] = node;
+                    else delete tabRefs.current[key];
+                  },
+                  role: "tab",
+                  id: domId("aw-tab", key),
+                  "aria-selected": key === active,
+                  "aria-controls": domId("aw-pane", key),
+                  tabIndex: key === active ? 0 : -1,
+                  className: cx("aw-tab", key === active && "is-active"),
+                  onClick: () => setTabs((s) => ({ ...s, active: key })),
+                  onAuxClick: (e) => e.button === 1 && close(key),
+                  onKeyDown: (e) => shiftTab(e, key),
+                  title: tabLabel(key),
+                  children: [
+                    /* @__PURE__ */ jsx(Icon, { name: key.startsWith("p:") ? "folder" : key.startsWith("t:") ? "ticket" : key.startsWith("c:") ? "clients" : viewOf(key)?.icon ?? "list", size: 14 }),
+                    /* @__PURE__ */ jsx("span", { className: "aw-tab__label", children: tabLabel(key) }),
+                    /* @__PURE__ */ jsx(
+                      "button",
+                      {
+                        type: "button",
+                        className: "aw-tab__close",
+                        "aria-label": "Close tab",
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          close(key);
+                        },
+                        children: "\xD7"
+                      }
+                    )
+                  ]
+                },
+                key
+              )),
+              /* @__PURE__ */ jsx("span", { className: "aw-tabs__fill" })
+            ] }),
             /* @__PURE__ */ jsx(MachineStatusPill, {}),
             /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "Refresh", onClick: () => void reload(), children: /* @__PURE__ */ jsx(Icon, { name: "refresh", size: 14 }) })
           ] }),
-          /* @__PURE__ */ jsx("div", { className: "aw-content", children: signedOut ? /* @__PURE__ */ jsx(SignedOut, {}) : !data.loaded ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading\u2026" }) : tabs.filter((key) => workbenchAllowed(key, data.access)).map((key) => /* @__PURE__ */ jsx("section", { className: "aw-pane", hidden: key !== active, children: key.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(key.slice(2)), active: key === active }) : key.startsWith("p:") ? /* @__PURE__ */ jsx(ProjectView, { id: key.slice(2) }) : key.startsWith("c:") ? /* @__PURE__ */ jsx(ClientView, { id: key.slice(2) }) : /* @__PURE__ */ jsx(View, { name: key }) }, key)) })
+          /* @__PURE__ */ jsxs("div", { className: "aw-content", children: [
+            !signedOut && data.error ? /* @__PURE__ */ jsxs("div", { className: "aw-topbanner", role: "alert", children: [
+              /* @__PURE__ */ jsx("span", { children: errorText(data.error) }),
+              /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void reload(), children: "Retry" })
+            ] }) : null,
+            signedOut ? /* @__PURE__ */ jsx(SignedOut, {}) : !data.loaded ? /* @__PURE__ */ jsx("div", { className: "aw-loading aw-loading--fill", role: "status", children: /* @__PURE__ */ jsx("span", { children: "Loading\u2026" }) }) : visibleTabs.map((key) => /* @__PURE__ */ jsx("section", { id: domId("aw-pane", key), role: "tabpanel", "aria-labelledby": domId("aw-tab", key), className: "aw-pane", hidden: key !== active, children: key.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(key.slice(2)), active: key === active }) : key.startsWith("p:") ? /* @__PURE__ */ jsx(ProjectView, { id: key.slice(2) }) : key.startsWith("c:") ? /* @__PURE__ */ jsx(ClientView, { id: key.slice(2) }) : /* @__PURE__ */ jsx(View, { name: key }) }, key))
+          ] })
         ] }),
         /* @__PURE__ */ jsx(StatusBar, {}),
-        toast ? /* @__PURE__ */ jsx("div", { className: cx("aw-toast", toast.kind === "error" && "is-error"), role: "status", children: toast.text }) : null,
+        /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast }),
         palette ? /* @__PURE__ */ jsx(Palette, { onClose: () => setPalette(false) }) : null,
         /* @__PURE__ */ jsx(MachineOnboarding, {}),
         modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal(null) }) : null,
@@ -11391,7 +11866,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       platform === "dsh" ? /* @__PURE__ */ jsx(SettingsView, {}) : null
     ] });
   }
-  function Explorer() {
+  function Explorer({ drawer = false }) {
     const { data, open, openTicket, setModal, setBoardProject, boardProject } = useAdmin();
     const [openSlug, setOpenSlug] = useState({});
     const byProject = /* @__PURE__ */ new Map();
@@ -11402,7 +11877,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     }
     const live = (t) => !["done", "declined"].includes(t.status);
     const runningTicket = new Set(data.running.map((r) => r.ticket_id));
-    return /* @__PURE__ */ jsxs("aside", { className: "aw-explorer", "aria-label": "Explorer", children: [
+    return /* @__PURE__ */ jsxs("aside", { className: cx("aw-explorer", drawer && "aw-explorer--drawer"), "aria-label": "Explorer", children: [
       /* @__PURE__ */ jsxs("h3", { children: [
         "Projects ",
         data.access?.canUseWorkbench ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "New project", onClick: () => setModal({ kind: "project" }), children: /* @__PURE__ */ jsx(Icon, { name: "plus", size: 12 }) }) : null
@@ -11434,7 +11909,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           ] }),
           expanded ? /* @__PURE__ */ jsxs("ul", { children: [
             items.map((t) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-tree__leaf", onClick: () => openTicket(t.id), title: t.title, children: [
-              /* @__PURE__ */ jsx("span", { className: `aw-sq aw-sq--${t.status}` }),
+              /* @__PURE__ */ jsx("span", { className: `aw-sq aw-sq--${t.status}`, title: STATUS_LABEL[t.status] ?? t.status }),
               /* @__PURE__ */ jsxs("span", { className: "aw-tree__id", children: [
                 "#",
                 t.id
@@ -11446,31 +11921,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             !items.length ? /* @__PURE__ */ jsx("li", { className: "aw-tree__none", children: "No open work" }) : null
           ] }) : null
         ] }, p.id);
-      }) }),
-      /* @__PURE__ */ jsx("h3", { children: "Running now" }),
-      /* @__PURE__ */ jsx("ul", { className: "aw-tree", children: data.running.length ? data.running.map((r) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-tree__leaf", onClick: () => openTicket(r.ticket_id), children: [
-        /* @__PURE__ */ jsx("span", { className: "aw-live" }),
-        " #",
-        r.ticket_id,
-        " ",
-        r.executor,
-        " \xB7 ",
-        r.node_id ?? "Harness"
-      ] }) }, r.id)) : /* @__PURE__ */ jsx("li", { className: "aw-tree__none", children: "Nothing" }) }),
-      data.access?.superAdmin ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-        /* @__PURE__ */ jsx("h3", { children: "Nodes" }),
-        /* @__PURE__ */ jsx("ul", { className: "aw-tree", children: data.nodes.map((n) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-tree__leaf", onClick: () => open("fleet"), children: [
-          /* @__PURE__ */ jsx(Dot, { state: !n.online ? "bad" : n.draining ? "warn" : "ok" }),
-          " ",
-          n.id,
-          /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-            " ",
-            n.running.length,
-            "/",
-            n.slots
-          ] })
-        ] }) }, n.id)) })
-      ] }) : null
+      }) })
     ] });
   }
   function StatusBar() {
@@ -11479,24 +11930,17 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const waiting = data.queue.length;
     const stuck = data.queue.filter((q) => !q.eligible.length).length;
     return /* @__PURE__ */ jsxs("footer", { className: "aw-status", children: [
-      data.access?.superAdmin ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-        /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => open("fleet"), children: [
-          /* @__PURE__ */ jsx(Dot, { state: online === data.nodes.length && online ? "ok" : online ? "warn" : "bad" }),
-          " ",
-          online,
-          "/",
-          data.nodes.length,
-          " nodes online"
-        ] }),
-        /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => open("fleet"), children: [
-          data.running.length,
-          " running"
-        ] }),
-        /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => open("fleet"), children: [
-          waiting,
-          " queued",
-          stuck ? ` \xB7 ${stuck} stuck` : ""
-        ] })
+      data.access?.superAdmin ? /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => open("fleet"), title: "Fleet, nodes and the queue", children: [
+        /* @__PURE__ */ jsx(Dot, { state: online === data.nodes.length && online ? "ok" : online ? "warn" : "bad" }),
+        online,
+        " ",
+        online === 1 ? "node" : "nodes",
+        " \xB7 ",
+        data.running.length,
+        " running \xB7 ",
+        waiting,
+        " queued",
+        stuck ? ` \xB7 ${stuck} stuck` : ""
       ] }) : /* @__PURE__ */ jsxs("span", { children: [
         data.projects.length,
         " projects"
@@ -11513,7 +11957,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const [i, setI] = useState(0);
     const input = useRef(null);
     useEffect(() => input.current?.focus(), []);
-    const items = useMemo(() => {
+    const { items, total } = useMemo(() => {
       const cmds = [
         { label: "New task\u2026", hint: "command", run: () => setModal({ kind: "task" }) },
         ...data.access?.canUseWorkbench ? [{ label: "New project\u2026", hint: "command", run: () => setModal({ kind: "project" }) }] : [],
@@ -11523,8 +11967,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         ...data.tickets.map((t) => ({ label: `#${t.id} ${t.title}`, hint: `${STATUS_LABEL[t.status]} \xB7 ${t.project_name ?? "no project"}`, run: () => openTicket(t.id) }))
       ];
       const needle = q.trim().toLowerCase();
-      if (!needle) return cmds.slice(0, 40);
-      return cmds.filter((c) => `${c.label} ${c.hint}`.toLowerCase().includes(needle)).slice(0, 40);
+      const matched = needle ? cmds.filter((c) => `${c.label} ${c.hint}`.toLowerCase().includes(needle)) : cmds;
+      return { items: matched.slice(0, 40), total: matched.length };
     }, [q, data, open, openTicket, setModal, reload]);
     const pick = (item) => {
       onClose();
@@ -11535,6 +11979,12 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         "input",
         {
           ref: input,
+          role: "combobox",
+          "aria-label": "Search tickets, views and commands",
+          "aria-expanded": "true",
+          "aria-controls": "aw-palette-list",
+          "aria-autocomplete": "list",
+          "aria-activedescendant": items[i] ? `aw-palette-option-${i}` : void 0,
           value: q,
           placeholder: "Search tickets, views and commands\u2026",
           onChange: (e) => {
@@ -11549,13 +11999,31 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           }
         }
       ),
-      /* @__PURE__ */ jsxs("ul", { children: [
-        items.map((item, n) => /* @__PURE__ */ jsxs("li", { className: n === i ? "is-active" : "", onMouseEnter: () => setI(n), onMouseDown: () => pick(item), children: [
-          /* @__PURE__ */ jsx("span", { children: item.label }),
-          /* @__PURE__ */ jsx("small", { children: item.hint })
-        ] }, item.label + n)),
-        !items.length ? /* @__PURE__ */ jsx("li", { className: "aw-muted", children: "No matches" }) : null
-      ] })
+      /* @__PURE__ */ jsxs("ul", { id: "aw-palette-list", role: "listbox", "aria-label": "Results", children: [
+        items.map((item, n) => /* @__PURE__ */ jsxs(
+          "li",
+          {
+            id: `aw-palette-option-${n}`,
+            role: "option",
+            "aria-selected": n === i,
+            className: n === i ? "is-active" : "",
+            onMouseEnter: () => setI(n),
+            onMouseDown: () => pick(item),
+            children: [
+              /* @__PURE__ */ jsx("span", { children: item.label }),
+              /* @__PURE__ */ jsx("small", { children: item.hint })
+            ]
+          },
+          item.label + n
+        )),
+        !items.length ? /* @__PURE__ */ jsx("li", { className: "aw-muted", role: "presentation", children: "No matches" }) : null
+      ] }),
+      total > items.length ? /* @__PURE__ */ jsxs("p", { className: "aw-palette__count", children: [
+        "Showing ",
+        items.length,
+        " of ",
+        total
+      ] }) : null
     ] }) });
   }
   function TaskModal({ preset = {}, onClose }) {
@@ -11613,7 +12081,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             "textarea",
             {
               disabled: busy,
-              rows: 7,
+              rows: 4,
               value: brief,
               onChange: (e) => setBrief(e.target.value),
               onKeyDown: (e) => {
@@ -11624,13 +12092,13 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
               }
             }
           ) }),
-          /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
+          /* @__PURE__ */ jsxs("div", { className: "aw-grid2 aw-taskform", children: [
             /* @__PURE__ */ jsx(Field, { label: "Project", children: /* @__PURE__ */ jsxs("select", { value: projectId, onChange: (e) => setProjectId(e.target.value), children: [
               /* @__PURE__ */ jsx("option", { value: "", children: "Pick a project\u2026" }),
               data.projects.map((p) => /* @__PURE__ */ jsx("option", { value: p.id, children: p.name }, p.id))
             ] }) }),
             /* @__PURE__ */ jsx(Field, { label: "Priority", children: /* @__PURE__ */ jsx(Segmented, { value: priority, options: PRIORITIES, onChange: setPriority }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Agent", children: /* @__PURE__ */ jsx(Segmented, { value: executor, options: AGENTS, onChange: setExecutor }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Agent", children: /* @__PURE__ */ jsx("select", { value: executor ?? "", onChange: (e) => setExecutor(e.target.value || null), children: AGENTS.map((agent) => /* @__PURE__ */ jsx("option", { value: agent.value ?? "", title: agent.hint, children: agent.label }, String(agent.value))) }) }),
             /* @__PURE__ */ jsx(Field, { label: "Start", children: /* @__PURE__ */ jsx(Segmented, { value: approve, disabled: busy, options: [{ value: false, label: "Save draft" }, { value: true, label: "Queue agent" }], onChange: setApprove }) })
           ] }),
           caps.length ? /* @__PURE__ */ jsx(Field, { label: "Needs", hint: "Only nodes with all of these take it.", children: /* @__PURE__ */ jsx(Chips, { value: requires, options: caps.map((c) => ({ value: c.id, label: c.label, hint: c.hint })), onChange: setRequires }) }) : null
@@ -11777,7 +12245,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const destination = navigation.id === id ? navigation.destination : `p:${id}`;
     const [modal, setModal] = useState(null);
     const [question, setQuestion] = useState(null);
-    const [notice, setNotice] = useState(null);
     const [boardProject, setBoardProject] = useState(id);
     const open = useCallback((key) => {
       if (key.startsWith("p:") && host?.openProject) return host.openProject(key.slice(2));
@@ -11785,35 +12252,14 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       setNavigation({ id, destination: key });
     }, [host, id]);
     const openTicket = useCallback((target) => open(`t:${target}`), [open]);
-    const notify = useCallback((text, kind = "ok") => {
-      setNotice({ text, kind });
-      host?.notify?.(text);
-    }, [host]);
-    const act = useCallback(async (run, done) => {
-      try {
-        const result = await run();
-        if (done) notify(typeof done === "function" ? done(result) : done);
-        void reload();
-        return result;
-      } catch (error) {
-        notify(errorText(error), "error");
-        throw error;
-      }
-    }, [notify, reload]);
-    const setStatus = useCallback((ticket, status) => {
-      const run = () => act(() => api("PATCH", `/admin/tickets/${ticket.id}`, { status }));
-      if (ticket.kind !== "system" && CLIENT_VISIBLE.includes(status)) {
-        setQuestion({ title: `${STATUS_LABEL[status]}: #${ticket.id}?`, text: "The client is emailed about this change.", confirm: STATUS_LABEL[status], run });
-        return Promise.resolve();
-      }
-      return run();
-    }, [act, api]);
+    const onNotify = useCallback((text, kind) => host?.notify?.(text, kind), [host]);
+    const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk: setQuestion, onNotify });
     const value = { api, files, host, platform: host ? "dsh" : "web", data, reload, open, openTicket, notify, act, setStatus, ask: setQuestion, setModal, boardProject, setBoardProject };
     return /* @__PURE__ */ jsxs("div", { className: cx("aw", host && "aw--dsh"), style: { display: "block", height: "100%", overflowY: "auto" }, children: [
       /* @__PURE__ */ jsx("style", { children: STYLES }),
       /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
         destination.startsWith("p:") ? /* @__PURE__ */ jsx(ProjectView, { id: destination.slice(2) }, destination) : destination.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(destination.slice(2)), active: true }, destination) : workbenchAllowed(destination, data.access) ? /* @__PURE__ */ jsx(View, { name: destination }) : /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "This destination requires administrator access." }),
-        notice ? /* @__PURE__ */ jsx("div", { role: "status", className: cx("aw-toast", notice.kind === "error" && "is-error"), onClick: () => setNotice(null), children: notice.text }) : null,
+        /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast }),
         modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal(null) }) : null,
         modal?.kind === "project" && data.access?.canUseWorkbench ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal(null) }) : null,
         modal?.kind === "custom" ? modal.render(() => setModal(null)) : null,
@@ -11821,43 +12267,40 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       ] })
     ] });
   }
-  function ticketContext({ api, data, reload, host, files }) {
-    return {
-      api,
-      files: files ?? null,
-      data,
-      reload,
-      platform: "dsh",
-      host,
-      open: () => {
-      },
-      openTicket: (target) => host?.openTicket?.(target),
-      setStatus: async (target, status) => {
-        await api("PATCH", `/admin/tickets/${target.id}`, { status });
-        reload();
-      },
-      act: async (run, done) => {
-        try {
-          await run();
-          if (done) host?.notify?.(done);
-        } finally {
-          reload();
-        }
-      },
-      notify: (text) => host?.notify?.(text),
-      ask: (question) => {
-        if (typeof window !== "undefined" && window.confirm(`${question.title}
+  function useTicketContext({ api, data, reload, host, files }) {
+    const ask = useCallback((question) => {
+      if (typeof window !== "undefined" && window.confirm(`${question.title}
 
 ${question.text ?? ""}`)) {
-          void question.run?.();
-        }
-      },
-      setModal: () => {
-      },
-      boardProject: "all",
-      setBoardProject: () => {
+        void question.run?.();
       }
-    };
+    }, []);
+    const onNotify = useCallback((text, kind) => host?.notify?.(text, kind), [host]);
+    const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk: ask, onNotify });
+    const value = useMemo(
+      () => ({
+        api,
+        files: files ?? null,
+        data,
+        reload,
+        platform: "dsh",
+        host,
+        open: () => {
+        },
+        openTicket: (target) => host?.openTicket?.(target),
+        setStatus,
+        act,
+        notify,
+        ask,
+        setModal: () => {
+        },
+        boardProject: "all",
+        setBoardProject: () => {
+        }
+      }),
+      [api, files, data, reload, host, setStatus, act, notify, ask]
+    );
+    return { value, toast, dismissToast };
   }
   function TicketSidePanel({ api, host = null, ticketId, page = false }) {
     const [data, reloadData] = useAdminData(api);
@@ -11867,7 +12310,7 @@ ${question.text ?? ""}`)) {
       void reloadData();
       void reloadTicket();
     }, [reloadData, reloadTicket]);
-    const value = useMemo(() => ticketContext({ api, data, reload, host, files: null }), [api, data, reload, host]);
+    const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files: null });
     const scope = page ? { display: "block", padding: "18px 24px 28px", maxWidth: 820, margin: "0 auto" } : { display: "block", height: "100%", overflowY: "auto" };
     if (loading && !ticket) {
       return /* @__PURE__ */ jsxs("div", { className: "aw", style: scope, children: [
@@ -11883,7 +12326,10 @@ ${question.text ?? ""}`)) {
     }
     return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: scope, children: [
       /* @__PURE__ */ jsx("style", { children: STYLES }),
-      /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload, page }) })
+      /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
+        /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload, page }),
+        /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast })
+      ] })
     ] });
   }
   function TicketPage({ api, host = null, files = null, ticketId, part = "thread", autoMeter = true }) {
@@ -11895,10 +12341,13 @@ ${question.text ?? ""}`)) {
     const reload = useCallback(() => {
       void reloadData();
     }, [reloadData]);
-    const value = useMemo(() => ticketContext({ api, data, reload, host, files }), [api, data, reload, host, files]);
+    const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files });
     return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: { display: "block", height: "100%", overflowY: "auto" }, children: [
       /* @__PURE__ */ jsx("style", { children: STYLES }),
-      /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: data.error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: errorText(data.error) }) : /* @__PURE__ */ jsx(ClientView, { id: clientId }) })
+      /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
+        data.error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: errorText(data.error) }) : /* @__PURE__ */ jsx(ClientView, { id: clientId }),
+        /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast })
+      ] })
     ] });
   }
   function TicketThread({ api, host, files, ticketId, autoMeter }) {
@@ -11906,11 +12355,14 @@ ${question.text ?? ""}`)) {
     const reload = useCallback(() => {
       void reloadData();
     }, [reloadData]);
-    const value = useMemo(() => ticketContext({ api, data, reload, host, files }), [api, data, reload, host, files]);
+    const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files });
     const scope = { display: "block", height: "100%", overflowY: "auto" };
     return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: scope, children: [
       /* @__PURE__ */ jsx("style", { children: STYLES }),
-      /* @__PURE__ */ jsx(AdminContext.Provider, { value, children: /* @__PURE__ */ jsx(TicketView, { id: ticketId, active: autoMeter, details: false }) })
+      /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
+        /* @__PURE__ */ jsx(TicketView, { id: ticketId, active: autoMeter, details: false }),
+        /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast })
+      ] })
     ] });
   }
 
@@ -11943,7 +12395,7 @@ ${question.text ?? ""}`)) {
     return ticket.title?.trim() || ticket.title_en?.trim() || `Ticket #${ticket.id}`;
   }
   function sidebarRunShortcut(run) {
-    return `Open ${run.kind === "task" ? "system task" : "client ticket"} #${run.ticketId}`;
+    return `Open ${run.kind === "task" ? "my task" : "client ticket"} #${run.ticketId}`;
   }
 
   // packages/dsh-admin/src/conversation-meter.mjs
@@ -12254,21 +12706,18 @@ ${question.text ?? ""}`)) {
   // packages/dsh-admin/src/conversation-history.jsx
   var clock2 = (unix) => unix ? new Date(unix * 1e3).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
   function ConversationHistory({ api, ticketId, openTicket }) {
-    const [{ ticket, messages, runs, loading, error }, reload] = useTicket(api, ticketId);
+    const [{ ticket, messages, runs, loading, error }] = useTicket(api, ticketId);
     const [mode, setMode] = useState("task");
     const projectId = ticket?.project_id;
     const scope = projectId == null ? "No project" : ticket.project_name || `Project #${projectId}`;
     return /* @__PURE__ */ jsxs("section", { "aria-label": "History", className: "pta-hist", children: [
-      /* @__PURE__ */ jsxs("div", { className: "pta-hist__bar", children: [
-        /* @__PURE__ */ jsxs("div", { role: "group", "aria-label": "History scope", className: "pta-seg", children: [
-          /* @__PURE__ */ jsxs("button", { type: "button", "aria-pressed": mode === "task", onClick: () => setMode("task"), children: [
-            "Task #",
-            ticketId
-          ] }),
-          /* @__PURE__ */ jsx("button", { type: "button", "aria-pressed": mode === "project", onClick: () => setMode("project"), title: scope, children: "Project" })
+      /* @__PURE__ */ jsx("div", { className: "pta-hist__bar", children: /* @__PURE__ */ jsxs("div", { role: "group", "aria-label": "History scope", className: "pta-seg", children: [
+        /* @__PURE__ */ jsxs("button", { type: "button", "aria-pressed": mode === "task", onClick: () => setMode("task"), children: [
+          "Task #",
+          ticketId
         ] }),
-        (mode === "task" || loading || error) && /* @__PURE__ */ jsx("button", { type: "button", className: "pta-hist__reload", onClick: reload, title: "Reload task history", children: "\u21BB Reload" })
-      ] }),
+        /* @__PURE__ */ jsx("button", { type: "button", "aria-pressed": mode === "project", onClick: () => setMode("project"), title: scope, children: "Project" })
+      ] }) }),
       error ? /* @__PURE__ */ jsxs("p", { role: "alert", children: [
         "Could not load task history. ",
         errorText(error)
@@ -12320,7 +12769,7 @@ ${question.text ?? ""}`)) {
           "Recent tickets in ",
           scope
         ] }),
-        /* @__PURE__ */ jsx("button", { type: "button", className: "pta-hist__reload", onClick: () => setRevision((value) => value + 1), children: "\u21BB Reload project" })
+        /* @__PURE__ */ jsx("button", { type: "button", className: "pta-hist__reload", onClick: () => setRevision((value) => value + 1), children: "Reload" })
       ] }),
       !current ? /* @__PURE__ */ jsx("p", { role: "status", children: "Loading project tickets\u2026" }) : current.error ? /* @__PURE__ */ jsxs("p", { role: "alert", children: [
         "Could not load project tickets. ",
@@ -12331,23 +12780,10 @@ ${question.text ?? ""}`)) {
           ticket.id
         ] }),
         /* @__PURE__ */ jsx("span", { className: "pta-hist__ttitle", children: ticket.title_en || ticket.title }),
-        ticket.status ? /* @__PURE__ */ jsx("span", { className: "pta-hist__tstatus", children: ticket.status.replace(/_/g, " ") }) : null,
+        ticket.status ? /* @__PURE__ */ jsx("span", { className: "pta-hist__tstatus", children: STATUS_LABEL[ticket.status] ?? ticket.status.replace(/_/g, " ") }) : null,
         /* @__PURE__ */ jsx("time", { children: when(ticket.updated_at) })
       ] }) }, ticket.id)) })
     ] });
-  }
-
-  // packages/dsh-admin/src/row-navigation.mjs
-  var NEXT_KEYS = /* @__PURE__ */ new Set(["j", "ArrowDown"]);
-  var PREV_KEYS = /* @__PURE__ */ new Set(["k", "ArrowUp"]);
-  function nextRowIndex(current, count, key) {
-    if (!Number.isInteger(count) || count <= 0) return null;
-    const index = Number.isInteger(current) && current >= 0 && current < count ? current : -1;
-    if (NEXT_KEYS.has(key)) return index < 0 ? 0 : Math.min(index + 1, count - 1);
-    if (PREV_KEYS.has(key)) return index < 0 ? 0 : Math.max(index - 1, 0);
-    if (key === "Home") return 0;
-    if (key === "End") return count - 1;
-    return null;
   }
 
   // packages/dsh-admin/src/project-park.mjs
@@ -12412,7 +12848,7 @@ ${question.text ?? ""}`)) {
     }
     return failing;
   }
-  function clientLabelFor(project, projectTickets) {
+  function clientLabelFor(project, projectTickets2) {
     const names = [];
     const seen = /* @__PURE__ */ new Set();
     const push = (raw) => {
@@ -12431,7 +12867,7 @@ ${question.text ?? ""}`)) {
       }
     }
     if (names.length === 0) {
-      for (const ticket of projectTickets) {
+      for (const ticket of projectTickets2) {
         if (ticket?.kind === "system") continue;
         push(ticket?.client_name || ticket?.client_email);
       }
@@ -12642,52 +13078,6 @@ ${question.text ?? ""}`)) {
     if (agentSeconds > 0) parts.push(`${shortAge(agentSeconds)} agent`);
     return { runs: runs.slice(-limit), total: runs.length, failed, agentSeconds, summary: parts.join(" \xB7 ") };
   }
-  function fleetTicker({ running = [], recent = [], tickets = [], now = Date.now(), limit = 4 } = {}) {
-    const nowSeconds = toUnixSeconds(now) || Date.now() / 1e3;
-    const byTicket = new Map((Array.isArray(tickets) ? tickets : []).filter(Boolean).map((t) => [String(t.id), t]));
-    const titleOf = (id, fallback) => {
-      const t = byTicket.get(String(id));
-      return typeof t?.title === "string" && t.title.trim() || typeof fallback === "string" && fallback.trim() || `#${id}`;
-    };
-    const runningNow = [];
-    const runningIds = /* @__PURE__ */ new Set();
-    for (const run of Array.isArray(running) ? running : []) {
-      if (!run || run.ticket_id === null || run.ticket_id === void 0 || runKind(run) !== "running") continue;
-      const key = String(run.ticket_id);
-      if (runningIds.has(key)) continue;
-      runningIds.add(key);
-      const started = toUnixSeconds(run.started_at);
-      runningNow.push({ ticketId: run.ticket_id, title: titleOf(run.ticket_id, run.title), seconds: started ? Math.max(0, nowSeconds - started) : 0 });
-    }
-    runningNow.sort((a, b) => b.seconds - a.seconds);
-    const latest = /* @__PURE__ */ new Map();
-    for (const run of Array.isArray(recent) ? recent : []) {
-      if (!run || run.ticket_id === null || run.ticket_id === void 0) continue;
-      const key = String(run.ticket_id);
-      const prev = latest.get(key);
-      if (!prev || toUnixSeconds(run.started_at) > toUnixSeconds(prev.started_at)) latest.set(key, run);
-    }
-    const attention = [];
-    for (const [key, run] of latest) {
-      if (runningIds.has(key)) continue;
-      const ticket = byTicket.get(key);
-      if (ticket && isClosedTicket(ticket)) continue;
-      const kind = runKind(run);
-      const finished = toUnixSeconds(run.finished_at);
-      let reason = null;
-      if (kind === "failed") reason = "failed";
-      else if (kind === "ok" && ticket?.status === "review") reason = "review";
-      if (!reason) continue;
-      attention.push({ ticketId: run.ticket_id, title: titleOf(run.ticket_id, run.title), reason, seconds: finished ? Math.max(0, nowSeconds - finished) : 0 });
-    }
-    attention.sort((a, b) => (a.reason === b.reason ? 0 : a.reason === "failed" ? -1 : 1) || b.seconds - a.seconds);
-    let idle = null;
-    if (!runningNow.length) {
-      const last = Math.max(0, ...[...latest.values()].map((r) => toUnixSeconds(r.finished_at)));
-      idle = last ? `last run finished ${shortAge(nowSeconds - last)} ago` : null;
-    }
-    return { running: runningNow.slice(0, limit), attention: attention.slice(0, limit), attentionTotal: attention.length, idle };
-  }
   function longAge(seconds) {
     const s = Math.max(0, Math.floor(Number(seconds) || 0));
     if (s < 60) return `${s}s`;
@@ -12730,48 +13120,6 @@ ${question.text ?? ""}`)) {
   }
 
   // packages/dsh-admin/src/project-park.jsx
-  function FleetTicker({ running, recent, tickets, onOpenTicket }) {
-    const [now, setNow] = useState(() => Date.now());
-    const ticker = fleetTicker({ running, recent, tickets, now });
-    const live = ticker.running.length > 0;
-    useEffect(() => {
-      if (!live) return void 0;
-      const id = setInterval(() => setNow(Date.now()), 15e3);
-      return () => clearInterval(id);
-    }, [live]);
-    if (!live && !ticker.attention.length && !ticker.idle) return null;
-    const open = (item) => onOpenTicket?.({ id: item.ticketId, title: item.title });
-    return /* @__PURE__ */ jsxs("div", { className: "pta-park__ticker", role: "status", "aria-label": "Fleet now", children: [
-      live ? ticker.running.map((item) => /* @__PURE__ */ jsxs("button", { type: "button", className: "pta-park__chip is-running", onClick: () => open(item), title: "Open the ticket's conversation", children: [
-        /* @__PURE__ */ jsx("i", { className: "pta-park__run is-running", "aria-hidden": "true" }),
-        "#",
-        item.ticketId,
-        " ",
-        item.title,
-        " \xB7 ",
-        shortAge(item.seconds)
-      ] }, `r${item.ticketId}`)) : /* @__PURE__ */ jsxs("span", { className: "pta-park__ticker-idle", children: [
-        "0 running",
-        ticker.attention.length ? "" : " \xB7 fleet clear",
-        ticker.idle ? ` \xB7 ${ticker.idle}` : ""
-      ] }),
-      ticker.attention.map((item) => /* @__PURE__ */ jsxs("button", { type: "button", className: `pta-park__chip is-${item.reason}`, onClick: () => open(item), title: "Open the ticket's conversation", children: [
-        /* @__PURE__ */ jsx("i", { className: `pta-park__run is-${item.reason === "failed" ? "failed" : "ok"}`, "aria-hidden": "true" }),
-        item.reason === "failed" ? "Failed" : "Review",
-        " #",
-        item.ticketId,
-        " ",
-        item.title,
-        " \xB7 ",
-        shortAge(item.seconds)
-      ] }, `a${item.ticketId}`)),
-      ticker.attentionTotal > ticker.attention.length ? /* @__PURE__ */ jsxs("span", { className: "pta-park__ticker-idle", children: [
-        "+",
-        ticker.attentionTotal - ticker.attention.length,
-        " more"
-      ] }) : null
-    ] });
-  }
   function RunBand({ trail }) {
     if (!trail) return null;
     return /* @__PURE__ */ jsxs("span", { className: "pta-park__runs", title: trail.summary, children: [
@@ -13169,7 +13517,6 @@ ${question.text ?? ""}`)) {
           f.key
         )) })
       ] }),
-      /* @__PURE__ */ jsx(FleetTicker, { running: runs, recent: recentRuns, tickets, onOpenTicket }),
       /* @__PURE__ */ jsx("div", { className: "pta-park__scroll", children: /* @__PURE__ */ jsxs(
         "svg",
         {
@@ -13318,11 +13665,6 @@ ${question.text ?? ""}`)) {
   .pta-park__strip-via{flex:0 0 auto;padding:0 5px;border-radius:4px;background:rgba(128,134,142,.2);font-size:10px}
   .pta-park__strip-age{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary,inherit)}
   .pta-park__strip-age.is-wait{color:var(--dsw-alias-state-warning-primary,#d18f2e)}
-  .pta-park__ticker{display:flex;align-items:center;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 0 4px;font-size:10.5px;color:var(--dsw-alias-label-secondary,inherit)}
-  .pta-park__chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;max-width:260px;padding:1px 8px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:999px;background:rgba(128,134,142,.12);color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:10.5px;line-height:17px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .pta-park__chip:hover,.pta-park__chip:focus-visible{background:rgba(128,134,142,.24);outline:none}
-  .pta-park__chip.is-failed{border-color:color-mix(in srgb,var(--dsw-alias-state-danger-primary,#e5534b) 55%,transparent)}
-  .pta-park__ticker-idle{flex:0 0 auto;white-space:nowrap;opacity:.85}
   .pta-park__runs{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--dsw-alias-label-secondary,inherit);white-space:nowrap}
   .pta-park__runband{display:inline-flex;gap:2px}
   .pta-park__run{display:inline-block;width:8px;height:8px;border-radius:2px;background:rgba(128,134,142,.45)}
@@ -13339,6 +13681,15 @@ ${question.text ?? ""}`)) {
   var NAMESPACE = "admin";
   var CLIENT_VERSION = "3.9.0";
   var DICTIONARY = { title: "Admin" };
+  var STATUS_TINT = {
+    new: "var(--dsw-alias-state-warning-primary, #d18f2e)",
+    approved: "var(--dsw-alias-state-business-primary, #4c8dff)",
+    in_progress: "var(--dsw-alias-state-success-primary, #2f9e5b)",
+    review: "var(--dsw-alias-state-business-primary, #4c8dff)",
+    done: "var(--dsw-alias-label-tertiary, #8a9099)",
+    declined: "var(--dsw-alias-label-tertiary, #8a9099)"
+  };
+  var tintOfStatus = (status) => STATUS_TINT[status] ?? STATUS_TINT.done;
   var SESSION_RETRY_CODES = /* @__PURE__ */ new Set(["session/writer-held", "session/not-found", "session/agent-busy"]);
   var MAX_SESSION_TRIES = 4;
   var lastSessionId;
@@ -13664,7 +14015,7 @@ ${question.text ?? ""}`)) {
       const run = ticketFromCwd(useSessionCwd(sessionId));
       if (!run) return null;
       return /* @__PURE__ */ jsxs("div", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary, #adb2b8)" }, children: [
-        run.kind === "task" ? "System task" : "Client ticket",
+        run.kind === "task" ? "My task" : "Client ticket",
         " #",
         run.ticketId,
         run.runId ? ` \xB7 run ${run.runId}` : "",
@@ -13672,11 +14023,6 @@ ${question.text ?? ""}`)) {
         run.slug
       ] });
     }
-    const TASK_TINT = {
-      new: "var(--dsw-alias-state-warning-primary, #f0a13a)",
-      review: "var(--dsw-alias-state-business-primary, #4c8bf5)",
-      in_progress: "var(--dsw-alias-state-success-primary, #35c07a)"
-    };
     const taskRowStyle = {
       display: "flex",
       alignItems: "flex-start",
@@ -13717,6 +14063,8 @@ ${question.text ?? ""}`)) {
     function TasksTab() {
       const [state, setState] = useState({ tickets: [], runs: [], loading: true });
       const [note, setNote] = useState("");
+      const root = useRef(null);
+      useRowNavigation(root);
       const [expanded, setExpanded] = useState(() => /* @__PURE__ */ new Set());
       useEffect(() => {
         let alive = true;
@@ -13750,8 +14098,8 @@ ${question.text ?? ""}`)) {
         }
       };
       const waiting = state.tickets.filter((t) => t.status === "new" || t.status === "review");
-      const ticketRow = (ticket) => /* @__PURE__ */ jsxs("button", { type: "button", style: taskRowStyle, onClick: () => void openTicketRun(ticket), children: [
-        dot(TASK_TINT[ticket.status]),
+      const ticketRow = (ticket) => /* @__PURE__ */ jsxs("button", { type: "button", className: "pta-row pta-task-row", style: taskRowStyle, onClick: () => void openTicketRun(ticket), children: [
+        dot(tintOfStatus(ticket.status)),
         /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
           /* @__PURE__ */ jsxs("span", { style: lineStyle, children: [
             "#",
@@ -13774,7 +14122,7 @@ ${question.text ?? ""}`)) {
         tickets.get(run.ticket_id).push(run);
       }
       if (state.loading) return /* @__PURE__ */ jsx("div", { style: { padding: 12, fontSize: 13, opacity: 0.7 }, children: "Loading tasks\u2026" });
-      return /* @__PURE__ */ jsxs("div", { style: { padding: 8, display: "flex", flexDirection: "column", gap: 12 }, children: [
+      return /* @__PURE__ */ jsxs("div", { style: { padding: 8, display: "flex", flexDirection: "column", gap: 12 }, ref: root, children: [
         /* @__PURE__ */ jsxs("section", { children: [
           /* @__PURE__ */ jsxs("h4", { style: taskHeadStyle, children: [
             "Waiting on you \xB7 ",
@@ -13787,8 +14135,8 @@ ${question.text ?? ""}`)) {
         [...projects].map(([slug, tickets]) => /* @__PURE__ */ jsxs("section", { children: [
           /* @__PURE__ */ jsx("h4", { style: taskHeadStyle, children: slug }),
           [...tickets].map(([ticketId, runs]) => /* @__PURE__ */ jsxs("div", { style: { marginBottom: 4 }, children: [
-            /* @__PURE__ */ jsxs("button", { type: "button", style: taskRowStyle, title: "Open the ticket's conversation", onClick: () => void openTicketRun({ id: ticketId, title: runs[0].title }), children: [
-              dot(TASK_TINT[runs[0].ticket_status]),
+            /* @__PURE__ */ jsxs("button", { type: "button", className: "pta-row pta-task-row", style: taskRowStyle, title: "Open the ticket's conversation", onClick: () => void openTicketRun({ id: ticketId, title: runs[0].title }), children: [
+              dot(tintOfStatus(runs[0].ticket_status)),
               /* @__PURE__ */ jsxs("span", { style: { ...lineStyle, flex: 1, minWidth: 0 }, children: [
                 "#",
                 ticketId,
@@ -13800,6 +14148,7 @@ ${question.text ?? ""}`)) {
               "button",
               {
                 type: "button",
+                className: "pta-row pta-task-row pta-task-row--run",
                 style: { ...taskRowStyle, padding: "3px 8px 3px 23px", fontSize: 11.5 },
                 title: run.session_id ? "Open this run\u2019s conversation" : "This run kept no conversation; opens the ticket",
                 onClick: () => void openRun(run),
@@ -13822,6 +14171,7 @@ ${question.text ?? ""}`)) {
               "button",
               {
                 type: "button",
+                className: "pta-row pta-task-row pta-task-row--more",
                 style: { ...taskRowStyle, padding: "2px 8px 2px 23px", fontSize: 11, opacity: 0.6 },
                 onClick: () => setExpanded((prev) => {
                   const next = new Set(prev);
@@ -14066,46 +14416,32 @@ ${question.text ?? ""}`)) {
           setState((prev) => ({ ...prev, busy: false, error: error?.message ?? "Could not save the setting." }));
         }
       };
-      const rowStyle = { display: "flex", alignItems: "center", gap: 16, padding: "14px 0", borderTop: "1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,0.22))" };
-      const switchStyle = {
-        width: 38,
-        height: 22,
-        padding: 2,
-        borderRadius: 11,
-        border: 0,
-        cursor: state.busy ? "wait" : "pointer",
-        background: state.notify ? "var(--dsw-alias-state-success-primary, #2f9e5b)" : "var(--dsw-alias-bg-secondary, rgba(127,127,127,0.35))",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: state.notify ? "flex-end" : "flex-start",
-        boxSizing: "border-box"
-      };
-      return /* @__PURE__ */ jsxs("div", { style: { padding: "20px 24px", maxWidth: 680 }, children: [
-        /* @__PURE__ */ jsx("h2", { style: { margin: "0 0 4px", fontSize: 17 }, children: "Admin" }),
-        /* @__PURE__ */ jsx("p", { style: { margin: "0 0 14px", fontSize: 12.5, opacity: 0.65, lineHeight: 1.45 }, children: "The PTech client portal (ptechsolutions.net) inside the Harness: tickets, the work queue and its fleet, clients and projects. The Host refreshes every minute and notifies you about new work in the window and on this Mac." }),
-        /* @__PURE__ */ jsxs("div", { style: rowStyle, children: [
-          /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
-            /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 13 }, children: "Notify me about new work" }),
-            /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 12, opacity: 0.6, marginTop: 2 }, children: "A new ticket, one waiting for approval, a client reply, or a finished or failed run \u2014 in-app and as a macOS notification, never twice." })
+      return /* @__PURE__ */ jsxs("div", { className: "pta-settings", children: [
+        /* @__PURE__ */ jsx("h2", { children: "Admin" }),
+        /* @__PURE__ */ jsx("p", { className: "pta-settings__intro", children: "The PTech client portal (ptechsolutions.net) inside the Harness: tickets, the work queue and its fleet, clients and projects. The Host refreshes every minute and notifies you about new work in the window and on this Mac." }),
+        /* @__PURE__ */ jsxs("div", { className: "pta-settings__row", children: [
+          /* @__PURE__ */ jsxs("span", { className: "pta-settings__text", children: [
+            /* @__PURE__ */ jsx("span", { className: "pta-settings__label", children: "Notify me about new work" }),
+            /* @__PURE__ */ jsx("span", { className: "pta-settings__hint", children: "A new ticket, one waiting for approval, a client reply, or a finished or failed run \u2014 in-app and as a macOS notification, never twice." })
           ] }),
           /* @__PURE__ */ jsx(
             "button",
             {
               type: "button",
               role: "switch",
+              className: "pta-switch",
               "aria-checked": state.notify,
               "aria-label": "Notify me about new work",
               disabled: !state.loaded || state.busy,
               onClick: () => void toggle(),
-              style: switchStyle,
-              children: /* @__PURE__ */ jsx("span", { style: { width: 18, height: 18, borderRadius: 9, background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,0.3)" } })
+              children: /* @__PURE__ */ jsx("span", { className: "pta-switch__knob" })
             }
           )
         ] }),
-        state.error ? /* @__PURE__ */ jsx("p", { style: { margin: "10px 0 0", fontSize: 12, color: "var(--dsw-alias-state-danger-primary, #e5534b)" }, children: state.error }) : null,
-        /* @__PURE__ */ jsx("div", { style: rowStyle, children: /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
-          /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 13, marginBottom: 2 }, children: "Portal connection" }),
-          /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 12, opacity: 0.6, marginBottom: 8 }, children: "Sign in with a portal admin account. The browser approves this app; the token stays on this machine." }),
+        state.error ? /* @__PURE__ */ jsx("p", { className: "pta-settings__error", children: state.error }) : null,
+        /* @__PURE__ */ jsx("div", { className: "pta-settings__row", children: /* @__PURE__ */ jsxs("span", { className: "pta-settings__text", children: [
+          /* @__PURE__ */ jsx("span", { className: "pta-settings__label", children: "Portal connection" }),
+          /* @__PURE__ */ jsx("span", { className: "pta-settings__hint", children: "Sign in with a portal admin account. The browser approves this app; the token stays on this machine." }),
           /* @__PURE__ */ jsx(PortalSignIn, { compact: true })
         ] }) })
       ] });
@@ -14399,14 +14735,6 @@ ${question.text ?? ""}`)) {
         for (const id of [...clientPages.keys()]) releaseClientPage(id);
       };
     }
-    const TICKET_DOT = {
-      new: "var(--dsw-alias-state-warning-primary, #d18f2e)",
-      approved: "var(--dsw-alias-state-business-primary, #4c8dff)",
-      in_progress: "var(--dsw-alias-state-success-primary, #2f9e5b)",
-      review: "var(--dsw-alias-state-business-primary, #4c8dff)",
-      done: "var(--dsw-alias-label-tertiary, #8a9099)",
-      declined: "var(--dsw-alias-label-tertiary, #8a9099)"
-    };
     const isClosedTicket2 = (t) => t.status === "done" || t.status === "declined";
     const openTicketCount = (tickets) => tickets.filter((t) => !isClosedTicket2(t)).length;
     const ticketOrder = (a, b) => Number(isClosedTicket2(a)) - Number(isClosedTicket2(b)) || (b.updated_at ?? 0) - (a.updated_at ?? 0);
@@ -14417,9 +14745,12 @@ ${question.text ?? ""}`)) {
     async function approveTicket(ticket, changed) {
       if (ticket.kind !== "system") {
         const who = ticket.client_email ?? "The client";
-        if (!window.confirm(`Approve #${ticket.id}?
-
-${who} is emailed about this change.`)) return;
+        const ok = await confirmAsk({
+          title: `Approve #${ticket.id}?`,
+          text: `${who} is emailed about this change.`,
+          confirm: "Approve"
+        });
+        if (!ok) return;
       }
       try {
         await api("PATCH", `/admin/tickets/${ticket.id}`, { status: "approved" });
@@ -14473,7 +14804,7 @@ ${who} is emailed about this change.`)) return;
         shown.map((ticket) => /* @__PURE__ */ jsx(
           Row,
           {
-            dot: TICKET_DOT[ticket.status] ?? TICKET_DOT.done,
+            dot: tintOfStatus(ticket.status),
             label: sidebarTicketLabel(ticket),
             trailing: ago2(ticket.updated_at),
             menuItems: menu(ticket),
@@ -14493,10 +14824,10 @@ ${who} is emailed about this change.`)) return;
     }
     function projectTint(tickets) {
       const open = tickets.filter((ticket) => !isClosedTicket2(ticket));
-      if (open.some((ticket) => ticket.status === "new")) return TICKET_DOT.new;
-      if (open.some((ticket) => ticket.status === "review")) return TICKET_DOT.review;
-      if (open.some((ticket) => ticket.status === "in_progress")) return TICKET_DOT.in_progress;
-      return open.length > 0 ? TICKET_DOT.approved : void 0;
+      if (open.some((ticket) => ticket.status === "new")) return tintOfStatus("new");
+      if (open.some((ticket) => ticket.status === "review")) return tintOfStatus("review");
+      if (open.some((ticket) => ticket.status === "in_progress")) return tintOfStatus("in_progress");
+      return open.length > 0 ? tintOfStatus("approved") : void 0;
     }
     function buildClientTree(clients, projects, tickets) {
       const projectById = new Map(projects.map((p) => [String(p.id), p]));
@@ -14599,17 +14930,7 @@ ${who} is emailed about this change.`)) return;
       const { tree, unsorted } = buildClientTree(state.clients, state.projects, state.tickets);
       const mine = state.tickets.filter((t) => t.kind === "system").sort(ticketOrder);
       const openTotal = tree.reduce((sum, client) => sum + client.projects.reduce((inner, project) => inner + openTicketCount(project.tickets), 0), 0) + openTicketCount(unsorted) + openTicketCount(mine);
-      const refresh = /* @__PURE__ */ jsx(
-        "button",
-        {
-          type: "button",
-          "aria-label": "Refresh clients",
-          title: "Refresh clients",
-          onClick: () => void load(),
-          style: { width: 24, height: 24, border: 0, borderRadius: 4, background: "transparent", color: "inherit", cursor: "pointer", fontSize: 14, lineHeight: 1 },
-          children: "\u21BB"
-        }
-      );
+      const refresh = /* @__PURE__ */ jsx("button", { type: "button", className: "pta-iconbtn", "aria-label": "Refresh clients", title: "Refresh clients", onClick: () => void load(), children: "\u21BB" });
       return /* @__PURE__ */ jsxs(Section, { id: "admin-clients", title: "Clients", count: openTotal || void 0, actions: refresh, children: [
         state.loading && /* @__PURE__ */ jsx(TreeNote, { children: "Loading clients\u2026" }),
         state.error !== "" && /* @__PURE__ */ jsx(TreeRow, { label: `${state.error} \u2014 click to retry`, onClick: () => void load() }),
@@ -14626,7 +14947,6 @@ ${who} is emailed about this change.`)) return;
               expanded: clientExpanded,
               onToggle: (open) => setRowOpen(clientKey, open),
               onClick: () => openClientPage(client, selectPanel),
-              menuItems: [{ id: "open-client", label: "Open client page", onSelect: () => openClientPage(client, selectPanel) }],
               children: projects.length > 0 ? projects.map((project, projectIndex) => {
                 const projectKey = `project:${client.id}:${project.id}`;
                 const projectDefault = index === 0 && projectIndex === 0 && project.tickets.length > 0;
@@ -14641,10 +14961,7 @@ ${who} is emailed about this change.`)) return;
                     expanded: projectExpanded,
                     onToggle: (open) => setRowOpen(projectKey, open),
                     onClick: () => project.id === "__none__" ? toggleRow(projectKey, projectDefault) : openProjectPage(project, selectPanel),
-                    menuItems: [
-                      ...project.id === "__none__" ? [] : [{ id: "open-project", label: "Open project", onSelect: () => openProjectPage(project, selectPanel) }],
-                      ...project.tickets.length === 0 ? [] : [{ id: "open-project-tickets", label: "Show project tickets", onSelect: () => setRowOpen(projectKey, true) }]
-                    ],
+                    menuItems: project.tickets.length === 0 ? void 0 : [{ id: "open-project-tickets", label: "Show project tickets", onSelect: () => setRowOpen(projectKey, true) }],
                     children: project.tickets.length > 0 ? /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: project.tickets, changed: () => void load() }) : void 0
                   },
                   `${client.id}:${project.id}`
@@ -14678,7 +14995,7 @@ ${who} is emailed about this change.`)) return;
             TreeRow,
             {
               appearance: "group",
-              label: "Mine",
+              label: "My task",
               badge: openTicketCount(mine) || void 0,
               expanded,
               onToggle: (open) => setRowOpen(key, open),
@@ -14817,7 +15134,7 @@ ${who} is emailed about this change.`)) return;
           " #",
           ticketId
         ] }),
-        /* @__PURE__ */ jsx("span", { className: "pta-chat-ticket__status", children: status ? STATUS_TEXT[status] ?? status : needsRead ? "Unavailable" : "Loading\u2026" }),
+        /* @__PURE__ */ jsx("span", { className: "pta-chat-ticket__status", children: status ? STATUS_LABEL[status] ?? status : needsRead ? "Unavailable" : "Loading\u2026" }),
         via ? /* @__PURE__ */ jsx("span", { className: "pta-tag pta-tag--client", title: assistantBadgeTitle({ assistant_app: assistantApp }), children: via }) : null,
         desktop ? /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsxs("span", { className: "pta-chat-ticket__time", "aria-label": `Recorded human time: ${seconds === null ? "unavailable" : recorded2}`, children: [
@@ -14908,6 +15225,32 @@ ${who} is emailed about this change.`)) return;
     .pta-btn--primary{border-color:transparent;background:var(--dsw-alias-brand-primary,#ff5a1f);color:#fff}
     .pta-btn--primary:hover{filter:brightness(1.06);background:var(--dsw-alias-brand-primary,#ff5a1f)}
     .pta-btn--ghost{border-color:transparent;opacity:.72}
+    .pta-btn--danger{border-color:transparent;background:var(--dsw-alias-state-danger-primary,#e5534b);color:#fff}
+    .pta-btn--danger:hover{filter:brightness(1.06);background:var(--dsw-alias-state-danger-primary,#e5534b)}
+    .pta-iconbtn{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:14px;line-height:1;cursor:pointer}
+    .pta-iconbtn:hover{background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.1))}
+    .pta-settings{padding:20px 24px;max-width:680px}
+    .pta-settings h2{margin:0 0 4px;font-size:17px}
+    .pta-settings__intro{margin:0 0 14px;font-size:12.5px;opacity:.65;line-height:1.45}
+    .pta-settings__row{display:flex;align-items:center;gap:16px;padding:14px 0;border-top:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.22))}
+    .pta-settings__label{display:block;font-size:13px}
+    .pta-settings__hint{display:block;margin-top:2px;font-size:12px;opacity:.6}
+    .pta-settings__text{flex:1;min-width:0}
+    .pta-settings__error{margin:10px 0 0;font-size:12px;color:var(--dsw-alias-state-danger-primary,#e5534b)}
+    .pta-switch{display:inline-flex;align-items:center;box-sizing:border-box;width:38px;height:22px;padding:2px;border:0;border-radius:11px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.35));cursor:pointer}
+    .pta-switch[aria-checked=true]{justify-content:flex-end;background:var(--dsw-alias-state-success-primary,#2f9e5b)}
+    .pta-switch:disabled{cursor:wait}
+    .pta-switch__knob{width:18px;height:18px;border-radius:9px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+    .pta-confirm{position:fixed;inset:0;z-index:2147482999;display:grid;place-items:center;padding:20px;background:rgba(0,0,0,.35);pointer-events:auto}
+    .pta-confirm__box{width:min(440px,100%);padding:16px 18px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:12px;background:var(--dsw-alias-bg-elevated,#23252a);box-shadow:0 18px 50px rgba(0,0,0,.35);font-size:13px;line-height:1.45}
+    .pta-confirm__box h3{margin:0 0 6px;font-size:15px}
+    .pta-confirm__box p{margin:0;font-size:12.5px;color:var(--dsw-alias-label-secondary,inherit)}
+    .pta-confirm__actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+    .pta-dot--running{background:var(--dsw-alias-state-success-primary,#2f9e5b)}
+    .pta-dot--danger{background:var(--dsw-alias-state-danger-primary,#e5534b)}
+    .pta-task-row{border-bottom:0;border-radius:6px;padding:6px 8px;align-items:flex-start}
+    .pta-task-row--run{padding:3px 8px 3px 23px;font-size:11.5px}
+    .pta-task-row--more{padding:2px 8px 2px 23px;font-size:11px;opacity:.6}
     .pta-pill{display:inline-flex;align-items:center;height:19px;padding:0 7px;border:1px solid currentColor;border-radius:10px;font-size:10.5px;line-height:1;white-space:nowrap;opacity:.9}
     .pta-empty{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:28px 24px;border:1px dashed var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:12px}
     .pta-empty h3{margin:0;font-size:15px}
@@ -15009,23 +15352,6 @@ ${who} is emailed about this change.`)) return;
     const HOME_PANEL = "admin";
     const MARKETING_PANEL = "admin-marketing";
     const SEO_PANEL = "admin-seo";
-    const STATUS_TINT = {
-      new: "var(--dsw-alias-state-warning-primary, #d18f2e)",
-      approved: "var(--dsw-alias-state-business-primary, #4c8dff)",
-      in_progress: "var(--dsw-alias-state-success-primary, #2f9e5b)",
-      review: "var(--dsw-alias-state-business-primary, #4c8dff)",
-      done: "var(--dsw-alias-label-tertiary, #8a9099)",
-      declined: "var(--dsw-alias-label-tertiary, #8a9099)"
-    };
-    const STATUS_TEXT = {
-      new: "Needs approval",
-      approved: "Approved",
-      in_progress: "Running",
-      review: "Review",
-      done: "Done",
-      declined: "Declined"
-    };
-    const tintOfStatus = (status) => STATUS_TINT[status] ?? STATUS_TINT.done;
     const ticketLabel = (ticket) => ticket?.title_en || ticket?.title || "(untitled)";
     const dollars = (cents) => Number.isFinite(Number(cents)) ? `$${(Number(cents) / 100).toFixed(2)}` : "";
     const isWaiting = (ticket) => Boolean(ticket) && Number(ticket?.client_waiting_since ?? 0) > 0 && !isClosedTicket2(ticket) && ticket?.status !== "new";
@@ -15100,17 +15426,18 @@ ${who} is emailed about this change.`)) return;
     }
     function ticketGroups(data) {
       const nowSeconds = Date.now() / 1e3;
-      const tickets = Array.isArray(data.tickets) ? data.tickets : [];
-      const queue = Array.isArray(data.queue) ? data.queue : [];
-      const stuck = new Set(
-        queue.filter((item) => !(Array.isArray(item?.eligible) ? item.eligible.length > 0 : Boolean(item?.eligible))).map((item) => Number(item?.id))
-      );
+      const shared = needsYou({
+        tickets: Array.isArray(data.tickets) ? data.tickets : [],
+        queue: Array.isArray(data.queue) ? data.queue : [],
+        nodes: []
+      });
+      const openWaiting = shared.waiting.filter((ticket) => !isClosedTicket2(ticket));
       return {
-        approvals: tickets.filter((ticket) => ticket.status === "new"),
-        reviews: tickets.filter((ticket) => ticket.status === "review"),
-        waiting: tickets.filter(isWaiting),
-        stalled: tickets.filter((ticket) => ticket.status === "in_progress" && nowSeconds - Number(ticket.updated_at ?? 0) > 45 * 60),
-        stuck: tickets.filter((ticket) => ticket.status === "approved" && stuck.has(Number(ticket.id))),
+        approvals: shared.new,
+        reviews: shared.review,
+        waiting: openWaiting,
+        stalled: shared.stalled,
+        stuck: shared.stuck,
         running: Array.isArray(data.running) ? data.running : [],
         failed: (Array.isArray(data.recent) ? data.recent : []).filter((run) => run.status === "failed" && nowSeconds - Number(run.finished_at ?? 0) < 86400).slice(0, 8)
       };
@@ -15131,13 +15458,24 @@ ${who} is emailed about this change.`)) return;
     }
     async function changeTicketStatus(ticket, status) {
       const requeue = status === "approved" && ticket.status !== "new";
-      if (requeue && !window.confirm(`Queue another Fleet run for #${ticket.id}? This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.`)) return false;
+      if (requeue) {
+        const ok = await confirmAsk({
+          title: `Queue another Fleet run for #${ticket.id}?`,
+          text: "This can change ticket status and notify the client. Fleet may resume the prior session with newer instructions.",
+          confirm: "Queue another run"
+        });
+        if (!ok) return false;
+      }
       if (!requeue && CLIENT_VISIBLE_STATUSES.has(status) && ticket.kind !== "system") {
         const who = ticket.client_email || ticket.client_name || "The client";
         const what = status === "approved" ? "Approve" : status === "declined" ? "Decline" : "Mark done";
-        if (!window.confirm(`${what} #${ticket.id}?
-
-${who} is emailed about this change.`)) return false;
+        const ok = await confirmAsk({
+          title: `${what} #${ticket.id}?`,
+          text: `${who} is emailed about this change.`,
+          confirm: what,
+          danger: status === "declined"
+        });
+        if (!ok) return false;
       }
       await api("PATCH", `/admin/tickets/${ticket.id}`, { status });
       window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "ticket.status", ticketId: ticket.id } }));
@@ -15173,7 +15511,52 @@ ${who} is emailed about this change.`)) return false;
     }
     function StatusPill2({ status }) {
       const tint = tintOfStatus(status);
-      return /* @__PURE__ */ jsx("span", { className: "pta-pill", style: { color: tint, borderColor: tint }, children: STATUS_TEXT[status] ?? status ?? "unknown" });
+      return /* @__PURE__ */ jsx("span", { className: "pta-pill", style: { color: tint, borderColor: tint }, children: STATUS_LABEL[status] ?? status ?? "unknown" });
+    }
+    const confirmHost = { open: null };
+    function confirmAsk(ask) {
+      return new Promise((resolve) => {
+        if (!confirmHost.open) {
+          resolve(window.confirm([ask.title, ask.text].filter(Boolean).join("\n\n")));
+          return;
+        }
+        confirmHost.open({ ...ask, resolve });
+      });
+    }
+    function ConfirmHost() {
+      const [ask, setAsk] = useState(null);
+      const close = useCallback((answer) => {
+        setAsk((current) => {
+          if (current) current.resolve(answer);
+          return null;
+        });
+      }, []);
+      useEffect(() => {
+        confirmHost.open = (next) => setAsk((current) => {
+          if (current) current.resolve(false);
+          return next;
+        });
+        return () => {
+          confirmHost.open = null;
+        };
+      }, []);
+      useEffect(() => {
+        if (!ask) return void 0;
+        const onKey = (event) => {
+          if (event.key === "Escape") close(false);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+      }, [ask, close]);
+      if (!ask) return null;
+      return /* @__PURE__ */ jsx("div", { className: "pta-confirm", role: "presentation", onMouseDown: (event) => event.target === event.currentTarget && close(false), children: /* @__PURE__ */ jsxs("div", { className: "pta-confirm__box", role: "dialog", "aria-modal": "true", "aria-label": ask.title, children: [
+        /* @__PURE__ */ jsx("h3", { children: ask.title }),
+        ask.text ? /* @__PURE__ */ jsx("p", { children: ask.text }) : null,
+        /* @__PURE__ */ jsxs("div", { className: "pta-confirm__actions", children: [
+          /* @__PURE__ */ jsx(PtaButton, { onClick: () => close(false), children: "Cancel" }),
+          /* @__PURE__ */ jsx(PtaButton, { kind: ask.danger ? "danger" : "primary", onClick: () => close(true), autoFocus: true, children: ask.confirm ?? "Confirm" })
+        ] })
+      ] }) });
     }
     function TicketLine({ ticket, actions = null, reason = "", detail = "", showAge = true }) {
       const open = () => void openTicketRun(ticket);
@@ -15198,7 +15581,7 @@ ${who} is emailed about this change.`)) return false;
               ticket.id
             ] }),
             /* @__PURE__ */ jsx("span", { className: "pta-title", title: ticketLabel(ticket), children: ticketLabel(ticket) }),
-            ticket.kind === "system" ? /* @__PURE__ */ jsx("span", { className: "pta-tag", children: "mine" }) : /* @__PURE__ */ jsx("span", { className: "pta-tag pta-tag--client", title: ticket.client_email ?? "", children: ticket.client_email || "client" }),
+            ticket.kind === "system" ? /* @__PURE__ */ jsx("span", { className: "pta-tag", children: "My task" }) : /* @__PURE__ */ jsx("span", { className: "pta-tag pta-tag--client", title: ticket.client_email ?? "", children: ticket.client_email || "client" }),
             via ? /* @__PURE__ */ jsx("span", { className: "pta-tag pta-tag--client", title: assistantBadgeTitle(ticket), children: via }) : null,
             /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ticket.project_name || "no project" }),
             reason ? /* @__PURE__ */ jsx("span", { className: "pta-warn", children: reason }) : null,
@@ -15322,14 +15705,13 @@ ${who} is emailed about this change.`)) return false;
         return /* @__PURE__ */ jsxs("div", { className: "pta-page", ref: root, children: [
           /* @__PURE__ */ jsx("header", { className: "pta-head", children: /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx("h1", { children: "Needs you" }),
-            /* @__PURE__ */ jsx("p", { children: isAuthError(data.code) ? "Connect PTech Admin to the portal to see what is waiting." : "The portal could not be reached." })
+            /* @__PURE__ */ jsx("p", { children: isAuthError(data.code) ? data.error || "Connect PTech Admin to the portal to see what is waiting." : "The portal could not be reached." })
           ] }) }),
           isAuthError(data.code) ? /* @__PURE__ */ jsx(PortalSignIn, { onDone: () => void data.reload() }) : /* @__PURE__ */ jsxs("div", { className: "pta-empty", children: [
             /* @__PURE__ */ jsx("h3", { children: "Could not reach the portal" }),
             /* @__PURE__ */ jsx("p", { children: data.error }),
             /* @__PURE__ */ jsx(PtaButton, { onClick: () => void data.reload(), children: "Try again" })
-          ] }),
-          /* @__PURE__ */ jsx("p", { className: "pta-meta", style: { marginTop: 10 }, children: data.error })
+          ] })
         ] });
       }
       const section = (key, title, hint, items, actions, reasonOf) => items.length === 0 ? null : /* @__PURE__ */ jsxs("section", { className: "pta-section", children: [
@@ -15399,7 +15781,7 @@ ${who} is emailed about this change.`)) return false;
             /* @__PURE__ */ jsx("span", { className: "pta-meta", children: "Live agent work." })
           ] }),
           /* @__PURE__ */ jsx("div", { className: "pta-rows", children: groups.running.map((run) => /* @__PURE__ */ jsxs("button", { type: "button", className: "pta-row", onClick: () => void openTicketRun({ id: run.ticket_id, title: run.title }), children: [
-            /* @__PURE__ */ jsx("span", { className: "pta-dot", style: { background: tintOfStatus("in_progress") } }),
+            /* @__PURE__ */ jsx("span", { className: "pta-dot pta-dot--running" }),
             /* @__PURE__ */ jsxs("span", { className: "pta-id", children: [
               "#",
               run.ticket_id
@@ -15420,7 +15802,7 @@ ${who} is emailed about this change.`)) return false;
             /* @__PURE__ */ jsx("span", { className: "pta-meta", children: "These stop until someone looks." })
           ] }),
           /* @__PURE__ */ jsx("div", { className: "pta-rows", children: groups.failed.map((run) => /* @__PURE__ */ jsxs("button", { type: "button", className: "pta-row", onClick: () => void openTicketRun({ id: run.ticket_id, title: run.title }), children: [
-            /* @__PURE__ */ jsx("span", { className: "pta-dot", style: { background: "var(--dsw-alias-state-danger-primary, #e5534b)" } }),
+            /* @__PURE__ */ jsx("span", { className: "pta-dot pta-dot--danger" }),
             /* @__PURE__ */ jsxs("span", { className: "pta-id", children: [
               "#",
               run.ticket_id
@@ -15646,8 +16028,14 @@ ${who} is emailed about this change.`)) return false;
         window.addEventListener("focus", refresh);
         return () => window.removeEventListener("focus", refresh);
       }, [result.state, request]);
-      const restore = () => {
-        if (window.confirm("Restore this workspace from its saved commit? Uncommitted edits are not recovered. This does not change the ticket or queue a Fleet run.")) void request("restore");
+      const restore = async () => {
+        const ok = await confirmAsk({
+          title: "Restore this workspace?",
+          text: "It is rebuilt from its saved commit. Uncommitted edits are not recovered. This does not change the ticket or queue a Fleet run.",
+          confirm: "Restore",
+          danger: true
+        });
+        if (ok) void request("restore");
       };
       const detail = [WORKSPACE_TEXT[result.state], result.reason].filter(Boolean).join(" ");
       const checkable = ["conflict", "unavailable", "pending", "ready"].includes(result.state);
@@ -15667,7 +16055,7 @@ ${who} is emailed about this change.`)) return false;
             ]
           }
         ),
-        result.state === "missing" ? /* @__PURE__ */ jsx(PtaButton, { onClick: restore, children: "Restore" }) : null
+        result.state === "missing" ? /* @__PURE__ */ jsx(PtaButton, { onClick: () => void restore(), children: "Restore" }) : null
       ] });
     }
     function TicketMessageForm({ mode, ticket }) {
@@ -15682,7 +16070,8 @@ ${who} is emailed about this change.`)) return false;
         setNotice("");
         setBusy(true);
         try {
-          if (await sendTicketMessage({ api: ticketCommandApi, ticket, mode, text, confirm: (message) => window.confirm(message) })) {
+          const confirmed = (message) => confirmAsk({ title: "Email this reply?", text: message, confirm: "Send reply" });
+          if (await sendTicketMessage({ api: ticketCommandApi, ticket, mode, text, confirm: confirmed })) {
             setText("");
             setNotice(internal ? "Private note saved." : "Email reply sent.");
             window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "ticket.reply", ticketId: ticket.id } }));
@@ -15927,6 +16316,7 @@ ${who} is emailed about this change.`)) return false;
     ctx.slots.inject("sidebar.session.row.leading", () => ctx.slots.register({ name: "sidebar.session.row.leading", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketMark));
     ctx.slots.inject("sidebar.session.row.hover", () => ctx.slots.register({ name: "sidebar.session.row.hover", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketHover));
     ctx.slots.inject("shell.overlay", () => ctx.slots.register({ name: "shell.overlay", id: "admin-notifications", order: 40 }, NotificationHost));
+    ctx.slots.inject("shell.overlay", () => ctx.slots.register({ name: "shell.overlay", id: "admin-confirm", order: 45 }, ConfirmHost));
     ctx.slots.inject("settings.section", () => ctx.slots.register({ name: "settings.section", id: "admin", order: 60, label: "Admin" }, AdminSettingsSection));
     ctx.effect(
       () => ctx.sidebarRightTabs.register({
