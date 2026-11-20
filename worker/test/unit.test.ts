@@ -613,7 +613,7 @@ test('content: a post is cleaned, measured and checked before it is queued', () 
   assert.equal(cleanPost('   ', 'x').ok, false);
   assert.equal(cleanPost('x'.repeat(281), 'x').ok, false);
   assert.equal(cleanPost('x'.repeat(281), 'linkedin').ok, true);
-  for (const bad of ['An AI-powered shop', 'We use Claude to do it', 'GPT-4 does the typing', 'A guaranteed 10x return']) {
+  for (const bad of ['An AI-powered shop', 'We use Claude to do it', 'Our agents run on ChatGPT', 'Built with OpenAI', 'GPT-4 does the typing', 'A guaranteed 10x return']) {
     assert.equal(cleanPost(bad, 'linkedin').ok, false, bad);
   }
   assert.equal(cleanPost('AI at cost, $100/hour by the second', 'linkedin').ok, true);
@@ -2203,4 +2203,10 @@ test('content: heldPostSlots keeps future slots and re-slots the passed ones', (
   assert.ok(assigned.every((at) => !taken.has(at)));
   // Oldest draft gets the earliest free slot.
   assert.ok(slots.get(1)! < slots.get(3)! && slots.get(3)! < slots.get(4)!);
+});
+
+test('content: the reader\'s own Claude Code or ChatGPT may be named in a post', () => {
+  for (const ok of ['Are you rebuilding your website with Claude Code?', 'Did ChatGPT get your site 90% there?', 'Send it from Claude or ChatGPT.']) {
+    assert.equal(cleanPost(ok, 'x').ok, true, ok);
+  }
 });

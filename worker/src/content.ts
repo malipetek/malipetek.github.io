@@ -99,7 +99,11 @@ export type CleanPost = { ok: true; text: string } | { ok: false; reason: string
 
 const BANNED = [
   { pattern: /\bai[- ]powered\b/i, reason: 'says “AI-powered”' },
-  { pattern: /\b(chatgpt|openai|anthropic|claude|gemini|copilot)\b/i, reason: 'names a model or provider' },
+  // The reader's own tools (ChatGPT, Claude, Claude Code) may be named: the
+  // audience is people vibe coding with them. The companies and the models
+  // behind our own agents may not.
+  { pattern: /\b(openai|anthropic|deepseek|gemini|copilot)\b/i, reason: 'names a model or provider' },
+  { pattern: /\b(we|our|i|my)\b[^.?!\n]{0,30}\b(claude|chatgpt)\b/i, reason: 'names the model behind our agents' },
   { pattern: /\bgpt-?\d/i, reason: 'names a model or provider' },
   { pattern: /\b(guarantee[ds]?|risk[- ]free)\b/i, reason: 'makes a guarantee' },
   { pattern: /\b(10x|100x)\b/i, reason: 'claims a multiplier' },
