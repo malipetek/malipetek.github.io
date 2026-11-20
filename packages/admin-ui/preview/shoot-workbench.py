@@ -76,6 +76,21 @@ def capture(browser, base, theme, viewport, narrow, diagnostics, paths):
 
         for entry in VIEWS:
             view(*entry)
+            if entry[0] == 'marketing':
+                marketing = pane.locator('.aw-mk')
+                for tab, marker in (
+                    ('Contacts', 'button:has-text("Open")'),
+                    ('Email', 'text=Recent events'),
+                    ('Posts', 'text=Scheduled'),
+                    ('Sequences', 'text=How each sequence is doing'),
+                    ('Sources', 'th:has-text("Reached")'),
+                    ('Settings', 'text=Schedule and volume'),
+                ):
+                    marketing.get_by_role('radio', name=tab, exact=True).click()
+                    shot(f'marketing-{tab.lower()}', marketing.locator(marker).first)
+                for group, marker in (('Safety', 'text=Review first emails'), ('Content', 'text=How publishing works')):
+                    marketing.get_by_role('radio', name=group, exact=True).click()
+                    shot(f'marketing-settings-{group.lower()}', marketing.locator(marker).first)
         ticket()
         explorer.locator('.aw-tree__name').first.click()
         shot('project', pane.get_by_role('region', name='Project world'))
