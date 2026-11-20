@@ -54,7 +54,7 @@ export function Panel({ title, subtitle, actions, children }) {
         <header className="aw-panel__head">
           <div className="aw-panel__titles">
             {title ? <h3>{title}</h3> : null}
-            {subtitle ? <p>{subtitle}</p> : null}
+            {subtitle ? <p title={typeof subtitle === 'string' ? subtitle : undefined}>{subtitle}</p> : null}
           </div>
           {actions ? <div className="aw-panel__actions">{actions}</div> : null}
         </header>
