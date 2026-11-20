@@ -806,7 +806,7 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] }) });
   }
 
-  // packages/dsh-admin/src/row-navigation.mjs
+  // packages/admin-ui/src/row-navigation.mjs
   var NEXT_KEYS = /* @__PURE__ */ new Set(["j", "ArrowDown"]);
   var PREV_KEYS = /* @__PURE__ */ new Set(["k", "ArrowUp"]);
   function nextRowIndex(current, count, key) {

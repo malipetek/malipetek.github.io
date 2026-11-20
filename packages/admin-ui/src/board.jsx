@@ -17,7 +17,7 @@ import {
   priorityName,
   usd,
 } from './format.js';
-import { nextRowIndex } from '../../dsh-admin/src/row-navigation.mjs';
+import { nextRowIndex } from './row-navigation.mjs';
 import { Badge, Button, Dot, Icon, PageHeader, Segmented, StatusPill, Tag, cx } from './ui.jsx';
 
 /** Filter bar shared by the board and the list. */
