@@ -18,7 +18,7 @@ if (!['light', 'dark', 'both'].includes(mode) || process.argv.length > 3) {
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const out = '/tmp/aw-shots';
+const out = process.env.AW_SHOTS ?? '/tmp/aw-shots';
 const require = createRequire(path.resolve(here, '../../../package.json'));
 const astroRequire = createRequire(require.resolve('astro/package.json'));
 const { build } = await import(pathToFileURL(astroRequire.resolve('esbuild')).href);

@@ -1,4 +1,5 @@
 """Capture the workbench at its real viewport sizes, without changing the layout."""
+import os
 import re
 import sys
 from pathlib import Path
@@ -18,7 +19,7 @@ VIEWS = (
     ('settings', 'Settings', '.aw-settings .aw-panel'),
 )
 UNKNOWN_PREFIX = '[workbench-preview] Unknown API:'
-OUT = Path('/tmp/aw-shots')
+OUT = Path(os.environ.get('AW_SHOTS', '/tmp/aw-shots'))
 
 
 def capture(browser, base, theme, viewport, narrow, diagnostics, paths):
