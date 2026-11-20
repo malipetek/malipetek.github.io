@@ -13,9 +13,8 @@ VIEWS = (
     ('list', 'All work', '.aw-table tbody tr'),
     ('marketing', 'Marketing', 'text=Autopilot'),
     ('seo', 'SEO', 'text=Guide coverage'),
-    ('health', 'Health', '.aw-health__row'),
     ('fleet', 'Fleet', '.aw-node'),
-    ('clients', 'Clients & projects', '.aw-cards .aw-panel'),
+    ('clients', 'Clients', '.aw-directory__open'),
     ('settings', 'Settings', '.aw-settings .aw-panel'),
 )
 UNKNOWN_PREFIX = '[workbench-preview] Unknown API:'
@@ -79,9 +78,9 @@ def capture(browser, base, theme, viewport, narrow, diagnostics, paths):
         ticket()
         explorer.locator('.aw-tree__name').first.click()
         shot('project', pane.get_by_role('region', name='Project world'))
-        activity.get_by_title('Clients & projects', exact=True).click()
-        pane.get_by_title('Open this client’s page', exact=True).first.click()
-        shot('client', pane.locator('.aw-table tbody tr').first)
+        activity.get_by_title('Clients', exact=True).click()
+        pane.locator('.aw-directory__open').first.click()
+        shot('client', pane.locator('h2').first)
 
         activity.get_by_title('New task (N)', exact=True).click()
         modal = page.get_by_role('dialog', name='New task', exact=True)
