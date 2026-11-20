@@ -14,6 +14,7 @@
   "files": [
     "index.js",
     "local-project.mjs",
+    "machine-consent.mjs",
     "project-operations.mjs",
     "workspace-recovery.mjs",
     "ticket-workspace-source.mjs",

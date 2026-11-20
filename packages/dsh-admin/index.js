@@ -24,6 +24,7 @@ import { homedir, hostname } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
 import { createLocalProjects } from './local-project.mjs';
+import { readConsent, writeConsent } from './machine-consent.mjs';
 import { PROJECT_OPERATIONS, projectOperationRequest } from './project-operations.mjs';
 import { createWorkspaceRecovery } from './workspace-recovery.mjs';
 import { fleetWorkspaceCandidate, verifiedTicketWorkspace } from './ticket-workspace-source.mjs';
@@ -177,6 +178,13 @@ const DEVICE_PENDING_PATH = join(ADMIN_DIR, 'device-signin.json');
  * because a thread is only worth fetching when someone looks at it.
  */
 const OPEN_PATH = join(ADMIN_DIR, 'open-ticket.json');
+/**
+ * This machine's record of consent to being a fleet worker, kept apart from
+ * the admin state on purpose: it is this admin's own answer about their
+ * computer, not panel state — `~/.dsh-admin/machine-consent.json` for PTech
+ * Admin. The node may be installed; the record says whether it may work.
+ */
+const CONSENT_PATH = join(dshHome(), 'machine-consent.json');
 
 /**
  * The conversation being watched. A ticket run's Harness session is where the
@@ -446,6 +454,14 @@ async function setProjectLocal(slug, local) {
 }
 
 /**
+ * Every executor a node may offer, the same catalog the fleet and the Worker
+ * route on (`EXECUTORS` in fleet/executors.mjs and worker/src/queue.ts). The
+ * local config's own list is written by the machine views, so it has to know
+ * the dsh family too.
+ */
+const NODE_EXECUTORS = ['claude', 'opencode', 'dsh', 'devin', 'dsh-go', 'dsh-claude', 'dsh-opencode', 'dsh-devin'];
+
+/**
  * The parts of this machine's node config the Settings view edits. The token
  * is never part of it.
  */
@@ -492,7 +508,7 @@ async function setLocalConfig(patch) {
         break;
       case 'executors':
         if (value === null) delete next.node.executors;
-        else if (Array.isArray(value)) next.node.executors = value.filter((e) => ['claude', 'opencode', 'dsh', 'devin'].includes(e));
+        else if (Array.isArray(value)) next.node.executors = value.filter((e) => NODE_EXECUTORS.includes(e));
         else throw new Error('Executors must be a list.');
         break;
       case 'projectsRoot':
@@ -1357,6 +1373,7 @@ function makeCommandHandler(ctx) {
             '  /admin cancel <runId>          stop a running run (it goes to review)',
             '  /admin drain <node> | undrain <node> | forget <node>',
             '  /admin node start|stop|restart|install   this machine\'s node',
+            '  /admin machine-consent get | set <json>   this Mac\'s record of lending itself to the fleet',
             '  /admin nodeset <node> {"slots"?,"capabilities"?,"executors"?,"alertOfflineMinutes"?}',
             '  /admin settings {"stallMinutes"?,"maxAttempts"?,"notifyRunFinished"?,"defaultPriority"?,"sitesDomain"?,"clientPublish"?}',
             '  /admin site retry|publish <projectId>   a hosted site: restart a stopped setup, or publish its preview',
@@ -1471,6 +1488,24 @@ function makeCommandHandler(ctx) {
             kind: 'success',
             text: JSON.stringify({ local, localConfig: localConfigView(runner), endpoint: config.endpoint, signedIn: config.token.length > 0, runGrouping }),
           };
+        }
+
+        // The panel's consent line: `get` is `{}` until the admin answers, and
+        // `set` writes the whole validated record. The shape lives in
+        // machine-consent.mjs, with the test that keeps it honest.
+        case 'machine-consent': {
+          const [action, ...json] = rest;
+          if (action === 'get') {
+            return { kind: 'success', text: JSON.stringify(await readConsent(CONSENT_PATH)) };
+          }
+          if (action === 'set') {
+            const record = jsonArg(
+              json.join(' '),
+              'Usage: /admin machine-consent set {"version":1,"acceptedAt":1732120000,"declinedAt":null,"lend":["dsh-go","dsh-claude"]}',
+            );
+            return { kind: 'success', text: JSON.stringify(await writeConsent(CONSENT_PATH, record)) };
+          }
+          return { kind: 'error', text: 'Usage: /admin machine-consent get | set <json>' };
         }
 
         case 'hello': {
