@@ -5,6 +5,7 @@ import { useAdmin, usePoll } from './store.js';
 import { EXECUTORS, PRIORITIES, ago, chargeOf, money, priorityName, span, usd } from './format.js';
 import { Button, Chips, Dot, Field, Modal, Segmented, StatusPill, Tag, cx } from './ui.jsx';
 import { SitePanel } from './ticket.jsx';
+import { ToolboxPanel } from './toolbox.jsx';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
@@ -1019,6 +1020,10 @@ export function SettingsView() {
           </Field>
         </section>
       ) : null}
+      <section className="aw-panel">
+        <h3>This machine&rsquo;s tools</h3>
+        <ToolboxPanel />
+      </section>
       {data.settings ? (
         <section className="aw-panel">
           <h3>Work queue</h3>

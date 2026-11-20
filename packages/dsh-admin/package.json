@@ -14,6 +14,7 @@
   "files": [
     "index.js",
     "local-project.mjs",
+    "local-toolbox.mjs",
     "project-operations.mjs",
     "workspace-recovery.mjs",
     "ticket-workspace-source.mjs",

@@ -232,6 +232,9 @@ team can share the portal without sharing one password.
 /admin settings {"stallMinutes"?,"maxAttempts"?,"notifyRunFinished"?,"defaultPriority"?}
 /admin local {"nodeId"?,"slots"?,"timeoutMinutes"?,"maxBudgetUsd"?,"claudeModel"?,…}
 /admin projectlocal <slug> {"path"?,"verify"?,"baseRef"?}
+/admin toolbox list                 the agent skills and MCP servers on this machine (fleet agents use them)
+/admin toolbox add-mcp|remove-mcp|toggle-mcp {"target":"claude"|"opencode",…}
+                                    edit them; each write keeps a timestamped .bak-ptech-<ts> (last three)
 ```
 
 The three everyday moves also have their own command names, so they appear in
