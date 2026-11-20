@@ -930,4 +930,21 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   .aw-explorer--drawer { display: block; position: fixed; z-index: 60; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); padding-top: 8px; box-shadow: 0 0 40px rgba(0, 0, 0, .3); }
   .aw--inset .aw-explorer--drawer { padding-top: 44px; }
 }
+/* loop */
+/* Keyboard rows: visible focus wherever a row can receive it. */
+.aw-table tbody tr:focus-visible, .aw-row:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: -2px; }
+/* A row's title is a real link that keeps the row's ink until it is hovered. */
+.aw-titlelink { color: inherit; text-decoration: none; }
+.aw-titlelink:hover { text-decoration: underline; }
+/* The right rail's rare controls, folded behind one summary. */
+.aw-details > details.aw-details__more { border-top: 1px solid var(--aw-border); padding-top: 14px; margin-top: 14px; }
+.aw-details__more > summary { cursor: pointer; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--aw-text2); }
+.aw-details__more[open] > summary { margin-bottom: 8px; }
+.aw-details__more .aw-field, .aw-details__more .aw-cost, .aw-details__more .aw-site { border-top: 1px solid var(--aw-border); padding-top: 14px; margin-top: 14px; }
+.aw-details__more .aw-site:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+/* The composer's notify fold and its one-line delivery status. */
+.aw-mentions__open { font-size: 12px; }
+.aw-notified { margin-top: 2px; }
+.aw-notified summary { cursor: pointer; font-size: 11px; }
+.aw-notified p { margin: 2px 0; }
 `;
