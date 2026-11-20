@@ -29,7 +29,6 @@ export default `
 .aw-project__brief dt:first-child { margin-top: 0; }
 .aw-project__brief dd { margin: 0; white-space: pre-wrap; line-height: 1.65; overflow-wrap: anywhere; max-width: 72ch; }
 .aw-project__form { display: grid; gap: 14px; margin: 14px 0; max-width: 760px; }
-.aw-project__form > .aw-button { justify-self: start; }
 .aw-project__fields { display: grid; grid-template-columns: 1fr 1.5fr; gap: 16px; }
 .aw-project__topology { display: grid; grid-template-columns: 1fr 1.1fr 1.2fr; gap: 26px; list-style: none; padding: 0; margin: 16px 0 22px; }
 .aw-project__topology > li { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }

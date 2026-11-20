@@ -1,6 +1,8 @@
 /* Small building blocks. Every class is prefixed `aw-` so neither host's CSS leaks in. */
-import { useEffect, useRef } from 'react';
-import { STATUS_LABEL } from './format.js';
+import { useEffect, useRef, useState } from 'react';
+import { STATUS_LABEL, errorText } from './format.js';
+
+let modalSeq = 0;
 
 export const cx = (...parts) => parts.filter(Boolean).join(' ');
 
@@ -12,10 +14,75 @@ export const StatusPill = ({ status }) => <span className={`aw-pill aw-pill--${s
 export const Dot = ({ state }) => <span className={`aw-dot aw-dot--${state}`} aria-hidden="true" />;
 export const Tag = ({ children, tone, title }) => <span className={cx('aw-tag', tone && `aw-tag--${tone}`)} title={title}>{children}</span>;
 
+/** A small tone pill: the tag recipe, fully rounded. */
+const BADGE_TONES = { neutral: null, info: 'aw-tag--info', ok: 'aw-tag--ok', warn: 'aw-tag--warn', bad: 'aw-tag--bad', accent: 'aw-tag--accent' };
+export function Badge({ tone = 'neutral', children }) {
+  return <span className={cx('aw-tag', 'aw-tag--pill', BADGE_TONES[tone] ?? null)}>{children}</span>;
+}
+
+/** A "nothing here" box: quiet, centered, compact. */
+export function Empty({ title, hint, action }) {
+  return (
+    <div className="aw-emptybox">
+      <strong>{title}</strong>
+      {hint ? <span className="aw-emptybox__hint">{hint}</span> : null}
+      {action ? <div className="aw-emptybox__action">{action}</div> : null}
+    </div>
+  );
+}
+
+/** A quiet loading line with a spinner, announced politely once. */
+export function Loading({ label = 'Loading…' }) {
+  return <div className="aw-loading" role="status">{label}</div>;
+}
+
+/** A failure with its reason and a way out. */
+export function ErrorNote({ error, onRetry }) {
+  return (
+    <div className="aw-errornote" role="alert">
+      <span className="aw-errornote__text">{errorText(error)}</span>
+      {onRetry ? <Button size="sm" onClick={onRetry}>Retry</Button> : null}
+    </div>
+  );
+}
+
+/** A titled, bordered section: header row, actions right, one padding. */
+export function Panel({ title, subtitle, actions, children }) {
+  return (
+    <section className="aw-panel">
+      {title || actions ? (
+        <header className="aw-panel__head">
+          <div className="aw-panel__titles">
+            {title ? <h3>{title}</h3> : null}
+            {subtitle ? <p>{subtitle}</p> : null}
+          </div>
+          {actions ? <div className="aw-panel__actions">{actions}</div> : null}
+        </header>
+      ) : null}
+      {children}
+    </section>
+  );
+}
+
+/** Compact horizontal stat tiles; `tone` colours the value. */
+export function StatRow({ items }) {
+  return (
+    <div className="aw-statrow">
+      {(items ?? []).map((it, i) => (
+        <div key={i} className={cx('aw-statrow__item', it.tone && `aw-statrow__item--${it.tone}`)} title={it.hint}>
+          <strong>{it.value}</strong>
+          <small>{it.label}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /**
  * A vertical drag handle that resizes a pane by writing a pixel width into a
  * CSS var on the host element (found with `closest(host)`). `invert` for panes
  * that grow toward the left. Persists the width in localStorage under `storage`.
+ * Focusable: the arrow keys move the handle by 16px.
  */
 export function Resizer({ host, cssVar, def, min, max, invert = false, storage, className }) {
   const ref = useRef(null);
@@ -51,24 +118,55 @@ export function Resizer({ host, cssVar, def, min, max, invert = false, storage, 
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
     };
+    const key = (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      const grow = (e.key === 'ArrowRight' ? 1 : -1) * (invert ? -1 : 1);
+      const w = Math.min(max, Math.max(min, Math.round(read()) + grow * 16));
+      pane.style.setProperty(cssVar, `${w}px`);
+      if (storage && w >= min && w <= max) localStorage.setItem(storage, String(w));
+    };
     el.addEventListener('pointerdown', down);
+    el.addEventListener('keydown', key);
     return () => {
       el.removeEventListener('pointerdown', down);
+      el.removeEventListener('keydown', key);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
   }, [host, cssVar, def, min, max, invert, storage]);
-  return <div ref={ref} className={cx('aw-resize', className)} role="separator" aria-orientation="vertical" />;
+  return <div ref={ref} className={cx('aw-resize', className)} role="separator" aria-orientation="vertical" aria-label="Resize pane" tabIndex={0} />;
 }
 
-export function Segmented({ value, options, onChange, disabled }) {
+/**
+ * A single-choice control with radiogroup semantics: the arrows move and pick,
+ * aria-checked marks the chosen option. aria-pressed stays alongside it until
+ * the markup tests that still read it are retired.
+ */
+export function Segmented({ value, options, onChange, disabled, label }) {
+  const ref = useRef(null);
+  const onKey = (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const btns = ref.current ? [...ref.current.querySelectorAll('button:not(:disabled)')] : [];
+    if (!btns.length) return;
+    e.preventDefault();
+    const idx = btns.indexOf(document.activeElement);
+    const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
+    const next = btns[idx === -1 ? (dir === 1 ? 0 : btns.length - 1) : (idx + dir + btns.length) % btns.length];
+    next.focus();
+    const opt = options.find((o) => String(o.value) === next.dataset.value);
+    if (opt && opt.value !== value) onChange(opt.value);
+  };
   return (
-    <div className="aw-seg" role="group">
+    <div className="aw-seg" role="radiogroup" aria-label={label} ref={ref} onKeyDown={onKey}>
       {options.map((o) => (
         <button
           key={String(o.value)}
           type="button"
+          role="radio"
+          data-value={String(o.value)}
           disabled={disabled || o.disabled}
+          aria-checked={o.value === value}
           aria-pressed={o.value === value}
           title={o.hint}
           onClick={() => onChange(o.value)}
@@ -80,10 +178,11 @@ export function Segmented({ value, options, onChange, disabled }) {
   );
 }
 
-export function Chips({ value, options, onChange, disabled }) {
+/** A multi-choice control: every chip toggles independently. */
+export function Chips({ value, options, onChange, disabled, label }) {
   const toggle = (v) => onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
   return (
-    <div className="aw-chips">
+    <div className="aw-chips" role="group" aria-label={label}>
       {options.map((o) => (
         <button key={o.value} type="button" disabled={disabled} title={o.hint} aria-pressed={value.includes(o.value)} onClick={() => toggle(o.value)}>
           {o.label}
@@ -103,20 +202,52 @@ export function Field({ label, hint, children }) {
   );
 }
 
-export function Modal({ title, subtitle, onClose, children, actions, wide, full }) {
+const FOCUSABLE = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * The one overlay: focus starts inside (`focus` names a selector to prefer),
+ * Tab stays inside, Escape closes, and focus returns to whoever opened it.
+ */
+export function Modal({ title, subtitle, onClose, children, actions, wide, full, focus }) {
   const ref = useRef(null);
+  // One id per mounted dialog; seeded once so re-renders keep it stable.
+  const [titleId] = useState(() => `aw-modal-title-${++modalSeq}`);
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose();
+    const root = ref.current;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const first = (focus ? root?.querySelector(focus) : null) ?? root?.querySelector(FOCUSABLE);
+    first?.focus();
+    return () => opener?.focus();
+    // Mount only: capture the opener once; re-renders must not re-capture it.
+  }, []);
+  useEffect(() => {
+    const root = ref.current;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab' || !root) return;
+      const items = [...root.querySelectorAll(FOCUSABLE)];
+      if (!items.length) return;
+      const inside = root.contains(document.activeElement);
+      if (e.shiftKey && (!inside || document.activeElement === items[0])) {
+        e.preventDefault();
+        items[items.length - 1].focus();
+      } else if (!e.shiftKey && (!inside || document.activeElement === items[items.length - 1])) {
+        e.preventDefault();
+        items[0].focus();
+      }
+    };
     window.addEventListener('keydown', onKey);
-    ref.current?.querySelector('input, textarea, select, button')?.focus();
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
   return (
     <div className="aw-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={cx('aw-modal', wide && 'aw-modal--wide', full && 'aw-modal--full')} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
+      <div className={cx('aw-modal', wide && 'aw-modal--wide', full && 'aw-modal--full')} role="dialog" aria-modal="true" aria-labelledby={titleId} ref={ref}>
         <header className="aw-modal__head">
           <div>
-            <h2>{title}</h2>
+            <h2 id={titleId}>{title}</h2>
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
           <Button kind="ghost" size="sm" onClick={onClose} aria-label="Close">
@@ -130,27 +261,46 @@ export function Modal({ title, subtitle, onClose, children, actions, wide, full 
   );
 }
 
+/**
+ * A question with consequences: the confirm button is focused (Enter confirms),
+ * stays busy while the action runs, and on failure the dialog stays open with
+ * the reason.
+ */
 export function Confirm({ ask, onClose }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const close = () => {
+    if (!busy) onClose();
+  };
+  const run = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await ask.run();
+      close();
+    } catch (err) {
+      setBusy(false);
+      setError(errorText(err));
+    }
+  };
   return (
     <Modal
       title={ask.title}
       subtitle={ask.text}
-      onClose={onClose}
+      onClose={close}
+      focus=".aw-confirm"
       actions={
         <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button
-            kind={ask.danger ? 'danger' : 'primary'}
-            onClick={() => {
-              onClose();
-              ask.run();
-            }}
-          >
+          <Button onClick={close} disabled={busy}>Cancel</Button>
+          <Button className="aw-confirm" kind={ask.danger ? 'danger' : 'primary'} disabled={busy} aria-busy={busy} onClick={() => { void run(); }}>
             {ask.confirm}
           </Button>
         </>
       }
-    />
+    >
+      {error ? <p className="aw-error" role="alert">{error}</p> : null}
+    </Modal>
   );
 }
 
