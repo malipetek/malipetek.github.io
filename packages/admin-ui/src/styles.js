@@ -317,6 +317,24 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-mlog summary { cursor: pointer; color: var(--aw-text2); font-size: 12px; }
 .aw-mlog[open] summary { margin-bottom: 4px; }
 .aw-machine p > .aw-btn { margin-left: 8px; }
+/* Settings → This machine's tools (MCP servers and skills fleet agents read). */
+.aw-toolbox__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.aw-toolbox__head p { margin: 0; }
+.aw-toolbox__warnings { list-style: none; margin: 4px 0 8px; padding: 0; display: grid; gap: 2px; font-size: 12px; }
+.aw-toolbox__section { border-top: 1px solid var(--aw-border); margin-top: 10px; padding-top: 10px; }
+.aw-toolbox__section > h4 { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
+.aw-toolbox__subhead { font-size: 12px; font-weight: 600; color: var(--aw-text2); margin: 10px 0 4px; }
+.aw-toolbox__rows, .aw-toolbox__skills, .aw-toolbox__plugins { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.aw-toolbox__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--aw-border); border-radius: 8px; background: var(--aw-bg2); }
+.aw-toolbox__row.is-off { opacity: .72; }
+.aw-toolbox__main { min-width: 0; }
+.aw-toolbox__title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.aw-toolbox__meta { color: var(--aw-text2); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-toolbox__actions { display: flex; gap: 4px; }
+.aw-toolbox__skills > li, .aw-toolbox__plugin { padding: 6px 8px; border: 1px solid var(--aw-border); border-radius: 8px; background: var(--aw-bg2); }
+.aw-toolbox__plugin { display: flex; align-items: center; gap: 6px; }
+.aw-toolbox__skilldesc { margin: 2px 0 0; color: var(--aw-text2); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
 
 /* overlays */
 .aw-scrim { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.35); display: grid; place-items: center; padding: 20px; }

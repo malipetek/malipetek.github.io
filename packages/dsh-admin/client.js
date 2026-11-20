@@ -2746,6 +2746,193 @@ var __awPlugin = (() => {
     ] });
   }
 
+  // packages/admin-ui/src/toolbox.jsx
+  var TARGETS = [
+    { value: "claude", label: "Claude Code" },
+    { value: "opencode", label: "OpenCode" }
+  ];
+  var CONNECTIONS = [
+    { value: "command", label: "Command" },
+    { value: "url", label: "URL" }
+  ];
+  var NAME_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+  var enabled = (server) => !server.disabled && server.enabled !== false;
+  function ServerRow({ server, target, busy, onToggle, onRemove }) {
+    const on = enabled(server);
+    const env = [...server.envKeys ?? [], ...server.headerKeys ?? []];
+    return /* @__PURE__ */ jsxs("li", { className: cx("aw-toolbox__row", !on && "is-off"), children: [
+      /* @__PURE__ */ jsx(Dot, { state: on ? "ok" : "warn" }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbox__main", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-toolbox__title", children: [
+          /* @__PURE__ */ jsx("strong", { children: server.name }),
+          /* @__PURE__ */ jsx(Tag, { tone: "dash", children: server.type }),
+          on ? null : /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "off" })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "aw-toolbox__meta aw-mono", title: server.command ?? server.url ?? "", children: server.command ? `${server.command}${server.args?.length ? ` ${server.args.join(" ")}` : ""}` : server.url }),
+        env.length > 0 ? /* @__PURE__ */ jsxs("div", { className: "aw-toolbox__meta", children: [
+          "secrets set: ",
+          env.join(", "),
+          " (values stay off this page)"
+        ] }) : null
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbox__actions", children: [
+        /* @__PURE__ */ jsx(Button, { size: "sm", disabled: busy, onClick: () => onToggle(target, server.name, !on), children: on ? "Disable" : "Enable" }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", disabled: busy, onClick: () => onRemove(target, server.name), children: "Remove" })
+      ] })
+    ] });
+  }
+  function ServerList({ servers, target, busy, onToggle, onRemove }) {
+    if (!servers.length) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No MCP servers." });
+    return /* @__PURE__ */ jsx("ul", { className: "aw-toolbox__rows", children: servers.map((server) => /* @__PURE__ */ jsx(ServerRow, { server, target, busy, onToggle, onRemove }, server.name)) });
+  }
+  function SkillList({ skills }) {
+    if (!skills.length) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No skills." });
+    return /* @__PURE__ */ jsx("ul", { className: "aw-toolbox__skills", children: skills.map((skill) => /* @__PURE__ */ jsxs("li", { title: skill.path, children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbox__title", children: [
+        /* @__PURE__ */ jsx("strong", { children: skill.name }),
+        /* @__PURE__ */ jsx(Tag, { tone: "dash", children: skill.source })
+      ] }),
+      skill.description ? /* @__PURE__ */ jsx("p", { className: "aw-toolbox__skilldesc", children: skill.description }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No description." })
+    ] }, skill.path)) });
+  }
+  function AddMcpModal({ busy, onClose, onSubmit }) {
+    const [target, setTarget] = useState("claude");
+    const [name, setName] = useState("");
+    const [connection, setConnection] = useState("command");
+    const [command, setCommand] = useState("");
+    const [args, setArgs] = useState("");
+    const [url, setUrl] = useState("");
+    const [error, setError] = useState("");
+    const valid = NAME_RE.test(name.trim()) && (connection === "command" ? command.trim().length > 0 : /^https?:\/\//.test(url.trim()));
+    const submit = async () => {
+      if (!valid || busy) return;
+      const payload = { target, name: name.trim() };
+      if (connection === "command") {
+        payload.command = command.trim();
+        payload.args = args.trim() ? args.trim().split(/\s+/) : [];
+      } else {
+        payload.url = url.trim();
+      }
+      setError("");
+      const ok = await onSubmit(payload);
+      if (!ok) setError("The server was not added; the message above says why.");
+    };
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: "Add MCP server",
+        subtitle: "Written to the config the fleet agents read on this machine.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !valid || busy, onClick: submit, children: "Add" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "For", children: /* @__PURE__ */ jsx(Segmented, { value: target, options: TARGETS, onChange: setTarget }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Name", hint: "Letters, digits, dots, dashes and underscores; up to 64 characters.", children: /* @__PURE__ */ jsx("input", { value: name, placeholder: "my-server", onChange: (event) => setName(event.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Connection", children: /* @__PURE__ */ jsx(Segmented, { value: connection, options: CONNECTIONS, onChange: setConnection }) }),
+          connection === "command" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx(Field, { label: "Command", children: /* @__PURE__ */ jsx("input", { value: command, placeholder: "npx", onChange: (event) => setCommand(event.target.value) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Arguments", hint: "Space-separated.", children: /* @__PURE__ */ jsx("input", { value: args, placeholder: "-y some-mcp-server", onChange: (event) => setArgs(event.target.value) }) })
+          ] }) : /* @__PURE__ */ jsx(Field, { label: "URL", hint: "http or https.", children: /* @__PURE__ */ jsx("input", { value: url, placeholder: "https://mcp.example.com/mcp", onChange: (event) => setUrl(event.target.value) }) }),
+          error ? /* @__PURE__ */ jsx("p", { className: "aw-warn", children: error }) : null
+        ]
+      }
+    );
+  }
+  function ToolboxPanel() {
+    const { host, platform, notify, ask } = useAdmin();
+    const [data, setData] = useState(null);
+    const [error, setError] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [adding, setAdding] = useState(false);
+    const load = useCallback(async () => {
+      if (!host) return;
+      try {
+        setData(await host.json("toolbox list"));
+        setError("");
+      } catch (failure) {
+        setError(failure.message);
+      }
+    }, [host]);
+    useEffect(() => {
+      void load();
+    }, [load]);
+    const apply2 = async (line) => {
+      if (!host) return false;
+      setBusy(true);
+      try {
+        const result = await host.json(line);
+        if (result?.list) setData(result.list);
+        else await load();
+        notify(result?.changed === false ? "Already in that state." : "Saved.", "ok");
+        return true;
+      } catch (failure) {
+        notify(failure.message, "error");
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    };
+    const toggle = (target, name, on) => void apply2(`toolbox toggle-mcp ${JSON.stringify({ target, name, enabled: on })}`);
+    const remove = (target, name) => ask({
+      title: `Remove ${name}?`,
+      text: "Fleet agents on this machine stop seeing it. The config keeps a timestamped backup.",
+      confirm: "Remove",
+      danger: true,
+      run: () => void apply2(`toolbox remove-mcp ${JSON.stringify({ target, name })}`)
+    });
+    if (platform !== "dsh" || !host) {
+      return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "MCP servers and skills on this machine are listed in the desktop app, where the files are." });
+    }
+    return /* @__PURE__ */ jsxs("div", { className: "aw-toolbox", children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-toolbox__head", children: [
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Fleet agents on this machine use these." }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", disabled: busy, onClick: () => void load(), children: "Refresh" }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", disabled: busy || !data, onClick: () => setAdding(true), children: "Add MCP server" })
+      ] }),
+      error ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        "Could not read the toolbox: ",
+        error
+      ] }) : null,
+      !data && !error ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Reading\u2026" }) : null,
+      data?.warnings?.length ? /* @__PURE__ */ jsx("ul", { className: "aw-toolbox__warnings", children: data.warnings.map((warning) => /* @__PURE__ */ jsx("li", { className: "aw-warn", children: warning }, warning)) }) : null,
+      data ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsxs("section", { className: "aw-toolbox__section", children: [
+          /* @__PURE__ */ jsx("h4", { children: "Claude Code" }),
+          /* @__PURE__ */ jsx(ServerList, { servers: data.claude?.mcp ?? [], target: "claude", busy, onToggle: toggle, onRemove: remove }),
+          /* @__PURE__ */ jsx("h5", { className: "aw-toolbox__subhead", children: "Skills" }),
+          /* @__PURE__ */ jsx(SkillList, { skills: data.claude?.skills ?? [] })
+        ] }),
+        /* @__PURE__ */ jsxs("section", { className: "aw-toolbox__section", children: [
+          /* @__PURE__ */ jsx("h4", { children: "OpenCode" }),
+          data.opencode?.configPath ? /* @__PURE__ */ jsx("p", { className: "aw-toolbox__meta aw-mono", title: data.opencode.configPath, children: data.opencode.configPath }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No config file yet; adding a server creates one." }),
+          /* @__PURE__ */ jsx(ServerList, { servers: data.opencode?.mcp ?? [], target: "opencode", busy, onToggle: toggle, onRemove: remove })
+        ] }),
+        /* @__PURE__ */ jsxs("section", { className: "aw-toolbox__section", children: [
+          /* @__PURE__ */ jsx("h4", { children: "Harness" }),
+          data.harness?.plugins?.length ? /* @__PURE__ */ jsx("ul", { className: "aw-toolbox__plugins", children: data.harness.plugins.map((plugin) => /* @__PURE__ */ jsxs("li", { className: "aw-toolbox__plugin", title: plugin.path, children: [
+            /* @__PURE__ */ jsx("strong", { children: plugin.name }),
+            /* @__PURE__ */ jsx(Tag, { tone: "dash", children: plugin.linked ? "symlink" : "directory" })
+          ] }, plugin.path)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No plugins in ~/.dsh/plugins." })
+        ] })
+      ] }) : null,
+      adding ? /* @__PURE__ */ jsx(
+        AddMcpModal,
+        {
+          busy,
+          onClose: () => setAdding(false),
+          onSubmit: async (payload) => {
+            const ok = await apply2(`toolbox add-mcp ${JSON.stringify(payload)}`);
+            if (ok) setAdding(false);
+            return ok;
+          }
+        }
+      ) : null
+    ] });
+  }
+
   // packages/admin-ui/src/fleet.jsx
   var pct = (a, b) => b ? Math.round(a / b * 100) : 0;
   function NodeCard({ node }) {
@@ -3571,6 +3758,10 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: async () => notify((await host.command("logout")).text), children: "Sign out" })
         ] }) })
       ] }) : null,
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "This machine\u2019s tools" }),
+        /* @__PURE__ */ jsx(ToolboxPanel, {})
+      ] }),
       data.settings ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsx("h3", { children: "Work queue" }),
         /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
@@ -3656,6 +3847,46 @@ var __awPlugin = (() => {
   var snippet = (text, max = 90) => text.length > max ? `${text.slice(0, max)}\u2026` : text;
   var plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   var dateLabel = (unix) => unix ? new Date(unix * 1e3).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+  function deskState(overview) {
+    const { settings, bound, senderState, autoResume } = overview;
+    if (!bound) {
+      const reason = senderState?.reason;
+      const short = reason === "ses_unconfigured" ? "SES has no keys" : reason === "sender_unbound" ? "no sender bound" : REASONS[reason] ?? reason ?? "no sender bound";
+      return { tone: "bad", text: `Can't send: ${short}` };
+    }
+    if (!settings.postalAddress) return { tone: "bad", text: "Can't send: no postal address in Settings" };
+    if (!settings.live) {
+      if (autoResume?.autoPausedAt) {
+        const back = autoResume.resumesAfter ? `, back on ${dateLabel(autoResume.resumesAfter)}` : "";
+        return { tone: "warn", text: `Paused itself on ${dateLabel(autoResume.autoPausedAt)}${back} if the numbers stay clean` };
+      }
+      return { tone: "warn", text: "Paused by you" };
+    }
+    return { tone: "ok", text: "Running on its own" };
+  }
+  function nextWindowOpen(settings, nowSec2) {
+    const offset = settings.offsetMinutes ?? 0;
+    const start = settings.startHour ?? 8;
+    const local = new Date((nowSec2 + offset * 60) * 1e3);
+    for (let add = 0; add < 8; add += 1) {
+      const day = new Date(local.getTime() + add * 864e5);
+      const dow = day.getUTCDay();
+      if (settings.weekdaysOnly && (dow === 0 || dow === 6)) continue;
+      const open = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), start) - offset * 6e4);
+      if (open.getTime() / 1e3 > nowSec2) return open.getTime() / 1e3;
+    }
+    return null;
+  }
+  var obsEtaMinutes = (pending) => pending * 5 / 12;
+  function fmtEta(minutes) {
+    if (minutes < 90) return `~${Math.max(1, Math.round(minutes))}m`;
+    if (minutes < 60 * 36) return `~${Math.round(minutes / 60)}h`;
+    return `~${(minutes / 1440).toFixed(1)}d`;
+  }
+  var limitPct = (limit) => {
+    const v = limit * 100;
+    return `${v < 1 ? v.toFixed(2) : v < 10 ? v.toFixed(1) : Math.round(v)}%`;
+  };
   function MarketingView() {
     const { api, act, notify } = useAdmin();
     const [overview, setOverview] = useState(null);
@@ -3689,7 +3920,6 @@ var __awPlugin = (() => {
       return load();
     }, [load]);
     const run = useCallback((fn, message) => act(fn, message).then(refresh, () => void 0), [act, refresh]);
-    const contactsById = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
     const done = useCallback(
       (message) => {
         setModal(null);
@@ -3704,90 +3934,25 @@ var __awPlugin = (() => {
     ] });
     if (!overview) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading\u2026" });
     const { settings, health } = overview;
-    const messagesToday = `${overview.today}/${settings.dailyCap} sent today`;
-    const providerName = settings.provider === "ses" ? "Amazon SES" : "Cloudflare";
+    const state = deskState(overview);
     return /* @__PURE__ */ jsxs("div", { className: "aw-view", children: [
-      /* @__PURE__ */ jsxs("header", { className: "aw-hero", children: [
+      /* @__PURE__ */ jsxs("header", { className: "aw-hero aw-hero--mk", children: [
         /* @__PURE__ */ jsx("h2", { children: "Marketing" }),
-        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          "Email sequences, X and LinkedIn posts, from ",
-          /* @__PURE__ */ jsx("span", { className: "aw-mono", children: overview.sender }),
-          ". Replies to that address land here; \u201Cno\u201D, the unsubscribe button or a spam complaint stops everything queued for that contact."
-        ] })
-      ] }),
-      !overview.bound ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: overview.senderState?.reason === "ses_unconfigured" ? "The sender is set to Amazon SES, but the Worker has no SES keys (AWS_SES_ACCESS_KEY_ID / AWS_SES_SECRET_ACCESS_KEY). Nothing can send." : "No outreach sender is bound on the Worker (MARKETING). Nothing can send." }) : !settings.postalAddress ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: "Set a postal address in Settings before a cold email goes out \u2014 anti-spam law asks for one on every send." }) : !settings.live ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
-        overview.autoResume?.autoPausedAt ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          "Paused itself on ",
-          dateLabel(overview.autoResume.autoPausedAt),
-          ". It switches back on after",
-          " ",
-          overview.autoResume.resumesAfter ? dateLabel(overview.autoResume.resumesAfter) : "the wait",
-          " if bounces and complaints stay under the limits."
-        ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
-          "Paused. ",
-          overview.due.email ? `${overview.due.email} email${overview.due.email === 1 ? "" : "s"} are due.` : "Nothing is due yet."
+        /* @__PURE__ */ jsxs("span", { className: "aw-mk-state", children: [
+          /* @__PURE__ */ jsx(Dot, { state: state.tone }),
+          /* @__PURE__ */ jsx("span", { children: state.text })
         ] }),
-        health?.trip ? ` The desk paused itself: ${health.trip === "bounce_rate" ? "too many bounces" : "too many complaints"}.` : "",
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => run(() => api("PUT", "/admin/marketing/settings", { live: true }), "Outreach is live."), children: "Go live" })
-      ] }) : /* @__PURE__ */ jsxs("div", { className: "aw-banner", children: [
-        "Live via ",
-        providerName,
-        " \xB7 ",
-        settings.startHour,
-        ":00\u2013",
-        settings.endHour,
-        ":00 ",
-        offsetLabel(settings.offsetMinutes),
-        settings.weekdaysOnly ? ", weekdays" : "",
-        " \xB7 ",
-        messagesToday,
-        overview.autoResume && overview.autoResume.cap < settings.dailyCap ? ` \xB7 ramping: ${overview.autoResume.cap}/day today` : "",
-        " ",
-        "\xB7 window",
-        " ",
-        overview.window.open ? "open" : `closed (${WINDOW_REASON[overview.window.reason] ?? overview.window.reason})`,
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
         /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => run(() => api("POST", "/admin/marketing/run"), runMessage), children: "Run now" }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => run(() => api("PUT", "/admin/marketing/settings", { live: false }), "Paused."), children: "Pause" })
+        settings.live ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => run(() => api("PUT", "/admin/marketing/settings", { live: false }), "Paused."), children: "Pause" }) : /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => run(() => api("PUT", "/admin/marketing/settings", { live: true }), "Outreach is live."), children: "Go live" })
       ] }),
+      !overview.bound ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: overview.senderState?.reason === "ses_unconfigured" ? "The sender is set to Amazon SES, but the Worker has no SES keys (AWS_SES_ACCESS_KEY_ID / AWS_SES_SECRET_ACCESS_KEY). Nothing can send." : "No outreach sender is bound on the Worker (MARKETING). Nothing can send." }) : !settings.postalAddress ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: "Set a postal address in Settings before a cold email goes out \u2014 anti-spam law asks for one on every send." }) : null,
       overview.postsAwaiting ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
         plural(overview.postsAwaiting, "post waits", "posts wait"),
         " for your approval. Nothing is posted until you approve it.",
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
         /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setTab("posts"), children: "Review posts" })
       ] }) : null,
-      /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
-        /* @__PURE__ */ jsx(Tag, { children: plural(overview.counts.contacts.queued, "queued contact", "queued contacts") }),
-        /* @__PURE__ */ jsxs(Tag, { children: [
-          overview.counts.contacts.replied,
-          " replied"
-        ] }),
-        /* @__PURE__ */ jsxs(Tag, { tone: overview.counts.contacts.opted_out ? "bad" : "dash", children: [
-          overview.counts.contacts.opted_out,
-          " opted out"
-        ] }),
-        /* @__PURE__ */ jsxs(Tag, { tone: overview.counts.contacts.bounced ? "bad" : "dash", children: [
-          overview.counts.contacts.bounced,
-          " bounced"
-        ] }),
-        /* @__PURE__ */ jsx(Tag, { tone: overview.counts.messages.failed ? "bad" : "dash", children: plural(overview.counts.messages.failed, "failed send", "failed sends") }),
-        /* @__PURE__ */ jsx(Tag, { tone: overview.due.email ? "warn" : "dash", children: plural(overview.due.email, "email due", "emails due") }),
-        /* @__PURE__ */ jsx(Tag, { tone: overview.due.x + overview.due.linkedin ? "warn" : "dash", children: plural(overview.due.x + overview.due.linkedin, "post due", "posts due") }),
-        health ? /* @__PURE__ */ jsxs(
-          Tag,
-          {
-            tone: health.trip ? "bad" : health.bounceRate > health.maxBounceRate / 2 ? "warn" : "dash",
-            title: `Last 14 days: ${health.sent} sent, ${health.bounces} bounced, ${health.complaints} complaints. The desk pauses itself above ${pct2(health.maxBounceRate)} bounces or ${pct2(health.maxComplaintRate)} complaints.`,
-            children: [
-              "bounces ",
-              pct2(health.bounceRate),
-              " \xB7 complaints ",
-              pct2(health.complaintRate)
-            ]
-          }
-        ) : null
-      ] }),
       /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
         /* @__PURE__ */ jsx(
           Segmented,
@@ -3836,10 +4001,9 @@ var __awPlugin = (() => {
         tab === "posts" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "compose", channel: "x" }), children: "Compose" }),
           /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => run(() => api("POST", "/admin/marketing/cycle?force=1"), cycleMessage), children: "Draft posts" })
-        ] }) : null,
-        tab === "settings" ? /* @__PURE__ */ jsx(Button, { onClick: () => run(() => api("POST", "/admin/marketing/run"), runMessage), children: "Run now" }) : null
+        ] }) : null
       ] }),
-      tab === "overview" ? /* @__PURE__ */ jsx(OverviewTab, { api, tick, health, overview, onReview: () => setModal({ kind: "review" }), onContact: (id) => setModal({ kind: "person", id }) }) : null,
+      tab === "overview" ? /* @__PURE__ */ jsx(OverviewTab, { api, tick, health, overview, onReview: () => setModal({ kind: "review" }), onContact: (id) => setModal({ kind: "person", id }), onTab: setTab }) : null,
       tab === "contacts" ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsxs("div", { className: "aw-inline", style: { marginBottom: 8 }, children: [
           /* @__PURE__ */ jsx("span", { className: "aw-muted", children: paging.total ? `${(filters.offset + 1).toLocaleString("en-US")}\u2013${Math.min(filters.offset + paging.page, paging.total).toLocaleString("en-US")} of ${paging.total.toLocaleString("en-US")}` : "None" }),
@@ -3871,7 +4035,7 @@ var __awPlugin = (() => {
             /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setSelected(/* @__PURE__ */ new Set()), children: "Clear" })
           ] }) : null
         ] }),
-        /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+        /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
           /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
             /* @__PURE__ */ jsx("th", { children: /* @__PURE__ */ jsx(
               "input",
@@ -3938,7 +4102,7 @@ var __awPlugin = (() => {
               ) : null
             ] }) })
           ] }, c.id)) })
-        ] }),
+        ] }) }),
         !contacts.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No contacts match. Import a CSV, or add one by hand." }) : null
       ] }) : null,
       tab === "email" ? /* @__PURE__ */ jsx(EmailTab, { api, run, tick, events: overview.events, onOpen: (m) => setModal({ kind: "message", id: m.id }) }) : null,
@@ -3955,7 +4119,7 @@ var __awPlugin = (() => {
           }
         }
       ) : null,
-      tab === "settings" ? /* @__PURE__ */ jsx(SettingsTab, { overview, run, api, contactsById }) : null,
+      tab === "settings" ? /* @__PURE__ */ jsx(SettingsTab, { overview, run, api }) : null,
       modal?.kind === "import" ? /* @__PURE__ */ jsx(ImportModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
       modal?.kind === "bulkqueue" ? /* @__PURE__ */ jsx(BulkQueueModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
       modal?.kind === "contact" ? /* @__PURE__ */ jsx(ContactModal, { contact: modal.contact, sequences: overview.sequences, api, onClose: () => setModal(null), onSaved: done }) : null,
@@ -3996,10 +4160,6 @@ var __awPlugin = (() => {
   }
   var pct2 = (rate) => `${(rate * 100).toFixed(rate && rate < 0.01 ? 2 : 1)}%`;
   var runMessage = (result) => result?.reason ? REASONS[result.reason] ?? `Nothing sent: ${result.reason}` : `Sent ${result?.sent ?? 0}${result?.failed ? `, ${result.failed} failed` : ""}.`;
-  var dayName = (unix, offsetMinutes) => {
-    const d = new Date((unix + offsetMinutes * 60) * 1e3);
-    return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()]} ${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
-  };
   var REPLY_TONE = { reply: "ok", opt_out: "warn", complaint: "bad" };
   var REPLY_LABEL = { reply: "replied", opt_out: "opted out", complaint: "spam complaint" };
   var OBSERVE_KIND = {
@@ -4012,122 +4172,380 @@ var __awPlugin = (() => {
     none: "clean",
     unreachable: "unreachable"
   };
-  function OverviewTab({ api, tick, health, overview, onReview, onContact }) {
+  var postChannelLabel = { x: "X", linkedin: "LinkedIn" };
+  function RateMeter({ label, rate, limit }) {
+    const pctOf = Math.min((rate ?? 0) / limit, 1);
+    const tone2 = (rate ?? 0) >= limit ? "bad" : (rate ?? 0) >= limit / 2 ? "warn" : "ok";
+    return /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter", title: `${label}: ${pct2(rate ?? 0)} of the ${limitPct(limit)} limit`, children: [
+      /* @__PURE__ */ jsx("span", { className: "aw-mk-meter__label", children: label }),
+      /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter__track", children: [
+        /* @__PURE__ */ jsx("i", { className: cx("aw-mk-meter__fill", `aw-mk-meter__fill--${tone2}`), style: { width: `${pctOf * 80}%` } }),
+        /* @__PURE__ */ jsx("i", { className: "aw-mk-meter__limit" })
+      ] }),
+      /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter__num", children: [
+        pct2(rate ?? 0),
+        " of ",
+        limitPct(limit)
+      ] })
+    ] });
+  }
+  function AutopilotTable({ overview }) {
+    const { settings, window: win, health, observe, domains, due, today, pulse = {} } = overview;
+    const cap = Math.min(settings.dailyCap, overview.autoResume?.cap ?? settings.dailyCap);
+    const ramping = (overview.autoResume?.cap ?? settings.dailyCap) < settings.dailyCap;
+    const events = overview.events ?? [];
+    const newest = (kind) => events.filter((e) => e.kind === kind).map((e) => e.createdAt).sort((a, b) => b - a)[0] ?? null;
+    const lastSentAt = pulse.lastSentAt ?? newest("sent");
+    const lastPublishedAt = pulse.lastPublishedAt ?? newest("published");
+    const lastPublishedChannel = pulse.lastPublishedChannel ?? null;
+    const emailState = !settings.live ? "paused" : win?.open ? "sending" : `waiting: ${WINDOW_REASON[win?.reason] ?? win?.reason ?? "outside the window"}`;
+    const nextOpen = win && !win.open ? nextWindowOpen(settings, Math.floor(Date.now() / 1e3)) : null;
+    const emailNext = [
+      due?.email ? `${due.email} due` : "queue clear",
+      !win?.open && nextOpen ? `opens ${when(nextOpen)}` : pulse.nextEmailAt ? `next ${when(pulse.nextEmailAt)}` : ""
+    ].filter(Boolean).join(" \xB7 ");
+    const holdHours = settings.postHoldHours ?? 0;
+    const postState = holdHours > 0 ? `hold ${holdHours}h` : settings.postApproval ? "approve by hand" : "on schedule";
+    const postNext = [
+      pulse.nextPostAt ? `${when(pulse.nextPostAt)}${pulse.nextPostChannel ? ` \xB7 ${postChannelLabel[pulse.nextPostChannel] ?? pulse.nextPostChannel}` : ""}` : "",
+      pulse.postsQueued ? `${pulse.postsQueued} queued` : ""
+    ].filter(Boolean).join(" \xB7 ");
+    const pending = observe?.pending ?? 0;
+    const observed = observe?.observed ?? 0;
+    const withGap = observe?.withGap ?? 0;
+    const kindEntries = Object.entries(observe?.byKind ?? {}).sort((a, b) => b[1] - a[1]);
+    const bounceRate = health?.bounceRate ?? 0;
+    const complaintRate = health?.complaintRate ?? 0;
+    return /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--compact aw-table--static aw-table--stack", children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Loop" }),
+          /* @__PURE__ */ jsx("th", { children: "State" }),
+          /* @__PURE__ */ jsx("th", { children: "Last" }),
+          /* @__PURE__ */ jsx("th", { children: "Next" }),
+          /* @__PURE__ */ jsx("th", { children: "Health" })
+        ] }) }),
+        /* @__PURE__ */ jsxs("tbody", { children: [
+          /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("td", { children: "Email" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "State", children: emailState }),
+            /* @__PURE__ */ jsxs("td", { "data-label": "Last", children: [
+              lastSentAt ? when(lastSentAt) : "no sends yet",
+              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                " ",
+                "\xB7 ",
+                today ?? 0,
+                "/",
+                cap,
+                " today",
+                ramping ? " \xB7 ramping" : ""
+              ] })
+            ] }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Next", children: emailNext || "\u2014" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Health", children: /* @__PURE__ */ jsxs("div", { className: "aw-mk-health", children: [
+              /* @__PURE__ */ jsx(RateMeter, { label: "bounces", rate: bounceRate, limit: health?.maxBounceRate ?? 0.04 }),
+              /* @__PURE__ */ jsx(RateMeter, { label: "complaints", rate: complaintRate, limit: health?.maxComplaintRate ?? 2e-3 })
+            ] }) })
+          ] }),
+          /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("td", { children: "Posts" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "State", children: postState }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Last", children: lastPublishedAt ? `${when(lastPublishedAt)}${lastPublishedChannel ? ` \xB7 ${postChannelLabel[lastPublishedChannel] ?? lastPublishedChannel}` : ""}` : "none yet" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Next", children: postNext || "\u2014" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Health", className: pulse.postsFailed ? "aw-mk-bad" : void 0, children: pulse.postsFailed == null ? "\u2014" : `${pulse.postsFailed} failed` })
+          ] }),
+          /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("td", { children: "Site reading" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "State", children: pending > 0 ? "reading" : "idle" }),
+            /* @__PURE__ */ jsxs("td", { "data-label": "Last", children: [
+              observed,
+              " read",
+              pulse.lastObservedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                " \xB7 last ",
+                when(pulse.lastObservedAt)
+              ] }) : null
+            ] }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Next", children: pending > 0 ? `${pending} waiting \xB7 ${fmtEta(obsEtaMinutes(pending))}` : "all read" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Health", children: observed > 0 ? `${pct2(withGap / observed)} found something` : "\u2014" })
+          ] }),
+          /* @__PURE__ */ jsxs("tr", { children: [
+            /* @__PURE__ */ jsx("td", { children: "Domain checks" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "State", children: "checking" }),
+            /* @__PURE__ */ jsxs("td", { "data-label": "Last", children: [
+              domains?.checked ?? 0,
+              " domains"
+            ] }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Next", children: "\u2014" }),
+            /* @__PURE__ */ jsxs("td", { "data-label": "Health", className: domains?.undeliverable ? "aw-mk-bad" : void 0, children: [
+              domains?.undeliverable ?? 0,
+              " undeliverable"
+            ] })
+          ] })
+        ] })
+      ] }) }),
+      kindEntries.length ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx("p", { className: "aw-muted aw-mk-kinds-label", children: "What the reader finds:" }),
+        /* @__PURE__ */ jsx("dl", { className: "aw-mk-kinds", children: kindEntries.map(([kind, n]) => /* @__PURE__ */ jsxs("div", { className: "aw-mk-kind", children: [
+          /* @__PURE__ */ jsx("dt", { children: OBSERVE_KIND[kind] ?? kind }),
+          /* @__PURE__ */ jsx("dd", { children: n })
+        ] }, kind)) })
+      ] }) : null
+    ] });
+  }
+  function NeedsYou({ api, tick, overview, replies, onTab, onReview, onContact }) {
+    const { settings, bound, senderState, pulse = {} } = overview;
+    const [queue, setQueue] = useState(null);
+    useEffect(() => {
+      if (!settings.reviewFirst) {
+        setQueue(null);
+        return void 0;
+      }
+      let live = true;
+      api("GET", "/admin/marketing/review?limit=100").then((r) => live && setQueue(r)).catch(() => live && setQueue({ messages: [] }));
+      return () => {
+        live = false;
+      };
+    }, [api, settings.reviewFirst, tick]);
+    const items = [];
+    if (!bound) {
+      items.push({
+        key: "sender",
+        text: senderState?.reason === "ses_unconfigured" ? "The sender is Amazon SES but the Worker has no SES keys." : "No outreach sender is bound on the Worker.",
+        action: { label: "Open Settings", run: () => onTab("settings") }
+      });
+    } else if (!settings.postalAddress) {
+      items.push({
+        key: "postal",
+        text: "Cold email cannot go out without a postal address.",
+        action: { label: "Open Settings", run: () => onTab("settings") }
+      });
+    }
+    const cutoff = Math.floor(Date.now() / 1e3) - 14 * 86400;
+    for (const r of (replies ?? []).filter((x) => x.kind === "reply" && x.at >= cutoff && x.contact?.id)) {
+      items.push({
+        key: `reply-${r.id}`,
+        text: `${r.contact.business ?? r.contact.email} replied ${ago(r.at)} ago`,
+        action: { label: "Open contact", run: () => onContact(r.contact.id) }
+      });
+    }
+    if (pulse.postsFailed > 0) {
+      items.push({
+        key: "posts-failed",
+        text: `${pulse.postsFailed} post${pulse.postsFailed === 1 ? "" : "s"} failed to publish.`,
+        action: { label: "Open Posts", run: () => onTab("posts") }
+      });
+    }
+    if (settings.reviewFirst && queue?.messages?.length) {
+      const n = queue.messages.length;
+      items.push({
+        key: "review",
+        text: `${n >= 100 ? "100+" : n} first email${n === 1 ? "" : "s"} wait for review.`,
+        action: { label: "Review next", run: onReview }
+      });
+    }
+    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+      /* @__PURE__ */ jsx("h3", { children: "Needs you" }),
+      items.length ? /* @__PURE__ */ jsx("ul", { className: "aw-needs", children: items.map((item) => /* @__PURE__ */ jsxs("li", { children: [
+        /* @__PURE__ */ jsx("span", { children: item.text }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: item.action.run, children: item.action.label })
+      ] }, item.key)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing needs you. The desk is running on its own." })
+    ] });
+  }
+  var shortDay = (unix, offsetMinutes = 0) => {
+    const d = new Date((unix + offsetMinutes * 60) * 1e3);
+    return `${d.getUTCDate()} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()]}`;
+  };
+  function StatsChart({ stats }) {
+    const ref = useRef(null);
+    const [width, setWidth] = useState(0);
+    const days = useMemo(() => stats?.days ? [...stats.days].reverse() : [], [stats]);
+    useEffect(() => {
+      const el = ref.current;
+      if (!el) return void 0;
+      const update = () => setWidth(el.clientWidth);
+      update();
+      const ro = new ResizeObserver(update);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }, [days.length]);
+    if (!days.length) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" });
+    const sum = (key) => days.reduce((n, d) => n + (d[key] ?? 0), 0);
+    const sent = sum("sent");
+    const replies = sum("reply");
+    const bounces = sum("bounce");
+    const optOuts = sum("opt_out");
+    const published = sum("published");
+    const offset = stats.offsetMinutes ?? 0;
+    const H = 180;
+    const padL = 40;
+    const padR = 10;
+    const padT = 12;
+    const padB = 26;
+    const measured = width > 0;
+    const w = measured ? Math.max(width, 200) : 720;
+    const plotW = w - padL - padR;
+    const plotH = H - padT - padB;
+    const baseY = padT + plotH;
+    const maxSent = Math.max(...days.map((d) => d.sent), 1);
+    const step = maxSent > 50 ? 10 : maxSent > 10 ? 5 : 1;
+    const yMax = Math.max(step, Math.ceil(maxSent / step) * step);
+    const slot = plotW / days.length;
+    const barW = Math.min(18, Math.max(3, slot * 0.6));
+    const labelEvery = Math.max(1, Math.ceil(56 / slot));
+    const y = (v) => baseY - v / yMax * plotH;
+    const aria = `${days.length} days: ${sent} sent, ${replies} replies, ${bounces} bounces, ${optOuts} opt-outs, ${published} posts published.`;
+    return /* @__PURE__ */ jsxs("figure", { className: "aw-chart", children: [
+      /* @__PURE__ */ jsxs("figcaption", { className: "aw-chart__totals", children: [
+        sent,
+        " sent \xB7 ",
+        replies,
+        " replies \xB7 ",
+        bounces,
+        " bounces \xB7 ",
+        optOuts,
+        " opt-outs \xB7 ",
+        published,
+        " posts"
+      ] }),
+      /* @__PURE__ */ jsx("div", { ref, className: "aw-chart__box", children: /* @__PURE__ */ jsxs(
+        "svg",
+        {
+          className: "aw-chart__svg",
+          width: measured ? w : "100%",
+          height: H,
+          viewBox: measured ? void 0 : `0 0 ${w} ${H}`,
+          preserveAspectRatio: measured ? void 0 : "xMidYMid meet",
+          role: "img",
+          "aria-label": aria,
+          children: [
+            [0, 0.5, 1].map((f) => {
+              const v = yMax * f;
+              return /* @__PURE__ */ jsxs("g", { children: [
+                /* @__PURE__ */ jsx("line", { className: "aw-chart__grid", x1: padL, x2: w - padR, y1: y(v), y2: y(v) }),
+                /* @__PURE__ */ jsx("text", { className: "aw-chart__tick", x: padL - 6, y: y(v) + 3, textAnchor: "end", children: Math.round(v) })
+              ] }, f);
+            }),
+            days.map((d, i) => {
+              const cx2 = padL + i * slot + slot / 2;
+              const sentH = d.sent / yMax * plotH;
+              const bounceH = Math.min((d.bounce ?? 0) / yMax * plotH, sentH);
+              return /* @__PURE__ */ jsxs("g", { children: [
+                /* @__PURE__ */ jsx("title", { children: `${shortDay(d.day, offset)}: ${d.sent} sent, ${d.reply} replies, ${d.bounce} bounces, ${d.opt_out} opt-outs, ${d.published ?? 0} posts` }),
+                d.sent ? /* @__PURE__ */ jsx("rect", { className: "aw-chart__bar", x: cx2 - barW / 2, y: y(d.sent), width: barW, height: sentH, rx: 1.5 }) : null,
+                d.bounce && d.sent ? /* @__PURE__ */ jsx("rect", { className: "aw-chart__bounce", x: cx2 - barW / 2, y: y(d.sent), width: barW, height: bounceH, rx: 1.5 }) : null,
+                d.reply ? /* @__PURE__ */ jsx("circle", { className: "aw-chart__reply", cx: cx2, cy: padT + 4, r: 3 }) : null,
+                i % labelEvery === 0 ? /* @__PURE__ */ jsx("text", { className: "aw-chart__day", x: cx2, y: H - 8, textAnchor: "middle", children: shortDay(d.day, offset) }) : null,
+                d.published ? Array.from({ length: Math.min(d.published, 3) }).map((_, j) => /* @__PURE__ */ jsx("rect", { className: "aw-chart__post", x: cx2 - 5 + j * 4, y: baseY + 7, width: 3, height: 3, rx: 1 }, j)) : null
+              ] }, d.day);
+            }),
+            /* @__PURE__ */ jsx("line", { className: "aw-chart__axis", x1: padL, x2: w - padR, y1: baseY, y2: baseY })
+          ]
+        }
+      ) }),
+      /* @__PURE__ */ jsxs("table", { className: "aw-sr-only", children: [
+        /* @__PURE__ */ jsx("caption", { children: "Daily marketing numbers" }),
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Day" }),
+          /* @__PURE__ */ jsx("th", { children: "Sent" }),
+          /* @__PURE__ */ jsx("th", { children: "Replies" }),
+          /* @__PURE__ */ jsx("th", { children: "Bounces" }),
+          /* @__PURE__ */ jsx("th", { children: "Opt-outs" }),
+          /* @__PURE__ */ jsx("th", { children: "Posts" })
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: days.map((d) => /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("td", { children: shortDay(d.day, offset) }),
+          /* @__PURE__ */ jsx("td", { children: d.sent }),
+          /* @__PURE__ */ jsx("td", { children: d.reply }),
+          /* @__PURE__ */ jsx("td", { children: d.bounce }),
+          /* @__PURE__ */ jsx("td", { children: d.opt_out }),
+          /* @__PURE__ */ jsx("td", { children: d.published ?? 0 })
+        ] }, d.day)) })
+      ] })
+    ] });
+  }
+  function ExperimentPanel({ overview, onTab }) {
+    const rows = (overview.sequences ?? []).filter((s) => s.key === "cold_a" || s.key === "cold_obs");
+    if (rows.length < 2) return null;
+    const control = rows.find((s) => s.key === "cold_a");
+    const challenger = rows.find((s) => s.key === "cold_obs");
+    if (!control || !challenger) return null;
+    const rate = (s) => s.stats.sent ? s.stats.replies / s.stats.sent : 0;
+    const enough = control.stats.sent >= 100 && challenger.stats.sent >= 100;
+    let verdict;
+    if (!enough) {
+      verdict = `Too early to call: ${control.stats.sent} and ${challenger.stats.sent} sends so far.`;
+    } else {
+      const diff = rate(challenger) - rate(control);
+      verdict = Math.abs(diff) < 5e-4 ? "Same reply rate so far." : `${diff > 0 ? challenger.key : control.key} leads: ${pct2(Math.max(rate(challenger), rate(control)))} vs ${pct2(Math.min(rate(challenger), rate(control)))} reply rate, ${(Math.abs(diff) * 100).toFixed(1)} pts apart.`;
+    }
+    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+      /* @__PURE__ */ jsx("h3", { children: "Experiment" }),
+      /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--compact aw-table--static aw-table--stack", children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Sequence" }),
+          /* @__PURE__ */ jsx("th", { children: "Sent" }),
+          /* @__PURE__ */ jsx("th", { children: "Replies" }),
+          /* @__PURE__ */ jsx("th", { children: "Reply rate" }),
+          /* @__PURE__ */ jsx("th", { children: "Opt-outs" }),
+          /* @__PURE__ */ jsx("th", { children: "Bounces" })
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: rows.map((s) => /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsxs("td", { children: [
+            s.label,
+            " ",
+            s.key === "cold_a" ? /* @__PURE__ */ jsx(Tag, { children: "control" }) : null,
+            s.key === "cold_obs" ? /* @__PURE__ */ jsx(Tag, { children: "challenger" }) : null
+          ] }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Sent", children: s.stats.sent }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Replies", children: s.stats.replies }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Reply rate", children: pct2(rate(s)) }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Opt-outs", children: s.stats.optedOut }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Bounces", children: s.stats.bounced })
+        ] }, s.key)) })
+      ] }) }),
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: verdict }),
+      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        overview.settings.obsShare,
+        "% of observed contacts get the observation opener.",
+        " ",
+        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => onTab("settings"), children: "Settings" })
+      ] })
+    ] });
+  }
+  function OverviewTab({ api, tick, health, overview, onReview, onContact, onTab }) {
     const [stats, setStats] = useState(null);
     const [replies, setReplies] = useState(null);
-    const [review, setReview] = useState(null);
     useEffect(() => {
       let live = true;
-      Promise.all([
-        api("GET", "/admin/marketing/stats?days=14"),
-        api("GET", "/admin/marketing/replies"),
-        api("GET", "/admin/marketing/review?limit=1")
-      ]).then(([s, r, v]) => {
+      Promise.all([api("GET", "/admin/marketing/stats?days=14"), api("GET", "/admin/marketing/replies")]).then(([s, r]) => {
         if (!live) return;
         setStats(s);
         setReplies(r.replies ?? []);
-        setReview(v.nextDay);
       }).catch(() => live && setReplies([]));
       return () => {
         live = false;
       };
     }, [api, tick]);
-    const sum = (key) => (stats?.days ?? []).reduce((n, d) => n + d[key], 0);
-    const sent = sum("sent");
+    const ordered = [...replies ?? []].sort((a, b) => Number(b.kind === "reply") - Number(a.kind === "reply") || b.at - a.at);
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsx("section", { className: "aw-panel", children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-        /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: "Next 24 hours" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: review ? `${review.reviewed} of ${plural(review.total, "first email", "first emails")} due by this time tomorrow are reviewed.` : "\u2026" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: onReview, children: "Review next" })
-      ] }) }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Autopilot" }),
+        /* @__PURE__ */ jsx(AutopilotTable, { overview })
+      ] }),
+      /* @__PURE__ */ jsx(NeedsYou, { api, tick, overview, replies, onTab, onReview, onContact }),
+      /* @__PURE__ */ jsx(ExperimentPanel, { overview, onTab }),
       /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsx("h3", { children: "Last 14 days" }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
-          /* @__PURE__ */ jsxs(Tag, { children: [
-            sent.toLocaleString("en-US"),
-            " sent"
-          ] }),
-          /* @__PURE__ */ jsxs(Tag, { tone: sum("reply") ? "ok" : "dash", children: [
-            sum("reply"),
-            " replies ",
-            sent ? `(${pct2(sum("reply") / sent)})` : ""
-          ] }),
-          /* @__PURE__ */ jsxs(Tag, { tone: health?.trip === "bounce_rate" ? "bad" : "dash", children: [
-            sum("bounce"),
-            " bounces"
-          ] }),
-          /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-            sum("opt_out"),
-            " opt-outs"
-          ] }),
-          /* @__PURE__ */ jsxs(Tag, { tone: sum("complaint") ? "bad" : "dash", children: [
-            sum("complaint"),
-            " complaints"
-          ] }),
-          /* @__PURE__ */ jsxs(Tag, { tone: "dash", children: [
-            sum("published"),
-            " posts published"
-          ] })
-        ] }),
-        stats ? /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
-          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("th", { children: "Day" }),
-            /* @__PURE__ */ jsx("th", { children: "Sent" }),
-            /* @__PURE__ */ jsx("th", { children: "Replies" }),
-            /* @__PURE__ */ jsx("th", { children: "Bounces" }),
-            /* @__PURE__ */ jsx("th", { children: "Opt-outs" }),
-            /* @__PURE__ */ jsx("th", { children: "Complaints" }),
-            /* @__PURE__ */ jsx("th", { children: "Posts" })
-          ] }) }),
-          /* @__PURE__ */ jsx("tbody", { children: stats.days.map((d) => /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("td", { className: "aw-muted", children: dayName(d.day, stats.offsetMinutes) }),
-            /* @__PURE__ */ jsx("td", { children: d.sent || "\xB7" }),
-            /* @__PURE__ */ jsx("td", { children: d.reply || "\xB7" }),
-            /* @__PURE__ */ jsx("td", { className: d.bounce ? "aw-warn" : void 0, children: d.bounce || "\xB7" }),
-            /* @__PURE__ */ jsx("td", { children: d.opt_out || "\xB7" }),
-            /* @__PURE__ */ jsx("td", { className: d.complaint ? "aw-warn" : void 0, children: d.complaint || "\xB7" }),
-            /* @__PURE__ */ jsx("td", { children: d.published || "\xB7" })
-          ] }, d.day)) })
-        ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Site observations" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "The desk opens each queued contact's site and writes down the first thing wrong with it; the observation sequence uses that as its opener. Domains with no mail server are paused before they can bounce." }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
-          /* @__PURE__ */ jsxs(Tag, { children: [
-            overview.observe?.observed ?? 0,
-            " sites read"
-          ] }),
-          /* @__PURE__ */ jsxs(Tag, { tone: overview.observe?.pending ? "warn" : "dash", children: [
-            overview.observe?.pending ?? 0,
-            " waiting to be read"
-          ] }),
-          /* @__PURE__ */ jsxs(Tag, { tone: overview.observe?.withGap ? "ok" : "dash", children: [
-            overview.observe?.withGap ?? 0,
-            " with an observation"
-          ] }),
-          /* @__PURE__ */ jsxs(Tag, { tone: overview.domains?.undeliverable ? "bad" : "dash", children: [
-            overview.domains?.checked ?? 0,
-            " domains checked \xB7 ",
-            overview.domains?.undeliverable ?? 0,
-            " undeliverable"
-          ] })
-        ] }),
-        Object.keys(overview.observe?.byKind ?? {}).length ? /* @__PURE__ */ jsx("div", { className: "aw-tags", style: { marginTop: 8 }, children: Object.entries(overview.observe.byKind).sort((a, b) => b[1] - a[1]).map(([kind, n]) => /* @__PURE__ */ jsxs(Tag, { tone: kind === "none" ? "ok" : kind === "unreachable" ? "dash" : "warn", children: [
-          OBSERVE_KIND[kind] ?? kind,
-          ": ",
-          n
-        ] }, kind)) }) : null
+        /* @__PURE__ */ jsx(StatsChart, { stats })
       ] }),
       /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsx("h3", { children: "What came back" }),
         /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Replies are also forwarded to your inbox; answer them from there. Opt-outs and complaints are closed already." }),
-        replies?.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: replies.map((r) => /* @__PURE__ */ jsxs("li", { className: "aw-row", style: { alignItems: "flex-start", cursor: "pointer" }, onClick: () => onContact(r.contact.id), children: [
+        ordered.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: ordered.map((r) => /* @__PURE__ */ jsxs("li", { className: "aw-row", style: { alignItems: "flex-start", cursor: "pointer" }, onClick: () => onContact(r.contact.id), children: [
           /* @__PURE__ */ jsx(Tag, { tone: REPLY_TONE[r.kind], children: REPLY_LABEL[r.kind] ?? r.kind }),
           /* @__PURE__ */ jsxs("span", { className: "aw-row__title", children: [
             r.contact.business ?? r.contact.email,
-            /* @__PURE__ */ jsx("div", { className: "aw-muted", style: { whiteSpace: "pre-wrap", fontWeight: "normal" }, children: snippet(r.text ?? "", 400) })
+            /* @__PURE__ */ jsx("div", { className: "aw-muted", style: { whiteSpace: "pre-wrap", fontWeight: "normal" }, children: snippet(r.text ?? "", 220) })
           ] }),
           /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
             ago(r.at),
@@ -4235,6 +4653,7 @@ var __awPlugin = (() => {
   function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
+    const [showDmarc, setShowDmarc] = useState(false);
     useEffect(() => {
       let live = true;
       api("GET", `/admin/marketing/contacts/${id}`).then((out) => live && setData(out)).catch((err) => live && setError(err.message ?? err.code));
@@ -4288,8 +4707,11 @@ var __awPlugin = (() => {
               /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: MESSAGE_TONE[m.status], children: m.status }) })
             ] }, m.id)) }) }),
             !data.messages.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing queued or sent." }) : null,
-            /* @__PURE__ */ jsx("h3", { children: "Events" }),
-            /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: data.events.map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
+            /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+              /* @__PURE__ */ jsx("h3", { children: "Events" }),
+              /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setShowDmarc((v) => !v), children: showDmarc ? "Hide DMARC reports" : "Show DMARC reports" })
+            ] }),
+            /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: data.events.filter((e) => showDmarc || e.kind !== "dmarc_report").map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
               /* @__PURE__ */ jsx(Tag, { tone: EVENT_BAD.has(e.kind) ? "bad" : EVENT_GOOD.has(e.kind) ? "ok" : "dash", children: EVENT_LABEL[e.kind] ?? e.kind.replaceAll("_", " ") }),
               /* @__PURE__ */ jsx("span", { className: "aw-muted", style: { whiteSpace: "pre-wrap" }, children: snippet(e.detail ?? "", 300) }),
               /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
@@ -4297,7 +4719,7 @@ var __awPlugin = (() => {
                 " ago"
               ] })
             ] }, e.id)) }),
-            !data.events.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No events." }) : null
+            !data.events.filter((e) => showDmarc || e.kind !== "dmarc_report").length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No events." }) : null
           ] }) : !error ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" }) : null
         ]
       }
@@ -4307,6 +4729,8 @@ var __awPlugin = (() => {
     const [order, setOrder] = useState("next");
     const [status, setStatus] = useState("scheduled");
     const [messages, setMessages] = useState(null);
+    const [showDmarc, setShowDmarc] = useState(false);
+    const visibleEvents = events.filter((e) => showDmarc || e.kind !== "dmarc_report");
     useEffect(() => {
       let live = true;
       const search = new URLSearchParams({ channel: "email", ...status ? { status } : {}, ...order === "next" ? { order: "next" } : {} });
@@ -4335,7 +4759,7 @@ var __awPlugin = (() => {
         /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "Click an email to read it exactly as it leaves, rewrite it, or send yourself a test." })
       ] }),
       messages === null ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" }) : null,
-      messages?.length ? /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+      messages?.length ? /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
         /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
           /* @__PURE__ */ jsx("th", { children: "When" }),
           /* @__PURE__ */ jsx("th", { children: "To" }),
@@ -4361,11 +4785,14 @@ var __awPlugin = (() => {
           ] }),
           /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: MESSAGE_TONE[m.status], children: m.status }) })
         ] }, m.id)) })
-      ] }) : messages ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No email matches." }) : null,
+      ] }) }) : messages ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No email matches." }) : null,
       messages?.length === 200 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "The first 200 are shown." }) : null,
       /* @__PURE__ */ jsxs("div", { className: "aw-group", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Recent events" }),
-        /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: events.map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+          /* @__PURE__ */ jsx("h3", { children: "Recent events" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setShowDmarc((v) => !v), children: showDmarc ? "Hide DMARC reports" : "Show DMARC reports" })
+        ] }),
+        /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: visibleEvents.map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
           /* @__PURE__ */ jsx(Tag, { tone: EVENT_BAD.has(e.kind) ? "bad" : EVENT_GOOD.has(e.kind) ? "ok" : "dash", children: EVENT_LABEL[e.kind] ?? e.kind.replaceAll("_", " ") }),
           /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: e.email ?? "\u2014" }),
           /* @__PURE__ */ jsx("span", { className: "aw-muted", children: snippet(e.detail ?? "", 100) }),
@@ -4374,7 +4801,7 @@ var __awPlugin = (() => {
             " ago"
           ] })
         ] }, e.id)) }),
-        !events.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing has happened yet." }) : null
+        !visibleEvents.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing has happened yet." }) : null
       ] })
     ] });
   }
@@ -4589,6 +5016,9 @@ var __awPlugin = (() => {
         /* @__PURE__ */ jsx("tbody", { children: sequences.map((s) => /* @__PURE__ */ jsxs("tr", { children: [
           /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
             s.label,
+            " ",
+            s.key === "cold_a" ? /* @__PURE__ */ jsx(Tag, { children: "control" }) : null,
+            s.key === "cold_obs" ? /* @__PURE__ */ jsx(Tag, { children: "challenger" }) : null,
             s.needsGap ? /* @__PURE__ */ jsx("div", { className: "aw-muted", children: "needs a site observation" }) : null
           ] }),
           /* @__PURE__ */ jsx("td", { children: s.stats.sent || "\xB7" }),
@@ -4639,7 +5069,7 @@ var __awPlugin = (() => {
     const rate = (n, d) => d ? pct2(n / d) : "\u2014";
     return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
       /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "A source is the label given at import (the file name by default). Rates are per contact reached. A source whose bounces pass 4% will pause the whole desk, so drop or verify it first." }),
-      /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+      /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
         /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
           /* @__PURE__ */ jsx("th", { children: "Source" }),
           /* @__PURE__ */ jsx("th", { children: "Contacts" }),
@@ -4676,7 +5106,7 @@ var __awPlugin = (() => {
             /* @__PURE__ */ jsx("span", { className: s.complaints ? "aw-warn" : "aw-muted", children: rate(s.complaints, s.reached) })
           ] })
         ] }, s.source)) })
-      ] }),
+      ] }) }),
       !sources.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No contacts yet." }) : null
     ] });
   }
@@ -4708,7 +5138,7 @@ var __awPlugin = (() => {
       ] })
     ] });
   }
-  function SettingsTab({ overview, run, api, contactsById }) {
+  function SettingsTab({ overview, run, api }) {
     const [draft, setDraft] = useState(overview.settings);
     useEffect(() => setDraft(overview.settings), [overview.settings]);
     const set = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
@@ -4723,11 +5153,11 @@ var __awPlugin = (() => {
       /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !changed, onClick: save, children: "Save" })
     ] });
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsx(ModelHealth, { api }),
       /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsx("h3", { children: "Sending" }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
-          /* @__PURE__ */ jsx(Field, { label: "Outreach", children: /* @__PURE__ */ jsx(
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Who the mail comes from and whether it goes out." }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-form2", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Outreach", hint: "The master switch.", children: /* @__PURE__ */ jsx(
             Segmented,
             {
               value: Boolean(draft.live),
@@ -4738,13 +5168,11 @@ var __awPlugin = (() => {
               onChange: (v) => set("live", v)
             }
           ) }),
-          /* @__PURE__ */ jsx(Field, { label: "Postal address", hint: "On every cold email, as anti-spam law requires.", children: /* @__PURE__ */ jsx("input", { value: draft.postalAddress, placeholder: "Street, city, country", onChange: (e) => set("postalAddress", e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "From name", children: /* @__PURE__ */ jsx("input", { value: draft.fromName, onChange: (e) => set("fromName", e.target.value) }) }),
           /* @__PURE__ */ jsx(
             Field,
             {
               label: "Sender",
-              hint: overview.providers.ses ? "Amazon SES: 50,000 a day, 14 a second, DKIM on ptechsolutions.net. Bounces and complaints come back to hello@ and are filed here." : "Amazon SES needs AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY as Worker secrets first.",
+              hint: draft.provider === "ses" ? overview.providers.ses ? "Amazon SES: bounces and complaints file back to hello@." : "Needs AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY as Worker secrets." : "The MARKETING binding on the Worker.",
               children: /* @__PURE__ */ jsx(
                 Segmented,
                 {
@@ -4758,11 +5186,87 @@ var __awPlugin = (() => {
               )
             }
           ),
+          /* @__PURE__ */ jsx(Field, { label: "From name", hint: "On the From line of every email.", children: /* @__PURE__ */ jsx("input", { value: draft.fromName, onChange: (e) => set("fromName", e.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Postal address", hint: "Required on every cold email.", children: /* @__PURE__ */ jsx("input", { value: draft.postalAddress, placeholder: "Street, city, country", onChange: (e) => set("postalAddress", e.target.value) }) })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Schedule and volume" }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "When mail may leave, and how much of it." }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-form2", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Send window", hint: "Local time on the offset clock; an end of 24 means midnight.", children: /* @__PURE__ */ jsxs("span", { className: "aw-inline aw-mk-window", children: [
+            "From",
+            " ",
+            /* @__PURE__ */ jsx(
+              "input",
+              {
+                inputMode: "numeric",
+                "aria-label": "Window start hour",
+                value: draft.startHour,
+                onChange: (e) => set("startHour", Number(e.target.value))
+              }
+            ),
+            " ",
+            "to",
+            " ",
+            /* @__PURE__ */ jsx(
+              "input",
+              {
+                inputMode: "numeric",
+                "aria-label": "Window end hour",
+                value: draft.endHour,
+                onChange: (e) => set("endHour", Number(e.target.value))
+              }
+            ),
+            " ",
+            "\xB7 offset",
+            " ",
+            /* @__PURE__ */ jsx(
+              "input",
+              {
+                inputMode: "numeric",
+                "aria-label": "Window offset minutes",
+                value: draft.offsetMinutes,
+                onChange: (e) => set("offsetMinutes", Number(e.target.value))
+              }
+            ),
+            " ",
+            "min (",
+            offsetLabel(draft.offsetMinutes),
+            ")"
+          ] }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Weekdays only", hint: "Skip Saturday and Sunday.", children: /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              value: Boolean(draft.weekdaysOnly),
+              options: [
+                { value: true, label: "Weekdays" },
+                { value: false, label: "Every day" }
+              ],
+              onChange: (v) => set("weekdaysOnly", v)
+            }
+          ) }),
+          /* @__PURE__ */ jsx(Field, { label: "Daily cap", hint: "Emails a day across every sequence.", children: /* @__PURE__ */ jsx(
+            "input",
+            {
+              inputMode: "numeric",
+              value: draft.dailyCap,
+              title: `At ${draft.perRun} per run the window allows about ${windowRoom(draft)} a day.`,
+              onChange: (e) => set("dailyCap", Number(e.target.value))
+            }
+          ) }),
+          /* @__PURE__ */ jsx(Field, { label: "Per run", hint: "The cron runs every five minutes; up to 200.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.perRun, onChange: (e) => set("perRun", Number(e.target.value)) }) })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Safety" }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "The checks that keep the list healthy." }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-form2", children: [
           /* @__PURE__ */ jsx(
             Field,
             {
               label: "Auto-resume",
-              hint: "On: a pause the desk caused itself (bounces or complaints) switches back on after 7 quiet days, starting at 20 a day and ramping up. A pause you set by hand is never undone.",
+              hint: "A pause the desk caused itself lifts after 7 quiet days, ramping from 20 a day. A pause you set by hand is never undone.",
               children: /* @__PURE__ */ jsx(
                 Segmented,
                 {
@@ -4776,79 +5280,18 @@ var __awPlugin = (() => {
               )
             }
           ),
-          /* @__PURE__ */ jsx(
-            Field,
-            {
-              label: "Observation sequence share (%)",
-              hint: "Of the contacts the desk reads a site observation for, this percent get the observation opener instead of the plain one. 0 keeps the experiment off, 100 makes it the only cold opener.",
-              children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "100", value: draft.obsShare ?? 50, onChange: (e) => set("obsShare", Number(e.target.value)) })
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            Field,
-            {
-              label: "Review first emails",
-              hint: "On: a first email goes out only after you read it in Review next (or rewrote it). Follow-ups ride on the first. Off: everything queued goes at its time.",
-              children: /* @__PURE__ */ jsx(
-                Segmented,
-                {
-                  value: Boolean(draft.reviewFirst),
-                  options: [
-                    { value: true, label: "Only reviewed" },
-                    { value: false, label: "Send all" }
-                  ],
-                  onChange: (v) => set("reviewFirst", v)
-                }
-              )
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            Field,
-            {
-              label: "Workshop GIF",
-              hint: "HTML emails: the homepage how diagram at the top and the conveyor as a looping GIF above the signature (both linked from ptechsolutions.net/email/, the GIF about 470 KB). Emails without it go as plain text only.",
-              children: /* @__PURE__ */ jsx(
-                Segmented,
-                {
-                  value: draft.image ?? "first",
-                  options: [
-                    { value: "off", label: "Off" },
-                    { value: "first", label: "First emails" },
-                    { value: "all", label: "Every email" }
-                  ],
-                  onChange: (v) => set("image", v)
-                }
-              )
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            Field,
-            {
-              label: "Daily cap",
-              hint: `Emails per day across every sequence. Raise it in steps (for example 50, 100, 250, 500, 1,000 over two weeks) and watch the bounce rate in Sources between steps. At ${draft.perRun} per run, the window allows about ${windowRoom(draft)} a day.`,
-              children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.dailyCap, onChange: (e) => set("dailyCap", Number(e.target.value)) })
-            }
-          ),
-          /* @__PURE__ */ jsx(Field, { label: "Per run", hint: "The cron runs every five minutes; up to 200.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.perRun, onChange: (e) => set("perRun", Number(e.target.value)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Weekdays only", children: /* @__PURE__ */ jsx(
+          /* @__PURE__ */ jsx(Field, { label: "Review first emails", hint: "First emails send only after you read them in Review next.", children: /* @__PURE__ */ jsx(
             Segmented,
             {
-              value: Boolean(draft.weekdaysOnly),
+              value: Boolean(draft.reviewFirst),
               options: [
-                { value: true, label: "Weekdays" },
-                { value: false, label: "Every day" }
+                { value: true, label: "Only reviewed" },
+                { value: false, label: "Send all" }
               ],
-              onChange: (v) => set("weekdaysOnly", v)
+              onChange: (v) => set("reviewFirst", v)
             }
-          ) }),
-          /* @__PURE__ */ jsx(Field, { label: "Send window (start)", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.startHour, onChange: (e) => set("startHour", Number(e.target.value)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Send window (end)", hint: "24 means midnight.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.endHour, onChange: (e) => set("endHour", Number(e.target.value)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Local offset (minutes)", hint: `${offsetLabel(draft.offsetMinutes)}. The window and the daily count use this clock.`, children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.offsetMinutes, onChange: (e) => set("offsetMinutes", Number(e.target.value)) }) })
+          ) })
         ] }),
-        actions
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "List health" }),
         /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
           "Last 14 days: ",
           overview.health.sent,
@@ -4870,8 +5313,37 @@ var __awPlugin = (() => {
         ] })
       ] }),
       /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Written posts" }),
-        /* @__PURE__ */ jsx(Field, { label: "Approval", hint: "On: posts the content cycle writes wait in Posts until you approve them, and you get an email with their text. Every post that goes out is also emailed to you.", children: /* @__PURE__ */ jsx(
+        /* @__PURE__ */ jsx("h3", { children: "Experiment" }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "The cold A/B test." }),
+        /* @__PURE__ */ jsx(
+          Field,
+          {
+            label: "Observation sequence share (%)",
+            hint: "Of contacts with a site observation, this percent get the observation opener. 0 keeps the experiment off, 100 makes it the only cold opener.",
+            children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "100", value: draft.obsShare ?? 50, onChange: (e) => set("obsShare", Number(e.target.value)) })
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Email look" }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "What the HTML version carries." }),
+        /* @__PURE__ */ jsx(Field, { label: "Workshop GIF", hint: "Off sends plain text only; First emails and Every email add the workshop images.", children: /* @__PURE__ */ jsx(
+          Segmented,
+          {
+            value: draft.image ?? "first",
+            options: [
+              { value: "off", label: "Off" },
+              { value: "first", label: "First emails" },
+              { value: "all", label: "Every email" }
+            ],
+            onChange: (v) => set("image", v)
+          }
+        ) })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Posts" }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "How written posts reach X and LinkedIn." }),
+        /* @__PURE__ */ jsx(Field, { label: "Approval", hint: "Drafted posts wait for approval or the hold; every post that goes out is also emailed to you.", children: /* @__PURE__ */ jsx(
           Segmented,
           {
             value: Boolean(draft.postApproval),
@@ -4882,32 +5354,20 @@ var __awPlugin = (() => {
             onChange: (v) => set("postApproval", v)
           }
         ) }),
-        /* @__PURE__ */ jsx(
-          Field,
+        /* @__PURE__ */ jsx(Field, { label: "Post hold (hours)", hint: "How long a drafted post waits before it goes out on its own. 0 means approve by hand. Up to 168.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "168", value: draft.postHoldHours ?? 24, onChange: (e) => set("postHoldHours", Number(e.target.value)) }) }),
+        /* @__PURE__ */ jsx(Field, { label: "Voice notes", hint: "Added to every content brief after the launch kit.", children: /* @__PURE__ */ jsx(
+          "textarea",
           {
-            label: "Post hold (hours, 0 = approve by hand)",
-            hint: "How long a drafted post waits before it goes out on its own. 0 keeps every post waiting for your approval in Posts. Up to 168.",
-            children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "168", value: draft.postHoldHours ?? 24, onChange: (e) => set("postHoldHours", Number(e.target.value)) })
+            rows: 3,
+            value: draft.voiceNotes ?? "",
+            placeholder: "Shorter sentences. No exclamation marks. Talk about the client's week, not the machine.",
+            onChange: (e) => set("voiceNotes", e.target.value)
           }
-        ),
-        /* @__PURE__ */ jsx(
-          Field,
-          {
-            label: "Voice notes",
-            hint: "Added to every content brief, after the launch kit. Leave empty to follow the kit alone. The next cycle picks it up; Draft posts shows it at once.",
-            children: /* @__PURE__ */ jsx(
-              "textarea",
-              {
-                rows: 3,
-                value: draft.voiceNotes ?? "",
-                placeholder: "Shorter sentences. No exclamation marks. Talk about the client's week, not the machine.",
-                onChange: (e) => set("voiceNotes", e.target.value)
-              }
-            )
-          }
-        ),
+        ) }),
         actions
       ] }),
+      /* @__PURE__ */ jsx("div", { className: "aw-divider" }),
+      /* @__PURE__ */ jsx(ModelHealth, { api }),
       /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsx("h3", { children: "The publisher" }),
         /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
@@ -4920,8 +5380,9 @@ var __awPlugin = (() => {
         ] }),
         /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Replies to the outreach address are filed here. A reply or \u201Cno\u201D from a contact cancels every queued email for them; strangers are forwarded to your inbox and never added to the list." }),
         /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-          "Contacts on file: ",
-          contactsById.size,
+          "Contacts on file:",
+          " ",
+          Object.values(overview.counts?.contacts ?? {}).reduce((a, b) => a + (b ?? 0), 0).toLocaleString("en-US"),
           ". Sender: ",
           overview.sender,
           ". Inbox: ",
@@ -5287,7 +5748,7 @@ var __awPlugin = (() => {
     return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / DAY : NaN;
   };
   var dayOfNumber = (n) => new Date(n * DAY).toISOString().slice(0, 10);
-  var shortDay = (day) => {
+  var shortDay2 = (day) => {
     const n = dayNumber(day);
     if (!Number.isFinite(n)) return day ?? "";
     return new Date(n * DAY).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -5494,7 +5955,7 @@ var __awPlugin = (() => {
           ] }),
           /* @__PURE__ */ jsx(Tag, { tone: "dash", children: plural2(host.pages, "page", "pages") }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: host.day ? shortDay(host.day) : "no audit yet" })
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: host.day ? shortDay2(host.day) : "no audit yet" })
         ] }),
         /* @__PURE__ */ jsx(ScoreChart, { series: host.series ?? [], events: overview.events ?? [], today: overview.day }),
         /* @__PURE__ */ jsxs("div", { className: "aw-tags", style: { marginTop: 8 }, children: [
@@ -5565,7 +6026,7 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: "Google rankings" }),
           /* @__PURE__ */ jsx(Tag, { tone: overview.rank?.rankReady ? "ok" : "bad", children: overview.rank?.rankReady ? "tracking on" : "no API key" }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: overview.rank?.latestDay ? `checked ${shortDay(overview.rank.latestDay)}` : "not checked yet" })
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: overview.rank?.latestDay ? `checked ${shortDay2(overview.rank.latestDay)}` : "not checked yet" })
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
           /* @__PURE__ */ jsx(Tag, { tone: overview.rank?.avgPosition === null || overview.rank?.avgPosition === void 0 ? "dash" : overview.rank.avgPosition <= 20 ? "ok" : "warn", children: overview.rank?.avgPosition === null || overview.rank?.avgPosition === void 0 ? "no average yet" : `${overview.rank.avgPosition} average position` }),
@@ -5668,7 +6129,7 @@ var __awPlugin = (() => {
         ] }, value)),
         [0, 7, 14, 21, 29].map((offset) => {
           const n = start + offset;
-          return /* @__PURE__ */ jsx("text", { x: xOf(n), y: height - 6, textAnchor: offset === 0 ? "start" : offset === 29 ? "end" : "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay(dayOfNumber(n)) }, offset);
+          return /* @__PURE__ */ jsx("text", { x: xOf(n), y: height - 6, textAnchor: offset === 0 ? "start" : offset === 29 ? "end" : "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay2(dayOfNumber(n)) }, offset);
         }),
         marks.map((event) => /* @__PURE__ */ jsxs("g", { children: [
           /* @__PURE__ */ jsx("title", { children: `${event.label} (${EVENT_LABEL2[event.kind] ?? event.kind}) on ${longDay(event.day)}` }),
@@ -5715,7 +6176,7 @@ var __awPlugin = (() => {
         return /* @__PURE__ */ jsxs("g", { children: [
           /* @__PURE__ */ jsx("title", { children: `Week of ${longDay(week.week)}: ${week.mentions} of ${week.runs} answers named us (${pct3(week.rate)})` }),
           /* @__PURE__ */ jsx("rect", { x, y: top + innerH - barH, width: barW, height: barH, rx: "2", fill: "var(--aw-accent)", opacity: week.runs ? 0.85 : 0.25 }),
-          index % 3 === 0 || index === weeks.length - 1 ? /* @__PURE__ */ jsx("text", { x: x + barW / 2, y: height - 6, textAnchor: "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay(week.week) }) : null
+          index % 3 === 0 || index === weeks.length - 1 ? /* @__PURE__ */ jsx("text", { x: x + barW / 2, y: height - 6, textAnchor: "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay2(week.week) }) : null
         ] }, week.week);
       }),
       /* @__PURE__ */ jsx("text", { x: left, y: top - 1, fontSize: "9", fill: "var(--aw-text2)", children: "100%" }),
@@ -5876,7 +6337,7 @@ var __awPlugin = (() => {
         ] }, value)),
         [0, 30, 60, 89].map((offset) => {
           const n = start + offset;
-          return /* @__PURE__ */ jsx("text", { x: xOf(n), y: height - 6, textAnchor: offset === 0 ? "start" : offset === 89 ? "end" : "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay(dayOfNumber(n)) }, offset);
+          return /* @__PURE__ */ jsx("text", { x: xOf(n), y: height - 6, textAnchor: offset === 0 ? "start" : offset === 89 ? "end" : "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay2(dayOfNumber(n)) }, offset);
         }),
         marks.map((event) => /* @__PURE__ */ jsxs("g", { children: [
           /* @__PURE__ */ jsx("title", { children: `${event.label} (${EVENT_LABEL2[event.kind] ?? event.kind}) on ${longDay(event.day)}` }),
@@ -6179,7 +6640,7 @@ var __awPlugin = (() => {
               const open = expanded === run.id;
               return /* @__PURE__ */ jsxs(Fragment, { children: [
                 /* @__PURE__ */ jsxs("tr", { onClick: () => setExpanded(open ? null : run.id), "aria-expanded": open, title: open ? "Hide the answer" : "Show the answer", children: [
-                  /* @__PURE__ */ jsx("td", { className: "aw-muted", children: shortDay(run.day) }),
+                  /* @__PURE__ */ jsx("td", { className: "aw-muted", children: shortDay2(run.day) }),
                   /* @__PURE__ */ jsx("td", { className: "aw-table__title", style: { minWidth: 240 }, children: run.question }),
                   /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Tag, { tone: run.mentionsUs ? "ok" : "bad", children: run.mentionsUs ? "yes" : "no" }) }),
                   /* @__PURE__ */ jsx("td", { className: "aw-seo-types", title: (run.competitors ?? []).join(", "), children: (run.competitors ?? []).length ? run.competitors.join(", ") : "none" }),
@@ -6982,6 +7443,24 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-mlog summary { cursor: pointer; color: var(--aw-text2); font-size: 12px; }
 .aw-mlog[open] summary { margin-bottom: 4px; }
 .aw-machine p > .aw-btn { margin-left: 8px; }
+/* Settings \u2192 This machine's tools (MCP servers and skills fleet agents read). */
+.aw-toolbox__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.aw-toolbox__head p { margin: 0; }
+.aw-toolbox__warnings { list-style: none; margin: 4px 0 8px; padding: 0; display: grid; gap: 2px; font-size: 12px; }
+.aw-toolbox__section { border-top: 1px solid var(--aw-border); margin-top: 10px; padding-top: 10px; }
+.aw-toolbox__section > h4 { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
+.aw-toolbox__subhead { font-size: 12px; font-weight: 600; color: var(--aw-text2); margin: 10px 0 4px; }
+.aw-toolbox__rows, .aw-toolbox__skills, .aw-toolbox__plugins { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.aw-toolbox__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--aw-border); border-radius: 8px; background: var(--aw-bg2); }
+.aw-toolbox__row.is-off { opacity: .72; }
+.aw-toolbox__main { min-width: 0; }
+.aw-toolbox__title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.aw-toolbox__meta { color: var(--aw-text2); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-toolbox__actions { display: flex; gap: 4px; }
+.aw-toolbox__skills > li, .aw-toolbox__plugin { padding: 6px 8px; border: 1px solid var(--aw-border); border-radius: 8px; background: var(--aw-bg2); }
+.aw-toolbox__plugin { display: flex; align-items: center; gap: 6px; }
+.aw-toolbox__skilldesc { margin: 2px 0 0; color: var(--aw-text2); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
 
 /* overlays */
 .aw-scrim { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.35); display: grid; place-items: center; padding: 20px; }
@@ -7441,6 +7920,74 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   .aw-world__cable-flow { animation: none; }
   .aw-world__pad, .aw-world__chip { transition: none; }
 }
+
+/* Marketing desk: the autopilot rows, the needs list, the day chart, regrouped settings. */
+.aw-hero--mk { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.aw-hero--mk h2 { flex: none; }
+.aw-mk-state { display: inline-flex; align-items: center; gap: 7px; color: var(--aw-text2); font-size: 13px; }
+.aw-mk-state .aw-dot { width: 9px; height: 9px; }
+.aw-table-wrap { overflow-x: auto; }
+.aw-table--compact td, .aw-table--compact th { padding-top: 7px; padding-bottom: 7px; }
+.aw-table--static tbody tr, .aw-table--static th { cursor: default; }
+.aw-table--static tbody tr:hover { background: transparent; }
+.aw-table, .aw-mk-meter__num, .aw-chart__tick, .aw-chart__day, .aw-needs, .aw-mk-kinds { font-variant-numeric: tabular-nums; }
+.aw-mk-health { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 250px; }
+.aw-mk-health .aw-mk-meter { margin: 0; }
+.aw-mk-meter { display: inline-flex; align-items: center; gap: 8px; margin: 2px 14px 2px 0; white-space: nowrap; }
+.aw-mk-meter__label { color: var(--aw-text2); font-size: 12px; min-width: 62px; }
+.aw-mk-meter__track { position: relative; width: 72px; height: 5px; background: var(--aw-bg3); border-radius: 3px; flex: none; }
+.aw-mk-meter__fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 3px; background: var(--aw-ok); }
+.aw-mk-meter__fill--warn { background: var(--aw-warn); }
+.aw-mk-meter__fill--bad { background: var(--aw-bad); }
+.aw-mk-meter__limit { position: absolute; top: -2px; bottom: -2px; left: 80%; width: 1px; background: var(--aw-text2); opacity: .55; }
+.aw-mk-meter__num { color: var(--aw-text2); font-size: 12px; }
+.aw-mk-bad { color: var(--aw-bad); }
+.aw-mk-kinds-label { margin: 12px 0 2px; }
+.aw-mk-kinds { display: flex; flex-wrap: wrap; gap: 3px 16px; margin: 0; font-size: 12px; }
+.aw-mk-kind { display: flex; gap: 5px; }
+.aw-mk-kind dt { color: var(--aw-text2); }
+.aw-mk-kind dd { margin: 0; font-weight: 600; }
+.aw-needs { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.aw-needs li { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-top: 1px solid var(--aw-border); }
+.aw-needs li:first-child { border-top: 0; }
+.aw-needs li > span { flex: 1; min-width: 0; }
+.aw-needs .aw-btn { flex: none; }
+.aw-chart { margin: 0; }
+.aw-chart__totals { margin: 0 0 8px; color: var(--aw-text2); font-size: 12px; }
+.aw-chart__svg { display: block; }
+.aw-chart__grid { stroke: var(--aw-border); stroke-width: 1; }
+.aw-chart__axis { stroke: var(--aw-border2); stroke-width: 1; }
+.aw-chart__tick, .aw-chart__day { fill: var(--aw-text2); font-size: 10px; }
+.aw-chart__bar { fill: var(--aw-bg3); }
+.aw-chart__bounce { fill: var(--aw-bad); }
+.aw-chart__reply { fill: var(--aw-ok); }
+.aw-chart__post { fill: var(--aw-violet); }
+.aw-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.aw-form2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+@media (max-width: 720px) {
+  .aw-form2 { grid-template-columns: 1fr; }
+  .aw-table--stack thead { display: none; }
+  .aw-table--stack, .aw-table--stack tbody, .aw-table--stack tr, .aw-table--stack td { display: block; width: 100%; }
+  .aw-table--stack tr { padding: 8px 4px; border-top: 1px solid var(--aw-border); }
+  .aw-table--stack tbody tr:first-child { border-top: 0; }
+  .aw-table--stack td { padding: 3px 8px; border-bottom: 0; white-space: normal; }
+  .aw-table--stack td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 1px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--aw-text2);
+  }
+  .aw-table--stack td:first-child { font-weight: 600; }
+  .aw-table--stack td:first-child::before { content: none; }
+  .aw-table--stack .aw-mk-meter { display: flex; margin: 2px 0; }
+}
+.aw-mk-window input { flex: none; width: 58px; min-width: 0; }
+.aw-mk-window input[aria-label="Window offset minutes"] { width: 72px; }
+.aw-divider { border: 0; border-top: 1px solid var(--aw-border); margin: 18px 0 4px; }
 `;
 
   // packages/admin-ui/src/project-model.js
@@ -10110,11 +10657,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     }
     return { tabs: ["inbox", "board"], active: "inbox" };
   }
-  function useUnderWindowButtons(ref, enabled) {
+  function useUnderWindowButtons(ref, enabled2) {
     const [under, setUnder] = useState(false);
     useEffect(() => {
       const el = ref.current;
-      if (!enabled || !el) return void 0;
+      if (!enabled2 || !el) return void 0;
       const check = () => {
         const r = el.getBoundingClientRect();
         setUnder(r.left < 90 && r.top < 30);
@@ -10127,7 +10674,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         observer.disconnect();
         window.removeEventListener("resize", check);
       };
-    }, [ref, enabled]);
+    }, [ref, enabled2]);
     return under;
   }
   function AdminApp({ api, platform = "web", host = null, fullscreen = false, files = null }) {
@@ -13766,7 +14313,7 @@ ${who} is emailed about this change.`)) return;
         if (snapshot.notice === "unconfirmed") refresh.current?.();
       }, [snapshot.notice]);
       const { phase, notice, seconds, status, needsRead } = snapshot;
-      const enabled = phase === "running" || phase === "waiting";
+      const enabled2 = phase === "running" || phase === "waiting";
       const busy = phase === "starting" || phase === "saving";
       const recorded2 = seconds === null ? "\u2014" : formatRecordedTime(seconds);
       const hint = meterNotices[notice] ?? (phase === "waiting" ? "Time waits while this conversation is idle or out of focus." : "Recorded human time");
@@ -13789,8 +14336,8 @@ ${who} is emailed about this change.`)) return;
             {
               className: "pta-chat-ticket__action",
               disabled: busy || needsRead,
-              onClick: () => enabled ? meter.pause(key) : void meter.resume(key),
-              children: enabled ? "Pause" : phase === "starting" ? "Starting\u2026" : phase === "saving" ? "Saving\u2026" : "Resume"
+              onClick: () => enabled2 ? meter.pause(key) : void meter.resume(key),
+              children: enabled2 ? "Pause" : phase === "starting" ? "Starting\u2026" : phase === "saving" ? "Saving\u2026" : "Resume"
             }
           ) : null,
           /* @__PURE__ */ jsx("span", { className: "pta-chat-ticket__feedback", role: "status", children: notice ? hint : "" })

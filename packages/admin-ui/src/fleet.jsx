@@ -6,6 +6,7 @@ import { EXECUTORS, PRIORITIES, ago, chargeOf, money, priorityName, span, usd } 
 import { Button, Chips, Dot, Field, Modal, Segmented, StatusPill, Tag, cx } from './ui.jsx';
 import { SitePanel } from './ticket.jsx';
 import { MachinePanel } from './machine.jsx';
+import { ToolboxPanel } from './toolbox.jsx';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
@@ -969,6 +970,10 @@ export function SettingsView() {
           </Field>
         </section>
       ) : null}
+      <section className="aw-panel">
+        <h3>This machine&rsquo;s tools</h3>
+        <ToolboxPanel />
+      </section>
       {data.settings ? (
         <section className="aw-panel">
           <h3>Work queue</h3>

@@ -25,6 +25,7 @@ import { basename, dirname, extname, isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
 import { createLocalProjects } from './local-project.mjs';
 import { readConsent, writeConsent } from './machine-consent.mjs';
+import { createToolbox } from './local-toolbox.mjs';
 import { PROJECT_OPERATIONS, projectOperationRequest } from './project-operations.mjs';
 import { createWorkspaceRecovery } from './workspace-recovery.mjs';
 import { fleetWorkspaceCandidate, verifiedTicketWorkspace } from './ticket-workspace-source.mjs';
@@ -1379,6 +1380,8 @@ function makeCommandHandler(ctx) {
             '  /admin site retry|publish <projectId>   a hosted site: restart a stopped setup, or publish its preview',
             '  /admin local {"nodeId"?,"slots"?,"timeoutMinutes"?,"maxBudgetUsd"?,…}   this machine\'s node config',
             '  /admin projectlocal <slug> {"path"?,"verify"?,"baseRef"?}',
+            '  /admin toolbox list             skills and MCP servers on this machine (fleet agents use them)',
+            '  /admin toolbox add-mcp|remove-mcp|toggle-mcp <json>   edit them; a timestamped backup is kept',
           ];
           return { kind: 'success', text: lines.join('\n') };
         }
@@ -1506,6 +1509,25 @@ function makeCommandHandler(ctx) {
             return { kind: 'success', text: JSON.stringify(await writeConsent(CONSENT_PATH, record)) };
           }
           return { kind: 'error', text: 'Usage: /admin machine-consent get | set <json>' };
+        }
+
+        // The agent skills and MCP servers on the admin's own machine, for
+        // Settings → "This machine's tools": `/admin toolbox list`, or
+        // `/admin toolbox add-mcp|remove-mcp|toggle-mcp {"…"}` to edit them.
+        // Read every time, so it always matches what the fleet agents see.
+        case 'toolbox': {
+          const [, action = 'list', payload = ''] = input.match(/^toolbox(?:\s+(\S+)(?:\s+([\s\S]*))?)?$/) ?? [];
+          try {
+            if (action === 'list' || action === '') {
+              return { kind: 'success', text: JSON.stringify(await toolbox.list()) };
+            }
+            const methods = { 'add-mcp': 'addMcp', 'remove-mcp': 'removeMcp', 'toggle-mcp': 'toggleMcp' };
+            if (!Object.hasOwn(methods, action)) throw new Error('Usage: /admin toolbox <list|add-mcp|remove-mcp|toggle-mcp> [json]');
+            const args = jsonArg(payload.trim(), `Usage: /admin toolbox ${action} <json>`);
+            return { kind: 'success', text: JSON.stringify(await toolbox[methods[action]](args)) };
+          } catch (error) {
+            return { kind: 'error', text: error?.message ?? String(error) };
+          }
         }
 
         case 'hello': {
@@ -1948,6 +1970,9 @@ function startBridge(ctx, handleAdmin) {
  */
 const RUN_WORKSPACES = join(homedir(), '.cache', 'malipetek-runner', 'run-workspaces.json');
 const GROUP_EVERY_MS = 30_000;
+/** The admin's own skills and MCP servers, read fresh on every call. */
+const toolbox = createToolbox();
+
 /** What the last pass did, for `/admin localinfo`. */
 export const runGrouping = { lastAt: null, attached: 0, error: null, folders: [] };
 

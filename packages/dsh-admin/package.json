@@ -15,6 +15,7 @@
     "index.js",
     "local-project.mjs",
     "machine-consent.mjs",
+    "local-toolbox.mjs",
     "project-operations.mjs",
     "workspace-recovery.mjs",
     "ticket-workspace-source.mjs",
