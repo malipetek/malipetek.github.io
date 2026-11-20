@@ -136,7 +136,7 @@ export function MarketingView() {
   }, [load]);
   const run = useCallback((fn, message) => act(fn, message).then(refresh, () => undefined), [act, refresh]);
 
-  const contactsById = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
+
   const done = useCallback(
     (message) => {
       setModal(null);
@@ -256,9 +256,6 @@ export function MarketingView() {
               Draft posts
             </Button>
           </>
-        ) : null}
-        {tab === 'settings' ? (
-          <Button onClick={() => run(() => api('POST', '/admin/marketing/run'), runMessage)}>Run now</Button>
         ) : null}
       </div>
 
@@ -416,7 +413,7 @@ export function MarketingView() {
         />
       ) : null}
 
-      {tab === 'settings' ? <SettingsTab overview={overview} run={run} api={api} contactsById={contactsById} /> : null}
+      {tab === 'settings' ? <SettingsTab overview={overview} run={run} api={api} /> : null}
 
       {modal?.kind === 'import' ? <ImportModal sequences={overview.sequences} onClose={() => setModal(null)} onDone={done} api={api} /> : null}
 
@@ -545,7 +542,7 @@ function AutopilotTable({ overview }) {
   return (
     <div>
       <div className="aw-table-wrap">
-        <table className="aw-table aw-table--compact aw-table--static">
+        <table className="aw-table aw-table--compact aw-table--static aw-table--stack">
           <thead>
             <tr>
               <th>Loop</th>
@@ -558,47 +555,53 @@ function AutopilotTable({ overview }) {
           <tbody>
             <tr>
               <td>Email</td>
-              <td>{emailState}</td>
-              <td>
+              <td data-label="State">{emailState}</td>
+              <td data-label="Last">
                 {lastSentAt ? when(lastSentAt) : 'no sends yet'}
                 <span className="aw-muted">
                   {' '}
                   · {today ?? 0}/{cap} today{ramping ? ' · ramping' : ''}
                 </span>
               </td>
-              <td>{emailNext || '—'}</td>
-              <td className="aw-mk-health">
-                <RateMeter label="bounces" rate={bounceRate} limit={health?.maxBounceRate ?? 0.04} />
-                <RateMeter label="complaints" rate={complaintRate} limit={health?.maxComplaintRate ?? 0.002} />
+              <td data-label="Next">{emailNext || '—'}</td>
+              <td data-label="Health">
+                <div className="aw-mk-health">
+                  <RateMeter label="bounces" rate={bounceRate} limit={health?.maxBounceRate ?? 0.04} />
+                  <RateMeter label="complaints" rate={complaintRate} limit={health?.maxComplaintRate ?? 0.002} />
+                </div>
               </td>
             </tr>
             <tr>
               <td>Posts</td>
-              <td>{postState}</td>
-              <td>
+              <td data-label="State">{postState}</td>
+              <td data-label="Last">
                 {lastPublishedAt
                   ? `${when(lastPublishedAt)}${lastPublishedChannel ? ` · ${postChannelLabel[lastPublishedChannel] ?? lastPublishedChannel}` : ''}`
                   : 'none yet'}
               </td>
-              <td>{postNext || '—'}</td>
-              <td className={pulse.postsFailed ? 'aw-mk-bad' : undefined}>{pulse.postsFailed == null ? '—' : `${pulse.postsFailed} failed`}</td>
+              <td data-label="Next">{postNext || '—'}</td>
+              <td data-label="Health" className={pulse.postsFailed ? 'aw-mk-bad' : undefined}>
+                {pulse.postsFailed == null ? '—' : `${pulse.postsFailed} failed`}
+              </td>
             </tr>
             <tr>
               <td>Site reading</td>
-              <td>{pending > 0 ? 'reading' : 'idle'}</td>
-              <td>
+              <td data-label="State">{pending > 0 ? 'reading' : 'idle'}</td>
+              <td data-label="Last">
                 {observed} read
                 {pulse.lastObservedAt ? <span className="aw-muted"> · last {when(pulse.lastObservedAt)}</span> : null}
               </td>
-              <td>{pending > 0 ? `${pending} waiting · ${fmtEta(obsEtaMinutes(pending))}` : 'all read'}</td>
-              <td>{observed > 0 ? `${pct(withGap / observed)} found something` : '—'}</td>
+              <td data-label="Next">{pending > 0 ? `${pending} waiting · ${fmtEta(obsEtaMinutes(pending))}` : 'all read'}</td>
+              <td data-label="Health">{observed > 0 ? `${pct(withGap / observed)} found something` : '—'}</td>
             </tr>
             <tr>
               <td>Domain checks</td>
-              <td>checking</td>
-              <td>{domains?.checked ?? 0} domains</td>
-              <td>—</td>
-              <td className={domains?.undeliverable ? 'aw-mk-bad' : undefined}>{domains?.undeliverable ?? 0} undeliverable</td>
+              <td data-label="State">checking</td>
+              <td data-label="Last">{domains?.checked ?? 0} domains</td>
+              <td data-label="Next">—</td>
+              <td data-label="Health" className={domains?.undeliverable ? 'aw-mk-bad' : undefined}>
+                {domains?.undeliverable ?? 0} undeliverable
+              </td>
             </tr>
           </tbody>
         </table>
@@ -685,7 +688,7 @@ function NeedsYou({ api, tick, overview, replies, onTab, onReview, onContact }) 
           {items.map((item) => (
             <li key={item.key}>
               <span>{item.text}</span>
-              <Button size="sm" kind="ghost" onClick={item.action.run}>
+              <Button size="sm" onClick={item.action.run}>
                 {item.action.label}
               </Button>
             </li>
@@ -700,13 +703,15 @@ function NeedsYou({ api, tick, overview, replies, onTab, onReview, onContact }) 
 
 const shortDay = (unix, offsetMinutes = 0) => {
   const d = new Date((unix + offsetMinutes * 60) * 1000);
-  return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()]} ${d.getUTCDate()}`;
+  return `${d.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()]}`;
 };
 
 /** The last days as bars: sent, bounces on top, replies as a mark, posts under the axis. */
 function StatsChart({ stats }) {
   const ref = useRef(null);
   const [width, setWidth] = useState(0);
+  const days = useMemo(() => (stats?.days ? [...stats.days].reverse() : []), [stats]);
+  // The box only exists once rows arrive, so measure again when they do.
   useEffect(() => {
     const el = ref.current;
     if (!el) return undefined;
@@ -715,8 +720,7 @@ function StatsChart({ stats }) {
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
-  const days = useMemo(() => (stats?.days ? [...stats.days].reverse() : []), [stats]);
+  }, [days.length]);
   if (!days.length) return <p className="aw-muted">Loading…</p>;
   const sum = (key) => days.reduce((n, d) => n + (d[key] ?? 0), 0);
   const sent = sum('sent');
@@ -725,12 +729,15 @@ function StatsChart({ stats }) {
   const optOuts = sum('opt_out');
   const published = sum('published');
   const offset = stats.offsetMinutes ?? 0;
-  const H = 168;
+  const H = 180;
   const padL = 40;
   const padR = 10;
   const padT = 12;
   const padB = 26;
-  const w = Math.max(width, 280);
+  // Until the wrapper is measured the chart lays out on a 720px viewBox so it
+  // never renders tiny; after that it is drawn at the real pixel width.
+  const measured = width > 0;
+  const w = measured ? Math.max(width, 200) : 720;
   const plotW = w - padL - padR;
   const plotH = H - padT - padB;
   const baseY = padT + plotH;
@@ -739,6 +746,7 @@ function StatsChart({ stats }) {
   const yMax = Math.max(step, Math.ceil(maxSent / step) * step);
   const slot = plotW / days.length;
   const barW = Math.min(18, Math.max(3, slot * 0.6));
+  const labelEvery = Math.max(1, Math.ceil(56 / slot));
   const y = (v) => baseY - (v / yMax) * plotH;
   const aria = `${days.length} days: ${sent} sent, ${replies} replies, ${bounces} bounces, ${optOuts} opt-outs, ${published} posts published.`;
   return (
@@ -746,43 +754,53 @@ function StatsChart({ stats }) {
       <figcaption className="aw-chart__totals">
         {sent} sent · {replies} replies · {bounces} bounces · {optOuts} opt-outs · {published} posts
       </figcaption>
-      <svg className="aw-chart__svg" width={w} height={H} role="img" aria-label={aria}>
-        {[0, 0.5, 1].map((f) => {
-          const v = yMax * f;
-          return (
-            <g key={f}>
-              <line className="aw-chart__grid" x1={padL} x2={w - padR} y1={y(v)} y2={y(v)} />
-              <text className="aw-chart__tick" x={padL - 6} y={y(v) + 3} textAnchor="end">
-                {Math.round(v)}
-              </text>
-            </g>
-          );
-        })}
-        {days.map((d, i) => {
-          const cx = padL + i * slot + slot / 2;
-          const sentH = (d.sent / yMax) * plotH;
-          const bounceH = Math.min(((d.bounce ?? 0) / yMax) * plotH, sentH);
-          return (
-            <g key={d.day}>
-              <title>{`${shortDay(d.day, offset)}: ${d.sent} sent, ${d.reply} replies, ${d.bounce} bounces, ${d.opt_out} opt-outs, ${d.published ?? 0} posts`}</title>
-              {d.sent ? <rect className="aw-chart__bar" x={cx - barW / 2} y={y(d.sent)} width={barW} height={sentH} rx={1.5} /> : null}
-              {d.bounce && d.sent ? <rect className="aw-chart__bounce" x={cx - barW / 2} y={y(d.sent)} width={barW} height={bounceH} rx={1.5} /> : null}
-              {d.reply ? <circle className="aw-chart__reply" cx={cx} cy={padT + 4} r={3} /> : null}
-              {i % 2 === 0 ? (
-                <text className="aw-chart__day" x={cx} y={H - 8} textAnchor="middle">
-                  {shortDay(d.day, offset)}
+      <div ref={ref} className="aw-chart__box">
+        <svg
+          className="aw-chart__svg"
+          width={measured ? w : '100%'}
+          height={H}
+          viewBox={measured ? undefined : `0 0 ${w} ${H}`}
+          preserveAspectRatio={measured ? undefined : 'xMidYMid meet'}
+          role="img"
+          aria-label={aria}
+        >
+          {[0, 0.5, 1].map((f) => {
+            const v = yMax * f;
+            return (
+              <g key={f}>
+                <line className="aw-chart__grid" x1={padL} x2={w - padR} y1={y(v)} y2={y(v)} />
+                <text className="aw-chart__tick" x={padL - 6} y={y(v) + 3} textAnchor="end">
+                  {Math.round(v)}
                 </text>
-              ) : null}
-              {d.published
-                ? Array.from({ length: Math.min(d.published, 3) }).map((_, j) => (
-                    <rect key={j} className="aw-chart__post" x={cx - 5 + j * 4} y={baseY + 7} width={3} height={3} rx={1} />
-                  ))
-                : null}
-            </g>
-          );
-        })}
-        <line className="aw-chart__axis" x1={padL} x2={w - padR} y1={baseY} y2={baseY} />
-      </svg>
+              </g>
+            );
+          })}
+          {days.map((d, i) => {
+            const cx = padL + i * slot + slot / 2;
+            const sentH = (d.sent / yMax) * plotH;
+            const bounceH = Math.min(((d.bounce ?? 0) / yMax) * plotH, sentH);
+            return (
+              <g key={d.day}>
+                <title>{`${shortDay(d.day, offset)}: ${d.sent} sent, ${d.reply} replies, ${d.bounce} bounces, ${d.opt_out} opt-outs, ${d.published ?? 0} posts`}</title>
+                {d.sent ? <rect className="aw-chart__bar" x={cx - barW / 2} y={y(d.sent)} width={barW} height={sentH} rx={1.5} /> : null}
+                {d.bounce && d.sent ? <rect className="aw-chart__bounce" x={cx - barW / 2} y={y(d.sent)} width={barW} height={bounceH} rx={1.5} /> : null}
+                {d.reply ? <circle className="aw-chart__reply" cx={cx} cy={padT + 4} r={3} /> : null}
+                {i % labelEvery === 0 ? (
+                  <text className="aw-chart__day" x={cx} y={H - 8} textAnchor="middle">
+                    {shortDay(d.day, offset)}
+                  </text>
+                ) : null}
+                {d.published
+                  ? Array.from({ length: Math.min(d.published, 3) }).map((_, j) => (
+                      <rect key={j} className="aw-chart__post" x={cx - 5 + j * 4} y={baseY + 7} width={3} height={3} rx={1} />
+                    ))
+                  : null}
+              </g>
+            );
+          })}
+          <line className="aw-chart__axis" x1={padL} x2={w - padR} y1={baseY} y2={baseY} />
+        </svg>
+      </div>
       <table className="aw-sr-only">
         <caption>Daily marketing numbers</caption>
         <thead>
@@ -835,7 +853,7 @@ function ExperimentPanel({ overview, onTab }) {
     <section className="aw-panel">
       <h3>Experiment</h3>
       <div className="aw-table-wrap">
-        <table className="aw-table aw-table--compact aw-table--static">
+        <table className="aw-table aw-table--compact aw-table--static aw-table--stack">
           <thead>
             <tr>
               <th>Sequence</th>
@@ -854,11 +872,11 @@ function ExperimentPanel({ overview, onTab }) {
                   {s.key === 'cold_a' ? <Tag>control</Tag> : null}
                   {s.key === 'cold_obs' ? <Tag>challenger</Tag> : null}
                 </td>
-                <td>{s.stats.sent}</td>
-                <td>{s.stats.replies}</td>
-                <td>{pct(rate(s))}</td>
-                <td>{s.stats.optedOut}</td>
-                <td>{s.stats.bounced}</td>
+                <td data-label="Sent">{s.stats.sent}</td>
+                <td data-label="Replies">{s.stats.replies}</td>
+                <td data-label="Reply rate">{pct(rate(s))}</td>
+                <td data-label="Opt-outs">{s.stats.optedOut}</td>
+                <td data-label="Bounces">{s.stats.bounced}</td>
               </tr>
             ))}
           </tbody>
@@ -1723,7 +1741,7 @@ function ModelHealth({ api }) {
 
 /* —— settings —— */
 
-function SettingsTab({ overview, run, api, contactsById }) {
+function SettingsTab({ overview, run, api }) {
   const [draft, setDraft] = useState(overview.settings);
   useEffect(() => setDraft(overview.settings), [overview.settings]);
   const set = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
@@ -1946,7 +1964,13 @@ function SettingsTab({ overview, run, api, contactsById }) {
           Replies to the outreach address are filed here. A reply or “no” from a contact cancels every queued email for
           them; strangers are forwarded to your inbox and never added to the list.
         </p>
-        <p className="aw-muted">Contacts on file: {contactsById.size}. Sender: {overview.sender}. Inbox: {overview.inbox}.</p>
+        <p className="aw-muted">
+          Contacts on file:{' '}
+          {Object.values(overview.counts?.contacts ?? {})
+            .reduce((a, b) => a + (b ?? 0), 0)
+            .toLocaleString('en-US')}
+          . Sender: {overview.sender}. Inbox: {overview.inbox}.
+        </p>
       </section>
     </>
   );

@@ -772,7 +772,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-table--static tbody tr, .aw-table--static th { cursor: default; }
 .aw-table--static tbody tr:hover { background: transparent; }
 .aw-table, .aw-mk-meter__num, .aw-chart__tick, .aw-chart__day, .aw-needs, .aw-mk-kinds { font-variant-numeric: tabular-nums; }
-.aw-mk-health { min-width: 190px; }
+.aw-mk-health { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 250px; }
+.aw-mk-health .aw-mk-meter { margin: 0; }
 .aw-mk-meter { display: inline-flex; align-items: center; gap: 8px; margin: 2px 14px 2px 0; white-space: nowrap; }
 .aw-mk-meter__label { color: var(--aw-text2); font-size: 12px; min-width: 62px; }
 .aw-mk-meter__track { position: relative; width: 72px; height: 5px; background: var(--aw-bg3); border-radius: 3px; flex: none; }
@@ -794,7 +795,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-needs .aw-btn { flex: none; }
 .aw-chart { margin: 0; }
 .aw-chart__totals { margin: 0 0 8px; color: var(--aw-text2); font-size: 12px; }
-.aw-chart__svg { display: block; width: 100%; height: auto; }
+.aw-chart__svg { display: block; }
 .aw-chart__grid { stroke: var(--aw-border); stroke-width: 1; }
 .aw-chart__axis { stroke: var(--aw-border2); stroke-width: 1; }
 .aw-chart__tick, .aw-chart__day { fill: var(--aw-text2); font-size: 10px; }
@@ -804,7 +805,27 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-chart__post { fill: var(--aw-violet); }
 .aw-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .aw-form2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
-@media (max-width: 720px) { .aw-form2 { grid-template-columns: 1fr; } }
+@media (max-width: 720px) {
+  .aw-form2 { grid-template-columns: 1fr; }
+  .aw-table--stack thead { display: none; }
+  .aw-table--stack, .aw-table--stack tbody, .aw-table--stack tr, .aw-table--stack td { display: block; width: 100%; }
+  .aw-table--stack tr { padding: 8px 4px; border-top: 1px solid var(--aw-border); }
+  .aw-table--stack tbody tr:first-child { border-top: 0; }
+  .aw-table--stack td { padding: 3px 8px; border-bottom: 0; white-space: normal; }
+  .aw-table--stack td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 1px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--aw-text2);
+  }
+  .aw-table--stack td:first-child { font-weight: 600; }
+  .aw-table--stack td:first-child::before { content: none; }
+  .aw-table--stack .aw-mk-meter { display: flex; margin: 2px 0; }
+}
 .aw-mk-window input { flex: none; width: 58px; min-width: 0; }
 .aw-mk-window input[aria-label="Window offset minutes"] { width: 72px; }
 .aw-divider { border: 0; border-top: 1px solid var(--aw-border); margin: 18px 0 4px; }
