@@ -956,4 +956,28 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-directory__project:hover { background: transparent; }
 .aw-directory__name { display: grid; flex: 1 1 9rem; min-width: 0; overflow-wrap: anywhere; }
 .aw-health--compact .aw-health__row { padding-block: 6px; }
+/* marketing */
+.aw-mk-header .aw-panel__head { margin-bottom: 0; }
+.aw-mk-header .aw-panel__actions { flex-wrap: wrap; }
+.aw-mk-header { scroll-margin-block: var(--aw-sp-4); }
+.aw-mk-controls { margin-bottom: var(--aw-sp-3); }
+.aw-mk-click { cursor: pointer; }
+.aw-mk-row-start { align-items: flex-start; }
+.aw-mk-copy { white-space: pre-wrap; font: inherit; line-height: 1.5; overflow-wrap: anywhere; }
+.aw-mk-preview { padding: var(--aw-sp-4); border: 1px solid var(--aw-border); border-radius: var(--aw-r-md); margin: 0; }
+.aw-mk-preview-spaced { margin-top: var(--aw-sp-4); }
+.aw-mk-no-top { margin-top: 0; }
+.aw-mk-subject { font-weight: 600; margin: 0 0 var(--aw-sp-3); }
+.aw-mk-message-meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--aw-sp-1) var(--aw-sp-4); font-size: var(--aw-fs-xs); margin: 0; }
+.aw-mk-message-meta dd { margin: 0; overflow-wrap: anywhere; }
+.aw-mk-figure { margin: 0 0 var(--aw-sp-4); }
+.aw-mk-preview-image { display: block; height: auto; max-width: 100%; border: 1px solid var(--aw-border); border-radius: var(--aw-r-md); }
+.aw-mk-entry { border-top: 1px solid var(--aw-border); padding-block: var(--aw-sp-3); }
+.aw-mk-post-body { margin: var(--aw-sp-3) 0; }
+.aw-mk-post-actions { align-items: baseline; flex-wrap: wrap; }
+.aw-mk-more summary, .aw-mk-publisher summary { cursor: pointer; }
+.aw-mk-more[open] summary { margin-bottom: var(--aw-sp-2); }
+.aw-mk-sequence-tools { margin-top: var(--aw-sp-4); }
+.aw-mk-settings-fields { display: grid; gap: var(--aw-sp-4); min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.aw-mk-settings-footer { position: sticky; bottom: 0; z-index: 1; flex-wrap: wrap; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: var(--aw-r-md); padding: var(--aw-sp-3) var(--aw-sp-4); }
 `;

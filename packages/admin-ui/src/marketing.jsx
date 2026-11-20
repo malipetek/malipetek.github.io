@@ -1,8 +1,8 @@
 /* The marketing desk: who we write to, what is queued, and the switch that sends it. */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin, usePoll } from './store.js';
-import { ago, when } from './format.js';
-import { Button, Dot, Field, Modal, Segmented, Tag, cx } from './ui.jsx';
+import { ago, errorText, when } from './format.js';
+import { Badge, Button, Chips, Empty, ErrorNote, Field, Loading, Modal, Panel, Segmented, StatRow, cx } from './ui.jsx';
 
 const CONTACT_TONE = { new: 'dash', queued: undefined, contacted: 'ok', replied: 'ok', opted_out: 'bad', bounced: 'bad', paused: 'warn' };
 const MESSAGE_TONE = { draft: 'dash', scheduled: undefined, sending: 'warn', sent: 'ok', failed: 'bad', cancelled: 'dash' };
@@ -91,18 +91,43 @@ function fmtEta(minutes) {
   return `~${(minutes / 1440).toFixed(1)}d`;
 }
 
-const limitPct = (limit) => {
-  const v = limit * 100;
-  return `${v < 1 ? v.toFixed(2) : v < 10 ? v.toFixed(1) : Math.round(v)}%`;
-};
+const percentNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
+const pct = (rate) => `${percentNumber.format(rate * 100)}%`;
+
+// Key results to the request inputs so a late response cannot replace a newer filter.
+function useResource(load, deps, { keepOnError = false } = {}) {
+  const request = useCallback(load, deps);
+  const [version, setVersion] = useState(0);
+  const [result, setResult] = useState(null);
+  const reload = useCallback(() => setVersion((n) => n + 1), []);
+  useEffect(() => {
+    let current = true;
+    Promise.resolve().then(request).then(
+      (data) => { if (current) setResult({ request, version, data, error: null }); },
+      (error) => { if (current) setResult((prior) => ({ request, version, data: keepOnError && prior?.request === request ? prior.data : null, error })); },
+    );
+    return () => { current = false; };
+  }, [request, version, keepOnError]);
+  const latest = result?.request === request ? result : null;
+  return {
+    data: latest?.data ?? null,
+    error: latest?.version === version ? latest.error : null,
+    loading: latest?.version !== version,
+    reload,
+  };
+}
+
+function ResourceNote({ resource, label, empty }) {
+  if (resource.error) return <ErrorNote error={resource.error} onRetry={resource.reload} />;
+  if (resource.loading) return <Loading label={label} />;
+  return empty ? <Empty title={empty} /> : null;
+}
 
 export function MarketingView() {
-  const { api, act, notify } = useAdmin();
-  const [overview, setOverview] = useState(null);
-  const [contacts, setContacts] = useState([]);
-  const [paging, setPaging] = useState({ total: 0, page: 200 });
+  const { api, act, ask, notify } = useAdmin();
+  const sendingControl = useRef(null);
+  const [sendingBusy, setSendingBusy] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
-  const [error, setError] = useState(null);
   const [tab, setTab] = useState('overview');
   const [modal, setModal] = useState(null);
   const [filters, setFilters] = useState({ status: '', q: '', source: '', offset: 0 });
@@ -113,29 +138,29 @@ export function MarketingView() {
   // Bumped after any action, so the tab that owns its own list reloads too.
   const [tick, setTick] = useState(0);
 
-  const load = useCallback(() => {
+  const desk = useResource(() => api('GET', '/admin/marketing'), [api], { keepOnError: true });
+  const people = useResource(() => {
     const search = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString();
-    return Promise.all([api('GET', '/admin/marketing'), api('GET', `/admin/marketing/contacts${search ? `?${search}` : ''}`)])
-      .then(([o, c]) => {
-        setOverview(o);
-        setContacts(c.contacts ?? []);
-        setPaging({ total: c.total ?? (c.contacts ?? []).length, page: c.page ?? 200 });
-        setError(null);
-      })
-      .catch(setError);
+    return api('GET', `/admin/marketing/contacts${search ? `?${search}` : ''}`);
   }, [api, filters]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const overview = desk.data;
+  const contacts = people.data?.contacts ?? [];
+  const paging = { total: people.data?.total ?? contacts.length, page: people.data?.page ?? 200 };
+  const { reload: reloadDesk } = desk;
+  const { reload: reloadPeople } = people;
+  const load = useCallback(() => { reloadDesk(); reloadPeople(); }, [reloadDesk, reloadPeople]);
   usePoll(load, 30_000, [load]);
 
   const refresh = useCallback(() => {
     setTick((n) => n + 1);
-    return load();
+    load();
   }, [load]);
-  const run = useCallback((fn, message) => act(fn, message).then(refresh, () => undefined), [act, refresh]);
-
+  const mutate = useCallback(async (fn, message) => {
+    const result = await act(fn, message);
+    refresh();
+    return result;
+  }, [act, refresh]);
+  const run = useCallback((fn, message) => mutate(fn, message).catch(() => undefined), [mutate]);
 
   const done = useCallback(
     (message) => {
@@ -146,65 +171,69 @@ export function MarketingView() {
     [refresh, notify],
   );
 
-  if (error) return <p className="aw-empty">Could not load the desk: {error.message ?? error.code}</p>;
-  if (!overview) return <p className="aw-empty">Loading…</p>;
+  if (!overview) return <ResourceNote resource={desk} label="Loading Marketing…" />;
 
   const { settings, health } = overview;
   const state = deskState(overview);
+  const changeSending = async (live) => {
+    setSendingBusy(true);
+    try {
+      await mutate(async () => {
+        const out = await api('PUT', '/admin/marketing/settings', { live });
+        if (out.rejected?.includes('live')) throw new Error('The server rejected the sending change.');
+        return out;
+      }, live ? 'Outreach is live.' : 'Paused.');
+    } finally {
+      setSendingBusy(false);
+    }
+  };
+  const startSending = () => {
+    const cap = settings.dailyCap;
+    const currentCap = overview.autoResume?.cap ?? cap;
+    const ramp = overview.autoResume?.resumedAt ? `The active ramp currently limits sending to ${currentCap}/day.` : 'No send ramp is active.';
+    ask({
+      title: 'Start sending cold email?',
+      text: `The five-minute cron can start sending eligible emails on its next run. Saved daily cap: ${cap}/day. ${ramp}`,
+      confirm: 'Go live',
+      danger: true,
+      run: () => changeSending(true),
+    });
+  };
+  const bulk = (action) => {
+    void mutate(() => api('POST', '/admin/marketing/contacts/bulk', { action, ids: [...selected] }),
+      (out) => `${out.changed} ${action === 'pause' ? 'paused' : 'opted out'}; their queued mail was cancelled.`)
+      .then(() => setSelected(new Set()), () => undefined);
+  };
 
   return (
-    <div className="aw-view">
-      <header className="aw-hero aw-hero--mk">
-        <h2>Marketing</h2>
-        <span className="aw-mk-state">
-          <Dot state={state.tone} />
-          <span>{state.text}</span>
-        </span>
-        <span className="aw-toolbar__fill" />
-        <Button size="sm" kind="ghost" onClick={() => run(() => api('POST', '/admin/marketing/run'), runMessage)}>
-          Run now
-        </Button>
-        {settings.live ? (
-          <Button size="sm" kind="ghost" onClick={() => run(() => api('PUT', '/admin/marketing/settings', { live: false }), 'Paused.')}>
-            Pause
-          </Button>
-        ) : (
-          <Button size="sm" onClick={() => run(() => api('PUT', '/admin/marketing/settings', { live: true }), 'Outreach is live.')}>
-            Go live
-          </Button>
-        )}
+    <div className="aw-view aw-mk">
+      <header ref={sendingControl} className="aw-mk-header" tabIndex={-1}>
+        <Panel
+          title="Marketing"
+          subtitle="Manage email outreach, contact lists, and social publishing."
+          actions={
+            <>
+              <Badge tone={state.tone}>{state.text}</Badge>
+              <Button size="sm" kind="ghost" onClick={() => run(() => api('POST', '/admin/marketing/run'), runMessage)}>Run now</Button>
+              <Button size="sm" kind={settings.live ? undefined : 'primary'} disabled={sendingBusy || desk.loading || Boolean(desk.error)}
+                onClick={settings.live ? () => void changeSending(false).catch(() => undefined) : startSending}>
+                {settings.live ? 'Pause sending' : 'Go live'}
+              </Button>
+            </>
+          }
+        />
       </header>
-
-      {!overview.bound ? (
-        <div className="aw-banner aw-banner--bad">
-          {overview.senderState?.reason === 'ses_unconfigured'
-            ? 'The sender is set to Amazon SES, but the Worker has no SES keys (AWS_SES_ACCESS_KEY_ID / AWS_SES_SECRET_ACCESS_KEY). Nothing can send.'
-            : 'No outreach sender is bound on the Worker (MARKETING). Nothing can send.'}
-        </div>
-      ) : !settings.postalAddress ? (
-        <div className="aw-banner aw-banner--bad">
-          Set a postal address in Settings before a cold email goes out — anti-spam law asks for one on every send.
-        </div>
-      ) : null}
-
-      {overview.postsAwaiting ? (
-        <div className="aw-banner aw-banner--warn">
-          {plural(overview.postsAwaiting, 'post waits', 'posts wait')} for your approval. Nothing is posted until you approve it.
-          <span className="aw-toolbar__fill" />
-          <Button size="sm" onClick={() => setTab('posts')}>
-            Review posts
-          </Button>
-        </div>
-      ) : null}
+      {desk.error ? <ResourceNote resource={desk} /> : null}
 
       <div className="aw-toolbar">
         <Segmented
+          label="Marketing tabs"
           value={tab}
           options={[
             { value: 'overview', label: 'Overview' },
-            { value: 'contacts', label: `Contacts (${paging.total.toLocaleString('en-US')})` },
+            { value: 'contacts', label: 'Contacts' },
             { value: 'email', label: 'Email' },
-            { value: 'posts', label: overview.postsAwaiting ? `Posts (${overview.postsAwaiting} to approve)` : 'Posts' },
+            { value: 'posts', label: 'Posts' },
             { value: 'sequences', label: 'Sequences' },
             { value: 'sources', label: 'Sources' },
             { value: 'settings', label: 'Settings' },
@@ -265,49 +294,31 @@ export function MarketingView() {
 
       {tab === 'contacts' ? (
         <section className="aw-panel">
-          <div className="aw-inline" style={{ marginBottom: 8 }}>
+          <div className="aw-inline aw-mk-controls">
             <span className="aw-muted">
               {paging.total
                 ? `${(filters.offset + 1).toLocaleString('en-US')}–${Math.min(filters.offset + paging.page, paging.total).toLocaleString('en-US')} of ${paging.total.toLocaleString('en-US')}`
                 : 'None'}
             </span>
-            <Button size="sm" disabled={!filters.offset} onClick={() => setFilters((f) => ({ ...f, offset: Math.max(0, f.offset - paging.page) }))}>
+            <Button size="sm" disabled={!filters.offset} onClick={() => filter({ offset: Math.max(0, filters.offset - paging.page) })}>
               Previous
             </Button>
-            <Button size="sm" disabled={filters.offset + paging.page >= paging.total} onClick={() => setFilters((f) => ({ ...f, offset: f.offset + paging.page }))}>
+            <Button size="sm" disabled={filters.offset + paging.page >= paging.total} onClick={() => filter({ offset: filters.offset + paging.page })}>
               Next
             </Button>
             <span className="aw-toolbar__fill" />
             {selected.size ? (
               <>
                 <span>{plural(selected.size, 'contact selected', 'contacts selected')}</span>
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    run(() => api('POST', '/admin/marketing/contacts/bulk', { action: 'pause', ids: [...selected] }), (out) => `${out.changed} paused; their queued mail was cancelled.`).then(() =>
-                      setSelected(new Set()),
-                    )
-                  }
-                >
-                  Pause
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    run(() => api('POST', '/admin/marketing/contacts/bulk', { action: 'opt_out', ids: [...selected] }), (out) => `${out.changed} opted out; their queued mail was cancelled.`).then(() =>
-                      setSelected(new Set()),
-                    )
-                  }
-                >
-                  Opt out
-                </Button>
+                <Button size="sm" onClick={() => bulk('pause')}>Pause</Button>
+                <Button size="sm" onClick={() => bulk('opt_out')}>Opt out</Button>
                 <Button size="sm" kind="ghost" onClick={() => setSelected(new Set())}>
                   Clear
                 </Button>
               </>
             ) : null}
           </div>
-          <div className="aw-table-wrap">
+          {contacts.length ? <div className="aw-table-wrap">
           <table className="aw-table">
             <thead>
               <tr>
@@ -346,7 +357,7 @@ export function MarketingView() {
                       }
                     />
                   </td>
-                  <td className="aw-table__title" onClick={() => setModal({ kind: 'person', id: c.id })} style={{ cursor: 'pointer' }} title="Open the contact's history">
+                  <td className="aw-table__title">
                     <span className="aw-mono">{c.email}</span>
                     {c.name ? <span className="aw-muted"> {c.name}</span> : null}
                     {c.gap ? <div className="aw-muted">{snippet(c.gap, 110)}</div> : null}
@@ -360,45 +371,24 @@ export function MarketingView() {
                     {c.country ? <div>{c.country}</div> : null}
                   </td>
                   <td>
-                    <Tag tone={CONTACT_TONE[c.status]}>{c.status}</Tag>
+                    <Badge tone={CONTACT_TONE[c.status]}>{c.status}</Badge>
                   </td>
                   <td>{c.sentCount}</td>
                   <td className="aw-muted">{c.nextAt ? when(c.nextAt) : '—'}</td>
                   <td>
-                    <div className="aw-inline">
-                      {['new', 'paused', 'contacted'].includes(c.status) && !c.nextAt ? (
-                        <Button size="sm" onClick={() => setModal({ kind: 'queue', contact: c })}>
-                          Queue
-                        </Button>
-                      ) : null}
-                      <Button size="sm" kind="ghost" onClick={() => setModal({ kind: 'contact', contact: c })}>
-                        Edit
-                      </Button>
-                      {c.status !== 'opted_out' ? (
-                        <Button
-                          size="sm"
-                          kind="ghost"
-                          onClick={() =>
-                            run(() => api('PATCH', `/admin/marketing/contacts/${c.id}`, { status: 'opted_out' }), `${c.email} opted out; queued mail cancelled.`)
-                          }
-                        >
-                          Opt out
-                        </Button>
-                      ) : null}
-                    </div>
+                    <Button size="sm" onClick={() => setModal({ kind: 'person', id: c.id })} aria-label={`Open ${c.email}`}>Open</Button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          </div>
-          {!contacts.length ? <p className="aw-muted">No contacts match. Import a CSV, or add one by hand.</p> : null}
+          </div> : <ResourceNote resource={people} label="Loading contacts…" empty="No contacts match. Import a CSV or add one by hand." />}
         </section>
       ) : null}
 
       {tab === 'email' ? <EmailTab api={api} run={run} tick={tick} events={overview.events} onOpen={(m) => setModal({ kind: 'message', id: m.id })} /> : null}
 
-      {tab === 'posts' ? <PostsTab api={api} run={run} tick={tick} holdHours={settings.postHoldHours ?? 0} onEdit={(m) => setModal({ kind: 'edit', message: m })} /> : null}
+      {tab === 'posts' ? <PostsTab api={api} run={run} mutate={mutate} ask={ask} tick={tick} holdHours={settings.postHoldHours ?? 0} onEdit={(m) => setModal({ kind: 'edit', message: m })} /> : null}
 
       {tab === 'sequences' ? <SequencesTab api={api} sequences={overview.sequences} /> : null}
 
@@ -413,7 +403,7 @@ export function MarketingView() {
         />
       ) : null}
 
-      {tab === 'settings' ? <SettingsTab overview={overview} run={run} api={api} /> : null}
+      {tab === 'settings' ? <SettingsTab overview={overview} mutate={mutate} api={api} onShowSending={() => sendingControl.current?.focus()} /> : null}
 
       {modal?.kind === 'import' ? <ImportModal sequences={overview.sequences} onClose={() => setModal(null)} onDone={done} api={api} /> : null}
 
@@ -454,6 +444,8 @@ export function MarketingView() {
           id={modal.id}
           api={api}
           onClose={() => setModal(null)}
+          onQueue={(contact) => setModal({ kind: 'queue', contact })}
+          onOptOut={(contact) => mutate(() => api('PATCH', `/admin/marketing/contacts/${contact.id}`, { status: 'opted_out' }), `${contact.email} opted out; queued mail cancelled.`)}
           onEdit={(contact) => setModal({ kind: 'contact', contact })}
           onOpenMessage={(id) => setModal({ kind: 'message', id })}
         />
@@ -462,7 +454,6 @@ export function MarketingView() {
   );
 }
 
-const pct = (rate) => `${(rate * 100).toFixed(rate && rate < 0.01 ? 2 : 1)}%`;
 
 const runMessage = (result) =>
   result?.reason ? (REASONS[result.reason] ?? `Nothing sent: ${result.reason}`) : `Sent ${result?.sent ?? 0}${result?.failed ? `, ${result.failed} failed` : ''}.`;
@@ -490,14 +481,14 @@ function RateMeter({ label, rate, limit }) {
   const pctOf = Math.min((rate ?? 0) / limit, 1);
   const tone = (rate ?? 0) >= limit ? 'bad' : (rate ?? 0) >= limit / 2 ? 'warn' : 'ok';
   return (
-    <span className="aw-mk-meter" title={`${label}: ${pct(rate ?? 0)} of the ${limitPct(limit)} limit`}>
+    <span className="aw-mk-meter" title={`${label}: ${pct(rate ?? 0)} of the ${pct(limit)} limit`}>
       <span className="aw-mk-meter__label">{label}</span>
       <span className="aw-mk-meter__track">
         <i className={cx('aw-mk-meter__fill', `aw-mk-meter__fill--${tone}`)} style={{ width: `${pctOf * 80}%` }} />
         <i className="aw-mk-meter__limit" />
       </span>
       <span className="aw-mk-meter__num">
-        {pct(rate ?? 0)} of {limitPct(limit)}
+        {pct(rate ?? 0)} of {pct(limit)}
       </span>
     </span>
   );
@@ -609,14 +600,7 @@ function AutopilotTable({ overview }) {
       {kindEntries.length ? (
         <>
           <p className="aw-muted aw-mk-kinds-label">What the reader finds:</p>
-          <dl className="aw-mk-kinds">
-            {kindEntries.map(([kind, n]) => (
-              <div key={kind} className="aw-mk-kind">
-                <dt>{OBSERVE_KIND[kind] ?? kind}</dt>
-                <dd>{n}</dd>
-              </div>
-            ))}
-          </dl>
+          <StatRow items={kindEntries.map(([kind, value]) => ({ label: OBSERVE_KIND[kind] ?? kind, value }))} />
         </>
       ) : null}
     </div>
@@ -625,21 +609,12 @@ function AutopilotTable({ overview }) {
 
 /** The handful of things only a person can do, each with the button that does it. */
 function NeedsYou({ api, tick, overview, replies, onTab, onReview, onContact }) {
-  const { settings, bound, senderState, pulse = {} } = overview;
-  const [queue, setQueue] = useState(null);
-  useEffect(() => {
-    if (!settings.reviewFirst) {
-      setQueue(null);
-      return undefined;
-    }
-    let live = true;
-    api('GET', '/admin/marketing/review?limit=100')
-      .then((r) => live && setQueue(r))
-      .catch(() => live && setQueue({ messages: [] }));
-    return () => {
-      live = false;
-    };
-  }, [api, settings.reviewFirst, tick]);
+  const { settings, bound, senderState, postsAwaiting, pulse = {} } = overview;
+  const review = useResource(
+    () => settings.reviewFirst ? api('GET', '/admin/marketing/review?limit=100') : null,
+    [api, settings.reviewFirst, tick],
+  );
+  const queue = review.data;
   const items = [];
   if (!bound) {
     items.push({
@@ -665,10 +640,17 @@ function NeedsYou({ api, tick, overview, replies, onTab, onReview, onContact }) 
       action: { label: 'Open contact', run: () => onContact(r.contact.id) },
     });
   }
+  if (postsAwaiting > 0) {
+    items.push({
+      key: 'posts-awaiting',
+      text: `${plural(postsAwaiting, 'post awaits', 'posts await')} approval.`,
+      action: { label: 'Review posts', run: () => onTab('posts') },
+    });
+  }
   if (pulse.postsFailed > 0) {
     items.push({
       key: 'posts-failed',
-      text: `${pulse.postsFailed} post${pulse.postsFailed === 1 ? '' : 's'} failed to publish.`,
+      text: `${plural(pulse.postsFailed, 'post', 'posts')} failed to publish.`,
       action: { label: 'Open Posts', run: () => onTab('posts') },
     });
   }
@@ -676,13 +658,13 @@ function NeedsYou({ api, tick, overview, replies, onTab, onReview, onContact }) 
     const n = queue.messages.length;
     items.push({
       key: 'review',
-      text: `${n >= 100 ? '100+' : n} first email${n === 1 ? '' : 's'} wait for review.`,
+      text: `${plural(n >= 100 ? '100+' : n, 'first email waits', 'first emails wait')} for review.`,
       action: { label: 'Review next', run: onReview },
     });
   }
   return (
-    <section className="aw-panel">
-      <h3>Needs you</h3>
+    <Panel title="Needs you">
+      {settings.reviewFirst && !queue ? <ResourceNote resource={review} label="Loading review queue…" /> : null}
       {items.length ? (
         <ul className="aw-needs">
           {items.map((item) => (
@@ -694,10 +676,8 @@ function NeedsYou({ api, tick, overview, replies, onTab, onReview, onContact }) 
             </li>
           ))}
         </ul>
-      ) : (
-        <p className="aw-muted">Nothing needs you. The desk is running on its own.</p>
-      )}
-    </section>
+      ) : (!settings.reviewFirst || queue) && replies ? <Empty title="All caught up" /> : null}
+    </Panel>
   );
 }
 
@@ -721,7 +701,7 @@ function StatsChart({ stats }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [days.length]);
-  if (!days.length) return <p className="aw-muted">Loading…</p>;
+  if (!days.length) return <Empty title="No outreach activity yet" />;
   const sum = (key) => days.reduce((n, d) => n + (d[key] ?? 0), 0);
   const sent = sum('sent');
   const replies = sum('reply');
@@ -847,7 +827,7 @@ function ExperimentPanel({ overview, onTab }) {
     verdict =
       Math.abs(diff) < 0.0005
         ? 'Same reply rate so far.'
-        : `${diff > 0 ? challenger.key : control.key} leads: ${pct(Math.max(rate(challenger), rate(control)))} vs ${pct(Math.min(rate(challenger), rate(control)))} reply rate, ${(Math.abs(diff) * 100).toFixed(1)} pts apart.`;
+        : `${diff > 0 ? challenger.key : control.key} leads: ${pct(Math.max(rate(challenger), rate(control)))} vs ${pct(Math.min(rate(challenger), rate(control)))} reply rate, ${percentNumber.format(Math.abs(diff) * 100)} pts apart.`;
   }
   return (
     <section className="aw-panel">
@@ -869,8 +849,8 @@ function ExperimentPanel({ overview, onTab }) {
               <tr key={s.key}>
                 <td>
                   {s.label}{' '}
-                  {s.key === 'cold_a' ? <Tag>control</Tag> : null}
-                  {s.key === 'cold_obs' ? <Tag>challenger</Tag> : null}
+                  {s.key === 'cold_a' ? <Badge>control</Badge> : null}
+                  {s.key === 'cold_obs' ? <Badge>challenger</Badge> : null}
                 </td>
                 <td data-label="Sent">{s.stats.sent}</td>
                 <td data-label="Replies">{s.stats.replies}</td>
@@ -894,50 +874,34 @@ function ExperimentPanel({ overview, onTab }) {
 }
 
 function OverviewTab({ api, tick, health, overview, onReview, onContact, onTab }) {
-  const [stats, setStats] = useState(null);
-  const [replies, setReplies] = useState(null);
-  useEffect(() => {
-    let live = true;
-    Promise.all([api('GET', '/admin/marketing/stats?days=14'), api('GET', '/admin/marketing/replies')])
-      .then(([s, r]) => {
-        if (!live) return;
-        setStats(s);
-        setReplies(r.replies ?? []);
-      })
-      .catch(() => live && setReplies([]));
-    return () => {
-      live = false;
-    };
-  }, [api, tick]);
+  const stats = useResource(() => api('GET', '/admin/marketing/stats?days=14'), [api, tick]);
+  const replies = useResource(() => api('GET', '/admin/marketing/replies').then((out) => out.replies ?? []), [api, tick]);
 
-  const ordered = [...(replies ?? [])].sort((a, b) => Number(b.kind === 'reply') - Number(a.kind === 'reply') || b.at - a.at);
+  const ordered = [...(replies.data ?? [])].sort((a, b) => Number(b.kind === 'reply') - Number(a.kind === 'reply') || b.at - a.at);
   return (
     <>
-      <section className="aw-panel">
-        <h3>Autopilot</h3>
+      <Panel title="Autopilot">
         <AutopilotTable overview={overview} />
-      </section>
+      </Panel>
 
-      <NeedsYou api={api} tick={tick} overview={overview} replies={replies} onTab={onTab} onReview={onReview} onContact={onContact} />
+      <NeedsYou api={api} tick={tick} overview={overview} replies={replies.data} onTab={onTab} onReview={onReview} onContact={onContact} />
 
       <ExperimentPanel overview={overview} onTab={onTab} />
 
-      <section className="aw-panel">
-        <h3>Last 14 days</h3>
-        <StatsChart stats={stats} />
-      </section>
+      <Panel title="Last 14 days">
+        <ResourceNote resource={stats} label="Loading outreach stats…" />
+        {stats.data ? (stats.data.days?.length ? <StatsChart stats={stats.data} /> : <Empty title="No outreach stats yet" />) : null}
+      </Panel>
 
-      <section className="aw-panel">
-        <h3>What came back</h3>
-        <p className="aw-muted">Replies are also forwarded to your inbox; answer them from there. Opt-outs and complaints are closed already.</p>
+      <Panel title="What came back" subtitle="Replies are forwarded to your inbox. Opt-outs and complaints are already closed.">
         {ordered.length ? (
           <ul className="aw-rows">
             {ordered.map((r) => (
-              <li key={r.id} className="aw-row" style={{ alignItems: 'flex-start', cursor: 'pointer' }} onClick={() => onContact(r.contact.id)}>
-                <Tag tone={REPLY_TONE[r.kind]}>{REPLY_LABEL[r.kind] ?? r.kind}</Tag>
+              <li key={r.id} className="aw-row aw-mk-click aw-mk-row-start" onClick={() => onContact(r.contact.id)}>
+                <Badge tone={REPLY_TONE[r.kind]}>{REPLY_LABEL[r.kind] ?? r.kind}</Badge>
                 <span className="aw-row__title">
                   {r.contact.business ?? r.contact.email}
-                  <div className="aw-muted" style={{ whiteSpace: 'pre-wrap', fontWeight: 'normal' }}>
+                  <div className="aw-muted aw-mk-copy">
                     {snippet(r.text ?? '', 220)}
                   </div>
                 </span>
@@ -945,10 +909,8 @@ function OverviewTab({ api, tick, health, overview, onReview, onContact, onTab }
               </li>
             ))}
           </ul>
-        ) : replies ? (
-          <p className="aw-muted">Nothing yet.</p>
-        ) : null}
-      </section>
+        ) : <ResourceNote resource={replies} label="Loading replies…" empty="No replies or opt-outs yet" />}
+      </Panel>
     </>
   );
 }
@@ -959,38 +921,30 @@ function ReviewModal({ api, onClose }) {
   const [queue, setQueue] = useState(null);
   const [nextDay, setNextDay] = useState(null);
   const [index, setIndex] = useState(0);
-  const [detail, setDetail] = useState(null);
   const [draft, setDraft] = useState(null);
   const [done, setDone] = useState({ ok: 0, rewritten: 0, cancelled: 0 });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   const loadQueue = useCallback(
-    () =>
-      api('GET', '/admin/marketing/review?limit=50').then((out) => {
+    () => {
+      setError(null);
+      return api('GET', '/admin/marketing/review?limit=50').then((out) => {
         setQueue(out.messages ?? []);
         setNextDay(out.nextDay);
         setIndex(0);
-      }),
+      });
+    },
     [api],
   );
   useEffect(() => {
-    void loadQueue().catch((err) => setError(err.message ?? err.code));
+    void loadQueue().catch(setError);
   }, [loadQueue]);
 
   const current = queue?.[index] ?? null;
-  useEffect(() => {
-    if (!current) return undefined;
-    let live = true;
-    setDetail(null);
-    setDraft(null);
-    api('GET', `/admin/marketing/messages/${current.id}`)
-      .then((out) => live && setDetail(out))
-      .catch((err) => live && setError(err.message ?? err.code));
-    return () => {
-      live = false;
-    };
-  }, [api, current]);
+  const detailResource = useResource(() => current ? api('GET', `/admin/marketing/messages/${current.id}`) : null, [api, current]);
+  const detail = detailResource.data;
+  useEffect(() => setDraft(null), [current]);
 
   const step = async (fn, counter) => {
     setBusy(true);
@@ -1001,7 +955,7 @@ function ReviewModal({ api, onClose }) {
       if (index + 1 < queue.length) setIndex(index + 1);
       else await loadQueue();
     } catch (err) {
-      setError(err.message ?? err.code);
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -1012,7 +966,7 @@ function ReviewModal({ api, onClose }) {
   if (queue && !current) {
     return (
       <Modal title="Review" subtitle={progress} onClose={onClose} actions={<Button kind="primary" onClick={onClose}>Done</Button>}>
-        <p>Every queued first email is reviewed. Follow-ups go with their first email.</p>
+        <Empty title="No first emails waiting for review" detail="Follow-ups go with their first email." />
       </Modal>
     );
   }
@@ -1047,7 +1001,7 @@ function ReviewModal({ api, onClose }) {
             <Button disabled={busy || !detail} onClick={() => setDraft({ subject: current.subject ?? '', body: current.body })}>
               Rewrite
             </Button>
-            <Button kind="primary" disabled={busy || !current} onClick={() => step(() => api('POST', `/admin/marketing/messages/${current.id}/review`), 'ok')}>
+            <Button kind="primary" disabled={busy || !detail} onClick={() => step(() => api('POST', `/admin/marketing/messages/${current.id}/review`), 'ok')}>
               Looks good, next
             </Button>
           </>
@@ -1055,7 +1009,7 @@ function ReviewModal({ api, onClose }) {
       }
     >
       {contact ? (
-        <p className="aw-muted" style={{ marginTop: 0 }}>
+        <p className="aw-muted aw-mk-no-top">
           {[contact.business, contact.site, contact.sourceKind, contact.country].filter(Boolean).join(' · ')}
           {current?.scheduledAt ? ` · goes ${when(current.scheduledAt)}` : ''}
           {contact.site ? (
@@ -1079,34 +1033,39 @@ function ReviewModal({ api, onClose }) {
         </>
       ) : detail ? (
         <>
-          <p style={{ fontWeight: 600, margin: '0 0 8px' }}>{detail.preview.subject}</p>
-          <pre style={{ whiteSpace: 'pre-wrap', font: 'inherit', lineHeight: 1.5, padding: 12, border: '1px solid var(--aw-line, #ddd)', borderRadius: 6, margin: 0 }}>
+          <p className="aw-mk-subject">{detail.preview.subject}</p>
+          <pre className="aw-mk-copy aw-mk-preview">
             {detail.preview.text}
           </pre>
         </>
       ) : (
-        <p className="aw-muted">Loading…</p>
+        current ? <ResourceNote resource={detailResource} label="Loading email…" /> : !error ? <Loading label="Loading review queue…" /> : null
       )}
-      {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
+      {error ? <ErrorNote error={error} onRetry={!queue ? () => void loadQueue().catch(setError) : undefined} /> : null}
     </Modal>
   );
 }
 
 /* —— one contact, everything that happened —— */
 
-function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
+function PersonModal({ id, api, onClose, onEdit, onQueue, onOptOut, onOpenMessage }) {
+  const resource = useResource(() => api('GET', `/admin/marketing/contacts/${id}`), [api, id]);
+  const data = resource.data;
   const [showDmarc, setShowDmarc] = useState(false);
-  useEffect(() => {
-    let live = true;
-    api('GET', `/admin/marketing/contacts/${id}`)
-      .then((out) => live && setData(out))
-      .catch((err) => live && setError(err.message ?? err.code));
-    return () => {
-      live = false;
-    };
-  }, [api, id]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const optOut = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await onOptOut(data.contact);
+      resource.reload();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
   const c = data?.contact;
   return (
     <Modal
@@ -1117,6 +1076,12 @@ function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
       actions={
         <>
           <Button onClick={onClose}>Close</Button>
+          {c && ['new', 'paused', 'contacted'].includes(c.status) && !c.nextAt ? (
+            <Button disabled={busy || resource.loading} onClick={() => onQueue(c)}>Queue</Button>
+          ) : null}
+          {c && c.status !== 'opted_out' ? (
+            <Button disabled={busy || resource.loading} onClick={optOut}>Opt out</Button>
+          ) : null}
           {c ? (
             <Button kind="primary" onClick={() => onEdit(c)}>
               Edit contact
@@ -1125,14 +1090,15 @@ function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
         </>
       }
     >
-      {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
+      {error ? <ErrorNote error={error} /> : null}
+      {c && resource.error ? <ResourceNote resource={resource} /> : null}
       {c ? (
         <>
           <div className="aw-tags">
-            <Tag tone={CONTACT_TONE[c.status]}>{c.status}</Tag>
-            {c.sourceKind ? <Tag tone="dash">{c.sourceKind}</Tag> : null}
-            {c.country ? <Tag tone="dash">{c.country}</Tag> : null}
-            <Tag tone="dash">added {ago(c.createdAt)} ago</Tag>
+            <Badge tone={CONTACT_TONE[c.status]}>{c.status}</Badge>
+            {c.sourceKind ? <Badge tone="neutral">{c.sourceKind}</Badge> : null}
+            {c.country ? <Badge tone="neutral">{c.country}</Badge> : null}
+            <Badge tone="neutral">added {ago(c.createdAt)} ago</Badge>
           </div>
           {c.gap ? <p>Observation: {c.gap}</p> : <p className="aw-muted">No observation written; the plain versions are used.</p>}
           {c.sourceUrl ? (
@@ -1148,13 +1114,13 @@ function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
           <table className="aw-table">
             <tbody>
               {data.messages.map((m) => (
-                <tr key={m.id} onClick={() => onOpenMessage(m.id)} style={{ cursor: 'pointer' }}>
+                <tr key={m.id} onClick={() => onOpenMessage(m.id)} className="aw-mk-click">
                   <td className="aw-muted">{m.sentAt ? `${ago(m.sentAt)} ago` : m.scheduledAt ? when(m.scheduledAt) : '—'}</td>
                   <td>
-                    {m.subject} {m.editedAt ? <Tag tone="ok">edited</Tag> : m.reviewedAt ? <Tag tone="ok">reviewed</Tag> : null}
+                    {m.subject} {m.editedAt ? <Badge tone="ok">edited</Badge> : m.reviewedAt ? <Badge tone="ok">reviewed</Badge> : null}
                   </td>
                   <td>
-                    <Tag tone={MESSAGE_TONE[m.status]}>{m.status}</Tag>
+                    <Badge tone={MESSAGE_TONE[m.status]}>{m.status}</Badge>
                   </td>
                 </tr>
               ))}
@@ -1163,15 +1129,13 @@ function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
           {!data.messages.length ? <p className="aw-muted">Nothing queued or sent.</p> : null}
           <div className="aw-inline">
             <h3>Events</h3>
-            <Button size="sm" kind="ghost" onClick={() => setShowDmarc((v) => !v)}>
-              {showDmarc ? 'Hide DMARC reports' : 'Show DMARC reports'}
-            </Button>
+            <Chips label="Event filters" value={showDmarc ? ['dmarc'] : []} options={[{ value: 'dmarc', label: 'Show DMARC reports' }]} onChange={(values) => setShowDmarc(values.includes('dmarc'))} />
           </div>
           <ul className="aw-rows">
             {data.events.filter((e) => showDmarc || e.kind !== 'dmarc_report').map((e) => (
               <li key={e.id} className="aw-row">
-                <Tag tone={EVENT_BAD.has(e.kind) ? 'bad' : EVENT_GOOD.has(e.kind) ? 'ok' : 'dash'}>{EVENT_LABEL[e.kind] ?? e.kind.replaceAll('_', ' ')}</Tag>
-                <span className="aw-muted" style={{ whiteSpace: 'pre-wrap' }}>
+                <Badge tone={EVENT_BAD.has(e.kind) ? 'bad' : EVENT_GOOD.has(e.kind) ? 'ok' : 'neutral'}>{EVENT_LABEL[e.kind] ?? e.kind.replaceAll('_', ' ')}</Badge>
+                <span className="aw-muted aw-mk-copy">
                   {snippet(e.detail ?? '', 300)}
                 </span>
                 <span className="aw-muted">{ago(e.createdAt)} ago</span>
@@ -1180,9 +1144,7 @@ function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
           </ul>
           {!data.events.filter((e) => showDmarc || e.kind !== 'dmarc_report').length ? <p className="aw-muted">No events.</p> : null}
         </>
-      ) : !error ? (
-        <p className="aw-muted">Loading…</p>
-      ) : null}
+      ) : <ResourceNote resource={resource} label="Loading contact history…" empty="No contact found" />}
     </Modal>
   );
 }
@@ -1192,24 +1154,18 @@ function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
 function EmailTab({ api, run, tick, events, onOpen }) {
   const [order, setOrder] = useState('next');
   const [status, setStatus] = useState('scheduled');
-  const [messages, setMessages] = useState(null);
   const [showDmarc, setShowDmarc] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const visibleEvents = events.filter((e) => showDmarc || e.kind !== 'dmarc_report');
-
-  useEffect(() => {
-    let live = true;
+  const resource = useResource(() => {
     const search = new URLSearchParams({ channel: 'email', ...(status ? { status } : {}), ...(order === 'next' ? { order: 'next' } : {}) });
-    api('GET', `/admin/marketing/messages?${search}`)
-      .then((out) => live && setMessages(out.messages ?? []))
-      .catch(() => live && setMessages([]));
-    return () => {
-      live = false;
-    };
+    return api('GET', `/admin/marketing/messages?${search}`).then((out) => out.messages ?? []);
   }, [api, order, status, tick]);
+  const messages = resource.data;
 
   return (
     <section className="aw-panel">
-      <div className="aw-inline" style={{ marginBottom: 8 }}>
+      <div className="aw-inline aw-mk-controls">
         <Segmented
           value={order}
           options={[
@@ -1228,7 +1184,6 @@ function EmailTab({ api, run, tick, events, onOpen }) {
         </select>
         <span className="aw-muted">Click an email to read it exactly as it leaves, rewrite it, or send yourself a test.</span>
       </div>
-      {messages === null ? <p className="aw-muted">Loading…</p> : null}
       {messages?.length ? (
         <div className="aw-table-wrap">
         <table className="aw-table">
@@ -1242,48 +1197,49 @@ function EmailTab({ api, run, tick, events, onOpen }) {
           </thead>
           <tbody>
             {messages.map((m) => (
-              <tr key={m.id} onClick={() => onOpen(m)} style={{ cursor: 'pointer' }}>
+              <tr key={m.id} onClick={() => onOpen(m)} className="aw-mk-click">
                 <td className="aw-muted">{m.sentAt ? `${ago(m.sentAt)} ago` : m.scheduledAt ? when(m.scheduledAt) : 'draft'}</td>
                 <td className="aw-mono">{m.contactEmail ?? '—'}</td>
                 <td className="aw-table__title">
                   <div>
-                    {m.subject} {m.editedAt ? <Tag tone="ok">edited</Tag> : m.reviewedAt ? <Tag tone="ok">reviewed</Tag> : null}{' '}
+                    {m.subject} {m.editedAt ? <Badge tone="ok">edited</Badge> : m.reviewedAt ? <Badge tone="ok">reviewed</Badge> : null}{' '}
                     <span className="aw-muted">· step {m.step + 1}</span>
                   </div>
                   <div className="aw-muted">{snippet(m.body.replace(/\s+/g, ' '), 140)}</div>
                   {m.error ? <div className="aw-warn">{m.error}</div> : null}
                 </td>
                 <td>
-                  <Tag tone={MESSAGE_TONE[m.status]}>{m.status}</Tag>
+                  <Badge tone={MESSAGE_TONE[m.status]}>{m.status}</Badge>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
         </div>
-      ) : messages ? (
-        <p className="aw-muted">No email matches.</p>
-      ) : null}
+      ) : <ResourceNote resource={resource} label="Loading email…" empty="No email matches these filters" />}
       {messages?.length === 200 ? <p className="aw-muted">The first 200 are shown.</p> : null}
 
       <div className="aw-group">
         <div className="aw-inline">
           <h3>Recent events</h3>
+          {visibleEvents.length > 10 ? (
+            <Button size="sm" onClick={() => setShowAll((v) => !v)}>{showAll ? 'Show less' : `Show all (${visibleEvents.length})`}</Button>
+          ) : null}
           <Button size="sm" kind="ghost" onClick={() => setShowDmarc((v) => !v)}>
             {showDmarc ? 'Hide DMARC reports' : 'Show DMARC reports'}
           </Button>
         </div>
         <ul className="aw-rows">
-          {visibleEvents.map((e) => (
+          {visibleEvents.slice(0, showAll ? undefined : 10).map((e) => (
             <li key={e.id} className="aw-row">
-              <Tag tone={EVENT_BAD.has(e.kind) ? 'bad' : EVENT_GOOD.has(e.kind) ? 'ok' : 'dash'}>{EVENT_LABEL[e.kind] ?? e.kind.replaceAll('_', ' ')}</Tag>
+              <Badge tone={EVENT_BAD.has(e.kind) ? 'bad' : EVENT_GOOD.has(e.kind) ? 'ok' : 'neutral'}>{EVENT_LABEL[e.kind] ?? e.kind.replaceAll('_', ' ')}</Badge>
               <span className="aw-row__title">{e.email ?? '—'}</span>
               <span className="aw-muted">{snippet(e.detail ?? '', 100)}</span>
               <span className="aw-muted">{ago(e.createdAt)} ago</span>
             </li>
           ))}
         </ul>
-        {!visibleEvents.length ? <p className="aw-muted">Nothing has happened yet.</p> : null}
+        {!visibleEvents.length ? <Empty title="No recent events" /> : null}
       </div>
     </section>
   );
@@ -1304,9 +1260,10 @@ function MessageModal({ id, api, onClose, onDone }) {
     () =>
       api('GET', `/admin/marketing/messages/${id}`)
         .then(setData)
-        .catch((err) => setError(err.message ?? err.code)),
+        .catch((err) => setError(errorText(err))),
     [api, id],
   );
+  const retry = () => { setError(null); void load(); };
   useEffect(() => {
     void load();
   }, [load]);
@@ -1322,7 +1279,7 @@ function MessageModal({ id, api, onClose, onDone }) {
         setDraft(null);
       }
     } catch (err) {
-      setError(err.message ?? err.code);
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -1331,7 +1288,7 @@ function MessageModal({ id, api, onClose, onDone }) {
   if (!data) {
     return (
       <Modal title="Email" onClose={onClose}>
-        {error ? <div className="aw-banner aw-banner--bad">{error}</div> : <p className="aw-muted">Loading…</p>}
+        {error ? <ErrorNote error={error} onRetry={retry} /> : <Loading label="Loading email…" />}
       </Modal>
     );
   }
@@ -1389,32 +1346,32 @@ function MessageModal({ id, api, onClose, onDone }) {
         </>
       ) : (
         <>
-          <dl className="aw-mono" style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '2px 12px', fontSize: 12, margin: 0 }}>
+          <dl className="aw-mono aw-mk-message-meta">
             <dt className="aw-muted">From</dt>
-            <dd style={{ margin: 0 }}>{preview.from}</dd>
+            <dd>{preview.from}</dd>
             <dt className="aw-muted">To</dt>
-            <dd style={{ margin: 0 }}>
+            <dd>
               {preview.to}
               {contact?.business ? ` (${contact.business})` : ''}
             </dd>
             <dt className="aw-muted">Reply-To</dt>
-            <dd style={{ margin: 0 }}>{preview.replyTo}</dd>
+            <dd>{preview.replyTo}</dd>
             {Object.entries(preview.headers ?? {}).map(([name, value]) => (
               <Fragment key={name}>
                 <dt className="aw-muted">{name}</dt>
-                <dd style={{ margin: 0, wordBreak: 'break-all' }}>{value}</dd>
+                <dd>{value}</dd>
               </Fragment>
             ))}
             <dt className="aw-muted">Subject</dt>
-            <dd style={{ margin: 0 }}>{preview.subject}</dd>
+            <dd>{preview.subject}</dd>
           </dl>
-          <pre style={{ whiteSpace: 'pre-wrap', font: 'inherit', lineHeight: 1.5, padding: 12, border: '1px solid var(--aw-line, #ddd)', borderRadius: 6, marginTop: 12 }}>
+          <pre className="aw-mk-copy aw-mk-preview aw-mk-preview-spaced">
             {preview.text}
           </pre>
           {preview.image ? (
-            <figure style={{ margin: '0 0 12px' }}>
-              <img src={preview.image} alt="" width={280} style={{ display: 'block', height: 'auto', border: '1px solid var(--aw-line, #ddd)', borderRadius: 6 }} />
-              <figcaption className="aw-muted" style={{ fontSize: 12 }}>
+            <figure className="aw-mk-figure">
+              <img src={preview.image} alt="" width={280} className="aw-mk-preview-image" />
+              <figcaption className="aw-muted">
                 Sent as HTML with this GIF above the signature; the text above is the plain-text part.
               </figcaption>
             </figure>
@@ -1430,7 +1387,7 @@ function MessageModal({ id, api, onClose, onDone }) {
             <ul className="aw-rows">
               {data.events.map((e) => (
                 <li key={e.id} className="aw-row">
-                  <Tag tone={EVENT_BAD.has(e.kind) ? 'bad' : EVENT_GOOD.has(e.kind) ? 'ok' : 'dash'}>{e.kind}</Tag>
+                  <Badge tone={EVENT_BAD.has(e.kind) ? 'bad' : EVENT_GOOD.has(e.kind) ? 'ok' : 'neutral'}>{e.kind}</Badge>
                   <span className="aw-muted">{snippet(e.detail ?? '', 100)}</span>
                   <span className="aw-muted">{ago(e.createdAt)} ago</span>
                 </li>
@@ -1439,7 +1396,7 @@ function MessageModal({ id, api, onClose, onDone }) {
           ) : null}
         </>
       )}
-      {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
+      {error ? <ErrorNote error={error} /> : null}
     </Modal>
   );
 }
@@ -1448,22 +1405,17 @@ function MessageModal({ id, api, onClose, onDone }) {
 
 const POST_MAX = { x: 280, linkedin: 3000 };
 
-function PostsTab({ api, run, tick, holdHours = 0, onEdit }) {
-  const [posts, setPosts] = useState(null);
-  useEffect(() => {
-    let live = true;
-    Promise.all(['x', 'linkedin'].map((channel) => api('GET', `/admin/marketing/messages?channel=${channel}`)))
-      .then((lists) => live && setPosts(lists.flatMap((out) => out.messages ?? [])))
-      .catch(() => live && setPosts([]));
-    return () => {
-      live = false;
-    };
-  }, [api, tick]);
-
-  if (!posts) return <p className="aw-muted">Loading…</p>;
+function PostsTab({ api, run, mutate, ask, tick, holdHours = 0, onEdit }) {
+  const resource = useResource(
+    () => Promise.all(['x', 'linkedin'].map((channel) => api('GET', `/admin/marketing/messages?channel=${channel}`)))
+      .then((lists) => lists.flatMap((out) => out.messages ?? [])),
+    [api, tick],
+  );
+  if (!resource.data) return <ResourceNote resource={resource} label="Loading posts…" />;
+  const posts = resource.data;
   const at = (m) => m.scheduledAt ?? m.createdAt;
   const groups = [
-    { title: 'Waiting for your approval', hint: 'Written by the content cycle. Nothing here is posted until you approve it.', list: posts.filter((m) => m.status === 'draft').sort((a, b) => at(a) - at(b)) },
+    { title: 'Waiting for your approval', hint: holdHours > 0 ? 'Approve a draft to schedule it, or let its hold expire.' : 'Approve a draft to schedule it.', list: posts.filter((m) => m.status === 'draft').sort((a, b) => at(a) - at(b)) },
     { title: 'Scheduled', hint: 'The publisher posts these at their time from your browser profile. You get an email when each goes out.', list: posts.filter((m) => m.status === 'scheduled' || m.status === 'sending').sort((a, b) => at(a) - at(b)) },
     { title: 'Failed', list: posts.filter((m) => m.status === 'failed') },
     { title: 'Published', list: posts.filter((m) => m.status === 'sent').sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0)) },
@@ -1473,32 +1425,28 @@ function PostsTab({ api, run, tick, holdHours = 0, onEdit }) {
     <>
       {groups.map((group) =>
         group.list.length ? (
-          <section key={group.title} className="aw-panel">
-            <h3>
-              {group.title} ({group.list.length})
-            </h3>
-            {group.hint ? <p className="aw-muted">{group.hint}</p> : null}
+          <Panel key={group.title} title={`${group.title} (${group.list.length})`} subtitle={group.hint}>
             {group.list.map((m) => (
-              <PostCard key={m.id} post={m} api={api} run={run} holdHours={holdHours} onEdit={onEdit} />
+              <PostCard key={m.id} post={m} api={api} run={run} mutate={mutate} ask={ask} holdHours={holdHours} onEdit={onEdit} />
             ))}
-          </section>
+          </Panel>
         ) : null,
       )}
-      {!posts.length ? <p className="aw-muted">No posts yet. Draft posts files a content cycle; Compose writes one by hand.</p> : null}
+      {!groups.some((group) => group.list.length) ? <ResourceNote resource={resource} label="Loading posts…" empty="No posts to review, schedule or track" /> : null}
     </>
   );
 }
 
-function PostCard({ post: m, api, run, holdHours = 0, onEdit }) {
+function PostCard({ post: m, api, run, mutate, ask, holdHours = 0, onEdit }) {
   const open = ['draft', 'scheduled', 'failed'].includes(m.status);
   const max = POST_MAX[m.channel] ?? 3000;
   // A held draft goes out on its own: the later of its hold expiring and its slot.
   const releaseAt = m.status === 'draft' && holdHours > 0 ? Math.max((m.createdAt ?? 0) + holdHours * 3600, m.scheduledAt ?? 0) : null;
   return (
-    <article style={{ borderTop: '1px solid var(--aw-line, #e5e5e5)', padding: '10px 0' }}>
+    <article className="aw-mk-entry">
       <div className="aw-inline">
-        <Tag>{m.channel === 'x' ? 'X' : 'LinkedIn'}</Tag>
-        <Tag tone={MESSAGE_TONE[m.status]}>{m.status === 'draft' ? 'to approve' : m.status}</Tag>
+        <Badge>{m.channel === 'x' ? 'X' : 'LinkedIn'}</Badge>
+        <Badge tone={MESSAGE_TONE[m.status]}>{m.status === 'draft' ? 'to approve' : m.status}</Badge>
         <span className="aw-muted">
           {m.sentAt ? `posted ${ago(m.sentAt)} ago` : m.scheduledAt ? `slot ${when(m.scheduledAt)}` : 'no slot'} · {m.body.length}/{max} characters
           {m.kind === 'auto' ? ' · written by the content cycle' : ''}
@@ -1510,33 +1458,34 @@ function PostCard({ post: m, api, run, holdHours = 0, onEdit }) {
           </a>
         ) : null}
       </div>
-      <p style={{ whiteSpace: 'pre-wrap', margin: '8px 0' }}>{m.body}</p>
+      <p className="aw-mk-copy aw-mk-post-body">{m.body}</p>
       {releaseAt ? <div className="aw-muted">Goes out automatically {when(releaseAt)} unless you cancel it first.</div> : null}
       {m.error ? <div className="aw-warn">{m.error}</div> : null}
       {open ? (
-        <div className="aw-inline">
+        <div className="aw-inline aw-mk-post-actions">
           {m.status === 'draft' ? (
-            <Button size="sm" kind="primary" onClick={() => run(() => api('POST', `/admin/marketing/messages/${m.id}/approve`), 'Approved: it goes out in its slot.')}>
-              Approve
-            </Button>
-          ) : null}
-          <Button size="sm" onClick={() => onEdit(m)}>
-            Edit
-          </Button>
-          {m.status === 'failed' ? (
-            <Button size="sm" onClick={() => run(() => api('POST', `/admin/marketing/messages/${m.id}/retry`), 'Queued again.')}>
-              Retry
-            </Button>
-          ) : null}
-          <Button
-            size="sm"
-            onClick={() => run(() => api('POST', `/admin/marketing/messages/${m.id}/send`), 'Due now: the publisher posts it within 15 minutes.')}
-          >
-            Post now
-          </Button>
-          <Button size="sm" kind="ghost" onClick={() => run(() => api('POST', `/admin/marketing/messages/${m.id}/cancel`), 'Cancelled.')}>
-            {m.status === 'draft' ? 'Reject' : 'Cancel'}
-          </Button>
+            <Button size="sm" kind="primary" onClick={() => run(() => api('POST', `/admin/marketing/messages/${m.id}/approve`), 'Approved: it goes out in its slot.')}>Approve</Button>
+          ) : m.status === 'failed' ? (
+            <Button size="sm" kind="primary" onClick={() => run(() => api('POST', `/admin/marketing/messages/${m.id}/retry`), 'Queued again.')}>Retry</Button>
+          ) : <Button size="sm" kind="primary" onClick={() => onEdit(m)}>Edit</Button>}
+          <details className="aw-mk-more">
+            <summary>More</summary>
+            <div className="aw-inline aw-mk-post-actions">
+              {m.status !== 'scheduled' ? <Button size="sm" onClick={() => onEdit(m)}>Edit</Button> : null}
+              <Button size="sm" onClick={() => ask({
+                title: `Post publicly on ${postChannelLabel[m.channel] ?? m.channel} now?`,
+                text: 'The publisher can post this as soon as it next checks the queue.',
+                confirm: 'Post now', danger: true,
+                run: () => mutate(() => api('POST', `/admin/marketing/messages/${m.id}/send`), 'Due now: the publisher posts it within 15 minutes.'),
+              })}>Post now</Button>
+              <Button size="sm" kind="ghost" onClick={() => ask({
+                title: m.status === 'draft' ? 'Reject this draft?' : 'Cancel this post?',
+                text: 'This removes it from the publishing queue.',
+                confirm: m.status === 'draft' ? 'Reject' : 'Cancel post', danger: true,
+                run: () => mutate(() => api('POST', `/admin/marketing/messages/${m.id}/cancel`), m.status === 'draft' ? 'Draft rejected.' : 'Post cancelled.'),
+              })}>{m.status === 'draft' ? 'Reject' : 'Cancel'}</Button>
+            </div>
+          </details>
         </div>
       ) : null}
     </article>
@@ -1547,18 +1496,11 @@ function PostCard({ post: m, api, run, holdHours = 0, onEdit }) {
 
 function SequencesTab({ api, sequences }) {
   const [sequence, setSequence] = useState(sequences[0]?.key ?? 'cold_a');
-  const [data, setData] = useState(null);
-  const [nonce, setNonce] = useState(0);
-  useEffect(() => {
-    let live = true;
-    setData(null);
-    api('GET', `/admin/marketing/sequences/preview?sequence=${sequence}`)
-      .then((out) => live && setData(out))
-      .catch(() => live && setData({ steps: [] }));
-    return () => {
-      live = false;
-    };
-  }, [api, sequence, nonce]);
+  const resource = useResource(
+    () => api('GET', `/admin/marketing/sequences/preview?sequence=${sequence}`),
+    [api, sequence],
+  );
+  const data = resource.data;
 
   const replyRate = (s) => (s.sent ? pct(s.replies / s.sent) : '—');
 
@@ -1582,8 +1524,8 @@ function SequencesTab({ api, sequences }) {
             <tr key={s.key}>
               <td className="aw-table__title">
                 {s.label}{' '}
-                {s.key === 'cold_a' ? <Tag>control</Tag> : null}
-                {s.key === 'cold_obs' ? <Tag>challenger</Tag> : null}
+                {s.key === 'cold_a' ? <Badge>control</Badge> : null}
+                {s.key === 'cold_obs' ? <Badge>challenger</Badge> : null}
                 {s.needsGap ? <div className="aw-muted">needs a site observation</div> : null}
               </td>
               <td>{s.stats.sent || '·'}</td>
@@ -1596,7 +1538,7 @@ function SequencesTab({ api, sequences }) {
         </tbody>
       </table>
 
-      <div className="aw-inline" style={{ marginTop: 14 }}>
+      <div className="aw-inline aw-mk-sequence-tools">
         <select value={sequence} onChange={(e) => setSequence(e.target.value)}>
           {sequences.map((s) => (
             <option key={s.key} value={s.key}>
@@ -1604,7 +1546,7 @@ function SequencesTab({ api, sequences }) {
             </option>
           ))}
         </select>
-        <Button size="sm" onClick={() => setNonce((n) => n + 1)}>
+        <Button size="sm" onClick={resource.reload} disabled={resource.loading}>
           Another contact
         </Button>
         <span className="aw-muted">
@@ -1615,14 +1557,15 @@ function SequencesTab({ api, sequences }) {
         The wording lives in <span className="aw-mono">SEQUENCES</span> in <span className="aw-mono">worker/src/marketing.ts</span>; the desk
         re-renders the queue by itself when it changes. To change it for one person, open their email in the Email tab and rewrite it there.
       </p>
-      {data?.steps.map((step) => (
-        <article key={step.kind} style={{ borderTop: '1px solid var(--aw-line, #e5e5e5)', padding: '10px 0' }}>
+      {resource.loading || !data?.steps?.length ? <ResourceNote resource={resource} label="Loading sequence preview…" empty="No steps in this sequence" /> : null}
+      {data?.steps?.map((step) => (
+        <article key={step.kind} className="aw-mk-entry">
           <div className="aw-inline">
-            <Tag>day {step.day}</Tag>
+            <Badge>day {step.day}</Badge>
             <strong>{step.subject}</strong>
-            {step.usesPlain ? <Tag tone="dash">plain version: no observation</Tag> : null}
+            {step.usesPlain ? <Badge tone="neutral">plain version: no observation</Badge> : null}
           </div>
-          <pre style={{ whiteSpace: 'pre-wrap', font: 'inherit', lineHeight: 1.5 }}>
+          <pre className="aw-mk-copy">
             {step.body}
             <span className="aw-muted">{data.footer}</span>
           </pre>
@@ -1635,17 +1578,9 @@ function SequencesTab({ api, sequences }) {
 /* —— sources: which list deserves the next hour —— */
 
 function SourcesTab({ api, tick, onPick }) {
-  const [sources, setSources] = useState(null);
-  useEffect(() => {
-    let live = true;
-    api('GET', '/admin/marketing/sources')
-      .then((out) => live && setSources(out.sources ?? []))
-      .catch(() => live && setSources([]));
-    return () => {
-      live = false;
-    };
-  }, [api, tick]);
-  if (!sources) return <p className="aw-muted">Loading…</p>;
+  const resource = useResource(() => api('GET', '/admin/marketing/sources').then((out) => out.sources ?? []), [api, tick]);
+  if (!resource.data?.length) return <Panel title="Sources"><ResourceNote resource={resource} label="Loading sources…" empty="No contact sources yet" /></Panel>;
+  const sources = resource.data;
   const rate = (n, d) => (d ? pct(n / d) : '—');
   return (
     <section className="aw-panel">
@@ -1669,7 +1604,7 @@ function SourcesTab({ api, tick, onPick }) {
         </thead>
         <tbody>
           {sources.map((s) => (
-            <tr key={s.source} onClick={() => onPick(s.source)} style={{ cursor: 'pointer' }} title="Show these contacts">
+            <tr key={s.source} onClick={() => onPick(s.source)} className="aw-mk-click" title="Show these contacts">
               <td className="aw-mono">{s.source}</td>
               <td>{s.contacts}</td>
               <td>{s.queued}</td>
@@ -1691,7 +1626,6 @@ function SourcesTab({ api, tick, onPick }) {
         </tbody>
       </table>
       </div>
-      {!sources.length ? <p className="aw-muted">No contacts yet.</p> : null}
     </section>
   );
 }
@@ -1705,79 +1639,62 @@ function windowRoom(settings) {
 /* —— model health —— */
 
 function ModelHealth({ api }) {
-  const [state, setState] = useState(null);
-  useEffect(() => {
-    let live = true;
-    api('GET', '/admin/health/deepseek')
-      .then((out) => {
-        if (live) setState(out);
-      })
-      .catch(() => {
-        if (live) setState({ bridge: false, chat: false });
-      });
-    return () => {
-      live = false;
-    };
-  }, [api]);
-  if (!state) return null;
+  const resource = useResource(() => api('GET', '/admin/health/deepseek'), [api]);
+  const state = resource.data;
+  if (!state) return <ResourceNote resource={resource} label="Checking model health…" empty="No model health report" />;
   const tone = state.chat ? 'ok' : state.bridge ? 'warn' : 'bad';
   const label = state.chat ? 'DeepSeek up' : state.bridge ? 'Workers AI fallback' : 'both engines down';
-  return (
-    <section className="aw-panel">
-      <h3>The model</h3>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <Tag tone={tone}>{label}</Tag>
-        <span className="aw-muted">
-          {state.chat
-            ? 'The site chat and the ticket bridge both use DeepSeek.'
-            : state.bridge
-              ? `DeepSeek is out of balance. The ticket bridge is on ${state.engine ?? 'Workers AI'}; the site chat is handing visitors to email until it is topped up.`
-              : 'The site chat and the ticket bridge are both handing off.'}
-        </span>
-      </div>
-    </section>
-  );
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 /* —— settings —— */
 
-function SettingsTab({ overview, run, api }) {
-  const [draft, setDraft] = useState(overview.settings);
-  useEffect(() => setDraft(overview.settings), [overview.settings]);
-  const set = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
-  const changed = Object.keys(draft).some((key) => draft[key] !== overview.settings[key]);
-  const save = () => {
-    const patch = Object.fromEntries(Object.entries(draft).filter(([key, value]) => value !== overview.settings[key]));
-    void run(() => api('PUT', '/admin/marketing/settings', patch), 'Marketing settings saved.');
+function SettingsTab({ overview, mutate, api, onShowSending }) {
+  const [group, setGroup] = useState('Sending');
+  const [edits, setEdits] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const saved = overview.settings;
+  const draft = { ...saved, ...edits };
+  const set = (key, value) => setEdits((before) => {
+    const next = { ...before };
+    if (value === saved[key]) delete next[key];
+    else next[key] = value;
+    return next;
+  });
+  const changed = Object.keys(edits).length > 0;
+  const save = async () => {
+    const { live: _live, ...patch } = edits;
+    setBusy(true);
+    setError(null);
+    try {
+      const out = await mutate(() => api('PUT', '/admin/marketing/settings', patch), (result) => result.rejected?.length ? 'Settings were not fully saved.' : 'Marketing settings saved.');
+      const rejected = out?.rejected ?? [];
+      setEdits(Object.fromEntries(Object.entries(patch).filter(([key]) => rejected.includes(key))));
+      if (rejected.length) setError(`Could not save: ${rejected.join(', ')}.`);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
   };
-  const actions = (
-    <div className="aw-inline">
-      <span className="aw-toolbar__fill" />
-      <Button disabled={!changed} onClick={() => setDraft(overview.settings)}>
-        Reset
-      </Button>
-      <Button kind="primary" disabled={!changed} onClick={save}>
-        Save
-      </Button>
-    </div>
-  );
 
   return (
     <>
-      <section className="aw-panel">
-        <h3>Sending</h3>
-        <p className="aw-muted">Who the mail comes from and whether it goes out.</p>
+      <Panel title="Marketing settings" actions={<ModelHealth api={api} />}>
+        <Segmented label="Settings group" value={group} options={['Sending', 'Safety', 'Content'].map((label) => ({ value: label, label }))} onChange={setGroup} />
+      </Panel>
+      <fieldset disabled={busy} className="aw-mk-settings-fields">
+      {group === 'Sending' ? <>
+      <Panel title="Sender" subtitle="Who the mail comes from.">
         <div className="aw-form2">
-          <Field label="Outreach" hint="The master switch.">
-            <Segmented
-              value={Boolean(draft.live)}
-              options={[
-                { value: true, label: 'Live' },
-                { value: false, label: 'Paused' },
-              ]}
-              onChange={(v) => set('live', v)}
-            />
-          </Field>
+          <div className="aw-field">
+            <span className="aw-field__label">Outreach</span>
+            <div className="aw-inline">
+              <Badge tone={saved.live ? 'ok' : 'warn'}>{saved.live ? 'Live' : 'Paused'}</Badge>
+              <Button size="sm" kind="ghost" onClick={onShowSending}>Go to sending control</Button>
+            </div>
+          </div>
           <Field
             label="Sender"
             hint={
@@ -1804,11 +1721,9 @@ function SettingsTab({ overview, run, api }) {
             <input value={draft.postalAddress} placeholder="Street, city, country" onChange={(e) => set('postalAddress', e.target.value)} />
           </Field>
         </div>
-      </section>
+      </Panel>
 
-      <section className="aw-panel">
-        <h3>Schedule and volume</h3>
-        <p className="aw-muted">When mail may leave, and how much of it.</p>
+      <Panel title="Schedule and volume" subtitle="When mail may leave, and how much of it.">
         <div className="aw-form2">
           <Field label="Send window" hint="Local time on the offset clock; an end of 24 means midnight.">
             <span className="aw-inline aw-mk-window">
@@ -1858,11 +1773,10 @@ function SettingsTab({ overview, run, api }) {
             <input inputMode="numeric" value={draft.perRun} onChange={(e) => set('perRun', Number(e.target.value))} />
           </Field>
         </div>
-      </section>
+      </Panel>
 
-      <section className="aw-panel">
-        <h3>Safety</h3>
-        <p className="aw-muted">The checks that keep the list healthy.</p>
+      </> : group === 'Safety' ? <>
+      <Panel title="Safety" subtitle="The checks that keep the list healthy.">
         <div className="aw-form2">
           <Field
             label="Auto-resume"
@@ -1894,22 +1808,19 @@ function SettingsTab({ overview, run, api }) {
           {pct(overview.health.maxComplaintRate)} complaints, before SES would review the account (5% and 0.1%). Every email carries a one-click
           unsubscribe header.
         </p>
-      </section>
+      </Panel>
 
-      <section className="aw-panel">
-        <h3>Experiment</h3>
-        <p className="aw-muted">The cold A/B test.</p>
+      <Panel title="Experiment" subtitle="The cold A/B test.">
         <Field
           label="Observation sequence share (%)"
           hint="Of contacts with a site observation, this percent get the observation opener. 0 keeps the experiment off, 100 makes it the only cold opener."
         >
           <input inputMode="numeric" min="0" max="100" value={draft.obsShare ?? 50} onChange={(e) => set('obsShare', Number(e.target.value))} />
         </Field>
-      </section>
+      </Panel>
 
-      <section className="aw-panel">
-        <h3>Email look</h3>
-        <p className="aw-muted">What the HTML version carries.</p>
+      </> : <>
+      <Panel title="Email look" subtitle="What the HTML version carries.">
         <Field label="Workshop GIF" hint="Off sends plain text only; First emails and Every email add the workshop images.">
           <Segmented
             value={draft.image ?? 'first'}
@@ -1921,11 +1832,9 @@ function SettingsTab({ overview, run, api }) {
             onChange={(v) => set('image', v)}
           />
         </Field>
-      </section>
+      </Panel>
 
-      <section className="aw-panel">
-        <h3>Posts</h3>
-        <p className="aw-muted">How written posts reach X and LinkedIn.</p>
+      <Panel title="Posts" subtitle="How written posts reach X and LinkedIn.">
         <Field label="Approval" hint="Drafted posts wait for approval or the hold; every post that goes out is also emailed to you.">
           <Segmented
             value={Boolean(draft.postApproval)}
@@ -1947,31 +1856,27 @@ function SettingsTab({ overview, run, api }) {
             onChange={(e) => set('voiceNotes', e.target.value)}
           />
         </Field>
-        {actions}
-      </section>
-
-      <div className="aw-divider" />
-      <ModelHealth api={api} />
-      <section className="aw-panel">
-        <h3>The publisher</h3>
+      </Panel>
+      <Panel title="Publisher">
+        <details className="aw-mk-publisher">
+          <summary>How publishing works</summary>
         <p className="aw-muted">
           X and LinkedIn have no affordable posting API, so the machine posts from a real browser profile:
           <span className="aw-mono"> marketing/publisher/publish.mjs</span>. It polls this desk with{' '}
           <span className="aw-mono">MARKETING_TOKEN</span>, opens the composer with the queued text, and reports back. Keep
           it launched from this machine — it uses that browser session, not a password.
         </p>
-        <p className="aw-muted">
-          Replies to the outreach address are filed here. A reply or “no” from a contact cancels every queued email for
-          them; strangers are forwarded to your inbox and never added to the list.
-        </p>
-        <p className="aw-muted">
-          Contacts on file:{' '}
-          {Object.values(overview.counts?.contacts ?? {})
-            .reduce((a, b) => a + (b ?? 0), 0)
-            .toLocaleString('en-US')}
-          . Sender: {overview.sender}. Inbox: {overview.inbox}.
-        </p>
-      </section>
+        </details>
+      </Panel>
+      </>}
+      </fieldset>
+      <footer className="aw-inline aw-mk-settings-footer">
+        <span className="aw-muted" role="status">{busy ? 'Saving…' : changed ? 'Unsaved changes' : 'No unsaved changes'}</span>
+        {error ? <ErrorNote error={error} /> : null}
+        <span className="aw-toolbar__fill" />
+        <Button disabled={busy || !changed} onClick={() => { setEdits({}); setError(null); }}>Reset</Button>
+        <Button kind="primary" disabled={busy || !changed} onClick={save}>Save</Button>
+      </footer>
     </>
   );
 }
@@ -2010,7 +1915,7 @@ function ImportModal({ api, sequences, onClose, onDone }) {
           `${result.skipped.length ? `, ${result.skipped.length} skipped` : ''}.`,
       );
     } catch (err) {
-      setError(err.message ?? err.code);
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -2063,7 +1968,7 @@ function ImportModal({ api, sequences, onClose, onDone }) {
           </label>
         </Field>
       ) : null}
-      {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
+      {error ? <ErrorNote error={error} /> : null}
     </Modal>
   );
 }
@@ -2097,7 +2002,7 @@ function ContactModal({ api, contact, sequences, onClose, onSaved }) {
         onSaved(`${out.contact.email} added${queue ? ' and queued' : ''}.`);
       }
     } catch (err) {
-      setError(err.message ?? err.code);
+      setError(errorText(err));
       setBusy(false);
     }
   };
@@ -2156,7 +2061,7 @@ function ContactModal({ api, contact, sequences, onClose, onSaved }) {
           ) : null}
         </>
       ) : null}
-      {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
+      {error ? <ErrorNote error={error} /> : null}
     </Modal>
   );
 }
@@ -2173,7 +2078,7 @@ function QueueModal({ api, contact, sequences, onClose, onQueued }) {
       const out = await api('POST', `/admin/marketing/contacts/${contact.id}/queue`, { sequence, genericGap });
       onQueued(out.queued);
     } catch (err) {
-      setError(err.message ?? err.code);
+      setError(errorText(err));
       setBusy(false);
     }
   };
@@ -2202,7 +2107,7 @@ function QueueModal({ api, contact, sequences, onClose, onQueued }) {
           </label>
         </Field>
       ) : null}
-      {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
+      {error ? <ErrorNote error={error} /> : null}
     </Modal>
   );
 }
@@ -2224,7 +2129,7 @@ function BulkQueueModal({ api, sequences, onClose, onDone }) {
           `${result.skippedNoGap ? `, ${result.skippedNoGap} skipped without an observation` : ''}.`,
       );
     } catch (err) {
-      setError(err.message ?? err.code);
+      setError(errorText(err));
       setBusy(false);
     }
   };
@@ -2262,7 +2167,7 @@ function BulkQueueModal({ api, sequences, onClose, onDone }) {
           </label>
         </Field>
       ) : null}
-      {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
+      {error ? <ErrorNote error={error} /> : null}
     </Modal>
   );
 }
@@ -2279,7 +2184,7 @@ function EditPostModal({ api, message, onClose, onSaved }) {
       await api('PATCH', `/admin/marketing/messages/${message.id}`, { body });
       onSaved('Post saved.');
     } catch (err) {
-      setError(err.message ?? err.code);
+      setError(errorText(err));
       setBusy(false);
     }
   };
@@ -2301,7 +2206,7 @@ function EditPostModal({ api, message, onClose, onSaved }) {
       <Field label="Text" hint={`${body.length}/${max} characters. No em dashes, no stock AI phrasing: marketing/style/README.md.`}>
         <textarea rows={message.channel === 'x' ? 5 : 14} value={body} onChange={(e) => setBody(e.target.value)} />
       </Field>
-      {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
+      {error ? <ErrorNote error={error} /> : null}
     </Modal>
   );
 }
@@ -2326,7 +2231,7 @@ function ComposeModal({ api, contacts, initialChannel = 'x', onClose, onSaved })
       if (queueNow) await api('POST', `/admin/marketing/messages/${out.message.id}/send`);
       onSaved(queueNow ? (channel === 'email' ? 'Sent.' : 'Queued for the publisher.') : 'Saved as a draft.');
     } catch (err) {
-      setError(err.message ?? err.code);
+      setError(errorText(err));
       setBusy(false);
     }
   };
@@ -2373,7 +2278,7 @@ function ComposeModal({ api, contacts, initialChannel = 'x', onClose, onSaved })
         <textarea rows={10} value={body} maxLength={20000} onChange={(e) => setBody(e.target.value)} />
       </Field>
       {channel !== 'email' ? <p className="aw-muted">Drafts do not reach the publisher until you queue them.</p> : null}
-      {error ? <div className="aw-banner aw-banner--bad">{error}</div> : null}
+      {error ? <ErrorNote error={error} /> : null}
     </Modal>
   );
 }
