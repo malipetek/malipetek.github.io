@@ -15,6 +15,7 @@ import { Button, Chips, Confirm, Dot, Field, Icon, Modal, Resizer, Segmented, cx
 import { BoardView, InboxView, ListView } from './board.jsx';
 import { TicketDetails, TicketView } from './ticket.jsx';
 import { ClientView, ClientsView, FleetView, SettingsView } from './fleet.jsx';
+import { MachineOnboarding, MachineStatusPill } from './machine.jsx';
 import { MarketingView } from './marketing.jsx';
 import { SeoView } from './seo.jsx';
 import { HealthView } from './health.jsx';
@@ -264,6 +265,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
               </div>
             ))}
             <span className="aw-tabs__fill" />
+            <MachineStatusPill />
             <Button kind="ghost" size="sm" title="Refresh" onClick={() => void reload()}>
               <Icon name="refresh" size={14} />
             </Button>
@@ -300,6 +302,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
           </div>
         ) : null}
         {palette ? <Palette onClose={() => setPalette(false)} /> : null}
+        <MachineOnboarding />
         {modal?.kind === 'task' ? <TaskModal preset={modal} onClose={() => setModal(null)} /> : null}
         {modal?.kind === 'project' ? <ProjectModal onClose={() => setModal(null)} /> : null}
         {modal?.kind === 'custom' ? modal.render(() => setModal(null)) : null}

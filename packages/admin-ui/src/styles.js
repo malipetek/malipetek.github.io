@@ -303,6 +303,21 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-panel p { margin: 6px 0; }
 .aw-settings { max-width: 900px; }
 
+/* this machine as a worker: the header pill, then the panel's own bits */
+.aw-mpillbar { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; }
+.aw-mpill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 1px solid var(--aw-border2); border-radius: 12px; background: var(--aw-bg); color: var(--aw-text2); font-size: 12px; white-space: nowrap; cursor: pointer; }
+.aw-mpill:hover { background: var(--aw-hover); color: var(--aw-text); }
+.aw-mpillbar .aw-btn--ghost { height: 24px; width: 26px; padding: 0; justify-content: center; }
+.aw-mstate { margin: 0 0 8px; font-size: 12.5px; }
+.aw-mexes { display: flex; flex-direction: column; gap: 2px; }
+.aw-mexe { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; cursor: pointer; }
+.aw-mexe .aw-tag { font-size: 11px; }
+.aw-mexe__name { font-weight: 600; }
+.aw-mlog { margin-top: 8px; }
+.aw-mlog summary { cursor: pointer; color: var(--aw-text2); font-size: 12px; }
+.aw-mlog[open] summary { margin-bottom: 4px; }
+.aw-machine p > .aw-btn { margin-left: 8px; }
+
 /* overlays */
 .aw-scrim { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.35); display: grid; place-items: center; padding: 20px; }
 .aw-scrim--top { place-items: start center; padding-top: 12vh; }

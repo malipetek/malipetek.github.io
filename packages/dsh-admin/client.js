@@ -2359,6 +2359,393 @@ var __awPlugin = (() => {
     );
   }
 
+  // packages/admin-ui/src/machine.jsx
+  var CONSENT_VERSION = 1;
+  var LEND = {
+    "dsh-go": { label: "Flash", plan: "OpenCode Go \xB7 DeepSeek v4.1 flash", note: "counts against the OpenCode Go plan\u2019s limits" },
+    "dsh-claude": { label: "Opus", plan: "Claude Code on Opus, through the Harness", note: "counts against the Claude plan\u2019s limits" },
+    dsh: { label: "DeepSeek", plan: "the DeepSeek API key", note: "billed to the DeepSeek account" },
+    "dsh-devin": { label: "SWE-2", plan: "Devin SWE-2", note: "free" },
+    "dsh-opencode": { label: "OpenCode (Harness)", plan: "OpenCode in the Harness", note: "counts against the OpenCode plan\u2019s limits" },
+    claude: { label: "Claude Code CLI", plan: "Claude Code on its own login", note: "counts against the Claude plan\u2019s limits" },
+    opencode: { label: "OpenCode CLI", plan: "OpenCode on its own login", note: "counts against the OpenCode plan\u2019s limits" },
+    devin: { label: "Devin CLI", plan: "Devin on its own login", note: "billed to the Devin account" }
+  };
+  var lendLabel = (e) => LEND[e]?.label ?? e;
+  var DEFAULT_LEND = ["dsh-go", "dsh-claude", "dsh", "dsh-devin"];
+  var STATE_DOT = { working: "ok", ready: "ok", pausing: "warn", paused: "warn", off: "bad", unset: null };
+  var HINT = {
+    working: "This Mac is running approved client tickets with your subscriptions.",
+    ready: "This Mac takes approved client work when it arrives.",
+    pausing: "Drained: what is running finishes, nothing new starts.",
+    paused: "Paused: this Mac takes no new work.",
+    off: "The worker service on this Mac is not running.",
+    unset: "This Mac can run approved client tickets. Say yes or no once."
+  };
+  var nowSec = () => Math.floor(Date.now() / 1e3);
+  var notEmpty = (list) => Array.isArray(list) && list.length ? list : null;
+  var IDLE = { loaded: false, info: null, consent: null, consentError: null, error: null };
+  var machineStore = {
+    snapshot: IDLE,
+    host: null,
+    timer: null,
+    inflight: false,
+    listeners: /* @__PURE__ */ new Set(),
+    subscribe(listener, host) {
+      this.host = host;
+      this.listeners.add(listener);
+      if (!this.timer) {
+        this.timer = setInterval(() => void this.tick(), 15e3);
+        void this.tick();
+      }
+      return () => {
+        this.listeners.delete(listener);
+        if (this.listeners.size === 0 && this.timer) {
+          clearInterval(this.timer);
+          this.timer = null;
+        }
+      };
+    },
+    getSnapshot() {
+      return this.snapshot;
+    },
+    async tick() {
+      const host = this.host;
+      if (!host || typeof host.json !== "function" || this.inflight) return;
+      this.inflight = true;
+      let error = null;
+      let consentError = null;
+      let info;
+      let consent = null;
+      try {
+        info = await host.json("localinfo").catch((e) => {
+          error = e?.message ?? String(e);
+          return void 0;
+        });
+        consent = await host.json("machine-consent get").catch((e) => {
+          consentError = e?.message ?? String(e);
+          return null;
+        });
+      } finally {
+        this.inflight = false;
+      }
+      this.snapshot = {
+        loaded: true,
+        info: info === void 0 ? this.snapshot.info : info,
+        consent: consent ?? this.snapshot.consent,
+        consentError,
+        error
+      };
+      for (const listener of this.listeners) listener();
+    }
+  };
+  function useMachine() {
+    const { api, act, ask, data, host, notify, platform, reload } = useAdmin();
+    const live = platform === "dsh" && Boolean(host);
+    const subscribe = useCallback((listener) => live ? machineStore.subscribe(listener, host) : () => {
+    }, [live, host]);
+    const readSnapshot = () => live ? machineStore.getSnapshot() : IDLE;
+    const read = useSyncExternalStore(subscribe, readSnapshot, readSnapshot);
+    const refresh = useCallback(() => void machineStore.tick(), []);
+    const svc = read.info?.local?.service;
+    const nodeId = read.info?.localConfig?.nodeId ?? "";
+    const node = nodeId ? data.nodes.find((n) => n.id === nodeId) ?? null : null;
+    const serviceUp = svc?.state === "running";
+    const running = node?.running ?? [];
+    const consent = read.consent;
+    const recorded2 = Boolean(consent && (consent.acceptedAt || consent.declinedAt));
+    const consented = Boolean(consent?.acceptedAt && !consent.declinedAt);
+    const stateKey = !recorded2 ? running.length ? "working" : "unset" : !serviceUp || node && !node.online ? "off" : node?.draining ? running.length ? "pausing" : "paused" : running.length ? "working" : "ready";
+    const hostMust = async (line) => {
+      const r = await host.command(line);
+      if (!r.ok) throw new Error(r.text);
+      return r;
+    };
+    const saveConsent = (record) => hostMust(`machine-consent set ${JSON.stringify({ version: CONSENT_VERSION, ...record })}`);
+    const needNode = () => {
+      if (!node) throw new Error(`This Mac\u2019s node (\u201C${nodeId || "unnamed"}\u201D) is not registered with the portal yet.`);
+    };
+    const pause = () => act(async () => {
+      needNode();
+      await api("PATCH", `/admin/nodes/${node.id}`, { draining: true });
+    }, "This Mac finishes what it has, then takes nothing new.").catch(() => void 0);
+    const resume = () => act(async () => {
+      needNode();
+      await api("PATCH", `/admin/nodes/${node.id}`, { draining: false });
+    }, "This Mac takes work again.").catch(() => void 0);
+    const control = async (verb) => {
+      const r = await host.command(`node ${verb}`);
+      notify(r.text, r.ok ? "ok" : "error");
+      refresh();
+      void reload();
+    };
+    const start = () => control(svc?.loaded ? "start" : "install");
+    const restart = () => control("restart");
+    const stopNow = () => ask({
+      title: "Stop this Mac\u2019s worker now?",
+      text: "Anything it is running goes back to the queue within three minutes, unfinished. Pause instead if you can wait it out.",
+      confirm: "Stop now",
+      danger: true,
+      run: () => void control("stop")
+    });
+    const setLend = (lend) => act(async () => {
+      needNode();
+      await saveConsent({ acceptedAt: consent?.acceptedAt ?? null, declinedAt: consent?.declinedAt ?? null, lend });
+      await api("PATCH", `/admin/nodes/${node.id}`, { overrides: { executors: lend } });
+    }, "Saved. The node picks it up on its next heartbeat (within 30s).").then(refresh, () => void 0);
+    const accept = (lend) => act(async () => {
+      await saveConsent({ acceptedAt: nowSec(), declinedAt: null, lend });
+      if (node) {
+        await api("PATCH", `/admin/nodes/${node.id}`, { overrides: { executors: lend } });
+        if (node.draining) await api("PATCH", `/admin/nodes/${node.id}`, { draining: false });
+      } else {
+        await hostMust(`local ${JSON.stringify({ executors: lend })}`);
+      }
+      if (!serviceUp) await hostMust(`node ${svc?.loaded ? "start" : "install"}`);
+    }, "This Mac is a fleet worker now. Pause it any time from the header.");
+    const decline = () => act(async () => {
+      await saveConsent({ acceptedAt: consent?.acceptedAt ?? null, declinedAt: nowSec(), lend: consent?.lend ?? [] });
+      if (node) await api("PATCH", `/admin/nodes/${node.id}`, { draining: true }).catch(() => void 0);
+    }, "Noted. This Mac takes no new work.").then(refresh, () => void 0);
+    const offered = notEmpty(node?.executors) ?? notEmpty(read.info?.localConfig?.executors) ?? DEFAULT_LEND;
+    const lending = consent?.lend ?? notEmpty(node?.executors) ?? [];
+    const signedOut = Boolean(data.error && ["unauthorized", "signed_out", "forbidden"].includes(data.error.code));
+    return {
+      live,
+      loaded: read.loaded,
+      error: read.error,
+      consentError: read.consentError,
+      info: read.info,
+      svc,
+      serviceUp,
+      nodeId,
+      node,
+      running,
+      slots: node?.slots ?? read.info?.localConfig?.slots ?? 1,
+      consent,
+      consented,
+      state: stateKey,
+      offered,
+      lending,
+      pause,
+      resume,
+      start,
+      restart,
+      stopNow,
+      setLend,
+      accept,
+      decline,
+      refresh,
+      signedOut
+    };
+  }
+  var lendNames = (m) => {
+    const names = (notEmpty(m.node?.executors) ?? m.lending).map(lendLabel).join(", ");
+    return names || "nothing";
+  };
+  var pillText = (m) => {
+    switch (m.state) {
+      case "working":
+        return `working ${m.running.length}/${m.slots} \xB7 ${lendNames(m)}`;
+      case "pausing":
+        return `pausing ${m.running.length}/${m.slots}`;
+      case "paused":
+        return "paused";
+      case "off":
+        return "off";
+      case "ready":
+        return `ready \xB7 ${lendNames(m)}`;
+      default:
+        return "not set up";
+    }
+  };
+  function PauseIcon({ size = 13 }) {
+    return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.2", strokeLinecap: "round", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: "M9 5v14M15 5v14" }) });
+  }
+  function MachineStatusPill() {
+    const m = useMachine();
+    const { setModal } = useAdmin();
+    if (!m.live) return null;
+    const open = () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(MachineModal, { m, onClose: close }) });
+    const toggle = m.state === "working" || m.state === "ready" ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "Pause: what is running finishes, nothing new starts", onClick: () => void m.pause(), children: /* @__PURE__ */ jsx(PauseIcon, {}) }) : m.state === "pausing" || m.state === "paused" ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "Resume: this Mac takes work again", onClick: () => void m.resume(), children: /* @__PURE__ */ jsx(Icon, { name: "play", size: 13 }) }) : null;
+    return /* @__PURE__ */ jsxs("span", { className: "aw-mpillbar", children: [
+      /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-mpill", title: `${HINT[m.state] ?? ""} Click for the panel.`, onClick: open, children: [
+        /* @__PURE__ */ jsx(Dot, { state: STATE_DOT[m.state] }),
+        "This Mac: ",
+        pillText(m)
+      ] }),
+      toggle
+    ] });
+  }
+  function MachineOnboarding() {
+    const m = useMachine();
+    const [dismissed, setDismissed] = useState(false);
+    const show = m.live && m.loaded && !dismissed && !m.signedOut && !m.consentError && m.consent && !m.consent.acceptedAt && !m.consent.declinedAt;
+    return show ? /* @__PURE__ */ jsx(OnboardingModal, { m, onClose: () => setDismissed(true) }) : null;
+  }
+  function OnboardingModal({ m, onClose }) {
+    const [lend, setLend] = useState(() => m.offered.slice());
+    const [busy, setBusy] = useState(false);
+    const go = async (fn) => {
+      if (busy) return;
+      setBusy(true);
+      try {
+        await fn();
+        onClose();
+      } catch {
+        setBusy(false);
+      }
+    };
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: "Lend this Mac to the fleet?",
+        onClose: () => !busy && onClose(),
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: () => void go(() => m.decline()), children: "Not now" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !lend.length, onClick: () => void go(() => m.accept(lend)), children: busy ? "Saving\u2026" : "Lend this Mac" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsxs("p", { children: [
+            "When you approve a client ticket, a fleet worker picks it up. This Mac can be one: it works in its own checkout under",
+            " ",
+            /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "~/.cache/malipetek-runner" }),
+            ", using CPU, battery and network, and every run is a Harness conversation saved on this machine. Only tickets you approved run here."
+          ] }),
+          /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Pick which subscriptions it may use. Each one runs tickets with that plan, and its usage counts against that plan\u2019s own limits." }),
+          /* @__PURE__ */ jsx("div", { className: "aw-mexes", children: m.offered.map((e) => /* @__PURE__ */ jsxs("label", { className: "aw-mexe", children: [
+            /* @__PURE__ */ jsx(
+              "input",
+              {
+                type: "checkbox",
+                checked: lend.includes(e),
+                onChange: (ev) => setLend(ev.target.checked ? [...lend, e] : lend.filter((x) => x !== e))
+              }
+            ),
+            /* @__PURE__ */ jsx("span", { className: "aw-mexe__name", children: lendLabel(e) }),
+            /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+              LEND[e]?.plan ?? e,
+              " \xB7 ",
+              LEND[e]?.note ?? "counts against that subscription"
+            ] })
+          ] }, e)) }),
+          /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "You can pause it any time from the \u201CThis Mac\u201D pill in the header \u2014 running work finishes, nothing new starts \u2014 and lend or un-lend single subscriptions from the Fleet view." })
+        ]
+      }
+    );
+  }
+  function MachineModal({ m, onClose }) {
+    return /* @__PURE__ */ jsx(Modal, { title: "This Mac as a fleet worker", onClose, children: /* @__PURE__ */ jsx(MachinePanel, { m }) });
+  }
+  var stateLine = (m) => {
+    switch (m.state) {
+      case "working":
+        return `Working \u2014 ${m.running.length} of ${m.slots} slots busy, lending ${lendNames(m)}.`;
+      case "pausing":
+        return `Pausing \u2014 ${m.running.length} to finish, then nothing new.`;
+      case "paused":
+        return "Paused \u2014 takes no new work.";
+      case "ready":
+        return `Ready \u2014 takes approved work when it arrives, lending ${lendNames(m)}.`;
+      case "off":
+        return `Off \u2014 the launchd service is ${m.svc?.state ?? "unknown"}${m.svc?.lastExit ? `, last exit ${m.svc.lastExit}` : ""}.`;
+      default:
+        return "Not set up \u2014 no lending record yet. The worker runs by default once it is installed; say yes or no once.";
+    }
+  };
+  function MachinePanel({ m: given }) {
+    const own = useMachine();
+    const m = given ?? own;
+    const { openTicket, setModal } = useAdmin();
+    if (!m.live) return null;
+    const askAgain = () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(OnboardingModal, { m, onClose: close }) });
+    return /* @__PURE__ */ jsxs("article", { className: cx("aw-node", "aw-machine", `aw-node--${STATE_DOT[m.state] ?? "warn"}`), children: [
+      /* @__PURE__ */ jsxs("header", { children: [
+        /* @__PURE__ */ jsx(Dot, { state: STATE_DOT[m.state] }),
+        /* @__PURE__ */ jsx("h3", { children: "This Mac" }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+          m.nodeId || "no node id yet",
+          " \xB7 ",
+          m.svc?.state ?? "unknown",
+          m.svc?.pid ? ` \xB7 pid ${m.svc.pid}` : ""
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        m.state === "working" || m.state === "ready" ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void m.pause(), children: "Pause" }) : null,
+        m.state === "pausing" || m.state === "paused" ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void m.resume(), children: "Resume" }) : null,
+        m.serviceUp ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", title: "Restart the worker service", onClick: () => void m.restart(), children: "Restart" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => m.stopNow(), children: "Stop now" })
+        ] }) : /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => void m.start(), children: "Start" })
+      ] }),
+      /* @__PURE__ */ jsx("p", { className: cx("aw-mstate", (m.state === "off" || m.state === "unset") && "aw-warn"), children: stateLine(m) }),
+      m.error ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        "Could not read this Mac\u2019s worker: ",
+        m.error
+      ] }) : null,
+      m.consented ? /* @__PURE__ */ jsxs("dl", { className: "aw-kv", children: [
+        /* @__PURE__ */ jsx("dt", { children: "Lends" }),
+        /* @__PURE__ */ jsxs("dd", { children: [
+          /* @__PURE__ */ jsx("div", { className: "aw-mexes", children: m.offered.map((e) => {
+            const health = m.node?.health?.executors?.[e];
+            const on = m.lending.includes(e);
+            return /* @__PURE__ */ jsxs("label", { className: "aw-mexe", title: LEND[e]?.note ?? void 0, children: [
+              /* @__PURE__ */ jsx(
+                "input",
+                {
+                  type: "checkbox",
+                  checked: on,
+                  onChange: (ev) => void m.setLend(ev.target.checked ? [...m.lending, e] : m.lending.filter((x) => x !== e))
+                }
+              ),
+              /* @__PURE__ */ jsx("span", { className: "aw-mexe__name", children: lendLabel(e) }),
+              /* @__PURE__ */ jsx("span", { className: "aw-muted", children: LEND[e]?.plan ?? e }),
+              health ? /* @__PURE__ */ jsxs(Tag, { tone: health.ok ? void 0 : "bad", children: [
+                e,
+                health.version ? ` ${health.version}` : ""
+              ] }) : null
+            ] }, e);
+          }) }),
+          !m.lending.length ? /* @__PURE__ */ jsx("span", { className: "aw-warn", children: "Nothing lent \u2014 this Mac takes no work." }) : null
+        ] })
+      ] }) : null,
+      m.running.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: m.running.map((r) => /* @__PURE__ */ jsxs("li", { className: "aw-row", onClick: () => openTicket(r.ticket_id), children: [
+        /* @__PURE__ */ jsx("span", { className: "aw-live" }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-mono aw-muted", children: [
+          "#",
+          r.ticket_id
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: r.title }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+          r.executor,
+          " \xB7 ",
+          ago(r.started_at)
+        ] })
+      ] }, r.id)) }) : null,
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: m.consented ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        "Lent since ",
+        when(m.consent.acceptedAt),
+        ".",
+        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", title: "Record a no and drain the node; running work finishes", onClick: () => void m.decline(), children: "Withdraw consent" })
+      ] }) : m.consent?.declinedAt ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        "Declined ",
+        when(m.consent.declinedAt),
+        m.consent.acceptedAt ? ` (previously lent ${when(m.consent.acceptedAt)})` : "",
+        ".",
+        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: askAgain, children: "Lend this Mac\u2026" })
+      ] }) : m.consentError ? /* @__PURE__ */ jsxs("span", { className: "aw-warn", children: [
+        "The consent record could not be read: ",
+        m.consentError
+      ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+        "No lending record yet.",
+        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: askAgain, children: "Decide now\u2026" })
+      ] }) }),
+      m.info?.local?.log ? /* @__PURE__ */ jsxs("details", { className: "aw-mlog", children: [
+        /* @__PURE__ */ jsx("summary", { children: "Worker log" }),
+        /* @__PURE__ */ jsx("pre", { className: "aw-log", children: m.info.local.log })
+      ] }) : null
+    ] });
+  }
+
   // packages/admin-ui/src/fleet.jsx
   var pct = (a, b) => b ? Math.round(a / b * 100) : 0;
   function NodeCard({ node }) {
@@ -2470,40 +2857,6 @@ var __awPlugin = (() => {
       }
     );
   }
-  function ThisMachine() {
-    const { host, notify, reload } = useAdmin();
-    const [info, setInfo] = useState(null);
-    const [busy, setBusy] = useState(false);
-    const load = () => host.json("localinfo").then(setInfo, (e) => notify(e.message, "error"));
-    useEffect(() => {
-      void load();
-      const id = setInterval(load, 15e3);
-      return () => clearInterval(id);
-    }, []);
-    const control = async (verb) => {
-      setBusy(true);
-      const r = await host.command(`node ${verb}`);
-      notify(r.text, r.ok ? "ok" : "error");
-      setBusy(false);
-      void load();
-      void reload();
-    };
-    const svc = info?.local?.service;
-    const up = svc?.state === "running";
-    return /* @__PURE__ */ jsxs("article", { className: cx("aw-node", `aw-node--${up ? "ok" : "bad"}`), children: [
-      /* @__PURE__ */ jsxs("header", { children: [
-        /* @__PURE__ */ jsx(Dot, { state: up ? "ok" : "bad" }),
-        /* @__PURE__ */ jsx("h3", { children: "This machine" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: info ? `${info.localConfig?.nodeId || "node"} \xB7 ${svc?.state ?? "unknown"}${svc?.pid ? ` \xB7 pid ${svc.pid}` : ""}` : "reading\u2026" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        svc?.loaded ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: busy, onClick: () => control("restart"), children: "Restart" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", disabled: busy, onClick: () => control("stop"), children: "Stop" })
-        ] }) : /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", disabled: busy, onClick: () => control(svc ? "start" : "install"), children: "Start" })
-      ] }),
-      info?.local?.log ? /* @__PURE__ */ jsx("pre", { className: "aw-log", children: info.local.log }) : null
-    ] });
-  }
   function FleetView() {
     const { data, openTicket, platform, host } = useAdmin();
     return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-fleet", children: [
@@ -2512,7 +2865,7 @@ var __awPlugin = (() => {
         /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nodes claim approved work they can do: the right project, capabilities and agent." })
       ] }),
       /* @__PURE__ */ jsxs("div", { className: "aw-nodes", children: [
-        platform === "dsh" && host ? /* @__PURE__ */ jsx(ThisMachine, {}) : null,
+        platform === "dsh" && host ? /* @__PURE__ */ jsx(MachinePanel, {}) : null,
         data.nodes.map((n) => /* @__PURE__ */ jsx(NodeCard, { node: n }, n.id)),
         !data.nodes.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No node has connected yet. Run fleet/install.sh on a machine." }) : null
       ] }),
@@ -3302,6 +3655,7 @@ var __awPlugin = (() => {
   var offsetLabel = (minutes) => `UTC${minutes >= 0 ? "+" : "\u2212"}${Math.abs(minutes) / 60}`;
   var snippet = (text, max = 90) => text.length > max ? `${text.slice(0, max)}\u2026` : text;
   var plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  var dateLabel = (unix) => unix ? new Date(unix * 1e3).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
   function MarketingView() {
     const { api, act, notify } = useAdmin();
     const [overview, setOverview] = useState(null);
@@ -3362,8 +3716,17 @@ var __awPlugin = (() => {
         ] })
       ] }),
       !overview.bound ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: overview.senderState?.reason === "ses_unconfigured" ? "The sender is set to Amazon SES, but the Worker has no SES keys (AWS_SES_ACCESS_KEY_ID / AWS_SES_SECRET_ACCESS_KEY). Nothing can send." : "No outreach sender is bound on the Worker (MARKETING). Nothing can send." }) : !settings.postalAddress ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--bad", children: "Set a postal address in Settings before a cold email goes out \u2014 anti-spam law asks for one on every send." }) : !settings.live ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
-        "Paused. ",
-        overview.due.email ? `${overview.due.email} email${overview.due.email === 1 ? "" : "s"} are due.` : "Nothing is due yet.",
+        overview.autoResume?.autoPausedAt ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          "Paused itself on ",
+          dateLabel(overview.autoResume.autoPausedAt),
+          ". It switches back on after",
+          " ",
+          overview.autoResume.resumesAfter ? dateLabel(overview.autoResume.resumesAfter) : "the wait",
+          " if bounces and complaints stay under the limits."
+        ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
+          "Paused. ",
+          overview.due.email ? `${overview.due.email} email${overview.due.email === 1 ? "" : "s"} are due.` : "Nothing is due yet."
+        ] }),
         health?.trip ? ` The desk paused itself: ${health.trip === "bounce_rate" ? "too many bounces" : "too many complaints"}.` : "",
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
         /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => run(() => api("PUT", "/admin/marketing/settings", { live: true }), "Outreach is live."), children: "Go live" })
@@ -3379,7 +3742,9 @@ var __awPlugin = (() => {
         settings.weekdaysOnly ? ", weekdays" : "",
         " \xB7 ",
         messagesToday,
-        " \xB7 window",
+        overview.autoResume && overview.autoResume.cap < settings.dailyCap ? ` \xB7 ramping: ${overview.autoResume.cap}/day today` : "",
+        " ",
+        "\xB7 window",
         " ",
         overview.window.open ? "open" : `closed (${WINDOW_REASON[overview.window.reason] ?? overview.window.reason})`,
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
@@ -3474,7 +3839,7 @@ var __awPlugin = (() => {
         ] }) : null,
         tab === "settings" ? /* @__PURE__ */ jsx(Button, { onClick: () => run(() => api("POST", "/admin/marketing/run"), runMessage), children: "Run now" }) : null
       ] }),
-      tab === "overview" ? /* @__PURE__ */ jsx(OverviewTab, { api, tick, health, onReview: () => setModal({ kind: "review" }), onContact: (id) => setModal({ kind: "person", id }) }) : null,
+      tab === "overview" ? /* @__PURE__ */ jsx(OverviewTab, { api, tick, health, overview, onReview: () => setModal({ kind: "review" }), onContact: (id) => setModal({ kind: "person", id }) }) : null,
       tab === "contacts" ? /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsxs("div", { className: "aw-inline", style: { marginBottom: 8 }, children: [
           /* @__PURE__ */ jsx("span", { className: "aw-muted", children: paging.total ? `${(filters.offset + 1).toLocaleString("en-US")}\u2013${Math.min(filters.offset + paging.page, paging.total).toLocaleString("en-US")} of ${paging.total.toLocaleString("en-US")}` : "None" }),
@@ -3577,7 +3942,7 @@ var __awPlugin = (() => {
         !contacts.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No contacts match. Import a CSV, or add one by hand." }) : null
       ] }) : null,
       tab === "email" ? /* @__PURE__ */ jsx(EmailTab, { api, run, tick, events: overview.events, onOpen: (m) => setModal({ kind: "message", id: m.id }) }) : null,
-      tab === "posts" ? /* @__PURE__ */ jsx(PostsTab, { api, run, tick, onEdit: (m) => setModal({ kind: "edit", message: m }) }) : null,
+      tab === "posts" ? /* @__PURE__ */ jsx(PostsTab, { api, run, tick, holdHours: settings.postHoldHours ?? 0, onEdit: (m) => setModal({ kind: "edit", message: m }) }) : null,
       tab === "sequences" ? /* @__PURE__ */ jsx(SequencesTab, { api, sequences: overview.sequences }) : null,
       tab === "sources" ? /* @__PURE__ */ jsx(
         SourcesTab,
@@ -3637,7 +4002,17 @@ var __awPlugin = (() => {
   };
   var REPLY_TONE = { reply: "ok", opt_out: "warn", complaint: "bad" };
   var REPLY_LABEL = { reply: "replied", opt_out: "opted out", complaint: "spam complaint" };
-  function OverviewTab({ api, tick, health, onReview, onContact }) {
+  var OBSERVE_KIND = {
+    no_https: "opens over http",
+    no_viewport: "no mobile tag",
+    old_copyright: "old copyright",
+    pdf_menu: "PDF menu",
+    slow: "slow to load",
+    no_description: "no description",
+    none: "clean",
+    unreachable: "unreachable"
+  };
+  function OverviewTab({ api, tick, health, overview, onReview, onContact }) {
     const [stats, setStats] = useState(null);
     const [replies, setReplies] = useState(null);
     const [review, setReview] = useState(null);
@@ -3715,6 +4090,35 @@ var __awPlugin = (() => {
             /* @__PURE__ */ jsx("td", { children: d.published || "\xB7" })
           ] }, d.day)) })
         ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading\u2026" })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Site observations" }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "The desk opens each queued contact's site and writes down the first thing wrong with it; the observation sequence uses that as its opener. Domains with no mail server are paused before they can bounce." }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-tags", children: [
+          /* @__PURE__ */ jsxs(Tag, { children: [
+            overview.observe?.observed ?? 0,
+            " sites read"
+          ] }),
+          /* @__PURE__ */ jsxs(Tag, { tone: overview.observe?.pending ? "warn" : "dash", children: [
+            overview.observe?.pending ?? 0,
+            " waiting to be read"
+          ] }),
+          /* @__PURE__ */ jsxs(Tag, { tone: overview.observe?.withGap ? "ok" : "dash", children: [
+            overview.observe?.withGap ?? 0,
+            " with an observation"
+          ] }),
+          /* @__PURE__ */ jsxs(Tag, { tone: overview.domains?.undeliverable ? "bad" : "dash", children: [
+            overview.domains?.checked ?? 0,
+            " domains checked \xB7 ",
+            overview.domains?.undeliverable ?? 0,
+            " undeliverable"
+          ] })
+        ] }),
+        Object.keys(overview.observe?.byKind ?? {}).length ? /* @__PURE__ */ jsx("div", { className: "aw-tags", style: { marginTop: 8 }, children: Object.entries(overview.observe.byKind).sort((a, b) => b[1] - a[1]).map(([kind, n]) => /* @__PURE__ */ jsxs(Tag, { tone: kind === "none" ? "ok" : kind === "unreachable" ? "dash" : "warn", children: [
+          OBSERVE_KIND[kind] ?? kind,
+          ": ",
+          n
+        ] }, kind)) }) : null
       ] }),
       /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsx("h3", { children: "What came back" }),
@@ -3886,7 +4290,7 @@ var __awPlugin = (() => {
             !data.messages.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nothing queued or sent." }) : null,
             /* @__PURE__ */ jsx("h3", { children: "Events" }),
             /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: data.events.map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
-              /* @__PURE__ */ jsx(Tag, { tone: EVENT_BAD.has(e.kind) ? "bad" : EVENT_GOOD.has(e.kind) ? "ok" : "dash", children: e.kind.replaceAll("_", " ") }),
+              /* @__PURE__ */ jsx(Tag, { tone: EVENT_BAD.has(e.kind) ? "bad" : EVENT_GOOD.has(e.kind) ? "ok" : "dash", children: EVENT_LABEL[e.kind] ?? e.kind.replaceAll("_", " ") }),
               /* @__PURE__ */ jsx("span", { className: "aw-muted", style: { whiteSpace: "pre-wrap" }, children: snippet(e.detail ?? "", 300) }),
               /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
                 ago(e.createdAt),
@@ -3962,7 +4366,7 @@ var __awPlugin = (() => {
       /* @__PURE__ */ jsxs("div", { className: "aw-group", children: [
         /* @__PURE__ */ jsx("h3", { children: "Recent events" }),
         /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: events.map((e) => /* @__PURE__ */ jsxs("li", { className: "aw-row", children: [
-          /* @__PURE__ */ jsx(Tag, { tone: EVENT_BAD.has(e.kind) ? "bad" : EVENT_GOOD.has(e.kind) ? "ok" : "dash", children: e.kind.replaceAll("_", " ") }),
+          /* @__PURE__ */ jsx(Tag, { tone: EVENT_BAD.has(e.kind) ? "bad" : EVENT_GOOD.has(e.kind) ? "ok" : "dash", children: EVENT_LABEL[e.kind] ?? e.kind.replaceAll("_", " ") }),
           /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: e.email ?? "\u2014" }),
           /* @__PURE__ */ jsx("span", { className: "aw-muted", children: snippet(e.detail ?? "", 100) }),
           /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
@@ -3974,8 +4378,9 @@ var __awPlugin = (() => {
       ] })
     ] });
   }
-  var EVENT_BAD = /* @__PURE__ */ new Set(["failed", "bounce", "opt_out", "complaint", "cycle_failed", "auto_paused", "blocked"]);
-  var EVENT_GOOD = /* @__PURE__ */ new Set(["reply", "sent", "published", "cycle", "approved"]);
+  var EVENT_BAD = /* @__PURE__ */ new Set(["failed", "bounce", "opt_out", "complaint", "cycle_failed", "auto_paused", "blocked", "undeliverable"]);
+  var EVENT_GOOD = /* @__PURE__ */ new Set(["reply", "sent", "published", "cycle", "approved", "auto_resumed", "auto_approved"]);
+  var EVENT_LABEL = { dmarc_report: "DMARC report", auto_resumed: "auto-resumed", auto_approved: "auto-approved", auto_paused: "auto-paused" };
   function MessageModal({ id, api, onClose, onDone }) {
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
@@ -4080,7 +4485,7 @@ var __awPlugin = (() => {
     );
   }
   var POST_MAX = { x: 280, linkedin: 3e3 };
-  function PostsTab({ api, run, tick, onEdit }) {
+  function PostsTab({ api, run, tick, holdHours = 0, onEdit }) {
     const [posts, setPosts] = useState(null);
     useEffect(() => {
       let live = true;
@@ -4107,15 +4512,16 @@ var __awPlugin = (() => {
             ")"
           ] }),
           group.hint ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: group.hint }) : null,
-          group.list.map((m) => /* @__PURE__ */ jsx(PostCard, { post: m, api, run, onEdit }, m.id))
+          group.list.map((m) => /* @__PURE__ */ jsx(PostCard, { post: m, api, run, holdHours, onEdit }, m.id))
         ] }, group.title) : null
       ),
       !posts.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No posts yet. Draft posts files a content cycle; Compose writes one by hand." }) : null
     ] });
   }
-  function PostCard({ post: m, api, run, onEdit }) {
+  function PostCard({ post: m, api, run, holdHours = 0, onEdit }) {
     const open = ["draft", "scheduled", "failed"].includes(m.status);
     const max = POST_MAX[m.channel] ?? 3e3;
+    const releaseAt = m.status === "draft" && holdHours > 0 ? Math.max((m.createdAt ?? 0) + holdHours * 3600, m.scheduledAt ?? 0) : null;
     return /* @__PURE__ */ jsxs("article", { style: { borderTop: "1px solid var(--aw-line, #e5e5e5)", padding: "10px 0" }, children: [
       /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
         /* @__PURE__ */ jsx(Tag, { children: m.channel === "x" ? "X" : "LinkedIn" }),
@@ -4133,6 +4539,11 @@ var __awPlugin = (() => {
         m.url ? /* @__PURE__ */ jsx("a", { href: m.url, target: "_blank", rel: "noreferrer", children: "Open post" }) : null
       ] }),
       /* @__PURE__ */ jsx("p", { style: { whiteSpace: "pre-wrap", margin: "8px 0" }, children: m.body }),
+      releaseAt ? /* @__PURE__ */ jsxs("div", { className: "aw-muted", children: [
+        "Goes out automatically ",
+        when(releaseAt),
+        " unless you cancel it first."
+      ] }) : null,
       m.error ? /* @__PURE__ */ jsx("div", { className: "aw-warn", children: m.error }) : null,
       open ? /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
         m.status === "draft" ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => run(() => api("POST", `/admin/marketing/messages/${m.id}/approve`), "Approved: it goes out in its slot."), children: "Approve" }) : null,
@@ -4162,8 +4573,32 @@ var __awPlugin = (() => {
         live = false;
       };
     }, [api, sequence, nonce]);
+    const replyRate = (s) => s.sent ? pct2(s.replies / s.sent) : "\u2014";
     return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-      /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+      /* @__PURE__ */ jsx("h3", { children: "How each sequence is doing" }),
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Sent, replies and outcomes per sequence, counted on the contact's latest send." }),
+      /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("th", { children: "Sequence" }),
+          /* @__PURE__ */ jsx("th", { children: "Sent" }),
+          /* @__PURE__ */ jsx("th", { children: "Replies" }),
+          /* @__PURE__ */ jsx("th", { children: "Reply rate" }),
+          /* @__PURE__ */ jsx("th", { children: "Opt-outs" }),
+          /* @__PURE__ */ jsx("th", { children: "Bounces" })
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { children: sequences.map((s) => /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
+            s.label,
+            s.needsGap ? /* @__PURE__ */ jsx("div", { className: "aw-muted", children: "needs a site observation" }) : null
+          ] }),
+          /* @__PURE__ */ jsx("td", { children: s.stats.sent || "\xB7" }),
+          /* @__PURE__ */ jsx("td", { children: s.stats.replies || "\xB7" }),
+          /* @__PURE__ */ jsx("td", { children: replyRate(s.stats) }),
+          /* @__PURE__ */ jsx("td", { className: s.stats.optedOut ? "aw-warn" : void 0, children: s.stats.optedOut || "\xB7" }),
+          /* @__PURE__ */ jsx("td", { className: s.stats.bounced ? "aw-warn" : void 0, children: s.stats.bounced || "\xB7" })
+        ] }, s.key)) })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-inline", style: { marginTop: 14 }, children: [
         /* @__PURE__ */ jsx("select", { value: sequence, onChange: (e) => setSequence(e.target.value), children: sequences.map((s) => /* @__PURE__ */ jsx("option", { value: s.key, children: s.label }, s.key)) }),
         /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setNonce((n) => n + 1), children: "Another contact" }),
         /* @__PURE__ */ jsx("span", { className: "aw-muted", children: data?.contact ? `Filled in for ${data.contact.email}${data.contact.business ? ` (${data.contact.business})` : ""}.` : data ? "Filled in for a sample contact." : "" })
@@ -4326,6 +4761,32 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx(
             Field,
             {
+              label: "Auto-resume",
+              hint: "On: a pause the desk caused itself (bounces or complaints) switches back on after 7 quiet days, starting at 20 a day and ramping up. A pause you set by hand is never undone.",
+              children: /* @__PURE__ */ jsx(
+                Segmented,
+                {
+                  value: Boolean(draft.autoResume),
+                  options: [
+                    { value: true, label: "On" },
+                    { value: false, label: "Off" }
+                  ],
+                  onChange: (v) => set("autoResume", v)
+                }
+              )
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            Field,
+            {
+              label: "Observation sequence share (%)",
+              hint: "Of the contacts the desk reads a site observation for, this percent get the observation opener instead of the plain one. 0 keeps the experiment off, 100 makes it the only cold opener.",
+              children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "100", value: draft.obsShare ?? 50, onChange: (e) => set("obsShare", Number(e.target.value)) })
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            Field,
+            {
               label: "Review first emails",
               hint: "On: a first email goes out only after you read it in Review next (or rewrote it). Follow-ups ride on the first. Off: everything queued goes at its time.",
               children: /* @__PURE__ */ jsx(
@@ -4421,6 +4882,14 @@ var __awPlugin = (() => {
             onChange: (v) => set("postApproval", v)
           }
         ) }),
+        /* @__PURE__ */ jsx(
+          Field,
+          {
+            label: "Post hold (hours, 0 = approve by hand)",
+            hint: "How long a drafted post waits before it goes out on its own. 0 keeps every post waiting for your approval in Posts. Up to 168.",
+            children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "168", value: draft.postHoldHours ?? 24, onChange: (e) => set("postHoldHours", Number(e.target.value)) })
+          }
+        ),
         /* @__PURE__ */ jsx(
           Field,
           {
@@ -4780,13 +5249,30 @@ var __awPlugin = (() => {
     { value: "fix", label: "Fix" },
     { value: "note", label: "Note" }
   ];
-  var EVENT_TONE = { core_update: "warn", algorithm_update: "warn", fix: "ok", note: "dash" };
-  var EVENT_LABEL = { core_update: "core update", algorithm_update: "algorithm update", fix: "fix", note: "note" };
+  var EVENT_TONE = { core_update: "warn", algorithm_update: "warn", fix: "ok", note: "dash", guide: "ok", indexnow: "dash" };
+  var EVENT_LABEL2 = {
+    core_update: "core update",
+    algorithm_update: "algorithm update",
+    fix: "fix",
+    note: "note",
+    guide: "guide",
+    indexnow: "IndexNow"
+  };
   var CYCLE_REASON = {
     auto_off: "automatic cycles are off",
     open_cycle: "a cycle ticket is already open",
     no_findings: "there are no open findings at medium or above",
     recent_cycle: "a cycle was filed in the last day",
+    no_project: "the ptechsolutions project is missing",
+    no_admin: "there is no admin account to file it for",
+    insert_failed: "the ticket could not be written"
+  };
+  var GUIDE_REASON = {
+    auto_off: "automatic guide cycles are off; force still files one",
+    open_cycle: "a guide ticket is already open",
+    weekly_cap: "this week\u2019s guide cycles are used up",
+    recent_cycle: "a guide cycle was filed in the last two days",
+    all_covered: "every target already has a guide or a fresh attempt",
     no_project: "the ptechsolutions project is missing",
     no_admin: "there is no admin account to file it for",
     insert_failed: "the ticket could not be written"
@@ -4939,9 +5425,16 @@ var __awPlugin = (() => {
     }
     return "Done.";
   }
+  function guideCycleText(result) {
+    if (!result || typeof result !== "object") return "Done.";
+    if (result.filed) return `Filed #${result.id}: an agent writes the guide and the desk merges it.`;
+    const reason = GUIDE_REASON[result.reason] ?? result.reason ?? "unknown reason";
+    return `Nothing filed: ${reason}${result.id ? ` (#${result.id})` : ""}.`;
+  }
   function OverviewTab2({ overview, api, refresh, openTicket }) {
     const [busy, setBusy] = useState(null);
     const [result, setResult] = useState(null);
+    const [guideBusy, setGuideBusy] = useState(false);
     const held = overview.cycle?.held;
     const run = async (what) => {
       setBusy(what);
@@ -4956,6 +5449,21 @@ var __awPlugin = (() => {
         setBusy(null);
       }
     };
+    const writeGuide = async () => {
+      setGuideBusy(true);
+      setResult(null);
+      try {
+        const out = await api("POST", "/admin/seo/guide-cycle?force=1");
+        setResult({ ok: true, text: guideCycleText(out) });
+        await refresh();
+      } catch (error) {
+        setResult({ ok: false, text: errorText2(error) });
+      } finally {
+        setGuideBusy(false);
+      }
+    };
+    const coverage = overview.coverage ?? [];
+    const covered = coverage.filter((entry) => entry.guide).length;
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       held?.held ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
         "Google core update in progress: content rewrites paused until ",
@@ -5100,6 +5608,36 @@ var __awPlugin = (() => {
             longDay(held.until)
           ] }) : null
         ] })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsxs("header", { children: [
+          /* @__PURE__ */ jsx("h3", { style: { margin: 0 }, children: "Guide coverage" }),
+          /* @__PURE__ */ jsxs(Tag, { tone: coverage.length && covered === coverage.length ? "ok" : "warn", children: [
+            covered,
+            " of ",
+            coverage.length,
+            " targets have a page"
+          ] }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: guideBusy, onClick: writeGuide, children: guideBusy ? "Filing\u2026" : "Write a guide now" })
+        ] }),
+        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+          "Every rank keyword and buyer question gets a guide on ptechsolutions.net.",
+          " ",
+          overview.guidesAt ? `guides.json was read ${ago(overview.guidesAt)} ago.` : "The site has not been read for guides yet."
+        ] }),
+        coverage.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: coverage.map((entry) => /* @__PURE__ */ jsxs("li", { className: "aw-row", style: { cursor: "default" }, children: [
+          /* @__PURE__ */ jsx(Tag, { tone: entry.kind === "keyword" ? "dash" : "warn", children: entry.kind }),
+          /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: entry.target }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          entry.guide ? /* @__PURE__ */ jsx("a", { href: entry.guide.url, target: "_blank", rel: "noreferrer", children: entry.guide.title }) : entry.inProgress ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            "writing ",
+            /* @__PURE__ */ jsx(TicketLink, { id: entry.inProgress, openTicket })
+          ] }) : entry.lastAttemptAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            "attempted ",
+            instantDay(entry.lastAttemptAt)
+          ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "No page yet" })
+        ] }, `${entry.kind}:${entry.target}`)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No targets yet: add rank keywords or buyer questions in Settings." })
       ] })
     ] });
   }
@@ -5121,7 +5659,7 @@ var __awPlugin = (() => {
     const points = series.map((point) => ({ ...point, n: dayNumber(point.day) })).filter((point) => Number.isFinite(point.n) && point.n >= start && point.n <= endNumber).sort((a, b) => a.n - b.n);
     const path = points.map((point, index) => `${index ? "L" : "M"}${xOf(point.n).toFixed(1)},${yOf(point.averageScore).toFixed(1)}`).join(" ");
     const marks = (events ?? []).map((event) => ({ ...event, n: dayNumber(event.day) })).filter((event) => Number.isFinite(event.n) && event.n >= start && event.n <= endNumber);
-    const markColour = (kind) => kind === "fix" ? "var(--aw-ok)" : kind === "note" ? "var(--aw-text2)" : "var(--aw-warn)";
+    const markColour = (kind) => kind === "fix" || kind === "guide" ? "var(--aw-ok)" : kind === "note" || kind === "indexnow" ? "var(--aw-text2)" : "var(--aw-warn)";
     return /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart", children: [
       /* @__PURE__ */ jsxs("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Average score, last 30 days", children: [
         [0, 50, 100].map((value) => /* @__PURE__ */ jsxs("g", { children: [
@@ -5133,7 +5671,7 @@ var __awPlugin = (() => {
           return /* @__PURE__ */ jsx("text", { x: xOf(n), y: height - 6, textAnchor: offset === 0 ? "start" : offset === 29 ? "end" : "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay(dayOfNumber(n)) }, offset);
         }),
         marks.map((event) => /* @__PURE__ */ jsxs("g", { children: [
-          /* @__PURE__ */ jsx("title", { children: `${event.label} (${EVENT_LABEL[event.kind] ?? event.kind}) on ${longDay(event.day)}` }),
+          /* @__PURE__ */ jsx("title", { children: `${event.label} (${EVENT_LABEL2[event.kind] ?? event.kind}) on ${longDay(event.day)}` }),
           /* @__PURE__ */ jsx("line", { x1: xOf(event.n), x2: xOf(event.n), y1: top, y2: height - bottom, stroke: markColour(event.kind), strokeWidth: "1", strokeDasharray: "3 3", opacity: "0.65" }),
           /* @__PURE__ */ jsx("circle", { cx: xOf(event.n), cy: height - bottom - 4, r: "3", fill: markColour(event.kind) })
         ] }, event.id)),
@@ -5329,7 +5867,7 @@ var __awPlugin = (() => {
     const points = series.map((point) => ({ ...point, n: dayNumber(point.day) })).filter((point) => Number.isFinite(point.n) && point.n >= start && point.n <= endNumber).sort((a, b) => a.n - b.n);
     const path = points.map((point, index) => `${index ? "L" : "M"}${xOf(point.n).toFixed(1)},${yOf(point.avgPosition).toFixed(1)}`).join(" ");
     const marks = (events ?? []).map((event) => ({ ...event, n: dayNumber(event.day) })).filter((event) => Number.isFinite(event.n) && event.n >= start && event.n <= endNumber);
-    const markColour = (kind) => kind === "fix" ? "var(--aw-ok)" : kind === "note" ? "var(--aw-text2)" : "var(--aw-warn)";
+    const markColour = (kind) => kind === "fix" || kind === "guide" ? "var(--aw-ok)" : kind === "note" || kind === "indexnow" ? "var(--aw-text2)" : "var(--aw-warn)";
     return /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart", children: [
       /* @__PURE__ */ jsxs("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Average Google position, last 90 days", children: [
         [1, 50, 100].map((value) => /* @__PURE__ */ jsxs("g", { children: [
@@ -5341,7 +5879,7 @@ var __awPlugin = (() => {
           return /* @__PURE__ */ jsx("text", { x: xOf(n), y: height - 6, textAnchor: offset === 0 ? "start" : offset === 89 ? "end" : "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay(dayOfNumber(n)) }, offset);
         }),
         marks.map((event) => /* @__PURE__ */ jsxs("g", { children: [
-          /* @__PURE__ */ jsx("title", { children: `${event.label} (${EVENT_LABEL[event.kind] ?? event.kind}) on ${longDay(event.day)}` }),
+          /* @__PURE__ */ jsx("title", { children: `${event.label} (${EVENT_LABEL2[event.kind] ?? event.kind}) on ${longDay(event.day)}` }),
           /* @__PURE__ */ jsx("line", { x1: xOf(event.n), x2: xOf(event.n), y1: top, y2: height - bottom, stroke: markColour(event.kind), strokeWidth: "1", strokeDasharray: "3 3", opacity: "0.65" }),
           /* @__PURE__ */ jsx("circle", { cx: xOf(event.n), cy: height - bottom - 4, r: "3", fill: markColour(event.kind) })
         ] }, event.id)),
@@ -5826,7 +6364,7 @@ var __awPlugin = (() => {
     const usedQuestions = questions.filter((question) => question.trim()).length;
     const keywords = draft.rankKeywords ?? [];
     const location = draft.rankLocation ?? { locationCode: 2840, languageCode: "en" };
-    const changed = draft.autoCycle !== overview.settings.autoCycle || draft.volatilityHold !== overview.settings.volatilityHold || (draft.geoQuestions ?? []).join("\n") !== (overview.settings.geoQuestions ?? []).join("\n") || keywords.join("\n") !== (overview.settings.rankKeywords ?? []).join("\n") || location.locationCode !== overview.settings.rankLocation?.locationCode || location.languageCode !== overview.settings.rankLocation?.languageCode;
+    const changed = draft.autoCycle !== overview.settings.autoCycle || draft.volatilityHold !== overview.settings.volatilityHold || Boolean(draft.guidesAuto) !== Boolean(overview.settings.guidesAuto) || Number(draft.guidesPerWeek) !== Number(overview.settings.guidesPerWeek) || Boolean(draft.guidesAutoMerge) !== Boolean(overview.settings.guidesAutoMerge) || (draft.geoQuestions ?? []).join("\n") !== (overview.settings.geoQuestions ?? []).join("\n") || keywords.join("\n") !== (overview.settings.rankKeywords ?? []).join("\n") || location.locationCode !== overview.settings.rankLocation?.locationCode || location.languageCode !== overview.settings.rankLocation?.languageCode;
     const save = async () => {
       setSaving(true);
       setMessage(null);
@@ -5834,6 +6372,9 @@ var __awPlugin = (() => {
         const out = await api("POST", "/admin/seo/settings", {
           autoCycle: draft.autoCycle,
           volatilityHold: draft.volatilityHold,
+          guidesAuto: draft.guidesAuto,
+          guidesPerWeek: draft.guidesPerWeek,
+          guidesAutoMerge: draft.guidesAutoMerge,
           geoQuestions: draft.geoQuestions,
           rankKeywords: draft.rankKeywords,
           rankLocation: draft.rankLocation
@@ -5911,6 +6452,34 @@ var __awPlugin = (() => {
               )
             }
           )
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Guides" }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Automatic guide cycles", hint: "On: the desk files a ticket for the first target no guide answers, within the weekly limit below.", children: /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              value: Boolean(draft.guidesAuto),
+              options: [
+                { value: true, label: "On" },
+                { value: false, label: "Off" }
+              ],
+              onChange: (value) => set("guidesAuto", value)
+            }
+          ) }),
+          /* @__PURE__ */ jsx(Field, { label: "Guides per week", hint: "How many guide cycles a week at most, 0 to 7. A target waits three weeks between attempts.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "7", value: draft.guidesPerWeek ?? 2, onChange: (event) => set("guidesPerWeek", Number(event.target.value)) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Auto-merge guide PRs", hint: "On: a guide PR that passes the checks and the content gate merges itself and pings IndexNow. Off: it waits for you on GitHub.", children: /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              value: Boolean(draft.guidesAutoMerge),
+              options: [
+                { value: true, label: "On" },
+                { value: false, label: "Off" }
+              ],
+              onChange: (value) => set("guidesAutoMerge", value)
+            }
+          ) })
         ] })
       ] }),
       /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
@@ -6021,7 +6590,7 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx(Button, { disabled: eventBusy, onClick: addEvent, children: eventBusy ? "Adding\u2026" : "Add event" })
         ] }),
         (overview.events ?? []).length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: overview.events.map((event) => /* @__PURE__ */ jsxs("li", { className: "aw-row", style: { cursor: "default" }, children: [
-          /* @__PURE__ */ jsx(Tag, { tone: EVENT_TONE[event.kind] ?? "dash", children: EVENT_LABEL[event.kind] ?? event.kind }),
+          /* @__PURE__ */ jsx(Tag, { tone: EVENT_TONE[event.kind] ?? "dash", children: EVENT_LABEL2[event.kind] ?? event.kind }),
           /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: event.label }),
           /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
             longDay(event.day),
@@ -6398,6 +6967,21 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-panel > h3 { font-size: 14px; margin-bottom: 12px; }
 .aw-panel p { margin: 6px 0; }
 .aw-settings { max-width: 900px; }
+
+/* this machine as a worker: the header pill, then the panel's own bits */
+.aw-mpillbar { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; }
+.aw-mpill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 1px solid var(--aw-border2); border-radius: 12px; background: var(--aw-bg); color: var(--aw-text2); font-size: 12px; white-space: nowrap; cursor: pointer; }
+.aw-mpill:hover { background: var(--aw-hover); color: var(--aw-text); }
+.aw-mpillbar .aw-btn--ghost { height: 24px; width: 26px; padding: 0; justify-content: center; }
+.aw-mstate { margin: 0 0 8px; font-size: 12.5px; }
+.aw-mexes { display: flex; flex-direction: column; gap: 2px; }
+.aw-mexe { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; cursor: pointer; }
+.aw-mexe .aw-tag { font-size: 11px; }
+.aw-mexe__name { font-weight: 600; }
+.aw-mlog { margin-top: 8px; }
+.aw-mlog summary { cursor: pointer; color: var(--aw-text2); font-size: 12px; }
+.aw-mlog[open] summary { margin-bottom: 4px; }
+.aw-machine p > .aw-btn { margin-left: 8px; }
 
 /* overlays */
 .aw-scrim { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.35); display: grid; place-items: center; padding: 20px; }
@@ -9712,6 +10296,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
               key
             )),
             /* @__PURE__ */ jsx("span", { className: "aw-tabs__fill" }),
+            /* @__PURE__ */ jsx(MachineStatusPill, {}),
             /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "Refresh", onClick: () => void reload(), children: /* @__PURE__ */ jsx(Icon, { name: "refresh", size: 14 }) })
           ] }),
           /* @__PURE__ */ jsx("div", { className: "aw-content", children: signedOut ? /* @__PURE__ */ jsx(SignedOut, {}) : !data.loaded ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Loading\u2026" }) : tabs.filter((key) => workbenchAllowed(key, data.access)).map((key) => /* @__PURE__ */ jsx("section", { className: "aw-pane", hidden: key !== active, children: key.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(key.slice(2)), active: key === active }) : key.startsWith("p:") ? /* @__PURE__ */ jsx(ProjectView, { id: key.slice(2) }) : key.startsWith("c:") ? /* @__PURE__ */ jsx(ClientView, { id: key.slice(2) }) : /* @__PURE__ */ jsx(View, { name: key }) }, key)) })
@@ -9719,6 +10304,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         /* @__PURE__ */ jsx(StatusBar, {}),
         toast ? /* @__PURE__ */ jsx("div", { className: cx("aw-toast", toast.kind === "error" && "is-error"), role: "status", children: toast.text }) : null,
         palette ? /* @__PURE__ */ jsx(Palette, { onClose: () => setPalette(false) }) : null,
+        /* @__PURE__ */ jsx(MachineOnboarding, {}),
         modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal(null) }) : null,
         modal?.kind === "project" ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal(null) }) : null,
         modal?.kind === "custom" ? modal.render(() => setModal(null)) : null,
@@ -11761,7 +12347,7 @@ ${question.text ?? ""}`)) {
   }
   var FALLBACK_READ_MS = 5 * 6e4;
   var BRIDGE_RETRY_MS = 15e3;
-  var isRead = (line) => line.startsWith("api GET ") || line === "localinfo";
+  var isRead = (line) => line.startsWith("api GET ") || line === "localinfo" || line === "machine-consent get";
   var BUSY_TEXT = "Every open session is busy (an agent is working in it), so the panel could not reach the Admin Host. It will reconnect on its own in a few seconds; or open a new session.";
   function makeTransport(command) {
     let bridge = null;
