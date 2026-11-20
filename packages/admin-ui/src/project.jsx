@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin } from './store.js';
 import { Button, Field, Icon, Modal, StatusPill, Tag } from './ui.jsx';
 import { RepoModal, ProjectEditModal, ProjectPeople } from './fleet.jsx';
+import { ProjectSolutions, SolutionTags } from './project-solutions.jsx';
 import { SitePanel } from './ticket.jsx';
 import { ago } from './format.js';
 import { briefPayload, createProjectResource, projectTopology, projectWork, resourceUrl, singleFlight } from './project-model.js';
@@ -54,9 +55,9 @@ function ResourceState({state, refresh, children}) {
   return <>{state.error ? <div className="aw-project__error" role="alert">{state.value ? 'Showing the last successful response. ' : ''}{errorText(state.error)} <Button size="sm" disabled={state.refreshing} onClick={refresh}>Retry</Button></div> : null}{children}</>;
 }
 
-export function ProjectView({id}) {
+export function ProjectView({id, initialTab = 'Overview'}) {
   const {api, data, host, setModal, reload} = useAdmin();
-  const [tab, setTab] = useState('Overview');
+  const [tab, setTab] = useState(initialTab);
   const load = useCallback(async () => {
     const result = await api('GET', '/admin/projects');
     return {project:(result.projects ?? []).find(project => project.id === id) ?? null};
@@ -66,7 +67,7 @@ export function ProjectView({id}) {
   useEffect(() => {
     if (lastInventory.current !== data.projects) {lastInventory.current = data.projects; void refresh();}
   }, [data.projects, refresh]);
-  useEffect(() => setTab('Overview'), [id]);
+  useEffect(() => setTab(initialTab), [id]);
   // Inventory supplies immediate context; an authoritative missing result never falls back.
   const project = remote.value ? remote.value.project : (data.projects ?? []).find(project => project.id === id);
   const refreshAll = useCallback(async () => { await refresh(); await reload?.(); }, [refresh, reload]);
@@ -74,7 +75,7 @@ export function ProjectView({id}) {
   return <div className="aw-view aw-project" key={id}>
     <style>{projectStyles}</style>
     <header className="aw-project__header">
-      <div><h2>{project.name}</h2><p className="aw-muted">{project.slug} · {project.kind === 'new' ? 'New project' : 'Existing project'}{project.githubAccount ? ` · GitHub @${project.githubAccount}` : ''}</p></div>
+      <div><h2>{project.name}</h2><p className="aw-muted">{project.slug} · {project.kind === 'new' ? 'New project' : 'Existing project'}{project.githubAccount ? ` · GitHub @${project.githubAccount}` : ''}{project.solutions?.length ? <> · <SolutionTags solutions={project.solutions} /></> : null}</p></div>
       <div className="aw-project__actions">
         <Button onClick={() => setModal({kind:'custom', render:close => <ProjectEditModal project={project} onClose={() => {close(); void refreshAll();}} />})}>Edit project</Button>
         <Button kind="primary" onClick={() => setModal({kind:'task',projectId:id})}><Icon name="plus" /> Add work</Button>
@@ -339,6 +340,7 @@ function People({project, refresh}) {
   const ownerPerson = (state.value?.clients ?? project.clients ?? []).find(person => person.id === state.value?.ownerUserId);
   const grant = event => {event.preventDefault();if (!email.trim() || !admin) return;void write(async () => {await api('POST', `${pathFor(project)}/memberships`, {email:email.trim()});setEmail('');void refreshPeople();void refreshRecipients();void refresh();}, 'Trusted project access granted.');};
   return <>
+    <section className="aw-project__section"><h3>Solutions</h3><ProjectSolutions project={project} /></section>
     <section className="aw-project__section"><h3>Project ownership</h3><p>{state.value?.ownerUserId ? `Owned by ${ownerPerson?.name || ownerPerson?.email || state.value.ownerUserId}.` : 'An owner has not been verified for this project.'}</p><p className="aw-muted">The client owns the project and can act independently. Agent help and agency support are optional.</p></section>
     <section className="aw-project__section"><h3>Trusted developers</h3><p className="aw-muted">Trusted developers can work across the project: context, integrations, configuration, code and deployments. Access does not extend to other projects or global administration.</p><ResourceState state={state} refresh={refreshPeople}><ul className="aw-project__work">{(state.value?.memberships ?? []).map(person => <li key={person.userId}><div><strong>{person.name || person.email}</strong>{person.name ? <span className="aw-muted">{person.email}</span> : null}<Tag>Trusted developer</Tag></div>{admin || owner ? <Button size="sm" disabled={writeState.busy} onClick={() => ask({title:`Remove ${person.email} from this project?`,text:'Their trusted access ends immediately. Their account and access to other projects stay unchanged.',confirm:'Remove access',danger:true,run:() => write(async () => {await api('DELETE', `${pathFor(project)}/memberships/${encodeURIComponent(person.userId)}`);void refreshPeople();void refreshRecipients();}, 'Trusted access removed.')})}>Remove access</Button> : null}</li>)}</ul>{!state.value?.memberships?.length ? <p className="aw-muted">No trusted developers assigned.</p> : null}</ResourceState>
       {admin ? <form onSubmit={grant} className="aw-project__invite"><Field label="Existing account email"><input type="email" required maxLength={254} value={email} onChange={event => setEmail(event.target.value)} /></Field><Button type="submit" disabled={writeState.busy || !email.trim()}>{writeState.busy ? 'Granting…' : 'Grant project access'}</Button></form> : <p className="aw-muted">A workspace administrator can grant trusted developer access.{owner ? ' As project owner, you can remove it.' : ''}</p>}<Feedback state={writeState} />

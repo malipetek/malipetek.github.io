@@ -862,4 +862,27 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-mk-window input { flex: none; width: 58px; min-width: 0; }
 .aw-mk-window input[aria-label="Window offset minutes"] { width: 72px; }
 .aw-divider { border: 0; border-top: 1px solid var(--aw-border); margin: 18px 0 4px; }
+
+/* Project solutions: kinds of work, the fleet note, and the client's connections. */
+.aw-dot--muted { background: var(--aw-border2); }
+.aw-psol { margin: 2px 0; }
+.aw-psol__h { margin: 12px 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); }
+.aw-psol__h:first-child { margin-top: 0; }
+.aw-psol__fleet { margin: 6px 0 0; font-size: 12px; color: var(--aw-text2); }
+.aw-psol__fleet--warn { color: color-mix(in srgb, var(--aw-warn) 80%, var(--aw-text)); font-weight: 600; }
+.aw-psol__rows { list-style: none; margin: 0; padding: 0; }
+.aw-psol__row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--aw-border); }
+.aw-psol__row:first-child { border-top: 0; }
+.aw-psol__rowmain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aw-psol__miss { font-family: var(--aw-mono); font-size: 11px; color: var(--aw-text2); }
+.aw-psol__err { font-size: 12px; color: var(--aw-bad); }
+.aw-psol__rowact { flex: none; display: flex; align-items: center; gap: 6px; }
+.aw-psol__brief { margin-top: 12px; }
+.aw-psol__brief > summary { cursor: pointer; color: var(--aw-text2); font-size: 12px; }
+.aw-psol__brief[open] > summary { margin-bottom: 4px; }
+.aw-psol__briefitem { padding: 6px 0; border-top: 1px solid var(--aw-border); font-size: 12px; }
+.aw-psol__briefitem ul { margin: 2px 0 8px; padding-left: 18px; color: var(--aw-text2); }
+.aw-psol__tags { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.aw-psol__steps { margin: 0 0 10px; padding-left: 20px; }
+.aw-psol__steps li { margin: 3px 0; font-size: 12px; color: var(--aw-text2); }
 `;

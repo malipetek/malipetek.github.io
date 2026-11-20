@@ -1818,9 +1818,9 @@ var __awPlugin = (() => {
       m.files?.length ? /* @__PURE__ */ jsx(FileChips, { ticketId: ticket.id, files: m.files }) : null
     ] });
   }
-  function FileChips({ ticketId, files: list }) {
+  function FileChips({ ticketId, files: list2 }) {
     const { files, notify } = useAdmin();
-    return /* @__PURE__ */ jsx("ul", { className: "aw-files", children: list.map((f) => /* @__PURE__ */ jsx("li", { children: files ? /* @__PURE__ */ jsxs(
+    return /* @__PURE__ */ jsx("ul", { className: "aw-files", children: list2.map((f) => /* @__PURE__ */ jsx("li", { children: files ? /* @__PURE__ */ jsxs(
       "button",
       {
         type: "button",
@@ -2128,14 +2128,14 @@ var __awPlugin = (() => {
               accept: ACCEPT,
               hidden: true,
               onChange: (e) => {
-                const list = [...e.target.files ?? []];
-                const problem = checkPicked(list);
+                const list2 = [...e.target.files ?? []];
+                const problem = checkPicked(list2);
                 if (problem) {
                   notify(problem, "error");
                   e.target.value = "";
                   return;
                 }
-                setPicked(list);
+                setPicked(list2);
               }
             }
           ),
@@ -2383,7 +2383,7 @@ var __awPlugin = (() => {
     unset: "This Mac can run approved client tickets. Say yes or no once."
   };
   var nowSec = () => Math.floor(Date.now() / 1e3);
-  var notEmpty = (list) => Array.isArray(list) && list.length ? list : null;
+  var notEmpty = (list2) => Array.isArray(list2) && list2.length ? list2 : null;
   var IDLE = { loaded: false, info: null, consent: null, consentError: null, error: null };
   var machineStore = {
     snapshot: IDLE,
@@ -2931,6 +2931,463 @@ var __awPlugin = (() => {
         }
       ) : null
     ] });
+  }
+
+  // packages/admin-ui/src/solutions.js
+  var SOLUTION_CATALOG = [
+    {
+      id: "web",
+      label: "Website",
+      summary: "Design, build, or improve a website that works on phones and desktops.",
+      requires: [],
+      integrations: [{ id: "github", optional: true }, { id: "cloudflare", optional: true }],
+      deliverables: ["Responsive website", "Review link", "Launch and editing notes"],
+      questions: ["Who will visit the site?", "What should visitors do before they leave?", "What pages or information must be ready at launch?", "Who should be able to change the content?"]
+    },
+    {
+      id: "shopify",
+      label: "Shopify store, theme, or app",
+      summary: "Build or improve a Shopify store, its look, or the tools you use to run it.",
+      requires: [],
+      integrations: [{ id: "shopify", optional: false }],
+      deliverables: ["Store or app changes", "Test store preview", "Launch and handover notes"],
+      questions: ["What do you sell, and where do you ship?", "Where do shoppers get stuck today?", "What should be easier for the people running the store?", "What must stay unchanged when we launch?"]
+    },
+    {
+      id: "mobile-ios",
+      label: "iOS app",
+      summary: "Build or improve an app for iPhone and iPad.",
+      requires: ["os:macos", "xcode"],
+      integrations: [{ id: "app-store-connect", optional: false }, { id: "github", optional: true }],
+      deliverables: ["iOS app", "TestFlight build", "Handover notes"],
+      questions: ["What should people be able to do the first time they open the app?", "Should it work on iPhone, iPad, or both?", "What should still work without internet?", "Who should try it before launch?"]
+    },
+    {
+      id: "mobile-android",
+      label: "Android app",
+      summary: "Build or improve an app for Android phones and tablets.",
+      requires: ["android"],
+      integrations: [{ id: "google-play", optional: false }, { id: "github", optional: true }],
+      deliverables: ["Android app", "Internal testing build", "Handover notes"],
+      questions: ["What should people be able to do in the app?", "Are there specific phones or tablets it must work on?", "Should users get reminders or updates?", "Who should get early access?"]
+    },
+    {
+      id: "mobile-cross",
+      label: "Cross-platform app",
+      summary: "Build an app for iOS and Android with Expo, React Native, or Flutter.",
+      requires: [],
+      integrations: [{ id: "expo", optional: true }, { id: "app-store-connect", optional: true }, { id: "google-play", optional: true }],
+      deliverables: ["Shared app source", "Test builds for both stores", "Handover notes"],
+      questions: ["What should people be able to do on both phones?", "Is there anything that should work differently on iPhone and Android?", "Does the app need to work away from an internet connection?", "Do you want to launch on both stores at the same time?"]
+    },
+    {
+      id: "app-release",
+      label: "App Store and Play submissions",
+      summary: "Prepare an existing app for store review, testing, and release.",
+      requires: ["os:macos"],
+      integrations: [{ id: "app-store-connect", optional: false }, { id: "google-play", optional: false }],
+      deliverables: ["Store listing and submission checklist", "Test releases", "Review and rollout notes"],
+      questions: ["Is this the first release or an update?", "What countries and languages should the release cover?", "Do you already have screenshots and store descriptions?", "Who should approve the final release?"]
+    },
+    {
+      id: "server",
+      label: "Server or container",
+      summary: "Set up or improve the hosting that keeps your service running.",
+      requires: ["docker"],
+      integrations: [{ id: "hetzner", optional: true }, { id: "digitalocean", optional: true }, { id: "fly", optional: true }],
+      deliverables: ["Repeatable service setup", "Monitoring and recovery notes", "Operating and cost notes"],
+      questions: ["What service needs to stay online, and who uses it?", "When would a short interruption be acceptable?", "What information would be hardest to lose?", "What monthly budget should we stay within?"]
+    },
+    {
+      id: "aws",
+      label: "AWS",
+      summary: "Set up, improve, or maintain services in your AWS account.",
+      requires: [],
+      integrations: [{ id: "aws", optional: false }],
+      deliverables: ["Agreed AWS changes", "Access and cost notes", "Operating and recovery notes"],
+      questions: ["What would you like to change in your AWS account?", "Which live services must keep working during the change?", "Who should be alerted if something stops working?", "What budget limits should we respect?"]
+    },
+    {
+      id: "gcp",
+      label: "Google Cloud",
+      summary: "Set up, improve, or maintain services in your Google Cloud project.",
+      requires: [],
+      integrations: [{ id: "gcp", optional: false }],
+      deliverables: ["Agreed Google Cloud changes", "Access and cost notes", "Operating and recovery notes"],
+      questions: ["What would you like to change in Google Cloud?", "Which people or teams use the services today?", "Where must your information be stored?", "What outages or costs are most important to avoid?"]
+    },
+    {
+      id: "ai-workspace",
+      label: "AI workspace",
+      summary: "Give your team reusable AI instructions and safe access to its everyday tools.",
+      requires: [],
+      integrations: [],
+      deliverables: ["Reusable skills and workflows", "Tool connections agreed with your team", "Examples and handover notes"],
+      questions: ["Which repeated tasks take your team the most time?", "What tools or information should the assistant use?", "What should the assistant never do without asking?", "How will your team tell whether the answers are good enough?"]
+    }
+  ];
+  var INTEGRATION_CATALOG = [
+    {
+      id: "github",
+      label: "GitHub",
+      vendor: "GitHub",
+      fields: [{ name: "GITHUB_REPO", label: "Repository", secret: false, placeholder: "owner/name" }],
+      steps: ["Install our GitHub App on your personal account or organization.", "Give the app access to just the repository for this project.", "Enter the repository owner and name as owner/name. Do not paste a personal access token."],
+      docs: "https://docs.github.com/en/apps/using-github-apps/installing-your-own-github-app",
+      scope: "GitHub App access to the selected repository only."
+    },
+    {
+      id: "cloudflare",
+      label: "Cloudflare",
+      vendor: "Cloudflare",
+      fields: [
+        { name: "CLOUDFLARE_ACCOUNT_ID", label: "Account ID", secret: false },
+        { name: "CLOUDFLARE_API_TOKEN", label: "API token", secret: true }
+      ],
+      steps: ["Copy the Account ID from the Cloudflare dashboard for the account that owns the site.", "Open My Profile \u2192 API Tokens and create a custom token.", "Select only the account and zones for this project. Add the permissions we agree on, such as Workers Scripts: Edit to deploy Workers or DNS: Edit to set up a domain."],
+      docs: "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/",
+      scope: "Limit the token to the relevant accounts, zones, and actions; do not share a Global API Key."
+    },
+    {
+      id: "shopify",
+      label: "Shopify",
+      vendor: "Shopify",
+      fields: [
+        { name: "SHOPIFY_STORE_DOMAIN", label: "Store domain", secret: false, placeholder: "your-store.myshopify.com" },
+        { name: "SHOPIFY_ADMIN_TOKEN", label: "Admin API access token", secret: true, placeholder: "shpat_\u2026" },
+        { name: "SHOPIFY_STOREFRONT_TOKEN", label: "Storefront access token", secret: true, optional: true },
+        { name: "SHOPIFY_COLLABORATOR_CODE", label: "Collaborator request code", secret: true, optional: true }
+      ],
+      steps: ["Use the store\u2019s permanent myshopify.com address, even if shoppers use another address.", "Create a custom app for this store. Use Settings \u2192 Apps and sales channels \u2192 Develop apps for an existing admin-created custom app, or the Shopify Dev Dashboard for a new app.", "Configure only the agreed Admin API scopes: read_themes/write_themes, read_products/write_products, and read_content/write_content as needed. Shopify may require approval for theme writes.", "Install the app and provide its Admin API access token (shpat_\u2026). If your app setup issues only short-lived tokens, ask us to arrange access before submitting it. Add a Storefront token only for Storefront API work, or a collaborator code if we need to request staff access."],
+      docs: "https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens",
+      scope: "Only the store and read/write scopes needed for the agreed theme, product, or content work."
+    },
+    {
+      id: "app-store-connect",
+      label: "App Store Connect",
+      vendor: "Apple",
+      fields: [
+        { name: "ASC_ISSUER_ID", label: "Issuer ID", secret: false },
+        { name: "ASC_KEY_ID", label: "Key ID", secret: false },
+        { name: "ASC_PRIVATE_KEY", label: "Private key (.p8)", secret: true, multiline: true, placeholder: "-----BEGIN PRIVATE KEY-----" },
+        { name: "APPLE_TEAM_ID", label: "Apple Developer Team ID", secret: false, optional: true }
+      ],
+      steps: ["In App Store Connect, open Users and Access \u2192 Integrations \u2192 App Store Connect API.", "Under Team Keys, create a key for this project with the App Manager role.", "Copy the Issuer ID and Key ID. Download the .p8 file (Apple only offers it once) and paste its full contents, including the first and last lines.", "If we ask for the Developer Team ID for signing, find it in Membership details in your Apple Developer account."],
+      docs: "https://developer.apple.com/documentation/appstoreconnectapi/creating-api-keys-for-app-store-connect-api",
+      scope: "App Manager can manage releases; an Apple team API key is not limited to one app."
+    },
+    {
+      id: "google-play",
+      label: "Google Play Console",
+      vendor: "Google",
+      fields: [
+        { name: "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON", label: "Service account key (JSON)", secret: true, multiline: true },
+        { name: "GOOGLE_PLAY_PACKAGE_NAME", label: "App package name", secret: false, optional: true, placeholder: "com.example.app" }
+      ],
+      steps: ["In Google Cloud, enable the Google Play Android Developer API and create a service account for this work.", "In Play Console, open Users and permissions and invite the service account email. Give it access to the target app and permission to release to the agreed testing or production tracks.", "Create and download a JSON key for that service account, if your organization allows it, and paste the whole file. Enter the app package name if you have it."],
+      docs: "https://developers.google.com/android-publisher/getting_started",
+      scope: "Grant only the target apps and tracks needed for the release."
+    },
+    {
+      id: "expo",
+      label: "Expo",
+      vendor: "Expo",
+      fields: [{ name: "EXPO_TOKEN", label: "Access token", secret: true }],
+      steps: ["In Expo, open Access tokens for the account that owns the project.", "Create a token for builds and updates. Prefer a robot user with access to the right organization and role if available.", "Copy the token into the form."],
+      docs: "https://docs.expo.dev/accounts/programmatic-access/",
+      scope: "A token inherits its user\u2019s permissions; choose an identity with only the access your project needs."
+    },
+    {
+      id: "hetzner",
+      label: "Hetzner Cloud",
+      vendor: "Hetzner",
+      fields: [{ name: "HETZNER_API_TOKEN", label: "Project API token", secret: true }],
+      steps: ["Open the project in Hetzner Cloud Console.", "Go to Security \u2192 API Tokens and generate a Read & Write token for this project.", "Copy the token and keep it separate from any other Hetzner projects."],
+      docs: "https://docs.hetzner.com/cloud/api/getting-started/generating-api-token/",
+      scope: "Read and write permission within one Hetzner Cloud project."
+    },
+    {
+      id: "digitalocean",
+      label: "DigitalOcean",
+      vendor: "DigitalOcean",
+      fields: [{ name: "DIGITALOCEAN_TOKEN", label: "API access token", secret: true }],
+      steps: ["Open API \u2192 Tokens in your DigitalOcean control panel.", "Generate a personal access token with an expiration date and custom scopes for the resources we will manage.", "Copy the token when DigitalOcean displays it."],
+      docs: "https://docs.digitalocean.com/reference/api/create-personal-access-token/",
+      scope: "Limit the token to the resource types and actions needed for this work."
+    },
+    {
+      id: "fly",
+      label: "Fly.io",
+      vendor: "Fly.io",
+      fields: [{ name: "FLY_API_TOKEN", label: "Organization deploy token", secret: true }],
+      steps: ["Identify the Fly.io organization that owns the app.", "Create an organization deploy token with an expiration date (`fly tokens create org -o YOUR_ORG`). If only one existing app needs deploy access, prefer an app-scoped deploy token.", "Copy the token. Do not use the full-access token from fly auth token."],
+      docs: "https://fly.io/docs/security/tokens/",
+      scope: "Deploy access to the selected organization, or to one existing app if app-scoped."
+    },
+    {
+      id: "aws",
+      label: "AWS",
+      vendor: "Amazon Web Services",
+      fields: [
+        { name: "AWS_ROLE_ARN", label: "Role ARN (preferred)", secret: false, optional: true, placeholder: "arn:aws:iam::123456789012:role/ProjectAccess" },
+        { name: "AWS_EXTERNAL_ID", label: "External ID (we provide this)", secret: false, optional: true },
+        { name: "AWS_ACCESS_KEY_ID", label: "Access key ID (alternative)", secret: false, optional: true },
+        { name: "AWS_SECRET_ACCESS_KEY", label: "Secret access key (alternative)", secret: true, optional: true },
+        { name: "AWS_REGION", label: "AWS region", secret: false, optional: true, placeholder: "us-east-1" }
+      ],
+      steps: ["Ask us for our AWS account ID and the unique external ID we generate for your project. Our own access key pair stays in Worker secrets; do not enter it here.", "In AWS IAM, create a cross-account role whose trust policy allows our designated principal to assume it only when it supplies that external ID. Attach a least-privilege policy for the resources we will manage.", "Enter the role ARN and the external ID we gave you. If a role is not possible, create a dedicated IAM user with only the necessary permissions and enter its access key ID and secret instead. Include the region if the work is region-specific."],
+      docs: "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html",
+      scope: "Provide one complete pair: role ARN and external ID, or dedicated IAM user access key ID and secret. Never share root credentials."
+    },
+    {
+      id: "gcp",
+      label: "Google Cloud",
+      vendor: "Google",
+      fields: [
+        { name: "GCP_SERVICE_ACCOUNT_JSON", label: "Service account key (JSON)", secret: true, multiline: true },
+        { name: "GCP_PROJECT_ID", label: "Project ID", secret: false, placeholder: "my-project" }
+      ],
+      steps: ["Copy the Project ID from the Google Cloud project selector.", "Under IAM & Admin \u2192 Service Accounts, create an account for this work. Grant only the roles needed on the relevant resources.", "If permitted by your organization, create and download a JSON key and paste its full contents. For keyless access, ask for our service account email and grant it the agreed roles instead of creating a key; confirm that setup with us separately."],
+      docs: "https://cloud.google.com/iam/docs/service-account-overview",
+      scope: "Grant the smallest roles possible on the specific project or resources; avoid Owner and Editor."
+    }
+  ];
+
+  // packages/admin-ui/src/project-solutions.jsx
+  var pathFor = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
+  var CLIENT_PORTAL_URL = "https://ptechsolutions.net/portal";
+  var SHORT = {
+    web: "Web",
+    shopify: "Shopify",
+    "mobile-ios": "iOS",
+    "mobile-android": "Android",
+    "mobile-cross": "Cross-platform",
+    "app-release": "Store release",
+    server: "Server",
+    aws: "AWS",
+    gcp: "GCP",
+    "ai-workspace": "AI workspace"
+  };
+  var list = (value) => Array.isArray(value) ? value.filter((id) => typeof id === "string") : [];
+  var VERIFY_ERRORS = {
+    missing_fields: "values are still missing",
+    verification_failed: "verification failed",
+    credentials_changed: "the values changed during the check",
+    secrets_unavailable: "the secret store is unavailable"
+  };
+  var verifyText = (error) => VERIFY_ERRORS[error] ?? error ?? "verification failed";
+  var IDLE2 = { loaded: false, integrations: null, error: null };
+  var psolStore = {
+    byProject: /* @__PURE__ */ new Map(),
+    listeners: /* @__PURE__ */ new Set(),
+    inflight: /* @__PURE__ */ new Set(),
+    subscribe(listener) {
+      this.listeners.add(listener);
+      return () => this.listeners.delete(listener);
+    },
+    snapshot(id) {
+      return this.byProject.get(String(id)) ?? IDLE2;
+    },
+    emit() {
+      for (const listener of this.listeners) listener();
+    },
+    async load(api, id) {
+      const key = String(id);
+      if (this.inflight.has(key)) return;
+      this.inflight.add(key);
+      try {
+        const value = await api("GET", `/admin/projects/${encodeURIComponent(key)}/integrations`);
+        this.byProject.set(key, { loaded: true, integrations: value?.integrations ?? [], error: null });
+      } catch (error) {
+        const previous = this.byProject.get(key) ?? IDLE2;
+        this.byProject.set(key, { ...previous, loaded: true, error });
+      } finally {
+        this.inflight.delete(key);
+      }
+      this.emit();
+    }
+  };
+  var dotState = (row) => !row.connected && row.required ? "bad" : row.verifiedAt && !row.verifyError ? "ok" : row.verifyError || row.connected ? "warn" : "muted";
+  function ProjectSolutions({ project }) {
+    const { api, data, notify, reload } = useAdmin();
+    const id = String(project.id);
+    const catalog = data?.catalog;
+    const solutionsCatalog = catalog?.solutions?.length ? catalog.solutions : SOLUTION_CATALOG;
+    const integrationsCatalog = catalog?.integrations?.length ? catalog.integrations : INTEGRATION_CATALOG;
+    const solutionById = new Map(solutionsCatalog.map((s) => [s.id, s]));
+    const integrationById = new Map(integrationsCatalog.map((i) => [i.id, i]));
+    const [selected, setSelected] = useState(() => list(project.solutions));
+    const [busy, setBusy] = useState(false);
+    const [verifying, setVerifying] = useState(null);
+    const [entering, setEntering] = useState(null);
+    const serverIds = list(project.solutions);
+    const localKey = selected.join("\n");
+    const serverKey = serverIds.join("\n");
+    useEffect(() => {
+      if (!busy && localKey !== serverKey) setSelected(serverIds);
+    }, [busy, localKey, serverKey]);
+    const subscribe = useCallback((listener) => psolStore.subscribe(listener), []);
+    const read = useCallback(() => psolStore.snapshot(id), [id]);
+    const status = useSyncExternalStore(subscribe, read, read);
+    const refreshStatus = useCallback(() => void psolStore.load(api, id), [api, id]);
+    useEffect(() => {
+      refreshStatus();
+    }, [refreshStatus]);
+    const choose = (next) => {
+      if (busy) return;
+      const previous = selected;
+      setSelected(next);
+      setBusy(true);
+      api("PUT", `${pathFor(project)}/solutions`, { solutions: next }).then(() => {
+        notify("Kinds of work saved.");
+        void reload?.();
+        void refreshStatus();
+      }, (error) => {
+        setSelected(previous);
+        notify(errorText(error), "error");
+      }).finally(() => setBusy(false));
+    };
+    const verify = (row) => {
+      if (verifying) return;
+      setVerifying(row.id);
+      api("POST", `${pathFor(project)}/integrations/${encodeURIComponent(row.id)}/verify`).then((out) => notify(
+        out?.ok ? `${row.label}: ${out.detail ?? "verified"}` : `${row.label}: ${verifyText(out?.error)}`,
+        out?.ok ? "ok" : "error"
+      )).catch((error) => notify(errorText(error), "error")).finally(() => {
+        setVerifying(null);
+        void refreshStatus();
+      });
+    };
+    const copySteps = async (entry) => {
+      try {
+        await navigator.clipboard.writeText(clientStepsText(project, entry));
+        notify(`${entry.label} client steps copied.`);
+      } catch {
+        notify("Could not copy. Open Enter and read the steps from there.", "error");
+      }
+    };
+    const chosen = selected.map((sid) => solutionById.get(sid)).filter(Boolean);
+    const requires = [...new Set(chosen.flatMap((s) => s.requires ?? []))];
+    const fleetKnown = data?.access?.superAdmin === true;
+    const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
+    const canBuild = (node) => requires.every((r) => (node.capabilities ?? []).includes(r));
+    const capable = requires.length ? nodes.filter((node) => node.online && canBuild(node)) : [];
+    const offlineCapable = requires.length ? nodes.filter((node) => !node.online && canBuild(node)) : [];
+    const fleetNote = !requires.length ? null : capable.length ? /* @__PURE__ */ jsxs("p", { className: "aw-psol__fleet", children: [
+      "Fleet needs ",
+      requires.join(", "),
+      " \u2014 ",
+      capable.map((n) => n.id).join(" or "),
+      " can build it."
+    ] }) : fleetKnown ? /* @__PURE__ */ jsxs("p", { className: "aw-psol__fleet aw-psol__fleet--warn", children: [
+      "No online machine can build this yet (needs ",
+      requires.join(", "),
+      ")",
+      offlineCapable.length ? ` \u2014 ${offlineCapable.map((n) => n.id).join(" or ")} has it offline.` : "."
+    ] }) : /* @__PURE__ */ jsxs("p", { className: "aw-psol__fleet", children: [
+      "Fleet needs ",
+      requires.join(", "),
+      "."
+    ] });
+    const rows = status.integrations;
+    return /* @__PURE__ */ jsxs("div", { className: "aw-psol", children: [
+      /* @__PURE__ */ jsx("p", { className: "aw-psol__h", children: "Kind of work" }),
+      /* @__PURE__ */ jsx(Chips, { value: selected, options: solutionsCatalog.map((s) => ({ value: s.id, label: s.label, hint: s.summary })), onChange: choose, disabled: busy }),
+      fleetNote,
+      /* @__PURE__ */ jsx("p", { className: "aw-psol__h", children: "Connections" }),
+      status.error && !rows ? /* @__PURE__ */ jsxs("p", { className: "aw-psol__err", role: "alert", children: [
+        "Connections failed to load. ",
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: refreshStatus, children: "Retry" })
+      ] }) : rows === null || rows === void 0 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading connections\u2026" }) : !rows.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No connections needed for the chosen kinds." }) : /* @__PURE__ */ jsx("ul", { className: "aw-psol__rows", children: rows.map((row) => {
+        const entry = integrationById.get(row.id);
+        return /* @__PURE__ */ jsxs("li", { className: "aw-psol__row", children: [
+          /* @__PURE__ */ jsx(Dot, { state: dotState(row) }),
+          /* @__PURE__ */ jsxs("div", { className: "aw-psol__rowmain", children: [
+            /* @__PURE__ */ jsx("strong", { children: row.label }),
+            entry?.vendor ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: entry.vendor }) : null,
+            /* @__PURE__ */ jsx(Tag, { tone: row.required ? void 0 : "dash", children: row.required ? "required" : "optional" }),
+            row.missing?.length ? /* @__PURE__ */ jsxs("span", { className: "aw-psol__miss", children: [
+              "needs ",
+              row.missing.join(", ")
+            ] }) : null,
+            row.verifyError ? /* @__PURE__ */ jsx("span", { className: "aw-psol__err", children: verifyText(row.verifyError) }) : row.verifiedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+              "verified ",
+              ago(row.verifiedAt),
+              " ago"
+            ] }) : null
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "aw-psol__rowact", children: [
+            /* @__PURE__ */ jsx(Button, { size: "sm", disabled: verifying === row.id, onClick: () => verify(row), children: verifying === row.id ? "Verifying\u2026" : "Verify" }),
+            entry ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setEntering(entry), children: "Enter" }) : null,
+            entry ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void copySteps(entry), children: "Copy client steps" }) : null
+          ] })
+        ] }, row.id);
+      }) }),
+      chosen.length ? /* @__PURE__ */ jsxs("details", { className: "aw-psol__brief", children: [
+        /* @__PURE__ */ jsx("summary", { children: "What we deliver / ask the client" }),
+        chosen.map((s) => /* @__PURE__ */ jsxs("div", { className: "aw-psol__briefitem", children: [
+          /* @__PURE__ */ jsx("strong", { children: s.label }),
+          /* @__PURE__ */ jsx("p", { className: "aw-psol__h", children: "We deliver" }),
+          /* @__PURE__ */ jsx("ul", { children: (s.deliverables ?? []).map((item) => /* @__PURE__ */ jsx("li", { children: item }, item)) }),
+          /* @__PURE__ */ jsx("p", { className: "aw-psol__h", children: "We ask" }),
+          /* @__PURE__ */ jsx("ul", { children: (s.questions ?? []).map((item) => /* @__PURE__ */ jsx("li", { children: item }, item)) })
+        ] }, s.id))
+      ] }) : null,
+      entering ? /* @__PURE__ */ jsx(IntegrationFieldsModal, { project, entry: entering, onClose: () => setEntering(null), onSaved: refreshStatus }) : null
+    ] });
+  }
+  function SolutionTags({ solutions }) {
+    const ids = list(solutions);
+    if (!ids.length) return null;
+    return /* @__PURE__ */ jsx("span", { className: "aw-psol__tags", children: ids.map((id) => {
+      const entry = SOLUTION_CATALOG.find((s) => s.id === id);
+      return /* @__PURE__ */ jsx(Tag, { title: entry?.label ?? id, children: SHORT[id] ?? entry?.label ?? id }, id);
+    }) });
+  }
+  function clientStepsText(project, entry) {
+    return [
+      `${entry.label} access for \u201C${project.name}\u201D`,
+      "",
+      ...entry.steps.map((step, index) => `${index + 1}. ${step}`),
+      "",
+      `Then open ${CLIENT_PORTAL_URL} and pick \u201C${project.name}\u201D: its ${entry.label} section takes these values. Paste each one where its label matches.`
+    ].join("\n");
+  }
+  function IntegrationFieldsModal({ project, entry, onClose, onSaved }) {
+    const { api, notify } = useAdmin();
+    const [values, setValues] = useState({});
+    const [busy, setBusy] = useState(false);
+    const filled = entry.fields.filter((field) => String(values[field.name] ?? "").trim());
+    const save = () => {
+      if (busy || !filled.length) return;
+      setBusy(true);
+      Promise.all(filled.map((field) => api("PUT", `${pathFor(project)}/secrets/${encodeURIComponent(field.name)}`, { value: String(values[field.name]).trim() }))).then(() => {
+        notify(`${entry.label} values saved.`);
+        onSaved?.();
+        onClose();
+      }).catch((error) => {
+        notify(errorText(error), "error");
+        setBusy(false);
+      });
+    };
+    const edit = (field) => (event) => setValues({ ...values, [field.name]: event.target.value });
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: `Enter ${entry.label} values`,
+        subtitle: entry.scope,
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !filled.length, onClick: save, children: busy ? "Saving\u2026" : filled.length ? `Save ${filled.length} value${filled.length === 1 ? "" : "s"}` : "Save" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx("ol", { className: "aw-psol__steps", children: entry.steps.map((step) => /* @__PURE__ */ jsx("li", { children: step }, step)) }),
+          /* @__PURE__ */ jsx("p", { className: "aw-muted", children: /* @__PURE__ */ jsx("a", { href: entry.docs, target: "_blank", rel: "noreferrer", children: entry.docs }) }),
+          entry.fields.map((field) => /* @__PURE__ */ jsx(Field, { label: `${field.label}${field.optional ? " (optional)" : ""}`, hint: field.secret ? "Stored encrypted with the project; never displayed again." : null, children: field.multiline ? /* @__PURE__ */ jsx("textarea", { rows: 4, placeholder: field.placeholder ?? "", value: values[field.name] ?? "", onChange: edit(field) }) : /* @__PURE__ */ jsx("input", { type: field.secret ? "password" : "text", autoComplete: "off", placeholder: field.placeholder ?? "", value: values[field.name] ?? "", onChange: edit(field) }) }, field.name))
+        ]
+      }
+    );
   }
 
   // packages/admin-ui/src/fleet.jsx
@@ -3566,6 +4023,7 @@ var __awPlugin = (() => {
                 /* @__PURE__ */ jsx("strong", { children: p.name }),
                 /* @__PURE__ */ jsx("span", { className: "aw-mono aw-muted", children: p.slug }),
                 p.kind === "new" ? /* @__PURE__ */ jsx(Tag, { children: "new site" }) : null,
+                p.solutions?.length ? /* @__PURE__ */ jsx(SolutionTags, { solutions: p.solutions }) : null,
                 /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
                 /* @__PURE__ */ jsx(
                   Button,
@@ -6720,8 +7178,8 @@ var __awPlugin = (() => {
       }
     };
     const ordered = useMemo(() => {
-      const list = [...data?.citations ?? []];
-      return list.sort(
+      const list2 = [...data?.citations ?? []];
+      return list2.sort(
         (a, b) => (CITATION_RANK[a.status] ?? 9) - (CITATION_RANK[b.status] ?? 9) || (b.dr ?? -1) - (a.dr ?? -1) || a.platform.localeCompare(b.platform)
       );
     }, [data]);
@@ -7988,6 +8446,29 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-mk-window input { flex: none; width: 58px; min-width: 0; }
 .aw-mk-window input[aria-label="Window offset minutes"] { width: 72px; }
 .aw-divider { border: 0; border-top: 1px solid var(--aw-border); margin: 18px 0 4px; }
+
+/* Project solutions: kinds of work, the fleet note, and the client's connections. */
+.aw-dot--muted { background: var(--aw-border2); }
+.aw-psol { margin: 2px 0; }
+.aw-psol__h { margin: 12px 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); }
+.aw-psol__h:first-child { margin-top: 0; }
+.aw-psol__fleet { margin: 6px 0 0; font-size: 12px; color: var(--aw-text2); }
+.aw-psol__fleet--warn { color: color-mix(in srgb, var(--aw-warn) 80%, var(--aw-text)); font-weight: 600; }
+.aw-psol__rows { list-style: none; margin: 0; padding: 0; }
+.aw-psol__row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--aw-border); }
+.aw-psol__row:first-child { border-top: 0; }
+.aw-psol__rowmain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aw-psol__miss { font-family: var(--aw-mono); font-size: 11px; color: var(--aw-text2); }
+.aw-psol__err { font-size: 12px; color: var(--aw-bad); }
+.aw-psol__rowact { flex: none; display: flex; align-items: center; gap: 6px; }
+.aw-psol__brief { margin-top: 12px; }
+.aw-psol__brief > summary { cursor: pointer; color: var(--aw-text2); font-size: 12px; }
+.aw-psol__brief[open] > summary { margin-bottom: 4px; }
+.aw-psol__briefitem { padding: 6px 0; border-top: 1px solid var(--aw-border); font-size: 12px; }
+.aw-psol__briefitem ul { margin: 2px 0 8px; padding-left: 18px; color: var(--aw-text2); }
+.aw-psol__tags { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.aw-psol__steps { margin: 0 0 10px; padding-left: 20px; }
+.aw-psol__steps li { margin: 3px 0; font-size: 12px; color: var(--aw-text2); }
 `;
 
   // packages/admin-ui/src/project-model.js
@@ -8208,9 +8689,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return dots;
   }
   function pickSite(project, sites) {
-    const list = Array.isArray(sites) && sites.length > 0 ? sites : Array.isArray(project?.sites) && project.sites.length > 0 ? project.sites : project?.site ? [project.site] : [];
-    if (!list.length) return null;
-    return list.find((s) => s?.isPrimary) ?? list.find((s) => s?.state === "ready") ?? list[0] ?? null;
+    const list2 = Array.isArray(sites) && sites.length > 0 ? sites : Array.isArray(project?.sites) && project.sites.length > 0 ? project.sites : project?.site ? [project.site] : [];
+    if (!list2.length) return null;
+    return list2.find((s) => s?.isPrimary) ?? list2.find((s) => s?.state === "ready") ?? list2[0] ?? null;
   }
   function cleanString(v) {
     return typeof v === "string" && v.trim() ? v.trim() : null;
@@ -8959,18 +9440,18 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const site = pickSite(project, sites);
     if (!site || site.state !== "ready" || !site.previewDeploy) return null;
     if (site.productionDeploy && String(site.previewDeploy) === String(site.productionDeploy)) return null;
-    const list = (Array.isArray(deploys) ? deploys : []).filter((d) => d && d.id !== void 0 && d.id !== null);
+    const list2 = (Array.isArray(deploys) ? deploys : []).filter((d) => d && d.id !== void 0 && d.id !== null);
     const at = (d) => normalizeTimestampMs(d?.created_at) ?? 0;
-    const preview = list.find((d) => String(d.id) === String(site.previewDeploy));
+    const preview = list2.find((d) => String(d.id) === String(site.previewDeploy));
     if (!preview) return null;
-    const live = site.productionDeploy ? list.find((d) => String(d.id) === String(site.productionDeploy)) : null;
+    const live = site.productionDeploy ? list2.find((d) => String(d.id) === String(site.productionDeploy)) : null;
     if (site.productionDeploy && !live) return null;
     const from = live ? at(live) : -Infinity;
     const nowMs = normalizeTimestampMs(now) ?? Date.now();
     const byTicket = new Map((Array.isArray(tickets) ? tickets : []).filter(Boolean).map((tk) => [String(tk.id), tk]));
     const seen = /* @__PURE__ */ new Set();
     const items = [];
-    for (const d of [...list].sort((a, b) => at(b) - at(a))) {
+    for (const d of [...list2].sort((a, b) => at(b) - at(a))) {
       if (at(d) <= from || at(d) > at(preview)) continue;
       const hasTicket = d.ticket_id !== null && d.ticket_id !== void 0;
       const key = hasTicket ? `t:${d.ticket_id}` : `d:${d.id}`;
@@ -9820,7 +10301,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 
   // packages/admin-ui/src/project.jsx
   var errorText3 = (error) => error?.message || String(error || "Request failed");
-  var pathFor = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
+  var pathFor2 = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
   var TABS = ["Overview", "Resources", "Work", "Activity & review", "People"];
   function useProjectResource(load) {
     const [state, setState] = useState({ load: null, value: null, loading: true, error: null });
@@ -9874,9 +10355,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       children
     ] });
   }
-  function ProjectView({ id }) {
+  function ProjectView({ id, initialTab = "Overview" }) {
     const { api, data, host, setModal, reload } = useAdmin();
-    const [tab, setTab] = useState("Overview");
+    const [tab, setTab] = useState(initialTab);
     const load = useCallback(async () => {
       const result = await api("GET", "/admin/projects");
       return { project: (result.projects ?? []).find((project2) => project2.id === id) ?? null };
@@ -9889,7 +10370,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         void refresh();
       }
     }, [data.projects, refresh]);
-    useEffect(() => setTab("Overview"), [id]);
+    useEffect(() => setTab(initialTab), [id]);
     const project = remote.value ? remote.value.project : (data.projects ?? []).find((project2) => project2.id === id);
     const refreshAll = useCallback(async () => {
       await refresh();
@@ -9912,7 +10393,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             project.slug,
             " \xB7 ",
             project.kind === "new" ? "New project" : "Existing project",
-            project.githubAccount ? ` \xB7 GitHub @${project.githubAccount}` : ""
+            project.githubAccount ? ` \xB7 GitHub @${project.githubAccount}` : "",
+            project.solutions?.length ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+              " \xB7 ",
+              /* @__PURE__ */ jsx(SolutionTags, { solutions: project.solutions })
+            ] }) : null
           ] })
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
@@ -9955,7 +10440,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
     const deploySiteId = sites.find((site) => site?.state === "ready" && site?.id)?.id ?? null;
     const loadDeploys = useCallback(
-      () => deploySiteId ? api("GET", `${pathFor(project)}/site/deploys?siteId=${encodeURIComponent(deploySiteId)}`) : Promise.resolve(null),
+      () => deploySiteId ? api("GET", `${pathFor2(project)}/site/deploys?siteId=${encodeURIComponent(deploySiteId)}`) : Promise.resolve(null),
       [api, project.id, deploySiteId]
     );
     const [deployState] = useProjectResource(loadDeploys);
@@ -10004,7 +10489,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       event.preventDefault();
       if (!payload) return;
       void write(async () => {
-        const result = await api("PATCH", pathFor(project), { brief: payload });
+        const result = await api("PATCH", pathFor2(project), { brief: payload });
         setSaved(result.project?.brief ?? payload);
         setEditing(false);
         void refresh();
@@ -10154,8 +10639,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           project.repoStatus?.label ? ` \xB7 ${project.repoStatus.label}` : ""
         ] }),
         !project.repo ? /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
-          /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor(project)}/repo/create`, {}), "Repository creation requested."), children: "Create repository" }),
-          project.githubInstallationId ? /* @__PURE__ */ jsxs(Button, { disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor(project)}/repo/github`, {}), "GitHub repository creation requested."), children: [
+          /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor2(project)}/repo/create`, {}), "Repository creation requested."), children: "Create repository" }),
+          project.githubInstallationId ? /* @__PURE__ */ jsxs(Button, { disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor2(project)}/repo/github`, {}), "GitHub repository creation requested."), children: [
             "Create in @",
             project.githubAccount || "connected GitHub"
           ] }) : null
@@ -10166,7 +10651,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
           /* @__PURE__ */ jsx("h3", { children: "Hosted destinations" }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor(project)}/site`, {}), "Hosting setup requested."), children: project.sites?.length ? "Add a site" : "Set up hosting" })
+          /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor2(project)}/site`, {}), "Hosting setup requested."), children: project.sites?.length ? "Add a site" : "Set up hosting" })
         ] }),
         /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Rebuild changes preview only. Publishing replaces the live site with preview; the publish action asks you to confirm the destination." }),
         /* @__PURE__ */ jsx(SitePanel, { project }),
@@ -10343,7 +10828,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   }
   function DeployHistory({ project, site, refresh }) {
     const { api, ask } = useAdmin();
-    const load = useCallback(() => api("GET", `${pathFor(project)}/site/deploys?siteId=${encodeURIComponent(site.id)}`), [api, project.id, site.id]);
+    const load = useCallback(() => api("GET", `${pathFor2(project)}/site/deploys?siteId=${encodeURIComponent(site.id)}`), [api, project.id, site.id]);
     const [state, refreshDeploys] = useProjectResource(load);
     const [writeState, write] = useWrite();
     return /* @__PURE__ */ jsxs("details", { children: [
@@ -10360,7 +10845,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           ] })
         ] }),
         /* @__PURE__ */ jsx(Button, { disabled: writeState.busy, size: "sm", onClick: () => ask({ title: "Roll production back?", text: `Replace ${site.productionUrl || site.name || project.name} with recorded deploy ${deploy.id}. This changes what visitors see.`, confirm: "Roll back", run: () => write(async () => {
-          await api("POST", `${pathFor(project)}/site/rollback`, { deployId: deploy.id, siteId: site.id });
+          await api("POST", `${pathFor2(project)}/site/rollback`, { deployId: deploy.id, siteId: site.id });
           void refresh();
           void refreshDeploys();
         }, "Production rolled back.") }), children: "Roll back" })
@@ -10432,9 +10917,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   }
   function People({ project, refresh }) {
     const { api, data, ask } = useAdmin();
-    const load = useCallback(() => api("GET", `${pathFor(project)}/memberships`), [api, project.id]);
+    const load = useCallback(() => api("GET", `${pathFor2(project)}/memberships`), [api, project.id]);
     const [state, refreshPeople] = useProjectResource(load);
-    const loadRecipients = useCallback(() => api("GET", `${pathFor(project)}/recipients`), [api, project.id]);
+    const loadRecipients = useCallback(() => api("GET", `${pathFor2(project)}/recipients`), [api, project.id]);
     const [recipients, refreshRecipients] = useProjectResource(loadRecipients);
     const [email, setEmail] = useState("");
     const [writeState, write] = useWrite();
@@ -10446,7 +10931,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       event.preventDefault();
       if (!email.trim() || !admin) return;
       void write(async () => {
-        await api("POST", `${pathFor(project)}/memberships`, { email: email.trim() });
+        await api("POST", `${pathFor2(project)}/memberships`, { email: email.trim() });
         setEmail("");
         void refreshPeople();
         void refreshRecipients();
@@ -10454,6 +10939,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }, "Trusted project access granted.");
     };
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Solutions" }),
+        /* @__PURE__ */ jsx(ProjectSolutions, { project })
+      ] }),
       /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
         /* @__PURE__ */ jsx("h3", { children: "Project ownership" }),
         /* @__PURE__ */ jsx("p", { children: state.value?.ownerUserId ? `Owned by ${ownerPerson?.name || ownerPerson?.email || state.value.ownerUserId}.` : "An owner has not been verified for this project." }),
@@ -10470,7 +10959,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
               /* @__PURE__ */ jsx(Tag, { children: "Trusted developer" })
             ] }),
             admin || owner ? /* @__PURE__ */ jsx(Button, { size: "sm", disabled: writeState.busy, onClick: () => ask({ title: `Remove ${person.email} from this project?`, text: "Their trusted access ends immediately. Their account and access to other projects stay unchanged.", confirm: "Remove access", danger: true, run: () => write(async () => {
-              await api("DELETE", `${pathFor(project)}/memberships/${encodeURIComponent(person.userId)}`);
+              await api("DELETE", `${pathFor2(project)}/memberships/${encodeURIComponent(person.userId)}`);
               void refreshPeople();
               void refreshRecipients();
             }, "Trusted access removed.") }), children: "Remove access" }) : null
@@ -10519,7 +11008,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
   function SecretManager({ project, api, ask, onClose }) {
-    const load = useCallback(() => api("GET", `${pathFor(project)}/secrets`), [api, project.id]);
+    const load = useCallback(() => api("GET", `${pathFor2(project)}/secrets`), [api, project.id]);
     const [state, refresh] = useProjectResource(load);
     const [name, setName] = useState("");
     const [value, setValue] = useState("");
@@ -10542,7 +11031,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       event.preventDefault();
       if (!name.trim() || !value) return;
       void write(async () => {
-        await api("PUT", `${pathFor(project)}/secrets/${encodeURIComponent(name.trim())}`, { value });
+        await api("PUT", `${pathFor2(project)}/secrets/${encodeURIComponent(name.trim())}`, { value });
         setValue("");
         setName("");
         hide();
@@ -10557,13 +11046,13 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
           /* @__PURE__ */ jsx(Button, { size: "sm", disabled: writeState.busy, onClick: () => void write(async () => {
             hide();
-            const result = await api("POST", `${pathFor(project)}/secrets/${encodeURIComponent(secret.name)}/reveal`, {});
+            const result = await api("POST", `${pathFor2(project)}/secrets/${encodeURIComponent(secret.name)}/reveal`, {});
             if (!alive.current) return;
             setRevealed({ name: secret.name, value: result.value });
             timer.current = setTimeout(() => setRevealed(null), 3e4);
           }), children: "Reveal" }),
           /* @__PURE__ */ jsx(Button, { size: "sm", disabled: writeState.busy, onClick: () => ask({ title: `Delete ${secret.name}?`, text: "Project operations that depend on this secret may stop working. This cannot be undone.", confirm: "Delete secret", danger: true, run: () => write(async () => {
-            await api("DELETE", `${pathFor(project)}/secrets/${encodeURIComponent(secret.name)}`);
+            await api("DELETE", `${pathFor2(project)}/secrets/${encodeURIComponent(secret.name)}`);
             hide();
             void refresh();
           }, "Secret deleted.") }), children: "Delete" })
@@ -11897,9 +12386,9 @@ ${question.text ?? ""}`)) {
     return updated > 0 && nowSeconds - updated > STALL_SECONDS;
   }
   function activeRunTicketKeys(runs) {
-    const list = Array.isArray(runs) ? runs : Array.isArray(runs?.running) ? runs.running : [];
+    const list2 = Array.isArray(runs) ? runs : Array.isArray(runs?.running) ? runs.running : [];
     const keys = /* @__PURE__ */ new Set();
-    for (const run of list) {
+    for (const run of list2) {
       if (!run || typeof run !== "object") continue;
       if (typeof run.status === "string" && TERMINAL_RUN_STATUSES.has(run.status)) continue;
       if (toUnixSeconds(run.finished_at) > 0) continue;
@@ -12071,9 +12560,9 @@ ${question.text ?? ""}`)) {
   }
   var KIND_RANK = Object.freeze({ stalled: 0, needsYou: 1, running: 2, open: 3 });
   function runStartsByTicket(runs) {
-    const list = Array.isArray(runs) ? runs : Array.isArray(runs?.running) ? runs.running : [];
+    const list2 = Array.isArray(runs) ? runs : Array.isArray(runs?.running) ? runs.running : [];
     const starts = /* @__PURE__ */ new Map();
-    for (const run of list) {
+    for (const run of list2) {
       if (!run || run.ticket_id === null || run.ticket_id === void 0) continue;
       if (run.finished_at || TERMINAL_RUN_STATUSES.has(String(run.status ?? "").toLowerCase())) continue;
       const started = toUnixSeconds(run.started_at ?? run.created_at);
@@ -12315,12 +12804,12 @@ ${question.text ?? ""}`)) {
     return `${clean.slice(0, max - 1)}\u2026`;
   }
   function beaconsFor(counts) {
-    const list = [];
-    if (counts.failing > 0) list.push({ kind: "failing", value: counts.failing });
-    if (counts.stalled > 0) list.push({ kind: "stalled", value: counts.stalled });
-    if (counts.needsYou > 0) list.push({ kind: "needsYou", value: counts.needsYou });
-    if (counts.running > 0) list.push({ kind: "running", value: counts.running });
-    return list;
+    const list2 = [];
+    if (counts.failing > 0) list2.push({ kind: "failing", value: counts.failing });
+    if (counts.stalled > 0) list2.push({ kind: "stalled", value: counts.stalled });
+    if (counts.needsYou > 0) list2.push({ kind: "needsYou", value: counts.needsYou });
+    if (counts.running > 0) list2.push({ kind: "running", value: counts.running });
+    return list2;
   }
   function IsoBox2({ faces, topFill, leftFill, rightFill, strokeClass = "pta-park__ink", strokeWidth = STROKE_INK }) {
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
@@ -13067,8 +13556,8 @@ ${question.text ?? ""}`)) {
         clearTimeout(timer);
         timer = setTimeout(() => void archiveFleetSessions(), 3e3);
       };
-      const list = ctx.sessions?.list;
-      const stop = typeof list?.subscribe === "function" ? list.subscribe(soon) : () => {
+      const list2 = ctx.sessions?.list;
+      const stop = typeof list2?.subscribe === "function" ? list2.subscribe(soon) : () => {
       };
       const every = setInterval(soon, 5 * 6e4);
       soon();
@@ -13132,12 +13621,12 @@ ${question.text ?? ""}`)) {
       return /* @__PURE__ */ jsx(ConversationHistory, { api, ticketId: ticket.ticketId, openTicket: openTicketRun }, `${sessionId}:${ticket.ticketId}`);
     }
     function useSessionCwd(sessionId) {
-      const list = ctx.sessions?.list;
+      const list2 = ctx.sessions?.list;
       return useSyncExternalStore(
-        (notify) => typeof list?.subscribe === "function" ? list.subscribe(notify) : () => {
+        (notify) => typeof list2?.subscribe === "function" ? list2.subscribe(notify) : () => {
         },
         () => {
-          const row = list?.getSnapshot?.()?.byId?.[sessionId];
+          const row = list2?.getSnapshot?.()?.byId?.[sessionId];
           return row?.cwd === void 0 ? void 0 : `${row.cwd}${SEP}${typeof row.title === "string" ? row.title : ""}`;
         }
       );
@@ -14631,8 +15120,8 @@ ${who} is emailed about this change.`)) return;
     }
     function actionableCount(groups) {
       const ids = /* @__PURE__ */ new Set();
-      for (const list of [groups.approvals, groups.reviews, groups.waiting, groups.stalled, groups.stuck]) {
-        for (const ticket of list) ids.add(ticket.id);
+      for (const list2 of [groups.approvals, groups.reviews, groups.waiting, groups.stalled, groups.stuck]) {
+        for (const ticket of list2) ids.add(ticket.id);
       }
       return ids.size;
     }

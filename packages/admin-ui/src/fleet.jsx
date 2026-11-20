@@ -7,6 +7,7 @@ import { Button, Chips, Dot, Field, Modal, Segmented, StatusPill, Tag, cx } from
 import { SitePanel } from './ticket.jsx';
 import { MachinePanel } from './machine.jsx';
 import { ToolboxPanel } from './toolbox.jsx';
+import { SolutionTags } from './project-solutions.jsx';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
@@ -770,6 +771,7 @@ export function ClientsView() {
                     <strong>{p.name}</strong>
                     <span className="aw-mono aw-muted">{p.slug}</span>
                     {p.kind === 'new' ? <Tag>new site</Tag> : null}
+                    {p.solutions?.length ? <SolutionTags solutions={p.solutions} /> : null}
                     <span className="aw-toolbar__fill" />
                     <Button
                       size="sm"
