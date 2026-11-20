@@ -4450,7 +4450,7 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx(
             Button,
             {
-              title: "Rewrite every scheduled email from the current templates. Emails you edited by hand are left alone.",
+              title: "The desk re-renders scheduled emails by itself when the templates change; this does it now. Emails you edited by hand are left alone.",
               onClick: () => run(() => api("POST", "/admin/marketing/messages/rerender"), "Scheduled emails now use the current wording."),
               children: "Re-render scheduled"
             }
@@ -5496,7 +5496,7 @@ var __awPlugin = (() => {
         /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "SEQUENCES" }),
         " in ",
         /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "worker/src/marketing.ts" }),
-        ". To change it for one person, open their email in the Email tab and rewrite it there."
+        "; the desk re-renders the queue by itself when it changes. To change it for one person, open their email in the Email tab and rewrite it there."
       ] }),
       data?.steps.map((step) => /* @__PURE__ */ jsxs("article", { style: { borderTop: "1px solid var(--aw-line, #e5e5e5)", padding: "10px 0" }, children: [
         /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
