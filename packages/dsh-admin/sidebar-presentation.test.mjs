@@ -9,6 +9,6 @@ test('ticket label starts with the title and does not repeat the ticket number',
 });
 
 test('run shortcut keeps the ticket kind and number in its accessible name only', () => {
-  assert.equal(sidebarRunShortcut({ kind: 'task', ticketId: 17 }), 'Open system task #17');
+  assert.equal(sidebarRunShortcut({ kind: 'task', ticketId: 17 }), 'Open my task #17');
   assert.equal(sidebarRunShortcut({ kind: 'ticket', ticketId: 19 }), 'Open client ticket #19');
 });

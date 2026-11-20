@@ -3,5 +3,5 @@ export function sidebarTicketLabel(ticket) {
 }
 
 export function sidebarRunShortcut(run) {
-  return `Open ${run.kind === 'task' ? 'system task' : 'client ticket'} #${run.ticketId}`;
+  return `Open ${run.kind === 'task' ? 'my task' : 'client ticket'} #${run.ticketId}`;
 }
