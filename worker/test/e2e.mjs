@@ -469,7 +469,7 @@ const groups = {
 
   async marketing({ admin }) {
     const desk = await call('/admin/marketing', { auth: admin });
-    check('the desk starts paused, with the outreach sender', desk.status === 200 && desk.data.settings.live === false && desk.data.sender === 'hello@malipetek.dev');
+    check('the desk starts paused, with the outreach sender', desk.status === 200 && desk.data.settings.live === false && desk.data.sender === 'hello@ptechsolutions.net');
     check('a paused desk sends nothing', (await call('/admin/marketing/run', { method: 'POST', auth: admin })).data.reason === 'paused');
 
     const csv = 'email,name,business,site,gap\nsara@bakery-nine.test,Sara,Bakery Nine,bakerynine.test,menu still says summer\nnobody@example.test,,,,';
@@ -596,7 +596,7 @@ const groups = {
     const preview = await call(`/admin/marketing/messages/${firstEmail.id}`, { auth: admin });
     check(
       'an email preview shows the footer and the unsubscribe headers',
-      preview.status === 200 && /Reply "no"/.test(preview.data.preview.text) && /mailto:hello@malipetek\.dev/.test(preview.data.preview.headers['List-Unsubscribe'] ?? ''),
+      preview.status === 200 && /Reply "no"/.test(preview.data.preview.text) && /mailto:hello@ptechsolutions\.net/.test(preview.data.preview.headers['List-Unsubscribe'] ?? ''),
       JSON.stringify(preview.data.preview ?? preview.data).slice(0, 400),
     );
     const handEdit = await call(`/admin/marketing/messages/${firstEmail.id}`, {
@@ -648,9 +648,9 @@ const groups = {
   },
 
   async content({ admin }) {
-    // The dev-site project the cycle ticket is filed against.
+    // The ptechsolutions project the cycle ticket is filed against.
     sql(
-      `INSERT INTO projects (id, slug, name, created_at) VALUES ('e2e-dev-site', 'malipetek-dev-site', 'malipetek.dev', ${Math.floor(Date.now() / 1000)})`,
+      `INSERT INTO projects (id, slug, name, created_at) VALUES ('e2e-dev-site', 'ptechsolutions', 'ptechsolutions.net', ${Math.floor(Date.now() / 1000)})`,
     );
 
     await call('/admin/marketing/settings', { method: 'PUT', auth: admin, body: { voiceNotes: 'Keep it dry.' } });
@@ -661,8 +661,8 @@ const groups = {
 
     const ticket = (await call(`/admin/tickets/${filed.data.id}`, { auth: admin })).data;
     check(
-      'the cycle ticket is approved, autonomous and on the dev-site project',
-      ticket.ticket.status === 'approved' && ticket.ticket.kind === 'system' && ticket.ticket.source === 'dsh' && ticket.ticket.attention === 'auto' && ticket.ticket.project_slug === 'malipetek-dev-site',
+      'the cycle ticket is approved, autonomous and on the ptechsolutions project',
+      ticket.ticket.status === 'approved' && ticket.ticket.kind === 'system' && ticket.ticket.source === 'dsh' && ticket.ticket.attention === 'auto' && ticket.ticket.project_slug === 'ptechsolutions',
       JSON.stringify(ticket.ticket),
     );
     const brief = ticket.messages.find((m) => m.author === 'ali')?.body ?? '';
