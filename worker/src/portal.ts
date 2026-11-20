@@ -43,7 +43,7 @@ import { Hono, type Context } from 'hono';
 import { ATTENTION_KEYS, billOf, DEFAULT_ATTENTION, money, priceLine, priceOf } from '../../src/lib/pricing.js';
 import { claimTicketById, finishRun, normalizeReport, sessionKey, sharedLine, ticketRuns } from './runs.ts';
 import { finishContentCycle } from './content.ts';
-import { finishSeoCycle } from './seo.ts';
+import { finishGuideCycle, finishSeoCycle } from './seo.ts';
 import { bridgeMessage, bridgeTitle, forAli, forClientMail, threadFor, translateText, type Bridged } from './translate.ts';
 import { inviteMail, INVITE_TTL_SECONDS, joinProjectNames } from './invites.ts';
 import { previewStrings, tFor } from '../../src/i18n/eager.js';
@@ -2862,6 +2862,8 @@ portal.post('/admin/tickets/:id/run-result', async (c) => {
   if (!done.late) await finishContentCycle(c.env, id, report.summary, report.ok).catch(() => {});
   // An SEO cycle ticket reads the same block, keyed on its own ticket column.
   if (!done.late) await finishSeoCycle(c.env, id, report.summary, report.ok).catch(() => {});
+  // A guide cycle ticket reads it for the guide's PR.
+  if (!done.late) await finishGuideCycle(c.env, id, report.summary, report.ok).catch(() => {});
 
   if (!done.late) c.executionCtx.waitUntil(completeFirstPreview(c.env, id));
   c.executionCtx.waitUntil(notifyRunFinished(c.env, id, report, done));

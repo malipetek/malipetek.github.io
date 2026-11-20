@@ -46,6 +46,7 @@ const cycleMessage = (result) =>
 const offsetLabel = (minutes) => `UTC${minutes >= 0 ? '+' : '−'}${Math.abs(minutes) / 60}`;
 const snippet = (text, max = 90) => (text.length > max ? `${text.slice(0, max)}…` : text);
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const dateLabel = (unix) => (unix ? new Date(unix * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 
 export function MarketingView() {
   const { api, act, notify } = useAdmin();
@@ -126,7 +127,17 @@ export function MarketingView() {
         </div>
       ) : !settings.live ? (
         <div className="aw-banner aw-banner--warn">
-          Paused. {overview.due.email ? `${overview.due.email} email${overview.due.email === 1 ? '' : 's'} are due.` : 'Nothing is due yet.'}
+          {overview.autoResume?.autoPausedAt ? (
+            <>
+              Paused itself on {dateLabel(overview.autoResume.autoPausedAt)}. It switches back on after{' '}
+              {overview.autoResume.resumesAfter ? dateLabel(overview.autoResume.resumesAfter) : 'the wait'} if bounces and complaints stay under the
+              limits.
+            </>
+          ) : (
+            <>
+              Paused. {overview.due.email ? `${overview.due.email} email${overview.due.email === 1 ? '' : 's'} are due.` : 'Nothing is due yet.'}
+            </>
+          )}
           {health?.trip ? ` The desk paused itself: ${health.trip === 'bounce_rate' ? 'too many bounces' : 'too many complaints'}.` : ''}
           <span className="aw-toolbar__fill" />
           <Button size="sm" onClick={() => run(() => api('PUT', '/admin/marketing/settings', { live: true }), 'Outreach is live.')}>
@@ -136,7 +147,9 @@ export function MarketingView() {
       ) : (
         <div className="aw-banner">
           Live via {providerName} · {settings.startHour}:00–{settings.endHour}:00 {offsetLabel(settings.offsetMinutes)}
-          {settings.weekdaysOnly ? ', weekdays' : ''} · {messagesToday} · window{' '}
+          {settings.weekdaysOnly ? ', weekdays' : ''} · {messagesToday}
+          {overview.autoResume && overview.autoResume.cap < settings.dailyCap ? ` · ramping: ${overview.autoResume.cap}/day today` : ''}
+          {' '}· window{' '}
           {overview.window.open ? 'open' : `closed (${WINDOW_REASON[overview.window.reason] ?? overview.window.reason})`}
           <span className="aw-toolbar__fill" />
           <Button size="sm" kind="ghost" onClick={() => run(() => api('POST', '/admin/marketing/run'), runMessage)}>
@@ -242,7 +255,7 @@ export function MarketingView() {
       </div>
 
       {tab === 'overview' ? (
-        <OverviewTab api={api} tick={tick} health={health} onReview={() => setModal({ kind: 'review' })} onContact={(id) => setModal({ kind: 'person', id })} />
+        <OverviewTab api={api} tick={tick} health={health} overview={overview} onReview={() => setModal({ kind: 'review' })} onContact={(id) => setModal({ kind: 'person', id })} />
       ) : null}
 
       {tab === 'contacts' ? (
@@ -378,7 +391,7 @@ export function MarketingView() {
 
       {tab === 'email' ? <EmailTab api={api} run={run} tick={tick} events={overview.events} onOpen={(m) => setModal({ kind: 'message', id: m.id })} /> : null}
 
-      {tab === 'posts' ? <PostsTab api={api} run={run} tick={tick} onEdit={(m) => setModal({ kind: 'edit', message: m })} /> : null}
+      {tab === 'posts' ? <PostsTab api={api} run={run} tick={tick} holdHours={settings.postHoldHours ?? 0} onEdit={(m) => setModal({ kind: 'edit', message: m })} /> : null}
 
       {tab === 'sequences' ? <SequencesTab api={api} sequences={overview.sequences} /> : null}
 
@@ -457,7 +470,18 @@ const dayName = (unix, offsetMinutes) => {
 const REPLY_TONE = { reply: 'ok', opt_out: 'warn', complaint: 'bad' };
 const REPLY_LABEL = { reply: 'replied', opt_out: 'opted out', complaint: 'spam complaint' };
 
-function OverviewTab({ api, tick, health, onReview, onContact }) {
+const OBSERVE_KIND = {
+  no_https: 'opens over http',
+  no_viewport: 'no mobile tag',
+  old_copyright: 'old copyright',
+  pdf_menu: 'PDF menu',
+  slow: 'slow to load',
+  no_description: 'no description',
+  none: 'clean',
+  unreachable: 'unreachable',
+};
+
+function OverviewTab({ api, tick, health, overview, onReview, onContact }) {
   const [stats, setStats] = useState(null);
   const [replies, setReplies] = useState(null);
   const [review, setReview] = useState(null);
@@ -539,6 +563,33 @@ function OverviewTab({ api, tick, health, onReview, onContact }) {
         ) : (
           <p className="aw-muted">Loading…</p>
         )}
+      </section>
+
+      <section className="aw-panel">
+        <h3>Site observations</h3>
+        <p className="aw-muted">
+          The desk opens each queued contact's site and writes down the first thing wrong with it; the observation sequence uses that as its
+          opener. Domains with no mail server are paused before they can bounce.
+        </p>
+        <div className="aw-tags">
+          <Tag>{overview.observe?.observed ?? 0} sites read</Tag>
+          <Tag tone={overview.observe?.pending ? 'warn' : 'dash'}>{overview.observe?.pending ?? 0} waiting to be read</Tag>
+          <Tag tone={overview.observe?.withGap ? 'ok' : 'dash'}>{overview.observe?.withGap ?? 0} with an observation</Tag>
+          <Tag tone={overview.domains?.undeliverable ? 'bad' : 'dash'}>
+            {overview.domains?.checked ?? 0} domains checked · {overview.domains?.undeliverable ?? 0} undeliverable
+          </Tag>
+        </div>
+        {Object.keys(overview.observe?.byKind ?? {}).length ? (
+          <div className="aw-tags" style={{ marginTop: 8 }}>
+            {Object.entries(overview.observe.byKind)
+              .sort((a, b) => b[1] - a[1])
+              .map(([kind, n]) => (
+                <Tag key={kind} tone={kind === 'none' ? 'ok' : kind === 'unreachable' ? 'dash' : 'warn'}>
+                  {OBSERVE_KIND[kind] ?? kind}: {n}
+                </Tag>
+              ))}
+          </div>
+        ) : null}
       </section>
 
       <section className="aw-panel">
@@ -778,7 +829,7 @@ function PersonModal({ id, api, onClose, onEdit, onOpenMessage }) {
           <ul className="aw-rows">
             {data.events.map((e) => (
               <li key={e.id} className="aw-row">
-                <Tag tone={EVENT_BAD.has(e.kind) ? 'bad' : EVENT_GOOD.has(e.kind) ? 'ok' : 'dash'}>{e.kind.replaceAll('_', ' ')}</Tag>
+                <Tag tone={EVENT_BAD.has(e.kind) ? 'bad' : EVENT_GOOD.has(e.kind) ? 'ok' : 'dash'}>{EVENT_LABEL[e.kind] ?? e.kind.replaceAll('_', ' ')}</Tag>
                 <span className="aw-muted" style={{ whiteSpace: 'pre-wrap' }}>
                   {snippet(e.detail ?? '', 300)}
                 </span>
@@ -875,7 +926,7 @@ function EmailTab({ api, run, tick, events, onOpen }) {
         <ul className="aw-rows">
           {events.map((e) => (
             <li key={e.id} className="aw-row">
-              <Tag tone={EVENT_BAD.has(e.kind) ? 'bad' : EVENT_GOOD.has(e.kind) ? 'ok' : 'dash'}>{e.kind.replaceAll('_', ' ')}</Tag>
+              <Tag tone={EVENT_BAD.has(e.kind) ? 'bad' : EVENT_GOOD.has(e.kind) ? 'ok' : 'dash'}>{EVENT_LABEL[e.kind] ?? e.kind.replaceAll('_', ' ')}</Tag>
               <span className="aw-row__title">{e.email ?? '—'}</span>
               <span className="aw-muted">{snippet(e.detail ?? '', 100)}</span>
               <span className="aw-muted">{ago(e.createdAt)} ago</span>
@@ -888,8 +939,9 @@ function EmailTab({ api, run, tick, events, onOpen }) {
   );
 }
 
-const EVENT_BAD = new Set(['failed', 'bounce', 'opt_out', 'complaint', 'cycle_failed', 'auto_paused', 'blocked']);
-const EVENT_GOOD = new Set(['reply', 'sent', 'published', 'cycle', 'approved']);
+const EVENT_BAD = new Set(['failed', 'bounce', 'opt_out', 'complaint', 'cycle_failed', 'auto_paused', 'blocked', 'undeliverable']);
+const EVENT_GOOD = new Set(['reply', 'sent', 'published', 'cycle', 'approved', 'auto_resumed', 'auto_approved']);
+const EVENT_LABEL = { dmarc_report: 'DMARC report', auto_resumed: 'auto-resumed', auto_approved: 'auto-approved', auto_paused: 'auto-paused' };
 
 /** One email: what leaves, word for word, and the hand edit. */
 function MessageModal({ id, api, onClose, onDone }) {
@@ -1046,7 +1098,7 @@ function MessageModal({ id, api, onClose, onDone }) {
 
 const POST_MAX = { x: 280, linkedin: 3000 };
 
-function PostsTab({ api, run, tick, onEdit }) {
+function PostsTab({ api, run, tick, holdHours = 0, onEdit }) {
   const [posts, setPosts] = useState(null);
   useEffect(() => {
     let live = true;
@@ -1077,7 +1129,7 @@ function PostsTab({ api, run, tick, onEdit }) {
             </h3>
             {group.hint ? <p className="aw-muted">{group.hint}</p> : null}
             {group.list.map((m) => (
-              <PostCard key={m.id} post={m} api={api} run={run} onEdit={onEdit} />
+              <PostCard key={m.id} post={m} api={api} run={run} holdHours={holdHours} onEdit={onEdit} />
             ))}
           </section>
         ) : null,
@@ -1087,9 +1139,11 @@ function PostsTab({ api, run, tick, onEdit }) {
   );
 }
 
-function PostCard({ post: m, api, run, onEdit }) {
+function PostCard({ post: m, api, run, holdHours = 0, onEdit }) {
   const open = ['draft', 'scheduled', 'failed'].includes(m.status);
   const max = POST_MAX[m.channel] ?? 3000;
+  // A held draft goes out on its own: the later of its hold expiring and its slot.
+  const releaseAt = m.status === 'draft' && holdHours > 0 ? Math.max((m.createdAt ?? 0) + holdHours * 3600, m.scheduledAt ?? 0) : null;
   return (
     <article style={{ borderTop: '1px solid var(--aw-line, #e5e5e5)', padding: '10px 0' }}>
       <div className="aw-inline">
@@ -1107,6 +1161,7 @@ function PostCard({ post: m, api, run, onEdit }) {
         ) : null}
       </div>
       <p style={{ whiteSpace: 'pre-wrap', margin: '8px 0' }}>{m.body}</p>
+      {releaseAt ? <div className="aw-muted">Goes out automatically {when(releaseAt)} unless you cancel it first.</div> : null}
       {m.error ? <div className="aw-warn">{m.error}</div> : null}
       {open ? (
         <div className="aw-inline">
@@ -1155,9 +1210,41 @@ function SequencesTab({ api, sequences }) {
     };
   }, [api, sequence, nonce]);
 
+  const replyRate = (s) => (s.sent ? pct(s.replies / s.sent) : '—');
+
   return (
     <section className="aw-panel">
-      <div className="aw-inline">
+      <h3>How each sequence is doing</h3>
+      <p className="aw-muted">Sent, replies and outcomes per sequence, counted on the contact's latest send.</p>
+      <table className="aw-table">
+        <thead>
+          <tr>
+            <th>Sequence</th>
+            <th>Sent</th>
+            <th>Replies</th>
+            <th>Reply rate</th>
+            <th>Opt-outs</th>
+            <th>Bounces</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sequences.map((s) => (
+            <tr key={s.key}>
+              <td className="aw-table__title">
+                {s.label}
+                {s.needsGap ? <div className="aw-muted">needs a site observation</div> : null}
+              </td>
+              <td>{s.stats.sent || '·'}</td>
+              <td>{s.stats.replies || '·'}</td>
+              <td>{replyRate(s.stats)}</td>
+              <td className={s.stats.optedOut ? 'aw-warn' : undefined}>{s.stats.optedOut || '·'}</td>
+              <td className={s.stats.bounced ? 'aw-warn' : undefined}>{s.stats.bounced || '·'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="aw-inline" style={{ marginTop: 14 }}>
         <select value={sequence} onChange={(e) => setSequence(e.target.value)}>
           {sequences.map((s) => (
             <option key={s.key} value={s.key}>
@@ -1361,6 +1448,25 @@ function SettingsTab({ overview, run, api, contactsById }) {
             />
           </Field>
           <Field
+            label="Auto-resume"
+            hint="On: a pause the desk caused itself (bounces or complaints) switches back on after 7 quiet days, starting at 20 a day and ramping up. A pause you set by hand is never undone."
+          >
+            <Segmented
+              value={Boolean(draft.autoResume)}
+              options={[
+                { value: true, label: 'On' },
+                { value: false, label: 'Off' },
+              ]}
+              onChange={(v) => set('autoResume', v)}
+            />
+          </Field>
+          <Field
+            label="Observation sequence share (%)"
+            hint="Of the contacts the desk reads a site observation for, this percent get the observation opener instead of the plain one. 0 keeps the experiment off, 100 makes it the only cold opener."
+          >
+            <input inputMode="numeric" min="0" max="100" value={draft.obsShare ?? 50} onChange={(e) => set('obsShare', Number(e.target.value))} />
+          </Field>
+          <Field
             label="Review first emails"
             hint="On: a first email goes out only after you read it in Review next (or rewrote it). Follow-ups ride on the first. Off: everything queued goes at its time."
           >
@@ -1440,6 +1546,12 @@ function SettingsTab({ overview, run, api, contactsById }) {
             ]}
             onChange={(v) => set('postApproval', v)}
           />
+        </Field>
+        <Field
+          label="Post hold (hours, 0 = approve by hand)"
+          hint="How long a drafted post waits before it goes out on its own. 0 keeps every post waiting for your approval in Posts. Up to 168."
+        >
+          <input inputMode="numeric" min="0" max="168" value={draft.postHoldHours ?? 24} onChange={(e) => set('postHoldHours', Number(e.target.value))} />
         </Field>
         <Field
           label="Voice notes"

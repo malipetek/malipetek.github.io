@@ -31,12 +31,12 @@ cd worker && npx wrangler secret put MARKETING_TOKEN && cd ..
 
 Two dashboard steps that no command covers:
 
-- **Email Routing** (Email → Email Routing → Routes): `hello@malipetek.dev` →
+- **Email Routing** (Email → Email Routing → Routes): `hello@ptechsolutions.net` →
   **Send to a Worker** → `ptechsolutions-intercom`. The existing `reply@` and `new@`
   rules stay. Do not also forward `hello@` somewhere: the Worker forwards the
   mail Ali should read, so a second rule would double it.
-- **Sending**: `hello@malipetek.dev` is on the already-onboarded
-  `malipetek.dev` sending domain, so DNS is done. The binding is
+- **Sending**: `hello@ptechsolutions.net` is on the ptechsolutions.net sending
+  domain with DKIM, so DNS is done. The binding is
   `MARKETING` in `worker/wrangler.jsonc`, separate from the portal's own
   mail, so a cold-email reputation problem cannot spill into magic links.
 
@@ -63,7 +63,13 @@ A run sends email only when all of these hold:
 | Contact not replied / opted out / bounced | enforced per message |
 
 An import also pauses any contact without a `gap` (the specific observation),
-because the cold sequences are written around one. Nothing half-written leaves.
+because the cold sequences are written around one. Nothing half-written leaves —
+and the gap itself no longer waits for a person: `observe.ts` reads up to a
+dozen queued sites per tick and writes the first problem it finds (or records
+that the page was clean or unreachable), then re-renders the queued mail. A
+deterministic share of cold contacts (`marketing_obs_share`, default 50) moves
+to `cold_obs`, the sequence that opens on that observation; `cold_a` stays the
+control.
 
 ## Replies, opt-outs, bounces
 
@@ -83,8 +89,8 @@ All of it is visible in the desk's event list.
 
 Nobody writes the social posts by hand. Every five minutes the Worker asks
 whether the queue needs posts, and when it does, files **one approved system
-ticket** on the `malipetek-dev-site` project. A fleet node claims it like any
-other ticket and runs an agent in a worktree of this repo.
+ticket** on the `ptechsolutions` project. A fleet node claims it like any
+other ticket and runs an agent in a worktree of the site repo.
 
 The brief (the ticket's first message) tells the agent to read
 [launch/social.md](launch/social.md), [launch/proof.md](launch/proof.md) and
@@ -181,12 +187,14 @@ batch.
 
 ## What still needs a person
 
-- writing the one observation per cold contact (`gap`);
 - reading a prospect CSV before importing it;
 - signing the publisher in, and re-signing when a session expires;
 - answering replies.
 
 The automation carries the queue and the record; it does not decide who to
-write to or what to say about them. The exception is the content cycle: the
-posts are written and queued without anyone reading them, so the desk's Queue
-tab is where you look when you are curious, and **Cancel** is the override.
+write to. Site observations, deliverability checks, the health-pause resume
+and the weekly guide pages all run on the cron. The exception is the content
+cycle: the posts are written and queued without anyone reading them (they hold
+as drafts for `marketing_post_hold_hours`, then schedule themselves), so the
+desk's Queue tab is where you look when you are curious, and **Cancel** is the
+override.

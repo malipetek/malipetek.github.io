@@ -200,6 +200,66 @@ Without a written observation, the queue sends this instead (it makes no claim a
 
 ---
 
+## Cold: opens on the observation of their site
+
+The challenger arm: the same offer as Cold A, but the email opens on the
+one true thing the desk observed on their site. Only contacts the
+observation writer has reached get this sequence.
+
+### First email
+
+**Subject:** {site}
+
+> Hi {name},
+>
+> {gap}
+>
+> I can fix that for you. It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy the change.
+>
+> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+>
+> Want me to fix it?
+>
+> Muhammet
+> ptechsolutions.net
+
+Without a written observation, the queue sends this instead (it makes no claim about the site):
+
+> Hi {name},
+>
+> {gap}
+>
+> I can fix that for you. It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy the change.
+>
+> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+>
+> Want me to fix it?
+>
+> Muhammet
+> ptechsolutions.net
+
+### Follow-up, day 4
+
+**Subject:** {site}
+
+> Hi {name},
+>
+> Should I go ahead with the fix on {site}? A one-line reply is enough.
+>
+> Muhammet
+
+### Follow-up, day 10
+
+**Subject:** {site}
+
+> Hi {name},
+>
+> Last note from me. If you want it fixed later, you can ask at ptechsolutions.net/portal, with no call or quote first.
+>
+> Muhammet
+
+---
+
 ## No website: an email on the map, no site
 
 For a business OpenStreetMap lists with an email and no website
@@ -250,7 +310,7 @@ open with a pitch.
 > Thanks for the note on {post}. Since you mentioned {problem}: that is the
 > exact kind of last-mile thing I do now — an agent types, I approve and check
 > it, you pay for my minutes by the second. If it is useful, the portal is
-> ptechsolutions.net/portal. If not, no follow-up from me.
+> malipetek.dev/portal. If not, no follow-up from me.
 
 ---
 
@@ -306,45 +366,6 @@ Answer in the thread, in plain words, within the same day where possible.
 
 > I will look at it and tell you honestly. If it is not something I should
 > touch, I will say so rather than learn on your bill.
-
-**"Is this the same as malipetek.dev?"**
-
-> Yes. The portal moved from malipetek.dev/portal to ptechsolutions.net/portal
-> in November 2026. Same me, same account, same requests and bills. The old
-> address forwards to the new one. malipetek.dev is now my lab: the
-> knowledgebase and the tools I build for my own agents.
-
----
-
-## Existing clients: the portal moved
-
-Send once, one at a time, to everyone who used malipetek.dev/portal before
-13 November 2026. Plain text, from hello@ptechsolutions.net. Not a campaign:
-no follow-ups. The sign-in email tells these accounts the same thing, so a
-client who skips this one still finds out the first time they sign in.
-
-**Subject:** The portal moved to ptechsolutions.net
-
-> Hi {name},
->
-> Short note: the client portal you used at malipetek.dev/portal is now at
-> ptechsolutions.net/portal.
->
-> Nothing else changes. Your account, projects, requests and bills are all
-> there. You sign in with the same email. Old links and bookmarks forward to
-> the new address.
->
-> Emails from the portal now come from portal@ptechsolutions.net, and replies
-> go through reply@ptechsolutions.net. If your mail app filed them as spam,
-> mark one as not spam, or add the addresses to your contacts.
->
-> One thing to redo: if you connected ChatGPT or Claude to the portal, remove
-> that connector and add it again with ptechsolutions.net/mcp, then sign in.
-> The old address, malipetek.dev/mcp, now serves my public knowledgebase, so
-> it cannot see your projects any more.
->
-> Muhammet
-> ptechsolutions.net/portal
 
 ---
 

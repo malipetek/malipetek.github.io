@@ -657,7 +657,7 @@ const groups = {
   },
 
   async content({ admin }) {
-    // The dev-site project the cycle ticket is filed against.
+    // The ptechsolutions project the cycle ticket is filed against.
     sql(
       `INSERT INTO projects (id, slug, name, created_at) VALUES ('e2e-dev-site', 'ptechsolutions', 'ptechsolutions.net', ${Math.floor(Date.now() / 1000)})`,
     );
@@ -670,7 +670,7 @@ const groups = {
 
     const ticket = (await call(`/admin/tickets/${filed.data.id}`, { auth: admin })).data;
     check(
-      'the cycle ticket is approved, autonomous and on the dev-site project',
+      'the cycle ticket is approved, autonomous and on the ptechsolutions project',
       ticket.ticket.status === 'approved' && ticket.ticket.kind === 'system' && ticket.ticket.source === 'dsh' && ticket.ticket.attention === 'auto' && ticket.ticket.project_slug === 'ptechsolutions',
       JSON.stringify(ticket.ticket),
     );

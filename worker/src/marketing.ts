@@ -54,6 +54,12 @@ export interface MarketingSettings {
   reviewFirst: boolean;
   /** Which emails carry the workshop GIF (EMAIL_IMAGE) above the signature. */
   image: 'off' | 'first' | 'all';
+  /** A health pause lifts itself a week later when the numbers have calmed. */
+  autoResume: boolean;
+  /** Share of observed contacts (id % 100 under this) that try cold_obs. */
+  obsShare: number;
+  /** Hours a cycle's posts wait as drafts before they schedule themselves; 0 waits for Ali. */
+  postHoldHours: number;
 }
 
 const SETTING_DEFAULTS: MarketingSettings = {
@@ -71,6 +77,9 @@ const SETTING_DEFAULTS: MarketingSettings = {
   postApproval: true,
   reviewFirst: false,
   image: 'first',
+  autoResume: true,
+  obsShare: 50,
+  postHoldHours: 24,
 };
 
 const SETTING_KEYS: Record<keyof MarketingSettings, string> = {
@@ -88,6 +97,9 @@ const SETTING_KEYS: Record<keyof MarketingSettings, string> = {
   postApproval: 'marketing_post_approval',
   reviewFirst: 'marketing_review_first',
   image: 'marketing_image',
+  autoResume: 'marketing_auto_resume',
+  obsShare: 'marketing_obs_share',
+  postHoldHours: 'marketing_post_hold_hours',
 };
 
 const FIELD_OF_KEY = Object.fromEntries(Object.entries(SETTING_KEYS).map(([field, key]) => [key, field])) as Record<
@@ -128,6 +140,9 @@ const RULES: Record<keyof MarketingSettings, (raw: unknown) => unknown> = {
   postApproval: (raw) => (typeof raw === 'boolean' ? raw : undefined),
   reviewFirst: (raw) => (typeof raw === 'boolean' ? raw : undefined),
   image: (raw) => (raw === 'off' || raw === 'first' || raw === 'all' ? raw : undefined),
+  autoResume: (raw) => (typeof raw === 'boolean' ? raw : undefined),
+  obsShare: int(0, 100),
+  postHoldHours: int(0, 168),
 };
 
 export async function readMarketingSettings(env: Env): Promise<MarketingSettings> {
@@ -212,7 +227,7 @@ export function sendWindow(settings: MarketingSettings, t: number): WindowState 
 
 /* ——————————————————————— sequences ——————————————————————— */
 
-export type SequenceKind = 'cold_a' | 'cold_b' | 'nosite' | 'warm';
+export type SequenceKind = 'cold_a' | 'cold_b' | 'cold_obs' | 'nosite' | 'warm';
 
 interface SequenceStep {
   kind: string;
@@ -346,6 +361,64 @@ Last note from me. If you want help with AI or getting a project online later, y
 Muhammet`,
     },
   ],
+  /*
+   * The challenger arm: same offer as cold_a, but it opens on the observation
+   * the desk wrote about the prospect's own site. cold_a stays untouched as
+   * the control — this is the test, not a replacement. The subject is the
+   * bare domain ({{site}} renders it), and follow-ups are not threaded, so
+   * they keep the same subject rather than a "Re:" prefix.
+   */
+  cold_obs: [
+    {
+      kind: 'first',
+      day: 0,
+      subject: '{{site}}',
+      body: `{{greeting}}
+
+{{gap}}
+
+I can fix that for you. It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy the change.
+
+It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+
+Want me to fix it?
+
+Muhammet
+ptechsolutions.net`,
+      plain: `{{greeting}}
+
+{{gap}}
+
+I can fix that for you. It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy the change.
+
+It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+
+Want me to fix it?
+
+Muhammet
+ptechsolutions.net`,
+    },
+    {
+      kind: 'followup_1',
+      day: 4,
+      subject: '{{site}}',
+      body: `{{greeting}}
+
+Should I go ahead with the fix on {{site}}? A one-line reply is enough.
+
+Muhammet`,
+    },
+    {
+      kind: 'followup_2',
+      day: 10,
+      subject: '{{site}}',
+      body: `{{greeting}}
+
+Last note from me. If you want it fixed later, you can ask at ptechsolutions.net/portal, with no call or quote first.
+
+Muhammet`,
+    },
+  ],
   // For a business a mapper recorded with an email and no website
   // (marketing/prospector/osm.mjs → the mail-only CSV). It says where we found
   // them, because that is the honest answer to "how did you get my address".
@@ -427,11 +500,12 @@ Muhammet`,
 export const SEQUENCE_LABELS: Record<SequenceKind, string> = {
   cold_a: 'Cold A: someone who built it with AI',
   cold_b: 'Cold B: a business owner with a small list',
+  cold_obs: 'Cold: opens on the observation of their site',
   nosite: 'No website: an email on the map, no site',
   warm: 'Warm: past collaborators',
 };
 
-export const SEQUENCE_NEEDS_GAP: Record<SequenceKind, boolean> = { cold_a: true, cold_b: true, nosite: false, warm: false };
+export const SEQUENCE_NEEDS_GAP: Record<SequenceKind, boolean> = { cold_a: true, cold_b: true, cold_obs: true, nosite: false, warm: false };
 
 export function isSequenceKind(value: unknown): value is SequenceKind {
   return typeof value === 'string' && value in SEQUENCES;
@@ -469,11 +543,30 @@ export function fillTemplate(text: string, contact: ContactFields): string {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_EMAIL_CHARS = 254;
+// Control characters SES refuses outright ("Local address contains control or
+// whitespace"): anything under 0x20 or 0x7f that a paste can smuggle in.
+// eslint-disable-next-line no-control-regex
+const CONTROL_RE = /[\x00-\x1f\x7f]/;
+
+/**
+ * An address SES will accept: no whitespace or control characters, exactly
+ * one @, a non-empty local part, a dotted domain, 254 characters or fewer.
+ * cleanEmail trims and lowercases first; this checks what is left.
+ */
+export function validEmail(addr: string): boolean {
+  if (typeof addr !== 'string' || !addr || addr.length > MAX_EMAIL_CHARS) return false;
+  if (CONTROL_RE.test(addr) || /\s/.test(addr)) return false;
+  const parts = addr.split('@');
+  if (parts.length !== 2) return false;
+  const [local, domain] = parts;
+  if (!local || !domain || !domain.includes('.')) return false;
+  return EMAIL_RE.test(addr);
+}
 
 export function cleanEmail(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const email = value.trim().toLowerCase();
-  return email && email.length <= MAX_EMAIL_CHARS && EMAIL_RE.test(email) ? email : null;
+  return email && validEmail(email) ? email : null;
 }
 
 const text = (value: unknown, max: number): string | null => {
@@ -597,6 +690,9 @@ export function sequenceOfSubject(subject: string | null): SequenceKind | null {
   if (/^(Re: )?(The smallest thing on |A small fix on |Vibe contracting for )/.test(s)) return 'cold_b';
   if (/^(Re: )?A small experiment/.test(s)) return 'warm';
   if (/^(Re: )?A website for /.test(s)) return 'nosite';
+  // The observation sequence's subject is the bare domain ("corroof.com",
+  // "Re: corroof.com"); no other sequence's subject is only a hostname.
+  if (/^(Re: )?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(s)) return 'cold_obs';
   return null;
 }
 
@@ -607,15 +703,18 @@ export function sequenceOfSubject(subject: string | null): SequenceKind | null {
  */
 export async function rerenderScheduled(
   env: Env,
-  move: { from?: SequenceKind; to?: SequenceKind } = {},
+  move: { from?: SequenceKind; to?: SequenceKind; contactId?: number } = {},
 ): Promise<{ updated: number; skipped: number; moved: number }> {
+  const scoped = move.contactId !== undefined;
   const { results } = await env.DB.prepare(
     `SELECT m.id, m.step, m.subject, c.email, c.name, c.business, c.site, c.gap
        FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
       WHERE m.channel = 'email' AND m.status = 'scheduled'
         -- A hand-edited email is Ali's wording; a template change must not overwrite it.
-        AND m.edited_at IS NULL`,
-  ).all<{ id: number; step: number; subject: string | null; email: string; name: string | null; business: string | null; site: string | null; gap: string | null }>();
+        AND m.edited_at IS NULL${scoped ? ' AND m.contact_id = ?' : ''}`,
+  )
+    .bind(...(scoped ? [move.contactId as number] : []))
+    .all<{ id: number; step: number; subject: string | null; email: string; name: string | null; business: string | null; site: string | null; gap: string | null }>();
   const t = now();
   const updates: D1PreparedStatement[] = [];
   let skipped = 0;
@@ -1042,6 +1141,175 @@ export async function listHealth(env: Env, t = now()): Promise<ListHealth> {
   return judgeHealth(sent?.n ?? 0, count('bounce'), count('complaint'));
 }
 
+/* —— deliverability: is the address's domain real —— */
+
+const MX_CACHE_DAYS = 30;
+const MX_TIMEOUT_MS = 5_000;
+const MX_PER_TICK = 40;
+
+/**
+ * Does the domain accept mail? One DoH lookup, cached for thirty days in
+ * marketing_domains. 1 has MX records, 0 provably has none, and null means we
+ * could not tell (timeout, SERVFAIL) — never a reason to pause anyone.
+ */
+export async function domainMx(env: Env, domain: string, t = now()): Promise<number | null> {
+  const cached = await env.DB.prepare('SELECT mx, checked_at FROM marketing_domains WHERE domain = ?')
+    .bind(domain)
+    .first<{ mx: number; checked_at: number }>();
+  if (cached && t - cached.checked_at < MX_CACHE_DAYS * 86400) return cached.mx;
+
+  let mx: number | null = null;
+  try {
+    const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=MX`, {
+      headers: { accept: 'application/dns-json' },
+      signal: AbortSignal.timeout(MX_TIMEOUT_MS),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { Status?: number; Answer?: { type?: number }[] };
+      if (data.Status === 0) mx = (data.Answer ?? []).some((a) => a.type === 15) ? 1 : 0;
+      else if (data.Status === 3) mx = 0;
+    }
+  } catch {
+    /* no answer is not an answer */
+  }
+  if (mx === null) return null;
+  await env.DB.prepare(
+    `INSERT INTO marketing_domains (domain, mx, checked_at) VALUES (?, ?, ?)
+     ON CONFLICT(domain) DO UPDATE SET mx = excluded.mx, checked_at = excluded.checked_at`,
+  )
+    .bind(domain, mx, t)
+    .run();
+  return mx;
+}
+
+/** The domain part of an address, lowercased, or null when there is none. */
+function emailDomain(email: string): string | null {
+  const at = email.lastIndexOf('@');
+  return at > 0 && at < email.length - 1 ? email.slice(at + 1).toLowerCase() : null;
+}
+
+/**
+ * Pause a contact whose address cannot be delivered to: bad syntax or a
+ * domain with no MX. Same shape as the country block — status, a note that
+ * says when it was checked, queued mail cancelled, an event for the feed.
+ */
+async function pauseUndeliverable(env: Env, contact: { id: number; email: string }, reason: string, t: number): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE marketing_contacts SET status = 'paused', notes = COALESCE(notes || '\n', '') || ?, updated_at = ? WHERE id = ?`,
+  )
+    .bind(`Undeliverable: ${reason} (checked ${dayLabel(t)})`, t, contact.id)
+    .run();
+  await cancelScheduled(env, contact.id);
+  await logEvent(env, { contactId: contact.id, kind: 'undeliverable', detail: `${contact.email}: ${reason}` });
+}
+
+function dayLabel(t: number): string {
+  return new Date(t * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * The cron's domain sweep: a bounded number of not-yet-checked domains among
+ * contacts still waiting to be mailed, whether or not outreach is live. A
+ * domain with no MX pauses its contacts here instead of bouncing later.
+ */
+export async function sweepDomains(env: Env, t = now()): Promise<number> {
+  const { results } = await env.DB.prepare(
+    `SELECT c.id, c.email FROM marketing_contacts c
+      WHERE c.status IN ('new', 'queued')
+        AND NOT EXISTS (
+          SELECT 1 FROM marketing_domains d
+           WHERE d.domain = substr(c.email, instr(c.email, '@') + 1)
+             AND d.checked_at >= ?
+        )
+      ORDER BY c.id LIMIT ?`,
+  )
+    .bind(t - MX_CACHE_DAYS * 86400, MX_PER_TICK * 4)
+    .all<{ id: number; email: string }>();
+  if (!results?.length) return 0;
+
+  // One lookup per domain per tick; contacts sharing a domain share the answer.
+  const seen = new Map<string, number | null>();
+  let paused = 0;
+  let checked = 0;
+  for (const contact of results) {
+    if (checked >= MX_PER_TICK) break;
+    if (!validEmail(contact.email)) {
+      await pauseUndeliverable(env, contact, 'the address itself is not deliverable', t);
+      paused += 1;
+      continue;
+    }
+    const domain = emailDomain(contact.email);
+    if (!domain) continue;
+    let mx = seen.get(domain);
+    if (mx === undefined) {
+      mx = await domainMx(env, domain, t);
+      seen.set(domain, mx);
+      checked += 1;
+    }
+    if (mx === 0) {
+      await pauseUndeliverable(env, contact, `the domain ${domain} has no mail records`, t);
+      paused += 1;
+    }
+  }
+  return paused;
+}
+
+/* —— coming back from a health pause —— */
+
+/** A week, the time a tripped desk waits before it may try again. */
+export const AUTO_RESUME_AFTER = 7 * 86400;
+/** The ramp back: twenty a day, growing by twenty each day for two weeks. */
+const RAMP_DAYS = 14;
+const RAMP_START = 20;
+
+/**
+ * The daily cap while a resume is still ramping: twenty sends on the first
+ * day back, twenty more each day, the full cap after two weeks.
+ */
+export function effectiveCap(dailyCap: number, resumedAt: number | null, t: number): number {
+  if (!resumedAt || t < resumedAt) return dailyCap;
+  const days = Math.floor((t - resumedAt) / 86400);
+  if (days >= RAMP_DAYS) return dailyCap;
+  return Math.min(dailyCap, RAMP_START * (1 + days));
+}
+
+/**
+ * Whether a paused desk may switch itself back on: the pause is a week old,
+ * the list has been calm (no health trip), and it has not tripped twice in a
+ * month — a second trip inside the window means a person should look first.
+ */
+export function shouldAutoResume(input: {
+  enabled: boolean;
+  pausedAt: number | null;
+  t: number;
+  trip: string | null;
+  pausesLast30d: number;
+}): boolean {
+  if (!input.enabled || !input.pausedAt) return false;
+  if (input.t - input.pausedAt < AUTO_RESUME_AFTER) return false;
+  if (input.trip) return false;
+  return input.pausesLast30d <= 1;
+}
+
+async function readStamp(env: Env, key: string): Promise<number | null> {
+  const row = await env.DB.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+  try {
+    const value = Number(JSON.parse(row?.value ?? 'null'));
+    return Number.isFinite(value) && value > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeStamp(env: Env, key: string, value: number | null): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  )
+    .bind(key, JSON.stringify(value), now())
+    .run();
+}
+
 /* —— the run —— */
 
 /** With review on, a first email waits until Ali has read or rewritten it. */
@@ -1060,16 +1328,60 @@ export async function runMarketing(env: Env): Promise<RunSummary> {
   const window = sendWindow(settings, t);
   const summary: RunSummary = { live: settings.live, window, sent: 0, failed: 0, reason: null };
 
-  if (!settings.live) return { ...summary, reason: 'paused' };
+  const health = await listHealth(env, t);
+  if (!settings.live) {
+    // A health pause is not forever: a week of calm numbers and the desk
+    // switches itself back on, then ramps the cap up again.
+    const [pausedAt, resumedAt, pauses] = await Promise.all([
+      readStamp(env, 'marketing_auto_paused_at'),
+      readStamp(env, 'marketing_resumed_at'),
+      env.DB.prepare(`SELECT COUNT(*) AS n FROM marketing_events WHERE kind = 'auto_paused' AND created_at > ?`)
+        .bind(t - 30 * 86400)
+        .first<{ n: number }>(),
+    ]);
+    if (
+      shouldAutoResume({
+        enabled: settings.autoResume,
+        pausedAt,
+        t,
+        trip: health.trip,
+        pausesLast30d: pauses?.n ?? 0,
+      })
+    ) {
+      await saveMarketingSettings(env, { live: true });
+      await writeStamp(env, 'marketing_auto_paused_at', null);
+      await writeStamp(env, 'marketing_resumed_at', t);
+      await logEvent(env, { kind: 'auto_resumed', detail: `paused since ${dayLabel(pausedAt ?? t)}, cap ramps from ${RAMP_START}/day` });
+      await mailAli(env, {
+        subject: 'Outreach resumed itself',
+        text: [
+          `The marketing desk switched itself back on: it has been paused since ${dayLabel(pausedAt ?? t)} and the last ${HEALTH_DAYS} days show no bounce or complaint problem.`,
+          `It ramps back carefully: about ${RAMP_START} emails a day for the first days, then the full cap of ${settings.dailyCap}/day by day ${RAMP_DAYS}.`,
+          'Switch it off in the desk if that is not what you want.',
+          `${siteUrl(env)}/portal/admin#marketing`,
+        ].join('\n'),
+      });
+      settings.live = true;
+      summary.live = true;
+    } else {
+      return { ...summary, reason: 'paused' };
+    }
+  }
+
   const sender = senderState(env, settings);
   if (!sender.ready) return { ...summary, reason: sender.reason ?? 'sender_unbound' };
   if (!settings.postalAddress) return { ...summary, reason: 'postal_address_unset' };
   if (!window.open) return { ...summary, reason: window.reason ?? 'outside_hours' };
 
-  const health = await listHealth(env, t);
   if (health.trip) {
+    const pausedAt = await readStamp(env, 'marketing_auto_paused_at');
+    const recent = await env.DB.prepare(`SELECT COUNT(*) AS n FROM marketing_events WHERE kind = 'auto_paused' AND created_at > ?`)
+      .bind(t - 30 * 86400)
+      .first<{ n: number }>();
     await saveMarketingSettings(env, { live: false });
+    await writeStamp(env, 'marketing_auto_paused_at', t);
     const detail = `bounces ${health.bounces}/${health.sent} (${(health.bounceRate * 100).toFixed(1)}%), complaints ${health.complaints} (${(health.complaintRate * 100).toFixed(2)}%) over ${HEALTH_DAYS} days`;
+    const trips = (recent?.n ?? 0) + 1;
     await logEvent(env, { kind: 'auto_paused', detail: `${health.trip}: ${detail}` });
     await mailAli(env, {
       subject: `Outreach paused: ${health.trip === 'bounce_rate' ? 'too many bounces' : 'too many complaints'}`,
@@ -1077,7 +1389,10 @@ export async function runMarketing(env: Env): Promise<RunSummary> {
         `The marketing desk paused itself: ${detail}.`,
         `Limits: bounces ${MAX_BOUNCE_RATE * 100}%, complaints ${MAX_COMPLAINT_RATE * 100}%. SES reviews an account at 5% and 0.1%.`,
         '',
-        'Look at Sources in the desk to see which list is doing it, pause or drop that list, then switch outreach back on.',
+        trips > 1
+          ? `This is the second health pause in 30 days, so it stays off until you switch it back on.`
+          : 'It switches itself back on in 7 days if the numbers stay clean; switch it off sooner in the desk if you disagree.',
+        'Look at Sources in the desk to see which list is doing it, pause or drop that list.',
         `${siteUrl(env)}/portal/admin#marketing`,
       ].join('\n'),
     });
@@ -1086,11 +1401,15 @@ export async function runMarketing(env: Env): Promise<RunSummary> {
 
   const { dayStart } = localClock(settings.offsetMinutes, t);
   const sentToday = await countSentToday(env, dayStart);
-  const room = Math.max(0, Math.min(settings.perRun, settings.dailyCap - sentToday));
+  const resumedAt = await readStamp(env, 'marketing_resumed_at');
+  const cap = effectiveCap(settings.dailyCap, resumedAt, t);
+  const room = Math.max(0, Math.min(settings.perRun, cap - sentToday));
   if (!room) return { ...summary, reason: 'daily_cap' };
 
+  // A few extra rows so contacts paused as undeliverable do not waste the
+  // run's room; the loop below stops once `room` sends have been attempted.
   const { results } = await env.DB.prepare(
-    `SELECT m.id
+    `SELECT m.id, m.contact_id, c.email
        FROM marketing_messages m JOIN marketing_contacts c ON c.id = m.contact_id
       WHERE m.channel = 'email' AND m.status = 'scheduled' AND m.scheduled_at <= ?
         AND c.status IN ('new', 'queued', 'contacted')
@@ -1098,16 +1417,47 @@ export async function runMarketing(env: Env): Promise<RunSummary> {
       ORDER BY m.scheduled_at, m.id
       LIMIT ?`,
   )
-    .bind(t, room)
-    .all<{ id: number }>();
+    .bind(t, room + 12)
+    .all<{ id: number; contact_id: number; email: string }>();
 
-  const send = async (id: number) => {
-    const message = await claimEmail(env, id, t);
-    if (!message) return;
+  // Domains are looked up once per run, not once per message.
+  const mxCache = new Map<string, number | null>();
+  // `slots` is reserved synchronously, so a chunk of five can never send more
+  // than the room allows; an undeliverable skip hands its slot back.
+  let slots = room;
+  const send = async (row: { id: number; contact_id: number; email: string }) => {
+    if (slots <= 0) return;
+    slots -= 1;
+    const skip = async (reason: string) => {
+      slots += 1;
+      await pauseUndeliverable(env, { id: row.contact_id, email: row.email }, reason, t);
+    };
+    if (!validEmail(row.email)) {
+      await skip('the address itself is not deliverable');
+      return;
+    }
+    const domain = emailDomain(row.email);
+    if (domain) {
+      let mx = mxCache.get(domain);
+      if (mx === undefined) {
+        mx = await domainMx(env, domain, t);
+        mxCache.set(domain, mx);
+      }
+      if (mx === 0) {
+        await skip(`the domain ${domain} has no mail records`);
+        return;
+      }
+    }
+    const message = await claimEmail(env, row.id, t);
+    if (!message) {
+      slots += 1;
+      return;
+    }
     if (await deliverEmail(env, settings, message)) summary.sent += 1;
     else summary.failed += 1;
   };
-  for (const part of chunk(results ?? [], CONCURRENCY)) await Promise.all(part.map((row) => send(row.id)));
+  const queue = [...(results ?? [])];
+  for (const part of chunk(queue, CONCURRENCY)) await Promise.all(part.map((row) => send(row)));
   return summary;
 }
 
@@ -1118,6 +1468,18 @@ export function isOptOut(body: string): boolean {
   const text = body.trim().slice(0, 600);
   if (/^\s*(no|stop|no thanks|no thank you|not interested)\s*[.!]?\s*$/i.test(text)) return true;
   return /\b(unsubscribe|opt[- ]?out|remove me|take me off|stop (emailing|writing)|don'?t (email|contact|write))\b/i.test(text);
+}
+
+/**
+ * The machine mail that is not a person: DMARC aggregate reports from the big
+ * receivers, and anything whose subject says "report domain:". They used to
+ * land in the inbox as fake replies and count toward "inbound".
+ */
+const AUTOMATED_REPORT_FROM = /dmarc/i;
+const AUTOMATED_REPORT_SUBJECT = /^(\[preview\]\s*)?report domain:/i;
+
+export function isAutomatedReport(mail: { headerFrom: string; subject: string }): boolean {
+  return AUTOMATED_REPORT_FROM.test(mail.headerFrom) || AUTOMATED_REPORT_SUBJECT.test(mail.subject ?? '');
 }
 
 const excerpt = (body: string, max: number) => (body.length > max ? `${body.slice(0, max)}…` : body);
@@ -1138,6 +1500,11 @@ export interface InboundMarketingMail {
  */
 export async function handleMarketingMail(env: Env, mail: InboundMarketingMail): Promise<void> {
   const t = now();
+  // A DMARC report is a machine writing about our mail, not a reply to it.
+  if (isAutomatedReport(mail)) {
+    await logEvent(env, { kind: 'dmarc_report', detail: `${mail.headerFrom}: ${mail.subject}`.slice(0, 300) });
+    return;
+  }
   const contact = mail.verified
     ? await env.DB.prepare('SELECT * FROM marketing_contacts WHERE email = ?')
         .bind(mail.headerFrom)
@@ -1593,6 +1960,49 @@ export const marketing = new Hono<PortalEnv>();
 
 marketing.use('/admin/marketing/*', requireUser, requireAdmin);
 
+interface SequenceStats {
+  sent: number;
+  replies: number;
+  optedOut: number;
+  bounced: number;
+}
+
+/**
+ * Per-sequence outcomes for the desk: a message's sequence comes from its
+ * subject (the table keeps the step, not the sequence), and a contact's
+ * reply, opt-out or bounce lands on the sequence their latest send belonged to.
+ */
+async function sequenceStats(env: Env): Promise<Record<SequenceKind, SequenceStats>> {
+  const out = Object.fromEntries(
+    (Object.keys(SEQUENCE_LABELS) as SequenceKind[]).map((kind) => [kind, { sent: 0, replies: 0, optedOut: 0, bounced: 0 }]),
+  ) as Record<SequenceKind, SequenceStats>;
+  const [sent, contacts] = await Promise.all([
+    env.DB.prepare(`SELECT contact_id, subject FROM marketing_messages WHERE channel = 'email' AND status = 'sent' ORDER BY sent_at, id`).all<{
+      contact_id: number;
+      subject: string | null;
+    }>(),
+    env.DB.prepare(`SELECT id, status FROM marketing_contacts WHERE status IN ('replied', 'opted_out', 'bounced')`).all<{
+      id: number;
+      status: string;
+    }>(),
+  ]);
+  const latest = new Map<number, SequenceKind>();
+  for (const row of sent.results ?? []) {
+    const kind = sequenceOfSubject(row.subject);
+    if (!kind) continue;
+    out[kind].sent += 1;
+    latest.set(row.contact_id, kind);
+  }
+  for (const contact of contacts.results ?? []) {
+    const kind = latest.get(contact.id);
+    if (!kind) continue;
+    if (contact.status === 'replied') out[kind].replies += 1;
+    else if (contact.status === 'opted_out') out[kind].optedOut += 1;
+    else if (contact.status === 'bounced') out[kind].bounced += 1;
+  }
+  return out;
+}
+
 marketing.get('/admin/marketing', async (c) => {
   const env = c.env;
   const settings = await readMarketingSettings(env);
@@ -1625,6 +2035,26 @@ marketing.get('/admin/marketing', async (c) => {
 
   const dueCounts = Object.fromEntries(['email', 'x', 'linkedin'].map((channel) => [channel, due.results?.find((r) => r.channel === channel)?.n ?? 0]));
 
+  const [autoPausedAt, resumedAt, observe, observeKinds, domains, seqStats] = await Promise.all([
+    readStamp(env, 'marketing_auto_paused_at'),
+    readStamp(env, 'marketing_resumed_at'),
+    env.DB.prepare(
+      `SELECT SUM(gap IS NOT NULL AND gap != '') AS with_gap,
+              SUM(observed_at IS NOT NULL) AS observed,
+              SUM(status IN ('new', 'queued') AND site IS NOT NULL AND site != '' AND (gap IS NULL OR gap = '') AND observed_at IS NULL) AS pending
+         FROM marketing_contacts`,
+    ).first<{ with_gap: number | null; observed: number | null; pending: number | null }>(),
+    env.DB.prepare(
+      `SELECT COALESCE(gap_kind, '(none)') AS kind, COUNT(*) AS n FROM marketing_contacts
+        WHERE observed_at IS NOT NULL GROUP BY COALESCE(gap_kind, '(none)')`,
+    ).all<{ kind: string; n: number }>(),
+    env.DB.prepare('SELECT COUNT(*) AS checked, SUM(mx = 0) AS undeliverable FROM marketing_domains').first<{
+      checked: number | null;
+      undeliverable: number | null;
+    }>(),
+    sequenceStats(env),
+  ]);
+
   return out(c, {
     settings,
     sender: marketingFrom(env),
@@ -1636,6 +2066,20 @@ marketing.get('/admin/marketing', async (c) => {
     postsAwaiting: awaiting?.n ?? 0,
     window: sendWindow(settings, t),
     today,
+    autoResume: {
+      enabled: settings.autoResume,
+      autoPausedAt,
+      resumesAfter: autoPausedAt ? autoPausedAt + AUTO_RESUME_AFTER : null,
+      resumedAt,
+      cap: effectiveCap(settings.dailyCap, resumedAt, t),
+    },
+    observe: {
+      pending: observe?.pending ?? 0,
+      observed: observe?.observed ?? 0,
+      withGap: observe?.with_gap ?? 0,
+      byKind: Object.fromEntries((observeKinds.results ?? []).map((row) => [row.kind, row.n])),
+    },
+    domains: { checked: domains?.checked ?? 0, undeliverable: domains?.undeliverable ?? 0 },
     counts: {
       contacts: counts(contacts.results, CONTACT_STATUSES),
       messages: counts(messages.results, ['draft', 'scheduled', 'sending', 'sent', 'failed', 'cancelled']),
@@ -1649,7 +2093,12 @@ marketing.get('/admin/marketing', async (c) => {
       email: e.contact_email,
       createdAt: e.created_at,
     })),
-    sequences: Object.entries(SEQUENCE_LABELS).map(([key, label]) => ({ key, label, needsGap: SEQUENCE_NEEDS_GAP[key as SequenceKind] })),
+    sequences: Object.entries(SEQUENCE_LABELS).map(([key, label]) => ({
+      key,
+      label,
+      needsGap: SEQUENCE_NEEDS_GAP[key as SequenceKind],
+      stats: seqStats[key as SequenceKind] ?? { sent: 0, replies: 0, optedOut: 0, bounced: 0 },
+    })),
   });
 });
 
@@ -2443,6 +2892,11 @@ marketing.put('/admin/marketing/settings', async (c) => {
   const body = await jsonBody(c);
   if (!body) return out(c, { error: 'bad_json' }, 400);
   const rejected = await saveMarketingSettings(c.env, body);
+  // A person's pause is never undone by the cron: touching `live` by hand
+  // clears the stamp the auto-resume reads.
+  if ('live' in body && !rejected.includes('live')) {
+    await writeStamp(c.env, 'marketing_auto_paused_at', null);
+  }
   return out(c, { settings: await readMarketingSettings(c.env), rejected });
 });
 
