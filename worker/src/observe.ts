@@ -147,25 +147,40 @@ export async function observeContacts(env: Env, t = now()): Promise<{ observed: 
   let gaps = 0;
   for (const contact of results) {
     const started = Date.now();
-    let html: string | null = null;
-    let finalUrl = contact.site;
-    try {
-      const res = await fetch(contact.site, {
+    // Contacts store the site the way a person writes it — "corroof.com", no
+    // scheme — so the fetch needs one. https first, like a browser; a bare
+    // domain that only answers http is itself the no_https observation.
+    const site = contact.site.trim();
+    const hasScheme = /^https?:\/\//i.test(site);
+    const attempt = async (url: string) => {
+      const res = await fetch(url, {
         headers: { 'user-agent': OBSERVE_UA, accept: 'text/html,application/xhtml+xml,*/*;q=0.8' },
         redirect: 'follow',
         signal: AbortSignal.timeout(OBSERVE_TIMEOUT_MS),
       });
-      finalUrl = res.url || contact.site;
       const buffer = await res.arrayBuffer();
-      html = new TextDecoder().decode(buffer.slice(0, OBSERVE_BODY_CAP));
-    } catch (error) {
-      console.warn('observe_fetch_failed', contact.site, String(error));
+      return { finalUrl: res.url || url, html: new TextDecoder().decode(buffer.slice(0, OBSERVE_BODY_CAP)) };
+    };
+    let page: { finalUrl: string; html: string } | null = null;
+    let requestedUrl = site;
+    try {
+      requestedUrl = hasScheme ? site : `https://${site}`;
+      page = await attempt(requestedUrl);
+    } catch {
+      if (!hasScheme) {
+        try {
+          requestedUrl = `http://${site}`;
+          page = await attempt(requestedUrl);
+        } catch {
+          /* neither scheme answered */
+        }
+      }
     }
     const ms = Date.now() - started;
 
-    const observation = html === null ? null : observeSite({ html, requestedUrl: contact.site, finalUrl, ms, now: t });
+    const observation = page === null ? null : observeSite({ html: page.html, requestedUrl, finalUrl: page.finalUrl, ms, now: t });
     const gap = observation?.gap ?? null;
-    const kind = html === null ? 'unreachable' : observation ? observation.kind : 'none';
+    const kind = page === null ? 'unreachable' : observation ? observation.kind : 'none';
     await env.DB.prepare('UPDATE marketing_contacts SET gap = ?, gap_kind = ?, observed_at = ?, updated_at = ? WHERE id = ?')
       .bind(gap, kind, t, t, contact.id)
       .run();
