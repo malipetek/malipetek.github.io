@@ -2778,7 +2778,7 @@ export function checkGuide(markdown: string): { ok: true } | { ok: false; reason
   const title = frontmatterField(fm.raw, 'title');
   if (!title || title.length > 70) return fail('title missing or over 70 characters');
   const description = frontmatterField(fm.raw, 'description');
-  if (description.length < 50 || description.length > 170) return fail('description must be 50-170 characters');
+  if (description.length < 50 || description.length > 160) return fail('description must be 50-160 characters');
   if (!frontmatterList(fm.raw, 'targets').length) return fail('targets empty');
   if (!frontmatterField(fm.raw, 'summary')) return fail('summary missing');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(frontmatterField(fm.raw, 'published'))) return fail('published must be YYYY-MM-DD');
