@@ -80,7 +80,7 @@ export async function authorizeWorkbenchRoute(env: Env, user: Identity, method: 
     return false;
   }
   if (method === 'DELETE' && action === '') return ownsProject(env,user,projectId);
-  const allowed = method === 'GET' && ['', '/secrets','/site/deploys','/recipients','/integrations'].includes(action)
+  const allowed = method === 'GET' && ['', '/secrets','/site/deploys','/recipients','/integrations','/credential-access'].includes(action)
     || method === 'PATCH' && action === ''
     || method === 'PUT' && (action === '/repo' || action === '/solutions' || /^\/secrets\/[^/]+$/.test(action))
     || method === 'POST' && /^\/integrations\/[^/]+\/verify$/.test(action)

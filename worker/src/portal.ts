@@ -3756,6 +3756,18 @@ portal.delete('/admin/projects/:id/secrets/:name', async (c) => {
   ]);
   return reply(c,{ok:true});
 });
+/** Every time a fleet run took this project's credentials, latest first (worker/src/node.ts). */
+portal.get('/admin/projects/:id/credential-access', async (c) => {
+  const rows=await c.env.DB.prepare(
+    'SELECT run_id AS runId, node_id AS nodeId, integrations, at FROM credential_access WHERE project_id=? ORDER BY id DESC LIMIT 50',
+  ).bind(c.req.param('id')).all<{runId:number;nodeId:string|null;integrations:string;at:number}>();
+  const access=(rows.results??[]).map(row=>{
+    let integrations:string[]=[];
+    try { const parsed=JSON.parse(row.integrations); if (Array.isArray(parsed)) integrations=parsed.filter((id):id is string=>typeof id==='string'); } catch { /* a bad row reads as none */ }
+    return {runId:row.runId,nodeId:row.nodeId,integrations,at:row.at};
+  });
+  return reply(c,{access});
+});
 portal.post('/admin/projects/:id/git-token', async (c) => {
   const project=await c.env.DB.prepare('SELECT repo,github_installation_id FROM projects WHERE id=?').bind(c.req.param('id')).first<{repo:string|null;github_installation_id:number|null}>();
   const repo=project?.repo?.match(/^(?:https:\/\/github\.com\/|git@github\.com:)?([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/);
