@@ -113,3 +113,25 @@ export function buildFollowUp(ticket, messages, previousRuns = [], checkout = {}
   parts.push('The same rules apply as before: stay in this checkout, commit when your work is ready, and end with a short summary.');
   return parts.join('\n\n');
 }
+
+/**
+ * The client accounts this run can use (fleet/node.mjs `fetchCredentials`):
+ * names only, never values, with the rules for using them.
+ * @param integrations - [{ id, label, names }] from /node/runs/:id/credentials.
+ * @returns a prompt section, or '' when there are none.
+ */
+export function credentialSection(integrations = []) {
+  if (!integrations.length) return '';
+  const list = integrations.map((i) => `- ${i.label}: ${i.names.map((n) => `$${n}`).join(', ')}`).join('\n');
+  return [
+    '## Client accounts connected for this project',
+    'These environment variables hold credentials the client connected. Read them from the environment when a tool needs them:',
+    list,
+    'Rules:',
+    "- Use them only for this ticket's project.",
+    '- Never print, echo, log or commit them, and never write them into files in this repository (not even .env). Pass them to tools through the environment.',
+    '- Prefer read-only actions unless the ticket asks for a change.',
+    '- AWS, Google Cloud and servers: do not delete resources, scale up, buy anything or change billing unless the ticket explicitly approves it. Describe such steps in your result instead.',
+    '- App Store and Google Play: submit a build for review only when the ticket says to submit.',
+  ].join('\n');
+}
