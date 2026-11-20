@@ -956,4 +956,31 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-directory__project:hover { background: transparent; }
 .aw-directory__name { display: grid; flex: 1 1 9rem; min-width: 0; overflow-wrap: anywhere; }
 .aw-health--compact .aw-health__row { padding-block: 6px; }
+
+/* seo */
+.aw-seo-head { display: flex; align-items: flex-start; gap: var(--aw-sp-3); flex-wrap: wrap; margin-bottom: var(--aw-sp-4); }
+.aw-seo-head__titles { flex: 1 1 340px; min-width: 0; }
+.aw-seo-head__titles h2 { margin: 0; font-size: var(--aw-fs-xl); font-weight: 700; line-height: 1.2; }
+.aw-seo-head__titles p { margin: 2px 0 0; max-width: 70ch; font-size: var(--aw-fs-sm); color: var(--aw-text2); }
+.aw-seo-head__runs, .aw-seo-head__actions { display: flex; align-items: center; gap: var(--aw-sp-1); flex-wrap: wrap; }
+.aw-seo-head__actions { flex: none; }
+.aw-seo-statrow { margin-bottom: var(--aw-sp-4); }
+.aw-seo-statrow .aw-statrow__item { min-width: 56px; padding: var(--aw-sp-1) var(--aw-sp-3); }
+.aw-seo-chart__dot--accent { background: var(--aw-accent); }
+.aw-seo-chart__dot--warn { background: var(--aw-warn); }
+.aw-seo-chart__dot--ok { background: var(--aw-ok); }
+.aw-seo-note, .aw-panel p.aw-seo-note { margin: 0; }
+.aw-panel p.aw-seo-answer { margin: 4px 0 0; white-space: pre-wrap; }
+.aw-seo-cell--detail { white-space: normal; }
+.aw-seo-cell--wide { min-width: 200px; white-space: normal; }
+.aw-seo-cell--wider { min-width: 240px; }
+.aw-seo-cell--url { min-width: 220px; }
+.aw-seo-cell--note { min-width: 280px; white-space: normal; }
+.aw-seo-cited-url { display: block; }
+.aw-table tbody tr.aw-seo-row, .aw-seo-row { cursor: default; }
+.aw-table tbody tr.aw-seo-row:hover { background: transparent; }
+.aw-seo-guides__more { margin-top: var(--aw-sp-2); }
+.aw-seo-events-form { margin-bottom: var(--aw-sp-3); }
+.aw-seo-savebar { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: var(--aw-sp-2); flex-wrap: wrap; padding: var(--aw-sp-3) var(--aw-sp-4); border: 1px solid var(--aw-border2); border-radius: var(--aw-r-lg); background: var(--aw-bg); box-shadow: 0 -6px 18px color-mix(in srgb, var(--aw-text) 8%, transparent); }
+.aw-seo-savebar__state { flex: 1; min-width: 160px; font-size: var(--aw-fs-sm); color: var(--aw-text2); }
 `;
