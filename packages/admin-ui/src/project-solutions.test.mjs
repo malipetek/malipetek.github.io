@@ -165,12 +165,12 @@ test('the project page carries the tags in its header and its Setup tab; old tab
   assert.doesNotMatch(html, /<h3>Kind of work and client connections<\/h3>/);
   assert.match(html, />Overview<\/button>/);
   assert.match(html, />Work<\/button>/);
-  assert.match(html, /aria-current="page"[^>]*>Setup<\/button>/);
+  assert.match(html, /aria-selected="true"[^>]*>Setup<\/button>/);
   assert.match(html, /Kind of work/);
   assert.match(html, /aria-pressed="true"[^>]*>iOS app<\/button>/);
   // Stored tab keys from before the collapse land on their new home.
   for (const legacy of ['Solutions', 'Resources', 'People', 'Activity & review']) {
-    assert.match(view.projectPage(['mobile-ios'], legacy), /aria-current="page"[^>]*>(Setup|Work)<\/button>/);
+    assert.match(view.projectPage(['mobile-ios'], legacy), /aria-selected="true"[^>]*>(Setup|Work)<\/button>/);
   }
   const quiet = view.projectPage([], 'Setup');
   assert.doesNotMatch(quiet, /aw-psol__tags/);

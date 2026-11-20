@@ -1,7 +1,7 @@
 /* Project destination shared by the web workbench and the native host. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin } from './store.js';
-import { Button, Empty, ErrorNote, Field, Icon, Modal, Segmented, StatusPill, Tag } from './ui.jsx';
+import { Button, Empty, ErrorNote, Field, Icon, Modal, PageHeader, PageTabs, Segmented, StatusPill, Tag } from './ui.jsx';
 import { RepoModal, ProjectEditModal } from './fleet.jsx';
 import { LOCALES } from '../../../src/lib/locales.js';
 import { ProjectSolutions, SolutionTags } from './project-solutions.jsx';
@@ -90,18 +90,16 @@ export function ProjectView({id, initialTab = 'Overview'}) {
   if (!project) return <div className="aw-view aw-project"><style>{projectStyles}</style><ResourceState state={remote} refresh={refresh}>{!remote.loading ? <><h2>Project unavailable</h2><p className="aw-muted">This project no longer exists or is not available to your account. Refresh the project list or choose another project.</p><Button onClick={refreshAll}>Refresh projects</Button></> : null}</ResourceState></div>;
   return <div className="aw-view aw-project" key={id}>
     <style>{projectStyles}</style>
-    <header className="aw-project__header">
-      <div>
-        <h2>{project.name}</h2>
-        <p className="aw-muted">{project.solutions?.length ? <SolutionTags solutions={project.solutions} catalog={data.catalog?.solutions} /> : 'Website'} · {project.githubAccount ? 'GitHub connected' : 'GitHub not connected'} · {project.slug}</p>
-      </div>
-      <div className="aw-project__actions">
+    <PageHeader
+      title={project.name}
+      subtitle={<>{project.solutions?.length ? <SolutionTags solutions={project.solutions} catalog={data.catalog?.solutions} /> : 'Website'} · {project.githubAccount ? 'GitHub connected' : 'GitHub not connected'} · {project.slug}</>}
+      actions={<>
         <Button kind="primary" onClick={() => setModal({kind:'task',projectId:id})}><Icon name="plus" /> Add work</Button>
         <Button onClick={() => setModal({kind:'custom', render:close => <ProjectEditModal project={project} onClose={() => {close(); void refreshAll();}} />})}>Edit project</Button>
-      </div>
-    </header>
+      </>}
+    />
     {remote.error ? <div role="alert" className="aw-project__error">Project refresh failed. {errorText(remote.error)} <Button size="sm" onClick={refresh}>Retry</Button></div> : null}
-    <nav className="aw-project__tabs" aria-label="Project sections">{TABS.map(label => <button type="button" key={label} aria-current={tab === label ? 'page' : undefined} onClick={() => switchTab(label)}>{label}</button>)}</nav>
+    <PageTabs ariaLabel="Project sections" value={tab} onChange={switchTab} items={TABS.map(label => ({value:label, label}))} />
     <div className="aw-project__body" key={`${id}:${tab}`}>
       {tab === 'Overview' ? <Overview project={project} refresh={refreshAll} setTab={switchTab} /> : null}
       {tab === 'Work' ? <Work project={project} /> : null}

@@ -64,6 +64,28 @@ export function Panel({ title, subtitle, actions, children }) {
   );
 }
 
+/**
+ * The one page header: title and a one-line muted subtitle on the left,
+ * badges then buttons on the right, vertically centred. No box, no border —
+ * the page furniture stays quiet. Wraps under the title on narrow panes.
+ */
+export function PageHeader({ title, subtitle, meta, actions }) {
+  return (
+    <header className="aw-pagehead">
+      <div className="aw-pagehead__titles">
+        <h2>{title}</h2>
+        {subtitle ? <p>{subtitle}</p> : null}
+      </div>
+      {meta || actions ? (
+        <div className="aw-pagehead__side">
+          {meta ? <div className="aw-pagehead__meta">{meta}</div> : null}
+          {actions ? <div className="aw-pagehead__actions">{actions}</div> : null}
+        </div>
+      ) : null}
+    </header>
+  );
+}
+
 /** Compact horizontal stat tiles; `tone` colours the value. */
 export function StatRow({ items }) {
   return (
@@ -188,6 +210,48 @@ export function Chips({ value, options, onChange, disabled, label }) {
           {o.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+/**
+ * The one tab strip for a page's sections: underline tabs with roving focus
+ * (the arrows move and pick, Home/End jump) and the chosen one inked with a
+ * 2px accent underline. A filter or toggle inside a section stays Segmented.
+ */
+export function PageTabs({ value, onChange, items, ariaLabel }) {
+  const ref = useRef(null);
+  const list = items ?? [];
+  const hasActive = list.some((it) => it.value === value);
+  const onKey = (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return;
+    const btns = ref.current ? [...ref.current.querySelectorAll('button')] : [];
+    if (!btns.length) return;
+    e.preventDefault();
+    const idx = btns.indexOf(document.activeElement);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? btns.length - 1 : (idx === -1 ? 0 : idx + (e.key === 'ArrowRight' ? 1 : -1) + btns.length) % btns.length;
+    btns[next].focus();
+    const item = list[next];
+    if (item && item.value !== value) onChange(item.value);
+  };
+  return (
+    <div className="aw-pagetabs" role="tablist" aria-label={ariaLabel} ref={ref} onKeyDown={onKey}>
+      {list.map((it, i) => {
+        const active = it.value === value;
+        return (
+          <button
+            key={String(it.value)}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            tabIndex={active || (!hasActive && i === 0) ? 0 : -1}
+            onClick={() => onChange(it.value)}
+          >
+            {it.label}
+            {it.badge != null && it.badge !== '' ? <span className="aw-pagetabs__badge">{it.badge}</span> : null}
+          </button>
+        );
+      })}
     </div>
   );
 }

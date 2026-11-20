@@ -18,7 +18,7 @@ import {
   usd,
 } from './format.js';
 import { nextRowIndex } from '../../dsh-admin/src/row-navigation.mjs';
-import { Badge, Button, Dot, Icon, Segmented, StatusPill, Tag, cx } from './ui.jsx';
+import { Badge, Button, Dot, Icon, PageHeader, Segmented, StatusPill, Tag, cx } from './ui.jsx';
 
 /** Filter bar shared by the board and the list. */
 function useFilters() {
@@ -238,6 +238,7 @@ export function BoardView() {
   const byId = new Map(data.tickets.map((t) => [t.id, t]));
   return (
     <div className="aw-view aw-view--board">
+      <PageHeader title="Board" subtitle="Every request by status. Drag a card to another column to move it." />
       <FilterBar f={f} extra={<Segmented value={showClosed} options={[{ value: false, label: 'Open' }, { value: true, label: '+ Declined' }]} onChange={setShowClosed} />} />
       <div className="aw-board">
         {columns.map((s) => {
@@ -306,6 +307,7 @@ export function ListView() {
   const nav = useRowNav(rows.length, (i) => openTicket(rows[i].id));
   return (
     <div className="aw-view">
+      <PageHeader title="All work" subtitle="Every request in one table. Click a column to sort; click a row to open it." />
       <FilterBar
         f={f}
         extra={
@@ -384,12 +386,10 @@ export function InboxView() {
   const total = groups.reduce((a, g) => a + g.items.length, 0);
   return (
     <div className="aw-view aw-inbox">
-      <header className="aw-hero">
-        <h2>Needs you</h2>
-        <p className="aw-muted">
-          {empty ? 'Nothing is waiting on you. Agents are on it.' : `${total} ${total === 1 ? 'item needs' : 'items need'} you.`}
-        </p>
-      </header>
+      <PageHeader
+        title="Needs you"
+        subtitle={empty ? 'Nothing is waiting on you. Agents are on it.' : `${total} ${total === 1 ? 'item needs' : 'items need'} you.`}
+      />
       {data.access?.superAdmin && n.offline.length ? (
         <div className="aw-inbox__offline">
           <Dot state="warn" /> Offline: {n.offline.map((x) => x.id).join(', ')}.{' '}

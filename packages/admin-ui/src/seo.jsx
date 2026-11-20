@@ -8,7 +8,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useAdmin, usePoll } from './store.js';
 import { ago, errorText, when } from './format.js';
-import { Badge, Button, Empty, ErrorNote, Field, Loading, Panel, Segmented, StatRow, Tag } from './ui.jsx';
+import { Badge, Button, Empty, ErrorNote, Field, Loading, PageHeader, PageTabs, Panel, Segmented, StatRow, Tag } from './ui.jsx';
 
 const DAY = 86_400_000;
 
@@ -197,51 +197,47 @@ export function SeoView() {
 
   return (
     <div className="aw-view aw-seo">
-      <header className="aw-seo-head">
-        <div className="aw-seo-head__titles">
-          <h2>SEO</h2>
-          <p>Our own hosts, checked daily: search scores, open fixes, the questions buyers ask assistants, and the profiles that link back.</p>
-        </div>
-        <div className="aw-seo-head__runs" aria-label="Last runs">
-          {runs.map((last) => (
-            <Badge key={last.key} tone={runTone(last.at, last.days)}>
-              {last.key} · {last.at ? `${ago(last.at)} ago` : 'not yet'}
-            </Badge>
-          ))}
-        </div>
-        <div className="aw-seo-head__actions">
-          <Button kind="primary" disabled={Boolean(busy)} onClick={() => run('audit')}>
-            {busy === 'audit' ? 'Running…' : 'Run audit'}
-          </Button>
-          <Button disabled={Boolean(busy)} onClick={() => run('geo')}>
-            {busy === 'geo' ? 'Running…' : 'Run GEO probe'}
-          </Button>
-          <Button disabled={Boolean(busy)} onClick={() => run('citations')}>
-            {busy === 'citations' ? 'Checking…' : 'Check citations'}
-          </Button>
-          <Button disabled={Boolean(busy)} onClick={() => run('cycle')}>
-            {busy === 'cycle' ? 'Filing…' : 'Run cycle now'}
-          </Button>
-        </div>
-      </header>
+      <PageHeader
+        title="SEO"
+        subtitle="Our own hosts, checked daily: search scores, open fixes, the questions buyers ask assistants, and the profiles that link back."
+        meta={runs.map((last) => (
+          <Badge key={last.key} tone={runTone(last.at, last.days)}>
+            {last.key} · {last.at ? `${ago(last.at)} ago` : 'not yet'}
+          </Badge>
+        ))}
+        actions={
+          <>
+            <Button kind="primary" disabled={Boolean(busy)} onClick={() => run('audit')}>
+              {busy === 'audit' ? 'Running…' : 'Run audit'}
+            </Button>
+            <Button disabled={Boolean(busy)} onClick={() => run('geo')}>
+              {busy === 'geo' ? 'Running…' : 'Run GEO probe'}
+            </Button>
+            <Button disabled={Boolean(busy)} onClick={() => run('citations')}>
+              {busy === 'citations' ? 'Checking…' : 'Check citations'}
+            </Button>
+            <Button disabled={Boolean(busy)} onClick={() => run('cycle')}>
+              {busy === 'cycle' ? 'Filing…' : 'Run cycle now'}
+            </Button>
+          </>
+        }
+      />
 
       {error ? <ErrorNote error={error} onRetry={load} /> : null}
 
-      <div className="aw-toolbar">
-        <Segmented
-          label="SEO desk section"
-          value={tab}
-          options={[
-            { value: 'overview', label: 'Overview' },
-            { value: 'audit', label: 'Audit' },
-            { value: 'answers', label: 'AI answers' },
-            { value: 'ranks', label: 'Rankings' },
-            { value: 'citations', label: 'Citations' },
-            { value: 'settings', label: 'Settings' },
-          ]}
-          onChange={setTab}
-        />
-      </div>
+      <PageTabs
+        ariaLabel="SEO desk section"
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: 'overview', label: 'Overview' },
+          { value: 'audit', label: 'Audit' },
+          { value: 'answers', label: 'AI answers' },
+          { value: 'ranks', label: 'Rankings' },
+          { value: 'citations', label: 'Citations' },
+          { value: 'settings', label: 'Settings' },
+        ]}
+      />
 
       {tab === 'overview' ? (
         <OverviewTab overview={overview} api={api} ask={ask} notify={notify} refresh={refresh} openTicket={openTicket} />

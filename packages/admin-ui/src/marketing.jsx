@@ -2,7 +2,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin, usePoll } from './store.js';
 import { ago, errorText, when } from './format.js';
-import { Badge, Button, Chips, Empty, ErrorNote, Field, Loading, Modal, Panel, Segmented, StatRow, cx } from './ui.jsx';
+import { Badge, Button, Chips, Empty, ErrorNote, Field, Loading, Modal, PageHeader, PageTabs, Panel, Segmented, StatRow, cx } from './ui.jsx';
 
 const CONTACT_TONE = { new: 'dash', queued: undefined, contacted: 'ok', replied: 'ok', opted_out: 'bad', bounced: 'bad', paused: 'warn' };
 const MESSAGE_TONE = { draft: 'dash', scheduled: undefined, sending: 'warn', sent: 'ok', failed: 'bad', cancelled: 'dash' };
@@ -207,86 +207,89 @@ export function MarketingView() {
 
   return (
     <div className="aw-view aw-mk">
-      <header ref={sendingControl} className="aw-mk-header" tabIndex={-1}>
-        <Panel
+      <div ref={sendingControl} tabIndex={-1} className="aw-mk-anchor">
+        <PageHeader
           title="Marketing"
           subtitle="Manage email outreach, contact lists, and social publishing."
+          meta={<Badge tone={state.tone}>{state.text}</Badge>}
           actions={
             <>
-              <Badge tone={state.tone}>{state.text}</Badge>
-              <Button size="sm" kind="ghost" onClick={() => run(() => api('POST', '/admin/marketing/run'), runMessage)}>Run now</Button>
-              <Button size="sm" kind={settings.live ? undefined : 'primary'} disabled={sendingBusy || desk.loading || Boolean(desk.error)}
+              <Button kind="ghost" onClick={() => run(() => api('POST', '/admin/marketing/run'), runMessage)}>Run now</Button>
+              <Button kind={settings.live ? undefined : 'primary'} disabled={sendingBusy || desk.loading || Boolean(desk.error)}
                 onClick={settings.live ? () => void changeSending(false).catch(() => undefined) : startSending}>
                 {settings.live ? 'Pause sending' : 'Go live'}
               </Button>
             </>
           }
         />
-      </header>
+      </div>
       {desk.error ? <ResourceNote resource={desk} /> : null}
 
-      <div className="aw-toolbar">
-        <Segmented
-          label="Marketing tabs"
-          value={tab}
-          options={[
-            { value: 'overview', label: 'Overview' },
-            { value: 'contacts', label: 'Contacts' },
-            { value: 'email', label: 'Email' },
-            { value: 'posts', label: 'Posts' },
-            { value: 'sequences', label: 'Sequences' },
-            { value: 'sources', label: 'Sources' },
-            { value: 'settings', label: 'Settings' },
-          ]}
-          onChange={setTab}
-        />
-        <span className="aw-toolbar__fill" />
-        {tab === 'contacts' ? (
-          <>
-            <input className="aw-search" value={filters.q} placeholder="Search email, name, business…" onChange={(e) => filter({ q: e.target.value })} />
-            <select value={filters.status} onChange={(e) => filter({ status: e.target.value })}>
-              <option value="">Every status</option>
-              {Object.keys(CONTACT_TONE).map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-            {filters.source ? (
-              <Button size="sm" kind="ghost" onClick={() => filter({ source: '' })} title="Show every source">
-                Source: {filters.source} ✕
-              </Button>
-            ) : null}
-            <Button onClick={() => setModal({ kind: 'import' })}>Import CSV</Button>
-            <Button onClick={() => setModal({ kind: 'bulkqueue' })}>Queue everyone</Button>
-            <Button kind="primary" onClick={() => setModal({ kind: 'contact' })}>
-              Add contact
+      <PageTabs
+        ariaLabel="Marketing tabs"
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: 'overview', label: 'Overview' },
+          { value: 'contacts', label: 'Contacts' },
+          { value: 'email', label: 'Email' },
+          { value: 'posts', label: 'Posts' },
+          { value: 'sequences', label: 'Sequences' },
+          { value: 'sources', label: 'Sources' },
+          { value: 'settings', label: 'Settings' },
+        ]}
+      />
+
+      {tab === 'contacts' ? (
+        <div className="aw-toolbar">
+          <span className="aw-toolbar__fill" />
+          <input className="aw-search" value={filters.q} placeholder="Search email, name, business…" onChange={(e) => filter({ q: e.target.value })} />
+          <select value={filters.status} onChange={(e) => filter({ status: e.target.value })}>
+            <option value="">Every status</option>
+            {Object.keys(CONTACT_TONE).map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          {filters.source ? (
+            <Button size="sm" kind="ghost" onClick={() => filter({ source: '' })} title="Show every source">
+              Source: {filters.source} ✕
             </Button>
-          </>
-        ) : null}
-        {tab === 'email' ? (
-          <>
-            <Button kind="primary" onClick={() => setModal({ kind: 'review' })} title="Read the next first emails one by one: let each go, rewrite it, or cancel it.">
-              Review next
-            </Button>
-            <Button onClick={() => setModal({ kind: 'compose', channel: 'email' })}>Compose</Button>
-            <Button
-              title="The desk re-renders scheduled emails by itself when the templates change; this does it now. Emails you edited by hand are left alone."
-              onClick={() => run(() => api('POST', '/admin/marketing/messages/rerender'), 'Scheduled emails now use the current wording.')}
-            >
-              Re-render scheduled
-            </Button>
-          </>
-        ) : null}
-        {tab === 'posts' ? (
-          <>
-            <Button onClick={() => setModal({ kind: 'compose', channel: 'x' })}>Compose</Button>
-            <Button kind="primary" onClick={() => run(() => api('POST', '/admin/marketing/cycle?force=1'), cycleMessage)}>
-              Draft posts
-            </Button>
-          </>
-        ) : null}
-      </div>
+          ) : null}
+          <Button onClick={() => setModal({ kind: 'import' })}>Import CSV</Button>
+          <Button onClick={() => setModal({ kind: 'bulkqueue' })}>Queue everyone</Button>
+          <Button kind="primary" onClick={() => setModal({ kind: 'contact' })}>
+            Add contact
+          </Button>
+        </div>
+      ) : null}
+
+      {tab === 'email' ? (
+        <div className="aw-toolbar">
+          <span className="aw-toolbar__fill" />
+          <Button kind="primary" onClick={() => setModal({ kind: 'review' })} title="Read the next first emails one by one: let each go, rewrite it, or cancel it.">
+            Review next
+          </Button>
+          <Button onClick={() => setModal({ kind: 'compose', channel: 'email' })}>Compose</Button>
+          <Button
+            title="The desk re-renders scheduled emails by itself when the templates change; this does it now. Emails you edited by hand are left alone."
+            onClick={() => run(() => api('POST', '/admin/marketing/messages/rerender'), 'Scheduled emails now use the current wording.')}
+          >
+            Re-render scheduled
+          </Button>
+        </div>
+      ) : null}
+
+      {tab === 'posts' ? (
+        <div className="aw-toolbar">
+          <span className="aw-toolbar__fill" />
+          <Button onClick={() => setModal({ kind: 'compose', channel: 'x' })}>Compose</Button>
+          <Button kind="primary" onClick={() => run(() => api('POST', '/admin/marketing/cycle?force=1'), cycleMessage)}>
+            Draft posts
+          </Button>
+        </div>
+      ) : null}
 
       {tab === 'overview' ? (
         <OverviewTab api={api} tick={tick} health={health} overview={overview} onReview={() => setModal({ kind: 'review' })} onContact={(id) => setModal({ kind: 'person', id })} onTab={setTab} />

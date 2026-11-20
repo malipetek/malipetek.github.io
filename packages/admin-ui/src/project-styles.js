@@ -1,7 +1,9 @@
 // Scoped to the project destination; uses the incumbent web/native workbench tokens.
 export default `
 .aw-project { max-width: 1440px; margin: 0 auto; width: 100%; min-width: 0; box-sizing: border-box; }
-.aw-project h2 { margin: 0 0 5px; font-size: 24px; line-height: 1.25; letter-spacing: -.025em; }
+/* The unavailable notice keeps its own big heading; the live page's title and
+   tabs come from the shared PageHeader and PageTabs primitives. */
+.aw-project > h2 { margin: 0 0 5px; font-size: 24px; line-height: 1.25; letter-spacing: -.025em; overflow-wrap: anywhere; }
 .aw-project h3 { margin: 0 0 14px; font-size: 15px; line-height: 1.4; font-weight: 650; }
 .aw-project p { line-height: 1.6; max-width: 75ch; }
 .aw-project a { color: var(--aw-accent); text-underline-offset: 3px; overflow-wrap: anywhere; }
@@ -9,15 +11,7 @@ export default `
 .aw-project :is(button, a, input, textarea, summary):focus-visible { outline: 2px solid var(--aw-accent); outline-offset: 3px; }
 .aw-project :is(input, textarea) { caret-color: var(--aw-accent); }
 .aw-project ::selection { background: var(--aw-accent); color: var(--aw-bg); }
-.aw-project__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding: 6px 0 22px; }
-.aw-project__header > div { min-width: 0; }
-.aw-project__header h2 { overflow-wrap: anywhere; }
-.aw-project__header p { margin: 0; }
 .aw-project__actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.aw-project__tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--aw-border); overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--aw-border2) var(--aw-bg); }
-.aw-project__tabs button { appearance: none; flex: 0 0 auto; background: none; border: 0; color: var(--aw-text2); font: inherit; padding: 13px 0; border-bottom: 2px solid transparent; cursor: pointer; }
-.aw-project__tabs button:hover { color: var(--aw-text); }
-.aw-project__tabs button[aria-current] { color: var(--aw-accent); border-bottom-color: var(--aw-accent); }
 .aw-project__body { min-width: 0; }
 .aw-project__section { padding: 28px 0; border-bottom: 1px solid var(--aw-border); min-width: 0; }
 .aw-project__section > :first-child { margin-top: 0; }
@@ -82,10 +76,8 @@ export default `
 .aw-project__peopleact { text-align: right; white-space: nowrap; }
 .aw-project__peopleact .aw-check { font-size: 12px; color: var(--aw-text2); }
 @media (max-width: 760px) {
-  .aw-project__header { flex-direction: column; gap: 14px; }
   .aw-project__fields { grid-template-columns: minmax(0,1fr); gap: 0; }
   .aw-project__topology { grid-template-columns: minmax(0,1fr); gap: 22px; }
-  .aw-project__tabs { gap: 20px; }
   .aw-project__work > li { flex-wrap: wrap; }
   .aw-project__worklink { flex-basis: calc(100% - 100px); flex-wrap: wrap; gap: 6px 10px; }
   .aw-project__worklink > .aw-muted { margin-left: 0; }

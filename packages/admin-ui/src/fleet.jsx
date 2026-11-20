@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { LOCALES } from '../../../src/lib/locales.js';
 import { useAdmin, usePoll } from './store.js';
 import { EXECUTORS, PRIORITIES, ago, chargeOf, money, priorityName, span, usd } from './format.js';
-import { Button, Chips, Dot, Empty, Field, Modal, Segmented, StatusPill, Tag, cx } from './ui.jsx';
+import { Button, Chips, Dot, Empty, Field, Modal, PageHeader, Segmented, StatusPill, Tag, cx } from './ui.jsx';
 import { HealthView } from './health.jsx';
 import { MachinePanel, useMachine } from './machine.jsx';
 import { ToolboxPanel } from './toolbox.jsx';
@@ -146,12 +146,10 @@ export function FleetView() {
   const runs = [...data.running, ...data.recent].slice(0, 8);
   return (
     <div className="aw-view aw-fleet">
-      <header className="aw-hero">
-        <h2 title="Nodes claim approved work they can do: the right project, capabilities and agent.">Fleet</h2>
-        <p className="aw-muted">
-          {data.nodes.length} node{data.nodes.length === 1 ? '' : 's'} · {data.queue.length} waiting · {data.running.length} running
-        </p>
-      </header>
+      <PageHeader
+        title="Fleet"
+        subtitle={`${data.nodes.length} node${data.nodes.length === 1 ? '' : 's'} · ${data.queue.length} waiting · ${data.running.length} running`}
+      />
       <HealthView compact />
       <div className="aw-nodes">
         {machine.live ? <MachinePanel /> : null}
@@ -677,14 +675,10 @@ export function ClientView({ id }) {
   const open = tickets.filter((t) => !closed(t)).length;
   return (
     <div className="aw-view aw-client">
-      <header className="aw-hero">
-        <h2>{c.name || c.email}</h2>
-        <p className="aw-muted">
-          {c.name ? `${c.email} · ` : ''}
-          {open} open of {tickets.length} · client for {ago(c.created_at)}
-          {c.handoff ? ` · hand-off: ${c.handoff}` : ''}
-        </p>
-      </header>
+      <PageHeader
+        title={c.name || c.email}
+        subtitle={`${c.name ? `${c.email} · ` : ''}${open} open of ${tickets.length} · client for ${ago(c.created_at)}${c.handoff ? ` · hand-off: ${c.handoff}` : ''}`}
+      />
       <section className="aw-group">
         <ClientControls c={c} />
       </section>
@@ -732,10 +726,7 @@ export function ClientsView() {
   const { data, setModal, open } = useAdmin();
   return (
     <div className="aw-view aw-clients">
-      <header className="aw-hero">
-        <h2>Clients & projects</h2>
-        {data.usageTotal ? <p className="aw-muted">Across all clients: {usageLine(data.usageTotal)}.</p> : null}
-      </header>
+      <PageHeader title="Clients & projects" subtitle={data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : undefined} />
       <div className="aw-split aw-directory">
         <section className="aw-group">
           <header className="aw-row-h">
@@ -968,9 +959,7 @@ export function SettingsView() {
   };
   return (
     <div className="aw-view aw-settings">
-      <header className="aw-hero">
-        <h2>Settings</h2>
-      </header>
+      <PageHeader title="Settings" />
       {platform === 'dsh' && host ? (
         <>
           <section className="aw-panel">

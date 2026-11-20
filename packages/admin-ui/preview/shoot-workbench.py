@@ -86,15 +86,16 @@ def capture(browser, base, theme, viewport, narrow, diagnostics, paths):
                     ('Sources', 'th:has-text("Reached")'),
                     ('Settings', 'text=Schedule and volume'),
                 ):
-                    marketing.get_by_role('radio', name=tab, exact=True).click()
+                    marketing.get_by_role('tab', name=tab, exact=True).click()
                     shot(f'marketing-{tab.lower()}', marketing.locator(marker).first)
+                # The settings sub-groups stay a segmented filter inside the section.
                 for group, marker in (('Safety', 'text=Review first emails'), ('Content', 'text=How publishing works')):
                     marketing.get_by_role('radio', name=group, exact=True).click()
                     shot(f'marketing-settings-{group.lower()}', marketing.locator(marker).first)
-        # Every SEO tab, on the same page: the segmented control is the only change.
+        # Every SEO tab, on the same page: the tab strip is the only change.
         activity.get_by_title('SEO', exact=True).click()
         shot('seo', pane.get_by_text('Guide coverage').first)
-        desk = pane.get_by_role('radiogroup', name='SEO desk section')
+        desk = pane.get_by_role('tablist', name='SEO desk section')
         for name, label, marker in (
             ('seo-audit-pages', 'Audit', '.aw-seo-pages tbody tr'),
             ('seo-answers', 'AI answers', '.aw-seo-chart'),
@@ -102,12 +103,12 @@ def capture(browser, base, theme, viewport, narrow, diagnostics, paths):
             ('seo-citations', 'Citations', '.aw-seo-citations tbody tr'),
             ('seo-settings', 'Settings', 'text=Buyer questions'),
         ):
-            desk.get_by_role('radio', name=label, exact=True).click()
+            desk.get_by_role('tab', name=label, exact=True).click()
             shot(name, pane.locator(marker).first)
-        desk.get_by_role('radio', name='Audit', exact=True).click()
+        desk.get_by_role('tab', name='Audit', exact=True).click()
         pane.get_by_role('radio', name='Per finding', exact=True).click()
         shot('seo-audit-findings', pane.locator('.aw-table tbody tr').first)
-        desk.get_by_role('radio', name='Overview', exact=True).click()
+        desk.get_by_role('tab', name='Overview', exact=True).click()
         ticket()
         # The project destination: Overview leads with needs-attention rows;
         # the world map sits behind Show map (collapsed by default).
@@ -115,10 +116,10 @@ def capture(browser, base, theme, viewport, narrow, diagnostics, paths):
         shot('project', pane.get_by_role('region', name='Needs attention'))
         pane.get_by_role('button', name='Show map').click()
         shot('project-map', pane.locator('.aw-world'))
-        tabs = pane.locator('.aw-project__tabs button')
-        tabs.filter(has_text='Work').click()
+        tabs = pane.get_by_role('tablist', name='Project sections')
+        tabs.get_by_role('tab', name='Work', exact=True).click()
         shot('project-work', pane.get_by_role('heading', name='Project work'))
-        tabs.filter(has_text='Setup').click()
+        tabs.get_by_role('tab', name='Setup', exact=True).click()
         shot('project-setup', pane.locator('.aw-psol'))
         activity.get_by_title('Clients', exact=True).click()
         pane.locator('.aw-directory__open').first.click()

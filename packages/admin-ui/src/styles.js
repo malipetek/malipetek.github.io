@@ -797,10 +797,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 }
 
 /* Marketing desk: the autopilot rows, the needs list, the day chart, regrouped settings. */
-.aw-hero--mk { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.aw-hero--mk h2 { flex: none; }
-.aw-mk-state { display: inline-flex; align-items: center; gap: 7px; color: var(--aw-text2); font-size: 13px; }
-.aw-mk-state .aw-dot { width: 9px; height: 9px; }
 .aw-table--compact td, .aw-table--compact th { padding-top: 7px; padding-bottom: 7px; }
 .aw-table--static tbody tr, .aw-table--static th { cursor: default; }
 .aw-table--static tbody tr:hover { background: transparent; }
@@ -911,6 +907,25 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-statrow__item--info strong { color: var(--aw-info); }
 .aw-statrow__item--accent strong { color: var(--aw-accent); }
 .aw-tag--pill { height: 18px; padding: 0 6px; border-radius: var(--aw-r-pill); }
+/* One page header for every view (PageHeader): h2 and a one-line muted
+   subtitle on the left, badges then buttons on the right; it wraps when the
+   pane is narrow, and no box or border competes with the page. */
+.aw-pagehead { display: flex; align-items: center; gap: var(--aw-sp-3) var(--aw-sp-5); flex-wrap: wrap; margin-bottom: var(--aw-sp-4); }
+.aw-pagehead__titles { flex: 1; min-width: 0; }
+.aw-pagehead__titles h2 { margin: 0; font-size: var(--aw-fs-xl); font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.aw-pagehead__titles p { margin: 2px 0 0; color: var(--aw-text2); font-size: var(--aw-fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-pagehead__side { display: flex; align-items: center; gap: var(--aw-sp-2); flex-wrap: wrap; }
+.aw-pagehead__meta { display: flex; align-items: center; gap: var(--aw-sp-1); flex-wrap: wrap; }
+.aw-pagehead__actions { display: flex; align-items: center; gap: var(--aw-sp-1); flex-wrap: wrap; }
+/* One tab strip for a page's sections (PageTabs): 32px underline tabs on one
+   rule, the chosen one inked with a 2px accent underline; roving focus. */
+.aw-pagetabs { display: flex; align-items: flex-end; gap: var(--aw-sp-5); border-bottom: 1px solid var(--aw-border); margin-bottom: var(--aw-sp-3); overflow-x: auto; scrollbar-width: none; }
+.aw-pagetabs::-webkit-scrollbar { display: none; }
+.aw-pagetabs button { appearance: none; flex: none; display: inline-flex; align-items: center; gap: var(--aw-sp-2); height: 32px; padding: 0 2px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--aw-text2); font: inherit; font-size: var(--aw-fs-md); cursor: pointer; white-space: nowrap; }
+.aw-pagetabs button:hover { color: var(--aw-text); }
+.aw-pagetabs button[aria-selected="true"] { color: var(--aw-text); border-bottom-color: var(--aw-accent); font-weight: 600; }
+.aw-pagetabs__badge { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: var(--aw-r-pill); background: var(--aw-bg3); color: var(--aw-text2); font-size: 10px; font-weight: 600; }
+.aw-pagetabs button[aria-selected="true"] .aw-pagetabs__badge { background: color-mix(in srgb, var(--aw-accent) 16%, transparent); color: var(--aw-accent); }
 /* shell */
 .aw-tablist { display: flex; flex: 1; align-items: stretch; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .aw-tablist::-webkit-scrollbar { display: none; }
@@ -957,9 +972,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-directory__name { display: grid; flex: 1 1 9rem; min-width: 0; overflow-wrap: anywhere; }
 .aw-health--compact .aw-health__row { padding-block: 6px; }
 /* marketing */
-.aw-mk-header .aw-panel__head { margin-bottom: 0; }
-.aw-mk-header .aw-panel__actions { flex-wrap: wrap; }
-.aw-mk-header { scroll-margin-block: var(--aw-sp-4); }
+.aw-mk-anchor { scroll-margin-block: var(--aw-sp-4); }
 .aw-mk-controls { margin-bottom: var(--aw-sp-3); }
 .aw-mk-click { cursor: pointer; }
 .aw-mk-row-start { align-items: flex-start; }
@@ -982,12 +995,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-mk-settings-footer { position: sticky; bottom: 0; z-index: 1; flex-wrap: wrap; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: var(--aw-r-md); padding: var(--aw-sp-3) var(--aw-sp-4); }
 
 /* seo */
-.aw-seo-head { display: flex; align-items: flex-start; gap: var(--aw-sp-3); flex-wrap: wrap; margin-bottom: var(--aw-sp-4); }
-.aw-seo-head__titles { flex: 1 1 340px; min-width: 0; }
-.aw-seo-head__titles h2 { margin: 0; font-size: var(--aw-fs-xl); font-weight: 700; line-height: 1.2; }
-.aw-seo-head__titles p { margin: 2px 0 0; max-width: 70ch; font-size: var(--aw-fs-sm); color: var(--aw-text2); }
-.aw-seo-head__runs, .aw-seo-head__actions { display: flex; align-items: center; gap: var(--aw-sp-1); flex-wrap: wrap; }
-.aw-seo-head__actions { flex: none; }
 .aw-seo-statrow { margin-bottom: var(--aw-sp-4); }
 .aw-seo-statrow .aw-statrow__item { min-width: 56px; padding: var(--aw-sp-1) var(--aw-sp-3); }
 .aw-seo-chart__dot--accent { background: var(--aw-accent); }
@@ -1011,9 +1018,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 /* fleet2 */
 /* Fleet, clients and settings, tightened: one-line health, dense node cards,
    28px table rows, 16px section rhythm. Scoped to the views it redesigns. */
-.aw-fleet .aw-hero, .aw-clients .aw-hero, .aw-client .aw-hero, .aw-settings .aw-hero { margin-bottom: var(--aw-sp-3); }
-.aw-fleet .aw-hero h2, .aw-clients .aw-hero h2, .aw-client .aw-hero h2, .aw-settings .aw-hero h2 { font-size: var(--aw-fs-xl); }
-.aw-fleet .aw-hero p, .aw-clients .aw-hero p, .aw-client .aw-hero p { margin: 2px 0 0; }
 .aw-fleet .aw-group, .aw-clients .aw-group, .aw-client .aw-group { margin: var(--aw-sp-5) 0; }
 .aw-fleet .aw-group > h3, .aw-clients .aw-group > h3, .aw-client .aw-group > h3 { font-size: var(--aw-fs-md); font-weight: 600; margin-bottom: var(--aw-sp-2); }
 
