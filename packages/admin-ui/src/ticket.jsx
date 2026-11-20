@@ -76,7 +76,19 @@ export function TicketView({ id, active, details = true }) {
           <div className="aw-ticket__crumbs">
             <span className="aw-mono">#{ticket.id}</span>
             <span>{ticket.project_name ?? 'no project'}</span>
-            <span>{isClient ? `${ticket.client_name ? `${ticket.client_name} · ` : ''}${ticket.client_email}` : MINE_LABEL}{via ? <>{' '}<Tag title={assistantBadgeTitle(ticket)}>{via}</Tag></> : null}</span>
+            <span>
+              {isClient ? (
+                <>
+                  {ticket.client_name ? `${ticket.client_name} · ` : ''}
+                  <a className="aw-mailto" href={`mailto:${ticket.client_email}`}>
+                    {ticket.client_email}
+                  </a>
+                </>
+              ) : (
+                MINE_LABEL
+              )}
+              {via ? <>{' '}<Tag title={assistantBadgeTitle(ticket)}>{via}</Tag></> : null}
+            </span>
             <span>opened {when(ticket.created_at)}</span>
             {isClient && ticket.client_locale && !isEnglish(ticket.client_locale) ? (
               <span title="Their messages are machine-translated for you; your replies reach them translated.">
@@ -587,6 +599,18 @@ function Composer({ ticket, onSent, replyAt = 0 }) {
     setMode('reply');
     body.current?.focus();
   }, [replyAt]);
+  // Three rows when empty, growing with the text up to twelve, then scrolling.
+  useEffect(() => {
+    const el = body.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const style = getComputedStyle(el);
+    const line = parseFloat(style.lineHeight) || 18;
+    const frame = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    const max = line * 12 + frame;
+    el.style.height = `${Math.min(el.scrollHeight, max)}px`;
+    el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
+  }, [text]);
 
   const checkMention = async (job, saved) => {
     setMentionJobs(previous => previous.map(value => value.key === job.key ? {...value,status:'checking'} : value));
@@ -662,7 +686,7 @@ function Composer({ ticket, onSent, replyAt = 0 }) {
       </div>
       <textarea
         ref={body}
-        rows={4}
+        rows={3}
         value={text}
         disabled={busy}
         placeholder={note ? 'Steer the agent: what to change, what to avoid, how to check…' : 'Write to the client…'}
@@ -861,45 +885,45 @@ export function TicketDetails({ ticket, runs, land, meter, reload, page = false 
   return (
     <aside className={cx('aw-details', page && 'aw-details--page')} aria-label="Details">
       <TicketActions ticket={ticket} runs={runs} land={land} reload={reload} />
-      <Field label="Status">
-        <select value={ticket.status} onChange={(e) => void setStatus(ticket, e.target.value).then(reload)}>
-          {/* Approving is its own button, with its own confirmation. */}
-          {STATUSES.filter((s) => s !== 'approved' || ticket.status === 'approved').map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABEL[s]}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Project">
-        <select value={ticket.project_id ?? ''} onChange={(e) => void patch({ projectId: e.target.value || null }, 'Project saved.')}>
-          <option value="">No project</option>
-          {data.projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Site">
-        <select value={ticket.site_id ?? ''} onChange={(e) => void patch({ siteId: e.target.value || null }, 'Site saved.')}>
-          <option value="">Main site</option>
-          {projectSites.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name || s.slug}
-            </option>
-          ))}
-        </select>
-      </Field>
+      <div className="aw-details__pair">
+        <Field label="Project">
+          <select value={ticket.project_id ?? ''} onChange={(e) => void patch({ projectId: e.target.value || null }, 'Project saved.')}>
+            <option value="">No project</option>
+            {data.projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Site">
+          <select value={ticket.site_id ?? ''} onChange={(e) => void patch({ siteId: e.target.value || null }, 'Site saved.')}>
+            <option value="">Main site</option>
+            {projectSites.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name || s.slug}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
       <Field label="Priority">
         <Segmented value={ticket.priority ?? 0} options={PRIORITIES} onChange={(v) => void patch({ priority: v }, 'Priority saved.')} />
       </Field>
-      <Field label="Agent" hint="Auto lets Flash pick: Flash for everyday work, Opus for hard work.">
-        <Segmented
-          value={ticket.executor ?? null}
-          options={agentOptions(ticket.executor)}
-          onChange={(v) => void patch({ executor: v }, `Agent: ${AGENTS.find((a) => a.value === v)?.label ?? v ?? 'auto'}.`)}
-        />
+      <Field label="Agent" hint={agentOptions(ticket.executor).find((a) => a.value === (ticket.executor ?? null))?.hint}>
+        <select
+          value={ticket.executor ?? ''}
+          onChange={(e) => {
+            const v = e.target.value || null;
+            void patch({ executor: v }, `Agent: ${AGENTS.find((a) => a.value === v)?.label ?? v ?? 'auto'}.`);
+          }}
+        >
+          {agentOptions(ticket.executor).map((a) => (
+            <option key={String(a.value)} value={a.value ?? ''} title={a.hint}>
+              {a.label}
+            </option>
+          ))}
+        </select>
       </Field>
       {['approved', 'new'].includes(ticket.status) ? (
         <p className={`aw-predict aw-predict--${queued && !queued.eligible.length ? 'bad' : where.state}`}>
@@ -910,6 +934,16 @@ export function TicketDetails({ ticket, runs, land, meter, reload, page = false 
       {/* The rare controls, folded away: the everyday loop is status, agent and priority. */}
       <details className="aw-details__more">
         <summary>More</summary>
+        <Field label="Change status">
+          <select value={ticket.status} onChange={(e) => void setStatus(ticket, e.target.value).then(reload)}>
+            {/* Approving is its own button, with its own confirmation. */}
+            {STATUSES.filter((s) => s !== 'approved' || ticket.status === 'approved').map((s) => (
+              <option key={s} value={s}>
+                {STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        </Field>
         <SitePanel project={data.projects.find((p) => p.id === ticket.project_id)} />
         {isClient ? (
           <>

@@ -18,7 +18,7 @@ import {
   usd,
 } from './format.js';
 import { nextRowIndex } from '../../dsh-admin/src/row-navigation.mjs';
-import { Button, Dot, Icon, Segmented, StatusPill, Tag, cx } from './ui.jsx';
+import { Badge, Button, Dot, Icon, Segmented, StatusPill, Tag, cx } from './ui.jsx';
 
 /** Filter bar shared by the board and the list. */
 function useFilters() {
@@ -381,17 +381,18 @@ export function InboxView() {
   for (const r of failed) at.set(r, ids.push(r.ticket_id) - 1);
   const nav = useRowNav(ids.length, (i) => openTicket(ids[i]));
   const empty = groups.every((g) => !g.items.length) && !n.offline.length;
+  const total = groups.reduce((a, g) => a + g.items.length, 0);
   return (
     <div className="aw-view aw-inbox">
       <header className="aw-hero">
         <h2>Needs you</h2>
         <p className="aw-muted">
-          {empty ? 'Nothing is waiting on you. Agents are on it.' : `${groups.reduce((a, g) => a + g.items.length, 0)} item(s) waiting on you.`}
+          {empty ? 'Nothing is waiting on you. Agents are on it.' : `${total} ${total === 1 ? 'item needs' : 'items need'} you.`}
         </p>
       </header>
       {data.access?.superAdmin && n.offline.length ? (
-        <div className="aw-banner aw-banner--bad">
-          <Dot state="bad" /> Offline: {n.offline.map((x) => x.id).join(', ')}.{' '}
+        <div className="aw-inbox__offline">
+          <Dot state="warn" /> Offline: {n.offline.map((x) => x.id).join(', ')}.{' '}
           <button type="button" className="aw-link" onClick={() => open('fleet')}>
             Fleet →
           </button>
@@ -402,8 +403,8 @@ export function InboxView() {
           <section key={g.key} className="aw-group">
             <h3>
               {g.title} <span className="aw-count">{g.items.length}</span>
+              <span className="aw-group__hint">{g.hint}</span>
             </h3>
-            <p className="aw-muted">{g.hint}</p>
             <ul className="aw-rows">
               {g.items.map((t) => {
                 const q = data.queue.find((x) => x.id === t.id);
@@ -411,40 +412,42 @@ export function InboxView() {
                 return (
                   <li key={t.id} className="aw-row" tabIndex={0} ref={nav.cell(i)} onKeyDown={(e) => nav.onKey(e, i)} onClick={() => openTicket(t.id)}>
                     <span className="aw-mono aw-muted">#{t.id}</span>
-                    <a className="aw-titlelink aw-row__title" href={`#ticket=${t.id}`} tabIndex={-1} onClick={titleLinkClick}>
+                    <a className="aw-titlelink aw-row__title" href={`#ticket=${t.id}`} tabIndex={-1} onClick={titleLinkClick} title={t.title}>
                       {t.title}
                     </a>
-                    {t.kind === 'system' ? <Tag tone="dash">{MINE_LABEL}</Tag> : <Tag tone="client">{t.client_email}</Tag>}
+                    {t.kind === 'system' ? <Badge>{MINE_LABEL}</Badge> : <span className="aw-muted">{t.client_email}</span>}
                     <span className="aw-muted">{t.project_name ?? 'no project'}</span>
                     {g.key === 'stuck' && q ? <span className="aw-warn">{q.reason}</span> : null}
                     <span className="aw-toolbar__fill" />
                     <span className="aw-muted">{g.key === 'waiting' ? `waiting ${ago(t.client_waiting_since)}` : ago(t.updated_at)}</span>
-                    {(g.extra?.(t) ?? []).map(([label, run]) => (
-                      <Button
-                        key={label}
-                        size="sm"
-                        kind="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void run();
-                        }}
-                      >
-                        {label}
-                      </Button>
-                    ))}
-                    {g.actions(t).map(([s, label]) => (
-                      <Button
-                        key={s}
-                        size="sm"
-                        kind={s === 'declined' ? 'ghost' : 'default'}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void move(t, s);
-                        }}
-                      >
-                        {label}
-                      </Button>
-                    ))}
+                    <span className="aw-row__actions">
+                      {(g.extra?.(t) ?? []).map(([label, run]) => (
+                        <Button
+                          key={label}
+                          size="sm"
+                          kind="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void run();
+                          }}
+                        >
+                          {label}
+                        </Button>
+                      ))}
+                      {g.actions(t).map(([s, label]) => (
+                        <Button
+                          key={s}
+                          size="sm"
+                          kind={s === 'declined' ? 'ghost' : 'default'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void move(t, s);
+                          }}
+                        >
+                          {label}
+                        </Button>
+                      ))}
+                    </span>
                   </li>
                 );
               })}

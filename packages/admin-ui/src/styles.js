@@ -1065,4 +1065,41 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-settings .aw-toolbox__row, .aw-settings .aw-toolbox__skills > li, .aw-settings .aw-toolbox__plugin { padding: 4px 8px; }
 .aw-settings .aw-toolbox__section { margin-top: var(--aw-sp-3); padding-top: var(--aw-sp-3); }
 .aw-settings__foot { position: sticky; bottom: 0; display: flex; align-items: center; gap: var(--aw-sp-3); margin: var(--aw-sp-5) -20px -40px; padding: var(--aw-sp-3) 20px; background: var(--aw-bg); border-top: 1px solid var(--aw-border); }
+/* loop2 */
+/* The ticket rail: one status pill at the top, fields 12px apart and no
+   rule between every one of them; labels stay small and quiet. */
+.aw-details > .aw-field { border-top: 0; padding-top: 0; margin-top: 0; margin-bottom: var(--aw-sp-4); }
+.aw-details > .aw-predict { border-top: 0; padding-top: 0; margin-top: 0; margin-bottom: var(--aw-sp-4); }
+.aw-details .aw-field { gap: var(--aw-sp-1); }
+.aw-details .aw-field__hint { font-size: var(--aw-fs-xs); line-height: 1.4; }
+.aw-details__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--aw-sp-3); margin-bottom: var(--aw-sp-4); }
+.aw-details__pair > .aw-field { margin-bottom: 0; }
+.aw-details__pair select { font-size: var(--aw-fs-sm); padding-inline: var(--aw-sp-2); }
+/* Priority: full-width, equal columns (the Agent choice is a select now). */
+.aw-details .aw-seg { display: flex; width: 100%; }
+.aw-details .aw-seg button { flex: 1 1 0; padding-inline: var(--aw-sp-1); }
+/* A primary button that cannot be pressed reads as disabled, not as a faded brand. */
+.aw-btn--primary:disabled { background: var(--aw-bg3); border-color: var(--aw-border); color: var(--aw-text2) !important; opacity: 1; }
+/* The composer starts at three rows and the script grows it up to twelve. */
+.aw-composer textarea { min-height: calc(3 * 1.5em + 8px); resize: none; }
+/* The header's mail address is a link, not a chip. */
+.aw-mailto { color: inherit; text-decoration: none; }
+.aw-mailto:hover { text-decoration: underline; }
+/* A run's branch line is context, so it is a plain muted line, not a chip. */
+.aw-run footer .aw-tag--dash { border: 0; background: none; padding-inline: 0; height: auto; color: var(--aw-text2); font-size: var(--aw-fs-xs); }
+/* Inbox: one count line, a slim warn notice, the hint on the group line, and
+   one fixed action column so the buttons line up down every group. */
+.aw-inbox .aw-group { margin: var(--aw-sp-5) 0; }
+.aw-group__hint { margin-left: var(--aw-sp-2); font-size: var(--aw-fs-sm); font-weight: 400; color: var(--aw-text2); }
+.aw-inbox__offline { display: flex; align-items: center; gap: var(--aw-sp-2); margin: 0 0 var(--aw-sp-4); padding: var(--aw-sp-1) var(--aw-sp-3); border: 1px solid color-mix(in srgb, var(--aw-warn) 25%, transparent); border-radius: var(--aw-r-md); background: color-mix(in srgb, var(--aw-warn) 9%, transparent); font-size: var(--aw-fs-sm); color: var(--aw-text2); }
+.aw-inbox .aw-row { gap: var(--aw-sp-3); }
+.aw-inbox .aw-row .aw-btn--ghost { border-color: var(--aw-border2); }
+.aw-inbox .aw-row__actions { display: flex; flex: 0 0 144px; justify-content: flex-end; gap: var(--aw-sp-1); margin-left: auto; }
+.aw-inbox .aw-row__actions > .aw-btn { flex: none; }
+/* New task: four fields in two columns and a shorter brief. */
+.aw-taskform { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.aw-taskform .aw-field { margin-bottom: var(--aw-sp-4); }
+.aw-taskform .aw-field:nth-last-child(-n + 2) { margin-bottom: 0; }
+.aw-taskform + .aw-field { margin-top: var(--aw-sp-3); }
+
 `;
