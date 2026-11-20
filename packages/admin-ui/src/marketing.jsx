@@ -242,7 +242,7 @@ export function MarketingView() {
             </Button>
             <Button onClick={() => setModal({ kind: 'compose', channel: 'email' })}>Compose</Button>
             <Button
-              title="Rewrite every scheduled email from the current templates. Emails you edited by hand are left alone."
+              title="The desk re-renders scheduled emails by itself when the templates change; this does it now. Emails you edited by hand are left alone."
               onClick={() => run(() => api('POST', '/admin/marketing/messages/rerender'), 'Scheduled emails now use the current wording.')}
             >
               Re-render scheduled
@@ -1612,8 +1612,8 @@ function SequencesTab({ api, sequences }) {
         </span>
       </div>
       <p className="aw-muted">
-        The wording lives in <span className="aw-mono">SEQUENCES</span> in <span className="aw-mono">worker/src/marketing.ts</span>. To change it for one
-        person, open their email in the Email tab and rewrite it there.
+        The wording lives in <span className="aw-mono">SEQUENCES</span> in <span className="aw-mono">worker/src/marketing.ts</span>; the desk
+        re-renders the queue by itself when it changes. To change it for one person, open their email in the Email tab and rewrite it there.
       </p>
       {data?.steps.map((step) => (
         <article key={step.kind} style={{ borderTop: '1px solid var(--aw-line, #e5e5e5)', padding: '10px 0' }}>
