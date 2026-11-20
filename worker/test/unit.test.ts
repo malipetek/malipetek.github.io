@@ -102,7 +102,7 @@ import {
   type FindingRow,
   type PageFacts,
 } from '../src/seo.ts';
-import { cleanPost, nextSlots, parseOutbox, repeatsOpener, slotLabel } from '../src/content.ts';
+import { cleanPost, heldPostSlots, nextSlots, parseOutbox, repeatsOpener, slotLabel } from '../src/content.ts';
 import { autoApproveDecision } from '../src/approve.ts';
 import { healthMail, parseFleetVersion } from '../src/health.ts';
 import { parseReview, reviewLine } from '../src/review.ts';
@@ -1921,6 +1921,14 @@ test('seo: checkGuide refuses the ways a guide goes wrong', () => {
   assert.equal(checkGuide(GUIDE_OK.replace('targets: ["small business website cost"]', 'targets: []')).ok, false);
   assert.equal(checkGuide(`${GUIDE_OK.split('---\n\n')[0]}---\n\nshort body`).ok, false);
   assert.equal(checkGuide(GUIDE_OK.replace('useful sentence', 'useful — sentence')).ok, false);
+  // published must be a real date shape, and every faq question needs its answer.
+  assert.equal(checkGuide(GUIDE_OK.replace('published: 2026-11-20', 'published: November 2026')).ok, false);
+  assert.equal(checkGuide(GUIDE_OK.replace('published: 2026-11-20', '')).ok, false);
+  assert.equal(checkGuide(GUIDE_OK.replace('    a: No, you pay only for the time spent.\n', '')).ok, false);
+  assert.equal(
+    checkGuide(GUIDE_OK.replace('  - q: Is there a monthly fee?', '  - q: Is there a monthly fee?\n  - q: Do you offer retainers?')).ok,
+    false,
+  );
 });
 
 test('seo: parseGuideOutbox reads the PR block and the skip', () => {
@@ -1956,6 +1964,8 @@ test('seo: guideBrief names the file, the contract and the repo rules', () => {
   assert.match(brief, /never\s+push to it directly|never push/i);
   assert.match(brief, /A: https:\/\/ptechsolutions\.net\/guides\/a/);
   assert.match(brief, /<<<OUTBOX/);
+  // The agent copies the style it is given: the brief itself stays dash-free.
+  assert.equal(brief.includes('—'), false);
 });
 
 /* —— observe: the site check that writes the gap —— */
@@ -2107,4 +2117,26 @@ test('content: an X post counts a link as 23 characters', () => {
   assert.equal(clean.ok, true);
   // The same length without the link still fails.
   assert.equal(cleanPost(`${'x'.repeat(281)}`, 'x').ok, false);
+});
+
+test('content: heldPostSlots keeps future slots and re-slots the passed ones', () => {
+  const t = 1_800_000_000;
+  const offset = 0;
+  const future = nextSlots(t, 1, offset)[0]!;
+  const drafts = [
+    { id: 1, scheduledAt: t - 3600 }, // slot already passed
+    { id: 2, scheduledAt: future }, // still in the future: keeps it
+    { id: 3, scheduledAt: null }, // never had a slot
+    { id: 4, scheduledAt: t - 7200 }, // also passed
+  ];
+  const taken = new Set([future]);
+  const slots = heldPostSlots({ drafts, taken, t, offsetMinutes: offset });
+  assert.equal(slots.has(2), false);
+  assert.equal(slots.size, 3);
+  const assigned = [...slots.values()];
+  assert.ok(assigned.every((at) => at > t));
+  assert.equal(new Set(assigned).size, 3);
+  assert.ok(assigned.every((at) => !taken.has(at)));
+  // Oldest draft gets the earliest free slot.
+  assert.ok(slots.get(1)! < slots.get(3)! && slots.get(3)! < slots.get(4)!);
 });
