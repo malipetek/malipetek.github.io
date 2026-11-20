@@ -135,6 +135,14 @@ export const SLOP: { pattern: RegExp; reason: string }[] = [
   },
 ];
 
+/*
+ * Links: one, and only to ptechsolutions.net — the guide engine's whole point
+ * is that a post can point at a guide we published. Every other URL is a
+ * reason to refuse the post.
+ */
+const LINK_RE = /https?:\/\/[^\s<>"')\]]+/g;
+const ALLOWED_LINK = 'https://ptechsolutions.net/';
+
 /** One post, or the reason it cannot go out as written. */
 export function cleanPost(raw: unknown, channel: 'x' | 'linkedin'): CleanPost {
   if (typeof raw !== 'string') return { ok: false, reason: 'not text' };
@@ -147,13 +155,39 @@ export function cleanPost(raw: unknown, channel: 'x' | 'linkedin'): CleanPost {
     .trim();
   if (!text) return { ok: false, reason: 'empty' };
   if (text.includes('<<<OUTBOX') || text.includes('OUTBOX>>>')) return { ok: false, reason: 'contains the outbox marker' };
+  const links = text.match(LINK_RE) ?? [];
+  if (links.some((link) => !link.startsWith(ALLOWED_LINK))) return { ok: false, reason: 'links outside ptechsolutions.net' };
+  if (links.length > 1) return { ok: false, reason: 'more than one link' };
   const limit = channel === 'x' ? 280 : 3_000;
-  if (text.length > limit) return { ok: false, reason: `${text.length} characters, ${channel} allows ${limit}` };
+  // X counts every URL as 23 characters however long it is; count it that way.
+  const length = channel === 'x' ? text.replace(LINK_RE, 'x'.repeat(23)).length : text.length;
+  if (length > limit) return { ok: false, reason: `${length} characters, ${channel} allows ${limit}` };
   for (const rule of BANNED) if (rule.pattern.test(text)) return { ok: false, reason: rule.reason };
   for (const rule of SLOP) if (rule.pattern.test(text)) return { ok: false, reason: `reads as machine-written: ${rule.reason}` };
   const hashtags = text.match(/#[A-Za-z0-9_]+/g) ?? [];
   if (hashtags.length > 2) return { ok: false, reason: `${hashtags.length} hashtags` };
   return { ok: true, text };
+}
+
+/**
+ * Did this post open the way a recent one did? The first four words,
+ * lowercased and stripped of punctuation, are the opener; "Vibe contracting
+ * is a/the/…" was the tell the desk kept repeating. `others` is the recent
+ * posts' texts plus the earlier posts of the same batch.
+ */
+const openerOf = (text: string): string =>
+  text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 4)
+    .join(' ');
+
+export function repeatsOpener(text: string, others: readonly string[]): boolean {
+  const opener = openerOf(text);
+  if (!opener) return false;
+  return others.some((other) => openerOf(other) === opener);
 }
 
 /** The posts in an agent's summary, or null when the block is missing or unreadable. */
@@ -217,6 +251,41 @@ async function readPostApproval(env: Env): Promise<boolean> {
   }
 }
 
+/** Desk setting: hours a cycle's posts wait as drafts before they schedule themselves. */
+async function readPostHold(env: Env): Promise<number> {
+  const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'marketing_post_hold_hours'`).first<{ value: string }>();
+  try {
+    const value = Number(JSON.parse(row?.value ?? '24'));
+    return Number.isInteger(value) && value >= 0 && value <= 168 ? value : 24;
+  } catch {
+    return 24;
+  }
+}
+
+/**
+ * The cron's half of post approval: a cycle's drafts that have waited out the
+ * hold schedule themselves, so a week of posts does not pile up unread. A
+ * slot that already passed moves a quarter hour out. Hold 0 means Ali
+ * approves every post, like before.
+ */
+export async function releaseHeldPosts(env: Env, t = now()): Promise<number> {
+  const hold = await readPostHold(env);
+  if (!hold) return 0;
+  const { results } = await env.DB.prepare(
+    `UPDATE marketing_messages
+        SET status = 'scheduled',
+            scheduled_at = CASE WHEN scheduled_at IS NULL OR scheduled_at <= ? THEN ? ELSE scheduled_at END,
+            updated_at = ?
+      WHERE channel IN ('x', 'linkedin') AND status = 'draft' AND kind = 'auto' AND created_at <= ?
+      RETURNING id`,
+  )
+    .bind(t, t + 15 * 60, t, t - hold * 3600)
+    .all<{ id: number }>();
+  const released = results?.length ?? 0;
+  if (released) await event(env, 'auto_approved', `${released} post${released === 1 ? '' : 's'} released after the ${hold}h hold`);
+  return released;
+}
+
 async function readVoiceNotes(env: Env): Promise<string> {
   const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'marketing_voice_notes'`)
     .first<{ value: string }>();
@@ -245,6 +314,31 @@ async function recentPosts(env: Env): Promise<RecentPost[]> {
   return (results ?? []).reverse();
 }
 
+/** Up to five newest guides the SEO desk knows about, for the brief's link slot. */
+async function recentGuides(env: Env): Promise<{ title: string; url: string }[]> {
+  const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'seo_guides'`).first<{ value: string }>();
+  try {
+    const parsed = JSON.parse(row?.value ?? '[]') as unknown;
+    const list = Array.isArray(parsed) ? parsed : ((parsed as { guides?: unknown })?.guides ?? []);
+    if (!Array.isArray(list)) return [];
+    return list
+      .map((guide) => {
+        const row = guide as { title?: unknown; url?: unknown; published?: unknown };
+        return {
+          title: typeof row.title === 'string' ? row.title.slice(0, 120) : '',
+          url: typeof row.url === 'string' ? row.url : '',
+          published: typeof row.published === 'string' ? row.published : '',
+        };
+      })
+      .filter((guide) => guide.title && guide.url.startsWith('https://ptechsolutions.net/'))
+      .sort((a, b) => b.published.localeCompare(a.published))
+      .slice(0, 5)
+      .map(({ title, url }) => ({ title, url }));
+  } catch {
+    return [];
+  }
+}
+
 function history(posts: RecentPost[], offsetMinutes: number): string {
   if (!posts.length) return 'Nothing has gone out yet. These are the first posts.';
   return posts
@@ -255,7 +349,7 @@ function history(posts: RecentPost[], offsetMinutes: number): string {
     .join('\n\n');
 }
 
-function brief(posts: RecentPost[], offsetMinutes: number, voice: string): string {
+function brief(posts: RecentPost[], offsetMinutes: number, voice: string, guides: { title: string; url: string }[] = []): string {
   return [
     "Write next week's X and LinkedIn posts — two for X, one for LinkedIn.",
     '',
@@ -273,6 +367,14 @@ function brief(posts: RecentPost[], offsetMinutes: number, voice: string): strin
     '',
     history(posts, offsetMinutes),
     '',
+    ...(guides.length
+      ? [
+          'Guides on ptechsolutions.net that exist today. If one fits a post, that',
+          'post may link to it; only ptechsolutions.net links are allowed at all:',
+          ...guides.map((guide) => `- ${guide.title}: ${guide.url}`),
+          '',
+        ]
+      : []),
     'Write:',
     '- two posts for X, each 280 characters or fewer including line breaks',
     '- one post for LinkedIn, 3,000 characters or fewer',
@@ -303,6 +405,7 @@ function brief(posts: RecentPost[], offsetMinutes: number, voice: string): strin
     '  there, write a different post.',
     '- Each post stands alone months from now: no “this week”, no thread references,',
     '  no numbering.',
+    '- Do not open two posts the same way; never open with "Vibe contracting is".',
     '- Write each post, then rewrite it the way marketing/style/README.md says: mark',
     '  the tells with marketing/style/humanizer/SKILL.md, rewrite the whole post, and',
     '  score it with the stop-slop rubric. Rewrite anything under 40/50.',
@@ -376,6 +479,7 @@ export async function ensureContentCycle(env: Env, t = now(), options: { force?:
   const offset = await readOffset(env);
   const voice = await readVoiceNotes(env);
   const posts = await recentPosts(env);
+  const guides = await recentGuides(env);
   const first = nextSlots(t, 1, offset)[0] ?? t;
   const title = `Social posts for the week of ${dayLabel(first, offset)}`;
 
@@ -388,7 +492,7 @@ export async function ensureContentCycle(env: Env, t = now(), options: { force?:
   if (!ticket) return { filed: false, reason: 'insert_failed' };
 
   await env.DB.prepare(`INSERT INTO ticket_messages (ticket_id, author, body, internal, created_at) VALUES (?, 'ali', ?, 1, ?)`)
-    .bind(ticket.id, brief(posts, offset, voice), t)
+    .bind(ticket.id, brief(posts, offset, voice, guides), t)
     .run();
   return { filed: true, id: ticket.id };
 }
@@ -431,12 +535,22 @@ export async function finishContentCycle(env: Env, ticketId: number, summary: st
     return { handled: true, queued: 0, slots: [], reason: 'no_outbox' };
   }
 
+  // The last dozen posts are the opener memory, plus each earlier post of
+  // this batch: three posts that open the same way is the tell being fixed.
+  const recent = await recentPosts(env);
+  const openers = recent.map((post) => post.body);
   const valid: OutboxPost[] = [];
   const skipped: string[] = [];
   for (const post of posts) {
     const clean = cleanPost(post.text, post.channel);
-    if (clean.ok) valid.push({ channel: post.channel, text: clean.text });
-    else skipped.push(`${post.channel}: ${clean.reason}`);
+    if (clean.ok && repeatsOpener(clean.text, openers)) {
+      skipped.push(`${post.channel}: repeats the opening of a recent post`);
+      continue;
+    }
+    if (clean.ok) {
+      valid.push({ channel: post.channel, text: clean.text });
+      openers.push(clean.text);
+    } else skipped.push(`${post.channel}: ${clean.reason}`);
   }
   if (valid.length > CYCLE_POSTS) valid.length = CYCLE_POSTS;
 
@@ -464,6 +578,7 @@ export async function finishContentCycle(env: Env, ticketId: number, summary: st
   const slots = nextSlots(t, valid.length, offset, taken);
   // With approval on, a post holds its slot as a draft; approving it schedules it there.
   const approval = await readPostApproval(env);
+  const hold = approval ? await readPostHold(env) : 0;
   await env.DB.batch(
     valid.map((post, index) =>
       env.DB.prepare(
@@ -486,7 +601,9 @@ export async function finishContentCycle(env: Env, ticketId: number, summary: st
         plan,
         '',
         approval
-          ? 'They wait in Admin → Marketing → Posts for approval; an approved post goes out in its slot.'
+          ? hold > 0
+            ? `They wait in Admin → Marketing → Posts; each goes out automatically at its slot ${hold}h after it was written unless you cancel it in the desk.`
+            : 'They wait in Admin → Marketing → Posts for approval; an approved post goes out in its slot.'
           : 'They are in Admin → Marketing → Posts, and the publisher picks them up at their time.',
         ...(skipped.length ? ['', `Left out:\n- ${skipped.join('\n- ')}`] : []),
       ].join('\n'),
@@ -505,7 +622,9 @@ export async function finishContentCycle(env: Env, ticketId: number, summary: st
       : `${valid.length} post${valid.length === 1 ? '' : 's'} queued`,
     text: [
       approval
-        ? 'The content cycle wrote these. Nothing goes out until you approve it in the desk.'
+        ? hold > 0
+          ? 'The content cycle wrote these. Each goes out automatically at its slot unless you cancel it in the desk.'
+          : 'The content cycle wrote these. Nothing goes out until you approve it in the desk.'
         : 'The content cycle queued these. They go out at their time unless you cancel them.',
       '',
       ...valid.flatMap((post, index) => [

@@ -59,7 +59,7 @@ Use for Customily, TRUTH NYC, PAX Digital, Bemeir, and personal contacts.
 
 > Hi {name},
 >
-> I will stop filling your inbox. If something small comes up, the door is open: malipetek.dev/portal.
+> I will stop filling your inbox. If something small comes up, the door is open: ptechsolutions.net/portal.
 >
 > Muhammet
 
@@ -86,7 +86,7 @@ breaks.
 > Reply with what you're working on and I'll tell you how I'd help.
 >
 > Muhammet
-> malipetek.dev
+> ptechsolutions.net
 
 Without a written observation, the queue sends this instead (it makes no claim about the site):
 
@@ -101,7 +101,7 @@ Without a written observation, the queue sends this instead (it makes no claim a
 > Reply with what you're working on and I'll tell you how I'd help.
 >
 > Muhammet
-> malipetek.dev
+> ptechsolutions.net
 
 ### Follow-up, day 4
 
@@ -127,7 +127,7 @@ Without a written observation, the queue sends this instead (it makes no claim a
 
 > Hi {name},
 >
-> Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
+> Last note from me. If you want help with AI or getting a project online later, it's here: ptechsolutions.net
 >
 > Muhammet
 
@@ -135,7 +135,7 @@ Without a written observation, the queue sends this instead (it makes no claim a
 
 > Hi {name},
 >
-> Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
+> Last note from me. If you want help with AI or getting a project online later, it's here: ptechsolutions.net
 >
 > Muhammet
 
@@ -161,7 +161,7 @@ site that is mostly fine and a list of small things that never get done.
 > Reply with what you're working on and I'll tell you how I'd help.
 >
 > Muhammet
-> malipetek.dev
+> ptechsolutions.net
 
 Without a written observation, the queue sends this instead (it makes no claim about the site):
 
@@ -176,7 +176,7 @@ Without a written observation, the queue sends this instead (it makes no claim a
 > Reply with what you're working on and I'll tell you how I'd help.
 >
 > Muhammet
-> malipetek.dev
+> ptechsolutions.net
 
 ### Follow-up, day 4
 
@@ -194,7 +194,67 @@ Without a written observation, the queue sends this instead (it makes no claim a
 
 > Hi {name},
 >
-> Last note from me. If you want help with AI or getting a project online later, it's here: malipetek.dev
+> Last note from me. If you want help with AI or getting a project online later, it's here: ptechsolutions.net
+>
+> Muhammet
+
+---
+
+## Cold: opens on the observation of their site
+
+The challenger arm: the same offer as Cold A, but the email opens on the
+one true thing the desk observed on their site. Only contacts the
+observation writer has reached get this sequence.
+
+### First email
+
+**Subject:** {site}
+
+> Hi {name},
+>
+> {gap}
+>
+> I can fix that for you. It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy the change.
+>
+> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+>
+> Want me to fix it?
+>
+> Muhammet
+> ptechsolutions.net
+
+Without a written observation, the queue sends this instead (it makes no claim about the site):
+
+> Hi {name},
+>
+> {gap}
+>
+> I can fix that for you. It's called vibe contracting: you connect to my service, and I, a veteran programmer, help you use AI and deploy the change.
+>
+> It costs $100 an hour, billed by the second, so most jobs come to less than $10.
+>
+> Want me to fix it?
+>
+> Muhammet
+> ptechsolutions.net
+
+### Follow-up, day 4
+
+**Subject:** {site}
+
+> Hi {name},
+>
+> Should I go ahead with the fix on {site}? A one-line reply is enough.
+>
+> Muhammet
+
+### Follow-up, day 10
+
+**Subject:** {site}
+
+> Hi {name},
+>
+> Last note from me. If you want it fixed later, you can ask at ptechsolutions.net/portal, with no call or quote first.
 >
 > Muhammet
 
@@ -218,7 +278,7 @@ For a business OpenStreetMap lists with an email and no website
 > If you want one, reply with a line about the business and I will tell you what it would take.
 >
 > Muhammet
-> malipetek.dev
+> ptechsolutions.net
 
 ### Follow-up, day 4
 
@@ -236,7 +296,7 @@ For a business OpenStreetMap lists with an email and no website
 
 > Hi {name},
 >
-> Last note from me. If you want a site later, you can ask through malipetek.dev/portal, with no call or quote first.
+> Last note from me. If you want a site later, you can ask through ptechsolutions.net/portal, with no call or quote first.
 >
 > Muhammet
 
