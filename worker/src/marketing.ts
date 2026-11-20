@@ -966,7 +966,9 @@ async function writeTextSetting(env: Env, key: string, value: string): Promise<v
  * A scheduled email the re-render cannot save: its subject maps to no
  * sequence, or its body still carries the retired domain. Exported for tests.
  */
-export function outdatedEmail(row: { subject: string | null; body: string | null }): boolean {
+export function outdatedEmail(row: { kind?: string | null; subject: string | null; body: string | null }): boolean {
+  // A message composed by hand belongs to no sequence; it is never a leftover.
+  if (row.kind === 'manual') return false;
   return sequenceOfSubject(row.subject) === null || (row.body ?? '').includes('malipetek.dev');
 }
 
@@ -1010,7 +1012,7 @@ export async function syncTemplates(env: Env): Promise<TemplateSyncResult> {
   const rerendered = await rerenderScheduled(env);
 
   const { results: scheduled } = await env.DB.prepare(
-    `SELECT id, subject, body FROM marketing_messages
+    `SELECT id, kind, subject, body FROM marketing_messages
       WHERE channel = 'email' AND status = 'scheduled' AND edited_at IS NULL`,
   ).all<{ id: number; subject: string | null; body: string | null }>();
   const doomed = (scheduled ?? []).filter(outdatedEmail).map((row) => row.id);

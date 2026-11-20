@@ -2133,6 +2133,7 @@ test('marketing: template sync fingerprints the templates and spots outdated mai
   assert.equal(await templateHash(), hash);
   // Outdated: a subject no sequence claims, or old-domain wording left in the body.
   assert.equal(outdatedEmail({ subject: 'Your summer menu', body: 'Hi Sara,' }), true);
+  assert.equal(outdatedEmail({ kind: 'manual', subject: 'Your summer menu', body: 'Hi Sara,' }), false);
   assert.equal(outdatedEmail({ subject: 'vibe coding or an agency?', body: 'old copy on malipetek.dev' }), true);
   assert.equal(outdatedEmail({ subject: 'vibe coding or an agency?', body: 'Hi Sara,\n\nAre you vibe coding' }), false);
   assert.equal(outdatedEmail({ subject: 'corroof.com', body: 'The footer on corroof.com still says © 2019.' }), false);
