@@ -22,13 +22,30 @@ const EVENT_KINDS = [
   { value: 'fix', label: 'Fix' },
   { value: 'note', label: 'Note' },
 ];
-const EVENT_TONE = { core_update: 'warn', algorithm_update: 'warn', fix: 'ok', note: 'dash' };
-const EVENT_LABEL = { core_update: 'core update', algorithm_update: 'algorithm update', fix: 'fix', note: 'note' };
+const EVENT_TONE = { core_update: 'warn', algorithm_update: 'warn', fix: 'ok', note: 'dash', guide: 'ok', indexnow: 'dash' };
+const EVENT_LABEL = {
+  core_update: 'core update',
+  algorithm_update: 'algorithm update',
+  fix: 'fix',
+  note: 'note',
+  guide: 'guide',
+  indexnow: 'IndexNow',
+};
 const CYCLE_REASON = {
   auto_off: 'automatic cycles are off',
   open_cycle: 'a cycle ticket is already open',
   no_findings: 'there are no open findings at medium or above',
   recent_cycle: 'a cycle was filed in the last day',
+  no_project: 'the ptechsolutions project is missing',
+  no_admin: 'there is no admin account to file it for',
+  insert_failed: 'the ticket could not be written',
+};
+const GUIDE_REASON = {
+  auto_off: 'automatic guide cycles are off; force still files one',
+  open_cycle: 'a guide ticket is already open',
+  weekly_cap: 'this week’s guide cycles are used up',
+  recent_cycle: 'a guide cycle was filed in the last two days',
+  all_covered: 'every target already has a guide or a fresh attempt',
   no_project: 'the ptechsolutions project is missing',
   no_admin: 'there is no admin account to file it for',
   insert_failed: 'the ticket could not be written',
@@ -198,9 +215,17 @@ function runText(result) {
   return 'Done.';
 }
 
+function guideCycleText(result) {
+  if (!result || typeof result !== 'object') return 'Done.';
+  if (result.filed) return `Filed #${result.id}: an agent writes the guide and the desk merges it.`;
+  const reason = GUIDE_REASON[result.reason] ?? result.reason ?? 'unknown reason';
+  return `Nothing filed: ${reason}${result.id ? ` (#${result.id})` : ''}.`;
+}
+
 function OverviewTab({ overview, api, refresh, openTicket }) {
   const [busy, setBusy] = useState(null);
   const [result, setResult] = useState(null);
+  const [guideBusy, setGuideBusy] = useState(false);
   const held = overview.cycle?.held;
 
   const run = async (what) => {
@@ -216,6 +241,23 @@ function OverviewTab({ overview, api, refresh, openTicket }) {
       setBusy(null);
     }
   };
+
+  const writeGuide = async () => {
+    setGuideBusy(true);
+    setResult(null);
+    try {
+      const out = await api('POST', '/admin/seo/guide-cycle?force=1');
+      setResult({ ok: true, text: guideCycleText(out) });
+      await refresh();
+    } catch (error) {
+      setResult({ ok: false, text: errorText(error) });
+    } finally {
+      setGuideBusy(false);
+    }
+  };
+
+  const coverage = overview.coverage ?? [];
+  const covered = coverage.filter((entry) => entry.guide).length;
 
   return (
     <>
@@ -335,6 +377,49 @@ function OverviewTab({ overview, api, refresh, openTicket }) {
           {held?.held ? <span className="aw-muted"> · rewrites pause until {longDay(held.until)}</span> : null}
         </p>
       </section>
+
+      <section className="aw-panel">
+        <header>
+          <h3 style={{ margin: 0 }}>Guide coverage</h3>
+          <Tag tone={coverage.length && covered === coverage.length ? 'ok' : 'warn'}>
+            {covered} of {coverage.length} targets have a page
+          </Tag>
+          <span className="aw-toolbar__fill" />
+          <Button size="sm" disabled={guideBusy} onClick={writeGuide}>
+            {guideBusy ? 'Filing…' : 'Write a guide now'}
+          </Button>
+        </header>
+        <p className="aw-muted">
+          Every rank keyword and buyer question gets a guide on ptechsolutions.net.{' '}
+          {overview.guidesAt ? `guides.json was read ${ago(overview.guidesAt)} ago.` : 'The site has not been read for guides yet.'}
+        </p>
+        {coverage.length ? (
+          <ul className="aw-rows">
+            {coverage.map((entry) => (
+              <li key={`${entry.kind}:${entry.target}`} className="aw-row" style={{ cursor: 'default' }}>
+                <Tag tone={entry.kind === 'keyword' ? 'dash' : 'warn'}>{entry.kind}</Tag>
+                <span className="aw-row__title">{entry.target}</span>
+                <span className="aw-toolbar__fill" />
+                {entry.guide ? (
+                  <a href={entry.guide.url} target="_blank" rel="noreferrer">
+                    {entry.guide.title}
+                  </a>
+                ) : entry.inProgress ? (
+                  <span className="aw-muted">
+                    writing <TicketLink id={entry.inProgress} openTicket={openTicket} />
+                  </span>
+                ) : entry.lastAttemptAt ? (
+                  <span className="aw-muted">attempted {instantDay(entry.lastAttemptAt)}</span>
+                ) : (
+                  <span className="aw-muted">No page yet</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="aw-muted">No targets yet: add rank keywords or buyer questions in Settings.</p>
+        )}
+      </section>
     </>
   );
 }
@@ -365,7 +450,8 @@ function ScoreChart({ series, events, today }) {
   const marks = (events ?? [])
     .map((event) => ({ ...event, n: dayNumber(event.day) }))
     .filter((event) => Number.isFinite(event.n) && event.n >= start && event.n <= endNumber);
-  const markColour = (kind) => (kind === 'fix' ? 'var(--aw-ok)' : kind === 'note' ? 'var(--aw-text2)' : 'var(--aw-warn)');
+  const markColour = (kind) =>
+    kind === 'fix' || kind === 'guide' ? 'var(--aw-ok)' : kind === 'note' || kind === 'indexnow' ? 'var(--aw-text2)' : 'var(--aw-warn)';
 
   return (
     <div className="aw-seo-chart">
@@ -669,7 +755,8 @@ function RankChart({ series, events, today }) {
   const marks = (events ?? [])
     .map((event) => ({ ...event, n: dayNumber(event.day) }))
     .filter((event) => Number.isFinite(event.n) && event.n >= start && event.n <= endNumber);
-  const markColour = (kind) => (kind === 'fix' ? 'var(--aw-ok)' : kind === 'note' ? 'var(--aw-text2)' : 'var(--aw-warn)');
+  const markColour = (kind) =>
+    kind === 'fix' || kind === 'guide' ? 'var(--aw-ok)' : kind === 'note' || kind === 'indexnow' ? 'var(--aw-text2)' : 'var(--aw-warn)';
 
   return (
     <div className="aw-seo-chart">
@@ -1352,6 +1439,9 @@ function SettingsTab({ api, overview, refresh, notify }) {
   const changed =
     draft.autoCycle !== overview.settings.autoCycle ||
     draft.volatilityHold !== overview.settings.volatilityHold ||
+    Boolean(draft.guidesAuto) !== Boolean(overview.settings.guidesAuto) ||
+    Number(draft.guidesPerWeek) !== Number(overview.settings.guidesPerWeek) ||
+    Boolean(draft.guidesAutoMerge) !== Boolean(overview.settings.guidesAutoMerge) ||
     (draft.geoQuestions ?? []).join('\n') !== (overview.settings.geoQuestions ?? []).join('\n') ||
     keywords.join('\n') !== (overview.settings.rankKeywords ?? []).join('\n') ||
     location.locationCode !== overview.settings.rankLocation?.locationCode ||
@@ -1364,6 +1454,9 @@ function SettingsTab({ api, overview, refresh, notify }) {
       const out = await api('POST', '/admin/seo/settings', {
         autoCycle: draft.autoCycle,
         volatilityHold: draft.volatilityHold,
+        guidesAuto: draft.guidesAuto,
+        guidesPerWeek: draft.guidesPerWeek,
+        guidesAutoMerge: draft.guidesAutoMerge,
         geoQuestions: draft.geoQuestions,
         rankKeywords: draft.rankKeywords,
         rankLocation: draft.rankLocation,
@@ -1437,6 +1530,35 @@ function SettingsTab({ api, overview, refresh, notify }) {
                 { value: false, label: 'Off' },
               ]}
               onChange={(value) => set('volatilityHold', value)}
+            />
+          </Field>
+        </div>
+      </section>
+
+      <section className="aw-panel">
+        <h3>Guides</h3>
+        <div className="aw-grid2">
+          <Field label="Automatic guide cycles" hint="On: the desk files a ticket for the first target no guide answers, within the weekly limit below.">
+            <Segmented
+              value={Boolean(draft.guidesAuto)}
+              options={[
+                { value: true, label: 'On' },
+                { value: false, label: 'Off' },
+              ]}
+              onChange={(value) => set('guidesAuto', value)}
+            />
+          </Field>
+          <Field label="Guides per week" hint="How many guide cycles a week at most, 0 to 7. A target waits three weeks between attempts.">
+            <input inputMode="numeric" min="0" max="7" value={draft.guidesPerWeek ?? 2} onChange={(event) => set('guidesPerWeek', Number(event.target.value))} />
+          </Field>
+          <Field label="Auto-merge guide PRs" hint="On: a guide PR that passes the checks and the content gate merges itself and pings IndexNow. Off: it waits for you on GitHub.">
+            <Segmented
+              value={Boolean(draft.guidesAutoMerge)}
+              options={[
+                { value: true, label: 'On' },
+                { value: false, label: 'Off' },
+              ]}
+              onChange={(value) => set('guidesAutoMerge', value)}
             />
           </Field>
         </div>
