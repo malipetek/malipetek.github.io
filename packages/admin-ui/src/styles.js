@@ -885,4 +885,14 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-psol__tags { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .aw-psol__steps { margin: 0 0 10px; padding-left: 20px; }
 .aw-psol__steps li { margin: 3px 0; font-size: 12px; color: var(--aw-text2); }
+
+/* fleet */
+.aw-directory { grid-template-columns: repeat(auto-fit, minmax(min(100%, 410px), 1fr)); }
+.aw-directory .aw-rows > li + li { border-top: 1px solid var(--aw-border); }
+.aw-directory__open { width: 100%; text-align: left; color: inherit; font: inherit; border: 0; background: transparent; }
+.aw-directory__open:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: -2px; }
+.aw-directory__project { cursor: default; }
+.aw-directory__project:hover { background: transparent; }
+.aw-directory__name { display: grid; flex: 1 1 9rem; min-width: 0; overflow-wrap: anywhere; }
+.aw-health--compact .aw-health__row { padding-block: 6px; }
 `;

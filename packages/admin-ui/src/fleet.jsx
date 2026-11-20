@@ -4,15 +4,19 @@ import { LOCALES } from '../../../src/lib/locales.js';
 import { useAdmin, usePoll } from './store.js';
 import { EXECUTORS, PRIORITIES, ago, chargeOf, money, priorityName, span, usd } from './format.js';
 import { Button, Chips, Dot, Field, Modal, Segmented, StatusPill, Tag, cx } from './ui.jsx';
-import { SitePanel } from './ticket.jsx';
-import { MachinePanel } from './machine.jsx';
+import { HealthView } from './health.jsx';
+import { MachinePanel, useMachine } from './machine.jsx';
 import { ToolboxPanel } from './toolbox.jsx';
-import { SolutionTags } from './project-solutions.jsx';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
-function NodeCard({ node }) {
-  const { api, act, ask, setModal, openTicket } = useAdmin();
+const capabilityLabel = (id, caps) => caps.find((c) => c.id === id)?.label ?? ({
+  'os:darwin': 'macOS', 'os:linux': 'Linux', 'os:win32': 'Windows',
+}[id] ?? id.replace(/^os:/, ''));
+
+function NodeCard({ node, local }) {
+  const { api, act, ask, data, setModal, openTicket } = useAdmin();
+  const caps = data.catalog?.capabilities ?? [];
   const h = node.health ?? {};
   const sys = h.system;
   const state = !node.online ? 'bad' : node.draining ? 'warn' : 'ok';
@@ -25,13 +29,13 @@ function NodeCard({ node }) {
           {node.os} · v{node.version} · {node.online ? (node.draining ? 'draining' : 'online') : `offline ${ago(node.lastSeenAt)}`}
         </span>
         <span className="aw-toolbar__fill" />
-        <Button size="sm" onClick={() => act(() => api('PATCH', `/admin/nodes/${node.id}`, { draining: !node.draining }), node.draining ? `${node.id} takes work again.` : `${node.id} finishes what it has, then takes nothing new.`)}>
+        {!local ? <Button size="sm" onClick={() => act(() => api('PATCH', `/admin/nodes/${node.id}`, { draining: !node.draining }), node.draining ? `${node.id} takes work again.` : `${node.id} finishes what it has, then takes nothing new.`)}>
           {node.draining ? 'Resume' : 'Drain'}
-        </Button>
-        <Button size="sm" onClick={() => setModal({ kind: 'custom', render: (close) => <NodeModal node={node} onClose={close} /> })}>
+        </Button> : null}
+        <Button size="sm" onClick={() => setModal({ kind: 'custom', render: (close) => <NodeModal node={node} local={local} onClose={close} /> })}>
           Edit
         </Button>
-        {!node.online ? (
+        {!local && !node.online ? (
           <Button
             size="sm"
             kind="ghost"
@@ -42,6 +46,7 @@ function NodeCard({ node }) {
         ) : null}
       </header>
       <dl className="aw-kv">
+        {!local ? <>
         <dt>Agents</dt>
         <dd>
           {node.executors.map((e) => {
@@ -54,13 +59,14 @@ function NodeCard({ node }) {
             );
           })}
         </dd>
+        </> : null}
         <dt>Can do</dt>
-        <dd>{node.capabilities.map((c) => <Tag key={c} tone="dash">{c}</Tag>)}</dd>
+        <dd>{node.capabilities.map((c) => <Tag key={c} tone="dash">{capabilityLabel(c, caps)}</Tag>)}</dd>
         <dt>Projects</dt>
         <dd>{node.slugs.length ? node.slugs.map((s) => <Tag key={s}>{s}</Tag>) : <span className="aw-muted">none yet</span>}</dd>
-        <dt>Slots</dt>
+        <dt>Workload</dt>
         <dd>
-          {node.running.length}/{node.slots} busy
+          {node.running.length} of {node.slots} runs busy
         </dd>
         {sys ? (
           <>
@@ -80,7 +86,7 @@ function NodeCard({ node }) {
           </>
         ) : null}
       </dl>
-      {node.running.length ? (
+      {!local && node.running.length ? (
         <ul className="aw-rows">
           {node.running.map((r) => (
             <li key={r.id} className="aw-row" onClick={() => openTicket(r.ticket_id)}>
@@ -98,14 +104,14 @@ function NodeCard({ node }) {
   );
 }
 
-function NodeModal({ node, onClose }) {
+function NodeModal({ node, local, onClose }) {
   const { api, act, data } = useAdmin();
   const caps = data.catalog?.capabilities ?? [];
   const [slots, setSlots] = useState(node.overrides?.slots ?? node.slots);
   const [executors, setExecutors] = useState(node.overrides?.executors ?? node.executors);
   const [capabilities, setCapabilities] = useState(node.overrides?.capabilities ?? node.capabilities.filter((c) => !c.startsWith('os:')));
   const save = () =>
-    act(() => api('PATCH', `/admin/nodes/${node.id}`, { overrides: { slots, executors, capabilities } }), `${node.id} picks this up on its next heartbeat.`).then(onClose, () => undefined);
+    act(() => api('PATCH', `/admin/nodes/${node.id}`, { overrides: { slots, capabilities, ...(!local ? { executors } : {}) } }), `${node.id} picks this up on its next heartbeat.`).then(onClose, () => undefined);
   return (
     <Modal
       title={`Node ${node.id}`}
@@ -124,36 +130,41 @@ function NodeModal({ node, onClose }) {
         <Segmented value={slots} options={[1, 2, 3, 4].map((n) => ({ value: n, label: String(n) }))} onChange={setSlots} />
       </Field>
       <Field label="Agents it offers">
-        <Chips value={executors} options={EXECUTORS.map((e) => ({ value: e, label: e }))} onChange={setExecutors} />
+        {local ? <p className="aw-muted">Manage the agents this Mac lends from This Mac.</p> : (
+          <Chips value={executors} options={EXECUTORS.map((e) => ({ value: e, label: e }))} onChange={setExecutors} />
+        )}
       </Field>
       <Field label="Capabilities">
-        <Chips value={capabilities} options={caps.map((c) => ({ value: c.id, label: c.label, hint: c.hint }))} onChange={setCapabilities} />
+        <Chips value={capabilities} options={caps.map((c) => ({ value: c.id, label: capabilityLabel(c.id, caps), hint: c.hint }))} onChange={setCapabilities} />
       </Field>
     </Modal>
   );
 }
 
 export function FleetView() {
-  const { data, openTicket, platform, host } = useAdmin();
+  const { data, openTicket } = useAdmin();
+  const machine = useMachine();
+  const runs = [...data.running, ...data.recent].slice(0, 8);
   return (
     <div className="aw-view aw-fleet">
       <header className="aw-hero">
         <h2>Fleet</h2>
         <p className="aw-muted">Nodes claim approved work they can do: the right project, capabilities and agent.</p>
       </header>
+      <HealthView compact />
       <div className="aw-nodes">
-        {platform === 'dsh' && host ? <MachinePanel /> : null}
+        {machine.live ? <MachinePanel /> : null}
         {data.nodes.map((n) => (
-          <NodeCard key={n.id} node={n} />
+          <NodeCard key={n.id} node={n} local={machine.live && n.id === machine.nodeId} />
         ))}
-        {!data.nodes.length ? <p className="aw-empty">No node has connected yet. Run fleet/install.sh on a machine.</p> : null}
+        {!data.nodes.length ? <p className="aw-empty">No node has connected yet. Turn on a worker from This Mac (desktop app).</p> : null}
       </div>
 
       <section className="aw-group">
         <h3>
           Queue <span className="aw-count">{data.queue.length}</span>
         </h3>
-        <table className="aw-table">
+        {data.queue.length ? <div className="aw-tablewrap"><table className="aw-table">
           <thead>
             <tr>
               <th>#</th>
@@ -161,7 +172,7 @@ export function FleetView() {
               <th>Project</th>
               <th>Priority</th>
               <th>Waiting</th>
-              <th>Goes to</th>
+              <th>Why waiting</th>
             </tr>
           </thead>
           <tbody>
@@ -176,13 +187,12 @@ export function FleetView() {
               </tr>
             ))}
           </tbody>
-        </table>
-        {!data.queue.length ? <p className="aw-muted">Nothing is waiting.</p> : null}
+        </table></div> : <p className="aw-muted">Nothing is waiting.</p>}
       </section>
 
       <section className="aw-group">
         <h3>Recent runs</h3>
-        <table className="aw-table">
+        {runs.length ? <div className="aw-tablewrap"><table className="aw-table">
           <thead>
             <tr>
               <th />
@@ -195,7 +205,7 @@ export function FleetView() {
             </tr>
           </thead>
           <tbody>
-            {[...data.running, ...data.recent].slice(0, 30).map((r) => (
+            {runs.map((r) => (
               <tr key={r.id} onClick={() => openTicket(r.ticket_id)}>
                 <td>{r.status === 'running' || !r.status ? <span className="aw-live" /> : <Dot state={r.status === 'ok' ? 'ok' : 'bad'} />}</td>
                 <td className="aw-mono">#{r.ticket_id}</td>
@@ -204,13 +214,13 @@ export function FleetView() {
                   {r.executor}
                   {r.model ? <span className="aw-muted"> {r.model}</span> : null}
                 </td>
-                <td>{r.node_id ?? 'Harness'}</td>
+                <td>{r.node_id ?? 'this Mac'}</td>
                 <td>{usd(r.cost_micro_usd)}</td>
                 <td className="aw-muted">{r.finished_at ? `${ago(r.finished_at)} ago` : 'running'}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div> : <p className="aw-muted">No runs yet</p>}
       </section>
     </div>
   );
@@ -300,7 +310,7 @@ function FirstPreviewControl({ c }) {
   );
 }
 
-/** A client's bill, language, translator and projects: the card and the client page both show these. */
+/** A client’s bill, language, translator and projects. */
 function ClientControls({ c }) {
   const { api, act, data } = useAdmin();
   const toggle = (ids) => {
@@ -346,7 +356,7 @@ function ClientControls({ c }) {
 
 /** Where an invite got to, and the two things Ali can do about it. */
 function InviteControls({ c }) {
-  const { api, act } = useAdmin();
+  const { api, act, ask } = useAdmin();
   // Once they have signed in, the invite row stops mattering: the normal
   // controls and their live session cover the account.
   if (!c.pending && !c.inviteExpiresAt) return null;
@@ -368,7 +378,13 @@ function InviteControls({ c }) {
         size="sm"
         kind="ghost"
         title="Every unused invite link stops working. A signed-in session is not touched."
-        onClick={() => void act(() => api('DELETE', `/admin/clients/${c.id}/invite`), 'Invite link revoked.')}
+        onClick={() => ask({
+          title: `Revoke invite for ${c.name || c.email}?`,
+          text: `Unused invite links for ${c.email} stop working. Existing signed-in sessions are not affected.`,
+          confirm: 'Revoke link',
+          danger: true,
+          run: () => act(() => api('DELETE', `/admin/clients/${c.id}/invite`), 'Invite link revoked.').catch(() => undefined),
+        })}
       >
         Revoke
       </Button>
@@ -712,150 +728,73 @@ export function ClientView({ id }) {
 }
 
 export function ClientsView() {
-  const { api, act, ask, data, setModal, setBoardProject, open } = useAdmin();
+  const { data, setModal, open } = useAdmin();
   return (
     <div className="aw-view">
       <header className="aw-hero">
         <h2>Clients & projects</h2>
-        <p className="aw-muted">{data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : ''}</p>
-        <Button
-          size="sm"
-          kind="primary"
-          onClick={() => setModal({ kind: 'custom', render: (close) => <InviteClientModal onClose={close} /> })}
-        >
-          Invite client
-        </Button>
-        <Button
-          size="sm"
-          title="List the GitHub App’s installations from GitHub and record any the callback missed"
-          onClick={() => void act(() => api('POST', '/admin/github/reconcile', {}), 'GitHub installations reconciled.')}
-        >
-          Reconcile GitHub
-        </Button>
+        {data.usageTotal ? <p className="aw-muted">Across all clients: {usageLine(data.usageTotal)}.</p> : null}
       </header>
-      <div className="aw-split">
+      <div className="aw-split aw-directory">
         <section className="aw-group">
-          <h3>Clients</h3>
-          <ul className="aw-cards">
-            {data.clients.map((c) => (
-              <li key={c.id} className="aw-panel">
-                <header>
-                  {c.role === 'admin' ? (
-                    <strong>{c.email}</strong>
-                  ) : (
-                    <button type="button" className="aw-link" title="Open this client’s page" onClick={() => open(`c:${c.id}`)}>
-                      <strong>{c.email}</strong>
-                    </button>
-                  )}
-                  <span className="aw-muted">{c.role === 'admin' ? 'admin' : `${c.ticket_count} ticket(s)`}</span>
-                </header>
-                {c.role !== 'admin' ? <ClientControls c={c} /> : null}
-              </li>
-            ))}
-          </ul>
+          <header className="aw-row-h">
+            <h3>Clients</h3>
+            <span className="aw-toolbar__fill" />
+            <Button size="sm" kind="primary" onClick={() => setModal({ kind: 'custom', render: (close) => <InviteClientModal onClose={close} /> })}>
+              Invite client
+            </Button>
+          </header>
+          {data.clients.length ? <ul className="aw-rows">
+            {data.clients.map((c) => {
+              const count = c.projectIds?.length ?? 0;
+              const lastSeen = c.lastSeenAt ?? c.last_seen_at;
+              return (
+                <li key={c.id}>
+                  <button type="button" className="aw-row aw-directory__open" onClick={() => open(`c:${c.id}`)}>
+                    <span className="aw-directory__name">
+                      <strong>{c.name || c.email}</strong>
+                      {c.name ? <span className="aw-muted">{c.email}</span> : null}
+                    </span>
+                    <span className="aw-muted">{count} {count === 1 ? 'project' : 'projects'}</span>
+                    <span className="aw-muted">{c.usage ? (usageLine(c.usage) || 'No usage') : 'Usage unavailable'}</span>
+                    <span className="aw-muted">{lastSeen ? `Seen ${ago(lastSeen)} ago` : 'Last seen unavailable'}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul> : <p className="aw-empty">No clients yet.</p>}
         </section>
         <section className="aw-group">
-          <h3 className="aw-row-h">
-            Projects
+          <header className="aw-row-h">
+            <h3>Projects</h3>
             <span className="aw-toolbar__fill" />
             <Button size="sm" kind="primary" onClick={() => setModal({ kind: 'project' })}>
               New project
             </Button>
-          </h3>
-          <ul className="aw-cards">
+          </header>
+          {data.projects.length ? <ul className="aw-rows">
             {data.projects.map((p) => {
               const holders = data.nodes.filter((n) => n.slugs.includes(p.slug));
+              const nodeState = holders.some((n) => n.online && !n.draining) ? 'ok' : holders.length ? 'warn' : 'bad';
+              const nodeLabel = nodeState === 'ok' ? 'Node available' : nodeState === 'warn' ? 'Nodes offline or draining' : 'No node has this project';
+              const people = p.clients?.length ?? 0;
+              const sites = p.sites ?? (p.site ? [p.site] : []);
+              const siteStates = [...new Set(sites.map((site) => site.state?.replaceAll('_', ' ')).filter(Boolean))];
+              const siteState = sites.length ? siteStates.join(', ') || 'Site status unavailable' : 'No site';
               return (
-                <li key={p.id} className="aw-panel">
-                  <header>
+                <li key={p.id} className="aw-row aw-directory__project">
+                  <span title={nodeLabel} role="img" aria-label={nodeLabel}><Dot state={nodeState} /></span>
+                  <span className="aw-directory__name">
                     <strong>{p.name}</strong>
-                    <span className="aw-mono aw-muted">{p.slug}</span>
-                    {p.kind === 'new' ? <Tag>new site</Tag> : null}
-                    {p.solutions?.length ? <SolutionTags solutions={p.solutions} /> : null}
-                    <span className="aw-toolbar__fill" />
-                    <Button
-                      size="sm"
-                      kind="ghost"
-                      title="Rename it or change what it is"
-                      onClick={() => setModal({ kind: 'custom', render: (close) => <ProjectEditModal project={p} onClose={close} /> })}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      kind="ghost"
-                      onClick={() => {
-                        setBoardProject(p.id);
-                        open('board');
-                      }}
-                    >
-                      Board →
-                    </Button>
-                  </header>
-                  <p className={p.repoStatus && !['ready', 'creating', 'queued'].includes(p.repoStatus.state) ? 'aw-warn' : 'aw-muted'}>
-                    {p.repoStatus?.detail ?? p.repo ?? 'no repo yet'}
-                  </p>
-                  {p.githubAccount ? <p className="aw-muted">GitHub: @{p.githubAccount}</p> : null}
-                  <div className="aw-tags">
-                    {holders.length ? holders.map((n) => <Tag key={n.id} tone={n.online ? undefined : 'bad'}>{n.id}</Tag>) : <span className="aw-warn">No node has it yet.</span>}
-                    {p.sites?.length ? <Tag tone="dash">{p.sites.length} site{p.sites.length === 1 ? '' : 's'}</Tag> : null}
-                  </div>
-                  <ProjectPeople project={p} />
-                  <SitePanel project={p} />
-                  <div className="aw-inline">
-                    {!p.repo ? (
-                      <Button size="sm" kind="primary" onClick={() => void act(() => api('POST', `/admin/projects/${p.id}/repo/create`), `Creating a repo for ${p.name}.`)}>
-                        {p.repoStatus?.state === 'failed' ? 'Retry repo' : 'Create repo'}
-                      </Button>
-                    ) : null}
-                    {!p.repo && p.githubInstallationId ? (
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          void act(
-                            () => api('POST', `/admin/projects/${p.id}/repo/github`, {}),
-                            `Creating ${p.slug} in @${p.githubAccount ?? 'the client’s GitHub'}.`,
-                          )
-                        }
-                      >
-                        Create in GitHub
-                      </Button>
-                    ) : null}
-                    <Button size="sm" onClick={() => setModal({ kind: 'custom', render: (close) => <RepoModal project={p} onClose={close} /> })}>
-                      {p.repo ? 'Change repo' : 'Use a repo URL'}
-                    </Button>
-                    <Button size="sm" onClick={() => void act(() => api('POST', `/admin/projects/${p.id}/site`, {}), `Adding a site to ${p.name}.`)}>
-                      {p.sites?.length ? 'Add a site' : 'Start hosting'}
-                    </Button>
-                    <span className="aw-toolbar__fill" />
-                    <Button
-                      size="sm"
-                      kind="ghost"
-                      onClick={() =>
-                        ask({
-                          title: `Delete ${p.name}?`,
-                          text: [
-                            'Its finished requests stay, with their threads, but no longer belong to a project.',
-                            'Clients lose access to it.',
-                            p.sites?.length ? `${p.sites.length} hosted site${p.sites.length === 1 ? '' : 's'} go offline.` : null,
-                            p.repo ? `The repo is not deleted: ${p.repo}.` : null,
-                            'This cannot be undone.',
-                          ]
-                            .filter(Boolean)
-                            .join(' '),
-                          confirm: 'Delete project',
-                          danger: true,
-                          run: () => act(() => api('DELETE', `/admin/projects/${p.id}`), `Deleted ${p.name}.`).catch(() => undefined),
-                        })
-                      }
-                    >
-                      Delete
-                    </Button>
-                  </div>
+                    <span className="aw-muted aw-mono">{p.slug}</span>
+                  </span>
+                  <span className="aw-muted">{people} {people === 1 ? 'person' : 'people'}</span>
+                  <span className="aw-muted">{siteState}</span>
+                  <Button size="sm" kind="ghost" aria-label={`Open ${p.name}`} onClick={() => open(`p:${p.id}`)}>Open</Button>
                 </li>
               );
             })}
-          </ul>
+          </ul> : <p className="aw-empty">No projects yet.</p>}
         </section>
       </div>
     </div>
@@ -935,101 +874,179 @@ function TranslationsPanel() {
   );
 }
 
+// These ranges mirror the Worker's settings contract. Keep the fields as text
+// until validation passes, so editing a value never silently turns it into 0.
+const SETTING_NUMBERS = {
+  stallMinutes: { max: 1440, min: 0, error: 'Enter a whole number from 0 to 1,440.' },
+  maxAttempts: { max: 10, min: 1, error: 'Enter a whole number from 1 to 10.' },
+  autoApproveCents: { max: 100000, min: 0, decimal: true, error: 'Enter USD from 0 to 100,000, with at most two decimal places.' },
+  first_preview_limit_usd: { max: 1000, min: 0, decimal: true, error: 'Enter USD from 0 to 1,000, with at most two decimal places.' },
+};
+const SITES_HOST = /^(?=.{3,100}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+function settingsText(settings) {
+  return Object.fromEntries(Object.entries(settings).map(([key, value]) => [
+    key,
+    key === 'autoApproveCents' ? (value / 100).toFixed(2) : key in SETTING_NUMBERS ? String(value) : value,
+  ]));
+}
+
+function validateSettings(draft, current) {
+  const parsed = { ...draft };
+  const errors = {};
+  for (const [key, { min, max, decimal, error }] of Object.entries(SETTING_NUMBERS)) {
+    const input = (draft[key] ?? '').trim();
+    const numeric = Number(input);
+    const valid = decimal ? /^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(input) : /^\d+$/.test(input);
+    if (!valid || numeric < min || numeric > max) errors[key] = error;
+    else parsed[key] = key === 'autoApproveCents' ? Math.round(numeric * 100) : numeric;
+  }
+  parsed.sitesDomain = (draft.sitesDomain ?? '').trim().toLowerCase();
+  if (!SITES_HOST.test(parsed.sitesDomain)) errors.sitesDomain = 'Enter a hostname like ptechsolutions.dev, without a protocol or path.';
+  const patch = Object.fromEntries(Object.entries(parsed).filter(([key, value]) => value !== current[key]));
+  return { patch, errors };
+}
+
 export function SettingsView() {
-  const { api, act, data, platform, host, notify, reload } = useAdmin();
-  const [draft, setDraft] = useState(data.settings ?? {});
-  useEffect(() => setDraft(data.settings ?? {}), [data.settings]);
-  const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
-  const changed = data.settings && Object.keys(draft).some((k) => draft[k] !== data.settings[k]);
+  const { api, act, ask, platform, host, notify, reload } = useAdmin();
+  const [edits, setEdits] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [read, setRead] = useState({ loading: true, settings: null });
+  const [readAttempt, setReadAttempt] = useState(0);
+  useEffect(() => {
+    let current = true;
+    api('GET', '/admin/settings').then(({ settings }) => {
+      if (current) setRead({ loading: false, settings: settings ?? null });
+    }, () => {
+      if (current) setRead({ loading: false, settings: null });
+    });
+    return () => { current = false; };
+  }, [api, readAttempt]);
+  const baseline = settingsText(read.settings ?? {});
+  const draft = { ...baseline, ...edits };
+  const set = (key, value) => setEdits((previous) => ({ ...previous, [key]: value }));
+  const changed = Object.keys(edits).some((key) => edits[key] !== baseline[key]);
+  const { patch, errors } = validateSettings(draft, read.settings ?? {});
+  const invalid = Object.keys(errors).length > 0;
   const [token, setToken] = useState('');
+  const textInput = (key, mode) => (
+    <>
+      <input
+        inputMode={mode}
+        value={draft[key] ?? ''}
+        disabled={saving}
+        aria-invalid={errors[key] ? true : undefined}
+        aria-describedby={errors[key] ? `aw-settings-error-${key}` : undefined}
+        onChange={(e) => set(key, e.target.value)}
+      />
+      {errors[key] ? <span id={`aw-settings-error-${key}`} className="aw-warn">{errors[key]}</span> : null}
+    </>
+  );
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { settings } = await act(() => api('PATCH', '/admin/settings', patch), 'Settings saved.');
+      setRead({ loading: false, settings });
+      setEdits({});
+    } catch { /* act already reported the error; keep the draft to retry. */ }
+    finally { setSaving(false); }
+  };
+  const submit = () => {
+    if (invalid || saving || !Object.keys(patch).length) return;
+    if (!Object.hasOwn(patch, 'sitesDomain')) return void save();
+    ask({
+      title: `Change sites domain to ${patch.sitesDomain}?`,
+      text: 'This changes the default addresses shown for existing managed sites as well as new sites. Make sure the new domain is ready before saving.',
+      confirm: 'Change domain',
+      run: save,
+    });
+  };
+  const retry = () => {
+    setRead({ loading: true, settings: null });
+    setReadAttempt((attempt) => attempt + 1);
+  };
   return (
     <div className="aw-view aw-settings">
       <header className="aw-hero">
         <h2>Settings</h2>
       </header>
       {platform === 'dsh' && host ? (
-        <section className="aw-panel">
-          <h3>Portal connection</h3>
-          <Field label="Session token" hint="Sign in on ptechsolutions.net/portal, then paste the session token here. It stays on this machine.">
-            <div className="aw-inline">
-              <input type="password" value={token} placeholder="paste token" onChange={(e) => setToken(e.target.value)} />
-              <Button
-                kind="primary"
-                disabled={!token.trim()}
-                onClick={async () => {
-                  const r = await host.command(`login ${token.trim()}`);
-                  notify(r.text, r.ok ? 'ok' : 'error');
-                  setToken('');
-                  void reload();
-                }}
-              >
-                Save
-              </Button>
-              <Button kind="ghost" onClick={async () => notify((await host.command('logout')).text)}>
-                Sign out
-              </Button>
-            </div>
-          </Field>
-        </section>
+        <>
+          <section className="aw-panel">
+            <h3>Portal connection</h3>
+            <Field label="Session token" hint="Sign in on ptechsolutions.net/portal, then paste the session token here. It stays on this machine.">
+              <div className="aw-inline">
+                <input type="password" value={token} placeholder="paste token" onChange={(e) => setToken(e.target.value)} />
+                <Button
+                  kind="primary"
+                  disabled={!token.trim()}
+                  onClick={async () => {
+                    const r = await host.command(`login ${token.trim()}`);
+                    notify(r.text, r.ok ? 'ok' : 'error');
+                    setToken('');
+                    void reload();
+                  }}
+                >
+                  Save
+                </Button>
+                <Button kind="ghost" onClick={async () => notify((await host.command('logout')).text)}>
+                  Sign out
+                </Button>
+              </div>
+            </Field>
+          </section>
+          <section className="aw-panel">
+            <h3>This machine&rsquo;s tools</h3>
+            <ToolboxPanel />
+          </section>
+        </>
       ) : null}
       <section className="aw-panel">
-        <h3>This machine&rsquo;s tools</h3>
-        <ToolboxPanel />
-      </section>
-      {data.settings ? (
-        <section className="aw-panel">
-          <h3>Work queue</h3>
+        <h3>Work queue</h3>
+        {!read.settings ? (read.loading ? <p className="aw-muted">Reading settings…</p> : (
+          <div className="aw-inline">
+            <p className="aw-warn" role="alert">Could not read settings.</p>
+            <Button size="sm" onClick={retry}>Retry</Button>
+          </div>
+        )) : <>
           <div className="aw-grid2">
             <Field label="Stalled after (minutes)" hint="An in-progress item with no report for this long is flagged.">
-              <input inputMode="numeric" value={draft.stallMinutes ?? ''} onChange={(e) => set('stallMinutes', Number(e.target.value))} />
+              {textInput('stallMinutes', 'numeric')}
             </Field>
             <Field label="Attempts before review" hint="Node restarts do not count.">
-              <input inputMode="numeric" value={draft.maxAttempts ?? ''} onChange={(e) => set('maxAttempts', Number(e.target.value))} />
+              {textInput('maxAttempts', 'numeric')}
             </Field>
             <Field label="Default priority">
-              <Segmented value={draft.defaultPriority ?? 0} options={PRIORITIES} onChange={(v) => set('defaultPriority', v)} />
+              <Segmented value={draft.defaultPriority ?? 0} options={PRIORITIES} onChange={(v) => !saving && set('defaultPriority', v)} />
             </Field>
             <Field label="Email me when a run finishes">
-              <Segmented value={Boolean(draft.notifyRunFinished)} options={[{ value: true, label: 'On' }, { value: false, label: 'Off' }]} onChange={(v) => set('notifyRunFinished', v)} />
+              <Segmented value={Boolean(draft.notifyRunFinished)} options={[{ value: true, label: 'On' }, { value: false, label: 'Off' }]} onChange={(v) => !saving && set('notifyRunFinished', v)} />
             </Field>
-            <Field label="Autopilot cap (cents)" hint="An Autopilot request with its own budget at or below this starts without you. 0 turns it off.">
-              <input inputMode="numeric" value={draft.autoApproveCents ?? ''} onChange={(e) => set('autoApproveCents', Number(e.target.value))} />
+            <Field label="Auto-approve runs under (USD)" hint="An Autopilot request with its own budget at or below this starts without you. 0 turns it off.">
+              {textInput('autoApproveCents', 'decimal')}
             </Field>
             <Field label="Sites domain">
-              <input value={draft.sitesDomain ?? ''} onChange={(e) => set('sitesDomain', e.target.value)} />
+              {textInput('sitesDomain', 'url')}
             </Field>
             <Field label="Clients may publish their site">
-              <Segmented value={Boolean(draft.clientPublish)} options={[{ value: true, label: 'Yes' }, { value: false, label: 'No' }]} onChange={(v) => set('clientPublish', v)} />
+              <Segmented value={Boolean(draft.clientPublish)} options={[{ value: true, label: 'Yes' }, { value: false, label: 'No' }]} onChange={(v) => !saving && set('clientPublish', v)} />
             </Field>
             <Field
               label="First preview limit (USD)"
               hint="A new client's first request starts by itself, with its AI run capped at this many dollars. Free to the client. 0 turns it off."
             >
-              <input
-                inputMode="decimal"
-                value={draft.first_preview_limit_usd ?? ''}
-                onChange={(e) => set('first_preview_limit_usd', e.target.value === '' ? 0 : Number(e.target.value))}
-              />
+              {textInput('first_preview_limit_usd', 'decimal')}
             </Field>
           </div>
           <div className="aw-inline">
             <span className="aw-toolbar__fill" />
-            <Button disabled={!changed} onClick={() => setDraft(data.settings)}>
-              Reset
-            </Button>
-            <Button
-              kind="primary"
-              disabled={!changed}
-              onClick={() => {
-                const patch = Object.fromEntries(Object.entries(draft).filter(([k, v]) => v !== data.settings[k]));
-                void act(() => api('PATCH', '/admin/settings', patch), 'Settings saved.').catch(() => undefined);
-              }}
-            >
-              Save
+            <Button disabled={!changed || saving} onClick={() => setEdits({})}>Reset</Button>
+            <Button kind="primary" disabled={invalid || !Object.keys(patch).length || saving} onClick={submit}>
+              {saving ? 'Saving…' : 'Save'}
             </Button>
           </div>
-        </section>
-      ) : null}
+        </>}
+      </section>
       <TranslationsPanel />
     </div>
   );

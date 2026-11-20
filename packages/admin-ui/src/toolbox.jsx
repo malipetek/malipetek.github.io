@@ -154,8 +154,7 @@ function AddMcpModal({ busy, onClose, onSubmit }) {
 }
 
 /**
- * Settings panel. The web admin has no local machine to read, so it says so
- * instead of pretending: these files belong to the desktop app's computer.
+ * Settings panel for the desktop app’s local machine.
  */
 export function ToolboxPanel() {
   const { host, platform, notify, ask } = useAdmin();
@@ -165,14 +164,14 @@ export function ToolboxPanel() {
   const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
-    if (!host) return;
+    if (platform !== 'dsh' || !host) return;
     try {
       setData(await host.json('toolbox list'));
       setError('');
     } catch (failure) {
       setError(failure.message);
     }
-  }, [host]);
+  }, [host, platform]);
 
   useEffect(() => {
     void load();
@@ -206,23 +205,21 @@ export function ToolboxPanel() {
       run: () => void apply(`toolbox remove-mcp ${JSON.stringify({ target, name })}`),
     });
 
-  if (platform !== 'dsh' || !host) {
-    return <p className="aw-muted">MCP servers and skills on this machine are listed in the desktop app, where the files are.</p>;
-  }
+  if (platform !== 'dsh' || !host) return null;
 
   return (
     <div className="aw-toolbox">
       <div className="aw-toolbox__head">
         <p className="aw-muted">Fleet agents on this machine use these.</p>
         <span className="aw-toolbar__fill" />
-        <Button size="sm" disabled={busy} onClick={() => void load()}>
-          Refresh
-        </Button>
         <Button size="sm" kind="primary" disabled={busy || !data} onClick={() => setAdding(true)}>
           Add MCP server
         </Button>
       </div>
-      {error ? <p className="aw-warn">Could not read the toolbox: {error}</p> : null}
+      {error ? <div className="aw-inline">
+        <p className="aw-warn" role="alert">Could not read the toolbox: {error}</p>
+        <Button size="sm" onClick={() => void load()}>Retry</Button>
+      </div> : null}
       {!data && !error ? <p className="aw-muted">Reading…</p> : null}
       {data?.warnings?.length ? (
         <ul className="aw-toolbox__warnings">
