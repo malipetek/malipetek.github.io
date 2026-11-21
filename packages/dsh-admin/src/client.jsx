@@ -998,43 +998,31 @@ function apply(ctx) {
   }
 
   /**
-   * The Admin entry's icon, with a count of what is waiting on Ali — tickets
-   * to approve or review, clients waiting for an answer — and a green dot when
-   * nothing is waiting but an agent is working.
+   * The Needs-you entry's icon. The host renders a panel row as icon + label
+   * with no trailing slot, so the count lives in the tooltip and the state is
+   * a small dot on the glyph's top-right corner: amber while a decision is
+   * waiting (approve, review, a client reply), green while agents work and
+   * nothing needs a decision. The dot sits in the 6px label gap, never on the
+   * label. The Inbox entry shows only the client messages waiting, in the
+   * business tint its KPI uses.
    */
   function AdminEntryIcon(props) {
     const counts = useSyncExternalStore(attention.subscribe, attention.get);
-    const waiting = counts ? counts.approve + counts.review + counts.waiting : 0;
-    const parts = counts
-      ? [
-          counts.approve && `${counts.approve} to approve`,
-          counts.review && `${counts.review} to review`,
-          counts.waiting && `${counts.waiting} client${counts.waiting === 1 ? '' : 's'} waiting`,
-          counts.running && `${counts.running} running`,
-        ].filter(Boolean)
-      : [];
-    const badge = {
-      position: 'absolute',
-      top: -5,
-      right: -7,
-      minWidth: 13,
-      height: 13,
-      padding: '0 3px',
-      borderRadius: 7,
-      fontSize: 9,
-      fontWeight: 700,
-      lineHeight: '13px',
-      textAlign: 'center',
-      color: '#fff',
-      boxSizing: 'border-box',
-    };
+    // Every actionable bucket the attention read covers: a new request, a run
+    // to review, and a client whose last message has no answer yet.
+    const decisions = counts ? counts.approve + counts.review + counts.waiting : 0;
+    const title = decisions > 0
+      ? `${decisions} item${decisions === 1 ? '' : 's'} need${decisions === 1 ? 's' : ''} you`
+      : counts?.running
+        ? `${counts.running} run${counts.running === 1 ? '' : 's'} running`
+        : 'Needs you';
     return (
-      <span style={{ position: 'relative', display: 'inline-flex' }} title={parts.length ? parts.join(' · ') : undefined}>
+      <span className="pta-entry-icon" title={title}>
         <AdminIcon size={props?.size ?? 16} />
-        {waiting > 0 ? (
-          <span style={{ ...badge, background: 'var(--dsw-alias-state-warning-primary, #d18f2e)' }}>{waiting > 99 ? '99+' : waiting}</span>
+        {decisions > 0 ? (
+          <span className="pta-entry-dot pta-entry-dot--wait" aria-hidden="true" />
         ) : counts?.running ? (
-          <span style={{ ...badge, minWidth: 7, width: 7, height: 7, top: -2, right: -3, padding: 0, background: 'var(--dsw-alias-state-success-primary, #2f9e5b)' }} />
+          <span className="pta-entry-dot pta-entry-dot--live" aria-hidden="true" />
         ) : null}
       </span>
     );
@@ -1079,32 +1067,14 @@ function apply(ctx) {
 
   function InboxEntryIcon(props) {
     const counts = useSyncExternalStore(attention.subscribe, attention.get);
-    const waiting = counts ? counts.approve + counts.review + counts.waiting : 0;
+    const waiting = counts?.waiting ?? 0;
+    const title = waiting > 0
+      ? `${waiting} client message${waiting === 1 ? '' : 's'} waiting`
+      : 'Inbox';
     return (
-      <span style={{ position: 'relative', display: 'inline-flex' }} title={waiting ? `${waiting} item(s) need you` : 'Inbox'}>
+      <span className="pta-entry-icon" title={title}>
         <InboxIcon size={props?.size ?? 16} />
-        {waiting > 0 ? (
-          <span
-            style={{
-              position: 'absolute',
-              top: -5,
-              right: -7,
-              minWidth: 13,
-              height: 13,
-              padding: '0 3px',
-              borderRadius: 7,
-              fontSize: 9,
-              fontWeight: 700,
-              lineHeight: '13px',
-              textAlign: 'center',
-              color: '#fff',
-              boxSizing: 'border-box',
-              background: 'var(--dsw-alias-state-warning-primary, #d18f2e)',
-            }}
-          >
-            {waiting > 99 ? '99+' : waiting}
-          </span>
-        ) : null}
+        {waiting > 0 ? <span className="pta-entry-dot pta-entry-dot--waiting" aria-hidden="true" /> : null}
       </span>
     );
   }
@@ -1762,13 +1732,17 @@ function apply(ctx) {
     readFailed: 'Could not read the recorded time. Recording is paused.',
   };
 
-  function TicketHeaderReadout({ sessionId, run, titled = false }) {
+  function TicketHeaderReadout({ sessionId, run, titled = false, sessionTitle = '' }) {
     const { ticketId } = run;
     const key = `${ticketId}:${sessionId}`;
     const root = useRef(null);
     const refresh = useRef(null);
     // Who filed the ticket, off the same detail read the meter takes.
     const [assistantApp, setAssistantApp] = useState(null);
+    // The ticket's own title: the Host titles a session from the leading five
+    // words of the run's first line, so a ticket session's title stops at
+    // "Ticket #27 — First look:" even though the ticket says more.
+    const [ticketTitle, setTicketTitle] = useState('');
     const snapshot = useSyncExternalStore(meter.subscribe, () => meter.snapshot(key));
     useEffect(() => {
       const isCurrent = () => {
@@ -1787,7 +1761,14 @@ function apply(ctx) {
         try {
           const detail = await (desktop ? meterApi : api)('GET', `/admin/tickets/${ticketId}`);
           if (alive && !meter.observe(key, detail?.ticket, revision)) meter.readFailed(key);
-          if (alive) setAssistantApp(typeof detail?.ticket?.assistant_app === 'string' ? detail.ticket.assistant_app : null);
+          if (alive) {
+            const ticket = detail?.ticket;
+            setAssistantApp(typeof ticket?.assistant_app === 'string' ? ticket.assistant_app : null);
+            // The run brief's first line is `${kind} #${id} — ${ticket.title}`, so
+            // the stored title must be completed from the same field.
+            const title = typeof ticket?.title === 'string' && ticket.title.trim() ? ticket.title.trim() : typeof ticket?.title_en === 'string' ? ticket.title_en.trim() : '';
+            setTicketTitle(title);
+          }
         } catch {
           if (alive) meter.readFailed(key);
         } finally {
@@ -1823,9 +1804,15 @@ function apply(ctx) {
     const recorded = seconds === null ? '—' : formatRecordedTime(seconds);
     const hint = meterNotices[notice] ?? (phase === 'waiting' ? 'Time waits while this conversation is idle or out of focus.' : 'Recorded human time');
     const via = assistantBadge({ assistant_app: assistantApp });
+    // Only complete a title the Host shortened: a session renamed by hand has
+    // its own words, and the header keeps them.
+    const fullTitle = ticketTitle ? `${run.kind === 'task' ? 'Task' : 'Ticket'} #${ticketId} — ${ticketTitle}` : '';
+    const generated = sessionTitle.trim();
+    const heading = generated && fullTitle.startsWith(generated) && fullTitle.length > generated.length ? fullTitle : '';
     return (
-      <span ref={root} className="pta-chat-ticket" title={hint}>
-        <span className={`pta-chat-ticket__id${titled ? ' pta-sr' : ''}`}>{run.kind === 'task' ? 'Task' : 'Ticket'} #{ticketId}</span>
+      <span ref={root} className={`pta-chat-ticket${heading ? ' pta-chat-ticket--heading' : ''}`} title={hint}>
+        {heading ? <span className="pta-chat-ticket__title" title={heading}>{heading}</span> : null}
+        {heading ? null : <span className={`pta-chat-ticket__id${titled ? ' pta-sr' : ''}`}>{run.kind === 'task' ? 'Task' : 'Ticket'} #{ticketId}</span>}
         <span className="pta-chat-ticket__status">{status ? (STATUS_LABEL[status] ?? status) : needsRead ? 'Unavailable' : 'Loading…'}</span>
         {via ? <span className="pta-tag pta-tag--client" title={assistantBadgeTitle({ assistant_app: assistantApp })}>{via}</span> : null}
         {desktop ? (
@@ -1848,9 +1835,10 @@ function apply(ctx) {
     const key = useSessionCwd(sessionId);
     const run = ticketFromCwd(key);
     if (!run || !sessionId) return null;
+    const sessionTitle = String(key ?? '').split(SEP)[1] ?? '';
     // The session title usually starts "Ticket #27 —"; then the id would only repeat it.
-    const titled = new RegExp(`#${run.ticketId}\\b`).test(String(key ?? '').split(SEP)[1] ?? '');
-    return <TicketHeaderReadout key={`${run.ticketId}:${sessionId}`} sessionId={sessionId} run={run} titled={titled} />;
+    const titled = new RegExp(`#${run.ticketId}\\b`).test(sessionTitle);
+    return <TicketHeaderReadout key={`${run.ticketId}:${sessionId}`} sessionId={sessionId} run={run} titled={titled} sessionTitle={sessionTitle} />;
   }
 
   // Downloads go through the Host (it holds the token and the disk). Uploads
@@ -1877,16 +1865,41 @@ function apply(ctx) {
     .pta-ticket-form__row{display:flex;align-items:center;justify-content:space-between;gap:8px}
     .pta-dock .pta-ticket-form{max-width:none}
     .pta-dock .pta-ticket-form textarea{min-height:0;resize:vertical;padding:4px 6px}
-    .pta-chat-ticket{display:inline-flex;align-items:center;flex-wrap:wrap;gap:3px 8px;min-width:0;max-width:100%;line-height:1.3;font-size:12px}
+    .pta-chat-ticket{display:inline-flex;align-items:center;flex-wrap:wrap;gap:2px 6px;flex:0 0 auto;min-width:0;max-width:100%;line-height:1.3;font-size:11.5px}
     .pta-chat-ticket__id,.pta-chat-ticket__time{white-space:nowrap}
     .pta-chat-ticket__status{color:var(--dsw-alias-label-secondary,currentColor);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .pta-chat-ticket__time{font-variant-numeric:tabular-nums}
     .pta-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-    [class*="_titleCluster"]:has(.pta-chat-ticket) [class*="_crumbCurrent"]{max-width:min(460px,42vw)}
-    .pta-chat-ticket .pta-chat-ticket__action{min-height:24px;padding:2px 7px}
+    /* The header chip keeps its status, timer and Resume compact, so the session
+       title gets every pixel left over: one line, ellipsis at the end. The host
+       caps crumbs at 220px; on this row that cuts a title mid-word, so the
+       current crumb shrinks instead (its flex min-width must be 0 to shrink). */
+    [class*="_titleCluster"]:has(.pta-chat-ticket) [class*="_crumbs"]{flex:1 1 auto;min-width:0}
+    [class*="_titleCluster"]:has(.pta-chat-ticket) [class*="_crumbSeg"]{min-width:0}
+    [class*="_titleCluster"]:has(.pta-chat-ticket) [class*="_crumbCurrent"]{flex:0 1 auto;min-width:0;max-width:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    /* When the Host only stored its five-word fallback title, the chip carries
+       the ticket's full title in the crumb's place: it takes the free width,
+       one line, ellipsis at the end, while status, timer and Resume keep their
+       natural size after it. */
+    [class*="_titleCluster"]:has(.pta-chat-ticket--heading) [class*="_crumbs"]{display:none}
+    [class*="_titleCluster"]:has(.pta-chat-ticket--heading) [class*="_headerActions"]{flex:1 1 auto;min-width:0}
+    .pta-chat-ticket--heading{flex:1 1 auto;flex-wrap:nowrap;min-width:0}
+    .pta-chat-ticket__title{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px;font-weight:500;color:var(--dsw-alias-label-primary,inherit)}
+    .pta-chat-ticket--heading .pta-chat-ticket__status,.pta-chat-ticket--heading .pta-chat-ticket__time,.pta-chat-ticket--heading .pta-chat-ticket__action,.pta-chat-ticket--heading .pta-tag{flex:none}
+    .pta-chat-ticket .pta-chat-ticket__action{min-height:22px;padding:1px 6px;font-size:11px}
     .pta-chat-ticket__action:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,currentColor);outline-offset:2px}
     .pta-chat-ticket__feedback{font-size:11px;max-width:100%;color:var(--dsw-alias-label-secondary,currentColor);overflow-wrap:anywhere}
     .pta-chat-ticket__feedback:empty{position:absolute;width:1px;height:1px;overflow:hidden}
+    /* Sidebar panel entries: the host draws one glyph span and then the label,
+       with no trailing slot, so a count cannot sit after the text. State is a
+       small dot on the glyph's corner instead — amber for a decision waiting,
+       green for live runs, business blue for client messages waiting — kept
+       inside the 6px label gap so it never covers the label's first letter. */
+    .pta-entry-icon{position:relative;display:inline-flex;align-items:center;justify-content:center;line-height:0}
+    .pta-entry-dot{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;box-sizing:border-box;box-shadow:0 0 0 1.5px var(--dsw-specific-sidebar-fill,var(--dsw-alias-bg-base,transparent))}
+    .pta-entry-dot--wait{background:var(--dsw-alias-state-warning-primary,#d18f2e)}
+    .pta-entry-dot--live{background:var(--dsw-alias-state-success-primary,#2f9e5b)}
+    .pta-entry-dot--waiting{background:var(--dsw-alias-state-business-primary,#4c8dff)}
     .pta-page{height:100%;overflow-y:auto;box-sizing:border-box;min-width:0;flex:1 1 auto;width:100%;padding:26px 30px 56px;max-width:1120px;margin:0 auto;color:var(--dsw-alias-label-primary,inherit);font-size:13px;line-height:1.45}
     .pta-head{display:flex;align-items:flex-start;gap:18px;margin:0 0 18px}
     .pta-head h1{margin:0;font-size:24px;line-height:1.15;font-weight:650;letter-spacing:-0.02em}
@@ -1987,8 +2000,12 @@ function apply(ctx) {
     .pta-dock__head{display:flex;align-items:center;gap:8px;padding:7px 10px;min-height:34px;flex-wrap:wrap}
     .pta-dock__id{flex:none;font-variant-numeric:tabular-nums;font-size:12px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.72))}
     .pta-dock__title{min-width:0;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:500}
-    .pta-dock__toggle{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 6px;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsw-alias-label-secondary,inherit);font:inherit;font-size:12px;cursor:pointer}
-    .pta-dock__toggle:hover{color:var(--dsw-alias-label-primary,inherit);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.1))}
+    /* The strip's two actions are link-buttons: text-sized, quiet, and lighter
+       than the workspace chip, so the row reads one line and no controls. */
+    .pta-dock__link{display:inline-flex;align-items:center;height:20px;padding:0;border:0;border-radius:2px;background:none;color:var(--dsw-alias-label-secondary,inherit);font:inherit;font-size:12px;line-height:20px;white-space:nowrap;cursor:pointer;text-decoration:none}
+    .pta-dock__link:hover{color:var(--dsw-alias-label-primary,inherit);text-decoration:underline;text-underline-offset:2px}
+    .pta-dock__link:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,currentColor);outline-offset:2px}
+    .pta-dock__link[aria-expanded=true]{color:var(--dsw-alias-label-primary,inherit);text-decoration:underline;text-underline-offset:2px}
     .pta-dock__chev{font-size:10px;line-height:1;opacity:.55}
     .pta-dock__body{border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));max-height:260px;overflow-y:auto;padding:8px 10px}
     .pta-dock__last{padding:0 10px 7px;font-size:12px;color:var(--dsw-alias-label-secondary,inherit);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2002,9 +2019,12 @@ function apply(ctx) {
     .pta-dock__dot{width:7px;height:7px;border-radius:50%;background:#9aa0a6}
     .pta-dock__ws[data-state=ready] .pta-dock__dot{background:#3fb950}
     .pta-dock__ws[data-state=missing] .pta-dock__dot,.pta-dock__ws[data-state=conflict] .pta-dock__dot{background:#d29922}
-    .pta-dock__ws[data-state=unavailable] .pta-dock__dot{background:#f85149}
-    .pta-dock__actions{display:inline-flex;gap:2px;flex:none}
-    .pta-dock__toggle[aria-expanded=true]{color:var(--dsw-alias-label-primary,inherit);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
+    /* No local checkout is a normal ticket, not a failure: the dot stays
+       neutral and the words stay quiet, so red is reserved for a real one. */
+    .pta-dock__ws[data-state=unavailable] .pta-dock__dot{background:var(--dsw-alias-label-tertiary,#8a9099)}
+    .pta-dock__ws[data-state=unavailable] .pta-dock__chip,.pta-dock__ws[data-state=unmanaged] .pta-dock__chip{color:var(--dsw-alias-label-tertiary,inherit);opacity:.85}
+    .pta-dock__actions{display:inline-flex;align-items:center;gap:12px;flex:none}
+    .pta-dock-anchor{display:contents}
     .pta-hist{height:100%;width:100%;overflow-y:auto;box-sizing:border-box;padding:18px 24px 140px;max-width:860px;margin:0 auto;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary,inherit)}
     .pta-hist__bar{display:flex;align-items:center;gap:10px;margin:0 0 14px}
     .pta-seg{display:inline-flex;padding:2px;border-radius:8px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.1))}
@@ -2856,22 +2876,35 @@ function apply(ctx) {
     return <DeskPage><SeoView /></DeskPage>;
   }
 
+  /**
+   * The workspace chip is metadata, not a failure report: a ticket that never
+   * had a local checkout says so quietly ("no local checkout", neutral dot).
+   * Red is reserved for a checkout that is actually missing or blocked.
+   */
   const WORKSPACE_TEXT = {
     ready: 'Workspace ready.',
     missing: 'Workspace is missing. Restore it from the saved commit.',
     conflict: 'Restore is blocked by an existing checkout or local changes. Preserve that work before retrying.',
-    unavailable: 'No verified workspace is available. Check that the run recorded its repository and commit.',
+    unavailable: 'This ticket has no local checkout on this machine. That is normal for a ticket that never needed one: nothing is broken and there is nothing to restore.',
     pending: 'Checking or restoring this session’s workspace…',
-    unmanaged: 'This session has no managed workspace to restore.',
+    unmanaged: 'This conversation has no local checkout on this machine. That is normal: nothing is broken and there is nothing to restore.',
   };
 
   const WORKSPACE_LABEL = {
     ready: 'Workspace ready',
     missing: 'Workspace missing',
     conflict: 'Restore blocked',
-    unavailable: 'No workspace',
+    unavailable: 'no local checkout',
     pending: 'Checking workspace…',
-    unmanaged: 'No managed workspace',
+    unmanaged: 'no local checkout',
+  };
+
+  /** Host reason codes for `unavailable`, in words — the tooltip never shows one. */
+  const WORKSPACE_REASON = {
+    invalid_session: 'This conversation has no workspace identity.',
+    session_not_found: 'This conversation is no longer open.',
+    workspace_policy_unavailable: 'The workspace service is not available in this window.',
+    source_unavailable: 'The workspace source could not be read.',
   };
 
   /** One inline chip in the dock row; the full explanation lives in its tooltip. */
@@ -2905,7 +2938,7 @@ function apply(ctx) {
       });
       if (ok) void request('restore');
     };
-    const detail = [WORKSPACE_TEXT[result.state], result.reason].filter(Boolean).join(' ');
+    const detail = [WORKSPACE_TEXT[result.state], WORKSPACE_REASON[result.reason]].filter(Boolean).join(' ');
     const checkable = ['conflict', 'unavailable', 'pending', 'ready'].includes(result.state);
     return <span className="pta-dock__ws" data-state={result.state}>
       <button type="button" className="pta-dock__chip" title={checkable ? `${detail} Click to check again.` : detail}
@@ -2959,7 +2992,7 @@ function apply(ctx) {
     const ticket = detail?.ticket;
     const [open, setOpen] = useState(null);
     const canReply = ticket && ticket.kind !== 'system' && ticket.client_email;
-    const toggle = (mode, label) => <button type="button" className="pta-dock__toggle" aria-expanded={open === mode}
+    const toggle = (mode, label) => <button type="button" className="pta-dock__link" aria-expanded={open === mode}
       onClick={() => setOpen(open === mode ? null : mode)}>{label}</button>;
     const title = error || (ticket ? ticketLabel(ticket) : 'Loading linked ticket…');
     return <section className="pta-dock" aria-label={`Ticket #${ticketId}`}
@@ -3008,7 +3041,7 @@ function apply(ctx) {
     const anchor = useRef(null);
     const chat = useChatViewActive(anchor, Boolean(run && sessionId));
     if (!run || !sessionId) return null;
-    return <div ref={anchor} style={{ display: 'contents' }}>
+    return <div ref={anchor} className="pta-dock-anchor">
       {chat ? <LinkedTicketDock key={`${run.ticketId}:${sessionId}`} ticketId={run.ticketId} sessionId={sessionId} /> : null}
     </div>;
   }
