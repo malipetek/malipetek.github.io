@@ -183,8 +183,8 @@ export function SeoView() {
     [api, ask, load, notify],
   );
 
-  if (error && !overview) return <ErrorNote error={error} onRetry={load} />;
-  if (!overview) return <Loading label="Loading the SEO desk…" />;
+  if (error && !overview) return <div className="aw-view"><ErrorNote error={error} onRetry={load} /></div>;
+  if (!overview) return <div className="aw-view"><Loading label="Loading the SEO desk…" /></div>;
 
   const hosts = overview.hostsAvailable ?? overview.hosts.map((h) => h.host);
   const state = overview.state ?? {};
@@ -206,21 +206,17 @@ export function SeoView() {
           </Badge>
         ))}
         actions={
-          <>
-            <Button kind="primary" disabled={Boolean(busy)} onClick={() => run('audit')}>
-              {busy === 'audit' ? 'Running…' : 'Run audit'}
-            </Button>
-            <Button disabled={Boolean(busy)} onClick={() => run('geo')}>
-              {busy === 'geo' ? 'Running…' : 'Run GEO probe'}
-            </Button>
-            <Button disabled={Boolean(busy)} onClick={() => run('citations')}>
-              {busy === 'citations' ? 'Checking…' : 'Check citations'}
-            </Button>
-            <Button disabled={Boolean(busy)} onClick={() => run('cycle')}>
-              {busy === 'cycle' ? 'Filing…' : 'Run cycle now'}
-            </Button>
-          </>
+          <Button kind="primary" busy={busy === 'audit'} disabled={Boolean(busy)} disabledReason={busy ? `Wait for the ${busy} run to finish.` : undefined} onClick={() => run('audit')}>
+            Run audit
+          </Button>
         }
+        secondary={[
+          { label: busy === 'geo' ? 'Running GEO probe…' : 'Run GEO probe', run: () => run('geo'), disabled: Boolean(busy), disabledReason: `Wait for the ${busy} run to finish.` },
+          { label: busy === 'citations' ? 'Checking citations…' : 'Check citations', run: () => run('citations'), disabled: Boolean(busy), disabledReason: `Wait for the ${busy} run to finish.` },
+        ]}
+        overflow={[
+          { label: busy === 'cycle' ? 'Filing the fix cycle…' : 'Run a fix cycle now…', run: () => run('cycle'), disabled: Boolean(busy), disabledReason: `Wait for the ${busy} run to finish.` },
+        ]}
       />
 
       {error ? <ErrorNote error={error} onRetry={load} /> : null}
@@ -544,9 +540,9 @@ function ScoreChart({ series, events, today }) {
             <circle cx={xOf(event.n)} cy={height - bottom - 4} r="3" fill={markColour(event.kind)} />
           </g>
         ))}
-        {path ? <path d={path} fill="none" stroke="var(--aw-accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {path ? <path d={path} fill="none" stroke="var(--aw-ink-2)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" /> : null}
         {points.map((point) => (
-          <circle key={point.day} cx={xOf(point.n)} cy={yOf(point.averageScore)} r="2.6" fill="var(--aw-accent)">
+          <circle key={point.day} cx={xOf(point.n)} cy={yOf(point.averageScore)} r="2.6" fill="var(--aw-ink-2)">
             <title>{`${longDay(point.day)}: ${point.averageScore} average over ${point.pages} pages`}</title>
           </circle>
         ))}
@@ -591,7 +587,7 @@ function GeoChart({ weeks }) {
           return (
             <g key={week.week}>
               <title>{`Week of ${longDay(week.week)}: ${week.mentions} of ${week.runs} answers named us (${pct(week.rate)})`}</title>
-              <rect x={x} y={top + innerH - barH} width={barW} height={barH} rx="2" fill="var(--aw-accent)" opacity={week.runs ? 0.85 : 0.25} />
+              <rect x={x} y={top + innerH - barH} width={barW} height={barH} rx="2" fill="var(--aw-ink-2)" opacity={week.runs ? 0.85 : 0.25} />
               {index % 3 === 0 || index === weeks.length - 1 ? (
                 <text x={x + barW / 2} y={height - 6} textAnchor="middle" fontSize="9" fill="var(--aw-text2)">
                   {shortDay(week.week)}
@@ -851,9 +847,9 @@ function RankChart({ series, events, today }) {
             <circle cx={xOf(event.n)} cy={height - bottom - 4} r="3" fill={markColour(event.kind)} />
           </g>
         ))}
-        {path ? <path d={path} fill="none" stroke="var(--aw-accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {path ? <path d={path} fill="none" stroke="var(--aw-ink-2)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" /> : null}
         {points.map((point) => (
-          <circle key={point.day} cx={xOf(point.n)} cy={yOf(point.avgPosition)} r="2.6" fill="var(--aw-accent)">
+          <circle key={point.day} cx={xOf(point.n)} cy={yOf(point.avgPosition)} r="2.6" fill="var(--aw-ink-2)">
             <title>{`${longDay(point.day)}: ${point.avgPosition} average (${point.inTop10} in the top 10, ${point.inTop100} in the top 100)`}</title>
           </circle>
         ))}

@@ -1,39 +1,162 @@
-/* Small building blocks. Every class is prefixed `aw-` so neither host's CSS leaks in. */
-import { useEffect, useRef, useState } from 'react';
+/*
+ * Small building blocks. Every class is prefixed `aw-` so neither host's CSS
+ * leaks in. The contract for every primitive here is
+ * docs/admin-ui-refresh/01-ui-contract.md §4: one shape each, every state.
+ * Props are additive: nothing that existed before M1 was renamed.
+ */
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { STATUS_LABEL, errorText } from './format.js';
 
 let modalSeq = 0;
+let uidSeq = 0;
+const useUid = (prefix) => {
+  const [id] = useState(() => `${prefix}-${++uidSeq}`);
+  return id;
+};
 
 export const cx = (...parts) => parts.filter(Boolean).join(' ');
 
-export function Button({ kind = 'default', size, className, ...props }) {
-  return <button type="button" className={cx('aw-btn', `aw-btn--${kind}`, size && `aw-btn--${size}`, className)} {...props} />;
+/** True while the media query matches; re-renders when it flips. */
+export function useMedia(query) {
+  const read = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.(query).matches);
+  const [match, setMatch] = useState(read);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+    const q = window.matchMedia(query);
+    const sync = () => setMatch(q.matches);
+    sync();
+    q.addEventListener('change', sync);
+    return () => q.removeEventListener('change', sync);
+  }, [query]);
+  return match;
+}
+
+/**
+ * The one button. `kind`: default (= secondary) · secondary · primary · ghost ·
+ * danger. `busy` disables it and shows a spinner in place of the label (the
+ * label stays for screen readers). `disabledReason` says why it cannot be
+ * pressed: a tooltip and the button's accessible description. `icon` puts an
+ * icon before the label; `iconOnly` makes a square button whose label is the
+ * tooltip. `shortcut` appears in the tooltip.
+ */
+export function Button({ kind = 'default', size, className, busy = false, disabledReason, icon, iconOnly = false, shortcut, tip, children, disabled, ...props }) {
+  const reasonId = useUid('aw-why');
+  const isDisabled = Boolean(disabled || busy);
+  const label = props['aria-label'] ?? (typeof children === 'string' ? children : undefined);
+  const tipText = tip ?? (iconOnly ? [label, shortcut].filter(Boolean).join('  ') : shortcut ? `${label ?? ''}  ${shortcut}`.trim() : undefined);
+  const button = (
+    <button
+      type="button"
+      className={cx('aw-btn', `aw-btn--${kind}`, size && `aw-btn--${size}`, iconOnly && 'aw-btn--icon', className)}
+      disabled={isDisabled}
+      aria-busy={busy || props['aria-busy'] || undefined}
+      aria-describedby={disabled && disabledReason ? reasonId : props['aria-describedby']}
+      data-tip={!(disabled && disabledReason) && tipText && !props.title ? tipText : undefined}
+      {...props}
+    >
+      {icon ? <Icon name={icon} size={size === 'sm' ? 14 : 16} /> : null}
+      {iconOnly ? null : children}
+    </button>
+  );
+  if (!(disabled && disabledReason)) return button;
+  return (
+    <span className="aw-btnwrap" data-tip={disabledReason}>
+      {button}
+      <span id={reasonId} className="aw-sr">{disabledReason}</span>
+    </span>
+  );
+}
+
+/** A square ghost button with a required label (its tooltip). */
+export function IconButton({ icon, label, shortcut, size, kind = 'ghost', ...props }) {
+  return <Button kind={kind} size={size} icon={icon} iconOnly aria-label={label} shortcut={shortcut} {...props} />;
 }
 
 export const StatusPill = ({ status }) => <span className={`aw-pill aw-pill--${status}`}>{STATUS_LABEL[status] ?? status}</span>;
 export const Dot = ({ state }) => <span className={`aw-dot aw-dot--${state}`} aria-hidden="true" />;
 export const Tag = ({ children, tone, title }) => <span className={cx('aw-tag', tone && `aw-tag--${tone}`)} title={title}>{children}</span>;
 
-/** A small tone pill: the tag recipe, fully rounded. */
-const BADGE_TONES = { neutral: null, info: 'aw-tag--info', ok: 'aw-tag--ok', warn: 'aw-tag--warn', bad: 'aw-tag--bad', accent: 'aw-tag--accent' };
-export function Badge({ tone = 'neutral', children }) {
-  return <span className={cx('aw-tag', 'aw-tag--pill', BADGE_TONES[tone] ?? null)}>{children}</span>;
+/** A small tone pill: the tag recipe, fully rounded. Tone is always beside a word. */
+const BADGE_TONES = { neutral: null, info: 'aw-tag--info', ok: 'aw-tag--ok', warn: 'aw-tag--warn', bad: 'aw-tag--bad', accent: 'aw-tag--accent', dash: 'aw-tag--dash' };
+export function Badge({ tone = 'neutral', children, title }) {
+  return <span className={cx('aw-tag', 'aw-tag--pill', BADGE_TONES[tone] ?? null)} title={title}>{children}</span>;
 }
 
-/** A "nothing here" box: quiet, centered, compact. */
-export function Empty({ title, hint, action }) {
+/** What this is and the next action. `inline` aligns it left inside a section. */
+export function EmptyState({ title, hint, action, icon, inline = false }) {
   return (
-    <div className="aw-emptybox">
+    <div className={cx('aw-emptybox', inline && 'aw-emptybox--inline')}>
+      {icon ? <span className="aw-emptybox__icon"><Icon name={icon} size={20} /></span> : null}
       <strong>{title}</strong>
       {hint ? <span className="aw-emptybox__hint">{hint}</span> : null}
       {action ? <div className="aw-emptybox__action">{action}</div> : null}
     </div>
   );
 }
+export const Empty = EmptyState;
 
-/** A quiet loading line with a spinner, announced politely once. */
-export function Loading({ label = 'Loading…' }) {
-  return <div className="aw-loading" role="status">{label}</div>;
+/**
+ * The loading shape: bars in the place the content will take. `variant`:
+ * text (default), rows (a list), table, board (lanes), pane (a page header and
+ * rows), ticket (a header and a thread).
+ */
+export function Skeleton({ variant = 'text', lines = 3, rows = 6, label = 'Loading…' }) {
+  const bar = (w, extra) => <span className={cx('aw-skel__bar', extra)} style={{ width: w }} />;
+  const widths = ['92%', '78%', '85%', '64%', '88%', '70%'];
+  let body;
+  if (variant === 'board') {
+    body = (
+      <div className="aw-skel__lanes">
+        {[3, 2, 2, 1, 2].map((n, i) => (
+          <div key={i} className="aw-skel__lane">
+            {bar('40%')}
+            {Array.from({ length: n }, (_, j) => <span key={j} className="aw-skel__card" />)}
+          </div>
+        ))}
+      </div>
+    );
+  } else if (variant === 'rows' || variant === 'table') {
+    body = Array.from({ length: rows }, (_, i) => (
+      <div key={i} className="aw-skel__row">
+        {bar('36px')}
+        {bar(widths[i % widths.length].replace('%', '') * 4 + 'px')}
+        {variant === 'table' ? bar('80px') : null}
+        {variant === 'table' ? bar('64px') : null}
+      </div>
+    ));
+  } else if (variant === 'pane' || variant === 'ticket') {
+    body = (
+      <>
+        {bar('34%', 'aw-skel__bar--title')}
+        {bar('52%')}
+        <div style={{ height: 12 }} />
+        {Array.from({ length: variant === 'ticket' ? 3 : rows }, (_, i) =>
+          variant === 'ticket' ? (
+            <div key={i} className="aw-skel" style={{ gap: 8 }}>
+              {bar('18%')}
+              {bar(widths[i])}
+              {bar(widths[i + 2])}
+            </div>
+          ) : (
+            <div key={i} className="aw-skel__row">{bar('36px')}{bar(widths[i % widths.length].replace('%', '') * 5 + 'px')}</div>
+          ),
+        )}
+      </>
+    );
+  } else {
+    body = Array.from({ length: lines }, (_, i) => <span key={i} className="aw-skel__bar" style={{ width: widths[i % widths.length] }} />);
+  }
+  return (
+    <div className={cx('aw-skel', (variant === 'pane' || variant === 'ticket') && 'aw-skel--pane')} role="status" aria-live="polite">
+      <span className="aw-sr">{label}</span>
+      {body}
+    </div>
+  );
+}
+
+/** Loading, as a skeleton of rows with the label for screen readers. */
+export function Loading({ label = 'Loading…', variant = 'rows' }) {
+  return <div className="aw-loading"><Skeleton variant={variant} rows={4} label={label} /></div>;
 }
 
 /** A failure with its reason and a way out. */
@@ -46,7 +169,7 @@ export function ErrorNote({ error, onRetry }) {
   );
 }
 
-/** A titled, bordered section: header row, actions right, one padding. */
+/** A titled section: a hairline above, the title row, then content. Not a card. */
 export function Panel({ title, subtitle, actions, children }) {
   return (
     <section className="aw-panel">
@@ -65,28 +188,49 @@ export function Panel({ title, subtitle, actions, children }) {
 }
 
 /**
- * The one page header: title and a one-line muted subtitle on the left,
- * badges then buttons on the right, vertically centred. No box, no border —
- * the page furniture stays quiet. Wraps under the title on narrow panes.
+ * The one pane header: title and a one-line context on the left; meta (status
+ * pills), actions (at most one primary) and the overflow menu on the right.
+ * `secondary` is a list of menu-shaped actions shown as buttons on a wide pane
+ * and folded into the overflow menu on a narrow one (≤600px), so nothing is
+ * lost when the pane is small.
  */
-export function PageHeader({ title, subtitle, meta, actions }) {
+export function PageHeader({ title, subtitle, meta, actions, secondary, overflow, back }) {
+  const narrow = useMedia('(max-width: 600px)');
+  const extra = secondary?.filter(Boolean) ?? [];
+  const menu = [...(narrow ? extra : []), ...(overflow?.filter(Boolean) ?? [])];
   return (
     <header className="aw-pagehead">
       <div className="aw-pagehead__titles">
+        {back ? <Button kind="ghost" size="sm" icon="chevronLeft" onClick={back.run}>{back.label}</Button> : null}
         <h2>{title}</h2>
-        {subtitle ? <p>{subtitle}</p> : null}
+        {subtitle ? <p title={typeof subtitle === 'string' ? subtitle : undefined}>{subtitle}</p> : null}
       </div>
-      {meta || actions ? (
+      {meta || actions || extra.length || menu.length ? (
         <div className="aw-pagehead__side">
           {meta ? <div className="aw-pagehead__meta">{meta}</div> : null}
+          {extra.length && !narrow ? (
+            <div className="aw-pagehead__actions aw-pagehead__secondary">
+              {extra.map((item) => (
+                <Button key={item.label} disabled={item.disabled} disabledReason={item.disabledReason} busy={item.busy} kind={item.danger ? 'danger' : 'default'} onClick={item.run} title={item.hint}>
+                  {item.label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
           {actions ? <div className="aw-pagehead__actions">{actions}</div> : null}
+          {menu.length ? <OverflowMenu items={menu} /> : null}
         </div>
       ) : null}
     </header>
   );
 }
 
-/** Compact horizontal stat tiles; `tone` colours the value. */
+/** Filters and sort in one row: search first, selects, fill, then actions. */
+export function Toolbar({ children, label }) {
+  return <div className="aw-toolbar" role="toolbar" aria-label={label}>{children}</div>;
+}
+
+/** Figures in a line; `tone` colours the value and is always beside its label. */
 export function StatRow({ items }) {
   return (
     <div className="aw-statrow">
@@ -179,9 +323,10 @@ export function Segmented({ value, options, onChange, disabled, label }) {
     const opt = options.find((o) => String(o.value) === next.dataset.value);
     if (opt && opt.value !== value) onChange(opt.value);
   };
+  const hasChecked = options.some((o) => o.value === value);
   return (
     <div className="aw-seg" role="radiogroup" aria-label={label} ref={ref} onKeyDown={onKey}>
-      {options.map((o) => (
+      {options.map((o, i) => (
         <button
           key={String(o.value)}
           type="button"
@@ -190,6 +335,7 @@ export function Segmented({ value, options, onChange, disabled, label }) {
           disabled={disabled || o.disabled}
           aria-checked={o.value === value}
           aria-pressed={o.value === value}
+          tabIndex={o.value === value || (!hasChecked && i === 0) ? 0 : -1}
           title={o.hint}
           onClick={() => onChange(o.value)}
         >
@@ -215,7 +361,7 @@ export function Chips({ value, options, onChange, disabled, label }) {
 }
 
 /**
- * The one tab strip for a page's sections: underline tabs with roving focus
+ * The one subnav for a page's sections: underline tabs with roving focus
  * (the arrows move and pick, Home/End jump) and the chosen one inked with a
  * 2px accent underline. A filter or toggle inside a section stays Segmented.
  */
@@ -231,6 +377,7 @@ export function PageTabs({ value, onChange, items, ariaLabel }) {
     const idx = btns.indexOf(document.activeElement);
     const next = e.key === 'Home' ? 0 : e.key === 'End' ? btns.length - 1 : (idx === -1 ? 0 : idx + (e.key === 'ArrowRight' ? 1 : -1) + btns.length) % btns.length;
     btns[next].focus();
+    btns[next].scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     const item = list[next];
     if (item && item.value !== value) onChange(item.value);
   };
@@ -255,39 +402,67 @@ export function PageTabs({ value, onChange, items, ariaLabel }) {
     </div>
   );
 }
+export const Subnav = PageTabs;
 
-export function Field({ label, hint, children }) {
+export function Field({ label, hint, error, children }) {
   return (
     <label className="aw-field">
       <span className="aw-field__label">{label}</span>
       {children}
-      {hint ? <span className="aw-field__hint">{hint}</span> : null}
+      {error ? <span className="aw-field__error" role="alert">{error}</span> : hint ? <span className="aw-field__hint">{hint}</span> : null}
     </label>
   );
 }
 
 const FOCUSABLE = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
+/** The layers open right now, top last: Escape closes only the top one. */
+const layers = [];
+const isTop = (token) => layers[layers.length - 1] === token;
+function useLayer() {
+  const [token] = useState(() => ({}));
+  useEffect(() => {
+    layers.push(token);
+    return () => {
+      const i = layers.indexOf(token);
+      if (i >= 0) layers.splice(i, 1);
+    };
+  }, [token]);
+  return token;
+}
+/** True while any menu, dialog or palette is open (the shell's shortcuts stand down). */
+export const layerOpen = () => layers.length > 0;
+
 /**
- * The one overlay: focus starts inside (`focus` names a selector to prefer),
+ * The one dialog: focus starts inside (`focus` names a selector to prefer),
  * Tab stays inside, Escape closes, and focus returns to whoever opened it.
+ * At ≤600px it is a bottom sheet (`sheet` is accepted for clarity; the
+ * narrow rule applies to every dialog).
  */
-export function Modal({ title, subtitle, onClose, children, actions, wide, full, focus }) {
+export function Modal({ title, subtitle, onClose, children, actions, wide, full, focus, sheet }) {
   const ref = useRef(null);
-  // One id per mounted dialog; seeded once so re-renders keep it stable.
+  const layer = useLayer();
   const [titleId] = useState(() => `aw-modal-title-${++modalSeq}`);
   useEffect(() => {
     const root = ref.current;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const first = (focus ? root?.querySelector(focus) : null) ?? root?.querySelector(FOCUSABLE);
+    // The named control, else the first field, else the first enabled footer
+    // button, else the dialog itself — never the close button.
+    const first =
+      (focus ? root?.querySelector(focus) : null) ??
+      root?.querySelector('.aw-modal__body :is(input:not(:disabled):not([type=hidden]), textarea:not(:disabled), select:not(:disabled))') ??
+      root?.querySelector('.aw-modal__foot button:not(:disabled)') ??
+      root;
     first?.focus();
-    return () => opener?.focus();
+    return () => opener?.focus?.();
     // Mount only: capture the opener once; re-renders must not re-capture it.
   }, []);
   useEffect(() => {
     const root = ref.current;
     const onKey = (e) => {
+      if (!isTop(layer)) return;
       if (e.key === 'Escape') {
+        e.stopPropagation();
         onClose();
         return;
       }
@@ -305,18 +480,16 @@ export function Modal({ title, subtitle, onClose, children, actions, wide, full,
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, layer]);
   return (
     <div className="aw-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={cx('aw-modal', wide && 'aw-modal--wide', full && 'aw-modal--full')} role="dialog" aria-modal="true" aria-labelledby={titleId} ref={ref}>
+      <div className={cx('aw-modal', wide && 'aw-modal--wide', full && 'aw-modal--full', sheet && 'aw-modal--sheet')} role="dialog" aria-modal="true" aria-labelledby={titleId} ref={ref} tabIndex={-1}>
         <header className="aw-modal__head">
           <div>
             <h2 id={titleId}>{title}</h2>
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
-          <Button kind="ghost" size="sm" onClick={onClose} aria-label="Close">
-            ✕
-          </Button>
+          <Button kind="ghost" size="sm" iconOnly icon="close" onClick={onClose} aria-label="Close" tip="Close  Esc" />
         </header>
         <div className="aw-modal__body">{children}</div>
         {actions ? <footer className="aw-modal__foot">{actions}</footer> : null}
@@ -326,9 +499,10 @@ export function Modal({ title, subtitle, onClose, children, actions, wide, full,
 }
 
 /**
- * A question with consequences: the confirm button is focused (Enter confirms),
- * stays busy while the action runs, and on failure the dialog stays open with
- * the reason.
+ * A question with consequences: one line of consequence, Cancel and the
+ * action. Initial focus is on the safe control for a destructive action and
+ * on the action otherwise (Return confirms). It stays busy while the action
+ * runs, and on failure it stays open with the reason.
  */
 export function Confirm({ ask, onClose }) {
   const [busy, setBusy] = useState(false);
@@ -353,10 +527,10 @@ export function Confirm({ ask, onClose }) {
       title={ask.title}
       subtitle={ask.text}
       onClose={close}
-      focus=".aw-confirm"
+      focus={ask.danger ? '.aw-confirm-cancel' : '.aw-confirm'}
       actions={
         <>
-          <Button onClick={close} disabled={busy}>Cancel</Button>
+          <Button className="aw-confirm-cancel" onClick={close} disabled={busy}>Cancel</Button>
           <Button className="aw-confirm" kind={ask.danger ? 'danger' : 'primary'} disabled={busy} aria-busy={busy} onClick={() => { void run(); }}>
             {ask.confirm}
           </Button>
@@ -368,6 +542,195 @@ export function Confirm({ ask, onClose }) {
   );
 }
 
+/** One result line: an error stays until dismissed, anything else times out (the caller's timer). */
+export function Toast({ toast, onDismiss }) {
+  if (!toast) return null;
+  return (
+    <div className={cx('aw-toast', toast.kind === 'error' && 'is-error')} role={toast.kind === 'error' ? 'alert' : 'status'}>
+      <span>{toast.text}</span>
+      <button type="button" className="aw-toast__close" aria-label="Dismiss" onClick={onDismiss}>
+        <Icon name="close" size={14} />
+      </button>
+    </div>
+  );
+}
+
+/* ————— menus ————— */
+
+/**
+ * A menu of actions at a point or under an anchor. Items:
+ * `{ label, run, hint, shortcut, danger, disabled, disabledReason }`,
+ * `{ separator: true }` or `{ heading: 'Label' }`. Arrows/Home/End move,
+ * typing jumps, Return or Space runs, Escape or Tab closes; focus returns to
+ * whatever had it when the menu opened.
+ */
+export function Menu({ items, at, anchor, onClose, label = 'Actions' }) {
+  const ref = useRef(null);
+  const layer = useLayer();
+  const list = items.filter(Boolean);
+  const actionable = list.map((it, i) => (it.separator || it.heading || it.disabled ? -1 : i)).filter((i) => i >= 0);
+  const [active, setActive] = useState(actionable[0] ?? -1);
+  const [pos, setPos] = useState(() => ({ left: at?.x ?? 0, top: at?.y ?? 0, visibility: 'hidden' }));
+  const opener = useRef(null);
+  const typed = useRef({ text: '', at: 0 });
+
+  useLayoutEffect(() => {
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    let left = at?.x ?? 0;
+    let top = at?.y ?? 0;
+    if (anchor?.current) {
+      const a = anchor.current.getBoundingClientRect();
+      left = a.right - r.width;
+      top = a.bottom + 4;
+      if (left < 8) left = a.left;
+    }
+    left = Math.max(8, Math.min(left, window.innerWidth - r.width - 8));
+    if (top + r.height > window.innerHeight - 8) top = Math.max(8, (anchor?.current ? anchor.current.getBoundingClientRect().top - 4 : top) - r.height);
+    setPos({ left, top, visibility: 'visible' });
+    el.focus();
+  }, []);
+
+  const close = useCallback((restore = true) => {
+    onClose();
+    if (restore) opener.current?.focus?.();
+  }, [onClose]);
+
+  useEffect(() => {
+    const down = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) close(false);
+    };
+    const blur = () => close(false);
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('blur', blur);
+    window.addEventListener('resize', blur);
+    return () => {
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('blur', blur);
+      window.removeEventListener('resize', blur);
+    };
+  }, [close]);
+
+  const run = (item) => {
+    if (!item || item.disabled || item.separator || item.heading) return;
+    close(true);
+    // After focus has gone back, so a dialog the action opens returns there too.
+    setTimeout(() => item.run?.(), 0);
+  };
+  const step = (dir) => {
+    if (!actionable.length) return;
+    const at0 = actionable.indexOf(active);
+    const next = at0 < 0 ? (dir > 0 ? 0 : actionable.length - 1) : (at0 + dir + actionable.length) % actionable.length;
+    setActive(actionable[next]);
+  };
+  const onKey = (e) => {
+    if (!isTop(layer)) return;
+    e.stopPropagation();
+    if (e.key === 'ArrowDown') { e.preventDefault(); step(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); step(-1); }
+    else if (e.key === 'Home') { e.preventDefault(); setActive(actionable[0]); }
+    else if (e.key === 'End') { e.preventDefault(); setActive(actionable[actionable.length - 1]); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(list[active]); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(true); }
+    else if (e.key === 'Tab') { e.preventDefault(); close(true); }
+    else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const now = Date.now();
+      typed.current = { text: (now - typed.current.at < 600 ? typed.current.text : '') + e.key.toLowerCase(), at: now };
+      const hit = actionable.find((i) => String(list[i].label).toLowerCase().startsWith(typed.current.text));
+      if (hit != null) setActive(hit);
+    }
+  };
+  const menuId = useUid('aw-menu');
+  return (
+    <ul
+      ref={ref}
+      id={menuId}
+      className="aw-menu"
+      role="menu"
+      aria-label={label}
+      tabIndex={-1}
+      aria-activedescendant={active >= 0 ? `${menuId}-${active}` : undefined}
+      style={pos}
+      onKeyDown={onKey}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
+      {list.map((item, i) =>
+        item.separator ? (
+          <li key={`s${i}`} className="aw-menu__sep" role="separator" />
+        ) : item.heading ? (
+          <li key={`h${i}`} className="aw-menu__label" role="presentation">{item.heading}</li>
+        ) : (
+          <li
+            key={`${item.label}-${i}`}
+            id={`${menuId}-${i}`}
+            role="menuitem"
+            aria-disabled={item.disabled || undefined}
+            className={cx('aw-menu__item', item.danger && 'aw-menu__item--danger', i === active && 'is-active')}
+            title={item.disabled ? item.disabledReason : item.hint}
+            onMouseEnter={() => setActive(item.disabled ? -1 : i)}
+            onClick={() => run(item)}
+          >
+            <span>{item.label}{item.disabled && item.disabledReason ? <span className="aw-sr"> — {item.disabledReason}</span> : null}</span>
+            {item.shortcut ? <small>{item.shortcut}</small> : null}
+          </li>
+        ),
+      )}
+    </ul>
+  );
+}
+
+/** The "…" button that opens a menu of the actions that are not inline. */
+export function OverflowMenu({ items, label = 'More actions', size }) {
+  const [open, setOpen] = useState(false);
+  const anchor = useRef(null);
+  const list = items.filter(Boolean);
+  if (!list.length) return null;
+  return (
+    <>
+      <Button ref={anchor} kind="ghost" size={size} iconOnly icon="more" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} />
+      {open ? <Menu items={list} anchor={anchor} label={label} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
+/**
+ * A context menu for a row, tab or station: right-click, the Menu key or
+ * Shift+F10. `items` is a list or a function of the event target.
+ * Spread `bind` on the element and render `menu` anywhere inside `.aw`.
+ */
+export function useContextMenu(items, label = 'Actions') {
+  const [state, setState] = useState(null);
+  const openAt = (x, y) => {
+    const list = (typeof items === 'function' ? items() : items)?.filter(Boolean) ?? [];
+    if (list.length) setState({ x, y, list });
+  };
+  const bind = {
+    onContextMenu: (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openAt(e.clientX, e.clientY);
+    },
+    onKeyDown: (e) => {
+      if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+        e.preventDefault();
+        e.stopPropagation();
+        const r = e.currentTarget.getBoundingClientRect();
+        openAt(r.left + 16, r.top + Math.min(r.height, 28));
+      }
+    },
+  };
+  const menu = state ? <Menu items={state.list} at={{ x: state.x, y: state.y }} label={label} onClose={() => setState(null)} /> : null;
+  return { bind, menu, open: openAt };
+}
+
+/* ————— icons: one 1.5px stroke set, currentColor ————— */
 const PATHS = {
   inbox: 'M3 13h4l2 3h6l2-3h4M5 5h14l2 8v6H3v-6z',
   board: 'M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v7h-4z',
@@ -384,11 +747,18 @@ const PATHS = {
   megaphone: 'M3 10v4a1 1 0 0 0 1 1h2l4 3V6L6 9H4a1 1 0 0 0-1 1zM14 8a5 5 0 0 1 0 8M17 5a9 9 0 0 1 0 14',
   seo: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.5 4 5.7 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.7-4-9s1.5-6.5 4-9z',
   pulse: 'M3 12h4l2-6 4 12 2-6h6',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
+  close: 'M6 6l12 12M18 6L6 18',
+  chevron: 'M9 6l6 6-6 6',
+  chevronLeft: 'M15 6l-6 6 6 6',
+  sidebar: 'M4 5h16v14H4zM9 5v14',
+  keyboard: 'M3 7h18v10H3zM7 11h.01M11 11h.01M15 11h.01M7 14h10',
+  check: 'M5 12l5 5 9-10',
 };
 export function Icon({ name, size = 16 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={PATHS[name]} />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={name === 'more' ? 2.6 : 1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d={PATHS[name] ?? PATHS.list} />
     </svg>
   );
 }

@@ -117,10 +117,23 @@ function useResource(load, deps, { keepOnError = false } = {}) {
   };
 }
 
-function ResourceNote({ resource, label, empty }) {
+function MarketingSkeleton({ label = 'Loading…', rows = 3, variant = 'rows' }) {
+  return (
+    <div className={cx('aw-mk-skel', `aw-mk-skel--${variant}`)} role="status" aria-label={label}>
+      <span className="aw-sr-only">{label}</span>
+      {variant === 'chart' ? (
+        <span className="aw-mk-skel__chart" aria-hidden="true" />
+      ) : (
+        Array.from({ length: rows }).map((_, i) => <span key={i} className="aw-mk-skel__row" aria-hidden="true" />)
+      )}
+    </div>
+  );
+}
+
+function ResourceNote({ resource, label, empty, hint, action, variant = 'rows', rows = 3 }) {
   if (resource.error) return <ErrorNote error={resource.error} onRetry={resource.reload} />;
-  if (resource.loading) return <Loading label={label} />;
-  return empty ? <Empty title={empty} /> : null;
+  if (resource.loading) return <MarketingSkeleton label={label} variant={variant} rows={rows} />;
+  return empty ? <Empty title={empty} hint={hint} action={action} /> : null;
 }
 
 export function MarketingView() {
@@ -205,6 +218,14 @@ export function MarketingView() {
       .then(() => setSelected(new Set()), () => undefined);
   };
 
+  const sendDisabledReason = sendingBusy
+    ? 'Updating sending state…'
+    : desk.loading
+      ? 'Refreshing marketing status…'
+      : desk.error
+        ? 'Refresh the desk before changing sending state.'
+        : undefined;
+
   return (
     <div className="aw-view aw-mk">
       <div ref={sendingControl} tabIndex={-1} className="aw-mk-anchor">
@@ -215,8 +236,12 @@ export function MarketingView() {
           actions={
             <>
               <Button kind="ghost" onClick={() => run(() => api('POST', '/admin/marketing/run'), runMessage)}>Run now</Button>
-              <Button kind={settings.live ? undefined : 'primary'} disabled={sendingBusy || desk.loading || Boolean(desk.error)}
-                onClick={settings.live ? () => void changeSending(false).catch(() => undefined) : startSending}>
+              <Button
+                kind={settings.live ? undefined : 'primary'}
+                disabled={sendingBusy || desk.loading || Boolean(desk.error)}
+                title={sendDisabledReason}
+                onClick={settings.live ? () => void changeSending(false).catch(() => undefined) : startSending}
+              >
                 {settings.live ? 'Pause sending' : 'Go live'}
               </Button>
             </>
@@ -551,10 +576,12 @@ function AutopilotTable({ overview }) {
               <td>Email</td>
               <td data-label="State">{emailState}</td>
               <td data-label="Last">
-                {lastSentAt ? when(lastSentAt) : 'no sends yet'}
-                <span className="aw-muted">
-                  {' '}
-                  · {today ?? 0}/{cap} today{ramping ? ' · ramping' : ''}
+                <span>
+                  {lastSentAt ? when(lastSentAt) : 'no sends yet'}
+                  <span className="aw-muted">
+                    {' '}
+                    · {today ?? 0}/{cap} today{ramping ? ' · ramping' : ''}
+                  </span>
                 </span>
               </td>
               <td data-label="Next">{emailNext || '—'}</td>
@@ -582,8 +609,10 @@ function AutopilotTable({ overview }) {
               <td>Site reading</td>
               <td data-label="State">{pending > 0 ? 'reading' : 'idle'}</td>
               <td data-label="Last">
-                {observed} read
-                {pulse.lastObservedAt ? <span className="aw-muted"> · last {when(pulse.lastObservedAt)}</span> : null}
+                <span>
+                  {observed} read
+                  {pulse.lastObservedAt ? <span className="aw-muted"> · last {when(pulse.lastObservedAt)}</span> : null}
+                </span>
               </td>
               <td data-label="Next">{pending > 0 ? `${pending} waiting · ${fmtEta(obsEtaMinutes(pending))}` : 'all read'}</td>
               <td data-label="Health">{observed > 0 ? `${pct(withGap / observed)} found something` : '—'}</td>
@@ -601,10 +630,17 @@ function AutopilotTable({ overview }) {
         </table>
       </div>
       {kindEntries.length ? (
-        <>
-          <p className="aw-muted aw-mk-kinds-label">What the reader finds:</p>
-          <StatRow items={kindEntries.map(([kind, value]) => ({ label: OBSERVE_KIND[kind] ?? kind, value }))} />
-        </>
+        <div className="aw-mk-findings">
+          <span className="aw-muted aw-mk-kinds-label">Reader findings:</span>
+          <dl className="aw-mk-kinds">
+            {kindEntries.map(([kind, value]) => (
+              <div className="aw-mk-kind" key={kind}>
+                <dd>{value}</dd>
+                <dt>{OBSERVE_KIND[kind] ?? kind}</dt>
+              </div>
+            ))}
+          </dl>
+        </div>
       ) : null}
     </div>
   );
@@ -734,8 +770,16 @@ function StatsChart({ stats }) {
   const aria = `${days.length} days: ${sent} sent, ${replies} replies, ${bounces} bounces, ${optOuts} opt-outs, ${published} posts published.`;
   return (
     <figure className="aw-chart">
-      <figcaption className="aw-chart__totals">
-        {sent} sent · {replies} replies · {bounces} bounces · {optOuts} opt-outs · {published} posts
+      <figcaption className="aw-chart__head">
+        <span className="aw-chart__totals">
+          {sent} sent · {replies} replies · {bounces} bounces · {optOuts} opt-outs · {published} posts
+        </span>
+        <span className="aw-chart__legend" aria-hidden="true">
+          <span><i className="aw-chart__key aw-chart__key--sent" />Sent</span>
+          <span><i className="aw-chart__key aw-chart__key--bounce" />Bounce</span>
+          <span><i className="aw-chart__key aw-chart__key--reply" />Reply</span>
+          <span><i className="aw-chart__key aw-chart__key--post" />Post</span>
+        </span>
       </figcaption>
       <div ref={ref} className="aw-chart__box">
         <svg
@@ -833,18 +877,20 @@ function ExperimentPanel({ overview, onTab }) {
         : `${diff > 0 ? challenger.key : control.key} leads: ${pct(Math.max(rate(challenger), rate(control)))} vs ${pct(Math.min(rate(challenger), rate(control)))} reply rate, ${percentNumber.format(Math.abs(diff) * 100)} pts apart.`;
   }
   return (
-    <section className="aw-panel">
-      <h3>Experiment</h3>
+    <section className="aw-panel aw-mk-section">
+      <header className="aw-panel__head">
+        <div className="aw-panel__titles"><h3>Experiment</h3></div>
+      </header>
       <div className="aw-table-wrap">
-        <table className="aw-table aw-table--compact aw-table--static aw-table--stack">
+        <table className="aw-table aw-table--compact aw-table--static aw-table--stack aw-mk-exp-table">
           <thead>
             <tr>
               <th>Sequence</th>
-              <th>Sent</th>
-              <th>Replies</th>
-              <th>Reply rate</th>
-              <th>Opt-outs</th>
-              <th>Bounces</th>
+              <th className="aw-mk-num">Sent</th>
+              <th className="aw-mk-num">Replies</th>
+              <th className="aw-mk-num">Reply rate</th>
+              <th className="aw-mk-num">Opt-outs</th>
+              <th className="aw-mk-num">Bounces</th>
             </tr>
           </thead>
           <tbody>
@@ -855,23 +901,25 @@ function ExperimentPanel({ overview, onTab }) {
                   {s.key === 'cold_a' ? <Badge>control</Badge> : null}
                   {s.key === 'cold_obs' ? <Badge>challenger</Badge> : null}
                 </td>
-                <td data-label="Sent">{s.stats.sent}</td>
-                <td data-label="Replies">{s.stats.replies}</td>
-                <td data-label="Reply rate">{pct(rate(s))}</td>
-                <td data-label="Opt-outs">{s.stats.optedOut}</td>
-                <td data-label="Bounces">{s.stats.bounced}</td>
+                <td className="aw-mk-num" data-label="Sent">{s.stats.sent}</td>
+                <td className="aw-mk-num" data-label="Replies">{s.stats.replies}</td>
+                <td className="aw-mk-num" data-label="Reply rate">{pct(rate(s))}</td>
+                <td className="aw-mk-num" data-label="Opt-outs">{s.stats.optedOut}</td>
+                <td className="aw-mk-num" data-label="Bounces">{s.stats.bounced}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="aw-muted">{verdict}</p>
-      <p className="aw-muted">
-        {overview.settings.obsShare}% of observed contacts get the observation opener.{' '}
-        <Button size="sm" kind="ghost" onClick={() => onTab('settings')}>
-          Settings
-        </Button>
-      </p>
+      <div className="aw-mk-exp-foot">
+        <p className="aw-muted">{verdict}</p>
+        <p className="aw-muted">
+          {overview.settings.obsShare}% of observed contacts get the observation opener.{' '}
+          <Button size="sm" kind="ghost" onClick={() => onTab('settings')}>
+            Settings
+          </Button>
+        </p>
+      </div>
     </section>
   );
 }
@@ -882,7 +930,7 @@ function OverviewTab({ api, tick, health, overview, onReview, onContact, onTab }
 
   const ordered = [...(replies.data ?? [])].sort((a, b) => Number(b.kind === 'reply') - Number(a.kind === 'reply') || b.at - a.at);
   return (
-    <>
+    <div className="aw-mk-overview">
       <Panel title="Autopilot">
         <AutopilotTable overview={overview} />
       </Panel>
@@ -892,29 +940,43 @@ function OverviewTab({ api, tick, health, overview, onReview, onContact, onTab }
       <ExperimentPanel overview={overview} onTab={onTab} />
 
       <Panel title="Last 14 days">
-        <ResourceNote resource={stats} label="Loading outreach stats…" />
-        {stats.data ? (stats.data.days?.length ? <StatsChart stats={stats.data} /> : <Empty title="No outreach stats yet" />) : null}
+        <ResourceNote resource={stats} label="Loading outreach stats…" variant="chart" />
+        {stats.data ? (stats.data.days?.length ? <StatsChart stats={stats.data} /> : <Empty title="No outreach stats yet" hint="Daily send, reply, bounce and post activity appears here once sending begins." />) : null}
       </Panel>
 
       <Panel title="What came back" subtitle="Replies are forwarded to your inbox. Opt-outs and complaints are already closed.">
         {ordered.length ? (
-          <ul className="aw-rows">
+          <ul className="aw-mk-replies">
             {ordered.map((r) => (
-              <li key={r.id} className="aw-row aw-mk-click aw-mk-row-start" onClick={() => onContact(r.contact.id)}>
+              <li
+                key={r.id}
+                className="aw-mk-reply"
+                onClick={() => onContact(r.contact.id)}
+              >
                 <Badge tone={REPLY_TONE[r.kind]}>{REPLY_LABEL[r.kind] ?? r.kind}</Badge>
-                <span className="aw-row__title">
-                  {r.contact.business ?? r.contact.email}
-                  <div className="aw-muted aw-mk-copy">
-                    {snippet(r.text ?? '', 220)}
-                  </div>
-                </span>
-                <span className="aw-muted">{ago(r.at)} ago</span>
+                <div className="aw-mk-reply__body">
+                  <strong className="aw-mk-reply__who">{r.contact.business ?? r.contact.email}</strong>
+                  <p className="aw-muted aw-mk-copy aw-mk-reply__text">{snippet(r.text ?? '', 220)}</p>
+                </div>
+                <div className="aw-mk-reply__meta">
+                  <span className="aw-muted aw-mk-reply__age">{ago(r.at)} ago</span>
+                  <Button
+                    size="sm"
+                    kind="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onContact(r.contact.id);
+                    }}
+                  >
+                    Open
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
-        ) : <ResourceNote resource={replies} label="Loading replies…" empty="No replies or opt-outs yet" />}
+        ) : <ResourceNote resource={replies} label="Loading replies…" empty="No replies or opt-outs yet" hint="Incoming replies and unsubscribe notices appear here." />}
       </Panel>
-    </>
+    </div>
   );
 }
 
@@ -1877,8 +1939,8 @@ function SettingsTab({ overview, mutate, api, onShowSending }) {
         <span className="aw-muted" role="status">{busy ? 'Saving…' : changed ? 'Unsaved changes' : 'No unsaved changes'}</span>
         {error ? <ErrorNote error={error} /> : null}
         <span className="aw-toolbar__fill" />
-        <Button disabled={busy || !changed} onClick={() => { setEdits({}); setError(null); }}>Reset</Button>
-        <Button kind="primary" disabled={busy || !changed} onClick={save}>Save</Button>
+        <Button disabled={busy || !changed} title={!changed ? 'No unsaved changes to reset.' : undefined} onClick={() => { setEdits({}); setError(null); }}>Reset</Button>
+        <Button kind="primary" disabled={busy || !changed} title={!changed ? 'Change a setting before saving.' : undefined} onClick={save}>Save</Button>
       </footer>
     </>
   );

@@ -1,6 +1,7 @@
 /*
  * The admin workbench: an activity bar, an explorer, tabs, and a status bar,
  * like an editor; boards, lists and ticket pages, like a task tracker.
+ * Geometry, keys and states: docs/admin-ui-refresh/01-ui-contract.md.
  *
  * Props:
  *   api(method, path, body) → Promise<json>   throws { code, status } on failure
@@ -11,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AdminContext, useAdmin as useAdminCtx, useAdminData, useMeter, useTicket } from './store.js';
 import { AGENTS, CLIENT_VISIBLE, PRIORITIES, STATUS_LABEL, errorText, needsYou, predict, slugify } from './format.js';
-import { Button, Chips, Confirm, Dot, Field, Icon, Modal, Resizer, Segmented, cx } from './ui.jsx';
+import { Button, Chips, Confirm, Dot, Field, Icon, Modal, Resizer, Segmented, Skeleton, Toast, cx, layerOpen, useContextMenu } from './ui.jsx';
 import { BoardView, InboxView, ListView } from './board.jsx';
 import { TicketDetails, TicketView } from './ticket.jsx';
 import { ClientView, ClientsView, FleetView, SettingsView } from './fleet.jsx';
@@ -23,6 +24,7 @@ import { STYLES } from './styles.js';
 import { ProjectView } from './project.jsx';
 import { createTaskSubmission, createProjectSubmission, destinationFromHash, workbenchAllowed, projectCreationRequest } from './workbench.js';
 
+/** The destinations, in shortcut order. Settings sits at the foot of the bar. */
 const VIEWS = [
   { key: 'inbox', label: 'Needs you', icon: 'inbox' },
   { key: 'board', label: 'Board', icon: 'board' },
@@ -39,6 +41,11 @@ const aliasView = (key) => (key === 'health' ? 'fleet' : key);
 const TABS_KEY = 'aw-tabs-v1';
 const NARROW_WIDTH = '(max-width: 900px)';
 const domId = (prefix, key) => `${prefix}-${String(key).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+const MOD = isMac ? '⌘' : 'Ctrl+';
+/** The browser keeps ⌘1…8 and ⌘W for itself; the Harness hands them to us. */
+const viewKey = (platform, n) => (platform === 'dsh' ? `${MOD}${n}` : `${isMac ? '⌃⌥' : 'Ctrl+Alt+'}${n}`);
+const closeKey = (platform) => (platform === 'dsh' ? `${MOD}W` : `${isMac ? '⌃⌥' : 'Ctrl+Alt+'}W`);
 
 function loadTabs() {
   try {
@@ -54,10 +61,8 @@ function loadTabs() {
   return { tabs: ['inbox', 'board'], active: 'inbox' };
 }
 
-/**
- * `files` is optional and host-supplied: `{ upload(path, formData), download(path, name) }`.
- * Without it attachments are listed by name, and the composer sends text only.
- */
+const typingIn = (el) => el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT' || el?.isContentEditable;
+
 /**
  * True when the app's top-left corner sits under the macOS window buttons
  * (the Harness can show a page edge to edge), so the corner gets room.
@@ -140,19 +145,6 @@ function useWorkbenchActions({ api, reload, setAsk, onNotify }) {
   return { notify, act, setStatus, toast, dismissToast };
 }
 
-/** One result line: an error stays until dismissed, anything else times out. */
-function Toast({ toast, onDismiss }) {
-  if (!toast) return null;
-  return (
-    <div className={cx('aw-toast', toast.kind === 'error' && 'is-error')} role={toast.kind === 'error' ? 'alert' : 'status'}>
-      <span>{toast.text}</span>
-      <button type="button" className="aw-toast__close" aria-label="Dismiss" onClick={onDismiss}>
-        ×
-      </button>
-    </div>
-  );
-}
-
 export function AdminApp({ api, platform = 'web', host = null, fullscreen = false, files = null }) {
   const rootRef = useRef(null);
   const underButtons = useUnderWindowButtons(rootRef, platform === 'dsh');
@@ -162,6 +154,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
   const [modal, setModal] = useState(null);
   const [ask, setAsk] = useState(null);
   const [palette, setPalette] = useState(false);
+  const [keys, setKeys] = useState(false);
   const [sidebar, setSidebar] = useState(true);
   const [drawer, setDrawer] = useState(false);
   const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && Boolean(window.matchMedia?.(NARROW_WIDTH).matches));
@@ -195,16 +188,20 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
     setTabs((s) => ({ tabs: s.tabs.includes(target) ? s.tabs : [...s.tabs, target], active: target }));
     return undefined;
   }, [host]);
-  const close = useCallback(
-    (key) =>
+  const closeMany = useCallback(
+    (drop) =>
       setTabs((s) => {
-        const i = s.tabs.indexOf(key);
-        const next = s.tabs.filter((t) => t !== key);
+        const gone = new Set(drop(s.tabs));
+        const next = s.tabs.filter((t) => !gone.has(t));
         if (!next.length) return { tabs: ['inbox'], active: 'inbox' };
-        return { tabs: next, active: s.active === key ? next[Math.max(0, i - 1)] : s.active };
+        if (!gone.has(s.active)) return { tabs: next, active: s.active };
+        const i = s.tabs.indexOf(s.active);
+        const left = s.tabs.slice(0, i).reverse().find((t) => !gone.has(t));
+        return { tabs: next, active: left ?? next[0] };
       }),
     [],
   );
+  const close = useCallback((key) => closeMany(() => [key]), [closeMany]);
   const openTicket = useCallback((id) => open(`t:${id}`), [open]);
 
   // Links in Ali's notification mail end in #ticket=<id>: open that ticket.
@@ -228,46 +225,82 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
     else setSidebar((s) => !s);
   }, [narrow]);
 
-  // ⌘K the palette, ⌘B the explorer, N a new task; Escape puts the drawer away.
+  const allowedViews = VIEWS.filter((v) => workbenchAllowed(v.key, data.access));
+  const visibleTabs = tabs.filter((key) => workbenchAllowed(key, data.access));
+
+  // The keyboard map (contract §6). Every shortcut stands down while a text
+  // field has focus (except the modifier ones) or a layer is open.
   const shell = useRef({});
-  shell.current = { palette, modal, ask, ready: data.loaded && !signedOut };
+  shell.current = { palette, modal, ask, keys, ready: data.loaded && !signedOut, active, visibleTabs, allowedViews, drawer };
   useEffect(() => {
     const onKey = (e) => {
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
-      if (mod && key === 'k') {
+      const state = shell.current;
+      const typing = typingIn(e.target);
+      const viaWeb = e.ctrlKey && e.altKey;
+      if (mod && !e.altKey && key === 'k') {
         e.preventDefault();
         setPalette((p) => !p);
         return;
       }
-      if (mod && key === 'b') {
+      if (layerOpen() || state.palette) return;
+      if (mod && !e.altKey && key === 'b') {
         e.preventDefault();
         toggleExplorer();
         return;
       }
-      if (e.key === 'Escape') {
-        setDrawer(false);
+      // ⌘1…8 in the Harness; Ctrl+Alt+1…8 anywhere (the browser keeps ⌘digits).
+      const digit = /^Digit([1-8])$/.exec(e.code)?.[1];
+      if (digit && state.ready && ((platform === 'dsh' && mod && !e.altKey) || viaWeb)) {
+        const view = VIEWS[Number(digit) - 1];
+        if (view && workbenchAllowed(view.key, data.access)) {
+          e.preventDefault();
+          open(view.key);
+        }
         return;
       }
-      const el = e.target;
-      const typing = el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT' || el?.isContentEditable;
-      const state = shell.current;
-      if (!mod && !e.altKey && key === 'n' && !typing && state.ready && !state.palette && !state.modal && !state.ask) {
+      if (e.code === 'KeyW' && ((platform === 'dsh' && mod && !e.altKey) || viaWeb)) {
+        e.preventDefault();
+        if (state.active) close(state.active);
+        return;
+      }
+      if (e.ctrlKey && e.key === 'Tab' && state.visibleTabs.length > 1) {
+        e.preventDefault();
+        const i = state.visibleTabs.indexOf(state.active);
+        const next = state.visibleTabs[(i + (e.shiftKey ? -1 : 1) + state.visibleTabs.length) % state.visibleTabs.length];
+        setTabs((s) => ({ ...s, active: next }));
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (state.drawer) setDrawer(false);
+        return;
+      }
+      if (typing || mod || e.altKey || !state.ready || state.modal || state.ask) return;
+      if (key === 'n') {
         e.preventDefault();
         setModal({ kind: 'task' });
+      } else if (e.key === '?') {
+        e.preventDefault();
+        setKeys(true);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [toggleExplorer]);
+  }, [toggleExplorer, open, close, platform, data.access]);
 
   useEffect(() => {
     if (data.loaded && !workbenchAllowed(active, data.access)) open('board');
   }, [data.loaded, data.access, active, open]);
 
+  // The active tab is always in view, however many are open.
+  useEffect(() => {
+    tabRefs.current[active]?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [active]);
+
   const ctx = useMemo(
-    () => ({ api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, ask: setAsk, setModal, boardProject, setBoardProject }),
-    [api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, boardProject],
+    () => ({ api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, ask: setAsk, setModal, boardProject, setBoardProject, activeTab: active, closeTab: close }),
+    [api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, boardProject, active, close],
   );
 
   const inbox = needsYou(data);
@@ -286,8 +319,6 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
     return viewOf(key)?.label ?? key;
   };
 
-  const visibleTabs = tabs.filter((key) => workbenchAllowed(key, data.access));
-
   // A tablist behaves like a tablist: arrows move and activate, Home/End jump.
   const shiftTab = (e, key) => {
     const i = visibleTabs.indexOf(key);
@@ -297,87 +328,99 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
     else if (e.key === 'ArrowLeft') next = visibleTabs[(i - 1 + visibleTabs.length) % visibleTabs.length];
     else if (e.key === 'Home') next = visibleTabs[0];
     else if (e.key === 'End') next = visibleTabs[visibleTabs.length - 1];
+    else if (e.key === 'Delete') {
+      e.preventDefault();
+      close(key);
+      return;
+    }
     if (next == null) return;
     e.preventDefault();
     setTabs((s) => ({ ...s, active: next }));
     tabRefs.current[next]?.focus();
   };
 
+  const showExplorer = (!narrow && sidebar) || (narrow && drawer);
+  const main = allowedViews.filter((v) => v.key !== 'settings');
+  const settingsView = allowedViews.find((v) => v.key === 'settings');
+  const activityButton = (v) => (
+    <button
+      key={v.key}
+      type="button"
+      aria-label={v.label}
+      aria-current={active === v.key ? 'page' : undefined}
+      aria-keyshortcuts={platform === 'dsh' ? `Meta+${VIEWS.indexOf(v) + 1}` : `Control+Alt+${VIEWS.indexOf(v) + 1}`}
+      data-tip={`${v.label}  ${viewKey(platform, VIEWS.indexOf(v) + 1)}`}
+      data-tip-side="right"
+      onClick={() => open(v.key)}
+    >
+      <Icon name={v.icon} size={20} />
+      {v.key === 'inbox' && inboxCount ? <span className="aw-badge" aria-label={`${inboxCount} need you`}>{inboxCount}</span> : null}
+    </button>
+  );
+
   return (
     <AdminContext.Provider value={ctx}>
       <style>{STYLES}</style>
-      <div ref={rootRef} className={cx('aw', fullscreen && 'aw--fullscreen', `aw--${platform}`, underButtons && 'aw--inset')}>
+      <div ref={rootRef} className={cx('aw', fullscreen && 'aw--fullscreen', `aw--${platform}`, underButtons && 'aw--inset', !showExplorer && 'aw--noexplorer')}>
         <nav className="aw-activity" aria-label="Views">
-          {VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => (
-            <button key={v.key} type="button" title={v.label} aria-label={v.label} aria-pressed={active === v.key} onClick={() => open(v.key)}>
-              <Icon name={v.icon} size={20} />
-              {v.key === 'inbox' && inboxCount ? <span className="aw-badge">{inboxCount}</span> : null}
-            </button>
-          ))}
+          {main.map(activityButton)}
           <span className="aw-activity__spacer" />
-          <button type="button" title="New task (N)" aria-label="New task" aria-keyshortcuts="N" onClick={() => setModal({ kind: 'task' })}>
+          <button type="button" aria-label="New task" aria-keyshortcuts="N" data-tip="New task  N" data-tip-side="right" onClick={() => setModal({ kind: 'task' })}>
             <Icon name="plus" size={20} />
           </button>
-          <button type="button" title="Search and commands (⌘K)" aria-label="Search and commands" aria-keyshortcuts="Meta+K Control+K" onClick={() => setPalette(true)}>
+          <button type="button" aria-label="Search and commands" aria-keyshortcuts="Meta+K Control+K" data-tip={`Search and commands  ${MOD}K`} data-tip-side="right" onClick={() => setPalette(true)}>
             <Icon name="search" size={20} />
           </button>
+          {settingsView ? activityButton(settingsView) : null}
         </nav>
 
         {narrow && drawer ? <div className="aw-drawer-scrim" onClick={() => setDrawer(false)} /> : null}
-        {(!narrow && sidebar) || (narrow && drawer) ? <Explorer drawer={narrow} /> : null}
+        {showExplorer ? <Explorer drawer={narrow} /> : null}
         {!narrow && sidebar ? <Resizer host=".aw" cssVar="--aw-explorer-w" def={260} min={180} max={520} storage="aw.explorer.w" className="aw-resize--explorer" /> : null}
 
         <main className="aw-main">
           <div className="aw-tabs">
-            <Button kind="ghost" size="sm" className="aw-tabs__toggle" title="Toggle explorer (⌘B)" aria-label="Toggle explorer" aria-keyshortcuts="Meta+B Control+B" onClick={toggleExplorer}>
-              <Icon name="board" size={14} />
+            <Button
+              kind="ghost"
+              size="sm"
+              className="aw-tabs__toggle"
+              aria-label={showExplorer ? 'Hide explorer' : 'Show explorer'}
+              aria-expanded={showExplorer}
+              aria-keyshortcuts="Meta+B Control+B"
+              title={`${showExplorer ? 'Hide' : 'Show'} explorer (${MOD}B)`}
+              onClick={toggleExplorer}
+            >
+              <Icon name="sidebar" size={16} />
             </Button>
             <div className="aw-tablist" role="tablist" aria-label="Open views">
               {visibleTabs.map((key) => (
-                <div
+                <Tab
                   key={key}
-                  ref={(node) => {
+                  tabKey={key}
+                  active={key === active}
+                  label={tabLabel(key)}
+                  icon={key.startsWith('p:') ? 'folder' : key.startsWith('t:') ? 'ticket' : key.startsWith('c:') ? 'clients' : viewOf(key)?.icon ?? 'list'}
+                  closeShortcut={closeKey(platform)}
+                  refFn={(node) => {
                     if (node) tabRefs.current[key] = node;
                     else delete tabRefs.current[key];
                   }}
-                  role="tab"
-                  id={domId('aw-tab', key)}
-                  aria-selected={key === active}
-                  aria-controls={domId('aw-pane', key)}
-                  tabIndex={key === active ? 0 : -1}
-                  className={cx('aw-tab', key === active && 'is-active')}
-                  onClick={() => setTabs((s) => ({ ...s, active: key }))}
-                  onAuxClick={(e) => e.button === 1 && close(key)}
+                  onSelect={() => setTabs((s) => ({ ...s, active: key }))}
+                  onClose={() => close(key)}
+                  onCloseOthers={() => closeMany((all) => all.filter((t) => t !== key))}
+                  onCloseRight={() => closeMany((all) => all.slice(all.indexOf(key) + 1))}
+                  isLast={visibleTabs[visibleTabs.length - 1] === key}
+                  only={visibleTabs.length === 1}
                   onKeyDown={(e) => shiftTab(e, key)}
-                  title={tabLabel(key)}
-                >
-                  <Icon name={key.startsWith('p:') ? 'folder' : key.startsWith('t:') ? 'ticket' : key.startsWith('c:') ? 'clients' : viewOf(key)?.icon ?? 'list'} size={14} />
-                  <span className="aw-tab__label">{tabLabel(key)}</span>
-                  <button
-                    type="button"
-                    className="aw-tab__close"
-                    aria-label="Close tab"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      close(key);
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
+                />
               ))}
-              <span className="aw-tabs__fill" />
             </div>
-            <MachineStatusPill />
-            <Button kind="ghost" size="sm" title="Refresh" onClick={() => void reload()}>
-              <Icon name="refresh" size={14} />
-            </Button>
           </div>
 
           <div className="aw-content">
-            {!signedOut && data.error ? (
+            {!signedOut && data.error && data.loaded ? (
               <div className="aw-topbanner" role="alert">
-                <span>{errorText(data.error)}</span>
+                <span>{errorText(data.error)}{data.fetchedAt ? ` Showing data from ${new Date(data.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.` : ''}</span>
                 <Button size="sm" onClick={() => void reload()}>
                   Retry
                 </Button>
@@ -386,8 +429,8 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
             {signedOut ? (
               <SignedOut />
             ) : !data.loaded ? (
-              <div className="aw-loading aw-loading--fill" role="status">
-                <span>Loading…</span>
+              <div className="aw-loading--fill">
+                <Skeleton variant="pane" label="Loading the workbench…" />
               </div>
             ) : (
               visibleTabs.map((key) => (
@@ -407,10 +450,11 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
           </div>
         </main>
 
-        <StatusBar />
+        <StatusBar onPalette={() => setPalette(true)} onKeys={() => setKeys(true)} />
 
         <Toast toast={toast} onDismiss={dismissToast} />
-        {palette ? <Palette onClose={() => setPalette(false)} /> : null}
+        {palette ? <Palette onClose={() => setPalette(false)} onKeys={() => setKeys(true)} toggleExplorer={toggleExplorer} /> : null}
+        {keys ? <ShortcutSheet onClose={() => setKeys(false)} /> : null}
         <MachineOnboarding />
         {modal?.kind === 'task' ? <TaskModal preset={modal} onClose={() => setModal(null)} /> : null}
         {modal?.kind === 'project' ? <ProjectModal onClose={() => setModal(null)} /> : null}
@@ -418,6 +462,51 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
         {ask ? <Confirm ask={ask} onClose={() => setAsk(null)} /> : null}
       </div>
     </AdminContext.Provider>
+  );
+}
+
+/** One tab: click selects, middle-click closes, right-click (or Shift+F10) opens its menu. */
+function Tab({ tabKey, active, label, icon, refFn, onSelect, onClose, onCloseOthers, onCloseRight, isLast, only, onKeyDown, closeShortcut }) {
+  const ctxMenu = useContextMenu(() => [
+    { label: 'Close', shortcut: closeShortcut, run: onClose },
+    { label: 'Close others', run: onCloseOthers, disabled: only, disabledReason: 'This is the only tab.' },
+    { label: 'Close tabs to the right', run: onCloseRight, disabled: isLast, disabledReason: 'No tabs to the right.' },
+  ], 'Tab actions');
+  return (
+    <div
+      ref={refFn}
+      role="tab"
+      id={domId('aw-tab', tabKey)}
+      aria-selected={active}
+      aria-controls={domId('aw-pane', tabKey)}
+      tabIndex={active ? 0 : -1}
+      className={cx('aw-tab', active && 'is-active')}
+      onClick={onSelect}
+      onMouseDown={(e) => e.button === 1 && e.preventDefault()}
+      onAuxClick={(e) => e.button === 1 && onClose()}
+      onContextMenu={ctxMenu.bind.onContextMenu}
+      onKeyDown={(e) => {
+        ctxMenu.bind.onKeyDown(e);
+        if (!e.defaultPrevented) onKeyDown(e);
+      }}
+      title={label}
+    >
+      <Icon name={icon} size={14} />
+      <span className="aw-tab__label">{label}</span>
+      <button
+        type="button"
+        className="aw-tab__close"
+        aria-label={`Close ${label}`}
+        tabIndex={-1}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+      >
+        <Icon name="close" size={12} />
+      </button>
+      {ctxMenu.menu}
+    </div>
   );
 }
 
@@ -465,8 +554,10 @@ function SignedOut() {
 
 /* ————— the explorer: projects as folders, their open work ————— */
 
+const NEEDS_YOU = new Set(['new', 'review']);
+
 function Explorer({ drawer = false }) {
-  const { data, open, openTicket, setModal, setBoardProject, boardProject } = useAdminCtx();
+  const { data, open, openTicket, setModal, setBoardProject, boardProject, activeTab } = useAdminCtx();
   const [openSlug, setOpenSlug] = useState({});
   const byProject = new Map();
   for (const t of data.tickets) {
@@ -478,94 +569,176 @@ function Explorer({ drawer = false }) {
   const runningTicket = new Set(data.running.map((r) => r.ticket_id));
   return (
     <aside className={cx('aw-explorer', drawer && 'aw-explorer--drawer')} aria-label="Explorer">
-      <h3>Projects {data.access?.canUseWorkbench ? <Button kind="ghost" size="sm" title="New project" onClick={() => setModal({ kind: 'project' })}><Icon name="plus" size={12} /></Button> : null}</h3>
-      <ul className="aw-tree">
+      <h3>
+        Projects
+        {data.access?.canUseWorkbench ? <Button kind="ghost" size="sm" iconOnly icon="plus" aria-label="New project" onClick={() => setModal({ kind: 'project' })} /> : null}
+      </h3>
+      <ul className="aw-tree" role="tree" aria-label="Projects and open work">
         {data.projects.map((p) => {
           const items = (byProject.get(p.id) ?? []).filter(live);
           const expanded = openSlug[p.id] ?? items.length > 0;
           return (
-            <li key={p.id}>
-              <div className={cx('aw-tree__row', boardProject === p.id && 'is-active')}>
-                <button type="button" className="aw-tree__twist" onClick={() => setOpenSlug((s) => ({ ...s, [p.id]: !expanded }))} aria-label={expanded ? 'Collapse' : 'Expand'}>
-                  {expanded ? '▾' : '▸'}
-                </button>
-                <button
-                  type="button"
-                  className="aw-tree__name"
-                  onClick={() => {
-                    setBoardProject(p.id);
-                    open(`p:${p.id}`);
-                  }}
-                  title={`Open ${p.name}`}
-                >
-                  <Icon name="folder" size={14} /> {p.name}
-                </button>
-                {items.length ? <span className="aw-count">{items.length}</span> : null}
-              </div>
-              {expanded ? (
-                <ul>
-                  {items.map((t) => (
-                    <li key={t.id}>
-                      <button type="button" className="aw-tree__leaf" onClick={() => openTicket(t.id)} title={t.title}>
-                        <span className={`aw-sq aw-sq--${t.status}`} title={STATUS_LABEL[t.status] ?? t.status} />
-                        <span className="aw-tree__id">#{t.id}</span> {t.title}
-                        {runningTicket.has(t.id) ? <span className="aw-live" title="An agent is running" /> : null}
-                      </button>
-                    </li>
-                  ))}
-                  {!items.length ? <li className="aw-tree__none">No open work</li> : null}
-                </ul>
-              ) : null}
-            </li>
+            <ExplorerProject
+              key={p.id}
+              project={p}
+              items={items}
+              expanded={expanded}
+              selected={activeTab === `p:${p.id}` || boardProject === p.id}
+              activeTab={activeTab}
+              running={runningTicket}
+              onToggle={() => setOpenSlug((s) => ({ ...s, [p.id]: !expanded }))}
+              onOpen={() => {
+                setBoardProject(p.id);
+                open(`p:${p.id}`);
+              }}
+              onBoard={() => {
+                setBoardProject(p.id);
+                open('board');
+              }}
+              onTask={() => setModal({ kind: 'task', projectId: p.id })}
+              openTicket={openTicket}
+            />
           );
         })}
+        {!data.projects.length ? <li className="aw-tree__none" role="none">No projects yet</li> : null}
       </ul>
     </aside>
   );
 }
 
-function StatusBar() {
-  const { data, open } = useAdminCtx();
+function ExplorerProject({ project: p, items, expanded, selected, activeTab, running, onToggle, onOpen, onBoard, onTask, openTicket }) {
+  const menu = useContextMenu([
+    { label: 'Open project', run: onOpen },
+    { label: 'Show on the board', run: onBoard },
+    { label: 'New task in this project…', shortcut: 'N', run: onTask },
+    { separator: true },
+    { label: expanded ? 'Collapse' : 'Expand', run: onToggle },
+  ], `${p.name} actions`);
+  return (
+    <li role="treeitem" aria-expanded={expanded} aria-selected={selected}>
+      <div className={cx('aw-tree__row', selected && 'is-active')} {...menu.bind}>
+        <button type="button" className="aw-tree__twist" onClick={onToggle} aria-expanded={expanded} aria-label={expanded ? `Collapse ${p.name}` : `Expand ${p.name}`}>
+          <Icon name="chevron" size={12} />
+        </button>
+        <button type="button" className="aw-tree__name" onClick={onOpen} title={`Open ${p.name}`}>
+          <Icon name="folder" size={14} /> <span>{p.name}</span>
+        </button>
+        {items.length ? <span className="aw-count" aria-label={`${items.length} open`}>{items.length}</span> : null}
+      </div>
+      {expanded ? (
+        <ul role="group">
+          {items.map((t) => (
+            <ExplorerTicket key={t.id} t={t} active={activeTab === `t:${t.id}`} running={running.has(t.id)} openTicket={openTicket} />
+          ))}
+          {!items.length ? <li className="aw-tree__none" role="none">No open work</li> : null}
+        </ul>
+      ) : null}
+      {menu.menu}
+    </li>
+  );
+}
+
+function ExplorerTicket({ t, active, running, openTicket }) {
+  const { platform } = useAdminCtx();
+  const menu = useContextMenu([
+    { label: 'Open', run: () => openTicket(t.id) },
+    {
+      label: 'Copy link',
+      run: () => void navigator.clipboard?.writeText(`${platform === 'web' ? location.origin + location.pathname : 'https://ptechsolutions.net/portal/admin'}#ticket=${t.id}`),
+    },
+  ], `#${t.id} actions`);
+  const state = running ? 'live' : NEEDS_YOU.has(t.status) ? 'needs' : 'open';
+  const stateText = running ? 'agent running' : STATUS_LABEL[t.status] ?? t.status;
+  return (
+    <li role="treeitem" aria-selected={active}>
+      <div className={cx('aw-tree__leafrow', active && 'is-active')} {...menu.bind}>
+        <button type="button" className="aw-tree__leaf" onClick={() => openTicket(t.id)} title={`#${t.id} ${t.title} · ${stateText}`}>
+          <span className={cx('aw-mark', state !== 'open' && `aw-mark--${state}`)} aria-hidden="true" />
+          <span className="aw-tree__title">{t.title}</span>
+          <span className="aw-sr">, {stateText}</span>
+          <span className="aw-tree__id">#{t.id}</span>
+        </button>
+      </div>
+      {menu.menu}
+    </li>
+  );
+}
+
+/** One line: fleet health, this Mac, sync time (click = refresh), the palette and the key sheet. */
+function StatusBar({ onPalette, onKeys }) {
+  const { data, open, reload, platform } = useAdminCtx();
+  const [syncing, setSyncing] = useState(false);
   const online = data.nodes.filter((n) => n.online).length;
   const waiting = data.queue.length;
   const stuck = data.queue.filter((q) => !q.eligible.length).length;
+  const health = !data.nodes.length ? 'bad' : online === data.nodes.length ? 'ok' : online ? 'warn' : 'bad';
+  const sync = () => {
+    setSyncing(true);
+    void Promise.resolve(reload()).finally(() => setSyncing(false));
+  };
+  const time = data.fetchedAt ? new Date(data.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
   return (
     <footer className="aw-status">
       {data.access?.superAdmin ? (
-        <button type="button" onClick={() => open('fleet')} title="Fleet, nodes and the queue">
-          <Dot state={online === data.nodes.length && online ? 'ok' : online ? 'warn' : 'bad'} />
-          {online} {online === 1 ? 'node' : 'nodes'} · {data.running.length} running · {waiting} queued{stuck ? ` · ${stuck} stuck` : ''}
+        <button type="button" onClick={() => open('fleet')} title="Open Fleet: nodes, the queue and health">
+          <Dot state={health} />
+          <span>
+            {online} of {data.nodes.length} {data.nodes.length === 1 ? 'node' : 'nodes'} online · {data.running.length} running · {waiting} queued
+            {stuck ? ` · ${stuck} stuck` : ''}
+          </span>
         </button>
-      ) : <span>{data.projects.length} projects</span>}
+      ) : (
+        <span className="aw-status__item">{data.projects.length} {data.projects.length === 1 ? 'project' : 'projects'}</span>
+      )}
+      {platform === 'dsh' ? <MachineStatusPill /> : null}
       <span className="aw-status__fill" />
-      {data.error ? <span className="aw-status__err">{errorText(data.error)}</span> : null}
-      <span>{data.fetchedAt ? `updated ${new Date(data.fetchedAt).toLocaleTimeString()}` : ''}</span>
-      <span>⌘K</span>
+      <button type="button" onClick={sync} disabled={syncing} title="Refresh now (it also refreshes every 15 seconds)" className={data.error ? 'aw-status__err' : undefined}>
+        <Icon name="refresh" size={12} />
+        {syncing ? 'Syncing…' : data.error ? 'Sync failed · retry' : time ? `Synced ${time}` : 'Not synced yet'}
+      </button>
+      <button type="button" onClick={onPalette} title="Search and commands">
+        <kbd>{MOD}K</kbd>
+      </button>
+      <button type="button" onClick={onKeys} title="Keyboard shortcuts" aria-label="Keyboard shortcuts">
+        <kbd>?</kbd>
+      </button>
     </footer>
   );
 }
 
 /* ————— the palette: jump to anything, run any command ————— */
 
-function Palette({ onClose }) {
-  const { data, open, openTicket, setModal, reload } = useAdminCtx();
+function Palette({ onClose, onKeys, toggleExplorer }) {
+  const { data, open, openTicket, setModal, reload, activeTab, closeTab, platform } = useAdminCtx();
   const [q, setQ] = useState('');
   const [i, setI] = useState(0);
   const input = useRef(null);
-  useEffect(() => input.current?.focus(), []);
+  const listRef = useRef(null);
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    input.current?.focus();
+    return () => opener?.focus?.();
+  }, []);
   const { items, total } = useMemo(() => {
     const cmds = [
-      { label: 'New task…', hint: 'command', run: () => setModal({ kind: 'task' }) },
+      { label: 'New task…', hint: 'N', run: () => setModal({ kind: 'task' }) },
       ...(data.access?.canUseWorkbench ? [{ label: 'New project…', hint: 'command', run: () => setModal({ kind: 'project' }) }] : []),
       { label: 'Refresh', hint: 'command', run: () => void reload() },
-      ...VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => ({ label: `Go to ${v.label}`, hint: 'view', run: () => open(v.key) })),
+      { label: 'Toggle explorer', hint: `${MOD}B`, run: toggleExplorer },
+      ...(activeTab ? [{ label: 'Close tab', hint: closeKey(platform), run: () => closeTab(activeTab) }] : []),
+      { label: 'Keyboard shortcuts', hint: '?', run: onKeys },
+      ...VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => ({ label: `Go to ${v.label}`, hint: viewKey(platform, VIEWS.indexOf(v) + 1), run: () => open(v.key) })),
       ...data.projects.map((p) => ({ label: p.name, hint: 'project', run: () => open(`p:${p.id}`) })),
+      ...data.clients.map((c) => ({ label: c.name || c.email, hint: c.name ? `client · ${c.email}` : 'client', run: () => open(`c:${c.id}`) })),
       ...data.tickets.map((t) => ({ label: `#${t.id} ${t.title}`, hint: `${STATUS_LABEL[t.status]} · ${t.project_name ?? 'no project'}`, run: () => openTicket(t.id) })),
     ];
     const needle = q.trim().toLowerCase();
     const matched = needle ? cmds.filter((c) => `${c.label} ${c.hint}`.toLowerCase().includes(needle)) : cmds;
     return { items: matched.slice(0, 40), total: matched.length };
-  }, [q, data, open, openTicket, setModal, reload]);
+  }, [q, data, open, openTicket, setModal, reload, toggleExplorer, activeTab, closeTab, onKeys, platform]);
+  useEffect(() => {
+    listRef.current?.querySelector('.is-active')?.scrollIntoView?.({ block: 'nearest' });
+  }, [i]);
   const pick = (item) => {
     onClose();
     item?.run();
@@ -582,7 +755,7 @@ function Palette({ onClose }) {
           aria-autocomplete="list"
           aria-activedescendant={items[i] ? `aw-palette-option-${i}` : undefined}
           value={q}
-          placeholder="Search tickets, views and commands…"
+          placeholder="Search tickets, projects, clients and commands…"
           onChange={(e) => {
             setQ(e.target.value);
             setI(0);
@@ -591,10 +764,12 @@ function Palette({ onClose }) {
             if (e.key === 'Escape') onClose();
             else if (e.key === 'ArrowDown') (e.preventDefault(), setI((n) => Math.min(items.length - 1, n + 1)));
             else if (e.key === 'ArrowUp') (e.preventDefault(), setI((n) => Math.max(0, n - 1)));
+            else if (e.key === 'Home' && e.metaKey) (e.preventDefault(), setI(0));
             else if (e.key === 'Enter') pick(items[i]);
+            else if (e.key === 'Tab') e.preventDefault();
           }}
         />
-        <ul id="aw-palette-list" role="listbox" aria-label="Results">
+        <ul id="aw-palette-list" role="listbox" aria-label="Results" ref={listRef}>
           {items.map((item, n) => (
             <li
               key={item.label + n}
@@ -609,11 +784,45 @@ function Palette({ onClose }) {
               <small>{item.hint}</small>
             </li>
           ))}
-          {!items.length ? <li className="aw-muted" role="presentation">No matches</li> : null}
+          {!items.length ? <li className="aw-muted" role="presentation">No matches. Try a ticket number, a project or a view.</li> : null}
         </ul>
         {total > items.length ? <p className="aw-palette__count">Showing {items.length} of {total}</p> : null}
       </div>
     </div>
+  );
+}
+
+/** `?`: every shortcut on one sheet. */
+function ShortcutSheet({ onClose }) {
+  const { platform } = useAdminCtx();
+  const alt = isMac ? '⌃⌥' : 'Ctrl+Alt+';
+  const rows = [
+    [[`${MOD}K`], 'Search and commands'],
+    [[`${MOD}B`], 'Show or hide the explorer'],
+    [[platform === 'dsh' ? `${MOD}1…8` : `${alt}1…8`], 'Needs you, Board, All work, Marketing, SEO, Fleet, Clients, Settings'],
+    [[closeKey(platform)], 'Close the tab'],
+    [['⌃Tab', '⌃⇧Tab'], 'Next / previous tab'],
+    [['←', '→', 'Home', 'End'], 'Move along tabs and section tabs'],
+    [['N'], 'New task'],
+    [['/'], 'Filter the list (web)'],
+    [['J', 'K', '↑', '↓'], 'Move between rows'],
+    [['Return'], 'Open the row, or confirm'],
+    [['⇧F10'], 'Actions for the focused row or tab'],
+    [[`${MOD}Return`], 'Send or save the form'],
+    [['Esc'], 'Close the menu, dialog or drawer'],
+    [['?'], 'This sheet'],
+  ];
+  return (
+    <Modal title="Keyboard shortcuts" subtitle="Everything else is in the palette." onClose={onClose} wide>
+      <dl className="aw-keys">
+        {rows.map(([keys, what]) => (
+          <div key={what}>
+            <dt>{keys.map((k) => <kbd key={k} className="aw-kbd">{k}</kbd>)}</dt>
+            <dd>{what}</dd>
+          </div>
+        ))}
+      </dl>
+    </Modal>
   );
 }
 
@@ -659,7 +868,12 @@ export function TaskModal({ preset = {}, onClose }) {
             <Dot state={where.state} /> {where.text}
           </span> : <span className="aw-muted">{approve ? 'The agent will be queued.' : 'Draft only · no agent starts.'}</span>}
           <Button disabled={busy} onClick={onClose}>Cancel</Button>
-          <Button kind="primary" disabled={busy || !title.trim() || !brief.trim() || !projectId} onClick={submit}>
+          <Button
+            kind="primary"
+            disabled={busy || !title.trim() || !brief.trim() || !projectId}
+            disabledReason={busy ? undefined : !title.trim() ? 'Add a title first.' : !brief.trim() ? 'Write the brief first.' : !projectId ? 'Pick a project first.' : undefined}
+            onClick={submit}
+          >
             {busy ? 'Saving…' : approve ? 'Save and queue agent' : 'Save draft'}
           </Button>
         </>
@@ -762,7 +976,7 @@ export function ProjectModal({ onClose }) {
       actions={
         <>
           <Button disabled={busy} onClick={() => created ? go(created) : onClose()}>{created ? 'Open project' : 'Cancel'}</Button>
-          <Button kind="primary" disabled={busy || !ready} onClick={submit}>
+          <Button kind="primary" disabled={busy || !ready} disabledReason={busy ? undefined : 'Fill in the name and the required fields first.'} onClick={submit}>
             {busy ? 'Saving…' : created ? 'Retry local setup' : 'Create project'}
           </Button>
         </>
@@ -943,7 +1157,7 @@ export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
     return (
       <div className="aw" style={scope}>
         <style>{STYLES}</style>
-        <p className="aw-muted" style={{ padding: 12, fontSize: 12 }}>Loading ticket…</p>
+        <Skeleton variant="ticket" label="Loading ticket…" />
       </div>
     );
   }

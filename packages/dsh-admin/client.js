@@ -130,7 +130,7 @@ var __awPlugin = (() => {
 
   // host-react:react
   var R = globalThis.__AW_REACT__;
-  var { createContext, createElement, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } = R;
+  var { createContext, createElement, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } = R;
 
   // packages/admin-ui/src/run-evidence.js
   var sortedRuns = (runs = []) => [...runs].sort((a, b) => Number(b.id) - Number(a.id));
@@ -520,26 +520,111 @@ var __awPlugin = (() => {
 
   // packages/admin-ui/src/ui.jsx
   var modalSeq = 0;
+  var uidSeq = 0;
+  var useUid = (prefix) => {
+    const [id] = useState(() => `${prefix}-${++uidSeq}`);
+    return id;
+  };
   var cx = (...parts) => parts.filter(Boolean).join(" ");
-  function Button({ kind = "default", size, className, ...props }) {
-    return /* @__PURE__ */ jsx("button", { type: "button", className: cx("aw-btn", `aw-btn--${kind}`, size && `aw-btn--${size}`, className), ...props });
+  function useMedia(query) {
+    const read = () => typeof window !== "undefined" && Boolean(window.matchMedia?.(query).matches);
+    const [match, setMatch] = useState(read);
+    useEffect(() => {
+      if (typeof window === "undefined" || !window.matchMedia) return void 0;
+      const q = window.matchMedia(query);
+      const sync = () => setMatch(q.matches);
+      sync();
+      q.addEventListener("change", sync);
+      return () => q.removeEventListener("change", sync);
+    }, [query]);
+    return match;
+  }
+  function Button({ kind = "default", size, className, busy = false, disabledReason, icon, iconOnly = false, shortcut, tip, children, disabled, ...props }) {
+    const reasonId = useUid("aw-why");
+    const isDisabled = Boolean(disabled || busy);
+    const label = props["aria-label"] ?? (typeof children === "string" ? children : void 0);
+    const tipText = tip ?? (iconOnly ? [label, shortcut].filter(Boolean).join("  ") : shortcut ? `${label ?? ""}  ${shortcut}`.trim() : void 0);
+    const button = /* @__PURE__ */ jsxs(
+      "button",
+      {
+        type: "button",
+        className: cx("aw-btn", `aw-btn--${kind}`, size && `aw-btn--${size}`, iconOnly && "aw-btn--icon", className),
+        disabled: isDisabled,
+        "aria-busy": busy || props["aria-busy"] || void 0,
+        "aria-describedby": disabled && disabledReason ? reasonId : props["aria-describedby"],
+        "data-tip": !(disabled && disabledReason) && tipText && !props.title ? tipText : void 0,
+        ...props,
+        children: [
+          icon ? /* @__PURE__ */ jsx(Icon, { name: icon, size: size === "sm" ? 14 : 16 }) : null,
+          iconOnly ? null : children
+        ]
+      }
+    );
+    if (!(disabled && disabledReason)) return button;
+    return /* @__PURE__ */ jsxs("span", { className: "aw-btnwrap", "data-tip": disabledReason, children: [
+      button,
+      /* @__PURE__ */ jsx("span", { id: reasonId, className: "aw-sr", children: disabledReason })
+    ] });
   }
   var StatusPill = ({ status }) => /* @__PURE__ */ jsx("span", { className: `aw-pill aw-pill--${status}`, children: STATUS_LABEL[status] ?? status });
   var Dot = ({ state }) => /* @__PURE__ */ jsx("span", { className: `aw-dot aw-dot--${state}`, "aria-hidden": "true" });
   var Tag = ({ children, tone: tone2, title }) => /* @__PURE__ */ jsx("span", { className: cx("aw-tag", tone2 && `aw-tag--${tone2}`), title, children });
-  var BADGE_TONES = { neutral: null, info: "aw-tag--info", ok: "aw-tag--ok", warn: "aw-tag--warn", bad: "aw-tag--bad", accent: "aw-tag--accent" };
-  function Badge({ tone: tone2 = "neutral", children }) {
-    return /* @__PURE__ */ jsx("span", { className: cx("aw-tag", "aw-tag--pill", BADGE_TONES[tone2] ?? null), children });
+  var BADGE_TONES = { neutral: null, info: "aw-tag--info", ok: "aw-tag--ok", warn: "aw-tag--warn", bad: "aw-tag--bad", accent: "aw-tag--accent", dash: "aw-tag--dash" };
+  function Badge({ tone: tone2 = "neutral", children, title }) {
+    return /* @__PURE__ */ jsx("span", { className: cx("aw-tag", "aw-tag--pill", BADGE_TONES[tone2] ?? null), title, children });
   }
-  function Empty({ title, hint, action }) {
-    return /* @__PURE__ */ jsxs("div", { className: "aw-emptybox", children: [
+  function EmptyState({ title, hint, action, icon, inline = false }) {
+    return /* @__PURE__ */ jsxs("div", { className: cx("aw-emptybox", inline && "aw-emptybox--inline"), children: [
+      icon ? /* @__PURE__ */ jsx("span", { className: "aw-emptybox__icon", children: /* @__PURE__ */ jsx(Icon, { name: icon, size: 20 }) }) : null,
       /* @__PURE__ */ jsx("strong", { children: title }),
       hint ? /* @__PURE__ */ jsx("span", { className: "aw-emptybox__hint", children: hint }) : null,
       action ? /* @__PURE__ */ jsx("div", { className: "aw-emptybox__action", children: action }) : null
     ] });
   }
-  function Loading({ label = "Loading\u2026" }) {
-    return /* @__PURE__ */ jsx("div", { className: "aw-loading", role: "status", children: label });
+  var Empty = EmptyState;
+  function Skeleton({ variant = "text", lines = 3, rows = 6, label = "Loading\u2026" }) {
+    const bar = (w, extra) => /* @__PURE__ */ jsx("span", { className: cx("aw-skel__bar", extra), style: { width: w } });
+    const widths = ["92%", "78%", "85%", "64%", "88%", "70%"];
+    let body;
+    if (variant === "board") {
+      body = /* @__PURE__ */ jsx("div", { className: "aw-skel__lanes", children: [3, 2, 2, 1, 2].map((n, i) => /* @__PURE__ */ jsxs("div", { className: "aw-skel__lane", children: [
+        bar("40%"),
+        Array.from({ length: n }, (_, j) => /* @__PURE__ */ jsx("span", { className: "aw-skel__card" }, j))
+      ] }, i)) });
+    } else if (variant === "rows" || variant === "table") {
+      body = Array.from({ length: rows }, (_, i) => /* @__PURE__ */ jsxs("div", { className: "aw-skel__row", children: [
+        bar("36px"),
+        bar(widths[i % widths.length].replace("%", "") * 4 + "px"),
+        variant === "table" ? bar("80px") : null,
+        variant === "table" ? bar("64px") : null
+      ] }, i));
+    } else if (variant === "pane" || variant === "ticket") {
+      body = /* @__PURE__ */ jsxs(Fragment2, { children: [
+        bar("34%", "aw-skel__bar--title"),
+        bar("52%"),
+        /* @__PURE__ */ jsx("div", { style: { height: 12 } }),
+        Array.from(
+          { length: variant === "ticket" ? 3 : rows },
+          (_, i) => variant === "ticket" ? /* @__PURE__ */ jsxs("div", { className: "aw-skel", style: { gap: 8 }, children: [
+            bar("18%"),
+            bar(widths[i]),
+            bar(widths[i + 2])
+          ] }, i) : /* @__PURE__ */ jsxs("div", { className: "aw-skel__row", children: [
+            bar("36px"),
+            bar(widths[i % widths.length].replace("%", "") * 5 + "px")
+          ] }, i)
+        )
+      ] });
+    } else {
+      body = Array.from({ length: lines }, (_, i) => /* @__PURE__ */ jsx("span", { className: "aw-skel__bar", style: { width: widths[i % widths.length] } }, i));
+    }
+    return /* @__PURE__ */ jsxs("div", { className: cx("aw-skel", (variant === "pane" || variant === "ticket") && "aw-skel--pane"), role: "status", "aria-live": "polite", children: [
+      /* @__PURE__ */ jsx("span", { className: "aw-sr", children: label }),
+      body
+    ] });
+  }
+  function Loading({ label = "Loading\u2026", variant = "rows" }) {
+    return /* @__PURE__ */ jsx("div", { className: "aw-loading", children: /* @__PURE__ */ jsx(Skeleton, { variant, rows: 4, label }) });
   }
   function ErrorNote({ error, onRetry }) {
     return /* @__PURE__ */ jsxs("div", { className: "aw-errornote", role: "alert", children: [
@@ -559,17 +644,26 @@ var __awPlugin = (() => {
       children
     ] });
   }
-  function PageHeader({ title, subtitle, meta, actions }) {
+  function PageHeader({ title, subtitle, meta, actions, secondary, overflow, back }) {
+    const narrow = useMedia("(max-width: 600px)");
+    const extra = secondary?.filter(Boolean) ?? [];
+    const menu = [...narrow ? extra : [], ...overflow?.filter(Boolean) ?? []];
     return /* @__PURE__ */ jsxs("header", { className: "aw-pagehead", children: [
       /* @__PURE__ */ jsxs("div", { className: "aw-pagehead__titles", children: [
+        back ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", icon: "chevronLeft", onClick: back.run, children: back.label }) : null,
         /* @__PURE__ */ jsx("h2", { children: title }),
-        subtitle ? /* @__PURE__ */ jsx("p", { children: subtitle }) : null
+        subtitle ? /* @__PURE__ */ jsx("p", { title: typeof subtitle === "string" ? subtitle : void 0, children: subtitle }) : null
       ] }),
-      meta || actions ? /* @__PURE__ */ jsxs("div", { className: "aw-pagehead__side", children: [
+      meta || actions || extra.length || menu.length ? /* @__PURE__ */ jsxs("div", { className: "aw-pagehead__side", children: [
         meta ? /* @__PURE__ */ jsx("div", { className: "aw-pagehead__meta", children: meta }) : null,
-        actions ? /* @__PURE__ */ jsx("div", { className: "aw-pagehead__actions", children: actions }) : null
+        extra.length && !narrow ? /* @__PURE__ */ jsx("div", { className: "aw-pagehead__actions aw-pagehead__secondary", children: extra.map((item) => /* @__PURE__ */ jsx(Button, { disabled: item.disabled, disabledReason: item.disabledReason, busy: item.busy, kind: item.danger ? "danger" : "default", onClick: item.run, title: item.hint, children: item.label }, item.label)) }) : null,
+        actions ? /* @__PURE__ */ jsx("div", { className: "aw-pagehead__actions", children: actions }) : null,
+        menu.length ? /* @__PURE__ */ jsx(OverflowMenu, { items: menu }) : null
       ] }) : null
     ] });
+  }
+  function Toolbar({ children, label }) {
+    return /* @__PURE__ */ jsx("div", { className: "aw-toolbar", role: "toolbar", "aria-label": label, children });
   }
   function StatRow({ items }) {
     return /* @__PURE__ */ jsx("div", { className: "aw-statrow", children: (items ?? []).map((it, i) => /* @__PURE__ */ jsxs("div", { className: cx("aw-statrow__item", it.tone && `aw-statrow__item--${it.tone}`), title: it.hint, children: [
@@ -644,7 +738,8 @@ var __awPlugin = (() => {
       const opt = options.find((o) => String(o.value) === next.dataset.value);
       if (opt && opt.value !== value) onChange(opt.value);
     };
-    return /* @__PURE__ */ jsx("div", { className: "aw-seg", role: "radiogroup", "aria-label": label, ref, onKeyDown: onKey, children: options.map((o) => /* @__PURE__ */ jsx(
+    const hasChecked = options.some((o) => o.value === value);
+    return /* @__PURE__ */ jsx("div", { className: "aw-seg", role: "radiogroup", "aria-label": label, ref, onKeyDown: onKey, children: options.map((o, i) => /* @__PURE__ */ jsx(
       "button",
       {
         type: "button",
@@ -653,6 +748,7 @@ var __awPlugin = (() => {
         disabled: disabled || o.disabled,
         "aria-checked": o.value === value,
         "aria-pressed": o.value === value,
+        tabIndex: o.value === value || !hasChecked && i === 0 ? 0 : -1,
         title: o.hint,
         onClick: () => onChange(o.value),
         children: o.label
@@ -676,6 +772,7 @@ var __awPlugin = (() => {
       const idx = btns.indexOf(document.activeElement);
       const next = e.key === "Home" ? 0 : e.key === "End" ? btns.length - 1 : (idx === -1 ? 0 : idx + (e.key === "ArrowRight" ? 1 : -1) + btns.length) % btns.length;
       btns[next].focus();
+      btns[next].scrollIntoView?.({ block: "nearest", inline: "nearest" });
       const item = list2[next];
       if (item && item.value !== value) onChange(item.value);
     };
@@ -698,28 +795,45 @@ var __awPlugin = (() => {
       );
     }) });
   }
-  function Field({ label, hint, children }) {
+  function Field({ label, hint, error, children }) {
     return /* @__PURE__ */ jsxs("label", { className: "aw-field", children: [
       /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: label }),
       children,
-      hint ? /* @__PURE__ */ jsx("span", { className: "aw-field__hint", children: hint }) : null
+      error ? /* @__PURE__ */ jsx("span", { className: "aw-field__error", role: "alert", children: error }) : hint ? /* @__PURE__ */ jsx("span", { className: "aw-field__hint", children: hint }) : null
     ] });
   }
   var FOCUSABLE = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
-  function Modal({ title, subtitle, onClose, children, actions, wide, full, focus }) {
+  var layers = [];
+  var isTop = (token) => layers[layers.length - 1] === token;
+  function useLayer() {
+    const [token] = useState(() => ({}));
+    useEffect(() => {
+      layers.push(token);
+      return () => {
+        const i = layers.indexOf(token);
+        if (i >= 0) layers.splice(i, 1);
+      };
+    }, [token]);
+    return token;
+  }
+  var layerOpen = () => layers.length > 0;
+  function Modal({ title, subtitle, onClose, children, actions, wide, full, focus, sheet }) {
     const ref = useRef(null);
+    const layer = useLayer();
     const [titleId] = useState(() => `aw-modal-title-${++modalSeq}`);
     useEffect(() => {
       const root = ref.current;
       const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      const first = (focus ? root?.querySelector(focus) : null) ?? root?.querySelector(FOCUSABLE);
+      const first = (focus ? root?.querySelector(focus) : null) ?? root?.querySelector(".aw-modal__body :is(input:not(:disabled):not([type=hidden]), textarea:not(:disabled), select:not(:disabled))") ?? root?.querySelector(".aw-modal__foot button:not(:disabled)") ?? root;
       first?.focus();
-      return () => opener?.focus();
+      return () => opener?.focus?.();
     }, []);
     useEffect(() => {
       const root = ref.current;
       const onKey = (e) => {
+        if (!isTop(layer)) return;
         if (e.key === "Escape") {
+          e.stopPropagation();
           onClose();
           return;
         }
@@ -737,14 +851,14 @@ var __awPlugin = (() => {
       };
       window.addEventListener("keydown", onKey);
       return () => window.removeEventListener("keydown", onKey);
-    }, [onClose]);
-    return /* @__PURE__ */ jsx("div", { className: "aw-scrim", onMouseDown: (e) => e.target === e.currentTarget && onClose(), children: /* @__PURE__ */ jsxs("div", { className: cx("aw-modal", wide && "aw-modal--wide", full && "aw-modal--full"), role: "dialog", "aria-modal": "true", "aria-labelledby": titleId, ref, children: [
+    }, [onClose, layer]);
+    return /* @__PURE__ */ jsx("div", { className: "aw-scrim", onMouseDown: (e) => e.target === e.currentTarget && onClose(), children: /* @__PURE__ */ jsxs("div", { className: cx("aw-modal", wide && "aw-modal--wide", full && "aw-modal--full", sheet && "aw-modal--sheet"), role: "dialog", "aria-modal": "true", "aria-labelledby": titleId, ref, tabIndex: -1, children: [
       /* @__PURE__ */ jsxs("header", { className: "aw-modal__head", children: [
         /* @__PURE__ */ jsxs("div", { children: [
           /* @__PURE__ */ jsx("h2", { id: titleId, children: title }),
           subtitle ? /* @__PURE__ */ jsx("p", { children: subtitle }) : null
         ] }),
-        /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", onClick: onClose, "aria-label": "Close", children: "\u2715" })
+        /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", iconOnly: true, icon: "close", onClick: onClose, "aria-label": "Close", tip: "Close  Esc" })
       ] }),
       /* @__PURE__ */ jsx("div", { className: "aw-modal__body", children }),
       actions ? /* @__PURE__ */ jsx("footer", { className: "aw-modal__foot", children: actions }) : null
@@ -774,9 +888,9 @@ var __awPlugin = (() => {
         title: ask.title,
         subtitle: ask.text,
         onClose: close,
-        focus: ".aw-confirm",
+        focus: ask.danger ? ".aw-confirm-cancel" : ".aw-confirm",
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: close, disabled: busy, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { className: "aw-confirm-cancel", onClick: close, disabled: busy, children: "Cancel" }),
           /* @__PURE__ */ jsx(Button, { className: "aw-confirm", kind: ask.danger ? "danger" : "primary", disabled: busy, "aria-busy": busy, onClick: () => {
             void run();
           }, children: ask.confirm })
@@ -784,6 +898,181 @@ var __awPlugin = (() => {
         children: error ? /* @__PURE__ */ jsx("p", { className: "aw-error", role: "alert", children: error }) : null
       }
     );
+  }
+  function Toast({ toast, onDismiss }) {
+    if (!toast) return null;
+    return /* @__PURE__ */ jsxs("div", { className: cx("aw-toast", toast.kind === "error" && "is-error"), role: toast.kind === "error" ? "alert" : "status", children: [
+      /* @__PURE__ */ jsx("span", { children: toast.text }),
+      /* @__PURE__ */ jsx("button", { type: "button", className: "aw-toast__close", "aria-label": "Dismiss", onClick: onDismiss, children: /* @__PURE__ */ jsx(Icon, { name: "close", size: 14 }) })
+    ] });
+  }
+  function Menu({ items, at, anchor, onClose, label = "Actions" }) {
+    const ref = useRef(null);
+    const layer = useLayer();
+    const list2 = items.filter(Boolean);
+    const actionable = list2.map((it, i) => it.separator || it.heading || it.disabled ? -1 : i).filter((i) => i >= 0);
+    const [active, setActive] = useState(actionable[0] ?? -1);
+    const [pos, setPos] = useState(() => ({ left: at?.x ?? 0, top: at?.y ?? 0, visibility: "hidden" }));
+    const opener = useRef(null);
+    const typed = useRef({ text: "", at: 0 });
+    useLayoutEffect(() => {
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const el = ref.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      let left = at?.x ?? 0;
+      let top = at?.y ?? 0;
+      if (anchor?.current) {
+        const a = anchor.current.getBoundingClientRect();
+        left = a.right - r.width;
+        top = a.bottom + 4;
+        if (left < 8) left = a.left;
+      }
+      left = Math.max(8, Math.min(left, window.innerWidth - r.width - 8));
+      if (top + r.height > window.innerHeight - 8) top = Math.max(8, (anchor?.current ? anchor.current.getBoundingClientRect().top - 4 : top) - r.height);
+      setPos({ left, top, visibility: "visible" });
+      el.focus();
+    }, []);
+    const close = useCallback((restore = true) => {
+      onClose();
+      if (restore) opener.current?.focus?.();
+    }, [onClose]);
+    useEffect(() => {
+      const down = (e) => {
+        if (ref.current && !ref.current.contains(e.target)) close(false);
+      };
+      const blur = () => close(false);
+      window.addEventListener("pointerdown", down, true);
+      window.addEventListener("blur", blur);
+      window.addEventListener("resize", blur);
+      return () => {
+        window.removeEventListener("pointerdown", down, true);
+        window.removeEventListener("blur", blur);
+        window.removeEventListener("resize", blur);
+      };
+    }, [close]);
+    const run = (item) => {
+      if (!item || item.disabled || item.separator || item.heading) return;
+      close(true);
+      setTimeout(() => item.run?.(), 0);
+    };
+    const step = (dir) => {
+      if (!actionable.length) return;
+      const at0 = actionable.indexOf(active);
+      const next = at0 < 0 ? dir > 0 ? 0 : actionable.length - 1 : (at0 + dir + actionable.length) % actionable.length;
+      setActive(actionable[next]);
+    };
+    const onKey = (e) => {
+      if (!isTop(layer)) return;
+      e.stopPropagation();
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        step(1);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        step(-1);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        setActive(actionable[0]);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        setActive(actionable[actionable.length - 1]);
+      } else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        run(list2[active]);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        close(true);
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        close(true);
+      } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const now = Date.now();
+        typed.current = { text: (now - typed.current.at < 600 ? typed.current.text : "") + e.key.toLowerCase(), at: now };
+        const hit = actionable.find((i) => String(list2[i].label).toLowerCase().startsWith(typed.current.text));
+        if (hit != null) setActive(hit);
+      }
+    };
+    const menuId = useUid("aw-menu");
+    return /* @__PURE__ */ jsx(
+      "ul",
+      {
+        ref,
+        id: menuId,
+        className: "aw-menu",
+        role: "menu",
+        "aria-label": label,
+        tabIndex: -1,
+        "aria-activedescendant": active >= 0 ? `${menuId}-${active}` : void 0,
+        style: pos,
+        onKeyDown: onKey,
+        onClick: (e) => e.stopPropagation(),
+        onMouseDown: (e) => e.stopPropagation(),
+        onContextMenu: (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        },
+        children: list2.map(
+          (item, i) => item.separator ? /* @__PURE__ */ jsx("li", { className: "aw-menu__sep", role: "separator" }, `s${i}`) : item.heading ? /* @__PURE__ */ jsx("li", { className: "aw-menu__label", role: "presentation", children: item.heading }, `h${i}`) : /* @__PURE__ */ jsxs(
+            "li",
+            {
+              id: `${menuId}-${i}`,
+              role: "menuitem",
+              "aria-disabled": item.disabled || void 0,
+              className: cx("aw-menu__item", item.danger && "aw-menu__item--danger", i === active && "is-active"),
+              title: item.disabled ? item.disabledReason : item.hint,
+              onMouseEnter: () => setActive(item.disabled ? -1 : i),
+              onClick: () => run(item),
+              children: [
+                /* @__PURE__ */ jsxs("span", { children: [
+                  item.label,
+                  item.disabled && item.disabledReason ? /* @__PURE__ */ jsxs("span", { className: "aw-sr", children: [
+                    " \u2014 ",
+                    item.disabledReason
+                  ] }) : null
+                ] }),
+                item.shortcut ? /* @__PURE__ */ jsx("small", { children: item.shortcut }) : null
+              ]
+            },
+            `${item.label}-${i}`
+          )
+        )
+      }
+    );
+  }
+  function OverflowMenu({ items, label = "More actions", size }) {
+    const [open, setOpen] = useState(false);
+    const anchor = useRef(null);
+    const list2 = items.filter(Boolean);
+    if (!list2.length) return null;
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx(Button, { ref: anchor, kind: "ghost", size, iconOnly: true, icon: "more", "aria-label": label, "aria-haspopup": "menu", "aria-expanded": open, onClick: () => setOpen((o) => !o) }),
+      open ? /* @__PURE__ */ jsx(Menu, { items: list2, anchor, label, onClose: () => setOpen(false) }) : null
+    ] });
+  }
+  function useContextMenu(items, label = "Actions") {
+    const [state, setState] = useState(null);
+    const openAt = (x, y) => {
+      const list2 = (typeof items === "function" ? items() : items)?.filter(Boolean) ?? [];
+      if (list2.length) setState({ x, y, list: list2 });
+    };
+    const bind = {
+      onContextMenu: (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openAt(e.clientX, e.clientY);
+      },
+      onKeyDown: (e) => {
+        if (e.key === "ContextMenu" || e.shiftKey && e.key === "F10") {
+          e.preventDefault();
+          e.stopPropagation();
+          const r = e.currentTarget.getBoundingClientRect();
+          openAt(r.left + 16, r.top + Math.min(r.height, 28));
+        }
+      }
+    };
+    const menu = state ? /* @__PURE__ */ jsx(Menu, { items: state.list, at: { x: state.x, y: state.y }, label, onClose: () => setState(null) }) : null;
+    return { bind, menu, open: openAt };
   }
   var PATHS = {
     inbox: "M3 13h4l2 3h6l2-3h4M5 5h14l2 8v6H3v-6z",
@@ -800,10 +1089,17 @@ var __awPlugin = (() => {
     play: "M7 5l12 7-12 7z",
     megaphone: "M3 10v4a1 1 0 0 0 1 1h2l4 3V6L6 9H4a1 1 0 0 0-1 1zM14 8a5 5 0 0 1 0 8M17 5a9 9 0 0 1 0 14",
     seo: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.5 4 5.7 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.7-4-9s1.5-6.5 4-9z",
-    pulse: "M3 12h4l2-6 4 12 2-6h6"
+    pulse: "M3 12h4l2-6 4 12 2-6h6",
+    more: "M5 12h.01M12 12h.01M19 12h.01",
+    close: "M6 6l12 12M18 6L6 18",
+    chevron: "M9 6l6 6-6 6",
+    chevronLeft: "M15 6l-6 6 6 6",
+    sidebar: "M4 5h16v14H4zM9 5v14",
+    keyboard: "M3 7h18v10H3zM7 11h.01M11 11h.01M15 11h.01M7 14h10",
+    check: "M5 12l5 5 9-10"
   };
   function Icon({ name, size = 16 }) {
-    return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] }) });
+    return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: name === "more" ? 2.6 : 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", focusable: "false", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] ?? PATHS.list }) });
   }
 
   // packages/admin-ui/src/row-navigation.mjs
@@ -847,8 +1143,18 @@ var __awPlugin = (() => {
     };
     return { boardProject, setBoardProject, kind, setKind, q, setQ, apply: apply2, hits };
   }
+  function NewTaskButton({ f }) {
+    const { setModal } = useAdmin();
+    return /* @__PURE__ */ jsx(Button, { kind: "primary", icon: "plus", shortcut: "N", onClick: () => setModal({ kind: "task", projectId: f.boardProject === "all" ? void 0 : f.boardProject }), children: "New task" });
+  }
+  var filtered = (f) => f.boardProject !== "all" || f.kind !== "all" || f.q.trim();
+  var clearFilters = (f) => {
+    f.setBoardProject("all");
+    f.setKind("all");
+    f.setQ("");
+  };
   function FilterBar({ f, extra }) {
-    const { data, setModal, platform } = useAdmin();
+    const { data, platform } = useAdmin();
     const search = useRef(null);
     useEffect(() => {
       if (platform !== "web") return void 0;
@@ -861,7 +1167,8 @@ var __awPlugin = (() => {
       window.addEventListener("keydown", onKey);
       return () => window.removeEventListener("keydown", onKey);
     }, [platform]);
-    return /* @__PURE__ */ jsxs("div", { className: "aw-toolbar", children: [
+    return /* @__PURE__ */ jsxs(Toolbar, { label: "Filters", children: [
+      /* @__PURE__ */ jsx("input", { ref: search, className: "aw-search", type: "search", value: f.q, "aria-label": "Filter, or search threads", "aria-keyshortcuts": platform === "web" ? "/" : void 0, placeholder: "Filter, or search threads\u2026", onChange: (e) => f.setQ(e.target.value) }),
       /* @__PURE__ */ jsxs("select", { value: f.boardProject, onChange: (e) => f.setBoardProject(e.target.value), "aria-label": "Project", children: [
         /* @__PURE__ */ jsx("option", { value: "all", children: "All projects" }),
         data.projects.map((p) => /* @__PURE__ */ jsx("option", { value: p.id, children: p.name }, p.id))
@@ -875,16 +1182,13 @@ var __awPlugin = (() => {
             { value: "client", label: "Client" },
             { value: "system", label: MINE_LABEL }
           ],
-          onChange: f.setKind
+          onChange: f.setKind,
+          label: "Kind of work"
         }
       ),
-      /* @__PURE__ */ jsx("input", { ref: search, className: "aw-search", value: f.q, placeholder: "Filter, or search threads\u2026", onChange: (e) => f.setQ(e.target.value) }),
-      /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
       extra,
-      /* @__PURE__ */ jsxs(Button, { kind: "primary", size: "sm", onClick: () => setModal({ kind: "task", projectId: f.boardProject === "all" ? void 0 : f.boardProject }), children: [
-        /* @__PURE__ */ jsx(Icon, { name: "plus", size: 14 }),
-        " New task"
-      ] })
+      /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+      filtered(f) ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", onClick: () => clearFilters(f), children: "Clear filters" }) : null
     ] });
   }
   function useMove() {
@@ -901,6 +1205,26 @@ var __awPlugin = (() => {
       }
       return setStatus(t, s);
     };
+  }
+  var ROW_MOVES = {
+    new: [["approved", "Approve"], ["declined", "Decline"]],
+    approved: [["new", "Hold"]],
+    review: [["done", "Mark done"], ["approved", RUN_AGAIN]],
+    done: [["approved", RUN_AGAIN]],
+    declined: [["new", "Reopen"]]
+  };
+  function useTicketMenu(t) {
+    const { openTicket, platform } = useAdmin();
+    const move = useMove();
+    return useContextMenu(() => [
+      { label: "Open", run: () => openTicket(t.id) },
+      {
+        label: "Copy link",
+        run: () => void navigator.clipboard?.writeText(`${platform === "web" ? location.origin + location.pathname : "https://ptechsolutions.net/portal/admin"}#ticket=${t.id}`)
+      },
+      ...ROW_MOVES[t.status]?.length ? [{ separator: true }] : [],
+      ...(ROW_MOVES[t.status] ?? []).map(([s, label]) => ({ label, run: () => void move(t, s), danger: s === "declined" }))
+    ], `#${t.id} actions`);
   }
   function useRowNav(count, open) {
     const { platform } = useAdmin();
@@ -930,6 +1254,7 @@ var __awPlugin = (() => {
   };
   function TicketCard({ t, draggable, cell, onKey }) {
     const { data, openTicket } = useAdmin();
+    const menu = useTicketMenu(t);
     const run = data.running.find((r) => r.ticket_id === t.id);
     const queued = data.queue.find((q) => q.id === t.id);
     const cost = chargeOf(t).totalCents;
@@ -937,6 +1262,8 @@ var __awPlugin = (() => {
       "article",
       {
         ref: cell ?? void 0,
+        onContextMenu: menu.bind.onContextMenu,
+        "aria-label": `#${t.id} ${t.title}`,
         className: cx("aw-card", run && "is-running", queued && !queued.eligible.length && "is-stuck"),
         draggable,
         onDragStart: (e) => {
@@ -944,7 +1271,10 @@ var __awPlugin = (() => {
           e.dataTransfer.effectAllowed = "move";
         },
         onClick: () => openTicket(t.id),
-        onKeyDown: onKey ?? ((e) => e.key === "Enter" && openTicket(t.id)),
+        onKeyDown: (e) => {
+          menu.bind.onKeyDown(e);
+          if (!e.defaultPrevented) (onKey ?? ((ev) => ev.key === "Enter" && openTicket(t.id)))(e);
+        },
         tabIndex: 0,
         children: [
           /* @__PURE__ */ jsxs("div", { className: "aw-card__top", children: [
@@ -952,16 +1282,15 @@ var __awPlugin = (() => {
               "#",
               t.id
             ] }),
-            t.kind === "system" ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: MINE_LABEL }) : /* @__PURE__ */ jsx(Tag, { tone: "client", children: "client" }),
-            t.source === "assistant" ? /* @__PURE__ */ jsx(Tag, { tone: "ok", title: "The client\u2019s own assistant (ChatGPT, \u2026) made this change on their subscription", children: "their AI" }) : null,
-            (t.priority ?? 0) > 0 ? /* @__PURE__ */ jsx(Tag, { tone: "hot", children: priorityName(t.priority) }) : null,
+            t.source === "assistant" ? /* @__PURE__ */ jsx(Tag, { title: "The client\u2019s own assistant (ChatGPT, \u2026) made this change on their subscription", children: "their AI" }) : null,
+            (t.priority ?? 0) > 0 ? /* @__PURE__ */ jsx(Tag, { children: priorityName(t.priority) }) : null,
             clientWaiting(t) ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "awaiting reply" }) : null,
             /* @__PURE__ */ jsx("span", { className: "aw-card__age", children: ago(t.updated_at) })
           ] }),
           /* @__PURE__ */ jsx("h4", { children: /* @__PURE__ */ jsx("a", { className: "aw-titlelink", href: `#ticket=${t.id}`, tabIndex: -1, onClick: titleLinkClick, children: t.title }) }),
           /* @__PURE__ */ jsxs("div", { className: "aw-card__meta", children: [
             /* @__PURE__ */ jsx("span", { children: t.project_name ?? "no project" }),
-            t.kind !== "system" && t.client_email ? /* @__PURE__ */ jsx("span", { children: t.client_email }) : null
+            t.kind === "system" ? /* @__PURE__ */ jsx("span", { children: MINE_LABEL }) : t.client_name || t.client_email ? /* @__PURE__ */ jsx("span", { title: t.client_email, children: t.client_name || t.client_email }) : null
           ] }),
           /* @__PURE__ */ jsxs("div", { className: "aw-card__foot", children: [
             run ? /* @__PURE__ */ jsxs("span", { className: "aw-running", children: [
@@ -975,7 +1304,12 @@ var __awPlugin = (() => {
             /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
             cost ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: money(cost) }) : null
           ] }),
-          queued && !queued.eligible.length ? /* @__PURE__ */ jsx("p", { className: "aw-card__warn", children: queued.reason }) : null
+          queued && !queued.eligible.length ? /* @__PURE__ */ jsxs("p", { className: "aw-card__warn", children: [
+            /* @__PURE__ */ jsx(Dot, { state: "bad" }),
+            " ",
+            /* @__PURE__ */ jsx("span", { children: queued.reason })
+          ] }) : null,
+          menu.menu
         ]
       }
     );
@@ -995,8 +1329,8 @@ var __awPlugin = (() => {
     const columns = showClosed ? STATUSES : STATUSES.filter((s) => s !== "declined");
     const byId = new Map(data.tickets.map((t) => [t.id, t]));
     return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-view--board", children: [
-      /* @__PURE__ */ jsx(PageHeader, { title: "Board", subtitle: "Every request by status. Drag a card to another column to move it." }),
-      /* @__PURE__ */ jsx(FilterBar, { f, extra: /* @__PURE__ */ jsx(Segmented, { value: showClosed, options: [{ value: false, label: "Open" }, { value: true, label: "+ Declined" }], onChange: setShowClosed }) }),
+      /* @__PURE__ */ jsx(PageHeader, { title: "Board", subtitle: "Every request by status. Drag a card to another column, or right-click it, to move it.", actions: /* @__PURE__ */ jsx(NewTaskButton, { f }) }),
+      /* @__PURE__ */ jsx(FilterBar, { f, extra: /* @__PURE__ */ jsx(Segmented, { label: "Columns", value: showClosed, options: [{ value: false, label: "Open" }, { value: true, label: "+ Declined" }], onChange: setShowClosed }) }),
       /* @__PURE__ */ jsx("div", { className: "aw-board", children: columns.map((s) => {
         let items = tickets.filter((t) => t.status === s);
         const more = s === "done" && items.length > 25 ? items.length - 25 : 0;
@@ -1018,7 +1352,7 @@ var __awPlugin = (() => {
             },
             children: [
               /* @__PURE__ */ jsxs("header", { title: STATUS_HINT[s], children: [
-                /* @__PURE__ */ jsx("span", { className: `aw-sq aw-sq--${s}` }),
+                /* @__PURE__ */ jsx("span", { className: `aw-sq aw-sq--${s}`, "aria-hidden": "true" }),
                 STATUS_LABEL[s],
                 /* @__PURE__ */ jsx("span", { className: "aw-count", children: tickets.filter((t) => t.status === s).length })
               ] }),
@@ -1039,14 +1373,14 @@ var __awPlugin = (() => {
     ] });
   }
   var COLUMNS = [
-    { key: "id", label: "#", get: (t) => t.id },
+    { key: "id", label: "#", get: (t) => t.id, num: true },
     { key: "title", label: "Title", get: (t) => t.title.toLowerCase() },
     { key: "status", label: "Status", get: (t) => STATUSES.indexOf(t.status) },
     { key: "project", label: "Project", get: (t) => t.project_name ?? "" },
     { key: "who", label: "For", get: (t) => t.kind === "system" ? "" : t.client_email ?? "" },
     { key: "priority", label: "Priority", get: (t) => t.priority ?? 0 },
     { key: "agent", label: "Agent", get: (t) => t.executor ?? "" },
-    { key: "cost", label: "Cost", get: (t) => chargeOf(t).totalCents },
+    { key: "cost", label: "Cost", get: (t) => chargeOf(t).totalCents, num: true },
     { key: "updated", label: "Updated", get: (t) => t.updated_at }
   ];
   function ListView() {
@@ -1060,7 +1394,7 @@ var __awPlugin = (() => {
     }, [data.tickets, f, status, sort]);
     const nav = useRowNav(rows.length, (i) => openTicket(rows[i].id));
     return /* @__PURE__ */ jsxs("div", { className: "aw-view", children: [
-      /* @__PURE__ */ jsx(PageHeader, { title: "All work", subtitle: "Every request in one table. Click a column to sort; click a row to open it." }),
+      /* @__PURE__ */ jsx(PageHeader, { title: "All work", subtitle: "Every request in one table. Click a column to sort; click a row to open it.", actions: /* @__PURE__ */ jsx(NewTaskButton, { f }) }),
       /* @__PURE__ */ jsx(
         FilterBar,
         {
@@ -1073,35 +1407,128 @@ var __awPlugin = (() => {
         }
       ),
       /* @__PURE__ */ jsxs("div", { className: "aw-tablewrap", children: [
-        /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
-          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { children: COLUMNS.map((c) => /* @__PURE__ */ jsxs("th", { onClick: () => setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : 1 })), "aria-sort": sort.key === c.key ? sort.dir > 0 ? "ascending" : "descending" : "none", children: [
+        /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--stack aw-table--rows", children: [
+          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { children: COLUMNS.map((c) => /* @__PURE__ */ jsx("th", { className: c.num ? "aw-num" : void 0, "aria-sort": sort.key === c.key ? sort.dir > 0 ? "ascending" : "descending" : "none", onClick: () => setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : 1 })), children: /* @__PURE__ */ jsxs("button", { type: "button", onClick: (e) => {
+            e.stopPropagation();
+            setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : 1 }));
+          }, children: [
             c.label,
             sort.key === c.key ? sort.dir > 0 ? " \u2191" : " \u2193" : ""
-          ] }, c.key)) }) }),
-          /* @__PURE__ */ jsx("tbody", { children: rows.map((t, i) => /* @__PURE__ */ jsxs("tr", { ref: nav.cell(i), onClick: () => openTicket(t.id), tabIndex: 0, onKeyDown: (e) => nav.onKey(e, i), children: [
-            /* @__PURE__ */ jsxs("td", { className: "aw-mono", children: [
-              "#",
-              t.id
-            ] }),
-            /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
-              /* @__PURE__ */ jsx("a", { className: "aw-titlelink", href: `#ticket=${t.id}`, tabIndex: -1, onClick: titleLinkClick, children: t.title }),
-              f.hits.get(t.id) ? /* @__PURE__ */ jsx("small", { className: "aw-muted aw-snippet", children: f.hits.get(t.id) }) : null
-            ] }),
-            /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(StatusPill, { status: t.status }) }),
-            /* @__PURE__ */ jsx("td", { children: t.project_name ?? "\u2014" }),
-            /* @__PURE__ */ jsx("td", { children: t.kind === "system" ? /* @__PURE__ */ jsx(Tag, { tone: "dash", children: MINE_LABEL }) : t.client_email }),
-            /* @__PURE__ */ jsx("td", { children: t.priority ? priorityName(t.priority) : "\u2014" }),
-            /* @__PURE__ */ jsx("td", { children: t.source === "assistant" ? "their assistant" : t.executor ?? "Auto" }),
-            /* @__PURE__ */ jsx("td", { children: money(chargeOf(t).totalCents) }),
-            /* @__PURE__ */ jsxs("td", { className: "aw-muted", children: [
-              ago(t.updated_at),
-              " ago"
-            ] })
-          ] }, t.id)) })
+          ] }) }, c.key)) }) }),
+          /* @__PURE__ */ jsx("tbody", { children: rows.map((t, i) => /* @__PURE__ */ jsx(ListRow, { t, hit: f.hits.get(t.id), cell: nav.cell(i), onKey: (e) => nav.onKey(e, i) }, t.id)) })
         ] }),
-        !rows.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Nothing matches." }) : null
+        !rows.length ? /* @__PURE__ */ jsx(
+          EmptyState,
+          {
+            title: data.tickets.length ? "Nothing matches these filters." : "No requests yet.",
+            hint: data.tickets.length ? "Clear the filters, or choose Everything in the status filter." : "Requests from clients and your own tasks appear here.",
+            action: data.tickets.length ? /* @__PURE__ */ jsx(Button, { onClick: () => {
+              clearFilters(f);
+              setStatusFilter("all");
+            }, children: "Clear filters" }) : /* @__PURE__ */ jsx(NewTaskButton, { f })
+          }
+        ) : null
       ] })
     ] });
+  }
+  function ListRow({ t, hit, cell, onKey }) {
+    const { openTicket } = useAdmin();
+    const menu = useTicketMenu(t);
+    return /* @__PURE__ */ jsxs(
+      "tr",
+      {
+        ref: cell,
+        onClick: () => openTicket(t.id),
+        tabIndex: 0,
+        onContextMenu: menu.bind.onContextMenu,
+        onKeyDown: (e) => {
+          menu.bind.onKeyDown(e);
+          if (!e.defaultPrevented) onKey(e);
+        },
+        children: [
+          /* @__PURE__ */ jsxs("td", { className: "aw-num aw-muted", children: [
+            "#",
+            t.id
+          ] }),
+          /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
+            /* @__PURE__ */ jsx("a", { className: "aw-titlelink", href: `#ticket=${t.id}`, tabIndex: -1, onClick: titleLinkClick, children: t.title }),
+            hit ? /* @__PURE__ */ jsx("small", { className: "aw-muted aw-snippet", children: hit }) : null,
+            menu.menu
+          ] }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Status", children: /* @__PURE__ */ jsx(StatusPill, { status: t.status }) }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Project", children: t.project_name ?? "\u2014" }),
+          /* @__PURE__ */ jsx("td", { "data-label": "For", children: t.kind === "system" ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: MINE_LABEL }) : t.client_email }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Priority", children: t.priority ? priorityName(t.priority) : /* @__PURE__ */ jsx("span", { className: "aw-faint", children: "Normal" }) }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Agent", children: t.source === "assistant" ? "their assistant" : t.executor ?? /* @__PURE__ */ jsx("span", { className: "aw-faint", children: "Auto" }) }),
+          /* @__PURE__ */ jsx("td", { "data-label": "Cost", className: "aw-num", children: money(chargeOf(t).totalCents) }),
+          /* @__PURE__ */ jsxs("td", { "data-label": "Updated", className: "aw-muted", children: [
+            ago(t.updated_at),
+            " ago"
+          ] })
+        ]
+      }
+    );
+  }
+  function InboxRow({ g, t, q, cell, onKey, move }) {
+    const { openTicket } = useAdmin();
+    const menu = useTicketMenu(t);
+    return /* @__PURE__ */ jsxs(
+      "li",
+      {
+        className: "aw-row",
+        tabIndex: 0,
+        ref: cell,
+        onContextMenu: menu.bind.onContextMenu,
+        onKeyDown: (e) => {
+          menu.bind.onKeyDown(e);
+          if (!e.defaultPrevented) onKey(e);
+        },
+        onClick: () => openTicket(t.id),
+        children: [
+          /* @__PURE__ */ jsxs("span", { className: "aw-mono aw-muted", children: [
+            "#",
+            t.id
+          ] }),
+          /* @__PURE__ */ jsx("a", { className: "aw-titlelink aw-row__title", href: `#ticket=${t.id}`, tabIndex: -1, onClick: titleLinkClick, title: t.title, children: t.title }),
+          /* @__PURE__ */ jsxs("span", { className: "aw-row__meta", children: [
+            t.kind === "system" ? MINE_LABEL : t.client_name || t.client_email,
+            " \xB7 ",
+            t.project_name ?? "no project"
+          ] }),
+          g.key === "stuck" && q ? /* @__PURE__ */ jsx("span", { className: "aw-warn aw-row__meta", children: q.reason }) : null,
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: g.key === "waiting" ? `waiting ${ago(t.client_waiting_since)}` : ago(t.updated_at) }),
+          /* @__PURE__ */ jsxs("span", { className: "aw-row__actions", children: [
+            (g.extra?.(t) ?? []).map(([label, run]) => /* @__PURE__ */ jsx(
+              Button,
+              {
+                size: "sm",
+                kind: "ghost",
+                onClick: (e) => {
+                  e.stopPropagation();
+                  void run();
+                },
+                children: label
+              },
+              label
+            )),
+            g.actions(t).map(([s, label]) => /* @__PURE__ */ jsx(
+              Button,
+              {
+                size: "sm",
+                kind: s === "declined" ? "ghost" : "default",
+                onClick: (e) => {
+                  e.stopPropagation();
+                  void move(t, s);
+                },
+                children: label
+              },
+              s
+            ))
+          ] }),
+          menu.menu
+        ]
+      }
+    );
   }
   function InboxView() {
     const { data, open, openTicket, act, api, reload } = useAdmin();
@@ -1148,53 +1575,25 @@ var __awPlugin = (() => {
             /* @__PURE__ */ jsx("span", { className: "aw-group__hint", children: g.hint })
           ] }),
           /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: g.items.map((t) => {
-            const q = data.queue.find((x) => x.id === t.id);
             const i = at.get(t);
-            return /* @__PURE__ */ jsxs("li", { className: "aw-row", tabIndex: 0, ref: nav.cell(i), onKeyDown: (e) => nav.onKey(e, i), onClick: () => openTicket(t.id), children: [
-              /* @__PURE__ */ jsxs("span", { className: "aw-mono aw-muted", children: [
-                "#",
-                t.id
-              ] }),
-              /* @__PURE__ */ jsx("a", { className: "aw-titlelink aw-row__title", href: `#ticket=${t.id}`, tabIndex: -1, onClick: titleLinkClick, title: t.title, children: t.title }),
-              t.kind === "system" ? /* @__PURE__ */ jsx(Badge, { children: MINE_LABEL }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: t.client_email }),
-              /* @__PURE__ */ jsx("span", { className: "aw-muted", children: t.project_name ?? "no project" }),
-              g.key === "stuck" && q ? /* @__PURE__ */ jsx("span", { className: "aw-warn", children: q.reason }) : null,
-              /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-              /* @__PURE__ */ jsx("span", { className: "aw-muted", children: g.key === "waiting" ? `waiting ${ago(t.client_waiting_since)}` : ago(t.updated_at) }),
-              /* @__PURE__ */ jsxs("span", { className: "aw-row__actions", children: [
-                (g.extra?.(t) ?? []).map(([label, run]) => /* @__PURE__ */ jsx(
-                  Button,
-                  {
-                    size: "sm",
-                    kind: "ghost",
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      void run();
-                    },
-                    children: label
-                  },
-                  label
-                )),
-                g.actions(t).map(([s, label]) => /* @__PURE__ */ jsx(
-                  Button,
-                  {
-                    size: "sm",
-                    kind: s === "declined" ? "ghost" : "default",
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      void move(t, s);
-                    },
-                    children: label
-                  },
-                  s
-                ))
-              ] })
-            ] }, t.id);
+            return /* @__PURE__ */ jsx(InboxRow, { g, t, q: data.queue.find((x) => x.id === t.id), cell: nav.cell(i), onKey: (e) => nav.onKey(e, i), move }, t.id);
           }) })
         ] }, g.key) : null
       ),
+      empty && !failed.length ? /* @__PURE__ */ jsx(
+        EmptyState,
+        {
+          icon: "check",
+          title: "Nothing needs you.",
+          hint: "New requests, finished runs and waiting clients land here. The board shows everything in flight.",
+          action: /* @__PURE__ */ jsx(Button, { onClick: () => open("board"), children: "Open the board" })
+        }
+      ) : null,
       failed.length ? /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Failed runs, last 24h" }),
+        /* @__PURE__ */ jsxs("h3", { children: [
+          "Failed runs, last 24h ",
+          /* @__PURE__ */ jsx("span", { className: "aw-count", children: failed.length })
+        ] }),
         /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: failed.map((r) => {
           const i = at.get(r);
           return /* @__PURE__ */ jsxs("li", { className: "aw-row", tabIndex: 0, ref: nav.cell(i), onKeyDown: (e) => nav.onKey(e, i), onClick: () => openTicket(r.ticket_id), children: [
@@ -1204,7 +1603,7 @@ var __awPlugin = (() => {
               r.ticket_id
             ] }),
             /* @__PURE__ */ jsx("a", { className: "aw-titlelink aw-row__title", href: `#ticket=${r.ticket_id}`, tabIndex: -1, onClick: titleLinkClick, children: r.title }),
-            /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            /* @__PURE__ */ jsxs("span", { className: "aw-row__meta", children: [
               r.executor,
               " on ",
               r.node_id ?? "Harness",
@@ -1563,26 +1962,22 @@ var __awPlugin = (() => {
     const [{ ticket, messages, runs, review, screenshots, land, error, loading, fetchedAt }, reload] = useTicket(api, id);
     const meter = useMeter(api, ticket, active);
     const [replyAt, setReplyAt] = useState(0);
-    if (loading && !ticket) return /* @__PURE__ */ jsxs("p", { className: "aw-empty", children: [
-      "Loading #",
-      id,
-      "\u2026"
-    ] });
-    if (!ticket) return /* @__PURE__ */ jsxs("div", { className: "aw-empty", role: "alert", children: [
-      errorText(error),
-      " ",
-      /* @__PURE__ */ jsx(Button, { onClick: reload, children: "Retry loading ticket" })
-    ] });
+    if (loading && !ticket) return /* @__PURE__ */ jsx(Skeleton, { variant: "ticket", label: `Loading #${id}\u2026` });
+    if (!ticket) {
+      return /* @__PURE__ */ jsx("div", { className: "aw-view", children: /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: reload }) });
+    }
     const isClient = ticket.kind !== "system";
     const via = assistantBadge(ticket);
     return /* @__PURE__ */ jsxs("div", { className: cx("aw-ticket", !details && "aw-ticket--solo"), children: [
       details ? /* @__PURE__ */ jsx(Resizer, { host: ".aw-ticket", cssVar: "--aw-details-w", def: 300, min: 200, max: 640, invert: true, storage: "aw.details.w", className: "aw-resize--details" }) : null,
       /* @__PURE__ */ jsxs("div", { className: "aw-ticket__main", children: [
         error ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", role: "alert", children: [
-          "Refresh failed. Showing ticket evidence last fetched ",
-          fetchedAt ? new Date(fetchedAt).toLocaleString() : "at an unknown time",
-          ". ",
-          errorText(error),
+          /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
+            "Refresh failed. Showing ticket evidence last fetched ",
+            fetchedAt ? new Date(fetchedAt).toLocaleString() : "at an unknown time",
+            ". ",
+            errorText(error)
+          ] }),
           " ",
           /* @__PURE__ */ jsx(Button, { size: "sm", onClick: reload, children: "Retry refresh" })
         ] }) : null,
@@ -1614,7 +2009,8 @@ var __awPlugin = (() => {
           ] }),
           /* @__PURE__ */ jsx("h2", { title: ticket.title_en ? `Original: ${ticket.title}` : void 0, children: ticket.title_en || ticket.title }),
           clientWaiting(ticket) ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
-            "The client wrote ",
+            /* @__PURE__ */ jsx(Dot, { state: "warn" }),
+            " The client wrote ",
             ago(ticket.client_waiting_since),
             " ago and is waiting for an answer.",
             /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
@@ -2188,10 +2584,20 @@ var __awPlugin = (() => {
             }
           ) : null
         ] }) : null,
-        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "\u2318\u21B5 to send" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-faint", children: "\u2318\u21B5 to send" }),
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
         note && canRerun ? /* @__PURE__ */ jsx(Button, { disabled: busy || submission.current.pendingQueue || !text.trim() && !picked.length, onClick: () => void send(true), children: "Add note and run again" }) : null,
-        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || submission.current.pendingQueue || !text.trim() && !picked.length, onClick: () => void send(false), children: note ? "Add note" : "Send reply\u2026" })
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            kind: "primary",
+            busy,
+            disabled: submission.current.pendingQueue || !text.trim() && !picked.length,
+            disabledReason: submission.current.pendingQueue ? "Retry the queue first: the note is already saved." : "Write something first.",
+            onClick: () => void send(false),
+            children: note ? "Add note" : "Send reply\u2026"
+          }
+        )
       ] })
     ] });
   }
@@ -2233,6 +2639,7 @@ var __awPlugin = (() => {
           {
             size: "sm",
             disabled: Boolean(site.rebuildRequestedAt),
+            disabledReason: "A rebuild is already queued; a node takes it on its next beat.",
             title: "Build the preview branch as it is and deploy it, without an agent run",
             onClick: () => void act(
               () => api("POST", `/admin/projects/${project.id}/site/rebuild`, { siteId: site.id }),
@@ -2386,7 +2793,7 @@ var __awPlugin = (() => {
         onClose,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !ok, onClick: () => onSave(Math.round(Number(minutes) * 60)), children: "Set time" })
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !ok, disabledReason: "Enter minutes as a number, 0 or more.", onClick: () => onSave(Math.round(Number(minutes) * 60)), children: "Set time" })
         ] }),
         children: /* @__PURE__ */ jsx(Field, { label: "Minutes on this ticket", children: /* @__PURE__ */ jsx("input", { inputMode: "decimal", value: minutes, onChange: (e) => setMinutes(e.target.value) }) })
       }
@@ -2430,12 +2837,12 @@ var __awPlugin = (() => {
       Button,
       {
         size: "sm",
-        disabled: busy,
+        busy,
         onClick: () => {
           setBusy(true);
           void act(() => api("POST", "/admin/health/run"), "Checks rerun.").then(load, load).finally(() => setBusy(false));
         },
-        children: busy ? "Running\u2026" : "Run now"
+        children: "Run checks now"
       }
     );
     const failing = state.checks.filter((c) => c.status === "fail");
@@ -2443,9 +2850,9 @@ var __awPlugin = (() => {
     const okCount = state.checks.filter((c) => c.status === "ok").length;
     const list2 = (checks) => /* @__PURE__ */ jsx("ul", { className: "aw-health__list", children: checks.map((check) => /* @__PURE__ */ jsx(CheckRow, { check }, check.name)) });
     const body = /* @__PURE__ */ jsxs(Fragment2, { children: [
-      state.error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: state.error.message ?? "Could not read the checks." }) : null,
-      state.loading ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Reading health checks\u2026" }) : null,
-      !state.loading && !state.error && !state.checks.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No checks reported" }) : null,
+      state.error ? /* @__PURE__ */ jsx(ErrorNote, { error: state.error.message ? state.error : { message: "Could not read the checks." }, onRetry: load }) : null,
+      state.loading ? /* @__PURE__ */ jsx(Skeleton, { variant: "rows", rows: compact ? 2 : 6, label: "Reading health checks\u2026" }) : null,
+      !state.loading && !state.error && !state.checks.length ? /* @__PURE__ */ jsx(Empty, { inline: true, title: "No checks reported yet.", hint: "The checks run every five minutes; Run now runs them at once." }) : null,
       compact ? /* @__PURE__ */ jsxs(Fragment2, { children: [
         failing.length ? list2(failing) : null,
         passing.length ? /* @__PURE__ */ jsxs("details", { className: "aw-health__pass", children: [
@@ -2476,19 +2883,18 @@ var __awPlugin = (() => {
       ] });
     }
     return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-health", children: [
-      /* @__PURE__ */ jsxs("header", { className: "aw-hero aw-health__head", children: [
-        /* @__PURE__ */ jsx("h2", { children: "Health" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        !state.loading && !state.error && state.checks.length ? state.failing ? /* @__PURE__ */ jsxs(Tag, { tone: "bad", children: [
-          state.failing,
-          " failing"
-        ] }) : /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "all green" }) : null,
-        runNow
-      ] }),
-      /* @__PURE__ */ jsxs("p", { className: "aw-muted aw-health__intro", children: [
-        "Every check runs every five minutes. A failing check mails you once, and mails again only when it recovers.",
-        state.ranAt ? ` Last run ${ago(state.ranAt)} ago.` : null
-      ] }),
+      /* @__PURE__ */ jsx(
+        PageHeader,
+        {
+          title: "Health",
+          subtitle: `Every check runs every five minutes; a failing check mails you once, and again when it recovers.${state.ranAt ? ` Last run ${ago(state.ranAt)} ago.` : ""}`,
+          meta: !state.loading && !state.error && state.checks.length ? state.failing ? /* @__PURE__ */ jsxs(Tag, { tone: "bad", children: [
+            state.failing,
+            " failing"
+          ] }) : /* @__PURE__ */ jsx(Tag, { tone: "ok", children: "all green" }) : null,
+          actions: runNow
+        }
+      ),
       body
     ] });
   }
@@ -3226,7 +3632,7 @@ var __awPlugin = (() => {
     );
   }
   function FleetView() {
-    const { data, openTicket } = useAdmin();
+    const { data, openTicket, open } = useAdmin();
     const machine = useMachine();
     const runs = [...data.running, ...data.recent].slice(0, 8);
     return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-fleet", children: [
@@ -3234,73 +3640,86 @@ var __awPlugin = (() => {
         PageHeader,
         {
           title: "Fleet",
-          subtitle: `${data.nodes.length} node${data.nodes.length === 1 ? "" : "s"} \xB7 ${data.queue.length} waiting \xB7 ${data.running.length} running`
+          subtitle: "The machines that run agents, what waits for them, and the end-to-end checks.",
+          overflow: [{ label: "Settings: work queue\u2026", run: () => open("settings") }]
         }
       ),
       /* @__PURE__ */ jsx(HealthView, { compact: true }),
       /* @__PURE__ */ jsxs("div", { className: "aw-nodes", children: [
         machine.live ? /* @__PURE__ */ jsx(MachinePanel, {}) : null,
         data.nodes.map((n) => /* @__PURE__ */ jsx(NodeCard, { node: n, local: machine.live && n.id === machine.nodeId }, n.id)),
-        !data.nodes.length ? /* @__PURE__ */ jsx(Empty, { title: "No node has connected yet.", hint: "Turn on a worker from This Mac (desktop app)." }) : null
+        !data.nodes.length ? /* @__PURE__ */ jsx(Empty, { title: "No node has connected yet.", hint: "Open the desktop app and lend This Mac from the status bar, or start a node with its config file." }) : null
       ] }),
       /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
         /* @__PURE__ */ jsxs("h3", { children: [
           "Queue ",
           /* @__PURE__ */ jsx("span", { className: "aw-count", children: data.queue.length })
         ] }),
-        data.queue.length ? /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+        data.queue.length ? /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--stack aw-table--rows", children: [
           /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("th", { children: "#" }),
+            /* @__PURE__ */ jsx("th", { className: "aw-num", children: "#" }),
             /* @__PURE__ */ jsx("th", { children: "Title" }),
             /* @__PURE__ */ jsx("th", { children: "Project" }),
             /* @__PURE__ */ jsx("th", { children: "Priority" }),
-            /* @__PURE__ */ jsx("th", { children: "Waiting" }),
+            /* @__PURE__ */ jsx("th", { className: "aw-num", children: "Waiting" }),
             /* @__PURE__ */ jsx("th", { children: "Why waiting" })
           ] }) }),
-          /* @__PURE__ */ jsx("tbody", { children: data.queue.map((q) => /* @__PURE__ */ jsxs("tr", { onClick: () => openTicket(q.id), children: [
-            /* @__PURE__ */ jsxs("td", { className: "aw-mono", children: [
+          /* @__PURE__ */ jsx("tbody", { children: data.queue.map((q) => /* @__PURE__ */ jsxs("tr", { onClick: () => openTicket(q.id), tabIndex: 0, onKeyDown: (e) => e.key === "Enter" && openTicket(q.id), children: [
+            /* @__PURE__ */ jsxs("td", { className: "aw-num aw-muted", children: [
               "#",
               q.id
             ] }),
             /* @__PURE__ */ jsx("td", { className: "aw-table__title", children: q.title }),
-            /* @__PURE__ */ jsx("td", { children: q.slug ?? "\u2014" }),
-            /* @__PURE__ */ jsx("td", { children: priorityName(q.priority) }),
-            /* @__PURE__ */ jsx("td", { children: span(q.waitingSeconds) }),
-            /* @__PURE__ */ jsx("td", { className: q.eligible.length ? "" : "aw-warn", children: q.reason })
+            /* @__PURE__ */ jsx("td", { "data-label": "Project", children: q.slug ?? "\u2014" }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Priority", children: priorityName(q.priority) }),
+            /* @__PURE__ */ jsx("td", { "data-label": "Waiting", className: "aw-num", children: span(q.waitingSeconds) }),
+            /* @__PURE__ */ jsxs("td", { "data-label": "Why waiting", className: q.eligible.length ? "aw-muted" : "aw-warn", style: { whiteSpace: "normal" }, children: [
+              q.eligible.length ? null : /* @__PURE__ */ jsxs(Fragment2, { children: [
+                /* @__PURE__ */ jsx(Dot, { state: "bad" }),
+                " "
+              ] }),
+              q.reason
+            ] })
           ] }, q.id)) })
-        ] }) }) : /* @__PURE__ */ jsx(Empty, { title: "Nothing is waiting." })
+        ] }) }) : /* @__PURE__ */ jsx(Empty, { inline: true, title: "Nothing is waiting.", hint: "Approved work starts as soon as a node with a free slot can take it." })
       ] }),
       /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
         /* @__PURE__ */ jsx("h3", { children: "Recent runs" }),
-        runs.length ? /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+        runs.length ? /* @__PURE__ */ jsx("div", { className: "aw-tablewrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--stack aw-table--rows", children: [
           /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-            /* @__PURE__ */ jsx("th", {}),
-            /* @__PURE__ */ jsx("th", { children: "#" }),
+            /* @__PURE__ */ jsx("th", { className: "aw-num", children: "#" }),
             /* @__PURE__ */ jsx("th", { children: "Title" }),
+            /* @__PURE__ */ jsx("th", { children: "Result" }),
             /* @__PURE__ */ jsx("th", { children: "Agent" }),
             /* @__PURE__ */ jsx("th", { children: "Node" }),
-            /* @__PURE__ */ jsx("th", { children: "Cost" }),
+            /* @__PURE__ */ jsx("th", { className: "aw-num", children: "Cost" }),
             /* @__PURE__ */ jsx("th", { children: "Finished" })
           ] }) }),
-          /* @__PURE__ */ jsx("tbody", { children: runs.map((r) => /* @__PURE__ */ jsxs("tr", { onClick: () => openTicket(r.ticket_id), children: [
-            /* @__PURE__ */ jsx("td", { children: r.status === "running" || !r.status ? /* @__PURE__ */ jsx("span", { className: "aw-live" }) : /* @__PURE__ */ jsx(Dot, { state: r.status === "ok" ? "ok" : "bad" }) }),
-            /* @__PURE__ */ jsxs("td", { className: "aw-mono", children: [
-              "#",
-              r.ticket_id
-            ] }),
-            /* @__PURE__ */ jsx("td", { className: "aw-table__title", children: r.title }),
-            /* @__PURE__ */ jsxs("td", { children: [
-              r.executor,
-              r.model ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-                " ",
-                r.model
-              ] }) : null
-            ] }),
-            /* @__PURE__ */ jsx("td", { children: r.node_id ?? "this Mac" }),
-            /* @__PURE__ */ jsx("td", { children: usd(r.cost_micro_usd) }),
-            /* @__PURE__ */ jsx("td", { className: "aw-muted", children: r.finished_at ? `${ago(r.finished_at)} ago` : "running" })
-          ] }, r.id)) })
-        ] }) }) : /* @__PURE__ */ jsx(Empty, { title: "No runs yet" })
+          /* @__PURE__ */ jsx("tbody", { children: runs.map((r) => {
+            const live = r.status === "running" || !r.status;
+            return /* @__PURE__ */ jsxs("tr", { onClick: () => openTicket(r.ticket_id), tabIndex: 0, onKeyDown: (e) => e.key === "Enter" && openTicket(r.ticket_id), children: [
+              /* @__PURE__ */ jsxs("td", { className: "aw-num aw-muted", children: [
+                "#",
+                r.ticket_id
+              ] }),
+              /* @__PURE__ */ jsx("td", { className: "aw-table__title", children: r.title }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Result", children: /* @__PURE__ */ jsxs("span", { className: "aw-running", children: [
+                live ? /* @__PURE__ */ jsx("span", { className: "aw-live" }) : /* @__PURE__ */ jsx(Dot, { state: r.status === "ok" ? "ok" : "bad" }),
+                live ? "running" : r.status === "ok" ? "ok" : r.status
+              ] }) }),
+              /* @__PURE__ */ jsxs("td", { "data-label": "Agent", children: [
+                r.executor,
+                r.model ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                  " ",
+                  r.model
+                ] }) : null
+              ] }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Node", children: r.node_id ?? "this Mac" }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Cost", className: "aw-num", children: usd(r.cost_micro_usd) }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Finished", className: "aw-muted", children: r.finished_at ? `${ago(r.finished_at)} ago` : "\u2014" })
+            ] }, r.id);
+          }) })
+        ] }) }) : /* @__PURE__ */ jsx(Empty, { inline: true, title: "No runs yet.", hint: "Runs appear here when a node starts approved work." })
       ] })
     ] });
   }
@@ -3528,9 +3947,9 @@ var __awPlugin = (() => {
     );
   }
   function ClientView({ id }) {
-    const { data, openTicket } = useAdmin();
+    const { data, openTicket, open: openTab } = useAdmin();
     const c = data.clients.find((x) => x.id === id);
-    if (!c) return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: data.loaded ? "No such client." : "Loading\u2026" });
+    if (!c) return data.loaded ? /* @__PURE__ */ jsx("div", { className: "aw-view", children: /* @__PURE__ */ jsx(Empty, { title: "No such client.", hint: "They may have been removed. The directory lists everyone.", action: /* @__PURE__ */ jsx(Button, { onClick: () => openTab("clients"), children: "Open Clients" }) }) }) : /* @__PURE__ */ jsx(Skeleton, { variant: "pane", label: "Loading the client\u2026" });
     const closed2 = (t) => ["done", "declined"].includes(t.status);
     const tickets = data.tickets.filter((t) => t.kind !== "system" && t.client_email === c.email).sort((a, b) => closed2(a) - closed2(b) || b.updated_at - a.updated_at);
     const open = tickets.filter((t) => !closed2(t)).length;
@@ -3549,54 +3968,74 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx("span", { className: "aw-count", children: tickets.length })
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "aw-tablewrap", children: [
-          /* @__PURE__ */ jsxs("table", { className: "aw-table", children: [
+          /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--stack aw-table--rows", children: [
             /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-              /* @__PURE__ */ jsx("th", { children: "#" }),
+              /* @__PURE__ */ jsx("th", { className: "aw-num", children: "#" }),
               /* @__PURE__ */ jsx("th", { children: "Title" }),
               /* @__PURE__ */ jsx("th", { children: "Status" }),
               /* @__PURE__ */ jsx("th", { children: "Project" }),
-              /* @__PURE__ */ jsx("th", { children: "Cost" }),
+              /* @__PURE__ */ jsx("th", { className: "aw-num", children: "Cost" }),
               /* @__PURE__ */ jsx("th", { children: "Updated" })
             ] }) }),
             /* @__PURE__ */ jsx("tbody", { children: tickets.map((t) => /* @__PURE__ */ jsxs("tr", { onClick: () => openTicket(t.id), tabIndex: 0, onKeyDown: (e) => e.key === "Enter" && openTicket(t.id), children: [
-              /* @__PURE__ */ jsxs("td", { className: "aw-mono", children: [
+              /* @__PURE__ */ jsxs("td", { className: "aw-num aw-muted", children: [
                 "#",
                 t.id
               ] }),
               /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
-                t.client_waiting_since && !closed2(t) ? /* @__PURE__ */ jsx(Dot, { state: "warn" }) : null,
-                " ",
-                t.title
+                t.title,
+                t.client_waiting_since && !closed2(t) ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                  " ",
+                  /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "waiting for you" })
+                ] }) : null
               ] }),
-              /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(StatusPill, { status: t.status }) }),
-              /* @__PURE__ */ jsx("td", { children: t.project_name ?? "\u2014" }),
-              /* @__PURE__ */ jsx("td", { children: money(chargeOf(t).totalCents) }),
-              /* @__PURE__ */ jsxs("td", { className: "aw-muted", children: [
+              /* @__PURE__ */ jsx("td", { "data-label": "Status", children: /* @__PURE__ */ jsx(StatusPill, { status: t.status }) }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Project", children: t.project_name ?? "\u2014" }),
+              /* @__PURE__ */ jsx("td", { "data-label": "Cost", className: "aw-num", children: money(chargeOf(t).totalCents) }),
+              /* @__PURE__ */ jsxs("td", { "data-label": "Updated", className: "aw-muted", children: [
                 ago(t.updated_at),
                 " ago"
               ] })
             ] }, t.id)) })
           ] }),
-          !tickets.length ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No requests yet." }) : null
+          !tickets.length ? /* @__PURE__ */ jsx(Empty, { inline: true, title: "No requests yet.", hint: "What this client files in the portal, or asks their assistant for, appears here." }) : null
         ] })
       ] })
+    ] });
+  }
+  function ClientRow({ c, onOpen, children }) {
+    const menu = useContextMenu([
+      { label: "Open", run: onOpen },
+      { label: "Email\u2026", run: () => window.open(`mailto:${c.email}`) },
+      { label: "Copy email address", run: () => void navigator.clipboard?.writeText(c.email) }
+    ], `${c.name || c.email} actions`);
+    return /* @__PURE__ */ jsxs("li", { children: [
+      /* @__PURE__ */ jsx("button", { type: "button", className: "aw-row aw-directory__open", onClick: onOpen, ...menu.bind, children }),
+      menu.menu
     ] });
   }
   function ClientsView() {
     const { data, setModal, open } = useAdmin();
     return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-clients", children: [
-      /* @__PURE__ */ jsx(PageHeader, { title: "Clients & projects", subtitle: data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : void 0 }),
+      /* @__PURE__ */ jsx(
+        PageHeader,
+        {
+          title: "Clients & projects",
+          subtitle: data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : "Who you work for, and the projects you work on.",
+          actions: /* @__PURE__ */ jsx(Button, { kind: "primary", icon: "plus", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(InviteClientModal, { onClose: close }) }), children: "Invite client" }),
+          secondary: [{ label: "New project", run: () => setModal({ kind: "project" }) }]
+        }
+      ),
       /* @__PURE__ */ jsxs("div", { className: "aw-split aw-directory", children: [
         /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
-          /* @__PURE__ */ jsxs("header", { className: "aw-row-h", children: [
-            /* @__PURE__ */ jsx("h3", { children: "Clients" }),
-            /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-            /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(InviteClientModal, { onClose: close }) }), children: "Invite client" })
-          ] }),
+          /* @__PURE__ */ jsx("header", { className: "aw-row-h", children: /* @__PURE__ */ jsxs("h3", { children: [
+            "Clients ",
+            /* @__PURE__ */ jsx("span", { className: "aw-count", children: data.clients.length })
+          ] }) }),
           data.clients.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: data.clients.map((c) => {
             const count = c.projectIds?.length ?? 0;
             const lastSeen = c.lastSeenAt ?? c.last_seen_at;
-            return /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-row aw-directory__open", onClick: () => open(`c:${c.id}`), children: [
+            return /* @__PURE__ */ jsxs(ClientRow, { c, onOpen: () => open(`c:${c.id}`), children: [
               /* @__PURE__ */ jsxs("span", { className: "aw-directory__name", children: [
                 /* @__PURE__ */ jsx("strong", { children: c.name || c.email }),
                 c.name ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: c.email }) : null
@@ -3608,15 +4047,14 @@ var __awPlugin = (() => {
               ] }),
               /* @__PURE__ */ jsx("span", { className: "aw-muted", children: c.usage ? usageLine(c.usage) || "No usage" : "Usage unavailable" }),
               /* @__PURE__ */ jsx("span", { className: "aw-muted", children: lastSeen ? `Seen ${ago(lastSeen)} ago` : "Last seen unavailable" })
-            ] }) }, c.id);
-          }) }) : /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No clients yet." })
+            ] }, c.id);
+          }) }) : /* @__PURE__ */ jsx(Empty, { inline: true, title: "No clients yet.", hint: "Invite a client and they get a portal account for their projects." })
         ] }),
         /* @__PURE__ */ jsxs("section", { className: "aw-group", children: [
-          /* @__PURE__ */ jsxs("header", { className: "aw-row-h", children: [
-            /* @__PURE__ */ jsx("h3", { children: "Projects" }),
-            /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-            /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => setModal({ kind: "project" }), children: "New project" })
-          ] }),
+          /* @__PURE__ */ jsx("header", { className: "aw-row-h", children: /* @__PURE__ */ jsxs("h3", { children: [
+            "Projects ",
+            /* @__PURE__ */ jsx("span", { className: "aw-count", children: data.projects.length })
+          ] }) }),
           data.projects.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: data.projects.map((p) => {
             const holders = data.nodes.filter((n) => n.slugs.includes(p.slug));
             const nodeState = holders.some((n) => n.online && !n.draining) ? "ok" : holders.length ? "warn" : "bad";
@@ -3639,7 +4077,7 @@ var __awPlugin = (() => {
               /* @__PURE__ */ jsx("span", { className: "aw-muted", children: siteState }),
               /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", "aria-label": `Open ${p.name}`, onClick: () => open(`p:${p.id}`), children: "Open" })
             ] }, p.id);
-          }) }) : /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "No projects yet." })
+          }) }) : /* @__PURE__ */ jsx(Empty, { inline: true, title: "No projects yet.", hint: "A project is a codebase and its sites.", action: /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "project" }), children: "New project" }) })
         ] })
       ] })
     ] });
@@ -3662,8 +4100,8 @@ var __awPlugin = (() => {
           Button,
           {
             size: "sm",
-            kind: "primary",
             disabled: !status?.ready || busy,
+            disabledReason: !status ? "Reading the translation status\u2026" : !status.ready ? "Needs DEEPSEEK_API_KEY and the GitHub App secrets on the Worker." : "A translation run is already queued or running.",
             title: "Translate every interface and email string that is missing or out of date, in all languages, and commit it to master",
             onClick: () => void act(() => api("POST", "/admin/i18n/sync", {}), "Translation starts within 5 minutes.").then(setStatus, () => void 0),
             children: status?.runningSince ? "Translating\u2026" : status?.requestedAt ? "Queued" : "Translate now"
@@ -3815,7 +4253,7 @@ var __awPlugin = (() => {
       setReadAttempt((attempt) => attempt + 1);
     };
     return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-settings", children: [
-      /* @__PURE__ */ jsx(PageHeader, { title: "Settings" }),
+      /* @__PURE__ */ jsx(PageHeader, { title: "Settings", subtitle: "How the queue runs, what the portal does on its own, and this machine." }),
       platform === "dsh" && host ? /* @__PURE__ */ jsxs(Fragment2, { children: [
         /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
           /* @__PURE__ */ jsx("h3", { children: "Portal connection" }),
@@ -3826,6 +4264,7 @@ var __awPlugin = (() => {
               {
                 kind: "primary",
                 disabled: !token.trim(),
+                disabledReason: "Paste the session token first.",
                 onClick: async () => {
                   const r = await host.command(`login ${token.trim()}`);
                   notify(r.text, r.ok ? "ok" : "error");
@@ -3845,7 +4284,7 @@ var __awPlugin = (() => {
       ] }) : null,
       /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
         /* @__PURE__ */ jsx("h3", { children: "Work queue" }),
-        !read.settings ? read.loading ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Reading settings\u2026" }) : /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+        !read.settings ? read.loading ? /* @__PURE__ */ jsx(Skeleton, { lines: 4, label: "Reading settings\u2026" }) : /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
           /* @__PURE__ */ jsx("p", { className: "aw-warn", role: "alert", children: "Could not read settings." }),
           /* @__PURE__ */ jsx(Button, { size: "sm", onClick: retry, children: "Retry" })
         ] }) : /* @__PURE__ */ jsx(Fragment2, { children: /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
@@ -3871,7 +4310,7 @@ var __awPlugin = (() => {
         changed ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "Unsaved changes" }) : null,
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
         /* @__PURE__ */ jsx(Button, { disabled: !changed || saving, onClick: () => setEdits({}), children: "Reset" }),
-        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: invalid || !Object.keys(patch).length || saving, onClick: submit, children: saving ? "Saving\u2026" : "Save" })
+        /* @__PURE__ */ jsx(Button, { kind: "primary", busy: saving, disabled: invalid || !Object.keys(patch).length, disabledReason: invalid ? "Fix the highlighted fields first." : "Nothing has changed yet.", onClick: submit, children: saving ? "Saving\u2026" : "Save" })
       ] }) : null
     ] });
   }
@@ -3979,10 +4418,16 @@ var __awPlugin = (() => {
       reload
     };
   }
-  function ResourceNote({ resource, label, empty }) {
+  function MarketingSkeleton({ label = "Loading\u2026", rows = 3, variant = "rows" }) {
+    return /* @__PURE__ */ jsxs("div", { className: cx("aw-mk-skel", `aw-mk-skel--${variant}`), role: "status", "aria-label": label, children: [
+      /* @__PURE__ */ jsx("span", { className: "aw-sr-only", children: label }),
+      variant === "chart" ? /* @__PURE__ */ jsx("span", { className: "aw-mk-skel__chart", "aria-hidden": "true" }) : Array.from({ length: rows }).map((_, i) => /* @__PURE__ */ jsx("span", { className: "aw-mk-skel__row", "aria-hidden": "true" }, i))
+    ] });
+  }
+  function ResourceNote({ resource, label, empty, hint, action, variant = "rows", rows = 3 }) {
     if (resource.error) return /* @__PURE__ */ jsx(ErrorNote, { error: resource.error, onRetry: resource.reload });
-    if (resource.loading) return /* @__PURE__ */ jsx(Loading, { label });
-    return empty ? /* @__PURE__ */ jsx(Empty, { title: empty }) : null;
+    if (resource.loading) return /* @__PURE__ */ jsx(MarketingSkeleton, { label, variant, rows });
+    return empty ? /* @__PURE__ */ jsx(Empty, { title: empty, hint, action }) : null;
   }
   function MarketingView() {
     const { api, act, ask, notify } = useAdmin();
@@ -4063,6 +4508,7 @@ var __awPlugin = (() => {
         (out) => `${out.changed} ${action === "pause" ? "paused" : "opted out"}; their queued mail was cancelled.`
       ).then(() => setSelected(/* @__PURE__ */ new Set()), () => void 0);
     };
+    const sendDisabledReason = sendingBusy ? "Updating sending state\u2026" : desk.loading ? "Refreshing marketing status\u2026" : desk.error ? "Refresh the desk before changing sending state." : void 0;
     return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-mk", children: [
       /* @__PURE__ */ jsx("div", { ref: sendingControl, tabIndex: -1, className: "aw-mk-anchor", children: /* @__PURE__ */ jsx(
         PageHeader,
@@ -4077,6 +4523,7 @@ var __awPlugin = (() => {
               {
                 kind: settings.live ? void 0 : "primary",
                 disabled: sendingBusy || desk.loading || Boolean(desk.error),
+                title: sendDisabledReason,
                 onClick: settings.live ? () => void changeSending(false).catch(() => void 0) : startSending,
                 children: settings.live ? "Pause sending" : "Go live"
               }
@@ -4332,7 +4779,7 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsxs("tr", { children: [
             /* @__PURE__ */ jsx("td", { children: "Email" }),
             /* @__PURE__ */ jsx("td", { "data-label": "State", children: emailState }),
-            /* @__PURE__ */ jsxs("td", { "data-label": "Last", children: [
+            /* @__PURE__ */ jsx("td", { "data-label": "Last", children: /* @__PURE__ */ jsxs("span", { children: [
               lastSentAt ? when(lastSentAt) : "no sends yet",
               /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
                 " ",
@@ -4343,7 +4790,7 @@ var __awPlugin = (() => {
                 " today",
                 ramping ? " \xB7 ramping" : ""
               ] })
-            ] }),
+            ] }) }),
             /* @__PURE__ */ jsx("td", { "data-label": "Next", children: emailNext || "\u2014" }),
             /* @__PURE__ */ jsx("td", { "data-label": "Health", children: /* @__PURE__ */ jsxs("div", { className: "aw-mk-health", children: [
               /* @__PURE__ */ jsx(RateMeter, { label: "bounces", rate: bounceRate, limit: health?.maxBounceRate ?? 0.04 }),
@@ -4360,14 +4807,14 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsxs("tr", { children: [
             /* @__PURE__ */ jsx("td", { children: "Site reading" }),
             /* @__PURE__ */ jsx("td", { "data-label": "State", children: pending > 0 ? "reading" : "idle" }),
-            /* @__PURE__ */ jsxs("td", { "data-label": "Last", children: [
+            /* @__PURE__ */ jsx("td", { "data-label": "Last", children: /* @__PURE__ */ jsxs("span", { children: [
               observed,
               " read",
               pulse.lastObservedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
                 " \xB7 last ",
                 when(pulse.lastObservedAt)
               ] }) : null
-            ] }),
+            ] }) }),
             /* @__PURE__ */ jsx("td", { "data-label": "Next", children: pending > 0 ? `${pending} waiting \xB7 ${fmtEta(obsEtaMinutes(pending))}` : "all read" }),
             /* @__PURE__ */ jsx("td", { "data-label": "Health", children: observed > 0 ? `${pct2(withGap / observed)} found something` : "\u2014" })
           ] }),
@@ -4386,9 +4833,12 @@ var __awPlugin = (() => {
           ] })
         ] })
       ] }) }),
-      kindEntries.length ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-        /* @__PURE__ */ jsx("p", { className: "aw-muted aw-mk-kinds-label", children: "What the reader finds:" }),
-        /* @__PURE__ */ jsx(StatRow, { items: kindEntries.map(([kind, value]) => ({ label: OBSERVE_KIND[kind] ?? kind, value })) })
+      kindEntries.length ? /* @__PURE__ */ jsxs("div", { className: "aw-mk-findings", children: [
+        /* @__PURE__ */ jsx("span", { className: "aw-muted aw-mk-kinds-label", children: "Reader findings:" }),
+        /* @__PURE__ */ jsx("dl", { className: "aw-mk-kinds", children: kindEntries.map(([kind, value]) => /* @__PURE__ */ jsxs("div", { className: "aw-mk-kind", children: [
+          /* @__PURE__ */ jsx("dd", { children: value }),
+          /* @__PURE__ */ jsx("dt", { children: OBSERVE_KIND[kind] ?? kind })
+        ] }, kind)) })
       ] }) : null
     ] });
   }
@@ -4495,17 +4945,37 @@ var __awPlugin = (() => {
     const y = (v) => baseY - v / yMax * plotH;
     const aria = `${days.length} days: ${sent} sent, ${replies} replies, ${bounces} bounces, ${optOuts} opt-outs, ${published} posts published.`;
     return /* @__PURE__ */ jsxs("figure", { className: "aw-chart", children: [
-      /* @__PURE__ */ jsxs("figcaption", { className: "aw-chart__totals", children: [
-        sent,
-        " sent \xB7 ",
-        replies,
-        " replies \xB7 ",
-        bounces,
-        " bounces \xB7 ",
-        optOuts,
-        " opt-outs \xB7 ",
-        published,
-        " posts"
+      /* @__PURE__ */ jsxs("figcaption", { className: "aw-chart__head", children: [
+        /* @__PURE__ */ jsxs("span", { className: "aw-chart__totals", children: [
+          sent,
+          " sent \xB7 ",
+          replies,
+          " replies \xB7 ",
+          bounces,
+          " bounces \xB7 ",
+          optOuts,
+          " opt-outs \xB7 ",
+          published,
+          " posts"
+        ] }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-chart__legend", "aria-hidden": "true", children: [
+          /* @__PURE__ */ jsxs("span", { children: [
+            /* @__PURE__ */ jsx("i", { className: "aw-chart__key aw-chart__key--sent" }),
+            "Sent"
+          ] }),
+          /* @__PURE__ */ jsxs("span", { children: [
+            /* @__PURE__ */ jsx("i", { className: "aw-chart__key aw-chart__key--bounce" }),
+            "Bounce"
+          ] }),
+          /* @__PURE__ */ jsxs("span", { children: [
+            /* @__PURE__ */ jsx("i", { className: "aw-chart__key aw-chart__key--reply" }),
+            "Reply"
+          ] }),
+          /* @__PURE__ */ jsxs("span", { children: [
+            /* @__PURE__ */ jsx("i", { className: "aw-chart__key aw-chart__key--post" }),
+            "Post"
+          ] })
+        ] })
       ] }),
       /* @__PURE__ */ jsx("div", { ref, className: "aw-chart__box", children: /* @__PURE__ */ jsxs(
         "svg",
@@ -4578,16 +5048,16 @@ var __awPlugin = (() => {
       const diff = rate(challenger) - rate(control);
       verdict = Math.abs(diff) < 5e-4 ? "Same reply rate so far." : `${diff > 0 ? challenger.key : control.key} leads: ${pct2(Math.max(rate(challenger), rate(control)))} vs ${pct2(Math.min(rate(challenger), rate(control)))} reply rate, ${percentNumber.format(Math.abs(diff) * 100)} pts apart.`;
     }
-    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-      /* @__PURE__ */ jsx("h3", { children: "Experiment" }),
-      /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--compact aw-table--static aw-table--stack", children: [
+    return /* @__PURE__ */ jsxs("section", { className: "aw-panel aw-mk-section", children: [
+      /* @__PURE__ */ jsx("header", { className: "aw-panel__head", children: /* @__PURE__ */ jsx("div", { className: "aw-panel__titles", children: /* @__PURE__ */ jsx("h3", { children: "Experiment" }) }) }),
+      /* @__PURE__ */ jsx("div", { className: "aw-table-wrap", children: /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--compact aw-table--static aw-table--stack aw-mk-exp-table", children: [
         /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
           /* @__PURE__ */ jsx("th", { children: "Sequence" }),
-          /* @__PURE__ */ jsx("th", { children: "Sent" }),
-          /* @__PURE__ */ jsx("th", { children: "Replies" }),
-          /* @__PURE__ */ jsx("th", { children: "Reply rate" }),
-          /* @__PURE__ */ jsx("th", { children: "Opt-outs" }),
-          /* @__PURE__ */ jsx("th", { children: "Bounces" })
+          /* @__PURE__ */ jsx("th", { className: "aw-mk-num", children: "Sent" }),
+          /* @__PURE__ */ jsx("th", { className: "aw-mk-num", children: "Replies" }),
+          /* @__PURE__ */ jsx("th", { className: "aw-mk-num", children: "Reply rate" }),
+          /* @__PURE__ */ jsx("th", { className: "aw-mk-num", children: "Opt-outs" }),
+          /* @__PURE__ */ jsx("th", { className: "aw-mk-num", children: "Bounces" })
         ] }) }),
         /* @__PURE__ */ jsx("tbody", { children: rows.map((s) => /* @__PURE__ */ jsxs("tr", { children: [
           /* @__PURE__ */ jsxs("td", { children: [
@@ -4596,19 +5066,21 @@ var __awPlugin = (() => {
             s.key === "cold_a" ? /* @__PURE__ */ jsx(Badge, { children: "control" }) : null,
             s.key === "cold_obs" ? /* @__PURE__ */ jsx(Badge, { children: "challenger" }) : null
           ] }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Sent", children: s.stats.sent }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Replies", children: s.stats.replies }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Reply rate", children: pct2(rate(s)) }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Opt-outs", children: s.stats.optedOut }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Bounces", children: s.stats.bounced })
+          /* @__PURE__ */ jsx("td", { className: "aw-mk-num", "data-label": "Sent", children: s.stats.sent }),
+          /* @__PURE__ */ jsx("td", { className: "aw-mk-num", "data-label": "Replies", children: s.stats.replies }),
+          /* @__PURE__ */ jsx("td", { className: "aw-mk-num", "data-label": "Reply rate", children: pct2(rate(s)) }),
+          /* @__PURE__ */ jsx("td", { className: "aw-mk-num", "data-label": "Opt-outs", children: s.stats.optedOut }),
+          /* @__PURE__ */ jsx("td", { className: "aw-mk-num", "data-label": "Bounces", children: s.stats.bounced })
         ] }, s.key)) })
       ] }) }),
-      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: verdict }),
-      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-        overview.settings.obsShare,
-        "% of observed contacts get the observation opener.",
-        " ",
-        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => onTab("settings"), children: "Settings" })
+      /* @__PURE__ */ jsxs("div", { className: "aw-mk-exp-foot", children: [
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: verdict }),
+        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+          overview.settings.obsShare,
+          "% of observed contacts get the observation opener.",
+          " ",
+          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => onTab("settings"), children: "Settings" })
+        ] })
       ] })
     ] });
   }
@@ -4616,25 +5088,47 @@ var __awPlugin = (() => {
     const stats = useResource(() => api("GET", "/admin/marketing/stats?days=14"), [api, tick]);
     const replies = useResource(() => api("GET", "/admin/marketing/replies").then((out) => out.replies ?? []), [api, tick]);
     const ordered = [...replies.data ?? []].sort((a, b) => Number(b.kind === "reply") - Number(a.kind === "reply") || b.at - a.at);
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+    return /* @__PURE__ */ jsxs("div", { className: "aw-mk-overview", children: [
       /* @__PURE__ */ jsx(Panel, { title: "Autopilot", children: /* @__PURE__ */ jsx(AutopilotTable, { overview }) }),
       /* @__PURE__ */ jsx(NeedsYou, { api, tick, overview, replies: replies.data, onTab, onReview, onContact }),
       /* @__PURE__ */ jsx(ExperimentPanel, { overview, onTab }),
       /* @__PURE__ */ jsxs(Panel, { title: "Last 14 days", children: [
-        /* @__PURE__ */ jsx(ResourceNote, { resource: stats, label: "Loading outreach stats\u2026" }),
-        stats.data ? stats.data.days?.length ? /* @__PURE__ */ jsx(StatsChart, { stats: stats.data }) : /* @__PURE__ */ jsx(Empty, { title: "No outreach stats yet" }) : null
+        /* @__PURE__ */ jsx(ResourceNote, { resource: stats, label: "Loading outreach stats\u2026", variant: "chart" }),
+        stats.data ? stats.data.days?.length ? /* @__PURE__ */ jsx(StatsChart, { stats: stats.data }) : /* @__PURE__ */ jsx(Empty, { title: "No outreach stats yet", hint: "Daily send, reply, bounce and post activity appears here once sending begins." }) : null
       ] }),
-      /* @__PURE__ */ jsx(Panel, { title: "What came back", subtitle: "Replies are forwarded to your inbox. Opt-outs and complaints are already closed.", children: ordered.length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: ordered.map((r) => /* @__PURE__ */ jsxs("li", { className: "aw-row aw-mk-click aw-mk-row-start", onClick: () => onContact(r.contact.id), children: [
-        /* @__PURE__ */ jsx(Badge, { tone: REPLY_TONE[r.kind], children: REPLY_LABEL[r.kind] ?? r.kind }),
-        /* @__PURE__ */ jsxs("span", { className: "aw-row__title", children: [
-          r.contact.business ?? r.contact.email,
-          /* @__PURE__ */ jsx("div", { className: "aw-muted aw-mk-copy", children: snippet(r.text ?? "", 220) })
-        ] }),
-        /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-          ago(r.at),
-          " ago"
-        ] })
-      ] }, r.id)) }) : /* @__PURE__ */ jsx(ResourceNote, { resource: replies, label: "Loading replies\u2026", empty: "No replies or opt-outs yet" }) })
+      /* @__PURE__ */ jsx(Panel, { title: "What came back", subtitle: "Replies are forwarded to your inbox. Opt-outs and complaints are already closed.", children: ordered.length ? /* @__PURE__ */ jsx("ul", { className: "aw-mk-replies", children: ordered.map((r) => /* @__PURE__ */ jsxs(
+        "li",
+        {
+          className: "aw-mk-reply",
+          onClick: () => onContact(r.contact.id),
+          children: [
+            /* @__PURE__ */ jsx(Badge, { tone: REPLY_TONE[r.kind], children: REPLY_LABEL[r.kind] ?? r.kind }),
+            /* @__PURE__ */ jsxs("div", { className: "aw-mk-reply__body", children: [
+              /* @__PURE__ */ jsx("strong", { className: "aw-mk-reply__who", children: r.contact.business ?? r.contact.email }),
+              /* @__PURE__ */ jsx("p", { className: "aw-muted aw-mk-copy aw-mk-reply__text", children: snippet(r.text ?? "", 220) })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "aw-mk-reply__meta", children: [
+              /* @__PURE__ */ jsxs("span", { className: "aw-muted aw-mk-reply__age", children: [
+                ago(r.at),
+                " ago"
+              ] }),
+              /* @__PURE__ */ jsx(
+                Button,
+                {
+                  size: "sm",
+                  kind: "ghost",
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    onContact(r.contact.id);
+                  },
+                  children: "Open"
+                }
+              )
+            ] })
+          ]
+        },
+        r.id
+      )) }) : /* @__PURE__ */ jsx(ResourceNote, { resource: replies, label: "Loading replies\u2026", empty: "No replies or opt-outs yet", hint: "Incoming replies and unsubscribe notices appear here." }) })
     ] });
   }
   function ReviewModal({ api, onClose }) {
@@ -5434,11 +5928,11 @@ var __awPlugin = (() => {
         /* @__PURE__ */ jsx("span", { className: "aw-muted", role: "status", children: busy ? "Saving\u2026" : changed ? "Unsaved changes" : "No unsaved changes" }),
         error ? /* @__PURE__ */ jsx(ErrorNote, { error }) : null,
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(Button, { disabled: busy || !changed, onClick: () => {
+        /* @__PURE__ */ jsx(Button, { disabled: busy || !changed, title: !changed ? "No unsaved changes to reset." : void 0, onClick: () => {
           setEdits({});
           setError(null);
         }, children: "Reset" }),
-        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !changed, onClick: save, children: "Save" })
+        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !changed, title: !changed ? "Change a setting before saving." : void 0, onClick: save, children: "Save" })
       ] })
     ] });
   }
@@ -5897,8 +6391,8 @@ var __awPlugin = (() => {
       }),
       [api, ask, load, notify]
     );
-    if (error && !overview) return /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: load });
-    if (!overview) return /* @__PURE__ */ jsx(Loading, { label: "Loading the SEO desk\u2026" });
+    if (error && !overview) return /* @__PURE__ */ jsx("div", { className: "aw-view", children: /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: load }) });
+    if (!overview) return /* @__PURE__ */ jsx("div", { className: "aw-view", children: /* @__PURE__ */ jsx(Loading, { label: "Loading the SEO desk\u2026" }) });
     const hosts = overview.hostsAvailable ?? overview.hosts.map((h) => h.host);
     const state = overview.state ?? {};
     const runs = [
@@ -5918,12 +6412,14 @@ var __awPlugin = (() => {
             " \xB7 ",
             last.at ? `${ago(last.at)} ago` : "not yet"
           ] }, last.key)),
-          actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: Boolean(busy), onClick: () => run("audit"), children: busy === "audit" ? "Running\u2026" : "Run audit" }),
-            /* @__PURE__ */ jsx(Button, { disabled: Boolean(busy), onClick: () => run("geo"), children: busy === "geo" ? "Running\u2026" : "Run GEO probe" }),
-            /* @__PURE__ */ jsx(Button, { disabled: Boolean(busy), onClick: () => run("citations"), children: busy === "citations" ? "Checking\u2026" : "Check citations" }),
-            /* @__PURE__ */ jsx(Button, { disabled: Boolean(busy), onClick: () => run("cycle"), children: busy === "cycle" ? "Filing\u2026" : "Run cycle now" })
-          ] })
+          actions: /* @__PURE__ */ jsx(Button, { kind: "primary", busy: busy === "audit", disabled: Boolean(busy), disabledReason: busy ? `Wait for the ${busy} run to finish.` : void 0, onClick: () => run("audit"), children: "Run audit" }),
+          secondary: [
+            { label: busy === "geo" ? "Running GEO probe\u2026" : "Run GEO probe", run: () => run("geo"), disabled: Boolean(busy), disabledReason: `Wait for the ${busy} run to finish.` },
+            { label: busy === "citations" ? "Checking citations\u2026" : "Check citations", run: () => run("citations"), disabled: Boolean(busy), disabledReason: `Wait for the ${busy} run to finish.` }
+          ],
+          overflow: [
+            { label: busy === "cycle" ? "Filing the fix cycle\u2026" : "Run a fix cycle now\u2026", run: () => run("cycle"), disabled: Boolean(busy), disabledReason: `Wait for the ${busy} run to finish.` }
+          ]
         }
       ),
       error ? /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: load }) : null,
@@ -6212,8 +6708,8 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx("line", { x1: xOf(event.n), x2: xOf(event.n), y1: top, y2: height - bottom, stroke: markColour(event.kind), strokeWidth: "1", strokeDasharray: "3 3", opacity: "0.65" }),
           /* @__PURE__ */ jsx("circle", { cx: xOf(event.n), cy: height - bottom - 4, r: "3", fill: markColour(event.kind) })
         ] }, event.id)),
-        path ? /* @__PURE__ */ jsx("path", { d: path, fill: "none", stroke: "var(--aw-accent)", strokeWidth: "2", strokeLinejoin: "round", strokeLinecap: "round" }) : null,
-        points.map((point) => /* @__PURE__ */ jsx("circle", { cx: xOf(point.n), cy: yOf(point.averageScore), r: "2.6", fill: "var(--aw-accent)", children: /* @__PURE__ */ jsx("title", { children: `${longDay(point.day)}: ${point.averageScore} average over ${point.pages} pages` }) }, point.day))
+        path ? /* @__PURE__ */ jsx("path", { d: path, fill: "none", stroke: "var(--aw-ink-2)", strokeWidth: "2", strokeLinejoin: "round", strokeLinecap: "round" }) : null,
+        points.map((point) => /* @__PURE__ */ jsx("circle", { cx: xOf(point.n), cy: yOf(point.averageScore), r: "2.6", fill: "var(--aw-ink-2)", children: /* @__PURE__ */ jsx("title", { children: `${longDay(point.day)}: ${point.averageScore} average over ${point.pages} pages` }) }, point.day))
       ] }),
       /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart__legend", children: [
         /* @__PURE__ */ jsxs("span", { children: [
@@ -6251,7 +6747,7 @@ var __awPlugin = (() => {
         const barH = Math.max(1, innerH * Math.max(0, Math.min(1, week.rate ?? 0)));
         return /* @__PURE__ */ jsxs("g", { children: [
           /* @__PURE__ */ jsx("title", { children: `Week of ${longDay(week.week)}: ${week.mentions} of ${week.runs} answers named us (${pct3(week.rate)})` }),
-          /* @__PURE__ */ jsx("rect", { x, y: top + innerH - barH, width: barW, height: barH, rx: "2", fill: "var(--aw-accent)", opacity: week.runs ? 0.85 : 0.25 }),
+          /* @__PURE__ */ jsx("rect", { x, y: top + innerH - barH, width: barW, height: barH, rx: "2", fill: "var(--aw-ink-2)", opacity: week.runs ? 0.85 : 0.25 }),
           index % 3 === 0 || index === weeks.length - 1 ? /* @__PURE__ */ jsx("text", { x: x + barW / 2, y: height - 6, textAnchor: "middle", fontSize: "9", fill: "var(--aw-text2)", children: shortDay2(week.week) }) : null
         ] }, week.week);
       }),
@@ -6291,7 +6787,7 @@ var __awPlugin = (() => {
     if (error && !data) return /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: load });
     if (!data) return /* @__PURE__ */ jsx(Loading, { label: "Loading rankings\u2026" });
     const rows = data.rows ?? [];
-    const location = data.location ?? { locationCode: 2840, languageCode: "en" };
+    const location2 = data.location ?? { locationCode: 2840, languageCode: "en" };
     const noPosition = data.avgPosition === null || data.avgPosition === void 0;
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       !data.rankReady ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
@@ -6316,7 +6812,7 @@ var __awPlugin = (() => {
             {
               label: "keywords",
               value: plural2((data.keywords ?? []).length, "keyword", "keywords"),
-              hint: `DataForSEO location ${location.locationCode}/${location.languageCode}`
+              hint: `DataForSEO location ${location2.locationCode}/${location2.languageCode}`
             },
             ...data.pending ? [{ label: "queued", value: plural2(data.pending, "task", "tasks"), tone: "warn" }] : []
           ]
@@ -6411,8 +6907,8 @@ var __awPlugin = (() => {
           /* @__PURE__ */ jsx("line", { x1: xOf(event.n), x2: xOf(event.n), y1: top, y2: height - bottom, stroke: markColour(event.kind), strokeWidth: "1", strokeDasharray: "3 3", opacity: "0.65" }),
           /* @__PURE__ */ jsx("circle", { cx: xOf(event.n), cy: height - bottom - 4, r: "3", fill: markColour(event.kind) })
         ] }, event.id)),
-        path ? /* @__PURE__ */ jsx("path", { d: path, fill: "none", stroke: "var(--aw-accent)", strokeWidth: "2", strokeLinejoin: "round", strokeLinecap: "round" }) : null,
-        points.map((point) => /* @__PURE__ */ jsx("circle", { cx: xOf(point.n), cy: yOf(point.avgPosition), r: "2.6", fill: "var(--aw-accent)", children: /* @__PURE__ */ jsx("title", { children: `${longDay(point.day)}: ${point.avgPosition} average (${point.inTop10} in the top 10, ${point.inTop100} in the top 100)` }) }, point.day))
+        path ? /* @__PURE__ */ jsx("path", { d: path, fill: "none", stroke: "var(--aw-ink-2)", strokeWidth: "2", strokeLinejoin: "round", strokeLinecap: "round" }) : null,
+        points.map((point) => /* @__PURE__ */ jsx("circle", { cx: xOf(point.n), cy: yOf(point.avgPosition), r: "2.6", fill: "var(--aw-ink-2)", children: /* @__PURE__ */ jsx("title", { children: `${longDay(point.day)}: ${point.avgPosition} average (${point.inTop10} in the top 10, ${point.inTop100} in the top 100)` }) }, point.day))
       ] }),
       /* @__PURE__ */ jsxs("div", { className: "aw-seo-chart__legend", children: [
         /* @__PURE__ */ jsxs("span", { children: [
@@ -6890,8 +7386,8 @@ var __awPlugin = (() => {
     const questions = draft.geoQuestions ?? [];
     const usedQuestions = questions.filter((question) => question.trim()).length;
     const keywords = draft.rankKeywords ?? [];
-    const location = draft.rankLocation ?? { locationCode: 2840, languageCode: "en" };
-    const changed = draft.autoCycle !== overview.settings.autoCycle || draft.volatilityHold !== overview.settings.volatilityHold || Boolean(draft.guidesAuto) !== Boolean(overview.settings.guidesAuto) || Number(draft.guidesPerWeek) !== Number(overview.settings.guidesPerWeek) || Boolean(draft.guidesAutoMerge) !== Boolean(overview.settings.guidesAutoMerge) || (draft.geoQuestions ?? []).join("\n") !== (overview.settings.geoQuestions ?? []).join("\n") || keywords.join("\n") !== (overview.settings.rankKeywords ?? []).join("\n") || location.locationCode !== overview.settings.rankLocation?.locationCode || location.languageCode !== overview.settings.rankLocation?.languageCode;
+    const location2 = draft.rankLocation ?? { locationCode: 2840, languageCode: "en" };
+    const changed = draft.autoCycle !== overview.settings.autoCycle || draft.volatilityHold !== overview.settings.volatilityHold || Boolean(draft.guidesAuto) !== Boolean(overview.settings.guidesAuto) || Number(draft.guidesPerWeek) !== Number(overview.settings.guidesPerWeek) || Boolean(draft.guidesAutoMerge) !== Boolean(overview.settings.guidesAutoMerge) || (draft.geoQuestions ?? []).join("\n") !== (overview.settings.geoQuestions ?? []).join("\n") || keywords.join("\n") !== (overview.settings.rankKeywords ?? []).join("\n") || location2.locationCode !== overview.settings.rankLocation?.locationCode || location2.languageCode !== overview.settings.rankLocation?.languageCode;
     const save = async () => {
       setSaving(true);
       setMessage(null);
@@ -7039,11 +7535,11 @@ var __awPlugin = (() => {
                 {
                   type: "number",
                   min: "1",
-                  value: location.locationCode ?? 2840,
-                  onChange: (event) => set("rankLocation", { ...location, locationCode: Number(event.target.value) })
+                  value: location2.locationCode ?? 2840,
+                  onChange: (event) => set("rankLocation", { ...location2, locationCode: Number(event.target.value) })
                 }
               ) }),
-              /* @__PURE__ */ jsx(Field, { label: "Language code", hint: "The search language, for example en.", children: /* @__PURE__ */ jsx("input", { value: location.languageCode ?? "en", onChange: (event) => set("rankLocation", { ...location, languageCode: event.target.value }) }) })
+              /* @__PURE__ */ jsx(Field, { label: "Language code", hint: "The search language, for example en.", children: /* @__PURE__ */ jsx("input", { value: location2.languageCode ?? "en", onChange: (event) => set("rankLocation", { ...location2, languageCode: event.target.value }) }) })
             ] })
           ]
         }
@@ -7098,526 +7594,603 @@ var __awPlugin = (() => {
   // packages/admin-ui/src/styles.js
   var STYLES = `
 .aw {
-  --aw-bg: var(--dsw-alias-bg-base, var(--bone, #fff));
-  --aw-bg2: var(--dsw-alias-bg-layer-1, var(--paper, #f8f7f4));
-  --aw-bg3: var(--dsw-alias-bg-layer-2, var(--rule, #efebe4));
-  --aw-hover: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.12));
-  --aw-text: var(--dsw-alias-label-primary, var(--ink, #16140f));
-  --aw-text2: var(--dsw-alias-label-secondary, var(--ink-soft, #5d5850));
-  --aw-border: var(--dsw-alias-border-l2, var(--rule, #e8e4dd));
-  --aw-border2: var(--dsw-alias-border-l3, var(--rule-strong, #d2ccc2));
+  /* \u2014\u2014 colour \u2014\u2014 */
+  --aw-surface: var(--dsw-alias-bg-base, var(--bone, #fff));
+  --aw-surface-sidebar: var(--dsw-alias-bg-layer-1, var(--paper, #f7f6f3));
+  --aw-surface-raised: var(--dsw-alias-bg-base, var(--bone, #fff));
+  --aw-ink: var(--dsw-alias-label-primary, var(--ink, #16140f));
+  --aw-ink-2: var(--dsw-alias-label-secondary, var(--ink-soft, #5d5850));
+  --aw-ink-3: color-mix(in srgb, var(--aw-ink-2) 68%, var(--aw-surface));
+  --aw-fill: var(--dsw-alias-bg-layer-2, color-mix(in srgb, var(--aw-ink) 6%, var(--aw-surface)));
+  --aw-hover: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, var(--aw-ink) 6%, transparent));
+  --aw-selected: color-mix(in srgb, var(--aw-ink) 9%, transparent);
+  --aw-hairline: var(--dsw-alias-border-l2, color-mix(in srgb, var(--aw-ink) 11%, var(--aw-surface)));
+  --aw-hairline-strong: var(--dsw-alias-border-l3, color-mix(in srgb, var(--aw-ink) 20%, var(--aw-surface)));
   --aw-accent: var(--orange, #ff5a1f);
+  --aw-accent-ink: #fff;
+  --aw-accent-wash: color-mix(in srgb, var(--aw-accent) 12%, transparent);
   --aw-ok: var(--dsw-alias-state-success-primary, #2f9e5b);
   --aw-warn: var(--dsw-alias-state-warn-primary, #d99a16);
   --aw-bad: var(--dsw-alias-state-error-primary, #d6453d);
   --aw-info: var(--dsw-alias-state-business-primary, #3b7bd9);
-  --aw-violet: #8a63d2;
+  --aw-ok-wash: color-mix(in srgb, var(--aw-ok) 12%, transparent);
+  --aw-warn-wash: color-mix(in srgb, var(--aw-warn) 14%, transparent);
+  --aw-bad-wash: color-mix(in srgb, var(--aw-bad) 11%, transparent);
+  --aw-info-wash: color-mix(in srgb, var(--aw-info) 11%, transparent);
+  --aw-ok-ink: color-mix(in srgb, var(--aw-ok) 82%, var(--aw-ink));
+  --aw-warn-ink: color-mix(in srgb, var(--aw-warn) 68%, var(--aw-ink));
+  --aw-bad-ink: color-mix(in srgb, var(--aw-bad) 88%, var(--aw-ink));
+  --aw-info-ink: color-mix(in srgb, var(--aw-info) 85%, var(--aw-ink));
+  --aw-focus: var(--aw-accent);
+  --aw-scrim: rgba(0, 0, 0, .32);
+  /* \u2014\u2014 shape, space, type \u2014\u2014 */
+  --aw-radius-sm: 4px;
+  --aw-radius-md: 6px;
+  --aw-radius-lg: 8px;
+  --aw-radius-pill: 999px;
+  --aw-space-1: 4px;
+  --aw-space-2: 8px;
+  --aw-space-3: 12px;
+  --aw-space-4: 16px;
+  --aw-space-5: 24px;
+  --aw-space-6: 32px;
+  --aw-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Inter, system-ui, sans-serif;
   --aw-mono: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
-  /* one design system: the one scale; every size in this sheet snaps to it */
-  --aw-r-sm: 4px;
-  --aw-r-md: 6px;
-  --aw-r-lg: 8px;
-  --aw-r-pill: 999px;
+  --aw-type-xs: 11px;
+  --aw-type-sm: 12px;
+  --aw-type-md: 13px;
+  --aw-type-lg: 15px;
+  --aw-type-xl: 18px;
+  --aw-type-2xl: 22px;
+  --aw-measure: 72ch;
+  --aw-measure-table: 1180px;
+  /* \u2014\u2014 geometry \u2014\u2014 */
+  --aw-row-h: 32px;
+  --aw-row-h-tight: 28px;
+  --aw-row-h-table: 36px;
+  --aw-bar-h: 38px;
+  --aw-status-h: 24px;
+  --aw-activity-w: 48px;
+  --aw-shadow-float: 0 0 0 1px color-mix(in srgb, var(--aw-ink) 10%, transparent), 0 12px 32px rgba(0, 0, 0, .18);
+  --aw-dur: 140ms;
+  --aw-ease: cubic-bezier(.2, 0, 0, 1);
+  /* \u2014\u2014 aliases: the pre-contract names; do not use in new code \u2014\u2014 */
+  --aw-bg: var(--aw-surface);
+  --aw-bg2: var(--aw-surface-sidebar);
+  --aw-bg3: var(--aw-fill);
+  --aw-text: var(--aw-ink);
+  --aw-text2: var(--aw-ink-2);
+  --aw-text3: var(--aw-ink-3);
+  --aw-border: var(--aw-hairline);
+  --aw-border2: var(--aw-hairline-strong);
+  --aw-line: var(--aw-hairline);
+  --aw-violet: #8a63d2;
+  --aw-r-sm: var(--aw-radius-sm);
+  --aw-r-md: var(--aw-radius-md);
+  --aw-r-lg: var(--aw-radius-lg);
+  --aw-r-pill: var(--aw-radius-pill);
   --aw-sp-1: 4px;
   --aw-sp-2: 6px;
   --aw-sp-3: 8px;
   --aw-sp-4: 12px;
   --aw-sp-5: 16px;
   --aw-sp-6: 24px;
-  --aw-fs-xs: 11px;
-  --aw-fs-sm: 12px;
-  --aw-fs-md: 13px;
-  --aw-fs-lg: 15px;
-  --aw-fs-xl: 18px;
-  --aw-text3: color-mix(in srgb, var(--aw-text2) 70%, var(--aw-bg));
-  --aw-line: var(--aw-border);
+  --aw-fs-xs: var(--aw-type-xs);
+  --aw-fs-sm: var(--aw-type-sm);
+  --aw-fs-md: var(--aw-type-md);
+  --aw-fs-lg: var(--aw-type-lg);
+  --aw-fs-xl: var(--aw-type-xl);
+
   display: grid;
-  grid-template-columns: 48px auto minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) 22px;
+  grid-template-columns: var(--aw-activity-w) auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) var(--aw-status-h);
+  grid-template-areas: "act exp main" "status status status";
   height: 100%;
   min-height: 0;
-  background: var(--aw-bg);
-  color: var(--aw-text);
-  font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+  background: var(--aw-surface);
+  color: var(--aw-ink);
+  font: var(--aw-type-md)/1.45 var(--aw-font);
+  -webkit-font-smoothing: antialiased;
   position: relative;
   overflow: hidden;
 }
+@media (prefers-reduced-motion: reduce) { .aw { --aw-dur: 0ms; } }
 .aw *, .aw *::before, .aw *::after { box-sizing: border-box; }
 .aw--fullscreen { position: fixed; inset: 0; z-index: 50; height: 100dvh; }
 .aw h2, .aw h3, .aw h4 { font-family: inherit; margin: 0; letter-spacing: 0; }
 .aw button { font: inherit; color: inherit; }
+.aw a { color: inherit; }
 .aw input, .aw select, .aw textarea {
-  font: inherit; color: var(--aw-text); background: var(--aw-bg);
-  border: 1px solid var(--aw-border2); border-radius: 6px; padding: 6px 8px; min-width: 0;
+  font: inherit; color: var(--aw-ink); background: var(--aw-surface);
+  border: 1px solid var(--aw-hairline-strong); border-radius: var(--aw-radius-md); padding: 5px 8px; min-width: 0; min-height: 30px;
 }
+.aw select { padding-right: 24px; }
+.aw input[type=checkbox], .aw input[type=radio] { min-height: 0; accent-color: var(--aw-accent); }
 .aw textarea { width: 100%; resize: vertical; line-height: 1.5; }
-.aw input:focus, .aw select:focus, .aw textarea:focus { outline: 2px solid color-mix(in srgb, var(--aw-accent) 50%, transparent); outline-offset: -1px; }
-/* One focus ring for everything; inputs keep their inset ring below it. */
-.aw :is(button, a, input, select, textarea, summary, [role=tab], [tabindex]):focus-visible { outline: 2px solid var(--aw-accent); outline-offset: 2px; }
-.aw :is(input, select, textarea):focus-visible { outline: 2px solid color-mix(in srgb, var(--aw-accent) 50%, transparent); outline-offset: -1px; }
+.aw input::placeholder, .aw textarea::placeholder { color: var(--aw-ink-3); }
+.aw input:disabled, .aw select:disabled, .aw textarea:disabled { opacity: .6; }
+.aw input[aria-invalid=true] { border-color: var(--aw-bad); }
+/* One focus ring: 2px focus colour outside controls, inset on fields. */
+.aw :is(button, a, summary, [role=tab], [role=option], [role=menuitem], [tabindex]):focus-visible { outline: 2px solid var(--aw-focus); outline-offset: 2px; }
+.aw :is(input, select, textarea):focus { outline: none; }
+.aw :is(input, select, textarea):focus-visible, .aw :is(input, select, textarea):focus { outline: 2px solid color-mix(in srgb, var(--aw-focus) 55%, transparent); outline-offset: -1px; }
 .aw [hidden] { display: none !important; }
-.aw-mono { font-family: var(--aw-mono); font-size: 12px; }
-.aw-muted { color: var(--aw-text2); }
-.aw-warn { color: color-mix(in srgb, var(--aw-warn) 70%, var(--aw-text)); }
-.aw-bad { color: var(--aw-bad); }
+.aw-sr { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.aw-mono { font-family: var(--aw-mono); font-size: var(--aw-type-sm); }
+.aw-num, .aw-table, .aw-statrow, .aw-cost { font-variant-numeric: tabular-nums; }
+.aw-muted { color: var(--aw-ink-2); }
+.aw-faint { color: var(--aw-ink-3); }
+.aw-warn { color: var(--aw-warn-ink); }
+.aw-bad { color: var(--aw-bad-ink); }
 .aw-center { text-align: center; }
-.aw-link { background: none; border: 0; padding: 0; color: var(--aw-accent); cursor: pointer; }
-.aw-link:hover { text-decoration: underline; }
-.aw-empty { padding: 40px; text-align: center; color: var(--aw-text2); }
-/* Bordered tinted info box, and the inline error text (after .aw-empty so it wins there). */
-.aw-callout { display: flex; align-items: flex-start; gap: var(--aw-sp-2); padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--aw-info) 30%, transparent); border-radius: var(--aw-r-lg); background: color-mix(in srgb, var(--aw-info) 8%, transparent); margin: 10px 0; overflow-wrap: anywhere; }
-.aw-error { color: var(--aw-bad); font-size: var(--aw-fs-sm); }
+.aw-link { background: none; border: 0; padding: 0; color: var(--aw-ink); text-decoration: underline; text-decoration-color: var(--aw-hairline-strong); text-underline-offset: 2px; cursor: pointer; }
+.aw-link:hover { text-decoration-color: currentColor; }
+.aw-link:disabled { color: var(--aw-ink-3); cursor: default; }
+.aw-empty { padding: var(--aw-space-6) var(--aw-space-4); text-align: center; color: var(--aw-ink-2); }
+.aw-callout { display: flex; align-items: flex-start; gap: var(--aw-space-2); padding: var(--aw-space-2) var(--aw-space-3); border-radius: var(--aw-radius-md); background: var(--aw-info-wash); margin: var(--aw-space-2) 0; overflow-wrap: anywhere; }
+.aw-error { color: var(--aw-bad-ink); font-size: var(--aw-type-sm); }
 .aw-toolbar__fill, .aw-tabs__fill, .aw-status__fill { flex: 1; }
 
-/* activity bar */
-.aw-activity { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0; background: var(--aw-bg2); border-right: 1px solid var(--aw-border); }
-.aw-activity button { position: relative; width: 34px; height: 34px; display: grid; place-items: center; border: 0; background: none; border-radius: 8px; color: var(--aw-text2); cursor: pointer; }
-.aw-activity button:hover { background: var(--aw-hover); color: var(--aw-text); }
-.aw-activity button[aria-pressed="true"] { color: var(--aw-text); box-shadow: inset 2px 0 0 var(--aw-accent); border-radius: 0 8px 8px 0; }
+/* \u2014\u2014\u2014\u2014\u2014 shell: activity bar \u2014\u2014\u2014\u2014\u2014 */
+.aw-activity { grid-area: act; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: var(--aw-space-2) 0; background: var(--aw-surface-sidebar); border-right: 1px solid var(--aw-hairline); z-index: 9; }
+.aw-activity button { position: relative; width: 36px; height: 36px; display: grid; place-items: center; border: 0; background: none; border-radius: var(--aw-radius-md); color: var(--aw-ink-3); cursor: pointer; transition: color var(--aw-dur) var(--aw-ease), background-color var(--aw-dur) var(--aw-ease); }
+.aw-activity button:hover { background: var(--aw-hover); color: var(--aw-ink); }
+.aw-activity button[aria-current=page], .aw-activity button[aria-pressed=true] { color: var(--aw-ink); }
+.aw-activity button[aria-current=page]::before, .aw-activity button[aria-pressed=true]::before { content: ''; position: absolute; left: -6px; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: var(--aw-ink); }
 .aw-activity__spacer { flex: 1; }
-/* Under the macOS window buttons: start below them. */
 .aw--inset .aw-activity { padding-top: 40px; }
 .aw--inset .aw-explorer { padding-top: 32px; }
-.aw-badge { position: absolute; top: 4px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--aw-accent); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; }
+.aw--inset.aw--noexplorer .aw-tabs { padding-left: 30px; }
+.aw-badge { position: absolute; top: 3px; right: 2px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: var(--aw-radius-pill); background: var(--aw-ink); color: var(--aw-surface); font-size: 10px; font-weight: 600; line-height: 15px; font-variant-numeric: tabular-nums; }
 
-/* explorer */
-.aw-explorer { grid-column: 2; grid-row: 1; width: var(--aw-explorer-w, 260px); overflow: auto; background: var(--aw-bg2); border-right: 1px solid var(--aw-border); padding: 6px 0 16px; }
-.aw-explorer h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--aw-text2); padding: 12px 12px 4px; }
+/* \u2014\u2014\u2014\u2014\u2014 tooltip: [data-tip], after 400ms; at once on keyboard focus \u2014\u2014\u2014\u2014\u2014 */
+.aw [data-tip] { position: relative; }
+/* Only drawn while hovered or focused, so a hidden tip never widens a pane. */
+.aw [data-tip]:is(:hover, :focus-visible)::after { content: attr(data-tip); position: absolute; z-index: 40; pointer-events: none; white-space: pre; padding: 3px 8px; border-radius: var(--aw-radius-sm); background: var(--aw-ink); color: var(--aw-surface); font-size: var(--aw-type-xs); font-weight: 500; line-height: 1.5; right: 0; top: calc(100% + 6px); animation: aw-tip var(--aw-dur) var(--aw-ease) 400ms backwards; }
+.aw [data-tip]:focus-visible::after { animation-delay: 0ms; }
+.aw [data-tip-side=right]:is(:hover, :focus-visible)::after { left: calc(100% + 8px); right: auto; top: 50%; transform: translateY(-50%); }
+.aw .aw-btnwrap[data-tip]:hover::after { left: 0; right: auto; }
+@keyframes aw-tip { from { opacity: 0; } }
+.aw-btnwrap { display: inline-flex; }
+
+/* \u2014\u2014\u2014\u2014\u2014 shell: explorer \u2014\u2014\u2014\u2014\u2014 */
+.aw-explorer { grid-area: exp; width: var(--aw-explorer-w, 260px); overflow: auto; background: var(--aw-surface-sidebar); border-right: 1px solid var(--aw-hairline); padding: 0 0 var(--aw-space-4); }
+.aw-explorer h3, .aw-explorer__head { display: flex; align-items: center; gap: var(--aw-space-1); height: var(--aw-bar-h); padding: 0 var(--aw-space-2) 0 var(--aw-space-3); font-size: var(--aw-type-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--aw-ink-3); }
+.aw-explorer h3 .aw-btn { margin-left: auto; }
 .aw-tree, .aw-tree ul { list-style: none; margin: 0; padding: 0; }
-.aw-tree ul { padding-left: 18px; }
-.aw-tree__row { display: flex; align-items: center; padding-right: 10px; }
-.aw-tree__row.is-active { background: var(--aw-hover); }
-.aw-tree__twist { width: 20px; border: 0; background: none; color: var(--aw-text2); cursor: pointer; padding: 0 0 0 6px; }
-.aw-tree__name, .aw-tree__leaf { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; border: 0; background: none; padding: 4px 10px 4px 4px; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 4px; }
-.aw-tree__leaf { width: 100%; padding-left: 12px; color: var(--aw-text); }
-.aw-tree__name { font-weight: 600; }
-.aw-tree__name:hover, .aw-tree__leaf:hover { background: var(--aw-hover); }
-.aw-tree__id { color: var(--aw-text2); font-family: var(--aw-mono); font-size: 11px; }
-.aw-tree__none { padding: 3px 12px; color: var(--aw-text2); font-size: 12px; }
-.aw-count { margin-left: 6px; padding: 0 6px; border-radius: var(--aw-r-lg); background: var(--aw-bg3); color: var(--aw-text2); font-size: 11px; font-weight: 600; }
+.aw-tree ul { padding-left: 0; }
+.aw-tree__row { display: flex; align-items: center; height: var(--aw-row-h-tight); padding: 0 var(--aw-space-2) 0 var(--aw-space-1); border-radius: var(--aw-radius-sm); margin: 0 var(--aw-space-1); }
+.aw-tree__row:hover { background: var(--aw-hover); }
+.aw-tree__row.is-active { background: var(--aw-selected); }
+.aw-tree__twist { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border: 0; background: none; color: var(--aw-ink-3); cursor: pointer; padding: 0; border-radius: var(--aw-radius-sm); }
+.aw-tree__twist svg { transition: transform var(--aw-dur) var(--aw-ease); }
+.aw-tree__twist[aria-expanded=true] svg { transform: rotate(90deg); }
+.aw-tree__name, .aw-tree__leaf { flex: 1; display: flex; align-items: center; gap: var(--aw-space-2); min-width: 0; height: 100%; border: 0; background: none; padding: 0 var(--aw-space-1); text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--aw-ink); }
+.aw-tree__name { font-weight: 500; }
+.aw-tree__name > span, .aw-tree__leaf > .aw-tree__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.aw-tree__name svg { flex: none; color: var(--aw-ink-3); }
+.aw-tree__leafrow { display: flex; align-items: center; height: var(--aw-row-h-tight); margin: 0 var(--aw-space-1); padding: 0 var(--aw-space-2) 0 26px; border-radius: var(--aw-radius-sm); }
+.aw-tree__leafrow:hover { background: var(--aw-hover); }
+.aw-tree__leafrow.is-active { background: var(--aw-selected); }
+.aw-tree__leaf { padding: 0; color: var(--aw-ink-2); }
+.aw-tree__leafrow:hover .aw-tree__leaf, .aw-tree__leafrow.is-active .aw-tree__leaf { color: var(--aw-ink); }
+.aw-tree__id { flex: none; color: var(--aw-ink-3); font-size: var(--aw-type-xs); font-variant-numeric: tabular-nums; }
+.aw-tree__none { height: var(--aw-row-h-tight); display: flex; align-items: center; padding-left: 30px; color: var(--aw-ink-3); font-size: var(--aw-type-sm); }
+.aw-count { margin-left: auto; padding-left: var(--aw-space-2); color: var(--aw-ink-3); font-size: var(--aw-type-xs); font-weight: 500; font-variant-numeric: tabular-nums; }
+/* One status marker for the explorer: monochrome; filled = needs you, ring = open. */
+.aw-mark { flex: none; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--aw-ink-3); }
+.aw-mark--needs { background: var(--aw-ink-2); border-color: var(--aw-ink-2); }
+.aw-mark--live { border-color: var(--aw-info); background: var(--aw-info); animation: aw-breathe 1.6s ease-in-out infinite; }
+@keyframes aw-breathe { 50% { opacity: .35; } }
 
-/* main + tabs */
-.aw-main { grid-column: 3; grid-row: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.aw-tabs { display: flex; align-items: stretch; height: 32px; background: var(--aw-bg2); border-bottom: 1px solid var(--aw-border); overflow-x: auto; scrollbar-width: none; }
-.aw-tab { display: flex; align-items: center; gap: 6px; max-width: 240px; padding: 0 6px 0 12px; border-right: 1px solid var(--aw-border); color: var(--aw-text2); cursor: pointer; white-space: nowrap; user-select: none; }
-.aw-tab:hover { background: var(--aw-hover); }
-.aw-tab.is-active { background: var(--aw-bg); color: var(--aw-text); box-shadow: inset 0 2px 0 var(--aw-accent); }
+/* \u2014\u2014\u2014\u2014\u2014 shell: main, tab strip \u2014\u2014\u2014\u2014\u2014 */
+.aw-main { grid-area: main; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.aw-tabs { flex: none; display: flex; align-items: stretch; height: var(--aw-bar-h); background: var(--aw-surface-sidebar); border-bottom: 1px solid var(--aw-hairline); }
+.aw-tablist { display: flex; flex: 1; align-items: stretch; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { .aw-tablist { scroll-behavior: auto; } }
+.aw-tablist::-webkit-scrollbar { display: none; }
+.aw-tab { position: relative; flex: none; display: flex; align-items: center; gap: var(--aw-space-2); max-width: 220px; padding: 0 var(--aw-space-1) 0 var(--aw-space-3); border-right: 1px solid var(--aw-hairline); color: var(--aw-ink-2); cursor: default; white-space: nowrap; user-select: none; font-size: var(--aw-type-sm); }
+.aw-tab svg { flex: none; color: var(--aw-ink-3); }
+.aw-tab:hover { color: var(--aw-ink); }
+.aw-tab.is-active { background: var(--aw-surface); color: var(--aw-ink); margin-bottom: -1px; }
+.aw-tab.is-active::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--aw-accent); }
+.aw-tab:focus-visible { outline: 2px solid var(--aw-focus); outline-offset: -2px; }
 .aw-tab__label { overflow: hidden; text-overflow: ellipsis; }
-.aw-tab__close { border: 0; background: none; width: 20px; height: 20px; border-radius: 4px; color: var(--aw-text2); cursor: pointer; opacity: .5; font-size: 15px; line-height: 1; }
-.aw-tab:hover .aw-tab__close, .aw-tab.is-active .aw-tab__close { opacity: 1; }
-.aw-tab__close:hover { background: var(--aw-hover); }
+.aw-tab__close { flex: none; display: grid; place-items: center; border: 0; background: none; width: 20px; height: 20px; padding: 0; border-radius: var(--aw-radius-sm); color: var(--aw-ink-3); cursor: pointer; opacity: 0; }
+.aw-tab:hover .aw-tab__close, .aw-tab.is-active .aw-tab__close, .aw-tab__close:focus-visible { opacity: 1; }
+.aw-tab__close:hover { background: var(--aw-hover); color: var(--aw-ink); }
+.aw-tab__close:focus-visible { outline: 2px solid var(--aw-focus); outline-offset: -1px; }
+.aw-tabs__toggle, .aw-tabs__end { flex: none; display: flex; align-items: center; gap: 2px; padding: 0 var(--aw-space-1); }
+.aw-tabs__toggle { border-right: 1px solid var(--aw-hairline); }
+.aw-tabs .aw-tabs__toggle.aw-btn { height: 100%; border: 0; border-right: 1px solid var(--aw-hairline); border-radius: 0; padding: 0 10px; color: var(--aw-ink-3); }
+.aw-tabs__end { border-left: 1px solid var(--aw-hairline); }
 .aw-content { flex: 1; min-height: 0; position: relative; }
 .aw-pane { position: absolute; inset: 0; overflow: auto; container-type: size; }
-.aw-view { padding: 16px 20px 40px; }
-.aw-hero { margin-bottom: 14px; }
-.aw-hero h2 { font-size: 20px; font-weight: 700; }
+.aw-view { padding: var(--aw-space-4) var(--aw-space-5) var(--aw-space-6); max-width: calc(var(--aw-measure-table) + 2 * var(--aw-space-5)); }
+.aw-hero { margin-bottom: var(--aw-space-3); }
+.aw-hero h2 { font-size: var(--aw-type-xl); font-weight: 600; }
 
-/* status bar */
-.aw-status { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 14px; padding: 0 10px; background: var(--aw-bg2); border-top: 1px solid var(--aw-border); color: var(--aw-text2); font-size: 12px; }
-.aw-status button { border: 0; background: none; padding: 0 4px; height: 100%; display: flex; align-items: center; gap: 6px; cursor: pointer; color: inherit; }
-.aw-status button:hover { background: var(--aw-hover); color: var(--aw-text); }
-.aw-status__err { color: var(--aw-bad); }
+/* \u2014\u2014\u2014\u2014\u2014 shell: status bar \u2014\u2014\u2014\u2014\u2014 */
+.aw-status { grid-area: status; display: flex; align-items: center; gap: var(--aw-space-1); padding: 0 var(--aw-space-2); background: var(--aw-surface-sidebar); border-top: 1px solid var(--aw-hairline); color: var(--aw-ink-2); font-size: var(--aw-type-xs); white-space: nowrap; overflow: hidden; z-index: 9; }
+.aw-status > * { flex: none; }
+.aw-status > .aw-status__fill { flex: 1; }
+.aw-status button { border: 0; background: none; padding: 0 var(--aw-space-2); height: var(--aw-status-h); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: inherit; font-size: inherit; border-radius: 0; }
+.aw-status button:hover { background: var(--aw-hover); color: var(--aw-ink); }
+.aw-status__item { display: inline-flex; align-items: center; gap: 6px; padding: 0 var(--aw-space-2); }
+.aw-status__err { color: var(--aw-bad-ink); }
+.aw-status kbd, .aw-kbd { font: inherit; font-size: var(--aw-type-xs); color: var(--aw-ink-2); padding: 0 5px; border: 1px solid var(--aw-hairline); border-radius: var(--aw-radius-sm); background: var(--aw-surface); line-height: 16px; display: inline-block; min-width: 18px; text-align: center; }
 
-/* controls */
-.aw-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--aw-border2); background: var(--aw-bg); cursor: pointer; white-space: nowrap; font-weight: 500; }
+/* \u2014\u2014\u2014\u2014\u2014 controls: buttons \u2014\u2014\u2014\u2014\u2014 */
+.aw-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: var(--aw-radius-md); border: 1px solid var(--aw-hairline-strong); background: var(--aw-surface); color: var(--aw-ink); cursor: pointer; white-space: nowrap; font-weight: 500; font-size: var(--aw-type-md); line-height: 1; transition: background-color var(--aw-dur) var(--aw-ease), border-color var(--aw-dur) var(--aw-ease); }
 .aw-btn:hover:not(:disabled) { background: var(--aw-hover); }
-.aw-btn:disabled { opacity: .45; cursor: default; }
-.aw-btn--sm { height: 26px; padding: 0 9px; font-size: 12px; }
-.aw-btn--primary { background: var(--aw-accent); color: #fff !important; border-color: var(--aw-accent); }
-.aw-btn--primary:hover:not(:disabled) { background: color-mix(in srgb, var(--aw-accent) 85%, #fff); border-color: color-mix(in srgb, var(--aw-accent) 85%, #fff); }
-.aw-btn--danger { color: var(--aw-bad) !important; border-color: color-mix(in srgb, var(--aw-bad) 50%, transparent); }
-.aw-btn--ghost { border-color: transparent; background: none; }
-.aw-seg { display: inline-flex; border: 1px solid var(--aw-border2); border-radius: 6px; overflow: hidden; flex-wrap: wrap; }
-.aw-seg button { border: 0; background: none; padding: 4px 10px; cursor: pointer; font-size: 12px; color: var(--aw-text2); }
-.aw-seg button + button { border-left: 1px solid var(--aw-border); }
-.aw-seg button:is([aria-pressed="true"], [aria-checked="true"]) { background: var(--aw-bg3); color: var(--aw-text); font-weight: 600; }
-.aw-seg button:disabled { cursor: default; }
+.aw-btn:active:not(:disabled) { background: var(--aw-selected); }
+.aw-btn:disabled { color: var(--aw-ink-3); border-color: var(--aw-hairline); background: var(--aw-surface); cursor: default; }
+.aw-btn--sm { height: 24px; padding: 0 8px; font-size: var(--aw-type-sm); gap: 4px; }
+.aw-btn--primary { background: var(--aw-accent); color: var(--aw-accent-ink) !important; border-color: transparent; }
+.aw-btn--primary:hover:not(:disabled) { background: color-mix(in srgb, var(--aw-accent) 88%, #000); }
+.aw-btn--primary:active:not(:disabled) { background: color-mix(in srgb, var(--aw-accent) 80%, #000); }
+.aw-btn--primary:disabled { background: var(--aw-fill); border-color: transparent; color: var(--aw-ink-3) !important; opacity: 1; }
+.aw-btn--danger { color: var(--aw-bad-ink) !important; }
+.aw-btn--danger:hover:not(:disabled) { background: var(--aw-bad-wash); border-color: color-mix(in srgb, var(--aw-bad) 40%, transparent); }
+.aw-btn--ghost { border-color: transparent; background: none; color: var(--aw-ink-2); }
+.aw-btn--ghost:hover:not(:disabled) { color: var(--aw-ink); }
+.aw-btn--ghost:disabled { border-color: transparent; background: none; }
+.aw-btn--icon { width: 28px; padding: 0; }
+.aw-btn--sm.aw-btn--icon { width: 24px; }
+.aw-btn[aria-busy=true] { color: transparent !important; }
+.aw-btn[aria-busy=true]::before { content: ''; position: absolute; inset: 0; margin: auto; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--aw-ink-3); border-top-color: var(--aw-ink); animation: aw-spin .7s linear infinite; }
+.aw-btn--primary[aria-busy=true] { background: var(--aw-accent); }
+.aw-btn--primary[aria-busy=true]::before { border-color: rgba(255,255,255,.45); border-top-color: #fff; }
+.aw-btn__kbd { margin-left: 4px; color: inherit; opacity: .6; font-size: var(--aw-type-xs); }
+
+/* \u2014\u2014\u2014\u2014\u2014 controls: segmented, chips, fields \u2014\u2014\u2014\u2014\u2014 */
+.aw-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: var(--aw-radius-md); background: var(--aw-fill); }
+.aw-seg button { border: 0; background: none; height: 24px; padding: 0 10px; border-radius: var(--aw-radius-sm); cursor: pointer; font-size: var(--aw-type-sm); color: var(--aw-ink-2); white-space: nowrap; }
+.aw-seg button:hover:not(:disabled) { color: var(--aw-ink); }
+.aw-seg button:is([aria-pressed="true"], [aria-checked="true"]) { background: var(--aw-surface); color: var(--aw-ink); font-weight: 600; box-shadow: 0 0 0 1px var(--aw-hairline), 0 1px 2px rgba(0,0,0,.06); }
+.aw-seg button:disabled { cursor: default; opacity: .55; }
 .aw-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.aw-chips button { border: 1px dashed var(--aw-border2); background: none; border-radius: var(--aw-r-pill); padding: 3px 10px; font-size: 12px; cursor: pointer; color: var(--aw-text2); }
-.aw-chips button[aria-pressed="true"] { border-style: solid; border-color: var(--aw-text); color: var(--aw-text); background: var(--aw-bg3); }
-.aw-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
-.aw-field__label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); }
-.aw-field__hint { font-size: 12px; color: var(--aw-text2); }
-.aw-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 18px; }
-.aw-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aw-chips button { border: 1px solid var(--aw-hairline-strong); background: none; border-radius: var(--aw-radius-pill); height: 24px; padding: 0 10px; font-size: var(--aw-type-sm); cursor: pointer; color: var(--aw-ink-2); }
+.aw-chips button:hover:not(:disabled) { color: var(--aw-ink); }
+.aw-chips button[aria-pressed="true"] { border-color: var(--aw-ink); color: var(--aw-ink); background: var(--aw-fill); }
+.aw-field { display: flex; flex-direction: column; gap: var(--aw-space-1); margin-bottom: var(--aw-space-3); min-width: 0; }
+.aw-field__label { font-size: var(--aw-type-sm); font-weight: 500; color: var(--aw-ink-2); }
+.aw-field__hint { font-size: var(--aw-type-xs); color: var(--aw-ink-3); line-height: 1.4; }
+.aw-field__error { font-size: var(--aw-type-xs); color: var(--aw-bad-ink); }
+.aw-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 0 var(--aw-space-5); }
+.aw-inline { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; }
+.aw-inline input { flex: 1; min-width: 120px; }
 .aw-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .aw-check input { flex: none; width: auto; min-width: 0; margin: 0; }
 .aw-people { margin: 6px 0; }
 .aw-people ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
 .aw-people li { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .aw-people__who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.aw-people .aw-check { font-size: 12px; color: var(--aw-text2); white-space: nowrap; }
-.aw-inline input { flex: 1; min-width: 120px; }
-.aw-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-.aw-search { width: 200px; }
+.aw-people .aw-check { font-size: var(--aw-type-sm); color: var(--aw-ink-2); white-space: nowrap; }
+.aw-toolbar { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; margin-bottom: var(--aw-space-3); min-height: 30px; }
+.aw-search { width: 220px; max-width: 100%; }
+.aw-toolbar .aw-search { padding-left: 28px; background: var(--aw-surface) no-repeat 8px 50% / 14px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3'/%3E%3C/svg%3E"); }
 
-.aw-pill { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: var(--aw-r-pill); font-size: 12px; font-weight: 600; background: var(--aw-bg3); }
-.aw-pill--new { background: color-mix(in srgb, var(--aw-info) 16%, transparent); color: var(--aw-info); }
-.aw-pill--approved { background: color-mix(in srgb, var(--aw-violet) 16%, transparent); color: var(--aw-violet); }
-.aw-pill--in_progress { background: color-mix(in srgb, var(--aw-warn) 20%, transparent); color: color-mix(in srgb, var(--aw-warn) 80%, var(--aw-text)); }
-.aw-pill--review { background: color-mix(in srgb, var(--aw-accent) 16%, transparent); color: var(--aw-accent); }
-.aw-pill--done { background: color-mix(in srgb, var(--aw-ok) 16%, transparent); color: var(--aw-ok); }
-.aw-pill--declined { background: color-mix(in srgb, var(--aw-text2) 12%, transparent); color: var(--aw-text2); }
-.aw-sq { width: 9px; height: 9px; border-radius: var(--aw-r-sm); flex: none; background: var(--aw-text2); display: inline-block; }
-.aw-sq--new { background: var(--aw-info); } .aw-sq--approved { background: var(--aw-violet); } .aw-sq--in_progress { background: var(--aw-warn); }
-.aw-sq--review { background: var(--aw-accent); } .aw-sq--done { background: var(--aw-ok); } .aw-sq--declined { background: var(--aw-border2); }
-.aw-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: var(--aw-text2); }
-.aw-dot--ok { background: var(--aw-ok); } .aw-dot--warn { background: var(--aw-warn); } .aw-dot--bad { background: var(--aw-bad); }
-.aw-live { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: var(--aw-warn); animation: aw-pulse 1.4s ease-in-out infinite; }
-@keyframes aw-pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--aw-warn) 60%, transparent); } 50% { box-shadow: 0 0 0 4px transparent; } }
-@media (prefers-reduced-motion: reduce) { .aw-live { animation: none; } }
-.aw-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; background: var(--aw-bg3); font-size: 11px; color: var(--aw-text2); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-.aw-tag--dash { background: none; border: 1px dashed var(--aw-border2); }
-.aw-tag--client, .aw-tag--info { background: color-mix(in srgb, var(--aw-info) 12%, transparent); color: var(--aw-info); }
-.aw-tag--hot, .aw-tag--accent { background: color-mix(in srgb, var(--aw-accent) 15%, transparent); color: var(--aw-accent); }
-.aw-tag--warn { background: color-mix(in srgb, var(--aw-warn) 18%, transparent); color: color-mix(in srgb, var(--aw-warn) 75%, var(--aw-text)); }
-.aw-tag--ok { background: color-mix(in srgb, var(--aw-ok) 14%, transparent); color: var(--aw-ok); }
-.aw-tag--bad { background: color-mix(in srgb, var(--aw-bad) 14%, transparent); color: var(--aw-bad); }
+/* \u2014\u2014\u2014\u2014\u2014 status: pills, tags, dots \u2014\u2014\u2014\u2014\u2014 */
+.aw-pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: var(--aw-radius-pill); font-size: var(--aw-type-xs); font-weight: 600; background: var(--aw-fill); color: var(--aw-ink-2); white-space: nowrap; }
+.aw-pill--new, .aw-pill--in_progress { background: var(--aw-info-wash); color: var(--aw-info-ink); }
+.aw-pill--approved { background: var(--aw-fill); color: var(--aw-ink); }
+.aw-pill--review { background: var(--aw-warn-wash); color: var(--aw-warn-ink); }
+.aw-pill--done { background: var(--aw-ok-wash); color: var(--aw-ok-ink); }
+.aw-pill--declined { background: none; color: var(--aw-ink-3); box-shadow: inset 0 0 0 1px var(--aw-hairline); }
+/* The status square is a neutral marker now; the word carries the status. */
+.aw-sq { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; border: 1.5px solid var(--aw-ink-3); }
+.aw-sq--new, .aw-sq--in_progress { border-color: var(--aw-info); }
+.aw-sq--review { border-color: var(--aw-warn); background: var(--aw-warn); }
+.aw-sq--done { border-color: var(--aw-ok); background: var(--aw-ok); }
+.aw-sq--approved { border-color: var(--aw-ink-2); }
+.aw-sq--declined { border-color: var(--aw-hairline-strong); }
+.aw-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; background: var(--aw-ink-3); }
+.aw-dot--ok { background: var(--aw-ok); } .aw-dot--warn { background: var(--aw-warn); } .aw-dot--bad { background: var(--aw-bad); } .aw-dot--info { background: var(--aw-info); }
+.aw-live { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; background: var(--aw-info); animation: aw-breathe 1.6s ease-in-out infinite; }
+@keyframes aw-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .aw-live, .aw-mark--live, .aw *::before { animation: none !important; } .aw [data-tip]:hover::after { animation: aw-tip 0s linear 400ms backwards; } }
+.aw-tag { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--aw-radius-sm); background: var(--aw-fill); font-size: var(--aw-type-xs); font-weight: 500; color: var(--aw-ink-2); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.aw-tag--dash { background: none; box-shadow: inset 0 0 0 1px var(--aw-hairline); }
+.aw-tag--client, .aw-tag--info { background: var(--aw-info-wash); color: var(--aw-info-ink); }
+.aw-tag--hot, .aw-tag--accent { background: var(--aw-accent-wash); color: color-mix(in srgb, var(--aw-accent) 80%, var(--aw-ink)); }
+.aw-tag--warn { background: var(--aw-warn-wash); color: var(--aw-warn-ink); }
+.aw-tag--ok { background: var(--aw-ok-wash); color: var(--aw-ok-ink); }
+.aw-tag--bad { background: var(--aw-bad-wash); color: var(--aw-bad-ink); }
 .aw-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.aw-running { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--aw-text2); }
+.aw-running { display: inline-flex; align-items: center; gap: 6px; font-size: var(--aw-type-sm); color: var(--aw-ink-2); }
 
-/* board */
-.aw-view--board { display: flex; flex-direction: column; height: 100%; padding-bottom: 0; }
-.aw-board { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(230px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 16px; }
-.aw-col { display: flex; flex-direction: column; min-height: 0; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); }
-.aw-col.is-over { border-color: var(--aw-accent); background: color-mix(in srgb, var(--aw-accent) 6%, var(--aw-bg2)); }
-.aw-col > header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-weight: 700; font-size: 12px; }
-.aw-col__body { flex: 1; overflow-y: auto; padding: 0 8px 10px; display: flex; flex-direction: column; gap: 8px; }
-.aw-col__empty { margin: 8px 4px; font-size: 12px; color: var(--aw-text2); }
-.aw-card { background: var(--aw-bg); border: 1px solid var(--aw-border); border-radius: 8px; padding: 9px 10px; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
-.aw-card:hover { border-color: var(--aw-border2); box-shadow: 0 2px 8px rgba(0,0,0,.06); }
-.aw-card:focus-visible { outline: 2px solid var(--aw-accent); }
-.aw-card.is-running { border-left: 3px solid var(--aw-warn); }
-.aw-card.is-stuck { border-left: 3px solid var(--aw-bad); }
-.aw-card__top { display: flex; align-items: center; gap: 6px; }
-.aw-card__id { font-family: var(--aw-mono); font-size: 11px; color: var(--aw-text2); }
-.aw-card__age { margin-left: auto; font-size: 11px; color: var(--aw-text2); }
-.aw-card h4 { font-size: 13px; font-weight: 600; margin: 5px 0 4px; line-height: 1.35; }
-.aw-card__meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--aw-text2); }
-.aw-card__foot { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 7px; font-size: 11px; }
+/* \u2014\u2014\u2014\u2014\u2014 board: lanes (one tint) holding cards (one hairline) \u2014\u2014\u2014\u2014\u2014 */
+.aw-view--board { display: flex; flex-direction: column; height: 100%; padding-bottom: 0; max-width: none; }
+.aw-board { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(248px, 1fr); gap: var(--aw-space-3); overflow-x: auto; padding-bottom: var(--aw-space-4); scroll-snap-type: x proximity; }
+.aw-col { display: flex; flex-direction: column; min-height: 0; background: var(--aw-surface-sidebar); border-radius: var(--aw-radius-lg); scroll-snap-align: start; transition: background-color var(--aw-dur) var(--aw-ease); }
+.aw-col.is-over { background: var(--aw-accent-wash); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--aw-accent) 45%, transparent); }
+.aw-col > header { display: flex; align-items: center; gap: var(--aw-space-2); height: 36px; padding: 0 var(--aw-space-3); font-weight: 600; font-size: var(--aw-type-sm); }
+.aw-col > header .aw-count { margin-left: 0; padding-left: 0; }
+.aw-col__body { flex: 1; overflow-y: auto; padding: 0 var(--aw-space-2) var(--aw-space-2); display: flex; flex-direction: column; gap: 6px; }
+.aw-col__empty { margin: var(--aw-space-1) var(--aw-space-1) var(--aw-space-2); font-size: var(--aw-type-sm); color: var(--aw-ink-3); }
+.aw-card { background: var(--aw-surface); border: 1px solid var(--aw-hairline); border-radius: var(--aw-radius-md); padding: var(--aw-space-2) 10px; cursor: pointer; transition: border-color var(--aw-dur) var(--aw-ease); }
+.aw-card:hover { border-color: var(--aw-hairline-strong); }
+.aw-card:focus-visible { outline: 2px solid var(--aw-focus); outline-offset: 1px; }
+.aw-card__top { display: flex; align-items: center; gap: 6px; min-height: 18px; }
+.aw-card__id { font-size: var(--aw-type-xs); color: var(--aw-ink-3); font-variant-numeric: tabular-nums; }
+.aw-card__age { margin-left: auto; font-size: var(--aw-type-xs); color: var(--aw-ink-3); }
+.aw-card h4 { font-size: var(--aw-type-md); font-weight: 500; margin: 3px 0 2px; line-height: 1.35; }
+.aw-card__meta { display: flex; gap: 0 6px; flex-wrap: wrap; font-size: var(--aw-type-xs); color: var(--aw-ink-2); }
+.aw-card__meta > span + span::before { content: '\xB7'; margin-right: 6px; color: var(--aw-ink-3); }
+.aw-card__foot { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 6px; font-size: var(--aw-type-xs); }
 .aw-card__foot:empty { display: none; }
-.aw-card__warn { margin: 6px 0 0; font-size: 11px; color: var(--aw-bad); }
+.aw-card__warn { display: flex; gap: 6px; align-items: baseline; margin: 6px 0 0; font-size: var(--aw-type-xs); color: var(--aw-bad-ink); }
 
-/* list + tables */
+/* \u2014\u2014\u2014\u2014\u2014 tables: 36px rows, hairlines, numeric right \u2014\u2014\u2014\u2014\u2014 */
 .aw-tablewrap, .aw-table-wrap { overflow-x: auto; }
-.aw-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.aw-table th { text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--aw-text2); padding: 6px 8px; border-bottom: 1px solid var(--aw-border2); cursor: pointer; white-space: nowrap; user-select: none; }
-.aw-table td { padding: 7px 8px; border-bottom: 1px solid var(--aw-border); white-space: nowrap; }
+.aw-table { width: 100%; border-collapse: collapse; font-size: var(--aw-type-md); }
+.aw-table th { position: sticky; top: 0; z-index: 1; background: var(--aw-surface); text-align: left; font-size: var(--aw-type-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--aw-ink-3); height: 30px; padding: 0 var(--aw-space-2); border-bottom: 1px solid var(--aw-hairline); white-space: nowrap; user-select: none; }
+.aw-table th[aria-sort] { cursor: pointer; }
+.aw-table th[aria-sort]:hover { color: var(--aw-ink); }
+.aw-table th button { all: unset; cursor: pointer; }
+.aw-table th button:focus-visible { outline: 2px solid var(--aw-focus); outline-offset: 2px; }
+.aw-table td { height: var(--aw-row-h-table); padding: 0 var(--aw-space-2); border-bottom: 1px solid var(--aw-hairline); white-space: nowrap; }
+.aw-table .is-num, .aw-table td.aw-num, .aw-table th.aw-num { text-align: right; font-variant-numeric: tabular-nums; }
 .aw-table tbody tr { cursor: pointer; }
 .aw-table tbody tr:hover { background: var(--aw-hover); }
-.aw-table__title { white-space: normal !important; min-width: 220px; font-weight: 500; }
+.aw-table__title { white-space: normal !important; min-width: 220px; font-weight: 500; padding-block: 6px !important; }
 
-/* needs you */
-.aw-inbox { max-width: 1100px; }
-.aw-group { margin: 22px 0; }
-.aw-group > h3 { font-size: var(--aw-fs-lg); font-weight: 700; display: flex; align-items: center; }
-.aw-group > p { margin: 2px 0 8px; }
-.aw-row-h { display: flex; align-items: center; gap: 8px; }
-.aw-rows { list-style: none; margin: 0; padding: 0; border: 1px solid var(--aw-border); border-radius: 8px; overflow: hidden; }
-.aw-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; flex-wrap: wrap; }
-.aw-row + .aw-row { border-top: 1px solid var(--aw-border); }
+/* \u2014\u2014\u2014\u2014\u2014 rows: the list pattern (hairlines, no box) \u2014\u2014\u2014\u2014\u2014 */
+.aw-inbox { max-width: var(--aw-measure-table); }
+.aw-group { margin: var(--aw-space-5) 0; }
+.aw-group > h3, .aw-group > header > h3 { font-size: var(--aw-type-md); font-weight: 600; display: flex; align-items: baseline; gap: var(--aw-space-2); }
+.aw-group > h3 .aw-count, .aw-group > header .aw-count { margin-left: 0; padding-left: 0; }
+.aw-group > p { margin: 2px 0 var(--aw-space-2); }
+.aw-row-h { display: flex; align-items: center; gap: var(--aw-space-2); }
+.aw-group > h3 + .aw-rows, .aw-group > header + .aw-rows, .aw-group > h3 + .aw-tablewrap, .aw-group > header + .aw-tablewrap { margin-top: var(--aw-space-2); }
+.aw-rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--aw-hairline); }
+.aw-rows > li { border-bottom: 1px solid var(--aw-hairline); }
+.aw-row { display: flex; align-items: center; gap: var(--aw-space-3); min-height: var(--aw-row-h-table); padding: 4px var(--aw-space-2); cursor: pointer; flex-wrap: wrap; }
 .aw-row:hover { background: var(--aw-hover); }
-.aw-row__title { font-weight: 600; }
-.aw-banner { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 8px; margin: 10px 0; }
-.aw-banner--bad { background: color-mix(in srgb, var(--aw-bad) 10%, transparent); }
+.aw-row__title { font-weight: 500; min-width: 0; }
+.aw-banner { display: flex; align-items: center; flex-wrap: wrap; gap: var(--aw-space-2); padding: var(--aw-space-2) var(--aw-space-3); border-radius: var(--aw-radius-md); margin: var(--aw-space-2) 0; background: var(--aw-fill); }
+.aw-banner--bad { background: var(--aw-bad-wash); }
+.aw-banner--warn { background: var(--aw-warn-wash); }
+.aw-banner--ok { background: var(--aw-ok-wash); }
 .aw-snippet { display: block; font-weight: 400; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
-.aw-files { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.aw-file { font: inherit; font-size: 12px; display: inline-flex; gap: 6px; align-items: baseline; padding: 3px 8px; border: 1px solid var(--aw-border2); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; max-width: 100%; overflow-wrap: anywhere; }
-button.aw-file:hover { border-color: currentColor; }
-.aw-banner--warn { background: color-mix(in srgb, var(--aw-warn) 12%, transparent); }
-.aw-banner--ok { background: color-mix(in srgb, var(--aw-ok) 12%, transparent); }
+.aw-files { list-style: none; margin: var(--aw-space-2) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.aw-file { font: inherit; font-size: var(--aw-type-sm); display: inline-flex; gap: 6px; align-items: baseline; padding: 2px 8px; border: 1px solid var(--aw-hairline-strong); border-radius: var(--aw-radius-md); background: transparent; color: inherit; cursor: pointer; max-width: 100%; overflow-wrap: anywhere; }
+button.aw-file:hover { background: var(--aw-hover); }
 
-/* ticket */
+/* \u2014\u2014\u2014\u2014\u2014 ticket: thread + inspector \u2014\u2014\u2014\u2014\u2014 */
 .aw-ticket { display: grid; grid-template-columns: minmax(0, 1fr) var(--aw-details-w, 300px); min-height: 100%; position: relative; }
-/* No details column: the thread gets the whole width, and the moves the column
-   used to hold sit under the title instead. */
 .aw-ticket--solo { grid-template-columns: minmax(0, 1fr); }
-.aw-ticket__quick { margin-top: 12px; }
+.aw-ticket__quick { margin-top: var(--aw-space-3); }
 .aw-ticket__quick .aw-ticket__actions { padding-bottom: 0; border-bottom: 0; }
-.aw-ticket__main { padding: 18px 24px 24px; min-width: 0; display: flex; flex-direction: column; }
-.aw-ticket__head h2 { font-size: var(--aw-fs-xl); font-weight: 700; margin: 4px 0 10px; line-height: 1.25; }
-.aw-ticket__head { padding-bottom: 4px; border-bottom: 1px solid var(--aw-border); margin-bottom: 4px; }
-.aw-ticket__crumbs { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--aw-text2); }
-.aw-ticket__crumbs span + span::before { content: '\xB7'; margin-right: 10px; }
-.aw-ticket__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--aw-border); }
-.aw-timeline { list-style: none; margin: 0; padding: 16px 0; display: flex; flex-direction: column; gap: 12px; flex: 1; }
-.aw-event { display: flex; gap: 10px; font-size: 12px; color: var(--aw-text2); padding-left: 12px; border-left: 2px solid var(--aw-border); }
-.aw-event time { margin-left: auto; white-space: nowrap; }
-.aw-msg { border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); padding: 10px 14px; background: var(--aw-bg); }
-.aw-msg--client { border-left: 3px solid var(--aw-info); }
-.aw-msg--ali { border-left: 3px solid var(--aw-text); }
-.aw-msg.is-private { background: color-mix(in srgb, var(--aw-warn) 7%, var(--aw-bg)); border-style: dashed; border-left-style: solid; border-left-color: var(--aw-warn); }
-.aw-msg header, .aw-run header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 5px; font-size: 12px; }
-.aw-msg header time { margin-left: auto; color: var(--aw-text2); }
-.aw-msg__body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.aw-ticket__main { padding: var(--aw-space-4) var(--aw-space-5) var(--aw-space-4); min-width: 0; display: flex; flex-direction: column; }
+.aw-ticket__main > * { width: 100%; max-width: 860px; }
+.aw-ticket__head { padding-bottom: var(--aw-space-3); border-bottom: 1px solid var(--aw-hairline); }
+.aw-ticket__head h2 { font-size: var(--aw-type-xl); font-weight: 600; margin: 4px 0 0; line-height: 1.3; overflow-wrap: anywhere; }
+.aw-ticket__crumbs { display: flex; gap: 0 var(--aw-space-2); flex-wrap: wrap; align-items: center; font-size: var(--aw-type-sm); color: var(--aw-ink-2); }
+.aw-ticket__crumbs > span + span::before { content: '\xB7'; margin-right: var(--aw-space-2); color: var(--aw-ink-3); }
+.aw-ticket__head .aw-banner { margin: var(--aw-space-3) 0 0; }
+.aw-ticket__actions { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; padding-bottom: var(--aw-space-3); border-bottom: 1px solid var(--aw-hairline); }
+.aw-timeline { list-style: none; margin: 0; padding: var(--aw-space-2) 0 var(--aw-space-4); display: flex; flex-direction: column; flex: 1; }
+.aw-timeline > li + li { border-top: 1px solid var(--aw-hairline); }
+.aw-event { display: flex; gap: var(--aw-space-2); align-items: baseline; font-size: var(--aw-type-sm); color: var(--aw-ink-2); padding: var(--aw-space-2) 0; }
+.aw-event::before { content: ''; flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--aw-ink-3); transform: translateY(-2px); }
+.aw-event time { margin-left: auto; white-space: nowrap; color: var(--aw-ink-3); }
+.aw-msg { padding: var(--aw-space-3) 0; }
+.aw-msg.is-private { background: color-mix(in srgb, var(--aw-warn) 7%, var(--aw-surface)); padding: var(--aw-space-3); border-radius: var(--aw-radius-md); border-top-color: transparent !important; margin: 2px 0; }
+.aw-msg.is-private + li { border-top-color: transparent; }
+.aw-msg header, .aw-run header { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; margin-bottom: 4px; font-size: var(--aw-type-sm); }
+.aw-msg header strong, .aw-run header strong { font-weight: 600; font-size: var(--aw-type-md); }
+.aw-msg header time, .aw-run header time { margin-left: auto; color: var(--aw-ink-3); }
+.aw-msg__body { white-space: pre-wrap; overflow-wrap: anywhere; max-width: var(--aw-measure); line-height: 1.55; }
 .aw-msg__body.is-clipped, .aw-run__summary.is-clipped { max-height: 7.5em; overflow: hidden; mask-image: linear-gradient(#000 55%, transparent); -webkit-mask-image: linear-gradient(#000 55%, transparent); }
 .aw-fold { cursor: pointer; user-select: none; }
-.aw-fold__chev { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: -4px; border: 0; padding: 0; background: none; color: var(--aw-text2); cursor: pointer; border-radius: 4px; transition: transform .12s; }
-.aw-fold__chev:hover { background: var(--aw-hover); color: var(--aw-text); }
+.aw-fold__chev { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: -4px; border: 0; padding: 0; background: none; color: var(--aw-ink-3); cursor: pointer; border-radius: var(--aw-radius-sm); transition: transform var(--aw-dur) var(--aw-ease); }
+.aw-fold__chev:hover { background: var(--aw-hover); color: var(--aw-ink); }
 .aw-fold__chev.is-open { transform: rotate(90deg); }
-.aw-fold__more { margin-top: 4px; font-size: 12px; }
-.aw-run { border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); padding: 10px 14px; background: var(--aw-bg2); }
-.aw-run--live { border-color: color-mix(in srgb, var(--aw-warn) 60%, transparent); }
-.aw-run--failed { border-left: 3px solid var(--aw-bad); }
-.aw-run--ok { border-left: 3px solid var(--aw-ok); }
-.aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-fs-sm); }
-.aw-steps { list-style: none; margin: 6px 0 2px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; border: 1px solid var(--aw-border); border-radius: 6px; background: var(--aw-bg); font-size: 12px; }
-.aw-steps li { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
-.aw-steps time { flex: none; color: var(--aw-text2); font-family: var(--aw-mono); font-size: var(--aw-fs-xs); }
+.aw-fold__more { margin-top: 4px; font-size: var(--aw-type-sm); }
+.aw-run { padding: var(--aw-space-3) 0; }
+.aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-type-sm); max-width: var(--aw-measure); line-height: 1.55; margin-top: 4px; }
+.aw-steps { list-style: none; margin: 6px 0 4px; padding: 6px var(--aw-space-2); display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; border-radius: var(--aw-radius-md); background: var(--aw-surface-sidebar); font-size: var(--aw-type-sm); }
+.aw-steps li { display: flex; gap: var(--aw-space-2); align-items: baseline; min-width: 0; }
+.aw-steps time { flex: none; color: var(--aw-ink-3); font-family: var(--aw-mono); font-size: var(--aw-type-xs); }
 .aw-steps span { min-width: 0; overflow-wrap: anywhere; }
-.aw-step--tool span { font-family: var(--aw-mono); font-size: var(--aw-fs-xs); }
-.aw-step--node span { color: var(--aw-text2); }
-.aw-step--error span { color: var(--aw-bad); }
-.aw-step__mark { flex: none; width: 1em; text-align: center; color: var(--aw-text2); }
-.aw-run footer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; }
-.aw-diff, .aw-log { font-family: var(--aw-mono); font-size: var(--aw-fs-xs); line-height: 1.5; white-space: pre; overflow: auto; max-height: 65vh; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: 6px; padding: 10px; margin: 0; }
+.aw-step--tool span { font-family: var(--aw-mono); font-size: var(--aw-type-xs); }
+.aw-step--node span { color: var(--aw-ink-2); }
+.aw-step--error span { color: var(--aw-bad-ink); }
+.aw-step__mark { flex: none; width: 1em; text-align: center; color: var(--aw-ink-3); }
+.aw-run footer { display: flex; align-items: center; gap: var(--aw-space-3); flex-wrap: wrap; margin-top: 6px; font-size: var(--aw-type-sm); }
+.aw-diff, .aw-log { font-family: var(--aw-mono); font-size: var(--aw-type-xs); line-height: 1.5; white-space: pre; overflow: auto; max-height: 65vh; background: var(--aw-surface-sidebar); border: 1px solid var(--aw-hairline); border-radius: var(--aw-radius-md); padding: 10px; margin: 0; }
 .aw-log { max-height: 220px; margin-top: 10px; }
-.aw-composer { position: sticky; bottom: 0; border: 1px solid var(--aw-border2); border-radius: var(--aw-r-lg); background: var(--aw-bg); padding: 10px; box-shadow: 0 -6px 16px var(--aw-bg); }
-.aw-composer.is-note { border-style: dashed; border-color: var(--aw-warn); }
-.aw-composer__head, .aw-composer__foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; }
-.aw-composer__head { margin-bottom: 8px; }
-.aw-composer__foot { margin-top: 8px; }
-.aw-composer textarea { border: 0; padding: 4px 2px; background: none; outline: none !important; }
-.aw-details { border-left: 1px solid var(--aw-border); background: var(--aw-bg2); padding: 16px; overflow-y: auto; position: sticky; top: 0; height: 100cqh; align-self: start; }
+.aw-composer { position: sticky; bottom: var(--aw-space-3); border: 1px solid var(--aw-hairline-strong); border-radius: var(--aw-radius-lg); background: var(--aw-surface); padding: var(--aw-space-2) var(--aw-space-3); box-shadow: 0 0 0 var(--aw-space-3) var(--aw-surface), 0 -14px 24px var(--aw-surface); }
+.aw-composer.is-note { background: color-mix(in srgb, var(--aw-warn) 5%, var(--aw-surface)); }
+.aw-composer:focus-within { border-color: color-mix(in srgb, var(--aw-focus) 60%, var(--aw-hairline-strong)); }
+.aw-composer__head, .aw-composer__foot { display: flex; align-items: center; gap: var(--aw-space-2) var(--aw-space-3); flex-wrap: wrap; font-size: var(--aw-type-sm); }
+.aw-composer__head { margin-bottom: 4px; }
+.aw-composer__foot { margin-top: 4px; }
+.aw-composer textarea { border: 0; padding: 4px 2px; background: none; outline: none !important; min-height: calc(3 * 1.5em + 8px); resize: none; }
+.aw-details { border-left: 1px solid var(--aw-hairline); background: var(--aw-surface-sidebar); padding: var(--aw-space-4); overflow-y: auto; position: sticky; top: 0; height: 100cqh; align-self: start; }
 .aw-details select, .aw-details input { width: 100%; }
-.aw-site { display: flex; flex-direction: column; gap: 6px; padding: 10px 0 14px; margin-bottom: 4px; border-bottom: 1px solid var(--aw-border); }
+.aw-site { display: flex; flex-direction: column; gap: 6px; padding: 0; }
 .aw-site p { margin: 0; }
-.aw-site__links { display: flex; gap: 14px; font-weight: 600; }
-.aw-details .aw-ticket__actions { flex-direction: column; align-items: stretch; gap: 6px; padding-bottom: 14px; margin-bottom: 4px; }
-.aw-details .aw-ticket__actions > button { width: 100%; justify-content: center; }
+.aw-site__links { display: flex; gap: 14px; font-weight: 500; }
+.aw-site__one { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.aw-details .aw-ticket__actions { flex-direction: column; align-items: stretch; gap: 6px; padding-bottom: var(--aw-space-4); margin-bottom: var(--aw-space-4); }
+.aw-details .aw-ticket__actions > button, .aw-details .aw-ticket__actions > .aw-btnwrap, .aw-details .aw-ticket__actions > .aw-btnwrap > button { width: 100%; justify-content: center; }
 .aw-details .aw-ticket__actions > :first-child { align-self: flex-start; }
+.aw-details .aw-ticket__actions .aw-btn--ghost { border-color: var(--aw-hairline-strong); background: var(--aw-surface); color: var(--aw-ink); }
 .aw-details .aw-ticket__actions > .aw-running, .aw-details .aw-ticket__actions > .aw-muted { justify-content: center; text-align: center; }
-/* The same fields as a full page (a tab of their own): no column furniture,
-   a readable measure, and the moves in a row instead of a stack. */
 .aw-details--page { border-left: 0; background: none; padding: 0; position: static; height: auto; overflow: visible; }
 .aw-details--page .aw-ticket__actions { flex-direction: row; flex-wrap: wrap; align-items: center; }
 .aw-details--page .aw-ticket__actions > button { width: auto; }
 .aw-details--page .aw-field { max-width: 520px; }
-.aw-details__h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); margin: 18px 0 6px !important; }
-.aw-cost { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 0; border-top: 1px solid var(--aw-border); border-bottom: 1px solid var(--aw-border); }
+.aw-details__h { font-size: var(--aw-type-xs); font-weight: 600; color: var(--aw-ink-3); margin: var(--aw-space-4) 0 6px !important; }
+.aw-cost { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--aw-space-2); padding: var(--aw-space-3) 0; }
 .aw-cost > div { display: flex; flex-direction: column; gap: 2px; }
-.aw-cost strong { font-size: 15px; }
-.aw-cost small { font-size: 11px; }
-.aw-cost .aw-link { grid-column: 1 / -1; text-align: left; font-size: 12px; }
-.aw-runlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-.aw-runlist li { display: flex; align-items: center; gap: 6px; }
-.aw-predict { display: flex; align-items: flex-start; gap: 7px; font-size: 12px; margin: 0 0 14px; color: var(--aw-text2); }
-.aw-predict .aw-dot { margin-top: 4px; }
-.aw-predict--bad { color: var(--aw-bad); }
+.aw-cost strong { font-size: var(--aw-type-lg); font-weight: 600; }
+.aw-cost small { font-size: var(--aw-type-xs); }
+.aw-cost .aw-link { grid-column: 1 / -1; justify-self: start; font-size: var(--aw-type-sm); }
+.aw-runlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; font-size: var(--aw-type-sm); }
+.aw-runlist li { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-top: 1px solid var(--aw-hairline); }
+.aw-runlist li:first-child { border-top: 0; }
+.aw-predict { display: flex; align-items: flex-start; gap: var(--aw-space-2); font-size: var(--aw-type-sm); margin: 0 0 var(--aw-space-3); color: var(--aw-ink-2); line-height: 1.45; }
+.aw-predict .aw-dot { margin-top: 5px; }
+.aw-predict--bad { color: var(--aw-bad-ink); }
 
-/* fleet + directory */
-.aw-nodes { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }
-.aw-node { border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); padding: 12px 14px; background: var(--aw-bg); }
-.aw-node--bad { border-left: 3px solid var(--aw-bad); } .aw-node--warn { border-left: 3px solid var(--aw-warn); } .aw-node--ok { border-left: 3px solid var(--aw-ok); }
-.aw-node > header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.aw-node h3 { font-size: 15px; font-weight: 700; }
-.aw-kv { display: grid; grid-template-columns: 80px 1fr; gap: 5px 10px; margin: 0 0 8px; font-size: 12px; }
-.aw-kv dt { color: var(--aw-text2); }
+/* \u2014\u2014\u2014\u2014\u2014 fleet + directory \u2014\u2014\u2014\u2014\u2014 */
+.aw-nodes { display: block; border-top: 1px solid var(--aw-hairline); }
+.aw-node { padding: var(--aw-space-3) 0; border-bottom: 1px solid var(--aw-hairline); min-width: 0; }
+.aw-node > header { display: flex; align-items: center; gap: var(--aw-space-2); min-width: 0; margin-bottom: 4px; }
+.aw-node h3 { flex: none; font-size: var(--aw-type-md); font-weight: 600; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-node > header .aw-btn { flex: none; }
+.aw-node__os { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--aw-type-sm); }
+.aw-node__lines { display: grid; gap: 1px; padding-left: 15px; }
+.aw-node__line { margin: 0; font-size: var(--aw-type-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-node__bar { display: inline-block; width: 56px; height: 4px; margin: 0 var(--aw-space-2); vertical-align: 1px; border-radius: 2px; background: var(--aw-fill); overflow: hidden; }
+.aw-node__bar i { display: block; height: 100%; background: var(--aw-ink-2); }
+.aw-node .aw-rows { margin: var(--aw-space-2) 0 0 15px; }
+.aw-node .aw-rows .aw-row { min-height: var(--aw-row-h); padding: 0 var(--aw-space-2); flex-wrap: nowrap; gap: var(--aw-space-2); font-size: var(--aw-type-sm); }
+.aw-node .aw-row > .aw-live, .aw-node .aw-row > .aw-mono, .aw-node .aw-row > .aw-muted { flex: none; white-space: nowrap; }
+.aw-node .aw-row__title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-kv { display: grid; grid-template-columns: 80px 1fr; gap: 5px 10px; margin: 0 0 var(--aw-space-2); font-size: var(--aw-type-sm); }
+.aw-kv dt { color: var(--aw-ink-2); }
 .aw-kv dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px; }
-.aw-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
-.aw-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.aw-panel { border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); padding: var(--aw-sp-4); background: var(--aw-bg); margin-bottom: 12px; }
-.aw-panel > header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.aw-panel > h3 { font-size: var(--aw-fs-md); margin-bottom: 12px; }
+.aw-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 0 var(--aw-space-6); }
+.aw-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--aw-space-2); }
+/* Panel: a titled section, not a card. One hairline above, space below. */
+.aw-panel { border-top: 1px solid var(--aw-hairline); padding: var(--aw-space-3) 0 var(--aw-space-2); margin-bottom: var(--aw-space-4); min-width: 0; }
+.aw-panel > header { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; }
+.aw-panel > h3 { font-size: var(--aw-type-md); font-weight: 600; margin-bottom: var(--aw-space-3); }
 .aw-panel p { margin: 6px 0; }
 .aw-settings { max-width: 900px; }
 
-/* this machine as a worker: the header pill, then the panel's own bits */
-.aw-mpillbar { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; }
-.aw-mpill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 1px solid var(--aw-border2); border-radius: var(--aw-r-pill); background: var(--aw-bg); color: var(--aw-text2); font-size: 12px; white-space: nowrap; cursor: pointer; }
-.aw-mpill:hover { background: var(--aw-hover); color: var(--aw-text); }
-.aw-mpillbar .aw-btn--ghost { height: 24px; width: 26px; padding: 0; justify-content: center; }
-.aw-mstate { margin: 0 0 8px; font-size: var(--aw-fs-sm); }
+/* \u2014\u2014\u2014\u2014\u2014 this Mac as a worker \u2014\u2014\u2014\u2014\u2014 */
+.aw-mpillbar { display: inline-flex; align-items: center; gap: 0; }
+.aw-mpill { display: inline-flex; align-items: center; gap: 6px; height: var(--aw-status-h); padding: 0 var(--aw-space-2); border: 0; background: none; color: inherit; font-size: inherit; white-space: nowrap; cursor: pointer; }
+.aw-mpill:hover { background: var(--aw-hover); color: var(--aw-ink); }
+.aw-mpillbar .aw-btn--ghost { height: var(--aw-status-h); width: 24px; padding: 0; border-radius: 0; }
+.aw-mstate { margin: 0 0 var(--aw-space-2); font-size: var(--aw-type-sm); }
 .aw-mexes { display: flex; flex-direction: column; gap: 2px; }
-.aw-mexe { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--aw-fs-sm); cursor: pointer; }
-.aw-mexe .aw-tag { font-size: 11px; }
+.aw-mexe { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; font-size: var(--aw-type-sm); cursor: pointer; min-height: 24px; }
 .aw-mexe__name { font-weight: 600; }
-.aw-mlog { margin-top: 8px; }
-.aw-mlog summary { cursor: pointer; color: var(--aw-text2); font-size: 12px; }
+.aw-mlog { margin-top: var(--aw-space-2); }
+.aw-mlog summary { cursor: pointer; color: var(--aw-ink-2); font-size: var(--aw-type-sm); }
 .aw-mlog[open] summary { margin-bottom: 4px; }
-.aw-machine p > .aw-btn { margin-left: 8px; }
-/* Settings \u2192 This machine's tools (MCP servers and skills fleet agents read). */
-.aw-toolbox__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.aw-machine p > .aw-btn { margin-left: var(--aw-space-2); }
+.aw-toolbox__head { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; margin-bottom: var(--aw-space-2); }
 .aw-toolbox__head p { margin: 0; }
-.aw-toolbox__warnings { list-style: none; margin: 4px 0 8px; padding: 0; display: grid; gap: 2px; font-size: 12px; }
-.aw-toolbox__section { border-top: 1px solid var(--aw-border); margin-top: 10px; padding-top: 10px; }
-.aw-toolbox__section > h4 { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
-.aw-toolbox__subhead { font-size: 12px; font-weight: 600; color: var(--aw-text2); margin: 10px 0 4px; }
-.aw-toolbox__rows, .aw-toolbox__skills, .aw-toolbox__plugins { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.aw-toolbox__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--aw-border); border-radius: 8px; background: var(--aw-bg2); }
+.aw-toolbox__warnings { list-style: none; margin: 4px 0 8px; padding: 0; display: grid; gap: 2px; font-size: var(--aw-type-sm); }
+.aw-toolbox__section { border-top: 1px solid var(--aw-hairline); margin-top: var(--aw-space-3); padding-top: var(--aw-space-3); }
+.aw-toolbox__section > h4 { font-size: var(--aw-type-md); font-weight: 600; margin: 0 0 6px; }
+.aw-toolbox__subhead { font-size: var(--aw-type-sm); font-weight: 600; color: var(--aw-ink-2); margin: 10px 0 4px; }
+.aw-toolbox__rows, .aw-toolbox__skills, .aw-toolbox__plugins { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--aw-hairline); }
+.aw-toolbox__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--aw-space-2); padding: 6px 0; border-bottom: 1px solid var(--aw-hairline); }
 .aw-toolbox__row.is-off { opacity: .72; }
 .aw-toolbox__main { min-width: 0; }
 .aw-toolbox__title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
-.aw-toolbox__meta { color: var(--aw-text2); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-toolbox__meta { color: var(--aw-ink-2); font-size: var(--aw-type-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aw-toolbox__actions { display: flex; gap: 4px; }
-.aw-toolbox__skills > li, .aw-toolbox__plugin { padding: 6px 8px; border: 1px solid var(--aw-border); border-radius: 8px; background: var(--aw-bg2); }
+.aw-toolbox__skills > li, .aw-toolbox__plugin { padding: 6px 0; border-bottom: 1px solid var(--aw-hairline); }
 .aw-toolbox__plugin { display: flex; align-items: center; gap: 6px; }
-.aw-toolbox__skilldesc { margin: 2px 0 0; color: var(--aw-text2); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.aw-toolbox__skilldesc { margin: 2px 0 0; color: var(--aw-ink-2); font-size: var(--aw-type-sm); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
-
-/* overlays */
-.aw-scrim { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.35); display: grid; place-items: center; padding: 20px; }
+/* \u2014\u2014\u2014\u2014\u2014 layers: scrim, dialog, sheet, palette, menu, toast \u2014\u2014\u2014\u2014\u2014 */
+.aw-scrim { position: absolute; inset: 0; z-index: 20; background: var(--aw-scrim); display: grid; place-items: center; padding: var(--aw-space-5); animation: aw-fade var(--aw-dur) var(--aw-ease); }
 .aw-scrim--top { place-items: start center; padding-top: 12vh; }
-.aw-modal { width: min(520px, 100%); max-height: 88%; display: flex; flex-direction: column; background: var(--aw-bg); color: var(--aw-text); border: 1px solid var(--aw-border2); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+@keyframes aw-fade { from { opacity: 0; } }
+@keyframes aw-rise { from { opacity: 0; transform: translateY(6px) scale(.99); } }
+.aw-modal { width: min(520px, 100%); max-height: 88%; display: flex; flex-direction: column; background: var(--aw-surface-raised); color: var(--aw-ink); border-radius: 10px; box-shadow: var(--aw-shadow-float); animation: aw-rise var(--aw-dur) var(--aw-ease); }
+.aw-modal:focus { outline: none; }
 .aw-modal--wide { width: min(760px, 100%); }
 .aw-modal--full { width: 96%; height: 92%; max-height: 92%; }
 .aw-modal--full .aw-modal__body { flex: 1; min-height: 0; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
 .aw-review { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .aw-review > * { flex: 1; min-height: 0; }
-.aw-modal__head { display: flex; align-items: flex-start; gap: 10px; padding: 16px 18px 6px; }
-.aw-modal__head > div { flex: 1; }
-.aw-modal__head h2 { font-size: 16px; font-weight: 700; }
-.aw-modal__head p { margin: 4px 0 0; color: var(--aw-text2); }
-.aw-modal__body { padding: 10px 18px; overflow-y: auto; }
-.aw-modal__foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--aw-border); flex-wrap: wrap; }
+.aw-modal__head { display: flex; align-items: flex-start; gap: var(--aw-space-3); padding: var(--aw-space-4) var(--aw-space-4) var(--aw-space-2); }
+.aw-modal__head > div { flex: 1; min-width: 0; }
+.aw-modal__head h2 { font-size: var(--aw-type-lg); font-weight: 600; }
+.aw-modal__head p { margin: 4px 0 0; color: var(--aw-ink-2); font-size: var(--aw-type-sm); }
+.aw-modal__body { padding: var(--aw-space-2) var(--aw-space-4) var(--aw-space-3); overflow-y: auto; }
+.aw-modal__foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--aw-space-2); padding: var(--aw-space-3) var(--aw-space-4); border-top: 1px solid var(--aw-hairline); flex-wrap: wrap; }
 .aw-modal__foot .aw-predict { margin: 0 auto 0 0; }
-.aw-palette { width: min(620px, 100%); background: var(--aw-bg); border: 1px solid var(--aw-border2); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.3); overflow: hidden; }
-.aw-palette input { width: 100%; border: 0 !important; border-bottom: 1px solid var(--aw-border) !important; border-radius: 0 !important; padding: 14px 16px !important; font-size: 15px !important; outline: none !important; }
+.aw-palette { width: min(620px, 100%); background: var(--aw-surface-raised); border-radius: 10px; box-shadow: var(--aw-shadow-float); overflow: hidden; animation: aw-rise var(--aw-dur) var(--aw-ease); }
+.aw-palette input { width: 100%; border: 0 !important; border-bottom: 1px solid var(--aw-hairline) !important; border-radius: 0 !important; padding: 14px 16px !important; font-size: var(--aw-type-lg) !important; outline: none !important; background: none; }
 .aw-palette ul { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow-y: auto; }
-.aw-palette li { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; cursor: pointer; }
+.aw-palette li { display: flex; align-items: center; gap: var(--aw-space-3); height: 32px; padding: 0 10px; border-radius: var(--aw-radius-md); cursor: pointer; }
 .aw-palette li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aw-palette li small { color: var(--aw-text2); white-space: nowrap; }
-.aw-palette li.is-active { background: var(--aw-hover); }
-.aw-toast { position: absolute; z-index: 30; right: 16px; bottom: 38px; max-width: 420px; padding: 10px 14px; border-radius: 8px; background: var(--aw-text); color: var(--aw-bg); box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+.aw-palette li small { color: var(--aw-ink-3); white-space: nowrap; font-size: var(--aw-type-xs); }
+.aw-palette li.is-active { background: var(--aw-selected); }
+.aw-palette__group { height: 26px !important; padding-top: 6px !important; font-size: var(--aw-type-xs); font-weight: 600; color: var(--aw-ink-3); cursor: default !important; }
+.aw-toast { position: absolute; z-index: 30; right: var(--aw-space-4); bottom: calc(var(--aw-status-h) + var(--aw-space-3)); max-width: 420px; display: flex; align-items: flex-start; gap: var(--aw-space-3); padding: 10px 12px 10px 14px; border-radius: var(--aw-radius-lg); background: var(--aw-ink); color: var(--aw-surface); box-shadow: var(--aw-shadow-float); font-size: var(--aw-type-md); animation: aw-rise var(--aw-dur) var(--aw-ease); }
 .aw-toast.is-error { background: var(--aw-bad); color: #fff; }
 
-/* pane resize handles */
+/* \u2014\u2014\u2014\u2014\u2014 pane resize handles \u2014\u2014\u2014\u2014\u2014 */
 .aw-resize { position: absolute; top: 0; bottom: 0; width: 9px; cursor: col-resize; z-index: 8; touch-action: none; }
-.aw-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; }
-.aw-resize:hover::after, .aw-resize.is-drag::after { background: var(--aw-accent); }
-.aw-resize--explorer { bottom: 22px; left: calc(48px + var(--aw-explorer-w, 260px) - 5px); }
+.aw-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; transition: background-color var(--aw-dur) var(--aw-ease); }
+.aw-resize:hover::after, .aw-resize.is-drag::after, .aw-resize:focus-visible::after { background: var(--aw-focus); }
+.aw-resize:focus-visible { outline: none; }
+.aw-resize--explorer { bottom: var(--aw-status-h); left: calc(var(--aw-activity-w) + var(--aw-explorer-w, 260px) - 5px); }
 .aw-resize--details { right: calc(var(--aw-details-w, 300px) - 5px); }
 
 @media (max-width: 900px) {
   .aw-explorer { display: none; }
   .aw-resize { display: none; }
   .aw-ticket { grid-template-columns: 1fr; }
-  .aw-details { border-left: 0; border-top: 1px solid var(--aw-border); position: static; height: auto; }
+  .aw-details { border-left: 0; border-top: 1px solid var(--aw-hairline); position: static; height: auto; }
+  .aw-view { padding-inline: var(--aw-space-4); }
+  .aw-ticket__main { padding-inline: var(--aw-space-4); }
+  /* Below 900px the map is the route list; a "Hide map" button would hide the
+     primary content, so the toggle is not offered there. */
+  .aw-world__toggle { display: none; }
 }
 
-/* \u2014\u2014\u2014\u2014\u2014 The details panel: sections, and what you can act on \u2014\u2014\u2014\u2014\u2014 */
+/* \u2014\u2014\u2014\u2014\u2014 details panel sections \u2014\u2014\u2014\u2014\u2014 */
+.aw-details > .aw-field, .aw-details > .aw-predict { margin-bottom: var(--aw-space-3); }
+.aw-details .aw-field { gap: var(--aw-space-1); }
+.aw-details .aw-field__label { font-size: var(--aw-type-xs); color: var(--aw-ink-3); }
+.aw-details .aw-chips button[aria-pressed="true"] { border-color: var(--aw-ink); }
+.aw-details .aw-cost strong { font-variant-numeric: tabular-nums; }
 
-/* One block per concern, separated by a rule, so the eye can find "where do I
-   change the agent" without reading every label. */
-.aw-details > .aw-field,
-.aw-details > .aw-cost,
-.aw-details > .aw-runlist,
-.aw-details > .aw-site,
-.aw-details > .aw-predict,
-.aw-details > .aw-details__h {
-  border-top: 1px solid var(--aw-border);
-  padding-top: 14px;
-  margin-top: 14px;
-}
-
-.aw-details__h {
-  font-size: var(--aw-fs-xs);
-  letter-spacing: .1em;
-  color: var(--aw-text2);
-  margin-bottom: 8px !important;
-}
-
-/* Labels read as labels, not as another line of body text. */
-.aw-details .aw-field__label {
-  font-size: var(--aw-fs-xs);
-  font-weight: 700;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: var(--aw-text3, var(--aw-text2));
-  opacity: .85;
-  margin-bottom: 2px;
-}
-
-/* Chips and segments: the chosen one is tinted, the rest stay quiet. */
-.aw-details .aw-seg { width: 100%; }
-.aw-details .aw-seg button { flex: 1; padding: 5px 6px; }
-.aw-details .aw-seg button:is([aria-pressed="true"], [aria-checked="true"]) {
-  background: color-mix(in srgb, var(--aw-accent) 18%, var(--aw-bg3));
-  color: var(--aw-text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--aw-accent) 55%, transparent);
-}
-.aw-details .aw-chips button[aria-pressed="true"] {
-  border-color: var(--aw-accent);
-  color: var(--aw-text);
-  background: color-mix(in srgb, var(--aw-accent) 14%, transparent);
-}
-
-/* The money block: three figures on one card, the one that is billed in accent. */
-.aw-details .aw-cost {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--aw-border);
-  border-radius: 8px;
-  background: var(--aw-bg);
-}
-.aw-details .aw-cost > div { display: flex; flex-direction: column; gap: 2px; }
-.aw-details .aw-cost strong { font-size: 16px; font-variant-numeric: tabular-nums; }
-.aw-details .aw-cost > div:last-child strong { color: var(--aw-accent); }
-
-/* Runs: one line each, separated, with the node and cost quiet. */
-.aw-details .aw-runlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
-.aw-details .aw-runlist > li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 0;
-  border-top: 1px dashed var(--aw-border);
-  font-size: 12px;
-}
-.aw-details .aw-runlist > li:first-child { border-top: 0; }
-
-/* Status and the "why nothing can take this" note get their own weight. */
-.aw-details .aw-predict { font-size: 12px; line-height: 1.45; }
-
-/* Health: one row per end-to-end check, red only when something is wrong. */
-.aw-health { max-width: 1000px; }
-.aw-health__intro { margin: 0 0 14px; }
-.aw-health__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.aw-health__row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); background: var(--aw-bg); }
-.aw-health__row--bad { border-color: color-mix(in srgb, var(--aw-bad) 45%, var(--aw-border)); }
+/* \u2014\u2014\u2014\u2014\u2014 health \u2014\u2014\u2014\u2014\u2014 */
+.aw-health { max-width: var(--aw-measure-table); }
+.aw-health__intro { margin: 0 0 var(--aw-space-3); }
+.aw-health__list { list-style: none; margin: var(--aw-space-2) 0 0; padding: 0; border-top: 1px solid var(--aw-hairline); }
+.aw-health__row { display: flex; align-items: center; gap: var(--aw-space-2); min-height: var(--aw-row-h); padding: 0 var(--aw-space-2); border-bottom: 1px solid var(--aw-hairline); font-size: var(--aw-type-sm); }
+.aw-health__row--bad { background: color-mix(in srgb, var(--aw-bad) 5%, transparent); }
 .aw-health__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.aw-health__body strong { font-size: 13px; }
-.aw-health__body span { font-size: 12px; }
-.aw-health__meta { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.aw-health__name { flex: none; font-size: var(--aw-type-sm); font-weight: 600; white-space: nowrap; }
+.aw-health__detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-health__meta { flex: none; display: flex; align-items: center; gap: var(--aw-space-2); white-space: nowrap; font-size: var(--aw-type-xs); }
 
-/* Pre-review: one screen instead of the diff. */
-.aw-prereview { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--aw-border); border-left: 3px solid var(--aw-border2); border-radius: 8px; background: var(--aw-bg); }
-.aw-prereview--ok { border-left-color: var(--aw-ok); }
-.aw-prereview--warn { border-left-color: var(--aw-warn); }
-.aw-prereview--bad { border-left-color: var(--aw-bad); }
-.aw-prereview header, .aw-prereview footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.aw-prereview__headline { margin: 8px 0 4px; font-size: var(--aw-fs-lg); }
-.aw-prereview ul { margin: 4px 0 8px; padding-left: 20px; font-size: 13px; }
+/* \u2014\u2014\u2014\u2014\u2014 pre-review, evidence, markdown \u2014\u2014\u2014\u2014\u2014 */
+.aw-prereview { margin: var(--aw-space-3) 0 0; padding: var(--aw-space-3); border-radius: var(--aw-radius-md); background: var(--aw-surface-sidebar); }
+.aw-prereview header, .aw-prereview footer { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; }
+.aw-prereview__headline { margin: var(--aw-space-2) 0 4px; font-size: var(--aw-type-lg); font-weight: 500; max-width: var(--aw-measure); }
+.aw-prereview ul { margin: 4px 0 var(--aw-space-2); padding-left: 20px; font-size: var(--aw-type-md); max-width: var(--aw-measure); }
 .aw-prereview footer { margin-top: 6px; }
-
-/* Recorded evidence: one summary row; the run and compare controls open on demand. */
-.aw-evidence { padding: 8px 12px; }
+.aw-evidence { padding: var(--aw-space-2) var(--aw-space-3); }
 .aw-evidence header { align-items: baseline; }
-.aw-evidence__line { font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aw-evidence__toggle { flex: none; font-size: 12px; }
-.aw-evidence__body { margin-top: 8px; }
-.aw-evidence__hint { margin: 0 0 8px; font-size: 12px; }
-.aw-md { margin: 6px 0 8px; overflow-wrap: anywhere; }
+.aw-evidence__line { font-size: var(--aw-type-sm); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-evidence__toggle { flex: none; font-size: var(--aw-type-sm); }
+.aw-evidence__body { margin-top: var(--aw-space-2); }
+.aw-evidence__hint { margin: 0 0 var(--aw-space-2); font-size: var(--aw-type-sm); }
+.aw-md { margin: 6px 0 8px; overflow-wrap: anywhere; max-width: var(--aw-measure); }
 .aw-md p { margin: 0 0 6px; }
 .aw-md p:last-child, .aw-md ul:last-child, .aw-md ol:last-child, .aw-md pre:last-child { margin-bottom: 0; }
-.aw-md__heading { margin: 10px 0 4px; font-size: 13px; }
-.aw-md ul, .aw-md ol { margin: 4px 0 8px; padding-left: 20px; font-size: var(--aw-fs-sm); }
+.aw-md__heading { margin: 10px 0 4px; font-size: var(--aw-type-md); }
+.aw-md ul, .aw-md ol { margin: 4px 0 8px; padding-left: 20px; font-size: var(--aw-type-sm); }
 .aw-md li { margin: 2px 0; }
-.aw-md code { font-family: var(--aw-mono); font-size: var(--aw-fs-xs); background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
+.aw-md code { font-family: var(--aw-mono); font-size: var(--aw-type-xs); background: var(--aw-fill); border-radius: var(--aw-radius-sm); padding: 0 4px; overflow-wrap: anywhere; }
 .aw-md__code { margin: 4px 0 8px; max-height: 32vh; }
-
-/* Before/after preview shots: evidence, not decoration. */
-.aw-shots { display: flex; gap: 8px; margin-top: 10px; }
+.aw-shots { display: flex; gap: var(--aw-space-2); margin-top: 10px; }
 .aw-shots figure { flex: 1; min-width: 0; margin: 0; }
-.aw-shots img { display: block; width: 100%; height: auto; border: 1px solid var(--aw-border); border-radius: 6px; background: var(--aw-bg2); }
-.aw-shots figcaption { margin-top: 3px; font-size: 11px; color: var(--aw-text3); text-transform: uppercase; letter-spacing: .04em; }
+.aw-shots img { display: block; width: 100%; height: auto; border: 1px solid var(--aw-hairline); border-radius: var(--aw-radius-md); background: var(--aw-surface-sidebar); }
+.aw-shots figcaption { margin-top: 3px; font-size: var(--aw-type-xs); color: var(--aw-ink-3); }
 
-/* SEO: small inline charts, wide tables that scroll, drafts that stay readable. */
-.aw-seo-chart { margin: 8px 0 4px; }
+/* \u2014\u2014\u2014\u2014\u2014 SEO \u2014\u2014\u2014\u2014\u2014 */
+.aw-seo-chart { margin: var(--aw-space-2) 0 4px; }
 .aw-seo-chart svg { display: block; width: 100%; height: auto; max-height: 190px; }
-.aw-seo-chart__legend { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--aw-text2); }
+.aw-seo-chart__legend { display: flex; align-items: center; gap: var(--aw-space-3); flex-wrap: wrap; font-size: var(--aw-type-xs); color: var(--aw-ink-2); }
 .aw-seo-chart__dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 .aw-seo-pages td.aw-seo-types, .aw-seo-citations td { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
 .aw-seo-path { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
@@ -7626,26 +8199,26 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-seo-citations textarea { min-width: 240px; }
 .aw-seo-citations input { min-width: 200px; }
 .aw-seo-issues { display: grid; gap: 4px; padding: 2px 0; }
-.aw-seo-issue { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.aw-seo-issue span:last-child { color: var(--aw-text2); }
+.aw-seo-issue { display: flex; align-items: baseline; gap: var(--aw-space-2); flex-wrap: wrap; }
+.aw-seo-issue span:last-child { color: var(--aw-ink-2); }
 
-/* ProjectWorld \u2014 compact isometric map ported from client portal; works in dark & light themes. */
-.aw-world-wrap { container-type: inline-size; min-width: 0; }
-.aw-project__world { padding: 16px 0 20px; }
-.aw-world {
-  --aw-w-ink: var(--aw-text, var(--dsw-alias-label-primary, currentColor));
-  --aw-w-ink-soft: var(--aw-text2, var(--dsw-alias-label-secondary, rgba(128,134,142,.92)));
-  --aw-w-surface: var(--aw-bg, rgba(128,134,142,.06));
-  --aw-w-stage: var(--aw-bg2, rgba(128,134,142,.09));
-  --aw-w-chip: rgba(128,134,142,.16);
-  --aw-w-rule: var(--aw-border, rgba(128,134,142,.24));
-  --aw-w-rule-strong: var(--aw-border2, rgba(128,134,142,.38));
+/* ProjectWorld \u2014 5-station isometric map (M1); readable at rest, calm motion, narrow route fallback. */
+.aw-world-wrap {
+  container-type: inline-size;
+  min-width: 0;
+  --aw-w-ink: var(--aw-ink, var(--aw-text, currentColor));
+  --aw-w-ink-soft: var(--aw-ink-2, var(--aw-text2, rgba(128,134,142,.92)));
+  --aw-w-surface: var(--aw-surface, var(--aw-bg, #fff));
+  --aw-w-stage: var(--aw-surface-sidebar, var(--aw-bg2, #f8f7f4));
+  --aw-w-chip: var(--aw-fill, var(--aw-bg3, rgba(128,134,142,.14)));
+  --aw-w-rule: var(--aw-hairline, var(--aw-border, rgba(128,134,142,.24)));
+  --aw-w-rule-strong: var(--aw-hairline-strong, var(--aw-border2, rgba(128,134,142,.38)));
   --aw-w-accent: var(--aw-accent, #ff5a1f);
   --aw-w-ok: var(--aw-ok, #2f9e5b);
   --aw-w-warn: var(--aw-warn, #d99a16);
   --aw-w-bad: var(--aw-bad, #d6453d);
-  --aw-w-hover: var(--aw-hover, rgba(128,134,142,.14));
-  --aw-w-tint: color-mix(in srgb, var(--aw-w-accent) 14%, transparent);
+  --aw-w-hover: var(--aw-hover, rgba(128,134,142,.12));
+  --aw-w-tint: color-mix(in srgb, var(--aw-w-accent) 12%, transparent);
   --aw-w-mono: var(--aw-mono, ui-monospace, 'SF Mono', Menlo, monospace);
 
   --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 90%, var(--aw-w-ink) 10%);
@@ -7659,70 +8232,86 @@ button.aw-file:hover { border-color: currentColor; }
   --aw-w-ok-soft: color-mix(in srgb, var(--aw-w-ok) 22%, var(--aw-w-surface));
   --aw-w-bad-soft: color-mix(in srgb, var(--aw-w-bad) 22%, var(--aw-w-surface));
   --aw-w-warn-soft: color-mix(in srgb, var(--aw-w-warn) 24%, var(--aw-w-surface));
-
+}
+.aw-project__world { padding: var(--aw-space-2, 8px) 0 0; }
+.aw-world__bar { display: flex; flex-direction: column; gap: var(--aw-space-2, 8px); margin-bottom: var(--aw-space-3, 12px); }
+.aw-world {
   margin: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(240px, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1.85fr) minmax(250px, 310px);
   align-items: stretch;
-  padding: 10px;
-  border-radius: var(--aw-r-lg);
+  border-radius: var(--aw-radius-lg, var(--aw-r-lg, 8px));
   border: 1px solid var(--aw-w-rule);
-  background: var(--aw-w-stage);
+  background: var(--aw-w-surface);
   color: var(--aw-w-ink);
+  overflow: hidden;
 }
 @media (prefers-color-scheme: dark) {
-  .aw-world, .aw-world__journeys {
+  .aw-world-wrap {
     --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
     --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
     --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
   }
 }
-:root[data-theme='dark'] .aw-world, :root[data-theme='dark'] .aw-world__journeys {
+:root[data-theme='dark'] .aw-world-wrap {
   --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
   --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
   --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
 }
 .aw-world__stage {
   position: relative;
-  border-radius: 8px;
   background: var(--aw-w-surface);
-  border: 1px solid var(--aw-w-rule);
-  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   min-width: 0;
-  padding: 4px;
+  padding: var(--aw-space-2, 8px);
 }
 .aw-world__svg {
   display: block;
   width: 100%;
   height: auto;
-  max-height: 260px;
+  max-height: 390px;
   user-select: none;
   -webkit-user-select: none;
 }
-.aw-world__floor-plate { fill: color-mix(in srgb, var(--aw-w-stage) 65%, var(--aw-w-surface)); stroke: var(--aw-w-rule-strong); stroke-width: 1; }
-.aw-world__dot { fill: color-mix(in srgb, var(--aw-w-ink) 20%, transparent); }
-.aw-world__dot--active { fill: var(--aw-w-accent); opacity: .72; }
-.aw-world__zone-label { font: 600 9px/1 var(--aw-w-mono); letter-spacing: .12em; text-transform: uppercase; fill: var(--aw-w-ink-soft); opacity: .78; }
+.aw-world__floor-plate {
+  fill: color-mix(in srgb, var(--aw-w-stage) 75%, var(--aw-w-surface));
+  stroke: var(--aw-w-rule-strong);
+  stroke-width: 1;
+}
 
-.aw-world__cable-base { fill: none; stroke: var(--aw-w-rule-strong); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-.aw-world__cable-base.is-connected { stroke: color-mix(in srgb, var(--aw-w-ink) 45%, transparent); }
-.aw-world__cable-flow { fill: none; stroke: var(--aw-w-accent); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 5 7; animation: aw-world-dash-flow 1.35s linear infinite; }
+.aw-world__cable-base { fill: none; stroke: var(--aw-w-rule-strong); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.aw-world__cable-base.is-connected { stroke: color-mix(in srgb, var(--aw-w-ink) 42%, transparent); }
+.aw-world__cable-base.is-lit { stroke: var(--aw-w-accent); stroke-width: 2.4; }
 .aw-world__cable-arrow { fill: var(--aw-w-ink-soft); }
 .aw-world__cable-arrow.is-active { fill: var(--aw-w-accent); }
-@keyframes aw-world-dash-flow { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
 
 .aw-world__station { cursor: pointer; outline: none; }
 .aw-world__hit { fill: transparent; stroke: none; }
-.aw-world__pad { fill: color-mix(in srgb, var(--aw-w-surface) 80%, var(--aw-w-stage)); stroke: var(--aw-w-rule-strong); stroke-width: 1; transition: fill 150ms ease, stroke 150ms ease; }
+.aw-world__pad {
+  fill: color-mix(in srgb, var(--aw-w-surface) 85%, var(--aw-w-stage));
+  stroke: var(--aw-w-rule-strong);
+  stroke-width: 1;
+  transition: fill var(--aw-dur, 140ms) var(--aw-ease, cubic-bezier(.2,0,0,1)), stroke var(--aw-dur, 140ms) var(--aw-ease, cubic-bezier(.2,0,0,1));
+}
+.aw-world__lift {
+  transition: transform var(--aw-dur, 140ms) var(--aw-ease, cubic-bezier(.2,0,0,1));
+}
+.aw-world__station:hover .aw-world__lift,
+.aw-world__station:focus-visible .aw-world__lift { transform: translateY(-3px); }
 .aw-world__station.is-active .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-accent) 12%, var(--aw-w-surface)); stroke: color-mix(in srgb, var(--aw-w-accent) 55%, var(--aw-w-ink)); }
-.aw-world__station.is-warn .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-warn) 12%, var(--aw-w-surface)); stroke: color-mix(in srgb, var(--aw-w-warn) 60%, var(--aw-w-ink)); }
+.aw-world__station.is-warn .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-warn) 12%, var(--aw-w-surface)); stroke: color-mix(in srgb, var(--aw-w-warn) 55%, var(--aw-w-ink)); }
+.aw-world__station.is-bad .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-bad) 12%, var(--aw-w-surface)); stroke: color-mix(in srgb, var(--aw-w-bad) 60%, var(--aw-w-ink)); }
 .aw-world__station.is-selected .aw-world__pad,
-.aw-world__station:hover .aw-world__pad { fill: var(--aw-w-tint); stroke: var(--aw-w-accent); stroke-width: 1.5; }
+.aw-world__station:hover .aw-world__pad { fill: var(--aw-w-tint); stroke: var(--aw-w-accent); stroke-width: 1.6; }
 .aw-world__station:focus-visible .aw-world__pad { stroke: var(--aw-w-accent); stroke-width: 2.2; }
+
+/* Pulse strictly on genuinely running stations (state === 'active') when motion is permitted. */
+@media (prefers-reduced-motion: no-preference) {
+  .aw-world__station.is-active .aw-world__pad { animation: aw-world-active-pulse 2s ease-in-out infinite; }
+}
+@keyframes aw-world-active-pulse { 50% { stroke-opacity: .4; } }
 
 .aw-world__face-top { fill: var(--aw-w-face-top); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
 .aw-world__face-left { fill: var(--aw-w-face-left); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
@@ -7734,16 +8323,16 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-world__face-bad { fill: var(--aw-w-bad-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
 .aw-world__face-warn { fill: var(--aw-w-warn-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
 .aw-world__ink-line { fill: none; stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
-.aw-world__detail-line { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 55%, transparent); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+.aw-world__detail-line { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 50%, transparent); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
 .aw-world__window { fill: color-mix(in srgb, var(--aw-w-ink) 14%, var(--aw-w-surface)); stroke: var(--aw-w-ink); stroke-width: 1.1; stroke-linejoin: round; }
 .aw-world__window--lit { fill: var(--aw-w-accent-left); }
 .aw-world__window--ok { fill: var(--aw-w-ok-soft); }
 
 .aw-world__cloche-rim-back { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 32%, transparent); stroke-width: 1; stroke-dasharray: 2.5 2; }
-.aw-world__cloche-glass { fill: rgba(128,134,142,.18); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__cloche-glass { fill: rgba(128,134,142,.16); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
 .aw-world__cloche-glass--active { fill: color-mix(in srgb, var(--aw-w-accent) 18%, transparent); }
 .aw-world__cloche-glass--warn { fill: color-mix(in srgb, var(--aw-w-warn) 18%, transparent); }
-.aw-world__cloche-shine { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 32%, transparent); stroke-width: 1.8; stroke-linecap: round; }
+.aw-world__cloche-shine { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 30%, transparent); stroke-width: 1.8; stroke-linecap: round; }
 
 .aw-world__station.is-unknown .aw-world__face-top,
 .aw-world__station.is-unknown .aw-world__face-left,
@@ -7752,318 +8341,580 @@ button.aw-file:hover { border-color: currentColor; }
 .aw-world__station.is-off .aw-world__object { opacity: .66; }
 .aw-world__station.is-off:hover .aw-world__object,
 .aw-world__station.is-off.is-selected .aw-world__object,
-.aw-world__station.is-off:focus-visible .aw-world__object { opacity: .92; }
+.aw-world__station.is-off:focus-visible .aw-world__object { opacity: .94; }
 
-.aw-world__beacon { stroke: var(--aw-w-ink); stroke-width: 1.2; }
+.aw-world__beacon { stroke: var(--aw-w-ink); stroke-width: 1.1; }
 .aw-world__beacon--ok { fill: var(--aw-w-ok); }
 .aw-world__beacon--active { fill: var(--aw-w-accent); }
 .aw-world__beacon--warn { fill: var(--aw-w-warn); }
 .aw-world__beacon--bad { fill: var(--aw-w-bad); }
 .aw-world__beacon--off,
 .aw-world__beacon--unknown { fill: var(--aw-w-stage); }
-.aw-world__badge-bg { fill: var(--aw-w-accent); stroke: var(--aw-w-ink); stroke-width: 1.2; }
-.aw-world__badge-text { font: 700 10px/1 var(--aw-w-mono); fill: #fff; text-anchor: middle; dominant-baseline: central; }
+.aw-world__badge-bg { fill: var(--aw-w-accent); stroke: var(--aw-w-ink); stroke-width: 1.1; }
+.aw-world__badge-bg--bad { fill: var(--aw-w-bad); }
+.aw-world__badge-text { font: 700 11.5px/1 var(--aw-w-mono); fill: #fff; text-anchor: middle; dominant-baseline: central; }
 
-.aw-world__tag-bg { fill: var(--aw-w-chip); stroke: var(--aw-w-rule-strong); stroke-width: 1; }
+/* Readable-at-rest two-line label plates (all SVG text \u226511px at 100%) */
+.aw-world__leader { stroke: var(--aw-w-rule-strong); stroke-width: 1; stroke-dasharray: 2 2; }
+.aw-world__station.is-selected .aw-world__leader,
+.aw-world__station:hover .aw-world__leader { stroke: var(--aw-w-accent); stroke-dasharray: none; }
+.aw-world__tag-bg { fill: var(--aw-w-surface); stroke: var(--aw-w-rule-strong); stroke-width: 1; }
 .aw-world__station.is-selected .aw-world__tag-bg,
-.aw-world__station:hover .aw-world__tag-bg { stroke: var(--aw-w-accent); }
-.aw-world__tag-text { font: 600 10px/1 inherit; fill: var(--aw-w-ink); text-anchor: middle; dominant-baseline: central; }
-.aw-world__micro { font: 500 9px/1 var(--aw-w-mono); fill: var(--aw-w-ink-soft); text-anchor: middle; }
+.aw-world__station:hover .aw-world__tag-bg { stroke: var(--aw-w-accent); stroke-width: 1.4; }
+.aw-world__tag-name { font: 600 12.5px/1 -apple-system, BlinkMacSystemFont, Inter, system-ui, sans-serif; fill: var(--aw-w-ink); dominant-baseline: central; }
+.aw-world__tag-status { font: 500 11.5px/1 -apple-system, BlinkMacSystemFont, Inter, system-ui, sans-serif; fill: var(--aw-w-ink-soft); dominant-baseline: central; }
+.aw-world__micro { font: 500 11.5px/1 var(--aw-w-mono); fill: var(--aw-w-ink-soft); text-anchor: middle; }
 
-.aw-world__caption { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.aw-world__eyebrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 600 10px/1.2 var(--aw-w-mono); text-transform: uppercase; letter-spacing: .09em; color: var(--aw-w-ink-soft); }
-.aw-world__project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
-.aw-world__card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--aw-w-surface); border: 1px solid var(--aw-w-rule); flex: 1; }
-.aw-world__card-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
-.aw-world__pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.3; border: 1px solid var(--aw-w-rule-strong); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); }
+/* Quiet inspector beside the map (hairline-separated, no inner card) */
+.aw-world__caption {
+  display: flex;
+  flex-direction: column;
+  gap: var(--aw-space-3, 12px);
+  min-width: 0;
+  padding: var(--aw-space-4, 16px);
+  border-left: 1px solid var(--aw-w-rule);
+  background: var(--aw-w-stage);
+}
+.aw-world__inspector { display: flex; flex-direction: column; gap: var(--aw-space-2, 8px); flex: 1; }
+.aw-world__card-top { display: flex; align-items: center; justify-content: space-between; gap: var(--aw-space-2, 8px); flex-wrap: wrap; }
+.aw-world__pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: var(--aw-radius-pill, 999px); font-size: var(--aw-type-xs, 11px); font-weight: 600; line-height: 1.3; border: 1px solid var(--aw-w-rule-strong); background: var(--aw-w-surface); color: var(--aw-w-ink-soft); }
 .aw-world__pill-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-ink-soft); flex: none; }
-.aw-world__pill--ok { border-color: color-mix(in srgb, var(--aw-w-ok) 45%, transparent); background: color-mix(in srgb, var(--aw-w-ok) 14%, transparent); color: var(--aw-w-ok); }
+.aw-world__pill--ok { border-color: color-mix(in srgb, var(--aw-w-ok) 45%, transparent); background: color-mix(in srgb, var(--aw-w-ok) 12%, transparent); color: var(--aw-w-ok); }
 .aw-world__pill--ok .aw-world__pill-dot { background: var(--aw-w-ok); }
 .aw-world__pill--active { border-color: color-mix(in srgb, var(--aw-w-accent) 45%, transparent); background: var(--aw-w-tint); color: var(--aw-w-accent); }
 .aw-world__pill--active .aw-world__pill-dot { background: var(--aw-w-accent); }
-.aw-world__pill--warn { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 14%, transparent); color: var(--aw-w-warn); }
+.aw-world__pill--warn { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 12%, transparent); color: color-mix(in srgb, var(--aw-w-warn) 78%, var(--aw-w-ink)); }
 .aw-world__pill--warn .aw-world__pill-dot { background: var(--aw-w-warn); }
-.aw-world__pill--bad { border-color: color-mix(in srgb, var(--aw-w-bad) 45%, transparent); background: color-mix(in srgb, var(--aw-w-bad) 14%, transparent); color: var(--aw-w-bad); }
+.aw-world__pill--bad { border-color: color-mix(in srgb, var(--aw-w-bad) 45%, transparent); background: color-mix(in srgb, var(--aw-w-bad) 12%, transparent); color: var(--aw-w-bad); }
 .aw-world__pill--bad .aw-world__pill-dot { background: var(--aw-w-bad); }
 .aw-world__pill--unknown { border-style: dashed; }
 
-.aw-world .aw-world__title { margin: 0; font-size: var(--aw-fs-lg); font-weight: 700; line-height: 1.25; letter-spacing: -.01em; color: var(--aw-w-ink); }
-.aw-world .aw-world__explain { margin: 0; font-size: 12px; line-height: 1.4; color: var(--aw-w-ink-soft); max-width: none; }
-.aw-world__status-box { margin-top: auto; padding-top: 7px; border-top: 1px dashed var(--aw-w-rule-strong); display: flex; flex-direction: column; gap: 2px; }
-.aw-world__status-label { font: 600 9.5px/1.2 var(--aw-w-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--aw-w-ink-soft); }
-.aw-world .aw-world__status-value { margin: 0; font-size: var(--aw-fs-sm); font-weight: 600; line-height: 1.35; color: var(--aw-w-ink); word-break: break-word; max-width: none; }
+.aw-world .aw-world__title { margin: 0; font-size: var(--aw-type-lg, 15px); font-weight: 600; line-height: 1.25; color: var(--aw-w-ink); }
+.aw-world .aw-world__explain { margin: 0; font-size: var(--aw-type-sm, 12px); line-height: 1.45; color: var(--aw-w-ink-soft); max-width: none; }
+.aw-world__status-box { padding-top: var(--aw-space-2, 8px); border-top: 1px solid var(--aw-w-rule); display: flex; flex-direction: column; gap: 2px; }
+.aw-world__status-label { font: 600 10px/1.2 var(--aw-w-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--aw-w-ink-soft); }
+.aw-world .aw-world__status-value { margin: 0; font-size: var(--aw-type-sm, 12px); font-weight: 600; line-height: 1.4; color: var(--aw-w-ink); word-break: break-word; max-width: none; }
 
-.aw-world__ops { padding-top: 7px; border-top: 1px dashed var(--aw-w-rule-strong); display: flex; flex-direction: column; gap: 4px; }
-.aw-world__op-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.aw-world__op-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font-size: 11px; line-height: 1.3; font-variant-numeric: tabular-nums; }
-.aw-world__op-chip strong { color: var(--aw-w-ink); font-weight: 650; }
-.aw-world__op-chip--warn { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 14%, transparent); color: var(--aw-w-warn); }
-.aw-world__op-chip--warn strong { color: var(--aw-w-warn); }
-.aw-world__op-chip--bad { border-color: color-mix(in srgb, var(--aw-w-bad) 45%, transparent); background: color-mix(in srgb, var(--aw-w-bad) 14%, transparent); color: var(--aw-w-bad); }
-.aw-world__op-chip--bad strong { color: var(--aw-w-bad); }
+.aw-world__meta { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px var(--aw-space-3, 12px); margin: 0; padding-top: var(--aw-space-2, 8px); border-top: 1px solid var(--aw-w-rule); font-size: var(--aw-type-xs, 11px); }
+.aw-world__meta dt { color: var(--aw-w-ink-soft); font-weight: 600; }
+.aw-world__meta dd { margin: 0; color: var(--aw-w-ink); overflow-wrap: anywhere; }
+.aw-world__meta-ok { color: var(--aw-w-ok); font-weight: 600; }
 
-.aw-world__checks { padding-top: 7px; border-top: 1px dashed var(--aw-w-rule-strong); display: flex; flex-direction: column; gap: 5px; }
-.aw-world__check-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
-.aw-world__check-item { display: flex; align-items: flex-start; gap: 7px; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); font-size: var(--aw-fs-xs); line-height: 1.35; }
-.aw-world__check-item.is-pending { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 10%, transparent); }
-.aw-world__check-item.is-ready { border-color: color-mix(in srgb, var(--aw-w-ok) 35%, transparent); background: color-mix(in srgb, var(--aw-w-ok) 9%, transparent); }
-.aw-world__check-mark { flex: none; width: 15px; height: 15px; margin-top: 1px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font: 700 10px/1 var(--aw-w-mono); color: var(--aw-w-ink-soft); background: var(--aw-w-chip); }
-.aw-world__check-item.is-pending .aw-world__check-mark { color: var(--aw-w-warn); background: color-mix(in srgb, var(--aw-w-warn) 18%, transparent); }
-.aw-world__check-item.is-ready .aw-world__check-mark { color: var(--aw-w-ok); background: color-mix(in srgb, var(--aw-w-ok) 18%, transparent); }
+.aw-world__ops { padding-top: var(--aw-space-2, 8px); border-top: 1px solid var(--aw-w-rule); display: flex; flex-direction: column; gap: var(--aw-space-1, 4px); }
+.aw-world__op-chips { display: flex; flex-wrap: wrap; gap: var(--aw-space-2, 8px); }
+.aw-world__op-chip { display: inline-flex; align-items: center; gap: 4px; font-size: var(--aw-type-xs, 11px); line-height: 1.3; color: var(--aw-w-ink-soft); font-variant-numeric: tabular-nums; }
+.aw-world__op-chip strong { color: var(--aw-w-ink); font-weight: 600; }
+.aw-world__op-chip--warn, .aw-world__op-chip--warn strong { color: color-mix(in srgb, var(--aw-w-warn) 78%, var(--aw-w-ink)); }
+.aw-world__op-chip--bad, .aw-world__op-chip--bad strong { color: var(--aw-w-bad); }
+
+.aw-world__checks { padding-top: var(--aw-space-2, 8px); border-top: 1px solid var(--aw-w-rule); display: flex; flex-direction: column; gap: var(--aw-space-1, 4px); }
+.aw-world__check-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.aw-world__check-item { display: flex; align-items: flex-start; gap: 6px; padding: 3px 0; font-size: var(--aw-type-xs, 11px); line-height: 1.35; }
+.aw-world__check-mark { flex: none; width: 14px; text-align: center; font: 700 11px/1.3 var(--aw-w-mono); color: var(--aw-w-ink-soft); }
+.aw-world__check-item.is-pending .aw-world__check-mark { color: var(--aw-w-warn); }
+.aw-world__check-item.is-ready .aw-world__check-mark { color: var(--aw-w-ok); }
 .aw-world__check-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
 .aw-world__check-label { font-weight: 600; color: var(--aw-w-ink); }
-.aw-world .aw-world__check-detail { margin: 0; font-size: var(--aw-fs-xs); line-height: 1.35; color: var(--aw-w-ink-soft); word-break: break-word; max-width: none; }
-.aw-world__check-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 1px; font: 500 var(--aw-fs-xs)/1.25 var(--aw-w-mono); color: var(--aw-w-ink-soft); }
+.aw-world .aw-world__check-detail { margin: 0; font-size: var(--aw-type-xs, 11px); line-height: 1.35; color: var(--aw-w-ink-soft); word-break: break-word; max-width: none; }
+.aw-world__check-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; font: 500 10.5px/1.25 var(--aw-w-mono); color: var(--aw-w-ink-soft); }
 .aw-world__check-who { color: var(--aw-w-ink); }
 
-.aw-world__nav { display: flex; flex-wrap: wrap; gap: 4px; }
-.aw-world__journeys {
-  --aw-w-ink: var(--aw-text, var(--dsw-alias-label-primary, currentColor));
-  --aw-w-ink-soft: var(--aw-text2, var(--dsw-alias-label-secondary, rgba(128,134,142,.92)));
-  --aw-w-surface: var(--aw-bg, rgba(128,134,142,.06));
-  --aw-w-stage: var(--aw-bg2, rgba(128,134,142,.09));
-  --aw-w-chip: rgba(128,134,142,.16);
-  --aw-w-rule: var(--aw-border, rgba(128,134,142,.24));
-  --aw-w-rule-strong: var(--aw-border2, rgba(128,134,142,.38));
-  --aw-w-accent: var(--aw-accent, #ff5a1f);
-  --aw-w-ok: var(--aw-ok, #2f9e5b);
-  --aw-w-warn: var(--aw-warn, #d99a16);
-  --aw-w-bad: var(--aw-bad, #d6453d);
-  --aw-w-hover: var(--aw-hover, rgba(128,134,142,.14));
-  --aw-w-tint: color-mix(in srgb, var(--aw-w-accent) 14%, transparent);
-  --aw-w-mono: var(--aw-mono, ui-monospace, 'SF Mono', Menlo, monospace);
-  --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 90%, var(--aw-w-ink) 10%);
-  --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 78%, var(--aw-w-ink) 22%);
-  --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 64%, var(--aw-w-ink) 36%);
-  --aw-w-accent-top: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface));
-  --aw-w-accent-left: color-mix(in srgb, var(--aw-w-accent) 36%, var(--aw-w-surface));
-  --aw-w-accent-right: color-mix(in srgb, var(--aw-w-accent) 50%, var(--aw-w-surface));
-  --aw-w-ok-soft: color-mix(in srgb, var(--aw-w-ok) 22%, var(--aw-w-surface));
-  --aw-w-bad-soft: color-mix(in srgb, var(--aw-w-bad) 22%, var(--aw-w-surface));
-  --aw-w-warn-soft: color-mix(in srgb, var(--aw-w-warn) 24%, var(--aw-w-surface));
+.aw-world__actions { display: flex; flex-wrap: wrap; gap: var(--aw-space-2, 8px); padding-top: var(--aw-space-2, 8px); margin-top: auto; border-top: 1px solid var(--aw-w-rule); }
+.aw-world__actions--compact { border-top: 0; padding-top: var(--aw-space-1, 4px); margin-top: var(--aw-space-1, 4px); }
+.aw-world__action-link { text-decoration: none; color: var(--aw-ink, var(--aw-text)) !important; }
+.aw-world__action-link:hover { text-decoration: none; }
+.aw-world__kbd-hint { margin: 0; font-size: var(--aw-type-xs, 11px); color: var(--aw-w-ink-soft); }
+
+/* Journey filter strip & preview drift bar */
+.aw-world__journeys { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; max-width: 100%; }
+.aw-world__journey-pill {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: min(240px, 100%);
+  min-width: 0;
+  padding: 3px 9px;
+  border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px));
+  border: 1px solid var(--aw-hairline, var(--aw-border));
+  background: var(--aw-surface, var(--aw-bg));
+  color: var(--aw-ink-2, var(--aw-text2));
+  font: inherit;
+  font-size: var(--aw-type-xs, 11px);
+  line-height: 1.35;
+  cursor: pointer;
 }
-.aw-world__journeys { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
-.aw-world__drift { margin: 0 0 6px; font-size: 12px; }
-.aw-world__drift-toggle { appearance: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--aw-warn, #d99a16) 45%, transparent); background: color-mix(in srgb, var(--aw-warn, #d99a16) 12%, transparent); color: var(--aw-text, inherit); font: inherit; cursor: pointer; }
-.aw-world__drift-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--aw-warn, #d99a16); }
-.aw-world__drift-list { list-style: none; margin: 4px 0 0; padding: 0 0 0 4px; display: grid; gap: 2px; }
+.aw-world__journey-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-world__journey-pill:hover { background: var(--aw-hover); color: var(--aw-ink, var(--aw-text)); }
+.aw-world__journey-pill[aria-pressed="true"] {
+  border-color: var(--aw-hairline-strong, var(--aw-border2));
+  background: var(--aw-fill, var(--aw-bg3));
+  color: var(--aw-ink, var(--aw-text));
+  font-weight: 600;
+}
+.aw-world__journey-pill.is-all { border-style: dashed; flex: none; }
+.aw-world__journey-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-ink-2, var(--aw-text2)); flex: 0 0 auto; }
+.aw-world__journey-pill.is-in_progress .aw-world__journey-dot,
+.aw-world__journey-pill.is-review .aw-world__journey-dot { background: var(--aw-accent); }
+.aw-world__journey-pill.is-done .aw-world__journey-dot { background: var(--aw-ok); }
+@media (max-width: 720px) {
+  .aw-world__journeys {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-right: 20px;
+    mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+  }
+  .aw-world__journeys::-webkit-scrollbar { display: none; }
+  .aw-world__journey-pill { flex: 0 0 auto; max-width: 200px; }
+}
+
+.aw-world__drift { margin: 0; font-size: var(--aw-type-sm, 12px); }
+.aw-world__drift-toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px));
+  border: 1px solid color-mix(in srgb, var(--aw-warn) 45%, transparent);
+  background: color-mix(in srgb, var(--aw-warn) 10%, transparent);
+  color: var(--aw-ink, var(--aw-text));
+  font: inherit;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.aw-world__drift-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-warn); flex: none; }
+.aw-world__drift-list { list-style: none; margin: 6px 0 0; padding: 0 0 0 8px; border-left: 2px solid color-mix(in srgb, var(--aw-warn) 45%, transparent); display: grid; gap: 3px; }
 .aw-world__drift-list li { display: flex; align-items: baseline; gap: 8px; }
-.aw-world__drift-item { appearance: none; border: 0; background: none; padding: 0; color: var(--aw-text, inherit); font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-span.aw-world__drift-item { cursor: default; color: var(--aw-text2, inherit); }
+.aw-world__drift-item { appearance: none; border: 0; background: none; padding: 0; color: var(--aw-ink, var(--aw-text)); font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+span.aw-world__drift-item { cursor: default; color: var(--aw-ink-2, var(--aw-text2)); }
 button.aw-world__drift-item:hover { text-decoration: underline; }
-.aw-world__drift-age { flex: 0 0 auto; color: var(--aw-warn, #d99a16); font-variant-numeric: tabular-nums; }
-.aw-world__journey-pill { appearance: none; display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font: inherit; font-size: 11px; line-height: 1.4; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.aw-world__journey-pill[aria-pressed="true"] { border-color: color-mix(in srgb, var(--aw-w-accent) 60%, var(--aw-w-rule)); background: var(--aw-w-tint); color: var(--aw-w-ink); }
-.aw-world__journey-pill.is-all { border-style: dashed; }
-.aw-world__journey-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-ink-soft); flex: 0 0 auto; }
-.aw-world__journey-pill.is-in_progress .aw-world__journey-dot, .aw-world__journey-pill.is-review .aw-world__journey-dot { background: var(--aw-w-accent); }
-.aw-world__journey-pill.is-done .aw-world__journey-dot { background: var(--aw-w-ok, #2f9e5b); }
-.aw-world__journey { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: var(--aw-w-tint); }
-.aw-world__journey-sentence { margin: 2px 0 6px; font-size: 13px; line-height: 1.4; color: var(--aw-w-ink); }
-.aw-world__journey-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--aw-w-accent) 55%, var(--aw-w-rule)); color: var(--aw-w-ink); font-size: 11px; text-decoration: none; }
-.aw-world__station.is-journey-ahead { opacity: .35; }
-.aw-world__station.is-journey-current .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface)); stroke: var(--aw-w-accent); stroke-width: 1.6; }
-@media (prefers-reduced-motion: no-preference) { .aw-world__station.is-journey-current .aw-world__pad { animation: aw-world-journey-pulse 2.4s ease-in-out infinite; } }
-@keyframes aw-world-journey-pulse { 50% { stroke-opacity: .45; } }
-.aw-world__chip { appearance: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--aw-w-rule); background: var(--aw-w-chip); color: var(--aw-w-ink-soft); font-size: 11px; font-weight: 500; line-height: 1.25; cursor: pointer; transition: border-color 120ms ease, background 120ms ease, color 120ms ease; }
-.aw-world__chip:hover { background: var(--aw-w-hover); color: var(--aw-w-ink); }
-.aw-world__chip[aria-pressed='true'] { border-color: var(--aw-w-accent); background: var(--aw-w-tint); color: var(--aw-w-ink); font-weight: 600; }
-.aw-world__chip:focus-visible { outline: 2px solid var(--aw-w-accent); outline-offset: 1px; }
-.aw-world__chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-rule-strong); flex: none; }
-.aw-world__chip-dot--ok { background: var(--aw-w-ok); }
-.aw-world__chip-dot--active { background: var(--aw-w-accent); }
-.aw-world__chip-dot--warn { background: var(--aw-w-warn); }
-.aw-world__chip-dot--bad { background: var(--aw-w-bad); }
-.aw-world__chip-dot--unknown { background: transparent; border: 1px dashed var(--aw-w-ink-soft); }
+.aw-world__drift-age { flex: 0 0 auto; color: color-mix(in srgb, var(--aw-warn) 78%, var(--aw-ink, var(--aw-text))); font-variant-numeric: tabular-nums; font-size: var(--aw-type-xs, 11px); }
+
+.aw-world__journey { padding-bottom: var(--aw-space-3, 12px); border-bottom: 1px solid var(--aw-w-rule); }
+.aw-world__journey-sentence { margin: 3px 0 6px; font-size: var(--aw-type-sm, 12px); line-height: 1.45; color: var(--aw-w-ink); }
+.aw-world__journey-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.aw-world__journey-chip { display: inline-block; padding: 2px 8px; border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px)); border: 1px solid var(--aw-w-rule-strong); background: var(--aw-w-surface); color: var(--aw-w-ink); font-size: var(--aw-type-xs, 11px); text-decoration: none; }
+.aw-world__journey-chip:hover { background: var(--aw-w-hover); }
+.aw-world__station.is-journey-ahead .aw-world__lift,
+.aw-world__station.is-journey-ahead .aw-world__pad { opacity: .45; }
+.aw-world__station.is-journey-ahead .aw-world__label { opacity: .82; }
+.aw-world__station.is-journey-ahead.is-selected .aw-world__lift,
+.aw-world__station.is-journey-ahead.is-selected .aw-world__pad,
+.aw-world__station.is-journey-ahead.is-selected .aw-world__label,
+.aw-world__station.is-journey-ahead:hover .aw-world__lift,
+.aw-world__station.is-journey-ahead:hover .aw-world__pad,
+.aw-world__station.is-journey-ahead:hover .aw-world__label { opacity: 1; }
+.aw-world__station.is-journey-current .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-accent) 16%, var(--aw-w-surface)); stroke: var(--aw-w-accent); stroke-width: 1.6; }
+
+/* Narrow fallback: vertical route list (hidden on wide, replaces SVG map \u2264900px) */
+.aw-world__route {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--aw-hairline, var(--aw-border));
+}
+.aw-world__route-item {
+  position: relative;
+  padding: var(--aw-space-3, 12px) 0 var(--aw-space-3, 12px) var(--aw-space-4, 16px);
+  border-bottom: 1px solid var(--aw-hairline, var(--aw-border));
+}
+.aw-world__route-item::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--aw-hairline, var(--aw-border));
+}
+.aw-world__route-item:first-child::before { top: 18px; }
+.aw-world__route-item:last-child { border-bottom: 0; }
+.aw-world__route-item:last-child::before { bottom: calc(100% - 18px); }
+.aw-world__route-head { display: flex; align-items: center; gap: var(--aw-space-2, 8px); flex-wrap: wrap; }
+.aw-world__route-dot {
+  position: absolute;
+  left: 0;
+  top: 16px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--aw-hairline-strong, var(--aw-border2));
+  border: 2px solid var(--aw-surface, var(--aw-bg));
+}
+.aw-world__route-dot--ok { background: var(--aw-ok); }
+.aw-world__route-dot--active { background: var(--aw-accent); }
+.aw-world__route-dot--warn { background: var(--aw-warn); }
+.aw-world__route-dot--bad { background: var(--aw-bad); }
+.aw-world__route-name { font-size: var(--aw-type-md, 13px); font-weight: 600; flex: 1; min-width: 0; }
+.aw-world__route-status { margin: 4px 0 0; font-size: var(--aw-type-sm, 12px); color: var(--aw-ink, var(--aw-text)); }
+.aw-world__route-sub { margin: 2px 0 0; font-size: var(--aw-type-xs, 11px); color: var(--aw-ink-2, var(--aw-text2)); }
+.aw-world__ops--inline { padding-top: var(--aw-space-1, 4px); border-top: 0; }
+.aw-world__route-checks { padding: var(--aw-space-1, 4px) 0 0; }
+.aw-world__route-checks > summary { cursor: pointer; font-size: var(--aw-type-xs, 11px); font-weight: 500; color: var(--aw-ink-2, var(--aw-text2)); padding: 2px 0; }
+.aw-world__route-checks .aw-world__checks { border-top: 0; padding-top: var(--aw-space-1, 4px); }
+.aw-world__route-checks .aw-world__status-label { display: none; }
+
+/* Station right-click context menu */
+.aw-world__ctxmenu {
+  position: fixed;
+  z-index: 60;
+  min-width: 176px;
+  padding: var(--aw-space-1, 4px);
+  border-radius: var(--aw-radius-lg, var(--aw-r-lg, 8px));
+  border: 1px solid var(--aw-hairline-strong, var(--aw-border2));
+  background: var(--aw-surface-raised, var(--aw-bg));
+  box-shadow: var(--aw-shadow-float, 0 8px 24px rgba(0, 0, 0, .2));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.aw-world__ctxhead {
+  padding: 4px 8px;
+  font-size: var(--aw-type-xs, 11px);
+  font-weight: 600;
+  color: var(--aw-ink-2, var(--aw-text2));
+  border-bottom: 1px solid var(--aw-hairline, var(--aw-border));
+  margin-bottom: 2px;
+}
+.aw-world__ctxitem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px));
+  background: transparent;
+  color: var(--aw-ink, var(--aw-text));
+  font-size: var(--aw-type-sm, 12px);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.aw-world__ctxitem:hover { background: var(--aw-hover); }
 
 .aw-sr-only, .aw-world__sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
-@media (max-width: 720px) {
-  .aw-world { grid-template-columns: minmax(0, 1fr); }
+/* Replace isometric map with vertical route list below ~900px viewport or \u2264780px container */
+@media (max-width: 900px) {
+  .aw-world { display: none; }
+  .aw-world__route { display: block; }
 }
-@container (max-width: 720px) {
-  .aw-world { grid-template-columns: minmax(0, 1fr); }
+@container (max-width: 780px) {
+  .aw-world { display: none; }
+  .aw-world__route { display: block; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .aw-world__cable-flow { animation: none; }
-  .aw-world__pad, .aw-world__chip { transition: none; }
+  .aw-world__station.is-active .aw-world__pad { animation: none; }
+  .aw-world__pad, .aw-world__lift { transition: none; }
+  .aw-world__station:hover .aw-world__lift,
+  .aw-world__station:focus-visible .aw-world__lift { transform: none; }
 }
 
-/* Marketing desk: the autopilot rows, the needs list, the day chart, regrouped settings. */
-.aw-table--compact td, .aw-table--compact th { padding-top: 7px; padding-bottom: 7px; }
+/* Marketing desk: flat hairline sections, capped measure, compact narrow rows, quiet chart. */
+.aw-mk { max-width: var(--aw-measure-table, 1180px); margin: 0 auto; width: 100%; min-width: 0; }
+.aw-mk p { max-width: var(--aw-measure, 72ch); }
+.aw-mk .aw-panel {
+  border: 0;
+  border-top: 1px solid var(--aw-hairline, var(--aw-border));
+  border-radius: 0;
+  padding: var(--aw-space-5, 24px) 0;
+  margin: 0;
+  background: transparent;
+}
+.aw-mk-overview > .aw-panel:first-child,
+.aw-mk > .aw-panel:first-of-type,
+.aw-mk .aw-pagetabs + .aw-panel,
+.aw-mk .aw-toolbar + .aw-panel { border-top: 0; padding-top: var(--aw-space-3, 12px); }
+.aw-mk .aw-panel__head { margin-bottom: var(--aw-space-3, 12px); }
+.aw-mk .aw-panel__titles h3 { font-size: var(--aw-type-lg, 15px); font-weight: 600; }
+.aw-mk .aw-rows { border: 0; border-top: 1px solid var(--aw-hairline, var(--aw-border)); border-radius: 0; overflow: visible; }
+.aw-mk .aw-row { padding: var(--aw-space-2, 8px) 0; }
+.aw-mk .aw-row + .aw-row { border-top: 1px solid var(--aw-hairline, var(--aw-border)); }
+.aw-mk .aw-row:hover { background: var(--aw-hover); }
+
+.aw-table--compact td, .aw-table--compact th { padding-top: var(--aw-space-2, 8px); padding-bottom: var(--aw-space-2, 8px); }
 .aw-table--static tbody tr, .aw-table--static th { cursor: default; }
 .aw-table--static tbody tr:hover { background: transparent; }
 .aw-table, .aw-mk-meter__num, .aw-chart__tick, .aw-chart__day, .aw-needs, .aw-mk-kinds { font-variant-numeric: tabular-nums; }
-.aw-mk-health { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 250px; }
+.aw-table th.aw-mk-num, .aw-table td.aw-mk-num { text-align: right; }
+
+.aw-mk-health { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 240px; }
 .aw-mk-health .aw-mk-meter { margin: 0; }
 .aw-mk-meter { display: inline-flex; align-items: center; gap: 8px; margin: 2px 14px 2px 0; white-space: nowrap; }
-.aw-mk-meter__label { color: var(--aw-text2); font-size: 12px; min-width: 62px; }
-.aw-mk-meter__track { position: relative; width: 72px; height: 5px; background: var(--aw-bg3); border-radius: var(--aw-r-sm); flex: none; }
-.aw-mk-meter__fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: var(--aw-r-sm); background: var(--aw-ok); }
+.aw-mk-meter__label { color: var(--aw-ink-2, var(--aw-text2)); font-size: var(--aw-type-sm, 12px); min-width: 62px; }
+.aw-mk-meter__track { position: relative; width: 72px; height: 5px; background: var(--aw-fill, var(--aw-bg3)); border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px)); flex: none; }
+.aw-mk-meter__fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px)); background: var(--aw-ok); }
 .aw-mk-meter__fill--warn { background: var(--aw-warn); }
 .aw-mk-meter__fill--bad { background: var(--aw-bad); }
-.aw-mk-meter__limit { position: absolute; top: -2px; bottom: -2px; left: 80%; width: 1px; background: var(--aw-text2); opacity: .55; }
-.aw-mk-meter__num { color: var(--aw-text2); font-size: 12px; }
+.aw-mk-meter__limit { position: absolute; top: -2px; bottom: -2px; left: 80%; width: 1px; background: var(--aw-ink-2, var(--aw-text2)); opacity: .55; }
+.aw-mk-meter__num { color: var(--aw-ink-2, var(--aw-text2)); font-size: var(--aw-type-sm, 12px); }
 .aw-mk-bad { color: var(--aw-bad); }
-.aw-mk-kinds-label { margin: 12px 0 2px; }
-.aw-mk-kinds { display: flex; flex-wrap: wrap; gap: 3px 16px; margin: 0; font-size: 12px; }
-.aw-mk-kind { display: flex; gap: 5px; }
-.aw-mk-kind dt { color: var(--aw-text2); }
-.aw-mk-kind dd { margin: 0; font-weight: 600; }
-.aw-needs { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.aw-needs li { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-top: 1px solid var(--aw-border); }
+
+.aw-mk-findings { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--aw-space-2, 8px) var(--aw-space-4, 16px); margin-top: var(--aw-space-3, 12px); padding-top: var(--aw-space-2, 8px); font-size: var(--aw-type-sm, 12px); }
+.aw-mk-kinds-label { margin: 0; font-size: var(--aw-type-sm, 12px); }
+.aw-mk-kinds { display: flex; flex-wrap: wrap; gap: var(--aw-space-1, 4px) var(--aw-space-4, 16px); margin: 0; font-size: var(--aw-type-sm, 12px); }
+.aw-mk-kind { display: inline-flex; align-items: baseline; gap: 5px; }
+.aw-mk-kind dt { color: var(--aw-ink-2, var(--aw-text2)); }
+.aw-mk-kind dd { margin: 0; font-weight: 600; color: var(--aw-ink, var(--aw-text)); }
+
+.aw-needs { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.aw-needs li { display: flex; align-items: center; gap: var(--aw-space-3, 12px); min-height: var(--aw-row-h-table, 36px); padding: var(--aw-space-2, 8px) 0; border-top: 1px solid var(--aw-hairline, var(--aw-border)); }
 .aw-needs li:first-child { border-top: 0; }
 .aw-needs li > span { flex: 1; min-width: 0; }
-.aw-needs .aw-btn { flex: none; }
+.aw-needs .aw-btn { flex: none; margin-left: auto; }
+
+.aw-mk-exp-foot { margin-top: var(--aw-space-3, 12px); display: flex; flex-direction: column; gap: 4px; }
+.aw-mk-exp-foot p { margin: 0; font-size: var(--aw-type-sm, 12px); }
+
+/* Quiet single-purpose 14-day chart */
 .aw-chart { margin: 0; }
-.aw-chart__totals { margin: 0 0 8px; color: var(--aw-text2); font-size: 12px; }
+.aw-chart__head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--aw-space-2, 8px) var(--aw-space-4, 16px); margin: 0 0 var(--aw-space-2, 8px); }
+.aw-chart__totals { color: var(--aw-ink-2, var(--aw-text2)); font-size: var(--aw-type-sm, 12px); font-variant-numeric: tabular-nums; }
+.aw-chart__legend { display: inline-flex; align-items: center; gap: var(--aw-space-3, 12px); font-size: var(--aw-type-xs, 11px); color: var(--aw-ink-2, var(--aw-text2)); }
+.aw-chart__legend span { display: inline-flex; align-items: center; gap: 4px; }
+.aw-chart__key { display: inline-block; width: 7px; height: 7px; border-radius: 2px; }
+.aw-chart__key--sent { background: var(--aw-fill, var(--aw-bg3)); border: 1px solid var(--aw-hairline-strong, var(--aw-border2)); }
+.aw-chart__key--bounce { background: var(--aw-bad); }
+.aw-chart__key--reply { background: var(--aw-ok); border-radius: 50%; }
+.aw-chart__key--post { background: var(--aw-violet); }
 .aw-chart__svg { display: block; }
-.aw-chart__grid { stroke: var(--aw-border); stroke-width: 1; }
-.aw-chart__axis { stroke: var(--aw-border2); stroke-width: 1; }
-.aw-chart__tick, .aw-chart__day { fill: var(--aw-text2); font-size: 10px; }
-.aw-chart__bar { fill: var(--aw-bg3); }
+.aw-chart__grid { stroke: var(--aw-hairline, var(--aw-border)); stroke-width: 1; }
+.aw-chart__axis { stroke: var(--aw-hairline-strong, var(--aw-border2)); stroke-width: 1; }
+.aw-chart__tick, .aw-chart__day { fill: var(--aw-ink-2, var(--aw-text2)); font-size: 10px; }
+.aw-chart__bar { fill: var(--aw-fill, var(--aw-bg3)); }
 .aw-chart__bounce { fill: var(--aw-bad); }
 .aw-chart__reply { fill: var(--aw-ok); }
 .aw-chart__post { fill: var(--aw-violet); }
-.aw-form2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+
+/* Replies: hairline rows with aligned timestamp and explicit row action */
+.aw-mk-replies { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--aw-hairline, var(--aw-border)); }
+.aw-mk-reply {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--aw-space-3, 12px);
+  padding: var(--aw-space-3, 12px) var(--aw-space-1, 4px);
+  border-bottom: 1px solid var(--aw-hairline, var(--aw-border));
+  cursor: pointer;
+}
+.aw-mk-reply:last-child { border-bottom: 0; }
+.aw-mk-reply:hover { background: var(--aw-hover); }
+.aw-mk-reply__body { min-width: 0; }
+.aw-mk-reply__who { display: block; font-size: var(--aw-type-md, 13px); font-weight: 600; color: var(--aw-ink, var(--aw-text)); }
+.aw-mk-reply__text { margin: 2px 0 0; font-size: var(--aw-type-sm, 12px); max-width: var(--aw-measure, 72ch); }
+.aw-mk-reply__meta { display: inline-flex; align-items: center; gap: var(--aw-space-2, 8px); white-space: nowrap; }
+.aw-mk-reply__age { font-size: var(--aw-type-xs, 11px); font-variant-numeric: tabular-nums; }
+
+/* Marketing loading skeletons */
+.aw-mk-skel { display: grid; gap: var(--aw-space-2, 8px); padding: var(--aw-space-2, 8px) 0; }
+.aw-mk-skel__row { display: block; height: 18px; border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px)); background: var(--aw-fill, var(--aw-bg3)); max-width: 540px; }
+.aw-mk-skel__row:nth-child(2) { max-width: 420px; opacity: .75; }
+.aw-mk-skel__row:nth-child(3) { max-width: 480px; opacity: .55; }
+.aw-mk-skel__chart { display: block; height: 164px; border-radius: var(--aw-radius-md, var(--aw-r-md, 6px)); background: var(--aw-fill, var(--aw-bg3)); opacity: .65; }
+
+.aw-form2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--aw-space-4, 16px); max-width: 860px; }
+
+/* Compact narrow layout (\u2264720px & 390px): 2-column compact label/value rows instead of ~5,000px stack */
 @media (max-width: 720px) {
+  .aw-mk .aw-panel { padding: var(--aw-space-4, 16px) 0; }
   .aw-form2 { grid-template-columns: 1fr; }
   .aw-table--stack thead { display: none; }
-  .aw-table--stack, .aw-table--stack tbody, .aw-table--stack tr, .aw-table--stack td { display: block; width: 100%; }
-  .aw-table--stack tr { padding: 8px 4px; border-top: 1px solid var(--aw-border); }
-  .aw-table--stack tbody tr:first-child { border-top: 0; }
-  .aw-table--stack td { padding: 3px 8px; border-bottom: 0; white-space: normal; }
+  .aw-table--stack, .aw-table--stack tbody, .aw-table--stack tr { display: block; width: 100%; }
+  .aw-table--stack tr { padding: var(--aw-space-2, 8px) 0; border-top: 1px solid var(--aw-hairline, var(--aw-border)); }
+  .aw-table--stack tbody tr:first-child { border-top: 0; padding-top: 0; }
+  .aw-table--stack td {
+    display: grid;
+    grid-template-columns: 68px minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--aw-space-2, 8px);
+    padding: 3px 0;
+    border-bottom: 0;
+    white-space: normal;
+    text-align: left;
+    font-size: var(--aw-type-sm, 12px);
+  }
   .aw-table--stack td::before {
     content: attr(data-label);
-    display: block;
-    margin-bottom: 1px;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: .05em;
-    color: var(--aw-text2);
+    letter-spacing: .04em;
+    color: var(--aw-ink-2, var(--aw-text2));
   }
-  .aw-table--stack td:first-child { font-weight: 600; }
+  .aw-table--stack td:first-child { display: block; font-weight: 600; font-size: var(--aw-type-md, 13px); padding-bottom: 4px; }
   .aw-table--stack td:first-child::before { content: none; }
-  .aw-table--stack .aw-mk-meter { display: flex; margin: 2px 0; }
+  .aw-table--stack .aw-mk-health { min-width: 0; }
+  .aw-table--stack .aw-mk-meter { display: flex; margin: 0; gap: 6px; }
+  .aw-table--stack .aw-mk-meter__track { width: 52px; }
+  .aw-mk-exp-table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px var(--aw-space-3, 12px); }
+  .aw-mk-exp-table tbody td:first-child { grid-column: 1 / -1; }
+  .aw-mk-exp-table tbody td { grid-template-columns: auto 1fr; }
+  .aw-mk-exp-table tbody td.aw-mk-num { text-align: left; }
+  .aw-mk-reply { grid-template-columns: minmax(0, 1fr); gap: var(--aw-space-1, 4px); }
+  .aw-mk-reply > .aw-tag { justify-self: start; }
+  .aw-mk-reply__meta { justify-content: space-between; width: 100%; }
 }
 .aw-mk-window input { flex: none; width: 58px; min-width: 0; }
 .aw-mk-window input[aria-label="Window offset minutes"] { width: 72px; }
-.aw-divider { border: 0; border-top: 1px solid var(--aw-border); margin: 18px 0 4px; }
+.aw-divider { border: 0; border-top: 1px solid var(--aw-hairline, var(--aw-border)); margin: var(--aw-space-4, 16px) 0 var(--aw-space-1, 4px); }
 
 /* Project solutions: kinds of work, the fleet note, and the client's connections. */
-.aw-dot--muted { background: var(--aw-border2); }
+.aw-dot--muted { background: var(--aw-hairline-strong, var(--aw-border2)); }
 .aw-psol { margin: 2px 0; }
-.aw-psol__h { margin: 12px 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); }
+.aw-psol__h { margin: var(--aw-space-3, 12px) 0 var(--aw-space-1, 4px); font-size: var(--aw-type-xs, 11px); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-ink-2, var(--aw-text2)); }
 .aw-psol__h:first-child { margin-top: 0; }
-.aw-psol__fleet { margin: 6px 0 0; font-size: 12px; color: var(--aw-text2); }
-.aw-psol__fleet--warn { color: color-mix(in srgb, var(--aw-warn) 80%, var(--aw-text)); font-weight: 600; }
+.aw-psol__fleet { margin: var(--aw-space-2, 8px) 0 0; font-size: var(--aw-type-sm, 12px); color: var(--aw-ink-2, var(--aw-text2)); }
+.aw-psol__fleet--warn { color: color-mix(in srgb, var(--aw-warn) 80%, var(--aw-ink, var(--aw-text))); font-weight: 600; }
 .aw-psol__rows { list-style: none; margin: 0; padding: 0; }
-.aw-psol__row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--aw-border); }
+.aw-psol__row { display: flex; align-items: center; gap: var(--aw-space-2, 8px); min-height: var(--aw-row-h-table, 36px); padding: var(--aw-space-2, 8px) 0; border-top: 1px solid var(--aw-hairline, var(--aw-border)); }
 .aw-psol__row:first-child { border-top: 0; }
-.aw-psol__rowmain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.aw-psol__miss { font-family: var(--aw-mono); font-size: 11px; color: var(--aw-text2); }
-.aw-psol__err { font-size: 12px; color: var(--aw-bad); }
-.aw-psol__rowact { flex: none; display: flex; align-items: center; gap: 6px; }
-.aw-psol__brief { margin-top: 12px; }
-.aw-psol__brief > summary { cursor: pointer; color: var(--aw-text2); font-size: 12px; }
-.aw-psol__brief[open] > summary { margin-bottom: 4px; }
-.aw-psol__briefitem { padding: 6px 0; border-top: 1px solid var(--aw-border); font-size: 12px; }
-.aw-psol__briefitem ul { margin: 2px 0 8px; padding-left: 18px; color: var(--aw-text2); }
-.aw-psol__tags { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.aw-psol__rowmain { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--aw-space-2, 8px); flex-wrap: wrap; }
+.aw-psol__miss { font-family: var(--aw-mono); font-size: var(--aw-type-xs, 11px); color: var(--aw-ink-2, var(--aw-text2)); }
+.aw-psol__err { font-size: var(--aw-type-sm, 12px); color: var(--aw-bad); }
+.aw-psol__rowact { flex: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.aw-psol__skel { display: grid; gap: var(--aw-space-2, 8px); padding: var(--aw-space-1, 4px) 0; }
+.aw-psol__skel > span:not(.aw-sr-only) { display: block; height: 20px; max-width: 440px; border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px)); background: var(--aw-fill, var(--aw-bg3)); }
+.aw-psol__skel > span:last-child { max-width: 340px; opacity: .7; }
+.aw-psol__brief { margin-top: var(--aw-space-3, 12px); }
+.aw-psol__brief > summary { cursor: pointer; color: var(--aw-ink-2, var(--aw-text2)); font-size: var(--aw-type-sm, 12px); }
+.aw-psol__brief[open] > summary { margin-bottom: var(--aw-space-1, 4px); }
+.aw-psol__briefitem { padding: var(--aw-space-2, 8px) 0; border-top: 1px solid var(--aw-hairline, var(--aw-border)); font-size: var(--aw-type-sm, 12px); max-width: var(--aw-measure, 72ch); }
+.aw-psol__briefitem ul { margin: 2px 0 var(--aw-space-2, 8px); padding-left: 18px; color: var(--aw-ink-2, var(--aw-text2)); }
+.aw-psol__tags { display: inline-flex; align-items: center; gap: var(--aw-space-1, 4px); flex-wrap: wrap; }
 .aw-psol__steps { margin: 0 0 10px; padding-left: 20px; }
-.aw-psol__steps li { margin: 3px 0; font-size: 12px; color: var(--aw-text2); }
+.aw-psol__steps li { margin: 3px 0; font-size: var(--aw-type-sm, 12px); color: var(--aw-ink-2, var(--aw-text2)); }
+@media (max-width: 720px) {
+  .aw-psol__row { flex-wrap: wrap; }
+  .aw-psol__rowact { width: 100%; padding-left: 16px; }
+}
 
 /* \u2014\u2014\u2014\u2014\u2014 Shared primitives (ui.jsx): one shape each, for every view \u2014\u2014\u2014\u2014\u2014 */
-.aw-emptybox { padding: var(--aw-sp-6); display: flex; flex-direction: column; align-items: center; gap: var(--aw-sp-2); text-align: center; color: var(--aw-text2); }
-.aw-emptybox strong { font-size: var(--aw-fs-md); font-weight: 600; }
-.aw-emptybox__hint { font-size: var(--aw-fs-sm); max-width: 52ch; }
-.aw-emptybox__action { margin-top: var(--aw-sp-2); }
-.aw-loading { display: flex; align-items: center; justify-content: center; gap: var(--aw-sp-2); padding: var(--aw-sp-6) var(--aw-sp-4); color: var(--aw-text2); font-size: var(--aw-fs-sm); }
-.aw-loading::before { content: ''; flex: none; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--aw-border2); border-top-color: var(--aw-accent); animation: aw-spin .7s linear infinite; }
+.aw-emptybox { padding: var(--aw-space-6) var(--aw-space-4); display: flex; flex-direction: column; align-items: center; gap: var(--aw-space-1); text-align: center; color: var(--aw-ink-2); }
+.aw-emptybox__icon { color: var(--aw-ink-3); margin-bottom: var(--aw-space-1); }
+.aw-emptybox strong { font-size: var(--aw-type-md); font-weight: 600; color: var(--aw-ink); }
+.aw-emptybox__hint { font-size: var(--aw-type-sm); max-width: 52ch; }
+.aw-emptybox__action { margin-top: var(--aw-space-2); display: flex; gap: var(--aw-space-2); }
+.aw-emptybox--inline { padding: var(--aw-space-4) var(--aw-space-2); align-items: flex-start; text-align: left; }
+.aw-loading { display: block; padding: var(--aw-space-4) 0; color: var(--aw-ink-2); font-size: var(--aw-type-sm); }
 @keyframes aw-spin { to { transform: rotate(1turn); } }
-@media (prefers-reduced-motion: reduce) { .aw-loading::before { animation: none; } }
-.aw-errornote { display: flex; align-items: center; gap: var(--aw-sp-3); flex-wrap: wrap; padding: 10px 12px; border-radius: var(--aw-r-lg); margin: 10px 0; background: color-mix(in srgb, var(--aw-bad) 10%, transparent); color: var(--aw-bad); font-size: var(--aw-fs-sm); }
+.aw-errornote { display: flex; align-items: center; gap: var(--aw-space-2) var(--aw-space-3); flex-wrap: wrap; padding: var(--aw-space-2) var(--aw-space-3); border-radius: var(--aw-radius-md); margin: var(--aw-space-2) 0; background: var(--aw-bad-wash); color: var(--aw-bad-ink); font-size: var(--aw-type-sm); }
 .aw-errornote__text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.aw-panel__head { display: flex; align-items: center; gap: var(--aw-sp-3); flex-wrap: wrap; margin-bottom: var(--aw-sp-3); }
+.aw-panel__head { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; margin-bottom: var(--aw-space-2); }
 .aw-panel__titles { flex: 1; min-width: 0; }
-.aw-panel__titles h3 { font-size: var(--aw-fs-md); font-weight: 600; margin: 0; }
-.aw-panel__titles p { margin: 2px 0 0; color: var(--aw-text2); font-size: var(--aw-fs-sm); }
-.aw-panel__actions { display: flex; align-items: center; gap: var(--aw-sp-1); flex: none; }
-.aw-statrow { display: flex; flex-wrap: wrap; gap: var(--aw-sp-3); font-variant-numeric: tabular-nums; }
-.aw-statrow__item { display: flex; flex-direction: column; gap: 1px; min-width: 64px; padding: var(--aw-sp-2) var(--aw-sp-4); border: 1px solid var(--aw-border); border-radius: var(--aw-r-md); background: var(--aw-bg); }
-.aw-statrow__item strong { font-size: var(--aw-fs-lg); font-weight: 600; }
-.aw-statrow__item small { font-size: var(--aw-fs-xs); color: var(--aw-text2); }
-.aw-statrow__item--ok strong { color: var(--aw-ok); }
-.aw-statrow__item--warn strong { color: color-mix(in srgb, var(--aw-warn) 70%, var(--aw-text)); }
-.aw-statrow__item--bad strong { color: var(--aw-bad); }
-.aw-statrow__item--info strong { color: var(--aw-info); }
-.aw-statrow__item--accent strong { color: var(--aw-accent); }
-.aw-tag--pill { height: 18px; padding: 0 6px; border-radius: var(--aw-r-pill); }
-/* One page header for every view (PageHeader): h2 and a one-line muted
-   subtitle on the left, badges then buttons on the right; it wraps when the
-   pane is narrow, and no box or border competes with the page. */
-.aw-pagehead { display: flex; align-items: center; gap: var(--aw-sp-3) var(--aw-sp-5); flex-wrap: wrap; margin-bottom: var(--aw-sp-4); }
-.aw-pagehead__titles { flex: 1; min-width: 0; }
-.aw-pagehead__titles h2 { margin: 0; font-size: var(--aw-fs-xl); font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
-.aw-pagehead__titles p { margin: 2px 0 0; color: var(--aw-text2); font-size: var(--aw-fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.aw-pagehead__side { display: flex; align-items: center; gap: var(--aw-sp-2); flex-wrap: wrap; }
-.aw-pagehead__meta { display: flex; align-items: center; gap: var(--aw-sp-1); flex-wrap: wrap; }
-.aw-pagehead__actions { display: flex; align-items: center; gap: var(--aw-sp-1); flex-wrap: wrap; }
-/* One tab strip for a page's sections (PageTabs): 32px underline tabs on one
-   rule, the chosen one inked with a 2px accent underline; roving focus. */
-.aw-pagetabs { display: flex; align-items: flex-end; gap: var(--aw-sp-5); border-bottom: 1px solid var(--aw-border); margin-bottom: var(--aw-sp-3); overflow-x: auto; scrollbar-width: none; }
+.aw-panel__titles h3 { font-size: var(--aw-type-md); font-weight: 600; margin: 0; }
+.aw-panel__titles p { margin: 2px 0 0; color: var(--aw-ink-2); font-size: var(--aw-type-sm); }
+.aw-panel__actions { display: flex; align-items: center; gap: var(--aw-space-1); flex: none; flex-wrap: wrap; }
+/* StatRow: figures in a line; no boxes. */
+.aw-statrow { display: flex; flex-wrap: wrap; gap: var(--aw-space-2) var(--aw-space-5); margin: var(--aw-space-2) 0; }
+.aw-statrow__item { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+.aw-statrow__item strong { font-size: var(--aw-type-lg); font-weight: 600; line-height: 1.3; }
+.aw-statrow__item small { font-size: var(--aw-type-xs); color: var(--aw-ink-2); }
+.aw-statrow__item--ok strong { color: var(--aw-ok-ink); }
+.aw-statrow__item--warn strong { color: var(--aw-warn-ink); }
+.aw-statrow__item--bad strong { color: var(--aw-bad-ink); }
+.aw-statrow__item--info strong { color: var(--aw-info-ink); }
+.aw-statrow__item--accent strong { color: var(--aw-ink); }
+.aw-tag--pill { height: 18px; padding: 0 7px; border-radius: var(--aw-radius-pill); }
+/* One page header (PageHeader): title + one-line context left; meta, actions
+   and the overflow menu right. No box, no border. */
+.aw-pagehead { display: flex; align-items: center; gap: var(--aw-space-2) var(--aw-space-4); flex-wrap: wrap; min-height: 40px; margin-bottom: var(--aw-space-3); }
+.aw-pagehead__titles { flex: 1 1 280px; min-width: 0; }
+.aw-pagehead__titles h2 { margin: 0; font-size: var(--aw-type-xl); font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.aw-pagehead__titles p { margin: 1px 0 0; color: var(--aw-ink-2); font-size: var(--aw-type-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-pagehead__side { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; justify-content: flex-end; }
+.aw-pagehead__meta { display: flex; align-items: center; gap: var(--aw-space-1); flex-wrap: wrap; }
+.aw-pagehead__actions { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; }
+.aw-pagehead__secondary { display: contents; }
+/* One subnav (PageTabs / Subnav): underline tabs on one hairline; scrolls. */
+.aw-pagetabs { display: flex; align-items: flex-end; gap: var(--aw-space-4); border-bottom: 1px solid var(--aw-hairline); margin-bottom: var(--aw-space-4); overflow-x: auto; scrollbar-width: none; }
 .aw-pagetabs::-webkit-scrollbar { display: none; }
-.aw-pagetabs button { appearance: none; flex: none; display: inline-flex; align-items: center; gap: var(--aw-sp-2); height: 32px; padding: 0 2px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--aw-text2); font: inherit; font-size: var(--aw-fs-md); cursor: pointer; white-space: nowrap; }
-.aw-pagetabs button:hover { color: var(--aw-text); }
-.aw-pagetabs button[aria-selected="true"] { color: var(--aw-text); border-bottom-color: var(--aw-accent); font-weight: 600; }
-.aw-pagetabs__badge { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: var(--aw-r-pill); background: var(--aw-bg3); color: var(--aw-text2); font-size: 10px; font-weight: 600; }
-.aw-pagetabs button[aria-selected="true"] .aw-pagetabs__badge { background: color-mix(in srgb, var(--aw-accent) 16%, transparent); color: var(--aw-accent); }
-/* shell */
-.aw-tablist { display: flex; flex: 1; align-items: stretch; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.aw-tablist::-webkit-scrollbar { display: none; }
-.aw-tabs__toggle { flex: none; height: 100%; padding: 0 9px; border: 0; border-right: 1px solid var(--aw-border); border-radius: 0; color: var(--aw-text2); }
-.aw-tabs__toggle:hover:not(:disabled) { background: var(--aw-hover); color: var(--aw-text); }
-.aw-tab:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: -2px; }
-.aw-tab__close:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: -1px; }
-.aw-topbanner { position: absolute; z-index: 5; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: color-mix(in srgb, var(--aw-bad) 12%, var(--aw-bg)); border-bottom: 1px solid color-mix(in srgb, var(--aw-bad) 45%, var(--aw-border)); color: var(--aw-text); font-size: 12px; }
+@media (max-width: 900px) {
+  /* A tab strip that runs off the edge reads as scrolled, not clipped. */
+  .aw-pagetabs { padding-right: 20px; mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent); }
+}
+
+.aw-pagetabs button { appearance: none; flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 2px; margin-bottom: -1px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--aw-ink-2); font: inherit; font-size: var(--aw-type-md); cursor: pointer; white-space: nowrap; }
+.aw-pagetabs button:hover { color: var(--aw-ink); }
+.aw-pagetabs button[aria-selected="true"] { color: var(--aw-ink); border-bottom-color: var(--aw-accent); font-weight: 600; }
+.aw-pagetabs button:focus-visible { outline-offset: -2px; }
+.aw-pagetabs__badge { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: var(--aw-radius-pill); background: var(--aw-fill); color: var(--aw-ink-2); font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* \u2014\u2014\u2014\u2014\u2014 Menu, context menu, overflow \u2014\u2014\u2014\u2014\u2014 */
+.aw-menu { position: fixed; z-index: 70; min-width: 200px; max-width: 320px; max-height: min(480px, 80vh); overflow-y: auto; padding: 4px; border-radius: var(--aw-radius-lg); background: var(--aw-surface-raised); color: var(--aw-ink); box-shadow: var(--aw-shadow-float); font-size: var(--aw-type-md); animation: aw-fade var(--aw-dur) var(--aw-ease); list-style: none; margin: 0; }
+.aw-menu:focus { outline: none; }
+.aw-menu__item { display: flex; align-items: center; gap: var(--aw-space-3); width: 100%; height: 28px; padding: 0 var(--aw-space-2); border: 0; border-radius: var(--aw-radius-sm); background: none; color: inherit; text-align: left; cursor: default; white-space: nowrap; }
+.aw-menu__item > span:first-child { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.aw-menu__item small { color: var(--aw-ink-3); font-size: var(--aw-type-xs); }
+.aw-menu__item.is-active, .aw-menu__item:focus-visible { background: var(--aw-accent); color: var(--aw-accent-ink); outline: none; }
+.aw-menu__item.is-active small { color: inherit; opacity: .75; }
+.aw-menu__item--danger { color: var(--aw-bad-ink); }
+.aw-menu__item[aria-disabled=true] { color: var(--aw-ink-3); }
+.aw-menu__item[aria-disabled=true].is-active { background: var(--aw-hover); color: var(--aw-ink-3); }
+.aw-menu__sep { height: 1px; margin: 4px var(--aw-space-2); background: var(--aw-hairline); }
+.aw-menu__label { padding: 4px var(--aw-space-2) 2px; font-size: var(--aw-type-xs); font-weight: 600; color: var(--aw-ink-3); }
+
+/* \u2014\u2014\u2014\u2014\u2014 Skeleton: the final shape, quietly \u2014\u2014\u2014\u2014\u2014 */
+.aw-skel { display: flex; flex-direction: column; gap: 10px; padding: var(--aw-space-2) 0; }
+.aw-skel__bar { height: 10px; border-radius: var(--aw-radius-sm); background: var(--aw-fill); animation: aw-skel 1.4s ease-in-out infinite; }
+.aw-skel__bar--title { height: 16px; width: 34%; margin-bottom: 6px; }
+.aw-skel__row { display: flex; align-items: center; gap: var(--aw-space-3); height: var(--aw-row-h-table); border-bottom: 1px solid var(--aw-hairline); }
+.aw-skel__row .aw-skel__bar { flex: none; }
+.aw-skel__lanes { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); gap: var(--aw-space-3); }
+.aw-skel__lane { height: 280px; border-radius: var(--aw-radius-lg); background: var(--aw-surface-sidebar); padding: var(--aw-space-3); display: flex; flex-direction: column; gap: var(--aw-space-2); }
+.aw-skel__card { height: 64px; border-radius: var(--aw-radius-md); background: var(--aw-surface); }
+.aw-skel--pane { padding: var(--aw-space-4) var(--aw-space-5); }
+@keyframes aw-skel { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .aw-skel__bar { animation: none; } }
+
+/* \u2014\u2014\u2014\u2014\u2014 Shortcut sheet \u2014\u2014\u2014\u2014\u2014 */
+.aw-keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 0 var(--aw-space-5); margin: 0; }
+.aw-keys > div { display: flex; align-items: center; gap: var(--aw-space-3); min-height: 30px; border-bottom: 1px solid var(--aw-hairline); font-size: var(--aw-type-md); }
+.aw-keys dt { order: 2; margin-left: auto; display: flex; gap: 3px; }
+.aw-keys dd { margin: 0; color: var(--aw-ink); }
+
+/* \u2014\u2014\u2014\u2014\u2014 shell, continued \u2014\u2014\u2014\u2014\u2014 */
+.aw-topbanner { position: absolute; z-index: 5; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: var(--aw-space-3); padding: 4px var(--aw-space-3); background: color-mix(in srgb, var(--aw-bad) 9%, var(--aw-surface)); border-bottom: 1px solid color-mix(in srgb, var(--aw-bad) 35%, var(--aw-hairline)); color: var(--aw-ink); font-size: var(--aw-type-sm); }
 .aw-topbanner > span { flex: 1; min-width: 0; }
 .aw-loading--fill { position: absolute; inset: 0; padding: 0; }
-.aw-toast { display: flex; align-items: flex-start; gap: 10px; }
-.aw-toast__close { flex: none; border: 0; background: none; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; opacity: .75; }
+.aw-toast > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.aw-toast__close { flex: none; border: 0; background: none; color: inherit; cursor: pointer; padding: 0; width: 18px; height: 18px; display: grid; place-items: center; opacity: .7; border-radius: var(--aw-radius-sm); }
 .aw-toast__close:hover { opacity: 1; }
-.aw-palette__count { margin: 2px 12px 8px; color: var(--aw-text2); font-size: 11px; }
-.aw-drawer-scrim { position: fixed; inset: 0; z-index: 59; background: rgba(0, 0, 0, .28); }
+.aw-palette__count { margin: 2px 12px 8px; color: var(--aw-ink-3); font-size: var(--aw-type-xs); }
+.aw-drawer-scrim { position: fixed; inset: 0; z-index: 59; background: var(--aw-scrim); animation: aw-fade var(--aw-dur) var(--aw-ease); }
 @media (max-width: 900px) {
-  .aw-explorer--drawer { display: block; position: fixed; z-index: 60; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); padding-top: 8px; box-shadow: 0 0 40px rgba(0, 0, 0, .3); }
-  .aw--inset .aw-explorer--drawer { padding-top: 44px; }
+  .aw-explorer--drawer { display: block; position: fixed; z-index: 60; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); box-shadow: var(--aw-shadow-float); animation: aw-slide var(--aw-dur) var(--aw-ease); }
+  .aw--inset .aw-explorer--drawer { padding-top: 32px; }
 }
-/* loop */
+@keyframes aw-slide { from { transform: translateX(-12px); opacity: 0; } }
 /* Keyboard rows: visible focus wherever a row can receive it. */
-.aw-table tbody tr:focus-visible, .aw-row:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: -2px; }
-/* A row's title is a real link that keeps the row's ink until it is hovered. */
+.aw-table tbody tr:focus-visible, .aw-row:focus-visible { outline: 2px solid var(--aw-focus); outline-offset: -2px; }
 .aw-titlelink { color: inherit; text-decoration: none; }
-.aw-titlelink:hover { text-decoration: underline; }
+.aw-titlelink:hover { text-decoration: underline; text-decoration-color: var(--aw-hairline-strong); }
 /* The right rail's rare controls, folded behind one summary. */
-.aw-details > details.aw-details__more { border-top: 1px solid var(--aw-border); padding-top: 14px; margin-top: 14px; }
-.aw-details__more > summary { cursor: pointer; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--aw-text2); }
-.aw-details__more[open] > summary { margin-bottom: 8px; }
-.aw-details__more .aw-field, .aw-details__more .aw-cost, .aw-details__more .aw-site { border-top: 1px solid var(--aw-border); padding-top: 14px; margin-top: 14px; }
-.aw-details__more .aw-site:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
-/* The composer's notify fold and its one-line delivery status. */
-.aw-mentions__open { font-size: 12px; }
+.aw-details > details.aw-details__more { border-top: 1px solid var(--aw-hairline); padding-top: var(--aw-space-3); margin-top: var(--aw-space-2); }
+.aw-details__more > summary { cursor: pointer; font-size: var(--aw-type-sm); font-weight: 500; color: var(--aw-ink-2); list-style: none; display: flex; align-items: center; gap: 6px; }
+.aw-details__more > summary::-webkit-details-marker { display: none; }
+.aw-details__more > summary::before { content: ''; width: 0; height: 0; border-left: 4px solid currentColor; border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform var(--aw-dur) var(--aw-ease); }
+.aw-details__more[open] > summary::before { transform: rotate(90deg); }
+.aw-details__more[open] > summary { margin-bottom: var(--aw-space-3); }
+.aw-details__more .aw-cost, .aw-details__more .aw-site { border-top: 1px solid var(--aw-hairline); padding-top: var(--aw-space-3); margin-top: var(--aw-space-3); }
+.aw-mentions__open { font-size: var(--aw-type-sm); }
 .aw-notified { margin-top: 2px; }
-.aw-notified summary { cursor: pointer; font-size: 11px; }
+.aw-notified summary { cursor: pointer; font-size: var(--aw-type-xs); }
 .aw-notified p { margin: 2px 0; }
-/* fleet */
-.aw-directory { grid-template-columns: repeat(auto-fit, minmax(min(100%, 410px), 1fr)); }
-.aw-directory .aw-rows > li + li { border-top: 1px solid var(--aw-border); }
+/* directory */
+.aw-directory .aw-rows > li + li { border-top: 0; }
 .aw-directory__open { width: 100%; text-align: left; color: inherit; font: inherit; border: 0; background: transparent; }
-.aw-directory__open:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: -2px; }
+.aw-directory__open:focus-visible { outline: 2px solid var(--aw-focus); outline-offset: -2px; }
 .aw-directory__project { cursor: default; }
 .aw-directory__project:hover { background: transparent; }
 .aw-directory__name { display: grid; flex: 1 1 9rem; min-width: 0; overflow-wrap: anywhere; }
-.aw-health--compact .aw-health__row { padding-block: 6px; }
+.aw-directory__name strong { font-weight: 500; }
+.aw-health--compact .aw-health__row { min-height: var(--aw-row-h-tight); }
 /* marketing */
 .aw-mk-anchor { scroll-margin-block: var(--aw-sp-4); }
 .aw-mk-controls { margin-bottom: var(--aw-sp-3); }
@@ -8086,11 +8937,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-mk-sequence-tools { margin-top: var(--aw-sp-4); }
 .aw-mk-settings-fields { display: grid; gap: var(--aw-sp-4); min-inline-size: 0; margin: 0; padding: 0; border: 0; }
 .aw-mk-settings-footer { position: sticky; bottom: 0; z-index: 1; flex-wrap: wrap; background: var(--aw-bg2); border: 1px solid var(--aw-border); border-radius: var(--aw-r-md); padding: var(--aw-sp-3) var(--aw-sp-4); }
-
 /* seo */
-.aw-seo-statrow { margin-bottom: var(--aw-sp-4); }
-.aw-seo-statrow .aw-statrow__item { min-width: 56px; padding: var(--aw-sp-1) var(--aw-sp-3); }
-.aw-seo-chart__dot--accent { background: var(--aw-accent); }
+.aw-seo-statrow { margin-bottom: var(--aw-space-3); }
+.aw-seo-chart__dot--accent { background: var(--aw-ink-2); }
 .aw-seo-chart__dot--warn { background: var(--aw-warn); }
 .aw-seo-chart__dot--ok { background: var(--aw-ok); }
 .aw-seo-note, .aw-panel p.aw-seo-note { margin: 0; }
@@ -8103,101 +8952,103 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-seo-cited-url { display: block; }
 .aw-table tbody tr.aw-seo-row, .aw-seo-row { cursor: default; }
 .aw-table tbody tr.aw-seo-row:hover { background: transparent; }
-.aw-seo-guides__more { margin-top: var(--aw-sp-2); }
-.aw-seo-events-form { margin-bottom: var(--aw-sp-3); }
-.aw-seo-savebar { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: var(--aw-sp-2); flex-wrap: wrap; padding: var(--aw-sp-3) var(--aw-sp-4); border: 1px solid var(--aw-border2); border-radius: var(--aw-r-lg); background: var(--aw-bg); box-shadow: 0 -6px 18px color-mix(in srgb, var(--aw-text) 8%, transparent); }
-.aw-seo-savebar__state { flex: 1; min-width: 160px; font-size: var(--aw-fs-sm); color: var(--aw-text2); }
+.aw-seo .aw-rows .aw-seo-row { display: flex; align-items: center; gap: var(--aw-space-2); min-height: var(--aw-row-h); padding: 0 var(--aw-space-1); }
+.aw-seo-guides__more { margin-top: var(--aw-space-2); }
+.aw-seo-events-form { margin-bottom: var(--aw-space-3); }
+.aw-seo-savebar { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; padding: var(--aw-space-2) 0; border-top: 1px solid var(--aw-hairline); background: var(--aw-surface); }
+.aw-seo-savebar__state { flex: 1; min-width: 160px; font-size: var(--aw-type-sm); color: var(--aw-ink-2); }
 
-/* fleet2 */
-/* Fleet, clients and settings, tightened: one-line health, dense node cards,
-   28px table rows, 16px section rhythm. Scoped to the views it redesigns. */
-.aw-fleet .aw-group, .aw-clients .aw-group, .aw-client .aw-group { margin: var(--aw-sp-5) 0; }
-.aw-fleet .aw-group > h3, .aw-clients .aw-group > h3, .aw-client .aw-group > h3 { font-size: var(--aw-fs-md); font-weight: 600; margin-bottom: var(--aw-sp-2); }
-
-/* Health on Fleet: a one-line summary, then a single bordered list of 28px rows. */
-.aw-health--compact { margin: 0 0 var(--aw-sp-5); }
-.aw-health--compact .aw-health__summary h3 { font-size: var(--aw-fs-md); font-weight: 600; }
-.aw-health__head { display: flex; align-items: center; gap: var(--aw-sp-3); }
-.aw-health__list { display: block; margin: var(--aw-sp-2) 0 0; padding: 0; border: 1px solid var(--aw-border); border-radius: var(--aw-r-lg); overflow: hidden; background: var(--aw-bg); }
-.aw-health__row { height: 28px; padding: 0 10px; gap: var(--aw-sp-2); border: 0; border-radius: 0; background: none; font-size: var(--aw-fs-sm); }
-.aw-health__row + .aw-health__row { border-top: 1px solid var(--aw-border); }
-.aw-health__row--bad { border-color: var(--aw-border); background: color-mix(in srgb, var(--aw-bad) 6%, transparent); }
-.aw-health__name { flex: none; font-size: var(--aw-fs-sm); font-weight: 600; white-space: nowrap; }
-.aw-health__detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aw-health__meta { flex: none; gap: var(--aw-sp-2); font-size: var(--aw-fs-xs); }
-.aw-health__pass { margin-top: var(--aw-sp-2); }
-.aw-health__pass > summary { cursor: pointer; padding: 2px 0; font-size: var(--aw-fs-sm); color: var(--aw-text2); }
-
-/* Node cards: 320px grid, one-line header, three short plain-text lines. */
-.aw-nodes { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--aw-sp-3); }
-.aw-node { padding: 9px 12px; }
-.aw-node > header { gap: 7px; margin-bottom: var(--aw-sp-2); flex-wrap: nowrap; }
-.aw-node > header .aw-btn { flex: none; }
-.aw-node > header .aw-btn--sm { padding: 0 7px; }
-.aw-node h3 { font-size: var(--aw-fs-md); flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aw-node__os { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--aw-fs-sm); }
-.aw-node__lines { display: grid; gap: 2px; margin-bottom: var(--aw-sp-2); }
-.aw-node__lines:last-child { margin-bottom: 0; }
-.aw-node__line { margin: 0; font-size: var(--aw-fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.aw-node__bar { display: inline-block; width: 56px; height: 4px; margin-left: var(--aw-sp-2); vertical-align: -1px; border-radius: 2px; background: var(--aw-bg3); overflow: hidden; }
-.aw-node__bar i { display: block; height: 100%; background: var(--aw-info); }
-.aw-node .aw-rows .aw-row { padding: 4px 10px; flex-wrap: nowrap; gap: var(--aw-sp-2); }
-.aw-node .aw-row > .aw-live, .aw-node .aw-row > .aw-mono, .aw-node .aw-row > .aw-muted { flex: none; white-space: nowrap; }
-.aw-node .aw-row__title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aw-machine .aw-kv { margin-bottom: var(--aw-sp-2); }
-.aw-machine .aw-mexes { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 2px var(--aw-sp-4); }
-
-/* 28px table rows on the fleet and client pages. */
-.aw-fleet .aw-table td, .aw-client .aw-table td, .aw-clients .aw-table td { padding: 4px 8px; }
-.aw-fleet .aw-table th, .aw-client .aw-table th, .aw-clients .aw-table th { padding: 4px 8px; }
-.aw-clients .aw-row { padding: 6px 10px; flex-wrap: nowrap; }
-.aw-clients .aw-row > .aw-muted { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* fleet, clients, settings */
+.aw-fleet .aw-group, .aw-clients .aw-group, .aw-client .aw-group { margin: var(--aw-space-5) 0; }
+.aw-health--compact { margin: 0 0 var(--aw-space-5); }
+.aw-health--compact .aw-health__summary h3 { font-size: var(--aw-type-md); font-weight: 600; }
+.aw-health__head { display: flex; align-items: center; gap: var(--aw-space-3); }
+.aw-health__pass { margin-top: var(--aw-space-1); }
+.aw-health__pass > summary { cursor: pointer; padding: 4px var(--aw-space-2); font-size: var(--aw-type-sm); color: var(--aw-ink-2); }
+.aw-machine .aw-kv { margin-bottom: var(--aw-space-2); }
+.aw-machine .aw-mexes { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 2px var(--aw-space-4); }
+.aw-fleet .aw-table td, .aw-client .aw-table td, .aw-clients .aw-table td { height: var(--aw-row-h); }
+.aw-clients .aw-row { flex-wrap: nowrap; }
+.aw-clients .aw-row > .aw-muted { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--aw-type-sm); }
 .aw-clients .aw-row > .aw-muted:last-child { flex: none; }
-.aw-clients .aw-directory__name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aw-client .aw-toolbar { margin-bottom: var(--aw-sp-3); }
-
-/* Settings: tighter fields and toolbox, Save pinned to a sticky footer. */
-.aw-settings .aw-field { margin-bottom: 10px; }
-.aw-settings .aw-panel > h3 { margin-bottom: var(--aw-sp-3); }
-.aw-settings .aw-toolbox__row, .aw-settings .aw-toolbox__skills > li, .aw-settings .aw-toolbox__plugin { padding: 4px 8px; }
-.aw-settings .aw-toolbox__section { margin-top: var(--aw-sp-3); padding-top: var(--aw-sp-3); }
-.aw-settings__foot { position: sticky; bottom: 0; display: flex; align-items: center; gap: var(--aw-sp-3); margin: var(--aw-sp-5) -20px -40px; padding: var(--aw-sp-3) 20px; background: var(--aw-bg); border-top: 1px solid var(--aw-border); }
-/* loop2 */
-/* The ticket rail: one status pill at the top, fields 12px apart and no
-   rule between every one of them; labels stay small and quiet. */
-.aw-details > .aw-field { border-top: 0; padding-top: 0; margin-top: 0; margin-bottom: var(--aw-sp-4); }
-.aw-details > .aw-predict { border-top: 0; padding-top: 0; margin-top: 0; margin-bottom: var(--aw-sp-4); }
-.aw-details .aw-field { gap: var(--aw-sp-1); }
-.aw-details .aw-field__hint { font-size: var(--aw-fs-xs); line-height: 1.4; }
-.aw-details__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--aw-sp-3); margin-bottom: var(--aw-sp-4); }
+.aw-clients .aw-directory__name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--aw-type-sm); }
+.aw-client .aw-toolbar { margin-bottom: var(--aw-space-3); }
+.aw-settings .aw-field { margin-bottom: var(--aw-space-3); }
+.aw-settings .aw-panel > h3 { margin-bottom: var(--aw-space-3); }
+.aw-settings__foot { position: sticky; bottom: 0; display: flex; align-items: center; gap: var(--aw-space-3); margin: var(--aw-space-4) 0 calc(-1 * var(--aw-space-6)); padding: var(--aw-space-2) 0; background: var(--aw-surface); border-top: 1px solid var(--aw-hairline); }
+/* the ticket rail */
+.aw-details__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--aw-space-2); margin-bottom: var(--aw-space-3); }
 .aw-details__pair > .aw-field { margin-bottom: 0; }
-.aw-details__pair select { font-size: var(--aw-fs-sm); padding-inline: var(--aw-sp-2); }
-/* Priority: full-width, equal columns (the Agent choice is a select now). */
+.aw-details__pair select { font-size: var(--aw-type-sm); padding-inline: var(--aw-space-2) 22px; }
 .aw-details .aw-seg { display: flex; width: 100%; }
-.aw-details .aw-seg button { flex: 1 1 0; padding-inline: var(--aw-sp-1); }
-/* A primary button that cannot be pressed reads as disabled, not as a faded brand. */
-.aw-btn--primary:disabled { background: var(--aw-bg3); border-color: var(--aw-border); color: var(--aw-text2) !important; opacity: 1; }
-/* The composer starts at three rows and the script grows it up to twelve. */
-.aw-composer textarea { min-height: calc(3 * 1.5em + 8px); resize: none; }
-/* The header's mail address is a link, not a chip. */
+.aw-details .aw-seg button { flex: 1 1 0; padding-inline: var(--aw-space-1); }
 .aw-mailto { color: inherit; text-decoration: none; }
 .aw-mailto:hover { text-decoration: underline; }
-/* A run's branch line is context, so it is a plain muted line, not a chip. */
-.aw-run footer .aw-tag--dash { border: 0; background: none; padding-inline: 0; height: auto; color: var(--aw-text2); font-size: var(--aw-fs-xs); }
-/* Inbox: one count line, a slim warn notice, the hint on the group line, and
-   one fixed action column so the buttons line up down every group. */
-.aw-inbox .aw-group { margin: var(--aw-sp-5) 0; }
-.aw-group__hint { margin-left: var(--aw-sp-2); font-size: var(--aw-fs-sm); font-weight: 400; color: var(--aw-text2); }
-.aw-inbox__offline { display: flex; align-items: center; gap: var(--aw-sp-2); margin: 0 0 var(--aw-sp-4); padding: var(--aw-sp-1) var(--aw-sp-3); border: 1px solid color-mix(in srgb, var(--aw-warn) 25%, transparent); border-radius: var(--aw-r-md); background: color-mix(in srgb, var(--aw-warn) 9%, transparent); font-size: var(--aw-fs-sm); color: var(--aw-text2); }
-.aw-inbox .aw-row { gap: var(--aw-sp-3); }
-.aw-inbox .aw-row .aw-btn--ghost { border-color: var(--aw-border2); }
-.aw-inbox .aw-row__actions { display: flex; flex: 0 0 144px; justify-content: flex-end; gap: var(--aw-sp-1); margin-left: auto; }
+.aw-run footer .aw-tag--dash { box-shadow: none; background: none; padding-inline: 0; height: auto; color: var(--aw-ink-2); font-size: var(--aw-type-xs); }
+/* Needs you */
+.aw-inbox .aw-group { margin: var(--aw-space-5) 0; }
+.aw-group__hint { font-size: var(--aw-type-sm); font-weight: 400; color: var(--aw-ink-2); }
+.aw-inbox__offline { display: flex; align-items: center; gap: var(--aw-space-2); margin: 0 0 var(--aw-space-4); padding: 6px var(--aw-space-3); border-radius: var(--aw-radius-md); background: var(--aw-warn-wash); font-size: var(--aw-type-sm); color: var(--aw-ink); }
+.aw-inbox .aw-row { flex-wrap: nowrap; }
+.aw-inbox .aw-row > .aw-row__title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-inbox .aw-row > .aw-muted { flex: none; white-space: nowrap; font-size: var(--aw-type-sm); }
+.aw-inbox .aw-row > .aw-mono { flex: none; }
+.aw-inbox .aw-row__actions { display: flex; flex: none; justify-content: flex-end; gap: var(--aw-space-1); min-width: 150px; }
 .aw-inbox .aw-row__actions > .aw-btn { flex: none; }
-/* New task: four fields in two columns and a shorter brief. */
+.aw-row__meta { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--aw-type-sm); color: var(--aw-ink-2); }
+/* New task */
 .aw-taskform { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.aw-taskform .aw-field { margin-bottom: var(--aw-sp-4); }
+.aw-taskform .aw-field { margin-bottom: var(--aw-space-3); }
 .aw-taskform .aw-field:nth-last-child(-n + 2) { margin-bottom: 0; }
-.aw-taskform + .aw-field { margin-top: var(--aw-sp-3); }
+.aw-taskform + .aw-field { margin-top: var(--aw-space-3); }
+
+/* Compact stacked rows (aw-table--rows, with aw-table--stack): the title on
+   its own line, then the other cells as label-value pairs that wrap. */
+@media (max-width: 720px) {
+  .aw-table--rows tr { display: flex !important; flex-wrap: wrap; align-items: baseline; gap: 2px var(--aw-space-3); padding: var(--aw-space-2) 2px !important; }
+  .aw-table--rows td { display: inline-flex !important; width: auto !important; height: auto; align-items: baseline; gap: 4px; padding: 0 !important; border: 0; font-size: var(--aw-type-sm); white-space: nowrap !important; text-align: left !important; }
+  .aw-table--rows td::before { display: inline !important; margin: 0 !important; font-size: var(--aw-type-xs) !important; font-weight: 400 !important; text-transform: none !important; letter-spacing: 0 !important; color: var(--aw-ink-3) !important; }
+  .aw-table--rows td:first-child { order: -2; font-weight: 400; color: var(--aw-ink-3); }
+  .aw-table--rows td.aw-table__title { order: -1; flex: 1 1 calc(100% - 60px); min-width: 0; font-size: var(--aw-type-md); white-space: normal !important; }
+}
+/* \u2014\u2014\u2014\u2014\u2014 narrow: one pane, bottom bar, sheets \u2014\u2014\u2014\u2014\u2014 */
+@media (max-width: 720px) {
+  .aw-board { grid-auto-columns: minmax(78vw, 1fr); }
+  .aw-pagehead__titles p { white-space: normal; }
+  .aw-taskform { grid-template-columns: 1fr; }
+  .aw-taskform .aw-field:nth-last-child(-n + 2) { margin-bottom: var(--aw-space-3); }
+  .aw-inbox .aw-row { flex-wrap: wrap; row-gap: 2px; }
+  .aw-inbox .aw-row > .aw-row__title { flex-basis: calc(100% - 60px); }
+  .aw-inbox .aw-row__actions { min-width: 0; margin-left: auto; }
+  .aw-node__lines { padding-left: 0; }
+  .aw-node .aw-rows { margin-left: 0; }
+  .aw-node__line { white-space: normal; }
+}
+@media (max-width: 600px) {
+  .aw { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; grid-template-areas: "main" "act"; }
+  .aw-activity { flex-direction: row; justify-content: space-around; padding: 2px 4px calc(2px + env(safe-area-inset-bottom)); border-right: 0; border-top: 1px solid var(--aw-hairline); gap: 0; }
+  .aw-activity__spacer { display: none; }
+  .aw-activity button { width: 38px; height: 40px; }
+  .aw-activity button[aria-current=page]::before, .aw-activity button[aria-pressed=true]::before { left: 9px; right: 9px; top: auto; bottom: -2px; width: auto; height: 2px; }
+  .aw-activity [data-tip]::after { display: none; }
+  .aw--inset .aw-activity { padding-top: 2px; }
+  .aw-status { display: none; }
+  .aw-toast { bottom: 64px; left: var(--aw-space-3); right: var(--aw-space-3); max-width: none; }
+  .aw-view, .aw-ticket__main { padding: var(--aw-space-3) var(--aw-space-3) var(--aw-space-5); }
+  .aw-pagehead__secondary { display: none; }
+  .aw-pagehead__meta { display: none; }
+  .aw-pagehead__side { flex: 0 0 auto; margin-left: auto; justify-content: flex-end; }
+  .aw-toolbar > select, .aw-toolbar > .aw-search { flex: 1 1 140px; }
+  .aw-scrim { padding: 0; place-items: end stretch; }
+  .aw-scrim--top { padding: 8px; place-items: start stretch; }
+  .aw-modal { width: 100%; max-height: 92%; border-radius: 12px 12px 0 0; animation-name: aw-sheet; }
+  .aw-modal--full { height: 92%; }
+  .aw-modal__foot { padding-bottom: calc(var(--aw-space-3) + env(safe-area-inset-bottom)); }
+  .aw-tab { max-width: 160px; }
+  .aw-composer { position: static; box-shadow: none; }
+  .aw-keys > div { font-size: var(--aw-type-sm); }
+}
+@keyframes aw-sheet { from { transform: translateY(16px); opacity: 0; } }
 
 `;
 
@@ -8585,8 +9436,13 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       fleetNote,
       /* @__PURE__ */ jsx("p", { className: "aw-psol__h", children: "Connections" }),
       status.error ? /* @__PURE__ */ jsx(ErrorNote, { error: status.error, onRetry: refreshStatus }) : null,
-      rows === null || rows === void 0 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Loading connections\u2026" }) : !rows.length && !status.error ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No connections needed for the chosen kinds." }) : /* @__PURE__ */ jsx("ul", { className: "aw-psol__rows", children: rows.map((row) => {
+      rows === null || rows === void 0 ? /* @__PURE__ */ jsxs("div", { className: "aw-psol__skel", role: "status", "aria-label": "Loading connections\u2026", children: [
+        /* @__PURE__ */ jsx("span", { className: "aw-sr-only", children: "Loading connections\u2026" }),
+        /* @__PURE__ */ jsx("span", { "aria-hidden": "true" }),
+        /* @__PURE__ */ jsx("span", { "aria-hidden": "true" })
+      ] }) : !rows.length && !status.error ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No connections needed for the chosen kinds." }) : /* @__PURE__ */ jsx("ul", { className: "aw-psol__rows", children: rows.map((row) => {
         const entry = integrationById.get(row.id);
+        const needsAction = !row.connected && row.required;
         return /* @__PURE__ */ jsxs("li", { className: "aw-psol__row", children: [
           /* @__PURE__ */ jsx(Dot, { state: dotState(row) }),
           /* @__PURE__ */ jsxs("div", { className: "aw-psol__rowmain", children: [
@@ -8604,7 +9460,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             ] }) : null
           ] }),
           /* @__PURE__ */ jsxs("div", { className: "aw-psol__rowact", children: [
-            entry ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => setEntering(entry), children: "Connect values" }) : null,
+            entry ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: needsAction ? "primary" : "default", onClick: () => setEntering(entry), children: "Connect values" }) : null,
             /* @__PURE__ */ jsx(Button, { size: "sm", disabled: verifying === row.id, onClick: () => verify(row), children: verifying === row.id ? "Verifying\u2026" : "Verify" }),
             entry ? /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link aw-psol__copy", onClick: () => void copySteps(entry), children: "Copy client steps" }) : null
           ] })
@@ -8774,18 +9630,19 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   var ISO_COS = Math.cos(Math.PI / 6);
   var ISO_SIN = 0.5;
   var DEFAULT_ISO = Object.freeze({
-    scale: 44,
-    originX: 325,
-    originY: 92
+    scale: 48,
+    originX: 300,
+    originY: 66
   });
   var FLOOR_BOUNDS = Object.freeze({
-    minX: 0,
-    maxX: 8.6,
-    minY: 0,
-    maxY: 5.6
+    minX: 0.2,
+    maxX: 6.8,
+    minY: 0.2,
+    maxY: 4.4
   });
   var OPEN_TICKET_STATUSES = /* @__PURE__ */ new Set(["new", "approved", "in_progress", "review"]);
   var STALL_MS = 45 * 60 * 1e3;
+  var STATION_ORDER = Object.freeze(["request", "agent", "code", "preview", "hosting"]);
   function iso(x, y, z = 0, opts = DEFAULT_ISO) {
     const scale = Number.isFinite(opts?.scale) ? opts.scale : DEFAULT_ISO.scale;
     const originX = Number.isFinite(opts?.originX) ? opts.originX : DEFAULT_ISO.originX;
@@ -8865,40 +9722,13 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
   }
   var STATION_POSITIONS = Object.freeze({
-    hosting: { x: 1.5, y: 1.2, padHalf: 0.82 },
-    https: { x: 1.5, y: 2.6, padHalf: 0.54 },
-    domain: { x: 1.5, y: 4.2, padHalf: 0.64 },
-    preview: { x: 3.5, y: 1.2, padHalf: 0.68 },
-    deploy: { x: 5.5, y: 1.2, padHalf: 0.74 },
-    code: { x: 7.5, y: 1.2, padHalf: 0.68 },
-    request: { x: 5, y: 3.5, padHalf: 0.66 },
-    agent: { x: 7.5, y: 3.5, padHalf: 0.74 }
+    hosting: { x: 1.3, y: 1.3, padHalf: 0.78 },
+    preview: { x: 3.5, y: 1.3, padHalf: 0.68 },
+    code: { x: 5.7, y: 1.3, padHalf: 0.68 },
+    request: { x: 2.8, y: 3.4, padHalf: 0.66 },
+    agent: { x: 5.3, y: 3.4, padHalf: 0.72 }
   });
-  var VISITOR_POS = Object.freeze({ x: 1.5, y: 5.4 });
-  function floorDots(stations = [], step = 0.4, opts = DEFAULT_ISO) {
-    const dots = [];
-    const activeZones = stations.filter((s) => s.state === "active").map((s) => {
-      const pos = STATION_POSITIONS[s.key];
-      const r = (pos?.padHalf ?? 0.7) + 0.18;
-      return { key: s.key, x: s.x, y: s.y, r };
-    });
-    for (let gx = FLOOR_BOUNDS.minX + 0.2; gx <= FLOOR_BOUNDS.maxX - 0.1; gx = round2(gx + step)) {
-      for (let gy = FLOOR_BOUNDS.minY + 0.2; gy <= FLOOR_BOUNDS.maxY - 0.1; gy = round2(gy + step)) {
-        const hit = activeZones.find((z) => Math.abs(gx - z.x) <= z.r && Math.abs(gy - z.y) <= z.r);
-        const p = iso(gx, gy, 0, opts);
-        dots.push({
-          id: `${gx}_${gy}`,
-          gx,
-          gy,
-          x: p.x,
-          y: p.y,
-          active: Boolean(hit),
-          stationKey: hit?.key ?? null
-        });
-      }
-    }
-    return dots;
-  }
+  var VISITOR_POS = Object.freeze({ x: 1.3, y: 2.75 });
   function pickSite(project, sites) {
     const list2 = Array.isArray(sites) && sites.length > 0 ? sites : Array.isArray(project?.sites) && project.sites.length > 0 ? project.sites : project?.site ? [project.site] : [];
     if (!list2.length) return null;
@@ -8907,11 +9737,29 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   function cleanString(v) {
     return typeof v === "string" && v.trim() ? v.trim() : null;
   }
+  function clip(text, max = 22) {
+    if (!text) return "";
+    return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
+  }
   function hostnameOf(raw) {
     const s = cleanString(raw);
     if (!s) return null;
     const stripped = s.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
     return stripped || null;
+  }
+  function safeHref(raw) {
+    const s = cleanString(raw);
+    if (!s) return null;
+    const ssh = /^git@([^:]+):(.+)$/.exec(s);
+    const candidate = ssh ? `https://${ssh[1]}/${ssh[2]}` : /^https?:\/\//i.test(s) ? s : null;
+    if (!candidate) return null;
+    try {
+      const u = new URL(candidate);
+      if (!["https:", "http:"].includes(u.protocol) || u.username || u.password) return null;
+      return u.href.replace(/\.git\/?$/, "");
+    } catch {
+      return null;
+    }
   }
   function extractAddress(site) {
     if (!site) return { raw: null, hostname: null, hasExplicitHttps: false, hasExplicitHttp: false };
@@ -8935,7 +9783,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   function shortRepo(repo) {
     const s = cleanString(repo);
     if (!s) return null;
-    return s.replace(/^https?:\/\/(www\.)?github\.com\//i, "").replace(/\.git$/i, "").replace(/\/+$/, "");
+    return s.replace(/^https?:\/\/(www\.)?github\.com\//i, "").replace(/^git@github\.com:/i, "").replace(/\.git$/i, "").replace(/\/+$/, "");
   }
   function normalizeTimestampMs(value) {
     if (value === null || value === void 0) return null;
@@ -9027,30 +9875,41 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     };
   }
   var EXACT_CHECK_STATION = Object.freeze({
-    domain: "domain",
-    dns: "domain",
-    email: "domain",
-    mail: "domain",
-    mx: "domain",
-    https: "https",
-    ssl: "https",
-    tls: "https",
+    domain: "hosting",
+    dns: "hosting",
+    email: "hosting",
+    mail: "hosting",
+    mx: "hosting",
+    https: "hosting",
+    ssl: "hosting",
+    tls: "hosting",
     hosting: "hosting",
     host: "hosting",
     code: "code",
     repo: "code",
     github: "code",
     preview: "preview",
-    deploy: "deploy"
+    deploy: "preview"
   });
+  function isHttpsCheck(check) {
+    const key = typeof check?.key === "string" ? check.key.toLowerCase() : "";
+    const label = typeof check?.label === "string" ? check.label.toLowerCase() : "";
+    const re = /https|ssl|tls|(?:^|[^a-z])cert(?:ificate)?(?:$|[^a-z])/;
+    return re.test(key) || re.test(label);
+  }
+  function isDomainCheck(check) {
+    const key = typeof check?.key === "string" ? check.key.toLowerCase() : "";
+    const label = typeof check?.label === "string" ? check.label.toLowerCase() : "";
+    const re = /domain|dns|e-?mail|(?:^|[^a-z])mail(?:$|[^a-z])|(?:^|[^a-z])mx(?:$|[^a-z])/;
+    return re.test(key) || re.test(label);
+  }
   function matchCheckText(text) {
     if (!text) return null;
-    if (/https|ssl|tls|(?:^|[^a-z])cert(?:ificate)?(?:$|[^a-z])/.test(text)) return "https";
-    if (/domain|dns|e-?mail|(?:^|[^a-z])mail(?:$|[^a-z])|(?:^|[^a-z])mx(?:$|[^a-z])/.test(text)) return "domain";
+    if (/https|ssl|tls|(?:^|[^a-z])cert(?:ificate)?(?:$|[^a-z])/.test(text)) return "hosting";
+    if (/domain|dns|e-?mail|(?:^|[^a-z])mail(?:$|[^a-z])|(?:^|[^a-z])mx(?:$|[^a-z])/.test(text)) return "hosting";
     if (/repo|github|(?:^|[^a-z])git(?:$|[^a-z])|(?:^|[^a-z])code(?:$|[^a-z])/.test(text)) return "code";
-    if (/preview|staging/.test(text)) return "preview";
+    if (/preview|staging|deploy|publish/.test(text)) return "preview";
     if (/hosting|(?:^|[^a-z])host(?:$|[^a-z])|cloudflare/.test(text)) return "hosting";
-    if (/deploy|publish/.test(text)) return "deploy";
     return null;
   }
   function stationForCheck(check) {
@@ -9102,30 +9961,37 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       return { ...station, checks: [] };
     }
     const pendingCheck = checks.find((c) => c.state === "pending");
-    const readyCheck = checks.find((c) => c.state === "ready");
-    let { state, stateText, meta } = station;
+    const readyHttpsCheck = checks.find((c) => c.state === "ready" && isHttpsCheck(c));
+    const readyDomainCheck = checks.find((c) => c.state === "ready" && isDomainCheck(c));
+    let { state, stateText, shortStatus, meta } = station;
+    if (station.key === "hosting" && readyHttpsCheck && !meta?.httpsVerified) {
+      meta = {
+        ...meta,
+        httpsVerified: true,
+        httpsVerifiedByCheck: true,
+        httpsText: tx(t, "world.https.state.ok", "Locked with HTTPS")
+      };
+    }
     if (pendingCheck) {
-      if (state !== "bad") {
+      if (state !== "bad" && state !== "active") {
         const wasEmpty = state === "off" || state === "unknown";
         state = "warn";
         if (wasEmpty && pendingCheck.label) {
           stateText = pendingCheck.label;
+          shortStatus = clip(pendingCheck.label, 20);
         }
       }
-    } else if (readyCheck && state === "unknown" && (station.key === "https" || station.key === "domain")) {
+    } else if (station.key === "hosting" && readyDomainCheck && state === "unknown") {
       state = "ok";
-      if (station.key === "https") {
-        stateText = tx(t, "world.https.state.ok", "Locked with HTTPS");
-        meta = { ...meta, verified: true, verifiedByCheck: true };
-      } else {
-        stateText = readyCheck.detail || tx(t, "world.domain.state.checkReady", "Domain ready");
-        meta = { ...meta, verifiedByCheck: true };
-      }
+      const nextAddr = readyDomainCheck.detail || tx(t, "world.domain.state.checkReady", "Domain ready");
+      stateText = nextAddr;
+      meta = { ...meta, addressText: nextAddr, verifiedByCheck: true };
     }
     return {
       ...station,
       state,
       stateText,
+      shortStatus,
       meta,
       checks
     };
@@ -9142,44 +10008,20 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const previewDeploy = cleanString(site?.previewDeploy);
     const productionDeploy = cleanString(site?.productionDeploy);
     const previewAhead = Boolean(siteReady && previewDeploy && previewDeploy !== productionDeploy);
-    const previewUrl = cleanString(site?.previewUrl) ?? cleanString(site?.cloudflare?.previewUrl);
-    let domainState = "off";
-    let domainText = tx(t, "world.domain.state.off", "Not connected yet");
-    if (site) {
-      if (siteFailed) {
-        domainState = "bad";
-        domainText = addr.hostname ? tx(t, "world.domain.state.failedHost", "Setup stopped for {host}", { host: addr.hostname }) : tx(t, "world.domain.state.failed", "Address setup stopped");
-      } else if (siteReady) {
-        if (addr.hostname) {
-          domainState = "ok";
-          domainText = tx(t, "world.domain.state.live", "Live at {host}", { host: addr.hostname });
-        } else {
-          domainState = "unknown";
-          domainText = tx(t, "world.domain.state.missing", "No web address reported yet");
-        }
-      } else {
-        domainState = "active";
-        domainText = addr.hostname ? tx(t, "world.domain.state.settingUpHost", "Setting up {host}", { host: addr.hostname }) : tx(t, "world.domain.state.settingUp", "Setting up your web address");
-      }
-    }
+    const previewUrl = safeHref(site?.previewUrl) ?? safeHref(site?.cloudflare?.previewUrl);
+    const liveUrl = safeHref(addr.raw) ?? (addr.hostname ? `https://${addr.hostname}` : null);
+    const latestDeploy = latestDeployOf(deploys);
+    const latestDeployStatus = latestDeploy ? String(latestDeploy.status ?? latestDeploy.state ?? "").toLowerCase() : "";
+    const deployTime = latestDeploy ? formatDeployTime(
+      latestDeploy.created_at ?? latestDeploy.updated_at ?? latestDeploy.timestamp ?? latestDeploy.time,
+      now
+    ) : null;
+    const deployFailed = ["failed", "error", "canceled", "cancelled"].includes(latestDeployStatus);
+    const deployBuilding = ["building", "running", "deploying", "pending", "queued", "in_progress"].includes(latestDeployStatus);
+    const drift = unshippedPreview({ project, sites, deploys, tickets: tickets ?? [], t, now });
     const isCloudflare = site?.host === "cloudflare";
     const hostLabel = isCloudflare ? tx(t, "world.hosting.host.cloudflare", "Cloudflare (your account)") : tx(t, "world.hosting.host.ptech", "PTech hosting");
-    let hostingState = "off";
-    let hostingText = tx(t, "world.hosting.state.none", "No hosting set up yet");
-    if (site) {
-      if (siteFailed) {
-        hostingState = "bad";
-        hostingText = tx(t, "world.hosting.state.failed", "{host} \u2014 setup stopped", { host: hostLabel });
-      } else if (siteReady) {
-        hostingState = "ok";
-        hostingText = previewAhead ? tx(t, "world.hosting.state.livePreview", "Live on {host} (preview ready)", { host: hostLabel }) : tx(t, "world.hosting.state.live", "Live on {host}", { host: hostLabel });
-      } else {
-        hostingState = "active";
-        hostingText = tx(t, "world.hosting.state.building", "Setting up on {host}", { host: hostLabel });
-      }
-    }
     const httpsVerified = Boolean(siteReady && addr.hasExplicitHttps);
-    const httpsState = httpsVerified ? "ok" : "unknown";
     let httpsText;
     if (httpsVerified) {
       httpsText = tx(t, "world.https.state.ok", "Locked with HTTPS");
@@ -9194,64 +10036,112 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     } else {
       httpsText = tx(t, "world.https.state.unverified", "Unknown \u2014 HTTPS address not reported");
     }
+    let hostingState = "off";
+    let addressText = tx(t, "world.domain.state.off", "Not connected yet");
+    let hostingText = tx(t, "world.hosting.state.none", "No hosting set up yet");
+    let hostingShort = tx(t, "world.hosting.short.none", "Not live");
+    if (site) {
+      if (siteFailed) {
+        hostingState = "bad";
+        addressText = addr.hostname ? tx(t, "world.domain.state.failedHost", "Setup stopped for {host}", { host: addr.hostname }) : tx(t, "world.domain.state.failed", "Address setup stopped");
+        hostingText = tx(t, "world.hosting.state.failed", "{host} \u2014 setup stopped", { host: hostLabel });
+        hostingShort = tx(t, "world.hosting.short.failed", "Setup stopped");
+      } else if (siteReady) {
+        if (addr.hostname) {
+          hostingState = "ok";
+          addressText = tx(t, "world.domain.state.live", "Live at {host}", { host: addr.hostname });
+          hostingText = previewAhead ? tx(t, "world.hosting.state.livePreview", "Live at {addr} \xB7 {host} (preview ahead)", {
+            addr: addr.hostname,
+            host: hostLabel
+          }) : tx(t, "world.hosting.state.live", "Live at {addr} \xB7 {host}", {
+            addr: addr.hostname,
+            host: hostLabel
+          });
+          hostingShort = clip(addr.hostname, 22);
+        } else {
+          hostingState = "unknown";
+          addressText = tx(t, "world.domain.state.missing", "No web address reported yet");
+          hostingText = tx(t, "world.hosting.state.noAddr", "On {host} \u2014 no web address reported yet", { host: hostLabel });
+          hostingShort = tx(t, "world.hosting.short.unknown", "Address unknown");
+        }
+      } else {
+        hostingState = "active";
+        addressText = addr.hostname ? tx(t, "world.domain.state.settingUpHost", "Setting up {host}", { host: addr.hostname }) : tx(t, "world.domain.state.settingUp", "Setting up your web address");
+        hostingText = tx(t, "world.hosting.state.building", "Setting up on {host}", { host: hostLabel });
+        hostingShort = tx(t, "world.hosting.short.building", "Setting up\u2026");
+      }
+    }
+    let previewState = "off";
+    let previewText = tx(t, "world.preview.state.off", "No preview yet");
+    let previewShort = tx(t, "world.preview.short.off", "No preview");
+    if (deployFailed) {
+      previewState = "bad";
+      previewText = deployTime ? tx(t, "world.deploy.state.failedAt", "Last publish failed ({time})", { time: deployTime }) : tx(t, "world.deploy.state.failed", "Last publish failed");
+      previewShort = tx(t, "world.preview.short.failed", "Publish failed");
+    } else if (deployBuilding) {
+      previewState = "active";
+      previewText = tx(t, "world.deploy.state.building", "Publishing update now");
+      previewShort = tx(t, "world.preview.short.publishing", "Publishing\u2026");
+    } else if (site && siteFailed) {
+      previewState = "bad";
+      previewText = tx(t, "world.preview.state.failed", "Preview paused \u2014 site setup stopped");
+      previewShort = tx(t, "world.preview.short.paused", "Paused");
+    } else if (site && siteBuilding) {
+      previewState = "active";
+      previewText = tx(t, "world.preview.state.building", "Setting up preview");
+      previewShort = tx(t, "world.preview.short.building", "Building\u2026");
+    } else if (site && previewDeploy) {
+      if (previewAhead) {
+        previewState = "warn";
+        previewText = drift ? drift.text : tx(t, "world.preview.state.ahead", "A newer version is waiting to be published");
+        previewShort = drift ? tx(t, "world.preview.short.unshipped", "{n} unshipped", { n: drift.count }) : tx(t, "world.preview.short.ahead", "Ready to publish");
+      } else {
+        previewState = "ok";
+        previewText = deployTime ? tx(t, "world.preview.state.okAt", "Matches live \xB7 published {time}", { time: deployTime }) : tx(t, "world.preview.state.ok", "Matches your live site");
+        previewShort = tx(t, "world.preview.short.ok", "Matches live");
+      }
+    }
     const repoSlug = shortRepo(project?.repo);
+    const repoUrl = safeHref(project?.repo);
     const repoError = cleanString(project?.repoError) ?? cleanString(project?.repo_error);
     const repoWanted = Boolean(project?.repoWanted || project?.repo_wanted);
     let codeState = "off";
     let codeText = tx(t, "world.code.state.missing", "Not connected yet");
+    let codeShort = tx(t, "world.code.short.missing", "Not linked");
     if (repoError) {
       codeState = "bad";
       codeText = tx(t, "world.code.state.error", "Connection problem \u2014 needs attention");
+      codeShort = tx(t, "world.code.short.error", "Connection error");
     } else if (repoSlug) {
       codeState = "ok";
       codeText = tx(t, "world.code.state.connected", "Connected: {repo}", { repo: repoSlug });
+      codeShort = clip(repoSlug, 21);
     } else if (repoWanted) {
       codeState = "active";
       codeText = tx(t, "world.code.state.settingUp", "Setting up your code repository");
+      codeShort = tx(t, "world.code.short.settingUp", "Setting up\u2026");
     } else if (project?.kind === "new") {
       codeState = "ok";
       codeText = tx(t, "world.code.state.ptech", "Kept by PTech");
-    }
-    const latestDeploy = latestDeployOf(deploys);
-    let deployState = "off";
-    let deployText = tx(t, "world.deploy.state.neutral", "Ready for the next update");
-    let deployTime = null;
-    if (latestDeploy) {
-      const rawStatus = String(latestDeploy.status ?? latestDeploy.state ?? "").toLowerCase();
-      deployTime = formatDeployTime(
-        latestDeploy.created_at ?? latestDeploy.updated_at ?? latestDeploy.timestamp ?? latestDeploy.time,
-        now
-      );
-      if (["failed", "error", "canceled", "cancelled"].includes(rawStatus)) {
-        deployState = "bad";
-        deployText = deployTime ? tx(t, "world.deploy.state.failedAt", "Last publish failed ({time})", { time: deployTime }) : tx(t, "world.deploy.state.failed", "Last publish failed");
-      } else if (["building", "running", "deploying", "pending", "queued", "in_progress"].includes(rawStatus)) {
-        deployState = "active";
-        deployText = tx(t, "world.deploy.state.building", "Publishing update now");
-      } else {
-        deployState = "ok";
-        deployText = deployTime ? tx(t, "world.deploy.state.okAt", "Last published {time}", { time: deployTime }) : tx(t, "world.deploy.state.ok", "Latest changes published");
-      }
-    } else if (!site) {
-      deployState = "off";
-      deployText = tx(t, "world.deploy.state.noSite", "Waiting for a site to publish to");
-    } else if (siteFailed) {
-      deployState = "bad";
-      deployText = tx(t, "world.deploy.state.paused", "Paused \u2014 hosting setup stopped");
-    } else if (siteBuilding) {
-      deployState = "active";
-      deployText = tx(t, "world.deploy.state.preparing", "Preparing first publish");
-    } else if (previewAhead) {
-      deployState = "warn";
-      deployText = tx(t, "world.deploy.state.previewAhead", "New preview ready to publish");
+      codeShort = tx(t, "world.code.short.ptech", "Kept by PTech");
     }
     const inProgressCount = projectTickets2.filter((tk) => tk.status === "in_progress").length;
     const inReviewCount = projectTickets2.filter((tk) => tk.status === "review").length;
     const workingCount = inProgressCount + inReviewCount;
     let agentState = "off";
     let agentText = tx(t, "world.agent.state.idle", "Standing by \u2014 no active build");
+    let agentShort = tx(t, "world.agent.short.idle", "Idle");
     if (workingCount > 0) {
-      agentState = "active";
+      if (opCounts.stalled > 0) {
+        agentState = "bad";
+        agentShort = tx(t, "world.agent.short.stalled", "{n} stalled", { n: opCounts.stalled });
+      } else if (inProgressCount > 0) {
+        agentState = "active";
+        agentShort = tx(t, "world.agent.short.building", "Building {n}", { n: inProgressCount });
+      } else {
+        agentState = "warn";
+        agentShort = tx(t, "world.agent.short.review", "{n} in review", { n: inReviewCount });
+      }
       if (inProgressCount > 0 && inReviewCount > 0) {
         agentText = tx(
           t,
@@ -9266,133 +10156,42 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }
     }
     const openCount = projectTickets2.filter((tk) => OPEN_TICKET_STATUSES.has(tk.status)).length;
-    const requestState = openCount > 0 ? "active" : "off";
+    const needsCount = opCounts.needsYou ?? 0;
+    const requestState = needsCount > 0 ? "warn" : openCount > 0 ? "ok" : "off";
     const requestText = openCount === 0 ? tx(t, "world.request.state.none", "No open requests") : openCount === 1 ? tx(t, "world.request.state.one", "1 open request") : tx(t, "world.request.state.many", "{count} open requests", { count: openCount });
-    let previewState = "off";
-    let previewText = tx(t, "world.preview.state.off", "No preview yet");
-    if (site && previewDeploy) {
-      if (siteFailed) {
-        previewState = "bad";
-        previewText = tx(t, "world.preview.state.failed", "Preview paused \u2014 site setup stopped");
-      } else if (!siteReady) {
-        previewState = "active";
-        previewText = tx(t, "world.preview.state.building", "Setting up preview");
-      } else if (previewAhead) {
-        previewState = "active";
-        previewText = tx(t, "world.preview.state.ahead", "A newer version is waiting to be published");
-      } else {
-        previewState = "ok";
-        previewText = tx(t, "world.preview.state.ok", "Matches your live site");
-      }
-    }
+    const requestShort = needsCount > 0 ? tx(t, "world.request.short.needs", "{n} {verb} you", { n: needsCount, verb: needsCount === 1 ? "needs" : "need" }) : openCount > 0 ? tx(t, "world.request.short.open", "{n} open", { n: openCount }) : tx(t, "world.request.short.none", "Clear");
     const baseStations = [
       {
-        key: "domain",
-        title: tx(t, "world.domain.title", "Your web address"),
-        shortLabel: tx(t, "world.domain.short", "Web address"),
+        key: "request",
+        title: tx(t, "world.request.title", "Requests"),
+        shortLabel: tx(t, "world.request.short", "Requests"),
+        shortStatus: requestShort,
         explain: tx(
           t,
-          "world.domain.explain",
-          "The domain name people type into their browser to reach your website."
+          "world.request.explain",
+          "Open client and internal work waiting for triage, build, or review."
         ),
-        state: domainState,
-        stateText: domainText,
-        x: STATION_POSITIONS.domain.x,
-        y: STATION_POSITIONS.domain.y,
-        meta: { hostname: addr.hostname, url: addr.raw }
-      },
-      {
-        key: "hosting",
-        title: tx(t, "world.hosting.title", "Where your site lives"),
-        shortLabel: tx(t, "world.hosting.short", "Hosting"),
-        explain: tx(
-          t,
-          "world.hosting.explain",
-          "The always-on server that stores your finished website and delivers it to every visitor."
-        ),
-        state: hostingState,
-        stateText: hostingText,
-        x: STATION_POSITIONS.hosting.x,
-        y: STATION_POSITIONS.hosting.y,
+        state: requestState,
+        stateText: requestText,
+        x: STATION_POSITIONS.request.x,
+        y: STATION_POSITIONS.request.y,
         meta: {
-          hostLabel,
-          hostKind: site ? isCloudflare ? "cloudflare" : "ptech" : null,
-          previewAhead
+          count: openCount,
+          needsYou: opCounts.needsYou,
+          stalled: opCounts.stalled,
+          newCount: opCounts.newCount,
+          reviewCount: opCounts.reviewCount
         }
-      },
-      {
-        key: "https",
-        title: tx(t, "world.https.title", "Secure connection (HTTPS)"),
-        shortLabel: tx(t, "world.https.short", "HTTPS"),
-        explain: tx(
-          t,
-          "world.https.explain",
-          "The browser padlock that encrypts traffic between visitors and your website."
-        ),
-        state: httpsState,
-        stateText: httpsText,
-        x: STATION_POSITIONS.https.x,
-        y: STATION_POSITIONS.https.y,
-        meta: { verified: httpsVerified }
-      },
-      {
-        key: "preview",
-        title: tx(t, "world.preview.title", "Preview"),
-        shortLabel: tx(t, "world.preview.short", "Preview"),
-        explain: tx(
-          t,
-          "world.preview.explain",
-          "A private copy of your site where changes are checked before going live."
-        ),
-        state: previewState,
-        stateText: previewText,
-        x: STATION_POSITIONS.preview.x,
-        y: STATION_POSITIONS.preview.y,
-        meta: {
-          ahead: previewAhead,
-          previewDeploy,
-          productionDeploy,
-          previewUrl
-        }
-      },
-      {
-        key: "code",
-        title: tx(t, "world.code.title", "Your code, with full history"),
-        shortLabel: tx(t, "world.code.short", "Code vault"),
-        explain: tx(
-          t,
-          "world.code.explain",
-          "A versioned filing cabinet of every file in your site so changes can always be reviewed or undone."
-        ),
-        state: codeState,
-        stateText: codeText,
-        x: STATION_POSITIONS.code.x,
-        y: STATION_POSITIONS.code.y,
-        meta: { repoSlug, keptByPTech: !repoSlug && !repoError && project?.kind === "new" }
-      },
-      {
-        key: "deploy",
-        title: tx(t, "world.deploy.title", "Publishing changes"),
-        shortLabel: tx(t, "world.deploy.short", "Publish"),
-        explain: tx(
-          t,
-          "world.deploy.explain",
-          "The automated conveyor that packages approved code and pushes updates onto your live hosting."
-        ),
-        state: deployState,
-        stateText: deployText,
-        x: STATION_POSITIONS.deploy.x,
-        y: STATION_POSITIONS.deploy.y,
-        meta: { deployTime, hasDeploys: Boolean(latestDeploy), previewAhead }
       },
       {
         key: "agent",
-        title: tx(t, "world.agent.title", "PTech's AI builder + human review"),
+        title: tx(t, "world.agent.title", "Builder & review"),
         shortLabel: tx(t, "world.agent.short", "Builder"),
+        shortStatus: agentShort,
         explain: tx(
           t,
           "world.agent.explain",
-          "Our AI builds your requested changes in code while a PTech engineer reviews the result before it ships."
+          "AI agent builds and human review before changes reach preview."
         ),
         state: agentState,
         stateText: agentText,
@@ -9407,24 +10206,74 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         }
       },
       {
-        key: "request",
-        title: tx(t, "world.request.title", "Your requests"),
-        shortLabel: tx(t, "world.request.short", "Requests"),
+        key: "code",
+        title: tx(t, "world.code.title", "Code repository"),
+        shortLabel: tx(t, "world.code.short", "Code"),
+        shortStatus: codeShort,
         explain: tx(
           t,
-          "world.request.explain",
-          "Your inbox for asking for new pages, wording edits, or fixes in plain English."
+          "world.code.explain",
+          "Versioned repository and GitHub connection holding every change."
         ),
-        state: requestState,
-        stateText: requestText,
-        x: STATION_POSITIONS.request.x,
-        y: STATION_POSITIONS.request.y,
+        state: codeState,
+        stateText: codeText,
+        x: STATION_POSITIONS.code.x,
+        y: STATION_POSITIONS.code.y,
         meta: {
-          count: openCount,
-          needsYou: opCounts.needsYou,
-          stalled: opCounts.stalled,
-          newCount: opCounts.newCount,
-          reviewCount: opCounts.reviewCount
+          repoSlug,
+          repoUrl,
+          keptByPTech: !repoSlug && !repoError && project?.kind === "new"
+        }
+      },
+      {
+        key: "preview",
+        title: tx(t, "world.preview.title", "Preview & publish"),
+        shortLabel: tx(t, "world.preview.short", "Preview"),
+        shortStatus: previewShort,
+        explain: tx(
+          t,
+          "world.preview.explain",
+          "Private staging copy where builds are verified before publishing live."
+        ),
+        state: previewState,
+        stateText: previewText,
+        x: STATION_POSITIONS.preview.x,
+        y: STATION_POSITIONS.preview.y,
+        meta: {
+          ahead: previewAhead,
+          previewDeploy,
+          productionDeploy,
+          previewUrl,
+          deployTime,
+          hasDeploys: Boolean(latestDeploy),
+          driftCount: drift?.count ?? 0
+        }
+      },
+      {
+        key: "hosting",
+        title: tx(t, "world.hosting.title", "Live site"),
+        shortLabel: tx(t, "world.hosting.short", "Live site"),
+        shortStatus: hostingShort,
+        explain: tx(
+          t,
+          "world.hosting.explain",
+          "Production web address, HTTPS connection, and hosting provider."
+        ),
+        state: hostingState,
+        stateText: hostingText,
+        x: STATION_POSITIONS.hosting.x,
+        y: STATION_POSITIONS.hosting.y,
+        meta: {
+          hostLabel,
+          hostKind: site ? isCloudflare ? "cloudflare" : "ptech" : null,
+          hostname: addr.hostname,
+          url: addr.raw,
+          liveUrl,
+          addressText,
+          httpsVerified,
+          httpsText,
+          previewAhead,
+          deployTime
         }
       }
     ];
@@ -9438,43 +10287,19 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const liveSite = st("hosting") === "ok";
     const buildingSite = st("hosting") === "active";
     const previewActive = st("preview") === "active";
-    const previewLive = st("preview") === "ok" || previewActive;
+    const previewLive = st("preview") === "ok" || st("preview") === "warn" || previewActive;
     return [
       {
-        id: "visitor-domain",
+        id: "visitor-hosting",
         from: "visitor",
-        to: "domain",
-        flow: "visitor",
-        points: [
-          [VISITOR_POS.x, VISITOR_POS.y],
-          [STATION_POSITIONS.domain.x, STATION_POSITIONS.domain.y]
-        ],
-        active: liveSite || st("domain") === "active",
-        connected: st("domain") === "ok" || st("domain") === "active"
-      },
-      {
-        id: "domain-https",
-        from: "domain",
-        to: "https",
-        flow: "visitor",
-        points: [
-          [STATION_POSITIONS.domain.x, STATION_POSITIONS.domain.y],
-          [STATION_POSITIONS.https.x, STATION_POSITIONS.https.y]
-        ],
-        active: liveSite || buildingSite,
-        connected: st("domain") === "ok" || buildingSite
-      },
-      {
-        id: "https-hosting",
-        from: "https",
         to: "hosting",
         flow: "visitor",
         points: [
-          [STATION_POSITIONS.https.x, STATION_POSITIONS.https.y],
+          [VISITOR_POS.x, VISITOR_POS.y],
           [STATION_POSITIONS.hosting.x, STATION_POSITIONS.hosting.y]
         ],
-        active: liveSite || buildingSite,
-        connected: liveSite || buildingSite
+        active: buildingSite,
+        connected: liveSite || buildingSite || st("hosting") === "warn"
       },
       {
         id: "request-agent",
@@ -9485,8 +10310,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           [STATION_POSITIONS.request.x, STATION_POSITIONS.request.y],
           [STATION_POSITIONS.agent.x, STATION_POSITIONS.agent.y]
         ],
-        active: st("request") === "active" || st("agent") === "active",
-        connected: st("request") === "active" || st("agent") === "active"
+        active: st("agent") === "active",
+        connected: st("request") !== "off" || st("agent") !== "off"
       },
       {
         id: "agent-code",
@@ -9498,31 +10323,19 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           [STATION_POSITIONS.code.x, STATION_POSITIONS.code.y]
         ],
         active: st("agent") === "active",
-        connected: st("code") === "ok" || st("agent") === "active"
+        connected: st("code") === "ok" || st("agent") !== "off"
       },
       {
-        id: "code-deploy",
+        id: "code-preview",
         from: "code",
-        to: "deploy",
-        flow: "build",
-        points: [
-          [STATION_POSITIONS.code.x, STATION_POSITIONS.code.y],
-          [STATION_POSITIONS.deploy.x, STATION_POSITIONS.deploy.y]
-        ],
-        active: st("deploy") === "active" || buildingSite,
-        connected: st("code") === "ok" && st("deploy") !== "off"
-      },
-      {
-        id: "deploy-preview",
-        from: "deploy",
         to: "preview",
         flow: "build",
         points: [
-          [STATION_POSITIONS.deploy.x, STATION_POSITIONS.deploy.y],
+          [STATION_POSITIONS.code.x, STATION_POSITIONS.code.y],
           [STATION_POSITIONS.preview.x, STATION_POSITIONS.preview.y]
         ],
-        active: st("deploy") === "active" || previewActive || buildingSite,
-        connected: previewLive || st("deploy") === "ok" || st("deploy") === "active"
+        active: previewActive || buildingSite,
+        connected: st("code") === "ok" && st("preview") !== "off"
       },
       {
         id: "preview-hosting",
@@ -9533,7 +10346,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           [STATION_POSITIONS.preview.x, STATION_POSITIONS.preview.y],
           [STATION_POSITIONS.hosting.x, STATION_POSITIONS.hosting.y]
         ],
-        active: st("deploy") === "active" || previewActive || buildingSite,
+        active: previewActive || buildingSite,
         connected: liveSite || previewLive
       }
     ];
@@ -9543,15 +10356,12 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     "agent",
     "code",
     "preview",
-    "deploy",
     "hosting"
   ]);
-  var JOURNEY_CABLE_ORDER = Object.freeze(["request", "agent", "code", "deploy", "preview", "hosting"]);
   var JOURNEY_CABLE_IDS = Object.freeze([
     "request-agent",
     "agent-code",
-    "code-deploy",
-    "deploy-preview",
+    "code-preview",
     "preview-hosting"
   ]);
   var JOURNEY_PLANS = Object.freeze({
@@ -9560,7 +10370,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     declined: { current: "request", reached: 0 },
     in_progress: { current: "agent", reached: 1 },
     review: { current: "preview", reached: 3 },
-    done: { current: "hosting", reached: 5 }
+    done: { current: "hosting", reached: 4 }
   });
   var JOURNEY_STATUS_SENTENCE = Object.freeze({
     new: ["world.journey.status.new", "waiting for approval"],
@@ -9607,7 +10417,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       status: ticket.status,
       stations,
       currentKey: plan.current,
-      activeCableIds: JOURNEY_CABLE_IDS.slice(0, JOURNEY_CABLE_ORDER.indexOf(plan.current)),
+      activeCableIds: JOURNEY_CABLE_IDS.slice(0, at),
       sentence,
       previewUrl,
       siteUrl: journeySiteUrl(site)
@@ -9693,25 +10503,22 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   }
 
   // packages/admin-ui/src/project-world.jsx
-  var VIEW_WIDTH = 760;
-  var VIEW_HEIGHT = 440;
+  var VIEW_WIDTH = 720;
+  var VIEW_HEIGHT = 385;
   var STATE_LABEL = {
-    ok: ["world.state.ok", "Live"],
-    active: ["world.state.active", "Working"],
-    warn: ["world.state.warn", "Pending"],
+    ok: ["world.state.ok", "Healthy"],
+    active: ["world.state.active", "Running"],
+    warn: ["world.state.warn", "Needs review"],
     bad: ["world.state.bad", "Needs attention"],
     off: ["world.state.off", "Idle"],
     unknown: ["world.state.unknown", "Unknown"]
   };
-  var LABEL_OFFSETS = {
-    hosting: { dx: 0, dy: -108 },
-    https: { dx: -56, dy: -34 },
-    domain: { dx: -62, dy: -28 },
-    preview: { dx: 24, dy: -74 },
-    deploy: { dx: 30, dy: -70 },
-    code: { dx: 62, dy: -22 },
-    request: { dx: -46, dy: 40 },
-    agent: { dx: 10, dy: 46 }
+  var LABEL_LAYOUT = {
+    hosting: { x: 96, y: 72, w: 168 },
+    preview: { x: 478, y: 60, w: 160 },
+    code: { x: 622, y: 170, w: 168 },
+    agent: { x: 526, y: 336, w: 158 },
+    request: { x: 112, y: 280, w: 158 }
   };
   function IsoBox({ x, y, z, dx, dy, dz, tone: tone2 = "base", className = "" }) {
     const b = isoBox(x, y, z, dx, dy, dz);
@@ -9724,7 +10531,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       /* @__PURE__ */ jsx("polygon", { className: topCls, points: b.top })
     ] });
   }
-  function CableArrow({ p1, p2, u = 0.52, active }) {
+  function CableArrow({ p1, p2, u = 0.5, active }) {
     const mx = p1.x + (p2.x - p1.x) * u;
     const my = p1.y + (p2.y - p1.y) * u;
     const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
@@ -9737,7 +10544,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }
     );
   }
-  function CountBadge({ x, y, z, count }) {
+  function CountBadge({ x, y, z, count, tone: tone2 = "accent" }) {
     if (!count) return null;
     const p = iso(x, y, z);
     const text = count > 99 ? "99+" : String(count);
@@ -9746,7 +10553,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       /* @__PURE__ */ jsx(
         "rect",
         {
-          className: "aw-world__badge-bg",
+          className: tone2 === "bad" ? "aw-world__badge-bg aw-world__badge-bg--bad" : "aw-world__badge-bg",
           x: p.x - rx,
           y: p.y - 10.5,
           width: rx * 2,
@@ -9763,42 +10570,43 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const y0 = y - 0.58;
     const w = 1.24;
     const d = 1.16;
-    const h = 1.22;
+    const h = 1.18;
     const roofTone = state === "active" ? "accent" : state === "bad" ? "bad" : state === "warn" ? "warn" : "base";
     const winCls = state === "ok" ? "aw-world__window aw-world__window--ok" : state === "active" ? "aw-world__window aw-world__window--lit" : "aw-world__window";
     const doorPts = isoPoints([
       [x - 0.19, y0 + d, 0.04],
       [x + 0.19, y0 + d, 0.04],
-      [x + 0.19, y0 + d, 0.54],
-      [x - 0.19, y0 + d, 0.54]
+      [x + 0.19, y0 + d, 0.52],
+      [x - 0.19, y0 + d, 0.52]
     ]);
     const winL = isoPoints([
-      [x0 + 0.18, y0 + d, 0.72],
-      [x0 + 0.52, y0 + d, 0.72],
-      [x0 + 0.52, y0 + d, 1.02],
-      [x0 + 0.18, y0 + d, 1.02]
+      [x0 + 0.18, y0 + d, 0.7],
+      [x0 + 0.52, y0 + d, 0.7],
+      [x0 + 0.52, y0 + d, 0.98],
+      [x0 + 0.18, y0 + d, 0.98]
     ]);
     const winR = isoPoints([
-      [x0 + 0.72, y0 + d, 0.72],
-      [x0 + 1.06, y0 + d, 0.72],
-      [x0 + 1.06, y0 + d, 1.02],
-      [x0 + 0.72, y0 + d, 1.02]
+      [x0 + 0.72, y0 + d, 0.7],
+      [x0 + 1.06, y0 + d, 0.7],
+      [x0 + 1.06, y0 + d, 0.98],
+      [x0 + 0.72, y0 + d, 0.98]
     ]);
-    const vents = [0.3, 0.56, 0.82, 1.04].map((vz) => {
+    const vents = [0.3, 0.56, 0.82, 1.02].map((vz) => {
       const a = iso(x0 + w, y0 + 0.2, vz);
       const b = iso(x0 + w, y0 + d - 0.2, vz);
       return { vz, a, b };
     });
-    const mastBase = iso(x + 0.25, y - 0.15, h + 0.24);
-    const mastTop = iso(x + 0.25, y - 0.15, h + 0.62);
-    const hostPlatePt = iso(x, y, h + 0.1);
+    const mastBase = iso(x + 0.24, y - 0.16, h + 0.22);
+    const mastTop = iso(x + 0.24, y - 0.16, h + 0.56);
+    const lockPt = iso(x - 0.28, y + 0.18, h + 0.28);
     return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
       /* @__PURE__ */ jsx(IsoBox, { x: x0 - 0.08, y: y0 - 0.08, z: 0, dx: w + 0.16, dy: d + 0.16, dz: 0.1 }),
       /* @__PURE__ */ jsx(IsoBox, { x: x0, y: y0, z: 0.1, dx: w, dy: d, dz: h - 0.1 }),
       /* @__PURE__ */ jsx(IsoBox, { x: x0 - 0.04, y: y0 - 0.04, z: h, dx: w + 0.08, dy: d + 0.08, dz: 0.1, tone: roofTone }),
-      /* @__PURE__ */ jsx(IsoBox, { x: x0 + 0.16, y: y0 + 0.18, z: h + 0.1, dx: 0.46, dy: 0.42, dz: 0.22 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0 + 0.16, y: y0 + 0.18, z: h + 0.1, dx: 0.44, dy: 0.4, dz: 0.2 }),
       /* @__PURE__ */ jsx("line", { className: "aw-world__ink-line", x1: mastBase.x, y1: mastBase.y, x2: mastTop.x, y2: mastTop.y }),
       /* @__PURE__ */ jsx("circle", { className: `aw-world__beacon aw-world__beacon--${state}`, cx: mastTop.x, cy: mastTop.y, r: 4.5 }),
+      meta?.httpsVerified ? /* @__PURE__ */ jsx("circle", { className: "aw-world__beacon aw-world__beacon--ok", cx: lockPt.x, cy: lockPt.y, r: 3 }) : null,
       /* @__PURE__ */ jsx(
         "polygon",
         {
@@ -9808,51 +10616,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       ),
       /* @__PURE__ */ jsx("polygon", { className: winCls, points: winL }),
       /* @__PURE__ */ jsx("polygon", { className: winCls, points: winR }),
-      vents.map((v) => /* @__PURE__ */ jsx("line", { className: "aw-world__detail-line", x1: v.a.x, y1: v.a.y, x2: v.b.x, y2: v.b.y }, v.vz)),
-      meta?.hostKind ? /* @__PURE__ */ jsx("text", { className: "aw-world__micro", x: hostPlatePt.x, y: hostPlatePt.y + 2, children: meta.hostKind === "cloudflare" ? "CF" : "PT" }) : null
-    ] });
-  }
-  function HttpsObject({ station }) {
-    const { x, y, state } = station;
-    const verified = state === "ok";
-    const tone2 = verified ? "ok" : state === "warn" ? "warn" : "base";
-    const archH = 0.88;
-    const lockCenter = iso(x, y, archH + 0.34);
-    const shackleL = iso(x - 0.11, y, archH + 0.32);
-    const shackleR = iso(x + 0.11, y, archH + 0.32);
-    const shackleTop = iso(x, y, archH + 0.58);
-    const shacklePath = verified ? `M ${shackleL.x} ${shackleL.y} C ${shackleL.x} ${shackleTop.y - 4}, ${shackleR.x} ${shackleTop.y - 4}, ${shackleR.x} ${shackleR.y}` : `M ${shackleL.x} ${shackleL.y} C ${shackleL.x} ${shackleTop.y - 4}, ${shackleR.x} ${shackleTop.y - 4}, ${shackleR.x + 2} ${shackleR.y - 7}`;
-    return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
-      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.44, y: y - 0.1, z: 0, dx: 0.18, dy: 0.2, dz: archH }),
-      /* @__PURE__ */ jsx(IsoBox, { x: x + 0.26, y: y - 0.1, z: 0, dx: 0.18, dy: 0.2, dz: archH }),
-      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.48, y: y - 0.12, z: archH, dx: 0.96, dy: 0.24, dz: 0.14, tone: tone2 }),
-      /* @__PURE__ */ jsx("path", { className: "aw-world__ink-line", d: shacklePath }),
-      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.19, y: y - 0.12, z: archH + 0.08, dx: 0.38, dy: 0.24, dz: 0.28, tone: tone2 }),
-      verified ? /* @__PURE__ */ jsx("circle", { className: "aw-world__beacon aw-world__beacon--ok", cx: lockCenter.x, cy: lockCenter.y + 8, r: 2.3 }) : state === "warn" ? /* @__PURE__ */ jsx("circle", { className: "aw-world__beacon aw-world__beacon--warn", cx: lockCenter.x, cy: lockCenter.y + 8, r: 2.6 }) : /* @__PURE__ */ jsx("text", { className: "aw-world__micro", x: lockCenter.x, y: lockCenter.y + 11, children: "?" })
-    ] });
-  }
-  function DomainObject({ station }) {
-    const { x, y, state, meta } = station;
-    const boardTone = state === "active" ? "accent" : state === "bad" ? "bad" : state === "warn" ? "warn" : "base";
-    const l1a = iso(x - 0.34, y + 0.08, 0.96);
-    const l1b = iso(x + 0.32, y + 0.08, 0.96);
-    const l2a = iso(x - 0.34, y + 0.08, 0.82);
-    const l2b = iso(x + 0.14, y + 0.08, 0.82);
-    const cap = iso(x, y, 1.24);
-    const shortHost = meta?.hostname ? meta.hostname.length > 18 ? `${meta.hostname.slice(0, 16)}\u2026` : meta.hostname : null;
-    const hostPt = iso(x + 0.62, y + 0.05, 0);
-    return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
-      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.24, y: y - 0.22, z: 0, dx: 0.48, dy: 0.44, dz: 0.12 }),
-      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.07, y: y - 0.07, z: 0.12, dx: 0.14, dy: 0.14, dz: 1.06 }),
-      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.44, y: y - 0.08, z: 0.68, dx: 0.88, dy: 0.16, dz: 0.42, tone: boardTone }),
-      /* @__PURE__ */ jsx("line", { className: "aw-world__ink-line", x1: l1a.x, y1: l1a.y, x2: l1b.x, y2: l1b.y }),
-      /* @__PURE__ */ jsx("line", { className: "aw-world__detail-line", x1: l2a.x, y1: l2a.y, x2: l2b.x, y2: l2b.y }),
-      /* @__PURE__ */ jsx("circle", { className: `aw-world__beacon aw-world__beacon--${state}`, cx: cap.x, cy: cap.y, r: 4 }),
-      shortHost ? /* @__PURE__ */ jsx("text", { className: "aw-world__micro", x: hostPt.x + 4, y: hostPt.y + 4, children: shortHost }) : null
+      vents.map((v) => /* @__PURE__ */ jsx("line", { className: "aw-world__detail-line", x1: v.a.x, y1: v.a.y, x2: v.b.x, y2: v.b.y }, v.vz))
     ] });
   }
   function PreviewObject({ station }) {
-    const { x, y, state } = station;
+    const { x, y, state, meta } = station;
     const roofTone = state === "active" ? "accent" : state === "ok" ? "ok" : state === "warn" ? "warn" : state === "bad" ? "bad" : "base";
     const winCls = state === "ok" ? "aw-world__window aw-world__window--ok" : state === "active" ? "aw-world__window aw-world__window--lit" : "aw-world__window";
     const doorPts = isoPoints([
@@ -9868,9 +10636,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       [x + 0.28, y - 0.12, 0.44]
     ]);
     const c = iso(x, y, 0.15);
-    const rx = 28;
-    const ry = 14.5;
-    const domeH = 44;
+    const rx = 30;
+    const ry = 15.5;
+    const domeH = 46;
     const backRim = `M ${c.x - rx} ${c.y} A ${rx} ${ry} 0 0 1 ${c.x + rx} ${c.y}`;
     const domeShell = [
       `M ${c.x - rx} ${c.y}`,
@@ -9878,8 +10646,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       `A ${rx} ${ry} 0 0 1 ${c.x - rx} ${c.y}`,
       "Z"
     ].join(" ");
-    const shineArc = `M ${c.x - rx + 6} ${c.y - 9} C ${c.x - rx + 7} ${c.y - 24}, ${c.x - 10} ${c.y - 31}, ${c.x - 4} ${c.y - 32}`;
-    const apexY = c.y - 36.5;
+    const shineArc = `M ${c.x - rx + 6} ${c.y - 9} C ${c.x - rx + 7} ${c.y - 25}, ${c.x - 10} ${c.y - 33}, ${c.x - 4} ${c.y - 34}`;
+    const apexY = c.y - 38;
     return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
       /* @__PURE__ */ jsx(IsoBox, { x: x - 0.52, y: y - 0.48, z: 0, dx: 1.04, dy: 0.96, dz: 0.14 }),
       /* @__PURE__ */ jsx("path", { className: "aw-world__cloche-rim-back", d: backRim }),
@@ -9888,7 +10656,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       /* @__PURE__ */ jsx(
         "polygon",
         {
-          className: state === "ok" ? "aw-world__face-ok" : state === "active" ? "aw-world__face-accent-top" : "aw-world__window",
+          className: state === "ok" ? "aw-world__face-ok" : state === "active" ? "aw-world__face-accent-top" : state === "warn" ? "aw-world__face-warn" : "aw-world__window",
           points: doorPts
         }
       ),
@@ -9901,7 +10669,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         }
       ),
       /* @__PURE__ */ jsx("path", { className: "aw-world__cloche-shine", d: shineArc }),
-      /* @__PURE__ */ jsx("circle", { className: `aw-world__beacon aw-world__beacon--${state}`, cx: c.x, cy: apexY, r: 4 })
+      /* @__PURE__ */ jsx("circle", { className: `aw-world__beacon aw-world__beacon--${state}`, cx: c.x, cy: apexY, r: 4 }),
+      /* @__PURE__ */ jsx(CountBadge, { x: x + 0.38, y: y - 0.22, z: 0.92, count: meta?.driftCount ?? 0 })
     ] });
   }
   function CodeObject({ station }) {
@@ -9910,10 +10679,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const y0 = y - 0.4;
     const w = 0.84;
     const d = 0.8;
-    const h = 1.24;
+    const h = 1.18;
     const topTone = state === "bad" ? "bad" : state === "warn" ? "warn" : state === "active" ? "accent" : "base";
-    const drawerTops = [0.42, 0.82];
-    const handles = [0.22, 0.62, 1.02];
+    const drawerTops = [0.4, 0.78];
+    const handles = [0.21, 0.59, 0.97];
     const beaconPt = iso(x0 + w - 0.14, y0 + 0.14, h + 0.04);
     return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
       /* @__PURE__ */ jsx(IsoBox, { x: x0, y: y0, z: 0, dx: w, dy: d, dz: h, tone: topTone }),
@@ -9922,65 +10691,27 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         const b = iso(x0 + w - 0.05, y0 + d, dz);
         return /* @__PURE__ */ jsx("line", { className: "aw-world__ink-line", x1: a.x, y1: a.y, x2: b.x, y2: b.y }, dz);
       }),
-      /* @__PURE__ */ jsx(IsoBox, { x: x0 + 0.08, y: y0 + d, z: 0.44, dx: w - 0.16, dy: 0.22, dz: 0.34 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0 + 0.08, y: y0 + d, z: 0.42, dx: w - 0.16, dy: 0.22, dz: 0.32 }),
       /* @__PURE__ */ jsx(
         IsoBox,
         {
           x: x0 + 0.16,
           y: y0 + d + 0.04,
-          z: 0.78,
+          z: 0.74,
           dx: 0.26,
           dy: 0.08,
           dz: 0.12,
           tone: state === "ok" ? "ok" : state === "bad" ? "bad" : state === "warn" ? "warn" : "base"
         }
       ),
-      /* @__PURE__ */ jsx(IsoBox, { x: x0 + 0.45, y: y0 + d + 0.06, z: 0.78, dx: 0.24, dy: 0.08, dz: 0.09 }),
+      /* @__PURE__ */ jsx(IsoBox, { x: x0 + 0.45, y: y0 + d + 0.06, z: 0.74, dx: 0.24, dy: 0.08, dz: 0.09 }),
       handles.map((hz) => {
-        const yFace = hz === 0.62 ? y0 + d + 0.22 : y0 + d;
+        const yFace = hz === 0.59 ? y0 + d + 0.22 : y0 + d;
         const a = iso(x - 0.13, yFace, hz);
         const b = iso(x + 0.13, yFace, hz);
         return /* @__PURE__ */ jsx("line", { className: "aw-world__ink-line", x1: a.x, y1: a.y, x2: b.x, y2: b.y }, hz);
       }),
       /* @__PURE__ */ jsx("circle", { className: `aw-world__beacon aw-world__beacon--${state}`, cx: beaconPt.x, cy: beaconPt.y, r: 4 })
-    ] });
-  }
-  function DeployObject({ station }) {
-    const { x, y, state } = station;
-    const bedX = x - 0.64;
-    const bedY = y - 0.32;
-    const bedW = 1.28;
-    const bedD = 0.64;
-    const bedH = 0.22;
-    const crateTone = state === "active" ? "accent" : state === "ok" ? "ok" : state === "warn" ? "warn" : state === "bad" ? "bad" : "base";
-    const rollers = [-0.46, -0.22, 0.02, 0.26, 0.48].map((rx) => {
-      const a = iso(x + rx, bedY + 0.08, bedH);
-      const b = iso(x + rx, bedY + bedD - 0.08, bedH);
-      return { rx, a, b };
-    });
-    const hookTop = iso(x - 0.04, y, 0.98);
-    const hookBot = iso(x - 0.04, y, 0.62);
-    const beaconPt = iso(x + 0.32, y - 0.32, 1.14);
-    return /* @__PURE__ */ jsxs("g", { className: "aw-world__object", children: [
-      /* @__PURE__ */ jsx(IsoBox, { x: bedX, y: bedY, z: 0, dx: bedW, dy: bedD, dz: bedH }),
-      rollers.map((r) => /* @__PURE__ */ jsx("line", { className: "aw-world__detail-line", x1: r.a.x, y1: r.a.y, x2: r.b.x, y2: r.b.y }, r.rx)),
-      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.08, y: bedY - 0.08, z: 0, dx: 0.16, dy: 0.14, dz: 1.04 }),
-      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.24, y: y - 0.18, z: bedH, dx: 0.42, dy: 0.36, dz: 0.38, tone: crateTone }),
-      /* @__PURE__ */ jsx(IsoBox, { x: x - 0.08, y: bedY + bedD - 0.06, z: 0, dx: 0.16, dy: 0.14, dz: 1.04 }),
-      /* @__PURE__ */ jsx(
-        IsoBox,
-        {
-          x: x - 0.12,
-          y: bedY - 0.12,
-          z: 0.98,
-          dx: 0.24,
-          dy: bedD + 0.24,
-          dz: 0.14,
-          tone: state === "active" ? "accent" : "base"
-        }
-      ),
-      /* @__PURE__ */ jsx("line", { className: "aw-world__ink-line", x1: hookTop.x, y1: hookTop.y, x2: hookBot.x, y2: hookBot.y }),
-      /* @__PURE__ */ jsx("circle", { className: `aw-world__beacon aw-world__beacon--${state}`, cx: beaconPt.x, cy: beaconPt.y, r: 3.8 })
     ] });
   }
   function AgentObject({ station }) {
@@ -9989,8 +10720,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const y0 = y - 0.42;
     const w = 1.12;
     const d = 0.84;
-    const deskZ = 0.52;
+    const deskZ = 0.5;
     const working = state === "active";
+    const stalled = state === "bad";
     const screenPts = isoPoints([
       [x - 0.22, y0 + 0.28, deskZ + 0.2],
       [x + 0.24, y0 + 0.28, deskZ + 0.2],
@@ -10013,10 +10745,16 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           dx: 0.58,
           dy: 0.14,
           dz: 0.44,
-          tone: working ? "accent" : "base"
+          tone: stalled ? "bad" : working ? "accent" : state === "warn" ? "warn" : "base"
         }
       ),
-      /* @__PURE__ */ jsx("polygon", { className: working ? "aw-world__window aw-world__window--lit" : "aw-world__window", points: screenPts }),
+      /* @__PURE__ */ jsx(
+        "polygon",
+        {
+          className: stalled ? "aw-world__face-bad" : working ? "aw-world__window aw-world__window--lit" : "aw-world__window",
+          points: screenPts
+        }
+      ),
       /* @__PURE__ */ jsx(IsoBox, { x: x - 0.14, y: y0 + 0.44, z: deskZ + 0.09, dx: 0.42, dy: 0.2, dz: 0.04 }),
       /* @__PURE__ */ jsx(
         IsoBox,
@@ -10031,7 +10769,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         }
       ),
       /* @__PURE__ */ jsx("line", { className: "aw-world__detail-line", x1: c1a.x, y1: c1a.y, x2: c1b.x, y2: c1b.y }),
-      /* @__PURE__ */ jsx(CountBadge, { x: x + 0.38, y: y - 0.22, z: deskZ + 0.68, count: meta?.count ?? 0 })
+      /* @__PURE__ */ jsx(CountBadge, { x: x + 0.38, y: y - 0.22, z: deskZ + 0.68, count: meta?.count ?? 0, tone: stalled ? "bad" : "accent" })
     ] });
   }
   function RequestObject({ station }) {
@@ -10056,7 +10794,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           dx: w - 0.34,
           dy: d - 0.32,
           dz: 0.08,
-          tone: i === sheets - 1 && state === "active" ? "accent" : "base"
+          tone: i === sheets - 1 && state === "warn" ? "warn" : i === sheets - 1 && state === "active" ? "accent" : "base"
         },
         i
       )),
@@ -10069,16 +10807,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     switch (station.key) {
       case "hosting":
         return /* @__PURE__ */ jsx(HostingObject, { station });
-      case "https":
-        return /* @__PURE__ */ jsx(HttpsObject, { station });
-      case "domain":
-        return /* @__PURE__ */ jsx(DomainObject, { station });
       case "preview":
         return /* @__PURE__ */ jsx(PreviewObject, { station });
       case "code":
         return /* @__PURE__ */ jsx(CodeObject, { station });
-      case "deploy":
-        return /* @__PURE__ */ jsx(DeployObject, { station });
       case "agent":
         return /* @__PURE__ */ jsx(AgentObject, { station });
       case "request":
@@ -10086,6 +10818,76 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       default:
         return null;
     }
+  }
+  function actionsForStation(station, onAction) {
+    const items = [];
+    if (station.key === "request") {
+      if (onAction) {
+        items.push({ id: "open-work", label: "Open work", primary: true, run: () => onAction("work", station) });
+        items.push({ id: "add-work", label: "Add work", run: () => onAction("add_work", station) });
+      }
+    } else if (station.key === "agent") {
+      if (onAction) {
+        items.push({ id: "open-activity", label: "Inspect activity", primary: true, run: () => onAction("activity", station) });
+      }
+    } else if (station.key === "code") {
+      if (station.meta?.repoUrl) {
+        items.push({ id: "open-repo", label: "Open repository", href: station.meta.repoUrl, primary: true });
+      }
+      if (onAction) {
+        items.push({
+          id: "manage-repo",
+          label: station.meta?.repoSlug ? "Manage repository" : "Link repository",
+          primary: !station.meta?.repoUrl,
+          run: () => onAction(station.meta?.repoSlug ? "repo" : "link_repo", station)
+        });
+      }
+    } else if (station.key === "preview") {
+      if (station.meta?.previewUrl) {
+        items.push({ id: "open-preview", label: "Open preview", href: station.meta.previewUrl, primary: true });
+      }
+      if (onAction) {
+        items.push({
+          id: "manage-preview",
+          label: station.meta?.ahead ? "Publish & hosting" : "Manage hosting",
+          primary: !station.meta?.previewUrl,
+          run: () => onAction("hosting", station)
+        });
+      }
+    } else if (station.key === "hosting") {
+      if (station.meta?.liveUrl && station.state !== "off") {
+        items.push({ id: "open-live", label: "Open live site", href: station.meta.liveUrl, primary: true });
+      }
+      if (onAction) {
+        items.push({
+          id: "manage-hosting",
+          label: station.state === "off" ? "Set up hosting" : "Hosting & rollback",
+          primary: !(station.meta?.liveUrl && station.state !== "off"),
+          run: () => onAction("hosting", station)
+        });
+      }
+    }
+    return items;
+  }
+  function StationActions({ station, onAction, compact = false }) {
+    const actions = actionsForStation(station, onAction);
+    if (!actions.length) return null;
+    return /* @__PURE__ */ jsx("div", { className: compact ? "aw-world__actions aw-world__actions--compact" : "aw-world__actions", children: actions.map(
+      (act) => act.href ? /* @__PURE__ */ jsxs(
+        "a",
+        {
+          className: act.primary ? "aw-btn aw-btn--sm aw-world__action-link" : "aw-btn aw-btn--sm aw-btn--ghost aw-world__action-link",
+          href: act.href,
+          target: "_blank",
+          rel: "noreferrer",
+          children: [
+            act.label,
+            " \u2197"
+          ]
+        },
+        act.id
+      ) : /* @__PURE__ */ jsx(Button, { size: "sm", kind: act.primary ? "default" : "ghost", onClick: act.run, children: act.label }, act.id)
+    ) });
   }
   function ChecksList({ checks, t }) {
     if (!Array.isArray(checks) || checks.length === 0) return null;
@@ -10107,13 +10909,13 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }) })
     ] });
   }
-  function OperatorExtras({ station }) {
+  function OperatorExtras({ station, inline = false }) {
     if (station.key !== "agent" && station.key !== "request") return null;
     const needsYou2 = station.meta?.needsYou;
     const stalled = station.meta?.stalled;
     if (needsYou2 == null && stalled == null) return null;
-    return /* @__PURE__ */ jsxs("div", { className: "aw-world__ops", children: [
-      /* @__PURE__ */ jsx("span", { className: "aw-world__status-label", children: "Operator" }),
+    return /* @__PURE__ */ jsxs("div", { className: inline ? "aw-world__ops aw-world__ops--inline" : "aw-world__ops", children: [
+      !inline ? /* @__PURE__ */ jsx("span", { className: "aw-world__status-label", children: "Operator" }) : null,
       /* @__PURE__ */ jsxs("div", { className: "aw-world__op-chips", children: [
         needsYou2 != null ? /* @__PURE__ */ jsxs("span", { className: needsYou2 > 0 ? "aw-world__op-chip aw-world__op-chip--warn" : "aw-world__op-chip", children: [
           "Needs you: ",
@@ -10124,6 +10926,21 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           /* @__PURE__ */ jsx("strong", { children: stalled })
         ] }) : null
       ] })
+    ] });
+  }
+  function HostingDetails({ station }) {
+    if (station.key !== "hosting") return null;
+    const { httpsText, httpsVerified, deployTime } = station.meta ?? {};
+    if (!httpsText && !deployTime) return null;
+    return /* @__PURE__ */ jsxs("dl", { className: "aw-world__meta", children: [
+      httpsText ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx("dt", { children: "HTTPS" }),
+        /* @__PURE__ */ jsx("dd", { className: httpsVerified ? "aw-world__meta-ok" : void 0, children: httpsText })
+      ] }) : null,
+      deployTime ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx("dt", { children: "Last published" }),
+        /* @__PURE__ */ jsx("dd", { children: deployTime })
+      ] }) : null
     ] });
   }
   function operatorSummaryText(station) {
@@ -10157,7 +10974,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     t = (k) => k,
     now,
     initialStation = "hosting",
-    onSelect
+    onSelect,
+    onAction
   }) {
     const stations = useMemo(
       () => stationsFor({ project, sites, tickets, deploys, t, now }),
@@ -10167,13 +10985,19 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       () => [...stations].sort((a, b) => a.x + a.y - (b.x + b.y)),
       [stations]
     );
+    const orderedStations = useMemo(
+      () => STATION_ORDER.map((k) => stations.find((s) => s.key === k)).filter(Boolean),
+      [stations]
+    );
     const cables = useMemo(() => cablesFor(stations), [stations]);
     const drift = useMemo(
       () => unshippedPreview({ project, sites, deploys, tickets: tickets ?? [], t, now }),
       [project, sites, deploys, tickets, t, now]
     );
-    const dots = useMemo(() => floorDots(stations, 0.42), [stations]);
-    const [selectedKey, setSelectedKey] = useState(initialStation);
+    const resolvedInitial = STATION_ORDER.includes(initialStation) ? initialStation : "hosting";
+    const [selectedKey, setSelectedKey] = useState(resolvedInitial);
+    const [contextMenu, setContextMenu] = useState(null);
+    const stationRefs = useRef({});
     const [journeyId, setJourneyId] = useState(void 0);
     const defaultTicket = useMemo(() => defaultJourneyTicket(project, tickets ?? []), [project, tickets]);
     const pillTickets = useMemo(
@@ -10183,9 +11007,63 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const followed = journeyId === null ? null : journeyId === void 0 ? defaultTicket : (tickets ?? []).find((tk) => String(tk?.id) === String(journeyId)) ?? null;
     const journey = useMemo(() => followed ? journeyFor(followed, { sites, t, now }) : null, [followed, sites, t, now]);
     const activeStation = stations.find((s) => s.key === selectedKey) ?? stations[0];
-    const activateStation = (key, emit) => {
+    useEffect(() => {
+      if (!contextMenu) return void 0;
+      const onKey = (e) => {
+        if (e.key === "Escape") setContextMenu(null);
+      };
+      const onPointer = () => setContextMenu(null);
+      window.addEventListener("keydown", onKey);
+      window.addEventListener("pointerdown", onPointer);
+      return () => {
+        window.removeEventListener("keydown", onKey);
+        window.removeEventListener("pointerdown", onPointer);
+      };
+    }, [contextMenu]);
+    const selectStation = (key, emit = true) => {
       setSelectedKey(key);
       if (emit) onSelect?.(key);
+    };
+    const triggerPrimaryAction = (station) => {
+      const actions = actionsForStation(station, onAction);
+      const first = actions[0];
+      if (!first) {
+        onSelect?.(station.key);
+        return;
+      }
+      if (first.href && typeof window !== "undefined") {
+        window.open(first.href, "_blank", "noopener,noreferrer");
+      } else if (first.run) {
+        first.run();
+      }
+    };
+    const onStationKeyDown = (e, station) => {
+      const idx = orderedStations.findIndex((s) => s.key === station.key);
+      if (idx === -1) return;
+      let nextIdx = null;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") nextIdx = (idx + 1) % orderedStations.length;
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") nextIdx = (idx - 1 + orderedStations.length) % orderedStations.length;
+      else if (e.key === "Home") nextIdx = 0;
+      else if (e.key === "End") nextIdx = orderedStations.length - 1;
+      if (nextIdx !== null) {
+        e.preventDefault();
+        const target = orderedStations[nextIdx];
+        selectStation(target.key, false);
+        stationRefs.current[target.key]?.focus();
+        return;
+      }
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        selectStation(station.key, true);
+        triggerPrimaryAction(station);
+      }
+    };
+    const openContextMenu = (e, station) => {
+      const actions = actionsForStation(station, onAction);
+      if (!actions.length) return;
+      e.preventDefault();
+      selectStation(station.key, false);
+      setContextMenu({ station, actions, x: e.clientX, y: e.clientY });
     };
     const floorPlate = useMemo(
       () => isoPoints([
@@ -10197,40 +11075,40 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       []
     );
     const visitorPt = iso(VISITOR_POS.x, VISITOR_POS.y, 0);
-    const visitorNext = iso(STATION_POSITIONS.domain.x, STATION_POSITIONS.domain.y, 0);
-    const visitorsZonePt = iso(2.55, 5.25, 0);
-    const workshopZonePt = iso(6.6, 5.2, 0);
+    const visitorNext = iso(STATION_POSITIONS.hosting.x, STATION_POSITIONS.hosting.y, 0);
     const [stateKey, stateDefault] = STATE_LABEL[activeStation.state] ?? STATE_LABEL.off;
     const stateBadgeText = tx(t, stateKey, stateDefault);
     return /* @__PURE__ */ jsxs("div", { className: "aw-world-wrap", children: [
-      pillTickets.length ? /* @__PURE__ */ jsxs("div", { className: "aw-world__journeys", role: "group", "aria-label": tx(t, "world.journey.pills", "Follow a request"), children: [
-        pillTickets.map((tk) => /* @__PURE__ */ jsxs(
-          "button",
-          {
-            type: "button",
-            className: `aw-world__journey-pill is-${tk.status}`,
-            "aria-pressed": followed ? String(followed.id) === String(tk.id) : false,
-            onClick: () => setJourneyId(tk.id),
-            title: `#${tk.id} ${tk.title ?? ""}`,
-            children: [
-              /* @__PURE__ */ jsx("span", { className: "aw-world__journey-dot", "aria-hidden": "true" }),
-              tk.title ?? `#${tk.id}`
-            ]
-          },
-          String(tk.id)
-        )),
-        /* @__PURE__ */ jsx(
-          "button",
-          {
-            type: "button",
-            className: "aw-world__journey-pill is-all",
-            "aria-pressed": !followed,
-            onClick: () => setJourneyId(null),
-            children: tx(t, "world.journey.all", "All stations")
-          }
-        )
+      pillTickets.length || drift ? /* @__PURE__ */ jsxs("div", { className: "aw-world__bar", children: [
+        pillTickets.length ? /* @__PURE__ */ jsxs("div", { className: "aw-world__journeys", role: "group", "aria-label": tx(t, "world.journey.pills", "Follow a request"), children: [
+          pillTickets.map((tk) => /* @__PURE__ */ jsxs(
+            "button",
+            {
+              type: "button",
+              className: `aw-world__journey-pill is-${tk.status}`,
+              "aria-pressed": followed ? String(followed.id) === String(tk.id) : false,
+              onClick: () => setJourneyId(tk.id),
+              title: `#${tk.id} ${tk.title ?? ""}`,
+              children: [
+                /* @__PURE__ */ jsx("span", { className: "aw-world__journey-dot", "aria-hidden": "true" }),
+                /* @__PURE__ */ jsx("span", { className: "aw-world__journey-label", children: tk.title ?? `#${tk.id}` })
+              ]
+            },
+            String(tk.id)
+          )),
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              type: "button",
+              className: "aw-world__journey-pill is-all",
+              "aria-pressed": !followed,
+              onClick: () => setJourneyId(null),
+              children: tx(t, "world.journey.all", "All stations")
+            }
+          )
+        ] }) : null,
+        /* @__PURE__ */ jsx(DriftLine, { drift, onPick: (id) => setJourneyId(id), t })
       ] }) : null,
-      /* @__PURE__ */ jsx(DriftLine, { drift, onPick: (id) => setJourneyId(id), t }),
       /* @__PURE__ */ jsxs("figure", { className: "aw-world", children: [
         /* @__PURE__ */ jsx("div", { className: "aw-world__stage", children: /* @__PURE__ */ jsxs(
           "svg",
@@ -10238,50 +11116,30 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             className: "aw-world__svg",
             viewBox: `0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`,
             preserveAspectRatio: "xMidYMid meet",
-            role: "img",
-            "aria-label": tx(t, "world.mapLabel", "Project health: how requests, code and deploys fit together"),
+            role: "group",
+            "aria-label": tx(t, "world.mapLabel", "Project map: requests, builder, code, preview and live site"),
             children: [
               /* @__PURE__ */ jsx("polygon", { className: "aw-world__floor-plate", points: floorPlate }),
-              /* @__PURE__ */ jsx("g", { "aria-hidden": "true", children: dots.map((d) => /* @__PURE__ */ jsx(
-                "circle",
-                {
-                  className: d.active ? "aw-world__dot aw-world__dot--active" : "aw-world__dot",
-                  cx: d.x,
-                  cy: d.y,
-                  r: d.active ? 2 : 1.25
-                },
-                d.id
-              )) }),
-              /* @__PURE__ */ jsx("text", { className: "aw-world__zone-label", x: visitorsZonePt.x, y: visitorsZonePt.y, textAnchor: "middle", children: tx(t, "world.zone.visitors", "Visitors") }),
-              /* @__PURE__ */ jsx("text", { className: "aw-world__zone-label", x: workshopZonePt.x, y: workshopZonePt.y, textAnchor: "middle", children: tx(t, "world.zone.workshop", "Workshop") }),
               /* @__PURE__ */ jsx("g", { "aria-hidden": "true", children: cables.map((c) => {
                 const p1 = iso(c.points[0][0], c.points[0][1], 0);
                 const p2 = iso(c.points[1][0], c.points[1][1], 0);
                 const dPath = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
+                const lit = journey && c.flow === "build" ? journey.activeCableIds.includes(c.id) : c.active;
                 return /* @__PURE__ */ jsxs("g", { children: [
                   /* @__PURE__ */ jsx(
                     "path",
                     {
-                      className: c.connected ? "aw-world__cable-base is-connected" : "aw-world__cable-base",
+                      className: lit ? "aw-world__cable-base is-lit" : c.connected ? "aw-world__cable-base is-connected" : "aw-world__cable-base",
                       d: dPath
                     }
                   ),
-                  (journey && c.flow === "build" ? journey.activeCableIds.includes(c.id) : c.active) ? /* @__PURE__ */ jsx("path", { className: "aw-world__cable-flow", d: dPath }) : null,
-                  /* @__PURE__ */ jsx(
-                    CableArrow,
-                    {
-                      p1,
-                      p2,
-                      u: 0.5,
-                      active: journey && c.flow === "build" ? journey.activeCableIds.includes(c.id) : c.active
-                    }
-                  )
+                  /* @__PURE__ */ jsx(CableArrow, { p1, p2, u: 0.5, active: lit })
                 ] }, c.id);
               }) }),
               /* @__PURE__ */ jsxs("g", { "aria-hidden": "true", children: [
-                /* @__PURE__ */ jsx("circle", { className: "aw-world__face-top", cx: visitorPt.x, cy: visitorPt.y, r: 7.5 }),
-                /* @__PURE__ */ jsx(CableArrow, { p1: visitorPt, p2: visitorNext, u: 0.14, active: false }),
-                /* @__PURE__ */ jsx("text", { className: "aw-world__micro", x: visitorPt.x - 24, y: visitorPt.y + 18, children: tx(t, "world.visitor", "Visitor") })
+                /* @__PURE__ */ jsx("circle", { className: "aw-world__face-top", cx: visitorPt.x, cy: visitorPt.y, r: 6.5 }),
+                /* @__PURE__ */ jsx(CableArrow, { p1: visitorPt, p2: visitorNext, u: 0.2, active: false }),
+                /* @__PURE__ */ jsx("text", { className: "aw-world__micro", x: visitorPt.x - 28, y: visitorPt.y + 18, children: tx(t, "world.visitor", "Visitor") })
               ] }),
               paintedStations.map((station) => {
                 const pos = STATION_POSITIONS[station.key];
@@ -10300,10 +11158,14 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                   [station.x - hitR, station.y + hitR, 0]
                 ]);
                 const center = iso(station.x, station.y, 0);
-                const off = LABEL_OFFSETS[station.key] ?? { dx: 0, dy: 42 };
-                const lx = center.x + off.dx;
-                const ly = center.y + off.dy;
-                const labelW = Math.max(66, station.shortLabel.length * 6.5 + 22);
+                const lay = LABEL_LAYOUT[station.key] ?? { x: center.x, y: center.y + 46, w: 158 };
+                const boxH = 42;
+                const bx = Math.max(6, Math.min(VIEW_WIDTH - lay.w - 6, lay.x - lay.w / 2));
+                const by = Math.max(6, Math.min(VIEW_HEIGHT - boxH - 6, lay.y - boxH / 2));
+                const cx2 = bx + lay.w / 2;
+                const cy = by + boxH / 2;
+                const anchorX = center.x < bx ? bx : center.x > bx + lay.w ? bx + lay.w : cx2;
+                const anchorY = center.y < by ? by : center.y > by + boxH ? by + boxH : cy;
                 const isSelected = activeStation.key === station.key;
                 const cls = [
                   "aw-world__station",
@@ -10315,46 +11177,44 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                 return /* @__PURE__ */ jsxs(
                   "g",
                   {
+                    ref: (el) => {
+                      stationRefs.current[station.key] = el;
+                    },
                     className: cls,
                     role: "button",
-                    tabIndex: 0,
+                    tabIndex: isSelected ? 0 : -1,
                     "aria-label": `${station.title}: ${station.stateText}`,
                     "aria-pressed": isSelected,
-                    onMouseEnter: () => activateStation(station.key, false),
-                    onFocus: () => activateStation(station.key, false),
-                    onClick: () => activateStation(station.key, true),
-                    onKeyDown: (e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        activateStation(station.key, true);
-                      }
-                    },
+                    onClick: () => selectStation(station.key, true),
+                    onContextMenu: (e) => openContextMenu(e, station),
+                    onKeyDown: (e) => onStationKeyDown(e, station),
                     children: [
                       /* @__PURE__ */ jsx("polygon", { className: "aw-world__hit", points: hitPts }),
                       /* @__PURE__ */ jsx("polygon", { className: "aw-world__pad", points: padPts }),
-                      /* @__PURE__ */ jsx(StationGeometry, { station }),
-                      /* @__PURE__ */ jsxs("g", { "aria-hidden": "true", children: [
+                      /* @__PURE__ */ jsx("g", { className: "aw-world__lift", children: /* @__PURE__ */ jsx(StationGeometry, { station }) }),
+                      /* @__PURE__ */ jsxs("g", { className: "aw-world__label", "aria-hidden": "true", children: [
                         /* @__PURE__ */ jsx(
-                          "rect",
+                          "line",
                           {
-                            className: "aw-world__tag-bg",
-                            x: lx - labelW / 2,
-                            y: ly - 10,
-                            width: labelW,
-                            height: 20,
-                            rx: 10
+                            className: "aw-world__leader",
+                            x1: anchorX,
+                            y1: anchorY,
+                            x2: center.x,
+                            y2: center.y
                           }
                         ),
+                        /* @__PURE__ */ jsx("rect", { className: "aw-world__tag-bg", x: bx, y: by, width: lay.w, height: boxH, rx: 6 }),
                         /* @__PURE__ */ jsx(
                           "circle",
                           {
                             className: `aw-world__beacon aw-world__beacon--${station.state}`,
-                            cx: lx - labelW / 2 + 10,
-                            cy: ly,
-                            r: 3.2
+                            cx: bx + 12,
+                            cy: by + 14,
+                            r: 3.8
                           }
                         ),
-                        /* @__PURE__ */ jsx("text", { className: "aw-world__tag-text", x: lx + 5, y: ly + 0.5, children: station.shortLabel })
+                        /* @__PURE__ */ jsx("text", { className: "aw-world__tag-name", x: bx + 22, y: by + 14.5, children: station.shortLabel }),
+                        /* @__PURE__ */ jsx("text", { className: "aw-world__tag-status", x: bx + 10, y: by + 31, children: station.shortStatus || station.stateText })
                       ] })
                     ]
                   },
@@ -10365,10 +11225,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           }
         ) }),
         /* @__PURE__ */ jsxs("figcaption", { className: "aw-world__caption", "aria-live": "polite", children: [
-          /* @__PURE__ */ jsxs("div", { className: "aw-world__eyebrow", children: [
-            /* @__PURE__ */ jsx("span", { children: tx(t, "world.eyebrow", "Project health") }),
-            project?.name ? /* @__PURE__ */ jsx("span", { className: "aw-world__project-name", children: project.name }) : null
-          ] }),
           journey ? /* @__PURE__ */ jsxs("div", { className: "aw-world__journey", children: [
             /* @__PURE__ */ jsxs("span", { className: "aw-world__status-label", children: [
               "#",
@@ -10377,147 +11233,369 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
               followed.title ?? ""
             ] }),
             /* @__PURE__ */ jsx("p", { className: "aw-world__journey-sentence", children: journey.sentence }),
-            journey.status === "review" && journey.previewUrl ? /* @__PURE__ */ jsxs("a", { className: "aw-world__journey-chip", href: journey.previewUrl, target: "_blank", rel: "noreferrer", children: [
-              tx(t, "world.journey.openPreview", "Open preview"),
-              " \u2197"
-            ] }) : null,
-            journey.status === "done" && journey.siteUrl ? /* @__PURE__ */ jsxs("a", { className: "aw-world__journey-chip", href: journey.siteUrl, target: "_blank", rel: "noreferrer", children: [
-              tx(t, "world.journey.openSite", "Open site"),
-              " \u2197"
-            ] }) : null
+            /* @__PURE__ */ jsxs("div", { className: "aw-world__journey-links", children: [
+              journey.status === "review" && journey.previewUrl ? /* @__PURE__ */ jsxs("a", { className: "aw-world__journey-chip", href: journey.previewUrl, target: "_blank", rel: "noreferrer", children: [
+                tx(t, "world.journey.openPreview", "Open preview"),
+                " \u2197"
+              ] }) : null,
+              journey.status === "done" && journey.siteUrl ? /* @__PURE__ */ jsxs("a", { className: "aw-world__journey-chip", href: journey.siteUrl, target: "_blank", rel: "noreferrer", children: [
+                tx(t, "world.journey.openSite", "Open site"),
+                " \u2197"
+              ] }) : null
+            ] })
           ] }) : null,
-          /* @__PURE__ */ jsxs("div", { className: "aw-world__card", children: [
-            /* @__PURE__ */ jsx("div", { className: "aw-world__card-top", children: /* @__PURE__ */ jsxs("span", { className: `aw-world__pill aw-world__pill--${activeStation.state}`, children: [
-              /* @__PURE__ */ jsx("span", { className: "aw-world__pill-dot", "aria-hidden": "true" }),
-              stateBadgeText
-            ] }) }),
-            /* @__PURE__ */ jsx("h3", { className: "aw-world__title", children: activeStation.title }),
+          /* @__PURE__ */ jsxs("div", { className: "aw-world__inspector", children: [
+            /* @__PURE__ */ jsxs("div", { className: "aw-world__card-top", children: [
+              /* @__PURE__ */ jsx("h3", { className: "aw-world__title", children: activeStation.title }),
+              /* @__PURE__ */ jsxs("span", { className: `aw-world__pill aw-world__pill--${activeStation.state}`, children: [
+                /* @__PURE__ */ jsx("span", { className: "aw-world__pill-dot", "aria-hidden": "true" }),
+                stateBadgeText
+              ] })
+            ] }),
             /* @__PURE__ */ jsx("p", { className: "aw-world__explain", children: activeStation.explain }),
             /* @__PURE__ */ jsxs("div", { className: "aw-world__status-box", children: [
               /* @__PURE__ */ jsx("span", { className: "aw-world__status-label", children: tx(t, "world.currentStatus", "Current status") }),
               /* @__PURE__ */ jsx("p", { className: "aw-world__status-value", children: activeStation.stateText })
             ] }),
+            /* @__PURE__ */ jsx(HostingDetails, { station: activeStation }),
             /* @__PURE__ */ jsx(OperatorExtras, { station: activeStation }),
-            /* @__PURE__ */ jsx(ChecksList, { checks: activeStation.checks, t })
+            /* @__PURE__ */ jsx(ChecksList, { checks: activeStation.checks, t }),
+            /* @__PURE__ */ jsx(StationActions, { station: activeStation, onAction })
           ] }),
-          /* @__PURE__ */ jsx("div", { className: "aw-world__nav", role: "group", "aria-label": tx(t, "world.stationsNav", "Map stations"), children: stations.map((s) => /* @__PURE__ */ jsxs(
-            "button",
-            {
-              type: "button",
-              className: "aw-world__chip",
-              "aria-pressed": activeStation.key === s.key,
-              onClick: () => activateStation(s.key, true),
-              children: [
-                /* @__PURE__ */ jsx("span", { className: `aw-world__chip-dot aw-world__chip-dot--${s.state}`, "aria-hidden": "true" }),
-                s.shortLabel
-              ]
-            },
-            s.key
-          )) })
+          /* @__PURE__ */ jsx("p", { className: "aw-world__kbd-hint", children: "Click or use arrow keys to inspect \xB7 Enter opens" })
         ] }),
-        /* @__PURE__ */ jsx("ul", { className: "aw-world__sr-only", "aria-label": tx(t, "world.summaryLabel", "Project health station status"), children: stations.map((s) => /* @__PURE__ */ jsxs("li", { children: [
+        /* @__PURE__ */ jsx("ul", { className: "aw-world__sr-only", "aria-label": tx(t, "world.summaryLabel", "Project health station status"), children: orderedStations.map((s) => /* @__PURE__ */ jsxs("li", { children: [
           s.title,
           ": ",
           s.stateText,
           ". ",
           s.explain,
+          s.key === "hosting" && s.meta?.httpsText ? ` HTTPS: ${s.meta.httpsText}.` : "",
           operatorSummaryText(s),
           s.checks?.length ? ` ${s.checks.map((c) => [c.label, c.detail, c.whoText, c.checkedText].filter(Boolean).join(" \u2014 ")).join("; ")}` : ""
         ] }, s.key)) })
-      ] })
+      ] }),
+      /* @__PURE__ */ jsx("ol", { className: "aw-world__route", "aria-label": tx(t, "world.routeLabel", "Project route"), children: orderedStations.map((s) => {
+        const [sk, sd] = STATE_LABEL[s.state] ?? STATE_LABEL.off;
+        const badge = tx(t, sk, sd);
+        const isCurrent = journey?.currentKey === s.key;
+        const readyChecks = (s.checks ?? []).filter((c) => c.state === "ready").length;
+        return /* @__PURE__ */ jsxs("li", { className: `aw-world__route-item is-${s.state}${isCurrent ? " is-journey-current" : ""}`, children: [
+          /* @__PURE__ */ jsxs("div", { className: "aw-world__route-head", children: [
+            /* @__PURE__ */ jsx("span", { className: `aw-world__route-dot aw-world__route-dot--${s.state}`, "aria-hidden": "true" }),
+            /* @__PURE__ */ jsx("strong", { className: "aw-world__route-name", children: s.title }),
+            /* @__PURE__ */ jsx("span", { className: `aw-world__pill aw-world__pill--${s.state}`, children: badge })
+          ] }),
+          /* @__PURE__ */ jsx("p", { className: "aw-world__route-status", children: s.stateText }),
+          s.key === "hosting" && s.meta?.httpsText ? /* @__PURE__ */ jsxs("p", { className: "aw-world__route-sub", children: [
+            "HTTPS: ",
+            s.meta.httpsText
+          ] }) : null,
+          /* @__PURE__ */ jsx(OperatorExtras, { station: s, inline: true }),
+          s.checks?.length ? /* @__PURE__ */ jsxs("details", { className: "aw-world__route-checks", children: [
+            /* @__PURE__ */ jsxs("summary", { children: [
+              tx(t, "world.check.section", "Setup checks"),
+              " (",
+              readyChecks,
+              "/",
+              s.checks.length,
+              " ok)"
+            ] }),
+            /* @__PURE__ */ jsx(ChecksList, { checks: s.checks, t })
+          ] }) : null,
+          /* @__PURE__ */ jsx(StationActions, { station: s, onAction, compact: true })
+        ] }, s.key);
+      }) }),
+      contextMenu ? /* @__PURE__ */ jsxs(
+        "div",
+        {
+          className: "aw-world__ctxmenu",
+          role: "menu",
+          "aria-label": `${contextMenu.station.title} actions`,
+          style: { left: `${contextMenu.x}px`, top: `${contextMenu.y}px` },
+          onPointerDown: (e) => e.stopPropagation(),
+          children: [
+            /* @__PURE__ */ jsx("div", { className: "aw-world__ctxhead", children: contextMenu.station.title }),
+            contextMenu.actions.map(
+              (act) => act.href ? /* @__PURE__ */ jsxs(
+                "a",
+                {
+                  role: "menuitem",
+                  className: "aw-world__ctxitem",
+                  href: act.href,
+                  target: "_blank",
+                  rel: "noreferrer",
+                  onClick: () => setContextMenu(null),
+                  children: [
+                    act.label,
+                    " \u2197"
+                  ]
+                },
+                act.id
+              ) : /* @__PURE__ */ jsx(
+                "button",
+                {
+                  type: "button",
+                  role: "menuitem",
+                  className: "aw-world__ctxitem",
+                  onClick: () => {
+                    setContextMenu(null);
+                    act.run();
+                  },
+                  children: act.label
+                },
+                act.id
+              )
+            )
+          ]
+        }
+      ) : null
     ] });
   }
 
   // packages/admin-ui/src/project-styles.js
   var project_styles_default = `
-.aw-project { max-width: 1440px; margin: 0 auto; width: 100%; min-width: 0; box-sizing: border-box; }
-/* The unavailable notice keeps its own big heading; the live page's title and
-   tabs come from the shared PageHeader and PageTabs primitives. */
-.aw-project > h2 { margin: 0 0 5px; font-size: 24px; line-height: 1.25; letter-spacing: -.025em; overflow-wrap: anywhere; }
-.aw-project h3 { margin: 0 0 14px; font-size: 15px; line-height: 1.4; font-weight: 650; }
-.aw-project p { line-height: 1.6; max-width: 75ch; }
+.aw-project { max-width: var(--aw-measure-table, 1180px); margin: 0 auto; width: 100%; min-width: 0; box-sizing: border-box; }
+/* Allow header meta chips and slug to wrap cleanly on narrow widths without clipping glyphs. */
+.aw-project .aw-pagehead__titles p { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; white-space: normal; overflow: visible; text-overflow: clip; }
+/* Hosted site actions: separate and clearly mark destructive Delete site secondary button. */
+.aw-project .aw-site { border-bottom: 0; padding: var(--aw-space-2, 8px) 0 var(--aw-space-3, 12px); }
+.aw-project .aw-site__one > .aw-btn { margin-top: var(--aw-space-1, 4px); margin-right: var(--aw-space-2, 8px); }
+.aw-project .aw-site__one > .aw-btn--ghost {
+  margin-left: var(--aw-space-3, 12px);
+  color: var(--aw-bad);
+  border-color: color-mix(in srgb, var(--aw-bad) 45%, transparent);
+}
+.aw-project .aw-site__one > .aw-btn--ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--aw-bad) 10%, transparent);
+}
+.aw-project h3 { margin: 0 0 var(--aw-space-3, 12px); font-size: var(--aw-type-lg, 15px); line-height: 1.35; font-weight: 600; }
+.aw-project h4 { margin: 0 0 var(--aw-space-2, 8px); font-size: var(--aw-type-md, 13px); font-weight: 600; }
+.aw-project p { line-height: 1.55; max-width: var(--aw-measure, 72ch); margin: var(--aw-space-2, 8px) 0; }
 .aw-project a { color: var(--aw-accent); text-underline-offset: 3px; overflow-wrap: anywhere; }
 .aw-project button { scroll-margin-block: 80px; }
-.aw-project :is(button, a, input, textarea, summary):focus-visible { outline: 2px solid var(--aw-accent); outline-offset: 3px; }
+.aw-project :is(button, a, input, textarea, summary):focus-visible { outline: 2px solid var(--aw-focus, var(--aw-accent)); outline-offset: 2px; }
 .aw-project :is(input, textarea) { caret-color: var(--aw-accent); }
-.aw-project ::selection { background: var(--aw-accent); color: var(--aw-bg); }
-.aw-project__actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.aw-project ::selection { background: var(--aw-accent); color: var(--aw-surface, var(--aw-bg)); }
+
+/* Header overflow menu ("\u2026") */
+.aw-project__overflow { position: relative; display: inline-flex; }
+.aw-project__overflow-btn { width: 30px; padding: 0; justify-content: center; font-size: 16px; line-height: 1; }
+.aw-project__menu {
+  position: absolute;
+  top: calc(100% + var(--aw-space-1, 4px));
+  right: 0;
+  z-index: 25;
+  min-width: 176px;
+  padding: var(--aw-space-1, 4px);
+  border-radius: var(--aw-radius-lg, var(--aw-r-lg, 8px));
+  border: 1px solid var(--aw-hairline-strong, var(--aw-border2));
+  background: var(--aw-surface-raised, var(--aw-bg));
+  box-shadow: var(--aw-shadow-float, 0 8px 24px rgba(0, 0, 0, .18));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.aw-project__menuitem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px));
+  background: transparent;
+  color: var(--aw-ink, var(--aw-text));
+  font-size: var(--aw-type-sm, 12px);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.aw-project__menuitem:hover { background: var(--aw-hover); text-decoration: none; }
+.aw-project__menuitem:disabled { opacity: .45; cursor: default; }
+
+/* Sections: separated by hairlines and breathing room, never nested cards */
+.aw-project__actions { display: flex; flex-wrap: wrap; gap: var(--aw-space-2, 8px); align-items: center; }
+.aw-project__local-actions { margin-bottom: var(--aw-space-3, 12px); }
 .aw-project__body { min-width: 0; }
-.aw-project__section { padding: 28px 0; border-bottom: 1px solid var(--aw-border); min-width: 0; }
+.aw-project__section { padding: var(--aw-space-5, 24px) 0; border-bottom: 1px solid var(--aw-hairline, var(--aw-border)); min-width: 0; }
+.aw-project__section:first-child { padding-top: var(--aw-space-3, 12px); }
+.aw-project__section:last-child { border-bottom: 0; }
 .aw-project__section > :first-child { margin-top: 0; }
 .aw-project__section > :last-child { margin-bottom: 0; }
-.aw-project__brief { margin: 8px 0 0; }
-.aw-project__brief dt { color: var(--aw-text2); font-size: 11px; font-weight: 600; margin: 22px 0 6px; }
+.aw-project__section .aw-row-h { margin-bottom: var(--aw-space-2, 8px); }
+.aw-project__section .aw-row-h h3 { margin: 0; }
+
+/* Brief */
+.aw-project__brief { margin: var(--aw-space-2, 8px) 0 0; }
+.aw-project__brief dt {
+  color: var(--aw-ink-2, var(--aw-text2));
+  font-size: var(--aw-type-xs, 11px);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin: var(--aw-space-4, 16px) 0 var(--aw-space-1, 4px);
+}
 .aw-project__brief dt:first-child { margin-top: 0; }
-.aw-project__brief dd { margin: 0; white-space: pre-wrap; line-height: 1.65; overflow-wrap: anywhere; max-width: 72ch; }
-.aw-project__form { display: grid; gap: 14px; margin: 14px 0; max-width: 760px; }
-.aw-project__fields { display: grid; grid-template-columns: 1fr 1.5fr; gap: 16px; }
-.aw-project__topology { display: grid; grid-template-columns: 1fr 1.1fr 1.2fr; gap: 26px; list-style: none; padding: 0; margin: 16px 0 22px; }
-.aw-project__topology > li { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
-.aw-project__topology > li > svg { margin-top: 2px; color: var(--aw-text2); flex-shrink: 0; }
-.aw-project__topology > li > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.aw-project__topology strong { font-size: 12px; }
-.aw-project__topology span, .aw-project__topology a { color: var(--aw-text2); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.aw-project__brief dd { margin: 0; white-space: pre-wrap; line-height: 1.6; overflow-wrap: anywhere; max-width: var(--aw-measure, 72ch); }
+
+/* Forms */
+.aw-project__form { display: grid; gap: var(--aw-space-3, 12px); margin: var(--aw-space-3, 12px) 0; max-width: var(--aw-measure, 72ch); }
+.aw-project__form .aw-field { margin-bottom: 0; }
+.aw-project__fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: var(--aw-space-4, 16px); }
+
+/* Topology strip */
+.aw-project__topology {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--aw-space-5, 24px);
+  list-style: none;
+  padding: var(--aw-space-1, 4px) 0;
+  margin: var(--aw-space-2, 8px) 0 0;
+}
+.aw-project__topology > li { display: flex; align-items: flex-start; gap: var(--aw-space-3, 12px); min-width: 0; }
+.aw-project__topology > li > svg { margin-top: 2px; color: var(--aw-ink-2, var(--aw-text2)); flex-shrink: 0; }
+.aw-project__topology > li > div { display: flex; flex-direction: column; gap: var(--aw-space-1, 4px); min-width: 0; }
+.aw-project__topology strong { font-size: var(--aw-type-sm, 12px); font-weight: 600; }
+.aw-project__topology span, .aw-project__topology a { color: var(--aw-ink-2, var(--aw-text2)); font-size: var(--aw-type-sm, 12px); line-height: 1.5; overflow-wrap: anywhere; }
 .aw-project__topology a { color: var(--aw-accent); }
-.aw-project__destination { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
-.aw-project__work { list-style: none; padding: 0; margin: 12px 0 20px; }
-.aw-project__work > li { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--aw-border); padding: 13px 0; min-width: 0; }
+.aw-project__destination { display: flex; flex-direction: column; gap: 2px; margin-bottom: var(--aw-space-2, 8px); }
+
+/* Hairline lists (work, runs, deploys, secrets) */
+.aw-project__work { list-style: none; padding: 0; margin: var(--aw-space-2, 8px) 0 0; font-variant-numeric: tabular-nums; }
+.aw-project__work > li {
+  display: flex;
+  align-items: center;
+  gap: var(--aw-space-3, 12px);
+  min-height: var(--aw-row-h-table, 36px);
+  border-bottom: 1px solid var(--aw-hairline, var(--aw-border));
+  padding: var(--aw-space-2, 8px) 0;
+  min-width: 0;
+}
 .aw-project__work > li:last-child { border-bottom: 0; }
-.aw-project__work > li > div { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.aw-project__work > li > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
 .aw-project__work > li > div:first-child { flex: 1; }
-.aw-project__worklink { flex: 1; display: flex; align-items: baseline; gap: 10px; border: 0; padding: 0; background: transparent; color: var(--aw-text); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.aw-project__worklink {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--aw-space-3, 12px);
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--aw-ink, var(--aw-text));
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
 .aw-project__worklink:hover strong { color: var(--aw-accent); }
-.aw-project__worklink strong { font-weight: 500; overflow-wrap: anywhere; }
-.aw-project__worklink > .aw-muted { margin-left: auto; font-size: 11px; white-space: nowrap; }
+.aw-project__worklink strong { font-size: var(--aw-type-md, 13px); font-weight: 500; overflow-wrap: anywhere; }
+.aw-project__worklink > .aw-muted { margin-left: auto; font-size: var(--aw-type-xs, 11px); white-space: nowrap; }
 .aw-project__run { overflow-wrap: anywhere; }
-.aw-project__error { color: var(--aw-bad); line-height: 1.6; margin-block: 12px; overflow-wrap: anywhere; }
-.aw-project__success { color: var(--aw-ok); margin-block: 12px; }
-.aw-project__empty { color: var(--aw-text2); padding: 20px 0; }
-.aw-project__handoff { max-width: 75ch; }
-.aw-project details { padding: 12px 0; }
-.aw-project summary { cursor: pointer; color: var(--aw-text); font-weight: 500; padding: 5px 0; }
-.aw-project__invite { display: flex; align-items: end; gap: 12px; margin-top: 18px; max-width: 650px; }
-.aw-project__invite .aw-field { flex: 1; }
-.aw-project__files { list-style: none; margin: 12px 0; padding: 0; max-height: 320px; overflow: auto; }
-.aw-project__files button { display: flex; gap: 8px; align-items: center; width: 100%; color: var(--aw-text); background: none; border: 0; font: inherit; text-align: left; padding: 7px 5px; cursor: pointer; }
-.aw-project__files button:hover { background: var(--aw-bg3); }
+
+/* States & feedback */
+.aw-project__error { color: var(--aw-bad); line-height: 1.5; margin-block: var(--aw-space-2, 8px); overflow-wrap: anywhere; font-size: var(--aw-type-sm, 12px); }
+.aw-project__error-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--aw-space-3, 12px);
+  flex-wrap: wrap;
+  padding: var(--aw-space-2, 8px) var(--aw-space-3, 12px);
+  border-radius: var(--aw-radius-md, var(--aw-r-md, 6px));
+  background: color-mix(in srgb, var(--aw-bad) 10%, transparent);
+  color: var(--aw-bad);
+  font-size: var(--aw-type-sm, 12px);
+  margin: var(--aw-space-2, 8px) 0;
+}
+.aw-project__error-bar > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.aw-project__success { color: var(--aw-ok); margin-block: var(--aw-space-2, 8px); font-size: var(--aw-type-sm, 12px); }
+.aw-project__handoff { max-width: var(--aw-measure, 72ch); }
+
+/* Shape-matched loading skeleton */
+.aw-project__skel { display: grid; gap: var(--aw-space-2, 8px); padding: var(--aw-space-2, 8px) 0; }
+.aw-project__skel-row {
+  display: block;
+  height: 16px;
+  border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px));
+  background: var(--aw-fill, var(--aw-bg3));
+  max-width: 480px;
+}
+.aw-project__skel-row:nth-child(2) { max-width: 360px; opacity: .75; }
+.aw-project__skel-row:nth-child(3) { max-width: 420px; opacity: .55; }
+
+/* Disclosures & file/secret blocks */
+.aw-project details { padding: var(--aw-space-2, 8px) 0; }
+.aw-project summary { cursor: pointer; color: var(--aw-ink, var(--aw-text)); font-weight: 500; padding: var(--aw-space-1, 4px) 0; font-size: var(--aw-type-md, 13px); }
+.aw-project__invite { display: flex; align-items: end; gap: var(--aw-space-3, 12px); margin-top: var(--aw-space-3, 12px); max-width: 560px; }
+.aw-project__invite .aw-field { flex: 1; margin-bottom: 0; }
+.aw-project__files { list-style: none; margin: var(--aw-space-2, 8px) 0; padding: 0; max-height: 300px; overflow: auto; border-top: 1px solid var(--aw-hairline, var(--aw-border)); }
+.aw-project__files li { border-bottom: 1px solid var(--aw-hairline, var(--aw-border)); }
+.aw-project__files button { display: flex; gap: var(--aw-space-2, 8px); align-items: center; width: 100%; color: var(--aw-ink, var(--aw-text)); background: none; border: 0; font: inherit; text-align: left; padding: 7px 6px; cursor: pointer; }
+.aw-project__files button:hover { background: var(--aw-hover); }
 .aw-project__files button:disabled { opacity: .5; cursor: wait; }
-.aw-project__file, .aw-project__reveal { background: var(--aw-bg2); padding: 14px; margin-top: 12px; min-width: 0; }
-.aw-project pre { overflow: auto; font-family: var(--aw-mono); font-size: 12px; line-height: 1.6; tab-size: 2; max-height: 480px; }
+.aw-project__file, .aw-project__reveal {
+  background: var(--aw-surface-sidebar, var(--aw-bg2));
+  border: 1px solid var(--aw-hairline, var(--aw-border));
+  border-radius: var(--aw-radius-md, var(--aw-r-md, 6px));
+  padding: var(--aw-space-3, 12px);
+  margin-top: var(--aw-space-3, 12px);
+  min-width: 0;
+}
+.aw-project pre { overflow: auto; font-family: var(--aw-mono); font-size: var(--aw-type-sm, 12px); line-height: 1.55; tab-size: 2; max-height: 440px; margin: var(--aw-space-2, 8px) 0 0; }
 .aw-project__reveal pre { white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
-/* Overview: the health line and its collapsed map. */
-.aw-project__health { margin: 0; font-size: 13px; color: var(--aw-text); min-width: 0; }
-.aw-project__world { margin-top: 8px; }
-/* Compact work rows: the needs-attention list stays scannable. */
-.aw-project__work > li { padding: 10px 0; }
-.aw-project__worklink strong { font-size: 13px; }
-/* Connect a checkout: one heading, one choice, one form. */
-.aw-project__connect { border-top: 1px solid var(--aw-border); padding-top: 14px; margin-top: 4px; }
-.aw-project__connect h4 { margin: 0; font-size: 13px; font-weight: 650; }
-.aw-project__connect .aw-seg button { font-size: 12px; }
-/* The client-steps affordance stays a small link next to the row's buttons. */
-.aw-project .aw-psol__copy { font-size: 12px; }
-/* People: one table for clients and trusted developers. */
-.aw-project__people { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
-.aw-project__people th { text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-text2); padding: 6px 12px 6px 0; border-bottom: 1px solid var(--aw-border); }
-.aw-project__people td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--aw-border); vertical-align: middle; }
+
+/* Overview health line & map wrapper */
+.aw-project__health { margin: 0; font-size: var(--aw-type-md, 13px); color: var(--aw-ink, var(--aw-text)); min-width: 0; font-variant-numeric: tabular-nums; }
+.aw-project__world { margin-top: var(--aw-space-3, 12px); }
+
+/* Sub-block separator inside Local checkout & People */
+.aw-project__connect { border-top: 1px solid var(--aw-hairline, var(--aw-border)); padding-top: var(--aw-space-4, 16px); margin-top: var(--aw-space-4, 16px); }
+.aw-project__connect .aw-row-h { margin-bottom: var(--aw-space-2, 8px); }
+.aw-project__connect .aw-row-h h4 { margin: 0; }
+.aw-project__connect .aw-seg button { font-size: var(--aw-type-sm, 12px); }
+.aw-project .aw-psol__copy { font-size: var(--aw-type-sm, 12px); }
+
+/* People table */
+.aw-project__ownership { margin-top: 0; font-size: var(--aw-type-md, 13px); }
+.aw-project__people { width: 100%; border-collapse: collapse; margin-top: var(--aw-space-3, 12px); font-size: var(--aw-type-md, 13px); }
+.aw-project__people th {
+  text-align: left;
+  font-size: var(--aw-type-xs, 11px);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--aw-ink-2, var(--aw-text2));
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--aw-hairline, var(--aw-border));
+}
+.aw-project__people td {
+  padding: var(--aw-space-2, 8px) 12px var(--aw-space-2, 8px) 0;
+  border-bottom: 1px solid var(--aw-hairline, var(--aw-border));
+  vertical-align: middle;
+}
 .aw-project__people tr:last-child td { border-bottom: 0; }
 .aw-project__peoplewho { min-width: 0; overflow-wrap: anywhere; }
+.aw-project__rolecell { display: inline-flex; align-items: center; gap: var(--aw-space-1, 4px); flex-wrap: wrap; }
 .aw-project__peopleact { text-align: right; white-space: nowrap; }
-.aw-project__peopleact .aw-check { font-size: 12px; color: var(--aw-text2); }
+.aw-project__peopleact .aw-check { font-size: var(--aw-type-sm, 12px); color: var(--aw-ink-2, var(--aw-text2)); margin-right: var(--aw-space-2, 8px); }
+
+/* Narrow layout (\u2264760px & 390px): zero horizontal scroll, compact rows */
 @media (max-width: 760px) {
-  .aw-project__fields { grid-template-columns: minmax(0,1fr); gap: 0; }
-  .aw-project__topology { grid-template-columns: minmax(0,1fr); gap: 22px; }
-  .aw-project__work > li { flex-wrap: wrap; }
-  .aw-project__worklink { flex-basis: calc(100% - 100px); flex-wrap: wrap; gap: 6px 10px; }
+  .aw-project__section { padding: var(--aw-space-4, 16px) 0; }
+  .aw-project__fields { grid-template-columns: minmax(0, 1fr); gap: var(--aw-space-3, 12px); }
+  .aw-project__topology { grid-template-columns: minmax(0, 1fr); gap: var(--aw-space-4, 16px); }
+  .aw-project__work > li { flex-wrap: wrap; gap: var(--aw-space-2, 8px); }
+  .aw-project__worklink { flex-basis: 100%; flex-wrap: wrap; gap: 4px 8px; }
   .aw-project__worklink > .aw-muted { margin-left: 0; }
   .aw-project__invite { align-items: stretch; flex-direction: column; }
-  .aw-project .aw-row-h { flex-wrap: wrap; gap: 8px; }
-  .aw-project__people, .aw-project__people td, .aw-project__people th { display: block; }
+  .aw-project .aw-row-h { flex-wrap: wrap; gap: var(--aw-space-2, 8px); }
+  .aw-project__people, .aw-project__people tbody, .aw-project__people tr, .aw-project__people td { display: block; width: 100%; }
   .aw-project__people thead { display: none; }
-  .aw-project__people td { border-bottom: 0; padding: 6px 0; }
-  .aw-project__people tr { border-bottom: 1px solid var(--aw-border); }
-  .aw-project__peopleact { text-align: left; }
+  .aw-project__people tr { padding: var(--aw-space-2, 8px) 0; border-bottom: 1px solid var(--aw-hairline, var(--aw-border)); }
+  .aw-project__people tr:last-child { border-bottom: 0; }
+  .aw-project__people td { border-bottom: 0; padding: 3px 0; }
+  .aw-project__peopleact { text-align: left; display: flex; align-items: center; gap: var(--aw-space-2, 8px); }
 }
 `;
 
@@ -10598,16 +11676,111 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       state.success ? /* @__PURE__ */ jsx("p", { className: "aw-project__success", role: "status", children: state.success }) : null
     ] });
   }
-  function ResourceState({ state, refresh, children }) {
-    if (state.loading) return /* @__PURE__ */ jsx("p", { className: "aw-muted", role: "status", children: "Loading\u2026" });
+  function SectionSkeleton({ rows = 3, label = "Loading\u2026" }) {
+    return /* @__PURE__ */ jsxs("div", { className: "aw-project__skel", role: "status", "aria-label": label, children: [
+      /* @__PURE__ */ jsx("span", { className: "aw-sr-only", children: label }),
+      Array.from({ length: rows }).map((_, i) => /* @__PURE__ */ jsx("span", { className: "aw-project__skel-row", "aria-hidden": "true" }, i))
+    ] });
+  }
+  function ResourceState({ state, refresh, rows = 3, children }) {
+    if (state.loading) return /* @__PURE__ */ jsx(SectionSkeleton, { rows });
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      state.error ? /* @__PURE__ */ jsxs("div", { className: "aw-project__error", role: "alert", children: [
-        state.value ? "Showing the last successful response. " : "",
-        errorText2(state.error),
-        " ",
+      state.error ? /* @__PURE__ */ jsxs("div", { className: "aw-project__error-bar", role: "alert", children: [
+        /* @__PURE__ */ jsxs("span", { children: [
+          state.value ? "Showing the last successful response. " : "",
+          errorText2(state.error)
+        ] }),
         /* @__PURE__ */ jsx(Button, { size: "sm", disabled: state.refreshing, onClick: refresh, children: "Retry" })
       ] }) : null,
       children
+    ] });
+  }
+  function HeaderOverflow({ items, label = "More actions" }) {
+    const [open, setOpen] = useState(false);
+    const triggerRef = useRef(null);
+    const menuRef = useRef(null);
+    useEffect(() => {
+      if (!open) return void 0;
+      const onPointer = (e) => {
+        if (menuRef.current?.contains(e.target) || triggerRef.current?.contains(e.target)) return;
+        setOpen(false);
+      };
+      const onKey = (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setOpen(false);
+          triggerRef.current?.focus();
+        }
+      };
+      window.addEventListener("pointerdown", onPointer);
+      window.addEventListener("keydown", onKey);
+      return () => {
+        window.removeEventListener("pointerdown", onPointer);
+        window.removeEventListener("keydown", onKey);
+      };
+    }, [open]);
+    useEffect(() => {
+      if (!open) return;
+      menuRef.current?.querySelector("button:not(:disabled), a[href]")?.focus();
+    }, [open]);
+    const onMenuKey = (e) => {
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
+      const els = menuRef.current ? [...menuRef.current.querySelectorAll("button:not(:disabled), a[href]")] : [];
+      if (!els.length) return;
+      e.preventDefault();
+      const idx = els.indexOf(document.activeElement);
+      const next = e.key === "Home" ? 0 : e.key === "End" ? els.length - 1 : (idx + (e.key === "ArrowDown" ? 1 : -1) + els.length) % els.length;
+      els[next].focus();
+    };
+    const visible2 = items.filter(Boolean);
+    if (!visible2.length) return null;
+    return /* @__PURE__ */ jsxs("div", { className: "aw-project__overflow", children: [
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          ref: triggerRef,
+          type: "button",
+          className: "aw-btn aw-project__overflow-btn",
+          "aria-label": label,
+          "aria-haspopup": "menu",
+          "aria-expanded": open,
+          title: label,
+          onClick: () => setOpen((v) => !v),
+          children: "\u22EF"
+        }
+      ),
+      open ? /* @__PURE__ */ jsx("div", { ref: menuRef, className: "aw-project__menu", role: "menu", "aria-label": label, onKeyDown: onMenuKey, children: visible2.map(
+        (item) => item.href ? /* @__PURE__ */ jsxs(
+          "a",
+          {
+            role: "menuitem",
+            className: "aw-project__menuitem",
+            href: item.href,
+            target: "_blank",
+            rel: "noreferrer",
+            onClick: () => setOpen(false),
+            children: [
+              item.label,
+              " \u2197"
+            ]
+          },
+          item.label
+        ) : /* @__PURE__ */ jsx(
+          "button",
+          {
+            type: "button",
+            role: "menuitem",
+            className: "aw-project__menuitem",
+            disabled: item.disabled,
+            onClick: () => {
+              setOpen(false);
+              item.run?.();
+            },
+            children: item.label
+          },
+          item.label
+        )
+      ) }) : null
     ] });
   }
   function ProjectView({ id, initialTab = "Overview" }) {
@@ -10626,26 +11799,59 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     }, [data.projects, refresh]);
     const resolveTab = useCallback(() => initialTab && initialTab !== "Overview" ? normalizeTab(initialTab) : storedTab(id), [id, initialTab]);
     const [tab, setTab] = useState(resolveTab);
+    const [pendingAnchor, setPendingAnchor] = useState(null);
     useEffect(() => {
       setTab(resolveTab());
     }, [id, resolveTab]);
-    const switchTab = useCallback((next) => {
+    const switchTab = useCallback((next, anchor = null) => {
       setTab(next);
       writeTab(id, next);
+      setPendingAnchor(anchor);
     }, [id]);
+    useEffect(() => {
+      if (!pendingAnchor || typeof document === "undefined") return;
+      const frame = requestAnimationFrame(() => {
+        document.getElementById(pendingAnchor)?.scrollIntoView({ block: "start", behavior: "auto" });
+        setPendingAnchor(null);
+      });
+      return () => cancelAnimationFrame(frame);
+    }, [tab, pendingAnchor]);
     const project = remote.value ? remote.value.project : (data.projects ?? []).find((project2) => project2.id === id);
     const refreshAll = useCallback(async () => {
       await refresh();
       await reload?.();
     }, [refresh, reload]);
-    if (!project) return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-project", children: [
-      /* @__PURE__ */ jsx("style", { children: project_styles_default }),
-      /* @__PURE__ */ jsx(ResourceState, { state: remote, refresh, children: !remote.loading ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-        /* @__PURE__ */ jsx("h2", { children: "Project unavailable" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "This project no longer exists or is not available to your account. Refresh the project list or choose another project." }),
-        /* @__PURE__ */ jsx(Button, { onClick: refreshAll, children: "Refresh projects" })
-      ] }) : null })
-    ] });
+    if (!project) {
+      return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-project", children: [
+        /* @__PURE__ */ jsx("style", { children: project_styles_default }),
+        /* @__PURE__ */ jsx(ResourceState, { state: remote, refresh, children: !remote.loading ? /* @__PURE__ */ jsx(
+          Empty,
+          {
+            title: "Project unavailable",
+            hint: "This project no longer exists or is not available to your account. Refresh the project list or choose another project.",
+            action: /* @__PURE__ */ jsx(Button, { onClick: refreshAll, children: "Refresh projects" })
+          }
+        ) : null })
+      ] });
+    }
+    const primarySite = (Array.isArray(project.sites) && project.sites.length ? project.sites : project.site ? [project.site] : []).find((s) => s?.isPrimary) ?? project.sites?.[0] ?? project.site ?? null;
+    const liveHref = resourceUrl(primarySite?.customDomain || primarySite?.productionUrl || primarySite?.url);
+    const repoHref = resourceUrl(project.repo);
+    const overflowItems = [
+      {
+        label: "Edit project",
+        run: () => setModal({
+          kind: "custom",
+          render: (close) => /* @__PURE__ */ jsx(ProjectEditModal, { project, onClose: () => {
+            close();
+            void refreshAll();
+          } })
+        })
+      },
+      liveHref ? { label: "Open live site", href: liveHref } : null,
+      repoHref ? { label: "Open repository", href: repoHref } : null,
+      { label: "Refresh project", run: () => void refreshAll() }
+    ];
     return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-project", children: [
       /* @__PURE__ */ jsx("style", { children: project_styles_default }),
       /* @__PURE__ */ jsx(
@@ -10664,20 +11870,18 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
               /* @__PURE__ */ jsx(Icon, { name: "plus" }),
               " Add work"
             ] }),
-            /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(ProjectEditModal, { project, onClose: () => {
-              close();
-              void refreshAll();
-            } }) }), children: "Edit project" })
+            /* @__PURE__ */ jsx(HeaderOverflow, { items: overflowItems, label: "Project actions" })
           ] })
         }
       ),
-      remote.error ? /* @__PURE__ */ jsxs("div", { role: "alert", className: "aw-project__error", children: [
-        "Project refresh failed. ",
-        errorText2(remote.error),
-        " ",
+      remote.error ? /* @__PURE__ */ jsxs("div", { role: "alert", className: "aw-project__error-bar", children: [
+        /* @__PURE__ */ jsxs("span", { children: [
+          "Project refresh failed. ",
+          errorText2(remote.error)
+        ] }),
         /* @__PURE__ */ jsx(Button, { size: "sm", onClick: refresh, children: "Retry" })
       ] }) : null,
-      /* @__PURE__ */ jsx(PageTabs, { ariaLabel: "Project sections", value: tab, onChange: switchTab, items: TABS.map((label) => ({ value: label, label })) }),
+      /* @__PURE__ */ jsx(PageTabs, { ariaLabel: "Project sections", value: tab, onChange: (next) => switchTab(next), items: TABS.map((label) => ({ value: label, label })) }),
       /* @__PURE__ */ jsxs("div", { className: "aw-project__body", children: [
         tab === "Overview" ? /* @__PURE__ */ jsx(Overview, { project, refresh: refreshAll, setTab: switchTab }) : null,
         tab === "Work" ? /* @__PURE__ */ jsx(Work, { project }) : null,
@@ -10687,18 +11891,18 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   }
   function healthSummary({ project, sites, tickets, deploys }) {
     const stations = stationsFor({ project, sites, tickets, deploys });
-    const domain = stations.find((station) => station.key === "domain");
+    const hosting = stations.find((station) => station.key === "hosting");
     const drift = unshippedPreview({ project, sites, deploys, tickets: tickets ?? [] });
     const counts = operatorTicketCounts(project, tickets, Date.now());
     const checks = Array.isArray(project?.setup?.checks) ? project.setup.checks.filter((check) => check && check.state && check.state !== "unknown") : [];
-    const parts = [domain?.stateText || "Site state unknown"];
+    const parts = [hosting?.meta?.addressText || hosting?.stateText || "Site state unknown"];
     if (drift) parts.push(`preview has ${drift.count === 1 ? "1 unshipped change" : `${drift.count} unshipped changes`}`);
     if (counts.stalled) parts.push(`${counts.stalled} stalled ${counts.stalled === 1 ? "build" : "builds"}`);
     if (checks.length) parts.push(`${checks.filter((check) => check.state === "ready").length}/${checks.length} checks ok`);
     return parts.join(" \xB7 ");
   }
   function Overview({ project, refresh, setTab }) {
-    const { data, api } = useAdmin();
+    const { data, api, setModal } = useAdmin();
     const work = projectWork(data.tickets, project.id);
     const mapTickets = useMemo(() => projectTickets(data.tickets, project.id, { includeSystem: true }), [data.tickets, project.id]);
     const sites = useMemo(
@@ -10718,24 +11922,46 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       return !open;
     });
     const health = useMemo(() => healthSummary({ project, sites, tickets: mapTickets, deploys }), [project, sites, mapTickets, deploys]);
+    const handleMapAction = useCallback((action) => {
+      if (action === "work") setTab("Work");
+      else if (action === "activity") setTab("Work", "project-activity");
+      else if (action === "add_work") setModal({ kind: "task", projectId: project.id });
+      else if (action === "repo") setTab("Setup", "project-repo");
+      else if (action === "link_repo") {
+        setModal({
+          kind: "custom",
+          render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
+            close();
+            void refresh();
+          } })
+        });
+      } else if (action === "hosting") setTab("Setup", "project-hosting");
+    }, [project, refresh, setModal, setTab]);
     const needs = work.filter((ticket) => ["new", "review"].includes(ticket.status)).sort((a, b) => (a.status === "review" ? 0 : 1) - (b.status === "review" ? 0 : 1) || (b.updated_at ?? 0) - (a.updated_at ?? 0));
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       /* @__PURE__ */ jsxs("section", { className: "aw-project__section", "aria-label": "Needs attention", children: [
         /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
           /* @__PURE__ */ jsx("h3", { children: "Needs attention" }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setTab("Work"), children: "All work \u2192" })
+          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setTab("Work"), children: "All work \u2192" })
         ] }),
-        needs.length ? /* @__PURE__ */ jsx(WorkList, { tickets: needs.slice(0, 5) }) : /* @__PURE__ */ jsx(Empty, { title: "Nothing needs you", hint: "Every open request is moving. New and review requests appear here." })
+        needs.length ? /* @__PURE__ */ jsx(WorkList, { tickets: needs.slice(0, 5) }) : /* @__PURE__ */ jsx(
+          Empty,
+          {
+            title: "Nothing needs you",
+            hint: "Every open request is moving. New and review requests appear here.",
+            action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "task", projectId: project.id }), children: "Add work" })
+          }
+        )
       ] }),
       /* @__PURE__ */ jsxs("section", { className: "aw-project__section", "aria-label": "Project health", children: [
         /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
           /* @__PURE__ */ jsx("p", { className: "aw-project__health", children: health }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", "aria-expanded": mapOpen, onClick: toggleMap, children: mapOpen ? "Hide map" : "Show map" })
+          /* @__PURE__ */ jsx(Button, { size: "sm", className: "aw-world__toggle", "aria-expanded": mapOpen, onClick: toggleMap, children: mapOpen ? "Hide map" : "Show map" })
         ] }),
         deploySiteId && deployState.error ? /* @__PURE__ */ jsx(ErrorNote, { error: deployState.error, onRetry: refreshDeploys }) : null,
-        mapOpen ? /* @__PURE__ */ jsx("div", { className: "aw-project__world", children: /* @__PURE__ */ jsx(ProjectWorld, { project, sites, tickets: mapTickets, deploys }) }) : null
+        mapOpen ? /* @__PURE__ */ jsx("div", { className: "aw-project__world", children: /* @__PURE__ */ jsx(ProjectWorld, { project, sites, tickets: mapTickets, deploys, onAction: handleMapAction }) }) : null
       ] }),
       /* @__PURE__ */ jsx("section", { className: "aw-project__section", children: /* @__PURE__ */ jsx(Brief, { project, refresh, setTab }) })
     ] });
@@ -10762,6 +11988,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }, "Brief saved.");
     };
     const notWritten = /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "Not written yet" });
+    const saveDisabledReason = state.busy ? "Saving brief\u2026" : !payload ? 'Fill in both "What it is" and "What done looks like" to save.' : void 0;
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
         /* @__PURE__ */ jsx("h3", { children: "Project brief" }),
@@ -10778,7 +12005,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         project.kind === "new" ? /* @__PURE__ */ jsx(Field, { label: "Done by hand today", hint: "Optional", children: /* @__PURE__ */ jsx("textarea", { rows: 2, maxLength: 1200, value: draft.manual ?? "", onChange: (event) => setDraft({ ...draft, manual: event.target.value }) }) }) : /* @__PURE__ */ jsx(Field, { label: "Where the code lives", hint: "Context only; connect the actual repository in Setup.", children: /* @__PURE__ */ jsx("textarea", { rows: 2, maxLength: 1200, value: draft.where ?? "", onChange: (event) => setDraft({ ...draft, where: event.target.value }) }) }),
         /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
           /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => setEditing(false), children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { type: "submit", kind: "primary", disabled: state.busy || !payload, children: state.busy ? "Saving\u2026" : "Save brief" })
+          /* @__PURE__ */ jsx(Button, { type: "submit", kind: "primary", disabled: state.busy || !payload, title: saveDisabledReason, children: state.busy ? "Saving\u2026" : "Save brief" })
         ] })
       ] }) : /* @__PURE__ */ jsxs("dl", { className: "aw-project__brief", children: [
         /* @__PURE__ */ jsx("dt", { children: "What it is" }),
@@ -10798,8 +12025,12 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
   function ProjectIcon({ name }) {
-    const paths = { branch: "M6 3v12a3 3 0 1 0 3 3M6 9h8a4 4 0 0 0 4-4M18 3v4M4 3h4", globe: "M21 12a9 9 0 1 0-18 0 9 9 0 0 0 18 0M3 12h18M12 3c4 5 4 13 0 18-4-5-4-13 0-18", file: "M14 3H5v18h14V8l-5-5v5h5M8 12h8M8 16h8" };
-    return /* @__PURE__ */ jsx("svg", { "aria-hidden": "true", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round", children: /* @__PURE__ */ jsx("path", { d: paths[name] }) });
+    const paths = {
+      branch: "M6 3v12a3 3 0 1 0 3 3M6 9h8a4 4 0 0 0 4-4M18 3v4M4 3h4",
+      globe: "M21 12a9 9 0 1 0-18 0 9 9 0 0 0 18 0M3 12h18M12 3c4 5 4 13 0 18-4-5-4-13 0-18",
+      file: "M14 3H5v18h14V8l-5-5v5h5M8 12h8M8 16h8"
+    };
+    return /* @__PURE__ */ jsx("svg", { "aria-hidden": "true", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.5", strokeLinecap: "round", strokeLinejoin: "round", children: /* @__PURE__ */ jsx("path", { d: paths[name] }) });
   }
   function Topology({ project, local, git }) {
     const topology = projectTopology(project, local, git);
@@ -10848,7 +12079,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       /* @__PURE__ */ jsx("section", { className: "aw-project__section", children: /* @__PURE__ */ jsx(ProjectSolutions, { project }) }),
       /* @__PURE__ */ jsx(Resources, { project, refresh, host }),
-      /* @__PURE__ */ jsx(People, { project, refresh })
+      /* @__PURE__ */ jsx(People, { project, refresh }),
+      /* @__PURE__ */ jsx(Secrets, { project })
     ] });
   }
   function Resources({ project, refresh, host }) {
@@ -10879,30 +12111,31 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         /* @__PURE__ */ jsx("h3", { children: "Development to deployment" }),
         /* @__PURE__ */ jsx(Topology, { project, local: topology?.local, git: topology?.git })
       ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Local development" }),
-        native ? /* @__PURE__ */ jsxs(ResourceState, { state: localState, refresh: refreshLocal, children: [
-          topology?.gitError ? /* @__PURE__ */ jsxs("p", { className: "aw-project__error", role: "alert", children: [
-            "Git inspection failed: ",
-            errorText2(topology.gitError),
-            " ",
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-local", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Local checkout" }),
+        native ? /* @__PURE__ */ jsxs(ResourceState, { state: localState, refresh: refreshLocal, rows: 2, children: [
+          topology?.gitError ? /* @__PURE__ */ jsxs("div", { className: "aw-project__error-bar", role: "alert", children: [
+            /* @__PURE__ */ jsxs("span", { children: [
+              "Git inspection failed: ",
+              errorText2(topology.gitError)
+            ] }),
             /* @__PURE__ */ jsx(Button, { size: "sm", onClick: refreshLocal, children: "Retry" })
           ] }) : null,
           /* @__PURE__ */ jsx(LocalDevelopment, { project, local: topology?.local, host, refresh: refreshLocal })
         ] }) : /* @__PURE__ */ jsxs("div", { className: "aw-project__handoff", children: [
           /* @__PURE__ */ jsx("p", { children: "This browser cannot access your local files. Open this project in PTech Admin to connect a checkout, edit files and continue a development conversation." }),
           /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Repository links, work, recorded agent evidence and hosted deployments remain available here." }),
-          resourceUrl(project.repo) ? /* @__PURE__ */ jsx("a", { href: resourceUrl(project.repo), target: "_blank", rel: "noreferrer", children: "Open repository" }) : /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
+          /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: resourceUrl(project.repo) ? /* @__PURE__ */ jsx("a", { className: "aw-btn aw-btn--sm", href: resourceUrl(project.repo), target: "_blank", rel: "noreferrer", children: "Open repository \u2197" }) : /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
             close();
             void refresh();
-          } }) }), children: "Link a repository" })
+          } }) }), children: "Link a repository" }) })
         ] })
       ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-repo", children: [
         /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
           /* @__PURE__ */ jsx("h3", { children: "Repository & integrations" }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
+          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
             close();
             void refresh();
           } }) }), children: project.repo ? "Change repository" : "Link repository" })
@@ -10914,25 +12147,24 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           project.repoStatus?.label ? ` \xB7 ${project.repoStatus.label}` : ""
         ] }),
         !project.repo ? /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
-          /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor2(project)}/repo/create`, {}), "Repository creation requested."), children: "Create repository" }),
-          project.githubInstallationId ? /* @__PURE__ */ jsxs(Button, { disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor2(project)}/repo/github`, {}), "GitHub repository creation requested."), children: [
+          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor2(project)}/repo/create`, {}), "Repository creation requested."), children: "Create repository" }),
+          project.githubInstallationId ? /* @__PURE__ */ jsxs(Button, { size: "sm", disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor2(project)}/repo/github`, {}), "GitHub repository creation requested."), children: [
             "Create in @",
             project.githubAccount || "connected GitHub"
           ] }) : null
         ] }) : null,
         /* @__PURE__ */ jsx(Feedback, { state })
       ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-hosting", children: [
         /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
           /* @__PURE__ */ jsx("h3", { children: "Hosted destinations" }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor2(project)}/site`, {}), "Hosting setup requested."), children: project.sites?.length ? "Add a site" : "Set up hosting" })
+          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: state.busy, onClick: () => mutate(() => api("POST", `${pathFor2(project)}/site`, {}), "Hosting setup requested."), children: project.sites?.length ? "Add a site" : "Set up hosting" })
         ] }),
         /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Rebuild changes preview only. Publishing replaces the live site with preview; the publish action asks you to confirm the destination." }),
         /* @__PURE__ */ jsx(SitePanel, { project }),
         (project.sites ?? (project.site ? [project.site] : [])).map((site) => /* @__PURE__ */ jsx(DeployHistory, { project, site, refresh }, site.id))
-      ] }),
-      /* @__PURE__ */ jsx(Secrets, { project })
+      ] })
     ] });
   }
   function LocalDevelopment({ project, local, host, refresh }) {
@@ -10990,15 +12222,26 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       if (connectMode === "clone" && !connectClone) setConnectMode("existing");
     }, [connectMode, connectClone]);
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      found && host.projectOpenLocal ? /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
-        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: state.busy, onClick: () => void write(() => host.projectOpenLocal({ projectId: project.id, mode: "session" }), "Development conversation opened."), children: "Continue locally" }),
-        /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => void write(() => host.projectOpenLocal({ projectId: project.id, mode: "reveal" })), children: "Show folder" })
+      found && host.projectOpenLocal ? /* @__PURE__ */ jsxs("div", { className: "aw-project__actions aw-project__local-actions", children: [
+        /* @__PURE__ */ jsx(Button, { disabled: state.busy, onClick: () => void write(() => host.projectOpenLocal({ projectId: project.id, mode: "session" }), "Development conversation opened."), children: "Continue locally" }),
+        /* @__PURE__ */ jsx(Button, { kind: "ghost", disabled: state.busy, onClick: () => void write(() => host.projectOpenLocal({ projectId: project.id, mode: "reveal" })), children: "Show folder" })
       ] }) : null,
       connectExisting || connectClone ? /* @__PURE__ */ jsxs("div", { className: "aw-project__connect", children: [
         /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
           /* @__PURE__ */ jsx("h4", { children: "Connect a checkout" }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Segmented, { value: connectMode, onChange: setConnectMode, label: "Connect a checkout", options: [{ value: "existing", label: "Existing folder", disabled: !connectExisting }, { value: "clone", label: "Clone", disabled: !connectClone }] })
+          /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              value: connectMode,
+              onChange: setConnectMode,
+              label: "Connect a checkout",
+              options: [
+                { value: "existing", label: "Existing folder", disabled: !connectExisting, hint: !connectExisting ? "Unavailable in this host" : void 0 },
+                { value: "clone", label: "Clone", disabled: !connectClone, hint: !project.repo ? "Link a repository before cloning" : !connectClone ? "Cloning unavailable in this host" : void 0 }
+              ]
+            }
+          )
         ] }),
         connectMode === "existing" ? /* @__PURE__ */ jsxs("form", { onSubmit: configure, className: "aw-project__form", children: [
           /* @__PURE__ */ jsx(Field, { label: "Local folder", hint: "An existing folder on this device. Connecting does not clone or overwrite it.", children: /* @__PURE__ */ jsx("input", { required: true, value: path, onChange: (event) => setPath(event.target.value), placeholder: "/Users/you/Projects/site" }) }),
@@ -11006,12 +12249,12 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             /* @__PURE__ */ jsx(Field, { label: "Base ref", hint: "Optional Git ref for review", children: /* @__PURE__ */ jsx("input", { value: baseRef, onChange: (event) => setBaseRef(event.target.value), placeholder: "main" }) }),
             /* @__PURE__ */ jsx(Field, { label: "Verification command", hint: "Saved for deliberate local execution", children: /* @__PURE__ */ jsx("input", { value: verify, onChange: (event) => setVerify(event.target.value), placeholder: "npm test" }) })
           ] }),
-          /* @__PURE__ */ jsx(Button, { type: "submit", disabled: state.busy || !path.trim() || Boolean(cloning), children: state.busy ? "Connecting\u2026" : "Connect folder" })
+          /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: /* @__PURE__ */ jsx(Button, { type: "submit", disabled: state.busy || !path.trim() || Boolean(cloning), title: !path.trim() ? "Enter a local folder path first." : void 0, children: state.busy ? "Connecting\u2026" : "Connect folder" }) })
         ] }) : /* @__PURE__ */ jsxs("form", { onSubmit: clone, className: "aw-project__form", children: [
           /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Creates a new folder; an existing destination is never overwritten. Private repositories use the project\u2019s authorized Git connection." }),
           /* @__PURE__ */ jsx(Field, { label: "Parent folder", children: /* @__PURE__ */ jsx("input", { required: true, value: parentPath, onChange: (event) => setParentPath(event.target.value), placeholder: "/Users/you/Projects" }) }),
           /* @__PURE__ */ jsx(Field, { label: "New folder name", children: /* @__PURE__ */ jsx("input", { value: directoryName, onChange: (event) => setDirectoryName(event.target.value) }) }),
-          /* @__PURE__ */ jsx(Button, { type: "submit", disabled: state.busy || Boolean(cloning) || !parentPath.trim(), children: cloning ? "Cloning\u2026" : "Clone repository" })
+          /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: /* @__PURE__ */ jsx(Button, { type: "submit", disabled: state.busy || Boolean(cloning) || !parentPath.trim(), title: !parentPath.trim() ? "Enter a parent folder path first." : void 0, children: cloning ? "Cloning\u2026" : "Clone repository" }) })
         ] })
       ] }) : null,
       operation ? /* @__PURE__ */ jsx("p", { className: operation.status === "failed" ? "aw-project__error" : "aw-muted", role: operation.status === "failed" ? "alert" : "status", children: operation.status === "failed" ? `Clone failed: ${errorText2(operation.error)}. Check the destination and Git connection, then retry.` : operation.status === "succeeded" ? `Clone ready: ${operation.receipt?.path || "checkout connected"}` : `Cloning: ${operation.phase || "working"}` }) : null,
@@ -11039,35 +12282,43 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       /* @__PURE__ */ jsx("summary", { children: "Browse checkout files" }),
       /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Read-only file preview. Continue locally to edit with the project\u2019s development conversation or your editor." }),
       /* @__PURE__ */ jsxs("div", { className: "aw-project__actions", children: [
-        /* @__PURE__ */ jsx(Button, { size: "sm", disabled: !path, onClick: () => navigate(path.split("/").slice(0, -1).join("/")), children: "Parent folder" }),
-        /* @__PURE__ */ jsx("code", { children: path || "/" }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: refresh, children: "Refresh files" })
+        /* @__PURE__ */ jsx(Button, { size: "sm", disabled: !path, title: !path ? "Already at the checkout root." : void 0, onClick: () => navigate(path.split("/").slice(0, -1).join("/")), children: "Parent folder" }),
+        /* @__PURE__ */ jsx("code", { className: "aw-mono", children: path || "/" }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: refresh, children: "Refresh files" })
       ] }),
-      /* @__PURE__ */ jsxs(ResourceState, { state, refresh, children: [
-        /* @__PURE__ */ jsx("ul", { className: "aw-project__files", children: (state.value?.entries ?? []).map((entry) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", disabled: readState.busy, onClick: () => {
-          if (entry.type === "directory") {
-            navigate(entry.path);
-          } else {
-            void write(async () => {
-              const epoch = ++readEpoch.current;
-              setFile(null);
-              const result = await host.projectFiles({ projectId: project.id, action: "read", path: entry.path, range: { startLine: 1, endLine: 250 } });
-              if (readEpoch.current === epoch) setFile(result);
-            });
+      /* @__PURE__ */ jsxs(ResourceState, { state, refresh, rows: 3, children: [
+        /* @__PURE__ */ jsx("ul", { className: "aw-project__files", children: (state.value?.entries ?? []).map((entry) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs(
+          "button",
+          {
+            type: "button",
+            disabled: readState.busy,
+            onClick: () => {
+              if (entry.type === "directory") {
+                navigate(entry.path);
+              } else {
+                void write(async () => {
+                  const epoch = ++readEpoch.current;
+                  setFile(null);
+                  const result = await host.projectFiles({ projectId: project.id, action: "read", path: entry.path, range: { startLine: 1, endLine: 250 } });
+                  if (readEpoch.current === epoch) setFile(result);
+                });
+              }
+            },
+            children: [
+              entry.type === "directory" ? /* @__PURE__ */ jsx(Icon, { name: "folder" }) : /* @__PURE__ */ jsx(ProjectIcon, { name: "file" }),
+              entry.name,
+              entry.type === "directory" ? "/" : ""
+            ]
           }
-        }, children: [
-          entry.type === "directory" ? /* @__PURE__ */ jsx(Icon, { name: "folder" }) : /* @__PURE__ */ jsx(ProjectIcon, { name: "file" }),
-          entry.name,
-          entry.type === "directory" ? "/" : ""
-        ] }) }, entry.path)) }),
+        ) }, entry.path)) }),
         !state.loading && !state.value?.entries?.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "This folder is empty." }) : null
       ] }),
       /* @__PURE__ */ jsx(Feedback, { state: readState }),
       file ? /* @__PURE__ */ jsxs("div", { className: "aw-project__file", children: [
         /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
-          /* @__PURE__ */ jsx("strong", { children: file.path }),
+          /* @__PURE__ */ jsx("strong", { className: "aw-mono", children: file.path }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => {
+          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => {
             readEpoch.current++;
             setFile(null);
           }, children: "Close preview" })
@@ -11089,8 +12340,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const [state, refresh] = useProjectResource(load);
     const graph = host.gitGraph;
     const installed = state.value?.available && typeof graph.View === "function" && typeof graph.focus === "function" && typeof graph.sessionId === "function";
-    return /* @__PURE__ */ jsx(ResourceState, { state, refresh, children: installed ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsx(Button, { onClick: () => setOpen(true), children: "Open Git Graph" }),
+    return /* @__PURE__ */ jsx(ResourceState, { state, refresh, rows: 1, children: installed ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setOpen(true), children: "Open Git Graph" }) }),
       open ? /* @__PURE__ */ jsx(ProjectGitGraph, { host, project, onClose: () => setOpen(false) }) : null
     ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Git Graph is not installed. Repository links, local development and work review remain available." }) });
   }
@@ -11117,19 +12368,32 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         site.name || project.name,
         ": deployment history & rollback"
       ] }),
-      /* @__PURE__ */ jsx(ResourceState, { state, refresh: refreshDeploys, children: (state.value?.deploys ?? []).length ? /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: state.value.deploys.map((deploy) => /* @__PURE__ */ jsxs("li", { children: [
+      /* @__PURE__ */ jsx(ResourceState, { state, refresh: refreshDeploys, rows: 2, children: (state.value?.deploys ?? []).length ? /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: state.value.deploys.map((deploy) => /* @__PURE__ */ jsxs("li", { children: [
         /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("strong", { children: deploy.id }),
+          /* @__PURE__ */ jsx("strong", { className: "aw-mono", children: deploy.id }),
           /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
             deploy.branch || deploy.kind || "Recorded deploy",
             deploy.created_at ? ` \xB7 ${ago(deploy.created_at)}` : ""
           ] })
         ] }),
-        /* @__PURE__ */ jsx(Button, { disabled: writeState.busy, size: "sm", onClick: () => ask({ title: "Roll production back?", text: `Replace ${site.productionUrl || site.name || project.name} with recorded deploy ${deploy.id}. This changes what visitors see.`, confirm: "Roll back", run: () => write(async () => {
-          await api("POST", `${pathFor2(project)}/site/rollback`, { deployId: deploy.id, siteId: site.id });
-          void refresh();
-          void refreshDeploys();
-        }, "Production rolled back.") }), children: "Roll back" })
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            disabled: writeState.busy,
+            size: "sm",
+            onClick: () => ask({
+              title: "Roll production back?",
+              text: `Replace ${site.productionUrl || site.name || project.name} with recorded deploy ${deploy.id}. This changes what visitors see.`,
+              confirm: "Roll back",
+              run: () => write(async () => {
+                await api("POST", `${pathFor2(project)}/site/rollback`, { deployId: deploy.id, siteId: site.id });
+                void refresh();
+                void refreshDeploys();
+              }, "Production rolled back.")
+            }),
+            children: "Roll back"
+          }
+        )
       ] }, deploy.id)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No recorded deployments yet." }) }),
       /* @__PURE__ */ jsx(Feedback, { state: writeState })
     ] });
@@ -11151,15 +12415,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
           /* @__PURE__ */ jsx("h3", { children: "Project work" }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Segmented, { value: filter, onChange: setFilter, label: "Work filter", options: [{ value: "open", label: "Open" }, { value: "review", label: "Review" }, { value: "done", label: "Done" }, { value: "all", label: "All" }] }),
-          /* @__PURE__ */ jsxs(Button, { kind: "primary", onClick: () => setModal({ kind: "task", projectId: project.id }), children: [
-            /* @__PURE__ */ jsx(Icon, { name: "plus" }),
-            " Add work"
-          ] })
+          /* @__PURE__ */ jsx(Segmented, { value: filter, onChange: setFilter, label: "Work filter", options: [{ value: "open", label: "Open" }, { value: "review", label: "Review" }, { value: "done", label: "Done" }, { value: "all", label: "All" }] })
         ] }),
         /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Save a draft for later, queue an agent deliberately, or continue the same work locally. Open a request for its conversation and evidence." }),
-        /* @__PURE__ */ jsx(WorkList, { tickets: shown }),
-        !shown.length ? tickets.length ? /* @__PURE__ */ jsx(Empty, { title: WORK_FILTER_EMPTY[filter] ?? WORK_FILTER_EMPTY.open, hint: "Switch the filter to see the rest of this project's work." }) : /* @__PURE__ */ jsx(Empty, { title: "No work yet", hint: "Add the first outcome you want to deliver.", action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "task", projectId: project.id }), children: "Add work" }) }) : null
+        shown.length ? /* @__PURE__ */ jsx(WorkList, { tickets: shown }) : tickets.length ? /* @__PURE__ */ jsx(Empty, { title: WORK_FILTER_EMPTY[filter] ?? WORK_FILTER_EMPTY.open, hint: "Switch the filter to see the rest of this project's work.", action: filter !== "all" ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setFilter("all"), children: "Show all work" }) : null }) : /* @__PURE__ */ jsx(Empty, { title: "No work yet", hint: "Add the first outcome you want to deliver.", action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "task", projectId: project.id }), children: "Add work" }) })
       ] }),
       /* @__PURE__ */ jsx(Activity, { project })
     ] });
@@ -11183,7 +12442,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const tickets = projectWork(data.tickets, project.id);
     const ids = new Set(tickets.map((ticket) => String(ticket.id)));
     const runs = [...data.running ?? [], ...data.recent ?? []].filter((run, index, all) => ids.has(String(run.ticket_id)) && all.findIndex((other) => other.id === run.id) === index).sort((a, b) => (b.started_at ?? b.created_at ?? 0) - (a.started_at ?? a.created_at ?? 0));
-    return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
+    return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-activity", children: [
       /* @__PURE__ */ jsx("h3", { children: "Activity & review" }),
       /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Recent recorded attempts are listed below. Open a request to select any historical run and inspect its changes, checks and agent session. Missing checks mean unknown, not passing." }),
       runs.length ? /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: runs.map((run) => /* @__PURE__ */ jsxs("li", { children: [
@@ -11194,20 +12453,21 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             " \xB7 ",
             tickets.find((ticket) => String(ticket.id) === String(run.ticket_id))?.title
           ] }),
-          /* @__PURE__ */ jsxs("span", { className: "aw-mono", children: [
-            "Run ",
-            run.id
-          ] }),
           /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+            /* @__PURE__ */ jsxs("span", { className: "aw-mono", children: [
+              "Run ",
+              run.id
+            ] }),
+            " \xB7 ",
             run.executor || "Agent",
             " \xB7 ",
             run.started_at ? ago(run.started_at) : "Start time unknown",
-            " \xB7 checks available in request review"
+            " \xB7 checks in request review"
           ] })
         ] }),
         /* @__PURE__ */ jsx(StatusPill, { status: run.status }),
         /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => openTicket(run.ticket_id), children: "Inspect attempts" })
-      ] }, run.id)) }) : /* @__PURE__ */ jsx("p", { className: "aw-project__empty", children: "No recent agent attempts. Older evidence, when available, remains inside each request." })
+      ] }, run.id)) }) : /* @__PURE__ */ jsx(Empty, { title: "No recent agent attempts", hint: "Older evidence, when available, remains inside each request." })
     ] });
   }
   var EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
@@ -11268,13 +12528,23 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }
     );
   }
-  function PeopleTable({ project, recipients, clients, canManage, onPeopleChanged }) {
+  function PeopleTable({ project, recipients, clients, memberships, canManage, onPeopleChanged, onRemoveDeveloper, busy }) {
     const { api, act, ask, open } = useAdmin();
     const byKey = /* @__PURE__ */ new Map();
+    for (const dev of Array.isArray(memberships) ? memberships : []) {
+      if (!dev?.userId && !dev?.email) continue;
+      const key = String(dev.userId ?? dev.email);
+      byKey.set(key, { key, userId: dev.userId ?? null, name: dev.name || null, email: dev.email, role: "Trusted developer", client: null, developer: dev });
+    }
     for (const person of Array.isArray(recipients) ? recipients : []) {
       if (!person?.email && !person?.userId) continue;
       const key = String(person.userId ?? person.email);
-      byKey.set(key, { key, userId: person.userId ?? null, name: person.name || null, email: person.email, role: person.memberType === "trusted_developer" ? "Trusted developer" : "Client", client: null });
+      const existing = byKey.get(key);
+      if (existing) {
+        if (!existing.name && person.name) existing.name = person.name;
+        continue;
+      }
+      byKey.set(key, { key, userId: person.userId ?? null, name: person.name || null, email: person.email, role: person.memberType === "trusted_developer" ? "Trusted developer" : "Client", client: null, developer: null });
     }
     for (const client of Array.isArray(clients) ? clients : []) {
       if (!client?.id && !client?.email) continue;
@@ -11285,7 +12555,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         if (!row.name) row.name = client.name || null;
         continue;
       }
-      byKey.set(key, { key, userId: client.id ?? null, name: client.name || null, email: client.email, role: "Client", client });
+      byKey.set(key, { key, userId: client.id ?? null, name: client.name || null, email: client.email, role: "Client", client, developer: null });
     }
     const rows = [...byKey.values()];
     if (!rows.length) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nobody yet. Only you see this project." });
@@ -11303,17 +12573,51 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           row.name ? `${row.name} \xB7 ` : "",
           row.email
         ] }) }),
-        /* @__PURE__ */ jsxs("td", { children: [
+        /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs("span", { className: "aw-project__rolecell", children: [
           /* @__PURE__ */ jsx(Tag, { tone: row.role === "Trusted developer" ? void 0 : "dash", children: row.role }),
           row.client?.pending ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "invited" }) : null
-        ] }),
+        ] }) }),
         canManage ? /* @__PURE__ */ jsx("td", { className: "aw-project__peopleact", children: row.client ? /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsxs("label", { className: "aw-check", title: "Mail them about every request on this project, not only the ones they filed", children: [
-            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: Boolean(row.client.copy), onChange: (event) => void act(() => api("PUT", `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`, { copy: event.target.checked }), event.target.checked ? `${row.client.email} gets every request on ${project.name}.` : `${row.client.email} gets only their own requests.`).then(onPeopleChanged) }),
+            /* @__PURE__ */ jsx(
+              "input",
+              {
+                type: "checkbox",
+                checked: Boolean(row.client.copy),
+                onChange: (event) => void act(
+                  () => api("PUT", `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`, { copy: event.target.checked }),
+                  event.target.checked ? `${row.client.email} gets every request on ${project.name}.` : `${row.client.email} gets only their own requests.`
+                ).then(onPeopleChanged)
+              }
+            ),
             "all emails"
           ] }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", title: "Take them off this project", onClick: () => ask({ title: `Remove ${row.client.email} from ${project.name}?`, text: "They stop seeing its requests and stop getting its emails. Their account and their own requests stay.", confirm: "Remove", danger: true, run: () => act(() => api("DELETE", `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`), `Removed ${row.client.email}.`).then(onPeopleChanged).catch(() => void 0) }), children: "\u2715" })
-        ] }) : null }) : null
+          /* @__PURE__ */ jsx(
+            Button,
+            {
+              size: "sm",
+              kind: "ghost",
+              title: "Take them off this project",
+              onClick: () => ask({
+                title: `Remove ${row.client.email} from ${project.name}?`,
+                text: "They stop seeing its requests and stop getting its emails. Their account and their own requests stay.",
+                confirm: "Remove",
+                danger: true,
+                run: () => act(() => api("DELETE", `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`), `Removed ${row.client.email}.`).then(onPeopleChanged).catch(() => void 0)
+              }),
+              children: "\u2715"
+            }
+          )
+        ] }) : row.developer ? /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
+            kind: "ghost",
+            disabled: busy,
+            onClick: () => onRemoveDeveloper(row.developer),
+            children: "Remove access"
+          }
+        ) : null }) : null
       ] }, row.key)) })
     ] });
   }
@@ -11343,62 +12647,73 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         void peopleChanged();
       }, "Trusted project access granted.");
     };
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Project ownership" }),
-        /* @__PURE__ */ jsx("p", { children: state.value?.ownerUserId ? `Owned by ${ownerPerson?.name || ownerPerson?.email || state.value.ownerUserId}.` : "An owner has not been verified for this project." }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "The client owns the project and can act independently. Agent help and agency support are optional." })
+    const removeDeveloper = (person) => {
+      ask({
+        title: `Remove ${person.email} from this project?`,
+        text: "Their trusted access ends immediately. Their account and access to other projects stay unchanged.",
+        confirm: "Remove access",
+        danger: true,
+        run: () => write(async () => {
+          await api("DELETE", `${pathFor2(project)}/memberships/${encodeURIComponent(person.userId)}`);
+          void peopleChanged();
+        }, "Trusted access removed.")
+      });
+    };
+    return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-people", children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+        /* @__PURE__ */ jsx("h3", { children: "People & access" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        admin ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(ProjectInviteModal, { project, onClose: () => {
+          close();
+          void peopleChanged();
+        } }) }), children: "Add people" }) : null
       ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Trusted developers" }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Trusted developers can work across the project: context, integrations, configuration, code and deployments. Access does not extend to other projects or global administration." }),
-        /* @__PURE__ */ jsxs(ResourceState, { state, refresh: refreshPeople, children: [
-          /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: (state.value?.memberships ?? []).map((person) => /* @__PURE__ */ jsxs("li", { children: [
-            /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("strong", { children: person.name || person.email }),
-              person.name ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: person.email }) : null,
-              /* @__PURE__ */ jsx(Tag, { children: "Trusted developer" })
-            ] }),
-            admin || owner ? /* @__PURE__ */ jsx(Button, { size: "sm", disabled: writeState.busy, onClick: () => ask({ title: `Remove ${person.email} from this project?`, text: "Their trusted access ends immediately. Their account and access to other projects stay unchanged.", confirm: "Remove access", danger: true, run: () => write(async () => {
-              await api("DELETE", `${pathFor2(project)}/memberships/${encodeURIComponent(person.userId)}`);
-              void peopleChanged();
-            }, "Trusted access removed.") }), children: "Remove access" }) : null
-          ] }, person.userId)) }),
-          !state.value?.memberships?.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No trusted developers assigned." }) : null
-        ] }),
+      /* @__PURE__ */ jsxs("p", { className: "aw-project__ownership", children: [
+        /* @__PURE__ */ jsx("strong", { children: state.value?.ownerUserId ? `Owned by ${ownerPerson?.name || ownerPerson?.email || state.value.ownerUserId}.` : "Owner not verified yet." }),
+        " ",
+        /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "The client owns the project and can act independently. Select recipients in a work conversation to notify them \u2014 typed @names alone do not send notifications." })
+      ] }),
+      /* @__PURE__ */ jsx(ResourceState, { state: recipients, refresh: refreshRecipients, rows: 3, children: /* @__PURE__ */ jsx(
+        PeopleTable,
+        {
+          project,
+          recipients: recipients.value?.recipients,
+          clients: project.clients ?? state.value?.clients ?? [],
+          memberships: state.value?.memberships ?? [],
+          canManage: admin || owner,
+          onPeopleChanged: peopleChanged,
+          onRemoveDeveloper: removeDeveloper,
+          busy: writeState.busy
+        }
+      ) }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-project__connect", children: [
+        /* @__PURE__ */ jsx("h4", { children: "Grant trusted developer access" }),
+        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Trusted developers can work across this project\u2019s context, integrations, configuration, code and deployments without global admin access." }),
         admin ? /* @__PURE__ */ jsxs("form", { onSubmit: grant, className: "aw-project__invite", children: [
-          /* @__PURE__ */ jsx(Field, { label: "Existing account email", children: /* @__PURE__ */ jsx("input", { type: "email", required: true, maxLength: 254, value: email, onChange: (event) => setEmail(event.target.value) }) }),
-          /* @__PURE__ */ jsx(Button, { type: "submit", disabled: writeState.busy || !email.trim(), children: writeState.busy ? "Granting\u2026" : "Grant project access" })
+          /* @__PURE__ */ jsx(Field, { label: "Existing account email", children: /* @__PURE__ */ jsx("input", { type: "email", required: true, maxLength: 254, value: email, placeholder: "dev@example.com", onChange: (event) => setEmail(event.target.value) }) }),
+          /* @__PURE__ */ jsx(Button, { type: "submit", disabled: writeState.busy || !email.trim(), title: !email.trim() ? "Enter an existing account email first." : void 0, children: writeState.busy ? "Granting\u2026" : "Grant project access" })
         ] }) : /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
           "A workspace administrator can grant trusted developer access.",
           owner ? " As project owner, you can remove it." : ""
         ] }),
         /* @__PURE__ */ jsx(Feedback, { state: writeState })
-      ] }),
-      /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
-        /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
-          /* @__PURE__ */ jsx("h3", { children: "People on this project" }),
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          admin ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(ProjectInviteModal, { project, onClose: () => {
-            close();
-            void peopleChanged();
-          } }) }), children: "Add people" }) : null
-        ] }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Everyone who can read this project's requests. Client participation is separate from trusted developer access; select recipients in a work conversation to notify them \u2014 typed @names alone do not send notifications." }),
-        /* @__PURE__ */ jsx(ResourceState, { state: recipients, refresh: refreshRecipients, children: /* @__PURE__ */ jsx(PeopleTable, { project, recipients: recipients.value?.recipients, clients: project.clients ?? state.value?.clients ?? [], canManage: admin || owner, onPeopleChanged: peopleChanged }) })
       ] })
     ] });
   }
   function Secrets({ project }) {
     const { api, ask } = useAdmin();
     const [opened, setOpened] = useState(false);
-    return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", children: [
-      /* @__PURE__ */ jsx("h3", { children: "Project secrets" }),
+    return /* @__PURE__ */ jsxs("section", { className: "aw-project__section", id: "project-secrets", children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+        /* @__PURE__ */ jsx("h3", { children: "Project secrets" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        opened ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => setOpened(false), children: "Close secrets" }) : null
+      ] }),
       /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Values stay hidden until you deliberately reveal one. Never paste secrets into work briefs, agent conversations or screenshots." }),
-      opened ? /* @__PURE__ */ jsx(SecretManager, { project, api, ask, onClose: () => setOpened(false) }, project.id) : /* @__PURE__ */ jsx(Button, { onClick: () => setOpened(true), children: "Manage project secrets" })
+      opened ? /* @__PURE__ */ jsx(SecretManager, { project, api, ask }, project.id) : /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setOpened(true), children: "Manage project secrets" }) })
     ] });
   }
-  function SecretManager({ project, api, ask, onClose }) {
+  function SecretManager({ project, api, ask }) {
     const load = useCallback(() => api("GET", `${pathFor2(project)}/secrets`), [api, project.id]);
     const [state, refresh] = useProjectResource(load);
     const [name, setName] = useState("");
@@ -11430,36 +12745,60 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }, "Secret saved.");
     };
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: onClose, children: "Close secrets" }) }),
-      /* @__PURE__ */ jsxs(ResourceState, { state, refresh, children: [
-        /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: (state.value?.secrets ?? []).map((secret) => /* @__PURE__ */ jsxs("li", { children: [
-          /* @__PURE__ */ jsx("code", { children: secret.name }),
-          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: writeState.busy, onClick: () => void write(async () => {
-            hide();
-            const result = await api("POST", `${pathFor2(project)}/secrets/${encodeURIComponent(secret.name)}/reveal`, {});
-            if (!alive.current) return;
-            setRevealed({ name: secret.name, value: result.value });
-            timer.current = setTimeout(() => setRevealed(null), 3e4);
-          }), children: "Reveal" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", disabled: writeState.busy, onClick: () => ask({ title: `Delete ${secret.name}?`, text: "Project operations that depend on this secret may stop working. This cannot be undone.", confirm: "Delete secret", danger: true, run: () => write(async () => {
-            await api("DELETE", `${pathFor2(project)}/secrets/${encodeURIComponent(secret.name)}`);
-            hide();
-            void refresh();
-          }, "Secret deleted.") }), children: "Delete" })
-        ] }, secret.name)) }),
-        !state.value?.secrets?.length ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No project secrets stored." }) : null
-      ] }),
+      /* @__PURE__ */ jsx(ResourceState, { state, refresh, rows: 2, children: (state.value?.secrets ?? []).length ? /* @__PURE__ */ jsx("ul", { className: "aw-project__work", children: state.value.secrets.map((secret) => /* @__PURE__ */ jsxs("li", { children: [
+        /* @__PURE__ */ jsx("code", { className: "aw-mono", children: secret.name }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
+            disabled: writeState.busy,
+            onClick: () => void write(async () => {
+              hide();
+              const result = await api("POST", `${pathFor2(project)}/secrets/${encodeURIComponent(secret.name)}/reveal`, {});
+              if (!alive.current) return;
+              setRevealed({ name: secret.name, value: result.value });
+              timer.current = setTimeout(() => setRevealed(null), 3e4);
+            }),
+            children: "Reveal"
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
+            kind: "ghost",
+            disabled: writeState.busy,
+            onClick: () => ask({
+              title: `Delete ${secret.name}?`,
+              text: "Project operations that depend on this secret may stop working. This cannot be undone.",
+              confirm: "Delete secret",
+              danger: true,
+              run: () => write(async () => {
+                await api("DELETE", `${pathFor2(project)}/secrets/${encodeURIComponent(secret.name)}`);
+                hide();
+                void refresh();
+              }, "Secret deleted.")
+            }),
+            children: "Delete"
+          }
+        )
+      ] }, secret.name)) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No project secrets stored." }) }),
       revealed ? /* @__PURE__ */ jsxs("div", { className: "aw-project__reveal", children: [
-        /* @__PURE__ */ jsx("strong", { children: revealed.name }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
+          /* @__PURE__ */ jsx("strong", { className: "aw-mono", children: revealed.name }),
+          /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: hide, children: "Hide value" })
+        ] }),
         /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Visible for 30 seconds. Hide it before sharing this screen." }),
-        /* @__PURE__ */ jsx("pre", { children: revealed.value }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: hide, children: "Hide value" })
+        /* @__PURE__ */ jsx("pre", { children: revealed.value })
       ] }) : null,
       /* @__PURE__ */ jsxs("form", { onSubmit: save, className: "aw-project__form", children: [
-        /* @__PURE__ */ jsx(Field, { label: "Secret name", children: /* @__PURE__ */ jsx("input", { required: true, autoComplete: "off", maxLength: 128, value: name, onChange: (event) => setName(event.target.value) }) }),
-        /* @__PURE__ */ jsx(Field, { label: "New value", hint: "An existing name replaces that secret\u2019s value.", children: /* @__PURE__ */ jsx("input", { type: "password", required: true, autoComplete: "new-password", value, onChange: (event) => setValue(event.target.value) }) }),
-        /* @__PURE__ */ jsx(Button, { type: "submit", disabled: writeState.busy || !name.trim() || !value, children: writeState.busy ? "Saving\u2026" : "Set secret" })
+        /* @__PURE__ */ jsxs("div", { className: "aw-project__fields", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Secret name", children: /* @__PURE__ */ jsx("input", { required: true, autoComplete: "off", maxLength: 128, value: name, placeholder: "API_TOKEN", onChange: (event) => setName(event.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "New value", hint: "An existing name replaces that secret\u2019s value.", children: /* @__PURE__ */ jsx("input", { type: "password", required: true, autoComplete: "new-password", value, onChange: (event) => setValue(event.target.value) }) })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: /* @__PURE__ */ jsx(Button, { type: "submit", disabled: writeState.busy || !name.trim() || !value, title: !name.trim() || !value ? "Enter both secret name and value." : void 0, children: writeState.busy ? "Saving\u2026" : "Set secret" }) })
       ] }),
       /* @__PURE__ */ jsx(Feedback, { state: writeState })
     ] });
@@ -11531,6 +12870,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   var TABS_KEY2 = "aw-tabs-v1";
   var NARROW_WIDTH = "(max-width: 900px)";
   var domId = (prefix, key) => `${prefix}-${String(key).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  var isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+  var MOD = isMac ? "\u2318" : "Ctrl+";
+  var viewKey = (platform, n) => platform === "dsh" ? `${MOD}${n}` : `${isMac ? "\u2303\u2325" : "Ctrl+Alt+"}${n}`;
+  var closeKey = (platform) => platform === "dsh" ? `${MOD}W` : `${isMac ? "\u2303\u2325" : "Ctrl+Alt+"}W`;
   function loadTabs() {
     try {
       const saved = JSON.parse(localStorage.getItem(TABS_KEY2) ?? "null");
@@ -11543,6 +12886,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     }
     return { tabs: ["inbox", "board"], active: "inbox" };
   }
+  var typingIn = (el) => el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.tagName === "SELECT" || el?.isContentEditable;
   function useUnderWindowButtons(ref, enabled2) {
     const [under, setUnder] = useState(false);
     useEffect(() => {
@@ -11609,13 +12953,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
     return { notify, act, setStatus, toast, dismissToast };
   }
-  function Toast({ toast, onDismiss }) {
-    if (!toast) return null;
-    return /* @__PURE__ */ jsxs("div", { className: cx("aw-toast", toast.kind === "error" && "is-error"), role: toast.kind === "error" ? "alert" : "status", children: [
-      /* @__PURE__ */ jsx("span", { children: toast.text }),
-      /* @__PURE__ */ jsx("button", { type: "button", className: "aw-toast__close", "aria-label": "Dismiss", onClick: onDismiss, children: "\xD7" })
-    ] });
-  }
   function AdminApp({ api, platform = "web", host = null, fullscreen = false, files = null }) {
     const rootRef = useRef(null);
     const underButtons = useUnderWindowButtons(rootRef, platform === "dsh");
@@ -11625,6 +12962,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const [modal, setModal] = useState(null);
     const [ask, setAsk] = useState(null);
     const [palette, setPalette] = useState(false);
+    const [keys, setKeys] = useState(false);
     const [sidebar, setSidebar] = useState(true);
     const [drawer, setDrawer] = useState(false);
     const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && Boolean(window.matchMedia?.(NARROW_WIDTH).matches));
@@ -11653,15 +12991,19 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       setTabs((s) => ({ tabs: s.tabs.includes(target) ? s.tabs : [...s.tabs, target], active: target }));
       return void 0;
     }, [host]);
-    const close = useCallback(
-      (key) => setTabs((s) => {
-        const i = s.tabs.indexOf(key);
-        const next = s.tabs.filter((t) => t !== key);
+    const closeMany = useCallback(
+      (drop) => setTabs((s) => {
+        const gone = new Set(drop(s.tabs));
+        const next = s.tabs.filter((t) => !gone.has(t));
         if (!next.length) return { tabs: ["inbox"], active: "inbox" };
-        return { tabs: next, active: s.active === key ? next[Math.max(0, i - 1)] : s.active };
+        if (!gone.has(s.active)) return { tabs: next, active: s.active };
+        const i = s.tabs.indexOf(s.active);
+        const left = s.tabs.slice(0, i).reverse().find((t) => !gone.has(t));
+        return { tabs: next, active: left ?? next[0] };
       }),
       []
     );
+    const close = useCallback((key) => closeMany(() => [key]), [closeMany]);
     const openTicket = useCallback((id) => open(`t:${id}`), [open]);
     useEffect(() => {
       if (typeof window === "undefined") return void 0;
@@ -11680,43 +13022,74 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       if (narrow) setDrawer((d) => !d);
       else setSidebar((s) => !s);
     }, [narrow]);
+    const allowedViews = VIEWS.filter((v) => workbenchAllowed(v.key, data.access));
+    const visibleTabs = tabs.filter((key) => workbenchAllowed(key, data.access));
     const shell = useRef({});
-    shell.current = { palette, modal, ask, ready: data.loaded && !signedOut };
+    shell.current = { palette, modal, ask, keys, ready: data.loaded && !signedOut, active, visibleTabs, allowedViews, drawer };
     useEffect(() => {
       const onKey = (e) => {
         const mod = e.metaKey || e.ctrlKey;
         const key = e.key.toLowerCase();
-        if (mod && key === "k") {
+        const state = shell.current;
+        const typing = typingIn(e.target);
+        const viaWeb = e.ctrlKey && e.altKey;
+        if (mod && !e.altKey && key === "k") {
           e.preventDefault();
           setPalette((p) => !p);
           return;
         }
-        if (mod && key === "b") {
+        if (layerOpen() || state.palette) return;
+        if (mod && !e.altKey && key === "b") {
           e.preventDefault();
           toggleExplorer();
           return;
         }
-        if (e.key === "Escape") {
-          setDrawer(false);
+        const digit = /^Digit([1-8])$/.exec(e.code)?.[1];
+        if (digit && state.ready && (platform === "dsh" && mod && !e.altKey || viaWeb)) {
+          const view = VIEWS[Number(digit) - 1];
+          if (view && workbenchAllowed(view.key, data.access)) {
+            e.preventDefault();
+            open(view.key);
+          }
           return;
         }
-        const el = e.target;
-        const typing = el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.tagName === "SELECT" || el?.isContentEditable;
-        const state = shell.current;
-        if (!mod && !e.altKey && key === "n" && !typing && state.ready && !state.palette && !state.modal && !state.ask) {
+        if (e.code === "KeyW" && (platform === "dsh" && mod && !e.altKey || viaWeb)) {
+          e.preventDefault();
+          if (state.active) close(state.active);
+          return;
+        }
+        if (e.ctrlKey && e.key === "Tab" && state.visibleTabs.length > 1) {
+          e.preventDefault();
+          const i = state.visibleTabs.indexOf(state.active);
+          const next = state.visibleTabs[(i + (e.shiftKey ? -1 : 1) + state.visibleTabs.length) % state.visibleTabs.length];
+          setTabs((s) => ({ ...s, active: next }));
+          return;
+        }
+        if (e.key === "Escape") {
+          if (state.drawer) setDrawer(false);
+          return;
+        }
+        if (typing || mod || e.altKey || !state.ready || state.modal || state.ask) return;
+        if (key === "n") {
           e.preventDefault();
           setModal({ kind: "task" });
+        } else if (e.key === "?") {
+          e.preventDefault();
+          setKeys(true);
         }
       };
       window.addEventListener("keydown", onKey);
       return () => window.removeEventListener("keydown", onKey);
-    }, [toggleExplorer]);
+    }, [toggleExplorer, open, close, platform, data.access]);
     useEffect(() => {
       if (data.loaded && !workbenchAllowed(active, data.access)) open("board");
     }, [data.loaded, data.access, active, open]);
+    useEffect(() => {
+      tabRefs.current[active]?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    }, [active]);
     const ctx = useMemo(
-      () => ({ api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, ask: setAsk, setModal, boardProject, setBoardProject }),
-      [api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, boardProject]
+      () => ({ api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, ask: setAsk, setModal, boardProject, setBoardProject, activeTab: active, closeTab: close }),
+      [api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, boardProject, active, close]
     );
     const inbox = needsYou(data);
     const inboxCount = inbox.waiting.length + inbox.review.length + inbox.new.length + inbox.stalled.length + inbox.stuck.length;
@@ -11733,7 +13106,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }
       return viewOf(key)?.label ?? key;
     };
-    const visibleTabs = tabs.filter((key) => workbenchAllowed(key, data.access));
     const shiftTab = (e, key) => {
       const i = visibleTabs.indexOf(key);
       if (i < 0) return;
@@ -11742,83 +13114,103 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       else if (e.key === "ArrowLeft") next = visibleTabs[(i - 1 + visibleTabs.length) % visibleTabs.length];
       else if (e.key === "Home") next = visibleTabs[0];
       else if (e.key === "End") next = visibleTabs[visibleTabs.length - 1];
+      else if (e.key === "Delete") {
+        e.preventDefault();
+        close(key);
+        return;
+      }
       if (next == null) return;
       e.preventDefault();
       setTabs((s) => ({ ...s, active: next }));
       tabRefs.current[next]?.focus();
     };
+    const showExplorer = !narrow && sidebar || narrow && drawer;
+    const main = allowedViews.filter((v) => v.key !== "settings");
+    const settingsView = allowedViews.find((v) => v.key === "settings");
+    const activityButton = (v) => /* @__PURE__ */ jsxs(
+      "button",
+      {
+        type: "button",
+        "aria-label": v.label,
+        "aria-current": active === v.key ? "page" : void 0,
+        "aria-keyshortcuts": platform === "dsh" ? `Meta+${VIEWS.indexOf(v) + 1}` : `Control+Alt+${VIEWS.indexOf(v) + 1}`,
+        "data-tip": `${v.label}  ${viewKey(platform, VIEWS.indexOf(v) + 1)}`,
+        "data-tip-side": "right",
+        onClick: () => open(v.key),
+        children: [
+          /* @__PURE__ */ jsx(Icon, { name: v.icon, size: 20 }),
+          v.key === "inbox" && inboxCount ? /* @__PURE__ */ jsx("span", { className: "aw-badge", "aria-label": `${inboxCount} need you`, children: inboxCount }) : null
+        ]
+      },
+      v.key
+    );
     return /* @__PURE__ */ jsxs(AdminContext.Provider, { value: ctx, children: [
       /* @__PURE__ */ jsx("style", { children: STYLES }),
-      /* @__PURE__ */ jsxs("div", { ref: rootRef, className: cx("aw", fullscreen && "aw--fullscreen", `aw--${platform}`, underButtons && "aw--inset"), children: [
+      /* @__PURE__ */ jsxs("div", { ref: rootRef, className: cx("aw", fullscreen && "aw--fullscreen", `aw--${platform}`, underButtons && "aw--inset", !showExplorer && "aw--noexplorer"), children: [
         /* @__PURE__ */ jsxs("nav", { className: "aw-activity", "aria-label": "Views", children: [
-          VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => /* @__PURE__ */ jsxs("button", { type: "button", title: v.label, "aria-label": v.label, "aria-pressed": active === v.key, onClick: () => open(v.key), children: [
-            /* @__PURE__ */ jsx(Icon, { name: v.icon, size: 20 }),
-            v.key === "inbox" && inboxCount ? /* @__PURE__ */ jsx("span", { className: "aw-badge", children: inboxCount }) : null
-          ] }, v.key)),
+          main.map(activityButton),
           /* @__PURE__ */ jsx("span", { className: "aw-activity__spacer" }),
-          /* @__PURE__ */ jsx("button", { type: "button", title: "New task (N)", "aria-label": "New task", "aria-keyshortcuts": "N", onClick: () => setModal({ kind: "task" }), children: /* @__PURE__ */ jsx(Icon, { name: "plus", size: 20 }) }),
-          /* @__PURE__ */ jsx("button", { type: "button", title: "Search and commands (\u2318K)", "aria-label": "Search and commands", "aria-keyshortcuts": "Meta+K Control+K", onClick: () => setPalette(true), children: /* @__PURE__ */ jsx(Icon, { name: "search", size: 20 }) })
+          /* @__PURE__ */ jsx("button", { type: "button", "aria-label": "New task", "aria-keyshortcuts": "N", "data-tip": "New task  N", "data-tip-side": "right", onClick: () => setModal({ kind: "task" }), children: /* @__PURE__ */ jsx(Icon, { name: "plus", size: 20 }) }),
+          /* @__PURE__ */ jsx("button", { type: "button", "aria-label": "Search and commands", "aria-keyshortcuts": "Meta+K Control+K", "data-tip": `Search and commands  ${MOD}K`, "data-tip-side": "right", onClick: () => setPalette(true), children: /* @__PURE__ */ jsx(Icon, { name: "search", size: 20 }) }),
+          settingsView ? activityButton(settingsView) : null
         ] }),
         narrow && drawer ? /* @__PURE__ */ jsx("div", { className: "aw-drawer-scrim", onClick: () => setDrawer(false) }) : null,
-        !narrow && sidebar || narrow && drawer ? /* @__PURE__ */ jsx(Explorer, { drawer: narrow }) : null,
+        showExplorer ? /* @__PURE__ */ jsx(Explorer, { drawer: narrow }) : null,
         !narrow && sidebar ? /* @__PURE__ */ jsx(Resizer, { host: ".aw", cssVar: "--aw-explorer-w", def: 260, min: 180, max: 520, storage: "aw.explorer.w", className: "aw-resize--explorer" }) : null,
         /* @__PURE__ */ jsxs("main", { className: "aw-main", children: [
           /* @__PURE__ */ jsxs("div", { className: "aw-tabs", children: [
-            /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", className: "aw-tabs__toggle", title: "Toggle explorer (\u2318B)", "aria-label": "Toggle explorer", "aria-keyshortcuts": "Meta+B Control+B", onClick: toggleExplorer, children: /* @__PURE__ */ jsx(Icon, { name: "board", size: 14 }) }),
-            /* @__PURE__ */ jsxs("div", { className: "aw-tablist", role: "tablist", "aria-label": "Open views", children: [
-              visibleTabs.map((key) => /* @__PURE__ */ jsxs(
-                "div",
-                {
-                  ref: (node) => {
-                    if (node) tabRefs.current[key] = node;
-                    else delete tabRefs.current[key];
-                  },
-                  role: "tab",
-                  id: domId("aw-tab", key),
-                  "aria-selected": key === active,
-                  "aria-controls": domId("aw-pane", key),
-                  tabIndex: key === active ? 0 : -1,
-                  className: cx("aw-tab", key === active && "is-active"),
-                  onClick: () => setTabs((s) => ({ ...s, active: key })),
-                  onAuxClick: (e) => e.button === 1 && close(key),
-                  onKeyDown: (e) => shiftTab(e, key),
-                  title: tabLabel(key),
-                  children: [
-                    /* @__PURE__ */ jsx(Icon, { name: key.startsWith("p:") ? "folder" : key.startsWith("t:") ? "ticket" : key.startsWith("c:") ? "clients" : viewOf(key)?.icon ?? "list", size: 14 }),
-                    /* @__PURE__ */ jsx("span", { className: "aw-tab__label", children: tabLabel(key) }),
-                    /* @__PURE__ */ jsx(
-                      "button",
-                      {
-                        type: "button",
-                        className: "aw-tab__close",
-                        "aria-label": "Close tab",
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          close(key);
-                        },
-                        children: "\xD7"
-                      }
-                    )
-                  ]
+            /* @__PURE__ */ jsx(
+              Button,
+              {
+                kind: "ghost",
+                size: "sm",
+                className: "aw-tabs__toggle",
+                "aria-label": showExplorer ? "Hide explorer" : "Show explorer",
+                "aria-expanded": showExplorer,
+                "aria-keyshortcuts": "Meta+B Control+B",
+                title: `${showExplorer ? "Hide" : "Show"} explorer (${MOD}B)`,
+                onClick: toggleExplorer,
+                children: /* @__PURE__ */ jsx(Icon, { name: "sidebar", size: 16 })
+              }
+            ),
+            /* @__PURE__ */ jsx("div", { className: "aw-tablist", role: "tablist", "aria-label": "Open views", children: visibleTabs.map((key) => /* @__PURE__ */ jsx(
+              Tab,
+              {
+                tabKey: key,
+                active: key === active,
+                label: tabLabel(key),
+                icon: key.startsWith("p:") ? "folder" : key.startsWith("t:") ? "ticket" : key.startsWith("c:") ? "clients" : viewOf(key)?.icon ?? "list",
+                closeShortcut: closeKey(platform),
+                refFn: (node) => {
+                  if (node) tabRefs.current[key] = node;
+                  else delete tabRefs.current[key];
                 },
-                key
-              )),
-              /* @__PURE__ */ jsx("span", { className: "aw-tabs__fill" })
-            ] }),
-            /* @__PURE__ */ jsx(MachineStatusPill, {}),
-            /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "Refresh", onClick: () => void reload(), children: /* @__PURE__ */ jsx(Icon, { name: "refresh", size: 14 }) })
+                onSelect: () => setTabs((s) => ({ ...s, active: key })),
+                onClose: () => close(key),
+                onCloseOthers: () => closeMany((all) => all.filter((t) => t !== key)),
+                onCloseRight: () => closeMany((all) => all.slice(all.indexOf(key) + 1)),
+                isLast: visibleTabs[visibleTabs.length - 1] === key,
+                only: visibleTabs.length === 1,
+                onKeyDown: (e) => shiftTab(e, key)
+              },
+              key
+            )) })
           ] }),
           /* @__PURE__ */ jsxs("div", { className: "aw-content", children: [
-            !signedOut && data.error ? /* @__PURE__ */ jsxs("div", { className: "aw-topbanner", role: "alert", children: [
-              /* @__PURE__ */ jsx("span", { children: errorText(data.error) }),
+            !signedOut && data.error && data.loaded ? /* @__PURE__ */ jsxs("div", { className: "aw-topbanner", role: "alert", children: [
+              /* @__PURE__ */ jsxs("span", { children: [
+                errorText(data.error),
+                data.fetchedAt ? ` Showing data from ${new Date(data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : ""
+              ] }),
               /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void reload(), children: "Retry" })
             ] }) : null,
-            signedOut ? /* @__PURE__ */ jsx(SignedOut, {}) : !data.loaded ? /* @__PURE__ */ jsx("div", { className: "aw-loading aw-loading--fill", role: "status", children: /* @__PURE__ */ jsx("span", { children: "Loading\u2026" }) }) : visibleTabs.map((key) => /* @__PURE__ */ jsx("section", { id: domId("aw-pane", key), role: "tabpanel", "aria-labelledby": domId("aw-tab", key), className: "aw-pane", hidden: key !== active, children: key.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(key.slice(2)), active: key === active }) : key.startsWith("p:") ? /* @__PURE__ */ jsx(ProjectView, { id: key.slice(2) }) : key.startsWith("c:") ? /* @__PURE__ */ jsx(ClientView, { id: key.slice(2) }) : /* @__PURE__ */ jsx(View, { name: key }) }, key))
+            signedOut ? /* @__PURE__ */ jsx(SignedOut, {}) : !data.loaded ? /* @__PURE__ */ jsx("div", { className: "aw-loading--fill", children: /* @__PURE__ */ jsx(Skeleton, { variant: "pane", label: "Loading the workbench\u2026" }) }) : visibleTabs.map((key) => /* @__PURE__ */ jsx("section", { id: domId("aw-pane", key), role: "tabpanel", "aria-labelledby": domId("aw-tab", key), className: "aw-pane", hidden: key !== active, children: key.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(key.slice(2)), active: key === active }) : key.startsWith("p:") ? /* @__PURE__ */ jsx(ProjectView, { id: key.slice(2) }) : key.startsWith("c:") ? /* @__PURE__ */ jsx(ClientView, { id: key.slice(2) }) : /* @__PURE__ */ jsx(View, { name: key }) }, key))
           ] })
         ] }),
-        /* @__PURE__ */ jsx(StatusBar, {}),
+        /* @__PURE__ */ jsx(StatusBar, { onPalette: () => setPalette(true), onKeys: () => setKeys(true) }),
         /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast }),
-        palette ? /* @__PURE__ */ jsx(Palette, { onClose: () => setPalette(false) }) : null,
+        palette ? /* @__PURE__ */ jsx(Palette, { onClose: () => setPalette(false), onKeys: () => setKeys(true), toggleExplorer }) : null,
+        keys ? /* @__PURE__ */ jsx(ShortcutSheet, { onClose: () => setKeys(false) }) : null,
         /* @__PURE__ */ jsx(MachineOnboarding, {}),
         modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal(null) }) : null,
         modal?.kind === "project" ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal(null) }) : null,
@@ -11826,6 +13218,53 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         ask ? /* @__PURE__ */ jsx(Confirm, { ask, onClose: () => setAsk(null) }) : null
       ] })
     ] });
+  }
+  function Tab({ tabKey, active, label, icon, refFn, onSelect, onClose, onCloseOthers, onCloseRight, isLast, only, onKeyDown, closeShortcut }) {
+    const ctxMenu = useContextMenu(() => [
+      { label: "Close", shortcut: closeShortcut, run: onClose },
+      { label: "Close others", run: onCloseOthers, disabled: only, disabledReason: "This is the only tab." },
+      { label: "Close tabs to the right", run: onCloseRight, disabled: isLast, disabledReason: "No tabs to the right." }
+    ], "Tab actions");
+    return /* @__PURE__ */ jsxs(
+      "div",
+      {
+        ref: refFn,
+        role: "tab",
+        id: domId("aw-tab", tabKey),
+        "aria-selected": active,
+        "aria-controls": domId("aw-pane", tabKey),
+        tabIndex: active ? 0 : -1,
+        className: cx("aw-tab", active && "is-active"),
+        onClick: onSelect,
+        onMouseDown: (e) => e.button === 1 && e.preventDefault(),
+        onAuxClick: (e) => e.button === 1 && onClose(),
+        onContextMenu: ctxMenu.bind.onContextMenu,
+        onKeyDown: (e) => {
+          ctxMenu.bind.onKeyDown(e);
+          if (!e.defaultPrevented) onKeyDown(e);
+        },
+        title: label,
+        children: [
+          /* @__PURE__ */ jsx(Icon, { name: icon, size: 14 }),
+          /* @__PURE__ */ jsx("span", { className: "aw-tab__label", children: label }),
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              type: "button",
+              className: "aw-tab__close",
+              "aria-label": `Close ${label}`,
+              tabIndex: -1,
+              onClick: (e) => {
+                e.stopPropagation();
+                onClose();
+              },
+              children: /* @__PURE__ */ jsx(Icon, { name: "close", size: 12 })
+            }
+          ),
+          ctxMenu.menu
+        ]
+      }
+    );
   }
   function View({ name }) {
     switch (name) {
@@ -11866,8 +13305,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       platform === "dsh" ? /* @__PURE__ */ jsx(SettingsView, {}) : null
     ] });
   }
+  var NEEDS_YOU = /* @__PURE__ */ new Set(["new", "review"]);
   function Explorer({ drawer = false }) {
-    const { data, open, openTicket, setModal, setBoardProject, boardProject } = useAdmin();
+    const { data, open, openTicket, setModal, setBoardProject, boardProject, activeTab } = useAdmin();
     const [openSlug, setOpenSlug] = useState({});
     const byProject = /* @__PURE__ */ new Map();
     for (const t of data.tickets) {
@@ -11879,97 +13319,170 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const runningTicket = new Set(data.running.map((r) => r.ticket_id));
     return /* @__PURE__ */ jsxs("aside", { className: cx("aw-explorer", drawer && "aw-explorer--drawer"), "aria-label": "Explorer", children: [
       /* @__PURE__ */ jsxs("h3", { children: [
-        "Projects ",
-        data.access?.canUseWorkbench ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "New project", onClick: () => setModal({ kind: "project" }), children: /* @__PURE__ */ jsx(Icon, { name: "plus", size: 12 }) }) : null
+        "Projects",
+        data.access?.canUseWorkbench ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", iconOnly: true, icon: "plus", "aria-label": "New project", onClick: () => setModal({ kind: "project" }) }) : null
       ] }),
-      /* @__PURE__ */ jsx("ul", { className: "aw-tree", children: data.projects.map((p) => {
-        const items = (byProject.get(p.id) ?? []).filter(live);
-        const expanded = openSlug[p.id] ?? items.length > 0;
-        return /* @__PURE__ */ jsxs("li", { children: [
-          /* @__PURE__ */ jsxs("div", { className: cx("aw-tree__row", boardProject === p.id && "is-active"), children: [
-            /* @__PURE__ */ jsx("button", { type: "button", className: "aw-tree__twist", onClick: () => setOpenSlug((s) => ({ ...s, [p.id]: !expanded })), "aria-label": expanded ? "Collapse" : "Expand", children: expanded ? "\u25BE" : "\u25B8" }),
-            /* @__PURE__ */ jsxs(
-              "button",
-              {
-                type: "button",
-                className: "aw-tree__name",
-                onClick: () => {
-                  setBoardProject(p.id);
-                  open(`p:${p.id}`);
-                },
-                title: `Open ${p.name}`,
-                children: [
-                  /* @__PURE__ */ jsx(Icon, { name: "folder", size: 14 }),
-                  " ",
-                  p.name
-                ]
-              }
-            ),
-            items.length ? /* @__PURE__ */ jsx("span", { className: "aw-count", children: items.length }) : null
-          ] }),
-          expanded ? /* @__PURE__ */ jsxs("ul", { children: [
-            items.map((t) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-tree__leaf", onClick: () => openTicket(t.id), title: t.title, children: [
-              /* @__PURE__ */ jsx("span", { className: `aw-sq aw-sq--${t.status}`, title: STATUS_LABEL[t.status] ?? t.status }),
-              /* @__PURE__ */ jsxs("span", { className: "aw-tree__id", children: [
-                "#",
-                t.id
-              ] }),
-              " ",
-              t.title,
-              runningTicket.has(t.id) ? /* @__PURE__ */ jsx("span", { className: "aw-live", title: "An agent is running" }) : null
-            ] }) }, t.id)),
-            !items.length ? /* @__PURE__ */ jsx("li", { className: "aw-tree__none", children: "No open work" }) : null
-          ] }) : null
-        ] }, p.id);
-      }) })
+      /* @__PURE__ */ jsxs("ul", { className: "aw-tree", role: "tree", "aria-label": "Projects and open work", children: [
+        data.projects.map((p) => {
+          const items = (byProject.get(p.id) ?? []).filter(live);
+          const expanded = openSlug[p.id] ?? items.length > 0;
+          return /* @__PURE__ */ jsx(
+            ExplorerProject,
+            {
+              project: p,
+              items,
+              expanded,
+              selected: activeTab === `p:${p.id}` || boardProject === p.id,
+              activeTab,
+              running: runningTicket,
+              onToggle: () => setOpenSlug((s) => ({ ...s, [p.id]: !expanded })),
+              onOpen: () => {
+                setBoardProject(p.id);
+                open(`p:${p.id}`);
+              },
+              onBoard: () => {
+                setBoardProject(p.id);
+                open("board");
+              },
+              onTask: () => setModal({ kind: "task", projectId: p.id }),
+              openTicket
+            },
+            p.id
+          );
+        }),
+        !data.projects.length ? /* @__PURE__ */ jsx("li", { className: "aw-tree__none", role: "none", children: "No projects yet" }) : null
+      ] })
     ] });
   }
-  function StatusBar() {
-    const { data, open } = useAdmin();
+  function ExplorerProject({ project: p, items, expanded, selected, activeTab, running, onToggle, onOpen, onBoard, onTask, openTicket }) {
+    const menu = useContextMenu([
+      { label: "Open project", run: onOpen },
+      { label: "Show on the board", run: onBoard },
+      { label: "New task in this project\u2026", shortcut: "N", run: onTask },
+      { separator: true },
+      { label: expanded ? "Collapse" : "Expand", run: onToggle }
+    ], `${p.name} actions`);
+    return /* @__PURE__ */ jsxs("li", { role: "treeitem", "aria-expanded": expanded, "aria-selected": selected, children: [
+      /* @__PURE__ */ jsxs("div", { className: cx("aw-tree__row", selected && "is-active"), ...menu.bind, children: [
+        /* @__PURE__ */ jsx("button", { type: "button", className: "aw-tree__twist", onClick: onToggle, "aria-expanded": expanded, "aria-label": expanded ? `Collapse ${p.name}` : `Expand ${p.name}`, children: /* @__PURE__ */ jsx(Icon, { name: "chevron", size: 12 }) }),
+        /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-tree__name", onClick: onOpen, title: `Open ${p.name}`, children: [
+          /* @__PURE__ */ jsx(Icon, { name: "folder", size: 14 }),
+          " ",
+          /* @__PURE__ */ jsx("span", { children: p.name })
+        ] }),
+        items.length ? /* @__PURE__ */ jsx("span", { className: "aw-count", "aria-label": `${items.length} open`, children: items.length }) : null
+      ] }),
+      expanded ? /* @__PURE__ */ jsxs("ul", { role: "group", children: [
+        items.map((t) => /* @__PURE__ */ jsx(ExplorerTicket, { t, active: activeTab === `t:${t.id}`, running: running.has(t.id), openTicket }, t.id)),
+        !items.length ? /* @__PURE__ */ jsx("li", { className: "aw-tree__none", role: "none", children: "No open work" }) : null
+      ] }) : null,
+      menu.menu
+    ] });
+  }
+  function ExplorerTicket({ t, active, running, openTicket }) {
+    const { platform } = useAdmin();
+    const menu = useContextMenu([
+      { label: "Open", run: () => openTicket(t.id) },
+      {
+        label: "Copy link",
+        run: () => void navigator.clipboard?.writeText(`${platform === "web" ? location.origin + location.pathname : "https://ptechsolutions.net/portal/admin"}#ticket=${t.id}`)
+      }
+    ], `#${t.id} actions`);
+    const state = running ? "live" : NEEDS_YOU.has(t.status) ? "needs" : "open";
+    const stateText = running ? "agent running" : STATUS_LABEL[t.status] ?? t.status;
+    return /* @__PURE__ */ jsxs("li", { role: "treeitem", "aria-selected": active, children: [
+      /* @__PURE__ */ jsx("div", { className: cx("aw-tree__leafrow", active && "is-active"), ...menu.bind, children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-tree__leaf", onClick: () => openTicket(t.id), title: `#${t.id} ${t.title} \xB7 ${stateText}`, children: [
+        /* @__PURE__ */ jsx("span", { className: cx("aw-mark", state !== "open" && `aw-mark--${state}`), "aria-hidden": "true" }),
+        /* @__PURE__ */ jsx("span", { className: "aw-tree__title", children: t.title }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-sr", children: [
+          ", ",
+          stateText
+        ] }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-tree__id", children: [
+          "#",
+          t.id
+        ] })
+      ] }) }),
+      menu.menu
+    ] });
+  }
+  function StatusBar({ onPalette, onKeys }) {
+    const { data, open, reload, platform } = useAdmin();
+    const [syncing, setSyncing] = useState(false);
     const online = data.nodes.filter((n) => n.online).length;
     const waiting = data.queue.length;
     const stuck = data.queue.filter((q) => !q.eligible.length).length;
+    const health = !data.nodes.length ? "bad" : online === data.nodes.length ? "ok" : online ? "warn" : "bad";
+    const sync = () => {
+      setSyncing(true);
+      void Promise.resolve(reload()).finally(() => setSyncing(false));
+    };
+    const time = data.fetchedAt ? new Date(data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
     return /* @__PURE__ */ jsxs("footer", { className: "aw-status", children: [
-      data.access?.superAdmin ? /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => open("fleet"), title: "Fleet, nodes and the queue", children: [
-        /* @__PURE__ */ jsx(Dot, { state: online === data.nodes.length && online ? "ok" : online ? "warn" : "bad" }),
-        online,
-        " ",
-        online === 1 ? "node" : "nodes",
-        " \xB7 ",
-        data.running.length,
-        " running \xB7 ",
-        waiting,
-        " queued",
-        stuck ? ` \xB7 ${stuck} stuck` : ""
-      ] }) : /* @__PURE__ */ jsxs("span", { children: [
+      data.access?.superAdmin ? /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => open("fleet"), title: "Open Fleet: nodes, the queue and health", children: [
+        /* @__PURE__ */ jsx(Dot, { state: health }),
+        /* @__PURE__ */ jsxs("span", { children: [
+          online,
+          " of ",
+          data.nodes.length,
+          " ",
+          data.nodes.length === 1 ? "node" : "nodes",
+          " online \xB7 ",
+          data.running.length,
+          " running \xB7 ",
+          waiting,
+          " queued",
+          stuck ? ` \xB7 ${stuck} stuck` : ""
+        ] })
+      ] }) : /* @__PURE__ */ jsxs("span", { className: "aw-status__item", children: [
         data.projects.length,
-        " projects"
+        " ",
+        data.projects.length === 1 ? "project" : "projects"
       ] }),
+      platform === "dsh" ? /* @__PURE__ */ jsx(MachineStatusPill, {}) : null,
       /* @__PURE__ */ jsx("span", { className: "aw-status__fill" }),
-      data.error ? /* @__PURE__ */ jsx("span", { className: "aw-status__err", children: errorText(data.error) }) : null,
-      /* @__PURE__ */ jsx("span", { children: data.fetchedAt ? `updated ${new Date(data.fetchedAt).toLocaleTimeString()}` : "" }),
-      /* @__PURE__ */ jsx("span", { children: "\u2318K" })
+      /* @__PURE__ */ jsxs("button", { type: "button", onClick: sync, disabled: syncing, title: "Refresh now (it also refreshes every 15 seconds)", className: data.error ? "aw-status__err" : void 0, children: [
+        /* @__PURE__ */ jsx(Icon, { name: "refresh", size: 12 }),
+        syncing ? "Syncing\u2026" : data.error ? "Sync failed \xB7 retry" : time ? `Synced ${time}` : "Not synced yet"
+      ] }),
+      /* @__PURE__ */ jsx("button", { type: "button", onClick: onPalette, title: "Search and commands", children: /* @__PURE__ */ jsxs("kbd", { children: [
+        MOD,
+        "K"
+      ] }) }),
+      /* @__PURE__ */ jsx("button", { type: "button", onClick: onKeys, title: "Keyboard shortcuts", "aria-label": "Keyboard shortcuts", children: /* @__PURE__ */ jsx("kbd", { children: "?" }) })
     ] });
   }
-  function Palette({ onClose }) {
-    const { data, open, openTicket, setModal, reload } = useAdmin();
+  function Palette({ onClose, onKeys, toggleExplorer }) {
+    const { data, open, openTicket, setModal, reload, activeTab, closeTab, platform } = useAdmin();
     const [q, setQ] = useState("");
     const [i, setI] = useState(0);
     const input = useRef(null);
-    useEffect(() => input.current?.focus(), []);
+    const listRef = useRef(null);
+    useEffect(() => {
+      const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      input.current?.focus();
+      return () => opener?.focus?.();
+    }, []);
     const { items, total } = useMemo(() => {
       const cmds = [
-        { label: "New task\u2026", hint: "command", run: () => setModal({ kind: "task" }) },
+        { label: "New task\u2026", hint: "N", run: () => setModal({ kind: "task" }) },
         ...data.access?.canUseWorkbench ? [{ label: "New project\u2026", hint: "command", run: () => setModal({ kind: "project" }) }] : [],
         { label: "Refresh", hint: "command", run: () => void reload() },
-        ...VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => ({ label: `Go to ${v.label}`, hint: "view", run: () => open(v.key) })),
+        { label: "Toggle explorer", hint: `${MOD}B`, run: toggleExplorer },
+        ...activeTab ? [{ label: "Close tab", hint: closeKey(platform), run: () => closeTab(activeTab) }] : [],
+        { label: "Keyboard shortcuts", hint: "?", run: onKeys },
+        ...VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => ({ label: `Go to ${v.label}`, hint: viewKey(platform, VIEWS.indexOf(v) + 1), run: () => open(v.key) })),
         ...data.projects.map((p) => ({ label: p.name, hint: "project", run: () => open(`p:${p.id}`) })),
+        ...data.clients.map((c) => ({ label: c.name || c.email, hint: c.name ? `client \xB7 ${c.email}` : "client", run: () => open(`c:${c.id}`) })),
         ...data.tickets.map((t) => ({ label: `#${t.id} ${t.title}`, hint: `${STATUS_LABEL[t.status]} \xB7 ${t.project_name ?? "no project"}`, run: () => openTicket(t.id) }))
       ];
       const needle = q.trim().toLowerCase();
       const matched = needle ? cmds.filter((c) => `${c.label} ${c.hint}`.toLowerCase().includes(needle)) : cmds;
       return { items: matched.slice(0, 40), total: matched.length };
-    }, [q, data, open, openTicket, setModal, reload]);
+    }, [q, data, open, openTicket, setModal, reload, toggleExplorer, activeTab, closeTab, onKeys, platform]);
+    useEffect(() => {
+      listRef.current?.querySelector(".is-active")?.scrollIntoView?.({ block: "nearest" });
+    }, [i]);
     const pick = (item) => {
       onClose();
       item?.run();
@@ -11986,7 +13499,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           "aria-autocomplete": "list",
           "aria-activedescendant": items[i] ? `aw-palette-option-${i}` : void 0,
           value: q,
-          placeholder: "Search tickets, views and commands\u2026",
+          placeholder: "Search tickets, projects, clients and commands\u2026",
           onChange: (e) => {
             setQ(e.target.value);
             setI(0);
@@ -11995,11 +13508,13 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             if (e.key === "Escape") onClose();
             else if (e.key === "ArrowDown") e.preventDefault(), setI((n) => Math.min(items.length - 1, n + 1));
             else if (e.key === "ArrowUp") e.preventDefault(), setI((n) => Math.max(0, n - 1));
+            else if (e.key === "Home" && e.metaKey) e.preventDefault(), setI(0);
             else if (e.key === "Enter") pick(items[i]);
+            else if (e.key === "Tab") e.preventDefault();
           }
         }
       ),
-      /* @__PURE__ */ jsxs("ul", { id: "aw-palette-list", role: "listbox", "aria-label": "Results", children: [
+      /* @__PURE__ */ jsxs("ul", { id: "aw-palette-list", role: "listbox", "aria-label": "Results", ref: listRef, children: [
         items.map((item, n) => /* @__PURE__ */ jsxs(
           "li",
           {
@@ -12016,7 +13531,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           },
           item.label + n
         )),
-        !items.length ? /* @__PURE__ */ jsx("li", { className: "aw-muted", role: "presentation", children: "No matches" }) : null
+        !items.length ? /* @__PURE__ */ jsx("li", { className: "aw-muted", role: "presentation", children: "No matches. Try a ticket number, a project or a view." }) : null
       ] }),
       total > items.length ? /* @__PURE__ */ jsxs("p", { className: "aw-palette__count", children: [
         "Showing ",
@@ -12025,6 +13540,30 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         total
       ] }) : null
     ] }) });
+  }
+  function ShortcutSheet({ onClose }) {
+    const { platform } = useAdmin();
+    const alt = isMac ? "\u2303\u2325" : "Ctrl+Alt+";
+    const rows = [
+      [[`${MOD}K`], "Search and commands"],
+      [[`${MOD}B`], "Show or hide the explorer"],
+      [[platform === "dsh" ? `${MOD}1\u20268` : `${alt}1\u20268`], "Needs you, Board, All work, Marketing, SEO, Fleet, Clients, Settings"],
+      [[closeKey(platform)], "Close the tab"],
+      [["\u2303Tab", "\u2303\u21E7Tab"], "Next / previous tab"],
+      [["\u2190", "\u2192", "Home", "End"], "Move along tabs and section tabs"],
+      [["N"], "New task"],
+      [["/"], "Filter the list (web)"],
+      [["J", "K", "\u2191", "\u2193"], "Move between rows"],
+      [["Return"], "Open the row, or confirm"],
+      [["\u21E7F10"], "Actions for the focused row or tab"],
+      [[`${MOD}Return`], "Send or save the form"],
+      [["Esc"], "Close the menu, dialog or drawer"],
+      [["?"], "This sheet"]
+    ];
+    return /* @__PURE__ */ jsx(Modal, { title: "Keyboard shortcuts", subtitle: "Everything else is in the palette.", onClose, wide: true, children: /* @__PURE__ */ jsx("dl", { className: "aw-keys", children: rows.map(([keys, what]) => /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx("dt", { children: keys.map((k) => /* @__PURE__ */ jsx("kbd", { className: "aw-kbd", children: k }, k)) }),
+      /* @__PURE__ */ jsx("dd", { children: what })
+    ] }, what)) }) });
   }
   function TaskModal({ preset = {}, onClose }) {
     const { api, data, act, openTicket } = useAdmin();
@@ -12073,7 +13612,16 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             where.text
           ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: approve ? "The agent will be queued." : "Draft only \xB7 no agent starts." }),
           /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !title.trim() || !brief.trim() || !projectId, onClick: submit, children: busy ? "Saving\u2026" : approve ? "Save and queue agent" : "Save draft" })
+          /* @__PURE__ */ jsx(
+            Button,
+            {
+              kind: "primary",
+              disabled: busy || !title.trim() || !brief.trim() || !projectId,
+              disabledReason: busy ? void 0 : !title.trim() ? "Add a title first." : !brief.trim() ? "Write the brief first." : !projectId ? "Pick a project first." : void 0,
+              onClick: submit,
+              children: busy ? "Saving\u2026" : approve ? "Save and queue agent" : "Save draft"
+            }
+          )
         ] }),
         children: /* @__PURE__ */ jsxs("fieldset", { disabled: busy, style: { border: 0, padding: 0, margin: 0, minWidth: 0 }, children: [
           /* @__PURE__ */ jsx(Field, { label: "Title", children: /* @__PURE__ */ jsx("input", { disabled: busy, value: title, maxLength: 140, placeholder: "Fix the checkout total rounding", onChange: (e) => setTitle(e.target.value) }) }),
@@ -12162,7 +13710,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         onClose: () => !busyRef.current && onClose(),
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: () => created ? go(created) : onClose(), children: created ? "Open project" : "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !ready, onClick: submit, children: busy ? "Saving\u2026" : created ? "Retry local setup" : "Create project" })
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !ready, disabledReason: busy ? void 0 : "Fill in the name and the required fields first.", onClick: submit, children: busy ? "Saving\u2026" : created ? "Retry local setup" : "Create project" })
         ] }),
         children: [
           receipt?.repoError ? /* @__PURE__ */ jsxs("p", { role: "status", className: "aw-callout", children: [
@@ -12315,7 +13863,7 @@ ${question.text ?? ""}`)) {
     if (loading && !ticket) {
       return /* @__PURE__ */ jsxs("div", { className: "aw", style: scope, children: [
         /* @__PURE__ */ jsx("style", { children: STYLES }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { padding: 12, fontSize: 12 }, children: "Loading ticket\u2026" })
+        /* @__PURE__ */ jsx(Skeleton, { variant: "ticket", label: "Loading ticket\u2026" })
       ] });
     }
     if (!ticket) {
@@ -15623,7 +17171,7 @@ ${question.text ?? ""}`)) {
         /* @__PURE__ */ jsx("span", { className: "pta-kpi__label", children: label })
       ] });
     }
-    function EmptyState({ title, text, children }) {
+    function EmptyState2({ title, text, children }) {
       return /* @__PURE__ */ jsxs("div", { className: "pta-empty", children: [
         /* @__PURE__ */ jsx("div", { className: "pta-empty__mark", "aria-hidden": "true", children: "\u2713" }),
         /* @__PURE__ */ jsx("h3", { children: title }),
@@ -15817,7 +17365,7 @@ ${question.text ?? ""}`)) {
             /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ago2(run.finished_at) })
           ] }, run.id)) })
         ] }) : null,
-        total === 0 && groups.failed.length === 0 ? /* @__PURE__ */ jsxs(EmptyState, { title: "Inbox zero", text: "No approvals, no reviews, no client waiting. New work will appear here and in a notification.", children: [
+        total === 0 && groups.failed.length === 0 ? /* @__PURE__ */ jsxs(EmptyState2, { title: "Inbox zero", text: "No approvals, no reviews, no client waiting. New work will appear here and in a notification.", children: [
           /* @__PURE__ */ jsx(PtaButton, { onClick: goInbox, children: "Open Inbox" }),
           /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: goWorkbench, children: "Workbench" })
         ] }) : null
@@ -15931,7 +17479,7 @@ ${question.text ?? ""}`)) {
           item.count ? /* @__PURE__ */ jsx("span", { className: "pta-count", children: item.count }) : null
         ] }, item.key)) }),
         /* @__PURE__ */ jsx("p", { className: "pta-meta pta-hint", children: "j/k to move \xB7 Enter to open \xB7 / to search" }),
-        shown.length === 0 ? /* @__PURE__ */ jsx(EmptyState, { title: all.length === 0 ? "Inbox zero" : "Nothing in this filter", text: all.length === 0 ? "New approvals, reviews and client replies will land here and notify you." : "Try another filter, or clear the search." }) : /* @__PURE__ */ jsx("div", { className: "pta-rows pta-rows--inbox", children: shown.map(({ ticket, kinds }) => /* @__PURE__ */ jsx(
+        shown.length === 0 ? /* @__PURE__ */ jsx(EmptyState2, { title: all.length === 0 ? "Inbox zero" : "Nothing in this filter", text: all.length === 0 ? "New approvals, reviews and client replies will land here and notify you." : "Try another filter, or clear the search." }) : /* @__PURE__ */ jsx("div", { className: "pta-rows pta-rows--inbox", children: shown.map(({ ticket, kinds }) => /* @__PURE__ */ jsx(
           TicketLine,
           {
             ticket,

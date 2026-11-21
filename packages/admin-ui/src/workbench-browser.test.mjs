@@ -45,7 +45,7 @@ test('real browser: keyboard/double-submit safety, explicit queue, project setup
     let posts=await page.evaluate(()=>window.calls.filter(c=>c.method==='POST'));
     assert.equal(posts.length,1);assert.equal(posts[0].body.approve,false);
     await page.evaluate(()=>window.show('queue'));
-    await page.getByPlaceholder('Fix the checkout total rounding').fill('Queued task');await page.locator('textarea').fill('Queued brief');await page.getByRole('button',{name:'Queue agent',exact:true}).click();
+    await page.getByPlaceholder('Fix the checkout total rounding').fill('Queued task');await page.locator('textarea').fill('Queued brief');await page.getByRole('radio',{name:'Queue agent',exact:true}).click();
     await page.getByRole('button',{name:'Save and queue agent',exact:true}).click();
     await page.waitForFunction(()=>window.calls.filter(c=>c.method==='POST').length===2);
     posts=await page.evaluate(()=>window.calls.filter(c=>c.method==='POST'));assert.equal(posts[1].body.approve,true);

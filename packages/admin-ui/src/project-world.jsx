@@ -1,27 +1,27 @@
 /*
- * Interactive isometric "project world" map for the Admin project overview.
- * Shows each project the way the client sees it, plus operator ticket signals
- * (needs-you / stalled counts) on the agent and request stations.
+ * Interactive isometric "project world" map for the Admin project cockpit.
  *
- * Origin: ported from ptechsolutions-site
- *   - src/components/portal/ProjectWorld.jsx
- *   - src/components/portal/project-world-model.js
- *   - src/components/portal/project-world.css
- *
- * Admin differences:
- *   - No browser HTTPS reachability probe (must not ping client sites).
- *   - Styles use `.aw-world` prefix and admin theme tokens in `styles.js`.
- *   - Compact ~260px map height with caption card to the right (stacks <720px).
- *   - Operator extras (needs-you / stalled) in agent/request caption cards.
+ * M1 architecture (docs/admin-ui-refresh/02-isometric-review.md):
+ *   - 5 functional stations only: request → agent → code → preview → hosting.
+ *   - Three-tone isometric faces & crisp ink lines preserved.
+ *   - Name + 1-line status legible at 100% without hover.
+ *   - Hover lifts and highlights without hijacking the selected station.
+ *   - Click selects and updates the inspector; Enter / action buttons open.
+ *   - Roving-tabIndex keyboard navigation (Tab into map, arrows move, Home/End,
+ *     Enter opens); right-click context menu on stations.
+ *   - No idle animation; pulse only on genuinely active stations; reduced motion.
+ *   - Below ~900px (or narrow container) replaced by a vertical route list with
+ *     the same statuses and actions.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Button } from './ui.jsx';
 import {
   FLOOR_BOUNDS,
+  STATION_ORDER,
   STATION_POSITIONS,
   VISITOR_POS,
   cablesFor,
   defaultJourneyTicket,
-  floorDots,
   iso,
   isoBox,
   isoPoints,
@@ -32,27 +32,26 @@ import {
   unshippedPreview,
 } from './project-world-model.mjs';
 
-const VIEW_WIDTH = 760;
-const VIEW_HEIGHT = 440;
+const VIEW_WIDTH = 720;
+const VIEW_HEIGHT = 385;
 
 const STATE_LABEL = {
-  ok: ['world.state.ok', 'Live'],
-  active: ['world.state.active', 'Working'],
-  warn: ['world.state.warn', 'Pending'],
+  ok: ['world.state.ok', 'Healthy'],
+  active: ['world.state.active', 'Running'],
+  warn: ['world.state.warn', 'Needs review'],
   bad: ['world.state.bad', 'Needs attention'],
   off: ['world.state.off', 'Idle'],
   unknown: ['world.state.unknown', 'Unknown'],
 };
 
-const LABEL_OFFSETS = {
-  hosting: { dx: 0, dy: -108 },
-  https: { dx: -56, dy: -34 },
-  domain: { dx: -62, dy: -28 },
-  preview: { dx: 24, dy: -74 },
-  deploy: { dx: 30, dy: -70 },
-  code: { dx: 62, dy: -22 },
-  request: { dx: -46, dy: 40 },
-  agent: { dx: 10, dy: 46 },
+/* Explicit label anchor boxes so every station's name + 1-line status sits in open
+   space with zero building/cable overlap and ≥11px rendered text at 100%. */
+const LABEL_LAYOUT = {
+  hosting: { x: 96, y: 72, w: 168 },
+  preview: { x: 478, y: 60, w: 160 },
+  code: { x: 622, y: 170, w: 168 },
+  agent: { x: 526, y: 336, w: 158 },
+  request: { x: 112, y: 280, w: 158 },
 };
 
 /** Reusable 3-tone isometric box with top / front-left / front-right faces. */
@@ -79,8 +78,8 @@ function IsoBox({ x, y, z, dx, dy, dz, tone = 'base', className = '' }) {
   );
 }
 
-/** Small arrow triangle along a cable from p1 -> p2, placed at fraction `u`. */
-function CableArrow({ p1, p2, u = 0.52, active }) {
+/** Small directional arrow along a cable from p1 -> p2, placed at fraction `u`. */
+function CableArrow({ p1, p2, u = 0.5, active }) {
   const mx = p1.x + (p2.x - p1.x) * u;
   const my = p1.y + (p2.y - p1.y) * u;
   const angle = (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI;
@@ -93,8 +92,8 @@ function CableArrow({ p1, p2, u = 0.52, active }) {
   );
 }
 
-/** Floating circular count badge for active tickets / open requests. */
-function CountBadge({ x, y, z, count }) {
+/** Floating circular count badge for open requests / active builds. */
+function CountBadge({ x, y, z, count, tone = 'accent' }) {
   if (!count) return null;
   const p = iso(x, y, z);
   const text = count > 99 ? '99+' : String(count);
@@ -102,7 +101,7 @@ function CountBadge({ x, y, z, count }) {
   return (
     <g aria-hidden="true">
       <rect
-        className="aw-world__badge-bg"
+        className={tone === 'bad' ? 'aw-world__badge-bg aw-world__badge-bg--bad' : 'aw-world__badge-bg'}
         x={p.x - rx}
         y={p.y - 10.5}
         width={rx * 2}
@@ -116,7 +115,7 @@ function CountBadge({ x, y, z, count }) {
   );
 }
 
-/* ————— Individual isometric station illustrations ————— */
+/* ————— Individual isometric station illustrations (5 functional stations) ————— */
 
 function HostingObject({ station }) {
   const { x, y, state, meta } = station;
@@ -124,7 +123,7 @@ function HostingObject({ station }) {
   const y0 = y - 0.58;
   const w = 1.24;
   const d = 1.16;
-  const h = 1.22;
+  const h = 1.18;
   const roofTone = state === 'active' ? 'accent' : state === 'bad' ? 'bad' : state === 'warn' ? 'warn' : 'base';
   const winCls =
     state === 'ok'
@@ -136,41 +135,43 @@ function HostingObject({ station }) {
   const doorPts = isoPoints([
     [x - 0.19, y0 + d, 0.04],
     [x + 0.19, y0 + d, 0.04],
-    [x + 0.19, y0 + d, 0.54],
-    [x - 0.19, y0 + d, 0.54],
+    [x + 0.19, y0 + d, 0.52],
+    [x - 0.19, y0 + d, 0.52],
   ]);
-
   const winL = isoPoints([
-    [x0 + 0.18, y0 + d, 0.72],
-    [x0 + 0.52, y0 + d, 0.72],
-    [x0 + 0.52, y0 + d, 1.02],
-    [x0 + 0.18, y0 + d, 1.02],
+    [x0 + 0.18, y0 + d, 0.7],
+    [x0 + 0.52, y0 + d, 0.7],
+    [x0 + 0.52, y0 + d, 0.98],
+    [x0 + 0.18, y0 + d, 0.98],
   ]);
   const winR = isoPoints([
-    [x0 + 0.72, y0 + d, 0.72],
-    [x0 + 1.06, y0 + d, 0.72],
-    [x0 + 1.06, y0 + d, 1.02],
-    [x0 + 0.72, y0 + d, 1.02],
+    [x0 + 0.72, y0 + d, 0.7],
+    [x0 + 1.06, y0 + d, 0.7],
+    [x0 + 1.06, y0 + d, 0.98],
+    [x0 + 0.72, y0 + d, 0.98],
   ]);
 
-  const vents = [0.3, 0.56, 0.82, 1.04].map((vz) => {
+  const vents = [0.3, 0.56, 0.82, 1.02].map((vz) => {
     const a = iso(x0 + w, y0 + 0.2, vz);
     const b = iso(x0 + w, y0 + d - 0.2, vz);
     return { vz, a, b };
   });
 
-  const mastBase = iso(x + 0.25, y - 0.15, h + 0.24);
-  const mastTop = iso(x + 0.25, y - 0.15, h + 0.62);
-  const hostPlatePt = iso(x, y, h + 0.1);
+  const mastBase = iso(x + 0.24, y - 0.16, h + 0.22);
+  const mastTop = iso(x + 0.24, y - 0.16, h + 0.56);
+  const lockPt = iso(x - 0.28, y + 0.18, h + 0.28);
 
   return (
     <g className="aw-world__object">
       <IsoBox x={x0 - 0.08} y={y0 - 0.08} z={0} dx={w + 0.16} dy={d + 0.16} dz={0.1} />
       <IsoBox x={x0} y={y0} z={0.1} dx={w} dy={d} dz={h - 0.1} />
       <IsoBox x={x0 - 0.04} y={y0 - 0.04} z={h} dx={w + 0.08} dy={d + 0.08} dz={0.1} tone={roofTone} />
-      <IsoBox x={x0 + 0.16} y={y0 + 0.18} z={h + 0.1} dx={0.46} dy={0.42} dz={0.22} />
+      <IsoBox x={x0 + 0.16} y={y0 + 0.18} z={h + 0.1} dx={0.44} dy={0.4} dz={0.2} />
       <line className="aw-world__ink-line" x1={mastBase.x} y1={mastBase.y} x2={mastTop.x} y2={mastTop.y} />
       <circle className={`aw-world__beacon aw-world__beacon--${state}`} cx={mastTop.x} cy={mastTop.y} r={4.5} />
+      {meta?.httpsVerified ? (
+        <circle className="aw-world__beacon aw-world__beacon--ok" cx={lockPt.x} cy={lockPt.y} r={3} />
+      ) : null}
       <polygon
         className={state === 'ok' ? 'aw-world__face-ok' : state === 'bad' ? 'aw-world__face-bad' : 'aw-world__window'}
         points={doorPts}
@@ -180,86 +181,13 @@ function HostingObject({ station }) {
       {vents.map((v) => (
         <line key={v.vz} className="aw-world__detail-line" x1={v.a.x} y1={v.a.y} x2={v.b.x} y2={v.b.y} />
       ))}
-      {meta?.hostKind ? (
-        <text className="aw-world__micro" x={hostPlatePt.x} y={hostPlatePt.y + 2}>
-          {meta.hostKind === 'cloudflare' ? 'CF' : 'PT'}
-        </text>
-      ) : null}
     </g>
   );
 }
 
-function HttpsObject({ station }) {
-  const { x, y, state } = station;
-  const verified = state === 'ok';
-  const tone = verified ? 'ok' : state === 'warn' ? 'warn' : 'base';
-
-  const archH = 0.88;
-  const lockCenter = iso(x, y, archH + 0.34);
-
-  const shackleL = iso(x - 0.11, y, archH + 0.32);
-  const shackleR = iso(x + 0.11, y, archH + 0.32);
-  const shackleTop = iso(x, y, archH + 0.58);
-  const shacklePath = verified
-    ? `M ${shackleL.x} ${shackleL.y} C ${shackleL.x} ${shackleTop.y - 4}, ${shackleR.x} ${shackleTop.y - 4}, ${shackleR.x} ${shackleR.y}`
-    : `M ${shackleL.x} ${shackleL.y} C ${shackleL.x} ${shackleTop.y - 4}, ${shackleR.x} ${shackleTop.y - 4}, ${shackleR.x + 2} ${shackleR.y - 7}`;
-
-  return (
-    <g className="aw-world__object">
-      <IsoBox x={x - 0.44} y={y - 0.1} z={0} dx={0.18} dy={0.2} dz={archH} />
-      <IsoBox x={x + 0.26} y={y - 0.1} z={0} dx={0.18} dy={0.2} dz={archH} />
-      <IsoBox x={x - 0.48} y={y - 0.12} z={archH} dx={0.96} dy={0.24} dz={0.14} tone={tone} />
-      <path className="aw-world__ink-line" d={shacklePath} />
-      <IsoBox x={x - 0.19} y={y - 0.12} z={archH + 0.08} dx={0.38} dy={0.24} dz={0.28} tone={tone} />
-      {verified ? (
-        <circle className="aw-world__beacon aw-world__beacon--ok" cx={lockCenter.x} cy={lockCenter.y + 8} r={2.3} />
-      ) : state === 'warn' ? (
-        <circle className="aw-world__beacon aw-world__beacon--warn" cx={lockCenter.x} cy={lockCenter.y + 8} r={2.6} />
-      ) : (
-        <text className="aw-world__micro" x={lockCenter.x} y={lockCenter.y + 11}>
-          ?
-        </text>
-      )}
-    </g>
-  );
-}
-
-function DomainObject({ station }) {
-  const { x, y, state, meta } = station;
-  const boardTone = state === 'active' ? 'accent' : state === 'bad' ? 'bad' : state === 'warn' ? 'warn' : 'base';
-
-  const l1a = iso(x - 0.34, y + 0.08, 0.96);
-  const l1b = iso(x + 0.32, y + 0.08, 0.96);
-  const l2a = iso(x - 0.34, y + 0.08, 0.82);
-  const l2b = iso(x + 0.14, y + 0.08, 0.82);
-  const cap = iso(x, y, 1.24);
-  const shortHost = meta?.hostname
-    ? meta.hostname.length > 18
-      ? `${meta.hostname.slice(0, 16)}…`
-      : meta.hostname
-    : null;
-  const hostPt = iso(x + 0.62, y + 0.05, 0);
-
-  return (
-    <g className="aw-world__object">
-      <IsoBox x={x - 0.24} y={y - 0.22} z={0} dx={0.48} dy={0.44} dz={0.12} />
-      <IsoBox x={x - 0.07} y={y - 0.07} z={0.12} dx={0.14} dy={0.14} dz={1.06} />
-      <IsoBox x={x - 0.44} y={y - 0.08} z={0.68} dx={0.88} dy={0.16} dz={0.42} tone={boardTone} />
-      <line className="aw-world__ink-line" x1={l1a.x} y1={l1a.y} x2={l1b.x} y2={l1b.y} />
-      <line className="aw-world__detail-line" x1={l2a.x} y1={l2a.y} x2={l2b.x} y2={l2b.y} />
-      <circle className={`aw-world__beacon aw-world__beacon--${state}`} cx={cap.x} cy={cap.y} r={4} />
-      {shortHost ? (
-        <text className="aw-world__micro" x={hostPt.x + 4} y={hostPt.y + 4}>
-          {shortHost}
-        </text>
-      ) : null}
-    </g>
-  );
-}
-
-/** Glass-cloche mini shop representing the private Preview environment. */
+/** Glass-cloche mini shop representing Preview & publish. */
 function PreviewObject({ station }) {
-  const { x, y, state } = station;
+  const { x, y, state, meta } = station;
   const roofTone =
     state === 'active'
       ? 'accent'
@@ -291,9 +219,9 @@ function PreviewObject({ station }) {
   ]);
 
   const c = iso(x, y, 0.15);
-  const rx = 28;
-  const ry = 14.5;
-  const domeH = 44;
+  const rx = 30;
+  const ry = 15.5;
+  const domeH = 46;
   const backRim = `M ${c.x - rx} ${c.y} A ${rx} ${ry} 0 0 1 ${c.x + rx} ${c.y}`;
   const domeShell = [
     `M ${c.x - rx} ${c.y}`,
@@ -301,8 +229,8 @@ function PreviewObject({ station }) {
     `A ${rx} ${ry} 0 0 1 ${c.x - rx} ${c.y}`,
     'Z',
   ].join(' ');
-  const shineArc = `M ${c.x - rx + 6} ${c.y - 9} C ${c.x - rx + 7} ${c.y - 24}, ${c.x - 10} ${c.y - 31}, ${c.x - 4} ${c.y - 32}`;
-  const apexY = c.y - 36.5;
+  const shineArc = `M ${c.x - rx + 6} ${c.y - 9} C ${c.x - rx + 7} ${c.y - 25}, ${c.x - 10} ${c.y - 33}, ${c.x - 4} ${c.y - 34}`;
+  const apexY = c.y - 38;
 
   return (
     <g className="aw-world__object">
@@ -316,7 +244,9 @@ function PreviewObject({ station }) {
             ? 'aw-world__face-ok'
             : state === 'active'
               ? 'aw-world__face-accent-top'
-              : 'aw-world__window'
+              : state === 'warn'
+                ? 'aw-world__face-warn'
+                : 'aw-world__window'
         }
         points={doorPts}
       />
@@ -333,6 +263,7 @@ function PreviewObject({ station }) {
       />
       <path className="aw-world__cloche-shine" d={shineArc} />
       <circle className={`aw-world__beacon aw-world__beacon--${state}`} cx={c.x} cy={apexY} r={4} />
+      <CountBadge x={x + 0.38} y={y - 0.22} z={0.92} count={meta?.driftCount ?? 0} />
     </g>
   );
 }
@@ -343,11 +274,11 @@ function CodeObject({ station }) {
   const y0 = y - 0.4;
   const w = 0.84;
   const d = 0.8;
-  const h = 1.24;
+  const h = 1.18;
   const topTone = state === 'bad' ? 'bad' : state === 'warn' ? 'warn' : state === 'active' ? 'accent' : 'base';
 
-  const drawerTops = [0.42, 0.82];
-  const handles = [0.22, 0.62, 1.02];
+  const drawerTops = [0.4, 0.78];
+  const handles = [0.21, 0.59, 0.97];
   const beaconPt = iso(x0 + w - 0.14, y0 + 0.14, h + 0.04);
 
   return (
@@ -358,69 +289,24 @@ function CodeObject({ station }) {
         const b = iso(x0 + w - 0.05, y0 + d, dz);
         return <line key={dz} className="aw-world__ink-line" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />;
       })}
-      <IsoBox x={x0 + 0.08} y={y0 + d} z={0.44} dx={w - 0.16} dy={0.22} dz={0.34} />
+      <IsoBox x={x0 + 0.08} y={y0 + d} z={0.42} dx={w - 0.16} dy={0.22} dz={0.32} />
       <IsoBox
         x={x0 + 0.16}
         y={y0 + d + 0.04}
-        z={0.78}
+        z={0.74}
         dx={0.26}
         dy={0.08}
         dz={0.12}
         tone={state === 'ok' ? 'ok' : state === 'bad' ? 'bad' : state === 'warn' ? 'warn' : 'base'}
       />
-      <IsoBox x={x0 + 0.45} y={y0 + d + 0.06} z={0.78} dx={0.24} dy={0.08} dz={0.09} />
+      <IsoBox x={x0 + 0.45} y={y0 + d + 0.06} z={0.74} dx={0.24} dy={0.08} dz={0.09} />
       {handles.map((hz) => {
-        const yFace = hz === 0.62 ? y0 + d + 0.22 : y0 + d;
+        const yFace = hz === 0.59 ? y0 + d + 0.22 : y0 + d;
         const a = iso(x - 0.13, yFace, hz);
         const b = iso(x + 0.13, yFace, hz);
         return <line key={hz} className="aw-world__ink-line" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />;
       })}
       <circle className={`aw-world__beacon aw-world__beacon--${state}`} cx={beaconPt.x} cy={beaconPt.y} r={4} />
-    </g>
-  );
-}
-
-function DeployObject({ station }) {
-  const { x, y, state } = station;
-  const bedX = x - 0.64;
-  const bedY = y - 0.32;
-  const bedW = 1.28;
-  const bedD = 0.64;
-  const bedH = 0.22;
-
-  const crateTone =
-    state === 'active' ? 'accent' : state === 'ok' ? 'ok' : state === 'warn' ? 'warn' : state === 'bad' ? 'bad' : 'base';
-
-  const rollers = [-0.46, -0.22, 0.02, 0.26, 0.48].map((rx) => {
-    const a = iso(x + rx, bedY + 0.08, bedH);
-    const b = iso(x + rx, bedY + bedD - 0.08, bedH);
-    return { rx, a, b };
-  });
-
-  const hookTop = iso(x - 0.04, y, 0.98);
-  const hookBot = iso(x - 0.04, y, 0.62);
-  const beaconPt = iso(x + 0.32, y - 0.32, 1.14);
-
-  return (
-    <g className="aw-world__object">
-      <IsoBox x={bedX} y={bedY} z={0} dx={bedW} dy={bedD} dz={bedH} />
-      {rollers.map((r) => (
-        <line key={r.rx} className="aw-world__detail-line" x1={r.a.x} y1={r.a.y} x2={r.b.x} y2={r.b.y} />
-      ))}
-      <IsoBox x={x - 0.08} y={bedY - 0.08} z={0} dx={0.16} dy={0.14} dz={1.04} />
-      <IsoBox x={x - 0.24} y={y - 0.18} z={bedH} dx={0.42} dy={0.36} dz={0.38} tone={crateTone} />
-      <IsoBox x={x - 0.08} y={bedY + bedD - 0.06} z={0} dx={0.16} dy={0.14} dz={1.04} />
-      <IsoBox
-        x={x - 0.12}
-        y={bedY - 0.12}
-        z={0.98}
-        dx={0.24}
-        dy={bedD + 0.24}
-        dz={0.14}
-        tone={state === 'active' ? 'accent' : 'base'}
-      />
-      <line className="aw-world__ink-line" x1={hookTop.x} y1={hookTop.y} x2={hookBot.x} y2={hookBot.y} />
-      <circle className={`aw-world__beacon aw-world__beacon--${state}`} cx={beaconPt.x} cy={beaconPt.y} r={3.8} />
     </g>
   );
 }
@@ -431,8 +317,9 @@ function AgentObject({ station }) {
   const y0 = y - 0.42;
   const w = 1.12;
   const d = 0.84;
-  const deskZ = 0.52;
+  const deskZ = 0.5;
   const working = state === 'active';
+  const stalled = state === 'bad';
 
   const screenPts = isoPoints([
     [x - 0.22, y0 + 0.28, deskZ + 0.2],
@@ -457,9 +344,12 @@ function AgentObject({ station }) {
         dx={0.58}
         dy={0.14}
         dz={0.44}
-        tone={working ? 'accent' : 'base'}
+        tone={stalled ? 'bad' : working ? 'accent' : state === 'warn' ? 'warn' : 'base'}
       />
-      <polygon className={working ? 'aw-world__window aw-world__window--lit' : 'aw-world__window'} points={screenPts} />
+      <polygon
+        className={stalled ? 'aw-world__face-bad' : working ? 'aw-world__window aw-world__window--lit' : 'aw-world__window'}
+        points={screenPts}
+      />
       <IsoBox x={x - 0.14} y={y0 + 0.44} z={deskZ + 0.09} dx={0.42} dy={0.2} dz={0.04} />
       <IsoBox
         x={x0 + 0.1}
@@ -471,7 +361,7 @@ function AgentObject({ station }) {
         tone={working ? 'accent' : 'base'}
       />
       <line className="aw-world__detail-line" x1={c1a.x} y1={c1a.y} x2={c1b.x} y2={c1b.y} />
-      <CountBadge x={x + 0.38} y={y - 0.22} z={deskZ + 0.68} count={meta?.count ?? 0} />
+      <CountBadge x={x + 0.38} y={y - 0.22} z={deskZ + 0.68} count={meta?.count ?? 0} tone={stalled ? 'bad' : 'accent'} />
     </g>
   );
 }
@@ -503,7 +393,7 @@ function RequestObject({ station }) {
             dx={w - 0.34}
             dy={d - 0.32}
             dz={0.08}
-            tone={i === sheets - 1 && state === 'active' ? 'accent' : 'base'}
+            tone={i === sheets - 1 && state === 'warn' ? 'warn' : i === sheets - 1 && state === 'active' ? 'accent' : 'base'}
           />
         ))
       )}
@@ -518,16 +408,10 @@ function StationGeometry({ station }) {
   switch (station.key) {
     case 'hosting':
       return <HostingObject station={station} />;
-    case 'https':
-      return <HttpsObject station={station} />;
-    case 'domain':
-      return <DomainObject station={station} />;
     case 'preview':
       return <PreviewObject station={station} />;
     case 'code':
       return <CodeObject station={station} />;
-    case 'deploy':
-      return <DeployObject station={station} />;
     case 'agent':
       return <AgentObject station={station} />;
     case 'request':
@@ -537,7 +421,85 @@ function StationGeometry({ station }) {
   }
 }
 
-/** Setup check details mapped onto a station (label, detail, Who, optional Checked time). */
+/** Real operator actions per station. Every station offers at least one real next step. */
+function actionsForStation(station, onAction) {
+  const items = [];
+  if (station.key === 'request') {
+    if (onAction) {
+      items.push({ id: 'open-work', label: 'Open work', primary: true, run: () => onAction('work', station) });
+      items.push({ id: 'add-work', label: 'Add work', run: () => onAction('add_work', station) });
+    }
+  } else if (station.key === 'agent') {
+    if (onAction) {
+      items.push({ id: 'open-activity', label: 'Inspect activity', primary: true, run: () => onAction('activity', station) });
+    }
+  } else if (station.key === 'code') {
+    if (station.meta?.repoUrl) {
+      items.push({ id: 'open-repo', label: 'Open repository', href: station.meta.repoUrl, primary: true });
+    }
+    if (onAction) {
+      items.push({
+        id: 'manage-repo',
+        label: station.meta?.repoSlug ? 'Manage repository' : 'Link repository',
+        primary: !station.meta?.repoUrl,
+        run: () => onAction(station.meta?.repoSlug ? 'repo' : 'link_repo', station),
+      });
+    }
+  } else if (station.key === 'preview') {
+    if (station.meta?.previewUrl) {
+      items.push({ id: 'open-preview', label: 'Open preview', href: station.meta.previewUrl, primary: true });
+    }
+    if (onAction) {
+      items.push({
+        id: 'manage-preview',
+        label: station.meta?.ahead ? 'Publish & hosting' : 'Manage hosting',
+        primary: !station.meta?.previewUrl,
+        run: () => onAction('hosting', station),
+      });
+    }
+  } else if (station.key === 'hosting') {
+    if (station.meta?.liveUrl && station.state !== 'off') {
+      items.push({ id: 'open-live', label: 'Open live site', href: station.meta.liveUrl, primary: true });
+    }
+    if (onAction) {
+      items.push({
+        id: 'manage-hosting',
+        label: station.state === 'off' ? 'Set up hosting' : 'Hosting & rollback',
+        primary: !(station.meta?.liveUrl && station.state !== 'off'),
+        run: () => onAction('hosting', station),
+      });
+    }
+  }
+  return items;
+}
+
+function StationActions({ station, onAction, compact = false }) {
+  const actions = actionsForStation(station, onAction);
+  if (!actions.length) return null;
+  return (
+    <div className={compact ? 'aw-world__actions aw-world__actions--compact' : 'aw-world__actions'}>
+      {actions.map((act) =>
+        act.href ? (
+          <a
+            key={act.id}
+            className={act.primary ? 'aw-btn aw-btn--sm aw-world__action-link' : 'aw-btn aw-btn--sm aw-btn--ghost aw-world__action-link'}
+            href={act.href}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {act.label} ↗
+          </a>
+        ) : (
+          <Button key={act.id} size="sm" kind={act.primary ? 'default' : 'ghost'} onClick={act.run}>
+            {act.label}
+          </Button>
+        ),
+      )}
+    </div>
+  );
+}
+
+/** Setup check details mapped onto a station. */
 function ChecksList({ checks, t }) {
   if (!Array.isArray(checks) || checks.length === 0) return null;
   return (
@@ -570,15 +532,15 @@ function ChecksList({ checks, t }) {
 }
 
 /** Operator-only ticket attention counts shown on agent and request station cards. */
-function OperatorExtras({ station }) {
+function OperatorExtras({ station, inline = false }) {
   if (station.key !== 'agent' && station.key !== 'request') return null;
   const needsYou = station.meta?.needsYou;
   const stalled = station.meta?.stalled;
   if (needsYou == null && stalled == null) return null;
 
   return (
-    <div className="aw-world__ops">
-      <span className="aw-world__status-label">Operator</span>
+    <div className={inline ? 'aw-world__ops aw-world__ops--inline' : 'aw-world__ops'}>
+      {!inline ? <span className="aw-world__status-label">Operator</span> : null}
       <div className="aw-world__op-chips">
         {needsYou != null ? (
           <span className={needsYou > 0 ? 'aw-world__op-chip aw-world__op-chip--warn' : 'aw-world__op-chip'}>
@@ -592,6 +554,29 @@ function OperatorExtras({ station }) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+/** Hosting-specific HTTPS and last-publish detail rows (absorbed from https + domain + deploy). */
+function HostingDetails({ station }) {
+  if (station.key !== 'hosting') return null;
+  const { httpsText, httpsVerified, deployTime } = station.meta ?? {};
+  if (!httpsText && !deployTime) return null;
+  return (
+    <dl className="aw-world__meta">
+      {httpsText ? (
+        <>
+          <dt>HTTPS</dt>
+          <dd className={httpsVerified ? 'aw-world__meta-ok' : undefined}>{httpsText}</dd>
+        </>
+      ) : null}
+      {deployTime ? (
+        <>
+          <dt>Last published</dt>
+          <dd>{deployTime}</dd>
+        </>
+      ) : null}
+    </dl>
   );
 }
 
@@ -618,11 +603,15 @@ function DriftLine({ drift, onPick, t }) {
           {drift.items.map((item) => (
             <li key={item.key}>
               {item.ticketId !== null ? (
-                <button type="button" className="aw-world__drift-item" onClick={() => onPick?.(item.ticketId)}>{item.title}</button>
+                <button type="button" className="aw-world__drift-item" onClick={() => onPick?.(item.ticketId)}>
+                  {item.title}
+                </button>
               ) : (
                 <span className="aw-world__drift-item">{item.title}</span>
               )}
-              {item.age ? <span className="aw-world__drift-age">{tx(t, 'world.drift.onPreview', 'On preview {age}', { age: item.age })}</span> : null}
+              {item.age ? (
+                <span className="aw-world__drift-age">{tx(t, 'world.drift.onPreview', 'On preview {age}', { age: item.age })}</span>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -632,8 +621,7 @@ function DriftLine({ drift, onPick, t }) {
 }
 
 /**
- * Interactive isometric "project world" map for the admin project overview.
- * No browser HTTPS probe is performed.
+ * Interactive isometric "project world" map for the admin project cockpit.
  */
 export function ProjectWorld({
   project,
@@ -644,6 +632,7 @@ export function ProjectWorld({
   now,
   initialStation = 'hosting',
   onSelect,
+  onAction,
 }) {
   const stations = useMemo(
     () => stationsFor({ project, sites, tickets, deploys, t, now }),
@@ -656,17 +645,24 @@ export function ProjectWorld({
     [stations],
   );
 
+  // Pipeline order for arrow keys and narrow vertical route list.
+  const orderedStations = useMemo(
+    () => STATION_ORDER.map((k) => stations.find((s) => s.key === k)).filter(Boolean),
+    [stations],
+  );
+
   const cables = useMemo(() => cablesFor(stations), [stations]);
   const drift = useMemo(
     () => unshippedPreview({ project, sites, deploys, tickets: tickets ?? [], t, now }),
     [project, sites, deploys, tickets, t, now],
   );
-  const dots = useMemo(() => floorDots(stations, 0.42), [stations]);
 
-  const [selectedKey, setSelectedKey] = useState(initialStation);
+  const resolvedInitial = STATION_ORDER.includes(initialStation) ? initialStation : 'hosting';
+  const [selectedKey, setSelectedKey] = useState(resolvedInitial);
+  const [contextMenu, setContextMenu] = useState(null);
+  const stationRefs = useRef({});
 
-  // A request's journey across the map: the same story the client sees.
-  // undefined = follow the default (most recent open request); null = all stations.
+  // Request journey trace: undefined = follow default open request; null = all stations.
   const [journeyId, setJourneyId] = useState(undefined);
   const defaultTicket = useMemo(() => defaultJourneyTicket(project, tickets ?? []), [project, tickets]);
   const pillTickets = useMemo(
@@ -682,9 +678,69 @@ export function ProjectWorld({
   const journey = useMemo(() => (followed ? journeyFor(followed, { sites, t, now }) : null), [followed, sites, t, now]);
   const activeStation = stations.find((s) => s.key === selectedKey) ?? stations[0];
 
-  const activateStation = (key, emit) => {
+  // Close station context menu on Escape or outside click.
+  useEffect(() => {
+    if (!contextMenu) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    const onPointer = () => setContextMenu(null);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('pointerdown', onPointer);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('pointerdown', onPointer);
+    };
+  }, [contextMenu]);
+
+  const selectStation = (key, emit = true) => {
     setSelectedKey(key);
     if (emit) onSelect?.(key);
+  };
+
+  const triggerPrimaryAction = (station) => {
+    const actions = actionsForStation(station, onAction);
+    const first = actions[0];
+    if (!first) {
+      onSelect?.(station.key);
+      return;
+    }
+    if (first.href && typeof window !== 'undefined') {
+      window.open(first.href, '_blank', 'noopener,noreferrer');
+    } else if (first.run) {
+      first.run();
+    }
+  };
+
+  const onStationKeyDown = (e, station) => {
+    const idx = orderedStations.findIndex((s) => s.key === station.key);
+    if (idx === -1) return;
+    let nextIdx = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextIdx = (idx + 1) % orderedStations.length;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') nextIdx = (idx - 1 + orderedStations.length) % orderedStations.length;
+    else if (e.key === 'Home') nextIdx = 0;
+    else if (e.key === 'End') nextIdx = orderedStations.length - 1;
+
+    if (nextIdx !== null) {
+      e.preventDefault();
+      const target = orderedStations[nextIdx];
+      selectStation(target.key, false);
+      stationRefs.current[target.key]?.focus();
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      selectStation(station.key, true);
+      triggerPrimaryAction(station);
+    }
+  };
+
+  const openContextMenu = (e, station) => {
+    const actions = actionsForStation(station, onAction);
+    if (!actions.length) return;
+    e.preventDefault();
+    selectStation(station.key, false);
+    setContextMenu({ station, actions, x: e.clientX, y: e.clientY });
   };
 
   const floorPlate = useMemo(
@@ -699,103 +755,87 @@ export function ProjectWorld({
   );
 
   const visitorPt = iso(VISITOR_POS.x, VISITOR_POS.y, 0);
-  const visitorNext = iso(STATION_POSITIONS.domain.x, STATION_POSITIONS.domain.y, 0);
-  const visitorsZonePt = iso(2.55, 5.25, 0);
-  const workshopZonePt = iso(6.6, 5.2, 0);
+  const visitorNext = iso(STATION_POSITIONS.hosting.x, STATION_POSITIONS.hosting.y, 0);
 
   const [stateKey, stateDefault] = STATE_LABEL[activeStation.state] ?? STATE_LABEL.off;
   const stateBadgeText = tx(t, stateKey, stateDefault);
 
   return (
     <div className="aw-world-wrap">
-      {pillTickets.length ? (
-        <div className="aw-world__journeys" role="group" aria-label={tx(t, 'world.journey.pills', 'Follow a request')}>
-          {pillTickets.map((tk) => (
-            <button
-              key={String(tk.id)}
-              type="button"
-              className={`aw-world__journey-pill is-${tk.status}`}
-              aria-pressed={followed ? String(followed.id) === String(tk.id) : false}
-              onClick={() => setJourneyId(tk.id)}
-              title={`#${tk.id} ${tk.title ?? ''}`}
-            >
-              <span className="aw-world__journey-dot" aria-hidden="true" />
-              {tk.title ?? `#${tk.id}`}
-            </button>
-          ))}
-          <button
-            type="button"
-            className="aw-world__journey-pill is-all"
-            aria-pressed={!followed}
-            onClick={() => setJourneyId(null)}
-          >
-            {tx(t, 'world.journey.all', 'All stations')}
-          </button>
+      {pillTickets.length || drift ? (
+        <div className="aw-world__bar">
+          {pillTickets.length ? (
+            <div className="aw-world__journeys" role="group" aria-label={tx(t, 'world.journey.pills', 'Follow a request')}>
+              {pillTickets.map((tk) => (
+                <button
+                  key={String(tk.id)}
+                  type="button"
+                  className={`aw-world__journey-pill is-${tk.status}`}
+                  aria-pressed={followed ? String(followed.id) === String(tk.id) : false}
+                  onClick={() => setJourneyId(tk.id)}
+                  title={`#${tk.id} ${tk.title ?? ''}`}
+                >
+                  <span className="aw-world__journey-dot" aria-hidden="true" />
+                  <span className="aw-world__journey-label">{tk.title ?? `#${tk.id}`}</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                className="aw-world__journey-pill is-all"
+                aria-pressed={!followed}
+                onClick={() => setJourneyId(null)}
+              >
+                {tx(t, 'world.journey.all', 'All stations')}
+              </button>
+            </div>
+          ) : null}
+          <DriftLine drift={drift} onPick={(id) => setJourneyId(id)} t={t} />
         </div>
       ) : null}
-      <DriftLine drift={drift} onPick={(id) => setJourneyId(id)} t={t} />
+
+      {/* Wide view: isometric map + quiet inspector */}
       <figure className="aw-world">
         <div className="aw-world__stage">
           <svg
             className="aw-world__svg"
             viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
             preserveAspectRatio="xMidYMid meet"
-            role="img"
-            aria-label={tx(t, 'world.mapLabel', 'Project health: how requests, code and deploys fit together')}
+            role="group"
+            aria-label={tx(t, 'world.mapLabel', 'Project map: requests, builder, code, preview and live site')}
           >
-            {/* Dot-matrix isometric floor */}
+            {/* Clean isometric floor plate (no decorative dot-matrix noise) */}
             <polygon className="aw-world__floor-plate" points={floorPlate} />
-            <g aria-hidden="true">
-              {dots.map((d) => (
-                <circle
-                  key={d.id}
-                  className={d.active ? 'aw-world__dot aw-world__dot--active' : 'aw-world__dot'}
-                  cx={d.x}
-                  cy={d.y}
-                  r={d.active ? 2 : 1.25}
-                />
-              ))}
-            </g>
 
-            {/* Subtle floor zone captions */}
-            <text className="aw-world__zone-label" x={visitorsZonePt.x} y={visitorsZonePt.y} textAnchor="middle">
-              {tx(t, 'world.zone.visitors', 'Visitors')}
-            </text>
-            <text className="aw-world__zone-label" x={workshopZonePt.x} y={workshopZonePt.y} textAnchor="middle">
-              {tx(t, 'world.zone.workshop', 'Workshop')}
-            </text>
-
-            {/* Isometric connecting cables / roads */}
+            {/* Isometric connecting cables / roads — static, no idle motion */}
             <g aria-hidden="true">
               {cables.map((c) => {
                 const p1 = iso(c.points[0][0], c.points[0][1], 0);
                 const p2 = iso(c.points[1][0], c.points[1][1], 0);
                 const dPath = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
+                const lit = journey && c.flow === 'build' ? journey.activeCableIds.includes(c.id) : c.active;
                 return (
                   <g key={c.id}>
                     <path
-                      className={c.connected ? 'aw-world__cable-base is-connected' : 'aw-world__cable-base'}
+                      className={
+                        lit
+                          ? 'aw-world__cable-base is-lit'
+                          : c.connected
+                            ? 'aw-world__cable-base is-connected'
+                            : 'aw-world__cable-base'
+                      }
                       d={dPath}
                     />
-                    {(journey && c.flow === 'build' ? journey.activeCableIds.includes(c.id) : c.active) ? (
-                      <path className="aw-world__cable-flow" d={dPath} />
-                    ) : null}
-                    <CableArrow
-                      p1={p1}
-                      p2={p2}
-                      u={0.5}
-                      active={journey && c.flow === 'build' ? journey.activeCableIds.includes(c.id) : c.active}
-                    />
+                    <CableArrow p1={p1} p2={p2} u={0.5} active={lit} />
                   </g>
                 );
               })}
             </g>
 
-            {/* Visitor entry floor cue */}
+            {/* Quiet visitor entry cue into Live site */}
             <g aria-hidden="true">
-              <circle className="aw-world__face-top" cx={visitorPt.x} cy={visitorPt.y} r={7.5} />
-              <CableArrow p1={visitorPt} p2={visitorNext} u={0.14} active={false} />
-              <text className="aw-world__micro" x={visitorPt.x - 24} y={visitorPt.y + 18}>
+              <circle className="aw-world__face-top" cx={visitorPt.x} cy={visitorPt.y} r={6.5} />
+              <CableArrow p1={visitorPt} p2={visitorNext} u={0.2} active={false} />
+              <text className="aw-world__micro" x={visitorPt.x - 28} y={visitorPt.y + 18}>
                 {tx(t, 'world.visitor', 'Visitor')}
               </text>
             </g>
@@ -819,10 +859,15 @@ export function ProjectWorld({
               ]);
 
               const center = iso(station.x, station.y, 0);
-              const off = LABEL_OFFSETS[station.key] ?? { dx: 0, dy: 42 };
-              const lx = center.x + off.dx;
-              const ly = center.y + off.dy;
-              const labelW = Math.max(66, station.shortLabel.length * 6.5 + 22);
+              const lay = LABEL_LAYOUT[station.key] ?? { x: center.x, y: center.y + 46, w: 158 };
+              const boxH = 42;
+              const bx = Math.max(6, Math.min(VIEW_WIDTH - lay.w - 6, lay.x - lay.w / 2));
+              const by = Math.max(6, Math.min(VIEW_HEIGHT - boxH - 6, lay.y - boxH / 2));
+              const cx = bx + lay.w / 2;
+              const cy = by + boxH / 2;
+              // Leader connects nearest edge of label box to the station pad center
+              const anchorX = center.x < bx ? bx : center.x > bx + lay.w ? bx + lay.w : cx;
+              const anchorY = center.y < by ? by : center.y > by + boxH ? by + boxH : cy;
 
               const isSelected = activeStation.key === station.key;
               const cls = [
@@ -838,42 +883,44 @@ export function ProjectWorld({
               return (
                 <g
                   key={station.key}
+                  ref={(el) => {
+                    stationRefs.current[station.key] = el;
+                  }}
                   className={cls}
                   role="button"
-                  tabIndex={0}
+                  tabIndex={isSelected ? 0 : -1}
                   aria-label={`${station.title}: ${station.stateText}`}
                   aria-pressed={isSelected}
-                  onMouseEnter={() => activateStation(station.key, false)}
-                  onFocus={() => activateStation(station.key, false)}
-                  onClick={() => activateStation(station.key, true)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      activateStation(station.key, true);
-                    }
-                  }}
+                  onClick={() => selectStation(station.key, true)}
+                  onContextMenu={(e) => openContextMenu(e, station)}
+                  onKeyDown={(e) => onStationKeyDown(e, station)}
                 >
                   <polygon className="aw-world__hit" points={hitPts} />
                   <polygon className="aw-world__pad" points={padPts} />
-                  <StationGeometry station={station} />
-                  {/* Compact station tag */}
-                  <g aria-hidden="true">
-                    <rect
-                      className="aw-world__tag-bg"
-                      x={lx - labelW / 2}
-                      y={ly - 10}
-                      width={labelW}
-                      height={20}
-                      rx={10}
+                  <g className="aw-world__lift">
+                    <StationGeometry station={station} />
+                  </g>
+                  {/* Readable-at-rest two-line label plate (name + 1-line status) */}
+                  <g className="aw-world__label" aria-hidden="true">
+                    <line
+                      className="aw-world__leader"
+                      x1={anchorX}
+                      y1={anchorY}
+                      x2={center.x}
+                      y2={center.y}
                     />
+                    <rect className="aw-world__tag-bg" x={bx} y={by} width={lay.w} height={boxH} rx={6} />
                     <circle
                       className={`aw-world__beacon aw-world__beacon--${station.state}`}
-                      cx={lx - labelW / 2 + 10}
-                      cy={ly}
-                      r={3.2}
+                      cx={bx + 12}
+                      cy={by + 14}
+                      r={3.8}
                     />
-                    <text className="aw-world__tag-text" x={lx + 5} y={ly + 0.5}>
+                    <text className="aw-world__tag-name" x={bx + 22} y={by + 14.5}>
                       {station.shortLabel}
+                    </text>
+                    <text className="aw-world__tag-status" x={bx + 10} y={by + 31}>
+                      {station.shortStatus || station.stateText}
                     </text>
                   </g>
                 </g>
@@ -882,69 +929,57 @@ export function ProjectWorld({
           </svg>
         </div>
 
+        {/* Quiet inspector beside the map */}
         <figcaption className="aw-world__caption" aria-live="polite">
-          <div className="aw-world__eyebrow">
-            <span>{tx(t, 'world.eyebrow', 'Project health')}</span>
-            {project?.name ? <span className="aw-world__project-name">{project.name}</span> : null}
-          </div>
-
           {journey ? (
             <div className="aw-world__journey">
               <span className="aw-world__status-label">
                 #{followed.id} {followed.title ?? ''}
               </span>
               <p className="aw-world__journey-sentence">{journey.sentence}</p>
-              {journey.status === 'review' && journey.previewUrl ? (
-                <a className="aw-world__journey-chip" href={journey.previewUrl} target="_blank" rel="noreferrer">
-                  {tx(t, 'world.journey.openPreview', 'Open preview')} ↗
-                </a>
-              ) : null}
-              {journey.status === 'done' && journey.siteUrl ? (
-                <a className="aw-world__journey-chip" href={journey.siteUrl} target="_blank" rel="noreferrer">
-                  {tx(t, 'world.journey.openSite', 'Open site')} ↗
-                </a>
-              ) : null}
+              <div className="aw-world__journey-links">
+                {journey.status === 'review' && journey.previewUrl ? (
+                  <a className="aw-world__journey-chip" href={journey.previewUrl} target="_blank" rel="noreferrer">
+                    {tx(t, 'world.journey.openPreview', 'Open preview')} ↗
+                  </a>
+                ) : null}
+                {journey.status === 'done' && journey.siteUrl ? (
+                  <a className="aw-world__journey-chip" href={journey.siteUrl} target="_blank" rel="noreferrer">
+                    {tx(t, 'world.journey.openSite', 'Open site')} ↗
+                  </a>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
-          <div className="aw-world__card">
+          <div className="aw-world__inspector">
             <div className="aw-world__card-top">
+              <h3 className="aw-world__title">{activeStation.title}</h3>
               <span className={`aw-world__pill aw-world__pill--${activeStation.state}`}>
                 <span className="aw-world__pill-dot" aria-hidden="true" />
                 {stateBadgeText}
               </span>
             </div>
-            <h3 className="aw-world__title">{activeStation.title}</h3>
             <p className="aw-world__explain">{activeStation.explain}</p>
             <div className="aw-world__status-box">
               <span className="aw-world__status-label">{tx(t, 'world.currentStatus', 'Current status')}</span>
               <p className="aw-world__status-value">{activeStation.stateText}</p>
             </div>
+            <HostingDetails station={activeStation} />
             <OperatorExtras station={activeStation} />
             <ChecksList checks={activeStation.checks} t={t} />
+            <StationActions station={activeStation} onAction={onAction} />
           </div>
 
-          <div className="aw-world__nav" role="group" aria-label={tx(t, 'world.stationsNav', 'Map stations')}>
-            {stations.map((s) => (
-              <button
-                key={s.key}
-                type="button"
-                className="aw-world__chip"
-                aria-pressed={activeStation.key === s.key}
-                onClick={() => activateStation(s.key, true)}
-              >
-                <span className={`aw-world__chip-dot aw-world__chip-dot--${s.state}`} aria-hidden="true" />
-                {s.shortLabel}
-              </button>
-            ))}
-          </div>
+          <p className="aw-world__kbd-hint">Click or use arrow keys to inspect · Enter opens</p>
         </figcaption>
 
         {/* Full text summary of every station and its state for screen readers */}
         <ul className="aw-world__sr-only" aria-label={tx(t, 'world.summaryLabel', 'Project health station status')}>
-          {stations.map((s) => (
+          {orderedStations.map((s) => (
             <li key={s.key}>
               {s.title}: {s.stateText}. {s.explain}
+              {s.key === 'hosting' && s.meta?.httpsText ? ` HTTPS: ${s.meta.httpsText}.` : ''}
               {operatorSummaryText(s)}
               {s.checks?.length
                 ? ` ${s.checks
@@ -955,6 +990,80 @@ export function ProjectWorld({
           ))}
         </ul>
       </figure>
+
+      {/* Narrow fallback (≤900px viewport or narrow container): vertical route list */}
+      <ol className="aw-world__route" aria-label={tx(t, 'world.routeLabel', 'Project route')}>
+        {orderedStations.map((s) => {
+          const [sk, sd] = STATE_LABEL[s.state] ?? STATE_LABEL.off;
+          const badge = tx(t, sk, sd);
+          const isCurrent = journey?.currentKey === s.key;
+          const readyChecks = (s.checks ?? []).filter((c) => c.state === 'ready').length;
+          return (
+            <li key={s.key} className={`aw-world__route-item is-${s.state}${isCurrent ? ' is-journey-current' : ''}`}>
+              <div className="aw-world__route-head">
+                <span className={`aw-world__route-dot aw-world__route-dot--${s.state}`} aria-hidden="true" />
+                <strong className="aw-world__route-name">{s.title}</strong>
+                <span className={`aw-world__pill aw-world__pill--${s.state}`}>{badge}</span>
+              </div>
+              <p className="aw-world__route-status">{s.stateText}</p>
+              {s.key === 'hosting' && s.meta?.httpsText ? (
+                <p className="aw-world__route-sub">HTTPS: {s.meta.httpsText}</p>
+              ) : null}
+              <OperatorExtras station={s} inline />
+              {s.checks?.length ? (
+                <details className="aw-world__route-checks">
+                  <summary>
+                    {tx(t, 'world.check.section', 'Setup checks')} ({readyChecks}/{s.checks.length} ok)
+                  </summary>
+                  <ChecksList checks={s.checks} t={t} />
+                </details>
+              ) : null}
+              <StationActions station={s} onAction={onAction} compact />
+            </li>
+          );
+        })}
+      </ol>
+
+      {/* Right-click station context menu */}
+      {contextMenu ? (
+        <div
+          className="aw-world__ctxmenu"
+          role="menu"
+          aria-label={`${contextMenu.station.title} actions`}
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="aw-world__ctxhead">{contextMenu.station.title}</div>
+          {contextMenu.actions.map((act) =>
+            act.href ? (
+              <a
+                key={act.id}
+                role="menuitem"
+                className="aw-world__ctxitem"
+                href={act.href}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setContextMenu(null)}
+              >
+                {act.label} ↗
+              </a>
+            ) : (
+              <button
+                key={act.id}
+                type="button"
+                role="menuitem"
+                className="aw-world__ctxitem"
+                onClick={() => {
+                  setContextMenu(null);
+                  act.run();
+                }}
+              >
+                {act.label}
+              </button>
+            ),
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

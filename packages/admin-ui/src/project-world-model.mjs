@@ -1,40 +1,43 @@
 /*
- * Pure model & isometric geometry for Admin ProjectWorld.
+ * Pure model & isometric geometry for Admin ProjectWorld (M1 5-station topology).
  * Zero React dependencies so state derivation and projection math can be
  * tested directly with node:test.
  *
- * Origin: ported from ptechsolutions-site
- *   - src/components/portal/project-world-model.js
- *   - src/components/portal/ProjectWorld.jsx
- *   - src/components/portal/project-world.css
- *   - src/components/portal/project-world-model.test.mjs
+ * Station verdicts implemented from docs/admin-ui-refresh/02-isometric-review.md:
+ *   - Keep:  request, agent, code, preview, hosting
+ *   - Merge: domain + https → hosting (Live site)
+ *   - Merge: deploy → preview (build/publish pipeline) & hosting (last published)
  *
- * Keep station geometry and derivation logic in sync with the portal model.
- * Admin differences:
- *   - Browser HTTPS probe omitted (operator view must not ping client sites).
+ * Admin guarantees:
+ *   - No browser HTTPS reachability probe (operator view never pings client sites).
  *   - Supports snake_case admin API aliases (repo_error, repo_wanted).
  *   - Computes operator ticket counts (needsYou, stalled > 45m) for agent/request.
+ *   - Honest HTTPS verification: only verified on explicit https:// + ready site
+ *     or an explicit ready ssl/https setup check.
  */
 
 export const ISO_COS = Math.cos(Math.PI / 6); // cos(30deg) ≈ 0.8660254
 export const ISO_SIN = 0.5; // sin(30deg)
 
 export const DEFAULT_ISO = Object.freeze({
-  scale: 44,
-  originX: 325,
-  originY: 92,
+  scale: 48,
+  originX: 300,
+  originY: 66,
 });
 
 export const FLOOR_BOUNDS = Object.freeze({
-  minX: 0,
-  maxX: 8.6,
-  minY: 0,
-  maxY: 5.6,
+  minX: 0.2,
+  maxX: 6.8,
+  minY: 0.2,
+  maxY: 4.4,
 });
 
 export const OPEN_TICKET_STATUSES = new Set(['new', 'approved', 'in_progress', 'review']);
 export const ACTIVE_TICKET_STATUSES = new Set(['in_progress', 'review']);
 export const STALL_MS = 45 * 60 * 1000;
+
+/** Pipeline order used for keyboard arrow traversal and the narrow route list. */
+export const STATION_ORDER = Object.freeze(['request', 'agent', 'code', 'preview', 'hosting']);
 
 /**
  * Isometric projection with 30° axes.
@@ -137,22 +140,19 @@ export function tx(t, key, english, vars) {
   );
 }
 
-/** Station grid coordinates arranged along crisp 30° axes. */
+/** Station grid coordinates arranged along crisp 30° axes (5 functional stations). */
 export const STATION_POSITIONS = Object.freeze({
-  hosting: { x: 1.5, y: 1.2, padHalf: 0.82 },
-  https: { x: 1.5, y: 2.6, padHalf: 0.54 },
-  domain: { x: 1.5, y: 4.2, padHalf: 0.64 },
-  preview: { x: 3.5, y: 1.2, padHalf: 0.68 },
-  deploy: { x: 5.5, y: 1.2, padHalf: 0.74 },
-  code: { x: 7.5, y: 1.2, padHalf: 0.68 },
-  request: { x: 5.0, y: 3.5, padHalf: 0.66 },
-  agent: { x: 7.5, y: 3.5, padHalf: 0.74 },
+  hosting: { x: 1.3, y: 1.3, padHalf: 0.78 },
+  preview: { x: 3.5, y: 1.3, padHalf: 0.68 },
+  code: { x: 5.7, y: 1.3, padHalf: 0.68 },
+  request: { x: 2.8, y: 3.4, padHalf: 0.66 },
+  agent: { x: 5.3, y: 3.4, padHalf: 0.72 },
 });
 
-export const VISITOR_POS = Object.freeze({ x: 1.5, y: 5.4 });
+export const VISITOR_POS = Object.freeze({ x: 1.3, y: 2.75 });
 
-/** Generate dot-matrix floor coordinates, tagging which station tile owns each dot. */
-export function floorDots(stations = [], step = 0.4, opts = DEFAULT_ISO) {
+/** Optional floor dot coordinates (kept exported for compatibility; omitted from M1 SVG). */
+export function floorDots(stations = [], step = 0.5, opts = DEFAULT_ISO) {
   const dots = [];
   const activeZones = stations
     .filter((s) => s.state === 'active')
@@ -199,6 +199,11 @@ function cleanString(v) {
   return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
+function clip(text, max = 22) {
+  if (!text) return '';
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
 function hostnameOf(raw) {
   const s = cleanString(raw);
   if (!s) return null;
@@ -206,10 +211,24 @@ function hostnameOf(raw) {
   return stripped || null;
 }
 
+function safeHref(raw) {
+  const s = cleanString(raw);
+  if (!s) return null;
+  const ssh = /^git@([^:]+):(.+)$/.exec(s);
+  const candidate = ssh ? `https://${ssh[1]}/${ssh[2]}` : /^https?:\/\//i.test(s) ? s : null;
+  if (!candidate) return null;
+  try {
+    const u = new URL(candidate);
+    if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password) return null;
+    return u.href.replace(/\.git\/?$/, '');
+  } catch {
+    return null;
+  }
+}
+
 function extractAddress(site) {
   if (!site) return { raw: null, hostname: null, hasExplicitHttps: false, hasExplicitHttp: false };
 
-  // Check explicit URL fields first to inspect protocol honestly.
   const urlCandidates = [
     cleanString(site.customDomain),
     cleanString(site.productionUrl),
@@ -219,10 +238,8 @@ function extractAddress(site) {
 
   const primaryUrl = urlCandidates[0] ?? null;
   const hasExplicitHttp = Boolean(primaryUrl && /^http:\/\//i.test(primaryUrl));
-  const hasExplicitHttps =
-    !hasExplicitHttp && urlCandidates.some((u) => /^https:\/\//i.test(u));
+  const hasExplicitHttps = !hasExplicitHttp && urlCandidates.some((u) => /^https:\/\//i.test(u));
 
-  // Display hostname prefers custom domain / domain / hostname, then production/url/preview.
   const displayRaw =
     cleanString(site.customDomain) ??
     cleanString(site.domain) ??
@@ -247,6 +264,7 @@ function shortRepo(repo) {
   if (!s) return null;
   return s
     .replace(/^https?:\/\/(www\.)?github\.com\//i, '')
+    .replace(/^git@github\.com:/i, '')
     .replace(/\.git$/i, '')
     .replace(/\/+$/, '');
 }
@@ -254,7 +272,6 @@ function shortRepo(repo) {
 function normalizeTimestampMs(value) {
   if (value === null || value === undefined) return null;
   if (typeof value === 'number' && Number.isFinite(value)) {
-    // Unix seconds vs milliseconds heuristic
     return value > 1e12 ? value : value * 1000;
   }
   if (typeof value === 'string' && value.trim()) {
@@ -356,38 +373,51 @@ export function operatorTicketCounts(project, tickets, now) {
 
 /* ————— setup check mapping (exact keys from worker/src/setup.ts + substrings) ————— */
 
-// Real keys from worker/src/setup.ts: brief, code, workspace, request, preview, domain.
+// Merged 5-station mapping: domain/dns/email/https/ssl → hosting; deploy → preview.
 const EXACT_CHECK_STATION = Object.freeze({
-  domain: 'domain',
-  dns: 'domain',
-  email: 'domain',
-  mail: 'domain',
-  mx: 'domain',
-  https: 'https',
-  ssl: 'https',
-  tls: 'https',
+  domain: 'hosting',
+  dns: 'hosting',
+  email: 'hosting',
+  mail: 'hosting',
+  mx: 'hosting',
+  https: 'hosting',
+  ssl: 'hosting',
+  tls: 'hosting',
   hosting: 'hosting',
   host: 'hosting',
   code: 'code',
   repo: 'code',
   github: 'code',
   preview: 'preview',
-  deploy: 'deploy',
+  deploy: 'preview',
 });
+
+function isHttpsCheck(check) {
+  const key = typeof check?.key === 'string' ? check.key.toLowerCase() : '';
+  const label = typeof check?.label === 'string' ? check.label.toLowerCase() : '';
+  const re = /https|ssl|tls|(?:^|[^a-z])cert(?:ificate)?(?:$|[^a-z])/;
+  return re.test(key) || re.test(label);
+}
+
+function isDomainCheck(check) {
+  const key = typeof check?.key === 'string' ? check.key.toLowerCase() : '';
+  const label = typeof check?.label === 'string' ? check.label.toLowerCase() : '';
+  const re = /domain|dns|e-?mail|(?:^|[^a-z])mail(?:$|[^a-z])|(?:^|[^a-z])mx(?:$|[^a-z])/;
+  return re.test(key) || re.test(label);
+}
 
 function matchCheckText(text) {
   if (!text) return null;
-  if (/https|ssl|tls|(?:^|[^a-z])cert(?:ificate)?(?:$|[^a-z])/.test(text)) return 'https';
-  if (/domain|dns|e-?mail|(?:^|[^a-z])mail(?:$|[^a-z])|(?:^|[^a-z])mx(?:$|[^a-z])/.test(text)) return 'domain';
+  if (/https|ssl|tls|(?:^|[^a-z])cert(?:ificate)?(?:$|[^a-z])/.test(text)) return 'hosting';
+  if (/domain|dns|e-?mail|(?:^|[^a-z])mail(?:$|[^a-z])|(?:^|[^a-z])mx(?:$|[^a-z])/.test(text)) return 'hosting';
   if (/repo|github|(?:^|[^a-z])git(?:$|[^a-z])|(?:^|[^a-z])code(?:$|[^a-z])/.test(text)) return 'code';
-  if (/preview|staging/.test(text)) return 'preview';
+  if (/preview|staging|deploy|publish/.test(text)) return 'preview';
   if (/hosting|(?:^|[^a-z])host(?:$|[^a-z])|cloudflare/.test(text)) return 'hosting';
-  if (/deploy|publish/.test(text)) return 'deploy';
   return null;
 }
 
 /**
- * Map a project.setup.checks entry onto its matching world station key,
+ * Map a project.setup.checks entry onto its matching 5-station world key,
  * or null if the check does not correspond to a mapped infrastructure station.
  */
 export function stationForCheck(check) {
@@ -456,48 +486,54 @@ function applyStationChecks(station, mappedChecks, t) {
   }
 
   const pendingCheck = checks.find((c) => c.state === 'pending');
-  const readyCheck = checks.find((c) => c.state === 'ready');
+  const readyHttpsCheck = checks.find((c) => c.state === 'ready' && isHttpsCheck(c));
+  const readyDomainCheck = checks.find((c) => c.state === 'ready' && isDomainCheck(c));
 
-  let { state, stateText, meta } = station;
+  let { state, stateText, shortStatus, meta } = station;
+
+  // Upgrade HTTPS metadata on hosting only on an explicit ready SSL/HTTPS check.
+  if (station.key === 'hosting' && readyHttpsCheck && !meta?.httpsVerified) {
+    meta = {
+      ...meta,
+      httpsVerified: true,
+      httpsVerifiedByCheck: true,
+      httpsText: tx(t, 'world.https.state.ok', 'Locked with HTTPS'),
+    };
+  }
 
   if (pendingCheck) {
-    if (state !== 'bad') {
+    if (state !== 'bad' && state !== 'active') {
       const wasEmpty = state === 'off' || state === 'unknown';
       state = 'warn';
       if (wasEmpty && pendingCheck.label) {
         stateText = pendingCheck.label;
+        shortStatus = clip(pendingCheck.label, 20);
       }
     }
-  } else if (
-    readyCheck &&
-    state === 'unknown' &&
-    (station.key === 'https' || station.key === 'domain')
-  ) {
+  } else if (station.key === 'hosting' && readyDomainCheck && state === 'unknown') {
     state = 'ok';
-    if (station.key === 'https') {
-      stateText = tx(t, 'world.https.state.ok', 'Locked with HTTPS');
-      meta = { ...meta, verified: true, verifiedByCheck: true };
-    } else {
-      stateText = readyCheck.detail || tx(t, 'world.domain.state.checkReady', 'Domain ready');
-      meta = { ...meta, verifiedByCheck: true };
-    }
+    const nextAddr = readyDomainCheck.detail || tx(t, 'world.domain.state.checkReady', 'Domain ready');
+    stateText = nextAddr;
+    meta = { ...meta, addressText: nextAddr, verifiedByCheck: true };
   }
 
   return {
     ...station,
     state,
     stateText,
+    shortStatus,
     meta,
     checks,
   };
 }
 
 /**
- * Derive the 8 world stations from real admin/portal project data.
+ * Derive the 5 functional world stations from real admin/portal project data.
  *
  * Returns an array of:
- *   { key, title, shortLabel, explain, state, stateText, x, y, meta, checks }
+ *   { key, title, shortLabel, shortStatus, explain, state, stateText, x, y, meta, checks }
  * where state is one of: 'ok' | 'active' | 'warn' | 'bad' | 'off' | 'unknown'.
+ * Only genuinely running/building processes use state === 'active'.
  */
 export function stationsFor({ project = null, sites = [], tickets = undefined, deploys = null, t = (k) => k, now } = {}) {
   const site = pickSite(project, sites);
@@ -511,60 +547,27 @@ export function stationsFor({ project = null, sites = [], tickets = undefined, d
   const previewDeploy = cleanString(site?.previewDeploy);
   const productionDeploy = cleanString(site?.productionDeploy);
   const previewAhead = Boolean(siteReady && previewDeploy && previewDeploy !== productionDeploy);
-  const previewUrl = cleanString(site?.previewUrl) ?? cleanString(site?.cloudflare?.previewUrl);
+  const previewUrl = safeHref(site?.previewUrl) ?? safeHref(site?.cloudflare?.previewUrl);
+  const liveUrl = safeHref(addr.raw) ?? (addr.hostname ? `https://${addr.hostname}` : null);
+  const latestDeploy = latestDeployOf(deploys);
+  const latestDeployStatus = latestDeploy ? String(latestDeploy.status ?? latestDeploy.state ?? '').toLowerCase() : '';
+  const deployTime = latestDeploy
+    ? formatDeployTime(
+        latestDeploy.created_at ?? latestDeploy.updated_at ?? latestDeploy.timestamp ?? latestDeploy.time,
+        now,
+      )
+    : null;
+  const deployFailed = ['failed', 'error', 'canceled', 'cancelled'].includes(latestDeployStatus);
+  const deployBuilding = ['building', 'running', 'deploying', 'pending', 'queued', 'in_progress'].includes(latestDeployStatus);
+  const drift = unshippedPreview({ project, sites, deploys, tickets: tickets ?? [], t, now });
 
-  // 1. Domain signpost ("Your web address")
-  let domainState = 'off';
-  let domainText = tx(t, 'world.domain.state.off', 'Not connected yet');
-  if (site) {
-    if (siteFailed) {
-      domainState = 'bad';
-      domainText = addr.hostname
-        ? tx(t, 'world.domain.state.failedHost', 'Setup stopped for {host}', { host: addr.hostname })
-        : tx(t, 'world.domain.state.failed', 'Address setup stopped');
-    } else if (siteReady) {
-      if (addr.hostname) {
-        domainState = 'ok';
-        domainText = tx(t, 'world.domain.state.live', 'Live at {host}', { host: addr.hostname });
-      } else {
-        domainState = 'unknown';
-        domainText = tx(t, 'world.domain.state.missing', 'No web address reported yet');
-      }
-    } else {
-      domainState = 'active';
-      domainText = addr.hostname
-        ? tx(t, 'world.domain.state.settingUpHost', 'Setting up {host}', { host: addr.hostname })
-        : tx(t, 'world.domain.state.settingUp', 'Setting up your web address');
-    }
-  }
-
-  // 2. Hosting building ("Where your site lives")
+  // 1. Live site (hosting + domain + https merged)
   const isCloudflare = site?.host === 'cloudflare';
   const hostLabel = isCloudflare
     ? tx(t, 'world.hosting.host.cloudflare', 'Cloudflare (your account)')
     : tx(t, 'world.hosting.host.ptech', 'PTech hosting');
-  let hostingState = 'off';
-  let hostingText = tx(t, 'world.hosting.state.none', 'No hosting set up yet');
-  if (site) {
-    if (siteFailed) {
-      hostingState = 'bad';
-      hostingText = tx(t, 'world.hosting.state.failed', '{host} — setup stopped', { host: hostLabel });
-    } else if (siteReady) {
-      hostingState = 'ok';
-      hostingText = previewAhead
-        ? tx(t, 'world.hosting.state.livePreview', 'Live on {host} (preview ready)', { host: hostLabel })
-        : tx(t, 'world.hosting.state.live', 'Live on {host}', { host: hostLabel });
-    } else {
-      hostingState = 'active';
-      hostingText = tx(t, 'world.hosting.state.building', 'Setting up on {host}', { host: hostLabel });
-    }
-  }
 
-  // 3. Padlock arch ("Secure connection (https)")
-  // Strict rule: ONLY 'ok' when site is ready AND URL explicitly uses https://.
-  // Never claim HTTPS is valid without data.
   const httpsVerified = Boolean(siteReady && addr.hasExplicitHttps);
-  const httpsState = httpsVerified ? 'ok' : 'unknown';
   let httpsText;
   if (httpsVerified) {
     httpsText = tx(t, 'world.https.state.ok', 'Locked with HTTPS');
@@ -580,73 +583,134 @@ export function stationsFor({ project = null, sites = [], tickets = undefined, d
     httpsText = tx(t, 'world.https.state.unverified', 'Unknown — HTTPS address not reported');
   }
 
-  // 4. Code repository filing cabinet ("Your code, with full history")
+  let hostingState = 'off';
+  let addressText = tx(t, 'world.domain.state.off', 'Not connected yet');
+  let hostingText = tx(t, 'world.hosting.state.none', 'No hosting set up yet');
+  let hostingShort = tx(t, 'world.hosting.short.none', 'Not live');
+
+  if (site) {
+    if (siteFailed) {
+      hostingState = 'bad';
+      addressText = addr.hostname
+        ? tx(t, 'world.domain.state.failedHost', 'Setup stopped for {host}', { host: addr.hostname })
+        : tx(t, 'world.domain.state.failed', 'Address setup stopped');
+      hostingText = tx(t, 'world.hosting.state.failed', '{host} — setup stopped', { host: hostLabel });
+      hostingShort = tx(t, 'world.hosting.short.failed', 'Setup stopped');
+    } else if (siteReady) {
+      if (addr.hostname) {
+        hostingState = 'ok';
+        addressText = tx(t, 'world.domain.state.live', 'Live at {host}', { host: addr.hostname });
+        hostingText = previewAhead
+          ? tx(t, 'world.hosting.state.livePreview', 'Live at {addr} · {host} (preview ahead)', {
+              addr: addr.hostname,
+              host: hostLabel,
+            })
+          : tx(t, 'world.hosting.state.live', 'Live at {addr} · {host}', {
+              addr: addr.hostname,
+              host: hostLabel,
+            });
+        hostingShort = clip(addr.hostname, 22);
+      } else {
+        hostingState = 'unknown';
+        addressText = tx(t, 'world.domain.state.missing', 'No web address reported yet');
+        hostingText = tx(t, 'world.hosting.state.noAddr', 'On {host} — no web address reported yet', { host: hostLabel });
+        hostingShort = tx(t, 'world.hosting.short.unknown', 'Address unknown');
+      }
+    } else {
+      hostingState = 'active';
+      addressText = addr.hostname
+        ? tx(t, 'world.domain.state.settingUpHost', 'Setting up {host}', { host: addr.hostname })
+        : tx(t, 'world.domain.state.settingUp', 'Setting up your web address');
+      hostingText = tx(t, 'world.hosting.state.building', 'Setting up on {host}', { host: hostLabel });
+      hostingShort = tx(t, 'world.hosting.short.building', 'Setting up…');
+    }
+  }
+
+  // 2. Preview & publishing (preview + deploy merged)
+  let previewState = 'off';
+  let previewText = tx(t, 'world.preview.state.off', 'No preview yet');
+  let previewShort = tx(t, 'world.preview.short.off', 'No preview');
+
+  if (deployFailed) {
+    previewState = 'bad';
+    previewText = deployTime
+      ? tx(t, 'world.deploy.state.failedAt', 'Last publish failed ({time})', { time: deployTime })
+      : tx(t, 'world.deploy.state.failed', 'Last publish failed');
+    previewShort = tx(t, 'world.preview.short.failed', 'Publish failed');
+  } else if (deployBuilding) {
+    previewState = 'active';
+    previewText = tx(t, 'world.deploy.state.building', 'Publishing update now');
+    previewShort = tx(t, 'world.preview.short.publishing', 'Publishing…');
+  } else if (site && siteFailed) {
+    previewState = 'bad';
+    previewText = tx(t, 'world.preview.state.failed', 'Preview paused — site setup stopped');
+    previewShort = tx(t, 'world.preview.short.paused', 'Paused');
+  } else if (site && siteBuilding) {
+    previewState = 'active';
+    previewText = tx(t, 'world.preview.state.building', 'Setting up preview');
+    previewShort = tx(t, 'world.preview.short.building', 'Building…');
+  } else if (site && previewDeploy) {
+    if (previewAhead) {
+      previewState = 'warn';
+      previewText = drift
+        ? drift.text
+        : tx(t, 'world.preview.state.ahead', 'A newer version is waiting to be published');
+      previewShort = drift
+        ? tx(t, 'world.preview.short.unshipped', '{n} unshipped', { n: drift.count })
+        : tx(t, 'world.preview.short.ahead', 'Ready to publish');
+    } else {
+      previewState = 'ok';
+      previewText = deployTime
+        ? tx(t, 'world.preview.state.okAt', 'Matches live · published {time}', { time: deployTime })
+        : tx(t, 'world.preview.state.ok', 'Matches your live site');
+      previewShort = tx(t, 'world.preview.short.ok', 'Matches live');
+    }
+  }
+
+  // 3. Code repository
   const repoSlug = shortRepo(project?.repo);
+  const repoUrl = safeHref(project?.repo);
   const repoError = cleanString(project?.repoError) ?? cleanString(project?.repo_error);
   const repoWanted = Boolean(project?.repoWanted || project?.repo_wanted);
   let codeState = 'off';
   let codeText = tx(t, 'world.code.state.missing', 'Not connected yet');
+  let codeShort = tx(t, 'world.code.short.missing', 'Not linked');
   if (repoError) {
     codeState = 'bad';
     codeText = tx(t, 'world.code.state.error', 'Connection problem — needs attention');
+    codeShort = tx(t, 'world.code.short.error', 'Connection error');
   } else if (repoSlug) {
     codeState = 'ok';
     codeText = tx(t, 'world.code.state.connected', 'Connected: {repo}', { repo: repoSlug });
+    codeShort = clip(repoSlug, 21);
   } else if (repoWanted) {
     codeState = 'active';
     codeText = tx(t, 'world.code.state.settingUp', 'Setting up your code repository');
+    codeShort = tx(t, 'world.code.short.settingUp', 'Setting up…');
   } else if (project?.kind === 'new') {
     codeState = 'ok';
     codeText = tx(t, 'world.code.state.ptech', 'Kept by PTech');
+    codeShort = tx(t, 'world.code.short.ptech', 'Kept by PTech');
   }
 
-  // 5. Deploy crane/conveyor ("Publishing changes")
-  const latestDeploy = latestDeployOf(deploys);
-  let deployState = 'off';
-  let deployText = tx(t, 'world.deploy.state.neutral', 'Ready for the next update');
-  let deployTime = null;
-  if (latestDeploy) {
-    const rawStatus = String(latestDeploy.status ?? latestDeploy.state ?? '').toLowerCase();
-    deployTime = formatDeployTime(
-      latestDeploy.created_at ?? latestDeploy.updated_at ?? latestDeploy.timestamp ?? latestDeploy.time,
-      now,
-    );
-    if (['failed', 'error', 'canceled', 'cancelled'].includes(rawStatus)) {
-      deployState = 'bad';
-      deployText = deployTime
-        ? tx(t, 'world.deploy.state.failedAt', 'Last publish failed ({time})', { time: deployTime })
-        : tx(t, 'world.deploy.state.failed', 'Last publish failed');
-    } else if (['building', 'running', 'deploying', 'pending', 'queued', 'in_progress'].includes(rawStatus)) {
-      deployState = 'active';
-      deployText = tx(t, 'world.deploy.state.building', 'Publishing update now');
-    } else {
-      deployState = 'ok';
-      deployText = deployTime
-        ? tx(t, 'world.deploy.state.okAt', 'Last published {time}', { time: deployTime })
-        : tx(t, 'world.deploy.state.ok', 'Latest changes published');
-    }
-  } else if (!site) {
-    deployState = 'off';
-    deployText = tx(t, 'world.deploy.state.noSite', 'Waiting for a site to publish to');
-  } else if (siteFailed) {
-    deployState = 'bad';
-    deployText = tx(t, 'world.deploy.state.paused', 'Paused — hosting setup stopped');
-  } else if (siteBuilding) {
-    deployState = 'active';
-    deployText = tx(t, 'world.deploy.state.preparing', 'Preparing first publish');
-  } else if (previewAhead) {
-    deployState = 'warn';
-    deployText = tx(t, 'world.deploy.state.previewAhead', 'New preview ready to publish');
-  }
-
-  // 6. Agent desk ("PTech's AI builder + human review")
+  // 4. Builder (agent + human review)
   const inProgressCount = projectTickets.filter((tk) => tk.status === 'in_progress').length;
   const inReviewCount = projectTickets.filter((tk) => tk.status === 'review').length;
   const workingCount = inProgressCount + inReviewCount;
   let agentState = 'off';
   let agentText = tx(t, 'world.agent.state.idle', 'Standing by — no active build');
+  let agentShort = tx(t, 'world.agent.short.idle', 'Idle');
   if (workingCount > 0) {
-    agentState = 'active';
+    if (opCounts.stalled > 0) {
+      agentState = 'bad';
+      agentShort = tx(t, 'world.agent.short.stalled', '{n} stalled', { n: opCounts.stalled });
+    } else if (inProgressCount > 0) {
+      agentState = 'active';
+      agentShort = tx(t, 'world.agent.short.building', 'Building {n}', { n: inProgressCount });
+    } else {
+      agentState = 'warn';
+      agentShort = tx(t, 'world.agent.short.review', '{n} in review', { n: inReviewCount });
+    }
     if (inProgressCount > 0 && inReviewCount > 0) {
       agentText = tx(
         t,
@@ -667,143 +731,55 @@ export function stationsFor({ project = null, sites = [], tickets = undefined, d
     }
   }
 
-  // 7. Request inbox ("Your requests")
+  // 5. Requests inbox
   const openCount = projectTickets.filter((tk) => OPEN_TICKET_STATUSES.has(tk.status)).length;
-  const requestState = openCount > 0 ? 'active' : 'off';
+  const needsCount = opCounts.needsYou ?? 0;
+  const requestState = needsCount > 0 ? 'warn' : openCount > 0 ? 'ok' : 'off';
   const requestText =
     openCount === 0
       ? tx(t, 'world.request.state.none', 'No open requests')
       : openCount === 1
         ? tx(t, 'world.request.state.one', '1 open request')
         : tx(t, 'world.request.state.many', '{count} open requests', { count: openCount });
-
-  // 8. Preview glass-cloche mini shop ("Preview")
-  let previewState = 'off';
-  let previewText = tx(t, 'world.preview.state.off', 'No preview yet');
-  if (site && previewDeploy) {
-    if (siteFailed) {
-      previewState = 'bad';
-      previewText = tx(t, 'world.preview.state.failed', 'Preview paused — site setup stopped');
-    } else if (!siteReady) {
-      previewState = 'active';
-      previewText = tx(t, 'world.preview.state.building', 'Setting up preview');
-    } else if (previewAhead) {
-      previewState = 'active';
-      previewText = tx(t, 'world.preview.state.ahead', 'A newer version is waiting to be published');
-    } else {
-      previewState = 'ok';
-      previewText = tx(t, 'world.preview.state.ok', 'Matches your live site');
-    }
-  }
+  const requestShort =
+    needsCount > 0
+      ? tx(t, 'world.request.short.needs', '{n} {verb} you', { n: needsCount, verb: needsCount === 1 ? 'needs' : 'need' })
+      : openCount > 0
+        ? tx(t, 'world.request.short.open', '{n} open', { n: openCount })
+        : tx(t, 'world.request.short.none', 'Clear');
 
   const baseStations = [
     {
-      key: 'domain',
-      title: tx(t, 'world.domain.title', 'Your web address'),
-      shortLabel: tx(t, 'world.domain.short', 'Web address'),
+      key: 'request',
+      title: tx(t, 'world.request.title', 'Requests'),
+      shortLabel: tx(t, 'world.request.short', 'Requests'),
+      shortStatus: requestShort,
       explain: tx(
         t,
-        'world.domain.explain',
-        'The domain name people type into their browser to reach your website.',
+        'world.request.explain',
+        'Open client and internal work waiting for triage, build, or review.',
       ),
-      state: domainState,
-      stateText: domainText,
-      x: STATION_POSITIONS.domain.x,
-      y: STATION_POSITIONS.domain.y,
-      meta: { hostname: addr.hostname, url: addr.raw },
-    },
-    {
-      key: 'hosting',
-      title: tx(t, 'world.hosting.title', 'Where your site lives'),
-      shortLabel: tx(t, 'world.hosting.short', 'Hosting'),
-      explain: tx(
-        t,
-        'world.hosting.explain',
-        'The always-on server that stores your finished website and delivers it to every visitor.',
-      ),
-      state: hostingState,
-      stateText: hostingText,
-      x: STATION_POSITIONS.hosting.x,
-      y: STATION_POSITIONS.hosting.y,
+      state: requestState,
+      stateText: requestText,
+      x: STATION_POSITIONS.request.x,
+      y: STATION_POSITIONS.request.y,
       meta: {
-        hostLabel,
-        hostKind: site ? (isCloudflare ? 'cloudflare' : 'ptech') : null,
-        previewAhead,
+        count: openCount,
+        needsYou: opCounts.needsYou,
+        stalled: opCounts.stalled,
+        newCount: opCounts.newCount,
+        reviewCount: opCounts.reviewCount,
       },
-    },
-    {
-      key: 'https',
-      title: tx(t, 'world.https.title', 'Secure connection (HTTPS)'),
-      shortLabel: tx(t, 'world.https.short', 'HTTPS'),
-      explain: tx(
-        t,
-        'world.https.explain',
-        'The browser padlock that encrypts traffic between visitors and your website.',
-      ),
-      state: httpsState,
-      stateText: httpsText,
-      x: STATION_POSITIONS.https.x,
-      y: STATION_POSITIONS.https.y,
-      meta: { verified: httpsVerified },
-    },
-    {
-      key: 'preview',
-      title: tx(t, 'world.preview.title', 'Preview'),
-      shortLabel: tx(t, 'world.preview.short', 'Preview'),
-      explain: tx(
-        t,
-        'world.preview.explain',
-        'A private copy of your site where changes are checked before going live.',
-      ),
-      state: previewState,
-      stateText: previewText,
-      x: STATION_POSITIONS.preview.x,
-      y: STATION_POSITIONS.preview.y,
-      meta: {
-        ahead: previewAhead,
-        previewDeploy,
-        productionDeploy,
-        previewUrl,
-      },
-    },
-    {
-      key: 'code',
-      title: tx(t, 'world.code.title', 'Your code, with full history'),
-      shortLabel: tx(t, 'world.code.short', 'Code vault'),
-      explain: tx(
-        t,
-        'world.code.explain',
-        'A versioned filing cabinet of every file in your site so changes can always be reviewed or undone.',
-      ),
-      state: codeState,
-      stateText: codeText,
-      x: STATION_POSITIONS.code.x,
-      y: STATION_POSITIONS.code.y,
-      meta: { repoSlug, keptByPTech: !repoSlug && !repoError && project?.kind === 'new' },
-    },
-    {
-      key: 'deploy',
-      title: tx(t, 'world.deploy.title', 'Publishing changes'),
-      shortLabel: tx(t, 'world.deploy.short', 'Publish'),
-      explain: tx(
-        t,
-        'world.deploy.explain',
-        'The automated conveyor that packages approved code and pushes updates onto your live hosting.',
-      ),
-      state: deployState,
-      stateText: deployText,
-      x: STATION_POSITIONS.deploy.x,
-      y: STATION_POSITIONS.deploy.y,
-      meta: { deployTime, hasDeploys: Boolean(latestDeploy), previewAhead },
     },
     {
       key: 'agent',
-      title: tx(t, 'world.agent.title', "PTech's AI builder + human review"),
+      title: tx(t, 'world.agent.title', 'Builder & review'),
       shortLabel: tx(t, 'world.agent.short', 'Builder'),
+      shortStatus: agentShort,
       explain: tx(
         t,
         'world.agent.explain',
-        'Our AI builds your requested changes in code while a PTech engineer reviews the result before it ships.',
+        'AI agent builds and human review before changes reach preview.',
       ),
       state: agentState,
       stateText: agentText,
@@ -818,24 +794,74 @@ export function stationsFor({ project = null, sites = [], tickets = undefined, d
       },
     },
     {
-      key: 'request',
-      title: tx(t, 'world.request.title', 'Your requests'),
-      shortLabel: tx(t, 'world.request.short', 'Requests'),
+      key: 'code',
+      title: tx(t, 'world.code.title', 'Code repository'),
+      shortLabel: tx(t, 'world.code.short', 'Code'),
+      shortStatus: codeShort,
       explain: tx(
         t,
-        'world.request.explain',
-        'Your inbox for asking for new pages, wording edits, or fixes in plain English.',
+        'world.code.explain',
+        'Versioned repository and GitHub connection holding every change.',
       ),
-      state: requestState,
-      stateText: requestText,
-      x: STATION_POSITIONS.request.x,
-      y: STATION_POSITIONS.request.y,
+      state: codeState,
+      stateText: codeText,
+      x: STATION_POSITIONS.code.x,
+      y: STATION_POSITIONS.code.y,
       meta: {
-        count: openCount,
-        needsYou: opCounts.needsYou,
-        stalled: opCounts.stalled,
-        newCount: opCounts.newCount,
-        reviewCount: opCounts.reviewCount,
+        repoSlug,
+        repoUrl,
+        keptByPTech: !repoSlug && !repoError && project?.kind === 'new',
+      },
+    },
+    {
+      key: 'preview',
+      title: tx(t, 'world.preview.title', 'Preview & publish'),
+      shortLabel: tx(t, 'world.preview.short', 'Preview'),
+      shortStatus: previewShort,
+      explain: tx(
+        t,
+        'world.preview.explain',
+        'Private staging copy where builds are verified before publishing live.',
+      ),
+      state: previewState,
+      stateText: previewText,
+      x: STATION_POSITIONS.preview.x,
+      y: STATION_POSITIONS.preview.y,
+      meta: {
+        ahead: previewAhead,
+        previewDeploy,
+        productionDeploy,
+        previewUrl,
+        deployTime,
+        hasDeploys: Boolean(latestDeploy),
+        driftCount: drift?.count ?? 0,
+      },
+    },
+    {
+      key: 'hosting',
+      title: tx(t, 'world.hosting.title', 'Live site'),
+      shortLabel: tx(t, 'world.hosting.short', 'Live site'),
+      shortStatus: hostingShort,
+      explain: tx(
+        t,
+        'world.hosting.explain',
+        'Production web address, HTTPS connection, and hosting provider.',
+      ),
+      state: hostingState,
+      stateText: hostingText,
+      x: STATION_POSITIONS.hosting.x,
+      y: STATION_POSITIONS.hosting.y,
+      meta: {
+        hostLabel,
+        hostKind: site ? (isCloudflare ? 'cloudflare' : 'ptech') : null,
+        hostname: addr.hostname,
+        url: addr.raw,
+        liveUrl,
+        addressText,
+        httpsVerified,
+        httpsText,
+        previewAhead,
+        deployTime,
       },
     },
   ];
@@ -847,8 +873,8 @@ export function stationsFor({ project = null, sites = [], tickets = undefined, d
 
 /**
  * Derive the connecting isometric cables/roads showing both flows:
- *   visitor → domain → https → hosting
- *   request → agent → code → deploy → preview → hosting
+ *   visitor → hosting
+ *   request → agent → code → preview → hosting
  */
 export function cablesFor(stations) {
   const byKey = Object.fromEntries((stations ?? []).map((s) => [s.key, s]));
@@ -856,44 +882,20 @@ export function cablesFor(stations) {
   const liveSite = st('hosting') === 'ok';
   const buildingSite = st('hosting') === 'active';
   const previewActive = st('preview') === 'active';
-  const previewLive = st('preview') === 'ok' || previewActive;
+  const previewLive = st('preview') === 'ok' || st('preview') === 'warn' || previewActive;
 
   return [
     {
-      id: 'visitor-domain',
+      id: 'visitor-hosting',
       from: 'visitor',
-      to: 'domain',
-      flow: 'visitor',
-      points: [
-        [VISITOR_POS.x, VISITOR_POS.y],
-        [STATION_POSITIONS.domain.x, STATION_POSITIONS.domain.y],
-      ],
-      active: liveSite || st('domain') === 'active',
-      connected: st('domain') === 'ok' || st('domain') === 'active',
-    },
-    {
-      id: 'domain-https',
-      from: 'domain',
-      to: 'https',
-      flow: 'visitor',
-      points: [
-        [STATION_POSITIONS.domain.x, STATION_POSITIONS.domain.y],
-        [STATION_POSITIONS.https.x, STATION_POSITIONS.https.y],
-      ],
-      active: liveSite || buildingSite,
-      connected: st('domain') === 'ok' || buildingSite,
-    },
-    {
-      id: 'https-hosting',
-      from: 'https',
       to: 'hosting',
       flow: 'visitor',
       points: [
-        [STATION_POSITIONS.https.x, STATION_POSITIONS.https.y],
+        [VISITOR_POS.x, VISITOR_POS.y],
         [STATION_POSITIONS.hosting.x, STATION_POSITIONS.hosting.y],
       ],
-      active: liveSite || buildingSite,
-      connected: liveSite || buildingSite,
+      active: buildingSite,
+      connected: liveSite || buildingSite || st('hosting') === 'warn',
     },
     {
       id: 'request-agent',
@@ -904,8 +906,8 @@ export function cablesFor(stations) {
         [STATION_POSITIONS.request.x, STATION_POSITIONS.request.y],
         [STATION_POSITIONS.agent.x, STATION_POSITIONS.agent.y],
       ],
-      active: st('request') === 'active' || st('agent') === 'active',
-      connected: st('request') === 'active' || st('agent') === 'active',
+      active: st('agent') === 'active',
+      connected: st('request') !== 'off' || st('agent') !== 'off',
     },
     {
       id: 'agent-code',
@@ -917,31 +919,19 @@ export function cablesFor(stations) {
         [STATION_POSITIONS.code.x, STATION_POSITIONS.code.y],
       ],
       active: st('agent') === 'active',
-      connected: st('code') === 'ok' || st('agent') === 'active',
+      connected: st('code') === 'ok' || st('agent') !== 'off',
     },
     {
-      id: 'code-deploy',
+      id: 'code-preview',
       from: 'code',
-      to: 'deploy',
-      flow: 'build',
-      points: [
-        [STATION_POSITIONS.code.x, STATION_POSITIONS.code.y],
-        [STATION_POSITIONS.deploy.x, STATION_POSITIONS.deploy.y],
-      ],
-      active: st('deploy') === 'active' || buildingSite,
-      connected: st('code') === 'ok' && st('deploy') !== 'off',
-    },
-    {
-      id: 'deploy-preview',
-      from: 'deploy',
       to: 'preview',
       flow: 'build',
       points: [
-        [STATION_POSITIONS.deploy.x, STATION_POSITIONS.deploy.y],
+        [STATION_POSITIONS.code.x, STATION_POSITIONS.code.y],
         [STATION_POSITIONS.preview.x, STATION_POSITIONS.preview.y],
       ],
-      active: st('deploy') === 'active' || previewActive || buildingSite,
-      connected: previewLive || st('deploy') === 'ok' || st('deploy') === 'active',
+      active: previewActive || buildingSite,
+      connected: st('code') === 'ok' && st('preview') !== 'off',
     },
     {
       id: 'preview-hosting',
@@ -952,50 +942,38 @@ export function cablesFor(stations) {
         [STATION_POSITIONS.preview.x, STATION_POSITIONS.preview.y],
         [STATION_POSITIONS.hosting.x, STATION_POSITIONS.hosting.y],
       ],
-      active: st('deploy') === 'active' || previewActive || buildingSite,
+      active: previewActive || buildingSite,
       connected: liveSite || previewLive,
     },
   ];
 }
 
-/* Ported from the portal (ptechsolutions-site src/components/portal/project-world-model.js); keep in sync. */
-/* ————— request journey trace (ticket status → workshop stations) ————— */
+/* ————— request journey trace (ticket status → 5 workshop stations) ————— */
 
-/** The stations one request passes through, in journey order (preview before
- *  the production publish). Distinct from JOURNEY_CABLE_ORDER below, which is
- *  the physical cable wiring: the request's story stops at the preview for
- *  review ("request/agent/code reached, current=preview") while its cables
- *  still run through the deploy corner to reach it. */
 export const JOURNEY_STATION_KEYS = Object.freeze([
   'request',
   'agent',
   'code',
   'preview',
-  'deploy',
   'hosting',
 ]);
 
-/** The same stations in the order the map's build cables wire them. */
-const JOURNEY_CABLE_ORDER = Object.freeze(['request', 'agent', 'code', 'deploy', 'preview', 'hosting']);
 const JOURNEY_CABLE_IDS = Object.freeze([
   'request-agent',
   'agent-code',
-  'code-deploy',
-  'deploy-preview',
+  'code-preview',
   'preview-hosting',
 ]);
 
-/** Honest mapping from a ticket status alone: where the request stands now. */
 const JOURNEY_PLANS = Object.freeze({
   new: { current: 'request', reached: 0 },
   approved: { current: 'request', reached: 0 },
   declined: { current: 'request', reached: 0 },
   in_progress: { current: 'agent', reached: 1 },
   review: { current: 'preview', reached: 3 },
-  done: { current: 'hosting', reached: 5 },
+  done: { current: 'hosting', reached: 4 },
 });
 
-/** The plain-English tail of the journey sentence, per status. */
 const JOURNEY_STATUS_SENTENCE = Object.freeze({
   new: ['world.journey.status.new', 'waiting for approval'],
   approved: ['world.journey.status.approved', 'approved, waiting for the builder'],
@@ -1005,20 +983,17 @@ const JOURNEY_STATUS_SENTENCE = Object.freeze({
   declined: ['world.journey.status.declined', 'declined'],
 });
 
-/** Minutes of human review spent on a ticket; at least one once any time is recorded. */
 function humanReviewMinutes(rawSeconds) {
   const s = Number(rawSeconds);
   if (!Number.isFinite(s) || s <= 0) return 0;
   return Math.max(1, Math.ceil(s / 60));
 }
 
-/** "$40" for whole dollars, "$40.50" otherwise — from price_cents only. */
 function receiptMoney(cents) {
   const dollars = cents / 100;
   return `$${Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2)}`;
 }
 
-/** The site's public address for an "Open site" chip, https:// for bare hosts. */
 function journeySiteUrl(site) {
   const raw =
     cleanString(site?.customDomain) ??
@@ -1029,17 +1004,6 @@ function journeySiteUrl(site) {
   return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
 }
 
-/**
- * Trace one ticket across the workshop stations, honestly and from its
- * status alone. Returns null when the ticket or its status says nothing.
- *
- *   stations:       request | agent | code | preview | deploy | hosting
- *                   → 'reached' | 'current' | 'ahead'
- *   currentKey:     the station the request stands at now
- *   activeCableIds: build cables (cablesFor ids) lit up to the current station
- *   sentence:        "Asked via Claude 2h ago → being built now"
- *   previewUrl / siteUrl: addresses for the caption chips, when the site has them
- */
 export function journeyFor(ticket, { sites = [], t = (k) => k, now } = {}) {
   if (!ticket || typeof ticket !== 'object') return null;
   const plan = JOURNEY_PLANS[ticket.status];
@@ -1054,7 +1018,6 @@ export function journeyFor(ticket, { sites = [], t = (k) => k, now } = {}) {
   const site = pickSite(null, sites);
   const previewUrl = cleanString(site?.previewUrl) ?? cleanString(site?.cloudflare?.previewUrl) ?? null;
 
-  // "Asked via Claude 2h ago" — only what the ticket actually says.
   const askedBits = [tx(t, 'world.journey.asked', 'Asked')];
   const app = cleanString(ticket.assistant_app);
   if (app) askedBits.push(tx(t, 'world.journey.via', 'via {app}', { app }));
@@ -1074,14 +1037,13 @@ export function journeyFor(ticket, { sites = [], t = (k) => k, now } = {}) {
     status: ticket.status,
     stations,
     currentKey: plan.current,
-    activeCableIds: JOURNEY_CABLE_IDS.slice(0, JOURNEY_CABLE_ORDER.indexOf(plan.current)),
+    activeCableIds: JOURNEY_CABLE_IDS.slice(0, at),
     sentence,
     previewUrl,
     siteUrl: journeySiteUrl(site),
   };
 }
 
-/** A ticket's clock: when it was last touched, or created if never touched. */
 function ticketStamp(ticket) {
   return normalizeTimestampMs(ticket?.updated_at) ?? normalizeTimestampMs(ticket?.created_at) ?? 0;
 }
@@ -1091,7 +1053,6 @@ function sameTicketId(a, b) {
   return String(a) === String(b);
 }
 
-/** A project's tickets newest-updated first. */
 function latestTickets(project, tickets, limit = Infinity) {
   const sorted = [...filterProjectTickets(project, tickets)]
     .filter(Boolean)
@@ -1099,22 +1060,12 @@ function latestTickets(project, tickets, limit = Infinity) {
   return Number.isFinite(limit) ? sorted.slice(0, Math.max(0, limit)) : sorted;
 }
 
-/**
- * The ticket a freshly opened map traces by default: the most recently
- * updated open one, or null when nothing is open.
- */
 export function defaultJourneyTicket(project, tickets) {
   const open = filterProjectTickets(project, tickets).filter((tk) => OPEN_TICKET_STATUSES.has(tk?.status));
   if (open.length === 0) return null;
   return open.reduce((best, tk) => (ticketStamp(tk) > ticketStamp(best) ? tk : best), open[0]);
 }
 
-/**
- * Pills for the journeys row: the project's latest `limit` tickets, newest
- * updated first. `ensure` (usually the default trace) is never dropped — when
- * newer closed tickets push it out of the window it takes the last slot, so
- * the default journey always has a visible pill.
- */
 export function journeyPillTickets(project, tickets, { limit = 5, ensure = null } = {}) {
   const sorted = latestTickets(project, tickets);
   const pills = sorted.slice(0, Math.max(0, limit));
@@ -1128,10 +1079,6 @@ export function journeyPillTickets(project, tickets, { limit = 5, ensure = null 
   return pills;
 }
 
-/**
- * Receipts for the request inbox station: the latest few tickets with a
- * "via <assistant_app>" badge when the ticket names one, and relative time.
- */
 export function requestReceipts(project, tickets, { t = (k) => k, now, limit = 3 } = {}) {
   return latestTickets(project, tickets, limit)
     .map((tk) => {
@@ -1148,11 +1095,6 @@ export function requestReceipts(project, tickets, { t = (k) => k, now, limit = 3
     .filter((r) => r.id !== null && r.title);
 }
 
-/**
- * One-line receipt for the builder desk: the latest done-or-review change,
- * e.g. "AI built the change · 12 min human review · $40". Missing parts are
- * omitted, and the AI meter (ai_micro_usd) is never shown to the client.
- */
 export function agentReceipt(project, tickets, { t = (k) => k } = {}) {
   const eligible = filterProjectTickets(project, tickets).filter(
     (tk) => tk && (tk.status === 'done' || tk.status === 'review'),
@@ -1165,7 +1107,6 @@ export function agentReceipt(project, tickets, { t = (k) => k } = {}) {
   if (minutes > 0) {
     parts.push(tx(t, 'world.journey.receipt.human', '{min} min human review', { min: minutes }));
   }
-  // A frozen $0 (a first preview is free) is data, not a missing part.
   const rawPrice = latest.price_cents;
   const cents = Number(rawPrice);
   if (
@@ -1189,14 +1130,6 @@ function spanShort(ms) {
   return `${Math.floor(s / 86400)}d`;
 }
 
-/**
- * The operator's view of preview drift: every change on the site's preview
- * that production does not have yet, one row per request (newest first), and
- * how long the oldest of them has waited to ship.
- *   { count, text: "2 changes on preview · unshipped 4h (since #42)", items }
- * Null when preview and live are the same version, when the site is not
- * ready, or when the deploy history cannot place both versions.
- */
 export function unshippedPreview({ project = null, sites = [], deploys = null, tickets = [], t = (k) => k, now } = {}) {
   const site = pickSite(project, sites);
   if (!site || site.state !== 'ready' || !site.previewDeploy) return null;
@@ -1225,7 +1158,6 @@ export function unshippedPreview({ project = null, sites = [], deploys = null, t
     items.push({ key, ticketId: hasTicket ? d.ticket_id : null, title, stamp: at(d), age: at(d) ? spanShort(nowMs - at(d)) : null });
   }
   if (!items.length) return null;
-  // Direct updates (no request behind them) fold into one row, newest position, oldest age.
   let rows = items;
   const direct = items.filter((i) => i.ticketId === null);
   if (direct.length > 1) {

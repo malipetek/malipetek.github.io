@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ago } from './format.js';
 import { useAdmin } from './store.js';
-import { Button, Dot, Tag, cx } from './ui.jsx';
+import { Button, Dot, Empty, ErrorNote, PageHeader, Skeleton, Tag, cx } from './ui.jsx';
 
 const tone = (status) => (status === 'ok' ? 'ok' : status === 'fail' ? 'bad' : 'warn');
 
@@ -53,7 +53,7 @@ export function HealthView({ compact = false }) {
   const runNow = (
     <Button
       size="sm"
-      disabled={busy}
+      busy={busy}
       onClick={() => {
         setBusy(true);
         void act(() => api('POST', '/admin/health/run'), 'Checks rerun.')
@@ -61,7 +61,7 @@ export function HealthView({ compact = false }) {
           .finally(() => setBusy(false));
       }}
     >
-      {busy ? 'Running…' : 'Run now'}
+      Run checks now
     </Button>
   );
 
@@ -72,9 +72,9 @@ export function HealthView({ compact = false }) {
 
   const body = (
     <>
-      {state.error ? <p className="aw-empty">{state.error.message ?? 'Could not read the checks.'}</p> : null}
-      {state.loading ? <p className="aw-empty">Reading health checks…</p> : null}
-      {!state.loading && !state.error && !state.checks.length ? <p className="aw-empty">No checks reported</p> : null}
+      {state.error ? <ErrorNote error={state.error.message ? state.error : { message: 'Could not read the checks.' }} onRetry={load} /> : null}
+      {state.loading ? <Skeleton variant="rows" rows={compact ? 2 : 6} label="Reading health checks…" /> : null}
+      {!state.loading && !state.error && !state.checks.length ? <Empty inline title="No checks reported yet." hint="The checks run every five minutes; Run now runs them at once." /> : null}
       {compact ? (
         <>
           {failing.length ? list(failing) : null}
@@ -112,20 +112,12 @@ export function HealthView({ compact = false }) {
 
   return (
     <div className="aw-view aw-health">
-      <header className="aw-hero aw-health__head">
-        <h2>Health</h2>
-        <span className="aw-toolbar__fill" />
-        {!state.loading && !state.error && state.checks.length ? (state.failing ? (
-          <Tag tone="bad">{state.failing} failing</Tag>
-        ) : (
-          <Tag tone="ok">all green</Tag>
-        )) : null}
-        {runNow}
-      </header>
-      <p className="aw-muted aw-health__intro">
-        Every check runs every five minutes. A failing check mails you once, and mails again only when it recovers.
-        {state.ranAt ? ` Last run ${ago(state.ranAt)} ago.` : null}
-      </p>
+      <PageHeader
+        title="Health"
+        subtitle={`Every check runs every five minutes; a failing check mails you once, and again when it recovers.${state.ranAt ? ` Last run ${ago(state.ranAt)} ago.` : ''}`}
+        meta={!state.loading && !state.error && state.checks.length ? (state.failing ? <Tag tone="bad">{state.failing} failing</Tag> : <Tag tone="ok">all green</Tag>) : null}
+        actions={runNow}
+      />
       {body}
     </div>
   );

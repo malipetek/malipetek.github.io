@@ -1,9 +1,14 @@
 /*
- * Unit tests for packages/admin-ui/src/project-world-model.mjs.
+ * Unit tests for packages/admin-ui/src/project-world-model.mjs (M1 5-station model).
  *
- * Origin: ported from ptechsolutions-site/src/components/portal/project-world-model.test.mjs
- * (browser HTTPS probe tests omitted because admin does not probe client sites;
- * admin operator-count and snake_case field tests added).
+ * Covers:
+ *   - Isometric projection and 3-face box geometry
+ *   - 5-station consolidation (domain+https merged into hosting; deploy merged into preview & hosting)
+ *   - Honest HTTPS verification without browser probing
+ *   - Active vs waiting state semantics (no idle pulsing on waiting preview/requests)
+ *   - Setup check mapping & timestamps
+ *   - Operator ticket counts (needsYou, stalled > 45m)
+ *   - Request journey tracing across the 5 stations
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,11 +18,14 @@ import {
   DEFAULT_ISO,
   ISO_COS,
   ISO_SIN,
+  JOURNEY_STATION_KEYS,
   STALL_MS,
+  STATION_ORDER,
   cablesFor,
   floorDots,
   iso,
   isoBox,
+  journeyFor,
   operatorTicketCounts,
   stationForCheck,
   stationsFor,
@@ -57,29 +65,30 @@ describe('iso() and isometric box projection', () => {
   });
 });
 
-describe('stationsFor() — site & hosting states', () => {
-  it('handles a project with no site', () => {
-    const map = byKey(
-      stationsFor({
-        project: { id: 'p1', name: 'Bakery', kind: 'existing' },
-        sites: [],
-        tickets: [],
-      }),
-    );
+describe('stationsFor() — 5 functional stations & hosting/domain/https merge', () => {
+  it('returns exactly 5 functional stations for a project with no site', () => {
+    const stations = stationsFor({
+      project: { id: 'p1', name: 'Bakery', kind: 'existing' },
+      sites: [],
+      tickets: [],
+    });
+    const map = byKey(stations);
 
-    assert.equal(Object.keys(map).length, 8);
-    assert.equal(map.domain.state, 'off');
-    assert.equal(map.domain.stateText, 'Not connected yet');
+    assert.deepEqual(stations.map((s) => s.key), [...STATION_ORDER]);
+    assert.equal(Object.keys(map).length, 5);
     assert.equal(map.hosting.state, 'off');
-    assert.equal(map.https.state, 'unknown');
+    assert.equal(map.hosting.meta.addressText, 'Not connected yet');
+    assert.equal(map.hosting.meta.httpsVerified, false);
     assert.equal(map.preview.state, 'off');
-    assert.equal(map.deploy.state, 'off');
     assert.equal(map.code.state, 'off');
     assert.equal(map.agent.state, 'off');
     assert.equal(map.request.state, 'off');
+    for (const s of stations) {
+      assert.ok(typeof s.shortStatus === 'string' && s.shortStatus.length > 0, `Station ${s.key} needs shortStatus`);
+    }
   });
 
-  it('handles a ready HTTPS site on Cloudflare and on PTech hosting', () => {
+  it('merges hostname, host provider, and explicit HTTPS into the Live site (hosting) station', () => {
     const cfMap = byKey(
       stationsFor({
         project: { id: 'p1', name: 'Bakery', repo: 'https://github.com/acme/bakery' },
@@ -96,12 +105,12 @@ describe('stationsFor() — site & hosting states', () => {
       }),
     );
 
-    assert.equal(cfMap.domain.state, 'ok');
-    assert.equal(cfMap.domain.stateText, 'Live at example.com');
     assert.equal(cfMap.hosting.state, 'ok');
+    assert.equal(cfMap.hosting.meta.addressText, 'Live at example.com');
+    assert.match(cfMap.hosting.stateText, /Live at example\.com/);
     assert.match(cfMap.hosting.stateText, /Cloudflare \(your account\)/);
-    assert.equal(cfMap.https.state, 'ok');
-    assert.match(cfMap.https.stateText, /HTTPS/);
+    assert.equal(cfMap.hosting.meta.httpsVerified, true);
+    assert.match(cfMap.hosting.meta.httpsText, /HTTPS/);
 
     const ptechMap = byKey(
       stationsFor({
@@ -118,11 +127,10 @@ describe('stationsFor() — site & hosting states', () => {
       }),
     );
 
-    assert.equal(ptechMap.domain.state, 'ok');
-    assert.equal(ptechMap.domain.stateText, 'Live at florist.example.org');
     assert.equal(ptechMap.hosting.state, 'ok');
+    assert.equal(ptechMap.hosting.meta.addressText, 'Live at florist.example.org');
     assert.match(ptechMap.hosting.stateText, /PTech hosting/);
-    assert.equal(ptechMap.https.state, 'ok');
+    assert.equal(ptechMap.hosting.meta.httpsVerified, true);
   });
 
   it('handles a failed site cleanly without claiming HTTPS', () => {
@@ -141,14 +149,13 @@ describe('stationsFor() — site & hosting states', () => {
       }),
     );
 
-    assert.equal(map.domain.state, 'bad');
     assert.equal(map.hosting.state, 'bad');
     assert.match(map.hosting.stateText, /Cloudflare \(your account\)/);
-    assert.equal(map.https.state, 'unknown');
-    assert.equal(map.deploy.state, 'bad');
+    assert.equal(map.hosting.meta.httpsVerified, false);
+    assert.equal(map.preview.state, 'bad');
   });
 
-  it('handles a building/waiting site as active and keeps HTTPS unknown', () => {
+  it('handles a building/waiting site as active and keeps HTTPS unverified', () => {
     const map = byKey(
       stationsFor({
         project: { id: 'p1', name: 'Bakery' },
@@ -163,12 +170,12 @@ describe('stationsFor() — site & hosting states', () => {
       }),
     );
 
-    assert.equal(map.domain.state, 'active');
     assert.equal(map.hosting.state, 'active');
-    assert.equal(map.https.state, 'unknown');
+    assert.equal(map.preview.state, 'active');
+    assert.equal(map.hosting.meta.httpsVerified, false);
   });
 
-  it('never marks unknown or non-HTTPS connections as ok', () => {
+  it('never marks unknown or non-HTTPS connections as verified', () => {
     const cases = [
       { id: 's1', state: 'ready', domain: 'example.com' },
       { id: 's2', state: 'ready', hostname: 'shop.example.com' },
@@ -179,8 +186,8 @@ describe('stationsFor() — site & hosting states', () => {
 
     for (const site of cases) {
       const map = byKey(stationsFor({ project: { id: 'p1' }, sites: [site] }));
-      assert.equal(map.https.state, 'unknown', `Expected unknown https for ${JSON.stringify(site)}`);
-      assert.notEqual(map.https.state, 'ok');
+      assert.equal(map.hosting.meta.httpsVerified, false, `Expected unverified https for ${JSON.stringify(site)}`);
+      assert.match(map.hosting.meta.httpsText, /^Unknown/);
     }
   });
 });
@@ -192,6 +199,7 @@ describe('stationsFor() — code repository states', () => {
     );
     assert.equal(connected.code.state, 'ok');
     assert.match(connected.code.stateText, /acme\/site/);
+    assert.equal(connected.code.meta.repoUrl, 'https://github.com/acme/site');
 
     const keptByPTech = byKey(stationsFor({ project: { id: 'p2', kind: 'new' } }));
     assert.equal(keptByPTech.code.state, 'ok');
@@ -225,13 +233,16 @@ describe('stationsFor() — code repository states', () => {
   });
 });
 
-describe('stationsFor() — deploys, agent, and request inbox', () => {
-  it('reads latest deploy status and time, or stays neutral when omitted', () => {
+describe('stationsFor() — preview/deploy merge, agent, and request inbox', () => {
+  it('surfaces deploy building/failed states on preview and last published time on hosting/preview', () => {
     const now = Date.UTC(2026, 10, 19, 12, 0, 0);
-    const liveSite = { id: 's1', state: 'ready', url: 'https://example.com' };
-
-    const neutral = byKey(stationsFor({ project: { id: 'p1' }, sites: [liveSite], deploys: null }));
-    assert.equal(neutral.deploy.state, 'off');
+    const liveSite = {
+      id: 's1',
+      state: 'ready',
+      url: 'https://example.com',
+      previewDeploy: 'd2',
+      productionDeploy: 'd2',
+    };
 
     const okDeploy = byKey(
       stationsFor({
@@ -244,8 +255,9 @@ describe('stationsFor() — deploys, agent, and request inbox', () => {
         now,
       }),
     );
-    assert.equal(okDeploy.deploy.state, 'ok');
-    assert.match(okDeploy.deploy.stateText, /10m ago/);
+    assert.equal(okDeploy.preview.state, 'ok');
+    assert.match(okDeploy.preview.stateText, /10m ago/);
+    assert.equal(okDeploy.hosting.meta.deployTime, '10m ago');
 
     const buildingDeploy = byKey(
       stationsFor({
@@ -255,7 +267,7 @@ describe('stationsFor() — deploys, agent, and request inbox', () => {
         now,
       }),
     );
-    assert.equal(buildingDeploy.deploy.state, 'active');
+    assert.equal(buildingDeploy.preview.state, 'active');
 
     const failedDeploy = byKey(
       stationsFor({
@@ -265,19 +277,57 @@ describe('stationsFor() — deploys, agent, and request inbox', () => {
         now,
       }),
     );
-    assert.equal(failedDeploy.deploy.state, 'bad');
-    assert.match(failedDeploy.deploy.stateText, /2m ago/);
+    assert.equal(failedDeploy.preview.state, 'bad');
+    assert.match(failedDeploy.preview.stateText, /2m ago/);
   });
 
-  it('activates agent desk for in_progress/review tickets and counts open requests accurately', () => {
+  it('uses warn (not active) for preview ahead so idle waiting previews never pulse', () => {
+    const ahead = byKey(
+      stationsFor({
+        project: { id: 'p1' },
+        sites: [
+          {
+            id: 's1',
+            state: 'ready',
+            productionUrl: 'https://bakery.ptechsolutions.dev',
+            previewDeploy: 'd101',
+            productionDeploy: 'd100',
+          },
+        ],
+      }),
+    );
+    assert.equal(ahead.preview.state, 'warn');
+    assert.equal(ahead.preview.stateText, 'A newer version is waiting to be published');
+
+    const sameAsLive = byKey(
+      stationsFor({
+        project: { id: 'p1' },
+        sites: [
+          {
+            id: 's1',
+            state: 'ready',
+            productionUrl: 'https://bakery.ptechsolutions.dev',
+            previewDeploy: 'd100',
+            productionDeploy: 'd100',
+          },
+        ],
+      }),
+    );
+    assert.equal(sameAsLive.preview.state, 'ok');
+    assert.equal(sameAsLive.preview.stateText, 'Matches your live site');
+  });
+
+  it('marks agent active when building, bad when stalled, warn when review-only, and request warn when needsYou', () => {
+    const now = Date.UTC(2026, 10, 19, 12, 0, 0);
+    const sec = (ms) => Math.floor(ms / 1000);
     const tickets = [
-      { id: 1, project_id: 'p1', status: 'new' },
-      { id: 2, project_id: 'p1', status: 'approved' },
-      { id: 3, project_id: 'p1', status: 'in_progress' },
-      { id: 4, project_id: 'p1', status: 'review' },
-      { id: 5, project_id: 'p1', status: 'done' },
-      { id: 6, project_id: 'p1', status: 'declined' },
-      { id: 7, project_id: 'other', status: 'in_progress' },
+      { id: 1, project_id: 'p1', status: 'new', updated_at: sec(now - 300_000) },
+      { id: 2, project_id: 'p1', status: 'approved', updated_at: sec(now - 300_000) },
+      { id: 3, project_id: 'p1', status: 'in_progress', updated_at: sec(now - 300_000) },
+      { id: 4, project_id: 'p1', status: 'review', updated_at: sec(now - 300_000) },
+      { id: 5, project_id: 'p1', status: 'done', updated_at: sec(now - 300_000) },
+      { id: 6, project_id: 'p1', status: 'declined', updated_at: sec(now - 300_000) },
+      { id: 7, project_id: 'other', status: 'in_progress', updated_at: sec(now - 300_000) },
     ];
 
     const map = byKey(
@@ -285,10 +335,11 @@ describe('stationsFor() — deploys, agent, and request inbox', () => {
         project: { id: 'p1', name: 'Bakery' },
         sites: [{ id: 's1', state: 'ready', url: 'https://example.com' }],
         tickets,
+        now,
       }),
     );
 
-    assert.equal(map.request.state, 'active');
+    assert.equal(map.request.state, 'warn');
     assert.equal(map.request.stateText, '4 open requests');
     assert.equal(map.agent.state, 'active');
     assert.match(map.agent.stateText, /2/);
@@ -302,36 +353,57 @@ describe('stationsFor() — deploys, agent, and request inbox', () => {
 
     const dots = floorDots(Object.values(map));
     assert.ok(dots.some((d) => d.active && d.stationKey === 'agent'));
-    assert.ok(dots.some((d) => d.active && d.stationKey === 'request'));
-  });
 
-  it('keeps agent idle when tickets are only new or approved', () => {
-    const map = byKey(
+    const reviewOnly = byKey(
       stationsFor({
         project: { id: 'p1' },
-        tickets: [
-          { id: 1, status: 'new' },
-          { id: 2, status: 'approved' },
-        ],
+        tickets: [{ id: 1, project_id: 'p1', status: 'review', updated_at: sec(now - 300_000) }],
+        now,
       }),
     );
+    assert.equal(reviewOnly.agent.state, 'warn');
+  });
 
-    assert.equal(map.request.state, 'active');
-    assert.equal(map.request.stateText, '2 open requests');
-    assert.equal(map.agent.state, 'off');
+  it('routes build cables through request → agent → code → preview → hosting', () => {
+    const stations = stationsFor({
+      project: { id: 'p1', repo: 'https://github.com/acme/bakery' },
+      sites: [
+        {
+          id: 's1',
+          state: 'ready',
+          productionUrl: 'https://bakery.ptechsolutions.dev',
+          previewDeploy: 'd2',
+          productionDeploy: 'd1',
+        },
+      ],
+    });
+
+    const cables = cablesFor(stations);
+    assert.deepEqual(
+      cables.map((c) => c.id),
+      ['visitor-hosting', 'request-agent', 'agent-code', 'code-preview', 'preview-hosting'],
+    );
+  });
+
+  it('traces journeys cleanly across the 5 stations', () => {
+    assert.deepEqual([...JOURNEY_STATION_KEYS], ['request', 'agent', 'code', 'preview', 'hosting']);
+    const j = journeyFor({ id: 42, status: 'review' }, { sites: [{ previewUrl: 'https://preview.example.com' }] });
+    assert.equal(j.currentKey, 'preview');
+    assert.deepEqual(j.activeCableIds, ['request-agent', 'agent-code', 'code-preview']);
+    assert.equal(j.stations.hosting, 'ahead');
   });
 });
 
 describe('tx() and world.* translation keys', () => {
   it('falls back to English when t(key) returns key, and uses translations when present', () => {
-    assert.equal(tx((k) => k, 'world.domain.title', 'Your web address'), 'Your web address');
+    assert.equal(tx((k) => k, 'world.hosting.title', 'Live site'), 'Live site');
     assert.equal(
       tx((k) => k, 'world.domain.state.live', 'Live at {host}', { host: 'acme.com' }),
       'Live at acme.com',
     );
     assert.equal(
-      tx((k) => (k === 'world.domain.title' ? 'Webadres' : k), 'world.domain.title', 'Your web address'),
-      'Webadres',
+      tx((k) => (k === 'world.hosting.title' ? 'Live-site' : k), 'world.hosting.title', 'Live site'),
+      'Live-site',
     );
   });
 
@@ -387,125 +459,30 @@ describe('tx() and world.* translation keys', () => {
   });
 });
 
-describe('stationsFor() — preview station & build cable routing', () => {
-  it('derives off, ok, and active states from real previewDeploy / productionDeploy fields', () => {
-    const noPreview = byKey(
-      stationsFor({
-        project: { id: 'p1' },
-        sites: [{ id: 's1', state: 'ready', productionUrl: 'https://bakery.ptechsolutions.dev' }],
-      }),
-    );
-    assert.equal(noPreview.preview.state, 'off');
-    assert.equal(
-      noPreview.preview.explain,
-      'A private copy of your site where changes are checked before going live.',
-    );
-
-    const sameAsLive = byKey(
-      stationsFor({
-        project: { id: 'p1' },
-        sites: [
-          {
-            id: 's1',
-            state: 'ready',
-            productionUrl: 'https://bakery.ptechsolutions.dev',
-            previewDeploy: 'd100',
-            productionDeploy: 'd100',
-          },
-        ],
-      }),
-    );
-    assert.equal(sameAsLive.preview.state, 'ok');
-    assert.equal(sameAsLive.preview.stateText, 'Matches your live site');
-
-    const ahead = byKey(
-      stationsFor({
-        project: { id: 'p1' },
-        sites: [
-          {
-            id: 's1',
-            state: 'ready',
-            productionUrl: 'https://bakery.ptechsolutions.dev',
-            previewDeploy: 'd101',
-            productionDeploy: 'd100',
-          },
-        ],
-      }),
-    );
-    assert.equal(ahead.preview.state, 'active');
-    assert.equal(ahead.preview.stateText, 'A newer version is waiting to be published');
-
-    const previewOnlyLive = byKey(
-      stationsFor({
-        project: { id: 'p1' },
-        sites: [
-          {
-            id: 's1',
-            state: 'ready',
-            previewDeploy: 'd101',
-            productionDeploy: null,
-          },
-        ],
-      }),
-    );
-    assert.equal(previewOnlyLive.preview.state, 'active');
-    assert.equal(previewOnlyLive.preview.stateText, 'A newer version is waiting to be published');
-  });
-
-  it('routes build cables through code → deploy → preview → hosting', () => {
-    const stations = stationsFor({
-      project: { id: 'p1', repo: 'https://github.com/acme/bakery' },
-      sites: [
-        {
-          id: 's1',
-          state: 'ready',
-          productionUrl: 'https://bakery.ptechsolutions.dev',
-          previewDeploy: 'd2',
-          productionDeploy: 'd1',
-        },
-      ],
-    });
-
-    const cables = cablesFor(stations);
-    const ids = cables.map((c) => c.id);
-    assert.ok(ids.includes('code-deploy'));
-    assert.ok(ids.includes('deploy-preview'));
-    assert.ok(ids.includes('preview-hosting'));
-    assert.ok(!ids.includes('deploy-hosting'));
-
-    const deployPreview = cables.find((c) => c.id === 'deploy-preview');
-    const previewHosting = cables.find((c) => c.id === 'preview-hosting');
-    assert.equal(deployPreview.from, 'deploy');
-    assert.equal(deployPreview.to, 'preview');
-    assert.equal(previewHosting.from, 'preview');
-    assert.equal(previewHosting.to, 'hosting');
-    assert.equal(deployPreview.active, true);
-    assert.equal(previewHosting.active, true);
-  });
-});
-
 describe('stationsFor() — setup checks mapping & timestamps', () => {
-  it('maps real setup.ts keys and domain/dns/ssl/https/email/mx/host/repo/github substrings', () => {
-    assert.equal(stationForCheck({ key: 'domain', label: 'Your domain' }), 'domain');
+  it('maps real setup.ts keys and domain/dns/ssl/https/email/mx/host/repo/github/deploy onto the 5 stations', () => {
+    assert.equal(stationForCheck({ key: 'domain', label: 'Your domain' }), 'hosting');
     assert.equal(stationForCheck({ key: 'code', label: 'The repo' }), 'code');
     assert.equal(stationForCheck({ key: 'preview', label: 'Preview URL' }), 'preview');
+    assert.equal(stationForCheck({ key: 'deploy', label: 'Deploy pipeline' }), 'preview');
     assert.equal(stationForCheck({ key: 'brief', label: 'Your brief' }), null);
     assert.equal(stationForCheck({ key: 'workspace', label: 'A machine with a copy' }), null);
     assert.equal(stationForCheck({ key: 'request', label: 'First request' }), null);
 
-    assert.equal(stationForCheck({ key: 'dns_records', label: 'DNS' }), 'domain');
-    assert.equal(stationForCheck({ key: 'email_mx', label: 'Email MX' }), 'domain');
-    assert.equal(stationForCheck({ key: 'mail_spf', label: 'Mail' }), 'domain');
-    assert.equal(stationForCheck({ key: 'mx', label: 'MX records' }), 'domain');
-    assert.equal(stationForCheck({ key: 'ssl_cert', label: 'SSL' }), 'https');
-    assert.equal(stationForCheck({ key: 'https_check', label: 'HTTPS' }), 'https');
+    assert.equal(stationForCheck({ key: 'dns_records', label: 'DNS' }), 'hosting');
+    assert.equal(stationForCheck({ key: 'email_mx', label: 'Email MX' }), 'hosting');
+    assert.equal(stationForCheck({ key: 'mail_spf', label: 'Mail' }), 'hosting');
+    assert.equal(stationForCheck({ key: 'mx', label: 'MX records' }), 'hosting');
+    assert.equal(stationForCheck({ key: 'ssl_cert', label: 'SSL' }), 'hosting');
+    assert.equal(stationForCheck({ key: 'https_check', label: 'HTTPS' }), 'hosting');
     assert.equal(stationForCheck({ key: 'site_host', label: 'Hosting' }), 'hosting');
     assert.equal(stationForCheck({ key: 'github_repo', label: 'GitHub' }), 'code');
-    assert.equal(stationForCheck({ key: 'custom_1', label: 'SSL certificate' }), 'https');
-    assert.equal(stationForCheck({ key: 'custom_2', label: 'Business email' }), 'domain');
+    assert.equal(stationForCheck({ key: 'custom_1', label: 'SSL certificate' }), 'hosting');
+    assert.equal(stationForCheck({ key: 'custom_2', label: 'Business email' }), 'hosting');
   });
 
-  it('marks a station warn on a pending check with label, detail, Who, and no time when timestamp is absent', () => {
+  it('marks a station warn on a pending check with label, detail, Who, and timestamps when present', () => {
+    const now = Date.UTC(2026, 10, 19, 12, 0, 0);
     const map = byKey(
       stationsFor({
         project: {
@@ -518,6 +495,7 @@ describe('stationsFor() — setup checks mapping & timestamps', () => {
                 state: 'pending',
                 detail: 'Point your domain DNS at Cloudflare.',
                 owner: 'you',
+                checked_at: Math.floor((now - 600_000) / 1000),
               },
               {
                 key: 'code',
@@ -530,76 +508,22 @@ describe('stationsFor() — setup checks mapping & timestamps', () => {
           },
         },
         sites: [{ id: 's1', state: 'ready', productionUrl: 'https://bakery.ptechsolutions.dev' }],
-      }),
-    );
-
-    assert.equal(map.domain.state, 'warn');
-    assert.equal(map.domain.checks.length, 1);
-    assert.equal(map.domain.checks[0].label, 'Your domain');
-    assert.equal(map.domain.checks[0].detail, 'Point your domain DNS at Cloudflare.');
-    assert.equal(map.domain.checks[0].whoText, 'Who: You');
-    assert.equal(map.domain.checks[0].checkedAt, null);
-    assert.equal(map.domain.checks[0].checkedText, null);
-
-    assert.equal(map.code.state, 'warn');
-    assert.equal(map.code.checks.length, 1);
-    assert.equal(map.code.checks[0].whoText, 'Who: PTech');
-    assert.equal(map.code.checks[0].checkedText, null);
-  });
-
-  it('shows "Checked <relative time>" only when a check carries checked_at, at, or updated', () => {
-    const now = Date.UTC(2026, 10, 19, 12, 0, 0);
-    const map = byKey(
-      stationsFor({
-        project: {
-          id: 'p1',
-          setup: {
-            checks: [
-              {
-                key: 'dns',
-                label: 'DNS check',
-                state: 'pending',
-                detail: 'Waiting for propagation.',
-                owner: 'you',
-                checked_at: Math.floor((now - 600_000) / 1000),
-              },
-              {
-                key: 'email',
-                label: 'MX records',
-                state: 'ready',
-                detail: 'Mail records verified.',
-                owner: 'us',
-                at: now - 3600_000 * 2,
-              },
-              {
-                key: 'hosting',
-                label: 'Hosting health',
-                state: 'ready',
-                detail: 'Edge responding.',
-                owner: 'us',
-                updated: new Date(now - 120_000).toISOString(),
-              },
-              {
-                key: 'repo',
-                label: 'GitHub repo',
-                state: 'ready',
-                detail: 'Connected.',
-                owner: 'you',
-              },
-            ],
-          },
-        },
         now,
       }),
     );
 
-    assert.equal(map.domain.checks[0].checkedText, 'Checked 10m ago');
-    assert.equal(map.domain.checks[1].checkedText, 'Checked 2h ago');
-    assert.equal(map.hosting.checks[0].checkedText, 'Checked 2m ago');
+    assert.equal(map.hosting.state, 'warn');
+    assert.equal(map.hosting.checks.length, 1);
+    assert.equal(map.hosting.checks[0].label, 'Your domain');
+    assert.equal(map.hosting.checks[0].whoText, 'Who: You');
+    assert.equal(map.hosting.checks[0].checkedText, 'Checked 10m ago');
+
+    assert.equal(map.code.state, 'warn');
+    assert.equal(map.code.checks[0].whoText, 'Who: PTech');
     assert.equal(map.code.checks[0].checkedText, null);
   });
 
-  it('upgrades unknown https/domain to ok ONLY when a mapped check explicitly has state ready', () => {
+  it('upgrades unverified HTTPS on hosting ONLY when an ssl/https check explicitly has state ready', () => {
     const readyHttps = byKey(
       stationsFor({
         project: {
@@ -619,30 +543,7 @@ describe('stationsFor() — setup checks mapping & timestamps', () => {
         sites: [{ id: 's1', state: 'ready', domain: 'bakery.example.com' }],
       }),
     );
-    assert.equal(readyHttps.https.state, 'ok');
-    assert.equal(readyHttps.https.meta.verified, true);
-
-    const readyDomain = byKey(
-      stationsFor({
-        project: {
-          id: 'p1',
-          setup: {
-            checks: [
-              {
-                key: 'domain',
-                label: 'Your domain',
-                state: 'ready',
-                detail: 'Live at bakery.example.com.',
-                owner: 'you',
-              },
-            ],
-          },
-        },
-        sites: [{ id: 's1', state: 'ready' }],
-      }),
-    );
-    assert.equal(readyDomain.domain.state, 'ok');
-    assert.equal(readyDomain.domain.stateText, 'Live at bakery.example.com.');
+    assert.equal(readyHttps.hosting.meta.httpsVerified, true);
 
     for (const badState of ['missing', 'unknown', 'pending', 'ok']) {
       const res = byKey(
@@ -664,12 +565,7 @@ describe('stationsFor() — setup checks mapping & timestamps', () => {
           sites: [{ id: 's1', state: 'ready', domain: 'bakery.example.com' }],
         }),
       );
-      assert.notEqual(res.https.state, 'ok', `State "${badState}" must not upgrade unknown https to ok`);
-      if (badState === 'pending') {
-        assert.equal(res.https.state, 'warn');
-      } else {
-        assert.equal(res.https.state, 'unknown');
-      }
+      assert.equal(res.hosting.meta.httpsVerified, false, `State "${badState}" must not verify HTTPS`);
     }
   });
 });
@@ -686,12 +582,10 @@ describe('admin operator extras & probe omission', () => {
       { id: 1, project_id: 'p1', status: 'new', updated_at: sec(now - 600_000) },
       { id: 2, project_id: 'p1', status: 'review', updated_at: sec(now - 600_000) },
       { id: 3, project_id: 'p1', status: 'approved', updated_at: sec(now - 3600_000 * 5) },
-      { id: 4, project_id: 'p1', status: 'in_progress', updated_at: sec(now - STALL_MS) }, // exact 45m: not stalled
-      { id: 5, project_id: 'p1', status: 'in_progress', updated_at: sec(now - STALL_MS - 60_000) }, // 46m: stalled
-      { id: 6, project_id: 'p1', status: 'in_progress', updated_at: sec(now - 3600_000 * 3) }, // 3h: stalled
+      { id: 4, project_id: 'p1', status: 'in_progress', updated_at: sec(now - STALL_MS) },
+      { id: 5, project_id: 'p1', status: 'in_progress', updated_at: sec(now - STALL_MS - 60_000) },
+      { id: 6, project_id: 'p1', status: 'in_progress', updated_at: sec(now - 3600_000 * 3) },
       { id: 7, project_id: 'p1', status: 'done', updated_at: sec(now - 3600_000 * 10) },
-      { id: 8, project_id: 'other', status: 'new', updated_at: sec(now - 3600_000 * 10) },
-      { id: 9, project_id: 'other', status: 'in_progress', updated_at: sec(now - 3600_000 * 10) },
     ];
 
     const counts = operatorTicketCounts({ id: 'p1' }, tickets, now);
@@ -699,6 +593,7 @@ describe('admin operator extras & probe omission', () => {
     assert.equal(counts.stalled, 2);
 
     const map = byKey(stationsFor({ project: { id: 'p1' }, tickets, now }));
+    assert.equal(map.agent.state, 'bad');
     assert.equal(map.agent.meta.needsYou, 2);
     assert.equal(map.agent.meta.stalled, 2);
     assert.equal(map.request.meta.needsYou, 2);

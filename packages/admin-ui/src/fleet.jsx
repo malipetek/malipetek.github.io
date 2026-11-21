@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { LOCALES } from '../../../src/lib/locales.js';
 import { useAdmin, usePoll } from './store.js';
 import { EXECUTORS, PRIORITIES, ago, chargeOf, money, priorityName, span, usd } from './format.js';
-import { Button, Chips, Dot, Empty, Field, Modal, PageHeader, Segmented, StatusPill, Tag, cx } from './ui.jsx';
+import { Button, Chips, Dot, Empty, Field, Modal, PageHeader, Segmented, Skeleton, StatusPill, Tag, cx, useContextMenu } from './ui.jsx';
 import { HealthView } from './health.jsx';
 import { MachinePanel, useMachine } from './machine.jsx';
 import { ToolboxPanel } from './toolbox.jsx';
@@ -141,14 +141,15 @@ function NodeModal({ node, local, onClose }) {
 }
 
 export function FleetView() {
-  const { data, openTicket } = useAdmin();
+  const { data, openTicket, open } = useAdmin();
   const machine = useMachine();
   const runs = [...data.running, ...data.recent].slice(0, 8);
   return (
     <div className="aw-view aw-fleet">
       <PageHeader
         title="Fleet"
-        subtitle={`${data.nodes.length} node${data.nodes.length === 1 ? '' : 's'} · ${data.queue.length} waiting · ${data.running.length} running`}
+        subtitle="The machines that run agents, what waits for them, and the end-to-end checks."
+        overflow={[{ label: 'Settings: work queue…', run: () => open('settings') }]}
       />
       <HealthView compact />
       <div className="aw-nodes">
@@ -156,70 +157,75 @@ export function FleetView() {
         {data.nodes.map((n) => (
           <NodeCard key={n.id} node={n} local={machine.live && n.id === machine.nodeId} />
         ))}
-        {!data.nodes.length ? <Empty title="No node has connected yet." hint="Turn on a worker from This Mac (desktop app)." /> : null}
+        {!data.nodes.length ? <Empty title="No node has connected yet." hint="Open the desktop app and lend This Mac from the status bar, or start a node with its config file." /> : null}
       </div>
 
       <section className="aw-group">
         <h3>
           Queue <span className="aw-count">{data.queue.length}</span>
         </h3>
-        {data.queue.length ? <div className="aw-tablewrap"><table className="aw-table">
+        {data.queue.length ? <div className="aw-tablewrap"><table className="aw-table aw-table--stack aw-table--rows">
           <thead>
             <tr>
-              <th>#</th>
+              <th className="aw-num">#</th>
               <th>Title</th>
               <th>Project</th>
               <th>Priority</th>
-              <th>Waiting</th>
+              <th className="aw-num">Waiting</th>
               <th>Why waiting</th>
             </tr>
           </thead>
           <tbody>
             {data.queue.map((q) => (
-              <tr key={q.id} onClick={() => openTicket(q.id)}>
-                <td className="aw-mono">#{q.id}</td>
+              <tr key={q.id} onClick={() => openTicket(q.id)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && openTicket(q.id)}>
+                <td className="aw-num aw-muted">#{q.id}</td>
                 <td className="aw-table__title">{q.title}</td>
-                <td>{q.slug ?? '—'}</td>
-                <td>{priorityName(q.priority)}</td>
-                <td>{span(q.waitingSeconds)}</td>
-                <td className={q.eligible.length ? '' : 'aw-warn'}>{q.reason}</td>
+                <td data-label="Project">{q.slug ?? '—'}</td>
+                <td data-label="Priority">{priorityName(q.priority)}</td>
+                <td data-label="Waiting" className="aw-num">{span(q.waitingSeconds)}</td>
+                <td data-label="Why waiting" className={q.eligible.length ? 'aw-muted' : 'aw-warn'} style={{ whiteSpace: 'normal' }}>{q.eligible.length ? null : <><Dot state="bad" />{' '}</>}{q.reason}</td>
               </tr>
             ))}
           </tbody>
-        </table></div> : <Empty title="Nothing is waiting." />}
+        </table></div> : <Empty inline title="Nothing is waiting." hint="Approved work starts as soon as a node with a free slot can take it." />}
       </section>
 
       <section className="aw-group">
         <h3>Recent runs</h3>
-        {runs.length ? <div className="aw-tablewrap"><table className="aw-table">
+        {runs.length ? <div className="aw-tablewrap"><table className="aw-table aw-table--stack aw-table--rows">
           <thead>
             <tr>
-              <th />
-              <th>#</th>
+              <th className="aw-num">#</th>
               <th>Title</th>
+              <th>Result</th>
               <th>Agent</th>
               <th>Node</th>
-              <th>Cost</th>
+              <th className="aw-num">Cost</th>
               <th>Finished</th>
             </tr>
           </thead>
           <tbody>
-            {runs.map((r) => (
-              <tr key={r.id} onClick={() => openTicket(r.ticket_id)}>
-                <td>{r.status === 'running' || !r.status ? <span className="aw-live" /> : <Dot state={r.status === 'ok' ? 'ok' : 'bad'} />}</td>
-                <td className="aw-mono">#{r.ticket_id}</td>
-                <td className="aw-table__title">{r.title}</td>
-                <td>
-                  {r.executor}
-                  {r.model ? <span className="aw-muted"> {r.model}</span> : null}
-                </td>
-                <td>{r.node_id ?? 'this Mac'}</td>
-                <td>{usd(r.cost_micro_usd)}</td>
-                <td className="aw-muted">{r.finished_at ? `${ago(r.finished_at)} ago` : 'running'}</td>
-              </tr>
-            ))}
+            {runs.map((r) => {
+              const live = r.status === 'running' || !r.status;
+              return (
+                <tr key={r.id} onClick={() => openTicket(r.ticket_id)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && openTicket(r.ticket_id)}>
+                  <td className="aw-num aw-muted">#{r.ticket_id}</td>
+                  <td className="aw-table__title">{r.title}</td>
+                  <td data-label="Result">
+                    <span className="aw-running">{live ? <span className="aw-live" /> : <Dot state={r.status === 'ok' ? 'ok' : 'bad'} />}{live ? 'running' : r.status === 'ok' ? 'ok' : r.status}</span>
+                  </td>
+                  <td data-label="Agent">
+                    {r.executor}
+                    {r.model ? <span className="aw-muted"> {r.model}</span> : null}
+                  </td>
+                  <td data-label="Node">{r.node_id ?? 'this Mac'}</td>
+                  <td data-label="Cost" className="aw-num">{usd(r.cost_micro_usd)}</td>
+                  <td data-label="Finished" className="aw-muted">{r.finished_at ? `${ago(r.finished_at)} ago` : '—'}</td>
+                </tr>
+              );
+            })}
           </tbody>
-        </table></div> : <Empty title="No runs yet" />}
+        </table></div> : <Empty inline title="No runs yet." hint="Runs appear here when a node starts approved work." />}
       </section>
     </div>
   );
@@ -665,9 +671,9 @@ export function ProjectPeople({ project: p }) {
 
 /** One client: who they are, what they owe, and every request they filed, open ones first. */
 export function ClientView({ id }) {
-  const { data, openTicket } = useAdmin();
+  const { data, openTicket, open: openTab } = useAdmin();
   const c = data.clients.find((x) => x.id === id);
-  if (!c) return <p className="aw-empty">{data.loaded ? 'No such client.' : 'Loading…'}</p>;
+  if (!c) return data.loaded ? <div className="aw-view"><Empty title="No such client." hint="They may have been removed. The directory lists everyone." action={<Button onClick={() => openTab('clients')}>Open Clients</Button>} /></div> : <Skeleton variant="pane" label="Loading the client…" />;
   const closed = (t) => ['done', 'declined'].includes(t.status);
   const tickets = data.tickets
     .filter((t) => t.kind !== 'system' && t.client_email === c.email)
@@ -687,38 +693,56 @@ export function ClientView({ id }) {
           Requests <span className="aw-count">{tickets.length}</span>
         </h3>
         <div className="aw-tablewrap">
-          <table className="aw-table">
+          <table className="aw-table aw-table--stack aw-table--rows">
             <thead>
               <tr>
-                <th>#</th>
+                <th className="aw-num">#</th>
                 <th>Title</th>
                 <th>Status</th>
                 <th>Project</th>
-                <th>Cost</th>
+                <th className="aw-num">Cost</th>
                 <th>Updated</th>
               </tr>
             </thead>
             <tbody>
               {tickets.map((t) => (
                 <tr key={t.id} onClick={() => openTicket(t.id)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && openTicket(t.id)}>
-                  <td className="aw-mono">#{t.id}</td>
+                  <td className="aw-num aw-muted">#{t.id}</td>
                   <td className="aw-table__title">
-                    {t.client_waiting_since && !closed(t) ? <Dot state="warn" /> : null} {t.title}
+                    {t.title}
+                    {t.client_waiting_since && !closed(t) ? <> <Tag tone="warn">waiting for you</Tag></> : null}
                   </td>
-                  <td>
+                  <td data-label="Status">
                     <StatusPill status={t.status} />
                   </td>
-                  <td>{t.project_name ?? '—'}</td>
-                  <td>{money(chargeOf(t).totalCents)}</td>
-                  <td className="aw-muted">{ago(t.updated_at)} ago</td>
+                  <td data-label="Project">{t.project_name ?? '—'}</td>
+                  <td data-label="Cost" className="aw-num">{money(chargeOf(t).totalCents)}</td>
+                  <td data-label="Updated" className="aw-muted">{ago(t.updated_at)} ago</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {!tickets.length ? <p className="aw-empty">No requests yet.</p> : null}
+          {!tickets.length ? <Empty inline title="No requests yet." hint="What this client files in the portal, or asks their assistant for, appears here." /> : null}
         </div>
       </section>
     </div>
+  );
+}
+
+/** A directory row: click opens the client; right-click or Shift+F10 offers open and email. */
+function ClientRow({ c, onOpen, children }) {
+  const menu = useContextMenu([
+    { label: 'Open', run: onOpen },
+    { label: 'Email…', run: () => window.open(`mailto:${c.email}`) },
+    { label: 'Copy email address', run: () => void navigator.clipboard?.writeText(c.email) },
+  ], `${c.name || c.email} actions`);
+  return (
+    <li>
+      <button type="button" className="aw-row aw-directory__open" onClick={onOpen} {...menu.bind}>
+        {children}
+      </button>
+      {menu.menu}
+    </li>
   );
 }
 
@@ -726,23 +750,23 @@ export function ClientsView() {
   const { data, setModal, open } = useAdmin();
   return (
     <div className="aw-view aw-clients">
-      <PageHeader title="Clients & projects" subtitle={data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : undefined} />
+      <PageHeader
+        title="Clients & projects"
+        subtitle={data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : 'Who you work for, and the projects you work on.'}
+        actions={<Button kind="primary" icon="plus" onClick={() => setModal({ kind: 'custom', render: (close) => <InviteClientModal onClose={close} /> })}>Invite client</Button>}
+        secondary={[{ label: 'New project', run: () => setModal({ kind: 'project' }) }]}
+      />
       <div className="aw-split aw-directory">
         <section className="aw-group">
           <header className="aw-row-h">
-            <h3>Clients</h3>
-            <span className="aw-toolbar__fill" />
-            <Button size="sm" kind="primary" onClick={() => setModal({ kind: 'custom', render: (close) => <InviteClientModal onClose={close} /> })}>
-              Invite client
-            </Button>
+            <h3>Clients <span className="aw-count">{data.clients.length}</span></h3>
           </header>
           {data.clients.length ? <ul className="aw-rows">
             {data.clients.map((c) => {
               const count = c.projectIds?.length ?? 0;
               const lastSeen = c.lastSeenAt ?? c.last_seen_at;
               return (
-                <li key={c.id}>
-                  <button type="button" className="aw-row aw-directory__open" onClick={() => open(`c:${c.id}`)}>
+                <ClientRow key={c.id} c={c} onOpen={() => open(`c:${c.id}`)}>
                     <span className="aw-directory__name">
                       <strong>{c.name || c.email}</strong>
                       {c.name ? <span className="aw-muted">{c.email}</span> : null}
@@ -750,19 +774,14 @@ export function ClientsView() {
                     <span className="aw-muted">{count} {count === 1 ? 'project' : 'projects'}</span>
                     <span className="aw-muted">{c.usage ? (usageLine(c.usage) || 'No usage') : 'Usage unavailable'}</span>
                     <span className="aw-muted">{lastSeen ? `Seen ${ago(lastSeen)} ago` : 'Last seen unavailable'}</span>
-                  </button>
-                </li>
+                </ClientRow>
               );
             })}
-          </ul> : <p className="aw-empty">No clients yet.</p>}
+          </ul> : <Empty inline title="No clients yet." hint="Invite a client and they get a portal account for their projects." />}
         </section>
         <section className="aw-group">
           <header className="aw-row-h">
-            <h3>Projects</h3>
-            <span className="aw-toolbar__fill" />
-            <Button size="sm" kind="primary" onClick={() => setModal({ kind: 'project' })}>
-              New project
-            </Button>
+            <h3>Projects <span className="aw-count">{data.projects.length}</span></h3>
           </header>
           {data.projects.length ? <ul className="aw-rows">
             {data.projects.map((p) => {
@@ -786,7 +805,7 @@ export function ClientsView() {
                 </li>
               );
             })}
-          </ul> : <p className="aw-empty">No projects yet.</p>}
+          </ul> : <Empty inline title="No projects yet." hint="A project is a codebase and its sites." action={<Button onClick={() => setModal({ kind: 'project' })}>New project</Button>} />}
         </section>
       </div>
     </div>
@@ -815,8 +834,8 @@ function TranslationsPanel() {
         <span className="aw-toolbar__fill" />
         <Button
           size="sm"
-          kind="primary"
           disabled={!status?.ready || busy}
+          disabledReason={!status ? 'Reading the translation status…' : !status.ready ? 'Needs DEEPSEEK_API_KEY and the GitHub App secrets on the Worker.' : 'A translation run is already queued or running.'}
           title="Translate every interface and email string that is missing or out of date, in all languages, and commit it to master"
           onClick={() => void act(() => api('POST', '/admin/i18n/sync', {}), 'Translation starts within 5 minutes.').then(setStatus, () => undefined)}
         >
@@ -959,7 +978,7 @@ export function SettingsView() {
   };
   return (
     <div className="aw-view aw-settings">
-      <PageHeader title="Settings" />
+      <PageHeader title="Settings" subtitle="How the queue runs, what the portal does on its own, and this machine." />
       {platform === 'dsh' && host ? (
         <>
           <section className="aw-panel">
@@ -970,6 +989,7 @@ export function SettingsView() {
                 <Button
                   kind="primary"
                   disabled={!token.trim()}
+                  disabledReason="Paste the session token first."
                   onClick={async () => {
                     const r = await host.command(`login ${token.trim()}`);
                     notify(r.text, r.ok ? 'ok' : 'error');
@@ -993,7 +1013,7 @@ export function SettingsView() {
       ) : null}
       <section className="aw-panel">
         <h3>Work queue</h3>
-        {!read.settings ? (read.loading ? <p className="aw-muted">Reading settings…</p> : (
+        {!read.settings ? (read.loading ? <Skeleton lines={4} label="Reading settings…" /> : (
           <div className="aw-inline">
             <p className="aw-warn" role="alert">Could not read settings.</p>
             <Button size="sm" onClick={retry}>Retry</Button>
@@ -1036,7 +1056,7 @@ export function SettingsView() {
           {changed ? <span className="aw-muted">Unsaved changes</span> : null}
           <span className="aw-toolbar__fill" />
           <Button disabled={!changed || saving} onClick={() => setEdits({})}>Reset</Button>
-          <Button kind="primary" disabled={invalid || !Object.keys(patch).length || saving} onClick={submit}>
+          <Button kind="primary" busy={saving} disabled={invalid || !Object.keys(patch).length} disabledReason={invalid ? 'Fix the highlighted fields first.' : 'Nothing has changed yet.'} onClick={submit}>
             {saving ? 'Saving…' : 'Save'}
           </Button>
         </footer>

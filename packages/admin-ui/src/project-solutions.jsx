@@ -199,12 +199,13 @@ export function ProjectSolutions({ project }) {
       ? <ErrorNote error={status.error} onRetry={refreshStatus} />
       : null}
     {rows === null || rows === undefined
-      ? <p className="aw-muted">Loading connections…</p>
+      ? <div className="aw-psol__skel" role="status" aria-label="Loading connections…"><span className="aw-sr-only">Loading connections…</span><span aria-hidden="true" /><span aria-hidden="true" /></div>
       : !rows.length && !status.error
         ? <p className="aw-muted">No connections needed for the chosen kinds.</p>
         : <ul className="aw-psol__rows">
             {rows.map((row) => {
               const entry = integrationById.get(row.id);
+              const needsAction = !row.connected && row.required;
               return <li className="aw-psol__row" key={row.id}>
                 <Dot state={dotState(row)} />
                 <div className="aw-psol__rowmain">
@@ -217,7 +218,7 @@ export function ProjectSolutions({ project }) {
                     : row.verifiedAt ? <span className="aw-muted">verified {ago(row.verifiedAt)} ago</span> : null}
                 </div>
                 <div className="aw-psol__rowact">
-                  {entry ? <Button size="sm" kind="primary" onClick={() => setEntering(entry)}>Connect values</Button> : null}
+                  {entry ? <Button size="sm" kind={needsAction ? 'primary' : 'default'} onClick={() => setEntering(entry)}>Connect values</Button> : null}
                   <Button size="sm" disabled={verifying === row.id} onClick={() => verify(row)}>{verifying === row.id ? 'Verifying…' : 'Verify'}</Button>
                   {entry ? <button type="button" className="aw-link aw-psol__copy" onClick={() => void copySteps(entry)}>Copy client steps</button> : null}
                 </div>

@@ -14,7 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // esbuild is not a direct dependency; use the copy Astro's toolchain installs.
 const fromRoot = createRequire(join(here, '../../package.json'));
 const { build } = createRequire(fromRoot.resolve('astro/package.json'))('esbuild');
-const HOOKS = ['createContext', 'createElement', 'Fragment', 'useCallback', 'useContext', 'useEffect', 'useMemo', 'useRef', 'useState', 'useSyncExternalStore'];
+const HOOKS = ['createContext', 'createElement', 'Fragment', 'useCallback', 'useContext', 'useEffect', 'useLayoutEffect', 'useMemo', 'useRef', 'useState', 'useSyncExternalStore'];
 
 const hostReact = {
   name: 'host-react',

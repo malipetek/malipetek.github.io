@@ -18,7 +18,7 @@ import {
   usd,
 } from './format.js';
 import { nextRowIndex } from './row-navigation.mjs';
-import { Badge, Button, Dot, Icon, PageHeader, Segmented, StatusPill, Tag, cx } from './ui.jsx';
+import { Button, Dot, EmptyState, PageHeader, Segmented, StatusPill, Tag, Toolbar, cx, useContextMenu } from './ui.jsx';
 
 /** Filter bar shared by the board and the list. */
 function useFilters() {
@@ -56,8 +56,25 @@ function useFilters() {
   return { boardProject, setBoardProject, kind, setKind, q, setQ, apply, hits };
 }
 
+/** The one primary action of the board and the list: a new task, preset to the filtered project. */
+function NewTaskButton({ f }) {
+  const { setModal } = useAdmin();
+  return (
+    <Button kind="primary" icon="plus" shortcut="N" onClick={() => setModal({ kind: 'task', projectId: f.boardProject === 'all' ? undefined : f.boardProject })}>
+      New task
+    </Button>
+  );
+}
+
+const filtered = (f) => f.boardProject !== 'all' || f.kind !== 'all' || f.q.trim();
+const clearFilters = (f) => {
+  f.setBoardProject('all');
+  f.setKind('all');
+  f.setQ('');
+};
+
 function FilterBar({ f, extra }) {
-  const { data, setModal, platform } = useAdmin();
+  const { data, platform } = useAdmin();
   const search = useRef(null);
   // '/' focuses the filter, the way every list app does; typing is untouched.
   useEffect(() => {
@@ -72,7 +89,8 @@ function FilterBar({ f, extra }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [platform]);
   return (
-    <div className="aw-toolbar">
+    <Toolbar label="Filters">
+      <input ref={search} className="aw-search" type="search" value={f.q} aria-label="Filter, or search threads" aria-keyshortcuts={platform === 'web' ? '/' : undefined} placeholder="Filter, or search threads…" onChange={(e) => f.setQ(e.target.value)} />
       <select value={f.boardProject} onChange={(e) => f.setBoardProject(e.target.value)} aria-label="Project">
         <option value="all">All projects</option>
         {data.projects.map((p) => (
@@ -89,14 +107,12 @@ function FilterBar({ f, extra }) {
           { value: 'system', label: MINE_LABEL },
         ]}
         onChange={f.setKind}
+        label="Kind of work"
       />
-      <input ref={search} className="aw-search" value={f.q} placeholder="Filter, or search threads…" onChange={(e) => f.setQ(e.target.value)} />
-      <span className="aw-toolbar__fill" />
       {extra}
-      <Button kind="primary" size="sm" onClick={() => setModal({ kind: 'task', projectId: f.boardProject === 'all' ? undefined : f.boardProject })}>
-        <Icon name="plus" size={14} /> New task
-      </Button>
-    </div>
+      <span className="aw-toolbar__fill" />
+      {filtered(f) ? <Button kind="ghost" size="sm" onClick={() => clearFilters(f)}>Clear filters</Button> : null}
+    </Toolbar>
   );
 }
 
@@ -119,6 +135,30 @@ function useMove() {
     }
     return setStatus(t, s);
   };
+}
+
+/** The moves a ticket offers from a row or card; the ticket page has the same ones. */
+const ROW_MOVES = {
+  new: [['approved', 'Approve'], ['declined', 'Decline']],
+  approved: [['new', 'Hold']],
+  review: [['done', 'Mark done'], ['approved', RUN_AGAIN]],
+  done: [['approved', RUN_AGAIN]],
+  declined: [['new', 'Reopen']],
+};
+
+/** Right-click (or Shift+F10) on a ticket row or card: open, copy its link, and its status moves. */
+export function useTicketMenu(t) {
+  const { openTicket, platform } = useAdmin();
+  const move = useMove();
+  return useContextMenu(() => [
+    { label: 'Open', run: () => openTicket(t.id) },
+    {
+      label: 'Copy link',
+      run: () => void navigator.clipboard?.writeText(`${platform === 'web' ? location.origin + location.pathname : 'https://ptechsolutions.net/portal/admin'}#ticket=${t.id}`),
+    },
+    ...(ROW_MOVES[t.status]?.length ? [{ separator: true }] : []),
+    ...(ROW_MOVES[t.status] ?? []).map(([s, label]) => ({ label, run: () => void move(t, s), danger: s === 'declined' })),
+  ], `#${t.id} actions`);
 }
 
 /**
@@ -158,12 +198,15 @@ const titleLinkClick = (e) => {
 
 export function TicketCard({ t, draggable, cell, onKey }) {
   const { data, openTicket } = useAdmin();
+  const menu = useTicketMenu(t);
   const run = data.running.find((r) => r.ticket_id === t.id);
   const queued = data.queue.find((q) => q.id === t.id);
   const cost = chargeOf(t).totalCents;
   return (
     <article
       ref={cell ?? undefined}
+      onContextMenu={menu.bind.onContextMenu}
+      aria-label={`#${t.id} ${t.title}`}
       className={cx('aw-card', run && 'is-running', queued && !queued.eligible.length && 'is-stuck')}
       draggable={draggable}
       onDragStart={(e) => {
@@ -171,16 +214,18 @@ export function TicketCard({ t, draggable, cell, onKey }) {
         e.dataTransfer.effectAllowed = 'move';
       }}
       onClick={() => openTicket(t.id)}
-      onKeyDown={onKey ?? ((e) => e.key === 'Enter' && openTicket(t.id))}
+      onKeyDown={(e) => {
+        menu.bind.onKeyDown(e);
+        if (!e.defaultPrevented) (onKey ?? ((ev) => ev.key === 'Enter' && openTicket(t.id)))(e);
+      }}
       tabIndex={0}
     >
       <div className="aw-card__top">
         <span className="aw-card__id">#{t.id}</span>
-        {t.kind === 'system' ? <Tag tone="dash">{MINE_LABEL}</Tag> : <Tag tone="client">client</Tag>}
         {t.source === 'assistant' ? (
-          <Tag tone="ok" title="The client’s own assistant (ChatGPT, …) made this change on their subscription">their AI</Tag>
+          <Tag title="The client’s own assistant (ChatGPT, …) made this change on their subscription">their AI</Tag>
         ) : null}
-        {(t.priority ?? 0) > 0 ? <Tag tone="hot">{priorityName(t.priority)}</Tag> : null}
+        {(t.priority ?? 0) > 0 ? <Tag>{priorityName(t.priority)}</Tag> : null}
         {clientWaiting(t) ? <Tag tone="warn">awaiting reply</Tag> : null}
         <span className="aw-card__age">{ago(t.updated_at)}</span>
       </div>
@@ -191,7 +236,7 @@ export function TicketCard({ t, draggable, cell, onKey }) {
       </h4>
       <div className="aw-card__meta">
         <span>{t.project_name ?? 'no project'}</span>
-        {t.kind !== 'system' && t.client_email ? <span>{t.client_email}</span> : null}
+        {t.kind === 'system' ? <span>{MINE_LABEL}</span> : t.client_name || t.client_email ? <span title={t.client_email}>{t.client_name || t.client_email}</span> : null}
       </div>
       <div className="aw-card__foot">
         {run ? (
@@ -209,7 +254,8 @@ export function TicketCard({ t, draggable, cell, onKey }) {
         <span className="aw-toolbar__fill" />
         {cost ? <span className="aw-muted">{money(cost)}</span> : null}
       </div>
-      {queued && !queued.eligible.length ? <p className="aw-card__warn">{queued.reason}</p> : null}
+      {queued && !queued.eligible.length ? <p className="aw-card__warn"><Dot state="bad" /> <span>{queued.reason}</span></p> : null}
+      {menu.menu}
     </article>
   );
 }
@@ -238,8 +284,8 @@ export function BoardView() {
   const byId = new Map(data.tickets.map((t) => [t.id, t]));
   return (
     <div className="aw-view aw-view--board">
-      <PageHeader title="Board" subtitle="Every request by status. Drag a card to another column to move it." />
-      <FilterBar f={f} extra={<Segmented value={showClosed} options={[{ value: false, label: 'Open' }, { value: true, label: '+ Declined' }]} onChange={setShowClosed} />} />
+      <PageHeader title="Board" subtitle="Every request by status. Drag a card to another column, or right-click it, to move it." actions={<NewTaskButton f={f} />} />
+      <FilterBar f={f} extra={<Segmented label="Columns" value={showClosed} options={[{ value: false, label: 'Open' }, { value: true, label: '+ Declined' }]} onChange={setShowClosed} />} />
       <div className="aw-board">
         {columns.map((s) => {
           let items = tickets.filter((t) => t.status === s);
@@ -263,7 +309,7 @@ export function BoardView() {
               }}
             >
               <header title={STATUS_HINT[s]}>
-                <span className={`aw-sq aw-sq--${s}`} />
+                <span className={`aw-sq aw-sq--${s}`} aria-hidden="true" />
                 {STATUS_LABEL[s]}
                 <span className="aw-count">{tickets.filter((t) => t.status === s).length}</span>
               </header>
@@ -281,14 +327,14 @@ export function BoardView() {
 }
 
 const COLUMNS = [
-  { key: 'id', label: '#', get: (t) => t.id },
+  { key: 'id', label: '#', get: (t) => t.id, num: true },
   { key: 'title', label: 'Title', get: (t) => t.title.toLowerCase() },
   { key: 'status', label: 'Status', get: (t) => STATUSES.indexOf(t.status) },
   { key: 'project', label: 'Project', get: (t) => t.project_name ?? '' },
   { key: 'who', label: 'For', get: (t) => (t.kind === 'system' ? '' : t.client_email ?? '') },
   { key: 'priority', label: 'Priority', get: (t) => t.priority ?? 0 },
   { key: 'agent', label: 'Agent', get: (t) => t.executor ?? '' },
-  { key: 'cost', label: 'Cost', get: (t) => chargeOf(t).totalCents },
+  { key: 'cost', label: 'Cost', get: (t) => chargeOf(t).totalCents, num: true },
   { key: 'updated', label: 'Updated', get: (t) => t.updated_at },
 ];
 
@@ -307,7 +353,7 @@ export function ListView() {
   const nav = useRowNav(rows.length, (i) => openTicket(rows[i].id));
   return (
     <div className="aw-view">
-      <PageHeader title="All work" subtitle="Every request in one table. Click a column to sort; click a row to open it." />
+      <PageHeader title="All work" subtitle="Every request in one table. Click a column to sort; click a row to open it." actions={<NewTaskButton f={f} />} />
       <FilterBar
         f={f}
         extra={
@@ -323,43 +369,127 @@ export function ListView() {
         }
       />
       <div className="aw-tablewrap">
-        <table className="aw-table">
+        <table className="aw-table aw-table--stack aw-table--rows">
           <thead>
             <tr>
               {COLUMNS.map((c) => (
-                <th key={c.key} onClick={() => setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : 1 }))} aria-sort={sort.key === c.key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>
-                  {c.label}
-                  {sort.key === c.key ? (sort.dir > 0 ? ' ↑' : ' ↓') : ''}
+                <th key={c.key} className={c.num ? 'aw-num' : undefined} aria-sort={sort.key === c.key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'} onClick={() => setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : 1 }))}>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : 1 })); }}>
+                    {c.label}
+                    {sort.key === c.key ? (sort.dir > 0 ? ' ↑' : ' ↓') : ''}
+                  </button>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rows.map((t, i) => (
-              <tr key={t.id} ref={nav.cell(i)} onClick={() => openTicket(t.id)} tabIndex={0} onKeyDown={(e) => nav.onKey(e, i)}>
-                <td className="aw-mono">#{t.id}</td>
-                <td className="aw-table__title">
-                  <a className="aw-titlelink" href={`#ticket=${t.id}`} tabIndex={-1} onClick={titleLinkClick}>
-                    {t.title}
-                  </a>
-                  {f.hits.get(t.id) ? <small className="aw-muted aw-snippet">{f.hits.get(t.id)}</small> : null}
-                </td>
-                <td>
-                  <StatusPill status={t.status} />
-                </td>
-                <td>{t.project_name ?? '—'}</td>
-                <td>{t.kind === 'system' ? <Tag tone="dash">{MINE_LABEL}</Tag> : t.client_email}</td>
-                <td>{t.priority ? priorityName(t.priority) : '—'}</td>
-                <td>{t.source === 'assistant' ? 'their assistant' : t.executor ?? 'Auto'}</td>
-                <td>{money(chargeOf(t).totalCents)}</td>
-                <td className="aw-muted">{ago(t.updated_at)} ago</td>
-              </tr>
+              <ListRow key={t.id} t={t} hit={f.hits.get(t.id)} cell={nav.cell(i)} onKey={(e) => nav.onKey(e, i)} />
             ))}
           </tbody>
         </table>
-        {!rows.length ? <p className="aw-empty">Nothing matches.</p> : null}
+        {!rows.length ? (
+          <EmptyState
+            title={data.tickets.length ? 'Nothing matches these filters.' : 'No requests yet.'}
+            hint={data.tickets.length ? 'Clear the filters, or choose Everything in the status filter.' : 'Requests from clients and your own tasks appear here.'}
+            action={data.tickets.length ? <Button onClick={() => { clearFilters(f); setStatusFilter('all'); }}>Clear filters</Button> : <NewTaskButton f={f} />}
+          />
+        ) : null}
       </div>
     </div>
+  );
+}
+
+function ListRow({ t, hit, cell, onKey }) {
+  const { openTicket } = useAdmin();
+  const menu = useTicketMenu(t);
+  return (
+    <tr
+      ref={cell}
+      onClick={() => openTicket(t.id)}
+      tabIndex={0}
+      onContextMenu={menu.bind.onContextMenu}
+      onKeyDown={(e) => {
+        menu.bind.onKeyDown(e);
+        if (!e.defaultPrevented) onKey(e);
+      }}
+    >
+      <td className="aw-num aw-muted">#{t.id}</td>
+      <td className="aw-table__title">
+        <a className="aw-titlelink" href={`#ticket=${t.id}`} tabIndex={-1} onClick={titleLinkClick}>
+          {t.title}
+        </a>
+        {hit ? <small className="aw-muted aw-snippet">{hit}</small> : null}
+        {menu.menu}
+      </td>
+      <td data-label="Status">
+        <StatusPill status={t.status} />
+      </td>
+      <td data-label="Project">{t.project_name ?? '—'}</td>
+      <td data-label="For">{t.kind === 'system' ? <span className="aw-muted">{MINE_LABEL}</span> : t.client_email}</td>
+      <td data-label="Priority">{t.priority ? priorityName(t.priority) : <span className="aw-faint">Normal</span>}</td>
+      <td data-label="Agent">{t.source === 'assistant' ? 'their assistant' : t.executor ?? <span className="aw-faint">Auto</span>}</td>
+      <td data-label="Cost" className="aw-num">{money(chargeOf(t).totalCents)}</td>
+      <td data-label="Updated" className="aw-muted">{ago(t.updated_at)} ago</td>
+    </tr>
+  );
+}
+
+/** A Needs-you row: the ticket, who and where, how long, and its one or two moves. */
+function InboxRow({ g, t, q, cell, onKey, move }) {
+  const { openTicket } = useAdmin();
+  const menu = useTicketMenu(t);
+  return (
+    <li
+      className="aw-row"
+      tabIndex={0}
+      ref={cell}
+      onContextMenu={menu.bind.onContextMenu}
+      onKeyDown={(e) => {
+        menu.bind.onKeyDown(e);
+        if (!e.defaultPrevented) onKey(e);
+      }}
+      onClick={() => openTicket(t.id)}
+    >
+      <span className="aw-mono aw-muted">#{t.id}</span>
+      <a className="aw-titlelink aw-row__title" href={`#ticket=${t.id}`} tabIndex={-1} onClick={titleLinkClick} title={t.title}>
+        {t.title}
+      </a>
+      <span className="aw-row__meta">
+        {t.kind === 'system' ? MINE_LABEL : t.client_name || t.client_email} · {t.project_name ?? 'no project'}
+      </span>
+      {g.key === 'stuck' && q ? <span className="aw-warn aw-row__meta">{q.reason}</span> : null}
+      <span className="aw-muted">{g.key === 'waiting' ? `waiting ${ago(t.client_waiting_since)}` : ago(t.updated_at)}</span>
+      <span className="aw-row__actions">
+        {(g.extra?.(t) ?? []).map(([label, run]) => (
+          <Button
+            key={label}
+            size="sm"
+            kind="ghost"
+            onClick={(e) => {
+              e.stopPropagation();
+              void run();
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+        {g.actions(t).map(([s, label]) => (
+          <Button
+            key={s}
+            size="sm"
+            kind={s === 'declined' ? 'ghost' : 'default'}
+            onClick={(e) => {
+              e.stopPropagation();
+              void move(t, s);
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+      </span>
+      {menu.menu}
+    </li>
   );
 }
 
@@ -407,57 +537,24 @@ export function InboxView() {
             </h3>
             <ul className="aw-rows">
               {g.items.map((t) => {
-                const q = data.queue.find((x) => x.id === t.id);
                 const i = at.get(t);
-                return (
-                  <li key={t.id} className="aw-row" tabIndex={0} ref={nav.cell(i)} onKeyDown={(e) => nav.onKey(e, i)} onClick={() => openTicket(t.id)}>
-                    <span className="aw-mono aw-muted">#{t.id}</span>
-                    <a className="aw-titlelink aw-row__title" href={`#ticket=${t.id}`} tabIndex={-1} onClick={titleLinkClick} title={t.title}>
-                      {t.title}
-                    </a>
-                    {t.kind === 'system' ? <Badge>{MINE_LABEL}</Badge> : <span className="aw-muted">{t.client_email}</span>}
-                    <span className="aw-muted">{t.project_name ?? 'no project'}</span>
-                    {g.key === 'stuck' && q ? <span className="aw-warn">{q.reason}</span> : null}
-                    <span className="aw-toolbar__fill" />
-                    <span className="aw-muted">{g.key === 'waiting' ? `waiting ${ago(t.client_waiting_since)}` : ago(t.updated_at)}</span>
-                    <span className="aw-row__actions">
-                      {(g.extra?.(t) ?? []).map(([label, run]) => (
-                        <Button
-                          key={label}
-                          size="sm"
-                          kind="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void run();
-                          }}
-                        >
-                          {label}
-                        </Button>
-                      ))}
-                      {g.actions(t).map(([s, label]) => (
-                        <Button
-                          key={s}
-                          size="sm"
-                          kind={s === 'declined' ? 'ghost' : 'default'}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void move(t, s);
-                          }}
-                        >
-                          {label}
-                        </Button>
-                      ))}
-                    </span>
-                  </li>
-                );
+                return <InboxRow key={t.id} g={g} t={t} q={data.queue.find((x) => x.id === t.id)} cell={nav.cell(i)} onKey={(e) => nav.onKey(e, i)} move={move} />;
               })}
             </ul>
           </section>
         ) : null,
       )}
+      {empty && !failed.length ? (
+        <EmptyState
+          icon="check"
+          title="Nothing needs you."
+          hint="New requests, finished runs and waiting clients land here. The board shows everything in flight."
+          action={<Button onClick={() => open('board')}>Open the board</Button>}
+        />
+      ) : null}
       {failed.length ? (
         <section className="aw-group">
-          <h3>Failed runs, last 24h</h3>
+          <h3>Failed runs, last 24h <span className="aw-count">{failed.length}</span></h3>
           <ul className="aw-rows">
             {failed.map((r) => {
               const i = at.get(r);
@@ -468,7 +565,7 @@ export function InboxView() {
                   <a className="aw-titlelink aw-row__title" href={`#ticket=${r.ticket_id}`} tabIndex={-1} onClick={titleLinkClick}>
                     {r.title}
                   </a>
-                  <span className="aw-muted">
+                  <span className="aw-row__meta">
                     {r.executor} on {r.node_id ?? 'Harness'} · {usd(r.cost_micro_usd)}
                   </span>
                   <span className="aw-toolbar__fill" />

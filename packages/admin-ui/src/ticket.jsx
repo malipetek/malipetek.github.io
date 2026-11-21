@@ -24,7 +24,7 @@ import {
   usd,
   when,
 } from './format.js';
-import { Button, Chips, Dot, Field, Modal, Resizer, Segmented, StatusPill, Tag, cx } from './ui.jsx';
+import { Button, Chips, Dot, ErrorNote, Field, Modal, Resizer, Segmented, Skeleton, StatusPill, Tag, cx } from './ui.jsx';
 import { ReviewButton } from './review.jsx';
 import { createSubmission } from './submit-state.js';
 import { sortedRuns } from './run-evidence.js';
@@ -60,8 +60,14 @@ export function TicketView({ id, active, details = true }) {
   const meter = useMeter(api, ticket, active);
   // The waiting banner's Reply button aims the composer: reply mode, then focus.
   const [replyAt, setReplyAt] = useState(0);
-  if (loading && !ticket) return <p className="aw-empty">Loading #{id}…</p>;
-  if (!ticket) return <div className="aw-empty" role="alert">{errorText(error)} <Button onClick={reload}>Retry loading ticket</Button></div>;
+  if (loading && !ticket) return <Skeleton variant="ticket" label={`Loading #${id}…`} />;
+  if (!ticket) {
+    return (
+      <div className="aw-view">
+        <ErrorNote error={error} onRetry={reload} />
+      </div>
+    );
+  }
   const isClient = ticket.kind !== 'system';
   // Who filed it: a person in the portal, or the client's assistant over MCP.
   const via = assistantBadge(ticket);
@@ -71,7 +77,7 @@ export function TicketView({ id, active, details = true }) {
         <Resizer host=".aw-ticket" cssVar="--aw-details-w" def={300} min={200} max={640} invert storage="aw.details.w" className="aw-resize--details" />
       ) : null}
       <div className="aw-ticket__main">
-        {error ? <div className="aw-banner aw-banner--warn" role="alert">Refresh failed. Showing ticket evidence last fetched {fetchedAt ? new Date(fetchedAt).toLocaleString() : 'at an unknown time'}. {errorText(error)} <Button size="sm" onClick={reload}>Retry refresh</Button></div> : null}
+        {error ? <div className="aw-banner aw-banner--warn" role="alert"><span style={{ flex: 1, minWidth: 0 }}>Refresh failed. Showing ticket evidence last fetched {fetchedAt ? new Date(fetchedAt).toLocaleString() : 'at an unknown time'}. {errorText(error)}</span> <Button size="sm" onClick={reload}>Retry refresh</Button></div> : null}
         <header className="aw-ticket__head">
           <div className="aw-ticket__crumbs">
             <span className="aw-mono">#{ticket.id}</span>
@@ -99,7 +105,7 @@ export function TicketView({ id, active, details = true }) {
           <h2 title={ticket.title_en ? `Original: ${ticket.title}` : undefined}>{ticket.title_en || ticket.title}</h2>
           {clientWaiting(ticket) ? (
             <div className="aw-banner aw-banner--warn">
-              The client wrote {ago(ticket.client_waiting_since)} ago and is waiting for an answer.
+              <Dot state="warn" /> The client wrote {ago(ticket.client_waiting_since)} ago and is waiting for an answer.
               <span className="aw-toolbar__fill" />
               <Button size="sm" kind="primary" onClick={() => setReplyAt(Date.now())}>
                 Reply
@@ -750,14 +756,20 @@ function Composer({ ticket, onSent, replyAt = 0 }) {
             ) : null}
           </>
         ) : null}
-        <span className="aw-muted">⌘↵ to send</span>
+        <span className="aw-faint">⌘↵ to send</span>
         <span className="aw-toolbar__fill" />
         {note && canRerun ? (
           <Button disabled={busy || submission.current.pendingQueue || (!text.trim() && !picked.length)} onClick={() => void send(true)}>
             Add note and run again
           </Button>
         ) : null}
-        <Button kind="primary" disabled={busy || submission.current.pendingQueue || (!text.trim() && !picked.length)} onClick={() => void send(false)}>
+        <Button
+          kind="primary"
+          busy={busy}
+          disabled={submission.current.pendingQueue || (!text.trim() && !picked.length)}
+          disabledReason={submission.current.pendingQueue ? 'Retry the queue first: the note is already saved.' : 'Write something first.'}
+          onClick={() => void send(false)}
+        >
           {note ? 'Add note' : 'Send reply…'}
         </Button>
       </div>
@@ -816,6 +828,7 @@ function AdminSite({ project, site }) {
           <Button
             size="sm"
             disabled={Boolean(site.rebuildRequestedAt)}
+            disabledReason="A rebuild is already queued; a node takes it on its next beat."
             title="Build the preview branch as it is and deploy it, without an agent run"
             onClick={() =>
               void act(
@@ -1028,7 +1041,7 @@ function TimeModal({ seconds, onClose, onSave }) {
       actions={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button kind="primary" disabled={!ok} onClick={() => onSave(Math.round(Number(minutes) * 60))}>
+          <Button kind="primary" disabled={!ok} disabledReason="Enter minutes as a number, 0 or more." onClick={() => onSave(Math.round(Number(minutes) * 60))}>
             Set time
           </Button>
         </>
