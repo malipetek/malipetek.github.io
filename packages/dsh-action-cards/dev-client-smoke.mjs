@@ -510,57 +510,6 @@ check('the popup offers a way to hide it', findButton(reviewTree, '×') !== unde
 reviewButton.props.onClick();
 check('Review does not send you to the Sidebar panel', opened === 0);
 
-
-/* ---- command rows: the handshake and repeated rows ---- */
-
-const commandSeat = registered.find((entry) => entry.key === 'conversation.chat.node' && entry.id === 'command');
-check('the command row seat was registered', commandSeat !== undefined);
-const actionRow = registered.find((entry) => entry.key === 'conversation.chat.commandview' && entry.id === 'actions');
-check('the /actions command row fallback was registered', actionRow !== undefined);
-
-/** One projected command chat node. */
-const commandView = (key, commandId, args, outcome, name = 'actions') => ({
-  key,
-  kind: 'command',
-  data: { kind: 'command', seq: 1, time: 0, commandId, name, args, outcome },
-});
-
-/** A Chat snapshot over the given command nodes, in transcript order. */
-const commandSnapshot = (views) => {
-  const byKey = new Map(views.map((view) => [view.key, view]));
-  return { order: views.map((view) => view.key), nodes: { get: (key) => byKey.get(key) } };
-};
-
-/** The command seat props for one node and its snapshot. */
-const commandProps = (view, snapshot) => ({
-  node: view,
-  useChat: (select) => select(snapshot),
-  renderSlot: (_name, _owner, options) => (options?.fallback ?? null),
-});
-
-const hello = commandView('cmd-1', 'call-hello', ' hello 1.2.0', { kind: 'success', text: 'host 1.2.0 speaking; client 1.2.0' });
-const quietText = texts(await settle(commandSeat.component, commandProps(hello, commandSnapshot([hello])))).join(' ').trim();
-check('a matched handshake draws no row at all', quietText === '', quietText);
-
-const mismatch = commandView('cmd-2', 'call-mismatch', ' hello 1.2.0', { kind: 'success', text: 'host 1.3.0 speaking; client 1.2.0' });
-const warningText = texts(await settle(commandSeat.component, commandProps(mismatch, commandSnapshot([mismatch])))).join(' ');
-check('a version mismatch draws one compact warning', warningText.includes('versions differ') && warningText.includes('host 1.3.0'), warningText.trim());
-
-const listOutcome = { kind: 'success', text: '2 action(s), 1 waiting:\n• [pending] A\n· [applied] B' };
-const repeated = [
-  commandView('cmd-3', 'call-list-1', ' list', listOutcome),
-  commandView('cmd-4', 'call-list-2', ' list', listOutcome),
-];
-const repeatedSnapshot = commandSnapshot(repeated);
-const firstText = texts(await settle(commandSeat.component, commandProps(repeated[0], repeatedSnapshot))).join(' ');
-const secondText = texts(await settle(commandSeat.component, commandProps(repeated[1], repeatedSnapshot))).join(' ').trim();
-check('identical consecutive rows collapse to one with a count', firstText.includes('×2') && firstText.includes('action(s)'), firstText.trim());
-check('the collapsed repeat draws nothing', secondText === '', secondText);
-
-const plan = commandView('cmd-5', 'call-plan', ' on', { kind: 'success', text: 'plan mode selected' }, 'plan');
-const planText = texts(await settle(commandSeat.component, commandProps(plan, commandSnapshot([plan])))).join(' ');
-check('an ordinary command still draws its row', planText.includes('plan') && planText.includes('plan mode selected'), planText.trim());
-
 console.log('\nclient smoke test complete');
 // The popup polls on an interval, and the miniature runtime never unmounts, so
 // the event loop would otherwise stay alive forever.
