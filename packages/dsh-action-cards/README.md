@@ -348,6 +348,19 @@ it is:
 stale; both missing means the app never loaded the plugin. Bump `PLUGIN_VERSION`
 in `index.js` and `CLIENT_VERSION` in `client.js` together.
 
+**The handshake is a diagnostic, not conversation.** Its `command/run` and
+`command/done` events stay in the Session log and it still writes `client.json`,
+but its Chat row renders nothing at all — the Chat Node seat is left empty, which
+the transcript's own layout treats as no row and no gap. A host/client version
+**mismatch** is the one thing worth saying: it renders a single compact warning
+row instead, so a stale bundle is visible where the conversation is.
+
+The handshake runs once per browser tab per Client version; a new tab or a new
+version announces itself again. Any other command that repeats verbatim — a
+polling loop, a retried apply — collapses its consecutive identical rows into the
+first one with an `×N` badge, so a stuck repeat cannot bury the conversation the
+way the handshake once did.
+
 ### Integration test — the real services
 
 The suites above run in plain Node, against shims shaped like the real services.
