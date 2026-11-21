@@ -33,7 +33,7 @@ import { ProjectPark, PROJECT_PARK_STYLES } from './project-park.jsx';
 const PANEL_ID = 'admin';
 const NAMESPACE = 'admin';
 /** Reported to the Host on activation, so "did the panel load?" has an answer. */
-const CLIENT_VERSION = '3.10.0';
+const CLIENT_VERSION = '3.9.0';
 const DICTIONARY = { title: 'Admin' };
 
 /**
@@ -1892,23 +1892,17 @@ function apply(ctx) {
     .pta-head h1{margin:0;font-size:24px;line-height:1.15;font-weight:650;letter-spacing:-0.02em}
     .pta-head p{margin:6px 0 0;font-size:13px;opacity:.65;max-width:620px}
     .pta-head__actions{display:flex;align-items:center;gap:8px;margin-left:auto;padding-top:2px}
-    /* The Needs-you filter chips: compact, non-zero only, colour by status. */
-    .pta-filters .pta-filter{display:inline-flex;align-items:center;gap:5px}
-    .pta-filters .pta-filter .pta-dot{flex:0 0 auto}
-    .pta-dot--new{background:var(--dsw-alias-state-warning-primary,#d18f2e)}
-    .pta-dot--review,.pta-dot--waiting{background:var(--dsw-alias-state-business-primary,#4c8dff)}
-    .pta-dot--stalled{background:var(--dsw-alias-state-success-primary,#2f9e5b)}
-    .pta-head__stalled{opacity:.55}
-    /* One line per ticket row, 36px at most, with quiet actions on the right. */
-    .pta-rows .pta-row{padding:4px 12px;min-height:36px;max-height:36px}
-    .pta-row__email{max-width:200px;overflow:hidden;text-overflow:ellipsis}
-    .pta-rows .pta-row .pta-actions .pta-btn{height:22px;min-width:78px;padding:0 9px;font-size:11px;border-color:var(--dsw-alias-border-l2,rgba(127,127,127,.34));background:transparent;color:inherit;text-align:center;opacity:.62}
-    .pta-rows .pta-row .pta-actions .pta-btn:hover{background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.12))}
-    .pta-rows .pta-row:hover .pta-actions .pta-btn,.pta-rows .pta-row:focus-within .pta-actions .pta-btn{opacity:1}
-    .pta-rows .pta-row .pta-actions .pta-btn--primary{border-color:var(--dsw-alias-border-l2,rgba(127,127,127,.34));background:transparent;color:inherit}
-    .pta-rows .pta-row:hover .pta-actions .pta-btn--primary,.pta-rows .pta-row:focus-within .pta-actions .pta-btn--primary{background:var(--dsw-alias-brand-primary,#ff5a1f);border-color:transparent;color:#fff;opacity:1}
-    .pta-rows .pta-row--more{justify-content:center;min-height:32px;max-height:32px;font-size:11.5px;opacity:.55}
-    .pta-rows .pta-row--more:hover{opacity:.95}
+    .pta-kpis{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 18px}
+    .pta-kpi{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.22));border-radius:10px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.06));color:inherit;font:inherit;text-align:left;cursor:pointer}
+    .pta-kpi:disabled{cursor:default}
+    .pta-kpi:not(:disabled):hover{border-color:var(--dsw-alias-border-primary,rgba(127,127,127,.4))}
+    .pta-kpi__value{font-size:22px;font-weight:650;line-height:1.1;font-variant-numeric:tabular-nums}
+    .pta-kpi__label{font-size:11.5px;opacity:.7}
+    .pta-kpis .pta-kpi{flex-direction:row;align-items:baseline;gap:6px;padding:5px 11px;border-radius:999px}
+    .pta-kpis .pta-kpi__value{font-size:15px}
+    .pta-kpis .pta-kpi__label{font-size:12px}
+    .pta-kpis .pta-kpi.is-zero{opacity:.45;background:transparent}
+    .pta-row:not(:hover):not(:focus-within) .pta-btn--reveal{visibility:hidden}
     .pta-section{margin:0 0 22px}
     .pta-section__head{display:flex;align-items:baseline;gap:10px;padding:0 2px 7px}
     .pta-section__head h3{margin:0;font-size:13px;font-weight:600}
@@ -2052,7 +2046,7 @@ function apply(ctx) {
     .pta-msg__body{font-size:13px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow-y:auto}
     .pta-runs{display:flex;flex-direction:column;gap:4px;margin-top:2px;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18))}
     .pta-run{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
-    @media (max-width:760px){.pta-page{padding:18px 16px 40px}.pta-head{flex-direction:column}.pta-head__actions{margin-left:0;width:100%}.pta-search{flex:1 1 auto;min-width:0}.pta-tag{max-width:120px}}
+    @media (max-width:760px){.pta-page{padding:18px 16px 40px}.pta-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.pta-head{flex-direction:column}.pta-head__actions{margin-left:0;width:100%}.pta-search{flex:1 1 auto;min-width:0}.pta-tag{max-width:120px}}
     ${PROJECT_PARK_STYLES}
   `;
 
@@ -2166,19 +2160,28 @@ function apply(ctx) {
     };
   }
 
+  /** Why a stalled row is flagged, with how long it has been quiet. */
+  const stalledReason = (ticket) => `no report for ${ago(ticket.updated_at)}`;
+
   /**
-   * "Needs a decision" is one number everywhere: the sidebar badge counts
-   * approve + review + client waiting from `/admin/attention`, and this page
-   * counts the same three buckets, so the header agrees with the badge by
-   * construction. Stalled work is urgent too, but it is an agent's problem
-   * ("run again"), not a decision, so it is never part of this count.
+   * A Needs-you KPI opens the Inbox on its own filter. The panel may mount
+   * after the click or already be mounted, so the choice is both stored and
+   * broadcast.
    */
-  function decisionCount(groups) {
-    return groups.approvals.length + groups.reviews.length + groups.waiting.length;
+  let pendingInboxFilter = null;
+  function openInboxFilter(filter) {
+    pendingInboxFilter = filter;
+    window.dispatchEvent(new CustomEvent('pta:inbox-filter', { detail: { filter } }));
+    ctx.layout?.selectPanel?.(INBOX_PANEL);
   }
 
-  /** Lets a `pta:inbox-filter` event preset the Inbox's filter before it mounts. */
-  let pendingInboxFilter = null;
+  function actionableCount(groups) {
+    const ids = new Set();
+    for (const list of [groups.approvals, groups.reviews, groups.waiting, groups.stalled, groups.stuck]) {
+      for (const ticket of list) ids.add(ticket.id);
+    }
+    return ids.size;
+  }
 
   /** Set a ticket's status, confirming the moves that email the client. */
   async function changeTicketStatus(ticket, status) {
@@ -2212,13 +2215,7 @@ function apply(ctx) {
     window.dispatchEvent(new CustomEvent('admin:changed', { detail: { kind: 'ticket.answered', ticketId: ticket.id } }));
   }
 
-  /**
-   * The moves a row offers, chosen by status rather than by page. Every button
-   * is a small outline at rest and only turns strong on row hover/focus (the
-   * CSS in `.pta-rows .pta-row .pta-actions`); one primary move per group:
-   * review → Done, approve → Approve, stalled → Run again. "Open" goes to the
-   * conversation, the same place a row click takes you.
-   */
+  /** The moves a row offers, chosen by status rather than by page. */
   function TicketRowActions({ ticket }) {
     if (ticket.status === 'new') {
       return (
@@ -2231,8 +2228,8 @@ function apply(ctx) {
     if (ticket.status === 'review') {
       return (
         <>
-          <PtaButton kind="primary" onClick={() => void changeTicketStatus(ticket, 'done')}>Done</PtaButton>
-          <PtaButton kind="ghost" onClick={() => void openTicketRun(ticket)}>Open</PtaButton>
+          <PtaButton kind="primary" onClick={() => void changeTicketStatus(ticket, 'done')}>Mark done</PtaButton>
+          <PtaButton kind="ghost" className="pta-btn--reveal" onClick={() => void changeTicketStatus(ticket, 'approved')}>Queue another run</PtaButton>
         </>
       );
     }
@@ -2240,12 +2237,7 @@ function apply(ctx) {
       return <PtaButton kind="ghost" onClick={() => void markTicketAnswered(ticket)}>No reply needed</PtaButton>;
     }
     if (ticket.status === 'in_progress') {
-      return (
-        <>
-          <PtaButton kind="primary" onClick={() => void changeTicketStatus(ticket, 'approved')}>Run again</PtaButton>
-          <PtaButton kind="ghost" onClick={() => void openTicketRun(ticket)}>Open</PtaButton>
-        </>
-      );
+      return <PtaButton kind="ghost" className="pta-btn--reveal" onClick={() => void changeTicketStatus(ticket, 'approved')}>Queue another run</PtaButton>;
     }
     return null;
   }
@@ -2318,12 +2310,7 @@ function apply(ctx) {
     );
   }
 
-  /**
-   * One ticket line: dot, number, ellipsized title, then who filed it as quiet
-   * muted text (a "My task" or "stuck" label keeps its small badge), the
-   * project, the age, and the row's actions on the right.
-   */
-  function TicketLine({ ticket, actions = null, tag = '', reason = '', detail = '', showAge = true }) {
+  function TicketLine({ ticket, actions = null, reason = '', detail = '', showAge = true }) {
     const open = () => void openTicketRun(ticket);
     // Who filed it: a person in the portal, or the client's assistant over MCP.
     const via = assistantBadge(ticket);
@@ -2343,10 +2330,9 @@ function apply(ctx) {
         <span className="pta-dot" style={{ background: tintOfStatus(ticket.status) }} />
         <span className="pta-id">#{ticket.id}</span>
         <span className="pta-title" title={ticketLabel(ticket)}>{ticketLabel(ticket)}</span>
-        {tag ? <span className="pta-tag">{tag}</span> : null}
         {ticket.kind === 'system'
           ? <span className="pta-tag">My task</span>
-          : ticket.client_email ? <span className="pta-meta pta-row__email" title={ticket.client_email}>{ticket.client_email}</span> : null}
+          : <span className="pta-tag pta-tag--client" title={ticket.client_email ?? ''}>{ticket.client_email || 'client'}</span>}
         {via ? <span className="pta-tag pta-tag--client" title={assistantBadgeTitle(ticket)}>{via}</span> : null}
         <span className="pta-meta">{ticket.project_name || 'no project'}</span>
         {reason ? <span className="pta-warn">{reason}</span> : null}
@@ -2388,6 +2374,15 @@ function apply(ctx) {
       window.addEventListener('keydown', onKeyDown);
       return () => window.removeEventListener('keydown', onKeyDown);
     }, [rootRef]);
+  }
+
+  function Kpi({ label, value, hint, tint, onClick }) {
+    return (
+      <button type="button" className={`pta-kpi${Number(value) === 0 ? ' is-zero' : ''}`} onClick={onClick} title={hint} disabled={!onClick || Number(value) === 0}>
+        <span className="pta-kpi__value" style={{ color: tint }}>{value}</span>
+        <span className="pta-kpi__label">{label}</span>
+      </button>
+    );
   }
 
   function EmptyState({ title, text, children }) {
@@ -2485,11 +2480,7 @@ function apply(ctx) {
     const root = useRef(null);
     useRowNavigation(root);
     const groups = useMemo(() => ticketGroups(data), [data]);
-    // A chip filters the list below; clicking the active chip goes back to all.
-    const [listFilter, setListFilter] = useState('all');
-    // The stalled group stays folded to its first rows until asked for more.
-    const [stalledOpen, setStalledOpen] = useState(false);
-    const decisions = decisionCount(groups);
+    const total = actionableCount(groups);
     const goInbox = () => ctx.layout?.selectPanel?.(INBOX_PANEL);
     const goWorkbench = () => ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
     if (data.loading && data.at === 0) return <div className="pta-page" ref={root}><p className="pta-empty">Loading…</p></div>;
@@ -2514,73 +2505,39 @@ function apply(ctx) {
         </div>
       );
     }
-    /**
-     * One list section. `options.collapse` folds the group to its first
-     * STALLED_PREVIEW rows behind a "Show N more" row; `options.tag` badges
-     * every row (the stalled group says "stuck", with a muted age).
-     */
-    const STALLED_PREVIEW = 3;
-    const section = (key, title, hint, items, options = {}) => {
-      if (items.length === 0) return null;
-      const { tag = '', reasonOf = null, collapse = false } = options;
-      const shown = collapse && !stalledOpen ? items.slice(0, STALLED_PREVIEW) : items;
-      const hidden = items.length - shown.length;
-      return (
-        <section key={key} className="pta-section">
-          <div className="pta-section__head">
-            <h3>{title} <span className="pta-count">{items.length}</span></h3>
-            <span className="pta-meta">{hint}</span>
-          </div>
-          <div className="pta-rows">
-            {shown.map((ticket) => (
-              <TicketLine
-                key={ticket.id}
-                ticket={ticket}
-                tag={tag}
-                reason={reasonOf ? reasonOf(ticket) : ''}
-                actions={<TicketRowActions ticket={ticket} />}
-              />
-            ))}
-            {hidden > 0 ? (
-              <button type="button" className="pta-row pta-row--more" onClick={() => setStalledOpen(true)}>
-                Show {hidden} more
-              </button>
-            ) : null}
-          </div>
-        </section>
-      );
-    };
-    const shows = (key) => listFilter === 'all' || listFilter === key;
+    const section = (key, title, hint, items, actions, reasonOf) => items.length === 0 ? null : (
+      <section key={key} className="pta-section">
+        <div className="pta-section__head">
+          <h3>{title} <span className="pta-count">{items.length}</span></h3>
+          <span className="pta-meta">{hint}</span>
+        </div>
+        <div className="pta-rows">
+          {items.map((ticket) => (
+            <TicketLine
+              key={ticket.id}
+              ticket={ticket}
+              reason={reasonOf ? reasonOf(ticket) : ''}
+              showAge={key !== 'stalled'}
+              actions={actions ? actions(ticket) : <TicketRowActions ticket={ticket} />}
+            />
+          ))}
+        </div>
+      </section>
+    );
     const stuckReason = new Map(
       data.queue
         .filter((item) => !(Array.isArray(item?.eligible) ? item.eligible.length > 0 : Boolean(item?.eligible)))
         .map((item) => [Number(item.id), item.reason ?? 'no eligible node']),
     );
-    // Only the non-zero groups become chips; stalled is shown, never counted
-    // as a decision.
-    const chips = [
-      { key: 'approvals', label: 'To approve', dot: 'new', count: groups.approvals.length, hint: 'New requests. Nothing runs until you decide.' },
-      { key: 'reviews', label: 'To review', dot: 'review', count: groups.reviews.length, hint: 'Finished runs waiting for your check.' },
-      { key: 'waiting', label: 'Clients waiting', dot: 'waiting', count: groups.waiting.length, hint: 'They wrote last and have heard nothing since.' },
-      { key: 'stalled', label: 'Stalled', dot: 'stalled', count: groups.stalled.length, hint: 'In progress for 45+ minutes without a report. Not a decision: run again or leave it.' },
-      { key: 'running', label: 'Running now', dot: 'running', count: groups.running.length, hint: 'Agents working right now.' },
-    ].filter((chip) => chip.count > 0);
     return (
       <div className="pta-page" ref={root}>
         <header className="pta-head">
           <div>
             <h1>Needs you</h1>
             <p>
-              {decisions === 0 && groups.stalled.length === 0
+              {total === 0
                 ? 'Nothing is waiting on you. Agents are on it.'
-                : (
-                  <>
-                    {decisions > 0
-                      ? `${decisions} item${decisions === 1 ? '' : 's'} want${decisions === 1 ? 's' : ''} a decision.`
-                      : 'No decisions waiting.'}
-                    {groups.stalled.length > 0 ? <span className="pta-head__stalled"> {groups.stalled.length} stalled.</span> : null}
-                  </>
-                )}
+                : `${total} item${total === 1 ? '' : 's'} want a decision.`}
             </p>
           </div>
           <div className="pta-head__actions">
@@ -2599,32 +2556,21 @@ function apply(ctx) {
           onOpenTicket={(ticket) => void openTicketRun(ticket)}
         />
 
-        {chips.length > 0 ? (
-          <div className="pta-filters" role="group" aria-label="Filter the list">
-            {chips.map((chip) => (
-              <button
-                key={chip.key}
-                type="button"
-                className={`pta-filter${listFilter === chip.key ? ' is-active' : ''}`}
-                title={chip.hint}
-                aria-pressed={listFilter === chip.key}
-                onClick={() => setListFilter((prev) => (prev === chip.key ? 'all' : chip.key))}
-              >
-                <span className={`pta-dot pta-dot--${chip.dot}`} aria-hidden="true" />
-                {chip.label}
-                <span className="pta-count">{chip.count}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
+        <div className="pta-kpis">
+          <Kpi label="To approve" value={groups.approvals.length} tint={tintOfStatus('new')} onClick={() => openInboxFilter('approval')} hint="New requests; nothing runs until you approve." />
+          <Kpi label="To review" value={groups.reviews.length} tint={tintOfStatus('review')} onClick={() => openInboxFilter('review')} hint="Finished runs waiting for your check." />
+          <Kpi label="Clients waiting" value={groups.waiting.length} tint={tintOfStatus('approved')} onClick={() => openInboxFilter('reply')} hint="They wrote last and have heard nothing since." />
+          <Kpi label="Stalled" value={groups.stalled.length} tint={tintOfStatus('in_progress')} onClick={() => openInboxFilter('stalled')} hint="In progress for 45+ minutes without a report." />
+          <Kpi label="Running now" value={groups.running.length} tint={tintOfStatus('in_progress')} hint="Agents working right now. Listed at the bottom of this page." />
+        </div>
 
-        {shows('approvals') ? section('approvals', 'Approve or decline', 'New requests. Nothing runs until you decide.', groups.approvals) : null}
-        {shows('reviews') ? section('review', 'Check the agent’s work', 'Finished runs waiting for you.', groups.reviews) : null}
-        {shows('waiting') ? section('waiting', 'Answer the client', 'They wrote last and have heard nothing since.', groups.waiting) : null}
-        {shows('stalled') ? section('stalled', 'Stalled', 'In progress for 45+ minutes without a report.', groups.stalled, { tag: 'stuck', collapse: true }) : null}
-        {listFilter === 'all' ? section('stuck', 'No node can take these', 'Approved, but nothing eligible can run them.', groups.stuck, { reasonOf: (ticket) => stuckReason.get(Number(ticket.id)) ?? '' }) : null}
+        {section('approvals', 'Approve or decline', 'New requests. Nothing runs until you decide.', groups.approvals)}
+        {section('review', 'Check the agent’s work', 'Finished runs waiting for you.', groups.reviews)}
+        {section('waiting', 'Answer the client', 'They wrote last and have heard nothing since.', groups.waiting)}
+        {section('stalled', 'Stalled', 'In progress for 45+ minutes without a report.', groups.stalled, null, stalledReason)}
+        {section('stuck', 'No node can take these', 'Approved, but nothing eligible can run them.', groups.stuck, null, (ticket) => stuckReason.get(Number(ticket.id)) ?? '')}
 
-        {groups.running.length > 0 && shows('running') ? (
+        {groups.running.length > 0 ? (
           <section className="pta-section">
             <div className="pta-section__head"><h3>Running now <span className="pta-count">{groups.running.length}</span></h3><span className="pta-meta">Live agent work.</span></div>
             <div className="pta-rows">
@@ -2643,7 +2589,7 @@ function apply(ctx) {
           </section>
         ) : null}
 
-        {groups.failed.length > 0 && listFilter === 'all' ? (
+        {groups.failed.length > 0 ? (
           <section className="pta-section">
             <div className="pta-section__head"><h3>Failed runs, last 24h</h3><span className="pta-meta">These stop until someone looks.</span></div>
             <div className="pta-rows">
@@ -2662,7 +2608,7 @@ function apply(ctx) {
           </section>
         ) : null}
 
-        {decisions === 0 && groups.stalled.length === 0 && groups.stuck.length === 0 && groups.failed.length === 0 ? (
+        {total === 0 && groups.failed.length === 0 ? (
           <EmptyState title="Inbox zero" text="No approvals, no reviews, no client waiting. New work will appear here and in a notification.">
             <PtaButton onClick={goInbox}>Open Inbox</PtaButton>
             <PtaButton kind="ghost" onClick={goWorkbench}>Workbench</PtaButton>
@@ -2785,7 +2731,8 @@ function apply(ctx) {
               <TicketLine
                 key={ticket.id}
                 ticket={ticket}
-                tag={kinds.has('stalled') ? 'stuck' : ''}
+                reason={kinds.has('stalled') ? stalledReason(ticket) : ''}
+                showAge={!kinds.has('stalled')}
                 actions={<TicketRowActions ticket={ticket} />}
                 detail={isWaiting(ticket) ? 'waiting' : ''}
               />

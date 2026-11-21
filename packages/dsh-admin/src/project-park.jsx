@@ -347,45 +347,12 @@ function PlotTile({ plot, opts, active, dimmed = false, picked = false, onActiva
 
 /**
  * Compact isometric "Project park" overview for the top of NeedsYouPage.
- *
- * The map is collapsed by default to one line of project chips (name + a
- * count coloured by urgency); "Show map" expands the isometric view, and the
- * choice is remembered in localStorage. A chip opens the project's page.
  */
-const MAP_OPEN_KEY = 'pta-park-map-open';
-
-function readMapOpen() {
-  try {
-    return globalThis.localStorage?.getItem(MAP_OPEN_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function storeMapOpen(open) {
-  try {
-    globalThis.localStorage?.setItem(MAP_OPEN_KEY, open ? '1' : '0');
-  } catch {
-    // Private mode or a blocked store: the toggle still works for this mount.
-  }
-}
-
-/** One project chip's number: everything on it that wants a person or a rerun. */
-function chipCount(plot) {
-  const c = plot?.counts ?? {};
-  return (Number(c.needsYou) || 0) + (Number(c.stalled) || 0) + (Number(c.running) || 0) + (Number(c.failing) || 0);
-}
-
 export function ProjectPark({ projects = [], tickets = [], runs = [], recentRuns = [], now = Date.now(), onSelect, onOpenTicket }) {
   const [activeId, setActiveId] = useState(null);
   const [filter, setFilter] = useState('all');
   const [pickedId, setPickedId] = useState(null);
-  const [mapOpen, setMapOpen] = useState(readMapOpen);
   const rootRef = useRef(null);
-  const toggleMap = () => setMapOpen((prev) => {
-    storeMapOpen(!prev);
-    return !prev;
-  });
 
   const plots = useMemo(
     () => parkPlots({ projects, tickets, runs, now }),
@@ -453,37 +420,6 @@ export function ProjectPark({ projects = [], tickets = [], runs = [], recentRuns
 
   if (!layout || plots.length === 0) return null;
 
-  // Collapsed: one line of chips, each a project with its open count.
-  if (!mapOpen) {
-    return (
-      <section className="pta-park is-collapsed" aria-label="Project park" ref={rootRef}>
-        <div className="pta-park__chipline">
-          <span className="pta-park__label">Project park</span>
-          <ul className="pta-park__chips">
-            {plots.map((plot) => {
-              const open = chipCount(plot);
-              return (
-                <li key={String(plot.id)}>
-                  <button
-                    type="button"
-                    className={`pta-park__chip is-${plot.state}`}
-                    title={plotAriaLabel(plot)}
-                    aria-label={plotAriaLabel(plot)}
-                    onClick={() => onSelect?.(plot)}
-                  >
-                    <span className="pta-park__chip-name">{plot.name}</span>
-                    {open > 0 ? <span className="pta-park__chip-n">{open > 99 ? '99+' : open}</span> : null}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          <button type="button" className="pta-park__mapbtn" aria-expanded={false} onClick={toggleMap}>Show map</button>
-        </div>
-      </section>
-    );
-  }
-
   const activePlot = activeId !== null ? plots.find((plot) => plot.id === activeId) ?? null : null;
   const activeHeadline = activePlot
     ? [plotWaitLabel(activePlot, tickets, runs, now, recentRuns), plotHeadline(activePlot, tickets, runs, now)].filter(Boolean).join(' · ') || null
@@ -506,7 +442,6 @@ export function ProjectPark({ projects = [], tickets = [], runs = [], recentRuns
         <div className="pta-park__title">
           <span className="pta-park__label">Project park</span>
           <span className="pta-count">{plots.length}</span>
-          <button type="button" className="pta-park__mapbtn" aria-expanded={true} onClick={toggleMap}>Hide map</button>
         </div>
         {activePlot ? (
           <div className="pta-park__tip" role="status">
@@ -621,23 +556,6 @@ export function ProjectPark({ projects = [], tickets = [], runs = [], recentRuns
 /** Styles injected alongside NATIVE_STYLES in client.jsx; theme-aware for light & dark. */
 export const PROJECT_PARK_STYLES = `
   .pta-park{position:relative;margin:0 0 14px;padding:7px 10px 6px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.24));border-radius:10px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.05));overflow:hidden}
-  .pta-park.is-collapsed{padding:3px 8px}
-  .pta-park__chipline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
-  .pta-park__chips{display:flex;flex-wrap:wrap;gap:4px;list-style:none;margin:0;padding:0;min-width:0}
-  .pta-park__chip{display:inline-flex;align-items:center;gap:5px;max-width:210px;height:20px;padding:0 8px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:10px;background:transparent;color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:11px;line-height:18px;cursor:pointer}
-  .pta-park__chip:hover{background:rgba(128,134,142,.16)}
-  .pta-park__chip:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4c8dff);outline-offset:-1px}
-  .pta-park__chip-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .pta-park__chip-n{font-variant-numeric:tabular-nums;font-weight:650}
-  .pta-park__chip.is-calm{opacity:.6}
-  .pta-park__chip.is-attention .pta-park__chip-n{color:var(--dsw-alias-state-warning-primary,#d18f2e)}
-  .pta-park__chip.is-bad .pta-park__chip-n{color:var(--dsw-alias-state-danger-primary,#e5534b)}
-  .pta-park__chip.is-active .pta-park__chip-n{color:var(--dsw-alias-state-business-primary,#4c8dff)}
-  .pta-park__mapbtn{background:none;border:0;padding:0;font:inherit;font-size:10.5px;color:var(--dsw-alias-label-secondary,inherit);text-decoration:underline;cursor:pointer}
-  .pta-park__mapbtn:hover{color:var(--dsw-alias-label-primary,inherit)}
-  .pta-park__mapbtn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4c8dff);outline-offset:2px}
-  .pta-park__chipline .pta-park__mapbtn{margin-left:auto}
-  .pta-park__title .pta-park__mapbtn{margin-left:6px}
   .pta-park__head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:20px;margin:0 0 4px}
   .pta-park__title{display:inline-flex;align-items:center;gap:2px;flex:0 0 auto}
   .pta-park__label{font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--dsw-alias-label-secondary,inherit);opacity:.82}
