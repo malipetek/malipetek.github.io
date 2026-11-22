@@ -896,6 +896,118 @@ function apply(ctx) {
    * The frame-wide toast stack. It lives in `shell.overlay`, the Harness's own
    * click-through layer, so a notice survives switching panels and pages.
    */
+  /** Where Command-K can go, independent of the current panel. */
+  const PALETTE_DESTINATIONS = [
+    { id: 'admin', label: 'Inbox', hint: 'tickets that want a decision' },
+    { id: 'admin-work', label: 'Work', hint: 'list and board of all work' },
+    { id: 'admin-marketing', label: 'Marketing', hint: 'contacts, email, social' },
+    { id: 'admin-seo', label: 'SEO', hint: 'audit, rankings, citations' },
+    { id: 'admin-fleet', label: 'Fleet', hint: 'nodes, queue, runs' },
+    { id: 'admin-settings', label: 'Settings', hint: 'queue, portal, marketing, SEO' },
+    { id: 'projects', label: 'Projects', hint: 'the workspace projects' },
+    { id: 'plugins', label: 'Plugins', hint: 'installed Harness plugins' },
+  ];
+
+  /**
+   * Command-K: destinations and the sessions the old sidebar search found,
+   * in one palette. It replaces the core binding; nothing is lost because
+   * session titles are still matched by the same query.
+   */
+  function CommandPaletteHost() {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState('');
+    const [active, setActive] = useState(0);
+    const [sessions, setSessions] = useState([]);
+    const input = useRef(null);
+
+    useEffect(() => {
+      const onKey = (event) => {
+        const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
+        if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && key === 'k') {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          setQuery('');
+          setActive(0);
+          setOpen((value) => !value);
+          return;
+        }
+        if (event.key === 'Escape') setOpen(false);
+      };
+      window.addEventListener('keydown', onKey, true);
+      return () => window.removeEventListener('keydown', onKey, true);
+    }, []);
+
+    useEffect(() => {
+      if (!open) return undefined;
+      try {
+        const snapshot = ctx.sessions?.list?.getSnapshot?.();
+        const rows = snapshot?.byId ? Object.values(snapshot.byId) : [];
+        setSessions(rows.filter((row) => row?.id));
+      } catch { setSessions([]); }
+      const timer = setTimeout(() => input.current?.focus(), 0);
+      return () => clearTimeout(timer);
+    }, [open]);
+
+    const needle = query.trim().toLowerCase();
+    const destinations = PALETTE_DESTINATIONS.filter((item) => !needle || `${item.label} ${item.hint}`.toLowerCase().includes(needle));
+    const found = sessions.filter((row) => {
+      if (!needle) return false;
+      const title = String(row.title ?? row.name ?? '').toLowerCase();
+      const cwd = String(row.cwd ?? '').toLowerCase();
+      return title.includes(needle) || cwd.includes(needle);
+    }).slice(0, 8);
+    const items = [
+      ...destinations.map((item) => ({ kind: 'go', ...item })),
+      ...found.map((row) => ({ kind: 'session', id: row.id, label: row.title || row.id, hint: row.cwd || 'session' })),
+    ];
+    const chosen = Math.min(active, Math.max(0, items.length - 1));
+
+    const run = (item) => {
+      if (!item) return;
+      setOpen(false);
+      if (item.kind === 'go') { ctx.layout?.selectPanel?.(item.id); return; }
+      const ws = workspace;
+      if (typeof ws?.openSession === 'function') void ws.openSession(item.id).catch(() => undefined);
+    };
+
+    if (!open) return null;
+    return (
+      <div className="pta-palette__scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
+        <div className="pta-palette" role="dialog" aria-modal="true" aria-label="Command palette">
+          <input
+            ref={input}
+            className="pta-palette__input"
+            value={query}
+            placeholder="Go to a panel, or search sessions…"
+            aria-label="Command palette search"
+            onChange={(event) => { setQuery(event.target.value); setActive(0); }}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown') { event.preventDefault(); setActive((value) => Math.min(value + 1, items.length - 1)); }
+              else if (event.key === 'ArrowUp') { event.preventDefault(); setActive((value) => Math.max(value - 1, 0)); }
+              else if (event.key === 'Enter') { event.preventDefault(); run(items[chosen]); }
+              else if (event.key === 'Escape') { event.preventDefault(); setOpen(false); }
+            }}
+          />
+          <div className="pta-palette__list">
+            {items.length === 0 ? <p className="pta-palette__empty">Nothing matches “{query}”.</p> : items.map((item, index) => (
+              <button
+                type="button"
+                key={`${item.kind}-${item.id}`}
+                className={`pta-palette__row${index === chosen ? ' pta-palette__row--active' : ''}`}
+                onMouseEnter={() => setActive(index)}
+                onClick={() => run(item)}
+              >
+                <span className="pta-palette__label">{item.label}</span>
+                <span className="pta-palette__hint">{item.kind === 'session' ? 'Session · ' : ''}{item.hint}</span>
+              </button>
+            ))}
+          </div>
+          <footer className="pta-palette__foot"><span>↑↓ move</span><span>↵ open</span><span>esc close</span><span className="pta-palette__fill" /><span>⌘⇧K</span></footer>
+        </div>
+      </div>
+    );
+  }
+
   /** A tiny relative clock for the runs dock. */
   function dockAge(value) {
     const raw = typeof value === 'number' ? value : Number(value);
@@ -2002,7 +2114,19 @@ function apply(ctx) {
     .pta-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#ff5a1f);outline-offset:-2px}
     .pta-row__state{flex:0 0 auto}
     .pta-row__chip{flex:0 0 auto;max-width:190px}
-.pta-agentdock{position:fixed;right:18px;bottom:46px;z-index:70;width:400px;max-width:calc(100vw - 24px);max-height:52vh;display:flex;flex-direction:column;border:1px solid var(--ui-border,rgba(127,127,127,.24));border-radius:12px;background:var(--dsw-alias-bg-elevated,#23252a);color:var(--dsw-alias-label-primary,inherit);box-shadow:0 18px 48px rgba(0,0,0,.45);overflow:hidden;font-size:12.5px}
+.pta-palette__scrim{position:fixed;inset:0;z-index:80;display:flex;justify-content:center;align-items:flex-start;padding-top:12vh;background:rgba(0,0,0,.38)}
+    .pta-palette{width:min(560px,calc(100vw - 32px));max-height:60vh;display:flex;flex-direction:column;border:1px solid var(--ui-border,rgba(127,127,127,.24));border-radius:12px;background:#23252a;color:var(--dsw-alias-label-primary,inherit);box-shadow:0 24px 64px rgba(0,0,0,.5);overflow:hidden}
+    .pta-palette__input{width:100%;box-sizing:border-box;border:0;border-bottom:1px solid var(--ui-border,rgba(127,127,127,.18));background:transparent;color:inherit;font:inherit;font-size:14px;padding:14px 16px;outline:none}
+    .pta-palette__input::placeholder{color:inherit;opacity:.4}
+    .pta-palette__list{overflow:auto;padding:4px 0}
+    .pta-palette__row{display:flex;align-items:baseline;gap:12px;width:100%;box-sizing:border-box;border:0;background:transparent;color:inherit;font:inherit;text-align:left;padding:9px 16px;cursor:pointer}
+    .pta-palette__row--active{background:rgba(255,255,255,.07);box-shadow:inset 2px 0 0 #ff5a1f}
+    .pta-palette__label{flex:0 0 auto;font-weight:500;font-size:13px}
+    .pta-palette__hint{flex:1;min-width:0;font-size:11.5px;opacity:.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pta-palette__empty{margin:0;padding:16px;font-size:12.5px;opacity:.6}
+    .pta-palette__foot{display:flex;align-items:center;gap:12px;padding:7px 16px;border-top:1px solid var(--ui-border,rgba(127,127,127,.18));font-size:10.5px;opacity:.45;flex:none}
+    .pta-palette__fill{flex:1}
+    .pta-agentdock{position:fixed;right:18px;bottom:46px;z-index:70;width:400px;max-width:calc(100vw - 24px);max-height:52vh;display:flex;flex-direction:column;border:1px solid var(--ui-border,rgba(127,127,127,.24));border-radius:12px;background:var(--dsw-alias-bg-elevated,#23252a);color:var(--dsw-alias-label-primary,inherit);box-shadow:0 18px 48px rgba(0,0,0,.45);overflow:hidden;font-size:12.5px}
     .pta-agentdock__head{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--ui-border,rgba(127,127,127,.18));flex:none}
     .pta-agentdock__head strong{font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.75}
     .pta-agentdock__meta{font-size:11.5px;opacity:.55}
@@ -3562,6 +3686,8 @@ function apply(ctx) {
     ctx.slots.register({ name: 'shell.overlay', id: 'admin-confirm', order: 45 }, ConfirmHost));
   ctx.slots.inject('shell.overlay', () =>
     ctx.slots.register({ name: 'shell.overlay', id: 'admin-runs-dock', order: 47 }, RunsDockHost));
+  ctx.slots.inject('shell.overlay', () =>
+    ctx.slots.register({ name: 'shell.overlay', id: 'admin-command-palette', order: 46 }, CommandPaletteHost));
   // One page in Settings for the switch the /admin notify command reads.
   ctx.slots.inject('settings.section', () =>
     ctx.slots.register({ name: 'settings.section', id: 'admin', order: 60, label: 'Admin' }, AdminSettingsSection));
