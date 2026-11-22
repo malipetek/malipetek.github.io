@@ -3077,7 +3077,7 @@ ${block(Object.entries(TOKENS))}
             ago(ticket.client_waiting_since),
             " ago and is waiting for an answer.",
             /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-            /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => setReplyAt(Date.now()), children: "Reply" }),
+            /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setReplyAt(Date.now()), children: "Reply" }),
             /* @__PURE__ */ jsx(
               Button,
               {
@@ -3662,7 +3662,6 @@ ${block(Object.entries(TOKENS))}
         /* @__PURE__ */ jsx(
           Button,
           {
-            kind: "primary",
             busy,
             disabled: submission.current.pendingQueue || !text.trim() && !picked.length,
             disabledReason: submission.current.pendingQueue ? "Retry the queue first: the note is already saved." : "Write something first.",
@@ -11015,7 +11014,7 @@ ${block(Object.entries(TOKENS))}
 .aw--inset .aw-activity { padding-top: 40px; }
 .aw--inset .aw-explorer { padding-top: 32px; }
 .aw--inset.aw--noexplorer .aw-tabs { padding-left: 30px; }
-.aw-badge { position: absolute; top: 3px; right: 2px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: var(--aw-radius-pill); background: var(--aw-ink); color: var(--aw-surface); font-size: 10px; font-weight: 600; line-height: 15px; font-variant-numeric: tabular-nums; }
+.aw-badge { position: absolute; top: 3px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--aw-radius-pill); background: var(--aw-ink); color: var(--aw-surface); font-size: var(--aw-type-xs); font-weight: 600; line-height: 15px; font-variant-numeric: tabular-nums; }
 
 /* \u2014\u2014\u2014\u2014\u2014 tooltip: [data-tip], after 400ms; at once on keyboard focus \u2014\u2014\u2014\u2014\u2014 */
 .aw [data-tip] { position: relative; }
@@ -11118,7 +11117,7 @@ ${block(Object.entries(TOKENS))}
 .aw-btn__kbd { margin-left: 4px; color: inherit; opacity: .6; font-size: var(--aw-type-xs); }
 
 /* \u2014\u2014\u2014\u2014\u2014 controls: segmented, chips, fields \u2014\u2014\u2014\u2014\u2014 */
-.aw-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: var(--aw-radius-md); background: var(--aw-fill); }
+.aw-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: var(--aw-radius-md); background: var(--aw-fill); align-self: flex-start; max-width: 100%; }
 .aw-seg button { border: 0; background: none; height: 24px; padding: 0 10px; border-radius: var(--aw-radius-sm); cursor: pointer; font-size: var(--aw-type-sm); color: var(--aw-ink-2); white-space: nowrap; }
 .aw-seg button:hover:not(:disabled) { color: var(--aw-ink); }
 .aw-seg button:is([aria-pressed="true"], [aria-checked="true"]) { background: var(--aw-surface); color: var(--aw-ink); font-weight: 600; box-shadow: 0 0 0 1px var(--aw-hairline), 0 1px 2px rgba(0,0,0,.06); }
@@ -12125,7 +12124,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-pagetabs button:hover { color: var(--aw-ink); }
 .aw-pagetabs button[aria-selected="true"] { color: var(--aw-ink); border-bottom-color: var(--aw-accent); font-weight: 600; }
 .aw-pagetabs button:focus-visible { outline-offset: -2px; }
-.aw-pagetabs__badge { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: var(--aw-radius-pill); background: var(--aw-fill); color: var(--aw-ink-2); font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.aw-pagetabs__badge { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border-radius: var(--aw-radius-pill); background: var(--aw-fill); color: var(--aw-ink-2); font-size: var(--aw-type-xs); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* \u2014\u2014\u2014\u2014\u2014 Menu, context menu, overflow \u2014\u2014\u2014\u2014\u2014 */
 .aw-menu { position: fixed; z-index: 70; min-width: 200px; max-width: 320px; max-height: min(480px, 80vh); overflow-y: auto; padding: 4px; border-radius: var(--aw-radius-lg); background: var(--aw-surface-raised); color: var(--aw-ink); box-shadow: var(--aw-shadow-float); font-size: var(--aw-type-md); animation: aw-fade var(--aw-dur) var(--aw-ease); list-style: none; margin: 0; }
@@ -12375,7 +12374,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-details__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--aw-space-2); margin-bottom: var(--aw-space-3); }
 .aw-details__pair > .aw-field { margin-bottom: 0; }
 .aw-details__pair select { font-size: var(--aw-type-sm); padding-inline: var(--aw-space-2) 22px; }
-.aw-details .aw-seg { display: flex; width: 100%; }
+.aw-details .aw-seg { display: flex; width: fit-content; max-width: 100%; }
 .aw-details .aw-seg button { flex: 1 1 0; padding-inline: var(--aw-space-1); }
 .aw-mailto { color: inherit; text-decoration: none; }
 .aw-mailto:hover { text-decoration: underline; }

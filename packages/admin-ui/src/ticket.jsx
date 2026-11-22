@@ -107,7 +107,7 @@ export function TicketView({ id, active, details = true }) {
             <div className="aw-banner aw-banner--warn">
               <Dot state="warn" /> The client wrote {ago(ticket.client_waiting_since)} ago and is waiting for an answer.
               <span className="aw-toolbar__fill" />
-              <Button size="sm" kind="primary" onClick={() => setReplyAt(Date.now())}>
+              <Button size="sm" onClick={() => setReplyAt(Date.now())}>
                 Reply
               </Button>
               <Button
@@ -770,7 +770,6 @@ function Composer({ ticket, onSent, replyAt = 0 }) {
           </Button>
         ) : null}
         <Button
-          kind="primary"
           busy={busy}
           disabled={submission.current.pendingQueue || (!text.trim() && !picked.length)}
           disabledReason={submission.current.pendingQueue ? 'Retry the queue first: the note is already saved.' : 'Write something first.'}
