@@ -1,20 +1,21 @@
 /*
- * Interactive isometric "project world" map for the Admin project cockpit.
+ * Interactive functional-isometric ProjectMap for Project → Overview.
  *
- * M1 architecture (docs/admin-ui-refresh/02-isometric-review.md):
+ * Contract (docs/admin-ui-refresh/06-design-system.md §7.3):
  *   - 5 functional stations only: request → agent → code → preview → hosting.
  *   - Three-tone isometric faces & crisp ink lines preserved.
- *   - Name + 1-line status legible at 100% without hover.
- *   - Hover lifts and highlights without hijacking the selected station.
- *   - Click selects and updates the inspector; Enter / action buttons open.
- *   - Roving-tabIndex keyboard navigation (Tab into map, arrows move, Home/End,
- *     Enter opens); right-click context menu on stations.
- *   - No idle animation; pulse only on genuinely active stations; reduced motion.
- *   - Below ~900px (or narrow container) replaced by a vertical route list with
- *     the same statuses and actions.
+ *   - Two-line label plates (name + real status) legible at 100% with zero
+ *     truncation and zero overlapping geometry; all text ≥11px.
+ *   - Hover lifts without hijacking selection; click selects into the shared
+ *     Inspector; roving tabIndex + arrows + Home/End + Enter; right-click /
+ *     Shift+F10 opens the shared Menu.
+ *   - No idle animation; pulse strictly when state === 'active'; all motion
+ *     disabled under prefers-reduced-motion.
+ *   - Collapsible via PipelineStrip summary; ≤900px (or narrow container)
+ *     replaced by a vertical route list with the same statuses and actions.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from './ui.jsx';
+import { Button, Inspector, Menu, StateIndicator, UiStyles } from './ui/index.js';
 import {
   FLOOR_BOUNDS,
   STATION_ORDER,
@@ -27,32 +28,34 @@ import {
   isoPoints,
   journeyFor,
   journeyPillTickets,
+  plateLayout,
+  plateWidth,
   stationsFor,
   tx,
   unshippedPreview,
 } from './project-world-model.mjs';
 
-const VIEW_WIDTH = 720;
-const VIEW_HEIGHT = 385;
-
-const STATE_LABEL = {
-  ok: ['world.state.ok', 'Healthy'],
-  active: ['world.state.active', 'Running'],
-  warn: ['world.state.warn', 'Needs review'],
-  bad: ['world.state.bad', 'Needs attention'],
-  off: ['world.state.off', 'Idle'],
-  unknown: ['world.state.unknown', 'Unknown'],
+const STATE_SPEC = {
+  ok: { state: 'ok', tone: 'ok', key: 'world.state.ok', fallback: 'Healthy', live: false },
+  active: { state: 'running', tone: 'info', key: 'world.state.active', fallback: 'Running', live: true },
+  warn: { state: 'check', tone: 'warn', key: 'world.state.warn', fallback: 'Needs review', live: false },
+  bad: { state: 'failed', tone: 'bad', key: 'world.state.bad', fallback: 'Needs attention', live: false },
+  off: { state: 'queued', tone: 'neutral', key: 'world.state.off', fallback: 'Idle', live: false },
+  unknown: { state: 'unknown', tone: 'neutral', key: 'world.state.unknown', fallback: 'Unknown', live: false },
 };
 
-/* Explicit label anchor boxes so every station's name + 1-line status sits in open
-   space with zero building/cable overlap and ≥11px rendered text at 100%. */
-const LABEL_LAYOUT = {
-  hosting: { x: 96, y: 72, w: 168 },
-  preview: { x: 478, y: 60, w: 160 },
-  code: { x: 622, y: 170, w: 168 },
-  agent: { x: 526, y: 336, w: 158 },
-  request: { x: 112, y: 280, w: 158 },
-};
+function StationStateIndicator({ state, t, dotOnly = false }) {
+  const spec = STATE_SPEC[state] ?? STATE_SPEC.off;
+  return (
+    <StateIndicator
+      state={spec.state}
+      tone={spec.tone}
+      label={tx(t, spec.key, spec.fallback)}
+      live={spec.live}
+      dotOnly={dotOnly}
+    />
+  );
+}
 
 /** Reusable 3-tone isometric box with top / front-left / front-right faces. */
 function IsoBox({ x, y, z, dx, dy, dz, tone = 'base', className = '' }) {
@@ -621,9 +624,53 @@ function DriftLine({ drift, onPick, t }) {
 }
 
 /**
- * Interactive isometric "project world" map for the admin project cockpit.
+ * Compact 5-station pipeline summary shown when ProjectMap is collapsed.
+ * Clicking any station expands the map focused on that station.
  */
-export function ProjectWorld({
+export function PipelineStrip({
+  project,
+  sites = [],
+  tickets = null,
+  deploys = null,
+  t = (k) => k,
+  now,
+  onSelectStation,
+}) {
+  const stations = useMemo(
+    () => stationsFor({ project, sites, tickets, deploys, t, now }),
+    [project, sites, tickets, deploys, t, now],
+  );
+  const ordered = useMemo(
+    () => STATION_ORDER.map((k) => stations.find((s) => s.key === k)).filter(Boolean),
+    [stations],
+  );
+  return (
+    <div className="aw-world-strip-wrap ui">
+      <UiStyles />
+      <ol className="aw-world-strip" aria-label={tx(t, 'world.stripLabel', 'Project pipeline')}>
+        {ordered.map((s) => (
+          <li key={s.key} className="aw-world-strip__item" data-station={s.key} data-state={s.state}>
+            <button
+              type="button"
+              className="aw-world-strip__btn"
+              onClick={() => onSelectStation?.(s.key)}
+              title={`${s.title}: ${s.stateText}`}
+            >
+              <StationStateIndicator state={s.state} t={t} dotOnly />
+              <span className="aw-world-strip__name">{s.shortLabel}</span>
+              <span className="aw-world-strip__status">{s.shortStatus || s.stateText}</span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/**
+ * Interactive functional-isometric ProjectMap for Project → Overview.
+ */
+export function ProjectMap({
   project,
   sites = [],
   tickets = null,
@@ -660,7 +707,34 @@ export function ProjectWorld({
   const resolvedInitial = STATION_ORDER.includes(initialStation) ? initialStation : 'hosting';
   const [selectedKey, setSelectedKey] = useState(resolvedInitial);
   const [contextMenu, setContextMenu] = useState(null);
+  const [measuredWidths, setMeasuredWidths] = useState({});
   const stationRefs = useRef({});
+  const textRefs = useRef({});
+
+  useEffect(() => {
+    if (STATION_ORDER.includes(initialStation)) setSelectedKey(initialStation);
+  }, [initialStation]);
+
+  // Measure rendered SVG text lengths so station plates fit without clipping or truncation.
+  useEffect(() => {
+    const next = {};
+    let changed = false;
+    for (const s of stations) {
+      const refs = textRefs.current[s.key];
+      if (!refs?.name || !refs?.status) continue;
+      if (typeof refs.name.getComputedTextLength !== 'function') continue;
+      const nw = refs.name.getComputedTextLength();
+      const sw = refs.status.getComputedTextLength();
+      if (nw > 0 || sw > 0) {
+        const w = plateWidth(nw, sw);
+        next[s.key] = w;
+        if (Math.abs((measuredWidths[s.key] ?? 0) - w) > 0.5) changed = true;
+      }
+    }
+    if (changed) setMeasuredWidths((prev) => ({ ...prev, ...next }));
+  }, [stations]);
+
+  const layout = useMemo(() => plateLayout(stations, measuredWidths), [stations, measuredWidths]);
 
   // Request journey trace: undefined = follow default open request; null = all stations.
   const [journeyId, setJourneyId] = useState(undefined);
@@ -677,21 +751,6 @@ export function ProjectWorld({
         : (tickets ?? []).find((tk) => String(tk?.id) === String(journeyId)) ?? null;
   const journey = useMemo(() => (followed ? journeyFor(followed, { sites, t, now }) : null), [followed, sites, t, now]);
   const activeStation = stations.find((s) => s.key === selectedKey) ?? stations[0];
-
-  // Close station context menu on Escape or outside click.
-  useEffect(() => {
-    if (!contextMenu) return undefined;
-    const onKey = (e) => {
-      if (e.key === 'Escape') setContextMenu(null);
-    };
-    const onPointer = () => setContextMenu(null);
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('pointerdown', onPointer);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('pointerdown', onPointer);
-    };
-  }, [contextMenu]);
 
   const selectStation = (key, emit = true) => {
     setSelectedKey(key);
@@ -712,6 +771,34 @@ export function ProjectWorld({
     }
   };
 
+  const openContextMenuAt = (x, y, station) => {
+    const actions = actionsForStation(station, onAction);
+    if (!actions.length) return;
+    selectStation(station.key, false);
+    const items = [
+      { heading: station.title },
+      ...actions.map((act) => ({
+        label: act.href ? `${act.label} ↗` : act.label,
+        run: () => {
+          if (act.href && typeof window !== 'undefined') {
+            window.open(act.href, '_blank', 'noopener,noreferrer');
+          } else {
+            act.run?.();
+          }
+        },
+      })),
+    ];
+    setContextMenu({ station, items, x, y });
+  };
+
+  const openContextMenu = (e, station) => {
+    const actions = actionsForStation(station, onAction);
+    if (!actions.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openContextMenuAt(e.clientX, e.clientY, station);
+  };
+
   const onStationKeyDown = (e, station) => {
     const idx = orderedStations.findIndex((s) => s.key === station.key);
     if (idx === -1) return;
@@ -728,19 +815,17 @@ export function ProjectWorld({
       stationRefs.current[target.key]?.focus();
       return;
     }
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      e.preventDefault();
+      const rect = e.currentTarget.getBoundingClientRect();
+      openContextMenuAt(rect.left + rect.width / 2, rect.top + rect.height / 2, station);
+      return;
+    }
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       selectStation(station.key, true);
       triggerPrimaryAction(station);
     }
-  };
-
-  const openContextMenu = (e, station) => {
-    const actions = actionsForStation(station, onAction);
-    if (!actions.length) return;
-    e.preventDefault();
-    selectStation(station.key, false);
-    setContextMenu({ station, actions, x: e.clientX, y: e.clientY });
   };
 
   const floorPlate = useMemo(
@@ -756,12 +841,11 @@ export function ProjectWorld({
 
   const visitorPt = iso(VISITOR_POS.x, VISITOR_POS.y, 0);
   const visitorNext = iso(STATION_POSITIONS.hosting.x, STATION_POSITIONS.hosting.y, 0);
-
-  const [stateKey, stateDefault] = STATE_LABEL[activeStation.state] ?? STATE_LABEL.off;
-  const stateBadgeText = tx(t, stateKey, stateDefault);
+  const vb = layout.viewBox;
 
   return (
-    <div className="aw-world-wrap">
+    <div className="aw-world-wrap ui">
+      <UiStyles />
       {pillTickets.length || drift ? (
         <div className="aw-world__bar">
           {pillTickets.length ? (
@@ -793,20 +877,20 @@ export function ProjectWorld({
         </div>
       ) : null}
 
-      {/* Wide view: isometric map + quiet inspector */}
+      {/* Wide view: functional isometric map + shared Inspector */}
       <figure className="aw-world">
         <div className="aw-world__stage">
           <svg
             className="aw-world__svg"
-            viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
+            viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
             preserveAspectRatio="xMidYMid meet"
             role="group"
             aria-label={tx(t, 'world.mapLabel', 'Project map: requests, builder, code, preview and live site')}
           >
-            {/* Clean isometric floor plate (no decorative dot-matrix noise) */}
+            {/* Clean isometric floor plate */}
             <polygon className="aw-world__floor-plate" points={floorPlate} />
 
-            {/* Isometric connecting cables / roads — static, no idle motion */}
+            {/* Relationship lines — static, no idle motion */}
             <g aria-hidden="true">
               {cables.map((c) => {
                 const p1 = iso(c.points[0][0], c.points[0][1], 0);
@@ -858,17 +942,8 @@ export function ProjectWorld({
                 [station.x - hitR, station.y + hitR, 0],
               ]);
 
-              const center = iso(station.x, station.y, 0);
-              const lay = LABEL_LAYOUT[station.key] ?? { x: center.x, y: center.y + 46, w: 158 };
-              const boxH = 42;
-              const bx = Math.max(6, Math.min(VIEW_WIDTH - lay.w - 6, lay.x - lay.w / 2));
-              const by = Math.max(6, Math.min(VIEW_HEIGHT - boxH - 6, lay.y - boxH / 2));
-              const cx = bx + lay.w / 2;
-              const cy = by + boxH / 2;
-              // Leader connects nearest edge of label box to the station pad center
-              const anchorX = center.x < bx ? bx : center.x > bx + lay.w ? bx + lay.w : cx;
-              const anchorY = center.y < by ? by : center.y > by + boxH ? by + boxH : cy;
-
+              const plate = layout.plates[station.key];
+              const stationActions = actionsForStation(station, onAction);
               const isSelected = activeStation.key === station.key;
               const cls = [
                 'aw-world__station',
@@ -887,6 +962,9 @@ export function ProjectWorld({
                     stationRefs.current[station.key] = el;
                   }}
                   className={cls}
+                  data-station={station.key}
+                  data-state={station.state}
+                  data-station-actions={stationActions.length}
                   role="button"
                   tabIndex={isSelected ? 0 : -1}
                   aria-label={`${station.title}: ${station.stateText}`}
@@ -897,69 +975,90 @@ export function ProjectWorld({
                 >
                   <polygon className="aw-world__hit" points={hitPts} />
                   <polygon className="aw-world__pad" points={padPts} />
+                  {plate ? (
+                    <line
+                      className="aw-world__leader"
+                      aria-hidden="true"
+                      x1={plate.leader.x1}
+                      y1={plate.leader.y1}
+                      x2={plate.leader.x2}
+                      y2={plate.leader.y2}
+                    />
+                  ) : null}
                   <g className="aw-world__lift">
                     <StationGeometry station={station} />
                   </g>
-                  {/* Readable-at-rest two-line label plate (name + 1-line status) */}
-                  <g className="aw-world__label" aria-hidden="true">
-                    <line
-                      className="aw-world__leader"
-                      x1={anchorX}
-                      y1={anchorY}
-                      x2={center.x}
-                      y2={center.y}
-                    />
-                    <rect className="aw-world__tag-bg" x={bx} y={by} width={lay.w} height={boxH} rx={6} />
-                    <circle
-                      className={`aw-world__beacon aw-world__beacon--${station.state}`}
-                      cx={bx + 12}
-                      cy={by + 14}
-                      r={3.8}
-                    />
-                    <text className="aw-world__tag-name" x={bx + 22} y={by + 14.5}>
-                      {station.shortLabel}
-                    </text>
-                    <text className="aw-world__tag-status" x={bx + 10} y={by + 31}>
-                      {station.shortStatus || station.stateText}
-                    </text>
-                  </g>
+                  {/* Readable-at-rest two-line label plate (name + full 1-line status) */}
+                  {plate ? (
+                    <g className="aw-world__label" aria-hidden="true">
+                      <rect className="aw-world__tag-bg" x={plate.x} y={plate.y} width={plate.w} height={plate.h} rx={6} />
+                      <circle
+                        className={`aw-world__beacon aw-world__beacon--${station.state}`}
+                        cx={plate.x + 13}
+                        cy={plate.y + 15}
+                        r={3.5}
+                      />
+                      <text
+                        ref={(el) => {
+                          textRefs.current[station.key] = { ...(textRefs.current[station.key] ?? {}), name: el };
+                        }}
+                        className="aw-world__tag-name"
+                        x={plate.x + 23}
+                        y={plate.y + 15.5}
+                      >
+                        {station.shortLabel}
+                      </text>
+                      <text
+                        ref={(el) => {
+                          textRefs.current[station.key] = { ...(textRefs.current[station.key] ?? {}), status: el };
+                        }}
+                        className="aw-world__tag-status"
+                        x={plate.x + 10}
+                        y={plate.y + 31.5}
+                      >
+                        {station.shortStatus || station.stateText}
+                      </text>
+                    </g>
+                  ) : null}
                 </g>
               );
             })}
           </svg>
         </div>
 
-        {/* Quiet inspector beside the map */}
-        <figcaption className="aw-world__caption" aria-live="polite">
-          {journey ? (
-            <div className="aw-world__journey">
-              <span className="aw-world__status-label">
-                #{followed.id} {followed.title ?? ''}
-              </span>
-              <p className="aw-world__journey-sentence">{journey.sentence}</p>
-              <div className="aw-world__journey-links">
-                {journey.status === 'review' && journey.previewUrl ? (
-                  <a className="aw-world__journey-chip" href={journey.previewUrl} target="_blank" rel="noreferrer">
-                    {tx(t, 'world.journey.openPreview', 'Open preview')} ↗
-                  </a>
-                ) : null}
-                {journey.status === 'done' && journey.siteUrl ? (
-                  <a className="aw-world__journey-chip" href={journey.siteUrl} target="_blank" rel="noreferrer">
-                    {tx(t, 'world.journey.openSite', 'Open site')} ↗
-                  </a>
-                ) : null}
+        {/* Shared v2 Inspector beside the map */}
+        <Inspector
+          className="aw-world__caption"
+          title={<span className="aw-world__title">{activeStation.title}</span>}
+          actions={<StationStateIndicator state={activeStation.state} t={t} />}
+          label={`${activeStation.title} inspector`}
+          storageKey="ui.projectmap.inspector"
+          defaultWidth={320}
+          minWidth={280}
+          maxWidth={440}
+        >
+          <div className="aw-world__inspector" aria-live="polite">
+            {journey ? (
+              <div className="aw-world__journey">
+                <span className="aw-world__status-label">
+                  #{followed.id} {followed.title ?? ''}
+                </span>
+                <p className="aw-world__journey-sentence">{journey.sentence}</p>
+                <div className="aw-world__journey-links">
+                  {journey.status === 'review' && journey.previewUrl ? (
+                    <a className="aw-world__journey-chip" href={journey.previewUrl} target="_blank" rel="noreferrer">
+                      {tx(t, 'world.journey.openPreview', 'Open preview')} ↗
+                    </a>
+                  ) : null}
+                  {journey.status === 'done' && journey.siteUrl ? (
+                    <a className="aw-world__journey-chip" href={journey.siteUrl} target="_blank" rel="noreferrer">
+                      {tx(t, 'world.journey.openSite', 'Open site')} ↗
+                    </a>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
 
-          <div className="aw-world__inspector">
-            <div className="aw-world__card-top">
-              <h3 className="aw-world__title">{activeStation.title}</h3>
-              <span className={`aw-world__pill aw-world__pill--${activeStation.state}`}>
-                <span className="aw-world__pill-dot" aria-hidden="true" />
-                {stateBadgeText}
-              </span>
-            </div>
             <p className="aw-world__explain">{activeStation.explain}</p>
             <div className="aw-world__status-box">
               <span className="aw-world__status-label">{tx(t, 'world.currentStatus', 'Current status')}</span>
@@ -969,10 +1068,9 @@ export function ProjectWorld({
             <OperatorExtras station={activeStation} />
             <ChecksList checks={activeStation.checks} t={t} />
             <StationActions station={activeStation} onAction={onAction} />
+            <p className="aw-world__kbd-hint">Click or use arrow keys to inspect · Enter opens</p>
           </div>
-
-          <p className="aw-world__kbd-hint">Click or use arrow keys to inspect · Enter opens</p>
-        </figcaption>
+        </Inspector>
 
         {/* Full text summary of every station and its state for screen readers */}
         <ul className="aw-world__sr-only" aria-label={tx(t, 'world.summaryLabel', 'Project health station status')}>
@@ -994,16 +1092,21 @@ export function ProjectWorld({
       {/* Narrow fallback (≤900px viewport or narrow container): vertical route list */}
       <ol className="aw-world__route" aria-label={tx(t, 'world.routeLabel', 'Project route')}>
         {orderedStations.map((s) => {
-          const [sk, sd] = STATE_LABEL[s.state] ?? STATE_LABEL.off;
-          const badge = tx(t, sk, sd);
           const isCurrent = journey?.currentKey === s.key;
           const readyChecks = (s.checks ?? []).filter((c) => c.state === 'ready').length;
+          const stationActions = actionsForStation(s, onAction);
           return (
-            <li key={s.key} className={`aw-world__route-item is-${s.state}${isCurrent ? ' is-journey-current' : ''}`}>
+            <li
+              key={s.key}
+              className={`aw-world__route-item is-${s.state}${isCurrent ? ' is-journey-current' : ''}`}
+              data-station={s.key}
+              data-state={s.state}
+              data-station-actions={stationActions.length}
+            >
               <div className="aw-world__route-head">
                 <span className={`aw-world__route-dot aw-world__route-dot--${s.state}`} aria-hidden="true" />
                 <strong className="aw-world__route-name">{s.title}</strong>
-                <span className={`aw-world__pill aw-world__pill--${s.state}`}>{badge}</span>
+                <StationStateIndicator state={s.state} t={t} />
               </div>
               <p className="aw-world__route-status">{s.stateText}</p>
               {s.key === 'hosting' && s.meta?.httpsText ? (
@@ -1024,48 +1127,18 @@ export function ProjectWorld({
         })}
       </ol>
 
-      {/* Right-click station context menu */}
+      {/* Shared station context menu (right-click or Shift+F10 / ContextMenu key) */}
       {contextMenu ? (
-        <div
-          className="aw-world__ctxmenu"
-          role="menu"
-          aria-label={`${contextMenu.station.title} actions`}
-          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <div className="aw-world__ctxhead">{contextMenu.station.title}</div>
-          {contextMenu.actions.map((act) =>
-            act.href ? (
-              <a
-                key={act.id}
-                role="menuitem"
-                className="aw-world__ctxitem"
-                href={act.href}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => setContextMenu(null)}
-              >
-                {act.label} ↗
-              </a>
-            ) : (
-              <button
-                key={act.id}
-                type="button"
-                role="menuitem"
-                className="aw-world__ctxitem"
-                onClick={() => {
-                  setContextMenu(null);
-                  act.run();
-                }}
-              >
-                {act.label}
-              </button>
-            ),
-          )}
-        </div>
+        <Menu
+          items={contextMenu.items}
+          at={{ x: contextMenu.x, y: contextMenu.y }}
+          label={`${contextMenu.station.title} actions`}
+          onClose={() => setContextMenu(null)}
+        />
       ) : null}
     </div>
   );
 }
 
-export default ProjectWorld;
+export const ProjectWorld = ProjectMap;
+export default ProjectMap;

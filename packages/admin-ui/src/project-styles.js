@@ -191,8 +191,8 @@ export default `
 .aw-project__reveal pre { white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 
 /* Overview health line & map wrapper */
-.aw-project__health { margin: 0; font-size: var(--aw-type-md, 13px); color: var(--aw-ink, var(--aw-text)); min-width: 0; font-variant-numeric: tabular-nums; }
-.aw-project__world { margin-top: var(--aw-space-3, 12px); }
+.aw-project__health { margin: 0; font-size: var(--ui-fs-md, var(--aw-type-md, 13px)); color: var(--ui-ink, var(--aw-ink)); min-width: 0; font-variant-numeric: tabular-nums; }
+.aw-project__world { margin-top: var(--ui-sp-3, var(--aw-space-3, 12px)); }
 
 /* Sub-block separator inside Local checkout & People */
 .aw-project__connect { border-top: 1px solid var(--aw-hairline, var(--aw-border)); padding-top: var(--aw-space-4, 16px); margin-top: var(--aw-space-4, 16px); }

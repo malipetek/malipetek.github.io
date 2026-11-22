@@ -9,7 +9,7 @@ import { SitePanel } from './ticket.jsx';
 import { ago } from './format.js';
 import { briefPayload, createProjectResource, projectTickets, projectWork, projectTopology, resourceUrl, singleFlight } from './project-model.js';
 import { operatorTicketCounts, stationsFor, unshippedPreview } from './project-world-model.mjs';
-import { ProjectWorld } from './project-world.jsx';
+import { PipelineStrip, ProjectMap } from './project-world.jsx';
 import projectStyles from './project-styles.js';
 
 const errorText = error => error?.message || String(error || 'Request failed');
@@ -335,7 +335,13 @@ function Overview({ project, refresh, setTab }) {
   const [deployState, refreshDeploys] = useProjectResource(loadDeploys);
   const deploys = Array.isArray(deployState.value?.deploys) ? deployState.value.deploys : null;
   const [mapOpen, setMapOpen] = useState(readMapOpen);
+  const [focusStation, setFocusStation] = useState('hosting');
   const toggleMap = () => setMapOpen(open => { writeMapOpen(!open); return !open; });
+  const openMapAt = useCallback((stationKey) => {
+    setFocusStation(stationKey);
+    writeMapOpen(true);
+    setMapOpen(true);
+  }, []);
   const health = useMemo(() => healthSummary({ project, sites, tickets: mapTickets, deploys }), [project, sites, mapTickets, deploys]);
 
   const handleMapAction = useCallback((action) => {
@@ -383,9 +389,24 @@ function Overview({ project, refresh, setTab }) {
         {deploySiteId && deployState.error ? <ErrorNote error={deployState.error} onRetry={refreshDeploys} /> : null}
         {mapOpen ? (
           <div className="aw-project__world">
-            <ProjectWorld project={project} sites={sites} tickets={mapTickets} deploys={deploys} onAction={handleMapAction} />
+            <ProjectMap
+              project={project}
+              sites={sites}
+              tickets={mapTickets}
+              deploys={deploys}
+              initialStation={focusStation}
+              onAction={handleMapAction}
+            />
           </div>
-        ) : null}
+        ) : (
+          <PipelineStrip
+            project={project}
+            sites={sites}
+            tickets={mapTickets}
+            deploys={deploys}
+            onSelectStation={openMapAt}
+          />
+        )}
       </section>
       <section className="aw-project__section"><Brief project={project} refresh={refresh} setTab={setTab} /></section>
     </>

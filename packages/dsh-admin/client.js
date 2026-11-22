@@ -9196,228 +9196,274 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-seo-issue { display: flex; align-items: baseline; gap: var(--aw-space-2); flex-wrap: wrap; }
 .aw-seo-issue span:last-child { color: var(--aw-ink-2); }
 
-/* ProjectWorld \u2014 5-station isometric map (M1); readable at rest, calm motion, narrow route fallback. */
+/* ProjectMap \u2014 5-station functional isometric map (06-design-system.md \xA77.3).
+   Uses shared --ui-* tokens exclusively; zero private --aw-w-* tokens. */
 .aw-world-wrap {
   container-type: inline-size;
   min-width: 0;
-  --aw-w-ink: var(--aw-ink, var(--aw-text, currentColor));
-  --aw-w-ink-soft: var(--aw-ink-2, var(--aw-text2, rgba(128,134,142,.92)));
-  --aw-w-surface: var(--aw-surface, var(--aw-bg, #fff));
-  --aw-w-stage: var(--aw-surface-sidebar, var(--aw-bg2, #f8f7f4));
-  --aw-w-chip: var(--aw-fill, var(--aw-bg3, rgba(128,134,142,.14)));
-  --aw-w-rule: var(--aw-hairline, var(--aw-border, rgba(128,134,142,.24)));
-  --aw-w-rule-strong: var(--aw-hairline-strong, var(--aw-border2, rgba(128,134,142,.38)));
-  --aw-w-accent: var(--aw-accent, #ff5a1f);
-  --aw-w-ok: var(--aw-ok, #2f9e5b);
-  --aw-w-warn: var(--aw-warn, #d99a16);
-  --aw-w-bad: var(--aw-bad, #d6453d);
-  --aw-w-hover: var(--aw-hover, rgba(128,134,142,.12));
-  --aw-w-tint: color-mix(in srgb, var(--aw-w-accent) 12%, transparent);
-  --aw-w-mono: var(--aw-mono, ui-monospace, 'SF Mono', Menlo, monospace);
-
-  --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 90%, var(--aw-w-ink) 10%);
-  --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 78%, var(--aw-w-ink) 22%);
-  --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 64%, var(--aw-w-ink) 36%);
-
-  --aw-w-accent-top: color-mix(in srgb, var(--aw-w-accent) 22%, var(--aw-w-surface));
-  --aw-w-accent-left: color-mix(in srgb, var(--aw-w-accent) 36%, var(--aw-w-surface));
-  --aw-w-accent-right: color-mix(in srgb, var(--aw-w-accent) 50%, var(--aw-w-surface));
-
-  --aw-w-ok-soft: color-mix(in srgb, var(--aw-w-ok) 22%, var(--aw-w-surface));
-  --aw-w-bad-soft: color-mix(in srgb, var(--aw-w-bad) 22%, var(--aw-w-surface));
-  --aw-w-warn-soft: color-mix(in srgb, var(--aw-w-warn) 24%, var(--aw-w-surface));
+  background: transparent;
 }
-.aw-project__world { padding: var(--aw-space-2, 8px) 0 0; }
-.aw-world__bar { display: flex; flex-direction: column; gap: var(--aw-space-2, 8px); margin-bottom: var(--aw-space-3, 12px); }
+.aw-world-strip-wrap {
+  min-width: 0;
+  background: transparent;
+  margin-top: var(--ui-sp-2);
+}
+.aw-world-strip {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-sp-1);
+}
+.aw-world-strip__item { min-width: 0; }
+.aw-world-strip__btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-sp-1);
+  height: var(--ui-ctl-h-sm);
+  padding: 0 var(--ui-sp-2);
+  border-radius: var(--ui-r-sm);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+  color: var(--ui-ink);
+  font: inherit;
+  font-size: var(--ui-fs-sm);
+  line-height: var(--ui-lh-tight);
+  cursor: pointer;
+  transition: background var(--ui-dur) var(--ui-ease), border-color var(--ui-dur) var(--ui-ease);
+}
+.aw-world-strip__btn:hover {
+  background: var(--ui-bg-hover);
+  border-color: var(--ui-border-strong);
+}
+.aw-world-strip__name { font-weight: 600; color: var(--ui-ink); }
+.aw-world-strip__status { color: var(--ui-ink-2); font-size: var(--ui-fs-xs); }
+
+.aw-project__world { padding: var(--ui-sp-2) 0 0; }
+.aw-world__bar { display: flex; flex-direction: column; gap: var(--ui-sp-2); margin-bottom: var(--ui-sp-3); }
 .aw-world {
   margin: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1.85fr) minmax(250px, 310px);
+  display: flex;
   align-items: stretch;
-  border-radius: var(--aw-radius-lg, var(--aw-r-lg, 8px));
-  border: 1px solid var(--aw-w-rule);
-  background: var(--aw-w-surface);
-  color: var(--aw-w-ink);
+  border-radius: var(--ui-r-lg);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+  color: var(--ui-ink);
   overflow: hidden;
-}
-@media (prefers-color-scheme: dark) {
-  .aw-world-wrap {
-    --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
-    --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
-    --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
-  }
-}
-:root[data-theme='dark'] .aw-world-wrap {
-  --aw-w-face-top: color-mix(in srgb, var(--aw-w-surface) 74%, var(--aw-w-ink) 26%);
-  --aw-w-face-left: color-mix(in srgb, var(--aw-w-surface) 84%, var(--aw-w-ink) 16%);
-  --aw-w-face-right: color-mix(in srgb, var(--aw-w-surface) 92%, var(--aw-w-ink) 8%);
 }
 .aw-world__stage {
   position: relative;
-  background: var(--aw-w-surface);
+  flex: 1 1 0;
+  background: var(--ui-bg);
   display: flex;
   align-items: center;
   justify-content: center;
   min-width: 0;
-  padding: var(--aw-space-2, 8px);
+  padding: var(--ui-sp-2);
 }
 .aw-world__svg {
   display: block;
   width: 100%;
   height: auto;
-  max-height: 390px;
+  max-height: 400px;
   user-select: none;
   -webkit-user-select: none;
 }
 .aw-world__floor-plate {
-  fill: color-mix(in srgb, var(--aw-w-stage) 75%, var(--aw-w-surface));
-  stroke: var(--aw-w-rule-strong);
+  fill: color-mix(in srgb, var(--ui-bg-subtle) 75%, var(--ui-bg));
+  stroke: var(--ui-border-strong);
   stroke-width: 1;
 }
 
-.aw-world__cable-base { fill: none; stroke: var(--aw-w-rule-strong); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.aw-world__cable-base.is-connected { stroke: color-mix(in srgb, var(--aw-w-ink) 42%, transparent); }
-.aw-world__cable-base.is-lit { stroke: var(--aw-w-accent); stroke-width: 2.4; }
-.aw-world__cable-arrow { fill: var(--aw-w-ink-soft); }
-.aw-world__cable-arrow.is-active { fill: var(--aw-w-accent); }
+.aw-world__cable-base { fill: none; stroke: var(--ui-border-strong); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.aw-world__cable-base.is-connected { stroke: color-mix(in srgb, var(--ui-ink) 42%, transparent); }
+.aw-world__cable-base.is-lit { stroke: var(--ui-accent); stroke-width: 2.4; }
+.aw-world__cable-arrow { fill: var(--ui-ink-2); }
+.aw-world__cable-arrow.is-active { fill: var(--ui-accent); }
 
 .aw-world__station { cursor: pointer; outline: none; }
 .aw-world__hit { fill: transparent; stroke: none; }
 .aw-world__pad {
-  fill: color-mix(in srgb, var(--aw-w-surface) 85%, var(--aw-w-stage));
-  stroke: var(--aw-w-rule-strong);
+  fill: color-mix(in srgb, var(--ui-bg) 85%, var(--ui-bg-subtle));
+  stroke: var(--ui-border-strong);
   stroke-width: 1;
-  transition: fill var(--aw-dur, 140ms) var(--aw-ease, cubic-bezier(.2,0,0,1)), stroke var(--aw-dur, 140ms) var(--aw-ease, cubic-bezier(.2,0,0,1));
+  transition: fill var(--ui-dur) var(--ui-ease), stroke var(--ui-dur) var(--ui-ease);
 }
 .aw-world__lift {
-  transition: transform var(--aw-dur, 140ms) var(--aw-ease, cubic-bezier(.2,0,0,1));
+  transition: transform var(--ui-dur) var(--ui-ease);
 }
 .aw-world__station:hover .aw-world__lift,
 .aw-world__station:focus-visible .aw-world__lift { transform: translateY(-3px); }
-.aw-world__station.is-active .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-accent) 12%, var(--aw-w-surface)); stroke: color-mix(in srgb, var(--aw-w-accent) 55%, var(--aw-w-ink)); }
-.aw-world__station.is-warn .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-warn) 12%, var(--aw-w-surface)); stroke: color-mix(in srgb, var(--aw-w-warn) 55%, var(--aw-w-ink)); }
-.aw-world__station.is-bad .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-bad) 12%, var(--aw-w-surface)); stroke: color-mix(in srgb, var(--aw-w-bad) 60%, var(--aw-w-ink)); }
+.aw-world__station.is-active .aw-world__pad { fill: color-mix(in srgb, var(--ui-info) 12%, var(--ui-bg)); stroke: color-mix(in srgb, var(--ui-info) 60%, var(--ui-ink)); }
+.aw-world__station.is-warn .aw-world__pad { fill: color-mix(in srgb, var(--ui-warn) 12%, var(--ui-bg)); stroke: color-mix(in srgb, var(--ui-warn) 55%, var(--ui-ink)); }
+.aw-world__station.is-bad .aw-world__pad { fill: color-mix(in srgb, var(--ui-bad) 12%, var(--ui-bg)); stroke: color-mix(in srgb, var(--ui-bad) 60%, var(--ui-ink)); }
 .aw-world__station.is-selected .aw-world__pad,
-.aw-world__station:hover .aw-world__pad { fill: var(--aw-w-tint); stroke: var(--aw-w-accent); stroke-width: 1.6; }
-.aw-world__station:focus-visible .aw-world__pad { stroke: var(--aw-w-accent); stroke-width: 2.2; }
+.aw-world__station:hover .aw-world__pad { fill: var(--ui-accent-wash); stroke: var(--ui-accent); stroke-width: 1.6; }
+.aw-world__station:focus-visible .aw-world__pad { stroke: var(--ui-focus); stroke-width: 2.2; }
 
-/* Pulse strictly on genuinely running stations (state === 'active') when motion is permitted. */
+/* Pulse strictly on genuinely active stations when motion is permitted. */
 @media (prefers-reduced-motion: no-preference) {
   .aw-world__station.is-active .aw-world__pad { animation: aw-world-active-pulse 2s ease-in-out infinite; }
 }
 @keyframes aw-world-active-pulse { 50% { stroke-opacity: .4; } }
 
-.aw-world__face-top { fill: var(--aw-w-face-top); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
-.aw-world__face-left { fill: var(--aw-w-face-left); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
-.aw-world__face-right { fill: var(--aw-w-face-right); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
-.aw-world__face-accent-top { fill: var(--aw-w-accent-top); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__face-accent-left { fill: var(--aw-w-accent-left); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__face-accent-right { fill: var(--aw-w-accent-right); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__face-ok { fill: var(--aw-w-ok-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__face-bad { fill: var(--aw-w-bad-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__face-warn { fill: var(--aw-w-warn-soft); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__ink-line { fill: none; stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
-.aw-world__detail-line { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 50%, transparent); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
-.aw-world__window { fill: color-mix(in srgb, var(--aw-w-ink) 14%, var(--aw-w-surface)); stroke: var(--aw-w-ink); stroke-width: 1.1; stroke-linejoin: round; }
-.aw-world__window--lit { fill: var(--aw-w-accent-left); }
-.aw-world__window--ok { fill: var(--aw-w-ok-soft); }
+/* Three-tone isometric faces & crisp ink lines */
+.aw-world__face-top { fill: color-mix(in srgb, var(--ui-bg) 90%, var(--ui-ink) 10%); stroke: var(--ui-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
+.aw-world__face-left { fill: color-mix(in srgb, var(--ui-bg) 78%, var(--ui-ink) 22%); stroke: var(--ui-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
+.aw-world__face-right { fill: color-mix(in srgb, var(--ui-bg) 64%, var(--ui-ink) 36%); stroke: var(--ui-ink); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
+@media (prefers-color-scheme: dark) {
+  .aw-world__face-top { fill: color-mix(in srgb, var(--ui-bg) 74%, var(--ui-ink) 26%); }
+  .aw-world__face-left { fill: color-mix(in srgb, var(--ui-bg) 84%, var(--ui-ink) 16%); }
+  .aw-world__face-right { fill: color-mix(in srgb, var(--ui-bg) 92%, var(--ui-ink) 8%); }
+}
+:where([data-theme='dark']) .aw-world__face-top { fill: color-mix(in srgb, var(--ui-bg) 74%, var(--ui-ink) 26%); }
+:where([data-theme='dark']) .aw-world__face-left { fill: color-mix(in srgb, var(--ui-bg) 84%, var(--ui-ink) 16%); }
+:where([data-theme='dark']) .aw-world__face-right { fill: color-mix(in srgb, var(--ui-bg) 92%, var(--ui-ink) 8%); }
+:where([data-theme='light']) .aw-world__face-top { fill: color-mix(in srgb, var(--ui-bg) 90%, var(--ui-ink) 10%); }
+:where([data-theme='light']) .aw-world__face-left { fill: color-mix(in srgb, var(--ui-bg) 78%, var(--ui-ink) 22%); }
+:where([data-theme='light']) .aw-world__face-right { fill: color-mix(in srgb, var(--ui-bg) 64%, var(--ui-ink) 36%); }
 
-.aw-world__cloche-rim-back { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 32%, transparent); stroke-width: 1; stroke-dasharray: 2.5 2; }
-.aw-world__cloche-glass { fill: rgba(128,134,142,.16); stroke: var(--aw-w-ink); stroke-width: 1.3; stroke-linejoin: round; }
-.aw-world__cloche-glass--active { fill: color-mix(in srgb, var(--aw-w-accent) 18%, transparent); }
-.aw-world__cloche-glass--warn { fill: color-mix(in srgb, var(--aw-w-warn) 18%, transparent); }
-.aw-world__cloche-shine { fill: none; stroke: color-mix(in srgb, var(--aw-w-ink) 30%, transparent); stroke-width: 1.8; stroke-linecap: round; }
+.aw-world__face-accent-top { fill: color-mix(in srgb, var(--ui-info) 22%, var(--ui-bg)); stroke: var(--ui-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-accent-left { fill: color-mix(in srgb, var(--ui-info) 36%, var(--ui-bg)); stroke: var(--ui-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-accent-right { fill: color-mix(in srgb, var(--ui-info) 50%, var(--ui-bg)); stroke: var(--ui-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-ok { fill: color-mix(in srgb, var(--ui-ok) 22%, var(--ui-bg)); stroke: var(--ui-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-bad { fill: color-mix(in srgb, var(--ui-bad) 22%, var(--ui-bg)); stroke: var(--ui-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__face-warn { fill: color-mix(in srgb, var(--ui-warn) 24%, var(--ui-bg)); stroke: var(--ui-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__ink-line { fill: none; stroke: var(--ui-ink); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.aw-world__detail-line { fill: none; stroke: color-mix(in srgb, var(--ui-ink) 50%, transparent); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+.aw-world__window { fill: color-mix(in srgb, var(--ui-ink) 14%, var(--ui-bg)); stroke: var(--ui-ink); stroke-width: 1.1; stroke-linejoin: round; }
+.aw-world__window--lit { fill: color-mix(in srgb, var(--ui-info) 36%, var(--ui-bg)); }
+.aw-world__window--ok { fill: color-mix(in srgb, var(--ui-ok) 22%, var(--ui-bg)); }
+
+.aw-world__cloche-rim-back { fill: none; stroke: color-mix(in srgb, var(--ui-ink) 32%, transparent); stroke-width: 1; stroke-dasharray: 2.5 2; }
+.aw-world__cloche-glass { fill: color-mix(in srgb, var(--ui-ink) 10%, transparent); stroke: var(--ui-ink); stroke-width: 1.3; stroke-linejoin: round; }
+.aw-world__cloche-glass--active { fill: color-mix(in srgb, var(--ui-info) 18%, transparent); }
+.aw-world__cloche-glass--warn { fill: color-mix(in srgb, var(--ui-warn) 18%, transparent); }
+.aw-world__cloche-shine { fill: none; stroke: color-mix(in srgb, var(--ui-ink) 30%, transparent); stroke-width: 1.8; stroke-linecap: round; }
 
 .aw-world__station.is-unknown .aw-world__face-top,
 .aw-world__station.is-unknown .aw-world__face-left,
 .aw-world__station.is-unknown .aw-world__face-right,
-.aw-world__station.is-unknown .aw-world__ink-line { stroke-dasharray: 3.5 2.5; stroke: var(--aw-w-ink-soft); fill-opacity: .55; }
+.aw-world__station.is-unknown .aw-world__ink-line { stroke-dasharray: 3.5 2.5; stroke: var(--ui-ink-2); fill-opacity: .55; }
 .aw-world__station.is-off .aw-world__object { opacity: .66; }
 .aw-world__station.is-off:hover .aw-world__object,
 .aw-world__station.is-off.is-selected .aw-world__object,
 .aw-world__station.is-off:focus-visible .aw-world__object { opacity: .94; }
 
-.aw-world__beacon { stroke: var(--aw-w-ink); stroke-width: 1.1; }
-.aw-world__beacon--ok { fill: var(--aw-w-ok); }
-.aw-world__beacon--active { fill: var(--aw-w-accent); }
-.aw-world__beacon--warn { fill: var(--aw-w-warn); }
-.aw-world__beacon--bad { fill: var(--aw-w-bad); }
+.aw-world__beacon { stroke: var(--ui-ink); stroke-width: 1.1; }
+.aw-world__beacon--ok { fill: var(--ui-ok); }
+.aw-world__beacon--active { fill: var(--ui-info); }
+.aw-world__beacon--warn { fill: var(--ui-warn); }
+.aw-world__beacon--bad { fill: var(--ui-bad); }
 .aw-world__beacon--off,
-.aw-world__beacon--unknown { fill: var(--aw-w-stage); }
-.aw-world__badge-bg { fill: var(--aw-w-accent); stroke: var(--aw-w-ink); stroke-width: 1.1; }
-.aw-world__badge-bg--bad { fill: var(--aw-w-bad); }
-.aw-world__badge-text { font: 700 11.5px/1 var(--aw-w-mono); fill: #fff; text-anchor: middle; dominant-baseline: central; }
+.aw-world__beacon--unknown { fill: var(--ui-bg-subtle); }
+.aw-world__badge-bg { fill: var(--ui-accent); stroke: var(--ui-ink); stroke-width: 1.1; }
+.aw-world__badge-bg--bad { fill: var(--ui-bad); }
+.aw-world__badge-text {
+  font-family: var(--ui-mono);
+  font-size: var(--ui-fs-sm);
+  font-weight: 700;
+  fill: var(--ui-accent-ink);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
 
 /* Readable-at-rest two-line label plates (all SVG text \u226511px at 100%) */
-.aw-world__leader { stroke: var(--aw-w-rule-strong); stroke-width: 1; stroke-dasharray: 2 2; }
+.aw-world__leader { stroke: var(--ui-border-strong); stroke-width: 1; stroke-dasharray: 2 2; }
 .aw-world__station.is-selected .aw-world__leader,
-.aw-world__station:hover .aw-world__leader { stroke: var(--aw-w-accent); stroke-dasharray: none; }
-.aw-world__tag-bg { fill: var(--aw-w-surface); stroke: var(--aw-w-rule-strong); stroke-width: 1; }
+.aw-world__station:hover .aw-world__leader { stroke: var(--ui-accent); stroke-dasharray: none; }
+.aw-world__tag-bg { fill: var(--ui-bg); stroke: var(--ui-border-strong); stroke-width: 1; }
 .aw-world__station.is-selected .aw-world__tag-bg,
-.aw-world__station:hover .aw-world__tag-bg { stroke: var(--aw-w-accent); stroke-width: 1.4; }
-.aw-world__tag-name { font: 600 12.5px/1 -apple-system, BlinkMacSystemFont, Inter, system-ui, sans-serif; fill: var(--aw-w-ink); dominant-baseline: central; }
-.aw-world__tag-status { font: 500 11.5px/1 -apple-system, BlinkMacSystemFont, Inter, system-ui, sans-serif; fill: var(--aw-w-ink-soft); dominant-baseline: central; }
-.aw-world__micro { font: 500 11.5px/1 var(--aw-w-mono); fill: var(--aw-w-ink-soft); text-anchor: middle; }
-
-/* Quiet inspector beside the map (hairline-separated, no inner card) */
-.aw-world__caption {
-  display: flex;
-  flex-direction: column;
-  gap: var(--aw-space-3, 12px);
-  min-width: 0;
-  padding: var(--aw-space-4, 16px);
-  border-left: 1px solid var(--aw-w-rule);
-  background: var(--aw-w-stage);
+.aw-world__station:hover .aw-world__tag-bg { stroke: var(--ui-accent); stroke-width: 1.4; }
+.aw-world__tag-name {
+  font-family: var(--ui-font);
+  font-size: var(--ui-fs-md);
+  font-weight: 600;
+  fill: var(--ui-ink);
+  dominant-baseline: central;
 }
-.aw-world__inspector { display: flex; flex-direction: column; gap: var(--aw-space-2, 8px); flex: 1; }
-.aw-world__card-top { display: flex; align-items: center; justify-content: space-between; gap: var(--aw-space-2, 8px); flex-wrap: wrap; }
-.aw-world__pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: var(--aw-radius-pill, 999px); font-size: var(--aw-type-xs, 11px); font-weight: 600; line-height: 1.3; border: 1px solid var(--aw-w-rule-strong); background: var(--aw-w-surface); color: var(--aw-w-ink-soft); }
-.aw-world__pill-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-w-ink-soft); flex: none; }
-.aw-world__pill--ok { border-color: color-mix(in srgb, var(--aw-w-ok) 45%, transparent); background: color-mix(in srgb, var(--aw-w-ok) 12%, transparent); color: var(--aw-w-ok); }
-.aw-world__pill--ok .aw-world__pill-dot { background: var(--aw-w-ok); }
-.aw-world__pill--active { border-color: color-mix(in srgb, var(--aw-w-accent) 45%, transparent); background: var(--aw-w-tint); color: var(--aw-w-accent); }
-.aw-world__pill--active .aw-world__pill-dot { background: var(--aw-w-accent); }
-.aw-world__pill--warn { border-color: color-mix(in srgb, var(--aw-w-warn) 45%, transparent); background: color-mix(in srgb, var(--aw-w-warn) 12%, transparent); color: color-mix(in srgb, var(--aw-w-warn) 78%, var(--aw-w-ink)); }
-.aw-world__pill--warn .aw-world__pill-dot { background: var(--aw-w-warn); }
-.aw-world__pill--bad { border-color: color-mix(in srgb, var(--aw-w-bad) 45%, transparent); background: color-mix(in srgb, var(--aw-w-bad) 12%, transparent); color: var(--aw-w-bad); }
-.aw-world__pill--bad .aw-world__pill-dot { background: var(--aw-w-bad); }
-.aw-world__pill--unknown { border-style: dashed; }
+.aw-world__tag-status {
+  font-family: var(--ui-font);
+  font-size: var(--ui-fs-sm);
+  font-weight: 500;
+  fill: var(--ui-ink-2);
+  dominant-baseline: central;
+}
+.aw-world__micro {
+  font-family: var(--ui-mono);
+  font-size: var(--ui-fs-sm);
+  font-weight: 500;
+  fill: var(--ui-ink-2);
+  text-anchor: middle;
+}
 
-.aw-world .aw-world__title { margin: 0; font-size: var(--aw-type-lg, 15px); font-weight: 600; line-height: 1.25; color: var(--aw-w-ink); }
-.aw-world .aw-world__explain { margin: 0; font-size: var(--aw-type-sm, 12px); line-height: 1.45; color: var(--aw-w-ink-soft); max-width: none; }
-.aw-world__status-box { padding-top: var(--aw-space-2, 8px); border-top: 1px solid var(--aw-w-rule); display: flex; flex-direction: column; gap: 2px; }
-.aw-world__status-label { font: 600 10px/1.2 var(--aw-w-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--aw-w-ink-soft); }
-.aw-world .aw-world__status-value { margin: 0; font-size: var(--aw-type-sm, 12px); font-weight: 600; line-height: 1.4; color: var(--aw-w-ink); word-break: break-word; max-width: none; }
+/* Shared Inspector overrides for ProjectMap */
+.aw-world__caption .ui-inspector__head { padding-right: var(--ui-sp-3); }
+.aw-world__caption .ui-inspector__body { display: flex; flex-direction: column; }
+.aw-world__inspector { display: flex; flex-direction: column; gap: var(--ui-sp-2); flex: 1; min-width: 0; }
+.aw-world__title { color: var(--ui-ink); }
+.aw-world .aw-world__explain { margin: 0; font-size: var(--ui-fs-sm); line-height: var(--ui-lh); color: var(--ui-ink-2); max-width: none; }
+.aw-world__status-box { padding-top: var(--ui-sp-2); border-top: 1px solid var(--ui-border); display: flex; flex-direction: column; gap: 2px; }
+.aw-world__status-label {
+  font-family: var(--ui-mono);
+  font-size: var(--ui-fs-xs);
+  font-weight: 600;
+  line-height: var(--ui-lh-tight);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--ui-ink-2);
+}
+.aw-world .aw-world__status-value { margin: 0; font-size: var(--ui-fs-sm); font-weight: 600; line-height: var(--ui-lh); color: var(--ui-ink); word-break: break-word; max-width: none; }
 
-.aw-world__meta { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px var(--aw-space-3, 12px); margin: 0; padding-top: var(--aw-space-2, 8px); border-top: 1px solid var(--aw-w-rule); font-size: var(--aw-type-xs, 11px); }
-.aw-world__meta dt { color: var(--aw-w-ink-soft); font-weight: 600; }
-.aw-world__meta dd { margin: 0; color: var(--aw-w-ink); overflow-wrap: anywhere; }
-.aw-world__meta-ok { color: var(--aw-w-ok); font-weight: 600; }
+.aw-world__meta { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px var(--ui-sp-3); margin: 0; padding-top: var(--ui-sp-2); border-top: 1px solid var(--ui-border); font-size: var(--ui-fs-xs); }
+.aw-world__meta dt { color: var(--ui-ink-2); font-weight: 600; }
+.aw-world__meta dd { margin: 0; color: var(--ui-ink); overflow-wrap: anywhere; }
+.aw-world__meta-ok { color: var(--ui-ok); font-weight: 600; }
 
-.aw-world__ops { padding-top: var(--aw-space-2, 8px); border-top: 1px solid var(--aw-w-rule); display: flex; flex-direction: column; gap: var(--aw-space-1, 4px); }
-.aw-world__op-chips { display: flex; flex-wrap: wrap; gap: var(--aw-space-2, 8px); }
-.aw-world__op-chip { display: inline-flex; align-items: center; gap: 4px; font-size: var(--aw-type-xs, 11px); line-height: 1.3; color: var(--aw-w-ink-soft); font-variant-numeric: tabular-nums; }
-.aw-world__op-chip strong { color: var(--aw-w-ink); font-weight: 600; }
-.aw-world__op-chip--warn, .aw-world__op-chip--warn strong { color: color-mix(in srgb, var(--aw-w-warn) 78%, var(--aw-w-ink)); }
-.aw-world__op-chip--bad, .aw-world__op-chip--bad strong { color: var(--aw-w-bad); }
+.aw-world__ops { padding-top: var(--ui-sp-2); border-top: 1px solid var(--ui-border); display: flex; flex-direction: column; gap: var(--ui-sp-1); }
+.aw-world__op-chips { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2); }
+.aw-world__op-chip { display: inline-flex; align-items: center; gap: var(--ui-sp-1); font-size: var(--ui-fs-xs); line-height: var(--ui-lh-tight); color: var(--ui-ink-2); font-variant-numeric: tabular-nums; }
+.aw-world__op-chip strong { color: var(--ui-ink); font-weight: 600; }
+.aw-world__op-chip--warn, .aw-world__op-chip--warn strong { color: color-mix(in srgb, var(--ui-warn) 78%, var(--ui-ink)); }
+.aw-world__op-chip--bad, .aw-world__op-chip--bad strong { color: var(--ui-bad); }
 
-.aw-world__checks { padding-top: var(--aw-space-2, 8px); border-top: 1px solid var(--aw-w-rule); display: flex; flex-direction: column; gap: var(--aw-space-1, 4px); }
-.aw-world__check-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.aw-world__check-item { display: flex; align-items: flex-start; gap: 6px; padding: 3px 0; font-size: var(--aw-type-xs, 11px); line-height: 1.35; }
-.aw-world__check-mark { flex: none; width: 14px; text-align: center; font: 700 11px/1.3 var(--aw-w-mono); color: var(--aw-w-ink-soft); }
-.aw-world__check-item.is-pending .aw-world__check-mark { color: var(--aw-w-warn); }
-.aw-world__check-item.is-ready .aw-world__check-mark { color: var(--aw-w-ok); }
-.aw-world__check-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
-.aw-world__check-label { font-weight: 600; color: var(--aw-w-ink); }
-.aw-world .aw-world__check-detail { margin: 0; font-size: var(--aw-type-xs, 11px); line-height: 1.35; color: var(--aw-w-ink-soft); word-break: break-word; max-width: none; }
-.aw-world__check-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; font: 500 10.5px/1.25 var(--aw-w-mono); color: var(--aw-w-ink-soft); }
-.aw-world__check-who { color: var(--aw-w-ink); }
+.aw-world__checks { padding-top: var(--ui-sp-2); border-top: 1px solid var(--ui-border); display: flex; flex-direction: column; gap: var(--ui-sp-1); }
+.aw-world__check-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--ui-sp-1); }
+.aw-world__check-item { display: flex; align-items: flex-start; gap: 6px; padding: 3px 0; font-size: var(--ui-fs-xs); line-height: var(--ui-lh); }
+.aw-world__check-mark {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  font-family: var(--ui-mono);
+  font-size: var(--ui-fs-xs);
+  font-weight: 700;
+  line-height: var(--ui-lh-tight);
+  color: var(--ui-ink-2);
+}
+.aw-world__check-item.is-pending .aw-world__check-mark { color: var(--ui-warn); }
+.aw-world__check-item.is-ready .aw-world__check-mark { color: var(--ui-ok); }
+.aw-world__check-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.aw-world__check-label { font-weight: 600; color: var(--ui-ink); }
+.aw-world .aw-world__check-detail { margin: 0; font-size: var(--ui-fs-xs); line-height: var(--ui-lh); color: var(--ui-ink-2); word-break: break-word; max-width: none; }
+.aw-world__check-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-sp-1) var(--ui-sp-2);
+  font-family: var(--ui-mono);
+  font-size: var(--ui-fs-xs);
+  font-weight: 500;
+  line-height: var(--ui-lh-tight);
+  color: var(--ui-ink-2);
+}
+.aw-world__check-who { color: var(--ui-ink); }
 
-.aw-world__actions { display: flex; flex-wrap: wrap; gap: var(--aw-space-2, 8px); padding-top: var(--aw-space-2, 8px); margin-top: auto; border-top: 1px solid var(--aw-w-rule); }
-.aw-world__actions--compact { border-top: 0; padding-top: var(--aw-space-1, 4px); margin-top: var(--aw-space-1, 4px); }
-.aw-world__action-link { text-decoration: none; color: var(--aw-ink, var(--aw-text)) !important; }
-.aw-world__action-link:hover { text-decoration: none; }
-.aw-world__kbd-hint { margin: 0; font-size: var(--aw-type-xs, 11px); color: var(--aw-w-ink-soft); }
+.aw-world__actions { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2); padding-top: var(--ui-sp-2); margin-top: auto; border-top: 1px solid var(--ui-border); }
+.aw-world__actions--compact { border-top: 0; padding-top: var(--ui-sp-1); margin-top: var(--ui-sp-1); }
+.aw-world-wrap a.aw-world__action-link { text-decoration: none; color: var(--ui-ink); }
+.aw-world-wrap a.aw-world__action-link:hover { text-decoration: none; }
+.aw-world__kbd-hint { margin: var(--ui-sp-1) 0 0; font-size: var(--ui-fs-xs); color: var(--ui-ink-3); }
 
 /* Journey filter strip & preview drift bar */
 .aw-world__journeys { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; max-width: 100%; }
@@ -9429,69 +9475,70 @@ button.aw-file:hover { background: var(--aw-hover); }
   max-width: min(240px, 100%);
   min-width: 0;
   padding: 3px 9px;
-  border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px));
-  border: 1px solid var(--aw-hairline, var(--aw-border));
-  background: var(--aw-surface, var(--aw-bg));
-  color: var(--aw-ink-2, var(--aw-text2));
+  border-radius: var(--ui-r-sm);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+  color: var(--ui-ink-2);
   font: inherit;
-  font-size: var(--aw-type-xs, 11px);
-  line-height: 1.35;
+  font-size: var(--ui-fs-xs);
+  line-height: var(--ui-lh-tight);
   cursor: pointer;
 }
 .aw-world__journey-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aw-world__journey-pill:hover { background: var(--aw-hover); color: var(--aw-ink, var(--aw-text)); }
+.aw-world__journey-pill:hover { background: var(--ui-bg-hover); color: var(--ui-ink); }
 .aw-world__journey-pill[aria-pressed="true"] {
-  border-color: var(--aw-hairline-strong, var(--aw-border2));
-  background: var(--aw-fill, var(--aw-bg3));
-  color: var(--aw-ink, var(--aw-text));
+  border-color: var(--ui-border-strong);
+  background: var(--ui-bg-selected);
+  color: var(--ui-ink);
   font-weight: 600;
 }
 .aw-world__journey-pill.is-all { border-style: dashed; flex: none; }
-.aw-world__journey-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-ink-2, var(--aw-text2)); flex: 0 0 auto; }
-.aw-world__journey-pill.is-in_progress .aw-world__journey-dot,
-.aw-world__journey-pill.is-review .aw-world__journey-dot { background: var(--aw-accent); }
-.aw-world__journey-pill.is-done .aw-world__journey-dot { background: var(--aw-ok); }
+.aw-world__journey-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ui-ink-3); flex: 0 0 auto; }
+.aw-world__journey-pill.is-new .aw-world__journey-dot,
+.aw-world__journey-pill.is-in_progress .aw-world__journey-dot { background: var(--ui-info); }
+.aw-world__journey-pill.is-review .aw-world__journey-dot { background: var(--ui-warn); }
+.aw-world__journey-pill.is-done .aw-world__journey-dot { background: var(--ui-ok); }
 @media (max-width: 720px) {
   .aw-world__journeys {
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
     padding-right: 20px;
-    mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+    mask-image: linear-gradient(to right, var(--ui-ink) calc(100% - 20px), transparent);
+    -webkit-mask-image: linear-gradient(to right, var(--ui-ink) calc(100% - 20px), transparent);
   }
   .aw-world__journeys::-webkit-scrollbar { display: none; }
   .aw-world__journey-pill { flex: 0 0 auto; max-width: 200px; }
 }
 
-.aw-world__drift { margin: 0; font-size: var(--aw-type-sm, 12px); }
+.aw-world__drift { margin: 0; font-size: var(--ui-fs-sm); }
 .aw-world__drift-toggle {
   appearance: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 3px 9px;
-  border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px));
-  border: 1px solid color-mix(in srgb, var(--aw-warn) 45%, transparent);
-  background: color-mix(in srgb, var(--aw-warn) 10%, transparent);
-  color: var(--aw-ink, var(--aw-text));
+  border-radius: var(--ui-r-sm);
+  border: 1px solid color-mix(in srgb, var(--ui-warn) 45%, transparent);
+  background: color-mix(in srgb, var(--ui-warn) 10%, transparent);
+  color: var(--ui-ink);
   font: inherit;
   cursor: pointer;
   font-variant-numeric: tabular-nums;
 }
-.aw-world__drift-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-warn); flex: none; }
-.aw-world__drift-list { list-style: none; margin: 6px 0 0; padding: 0 0 0 8px; border-left: 2px solid color-mix(in srgb, var(--aw-warn) 45%, transparent); display: grid; gap: 3px; }
-.aw-world__drift-list li { display: flex; align-items: baseline; gap: 8px; }
-.aw-world__drift-item { appearance: none; border: 0; background: none; padding: 0; color: var(--aw-ink, var(--aw-text)); font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-span.aw-world__drift-item { cursor: default; color: var(--aw-ink-2, var(--aw-text2)); }
+.aw-world__drift-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ui-warn); flex: none; }
+.aw-world__drift-list { list-style: none; margin: 6px 0 0; padding: 0 0 0 var(--ui-sp-2); border-left: 2px solid color-mix(in srgb, var(--ui-warn) 45%, transparent); display: grid; gap: 3px; }
+.aw-world__drift-list li { display: flex; align-items: baseline; gap: var(--ui-sp-2); }
+.aw-world__drift-item { appearance: none; border: 0; background: none; padding: 0; color: var(--ui-ink); font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+span.aw-world__drift-item { cursor: default; color: var(--ui-ink-2); }
 button.aw-world__drift-item:hover { text-decoration: underline; }
-.aw-world__drift-age { flex: 0 0 auto; color: color-mix(in srgb, var(--aw-warn) 78%, var(--aw-ink, var(--aw-text))); font-variant-numeric: tabular-nums; font-size: var(--aw-type-xs, 11px); }
+.aw-world__drift-age { flex: 0 0 auto; color: color-mix(in srgb, var(--ui-warn) 78%, var(--ui-ink)); font-variant-numeric: tabular-nums; font-size: var(--ui-fs-xs); }
 
-.aw-world__journey { padding-bottom: var(--aw-space-3, 12px); border-bottom: 1px solid var(--aw-w-rule); }
-.aw-world__journey-sentence { margin: 3px 0 6px; font-size: var(--aw-type-sm, 12px); line-height: 1.45; color: var(--aw-w-ink); }
+.aw-world__journey { padding-bottom: var(--ui-sp-3); border-bottom: 1px solid var(--ui-border); }
+.aw-world__journey-sentence { margin: 3px 0 6px; font-size: var(--ui-fs-sm); line-height: var(--ui-lh); color: var(--ui-ink); }
 .aw-world__journey-links { display: flex; flex-wrap: wrap; gap: 6px; }
-.aw-world__journey-chip { display: inline-block; padding: 2px 8px; border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px)); border: 1px solid var(--aw-w-rule-strong); background: var(--aw-w-surface); color: var(--aw-w-ink); font-size: var(--aw-type-xs, 11px); text-decoration: none; }
-.aw-world__journey-chip:hover { background: var(--aw-w-hover); }
+.aw-world-wrap a.aw-world__journey-chip { display: inline-block; padding: 2px var(--ui-sp-2); border-radius: var(--ui-r-sm); border: 1px solid var(--ui-border-strong); background: var(--ui-bg); color: var(--ui-ink); font-size: var(--ui-fs-xs); text-decoration: none; }
+.aw-world-wrap a.aw-world__journey-chip:hover { background: var(--ui-bg-hover); }
 .aw-world__station.is-journey-ahead .aw-world__lift,
 .aw-world__station.is-journey-ahead .aw-world__pad { opacity: .45; }
 .aw-world__station.is-journey-ahead .aw-world__label { opacity: .82; }
@@ -9501,7 +9548,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-world__station.is-journey-ahead:hover .aw-world__lift,
 .aw-world__station.is-journey-ahead:hover .aw-world__pad,
 .aw-world__station.is-journey-ahead:hover .aw-world__label { opacity: 1; }
-.aw-world__station.is-journey-current .aw-world__pad { fill: color-mix(in srgb, var(--aw-w-accent) 16%, var(--aw-w-surface)); stroke: var(--aw-w-accent); stroke-width: 1.6; }
+.aw-world__station.is-journey-current .aw-world__pad { fill: color-mix(in srgb, var(--ui-accent) 16%, var(--ui-bg)); stroke: var(--ui-accent); stroke-width: 1.6; }
 
 /* Narrow fallback: vertical route list (hidden on wide, replaces SVG map \u2264900px) */
 .aw-world__route {
@@ -9509,12 +9556,12 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   list-style: none;
   margin: 0;
   padding: 0;
-  border-top: 1px solid var(--aw-hairline, var(--aw-border));
+  border-top: 1px solid var(--ui-border);
 }
 .aw-world__route-item {
   position: relative;
-  padding: var(--aw-space-3, 12px) 0 var(--aw-space-3, 12px) var(--aw-space-4, 16px);
-  border-bottom: 1px solid var(--aw-hairline, var(--aw-border));
+  padding: var(--ui-sp-3) 0 var(--ui-sp-3) var(--ui-sp-4);
+  border-bottom: 1px solid var(--ui-border);
 }
 .aw-world__route-item::before {
   content: '';
@@ -9523,12 +9570,12 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   top: 0;
   bottom: 0;
   width: 1px;
-  background: var(--aw-hairline, var(--aw-border));
+  background: var(--ui-border);
 }
 .aw-world__route-item:first-child::before { top: 18px; }
 .aw-world__route-item:last-child { border-bottom: 0; }
 .aw-world__route-item:last-child::before { bottom: calc(100% - 18px); }
-.aw-world__route-head { display: flex; align-items: center; gap: var(--aw-space-2, 8px); flex-wrap: wrap; }
+.aw-world__route-head { display: flex; align-items: center; gap: var(--ui-sp-2); flex-wrap: wrap; }
 .aw-world__route-dot {
   position: absolute;
   left: 0;
@@ -9536,59 +9583,21 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--aw-hairline-strong, var(--aw-border2));
-  border: 2px solid var(--aw-surface, var(--aw-bg));
+  background: var(--ui-border-strong);
+  border: 2px solid var(--ui-bg);
 }
-.aw-world__route-dot--ok { background: var(--aw-ok); }
-.aw-world__route-dot--active { background: var(--aw-accent); }
-.aw-world__route-dot--warn { background: var(--aw-warn); }
-.aw-world__route-dot--bad { background: var(--aw-bad); }
-.aw-world__route-name { font-size: var(--aw-type-md, 13px); font-weight: 600; flex: 1; min-width: 0; }
-.aw-world__route-status { margin: 4px 0 0; font-size: var(--aw-type-sm, 12px); color: var(--aw-ink, var(--aw-text)); }
-.aw-world__route-sub { margin: 2px 0 0; font-size: var(--aw-type-xs, 11px); color: var(--aw-ink-2, var(--aw-text2)); }
-.aw-world__ops--inline { padding-top: var(--aw-space-1, 4px); border-top: 0; }
-.aw-world__route-checks { padding: var(--aw-space-1, 4px) 0 0; }
-.aw-world__route-checks > summary { cursor: pointer; font-size: var(--aw-type-xs, 11px); font-weight: 500; color: var(--aw-ink-2, var(--aw-text2)); padding: 2px 0; }
-.aw-world__route-checks .aw-world__checks { border-top: 0; padding-top: var(--aw-space-1, 4px); }
+.aw-world__route-dot--ok { background: var(--ui-ok); }
+.aw-world__route-dot--active { background: var(--ui-info); }
+.aw-world__route-dot--warn { background: var(--ui-warn); }
+.aw-world__route-dot--bad { background: var(--ui-bad); }
+.aw-world__route-name { font-size: var(--ui-fs-md); font-weight: 600; flex: 1; min-width: 0; color: var(--ui-ink); }
+.aw-world__route-status { margin: var(--ui-sp-1) 0 0; font-size: var(--ui-fs-sm); color: var(--ui-ink); }
+.aw-world__route-sub { margin: 2px 0 0; font-size: var(--ui-fs-xs); color: var(--ui-ink-2); }
+.aw-world__ops--inline { padding-top: var(--ui-sp-1); border-top: 0; }
+.aw-world__route-checks { padding: var(--ui-sp-1) 0 0; }
+.aw-world__route-checks > summary { cursor: pointer; font-size: var(--ui-fs-xs); font-weight: 500; color: var(--ui-ink-2); padding: 2px 0; }
+.aw-world__route-checks .aw-world__checks { border-top: 0; padding-top: var(--ui-sp-1); }
 .aw-world__route-checks .aw-world__status-label { display: none; }
-
-/* Station right-click context menu */
-.aw-world__ctxmenu {
-  position: fixed;
-  z-index: 60;
-  min-width: 176px;
-  padding: var(--aw-space-1, 4px);
-  border-radius: var(--aw-radius-lg, var(--aw-r-lg, 8px));
-  border: 1px solid var(--aw-hairline-strong, var(--aw-border2));
-  background: var(--aw-surface-raised, var(--aw-bg));
-  box-shadow: var(--aw-shadow-float, 0 8px 24px rgba(0, 0, 0, .2));
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.aw-world__ctxhead {
-  padding: 4px 8px;
-  font-size: var(--aw-type-xs, 11px);
-  font-weight: 600;
-  color: var(--aw-ink-2, var(--aw-text2));
-  border-bottom: 1px solid var(--aw-hairline, var(--aw-border));
-  margin-bottom: 2px;
-}
-.aw-world__ctxitem {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px));
-  background: transparent;
-  color: var(--aw-ink, var(--aw-text));
-  font-size: var(--aw-type-sm, 12px);
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
-}
-.aw-world__ctxitem:hover { background: var(--aw-hover); }
 
 .aw-sr-only, .aw-world__sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
@@ -9603,10 +9612,16 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 }
 @media (prefers-reduced-motion: reduce) {
   .aw-world__station.is-active .aw-world__pad { animation: none; }
-  .aw-world__pad, .aw-world__lift { transition: none; }
+  .aw-world__pad, .aw-world__lift, .aw-world-strip__btn { transition: none; }
   .aw-world__station:hover .aw-world__lift,
   .aw-world__station:focus-visible .aw-world__lift { transform: none; }
 }
+:where([data-reduced-motion='1']) .aw-world__station.is-active .aw-world__pad { animation: none; }
+:where([data-reduced-motion='1']) .aw-world__pad,
+:where([data-reduced-motion='1']) .aw-world__lift,
+:where([data-reduced-motion='1']) .aw-world-strip__btn { transition: none; }
+:where([data-reduced-motion='1']) .aw-world__station:hover .aw-world__lift,
+:where([data-reduced-motion='1']) .aw-world__station:focus-visible .aw-world__lift { transform: none; }
 
 /* Marketing desk: flat hairline sections, capped measure, compact narrow rows, quiet chart. */
 .aw-mk { max-width: var(--aw-measure-table, 1180px); margin: 0 auto; width: 100%; min-width: 0; }
@@ -10716,12 +10731,76 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
   }
   var STATION_POSITIONS = Object.freeze({
-    hosting: { x: 1.3, y: 1.3, padHalf: 0.78 },
-    preview: { x: 3.5, y: 1.3, padHalf: 0.68 },
-    code: { x: 5.7, y: 1.3, padHalf: 0.68 },
-    request: { x: 2.8, y: 3.4, padHalf: 0.66 },
-    agent: { x: 5.3, y: 3.4, padHalf: 0.72 }
+    hosting: { x: 1.3, y: 1.3, padHalf: 0.78, top: -88 },
+    preview: { x: 3.5, y: 1.3, padHalf: 0.68, top: -54 },
+    code: { x: 5.7, y: 1.3, padHalf: 0.68, top: -84 },
+    request: { x: 2.8, y: 3.4, padHalf: 0.66, top: -48 },
+    agent: { x: 5.3, y: 3.4, padHalf: 0.72, top: -72 }
   });
+  var PLATE_ANCHORS = Object.freeze({
+    hosting: { side: "left", edge: 222, cy: 98 },
+    request: { side: "left", edge: 206, cy: 262 },
+    preview: { side: "right", edge: 424, cy: 88, target: "top" },
+    code: { side: "right", edge: 552, cy: 222 },
+    agent: { side: "right", edge: 454, cy: 304 }
+  });
+  var PLATE_HEIGHT = 44;
+  var PLATE_TYPE = Object.freeze({ name: 13, status: 12 });
+  function estimateTextWidth(text, size) {
+    return Math.ceil(String(text ?? "").length * size * 0.62);
+  }
+  function plateWidth(nameW, statusW) {
+    return Math.ceil(Math.max(nameW + 34, statusW + 22, 104));
+  }
+  function stationBounds(key, opts = DEFAULT_ISO) {
+    const pos = STATION_POSITIONS[key];
+    if (!pos) return null;
+    const c = iso(pos.x, pos.y, 0, opts);
+    const scale = Number.isFinite(opts?.scale) ? opts.scale : DEFAULT_ISO.scale;
+    const halfW = 2 * pos.padHalf * ISO_COS * scale;
+    const halfH = 2 * pos.padHalf * ISO_SIN * scale;
+    return { x: c.x - halfW, y: c.y + (pos.top ?? -halfH), w: halfW * 2, h: halfH - (pos.top ?? -halfH), cx: c.x, cy: c.y, halfW, halfH };
+  }
+  function plateLayout(stations = [], widths = {}, { margin = 12 } = {}) {
+    const plates = {};
+    const boxes = [];
+    for (const s of stations) {
+      const a = PLATE_ANCHORS[s.key];
+      const b = stationBounds(s.key);
+      if (!a || !b) continue;
+      const w = Number.isFinite(widths[s.key]) && widths[s.key] > 0 ? widths[s.key] : plateWidth(estimateTextWidth(s.shortLabel, PLATE_TYPE.name), estimateTextWidth(s.shortStatus || s.stateText, PLATE_TYPE.status));
+      const x = a.side === "left" ? a.edge - w : a.edge;
+      const y = a.cy - PLATE_HEIGHT / 2;
+      const leader = a.target === "top" ? { x1: a.edge, y1: a.cy + 8, x2: b.cx, y2: b.cy - b.halfH } : {
+        x1: a.edge,
+        y1: a.cy,
+        x2: a.side === "left" ? b.cx - b.halfW : b.cx + b.halfW,
+        y2: b.cy
+      };
+      plates[s.key] = { x, y, w, h: PLATE_HEIGHT, side: a.side, leader };
+      boxes.push({ x, y, w, h: PLATE_HEIGHT }, { x: b.x, y: b.y, w: b.w, h: b.h });
+    }
+    const floorCorners = [
+      iso(FLOOR_BOUNDS.minX, FLOOR_BOUNDS.minY, 0),
+      iso(FLOOR_BOUNDS.maxX, FLOOR_BOUNDS.minY, 0),
+      iso(FLOOR_BOUNDS.maxX, FLOOR_BOUNDS.maxY, 0),
+      iso(FLOOR_BOUNDS.minX, FLOOR_BOUNDS.maxY, 0)
+    ];
+    for (const pt of floorCorners) {
+      boxes.push({ x: pt.x, y: pt.y, w: 0, h: 0 });
+    }
+    const entry = iso(VISITOR_POS.x, VISITOR_POS.y, 0);
+    boxes.push({ x: entry.x - 56, y: entry.y - 8, w: 66, h: 32 });
+    if (!boxes.length) return { plates, viewBox: { x: 0, y: 0, w: 720, h: 385 } };
+    const minX = Math.min(...boxes.map((r) => r.x)) - margin;
+    const minY = Math.min(...boxes.map((r) => r.y)) - margin;
+    const maxX = Math.max(...boxes.map((r) => r.x + r.w)) + margin;
+    const maxY = Math.max(...boxes.map((r) => r.y + r.h)) + margin;
+    return {
+      plates,
+      viewBox: { x: Math.floor(minX), y: Math.floor(minY), w: Math.ceil(maxX - minX), h: Math.ceil(maxY - minY) }
+    };
+  }
   var VISITOR_POS = Object.freeze({ x: 1.3, y: 2.75 });
   function pickSite(project, sites) {
     const list2 = Array.isArray(sites) && sites.length > 0 ? sites : Array.isArray(project?.sites) && project.sites.length > 0 ? project.sites : project?.site ? [project.site] : [];
@@ -10730,10 +10809,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   }
   function cleanString(v) {
     return typeof v === "string" && v.trim() ? v.trim() : null;
-  }
-  function clip(text, max = 22) {
-    if (!text) return "";
-    return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
   }
   function hostnameOf(raw) {
     const s = cleanString(raw);
@@ -10972,7 +11047,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         state = "warn";
         if (wasEmpty && pendingCheck.label) {
           stateText = pendingCheck.label;
-          shortStatus = clip(pendingCheck.label, 20);
+          shortStatus = pendingCheck.label;
         }
       }
     } else if (station.key === "hosting" && readyDomainCheck && state === "unknown") {
@@ -11051,7 +11126,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             addr: addr.hostname,
             host: hostLabel
           });
-          hostingShort = clip(addr.hostname, 22);
+          hostingShort = addr.hostname;
         } else {
           hostingState = "unknown";
           addressText = tx(t, "world.domain.state.missing", "No web address reported yet");
@@ -11109,7 +11184,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     } else if (repoSlug) {
       codeState = "ok";
       codeText = tx(t, "world.code.state.connected", "Connected: {repo}", { repo: repoSlug });
-      codeShort = clip(repoSlug, 21);
+      codeShort = repoSlug;
     } else if (repoWanted) {
       codeState = "active";
       codeText = tx(t, "world.code.state.settingUp", "Setting up your code repository");
@@ -11497,23 +11572,27 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   }
 
   // packages/admin-ui/src/project-world.jsx
-  var VIEW_WIDTH = 720;
-  var VIEW_HEIGHT = 385;
-  var STATE_LABEL = {
-    ok: ["world.state.ok", "Healthy"],
-    active: ["world.state.active", "Running"],
-    warn: ["world.state.warn", "Needs review"],
-    bad: ["world.state.bad", "Needs attention"],
-    off: ["world.state.off", "Idle"],
-    unknown: ["world.state.unknown", "Unknown"]
+  var STATE_SPEC = {
+    ok: { state: "ok", tone: "ok", key: "world.state.ok", fallback: "Healthy", live: false },
+    active: { state: "running", tone: "info", key: "world.state.active", fallback: "Running", live: true },
+    warn: { state: "check", tone: "warn", key: "world.state.warn", fallback: "Needs review", live: false },
+    bad: { state: "failed", tone: "bad", key: "world.state.bad", fallback: "Needs attention", live: false },
+    off: { state: "queued", tone: "neutral", key: "world.state.off", fallback: "Idle", live: false },
+    unknown: { state: "unknown", tone: "neutral", key: "world.state.unknown", fallback: "Unknown", live: false }
   };
-  var LABEL_LAYOUT = {
-    hosting: { x: 96, y: 72, w: 168 },
-    preview: { x: 478, y: 60, w: 160 },
-    code: { x: 622, y: 170, w: 168 },
-    agent: { x: 526, y: 336, w: 158 },
-    request: { x: 112, y: 280, w: 158 }
-  };
+  function StationStateIndicator({ state, t, dotOnly = false }) {
+    const spec = STATE_SPEC[state] ?? STATE_SPEC.off;
+    return /* @__PURE__ */ jsx(
+      StateIndicator,
+      {
+        state: spec.state,
+        tone: spec.tone,
+        label: tx(t, spec.key, spec.fallback),
+        live: spec.live,
+        dotOnly
+      }
+    );
+  }
   function IsoBox({ x, y, z, dx, dy, dz, tone: tone2 = "base", className = "" }) {
     const b = isoBox(x, y, z, dx, dy, dz);
     const topCls = tone2 === "accent" ? "aw-world__face-accent-top" : tone2 === "ok" ? "aw-world__face-ok" : tone2 === "bad" ? "aw-world__face-bad" : tone2 === "warn" ? "aw-world__face-warn" : "aw-world__face-top";
@@ -11960,7 +12039,42 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       ] }, item.key)) }) : null
     ] });
   }
-  function ProjectWorld({
+  function PipelineStrip({
+    project,
+    sites = [],
+    tickets = null,
+    deploys = null,
+    t = (k) => k,
+    now,
+    onSelectStation
+  }) {
+    const stations = useMemo(
+      () => stationsFor({ project, sites, tickets, deploys, t, now }),
+      [project, sites, tickets, deploys, t, now]
+    );
+    const ordered = useMemo(
+      () => STATION_ORDER.map((k) => stations.find((s) => s.key === k)).filter(Boolean),
+      [stations]
+    );
+    return /* @__PURE__ */ jsxs("div", { className: "aw-world-strip-wrap ui", children: [
+      /* @__PURE__ */ jsx(UiStyles, {}),
+      /* @__PURE__ */ jsx("ol", { className: "aw-world-strip", "aria-label": tx(t, "world.stripLabel", "Project pipeline"), children: ordered.map((s) => /* @__PURE__ */ jsx("li", { className: "aw-world-strip__item", "data-station": s.key, "data-state": s.state, children: /* @__PURE__ */ jsxs(
+        "button",
+        {
+          type: "button",
+          className: "aw-world-strip__btn",
+          onClick: () => onSelectStation?.(s.key),
+          title: `${s.title}: ${s.stateText}`,
+          children: [
+            /* @__PURE__ */ jsx(StationStateIndicator, { state: s.state, t, dotOnly: true }),
+            /* @__PURE__ */ jsx("span", { className: "aw-world-strip__name", children: s.shortLabel }),
+            /* @__PURE__ */ jsx("span", { className: "aw-world-strip__status", children: s.shortStatus || s.stateText })
+          ]
+        }
+      ) }, s.key)) })
+    ] });
+  }
+  function ProjectMap({
     project,
     sites = [],
     tickets = null,
@@ -11991,7 +12105,30 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const resolvedInitial = STATION_ORDER.includes(initialStation) ? initialStation : "hosting";
     const [selectedKey, setSelectedKey] = useState(resolvedInitial);
     const [contextMenu, setContextMenu] = useState(null);
+    const [measuredWidths, setMeasuredWidths] = useState({});
     const stationRefs = useRef({});
+    const textRefs = useRef({});
+    useEffect(() => {
+      if (STATION_ORDER.includes(initialStation)) setSelectedKey(initialStation);
+    }, [initialStation]);
+    useEffect(() => {
+      const next = {};
+      let changed = false;
+      for (const s of stations) {
+        const refs = textRefs.current[s.key];
+        if (!refs?.name || !refs?.status) continue;
+        if (typeof refs.name.getComputedTextLength !== "function") continue;
+        const nw = refs.name.getComputedTextLength();
+        const sw = refs.status.getComputedTextLength();
+        if (nw > 0 || sw > 0) {
+          const w = plateWidth(nw, sw);
+          next[s.key] = w;
+          if (Math.abs((measuredWidths[s.key] ?? 0) - w) > 0.5) changed = true;
+        }
+      }
+      if (changed) setMeasuredWidths((prev) => ({ ...prev, ...next }));
+    }, [stations]);
+    const layout = useMemo(() => plateLayout(stations, measuredWidths), [stations, measuredWidths]);
     const [journeyId, setJourneyId] = useState(void 0);
     const defaultTicket = useMemo(() => defaultJourneyTicket(project, tickets ?? []), [project, tickets]);
     const pillTickets = useMemo(
@@ -12001,19 +12138,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const followed = journeyId === null ? null : journeyId === void 0 ? defaultTicket : (tickets ?? []).find((tk) => String(tk?.id) === String(journeyId)) ?? null;
     const journey = useMemo(() => followed ? journeyFor(followed, { sites, t, now }) : null, [followed, sites, t, now]);
     const activeStation = stations.find((s) => s.key === selectedKey) ?? stations[0];
-    useEffect(() => {
-      if (!contextMenu) return void 0;
-      const onKey = (e) => {
-        if (e.key === "Escape") setContextMenu(null);
-      };
-      const onPointer = () => setContextMenu(null);
-      window.addEventListener("keydown", onKey);
-      window.addEventListener("pointerdown", onPointer);
-      return () => {
-        window.removeEventListener("keydown", onKey);
-        window.removeEventListener("pointerdown", onPointer);
-      };
-    }, [contextMenu]);
     const selectStation = (key, emit = true) => {
       setSelectedKey(key);
       if (emit) onSelect?.(key);
@@ -12031,6 +12155,32 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         first.run();
       }
     };
+    const openContextMenuAt = (x, y, station) => {
+      const actions = actionsForStation(station, onAction);
+      if (!actions.length) return;
+      selectStation(station.key, false);
+      const items = [
+        { heading: station.title },
+        ...actions.map((act) => ({
+          label: act.href ? `${act.label} \u2197` : act.label,
+          run: () => {
+            if (act.href && typeof window !== "undefined") {
+              window.open(act.href, "_blank", "noopener,noreferrer");
+            } else {
+              act.run?.();
+            }
+          }
+        }))
+      ];
+      setContextMenu({ station, items, x, y });
+    };
+    const openContextMenu = (e, station) => {
+      const actions = actionsForStation(station, onAction);
+      if (!actions.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openContextMenuAt(e.clientX, e.clientY, station);
+    };
     const onStationKeyDown = (e, station) => {
       const idx = orderedStations.findIndex((s) => s.key === station.key);
       if (idx === -1) return;
@@ -12046,18 +12196,17 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         stationRefs.current[target.key]?.focus();
         return;
       }
+      if (e.key === "ContextMenu" || e.shiftKey && e.key === "F10") {
+        e.preventDefault();
+        const rect = e.currentTarget.getBoundingClientRect();
+        openContextMenuAt(rect.left + rect.width / 2, rect.top + rect.height / 2, station);
+        return;
+      }
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         selectStation(station.key, true);
         triggerPrimaryAction(station);
       }
-    };
-    const openContextMenu = (e, station) => {
-      const actions = actionsForStation(station, onAction);
-      if (!actions.length) return;
-      e.preventDefault();
-      selectStation(station.key, false);
-      setContextMenu({ station, actions, x: e.clientX, y: e.clientY });
     };
     const floorPlate = useMemo(
       () => isoPoints([
@@ -12070,9 +12219,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
     const visitorPt = iso(VISITOR_POS.x, VISITOR_POS.y, 0);
     const visitorNext = iso(STATION_POSITIONS.hosting.x, STATION_POSITIONS.hosting.y, 0);
-    const [stateKey, stateDefault] = STATE_LABEL[activeStation.state] ?? STATE_LABEL.off;
-    const stateBadgeText = tx(t, stateKey, stateDefault);
-    return /* @__PURE__ */ jsxs("div", { className: "aw-world-wrap", children: [
+    const vb = layout.viewBox;
+    return /* @__PURE__ */ jsxs("div", { className: "aw-world-wrap ui", children: [
+      /* @__PURE__ */ jsx(UiStyles, {}),
       pillTickets.length || drift ? /* @__PURE__ */ jsxs("div", { className: "aw-world__bar", children: [
         pillTickets.length ? /* @__PURE__ */ jsxs("div", { className: "aw-world__journeys", role: "group", "aria-label": tx(t, "world.journey.pills", "Follow a request"), children: [
           pillTickets.map((tk) => /* @__PURE__ */ jsxs(
@@ -12108,7 +12257,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           "svg",
           {
             className: "aw-world__svg",
-            viewBox: `0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`,
+            viewBox: `${vb.x} ${vb.y} ${vb.w} ${vb.h}`,
             preserveAspectRatio: "xMidYMid meet",
             role: "group",
             "aria-label": tx(t, "world.mapLabel", "Project map: requests, builder, code, preview and live site"),
@@ -12151,15 +12300,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                   [station.x + hitR, station.y + hitR, 0],
                   [station.x - hitR, station.y + hitR, 0]
                 ]);
-                const center = iso(station.x, station.y, 0);
-                const lay = LABEL_LAYOUT[station.key] ?? { x: center.x, y: center.y + 46, w: 158 };
-                const boxH = 42;
-                const bx = Math.max(6, Math.min(VIEW_WIDTH - lay.w - 6, lay.x - lay.w / 2));
-                const by = Math.max(6, Math.min(VIEW_HEIGHT - boxH - 6, lay.y - boxH / 2));
-                const cx2 = bx + lay.w / 2;
-                const cy = by + boxH / 2;
-                const anchorX = center.x < bx ? bx : center.x > bx + lay.w ? bx + lay.w : cx2;
-                const anchorY = center.y < by ? by : center.y > by + boxH ? by + boxH : cy;
+                const plate = layout.plates[station.key];
+                const stationActions = actionsForStation(station, onAction);
                 const isSelected = activeStation.key === station.key;
                 const cls = [
                   "aw-world__station",
@@ -12175,6 +12317,9 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                       stationRefs.current[station.key] = el;
                     },
                     className: cls,
+                    "data-station": station.key,
+                    "data-state": station.state,
+                    "data-station-actions": stationActions.length,
                     role: "button",
                     tabIndex: isSelected ? 0 : -1,
                     "aria-label": `${station.title}: ${station.stateText}`,
@@ -12185,31 +12330,54 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                     children: [
                       /* @__PURE__ */ jsx("polygon", { className: "aw-world__hit", points: hitPts }),
                       /* @__PURE__ */ jsx("polygon", { className: "aw-world__pad", points: padPts }),
+                      plate ? /* @__PURE__ */ jsx(
+                        "line",
+                        {
+                          className: "aw-world__leader",
+                          "aria-hidden": "true",
+                          x1: plate.leader.x1,
+                          y1: plate.leader.y1,
+                          x2: plate.leader.x2,
+                          y2: plate.leader.y2
+                        }
+                      ) : null,
                       /* @__PURE__ */ jsx("g", { className: "aw-world__lift", children: /* @__PURE__ */ jsx(StationGeometry, { station }) }),
-                      /* @__PURE__ */ jsxs("g", { className: "aw-world__label", "aria-hidden": "true", children: [
-                        /* @__PURE__ */ jsx(
-                          "line",
-                          {
-                            className: "aw-world__leader",
-                            x1: anchorX,
-                            y1: anchorY,
-                            x2: center.x,
-                            y2: center.y
-                          }
-                        ),
-                        /* @__PURE__ */ jsx("rect", { className: "aw-world__tag-bg", x: bx, y: by, width: lay.w, height: boxH, rx: 6 }),
+                      plate ? /* @__PURE__ */ jsxs("g", { className: "aw-world__label", "aria-hidden": "true", children: [
+                        /* @__PURE__ */ jsx("rect", { className: "aw-world__tag-bg", x: plate.x, y: plate.y, width: plate.w, height: plate.h, rx: 6 }),
                         /* @__PURE__ */ jsx(
                           "circle",
                           {
                             className: `aw-world__beacon aw-world__beacon--${station.state}`,
-                            cx: bx + 12,
-                            cy: by + 14,
-                            r: 3.8
+                            cx: plate.x + 13,
+                            cy: plate.y + 15,
+                            r: 3.5
                           }
                         ),
-                        /* @__PURE__ */ jsx("text", { className: "aw-world__tag-name", x: bx + 22, y: by + 14.5, children: station.shortLabel }),
-                        /* @__PURE__ */ jsx("text", { className: "aw-world__tag-status", x: bx + 10, y: by + 31, children: station.shortStatus || station.stateText })
-                      ] })
+                        /* @__PURE__ */ jsx(
+                          "text",
+                          {
+                            ref: (el) => {
+                              textRefs.current[station.key] = { ...textRefs.current[station.key] ?? {}, name: el };
+                            },
+                            className: "aw-world__tag-name",
+                            x: plate.x + 23,
+                            y: plate.y + 15.5,
+                            children: station.shortLabel
+                          }
+                        ),
+                        /* @__PURE__ */ jsx(
+                          "text",
+                          {
+                            ref: (el) => {
+                              textRefs.current[station.key] = { ...textRefs.current[station.key] ?? {}, status: el };
+                            },
+                            className: "aw-world__tag-status",
+                            x: plate.x + 10,
+                            y: plate.y + 31.5,
+                            children: station.shortStatus || station.stateText
+                          }
+                        )
+                      ] }) : null
                     ]
                   },
                   station.key
@@ -12218,46 +12386,50 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             ]
           }
         ) }),
-        /* @__PURE__ */ jsxs("figcaption", { className: "aw-world__caption", "aria-live": "polite", children: [
-          journey ? /* @__PURE__ */ jsxs("div", { className: "aw-world__journey", children: [
-            /* @__PURE__ */ jsxs("span", { className: "aw-world__status-label", children: [
-              "#",
-              followed.id,
-              " ",
-              followed.title ?? ""
-            ] }),
-            /* @__PURE__ */ jsx("p", { className: "aw-world__journey-sentence", children: journey.sentence }),
-            /* @__PURE__ */ jsxs("div", { className: "aw-world__journey-links", children: [
-              journey.status === "review" && journey.previewUrl ? /* @__PURE__ */ jsxs("a", { className: "aw-world__journey-chip", href: journey.previewUrl, target: "_blank", rel: "noreferrer", children: [
-                tx(t, "world.journey.openPreview", "Open preview"),
-                " \u2197"
+        /* @__PURE__ */ jsx(
+          Inspector,
+          {
+            className: "aw-world__caption",
+            title: /* @__PURE__ */ jsx("span", { className: "aw-world__title", children: activeStation.title }),
+            actions: /* @__PURE__ */ jsx(StationStateIndicator, { state: activeStation.state, t }),
+            label: `${activeStation.title} inspector`,
+            storageKey: "ui.projectmap.inspector",
+            defaultWidth: 320,
+            minWidth: 280,
+            maxWidth: 440,
+            children: /* @__PURE__ */ jsxs("div", { className: "aw-world__inspector", "aria-live": "polite", children: [
+              journey ? /* @__PURE__ */ jsxs("div", { className: "aw-world__journey", children: [
+                /* @__PURE__ */ jsxs("span", { className: "aw-world__status-label", children: [
+                  "#",
+                  followed.id,
+                  " ",
+                  followed.title ?? ""
+                ] }),
+                /* @__PURE__ */ jsx("p", { className: "aw-world__journey-sentence", children: journey.sentence }),
+                /* @__PURE__ */ jsxs("div", { className: "aw-world__journey-links", children: [
+                  journey.status === "review" && journey.previewUrl ? /* @__PURE__ */ jsxs("a", { className: "aw-world__journey-chip", href: journey.previewUrl, target: "_blank", rel: "noreferrer", children: [
+                    tx(t, "world.journey.openPreview", "Open preview"),
+                    " \u2197"
+                  ] }) : null,
+                  journey.status === "done" && journey.siteUrl ? /* @__PURE__ */ jsxs("a", { className: "aw-world__journey-chip", href: journey.siteUrl, target: "_blank", rel: "noreferrer", children: [
+                    tx(t, "world.journey.openSite", "Open site"),
+                    " \u2197"
+                  ] }) : null
+                ] })
               ] }) : null,
-              journey.status === "done" && journey.siteUrl ? /* @__PURE__ */ jsxs("a", { className: "aw-world__journey-chip", href: journey.siteUrl, target: "_blank", rel: "noreferrer", children: [
-                tx(t, "world.journey.openSite", "Open site"),
-                " \u2197"
-              ] }) : null
+              /* @__PURE__ */ jsx("p", { className: "aw-world__explain", children: activeStation.explain }),
+              /* @__PURE__ */ jsxs("div", { className: "aw-world__status-box", children: [
+                /* @__PURE__ */ jsx("span", { className: "aw-world__status-label", children: tx(t, "world.currentStatus", "Current status") }),
+                /* @__PURE__ */ jsx("p", { className: "aw-world__status-value", children: activeStation.stateText })
+              ] }),
+              /* @__PURE__ */ jsx(HostingDetails, { station: activeStation }),
+              /* @__PURE__ */ jsx(OperatorExtras, { station: activeStation }),
+              /* @__PURE__ */ jsx(ChecksList, { checks: activeStation.checks, t }),
+              /* @__PURE__ */ jsx(StationActions, { station: activeStation, onAction }),
+              /* @__PURE__ */ jsx("p", { className: "aw-world__kbd-hint", children: "Click or use arrow keys to inspect \xB7 Enter opens" })
             ] })
-          ] }) : null,
-          /* @__PURE__ */ jsxs("div", { className: "aw-world__inspector", children: [
-            /* @__PURE__ */ jsxs("div", { className: "aw-world__card-top", children: [
-              /* @__PURE__ */ jsx("h3", { className: "aw-world__title", children: activeStation.title }),
-              /* @__PURE__ */ jsxs("span", { className: `aw-world__pill aw-world__pill--${activeStation.state}`, children: [
-                /* @__PURE__ */ jsx("span", { className: "aw-world__pill-dot", "aria-hidden": "true" }),
-                stateBadgeText
-              ] })
-            ] }),
-            /* @__PURE__ */ jsx("p", { className: "aw-world__explain", children: activeStation.explain }),
-            /* @__PURE__ */ jsxs("div", { className: "aw-world__status-box", children: [
-              /* @__PURE__ */ jsx("span", { className: "aw-world__status-label", children: tx(t, "world.currentStatus", "Current status") }),
-              /* @__PURE__ */ jsx("p", { className: "aw-world__status-value", children: activeStation.stateText })
-            ] }),
-            /* @__PURE__ */ jsx(HostingDetails, { station: activeStation }),
-            /* @__PURE__ */ jsx(OperatorExtras, { station: activeStation }),
-            /* @__PURE__ */ jsx(ChecksList, { checks: activeStation.checks, t }),
-            /* @__PURE__ */ jsx(StationActions, { station: activeStation, onAction })
-          ] }),
-          /* @__PURE__ */ jsx("p", { className: "aw-world__kbd-hint", children: "Click or use arrow keys to inspect \xB7 Enter opens" })
-        ] }),
+          }
+        ),
         /* @__PURE__ */ jsx("ul", { className: "aw-world__sr-only", "aria-label": tx(t, "world.summaryLabel", "Project health station status"), children: orderedStations.map((s) => /* @__PURE__ */ jsxs("li", { children: [
           s.title,
           ": ",
@@ -12270,78 +12442,52 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         ] }, s.key)) })
       ] }),
       /* @__PURE__ */ jsx("ol", { className: "aw-world__route", "aria-label": tx(t, "world.routeLabel", "Project route"), children: orderedStations.map((s) => {
-        const [sk, sd] = STATE_LABEL[s.state] ?? STATE_LABEL.off;
-        const badge = tx(t, sk, sd);
         const isCurrent = journey?.currentKey === s.key;
         const readyChecks = (s.checks ?? []).filter((c) => c.state === "ready").length;
-        return /* @__PURE__ */ jsxs("li", { className: `aw-world__route-item is-${s.state}${isCurrent ? " is-journey-current" : ""}`, children: [
-          /* @__PURE__ */ jsxs("div", { className: "aw-world__route-head", children: [
-            /* @__PURE__ */ jsx("span", { className: `aw-world__route-dot aw-world__route-dot--${s.state}`, "aria-hidden": "true" }),
-            /* @__PURE__ */ jsx("strong", { className: "aw-world__route-name", children: s.title }),
-            /* @__PURE__ */ jsx("span", { className: `aw-world__pill aw-world__pill--${s.state}`, children: badge })
-          ] }),
-          /* @__PURE__ */ jsx("p", { className: "aw-world__route-status", children: s.stateText }),
-          s.key === "hosting" && s.meta?.httpsText ? /* @__PURE__ */ jsxs("p", { className: "aw-world__route-sub", children: [
-            "HTTPS: ",
-            s.meta.httpsText
-          ] }) : null,
-          /* @__PURE__ */ jsx(OperatorExtras, { station: s, inline: true }),
-          s.checks?.length ? /* @__PURE__ */ jsxs("details", { className: "aw-world__route-checks", children: [
-            /* @__PURE__ */ jsxs("summary", { children: [
-              tx(t, "world.check.section", "Setup checks"),
-              " (",
-              readyChecks,
-              "/",
-              s.checks.length,
-              " ok)"
-            ] }),
-            /* @__PURE__ */ jsx(ChecksList, { checks: s.checks, t })
-          ] }) : null,
-          /* @__PURE__ */ jsx(StationActions, { station: s, onAction, compact: true })
-        ] }, s.key);
+        const stationActions = actionsForStation(s, onAction);
+        return /* @__PURE__ */ jsxs(
+          "li",
+          {
+            className: `aw-world__route-item is-${s.state}${isCurrent ? " is-journey-current" : ""}`,
+            "data-station": s.key,
+            "data-state": s.state,
+            "data-station-actions": stationActions.length,
+            children: [
+              /* @__PURE__ */ jsxs("div", { className: "aw-world__route-head", children: [
+                /* @__PURE__ */ jsx("span", { className: `aw-world__route-dot aw-world__route-dot--${s.state}`, "aria-hidden": "true" }),
+                /* @__PURE__ */ jsx("strong", { className: "aw-world__route-name", children: s.title }),
+                /* @__PURE__ */ jsx(StationStateIndicator, { state: s.state, t })
+              ] }),
+              /* @__PURE__ */ jsx("p", { className: "aw-world__route-status", children: s.stateText }),
+              s.key === "hosting" && s.meta?.httpsText ? /* @__PURE__ */ jsxs("p", { className: "aw-world__route-sub", children: [
+                "HTTPS: ",
+                s.meta.httpsText
+              ] }) : null,
+              /* @__PURE__ */ jsx(OperatorExtras, { station: s, inline: true }),
+              s.checks?.length ? /* @__PURE__ */ jsxs("details", { className: "aw-world__route-checks", children: [
+                /* @__PURE__ */ jsxs("summary", { children: [
+                  tx(t, "world.check.section", "Setup checks"),
+                  " (",
+                  readyChecks,
+                  "/",
+                  s.checks.length,
+                  " ok)"
+                ] }),
+                /* @__PURE__ */ jsx(ChecksList, { checks: s.checks, t })
+              ] }) : null,
+              /* @__PURE__ */ jsx(StationActions, { station: s, onAction, compact: true })
+            ]
+          },
+          s.key
+        );
       }) }),
-      contextMenu ? /* @__PURE__ */ jsxs(
-        "div",
+      contextMenu ? /* @__PURE__ */ jsx(
+        Menu,
         {
-          className: "aw-world__ctxmenu",
-          role: "menu",
-          "aria-label": `${contextMenu.station.title} actions`,
-          style: { left: `${contextMenu.x}px`, top: `${contextMenu.y}px` },
-          onPointerDown: (e) => e.stopPropagation(),
-          children: [
-            /* @__PURE__ */ jsx("div", { className: "aw-world__ctxhead", children: contextMenu.station.title }),
-            contextMenu.actions.map(
-              (act) => act.href ? /* @__PURE__ */ jsxs(
-                "a",
-                {
-                  role: "menuitem",
-                  className: "aw-world__ctxitem",
-                  href: act.href,
-                  target: "_blank",
-                  rel: "noreferrer",
-                  onClick: () => setContextMenu(null),
-                  children: [
-                    act.label,
-                    " \u2197"
-                  ]
-                },
-                act.id
-              ) : /* @__PURE__ */ jsx(
-                "button",
-                {
-                  type: "button",
-                  role: "menuitem",
-                  className: "aw-world__ctxitem",
-                  onClick: () => {
-                    setContextMenu(null);
-                    act.run();
-                  },
-                  children: act.label
-                },
-                act.id
-              )
-            )
-          ]
+          items: contextMenu.items,
+          at: { x: contextMenu.x, y: contextMenu.y },
+          label: `${contextMenu.station.title} actions`,
+          onClose: () => setContextMenu(null)
         }
       ) : null
     ] });
@@ -12540,8 +12686,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-project__reveal pre { white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 
 /* Overview health line & map wrapper */
-.aw-project__health { margin: 0; font-size: var(--aw-type-md, 13px); color: var(--aw-ink, var(--aw-text)); min-width: 0; font-variant-numeric: tabular-nums; }
-.aw-project__world { margin-top: var(--aw-space-3, 12px); }
+.aw-project__health { margin: 0; font-size: var(--ui-fs-md, var(--aw-type-md, 13px)); color: var(--ui-ink, var(--aw-ink)); min-width: 0; font-variant-numeric: tabular-nums; }
+.aw-project__world { margin-top: var(--ui-sp-3, var(--aw-space-3, 12px)); }
 
 /* Sub-block separator inside Local checkout & People */
 .aw-project__connect { border-top: 1px solid var(--aw-hairline, var(--aw-border)); padding-top: var(--aw-space-4, 16px); margin-top: var(--aw-space-4, 16px); }
@@ -12911,10 +13057,16 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const [deployState, refreshDeploys] = useProjectResource(loadDeploys);
     const deploys = Array.isArray(deployState.value?.deploys) ? deployState.value.deploys : null;
     const [mapOpen, setMapOpen] = useState(readMapOpen);
+    const [focusStation, setFocusStation] = useState("hosting");
     const toggleMap = () => setMapOpen((open) => {
       writeMapOpen(!open);
       return !open;
     });
+    const openMapAt = useCallback((stationKey) => {
+      setFocusStation(stationKey);
+      writeMapOpen(true);
+      setMapOpen(true);
+    }, []);
     const health = useMemo(() => healthSummary({ project, sites, tickets: mapTickets, deploys }), [project, sites, mapTickets, deploys]);
     const handleMapAction = useCallback((action) => {
       if (action === "work") setTab("Work");
@@ -12955,7 +13107,26 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           /* @__PURE__ */ jsx(Button, { size: "sm", className: "aw-world__toggle", "aria-expanded": mapOpen, onClick: toggleMap, children: mapOpen ? "Hide map" : "Show map" })
         ] }),
         deploySiteId && deployState.error ? /* @__PURE__ */ jsx(ErrorNote, { error: deployState.error, onRetry: refreshDeploys }) : null,
-        mapOpen ? /* @__PURE__ */ jsx("div", { className: "aw-project__world", children: /* @__PURE__ */ jsx(ProjectWorld, { project, sites, tickets: mapTickets, deploys, onAction: handleMapAction }) }) : null
+        mapOpen ? /* @__PURE__ */ jsx("div", { className: "aw-project__world", children: /* @__PURE__ */ jsx(
+          ProjectMap,
+          {
+            project,
+            sites,
+            tickets: mapTickets,
+            deploys,
+            initialStation: focusStation,
+            onAction: handleMapAction
+          }
+        ) }) : /* @__PURE__ */ jsx(
+          PipelineStrip,
+          {
+            project,
+            sites,
+            tickets: mapTickets,
+            deploys,
+            onSelectStation: openMapAt
+          }
+        )
       ] }),
       /* @__PURE__ */ jsx("section", { className: "aw-project__section", children: /* @__PURE__ */ jsx(Brief, { project, refresh, setTab }) })
     ] });

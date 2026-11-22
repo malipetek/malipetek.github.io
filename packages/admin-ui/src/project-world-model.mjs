@@ -142,12 +142,128 @@ export function tx(t, key, english, vars) {
 
 /** Station grid coordinates arranged along crisp 30° axes (5 functional stations). */
 export const STATION_POSITIONS = Object.freeze({
-  hosting: { x: 1.3, y: 1.3, padHalf: 0.78 },
-  preview: { x: 3.5, y: 1.3, padHalf: 0.68 },
-  code: { x: 5.7, y: 1.3, padHalf: 0.68 },
-  request: { x: 2.8, y: 3.4, padHalf: 0.66 },
-  agent: { x: 5.3, y: 3.4, padHalf: 0.72 },
+  hosting: { x: 1.3, y: 1.3, padHalf: 0.78, top: -88 },
+  preview: { x: 3.5, y: 1.3, padHalf: 0.68, top: -54 },
+  code: { x: 5.7, y: 1.3, padHalf: 0.68, top: -84 },
+  request: { x: 2.8, y: 3.4, padHalf: 0.66, top: -48 },
+  agent: { x: 5.3, y: 3.4, padHalf: 0.72, top: -72 },
 });
+// `top` is how far (in px at DEFAULT_ISO) the tallest part of the drawing —
+// roof, mast, beacon or count badge — rises above the station's floor centre.
+
+/**
+ * Where each station's two-line plate sits, in px at DEFAULT_ISO. `side` says
+ * which way the plate grows from `edge`: plates on the left grow leftwards and
+ * plates on the right grow rightwards, so a longer status line widens the plate
+ * into open space instead of into a building. `cy` is the plate's centre line.
+ */
+export const PLATE_ANCHORS = Object.freeze({
+  hosting: { side: 'left', edge: 222, cy: 98 },
+  request: { side: 'left', edge: 206, cy: 262 },
+  preview: { side: 'right', edge: 424, cy: 88, target: 'top' },
+  code: { side: 'right', edge: 552, cy: 222 },
+  agent: { side: 'right', edge: 454, cy: 304 },
+});
+export const PLATE_HEIGHT = 44;
+/** Plate type sizes in SVG user units. The map never renders below 1:1, so these are the floor. */
+export const PLATE_TYPE = Object.freeze({ name: 13, status: 12 });
+
+/**
+ * Text width estimate for SSR and the first paint, before the browser measures.
+ * Deliberately generous (≈0.6em), so a plate never starts narrower than its text.
+ */
+export function estimateTextWidth(text, size) {
+  return Math.ceil(String(text ?? '').length * size * 0.62);
+}
+
+/** Plate width for a name + status pair (dot + horizontal padding included). */
+export function plateWidth(nameW, statusW) {
+  return Math.ceil(Math.max(nameW + 34, statusW + 22, 104));
+}
+
+/** The floor footprint plus drawing height of a station, in px at DEFAULT_ISO. */
+export function stationBounds(key, opts = DEFAULT_ISO) {
+  const pos = STATION_POSITIONS[key];
+  if (!pos) return null;
+  const c = iso(pos.x, pos.y, 0, opts);
+  const scale = Number.isFinite(opts?.scale) ? opts.scale : DEFAULT_ISO.scale;
+  const halfW = 2 * pos.padHalf * ISO_COS * scale;
+  const halfH = 2 * pos.padHalf * ISO_SIN * scale;
+  return { x: c.x - halfW, y: c.y + (pos.top ?? -halfH), w: halfW * 2, h: halfH - (pos.top ?? -halfH), cx: c.x, cy: c.y, halfW, halfH };
+}
+
+function rectsOverlap(a, b, gap = 0) {
+  return a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+}
+
+/**
+ * Lay out every station plate and its leader, and the tight viewBox that holds
+ * the floor plate, drawings, entry cue, and all plates. `widths` maps station
+ * key → plate width (measured in the browser; estimated otherwise). Pure, so
+ * overlap rules are testable.
+ */
+export function plateLayout(stations = [], widths = {}, { margin = 12 } = {}) {
+  const plates = {};
+  const boxes = [];
+  for (const s of stations) {
+    const a = PLATE_ANCHORS[s.key];
+    const b = stationBounds(s.key);
+    if (!a || !b) continue;
+    const w = Number.isFinite(widths[s.key]) && widths[s.key] > 0
+      ? widths[s.key]
+      : plateWidth(estimateTextWidth(s.shortLabel, PLATE_TYPE.name), estimateTextWidth(s.shortStatus || s.stateText, PLATE_TYPE.status));
+    const x = a.side === 'left' ? a.edge - w : a.edge;
+    const y = a.cy - PLATE_HEIGHT / 2;
+    // Leader: from the plate edge facing the station to the pad's near corner.
+    const leader = a.target === 'top'
+      ? { x1: a.edge, y1: a.cy + 8, x2: b.cx, y2: b.cy - b.halfH }
+      : {
+          x1: a.edge,
+          y1: a.cy,
+          x2: a.side === 'left' ? b.cx - b.halfW : b.cx + b.halfW,
+          y2: b.cy,
+        };
+    plates[s.key] = { x, y, w, h: PLATE_HEIGHT, side: a.side, leader };
+    boxes.push({ x, y, w, h: PLATE_HEIGHT }, { x: b.x, y: b.y, w: b.w, h: b.h });
+  }
+  const floorCorners = [
+    iso(FLOOR_BOUNDS.minX, FLOOR_BOUNDS.minY, 0),
+    iso(FLOOR_BOUNDS.maxX, FLOOR_BOUNDS.minY, 0),
+    iso(FLOOR_BOUNDS.maxX, FLOOR_BOUNDS.maxY, 0),
+    iso(FLOOR_BOUNDS.minX, FLOOR_BOUNDS.maxY, 0),
+  ];
+  for (const pt of floorCorners) {
+    boxes.push({ x: pt.x, y: pt.y, w: 0, h: 0 });
+  }
+  const entry = iso(VISITOR_POS.x, VISITOR_POS.y, 0);
+  boxes.push({ x: entry.x - 56, y: entry.y - 8, w: 66, h: 32 });
+  if (!boxes.length) return { plates, viewBox: { x: 0, y: 0, w: 720, h: 385 } };
+  const minX = Math.min(...boxes.map((r) => r.x)) - margin;
+  const minY = Math.min(...boxes.map((r) => r.y)) - margin;
+  const maxX = Math.max(...boxes.map((r) => r.x + r.w)) + margin;
+  const maxY = Math.max(...boxes.map((r) => r.y + r.h)) + margin;
+  return {
+    plates,
+    viewBox: { x: Math.floor(minX), y: Math.floor(minY), w: Math.ceil(maxX - minX), h: Math.ceil(maxY - minY) },
+  };
+}
+
+/** Every collision in a layout: plate↔plate and plate↔station drawing. Empty means legible. */
+export function plateCollisions(layout, gap = 2) {
+  const hits = [];
+  const keys = Object.keys(layout?.plates ?? {});
+  for (let i = 0; i < keys.length; i++) {
+    const a = layout.plates[keys[i]];
+    for (let j = i + 1; j < keys.length; j++) {
+      if (rectsOverlap(a, layout.plates[keys[j]], gap)) hits.push(`${keys[i]}~${keys[j]}`);
+    }
+    for (const k of Object.keys(STATION_POSITIONS)) {
+      const b = stationBounds(k);
+      if (rectsOverlap(a, b, gap)) hits.push(`${keys[i]}~station:${k}`);
+    }
+  }
+  return hits;
+}
 
 export const VISITOR_POS = Object.freeze({ x: 1.3, y: 2.75 });
 
@@ -199,10 +315,6 @@ function cleanString(v) {
   return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
-function clip(text, max = 22) {
-  if (!text) return '';
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
 
 function hostnameOf(raw) {
   const s = cleanString(raw);
@@ -507,7 +619,7 @@ function applyStationChecks(station, mappedChecks, t) {
       state = 'warn';
       if (wasEmpty && pendingCheck.label) {
         stateText = pendingCheck.label;
-        shortStatus = clip(pendingCheck.label, 20);
+        shortStatus = pendingCheck.label;
       }
     }
   } else if (station.key === 'hosting' && readyDomainCheck && state === 'unknown') {
@@ -609,7 +721,7 @@ export function stationsFor({ project = null, sites = [], tickets = undefined, d
               addr: addr.hostname,
               host: hostLabel,
             });
-        hostingShort = clip(addr.hostname, 22);
+        hostingShort = addr.hostname;
       } else {
         hostingState = 'unknown';
         addressText = tx(t, 'world.domain.state.missing', 'No web address reported yet');
@@ -682,7 +794,7 @@ export function stationsFor({ project = null, sites = [], tickets = undefined, d
   } else if (repoSlug) {
     codeState = 'ok';
     codeText = tx(t, 'world.code.state.connected', 'Connected: {repo}', { repo: repoSlug });
-    codeShort = clip(repoSlug, 21);
+    codeShort = repoSlug;
   } else if (repoWanted) {
     codeState = 'active';
     codeText = tx(t, 'world.code.state.settingUp', 'Setting up your code repository');
