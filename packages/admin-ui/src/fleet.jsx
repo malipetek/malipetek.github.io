@@ -1,9 +1,26 @@
 /* The fleet (nodes, queue, runs), the directory (clients, projects), and settings. */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LOCALES } from '../../../src/lib/locales.js';
 import { useAdmin, usePoll } from './store.js';
 import { EXECUTORS, PRIORITIES, ago, chargeOf, money, priorityName, span, usd } from './format.js';
-import { Button, Chips, Dot, Empty, Field, Modal, PageHeader, Segmented, Skeleton, StatusPill, Tag, cx, useContextMenu } from './ui.jsx';
+import {
+  Button,
+  Chips,
+  DataTable,
+  Empty,
+  Field,
+  FormPane,
+  Inspector,
+  MetaChip,
+  Modal,
+  PageHeader,
+  Segmented,
+  Skeleton,
+  StateIndicator,
+  Tag,
+  UiStyles,
+  useMedia,
+} from './ui/index.js';
 import { HealthView } from './health.jsx';
 import { MachinePanel, useMachine } from './machine.jsx';
 import { ToolboxPanel } from './toolbox.jsx';
@@ -14,92 +31,260 @@ const capabilityLabel = (id, caps) => caps.find((c) => c.id === id)?.label ?? ({
   'os:darwin': 'macOS', 'os:linux': 'Linux', 'os:win32': 'Windows',
 }[id] ?? id.replace(/^os:/, ''));
 
-function NodeCard({ node, local }) {
-  const { api, act, ask, data, setModal, openTicket } = useAdmin();
-  const caps = data.catalog?.capabilities ?? [];
-  const h = node.health ?? {};
-  const sys = h.system;
-  const state = !node.online ? 'bad' : node.draining ? 'warn' : 'ok';
-  const machine = sys
-    ? [
-        `load ${sys.load?.[0]?.toFixed?.(2) ?? '—'} / ${sys.cpus} cpu`,
-        sys.memFreePct != null ? `${100 - sys.memFreePct}% mem` : null,
-        sys.disk ? `${pct(sys.disk.totalGb - sys.disk.freeGb, sys.disk.totalGb)}% disk` : null,
-        sys.battery ? `battery ${sys.battery.percent}%${sys.battery.onPower ? ' ⚡' : ''}` : null,
-        `up ${span(sys.uptimeSec)}`,
-      ].filter(Boolean).join(' · ')
-    : '';
+const osLabel = (os) => (os ? capabilityLabel(`os:${os}`, []) : '—');
+
+/** Escape closes an Inspector from anywhere in its workspace, unless something nearer used it. */
+const closeOnEscape = (open, close) => (e) => {
+  if (e.key !== 'Escape' || e.defaultPrevented || !open) return;
+  if (e.target?.closest?.('input, textarea, select, [contenteditable], [role=menu], [role=dialog]')) return;
+  e.preventDefault();
+  close();
+};
+
+/** At ≤900px the Inspector sits below the list: bring it into view when the selection changes. */
+function useRevealInspector(root, key) {
+  const narrow = useMedia('(max-width: 900px)');
+  useEffect(() => {
+    if (narrow && key != null) root.current?.querySelector('.ui-inspector')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+  }, [narrow, key, root]);
+}
+
+/** A ticket title as a link: a plain click opens the ticket; modifier clicks stay the browser's. */
+function TicketLink({ id, children }) {
+  const { openTicket } = useAdmin();
   return (
-    <article className={cx('aw-node', `aw-node--${state}`)}>
-      <header>
-        <Dot state={state} />
-        <h3>{node.id}</h3>
-        <span className="aw-muted aw-node__os">
-          {node.os} · v{node.version}
-          {node.online ? (node.draining ? ' · draining' : '') : ` · offline ${ago(node.lastSeenAt)}`}
-        </span>
-        <span className="aw-toolbar__fill" />
-        {!local ? <Button size="sm" kind="ghost" onClick={() => act(() => api('PATCH', `/admin/nodes/${node.id}`, { draining: !node.draining }), node.draining ? `${node.id} takes work again.` : `${node.id} finishes what it has, then takes nothing new.`)}>
-          {node.draining ? 'Resume' : 'Drain'}
-        </Button> : null}
-        <Button size="sm" kind="ghost" onClick={() => setModal({ kind: 'custom', render: (close) => <NodeModal node={node} local={local} onClose={close} /> })}>
-          Edit
-        </Button>
-        {!local && !node.online ? (
+    <a
+      className="aw-titlelink"
+      href={`#ticket=${id}`}
+      tabIndex={-1}
+      title={typeof children === 'string' ? children : undefined}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return void e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
+        openTicket(id);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
+/** The one state word a node row shows: online, draining or offline (This Mac before it registers: what its worker says). */
+function nodeStateProps(n, m) {
+  if (n.unregistered) {
+    if (!m.loaded) return { state: 'checking', label: 'Checking…' };
+    if (m.state === 'unset') return { state: 'unset', label: 'Not set up', tone: 'warn' };
+    return { state: 'unregistered', label: m.serviceUp ? 'Not registered yet' : 'Off', tone: m.serviceUp ? 'warn' : 'bad' };
+  }
+  if (!n.online) return { state: 'offline', label: `Offline · ${ago(n.lastSeenAt)}`, title: `Last seen ${ago(n.lastSeenAt)} ago` };
+  if (n.draining) return { state: 'draining', label: 'Draining', tone: 'warn', title: 'Finishes what it has, then takes nothing new' };
+  return { state: 'online' };
+}
+
+const unhealthy = (n) => (n.executors ?? []).filter((e) => n.health?.executors?.[e] && !n.health.executors[e].ok);
+
+function workloadLine(n) {
+  const sys = n.health?.system;
+  const parts = [`${n.running.length}/${n.slots} busy`];
+  if (sys) {
+    const load = sys.load?.[0]?.toFixed?.(2);
+    if (load != null) parts.push(`load ${load}/${sys.cpus ?? '?'}`);
+    if (sys.memFreePct != null) parts.push(`mem ${100 - sys.memFreePct}%`);
+    if (sys.disk) parts.push(`disk ${pct(sys.disk.totalGb - sys.disk.freeGb, sys.disk.totalGb)}%`);
+  }
+  return parts.join(' · ');
+}
+
+const NODE_COLUMNS = (m) => [
+  {
+    key: 'name',
+    header: 'Node',
+    render: (n) => (
+      <>
+        {n.local ? <><MetaChip>This Mac</MetaChip> </> : null}
+        <strong title={n.id}>{n.id}</strong>
+      </>
+    ),
+  },
+  { key: 'state', header: 'State', fit: true, render: (n) => <StateIndicator {...nodeStateProps(n, m)} /> },
+  { key: 'platform', header: 'Platform', fit: true, render: (n) => (n.unregistered ? '—' : `${osLabel(n.os)} · v${n.version}`) },
+  {
+    key: 'agents',
+    header: 'Agents',
+    render: (n) => {
+      const bad = unhealthy(n);
+      return (
+        <>
+          {bad.length ? (
+            <>
+              <StateIndicator state="check" label={`${bad.length} not healthy`} title={bad.map((e) => `${e}: ${n.health.executors[e].error ?? 'not healthy'}`).join('; ')} />{' '}
+            </>
+          ) : null}
+          <span title={n.executors.join(', ') || undefined}>{n.executors.length ? n.executors.join(', ') : '—'}</span>
+        </>
+      );
+    },
+  },
+  { key: 'workload', header: 'Workload', render: (n) => (n.unregistered ? '—' : <span title={workloadLine(n)}>{workloadLine(n)}</span>) },
+  {
+    key: 'battery',
+    header: 'Battery',
+    fit: true,
+    render: (n) => {
+      const b = n.health?.system?.battery;
+      return b ? <span title={b.onPower ? 'On power' : 'On battery'}>{b.percent}%{b.onPower ? ' ⚡' : ''}</span> : '—';
+    },
+  },
+  { key: 'projects', header: 'Projects', numeric: true, render: (n) => <span title={n.slugs.join(', ') || 'No projects yet'}>{n.slugs.length}</span> },
+];
+
+/** A run on a node, in the Inspector: the ticket opens on Enter, a click on the title, or a double-click. */
+function RunsTable({ runs, label, empty }) {
+  const { openTicket } = useAdmin();
+  return (
+    <DataTable
+      label={label}
+      rows={runs}
+      onOpen={(r) => openTicket(r.ticket_id)}
+      empty={empty}
+      columns={[
+        { key: 'title', header: 'Title', render: (r) => <TicketLink id={r.ticket_id}>{r.title}</TicketLink> },
+        { key: 'id', header: '#', mono: true, fit: true, render: (r) => `#${r.ticket_id}` },
+        { key: 'agent', header: 'Agent', fit: true, render: (r) => r.executor },
+        { key: 'started', header: 'Started', fit: true, render: (r) => `${ago(r.started_at)} ago` },
+      ]}
+    />
+  );
+}
+
+/**
+ * The node Inspector: its state, its actions (Drain/Resume, Edit, Forget; on
+ * This Mac the worker's Pause/Resume, Restart, Stop now, Start), telemetry,
+ * agents, capabilities, projects, what it runs, and on This Mac the lending
+ * panel (subscriptions it lends, the consent record, the worker log).
+ */
+function NodeInspector({ n, m, onClose }) {
+  const { api, act, ask, data, setModal } = useAdmin();
+  const caps = data.catalog?.capabilities ?? [];
+  const sys = n.health?.system;
+  const edit = () => setModal({ kind: 'custom', render: (close) => <NodeModal node={n} local={n.local} onClose={close} /> });
+  const machineReady = n.local && m.loaded && !m.consentError;
+  return (
+    <Inspector title={n.id} label={`Node ${n.id}`} storageKey="ptech.fleet.inspector.w" onClose={onClose} className="aw-fleet__inspector">
+      <div className="ui-meta">
+        <StateIndicator {...nodeStateProps(n, m)} />
+        {n.local ? <MetaChip>This Mac</MetaChip> : null}
+      </div>
+      <div className="ui-actions">
+        {n.local ? (
+          machineReady ? (
+            <>
+              {m.state === 'working' || m.state === 'ready' ? <Button title="What is running finishes, nothing new starts" onClick={() => void m.pause()}>Pause</Button> : null}
+              {m.consented && (m.state === 'pausing' || m.state === 'paused') ? <Button title="This Mac takes work again" onClick={() => void m.resume()}>Resume</Button> : null}
+              {m.serviceUp ? (
+                <>
+                  <Button kind="ghost" title="Restart the worker service" onClick={() => void m.restart()}>Restart</Button>
+                  <Button kind="ghost" onClick={() => m.stopNow()}>Stop now</Button>
+                </>
+              ) : m.consented ? (
+                <Button kind="primary" onClick={() => void m.start()}>{m.svc?.loaded ? 'Start worker' : 'Install worker'}</Button>
+              ) : null}
+            </>
+          ) : null
+        ) : (
           <Button
-            size="sm"
-            kind="ghost"
-            onClick={() => ask({ title: `Forget ${node.id}?`, text: 'It re-registers on its next heartbeat if it is still alive.', confirm: 'Forget', danger: true, run: () => act(() => api('DELETE', `/admin/nodes/${node.id}`), `Forgot ${node.id}.`) })}
+            onClick={() => act(() => api('PATCH', `/admin/nodes/${n.id}`, { draining: !n.draining }), n.draining ? `${n.id} takes work again.` : `${n.id} finishes what it has, then takes nothing new.`)}
           >
-            Forget
+            {n.draining ? 'Resume' : 'Drain'}
+          </Button>
+        )}
+        {!n.unregistered ? <Button kind="ghost" onClick={edit}>Edit…</Button> : null}
+        {!n.local && !n.online ? (
+          <Button
+            kind="ghost"
+            onClick={() => ask({ title: `Forget ${n.id}?`, text: 'It re-registers on its next heartbeat if it is still alive.', confirm: 'Forget', danger: true, run: () => act(() => api('DELETE', `/admin/nodes/${n.id}`), `Forgot ${n.id}.`) })}
+          >
+            Forget…
           </Button>
         ) : null}
-      </header>
-      <div className="aw-node__lines">
-        {!local ? (
-          <p className="aw-node__line">
-            <span className="aw-muted">Agents: </span>
-            {node.executors.map((e, i) => {
-              const ex = h.executors?.[e];
-              return (
-                <span key={e} className={ex && !ex.ok ? 'aw-warn' : undefined} title={ex && !ex.ok ? (ex.error ?? 'not healthy') : ex?.version ? `${e} ${ex.version}` : undefined}>
-                  {i ? ', ' : ''}{e}
-                </span>
-              );
-            })}
-          </p>
-        ) : null}
-        <p className="aw-node__line">
-          <span className="aw-muted">Can do: </span>
-          {node.capabilities.length ? node.capabilities.map((c) => capabilityLabel(c, caps)).join(', ') : '—'}
-          <span className="aw-muted"> · </span>
-          <span className="aw-muted" title={node.slugs.length ? node.slugs.join(', ') : undefined}>
-            {node.slugs.length ? `${node.slugs.length} project${node.slugs.length === 1 ? '' : 's'}` : 'no projects yet'}
-          </span>
-        </p>
-        <p className="aw-node__line" title={machine || undefined}>
-          <span className="aw-muted">Workload: </span>
-          {node.running.length} of {node.slots} runs busy
-          <span className="aw-node__bar" aria-hidden="true"><i style={{ width: `${pct(node.running.length, node.slots)}%` }} /></span>
-          {machine ? <span className="aw-muted aw-node__sys"> · {machine}</span> : null}
-        </p>
-        {h.process?.lastError ? <p className="aw-node__line aw-warn">Last error: {h.process.lastError}</p> : null}
       </div>
-      {!local && node.running.length ? (
-        <ul className="aw-rows">
-          {node.running.map((r) => (
-            <li key={r.id} className="aw-row" onClick={() => openTicket(r.ticket_id)}>
-              <span className="aw-live" />
-              <span className="aw-mono aw-muted">#{r.ticket_id}</span>
-              <span className="aw-row__title">{r.title}</span>
-              <span className="aw-muted">
-                {r.executor} · {ago(r.started_at)}
-              </span>
-            </li>
-          ))}
-        </ul>
+      <dl className="ui-props">
+        {n.local ? (
+          <>
+            <dt>Worker</dt>
+            <dd>{m.svc?.state ?? 'unknown'}{m.svc?.pid ? ` · pid ${m.svc.pid}` : ''}</dd>
+          </>
+        ) : null}
+        {!n.unregistered ? (
+          <>
+            <dt>Platform</dt>
+            <dd>{osLabel(n.os)} · v{n.version}</dd>
+            <dt>Last seen</dt>
+            <dd>{ago(n.lastSeenAt)} ago</dd>
+            <dt>Workload</dt>
+            <dd>{n.running.length} of {n.slots} runs busy</dd>
+          </>
+        ) : null}
+        {sys ? (
+          <>
+            <dt>Load</dt>
+            <dd>{sys.load?.[0]?.toFixed?.(2) ?? '—'} on {sys.cpus} CPUs</dd>
+            {sys.memFreePct != null ? (<><dt>Memory</dt><dd>{100 - sys.memFreePct}% used</dd></>) : null}
+            {sys.disk ? (<><dt>Disk</dt><dd>{pct(sys.disk.totalGb - sys.disk.freeGb, sys.disk.totalGb)}% used · {sys.disk.freeGb} GB free</dd></>) : null}
+            {sys.battery ? (<><dt>Battery</dt><dd>{sys.battery.percent}% · {sys.battery.onPower ? 'on power' : 'on battery'}</dd></>) : null}
+            {sys.uptimeSec != null ? (<><dt>Up</dt><dd>{span(sys.uptimeSec)}</dd></>) : null}
+          </>
+        ) : null}
+      </dl>
+      {n.health?.process?.lastError ? (
+        <div className="ui-section">
+          <StateIndicator state="failed" label="Last error" />
+          <p className="ui-quote">{n.health.process.lastError}</p>
+        </div>
       ) : null}
-    </article>
+      {!n.local && !n.unregistered ? (
+        <div className="ui-section">
+          <h3 className="ui-section__title">Agents</h3>
+          <div className="ui-meta">
+            {n.executors.length ? n.executors.map((e) => {
+              const ex = n.health?.executors?.[e];
+              return ex ? (
+                <StateIndicator key={e} state={ex.ok ? 'ok' : 'failed'} label={`${e}${ex.version ? ` ${ex.version}` : ''}`} title={ex.ok ? undefined : ex.error ?? 'not healthy'} />
+              ) : (
+                <StateIndicator key={e} state="unchecked" label={e} title="No health report yet" />
+              );
+            }) : <span className="ui-note">None</span>}
+          </div>
+        </div>
+      ) : null}
+      {!n.unregistered ? (
+        <>
+          <div className="ui-section">
+            <h3 className="ui-section__title">Can do</h3>
+            <div className="ui-meta">
+              {n.capabilities.length ? n.capabilities.map((c) => <MetaChip key={c}>{capabilityLabel(c, caps)}</MetaChip>) : <span className="ui-note">—</span>}
+            </div>
+          </div>
+          <div className="ui-section">
+            <h3 className="ui-section__title">Projects · {n.slugs.length}</h3>
+            <div className="ui-meta">
+              {n.slugs.length ? n.slugs.map((s) => <MetaChip key={s} mono>{s}</MetaChip>) : <span className="ui-note">No projects yet</span>}
+            </div>
+          </div>
+          <div className="ui-section">
+            <h3 className="ui-section__title">Running · {n.running.length} of {n.slots}</h3>
+            <RunsTable runs={n.running} label={`Runs on ${n.id}`} empty={{ title: 'Nothing running.', hint: `${n.slots} free ${n.slots === 1 ? 'slot' : 'slots'}.` }} />
+          </div>
+        </>
+      ) : null}
+      {n.local ? (
+        <div className="ui-section aw-fleet-machine">
+          <h3 className="ui-section__title">Lending</h3>
+          <MachinePanel />
+        </div>
+      ) : null}
+    </Inspector>
   );
 }
 
@@ -141,92 +326,101 @@ function NodeModal({ node, local, onClose }) {
 }
 
 export function FleetView() {
-  const { data, openTicket, open } = useAdmin();
-  const machine = useMachine();
+  const { data, open, openTicket } = useAdmin();
+  const m = useMachine();
+  const root = useRef(null);
+  const [selectedKey, setSelectedKey] = useState(null);
+  const nodes = useMemo(() => {
+    const list = data.nodes.map((n) => ({ ...n, local: m.live && Boolean(m.nodeId) && n.id === m.nodeId }));
+    // This Mac first. Before its node registers, it still has a row, so its controls stay one click away.
+    if (m.live && !list.some((n) => n.local)) {
+      list.unshift({ id: m.nodeId || 'This Mac', local: true, unregistered: true, online: false, draining: false, slots: m.slots, executors: m.lending, capabilities: [], slugs: [], running: [] });
+    }
+    return list.sort((a, b) => Number(b.local) - Number(a.local));
+  }, [data.nodes, m.live, m.nodeId, m.slots, m.lending]);
+  const keyOf = (n) => (n.unregistered ? '__this-mac' : n.id);
+  const selected = selectedKey == null ? null : nodes.find((n) => keyOf(n) === selectedKey) ?? null;
+  const close = () => setSelectedKey(null);
+  useRevealInspector(root, selected ? selectedKey : null);
   const runs = [...data.running, ...data.recent].slice(0, 8);
   return (
-    <div className="aw-view aw-fleet">
+    <div ref={root} className="ui-workspace aw-fleet" onKeyDown={closeOnEscape(Boolean(selected), close)}>
+      <UiStyles />
       <PageHeader
         title="Fleet"
-        subtitle="The machines that run agents, what waits for them, and the end-to-end checks."
+        subtitle="The machines that run agents, what waits for them, and the end-to-end checks. Select a node to inspect it."
         overflow={[{ label: 'Settings: work queue…', run: () => open('settings') }]}
       />
-      <HealthView compact />
-      <div className="aw-nodes">
-        {machine.live ? <MachinePanel /> : null}
-        {data.nodes.map((n) => (
-          <NodeCard key={n.id} node={n} local={machine.live && n.id === machine.nodeId} />
-        ))}
-        {!data.nodes.length ? <Empty title="No node has connected yet." hint="Open the desktop app and lend This Mac from the status bar, or start a node with its config file." /> : null}
+      <div className="ui-split">
+        <div className="ui-split__main">
+          <HealthView compact />
+          <section className="ui-section">
+            <h3 className="ui-section__title">Nodes · {nodes.length}</h3>
+            <DataTable
+              label="Nodes"
+              columns={NODE_COLUMNS(m)}
+              rows={nodes}
+              rowKey={keyOf}
+              selected={selected ? selectedKey : null}
+              onSelect={(n) => setSelectedKey(keyOf(n))}
+              onOpen={(n) => setSelectedKey(keyOf(n))}
+              empty={{ title: 'No node has connected yet.', hint: 'Open the desktop app and lend This Mac from the status bar, or start a node with its config file.' }}
+            />
+          </section>
+          <section className="ui-section">
+            <h3 className="ui-section__title">Queue · {data.queue.length}</h3>
+            <DataTable
+              label="Queue"
+              rows={data.queue}
+              onOpen={(q) => openTicket(q.id)}
+              empty={{ title: 'Nothing is waiting.', hint: 'Approved work starts as soon as a node with a free slot can take it.' }}
+              columns={[
+                { key: 'title', header: 'Title', render: (q) => <TicketLink id={q.id}>{q.title}</TicketLink> },
+                { key: 'id', header: '#', mono: true, fit: true, render: (q) => `#${q.id}` },
+                { key: 'project', header: 'Project', fit: true, render: (q) => q.slug ?? '—' },
+                { key: 'priority', header: 'Priority', fit: true, render: (q) => priorityName(q.priority) },
+                { key: 'waiting', header: 'Waiting', numeric: true, render: (q) => span(q.waitingSeconds) },
+                {
+                  key: 'why',
+                  header: 'Why waiting',
+                  render: (q) =>
+                    q.eligible.length ? (
+                      <span title={q.reason}>{q.reason}</span>
+                    ) : (
+                      <span title={q.reason}>
+                        <StateIndicator state="stuck" tone="bad" label="Blocked" /> {q.reason || 'No node can take this'}
+                      </span>
+                    ),
+                },
+              ]}
+            />
+          </section>
+          <section className="ui-section">
+            <h3 className="ui-section__title">Recent runs</h3>
+            <DataTable
+              label="Recent runs"
+              rows={runs}
+              onOpen={(r) => openTicket(r.ticket_id)}
+              empty={{ title: 'No runs yet.', hint: 'Runs appear here when a node starts approved work.' }}
+              columns={[
+                { key: 'title', header: 'Title', render: (r) => <TicketLink id={r.ticket_id}>{r.title}</TicketLink> },
+                { key: 'id', header: '#', mono: true, fit: true, render: (r) => `#${r.ticket_id}` },
+                {
+                  key: 'result',
+                  header: 'Result',
+                  fit: true,
+                  render: (r) => (r.status === 'running' || !r.status ? <StateIndicator state="running" /> : <StateIndicator state={r.status} />),
+                },
+                { key: 'agent', header: 'Agent', render: (r) => <span title={r.model ? `${r.executor} ${r.model}` : r.executor}>{r.executor}{r.model ? <span className="ui-note"> {r.model}</span> : null}</span> },
+                { key: 'node', header: 'Node', fit: true, render: (r) => r.node_id ?? 'This Mac' },
+                { key: 'cost', header: 'Cost', numeric: true, render: (r) => usd(r.cost_micro_usd) },
+                { key: 'finished', header: 'Finished', fit: true, render: (r) => (r.finished_at ? `${ago(r.finished_at)} ago` : '—') },
+              ]}
+            />
+          </section>
+        </div>
+        {selected ? <NodeInspector n={selected} m={m} onClose={close} /> : null}
       </div>
-
-      <section className="aw-group">
-        <h3>
-          Queue <span className="aw-count">{data.queue.length}</span>
-        </h3>
-        {data.queue.length ? <div className="aw-tablewrap"><table className="aw-table aw-table--stack aw-table--rows">
-          <thead>
-            <tr>
-              <th className="aw-num">#</th>
-              <th>Title</th>
-              <th>Project</th>
-              <th>Priority</th>
-              <th className="aw-num">Waiting</th>
-              <th>Why waiting</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.queue.map((q) => (
-              <tr key={q.id} onClick={() => openTicket(q.id)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && openTicket(q.id)}>
-                <td className="aw-num aw-muted">#{q.id}</td>
-                <td className="aw-table__title">{q.title}</td>
-                <td data-label="Project">{q.slug ?? '—'}</td>
-                <td data-label="Priority">{priorityName(q.priority)}</td>
-                <td data-label="Waiting" className="aw-num">{span(q.waitingSeconds)}</td>
-                <td data-label="Why waiting" className={q.eligible.length ? 'aw-muted' : 'aw-warn'} style={{ whiteSpace: 'normal' }}>{q.eligible.length ? null : <><Dot state="bad" />{' '}</>}{q.reason}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div> : <Empty inline title="Nothing is waiting." hint="Approved work starts as soon as a node with a free slot can take it." />}
-      </section>
-
-      <section className="aw-group">
-        <h3>Recent runs</h3>
-        {runs.length ? <div className="aw-tablewrap"><table className="aw-table aw-table--stack aw-table--rows">
-          <thead>
-            <tr>
-              <th className="aw-num">#</th>
-              <th>Title</th>
-              <th>Result</th>
-              <th>Agent</th>
-              <th>Node</th>
-              <th className="aw-num">Cost</th>
-              <th>Finished</th>
-            </tr>
-          </thead>
-          <tbody>
-            {runs.map((r) => {
-              const live = r.status === 'running' || !r.status;
-              return (
-                <tr key={r.id} onClick={() => openTicket(r.ticket_id)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && openTicket(r.ticket_id)}>
-                  <td className="aw-num aw-muted">#{r.ticket_id}</td>
-                  <td className="aw-table__title">{r.title}</td>
-                  <td data-label="Result">
-                    <span className="aw-running">{live ? <span className="aw-live" /> : <Dot state={r.status === 'ok' ? 'ok' : 'bad'} />}{live ? 'running' : r.status === 'ok' ? 'ok' : r.status}</span>
-                  </td>
-                  <td data-label="Agent">
-                    {r.executor}
-                    {r.model ? <span className="aw-muted"> {r.model}</span> : null}
-                  </td>
-                  <td data-label="Node">{r.node_id ?? 'this Mac'}</td>
-                  <td data-label="Cost" className="aw-num">{usd(r.cost_micro_usd)}</td>
-                  <td data-label="Finished" className="aw-muted">{r.finished_at ? `${ago(r.finished_at)} ago` : '—'}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table></div> : <Empty inline title="No runs yet." hint="Runs appear here when a node starts approved work." />}
-      </section>
     </div>
   );
 }
@@ -329,7 +523,7 @@ function ClientControls({ c }) {
   return (
     <>
       <p className="aw-muted">{usageLine(c.usage)}</p>
-      <div className="aw-toolbar">
+      <div className="ui-actions">
         <select
           aria-label="Language"
           value={c.locale ?? 'en-US'}
@@ -368,9 +562,7 @@ function InviteControls({ c }) {
   const left = c.inviteExpiresAt ? Math.max(0, c.inviteExpiresAt - Date.now() / 1000) : 0;
   return (
     <div className="aw-inline">
-      <Tag tone={c.pending ? 'warn' : undefined} title={c.email}>
-        {c.pending ? 'Invited, not signed in yet' : 'Invite link live'}
-      </Tag>
+      <StateIndicator state={c.pending ? 'invited' : 'invite_live'} tone={c.pending ? 'warn' : 'info'} label={c.pending ? 'Invited, not signed in yet' : 'Invite link live'} title={c.email} />
       {left > 0 ? <span className="aw-muted">link expires in {span(left)}</span> : <span className="aw-muted">link expired</span>}
       <Button
         size="sm"
@@ -398,11 +590,11 @@ function InviteControls({ c }) {
 }
 
 /** Invite a client to existing projects: email, who, language, which projects, a note. */
-function InviteClientModal({ onClose }) {
+function InviteClientModal({ onClose, client }) {
   const { api, act, data } = useAdmin();
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
-  const [locale, setLocale] = useState('en-US');
+  const [email, setEmail] = useState(client?.email ?? '');
+  const [name, setName] = useState(client?.name ?? '');
+  const [locale, setLocale] = useState(client?.locale ?? 'en-US');
   const [projectIds, setProjectIds] = useState(data.projects.length === 1 ? [data.projects[0].id] : []);
   const [note, setNote] = useState('');
   const ready = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && projectIds.length > 0;
@@ -418,14 +610,15 @@ function InviteClientModal({ onClose }) {
         }),
       (out) =>
         out.invite?.sent === false
-          ? `Added ${email.trim()}, but the email could not be sent. Use Resend on their card.`
+          ? `Added ${email.trim()}, but the email could not be sent. Use Resend on their row in Clients.`
           : out.user?.verified_at
             ? `${email.trim()} now has ${projectIds.length} more project${projectIds.length === 1 ? '' : 's'} and a new link.`
             : `Invited ${email.trim()}.`,
     ).then(onClose, () => undefined);
   return (
     <Modal
-      title="Invite a client"
+      title={client ? `Add ${client.name || client.email} to projects` : 'Invite a client'}
+      kind="create"
       subtitle="They get a link that signs them in for the projects you pick. No sign-up needed; the link works once and lasts 7 days."
       onClose={onClose}
       actions={
@@ -669,144 +862,234 @@ export function ProjectPeople({ project: p }) {
   );
 }
 
+const closedTicket = (t) => ['done', 'declined'].includes(t.status);
+const ticketsOf = (data, c) =>
+  data.tickets
+    .filter((t) => t.kind !== 'system' && t.client_email === c.email)
+    .sort((x, y) => closedTicket(x) - closedTicket(y) || y.updated_at - x.updated_at);
+const lastSeenOf = (c) => c.lastSeenAt ?? c.last_seen_at ?? null;
+const TRANSLATION_LABEL = { deepseek: 'DeepSeek', cloudflare: 'Workers AI', off: 'No translation' };
+const localeName = (code) => LOCALES.find((l) => l.code === code)?.english ?? code;
+
+/** Can a node build this project: one online and taking work, only offline or draining ones, or none. */
+function projectNodeState(p, nodes) {
+  const holders = nodes.filter((n) => n.slugs.includes(p.slug));
+  if (holders.some((n) => n.online && !n.draining)) return { state: 'online', label: 'Node available' };
+  if (holders.length) return { state: 'draining', tone: 'warn', label: 'Nodes offline or draining' };
+  return { state: 'no_node', tone: 'bad', label: 'No node has this project' };
+}
+
+const siteStateOf = (p) => {
+  const sites = p.sites ?? (p.site ? [p.site] : []);
+  if (!sites.length) return 'No site';
+  const states = [...new Set(sites.map((site) => site.state?.replaceAll('_', ' ')).filter(Boolean))];
+  return states.join(', ') || 'Site status unavailable';
+};
+
 /** One client: who they are, what they owe, and every request they filed, open ones first. */
 export function ClientView({ id }) {
   const { data, openTicket, open: openTab } = useAdmin();
   const c = data.clients.find((x) => x.id === id);
   if (!c) return data.loaded ? <div className="aw-view"><Empty title="No such client." hint="They may have been removed. The directory lists everyone." action={<Button onClick={() => openTab('clients')}>Open Clients</Button>} /></div> : <Skeleton variant="pane" label="Loading the client…" />;
-  const closed = (t) => ['done', 'declined'].includes(t.status);
-  const tickets = data.tickets
-    .filter((t) => t.kind !== 'system' && t.client_email === c.email)
-    .sort((a, b) => closed(a) - closed(b) || b.updated_at - a.updated_at);
-  const open = tickets.filter((t) => !closed(t)).length;
+  const tickets = ticketsOf(data, c);
+  const open = tickets.filter((t) => !closedTicket(t)).length;
   return (
     <div className="aw-view aw-client">
+      <UiStyles />
       <PageHeader
         title={c.name || c.email}
         subtitle={`${c.name ? `${c.email} · ` : ''}${open} open of ${tickets.length} · client for ${ago(c.created_at)}${c.handoff ? ` · hand-off: ${c.handoff}` : ''}`}
       />
-      <section className="aw-group">
+      <FormPane className="aw-group">
         <ClientControls c={c} />
-      </section>
-      <section className="aw-group">
-        <h3>
-          Requests <span className="aw-count">{tickets.length}</span>
-        </h3>
-        <div className="aw-tablewrap">
-          <table className="aw-table aw-table--stack aw-table--rows">
-            <thead>
-              <tr>
-                <th className="aw-num">#</th>
-                <th>Title</th>
-                <th>Status</th>
-                <th>Project</th>
-                <th className="aw-num">Cost</th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tickets.map((t) => (
-                <tr key={t.id} onClick={() => openTicket(t.id)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && openTicket(t.id)}>
-                  <td className="aw-num aw-muted">#{t.id}</td>
-                  <td className="aw-table__title">
-                    {t.title}
-                    {t.client_waiting_since && !closed(t) ? <> <Tag tone="warn">waiting for you</Tag></> : null}
-                  </td>
-                  <td data-label="Status">
-                    <StatusPill status={t.status} />
-                  </td>
-                  <td data-label="Project">{t.project_name ?? '—'}</td>
-                  <td data-label="Cost" className="aw-num">{money(chargeOf(t).totalCents)}</td>
-                  <td data-label="Updated" className="aw-muted">{ago(t.updated_at)} ago</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!tickets.length ? <Empty inline title="No requests yet." hint="What this client files in the portal, or asks their assistant for, appears here." /> : null}
-        </div>
+      </FormPane>
+      <section className="ui-section">
+        <h3 className="ui-section__title">Requests · {tickets.length}</h3>
+        <DataTable
+          label="Requests"
+          rows={tickets}
+          onOpen={(t) => openTicket(t.id)}
+          empty={{ title: 'No requests yet.', hint: 'What this client files in the portal, or asks their assistant for, appears here.' }}
+          columns={[
+            { key: 'id', header: '#', mono: true, fit: true, render: (t) => `#${t.id}` },
+            {
+              key: 'title',
+              header: 'Title',
+              render: (t) => (
+                <>
+                  <TicketLink id={t.id}>{t.title}</TicketLink>
+                  {t.client_waiting_since && !closedTicket(t) ? <> <StateIndicator state="waiting" tone="warn" label="Waiting for you" /></> : null}
+                </>
+              ),
+            },
+            { key: 'status', header: 'Status', fit: true, render: (t) => <StateIndicator state={t.status} /> },
+            { key: 'project', header: 'Project', render: (t) => t.project_name ?? '—' },
+            { key: 'cost', header: 'Cost', numeric: true, render: (t) => money(chargeOf(t).totalCents) },
+            { key: 'updated', header: 'Updated', fit: true, render: (t) => `${ago(t.updated_at)} ago` },
+          ]}
+        />
       </section>
     </div>
   );
 }
 
-/** A directory row: click opens the client; right-click or Shift+F10 offers open and email. */
-function ClientRow({ c, onOpen, children }) {
-  const menu = useContextMenu([
-    { label: 'Open', run: onOpen },
-    { label: 'Email…', run: () => window.open(`mailto:${c.email}`) },
-    { label: 'Copy email address', run: () => void navigator.clipboard?.writeText(c.email) },
-  ], `${c.name || c.email} actions`);
+/** A client's right-click menu: open, email, copy the address. */
+const clientMenu = (c, open) => [
+  { label: 'Open', run: () => open(`c:${c.id}`) },
+  { label: 'Email…', run: () => window.open(`mailto:${c.email}`) },
+  { label: 'Copy email address', run: () => void navigator.clipboard?.writeText(c.email) },
+];
+
+/**
+ * The client Inspector: who they are, their settings at a glance, usage,
+ * where their invite got to, and their projects (open or take them off one).
+ * Creating stays in the invite modal; the full client page has every control.
+ */
+function ClientInspector({ c, onClose }) {
+  const { api, act, ask, data, open, setModal } = useAdmin();
+  const tickets = ticketsOf(data, c);
+  const openCount = tickets.filter((t) => !closedTicket(t)).length;
+  const projects = data.projects.filter((p) => (c.projectIds ?? []).includes(p.id));
+  const lastSeen = lastSeenOf(c);
+  const remove = (p) =>
+    ask({
+      title: `Remove ${c.email} from ${p.name}?`,
+      text: 'They stop seeing its requests and stop getting its emails. Their account and their own requests stay.',
+      confirm: 'Remove',
+      danger: true,
+      run: () => act(() => api('DELETE', `/admin/clients/${c.id}/projects/${p.id}`), `Removed ${c.email} from ${p.name}.`).catch(() => undefined),
+    });
   return (
-    <li>
-      <button type="button" className="aw-row aw-directory__open" onClick={onOpen} {...menu.bind}>
-        {children}
-      </button>
-      {menu.menu}
-    </li>
+    <Inspector title={c.name || c.email} label={`Client ${c.email}`} storageKey="ptech.clients.inspector.w" onClose={onClose}>
+      {c.pending ? <StateIndicator state="invited" tone="warn" label="Invited, not signed in yet" /> : null}
+      <div className="ui-actions">
+        <Button onClick={() => open(`c:${c.id}`)} title="Open client page  Enter">Open client page</Button>
+        <Button kind="ghost" onClick={() => setModal({ kind: 'custom', render: (close) => <InviteClientModal client={c} onClose={close} /> })}>Add to projects…</Button>
+        <Button kind="ghost" onClick={() => window.open(`mailto:${c.email}`)}>Email…</Button>
+      </div>
+      <dl className="ui-props">
+        <dt>Email</dt>
+        <dd>{c.email}</dd>
+        {c.name ? (<><dt>Name</dt><dd>{c.name}</dd></>) : null}
+        <dt>Requests</dt>
+        <dd>{openCount} open of {tickets.length}</dd>
+        <dt>Client for</dt>
+        <dd>{ago(c.created_at)}</dd>
+        <dt>Last seen</dt>
+        <dd>{lastSeen ? `${ago(lastSeen)} ago` : 'Unavailable'}</dd>
+        <dt>Language</dt>
+        <dd>{localeName(c.locale ?? 'en-US')}</dd>
+        <dt>Translation</dt>
+        <dd>{TRANSLATION_LABEL[c.translation ?? 'deepseek'] ?? c.translation}</dd>
+        {c.role !== 'admin' ? (<><dt>First preview</dt><dd>{c.first_preview_at ? `used ${ago(c.first_preview_at)} ago` : 'not used yet'}</dd></>) : null}
+        {c.handoff ? (<><dt>Hand-off</dt><dd>{c.handoff}</dd></>) : null}
+      </dl>
+      <div className="ui-section">
+        <h3 className="ui-section__title">Usage</h3>
+        <p className="ui-note">{c.usage ? usageLine(c.usage) : 'Usage unavailable'}</p>
+      </div>
+      {c.pending || c.inviteExpiresAt ? (
+        <div className="ui-section">
+          <h3 className="ui-section__title">Invite</h3>
+          <InviteControls c={c} />
+        </div>
+      ) : null}
+      <div className="ui-section">
+        <h3 className="ui-section__title">Projects · {projects.length}</h3>
+        <DataTable
+          label={`Projects of ${c.name || c.email}`}
+          rows={projects}
+          onOpen={(p) => open(`p:${p.id}`)}
+          empty={{ title: 'No projects.', hint: 'Add them to a project to give them a portal for it.' }}
+          columns={[
+            { key: 'name', header: 'Project', render: (p) => <strong title={p.slug}>{p.name}</strong> },
+            { key: 'node', header: 'Node', render: (p) => <StateIndicator {...projectNodeState(p, data.nodes)} /> },
+            { key: 'site', header: 'Site', render: (p) => siteStateOf(p) },
+            { key: 'people', header: 'People', render: (p) => `${p.clients?.length ?? 0}` },
+            {
+              key: 'actions',
+              header: 'Actions',
+              fit: true,
+              render: (p) => (
+                <span className="ui-meta">
+                  <Button size="sm" kind="ghost" aria-label={`Open ${p.name}`} onClick={(e) => { e.stopPropagation(); open(`p:${p.id}`); }}>Open</Button>
+                  <Button size="sm" kind="ghost" aria-label={`Remove from ${p.name}`} onClick={(e) => { e.stopPropagation(); remove(p); }}>Remove…</Button>
+                </span>
+              ),
+            },
+          ]}
+        />
+      </div>
+    </Inspector>
   );
 }
 
+const CLIENT_SORTS = {
+  name: (c) => (c.name || c.email).toLowerCase(),
+  projects: (c) => c.projectIds?.length ?? 0,
+  seen: (c) => lastSeenOf(c) ?? 0,
+};
+
 export function ClientsView() {
   const { data, setModal, open } = useAdmin();
+  const root = useRef(null);
+  const [sort, setSort] = useState({ key: 'name', dir: 1 });
+  const [selectedId, setSelectedId] = useState(null);
+  const rows = useMemo(() => {
+    const get = CLIENT_SORTS[sort.key];
+    return [...data.clients].sort((a, b) => (get(a) > get(b) ? 1 : get(a) < get(b) ? -1 : 0) * sort.dir);
+  }, [data.clients, sort]);
+  const selected = selectedId == null ? null : rows.find((c) => c.id === selectedId) ?? null;
+  const close = () => setSelectedId(null);
+  useRevealInspector(root, selected?.id ?? null);
+  const invite = () => setModal({ kind: 'custom', render: (onClose) => <InviteClientModal onClose={onClose} /> });
   return (
-    <div className="aw-view aw-clients">
+    <div ref={root} className="ui-workspace aw-clients" onKeyDown={closeOnEscape(Boolean(selected), close)}>
+      <UiStyles />
       <PageHeader
-        title="Clients & projects"
-        subtitle={data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : 'Who you work for, and the projects you work on.'}
-        actions={<Button kind="primary" icon="plus" onClick={() => setModal({ kind: 'custom', render: (close) => <InviteClientModal onClose={close} /> })}>Invite client</Button>}
-        secondary={[{ label: 'New project', run: () => setModal({ kind: 'project' }) }]}
+        title="Clients"
+        subtitle={data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : 'Who you work for. Select a client to inspect them; Enter opens their page.'}
+        actions={<Button kind="primary" icon="plus" onClick={invite}>Invite client</Button>}
+        overflow={[{ label: 'New project…', run: () => setModal({ kind: 'project' }) }]}
       />
-      <div className="aw-split aw-directory">
-        <section className="aw-group">
-          <header className="aw-row-h">
-            <h3>Clients <span className="aw-count">{data.clients.length}</span></h3>
-          </header>
-          {data.clients.length ? <ul className="aw-rows">
-            {data.clients.map((c) => {
-              const count = c.projectIds?.length ?? 0;
-              const lastSeen = c.lastSeenAt ?? c.last_seen_at;
-              return (
-                <ClientRow key={c.id} c={c} onOpen={() => open(`c:${c.id}`)}>
-                    <span className="aw-directory__name">
-                      <strong>{c.name || c.email}</strong>
-                      {c.name ? <span className="aw-muted">{c.email}</span> : null}
-                    </span>
-                    <span className="aw-muted">{count} {count === 1 ? 'project' : 'projects'}</span>
-                    <span className="aw-muted">{c.usage ? (usageLine(c.usage) || 'No usage') : 'Usage unavailable'}</span>
-                    <span className="aw-muted">{lastSeen ? `Seen ${ago(lastSeen)} ago` : 'Last seen unavailable'}</span>
-                </ClientRow>
-              );
-            })}
-          </ul> : <Empty inline title="No clients yet." hint="Invite a client and they get a portal account for their projects." />}
-        </section>
-        <section className="aw-group">
-          <header className="aw-row-h">
-            <h3>Projects <span className="aw-count">{data.projects.length}</span></h3>
-          </header>
-          {data.projects.length ? <ul className="aw-rows">
-            {data.projects.map((p) => {
-              const holders = data.nodes.filter((n) => n.slugs.includes(p.slug));
-              const nodeState = holders.some((n) => n.online && !n.draining) ? 'ok' : holders.length ? 'warn' : 'bad';
-              const nodeLabel = nodeState === 'ok' ? 'Node available' : nodeState === 'warn' ? 'Nodes offline or draining' : 'No node has this project';
-              const people = p.clients?.length ?? 0;
-              const sites = p.sites ?? (p.site ? [p.site] : []);
-              const siteStates = [...new Set(sites.map((site) => site.state?.replaceAll('_', ' ')).filter(Boolean))];
-              const siteState = sites.length ? siteStates.join(', ') || 'Site status unavailable' : 'No site';
-              return (
-                <li key={p.id} className="aw-row aw-directory__project">
-                  <span title={nodeLabel} role="img" aria-label={nodeLabel}><Dot state={nodeState} /></span>
-                  <span className="aw-directory__name">
-                    <strong>{p.name}</strong>
-                    <span className="aw-muted aw-mono">{p.slug}</span>
+      <div className="ui-split">
+        <div className="ui-split__main">
+          <DataTable
+            label="Clients"
+            rows={rows}
+            selected={selected?.id ?? null}
+            onSelect={(c) => setSelectedId(c.id)}
+            onOpen={(c) => open(`c:${c.id}`)}
+            menu={(c) => clientMenu(c, open)}
+            sort={sort}
+            onSort={(key) => setSort((s) => ({ key, dir: s.key === key ? -s.dir : key === 'name' ? 1 : -1 }))}
+            empty={{ title: 'No clients yet.', hint: 'Invite a client and they get a portal account for their projects.' }}
+            columns={[
+              {
+                key: 'name',
+                header: 'Client',
+                sortable: true,
+                render: (c) => (
+                  <span title={c.email}>
+                    <strong>{c.name || c.email}</strong>
+                    {c.name ? <span className="ui-note"> {c.email}</span> : null}
                   </span>
-                  <span className="aw-muted">{people} {people === 1 ? 'person' : 'people'}</span>
-                  <span className="aw-muted">{siteState}</span>
-                  <Button size="sm" kind="ghost" aria-label={`Open ${p.name}`} onClick={() => open(`p:${p.id}`)}>Open</Button>
-                </li>
-              );
-            })}
-          </ul> : <Empty inline title="No projects yet." hint="A project is a codebase and its sites." action={<Button onClick={() => setModal({ kind: 'project' })}>New project</Button>} />}
-        </section>
+                ),
+              },
+              { key: 'projects', header: 'Projects', numeric: true, sortable: true, render: (c) => c.projectIds?.length ?? 0 },
+              { key: 'usage', header: 'Usage', render: (c) => (c.usage ? usageLine(c.usage) : 'Usage unavailable') },
+              {
+                key: 'seen',
+                header: 'Last seen',
+                fit: true,
+                sortable: true,
+                render: (c) =>
+                  c.pending ? <StateIndicator state="invited" tone="warn" label="Invited" /> : lastSeenOf(c) ? `${ago(lastSeenOf(c))} ago` : <span title="Last seen unavailable">—</span>,
+              },
+            ]}
+          />
+        </div>
+        {selected ? <ClientInspector c={selected} onClose={close} /> : null}
       </div>
     </div>
   );

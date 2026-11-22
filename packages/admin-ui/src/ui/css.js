@@ -110,6 +110,8 @@ const PRIMITIVES_CSS = `
   .ui-table tr.ui-row { padding: var(--ui-sp-2) var(--ui-sp-3); border-bottom: 1px solid var(--ui-border); }
   .ui-table td { height: auto; max-width: none; padding: 0; border: 0; white-space: normal; text-align: left; }
   .ui-table td[data-numeric] { text-align: left; }
+  /* A fit column is 1% wide in table mode; stacked rows must not inherit it. */
+  .ui-table :is(td, th)[data-fit] { width: auto; max-width: none; }
   .ui-table td + td { margin-top: var(--ui-sp-1); font-size: var(--ui-fs-sm); color: var(--ui-ink-2); }
   .ui-table td + td[data-label]::before { content: attr(data-label) ' · '; color: var(--ui-ink-3); }
 }
