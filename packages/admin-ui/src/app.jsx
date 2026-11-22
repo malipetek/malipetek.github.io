@@ -16,6 +16,7 @@ import { Button, Chips, Confirm, Dot, Field, Icon, Modal, Resizer, Segmented, Sk
 import { BoardView, InboxView, ListView } from './board.jsx';
 import { TicketDetails, TicketView } from './ticket.jsx';
 import { ClientView, ClientsView, FleetView, SettingsView } from './fleet.jsx';
+import { isSettingsKey, settingsSection } from './settings-link.js';
 import { MachineOnboarding, MachineStatusPill } from './machine.jsx';
 import { MarketingView } from './marketing.jsx';
 import { SeoView } from './seo.jsx';
@@ -37,7 +38,9 @@ const VIEWS = [
 ];
 const viewOf = (key) => VIEWS.find((v) => v.key === key);
 // Health is folded into Fleet: an old tab or hash still lands somewhere.
-const aliasView = (key) => (key === 'health' ? 'fleet' : key);
+// Every Settings address (settings#seo, settings/marketing) is the one Settings
+// tab; SettingsView reads the section from the link or the page hash.
+const aliasView = (key) => (key === 'health' ? 'fleet' : isSettingsKey(key) ? 'settings' : key);
 const TABS_KEY = 'aw-tabs-v1';
 const NARROW_WIDTH = '(max-width: 900px)';
 const domId = (prefix, key) => `${prefix}-${String(key).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
@@ -531,6 +534,7 @@ function View({ name }) {
     case 'settings':
       return <SettingsView />;
     default:
+      if (isSettingsKey(name)) return <SettingsView section={settingsSection(name) ?? undefined} />;
       return <p className="aw-empty">Unknown view.</p>;
   }
 }
@@ -547,7 +551,7 @@ function SignedOut() {
       ) : (
         <p>Open Settings and choose <strong>Sign in with portal</strong>.</p>
       )}
-      {platform === 'dsh' ? <SettingsView /> : null}
+      {platform === 'dsh' ? <SettingsView section="account" /> : null}
     </div>
   );
 }

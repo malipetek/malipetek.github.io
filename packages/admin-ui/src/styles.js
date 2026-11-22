@@ -479,7 +479,6 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-panel > header { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; }
 .aw-panel > h3 { font-size: var(--aw-type-md); font-weight: 600; margin-bottom: var(--aw-space-3); }
 .aw-panel p { margin: 6px 0; }
-.aw-settings { max-width: 900px; }
 
 /* ————— this Mac as a worker ————— */
 .aw-mpillbar { display: inline-flex; align-items: center; gap: 0; }
@@ -1341,7 +1340,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-directory__name strong { font-weight: 500; }
 .aw-health--compact .aw-health__row { min-height: var(--aw-row-h-tight); }
 /* marketing */
-.aw-mk-anchor { scroll-margin-block: var(--ui-sp-4); }
 .aw-mk-controls { margin-bottom: var(--ui-sp-3); }
 .aw-mk-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ui-sp-2); margin-bottom: var(--ui-sp-3); min-width: 0; }
 .aw-mk-bar > .aw-search { min-width: 0; flex: 1 1 200px; max-width: 320px; }
@@ -1441,8 +1439,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-seo-row { cursor: default; }
 .aw-seo .aw-rows .aw-seo-row { display: flex; align-items: center; gap: var(--aw-space-2); min-height: var(--aw-row-h); padding: 0 var(--aw-space-1); }
 .aw-seo-events-form { margin-bottom: var(--aw-space-3); }
-.aw-seo-savebar { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; padding: var(--aw-space-2) 0; border-top: 1px solid var(--aw-hairline); background: var(--aw-surface); }
-.aw-seo-savebar__state { flex: 1; min-width: 160px; font-size: var(--aw-type-sm); color: var(--aw-ink-2); }
 
 /* fleet, clients, settings */
 .aw-fleet .aw-group, .aw-clients .aw-group, .aw-client .aw-group { margin: var(--aw-space-5) 0; }
@@ -1469,9 +1465,52 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-clients .aw-row > .aw-muted:last-child { flex: none; }
 .aw-clients .aw-directory__name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--aw-type-sm); }
 .aw-client .aw-toolbar { margin-bottom: var(--aw-space-3); }
-.aw-settings .aw-field { margin-bottom: var(--aw-space-3); }
-.aw-settings .aw-panel > h3 { margin-bottom: var(--aw-space-3); }
-.aw-settings__foot { position: sticky; bottom: 0; display: flex; align-items: center; gap: var(--aw-space-3); margin: var(--aw-space-4) 0 calc(-1 * var(--aw-space-6)); padding: var(--aw-space-2) 0; background: var(--aw-surface); border-top: 1px solid var(--aw-hairline); }
+/* —— Settings: one workspace — header, 180px section nav, bounded form, one SaveBar —— */
+.aw-settings__body { flex: 1; min-height: 0; min-width: 0; display: flex; gap: var(--ui-sp-5); }
+.aw-settings__nav { flex: none; width: 180px; display: flex; flex-direction: column; gap: 2px; padding-top: var(--ui-sp-1); }
+.aw-settings__navitem {
+  display: flex; align-items: center; height: 28px; padding: 0 var(--ui-sp-3); border: 0; border-radius: var(--ui-r-md);
+  background: none; color: var(--ui-ink-2); font: inherit; font-size: var(--ui-fs-md); text-align: left; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: inset 2px 0 0 transparent;
+}
+.aw-settings__navitem:hover { background: var(--ui-bg-hover); color: var(--ui-ink); }
+.aw-settings__navitem[aria-current="page"] { background: var(--ui-bg-selected); color: var(--ui-ink); font-weight: 600; box-shadow: inset 2px 0 0 var(--ui-accent); }
+.aw-settings__navitem:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: -2px; }
+.aw-settings__main { flex: 1; min-width: 0; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.aw-settings__main > .ui-form { flex: 1 0 auto; width: 100%; padding-bottom: var(--ui-sp-4); }
+.aw-settings__main > .ui-savebar { margin-top: auto; padding-inline: 0; max-width: var(--ui-form-max); width: 100%; }
+.aw-settings-form__head { display: flex; align-items: center; gap: var(--ui-sp-3); flex-wrap: wrap; margin-bottom: var(--ui-sp-3); }
+.aw-settings-form__fill { flex: 1; }
+/* Field row: the label beside its control, hint and error under the control. */
+.aw-settings-form .aw-field {
+  display: grid; grid-template-columns: minmax(140px, 200px) minmax(0, 1fr); align-items: start;
+  gap: var(--ui-sp-1) var(--ui-sp-4); margin-bottom: var(--ui-sp-4);
+}
+.aw-settings-form .aw-field > .aw-field__label { grid-column: 1; grid-row: 1 / span 3; padding-top: 5px; color: var(--ui-ink-2); }
+.aw-settings-form .aw-field > :not(.aw-field__label) { grid-column: 2; min-width: 0; }
+.aw-settings-form .aw-field > input:not([type="checkbox"]):not(.aw-settings-num),
+.aw-settings-form .aw-field > select { max-width: 360px; }
+.aw-settings-form .aw-settings-num { width: 120px; max-width: 100%; }
+.aw-settings-form .aw-settings-token { flex: 0 1 240px; width: 240px; min-width: 0; }
+/* Segmented stays intrinsic: never stretched to the column. */
+.aw-settings-form .aw-seg { justify-self: start; align-self: start; width: fit-content; max-width: 100%; }
+.aw-settings-form .aw-panel > h3 { margin-bottom: var(--ui-sp-3); }
+.aw-settings-form .aw-mk-settings-fields { gap: 0; }
+.aw-settings-form .aw-panel { margin-bottom: var(--ui-sp-2); }
+.aw-settings__main > .ui-form > .aw-panel:first-child:not(:has(> header)) { border-top: 0; padding-top: 0; }
+.aw-settings-form .aw-panel__head { margin-bottom: var(--ui-sp-3); }
+@media (max-width: 900px) {
+  .aw-settings__body { flex-direction: column; gap: var(--ui-sp-3); flex: none; }
+  .aw-settings__nav { width: auto; flex-direction: row; gap: 0; overflow-x: auto; padding-top: 0; border-bottom: 1px solid var(--ui-border); }
+  .aw-settings__navitem { flex: none; height: 32px; border-radius: 0; box-shadow: inset 0 -2px 0 transparent; }
+  .aw-settings__navitem[aria-current="page"] { background: none; box-shadow: inset 0 -2px 0 var(--ui-accent); }
+  .aw-settings__main { overflow: visible; flex: none; }
+}
+@media (max-width: 600px) {
+  .aw-settings-form .aw-field { grid-template-columns: minmax(0, 1fr); }
+  .aw-settings-form .aw-field > .aw-field__label { grid-row: auto; padding-top: 0; }
+  .aw-settings-form .aw-field > :not(.aw-field__label) { grid-column: 1; }
+}
 /* the ticket rail */
 .aw-details__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--aw-space-2); margin-bottom: var(--aw-space-3); }
 .aw-details__pair > .aw-field { margin-bottom: 0; }

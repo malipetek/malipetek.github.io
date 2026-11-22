@@ -1,6 +1,7 @@
 /* The marketing desk: who we write to, what is queued, and the switch that sends it. */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin, usePoll } from './store.js';
+import { openSettings } from './settings-link.js';
 import { ago, errorText, when } from './format.js';
 import { nextRowIndex } from './row-navigation.mjs';
 import {
@@ -274,14 +275,11 @@ const runMessage = (result) =>
   result?.reason ? (REASONS[result.reason] ?? `Nothing sent: ${result.reason}`) : `Sent ${result?.sent ?? 0}${result?.failed ? `, ${result.failed} failed` : ''}.`;
 
 export function MarketingView() {
-  const { api, act, ask, notify } = useAdmin();
-  const sendingControl = useRef(null);
-  const [sendingBusy, setSendingBusy] = useState(false);
+  const { api, act, ask, notify, open } = useAdmin();
   const [selectedBulk, setSelectedBulk] = useState(() => new Set());
   const [tab, setTab] = useState('overview');
   const [modal, setModal] = useState(null);
   const [inspector, setInspector] = useState(null);
-  const [settingsDirty, setSettingsDirty] = useState(false);
   const [filters, setFilters] = useState({ status: '', q: '', source: '', offset: 0 });
 
   const filter = useCallback((patch) => {
@@ -330,6 +328,10 @@ export function MarketingView() {
     setTab(next);
     setInspector(null);
   }, []);
+  // Marketing settings live in the unified Settings; links that said "Settings" go there.
+  const openMarketingSettings = useCallback(() => openSettings(open, 'marketing'), [open]);
+  const goTab = useCallback((next) => (next === 'settings' ? openMarketingSettings() : switchTab(next)), [openMarketingSettings, switchTab]);
+  const sending = useSendingSwitch({ api, ask, mutate, overview, resource: desk });
 
   if (!overview) {
     return (
@@ -342,30 +344,7 @@ export function MarketingView() {
 
   const { settings, health } = overview;
   const state = deskState(overview);
-  const changeSending = async (live) => {
-    setSendingBusy(true);
-    try {
-      await mutate(async () => {
-        const out = await api('PUT', '/admin/marketing/settings', { live });
-        if (out.rejected?.includes('live')) throw new Error('The server rejected the sending change.');
-        return out;
-      }, live ? 'Outreach is live.' : 'Paused.');
-    } finally {
-      setSendingBusy(false);
-    }
-  };
-  const startSending = () => {
-    const cap = settings.dailyCap;
-    const currentCap = overview.autoResume?.cap ?? cap;
-    const ramp = overview.autoResume?.resumedAt ? `The active ramp currently limits sending to ${currentCap}/day.` : 'No send ramp is active.';
-    ask({
-      title: 'Start sending cold email?',
-      text: `The five-minute cron can start sending eligible emails on its next run. Saved daily cap: ${cap}/day. ${ramp}`,
-      confirm: 'Go live',
-      danger: true,
-      run: () => changeSending(true),
-    });
-  };
+  const startSending = sending.start;
   const bulk = (action) => {
     void mutate(
       () => api('POST', '/admin/marketing/contacts/bulk', { action, ids: [...selectedBulk] }),
@@ -378,22 +357,16 @@ export function MarketingView() {
       `${contact.email} opted out; queued mail cancelled.`,
     );
 
-  const sendDisabled = sendingBusy || desk.loading || Boolean(desk.error);
-  const sendDisabledReason = sendingBusy
-    ? 'Updating sending state…'
-    : desk.loading
-      ? 'Refreshing marketing status…'
-      : desk.error
-        ? 'Refresh the desk before changing sending state.'
-        : undefined;
-  const toggleSending = () => (settings.live ? void changeSending(false).catch(() => undefined) : startSending());
+  const sendDisabled = sending.disabled;
+  const sendDisabledReason = sending.disabledReason;
+  const toggleSending = sending.toggle;
   const runNow = () => run(() => api('POST', '/admin/marketing/run'), runMessage);
   const rerenderScheduled = () => run(() => api('POST', '/admin/marketing/messages/rerender'), 'Scheduled emails now use the current wording.');
   const draftPosts = () => run(() => api('POST', '/admin/marketing/cycle?force=1'), cycleMessage);
 
   // At most ONE visible primary action per viewport: step header CTA down whenever
-  // an Inspector, Settings SaveBar, or Create modal holds the primary button.
-  const quietHeader = Boolean(inspector) || (tab === 'settings' && settingsDirty) || Boolean(modal);
+  // an Inspector or Create modal holds the primary button.
+  const quietHeader = Boolean(inspector) || Boolean(modal);
   const headerPrimaryKind = quietHeader ? 'default' : 'primary';
 
   const sendingOverflowItem = {
@@ -403,9 +376,12 @@ export function MarketingView() {
     danger: !settings.live,
     run: toggleSending,
   };
+  const settingsItem = { label: 'Marketing settings…', run: openMarketingSettings };
   const deskOverflowItems = [
     { label: 'Run now', run: runNow },
     sendingOverflowItem,
+    { separator: true },
+    settingsItem,
   ];
 
   let headerAction = null;
@@ -432,6 +408,8 @@ export function MarketingView() {
       { label: 'Import CSV', run: () => setModal({ kind: 'import' }) },
       { label: 'Compose', run: () => setModal({ kind: 'compose', channel: 'email' }) },
       { label: 'Draft posts', run: draftPosts },
+      { separator: true },
+      settingsItem,
     ];
   } else if (tab === 'contacts') {
     headerAction = (
@@ -485,29 +463,20 @@ export function MarketingView() {
     headerOverflow = [
       { label: 'Re-render scheduled', run: rerenderScheduled },
       { separator: true },
-      ...(settings.live ? deskOverflowItems : [{ label: 'Run now', run: runNow }]),
+      ...(settings.live ? deskOverflowItems : [{ label: 'Run now', run: runNow }, { separator: true }, settingsItem]),
     ];
-  } else if (tab === 'settings') {
-    headerAction = !settings.live ? (
-      <Button kind={headerPrimaryKind} disabled={sendDisabled} disabledReason={sendDisabledReason} onClick={startSending}>
-        Go live
-      </Button>
-    ) : null;
-    headerOverflow = settings.live ? deskOverflowItems : [{ label: 'Run now', run: runNow }];
   }
 
   return (
     <div className="ui-workspace aw-mk" onKeyDown={closeOnEscape(Boolean(inspector), closeInspector)}>
       <UiStyles />
-      <div ref={sendingControl} tabIndex={-1} className="aw-mk-anchor">
-        <PageHeader
-          title="Marketing"
-          subtitle="Email outreach, contacts, and scheduled posts."
-          meta={<StateIndicator state={state.state} tone={state.tone} label={state.text} live={state.live} />}
-          actions={headerAction}
-          overflow={headerOverflow}
-        />
-      </div>
+      <PageHeader
+        title="Marketing"
+        subtitle="Email outreach, contacts, and scheduled posts."
+        meta={<StateIndicator state={state.state} tone={state.tone} label={state.text} live={state.live} />}
+        actions={headerAction}
+        overflow={headerOverflow}
+      />
       {desk.error ? <ResourceNote resource={desk} /> : null}
 
       <PageTabs
@@ -520,7 +489,6 @@ export function MarketingView() {
           { value: 'email', label: 'Email' },
           { value: 'posts', label: 'Posts', badge: overview.postsAwaiting > 0 ? overview.postsAwaiting : undefined },
           { value: 'sequences', label: 'Sequences' },
-          { value: 'settings', label: 'Settings' },
         ]}
       />
 
@@ -533,7 +501,7 @@ export function MarketingView() {
           inspector={inspector}
           setInspector={setInspector}
           closeInspector={closeInspector}
-          onTab={switchTab}
+          onTab={goTab}
           onToggleSending={toggleSending}
           onRunNow={runNow}
           onDraftPosts={draftPosts}
@@ -608,19 +576,6 @@ export function MarketingView() {
           inspector={inspector}
           setInspector={setInspector}
           closeInspector={closeInspector}
-        />
-      ) : null}
-
-      {tab === 'settings' ? (
-        <SettingsTab
-          overview={overview}
-          mutate={mutate}
-          api={api}
-          onDirtyChange={setSettingsDirty}
-          onShowSending={() => sendingControl.current?.focus()}
-          onToggleSending={toggleSending}
-          sendDisabled={sendDisabled}
-          sendDisabledReason={sendDisabledReason}
         />
       ) : null}
 
@@ -2114,7 +2069,7 @@ function LoopInspector({ id, overview, onClose, onTab, onToggleSending, onRunNow
               {settings.live ? 'Pause sending' : 'Go live'}
             </Button>
             <Button onClick={onRunNow}>Run now</Button>
-            <Button kind="ghost" onClick={() => onTab('settings')}>Settings</Button>
+            <Button kind="ghost" onClick={() => onTab('settings')}>Marketing settings</Button>
           </>
         ) : loop.id === 'posts' ? (
           <>
@@ -2996,7 +2951,7 @@ function SequenceInspector({ api, sequences, sequenceKey, onClose }) {
   );
 }
 
-/* —— settings (kept until unified Settings lands in a later phase) —— */
+/* —— settings: rendered by the unified Settings (Settings → Marketing) —— */
 
 function windowRoom(settings) {
   const hours = settings.startHour === settings.endHour ? 24 : (settings.endHour - settings.startHour + 24) % 24 || 24;
@@ -3012,11 +2967,81 @@ function ModelHealth({ api }) {
   return <StateIndicator state={state.chat ? 'online' : 'degraded'} tone={tone} label={label} />;
 }
 
-function SettingsTab({ overview, mutate, api, onDirtyChange, onShowSending, onToggleSending, sendDisabled, sendDisabledReason }) {
+/**
+ * The outreach switch: pause at once, go live only after a confirmation that
+ * names the saved cap and any active ramp. One implementation for the desk
+ * header, the loop Inspector and Settings → Marketing.
+ */
+function useSendingSwitch({ api, ask, mutate, overview, resource }) {
+  const [busy, setBusy] = useState(false);
+  const settings = overview?.settings ?? {};
+  const change = async (live) => {
+    setBusy(true);
+    try {
+      await mutate(async () => {
+        const out = await api('PUT', '/admin/marketing/settings', { live });
+        if (out.rejected?.includes('live')) throw new Error('The server rejected the sending change.');
+        return out;
+      }, live ? 'Outreach is live.' : 'Paused.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const start = () => {
+    const cap = settings.dailyCap;
+    const currentCap = overview?.autoResume?.cap ?? cap;
+    const ramp = overview?.autoResume?.resumedAt ? `The active ramp currently limits sending to ${currentCap}/day.` : 'No send ramp is active.';
+    ask({
+      title: 'Start sending cold email?',
+      text: `The five-minute cron can start sending eligible emails on its next run. Saved daily cap: ${cap}/day. ${ramp}`,
+      confirm: 'Go live',
+      danger: true,
+      run: () => change(true),
+    });
+  };
+  const disabled = busy || resource.loading || Boolean(resource.error);
+  const disabledReason = busy
+    ? 'Updating sending state…'
+    : resource.loading
+      ? 'Refreshing marketing status…'
+      : resource.error
+        ? 'Refresh the desk before changing sending state.'
+        : undefined;
+  const toggle = () => (settings.live ? void change(false).catch(() => undefined) : start());
+  return { start, toggle, disabled, disabledReason };
+}
+
+const MARKETING_GROUPS = ['Sending', 'Safety', 'Content'];
+
+/**
+ * Settings → Marketing: sending, safety and content in one bounded form, one
+ * Segmented to pick the group, one SaveBar. Reads the desk itself, so it works
+ * wherever Settings is mounted.
+ */
+export function MarketingSettings({ onDirtyChange }) {
+  const { api, act, ask } = useAdmin();
+  const desk = useResource(() => api('GET', '/admin/marketing'), [api], { keepOnError: true });
+  const overview = desk.data;
+  const { reload } = desk;
+  const mutate = useCallback(async (fn, message) => {
+    const result = await act(fn, message);
+    reload();
+    return result;
+  }, [act, reload]);
+  const sending = useSendingSwitch({ api, ask, mutate, overview, resource: desk });
   const [group, setGroup] = useState('Sending');
   const [edits, setEdits] = useState({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const changed = Object.keys(edits).length > 0;
+
+  useEffect(() => {
+    onDirtyChange?.(changed);
+  }, [changed, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+
+  if (!overview) return <ResourceNote resource={desk} label="Loading Marketing settings…" variant="rows" />;
+
   const saved = overview.settings;
   const draft = { ...saved, ...edits };
   const set = (key, value) =>
@@ -3026,12 +3051,6 @@ function SettingsTab({ overview, mutate, api, onDirtyChange, onShowSending, onTo
       else next[key] = value;
       return next;
     });
-  const changed = Object.keys(edits).length > 0;
-
-  useEffect(() => {
-    onDirtyChange?.(changed);
-    return () => onDirtyChange?.(false);
-  }, [changed, onDirtyChange]);
 
   const save = async () => {
     const { live: _live, ...patch } = edits;
@@ -3053,143 +3072,140 @@ function SettingsTab({ overview, mutate, api, onDirtyChange, onShowSending, onTo
   };
 
   return (
-    <div className="ui-split__main">
-      <FormPane>
-        <Panel title="Marketing settings" actions={<ModelHealth api={api} />}>
+    <>
+      <FormPane className="aw-settings-form">
+        {desk.error ? <ResourceNote resource={desk} /> : null}
+        <div className="aw-settings-form__head">
           <Segmented
-            label="Settings group"
+            label="Marketing settings group"
             value={group}
-            options={['Sending', 'Safety', 'Content'].map((label) => ({ value: label, label }))}
+            options={MARKETING_GROUPS.map((label) => ({ value: label, label }))}
             onChange={setGroup}
           />
-        </Panel>
+          <span className="aw-settings-form__fill" />
+          <ModelHealth api={api} />
+        </div>
         <fieldset disabled={busy} className="aw-mk-settings-fields">
           {group === 'Sending' ? (
             <>
               <Panel title="Sender" subtitle="Who the mail comes from.">
-                <div className="aw-form2">
-                  <div className="aw-field">
-                    <span className="aw-field__label">Outreach</span>
-                    <div className="aw-inline">
-                      <StateIndicator state={saved.live ? 'running' : 'paused'} tone={saved.live ? 'ok' : 'warn'} label={saved.live ? 'Live' : 'Paused'} live={saved.live} />
-                      <Button size="sm" disabled={sendDisabled} disabledReason={sendDisabledReason} onClick={onToggleSending}>
-                        {saved.live ? 'Pause sending' : 'Go live'}
-                      </Button>
-                      <Button size="sm" kind="ghost" onClick={onShowSending}>Header control</Button>
-                    </div>
+                <div className="aw-field">
+                  <span className="aw-field__label">Outreach</span>
+                  <div className="aw-inline">
+                    <StateIndicator state={saved.live ? 'running' : 'paused'} tone={saved.live ? 'ok' : 'warn'} label={saved.live ? 'Live' : 'Paused'} live={saved.live} />
+                    <Button size="sm" disabled={sending.disabled} disabledReason={sending.disabledReason} onClick={sending.toggle}>
+                      {saved.live ? 'Pause sending' : 'Go live'}
+                    </Button>
                   </div>
-                  <Field
-                    label="Sender"
-                    hint={
-                      draft.provider === 'ses'
-                        ? overview.providers.ses
-                          ? 'Amazon SES: bounces and complaints file back to hello@.'
-                          : 'Needs AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY as Worker secrets.'
-                        : 'The MARKETING binding on the Worker.'
-                    }
-                  >
-                    <Segmented
-                      label="Email sender"
-                      value={draft.provider}
-                      options={[
-                        { value: 'cloudflare', label: 'Cloudflare' },
-                        { value: 'ses', label: 'Amazon SES' },
-                      ]}
-                      onChange={(v) => set('provider', v)}
-                    />
-                  </Field>
-                  <Field label="From name" hint="On the From line of every email.">
-                    <input value={draft.fromName} onChange={(e) => set('fromName', e.target.value)} />
-                  </Field>
-                  <Field label="Postal address" hint="Required on every cold email.">
-                    <input value={draft.postalAddress} placeholder="Street, city, country" onChange={(e) => set('postalAddress', e.target.value)} />
-                  </Field>
                 </div>
+                <Field
+                  label="Sender"
+                  hint={
+                    draft.provider === 'ses'
+                      ? overview.providers.ses
+                        ? 'Amazon SES: bounces and complaints file back to hello@.'
+                        : 'Needs AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY as Worker secrets.'
+                      : 'The MARKETING binding on the Worker.'
+                  }
+                >
+                  <Segmented
+                    label="Email sender"
+                    value={draft.provider}
+                    options={[
+                      { value: 'cloudflare', label: 'Cloudflare' },
+                      { value: 'ses', label: 'Amazon SES' },
+                    ]}
+                    onChange={(v) => set('provider', v)}
+                  />
+                </Field>
+                <Field label="From name" hint="On the From line of every email.">
+                  <input value={draft.fromName} onChange={(e) => set('fromName', e.target.value)} />
+                </Field>
+                <Field label="Postal address" hint="Required on every cold email.">
+                  <input value={draft.postalAddress} placeholder="Street, city, country" onChange={(e) => set('postalAddress', e.target.value)} />
+                </Field>
               </Panel>
 
               <Panel title="Schedule and volume" subtitle="When mail may leave, and how much of it.">
-                <div className="aw-form2">
-                  <Field label="Send window" hint="Local time on the offset clock; an end of 24 means midnight.">
-                    <span className="aw-inline aw-mk-window">
-                      From{' '}
-                      <input
-                        inputMode="numeric"
-                        aria-label="Window start hour"
-                        value={draft.startHour}
-                        onChange={(e) => set('startHour', Number(e.target.value))}
-                      />{' '}
-                      to{' '}
-                      <input
-                        inputMode="numeric"
-                        aria-label="Window end hour"
-                        value={draft.endHour}
-                        onChange={(e) => set('endHour', Number(e.target.value))}
-                      />{' '}
-                      · offset{' '}
-                      <input
-                        inputMode="numeric"
-                        aria-label="Window offset minutes"
-                        value={draft.offsetMinutes}
-                        onChange={(e) => set('offsetMinutes', Number(e.target.value))}
-                      />{' '}
-                      min ({offsetLabel(draft.offsetMinutes)})
-                    </span>
-                  </Field>
-                  <Field label="Weekdays only" hint="Skip Saturday and Sunday.">
-                    <Segmented
-                      label="Weekdays only"
-                      value={Boolean(draft.weekdaysOnly)}
-                      options={[
-                        { value: true, label: 'Weekdays' },
-                        { value: false, label: 'Every day' },
-                      ]}
-                      onChange={(v) => set('weekdaysOnly', v)}
-                    />
-                  </Field>
-                  <Field label="Daily cap" hint="Emails a day across every sequence.">
+                <Field label="Send window" hint="Local time on the offset clock; an end of 24 means midnight.">
+                  <span className="aw-inline aw-mk-window">
+                    From{' '}
                     <input
                       inputMode="numeric"
-                      value={draft.dailyCap}
-                      title={`At ${draft.perRun} per run the window allows about ${windowRoom(draft)} a day.`}
-                      onChange={(e) => set('dailyCap', Number(e.target.value))}
-                    />
-                  </Field>
-                  <Field label="Per run" hint="The cron runs every five minutes; up to 200.">
-                    <input inputMode="numeric" value={draft.perRun} onChange={(e) => set('perRun', Number(e.target.value))} />
-                  </Field>
-                </div>
+                      aria-label="Window start hour"
+                      value={draft.startHour}
+                      onChange={(e) => set('startHour', Number(e.target.value))}
+                    />{' '}
+                    to{' '}
+                    <input
+                      inputMode="numeric"
+                      aria-label="Window end hour"
+                      value={draft.endHour}
+                      onChange={(e) => set('endHour', Number(e.target.value))}
+                    />{' '}
+                    · offset{' '}
+                    <input
+                      inputMode="numeric"
+                      aria-label="Window offset minutes"
+                      value={draft.offsetMinutes}
+                      onChange={(e) => set('offsetMinutes', Number(e.target.value))}
+                    />{' '}
+                    min ({offsetLabel(draft.offsetMinutes)})
+                  </span>
+                </Field>
+                <Field label="Weekdays only" hint="Skip Saturday and Sunday.">
+                  <Segmented
+                    label="Weekdays only"
+                    value={Boolean(draft.weekdaysOnly)}
+                    options={[
+                      { value: true, label: 'Weekdays' },
+                      { value: false, label: 'Every day' },
+                    ]}
+                    onChange={(v) => set('weekdaysOnly', v)}
+                  />
+                </Field>
+                <Field label="Daily cap" hint={`Emails a day across every sequence. At ${draft.perRun} per run the window allows about ${windowRoom(draft)} a day.`}>
+                  <input
+                    inputMode="numeric"
+                    className="aw-settings-num"
+                    value={draft.dailyCap}
+                    title={`At ${draft.perRun} per run the window allows about ${windowRoom(draft)} a day.`}
+                    onChange={(e) => set('dailyCap', Number(e.target.value))}
+                  />
+                </Field>
+                <Field label="Per run" hint="The cron runs every five minutes; up to 200.">
+                  <input inputMode="numeric" className="aw-settings-num" value={draft.perRun} onChange={(e) => set('perRun', Number(e.target.value))} />
+                </Field>
               </Panel>
             </>
           ) : group === 'Safety' ? (
             <>
               <Panel title="Safety" subtitle="The checks that keep the list healthy.">
-                <div className="aw-form2">
-                  <Field
+                <Field
+                  label="Auto-resume"
+                  hint="A pause the desk caused itself lifts after 7 quiet days, ramping from 20 a day. A pause you set by hand is never undone."
+                >
+                  <Segmented
                     label="Auto-resume"
-                    hint="A pause the desk caused itself lifts after 7 quiet days, ramping from 20 a day. A pause you set by hand is never undone."
-                  >
-                    <Segmented
-                      label="Auto-resume"
-                      value={Boolean(draft.autoResume)}
-                      options={[
-                        { value: true, label: 'On' },
-                        { value: false, label: 'Off' },
-                      ]}
-                      onChange={(v) => set('autoResume', v)}
-                    />
-                  </Field>
-                  <Field label="Review first emails" hint="First emails send only after you read them in Review next.">
-                    <Segmented
-                      label="Review first emails"
-                      value={Boolean(draft.reviewFirst)}
-                      options={[
-                        { value: true, label: 'Only reviewed' },
-                        { value: false, label: 'Send all' },
-                      ]}
-                      onChange={(v) => set('reviewFirst', v)}
-                    />
-                  </Field>
-                </div>
+                    value={Boolean(draft.autoResume)}
+                    options={[
+                      { value: true, label: 'On' },
+                      { value: false, label: 'Off' },
+                    ]}
+                    onChange={(v) => set('autoResume', v)}
+                  />
+                </Field>
+                <Field label="Review first emails" hint="First emails send only after you read them in Review next.">
+                  <Segmented
+                    label="Review first emails"
+                    value={Boolean(draft.reviewFirst)}
+                    options={[
+                      { value: true, label: 'Only reviewed' },
+                      { value: false, label: 'Send all' },
+                    ]}
+                    onChange={(v) => set('reviewFirst', v)}
+                  />
+                </Field>
                 <p className="aw-muted">
                   Last 14 days: {overview.health.sent} sent, {overview.health.bounces} bounced ({pct(overview.health.bounceRate)}), {overview.health.complaints}{' '}
                   complaints ({pct(overview.health.complaintRate)}). The desk pauses itself and emails you above {pct(overview.health.maxBounceRate)} bounces or{' '}
@@ -3203,7 +3219,7 @@ function SettingsTab({ overview, mutate, api, onDirtyChange, onShowSending, onTo
                   label="Observation sequence share (%)"
                   hint="Of contacts with a site observation, this percent get the observation opener. 0 keeps the experiment off, 100 makes it the only cold opener."
                 >
-                  <input inputMode="numeric" min="0" max="100" value={draft.obsShare ?? 50} onChange={(e) => set('obsShare', Number(e.target.value))} />
+                  <input inputMode="numeric" className="aw-settings-num" min="0" max="100" value={draft.obsShare ?? 50} onChange={(e) => set('obsShare', Number(e.target.value))} />
                 </Field>
               </Panel>
             </>
@@ -3237,7 +3253,7 @@ function SettingsTab({ overview, mutate, api, onDirtyChange, onShowSending, onTo
                   />
                 </Field>
                 <Field label="Post hold (hours)" hint="How long a drafted post waits before it goes out on its own. 0 means approve by hand. Up to 168.">
-                  <input inputMode="numeric" min="0" max="168" value={draft.postHoldHours ?? 24} onChange={(e) => set('postHoldHours', Number(e.target.value))} />
+                  <input inputMode="numeric" className="aw-settings-num" min="0" max="168" value={draft.postHoldHours ?? 24} onChange={(e) => set('postHoldHours', Number(e.target.value))} />
                 </Field>
                 <Field label="Voice notes" hint="Added to every content brief after the launch kit.">
                   <textarea
@@ -3271,10 +3287,10 @@ function SettingsTab({ overview, mutate, api, onDirtyChange, onShowSending, onTo
         error={error}
         onSave={save}
         onDiscard={() => { setEdits({}); setError(null); }}
-        saveLabel="Save settings"
-        discardLabel="Reset"
+        saveLabel="Save Marketing settings"
+        discardLabel="Discard"
       />
-    </div>
+    </>
   );
 }
 

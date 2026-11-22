@@ -8,12 +8,15 @@ import {
   Chips,
   DataTable,
   Empty,
+  EmptyState,
   Field,
   FormPane,
   Inspector,
   MetaChip,
   Modal,
   PageHeader,
+  Panel,
+  SaveBar,
   Segmented,
   Skeleton,
   StateIndicator,
@@ -24,6 +27,9 @@ import {
 import { HealthView } from './health.jsx';
 import { MachinePanel, useMachine } from './machine.jsx';
 import { ToolboxPanel } from './toolbox.jsx';
+import { MarketingSettings } from './marketing.jsx';
+import { SeoSettings } from './seo.jsx';
+import { onSettingsSection, openSettings, settingsSection, takePendingSection } from './settings-link.js';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
@@ -349,7 +355,7 @@ export function FleetView() {
       <PageHeader
         title="Fleet"
         subtitle="The machines that run agents, what waits for them, and the end-to-end checks. Select a node to inspect it."
-        overflow={[{ label: 'Settings: work queue…', run: () => open('settings') }]}
+        overflow={[{ label: 'Settings: work queue…', run: () => openSettings(open, 'queue') }]}
       />
       <div className="ui-split">
         <div className="ui-split__main">
@@ -1201,10 +1207,21 @@ function validateSettings(draft, current) {
   return { patch, errors };
 }
 
-export function SettingsView() {
-  const { api, act, ask, platform, host, notify, reload } = useAdmin();
+/** Which /admin/settings fields each Settings section edits. */
+const QUEUE_KEYS = ['stallMinutes', 'maxAttempts', 'defaultPriority', 'notifyRunFinished', 'autoApproveCents'];
+const PORTAL_KEYS = ['sitesDomain', 'clientPublish', 'first_preview_limit_usd'];
+
+const pick = (object, keys) => Object.fromEntries(Object.entries(object).filter(([key]) => keys.includes(key)));
+
+/**
+ * One section's slice of /admin/settings: read, draft, validate, and save only
+ * the fields this section owns, so two sections never save each other's edits.
+ */
+function useAdminSettings(keys, onDirtyChange) {
+  const { api, act, ask } = useAdmin();
   const [edits, setEdits] = useState({});
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
   const [read, setRead] = useState({ loading: true, settings: null });
   const [readAttempt, setReadAttempt] = useState(0);
   useEffect(() => {
@@ -1220,13 +1237,57 @@ export function SettingsView() {
   const draft = { ...baseline, ...edits };
   const set = (key, value) => setEdits((previous) => ({ ...previous, [key]: value }));
   const changed = Object.keys(edits).some((key) => edits[key] !== baseline[key]);
-  const { patch, errors } = validateSettings(draft, read.settings ?? {});
+  const all = validateSettings(draft, read.settings ?? {});
+  const patch = pick(all.patch, keys);
+  const errors = pick(all.errors, keys);
   const invalid = Object.keys(errors).length > 0;
-  const [token, setToken] = useState('');
-  const textInput = (key, mode) => (
+  const dirty = changed && (invalid || Object.keys(patch).length > 0);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+
+  const save = async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const { settings } = await act(() => api('PATCH', '/admin/settings', patch), 'Settings saved.');
+      setRead({ loading: false, settings });
+      setEdits({});
+    } catch (error) {
+      // act already reported the error; keep the draft to retry.
+      setSaveError(error?.message ?? 'Could not save.');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const submit = () => {
+    if (saving || !Object.keys(patch).length) return;
+    if (invalid) {
+      setSaveError('Fix the highlighted fields first.');
+      return;
+    }
+    if (!Object.hasOwn(patch, 'sitesDomain')) return void save();
+    ask({
+      title: `Change sites domain to ${patch.sitesDomain}?`,
+      text: 'This changes the default addresses shown for existing managed sites as well as new sites. Make sure the new domain is ready before saving.',
+      confirm: 'Change domain',
+      run: save,
+    });
+  };
+  const discard = () => {
+    setEdits({});
+    setSaveError(null);
+  };
+  const retry = () => {
+    setRead({ loading: true, settings: null });
+    setReadAttempt((attempt) => attempt + 1);
+  };
+  const textInput = (key, mode, className) => (
     <>
       <input
         inputMode={mode}
+        className={className}
         value={draft[key] ?? ''}
         disabled={saving}
         aria-invalid={errors[key] ? true : undefined}
@@ -1236,114 +1297,299 @@ export function SettingsView() {
       {errors[key] ? <span id={`aw-settings-error-${key}`} className="aw-warn">{errors[key]}</span> : null}
     </>
   );
-  const save = async () => {
-    setSaving(true);
-    try {
-      const { settings } = await act(() => api('PATCH', '/admin/settings', patch), 'Settings saved.');
-      setRead({ loading: false, settings });
-      setEdits({});
-    } catch { /* act already reported the error; keep the draft to retry. */ }
-    finally { setSaving(false); }
-  };
-  const submit = () => {
-    if (invalid || saving || !Object.keys(patch).length) return;
-    if (!Object.hasOwn(patch, 'sitesDomain')) return void save();
-    ask({
-      title: `Change sites domain to ${patch.sitesDomain}?`,
-      text: 'This changes the default addresses shown for existing managed sites as well as new sites. Make sure the new domain is ready before saving.',
-      confirm: 'Change domain',
-      run: save,
-    });
-  };
-  const retry = () => {
-    setRead({ loading: true, settings: null });
-    setReadAttempt((attempt) => attempt + 1);
-  };
+  const status = !read.settings ? (read.loading ? <Skeleton lines={4} label="Reading settings…" /> : (
+    <div className="aw-inline">
+      <p className="aw-warn" role="alert">Could not read settings.</p>
+      <Button size="sm" onClick={retry}>Retry</Button>
+    </div>
+  )) : null;
+  const saveBar = read.settings ? (
+    <SaveBar
+      dirty={dirty}
+      saving={saving}
+      error={saveError ?? (dirty && invalid ? 'Fix the highlighted fields first.' : null)}
+      onSave={submit}
+      onDiscard={discard}
+      saveLabel="Save"
+    />
+  ) : null;
+  return { draft, set, saving, textInput, status, saveBar };
+}
+
+function QueueSettings({ onDirtyChange }) {
+  const form = useAdminSettings(QUEUE_KEYS, onDirtyChange);
+  const { draft, set, saving, textInput } = form;
   return (
-    <div className="aw-view aw-settings">
-      <PageHeader title="Settings" subtitle="How the queue runs, what the portal does on its own, and this machine." />
-      {platform === 'dsh' && host ? (
-        <>
-          <section className="aw-panel">
-            <h3>Portal connection</h3>
-            <Field label="Session token" hint="Sign in on ptechsolutions.net/portal, then paste the session token here. It stays on this machine.">
-              <div className="aw-inline">
-                <input type="password" value={token} placeholder="paste token" onChange={(e) => setToken(e.target.value)} />
-                <Button
-                  kind="primary"
-                  disabled={!token.trim()}
-                  disabledReason="Paste the session token first."
-                  onClick={async () => {
-                    const r = await host.command(`login ${token.trim()}`);
-                    notify(r.text, r.ok ? 'ok' : 'error');
-                    setToken('');
-                    void reload();
-                  }}
-                >
-                  Save
-                </Button>
-                <Button kind="ghost" onClick={async () => notify((await host.command('logout')).text)}>
-                  Sign out
-                </Button>
-              </div>
-            </Field>
-          </section>
-          <section className="aw-panel">
-            <h3>This machine&rsquo;s tools</h3>
-            <ToolboxPanel />
-          </section>
-        </>
-      ) : null}
-      <section className="aw-panel">
-        <h3>Work queue</h3>
-        {!read.settings ? (read.loading ? <Skeleton lines={4} label="Reading settings…" /> : (
-          <div className="aw-inline">
-            <p className="aw-warn" role="alert">Could not read settings.</p>
-            <Button size="sm" onClick={retry}>Retry</Button>
-          </div>
-        )) : <>
-          <div className="aw-grid2">
+    <>
+      <FormPane className="aw-settings-form">
+        <Panel>
+          {form.status ?? <>
             <Field label="Stalled after (minutes)" hint="An in-progress item with no report for this long is flagged.">
-              {textInput('stallMinutes', 'numeric')}
+              {textInput('stallMinutes', 'numeric', 'aw-settings-num')}
             </Field>
             <Field label="Attempts before review" hint="Node restarts do not count.">
-              {textInput('maxAttempts', 'numeric')}
+              {textInput('maxAttempts', 'numeric', 'aw-settings-num')}
             </Field>
             <Field label="Default priority">
-              <Segmented value={draft.defaultPriority ?? 0} options={PRIORITIES} onChange={(v) => !saving && set('defaultPriority', v)} />
+              <Segmented label="Default priority" value={draft.defaultPriority ?? 0} options={PRIORITIES} onChange={(v) => !saving && set('defaultPriority', v)} />
             </Field>
             <Field label="Email me when a run finishes">
-              <Segmented value={Boolean(draft.notifyRunFinished)} options={[{ value: true, label: 'On' }, { value: false, label: 'Off' }]} onChange={(v) => !saving && set('notifyRunFinished', v)} />
+              <Segmented label="Email me when a run finishes" value={Boolean(draft.notifyRunFinished)} options={[{ value: true, label: 'On' }, { value: false, label: 'Off' }]} onChange={(v) => !saving && set('notifyRunFinished', v)} />
             </Field>
             <Field label="Auto-approve runs under (USD)" hint="An Autopilot request with its own budget at or below this starts without you. 0 turns it off.">
-              {textInput('autoApproveCents', 'decimal')}
+              {textInput('autoApproveCents', 'decimal', 'aw-settings-num')}
             </Field>
+          </>}
+        </Panel>
+      </FormPane>
+      {form.saveBar}
+    </>
+  );
+}
+
+function PortalSettings({ onDirtyChange }) {
+  const form = useAdminSettings(PORTAL_KEYS, onDirtyChange);
+  const { draft, set, saving, textInput } = form;
+  return (
+    <>
+      <FormPane className="aw-settings-form">
+        <Panel title="Portal">
+          {form.status ?? <>
             <Field label="Sites domain">
               {textInput('sitesDomain', 'url')}
             </Field>
             <Field label="Clients may publish their site">
-              <Segmented value={Boolean(draft.clientPublish)} options={[{ value: true, label: 'Yes' }, { value: false, label: 'No' }]} onChange={(v) => !saving && set('clientPublish', v)} />
+              <Segmented label="Clients may publish their site" value={Boolean(draft.clientPublish)} options={[{ value: true, label: 'Yes' }, { value: false, label: 'No' }]} onChange={(v) => !saving && set('clientPublish', v)} />
             </Field>
             <Field
               label="First preview limit (USD)"
               hint="A new client's first request starts by itself, with its AI run capped at this many dollars. Free to the client. 0 turns it off."
             >
-              {textInput('first_preview_limit_usd', 'decimal')}
+              {textInput('first_preview_limit_usd', 'decimal', 'aw-settings-num')}
             </Field>
+          </>}
+        </Panel>
+        <TranslationsPanel />
+      </FormPane>
+      {form.saveBar}
+    </>
+  );
+}
+
+function MachineSettings() {
+  const { platform, host } = useAdmin();
+  if (platform !== 'dsh' || !host) {
+    return (
+      <FormPane className="aw-settings-form">
+        <EmptyState title="Only in the desktop app" hint="MCP servers and skills belong to the machine that runs the agents. Open Settings in the desktop app to change them." />
+      </FormPane>
+    );
+  }
+  return (
+    <FormPane className="aw-settings-form">
+      <Panel title="This machine’s tools" subtitle="MCP servers and skills the agents on this machine can use.">
+        <ToolboxPanel />
+      </Panel>
+    </FormPane>
+  );
+}
+
+function AccountSettings() {
+  const { platform, host, notify, reload, data } = useAdmin();
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(null);
+  const desktop = platform === 'dsh' && Boolean(host);
+  const user = data?.user ?? data?.identity?.user ?? null;
+  const access = data?.access;
+  const signedIn = Boolean(user) && !data?.error;
+  const who = user?.email ?? user?.name ?? null;
+  const role = access?.superAdmin ? 'Administrator' : access?.canUseWorkbench ? 'Developer' : null;
+  const signIn = async () => {
+    setBusy('in');
+    try {
+      const r = await host.command(`login ${token.trim()}`);
+      notify(r.text, r.ok ? 'ok' : 'error');
+      setToken('');
+      void reload?.();
+    } finally {
+      setBusy(null);
+    }
+  };
+  const signOut = async () => {
+    setBusy('out');
+    try {
+      notify((await host.command('logout')).text);
+      void reload?.();
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <FormPane className="aw-settings-form">
+      <Panel
+        title="Sign-in"
+        actions={data?.loaded === false ? null : (
+          <StateIndicator
+            state={signedIn ? 'online' : 'offline'}
+            tone={signedIn ? 'ok' : 'bad'}
+            label={signedIn ? 'Signed in' : 'Not signed in'}
+          />
+        )}
+      >
+        {who ? (
+          <div className="aw-field">
+            <span className="aw-field__label">Account</span>
+            <span>{who}{role ? <span className="aw-muted"> · {role}</span> : null}</span>
           </div>
-        </>}
-      </section>
-      <TranslationsPanel />
-      {read.settings ? (
-        <footer className="aw-settings__foot">
-          {changed ? <span className="aw-muted">Unsaved changes</span> : null}
-          <span className="aw-toolbar__fill" />
-          <Button disabled={!changed || saving} onClick={() => setEdits({})}>Reset</Button>
-          <Button kind="primary" busy={saving} disabled={invalid || !Object.keys(patch).length} disabledReason={invalid ? 'Fix the highlighted fields first.' : 'Nothing has changed yet.'} onClick={submit}>
-            {saving ? 'Saving…' : 'Save'}
-          </Button>
-        </footer>
-      ) : null}
+        ) : null}
+        {desktop ? (
+          <Field label="Session token" hint="Sign in on ptechsolutions.net/portal, then paste the session token here. It stays on this machine.">
+            <div className="aw-inline">
+              <input type="password" className="aw-settings-token" value={token} placeholder="paste token" onChange={(e) => setToken(e.target.value)} />
+              <Button
+                kind="primary"
+                busy={busy === 'in'}
+                disabled={!token.trim() || Boolean(busy)}
+                disabledReason="Paste the session token first."
+                onClick={signIn}
+              >
+                Save
+              </Button>
+              <Button kind="ghost" busy={busy === 'out'} disabled={Boolean(busy)} onClick={signOut}>
+                Sign out
+              </Button>
+            </div>
+          </Field>
+        ) : (
+          <p className="aw-muted">
+            This page uses your portal session. <a href="/portal">Manage sign-in on the portal</a>.
+          </p>
+        )}
+      </Panel>
+      <Panel title="About">
+        <div className="aw-field">
+          <span className="aw-field__label">Running in</span>
+          <span>{desktop ? 'The desktop app' : 'The web admin'}</span>
+        </div>
+        {host?.version ? (
+          <div className="aw-field">
+            <span className="aw-field__label">Version</span>
+            <span className="aw-mono">{host.version}</span>
+          </div>
+        ) : null}
+        {data?.fetchedAt ? (
+          <div className="aw-field">
+            <span className="aw-field__label">Last synced</span>
+            <span>{ago(Math.floor(data.fetchedAt / 1000))} ago</span>
+          </div>
+        ) : null}
+        <p className="aw-muted">The theme follows {desktop ? 'the desktop app' : 'your system'}.</p>
+      </Panel>
+    </FormPane>
+  );
+}
+
+/** The sections, in nav order. `desktop`: shown only where the Harness host is. */
+const SETTINGS_SECTIONS = [
+  { id: 'queue', label: 'Work queue', hint: 'How runs are picked up, retried and reported.' },
+  { id: 'machine', label: 'This machine & tools', hint: 'MCP servers and skills on this machine.', desktop: true },
+  { id: 'portal', label: 'Portal & translations', hint: 'What the client portal does on its own, and its languages.' },
+  { id: 'marketing', label: 'Marketing', hint: 'Sending, safety and content for the outreach desk.' },
+  { id: 'seo', label: 'SEO', hint: 'Cycles, guides, buyer questions, rank tracking and events.' },
+  { id: 'account', label: 'Account & about', hint: 'Who is signed in, and where this admin runs.' },
+];
+
+const hashSection = () => (typeof window === 'undefined' ? null : settingsSection(window.location.hash.slice(1)));
+
+/**
+ * Settings: one workspace. One header, a 180px section nav, and one bounded
+ * form per section with its own SaveBar. Addressable as `settings#<section>`
+ * (prop `section`, an `openSettings()` link, or the page hash). The hash is
+ * read, never written: a stale #settings/… would steal the next reload.
+ */
+export function SettingsView({ section: requested } = {}) {
+  const { platform, host, ask } = useAdmin();
+  const desktop = platform === 'dsh' && Boolean(host);
+  const sections = SETTINGS_SECTIONS.filter((s) => !s.desktop || desktop);
+  const known = (id) => (id && sections.some((s) => s.id === id) ? id : null);
+  const [section, setSection] = useState(() => known(settingsSection(`settings#${requested ?? ''}`) ?? requested) ?? known(takePendingSection()) ?? known(hashSection()) ?? sections[0].id);
+  const dirty = useRef(false);
+  const current = useRef(section);
+  current.current = section;
+  const onDirtyChange = useCallback((value) => { dirty.current = value; }, []);
+
+  const go = useCallback((next) => {
+    if (!next || next === current.current) return;
+    const show = () => {
+      dirty.current = false;
+      setSection(next);
+    };
+    if (!dirty.current) return show();
+    const from = SETTINGS_SECTIONS.find((s) => s.id === current.current)?.label ?? 'this section';
+    ask({
+      title: 'Discard unsaved changes?',
+      text: `${from} has changes that are not saved yet.`,
+      confirm: 'Discard changes',
+      danger: true,
+      run: show,
+    });
+  }, [ask]);
+  const goKnown = useCallback((id) => {
+    const target = known(id);
+    if (target) go(target);
+  }, [go, desktop]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A section asked for by prop, by link, or by the page address.
+  useEffect(() => { if (requested) goKnown(settingsSection(`settings#${requested}`) ?? requested); }, [requested, goKnown]);
+  useEffect(() => onSettingsSection(goKnown), [goKnown]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const fromHash = () => { const id = hashSection(); if (id) goKnown(id); };
+    window.addEventListener('hashchange', fromHash);
+    return () => window.removeEventListener('hashchange', fromHash);
+  }, [goKnown]);
+
+  const navRef = useRef(null);
+  const onNavKey = (e) => {
+    if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    const buttons = navRef.current ? [...navRef.current.querySelectorAll('button')] : [];
+    if (!buttons.length) return;
+    e.preventDefault();
+    const i = buttons.indexOf(document.activeElement);
+    const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1;
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (Math.max(i, 0) + step + buttons.length) % buttons.length;
+    buttons[next].focus();
+  };
+
+  const info = sections.find((s) => s.id === section) ?? sections[0];
+  return (
+    <div className="ui-workspace aw-settings">
+      <UiStyles />
+      <PageHeader title="Settings" subtitle={info.hint} />
+      <div className="aw-settings__body">
+        <nav className="aw-settings__nav" aria-label="Settings sections" ref={navRef} onKeyDown={onNavKey}>
+          {sections.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className="aw-settings__navitem"
+              aria-current={s.id === section ? 'page' : undefined}
+              data-section={s.id}
+              onClick={() => go(s.id)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </nav>
+        <section className="aw-settings__main" aria-label={info.label} data-section={section}>
+          {section === 'queue' ? <QueueSettings onDirtyChange={onDirtyChange} /> : null}
+          {section === 'machine' ? <MachineSettings /> : null}
+          {section === 'portal' ? <PortalSettings onDirtyChange={onDirtyChange} /> : null}
+          {section === 'marketing' ? <MarketingSettings onDirtyChange={onDirtyChange} /> : null}
+          {section === 'seo' ? <SeoSettings onDirtyChange={onDirtyChange} /> : null}
+          {section === 'account' ? <AccountSettings /> : null}
+        </section>
+      </div>
     </div>
   );
 }

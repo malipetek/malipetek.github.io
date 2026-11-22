@@ -310,25 +310,25 @@ var __awPlugin = (() => {
     const open = Boolean(ticket) && ticket.status !== "done" && ticket.status !== "declined";
     const [seconds, setSeconds] = useState(ticket?.human_seconds ?? 0);
     const [running, setRunning] = useState(false);
-    const pending = useRef(0);
+    const pending2 = useRef(0);
     const id = ticket?.id;
     const conversationMeter = api.conversationMeter === true;
     useEffect(() => setSeconds(ticket?.human_seconds ?? 0), [id, ticket?.human_seconds]);
     useEffect(() => {
       if (!id || conversationMeter) return void 0;
       const flush = () => {
-        const n = pending.current;
+        const n = pending2.current;
         if (n <= 0) return;
-        pending.current = 0;
-        api("POST", `/admin/tickets/${id}/time`, { seconds: n }).catch(() => pending.current += n);
+        pending2.current = 0;
+        api("POST", `/admin/tickets/${id}/time`, { seconds: n }).catch(() => pending2.current += n);
       };
       const tick = setInterval(() => {
         const on = open && active && visible() && document.hasFocus() && Date.now() - lastInput < IDLE_AFTER_MS;
         setRunning(on);
         if (!on) return;
-        pending.current += 1;
+        pending2.current += 1;
         setSeconds((s) => s + 1);
-        if (pending.current >= 20) flush();
+        if (pending2.current >= 20) flush();
       }, 1e3);
       return () => {
         clearInterval(tick);
@@ -2871,32 +2871,32 @@ ${block(Object.entries(TOKENS))}
 
   // packages/admin-ui/src/submit-state.js
   function createSubmission() {
-    let busy = false, pending = null;
+    let busy = false, pending2 = null;
     const queueOnly = async () => {
-      await pending();
-      pending = null;
+      await pending2();
+      pending2 = null;
     };
     return {
       get busy() {
         return busy;
       },
       get pendingQueue() {
-        return Boolean(pending);
+        return Boolean(pending2);
       },
       async run({ save, onSaved, queue }) {
-        if (busy || pending) return;
+        if (busy || pending2) return;
         busy = true;
         try {
           const saved = await save();
-          if (queue) pending = queue;
+          if (queue) pending2 = queue;
           onSaved?.(saved);
-          if (pending) await queueOnly();
+          if (pending2) await queueOnly();
         } finally {
           busy = false;
         }
       },
       async retryQueue() {
-        if (busy || !pending) return;
+        if (busy || !pending2) return;
         busy = true;
         try {
           await queueOnly();
@@ -2917,14 +2917,14 @@ ${block(Object.entries(TOKENS))}
   function createMentionDelivery({ api, projectId, ticketId, recipientUserIds, requestId = globalThis.crypto.randomUUID() }) {
     const recipients = [...new Set(recipientUserIds || [])];
     let messageId;
-    let pending;
+    let pending2;
     return function deliver(saved) {
       if (saved?.messageId && !messageId) messageId = saved.messageId;
-      if (pending) return pending;
-      pending = deliverMentions({ api, projectId, ticketId, messageId, recipientUserIds: recipients, requestId }).finally(() => {
-        pending = null;
+      if (pending2) return pending2;
+      pending2 = deliverMentions({ api, projectId, ticketId, messageId, recipientUserIds: recipients, requestId }).finally(() => {
+        pending2 = null;
       });
-      return pending;
+      return pending2;
     };
   }
 
@@ -4526,1107 +4526,49 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/fleet.jsx
-  var pct = (a, b) => b ? Math.round(a / b * 100) : 0;
-  var capabilityLabel = (id, caps) => caps.find((c) => c.id === id)?.label ?? ({
-    "os:darwin": "macOS",
-    "os:linux": "Linux",
-    "os:win32": "Windows"
-  }[id] ?? id.replace(/^os:/, ""));
-  var osLabel = (os) => os ? capabilityLabel(`os:${os}`, []) : "\u2014";
-  var closeOnEscape2 = (open, close) => (e) => {
-    if (e.key !== "Escape" || e.defaultPrevented || !open) return;
-    if (e.target?.closest?.("input, textarea, select, [contenteditable], [role=menu], [role=dialog]")) return;
-    e.preventDefault();
-    close();
+  // packages/admin-ui/src/settings-link.js
+  var SETTINGS_SECTION_IDS = Object.freeze(["queue", "machine", "portal", "marketing", "seo", "account"]);
+  var ALIASES = {
+    "work-queue": "queue",
+    work: "queue",
+    tools: "machine",
+    toolbox: "machine",
+    translations: "portal",
+    about: "account",
+    "sign-in": "account"
   };
-  function useRevealInspector(root, key) {
-    const narrow = useMedia("(max-width: 900px)");
-    useEffect(() => {
-      if (narrow && key != null) root.current?.querySelector(".ui-inspector")?.scrollIntoView?.({ block: "start", behavior: "smooth" });
-    }, [narrow, key, root]);
+  function settingsSection(target) {
+    const match = /^#?settings(?:[#/:=]([\w-]+))?\/?$/i.exec(String(target ?? "").trim());
+    if (!match?.[1]) return null;
+    const name = match[1].toLowerCase();
+    const id = ALIASES[name] ?? name;
+    return SETTINGS_SECTION_IDS.includes(id) ? id : null;
   }
-  function TicketLink({ id, children }) {
-    const { openTicket } = useAdmin();
-    return /* @__PURE__ */ jsx(
-      "a",
-      {
-        className: "aw-titlelink",
-        href: `#ticket=${id}`,
-        tabIndex: -1,
-        title: typeof children === "string" ? children : void 0,
-        onClick: (e) => {
-          if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return void e.stopPropagation();
-          e.preventDefault();
-          e.stopPropagation();
-          openTicket(id);
-        },
-        children
-      }
-    );
-  }
-  function nodeStateProps(n, m) {
-    if (n.unregistered) {
-      if (!m.loaded) return { state: "checking", label: "Checking\u2026" };
-      if (m.state === "unset") return { state: "unset", label: "Not set up", tone: "warn" };
-      return { state: "unregistered", label: m.serviceUp ? "Not registered yet" : "Off", tone: m.serviceUp ? "warn" : "bad" };
+  var isSettingsKey = (key) => /^#?settings(?:[#/:=][\w-]*)?\/?$/i.test(String(key ?? "").trim());
+  var settingsKey = (section) => section ? `settings#${section}` : "settings";
+  var EVENT = "aw:settings-section";
+  var pending = null;
+  function openSettings(open, section) {
+    pending = section ?? null;
+    if (typeof window !== "undefined" && section) {
+      window.dispatchEvent(new CustomEvent(EVENT, { detail: section }));
     }
-    if (!n.online) return { state: "offline", label: `Offline \xB7 ${ago(n.lastSeenAt)}`, title: `Last seen ${ago(n.lastSeenAt)} ago` };
-    if (n.draining) return { state: "draining", label: "Draining", tone: "warn", title: "Finishes what it has, then takes nothing new" };
-    return { state: "online" };
+    open?.(settingsKey(section));
   }
-  var unhealthy = (n) => (n.executors ?? []).filter((e) => n.health?.executors?.[e] && !n.health.executors[e].ok);
-  function workloadLine(n) {
-    const sys = n.health?.system;
-    const parts = [`${n.running.length}/${n.slots} busy`];
-    if (sys) {
-      const load = sys.load?.[0]?.toFixed?.(2);
-      if (load != null) parts.push(`load ${load}/${sys.cpus ?? "?"}`);
-      if (sys.memFreePct != null) parts.push(`mem ${100 - sys.memFreePct}%`);
-      if (sys.disk) parts.push(`disk ${pct(sys.disk.totalGb - sys.disk.freeGb, sys.disk.totalGb)}%`);
-    }
-    return parts.join(" \xB7 ");
+  function takePendingSection() {
+    const section = pending;
+    pending = null;
+    return section;
   }
-  var NODE_COLUMNS = (m) => [
-    {
-      key: "name",
-      header: "Node",
-      render: (n) => /* @__PURE__ */ jsxs(Fragment2, { children: [
-        n.local ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(MetaChip, { children: "This Mac" }),
-          " "
-        ] }) : null,
-        /* @__PURE__ */ jsx("strong", { title: n.id, children: n.id })
-      ] })
-    },
-    { key: "state", header: "State", fit: true, render: (n) => /* @__PURE__ */ jsx(StateIndicator, { ...nodeStateProps(n, m) }) },
-    { key: "platform", header: "Platform", fit: true, render: (n) => n.unregistered ? "\u2014" : `${osLabel(n.os)} \xB7 v${n.version}` },
-    {
-      key: "agents",
-      header: "Agents",
-      render: (n) => {
-        const bad = unhealthy(n);
-        return /* @__PURE__ */ jsxs(Fragment2, { children: [
-          bad.length ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx(StateIndicator, { state: "check", label: `${bad.length} not healthy`, title: bad.map((e) => `${e}: ${n.health.executors[e].error ?? "not healthy"}`).join("; ") }),
-            " "
-          ] }) : null,
-          /* @__PURE__ */ jsx("span", { title: n.executors.join(", ") || void 0, children: n.executors.length ? n.executors.join(", ") : "\u2014" })
-        ] });
-      }
-    },
-    { key: "workload", header: "Workload", render: (n) => n.unregistered ? "\u2014" : /* @__PURE__ */ jsx("span", { title: workloadLine(n), children: workloadLine(n) }) },
-    {
-      key: "battery",
-      header: "Battery",
-      fit: true,
-      render: (n) => {
-        const b = n.health?.system?.battery;
-        return b ? /* @__PURE__ */ jsxs("span", { title: b.onPower ? "On power" : "On battery", children: [
-          b.percent,
-          "%",
-          b.onPower ? " \u26A1" : ""
-        ] }) : "\u2014";
-      }
-    },
-    { key: "projects", header: "Projects", numeric: true, render: (n) => /* @__PURE__ */ jsx("span", { title: n.slugs.join(", ") || "No projects yet", children: n.slugs.length }) }
-  ];
-  function RunsTable({ runs, label, empty }) {
-    const { openTicket } = useAdmin();
-    return /* @__PURE__ */ jsx(
-      DataTable,
-      {
-        label,
-        rows: runs,
-        onOpen: (r) => openTicket(r.ticket_id),
-        empty,
-        columns: [
-          { key: "title", header: "Title", render: (r) => /* @__PURE__ */ jsx(TicketLink, { id: r.ticket_id, children: r.title }) },
-          { key: "id", header: "#", mono: true, fit: true, render: (r) => `#${r.ticket_id}` },
-          { key: "agent", header: "Agent", fit: true, render: (r) => r.executor },
-          { key: "started", header: "Started", fit: true, render: (r) => `${ago(r.started_at)} ago` }
-        ]
-      }
-    );
-  }
-  function NodeInspector({ n, m, onClose }) {
-    const { api, act, ask, data, setModal } = useAdmin();
-    const caps = data.catalog?.capabilities ?? [];
-    const sys = n.health?.system;
-    const edit = () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(NodeModal, { node: n, local: n.local, onClose: close }) });
-    const machineReady = n.local && m.loaded && !m.consentError;
-    return /* @__PURE__ */ jsxs(Inspector, { title: n.id, label: `Node ${n.id}`, storageKey: "ptech.fleet.inspector.w", onClose, className: "aw-fleet__inspector", children: [
-      /* @__PURE__ */ jsxs("div", { className: "ui-meta", children: [
-        /* @__PURE__ */ jsx(StateIndicator, { ...nodeStateProps(n, m) }),
-        n.local ? /* @__PURE__ */ jsx(MetaChip, { children: "This Mac" }) : null
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
-        n.local ? machineReady ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          m.state === "working" || m.state === "ready" ? /* @__PURE__ */ jsx(Button, { title: "What is running finishes, nothing new starts", onClick: () => void m.pause(), children: "Pause" }) : null,
-          m.consented && (m.state === "pausing" || m.state === "paused") ? /* @__PURE__ */ jsx(Button, { title: "This Mac takes work again", onClick: () => void m.resume(), children: "Resume" }) : null,
-          m.serviceUp ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx(Button, { kind: "ghost", title: "Restart the worker service", onClick: () => void m.restart(), children: "Restart" }),
-            /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => m.stopNow(), children: "Stop now" })
-          ] }) : m.consented ? /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => void m.start(), children: m.svc?.loaded ? "Start worker" : "Install worker" }) : null
-        ] }) : null : /* @__PURE__ */ jsx(
-          Button,
-          {
-            onClick: () => act(() => api("PATCH", `/admin/nodes/${n.id}`, { draining: !n.draining }), n.draining ? `${n.id} takes work again.` : `${n.id} finishes what it has, then takes nothing new.`),
-            children: n.draining ? "Resume" : "Drain"
-          }
-        ),
-        !n.unregistered ? /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: edit, children: "Edit\u2026" }) : null,
-        !n.local && !n.online ? /* @__PURE__ */ jsx(
-          Button,
-          {
-            kind: "ghost",
-            onClick: () => ask({ title: `Forget ${n.id}?`, text: "It re-registers on its next heartbeat if it is still alive.", confirm: "Forget", danger: true, run: () => act(() => api("DELETE", `/admin/nodes/${n.id}`), `Forgot ${n.id}.`) }),
-            children: "Forget\u2026"
-          }
-        ) : null
-      ] }),
-      /* @__PURE__ */ jsxs("dl", { className: "ui-props", children: [
-        n.local ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx("dt", { children: "Worker" }),
-          /* @__PURE__ */ jsxs("dd", { children: [
-            m.svc?.state ?? "unknown",
-            m.svc?.pid ? ` \xB7 pid ${m.svc.pid}` : ""
-          ] })
-        ] }) : null,
-        !n.unregistered ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx("dt", { children: "Platform" }),
-          /* @__PURE__ */ jsxs("dd", { children: [
-            osLabel(n.os),
-            " \xB7 v",
-            n.version
-          ] }),
-          /* @__PURE__ */ jsx("dt", { children: "Last seen" }),
-          /* @__PURE__ */ jsxs("dd", { children: [
-            ago(n.lastSeenAt),
-            " ago"
-          ] }),
-          /* @__PURE__ */ jsx("dt", { children: "Workload" }),
-          /* @__PURE__ */ jsxs("dd", { children: [
-            n.running.length,
-            " of ",
-            n.slots,
-            " runs busy"
-          ] })
-        ] }) : null,
-        sys ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx("dt", { children: "Load" }),
-          /* @__PURE__ */ jsxs("dd", { children: [
-            sys.load?.[0]?.toFixed?.(2) ?? "\u2014",
-            " on ",
-            sys.cpus,
-            " CPUs"
-          ] }),
-          sys.memFreePct != null ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx("dt", { children: "Memory" }),
-            /* @__PURE__ */ jsxs("dd", { children: [
-              100 - sys.memFreePct,
-              "% used"
-            ] })
-          ] }) : null,
-          sys.disk ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx("dt", { children: "Disk" }),
-            /* @__PURE__ */ jsxs("dd", { children: [
-              pct(sys.disk.totalGb - sys.disk.freeGb, sys.disk.totalGb),
-              "% used \xB7 ",
-              sys.disk.freeGb,
-              " GB free"
-            ] })
-          ] }) : null,
-          sys.battery ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx("dt", { children: "Battery" }),
-            /* @__PURE__ */ jsxs("dd", { children: [
-              sys.battery.percent,
-              "% \xB7 ",
-              sys.battery.onPower ? "on power" : "on battery"
-            ] })
-          ] }) : null,
-          sys.uptimeSec != null ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx("dt", { children: "Up" }),
-            /* @__PURE__ */ jsx("dd", { children: span(sys.uptimeSec) })
-          ] }) : null
-        ] }) : null
-      ] }),
-      n.health?.process?.lastError ? /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
-        /* @__PURE__ */ jsx(StateIndicator, { state: "failed", label: "Last error" }),
-        /* @__PURE__ */ jsx("p", { className: "ui-quote", children: n.health.process.lastError })
-      ] }) : null,
-      !n.local && !n.unregistered ? /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
-        /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Agents" }),
-        /* @__PURE__ */ jsx("div", { className: "ui-meta", children: n.executors.length ? n.executors.map((e) => {
-          const ex = n.health?.executors?.[e];
-          return ex ? /* @__PURE__ */ jsx(StateIndicator, { state: ex.ok ? "ok" : "failed", label: `${e}${ex.version ? ` ${ex.version}` : ""}`, title: ex.ok ? void 0 : ex.error ?? "not healthy" }, e) : /* @__PURE__ */ jsx(StateIndicator, { state: "unchecked", label: e, title: "No health report yet" }, e);
-        }) : /* @__PURE__ */ jsx("span", { className: "ui-note", children: "None" }) })
-      ] }) : null,
-      !n.unregistered ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-        /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
-          /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Can do" }),
-          /* @__PURE__ */ jsx("div", { className: "ui-meta", children: n.capabilities.length ? n.capabilities.map((c) => /* @__PURE__ */ jsx(MetaChip, { children: capabilityLabel(c, caps) }, c)) : /* @__PURE__ */ jsx("span", { className: "ui-note", children: "\u2014" }) })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
-          /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
-            "Projects \xB7 ",
-            n.slugs.length
-          ] }),
-          /* @__PURE__ */ jsx("div", { className: "ui-meta", children: n.slugs.length ? n.slugs.map((s) => /* @__PURE__ */ jsx(MetaChip, { mono: true, children: s }, s)) : /* @__PURE__ */ jsx("span", { className: "ui-note", children: "No projects yet" }) })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
-          /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
-            "Running \xB7 ",
-            n.running.length,
-            " of ",
-            n.slots
-          ] }),
-          /* @__PURE__ */ jsx(RunsTable, { runs: n.running, label: `Runs on ${n.id}`, empty: { title: "Nothing running.", hint: `${n.slots} free ${n.slots === 1 ? "slot" : "slots"}.` } })
-        ] })
-      ] }) : null,
-      n.local ? /* @__PURE__ */ jsxs("div", { className: "ui-section aw-fleet-machine", children: [
-        /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Lending" }),
-        /* @__PURE__ */ jsx(MachinePanel, {})
-      ] }) : null
-    ] });
-  }
-  function NodeModal({ node, local, onClose }) {
-    const { api, act, data } = useAdmin();
-    const caps = data.catalog?.capabilities ?? [];
-    const [slots, setSlots] = useState(node.overrides?.slots ?? node.slots);
-    const [executors, setExecutors] = useState(node.overrides?.executors ?? node.executors);
-    const [capabilities, setCapabilities] = useState(node.overrides?.capabilities ?? node.capabilities.filter((c) => !c.startsWith("os:")));
-    const save = () => act(() => api("PATCH", `/admin/nodes/${node.id}`, { overrides: { slots, capabilities, ...!local ? { executors } : {} } }), `${node.id} picks this up on its next heartbeat.`).then(onClose, () => void 0);
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: `Node ${node.id}`,
-        subtitle: "Overrides from here win over the node\u2019s own config file.",
-        onClose,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: save, children: "Save" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Slots", hint: "How many items it runs at once.", children: /* @__PURE__ */ jsx(Segmented, { value: slots, options: [1, 2, 3, 4].map((n) => ({ value: n, label: String(n) })), onChange: setSlots }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Agents it offers", children: local ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Manage the agents this Mac lends from This Mac." }) : /* @__PURE__ */ jsx(Chips, { value: executors, options: EXECUTORS.map((e) => ({ value: e, label: e })), onChange: setExecutors }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Capabilities", children: /* @__PURE__ */ jsx(Chips, { value: capabilities, options: caps.map((c) => ({ value: c.id, label: capabilityLabel(c.id, caps), hint: c.hint })), onChange: setCapabilities }) })
-        ]
-      }
-    );
-  }
-  function FleetView() {
-    const { data, open, openTicket } = useAdmin();
-    const m = useMachine();
-    const root = useRef(null);
-    const [selectedKey, setSelectedKey] = useState(null);
-    const nodes = useMemo(() => {
-      const list2 = data.nodes.map((n) => ({ ...n, local: m.live && Boolean(m.nodeId) && n.id === m.nodeId }));
-      if (m.live && !list2.some((n) => n.local)) {
-        list2.unshift({ id: m.nodeId || "This Mac", local: true, unregistered: true, online: false, draining: false, slots: m.slots, executors: m.lending, capabilities: [], slugs: [], running: [] });
-      }
-      return list2.sort((a, b) => Number(b.local) - Number(a.local));
-    }, [data.nodes, m.live, m.nodeId, m.slots, m.lending]);
-    const keyOf = (n) => n.unregistered ? "__this-mac" : n.id;
-    const selected = selectedKey == null ? null : nodes.find((n) => keyOf(n) === selectedKey) ?? null;
-    const close = () => setSelectedKey(null);
-    useRevealInspector(root, selected ? selectedKey : null);
-    const runs = [...data.running, ...data.recent].slice(0, 8);
-    return /* @__PURE__ */ jsxs("div", { ref: root, className: "ui-workspace aw-fleet", onKeyDown: closeOnEscape2(Boolean(selected), close), children: [
-      /* @__PURE__ */ jsx(UiStyles, {}),
-      /* @__PURE__ */ jsx(
-        PageHeader,
-        {
-          title: "Fleet",
-          subtitle: "The machines that run agents, what waits for them, and the end-to-end checks. Select a node to inspect it.",
-          overflow: [{ label: "Settings: work queue\u2026", run: () => open("settings") }]
-        }
-      ),
-      /* @__PURE__ */ jsxs("div", { className: "ui-split", children: [
-        /* @__PURE__ */ jsxs("div", { className: "ui-split__main", children: [
-          /* @__PURE__ */ jsx(HealthView, { compact: true }),
-          /* @__PURE__ */ jsxs("section", { className: "ui-section", children: [
-            /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
-              "Nodes \xB7 ",
-              nodes.length
-            ] }),
-            /* @__PURE__ */ jsx(
-              DataTable,
-              {
-                label: "Nodes",
-                columns: NODE_COLUMNS(m),
-                rows: nodes,
-                rowKey: keyOf,
-                selected: selected ? selectedKey : null,
-                onSelect: (n) => setSelectedKey(keyOf(n)),
-                onOpen: (n) => setSelectedKey(keyOf(n)),
-                empty: { title: "No node has connected yet.", hint: "Open the desktop app and lend This Mac from the status bar, or start a node with its config file." }
-              }
-            )
-          ] }),
-          /* @__PURE__ */ jsxs("section", { className: "ui-section", children: [
-            /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
-              "Queue \xB7 ",
-              data.queue.length
-            ] }),
-            /* @__PURE__ */ jsx(
-              DataTable,
-              {
-                label: "Queue",
-                rows: data.queue,
-                onOpen: (q) => openTicket(q.id),
-                empty: { title: "Nothing is waiting.", hint: "Approved work starts as soon as a node with a free slot can take it." },
-                columns: [
-                  { key: "title", header: "Title", render: (q) => /* @__PURE__ */ jsx(TicketLink, { id: q.id, children: q.title }) },
-                  { key: "id", header: "#", mono: true, fit: true, render: (q) => `#${q.id}` },
-                  { key: "project", header: "Project", fit: true, render: (q) => q.slug ?? "\u2014" },
-                  { key: "priority", header: "Priority", fit: true, render: (q) => priorityName(q.priority) },
-                  { key: "waiting", header: "Waiting", numeric: true, render: (q) => span(q.waitingSeconds) },
-                  {
-                    key: "why",
-                    header: "Why waiting",
-                    render: (q) => q.eligible.length ? /* @__PURE__ */ jsx("span", { title: q.reason, children: q.reason }) : /* @__PURE__ */ jsxs("span", { title: q.reason, children: [
-                      /* @__PURE__ */ jsx(StateIndicator, { state: "stuck", tone: "bad", label: "Blocked" }),
-                      " ",
-                      q.reason || "No node can take this"
-                    ] })
-                  }
-                ]
-              }
-            )
-          ] }),
-          /* @__PURE__ */ jsxs("section", { className: "ui-section", children: [
-            /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Recent runs" }),
-            /* @__PURE__ */ jsx(
-              DataTable,
-              {
-                label: "Recent runs",
-                rows: runs,
-                onOpen: (r) => openTicket(r.ticket_id),
-                empty: { title: "No runs yet.", hint: "Runs appear here when a node starts approved work." },
-                columns: [
-                  { key: "title", header: "Title", render: (r) => /* @__PURE__ */ jsx(TicketLink, { id: r.ticket_id, children: r.title }) },
-                  { key: "id", header: "#", mono: true, fit: true, render: (r) => `#${r.ticket_id}` },
-                  {
-                    key: "result",
-                    header: "Result",
-                    fit: true,
-                    render: (r) => r.status === "running" || !r.status ? /* @__PURE__ */ jsx(StateIndicator, { state: "running" }) : /* @__PURE__ */ jsx(StateIndicator, { state: r.status })
-                  },
-                  { key: "agent", header: "Agent", render: (r) => /* @__PURE__ */ jsxs("span", { title: r.model ? `${r.executor} ${r.model}` : r.executor, children: [
-                    r.executor,
-                    r.model ? /* @__PURE__ */ jsxs("span", { className: "ui-note", children: [
-                      " ",
-                      r.model
-                    ] }) : null
-                  ] }) },
-                  { key: "node", header: "Node", fit: true, render: (r) => r.node_id ?? "This Mac" },
-                  { key: "cost", header: "Cost", numeric: true, render: (r) => usd(r.cost_micro_usd) },
-                  { key: "finished", header: "Finished", fit: true, render: (r) => r.finished_at ? `${ago(r.finished_at)} ago` : "\u2014" }
-                ]
-              }
-            )
-          ] })
-        ] }),
-        selected ? /* @__PURE__ */ jsx(NodeInspector, { n: selected, m, onClose: close }) : null
-      ] })
-    ] });
-  }
-  var usageLine = (u) => u ? [
-    u.billedCents && `${money(u.billedCents)} billed`,
-    u.openCents && `${money(u.openCents)} open`,
-    u.aiCents && `AI ${money(u.aiCents)}`,
-    u.ourCents && `first previews ${money(u.ourCents)} on us`
-  ].filter(Boolean).join(" \xB7 ") || "nothing owed" : "";
-  function RepoModal({ project, onClose }) {
-    const { api, act } = useAdmin();
-    const [repo, setRepo] = useState(project.repo ?? "");
-    const submit = () => act(() => api("PUT", `/admin/projects/${project.id}/repo`, { repo: repo.trim() }), "Repo saved.").then(onClose, () => void 0);
-    return /* @__PURE__ */ jsx(
-      Modal,
-      {
-        title: `Repo for ${project.name}`,
-        subtitle: "Nodes clone this on their next sync. A private repo needs a node whose git can reach it.",
-        onClose,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !repo.trim(), onClick: submit, children: "Save" })
-        ] }),
-        children: /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) })
-      }
-    );
-  }
-  function FirstPreviewControl({ c }) {
-    const { api, act, data } = useAdmin();
-    const globalLimit = data.settings?.first_preview_limit_usd;
-    const [usd2, setUsd] = useState(c.firstPreviewLimitUsd ?? "");
-    useEffect(() => setUsd(c.firstPreviewLimitUsd ?? ""), [c.id, c.firstPreviewLimitUsd]);
-    const save = () => {
-      const raw = String(usd2).trim();
-      const value = raw === "" ? null : Number(raw);
-      if (value !== null && (!Number.isFinite(value) || value < 0 || value > 1e3)) return;
-      if (value === (c.firstPreviewLimitUsd ?? null)) return;
-      void act(() => api("PATCH", `/admin/clients/${c.id}`, { firstPreviewLimitUsd: value }), "First preview limit saved.");
+  function onSettingsSection(fn) {
+    if (typeof window === "undefined") return () => {
     };
-    return /* @__PURE__ */ jsx(
-      Field,
-      {
-        label: "First preview limit (USD)",
-        hint: `Blank follows the setting (${globalLimit ?? 2}). 0 turns the first preview off for this client.`,
-        children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-          /* @__PURE__ */ jsx(
-            "input",
-            {
-              inputMode: "decimal",
-              value: usd2,
-              placeholder: String(globalLimit ?? 2),
-              "aria-label": "First preview limit in dollars",
-              onChange: (e) => setUsd(e.target.value),
-              onBlur: save
-            }
-          ),
-          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: c.first_preview_at ? `used ${ago(c.first_preview_at)} ago` : "not used yet" }),
-          c.first_preview_at ? /* @__PURE__ */ jsx(
-            Button,
-            {
-              size: "sm",
-              title: "Give this account its free first preview again",
-              onClick: () => void act(() => api("PATCH", `/admin/clients/${c.id}`, { grantFirstPreview: true }), "First preview granted again."),
-              children: "Grant again"
-            }
-          ) : null
-        ] })
-      }
-    );
-  }
-  function ClientControls({ c }) {
-    const { api, act, data } = useAdmin();
-    const toggle = (ids) => {
-      const added = ids.filter((x) => !c.projectIds.includes(x));
-      const removed = c.projectIds.filter((x) => !ids.includes(x));
-      return act(async () => {
-        for (const p of added) await api("PUT", `/admin/clients/${c.id}/projects/${p}`);
-        for (const p of removed) await api("DELETE", `/admin/clients/${c.id}/projects/${p}`);
-      }, "Saved.");
+    const listener = (event) => {
+      pending = null;
+      fn(event.detail);
     };
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: usageLine(c.usage) }),
-      /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
-        /* @__PURE__ */ jsx(
-          "select",
-          {
-            "aria-label": "Language",
-            value: c.locale ?? "en-US",
-            onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { locale: e.target.value }), "Language saved."),
-            children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code))
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "select",
-          {
-            "aria-label": "Translation",
-            title: "Who translates this client\u2019s messages. They can change it themselves.",
-            value: c.translation ?? "deepseek",
-            onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { translation: e.target.value }), "Saved."),
-            children: [
-              /* @__PURE__ */ jsx("option", { value: "deepseek", children: "DeepSeek" }),
-              /* @__PURE__ */ jsx("option", { value: "cloudflare", children: "Workers AI" }),
-              /* @__PURE__ */ jsx("option", { value: "off", children: "no translation" })
-            ]
-          }
-        )
-      ] }),
-      c.role !== "admin" ? /* @__PURE__ */ jsx(FirstPreviewControl, { c }) : null,
-      /* @__PURE__ */ jsx(InviteControls, { c }),
-      /* @__PURE__ */ jsx(Chips, { value: c.projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: (ids) => void toggle(ids) })
-    ] });
-  }
-  function InviteControls({ c }) {
-    const { api, act, ask } = useAdmin();
-    if (!c.pending && !c.inviteExpiresAt) return null;
-    const left = c.inviteExpiresAt ? Math.max(0, c.inviteExpiresAt - Date.now() / 1e3) : 0;
-    return /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-      /* @__PURE__ */ jsx(StateIndicator, { state: c.pending ? "invited" : "invite_live", tone: c.pending ? "warn" : "info", label: c.pending ? "Invited, not signed in yet" : "Invite link live", title: c.email }),
-      left > 0 ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-        "link expires in ",
-        span(left)
-      ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "link expired" }),
-      /* @__PURE__ */ jsx(
-        Button,
-        {
-          size: "sm",
-          title: "Send a fresh link. The old unused links stop working.",
-          onClick: () => void act(() => api("POST", `/admin/clients/${c.id}/invite`, {}), `Invite resent to ${c.email}.`),
-          children: "Resend"
-        }
-      ),
-      /* @__PURE__ */ jsx(
-        Button,
-        {
-          size: "sm",
-          kind: "ghost",
-          title: "Every unused invite link stops working. A signed-in session is not touched.",
-          onClick: () => ask({
-            title: `Revoke invite for ${c.name || c.email}?`,
-            text: `Unused invite links for ${c.email} stop working. Existing signed-in sessions are not affected.`,
-            confirm: "Revoke link",
-            danger: true,
-            run: () => act(() => api("DELETE", `/admin/clients/${c.id}/invite`), "Invite link revoked.").catch(() => void 0)
-          }),
-          children: "Revoke"
-        }
-      )
-    ] });
-  }
-  function InviteClientModal({ onClose, client }) {
-    const { api, act, data } = useAdmin();
-    const [email, setEmail] = useState(client?.email ?? "");
-    const [name, setName] = useState(client?.name ?? "");
-    const [locale, setLocale] = useState(client?.locale ?? "en-US");
-    const [projectIds, setProjectIds] = useState(data.projects.length === 1 ? [data.projects[0].id] : []);
-    const [note, setNote] = useState("");
-    const ready = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && projectIds.length > 0;
-    const send = () => act(
-      () => api("POST", "/admin/clients", {
-        email: email.trim(),
-        name: name.trim() || void 0,
-        locale,
-        projectIds,
-        note: note.trim() || void 0
-      }),
-      (out) => out.invite?.sent === false ? `Added ${email.trim()}, but the email could not be sent. Use Resend on their row in Clients.` : out.user?.verified_at ? `${email.trim()} now has ${projectIds.length} more project${projectIds.length === 1 ? "" : "s"} and a new link.` : `Invited ${email.trim()}.`
-    ).then(onClose, () => void 0);
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: client ? `Add ${client.name || client.email} to projects` : "Invite a client",
-        kind: "create",
-        subtitle: "They get a link that signs them in for the projects you pick. No sign-up needed; the link works once and lasts 7 days.",
-        onClose,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !ready, onClick: send, children: "Send invite" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Email", children: /* @__PURE__ */ jsx("input", { type: "email", value: email, maxLength: 254, placeholder: "client@example.com", onChange: (e) => setEmail(e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Name", hint: "Optional. The account keeps its own name if it already exists.", children: /* @__PURE__ */ jsx("input", { value: name, maxLength: 80, placeholder: "Their name", onChange: (e) => setName(e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Language", hint: "The language of the invite email and the portal. They can change it.", children: /* @__PURE__ */ jsx("select", { value: locale, onChange: (e) => setLocale(e.target.value), children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code)) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Projects", hint: "At least one. An existing account gains these and keeps the rest. They see every request on them.", children: data.projects.length ? /* @__PURE__ */ jsx(Chips, { value: projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: setProjectIds }) : /* @__PURE__ */ jsx("span", { className: "aw-warn", children: "No projects yet. Make one first." }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Note", hint: "Optional. Your own words, added under the link. Not translated.", children: /* @__PURE__ */ jsx("textarea", { rows: 3, value: note, maxLength: 1e3, placeholder: "Anything you want them to read first", onChange: (e) => setNote(e.target.value) }) })
-        ]
-      }
-    );
-  }
-  function ProjectEditModal({ project, onClose }) {
-    const { api, act } = useAdmin();
-    const [name, setName] = useState(project.name);
-    const [kind, setKind] = useState(project.kind ?? "existing");
-    const changed = name.trim() !== project.name || kind !== (project.kind ?? "existing");
-    const save = () => act(
-      () => api("PATCH", `/admin/projects/${project.id}`, {
-        ...name.trim() !== project.name ? { name: name.trim() } : {},
-        ...kind !== (project.kind ?? "existing") ? { kind } : {}
-      }),
-      "Project saved."
-    ).then(onClose, () => void 0);
-    return /* @__PURE__ */ jsxs(
-      Modal,
-      {
-        title: `Edit ${project.name}`,
-        subtitle: `Slug ${project.slug} stays: nodes keep its folder under that name, and its first site is named after it.`,
-        onClose,
-        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !name.trim() || !changed, onClick: save, children: "Save" })
-        ] }),
-        children: [
-          /* @__PURE__ */ jsx(Field, { label: "Name", hint: "What the client sees in the portal and in their emails.", children: /* @__PURE__ */ jsx("input", { value: name, maxLength: 80, onChange: (e) => setName(e.target.value) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx(
-            Segmented,
-            {
-              value: kind,
-              options: [
-                { value: "existing", label: "Existing code or system" },
-                { value: "new", label: "New website" }
-              ],
-              onChange: setKind
-            }
-          ) })
-        ]
-      }
-    );
-  }
-  var closedTicket = (t) => ["done", "declined"].includes(t.status);
-  var ticketsOf = (data, c) => data.tickets.filter((t) => t.kind !== "system" && t.client_email === c.email).sort((x, y) => closedTicket(x) - closedTicket(y) || y.updated_at - x.updated_at);
-  var lastSeenOf = (c) => c.lastSeenAt ?? c.last_seen_at ?? null;
-  var TRANSLATION_LABEL = { deepseek: "DeepSeek", cloudflare: "Workers AI", off: "No translation" };
-  var localeName = (code) => LOCALES.find((l) => l.code === code)?.english ?? code;
-  function projectNodeState(p, nodes) {
-    const holders = nodes.filter((n) => n.slugs.includes(p.slug));
-    if (holders.some((n) => n.online && !n.draining)) return { state: "online", label: "Node available" };
-    if (holders.length) return { state: "draining", tone: "warn", label: "Nodes offline or draining" };
-    return { state: "no_node", tone: "bad", label: "No node has this project" };
-  }
-  var siteStateOf = (p) => {
-    const sites = p.sites ?? (p.site ? [p.site] : []);
-    if (!sites.length) return "No site";
-    const states = [...new Set(sites.map((site) => site.state?.replaceAll("_", " ")).filter(Boolean))];
-    return states.join(", ") || "Site status unavailable";
-  };
-  function ClientView({ id }) {
-    const { data, openTicket, open: openTab } = useAdmin();
-    const c = data.clients.find((x) => x.id === id);
-    if (!c) return data.loaded ? /* @__PURE__ */ jsx("div", { className: "aw-view", children: /* @__PURE__ */ jsx(Empty, { title: "No such client.", hint: "They may have been removed. The directory lists everyone.", action: /* @__PURE__ */ jsx(Button, { onClick: () => openTab("clients"), children: "Open Clients" }) }) }) : /* @__PURE__ */ jsx(Skeleton, { variant: "pane", label: "Loading the client\u2026" });
-    const tickets = ticketsOf(data, c);
-    const open = tickets.filter((t) => !closedTicket(t)).length;
-    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-client", children: [
-      /* @__PURE__ */ jsx(UiStyles, {}),
-      /* @__PURE__ */ jsx(
-        PageHeader,
-        {
-          title: c.name || c.email,
-          subtitle: `${c.name ? `${c.email} \xB7 ` : ""}${open} open of ${tickets.length} \xB7 client for ${ago(c.created_at)}${c.handoff ? ` \xB7 hand-off: ${c.handoff}` : ""}`
-        }
-      ),
-      /* @__PURE__ */ jsx(FormPane, { className: "aw-group", children: /* @__PURE__ */ jsx(ClientControls, { c }) }),
-      /* @__PURE__ */ jsxs("section", { className: "ui-section", children: [
-        /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
-          "Requests \xB7 ",
-          tickets.length
-        ] }),
-        /* @__PURE__ */ jsx(
-          DataTable,
-          {
-            label: "Requests",
-            rows: tickets,
-            onOpen: (t) => openTicket(t.id),
-            empty: { title: "No requests yet.", hint: "What this client files in the portal, or asks their assistant for, appears here." },
-            columns: [
-              { key: "id", header: "#", mono: true, fit: true, render: (t) => `#${t.id}` },
-              {
-                key: "title",
-                header: "Title",
-                render: (t) => /* @__PURE__ */ jsxs(Fragment2, { children: [
-                  /* @__PURE__ */ jsx(TicketLink, { id: t.id, children: t.title }),
-                  t.client_waiting_since && !closedTicket(t) ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-                    " ",
-                    /* @__PURE__ */ jsx(StateIndicator, { state: "waiting", tone: "warn", label: "Waiting for you" })
-                  ] }) : null
-                ] })
-              },
-              { key: "status", header: "Status", fit: true, render: (t) => /* @__PURE__ */ jsx(StateIndicator, { state: t.status }) },
-              { key: "project", header: "Project", render: (t) => t.project_name ?? "\u2014" },
-              { key: "cost", header: "Cost", numeric: true, render: (t) => money(chargeOf(t).totalCents) },
-              { key: "updated", header: "Updated", fit: true, render: (t) => `${ago(t.updated_at)} ago` }
-            ]
-          }
-        )
-      ] })
-    ] });
-  }
-  var clientMenu = (c, open) => [
-    { label: "Open", run: () => open(`c:${c.id}`) },
-    { label: "Email\u2026", run: () => window.open(`mailto:${c.email}`) },
-    { label: "Copy email address", run: () => void navigator.clipboard?.writeText(c.email) }
-  ];
-  function ClientInspector({ c, onClose }) {
-    const { api, act, ask, data, open, setModal } = useAdmin();
-    const tickets = ticketsOf(data, c);
-    const openCount = tickets.filter((t) => !closedTicket(t)).length;
-    const projects = data.projects.filter((p) => (c.projectIds ?? []).includes(p.id));
-    const lastSeen = lastSeenOf(c);
-    const remove = (p) => ask({
-      title: `Remove ${c.email} from ${p.name}?`,
-      text: "They stop seeing its requests and stop getting its emails. Their account and their own requests stay.",
-      confirm: "Remove",
-      danger: true,
-      run: () => act(() => api("DELETE", `/admin/clients/${c.id}/projects/${p.id}`), `Removed ${c.email} from ${p.name}.`).catch(() => void 0)
-    });
-    return /* @__PURE__ */ jsxs(Inspector, { title: c.name || c.email, label: `Client ${c.email}`, storageKey: "ptech.clients.inspector.w", onClose, children: [
-      c.pending ? /* @__PURE__ */ jsx(StateIndicator, { state: "invited", tone: "warn", label: "Invited, not signed in yet" }) : null,
-      /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
-        /* @__PURE__ */ jsx(Button, { onClick: () => open(`c:${c.id}`), title: "Open client page  Enter", children: "Open client page" }),
-        /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(InviteClientModal, { client: c, onClose: close }) }), children: "Add to projects\u2026" }),
-        /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => window.open(`mailto:${c.email}`), children: "Email\u2026" })
-      ] }),
-      /* @__PURE__ */ jsxs("dl", { className: "ui-props", children: [
-        /* @__PURE__ */ jsx("dt", { children: "Email" }),
-        /* @__PURE__ */ jsx("dd", { children: c.email }),
-        c.name ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx("dt", { children: "Name" }),
-          /* @__PURE__ */ jsx("dd", { children: c.name })
-        ] }) : null,
-        /* @__PURE__ */ jsx("dt", { children: "Requests" }),
-        /* @__PURE__ */ jsxs("dd", { children: [
-          openCount,
-          " open of ",
-          tickets.length
-        ] }),
-        /* @__PURE__ */ jsx("dt", { children: "Client for" }),
-        /* @__PURE__ */ jsx("dd", { children: ago(c.created_at) }),
-        /* @__PURE__ */ jsx("dt", { children: "Last seen" }),
-        /* @__PURE__ */ jsx("dd", { children: lastSeen ? `${ago(lastSeen)} ago` : "Unavailable" }),
-        /* @__PURE__ */ jsx("dt", { children: "Language" }),
-        /* @__PURE__ */ jsx("dd", { children: localeName(c.locale ?? "en-US") }),
-        /* @__PURE__ */ jsx("dt", { children: "Translation" }),
-        /* @__PURE__ */ jsx("dd", { children: TRANSLATION_LABEL[c.translation ?? "deepseek"] ?? c.translation }),
-        c.role !== "admin" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx("dt", { children: "First preview" }),
-          /* @__PURE__ */ jsx("dd", { children: c.first_preview_at ? `used ${ago(c.first_preview_at)} ago` : "not used yet" })
-        ] }) : null,
-        c.handoff ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx("dt", { children: "Hand-off" }),
-          /* @__PURE__ */ jsx("dd", { children: c.handoff })
-        ] }) : null
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
-        /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Usage" }),
-        /* @__PURE__ */ jsx("p", { className: "ui-note", children: c.usage ? usageLine(c.usage) : "Usage unavailable" })
-      ] }),
-      c.pending || c.inviteExpiresAt ? /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
-        /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Invite" }),
-        /* @__PURE__ */ jsx(InviteControls, { c })
-      ] }) : null,
-      /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
-        /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
-          "Projects \xB7 ",
-          projects.length
-        ] }),
-        /* @__PURE__ */ jsx(
-          DataTable,
-          {
-            label: `Projects of ${c.name || c.email}`,
-            rows: projects,
-            onOpen: (p) => open(`p:${p.id}`),
-            empty: { title: "No projects.", hint: "Add them to a project to give them a portal for it." },
-            columns: [
-              { key: "name", header: "Project", render: (p) => /* @__PURE__ */ jsx("strong", { title: p.slug, children: p.name }) },
-              { key: "node", header: "Node", render: (p) => /* @__PURE__ */ jsx(StateIndicator, { ...projectNodeState(p, data.nodes) }) },
-              { key: "site", header: "Site", render: (p) => siteStateOf(p) },
-              { key: "people", header: "People", render: (p) => `${p.clients?.length ?? 0}` },
-              {
-                key: "actions",
-                header: "Actions",
-                fit: true,
-                render: (p) => /* @__PURE__ */ jsxs("span", { className: "ui-meta", children: [
-                  /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", "aria-label": `Open ${p.name}`, onClick: (e) => {
-                    e.stopPropagation();
-                    open(`p:${p.id}`);
-                  }, children: "Open" }),
-                  /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", "aria-label": `Remove from ${p.name}`, onClick: (e) => {
-                    e.stopPropagation();
-                    remove(p);
-                  }, children: "Remove\u2026" })
-                ] })
-              }
-            ]
-          }
-        )
-      ] })
-    ] });
-  }
-  var CLIENT_SORTS = {
-    name: (c) => (c.name || c.email).toLowerCase(),
-    projects: (c) => c.projectIds?.length ?? 0,
-    seen: (c) => lastSeenOf(c) ?? 0
-  };
-  function ClientsView() {
-    const { data, setModal, open } = useAdmin();
-    const root = useRef(null);
-    const [sort, setSort] = useState({ key: "name", dir: 1 });
-    const [selectedId, setSelectedId] = useState(null);
-    const rows = useMemo(() => {
-      const get = CLIENT_SORTS[sort.key];
-      return [...data.clients].sort((a, b) => (get(a) > get(b) ? 1 : get(a) < get(b) ? -1 : 0) * sort.dir);
-    }, [data.clients, sort]);
-    const selected = selectedId == null ? null : rows.find((c) => c.id === selectedId) ?? null;
-    const close = () => setSelectedId(null);
-    useRevealInspector(root, selected?.id ?? null);
-    const invite = () => setModal({ kind: "custom", render: (onClose) => /* @__PURE__ */ jsx(InviteClientModal, { onClose }) });
-    return /* @__PURE__ */ jsxs("div", { ref: root, className: "ui-workspace aw-clients", onKeyDown: closeOnEscape2(Boolean(selected), close), children: [
-      /* @__PURE__ */ jsx(UiStyles, {}),
-      /* @__PURE__ */ jsx(
-        PageHeader,
-        {
-          title: "Clients",
-          subtitle: data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : "Who you work for. Select a client to inspect them; Enter opens their page.",
-          actions: /* @__PURE__ */ jsx(Button, { kind: "primary", icon: "plus", onClick: invite, children: "Invite client" }),
-          overflow: [{ label: "New project\u2026", run: () => setModal({ kind: "project" }) }]
-        }
-      ),
-      /* @__PURE__ */ jsxs("div", { className: "ui-split", children: [
-        /* @__PURE__ */ jsx("div", { className: "ui-split__main", children: /* @__PURE__ */ jsx(
-          DataTable,
-          {
-            label: "Clients",
-            rows,
-            selected: selected?.id ?? null,
-            onSelect: (c) => setSelectedId(c.id),
-            onOpen: (c) => open(`c:${c.id}`),
-            menu: (c) => clientMenu(c, open),
-            sort,
-            onSort: (key) => setSort((s) => ({ key, dir: s.key === key ? -s.dir : key === "name" ? 1 : -1 })),
-            empty: { title: "No clients yet.", hint: "Invite a client and they get a portal account for their projects." },
-            columns: [
-              {
-                key: "name",
-                header: "Client",
-                sortable: true,
-                render: (c) => /* @__PURE__ */ jsxs("span", { title: c.email, children: [
-                  /* @__PURE__ */ jsx("strong", { children: c.name || c.email }),
-                  c.name ? /* @__PURE__ */ jsxs("span", { className: "ui-note", children: [
-                    " ",
-                    c.email
-                  ] }) : null
-                ] })
-              },
-              { key: "projects", header: "Projects", numeric: true, sortable: true, render: (c) => c.projectIds?.length ?? 0 },
-              { key: "usage", header: "Usage", render: (c) => c.usage ? usageLine(c.usage) : "Usage unavailable" },
-              {
-                key: "seen",
-                header: "Last seen",
-                fit: true,
-                sortable: true,
-                render: (c) => c.pending ? /* @__PURE__ */ jsx(StateIndicator, { state: "invited", tone: "warn", label: "Invited" }) : lastSeenOf(c) ? `${ago(lastSeenOf(c))} ago` : /* @__PURE__ */ jsx("span", { title: "Last seen unavailable", children: "\u2014" })
-              }
-            ]
-          }
-        ) }),
-        selected ? /* @__PURE__ */ jsx(ClientInspector, { c: selected, onClose: close }) : null
-      ] })
-    ] });
-  }
-  function TranslationsPanel() {
-    const { api, act } = useAdmin();
-    const [status, setStatus] = useState(null);
-    const load = useCallback(() => api("GET", "/admin/i18n").then(setStatus, () => void 0), [api]);
-    usePoll(load, status?.requestedAt || status?.runningSince ? 15e3 : 12e4, [load, status?.requestedAt, status?.runningSince]);
-    useEffect(() => void load(), [load]);
-    const last = status?.last;
-    const rejected = last ? Object.entries(last.rejected ?? {}) : [];
-    const failed = last ? Object.entries(last.failed ?? {}) : [];
-    const busy = Boolean(status?.requestedAt || status?.runningSince);
-    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-      /* @__PURE__ */ jsxs("h3", { className: "aw-row-h", children: [
-        "Translations",
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(
-          Button,
-          {
-            size: "sm",
-            disabled: !status?.ready || busy,
-            disabledReason: !status ? "Reading the translation status\u2026" : !status.ready ? "Needs DEEPSEEK_API_KEY and the GitHub App secrets on the Worker." : "A translation run is already queued or running.",
-            title: "Translate every interface and email string that is missing or out of date, in all languages, and commit it to master",
-            onClick: () => void act(() => api("POST", "/admin/i18n/sync", {}), "Translation starts within 5 minutes.").then(setStatus, () => void 0),
-            children: status?.runningSince ? "Translating\u2026" : status?.requestedAt ? "Queued" : "Translate now"
-          }
-        )
-      ] }),
-      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-        "Translates every interface and email string that is new or re-worded, in all languages, with DeepSeek, and commits it to ",
-        status?.repo ?? "the repo",
-        ". That push deploys like any other. Until then, untranslated strings show in English."
-      ] }),
-      status?.englishChanged && !busy ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
-        "English changed on master since the last translation",
-        status.checkedAt ? ` (checked ${ago(status.checkedAt)} ago)` : "",
-        "."
-      ] }) : null,
-      status ? /* @__PURE__ */ jsxs("label", { className: "aw-check", children: [
-        /* @__PURE__ */ jsx(
-          "input",
-          {
-            type: "checkbox",
-            checked: Boolean(status.auto),
-            onChange: (e) => void act(
-              () => api("PUT", "/admin/i18n", { auto: e.target.checked }),
-              e.target.checked ? "Translations now follow every English change." : "Translations run only from the button."
-            ).then(setStatus, () => void 0)
-          }
-        ),
-        "Translate automatically whenever English changes"
-      ] }) : null,
-      status && !status.ready ? /* @__PURE__ */ jsx("p", { className: "aw-warn", children: "Needs DEEPSEEK_API_KEY and the GitHub App secrets on the Worker." }) : null,
-      status?.runningSince ? /* @__PURE__ */ jsxs("p", { children: [
-        "Translating since ",
-        ago(status.runningSince),
-        " ago."
-      ] }) : status?.requestedAt ? /* @__PURE__ */ jsxs("p", { children: [
-        "Queued ",
-        ago(status.requestedAt),
-        " ago; the next five-minute tick runs it."
-      ] }) : null,
-      last ? /* @__PURE__ */ jsxs("p", { className: last.ok ? "aw-muted" : "aw-warn", children: [
-        "Last run ",
-        ago(last.at),
-        " ago (",
-        last.trigger === "manual" ? "by hand" : "English changed",
-        "):",
-        " ",
-        last.error ? last.error : last.keys || last.removed ? `${last.keys} string${last.keys === 1 ? "" : "s"} in ${last.locales} language${last.locales === 1 ? "" : "s"}${last.removed ? `, ${last.removed} old removed` : ""}${last.commit ? `, commit ${last.commit.slice(0, 7)}` : ""}.` : "everything was already translated."
-      ] }) : status ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No run yet." }) : null,
-      failed.length ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
-        "Failed: ",
-        failed.map(([code, why]) => `${code} (${why})`).join("; ")
-      ] }) : null,
-      rejected.length ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-        "Kept in English (the placeholders did not survive): ",
-        rejected.map(([code, keys]) => `${code}: ${keys.join(", ")}`).join("; ")
-      ] }) : null
-    ] });
-  }
-  var SETTING_NUMBERS = {
-    stallMinutes: { max: 1440, min: 0, error: "Enter a whole number from 0 to 1,440." },
-    maxAttempts: { max: 10, min: 1, error: "Enter a whole number from 1 to 10." },
-    autoApproveCents: { max: 1e5, min: 0, decimal: true, error: "Enter USD from 0 to 100,000, with at most two decimal places." },
-    first_preview_limit_usd: { max: 1e3, min: 0, decimal: true, error: "Enter USD from 0 to 1,000, with at most two decimal places." }
-  };
-  var SITES_HOST = /^(?=.{3,100}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
-  function settingsText(settings) {
-    return Object.fromEntries(Object.entries(settings).map(([key, value]) => [
-      key,
-      key === "autoApproveCents" ? (value / 100).toFixed(2) : key in SETTING_NUMBERS ? String(value) : value
-    ]));
-  }
-  function validateSettings(draft, current) {
-    const parsed = { ...draft };
-    const errors = {};
-    for (const [key, { min, max, decimal, error }] of Object.entries(SETTING_NUMBERS)) {
-      const input = (draft[key] ?? "").trim();
-      const numeric = Number(input);
-      const valid = decimal ? /^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(input) : /^\d+$/.test(input);
-      if (!valid || numeric < min || numeric > max) errors[key] = error;
-      else parsed[key] = key === "autoApproveCents" ? Math.round(numeric * 100) : numeric;
-    }
-    parsed.sitesDomain = (draft.sitesDomain ?? "").trim().toLowerCase();
-    if (!SITES_HOST.test(parsed.sitesDomain)) errors.sitesDomain = "Enter a hostname like ptechsolutions.dev, without a protocol or path.";
-    const patch = Object.fromEntries(Object.entries(parsed).filter(([key, value]) => value !== current[key]));
-    return { patch, errors };
-  }
-  function SettingsView() {
-    const { api, act, ask, platform, host, notify, reload } = useAdmin();
-    const [edits, setEdits] = useState({});
-    const [saving, setSaving] = useState(false);
-    const [read, setRead] = useState({ loading: true, settings: null });
-    const [readAttempt, setReadAttempt] = useState(0);
-    useEffect(() => {
-      let current = true;
-      api("GET", "/admin/settings").then(({ settings }) => {
-        if (current) setRead({ loading: false, settings: settings ?? null });
-      }, () => {
-        if (current) setRead({ loading: false, settings: null });
-      });
-      return () => {
-        current = false;
-      };
-    }, [api, readAttempt]);
-    const baseline = settingsText(read.settings ?? {});
-    const draft = { ...baseline, ...edits };
-    const set = (key, value) => setEdits((previous) => ({ ...previous, [key]: value }));
-    const changed = Object.keys(edits).some((key) => edits[key] !== baseline[key]);
-    const { patch, errors } = validateSettings(draft, read.settings ?? {});
-    const invalid = Object.keys(errors).length > 0;
-    const [token, setToken] = useState("");
-    const textInput = (key, mode) => /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsx(
-        "input",
-        {
-          inputMode: mode,
-          value: draft[key] ?? "",
-          disabled: saving,
-          "aria-invalid": errors[key] ? true : void 0,
-          "aria-describedby": errors[key] ? `aw-settings-error-${key}` : void 0,
-          onChange: (e) => set(key, e.target.value)
-        }
-      ),
-      errors[key] ? /* @__PURE__ */ jsx("span", { id: `aw-settings-error-${key}`, className: "aw-warn", children: errors[key] }) : null
-    ] });
-    const save = async () => {
-      setSaving(true);
-      try {
-        const { settings } = await act(() => api("PATCH", "/admin/settings", patch), "Settings saved.");
-        setRead({ loading: false, settings });
-        setEdits({});
-      } catch {
-      } finally {
-        setSaving(false);
-      }
-    };
-    const submit = () => {
-      if (invalid || saving || !Object.keys(patch).length) return;
-      if (!Object.hasOwn(patch, "sitesDomain")) return void save();
-      ask({
-        title: `Change sites domain to ${patch.sitesDomain}?`,
-        text: "This changes the default addresses shown for existing managed sites as well as new sites. Make sure the new domain is ready before saving.",
-        confirm: "Change domain",
-        run: save
-      });
-    };
-    const retry = () => {
-      setRead({ loading: true, settings: null });
-      setReadAttempt((attempt) => attempt + 1);
-    };
-    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-settings", children: [
-      /* @__PURE__ */ jsx(PageHeader, { title: "Settings", subtitle: "How the queue runs, what the portal does on its own, and this machine." }),
-      platform === "dsh" && host ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-          /* @__PURE__ */ jsx("h3", { children: "Portal connection" }),
-          /* @__PURE__ */ jsx(Field, { label: "Session token", hint: "Sign in on ptechsolutions.net/portal, then paste the session token here. It stays on this machine.", children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-            /* @__PURE__ */ jsx("input", { type: "password", value: token, placeholder: "paste token", onChange: (e) => setToken(e.target.value) }),
-            /* @__PURE__ */ jsx(
-              Button,
-              {
-                kind: "primary",
-                disabled: !token.trim(),
-                disabledReason: "Paste the session token first.",
-                onClick: async () => {
-                  const r = await host.command(`login ${token.trim()}`);
-                  notify(r.text, r.ok ? "ok" : "error");
-                  setToken("");
-                  void reload();
-                },
-                children: "Save"
-              }
-            ),
-            /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: async () => notify((await host.command("logout")).text), children: "Sign out" })
-          ] }) })
-        ] }),
-        /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-          /* @__PURE__ */ jsx("h3", { children: "This machine\u2019s tools" }),
-          /* @__PURE__ */ jsx(ToolboxPanel, {})
-        ] })
-      ] }) : null,
-      /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
-        /* @__PURE__ */ jsx("h3", { children: "Work queue" }),
-        !read.settings ? read.loading ? /* @__PURE__ */ jsx(Skeleton, { lines: 4, label: "Reading settings\u2026" }) : /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
-          /* @__PURE__ */ jsx("p", { className: "aw-warn", role: "alert", children: "Could not read settings." }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: retry, children: "Retry" })
-        ] }) : /* @__PURE__ */ jsx(Fragment2, { children: /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
-          /* @__PURE__ */ jsx(Field, { label: "Stalled after (minutes)", hint: "An in-progress item with no report for this long is flagged.", children: textInput("stallMinutes", "numeric") }),
-          /* @__PURE__ */ jsx(Field, { label: "Attempts before review", hint: "Node restarts do not count.", children: textInput("maxAttempts", "numeric") }),
-          /* @__PURE__ */ jsx(Field, { label: "Default priority", children: /* @__PURE__ */ jsx(Segmented, { value: draft.defaultPriority ?? 0, options: PRIORITIES, onChange: (v) => !saving && set("defaultPriority", v) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Email me when a run finishes", children: /* @__PURE__ */ jsx(Segmented, { value: Boolean(draft.notifyRunFinished), options: [{ value: true, label: "On" }, { value: false, label: "Off" }], onChange: (v) => !saving && set("notifyRunFinished", v) }) }),
-          /* @__PURE__ */ jsx(Field, { label: "Auto-approve runs under (USD)", hint: "An Autopilot request with its own budget at or below this starts without you. 0 turns it off.", children: textInput("autoApproveCents", "decimal") }),
-          /* @__PURE__ */ jsx(Field, { label: "Sites domain", children: textInput("sitesDomain", "url") }),
-          /* @__PURE__ */ jsx(Field, { label: "Clients may publish their site", children: /* @__PURE__ */ jsx(Segmented, { value: Boolean(draft.clientPublish), options: [{ value: true, label: "Yes" }, { value: false, label: "No" }], onChange: (v) => !saving && set("clientPublish", v) }) }),
-          /* @__PURE__ */ jsx(
-            Field,
-            {
-              label: "First preview limit (USD)",
-              hint: "A new client's first request starts by itself, with its AI run capped at this many dollars. Free to the client. 0 turns it off.",
-              children: textInput("first_preview_limit_usd", "decimal")
-            }
-          )
-        ] }) })
-      ] }),
-      /* @__PURE__ */ jsx(TranslationsPanel, {}),
-      read.settings ? /* @__PURE__ */ jsxs("footer", { className: "aw-settings__foot", children: [
-        changed ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "Unsaved changes" }) : null,
-        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        /* @__PURE__ */ jsx(Button, { disabled: !changed || saving, onClick: () => setEdits({}), children: "Reset" }),
-        /* @__PURE__ */ jsx(Button, { kind: "primary", busy: saving, disabled: invalid || !Object.keys(patch).length, disabledReason: invalid ? "Fix the highlighted fields first." : "Nothing has changed yet.", onClick: submit, children: saving ? "Saving\u2026" : "Save" })
-      ] }) : null
-    ] });
+    window.addEventListener(EVENT, listener);
+    return () => window.removeEventListener(EVENT, listener);
   }
 
   // packages/admin-ui/src/marketing.jsx
@@ -5757,14 +4699,14 @@ ${block(Object.entries(TOKENS))}
     }
     return null;
   }
-  var obsEtaMinutes = (pending) => pending * 5 / 12;
+  var obsEtaMinutes = (pending2) => pending2 * 5 / 12;
   function fmtEta(minutes) {
     if (minutes < 90) return `~${Math.max(1, Math.round(minutes))}m`;
     if (minutes < 60 * 36) return `~${Math.round(minutes / 60)}h`;
     return `~${(minutes / 1440).toFixed(1)}d`;
   }
   var percentNumber = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
-  var pct2 = (rate) => `${percentNumber.format(rate * 100)}%`;
+  var pct = (rate) => `${percentNumber.format(rate * 100)}%`;
   function useResource(load, deps, { keepOnError = false } = {}) {
     const request = useCallback(load, deps);
     const [version, setVersion] = useState(0);
@@ -5815,7 +4757,7 @@ ${block(Object.entries(TOKENS))}
     }, [activeKey, rows, getKey, loading, onChange]);
     return resolved;
   }
-  var closeOnEscape3 = (open, close) => (e) => {
+  var closeOnEscape2 = (open, close) => (e) => {
     if (e.key !== "Escape" || e.defaultPrevented || !open) return;
     if (e.target?.closest?.('input, textarea, select, [contenteditable], .aw-menu, [role="dialog"]')) return;
     e.preventDefault();
@@ -5837,14 +4779,11 @@ ${block(Object.entries(TOKENS))}
   }
   var runMessage = (result) => result?.reason ? REASONS[result.reason] ?? `Nothing sent: ${result.reason}` : `Sent ${result?.sent ?? 0}${result?.failed ? `, ${result.failed} failed` : ""}.`;
   function MarketingView() {
-    const { api, act, ask, notify } = useAdmin();
-    const sendingControl = useRef(null);
-    const [sendingBusy, setSendingBusy] = useState(false);
+    const { api, act, ask, notify, open } = useAdmin();
     const [selectedBulk, setSelectedBulk] = useState(() => /* @__PURE__ */ new Set());
     const [tab, setTab] = useState("overview");
     const [modal, setModal] = useState(null);
     const [inspector, setInspector] = useState(null);
-    const [settingsDirty, setSettingsDirty] = useState(false);
     const [filters, setFilters] = useState({ status: "", q: "", source: "", offset: 0 });
     const filter = useCallback((patch) => {
       setSelectedBulk(/* @__PURE__ */ new Set());
@@ -5889,6 +4828,9 @@ ${block(Object.entries(TOKENS))}
       setTab(next);
       setInspector(null);
     }, []);
+    const openMarketingSettings = useCallback(() => openSettings(open, "marketing"), [open]);
+    const goTab = useCallback((next) => next === "settings" ? openMarketingSettings() : switchTab(next), [openMarketingSettings, switchTab]);
+    const sending = useSendingSwitch({ api, ask, mutate, overview, resource: desk });
     if (!overview) {
       return /* @__PURE__ */ jsxs("div", { className: "ui-workspace aw-mk", children: [
         /* @__PURE__ */ jsx(UiStyles, {}),
@@ -5897,30 +4839,7 @@ ${block(Object.entries(TOKENS))}
     }
     const { settings, health } = overview;
     const state = deskState(overview);
-    const changeSending = async (live) => {
-      setSendingBusy(true);
-      try {
-        await mutate(async () => {
-          const out = await api("PUT", "/admin/marketing/settings", { live });
-          if (out.rejected?.includes("live")) throw new Error("The server rejected the sending change.");
-          return out;
-        }, live ? "Outreach is live." : "Paused.");
-      } finally {
-        setSendingBusy(false);
-      }
-    };
-    const startSending = () => {
-      const cap = settings.dailyCap;
-      const currentCap = overview.autoResume?.cap ?? cap;
-      const ramp = overview.autoResume?.resumedAt ? `The active ramp currently limits sending to ${currentCap}/day.` : "No send ramp is active.";
-      ask({
-        title: "Start sending cold email?",
-        text: `The five-minute cron can start sending eligible emails on its next run. Saved daily cap: ${cap}/day. ${ramp}`,
-        confirm: "Go live",
-        danger: true,
-        run: () => changeSending(true)
-      });
-    };
+    const startSending = sending.start;
     const bulk = (action) => {
       void mutate(
         () => api("POST", "/admin/marketing/contacts/bulk", { action, ids: [...selectedBulk] }),
@@ -5931,13 +4850,13 @@ ${block(Object.entries(TOKENS))}
       () => api("PATCH", `/admin/marketing/contacts/${contact.id}`, { status: "opted_out" }),
       `${contact.email} opted out; queued mail cancelled.`
     );
-    const sendDisabled = sendingBusy || desk.loading || Boolean(desk.error);
-    const sendDisabledReason = sendingBusy ? "Updating sending state\u2026" : desk.loading ? "Refreshing marketing status\u2026" : desk.error ? "Refresh the desk before changing sending state." : void 0;
-    const toggleSending = () => settings.live ? void changeSending(false).catch(() => void 0) : startSending();
+    const sendDisabled = sending.disabled;
+    const sendDisabledReason = sending.disabledReason;
+    const toggleSending = sending.toggle;
     const runNow = () => run(() => api("POST", "/admin/marketing/run"), runMessage);
     const rerenderScheduled = () => run(() => api("POST", "/admin/marketing/messages/rerender"), "Scheduled emails now use the current wording.");
     const draftPosts = () => run(() => api("POST", "/admin/marketing/cycle?force=1"), cycleMessage);
-    const quietHeader = Boolean(inspector) || tab === "settings" && settingsDirty || Boolean(modal);
+    const quietHeader = Boolean(inspector) || Boolean(modal);
     const headerPrimaryKind = quietHeader ? "default" : "primary";
     const sendingOverflowItem = {
       label: settings.live ? "Pause sending" : "Go live",
@@ -5946,9 +4865,12 @@ ${block(Object.entries(TOKENS))}
       danger: !settings.live,
       run: toggleSending
     };
+    const settingsItem = { label: "Marketing settings\u2026", run: openMarketingSettings };
     const deskOverflowItems = [
       { label: "Run now", run: runNow },
-      sendingOverflowItem
+      sendingOverflowItem,
+      { separator: true },
+      settingsItem
     ];
     let headerAction = null;
     let headerOverflow = [];
@@ -5969,7 +4891,9 @@ ${block(Object.entries(TOKENS))}
         { label: "Add contact", run: () => setModal({ kind: "contact" }) },
         { label: "Import CSV", run: () => setModal({ kind: "import" }) },
         { label: "Compose", run: () => setModal({ kind: "compose", channel: "email" }) },
-        { label: "Draft posts", run: draftPosts }
+        { label: "Draft posts", run: draftPosts },
+        { separator: true },
+        settingsItem
       ];
     } else if (tab === "contacts") {
       headerAction = /* @__PURE__ */ jsx(Button, { kind: headerPrimaryKind, onClick: () => setModal({ kind: "contact" }), children: "Add contact" });
@@ -6011,15 +4935,12 @@ ${block(Object.entries(TOKENS))}
       headerOverflow = [
         { label: "Re-render scheduled", run: rerenderScheduled },
         { separator: true },
-        ...settings.live ? deskOverflowItems : [{ label: "Run now", run: runNow }]
+        ...settings.live ? deskOverflowItems : [{ label: "Run now", run: runNow }, { separator: true }, settingsItem]
       ];
-    } else if (tab === "settings") {
-      headerAction = !settings.live ? /* @__PURE__ */ jsx(Button, { kind: headerPrimaryKind, disabled: sendDisabled, disabledReason: sendDisabledReason, onClick: startSending, children: "Go live" }) : null;
-      headerOverflow = settings.live ? deskOverflowItems : [{ label: "Run now", run: runNow }];
     }
-    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace aw-mk", onKeyDown: closeOnEscape3(Boolean(inspector), closeInspector), children: [
+    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace aw-mk", onKeyDown: closeOnEscape2(Boolean(inspector), closeInspector), children: [
       /* @__PURE__ */ jsx(UiStyles, {}),
-      /* @__PURE__ */ jsx("div", { ref: sendingControl, tabIndex: -1, className: "aw-mk-anchor", children: /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsx(
         PageHeader,
         {
           title: "Marketing",
@@ -6028,7 +4949,7 @@ ${block(Object.entries(TOKENS))}
           actions: headerAction,
           overflow: headerOverflow
         }
-      ) }),
+      ),
       desk.error ? /* @__PURE__ */ jsx(ResourceNote, { resource: desk }) : null,
       /* @__PURE__ */ jsx(
         PageTabs,
@@ -6041,8 +4962,7 @@ ${block(Object.entries(TOKENS))}
             { value: "contacts", label: "Contacts" },
             { value: "email", label: "Email" },
             { value: "posts", label: "Posts", badge: overview.postsAwaiting > 0 ? overview.postsAwaiting : void 0 },
-            { value: "sequences", label: "Sequences" },
-            { value: "settings", label: "Settings" }
+            { value: "sequences", label: "Sequences" }
           ]
         }
       ),
@@ -6056,7 +4976,7 @@ ${block(Object.entries(TOKENS))}
           inspector,
           setInspector,
           closeInspector,
-          onTab: switchTab,
+          onTab: goTab,
           onToggleSending: toggleSending,
           onRunNow: runNow,
           onDraftPosts: draftPosts,
@@ -6133,19 +5053,6 @@ ${block(Object.entries(TOKENS))}
           closeInspector
         }
       ) : null,
-      tab === "settings" ? /* @__PURE__ */ jsx(
-        SettingsTab,
-        {
-          overview,
-          mutate,
-          api,
-          onDirtyChange: setSettingsDirty,
-          onShowSending: () => sendingControl.current?.focus(),
-          onToggleSending: toggleSending,
-          sendDisabled,
-          sendDisabledReason
-        }
-      ) : null,
       modal?.kind === "import" ? /* @__PURE__ */ jsx(ImportModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
       modal?.kind === "bulkqueue" ? /* @__PURE__ */ jsx(BulkQueueModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
       modal?.kind === "contact" ? /* @__PURE__ */ jsx(ContactModal, { sequences: overview.sequences, api, onClose: () => setModal(null), onSaved: done }) : null,
@@ -6175,16 +5082,16 @@ ${block(Object.entries(TOKENS))}
   function RateMeter({ label, rate, limit }) {
     const pctOf = Math.min((rate ?? 0) / limit, 1);
     const tone2 = (rate ?? 0) >= limit ? "bad" : (rate ?? 0) >= limit / 2 ? "warn" : "ok";
-    return /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter", title: `${label}: ${pct2(rate ?? 0)} of the ${pct2(limit)} limit`, children: [
+    return /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter", title: `${label}: ${pct(rate ?? 0)} of the ${pct(limit)} limit`, children: [
       /* @__PURE__ */ jsx("span", { className: "aw-mk-meter__label", children: label }),
       /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter__track", children: [
         /* @__PURE__ */ jsx("i", { className: cx("aw-mk-meter__fill", `aw-mk-meter__fill--${tone2}`), style: { width: `${pctOf * 80}%` } }),
         /* @__PURE__ */ jsx("i", { className: "aw-mk-meter__limit" })
       ] }),
       /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter__num", children: [
-        pct2(rate ?? 0),
+        pct(rate ?? 0),
         " of ",
-        pct2(limit)
+        pct(limit)
       ] })
     ] });
   }
@@ -6210,7 +5117,7 @@ ${block(Object.entries(TOKENS))}
       pulse.nextPostAt ? `${when(pulse.nextPostAt)}${pulse.nextPostChannel ? ` \xB7 ${postChannelLabel[pulse.nextPostChannel] ?? pulse.nextPostChannel}` : ""}` : "",
       pulse.postsQueued ? `${pulse.postsQueued} queued` : ""
     ].filter(Boolean).join(" \xB7 ");
-    const pending = observe?.pending ?? 0;
+    const pending2 = observe?.pending ?? 0;
     const observed = observe?.observed ?? 0;
     const withGap = observe?.withGap ?? 0;
     const bounceRate = health?.bounceRate ?? 0;
@@ -6226,7 +5133,7 @@ ${block(Object.entries(TOKENS))}
         complaintRate,
         maxBounceRate: health?.maxBounceRate ?? 0.04,
         maxComplaintRate: health?.maxComplaintRate ?? 2e-3,
-        healthText: `${pct2(bounceRate)} bounces \xB7 ${pct2(complaintRate)} complaints`
+        healthText: `${pct(bounceRate)} bounces \xB7 ${pct(complaintRate)} complaints`
       },
       {
         id: "posts",
@@ -6241,10 +5148,10 @@ ${block(Object.entries(TOKENS))}
       {
         id: "observe",
         name: "Site reading",
-        indicator: pending > 0 ? { state: "running", tone: "info", label: "Reading", live: true } : { state: "idle", tone: "neutral", label: "Idle", live: false },
+        indicator: pending2 > 0 ? { state: "running", tone: "info", label: "Reading", live: true } : { state: "idle", tone: "neutral", label: "Idle", live: false },
         last: `${observed} read${pulse.lastObservedAt ? ` \xB7 last ${when(pulse.lastObservedAt)}` : ""}`,
-        next: pending > 0 ? `${pending} waiting \xB7 ${fmtEta(obsEtaMinutes(pending))}` : "All read",
-        healthText: observed > 0 ? `${pct2(withGap / observed)} found something` : "\u2014"
+        next: pending2 > 0 ? `${pending2} waiting \xB7 ${fmtEta(obsEtaMinutes(pending2))}` : "All read",
+        healthText: observed > 0 ? `${pct(withGap / observed)} found something` : "\u2014"
       },
       {
         id: "domains",
@@ -6536,7 +5443,7 @@ ${block(Object.entries(TOKENS))}
     } else {
       const diff = rate(challenger) - rate(control);
       const leader = diff > 0 ? challenger.label : control.label;
-      verdict = Math.abs(diff) < 5e-4 ? "Same reply rate so far." : `${leader} leads: ${pct2(Math.max(rate(challenger), rate(control)))} vs ${pct2(Math.min(rate(challenger), rate(control)))} reply rate, ${percentNumber.format(Math.abs(diff) * 100)} pts apart.`;
+      verdict = Math.abs(diff) < 5e-4 ? "Same reply rate so far." : `${leader} leads: ${pct(Math.max(rate(challenger), rate(control)))} vs ${pct(Math.min(rate(challenger), rate(control)))} reply rate, ${percentNumber.format(Math.abs(diff) * 100)} pts apart.`;
     }
     const columns = [
       {
@@ -6550,7 +5457,7 @@ ${block(Object.entries(TOKENS))}
       },
       { key: "sent", header: "Sent", numeric: true, render: (s) => s.stats.sent },
       { key: "replies", header: "Replies", numeric: true, render: (s) => s.stats.replies },
-      { key: "rate", header: "Reply rate", numeric: true, render: (s) => pct2(rate(s)) },
+      { key: "rate", header: "Reply rate", numeric: true, render: (s) => pct(rate(s)) },
       { key: "optout", header: "Opt-outs", numeric: true, render: (s) => s.stats.optedOut },
       { key: "bounces", header: "Bounces", numeric: true, render: (s) => s.stats.bounced }
     ];
@@ -6786,7 +5693,7 @@ ${block(Object.entries(TOKENS))}
     );
     const resolvedContact = useSurvivedSelection(activeContactId, contacts, (c) => c.id, people.loading, onSurvive);
     const hasFilters = Boolean(filters.q || filters.status || filters.source);
-    const sourceRate = (n, d) => d ? pct2(n / d) : "\u2014";
+    const sourceRate = (n, d) => d ? pct(n / d) : "\u2014";
     const sourceOptions = useMemo(() => {
       const names = new Set(sources.map((s) => s.source));
       const list2 = sources.map((s) => ({ value: s.source, label: `${s.source} (${s.contacts.toLocaleString("en-US")})` }));
@@ -7406,7 +6313,7 @@ ${block(Object.entries(TOKENS))}
       [setInspector]
     );
     const resolved = useSurvivedSelection(activeKey, sequences, (s) => s.key, false, onSurvive);
-    const replyRate = (s) => s.sent ? pct2(s.replies / s.sent) : "\u2014";
+    const replyRate = (s) => s.sent ? pct(s.replies / s.sent) : "\u2014";
     const columns = [
       {
         key: "label",
@@ -7480,7 +6387,7 @@ ${block(Object.entries(TOKENS))}
           }
         ),
         /* @__PURE__ */ jsx(Button, { onClick: onRunNow, children: "Run now" }),
-        /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => onTab("settings"), children: "Settings" })
+        /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => onTab("settings"), children: "Marketing settings" })
       ] }) : loop.id === "posts" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
         /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => onTab("posts"), children: "Open Posts" }),
         /* @__PURE__ */ jsx(Button, { onClick: onDraftPosts, children: "Draft posts" })
@@ -8208,11 +7115,60 @@ ${block(Object.entries(TOKENS))}
     const label = state.chat ? "DeepSeek up" : state.bridge ? "Workers AI fallback" : "Both engines down";
     return /* @__PURE__ */ jsx(StateIndicator, { state: state.chat ? "online" : "degraded", tone: tone2, label });
   }
-  function SettingsTab({ overview, mutate, api, onDirtyChange, onShowSending, onToggleSending, sendDisabled, sendDisabledReason }) {
+  function useSendingSwitch({ api, ask, mutate, overview, resource }) {
+    const [busy, setBusy] = useState(false);
+    const settings = overview?.settings ?? {};
+    const change = async (live) => {
+      setBusy(true);
+      try {
+        await mutate(async () => {
+          const out = await api("PUT", "/admin/marketing/settings", { live });
+          if (out.rejected?.includes("live")) throw new Error("The server rejected the sending change.");
+          return out;
+        }, live ? "Outreach is live." : "Paused.");
+      } finally {
+        setBusy(false);
+      }
+    };
+    const start = () => {
+      const cap = settings.dailyCap;
+      const currentCap = overview?.autoResume?.cap ?? cap;
+      const ramp = overview?.autoResume?.resumedAt ? `The active ramp currently limits sending to ${currentCap}/day.` : "No send ramp is active.";
+      ask({
+        title: "Start sending cold email?",
+        text: `The five-minute cron can start sending eligible emails on its next run. Saved daily cap: ${cap}/day. ${ramp}`,
+        confirm: "Go live",
+        danger: true,
+        run: () => change(true)
+      });
+    };
+    const disabled = busy || resource.loading || Boolean(resource.error);
+    const disabledReason = busy ? "Updating sending state\u2026" : resource.loading ? "Refreshing marketing status\u2026" : resource.error ? "Refresh the desk before changing sending state." : void 0;
+    const toggle = () => settings.live ? void change(false).catch(() => void 0) : start();
+    return { start, toggle, disabled, disabledReason };
+  }
+  var MARKETING_GROUPS = ["Sending", "Safety", "Content"];
+  function MarketingSettings({ onDirtyChange }) {
+    const { api, act, ask } = useAdmin();
+    const desk = useResource(() => api("GET", "/admin/marketing"), [api], { keepOnError: true });
+    const overview = desk.data;
+    const { reload } = desk;
+    const mutate = useCallback(async (fn, message) => {
+      const result = await act(fn, message);
+      reload();
+      return result;
+    }, [act, reload]);
+    const sending = useSendingSwitch({ api, ask, mutate, overview, resource: desk });
     const [group, setGroup] = useState("Sending");
     const [edits, setEdits] = useState({});
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
+    const changed = Object.keys(edits).length > 0;
+    useEffect(() => {
+      onDirtyChange?.(changed);
+    }, [changed, onDirtyChange]);
+    useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+    if (!overview) return /* @__PURE__ */ jsx(ResourceNote, { resource: desk, label: "Loading Marketing settings\u2026", variant: "rows" });
     const saved = overview.settings;
     const draft = { ...saved, ...edits };
     const set = (key, value) => setEdits((before) => {
@@ -8221,11 +7177,6 @@ ${block(Object.entries(TOKENS))}
       else next[key] = value;
       return next;
     });
-    const changed = Object.keys(edits).length > 0;
-    useEffect(() => {
-      onDirtyChange?.(changed);
-      return () => onDirtyChange?.(false);
-    }, [changed, onDirtyChange]);
     const save = async () => {
       const { live: _live, ...patch } = edits;
       setBusy(true);
@@ -8244,25 +7195,29 @@ ${block(Object.entries(TOKENS))}
         setBusy(false);
       }
     };
-    return /* @__PURE__ */ jsxs("div", { className: "ui-split__main", children: [
-      /* @__PURE__ */ jsxs(FormPane, { children: [
-        /* @__PURE__ */ jsx(Panel, { title: "Marketing settings", actions: /* @__PURE__ */ jsx(ModelHealth, { api }), children: /* @__PURE__ */ jsx(
-          Segmented,
-          {
-            label: "Settings group",
-            value: group,
-            options: ["Sending", "Safety", "Content"].map((label) => ({ value: label, label })),
-            onChange: setGroup
-          }
-        ) }),
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs(FormPane, { className: "aw-settings-form", children: [
+        desk.error ? /* @__PURE__ */ jsx(ResourceNote, { resource: desk }) : null,
+        /* @__PURE__ */ jsxs("div", { className: "aw-settings-form__head", children: [
+          /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              label: "Marketing settings group",
+              value: group,
+              options: MARKETING_GROUPS.map((label) => ({ value: label, label })),
+              onChange: setGroup
+            }
+          ),
+          /* @__PURE__ */ jsx("span", { className: "aw-settings-form__fill" }),
+          /* @__PURE__ */ jsx(ModelHealth, { api })
+        ] }),
         /* @__PURE__ */ jsx("fieldset", { disabled: busy, className: "aw-mk-settings-fields", children: group === "Sending" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Panel, { title: "Sender", subtitle: "Who the mail comes from.", children: /* @__PURE__ */ jsxs("div", { className: "aw-form2", children: [
+          /* @__PURE__ */ jsxs(Panel, { title: "Sender", subtitle: "Who the mail comes from.", children: [
             /* @__PURE__ */ jsxs("div", { className: "aw-field", children: [
               /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: "Outreach" }),
               /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
                 /* @__PURE__ */ jsx(StateIndicator, { state: saved.live ? "running" : "paused", tone: saved.live ? "ok" : "warn", label: saved.live ? "Live" : "Paused", live: saved.live }),
-                /* @__PURE__ */ jsx(Button, { size: "sm", disabled: sendDisabled, disabledReason: sendDisabledReason, onClick: onToggleSending, children: saved.live ? "Pause sending" : "Go live" }),
-                /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: onShowSending, children: "Header control" })
+                /* @__PURE__ */ jsx(Button, { size: "sm", disabled: sending.disabled, disabledReason: sending.disabledReason, onClick: sending.toggle, children: saved.live ? "Pause sending" : "Go live" })
               ] })
             ] }),
             /* @__PURE__ */ jsx(
@@ -8286,8 +7241,8 @@ ${block(Object.entries(TOKENS))}
             ),
             /* @__PURE__ */ jsx(Field, { label: "From name", hint: "On the From line of every email.", children: /* @__PURE__ */ jsx("input", { value: draft.fromName, onChange: (e) => set("fromName", e.target.value) }) }),
             /* @__PURE__ */ jsx(Field, { label: "Postal address", hint: "Required on every cold email.", children: /* @__PURE__ */ jsx("input", { value: draft.postalAddress, placeholder: "Street, city, country", onChange: (e) => set("postalAddress", e.target.value) }) })
-          ] }) }),
-          /* @__PURE__ */ jsx(Panel, { title: "Schedule and volume", subtitle: "When mail may leave, and how much of it.", children: /* @__PURE__ */ jsxs("div", { className: "aw-form2", children: [
+          ] }),
+          /* @__PURE__ */ jsxs(Panel, { title: "Schedule and volume", subtitle: "When mail may leave, and how much of it.", children: [
             /* @__PURE__ */ jsx(Field, { label: "Send window", hint: "Local time on the offset clock; an end of 24 means midnight.", children: /* @__PURE__ */ jsxs("span", { className: "aw-inline aw-mk-window", children: [
               "From",
               " ",
@@ -8341,69 +7296,68 @@ ${block(Object.entries(TOKENS))}
                 onChange: (v) => set("weekdaysOnly", v)
               }
             ) }),
-            /* @__PURE__ */ jsx(Field, { label: "Daily cap", hint: "Emails a day across every sequence.", children: /* @__PURE__ */ jsx(
+            /* @__PURE__ */ jsx(Field, { label: "Daily cap", hint: `Emails a day across every sequence. At ${draft.perRun} per run the window allows about ${windowRoom(draft)} a day.`, children: /* @__PURE__ */ jsx(
               "input",
               {
                 inputMode: "numeric",
+                className: "aw-settings-num",
                 value: draft.dailyCap,
                 title: `At ${draft.perRun} per run the window allows about ${windowRoom(draft)} a day.`,
                 onChange: (e) => set("dailyCap", Number(e.target.value))
               }
             ) }),
-            /* @__PURE__ */ jsx(Field, { label: "Per run", hint: "The cron runs every five minutes; up to 200.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", value: draft.perRun, onChange: (e) => set("perRun", Number(e.target.value)) }) })
-          ] }) })
+            /* @__PURE__ */ jsx(Field, { label: "Per run", hint: "The cron runs every five minutes; up to 200.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", className: "aw-settings-num", value: draft.perRun, onChange: (e) => set("perRun", Number(e.target.value)) }) })
+          ] })
         ] }) : group === "Safety" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsxs(Panel, { title: "Safety", subtitle: "The checks that keep the list healthy.", children: [
-            /* @__PURE__ */ jsxs("div", { className: "aw-form2", children: [
-              /* @__PURE__ */ jsx(
-                Field,
-                {
-                  label: "Auto-resume",
-                  hint: "A pause the desk caused itself lifts after 7 quiet days, ramping from 20 a day. A pause you set by hand is never undone.",
-                  children: /* @__PURE__ */ jsx(
-                    Segmented,
-                    {
-                      label: "Auto-resume",
-                      value: Boolean(draft.autoResume),
-                      options: [
-                        { value: true, label: "On" },
-                        { value: false, label: "Off" }
-                      ],
-                      onChange: (v) => set("autoResume", v)
-                    }
-                  )
-                }
-              ),
-              /* @__PURE__ */ jsx(Field, { label: "Review first emails", hint: "First emails send only after you read them in Review next.", children: /* @__PURE__ */ jsx(
-                Segmented,
-                {
-                  label: "Review first emails",
-                  value: Boolean(draft.reviewFirst),
-                  options: [
-                    { value: true, label: "Only reviewed" },
-                    { value: false, label: "Send all" }
-                  ],
-                  onChange: (v) => set("reviewFirst", v)
-                }
-              ) })
-            ] }),
+            /* @__PURE__ */ jsx(
+              Field,
+              {
+                label: "Auto-resume",
+                hint: "A pause the desk caused itself lifts after 7 quiet days, ramping from 20 a day. A pause you set by hand is never undone.",
+                children: /* @__PURE__ */ jsx(
+                  Segmented,
+                  {
+                    label: "Auto-resume",
+                    value: Boolean(draft.autoResume),
+                    options: [
+                      { value: true, label: "On" },
+                      { value: false, label: "Off" }
+                    ],
+                    onChange: (v) => set("autoResume", v)
+                  }
+                )
+              }
+            ),
+            /* @__PURE__ */ jsx(Field, { label: "Review first emails", hint: "First emails send only after you read them in Review next.", children: /* @__PURE__ */ jsx(
+              Segmented,
+              {
+                label: "Review first emails",
+                value: Boolean(draft.reviewFirst),
+                options: [
+                  { value: true, label: "Only reviewed" },
+                  { value: false, label: "Send all" }
+                ],
+                onChange: (v) => set("reviewFirst", v)
+              }
+            ) }),
             /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
               "Last 14 days: ",
               overview.health.sent,
               " sent, ",
               overview.health.bounces,
               " bounced (",
-              pct2(overview.health.bounceRate),
+              pct(overview.health.bounceRate),
               "), ",
               overview.health.complaints,
               " ",
               "complaints (",
-              pct2(overview.health.complaintRate),
+              pct(overview.health.complaintRate),
               "). The desk pauses itself and emails you above ",
-              pct2(overview.health.maxBounceRate),
+              pct(overview.health.maxBounceRate),
               " bounces or",
               " ",
-              pct2(overview.health.maxComplaintRate),
+              pct(overview.health.maxComplaintRate),
               " complaints, before SES would review the account (5% and 0.1%). Every email carries a one-click unsubscribe header."
             ] })
           ] }),
@@ -8412,7 +7366,7 @@ ${block(Object.entries(TOKENS))}
             {
               label: "Observation sequence share (%)",
               hint: "Of contacts with a site observation, this percent get the observation opener. 0 keeps the experiment off, 100 makes it the only cold opener.",
-              children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "100", value: draft.obsShare ?? 50, onChange: (e) => set("obsShare", Number(e.target.value)) })
+              children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", className: "aw-settings-num", min: "0", max: "100", value: draft.obsShare ?? 50, onChange: (e) => set("obsShare", Number(e.target.value)) })
             }
           ) })
         ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
@@ -8442,7 +7396,7 @@ ${block(Object.entries(TOKENS))}
                 onChange: (v) => set("postApproval", v)
               }
             ) }),
-            /* @__PURE__ */ jsx(Field, { label: "Post hold (hours)", hint: "How long a drafted post waits before it goes out on its own. 0 means approve by hand. Up to 168.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "168", value: draft.postHoldHours ?? 24, onChange: (e) => set("postHoldHours", Number(e.target.value)) }) }),
+            /* @__PURE__ */ jsx(Field, { label: "Post hold (hours)", hint: "How long a drafted post waits before it goes out on its own. 0 means approve by hand. Up to 168.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", className: "aw-settings-num", min: "0", max: "168", value: draft.postHoldHours ?? 24, onChange: (e) => set("postHoldHours", Number(e.target.value)) }) }),
             /* @__PURE__ */ jsx(Field, { label: "Voice notes", hint: "Added to every content brief after the launch kit.", children: /* @__PURE__ */ jsx(
               "textarea",
               {
@@ -8478,8 +7432,8 @@ ${block(Object.entries(TOKENS))}
             setEdits({});
             setError(null);
           },
-          saveLabel: "Save settings",
-          discardLabel: "Reset"
+          saveLabel: "Save Marketing settings",
+          discardLabel: "Discard"
         }
       )
     ] });
@@ -8495,7 +7449,7 @@ ${block(Object.entries(TOKENS))}
     const [error, setError] = useState(null);
     const chosen = sequences.find((s) => s.key === sequence);
     const needsGap = Boolean(chosen?.needsGap);
-    const pick = async (event) => {
+    const pick2 = async (event) => {
       const picked = event.target.files?.[0] ?? null;
       setFile(picked);
       setCsv(picked ? await picked.text() : "");
@@ -8529,7 +7483,7 @@ ${block(Object.entries(TOKENS))}
           /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !csv.trim(), onClick: submit, children: busy ? "Importing\u2026" : "Import" })
         ] }),
         children: [
-          /* @__PURE__ */ jsx(Field, { label: "CSV file", hint: "A file with a header row. It is read in the browser and sent as text, so a large export does not have to be pasted.", children: /* @__PURE__ */ jsx("input", { type: "file", accept: ".csv,text/csv", onChange: pick }) }),
+          /* @__PURE__ */ jsx(Field, { label: "CSV file", hint: "A file with a header row. It is read in the browser and sent as text, so a large export does not have to be pasted.", children: /* @__PURE__ */ jsx("input", { type: "file", accept: ".csv,text/csv", onChange: pick2 }) }),
           file ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
             file.name,
             " \xB7 ",
@@ -8765,7 +7719,7 @@ ${block(Object.entries(TOKENS))}
   var plural2 = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   var OUR_DOMAINS = ["malipetek.dev", "ptechsolutions.net"];
   var isOurDomain = (domain) => OUR_DOMAINS.some((host) => domain === host || domain.endsWith(`.${host}`));
-  var pct3 = (rate) => `${Number(((rate ?? 0) * 100).toFixed(1))}%`;
+  var pct2 = (rate) => `${Number(((rate ?? 0) * 100).toFixed(1))}%`;
   var dayNumber = (day) => {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day ?? "");
     return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / DAY : NaN;
@@ -8819,7 +7773,7 @@ ${block(Object.entries(TOKENS))}
     { key: "ranks", label: "Rankings", stateKey: "lastRanksAt", days: 8 }
   ];
   var runLate = (at, days) => !at || Date.now() / 1e3 - at > days * 86400;
-  function TicketLink2({ id, openTicket }) {
+  function TicketLink({ id, openTicket }) {
     if (!id) return /* @__PURE__ */ jsx("span", { className: "ui-note", children: "\u2014" });
     return /* @__PURE__ */ jsxs(
       "a",
@@ -8841,14 +7795,14 @@ ${block(Object.entries(TOKENS))}
   function OutLink({ href, children, className = "aw-link" }) {
     return /* @__PURE__ */ jsx("a", { href, target: "_blank", rel: "noreferrer", className, onClick: (event) => event.stopPropagation(), children });
   }
-  var closeOnEscape4 = (open, close) => (e) => {
+  var closeOnEscape3 = (open, close) => (e) => {
     if (e.key !== "Escape" || e.defaultPrevented || !open) return;
     if (e.target?.closest?.("input, textarea, select, [contenteditable], [role=menu], [role=dialog], .aw-menu")) return;
     e.preventDefault();
     close();
   };
   function SeoSplit({ inspector, onClose, children }) {
-    return /* @__PURE__ */ jsxs("div", { className: "ui-split", onKeyDown: closeOnEscape4(Boolean(inspector), onClose), children: [
+    return /* @__PURE__ */ jsxs("div", { className: "ui-split", onKeyDown: closeOnEscape3(Boolean(inspector), onClose), children: [
       /* @__PURE__ */ jsx("div", { className: "ui-split__main", children }),
       inspector ? /* @__PURE__ */ jsxs(Fragment2, { children: [
         /* @__PURE__ */ jsx("div", { className: "aw-seo-scrim", onClick: onClose, "aria-hidden": "true" }),
@@ -8864,7 +7818,7 @@ ${block(Object.entries(TOKENS))}
   }
   var SectionTitle = ({ children }) => /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children });
   function SeoView() {
-    const { api, ask, notify, openTicket } = useAdmin();
+    const { api, ask, notify, openTicket, open } = useAdmin();
     const [overview, setOverview] = useState(null);
     const [error, setError] = useState(null);
     const [tab, setTab] = useState("overview");
@@ -8933,15 +7887,13 @@ ${block(Object.entries(TOKENS))}
     const cadence = RUN_CADENCE.map((entry) => ({ ...entry, at: state[entry.stateKey] ?? null }));
     const late = cadence.filter((entry) => runLate(entry.at, entry.days));
     const waitReason = busy ? `Wait for the ${RUN_BUSY[busy] ?? busy} to finish.` : void 0;
-    const settings = tab === "settings";
     const desk = { api, ask, notify, openTicket, refresh, run, busy, tick, hosts, overview, writeGuide, guideBusy };
     return /* @__PURE__ */ jsxs("div", { className: "ui-workspace aw-seo", children: [
       /* @__PURE__ */ jsx(UiStyles, {}),
       /* @__PURE__ */ jsx(
         PageHeader,
         {
-          title: settings ? "SEO settings" : "SEO",
-          back: settings ? { label: "SEO", run: () => switchTab("overview") } : void 0,
+          title: "SEO",
           subtitle: cadence.map((entry) => `${entry.label} ${entry.at ? `${ago(entry.at)} ago` : "not run yet"}`).join(" \xB7 "),
           meta: late.length ? /* @__PURE__ */ jsx(
             StateIndicator,
@@ -8971,7 +7923,8 @@ ${block(Object.entries(TOKENS))}
             { label: busy === "ranks" ? "Checking rankings\u2026" : "Check rankings now\u2026", run: () => run("ranks"), disabled: Boolean(busy), disabledReason: waitReason },
             { label: busy === "cycle" ? "Filing the fix cycle\u2026" : "Run a fix cycle now\u2026", run: () => run("cycle"), disabled: Boolean(busy), disabledReason: waitReason },
             { label: guideBusy ? "Filing the guide cycle\u2026" : "Write a guide now\u2026", run: writeGuide, disabled: guideBusy },
-            { label: "SEO settings", run: () => switchTab("settings") }
+            { separator: true },
+            { label: "SEO settings\u2026", run: () => openSettings(open, "seo") }
           ]
         }
       ),
@@ -8995,8 +7948,7 @@ ${block(Object.entries(TOKENS))}
       tab === "audit" ? /* @__PURE__ */ jsx(AuditTab, { desk }) : null,
       tab === "answers" ? /* @__PURE__ */ jsx(GeoTab, { desk }) : null,
       tab === "ranks" ? /* @__PURE__ */ jsx(RankingsTab, { desk }) : null,
-      tab === "citations" ? /* @__PURE__ */ jsx(CitationsTab, { desk, onClaimPrimary: setPrimaryClaimed }) : null,
-      settings ? /* @__PURE__ */ jsx("div", { className: "ui-split", children: /* @__PURE__ */ jsx("div", { className: "ui-split__main", children: /* @__PURE__ */ jsx(SettingsTab2, { api, overview, refresh, notify }) }) }) : null
+      tab === "citations" ? /* @__PURE__ */ jsx(CitationsTab, { desk, onClaimPrimary: setPrimaryClaimed }) : null
     ] });
   }
   function runText(result) {
@@ -9064,7 +8016,7 @@ ${block(Object.entries(TOKENS))}
           items: [
             ...overview.hosts.map((host) => ({ label: `${host.host} score`, value: host.averageScore, hint: plural2(host.pages, "page", "pages") })),
             { label: "open findings", value: openFindings },
-            { label: "assistant mention rate", value: pct3(overview.geo.rate), hint: `${overview.geo.mentions} of ${overview.geo.runs} answers named us` },
+            { label: "assistant mention rate", value: pct2(overview.geo.rate), hint: `${overview.geo.mentions} of ${overview.geo.runs} answers named us` },
             { label: "average Google position", value: hasValue(rank.avgPosition) ? rank.avgPosition : "\u2014" },
             { label: "citations verified", value: `${citations.verified ?? 0} of ${citationTotal}` },
             { label: "targets with a guide", value: `${covered} of ${coverage.length}` }
@@ -9118,7 +8070,7 @@ ${block(Object.entries(TOKENS))}
               " answers"
             ] }),
             /* @__PURE__ */ jsxs("span", { children: [
-              /* @__PURE__ */ jsx("strong", { children: pct3(overview.geo.rate) }),
+              /* @__PURE__ */ jsx("strong", { children: pct2(overview.geo.rate) }),
               " mention rate"
             ] })
           ] })
@@ -9169,7 +8121,7 @@ ${block(Object.entries(TOKENS))}
             /* @__PURE__ */ jsx("dt", { children: "Due" }),
             /* @__PURE__ */ jsx("dd", { children: overview.cycle.wouldFile ? /* @__PURE__ */ jsx(StateIndicator, { state: "cycle_due", tone: "warn", label: "A cycle would file" }) : "No cycle due" }),
             /* @__PURE__ */ jsx("dt", { children: "Open ticket" }),
-            /* @__PURE__ */ jsx("dd", { children: overview.cycle.openTicketId ? /* @__PURE__ */ jsx(TicketLink2, { id: overview.cycle.openTicketId, openTicket }) : /* @__PURE__ */ jsx("span", { className: "ui-note", children: "None" }) }),
+            /* @__PURE__ */ jsx("dd", { children: overview.cycle.openTicketId ? /* @__PURE__ */ jsx(TicketLink, { id: overview.cycle.openTicketId, openTicket }) : /* @__PURE__ */ jsx("span", { className: "ui-note", children: "None" }) }),
             held?.held ? /* @__PURE__ */ jsxs(Fragment2, { children: [
               /* @__PURE__ */ jsx("dt", { children: "Rewrites" }),
               /* @__PURE__ */ jsxs("dd", { children: [
@@ -9214,7 +8166,7 @@ ${block(Object.entries(TOKENS))}
                 header: "Guide",
                 render: (entry) => entry.guide ? /* @__PURE__ */ jsx(OutLink, { href: entry.guide.url, children: entry.guide.title }) : entry.inProgress ? /* @__PURE__ */ jsxs("span", { className: "ui-note", children: [
                   "Writing in ",
-                  /* @__PURE__ */ jsx(TicketLink2, { id: entry.inProgress, openTicket })
+                  /* @__PURE__ */ jsx(TicketLink, { id: entry.inProgress, openTicket })
                 ] }) : entry.lastAttemptAt ? /* @__PURE__ */ jsxs("span", { className: "ui-note", children: [
                   "Attempted ",
                   instantDay(entry.lastAttemptAt)
@@ -9392,7 +8344,7 @@ ${block(Object.entries(TOKENS))}
         const x = x0 + index * (barW + gap);
         const barH = Math.max(1, innerH * Math.max(0, Math.min(1, week.rate ?? 0)));
         return /* @__PURE__ */ jsxs("g", { children: [
-          /* @__PURE__ */ jsx("title", { children: `Week of ${longDay(week.week)}: ${week.mentions} of ${week.runs} answers named us (${pct3(week.rate)})` }),
+          /* @__PURE__ */ jsx("title", { children: `Week of ${longDay(week.week)}: ${week.mentions} of ${week.runs} answers named us (${pct2(week.rate)})` }),
           /* @__PURE__ */ jsx("rect", { x, y: top + innerH - barH, width: barW, height: barH, rx: "2", fill: "var(--ui-ink-2)", opacity: week.runs ? 0.85 : 0.25 }),
           index % 3 === 0 && weeks.length - 1 - index >= 2 || index === weeks.length - 1 ? /* @__PURE__ */ jsx("text", { x: x + barW / 2, y: height - 6, textAnchor: "middle", fontSize: CHART_FONT, fill: "var(--ui-ink-3)", children: shortDay2(week.week) }) : null
         ] }, week.week);
@@ -9754,7 +8706,7 @@ ${block(Object.entries(TOKENS))}
                     " ago"
                   ] })
                 },
-                { key: "ticket", header: "Ticket", fit: true, render: (finding) => /* @__PURE__ */ jsx(TicketLink2, { id: finding.ticketId, openTicket }) }
+                { key: "ticket", header: "Ticket", fit: true, render: (finding) => /* @__PURE__ */ jsx(TicketLink, { id: finding.ticketId, openTicket }) }
               ]
             }
           )
@@ -9797,7 +8749,7 @@ ${block(Object.entries(TOKENS))}
           /* @__PURE__ */ jsx("dd", { children: finding.resolvedAt ? `${ago(finding.resolvedAt)} ago` : "\u2014" })
         ] }) : null,
         /* @__PURE__ */ jsx("dt", { children: "Ticket" }),
-        /* @__PURE__ */ jsx("dd", { children: /* @__PURE__ */ jsx(TicketLink2, { id: finding.ticketId, openTicket }) })
+        /* @__PURE__ */ jsx("dd", { children: /* @__PURE__ */ jsx(TicketLink, { id: finding.ticketId, openTicket }) })
       ] })
     ] });
   }
@@ -9845,7 +8797,7 @@ ${block(Object.entries(TOKENS))}
             StatRow,
             {
               items: [
-                { label: "mention rate", value: pct3(data.summary.rate) },
+                { label: "mention rate", value: pct2(data.summary.rate) },
                 { label: "mentions", value: data.summary.mentions },
                 { label: "answers", value: data.summary.runs },
                 { label: "questions asked weekly", value: data.questions.length }
@@ -9857,7 +8809,7 @@ ${block(Object.entries(TOKENS))}
             /* @__PURE__ */ jsxs("summary", { children: [
               "Last 12 weeks",
               /* @__PURE__ */ jsxs("span", { className: "ui-disclosure__hint", children: [
-                pct3(data.summary.rate),
+                pct2(data.summary.rate),
                 " of answers named us"
               ] })
             ] }),
@@ -10348,11 +9300,30 @@ ${block(Object.entries(TOKENS))}
       ] })
     ] });
   }
-  function SettingsTab2({ api, overview, refresh, notify }) {
+  function SeoSettings({ onDirtyChange }) {
+    const { api, notify } = useAdmin();
+    const [overview, setOverview] = useState(null);
+    const [loadError, setLoadError] = useState(null);
+    const load = useCallback(
+      () => api("GET", "/admin/seo/overview").then((data) => {
+        setOverview(data);
+        setLoadError(null);
+      }).catch(setLoadError),
+      [api]
+    );
+    useEffect(() => {
+      void load();
+    }, [load]);
+    useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+    if (!overview) return loadError ? /* @__PURE__ */ jsx(ErrorNote, { error: loadError, onRetry: load }) : /* @__PURE__ */ jsx(Loading, { label: "Loading SEO settings\u2026" });
+    return /* @__PURE__ */ jsx(SeoSettingsForm, { api, overview, refresh: load, notify, onDirtyChange });
+  }
+  function SeoSettingsForm({ api, overview, refresh, notify, onDirtyChange }) {
     const [draft, setDraft] = useState(overview.settings);
     const [touched, setTouched] = useState(false);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState(null);
+    const [saveError, setSaveError] = useState(null);
     const [eventForm, setEventForm] = useState({ kind: "core_update", label: "", day: "" });
     const [eventBusy, setEventBusy] = useState(false);
     useEffect(() => {
@@ -10367,9 +9338,14 @@ ${block(Object.entries(TOKENS))}
     const keywords = draft.rankKeywords ?? [];
     const location2 = draft.rankLocation ?? { locationCode: 2840, languageCode: "en" };
     const changed = draft.autoCycle !== overview.settings.autoCycle || draft.volatilityHold !== overview.settings.volatilityHold || Boolean(draft.guidesAuto) !== Boolean(overview.settings.guidesAuto) || Number(draft.guidesPerWeek) !== Number(overview.settings.guidesPerWeek) || Boolean(draft.guidesAutoMerge) !== Boolean(overview.settings.guidesAutoMerge) || (draft.geoQuestions ?? []).join("\n") !== (overview.settings.geoQuestions ?? []).join("\n") || keywords.join("\n") !== (overview.settings.rankKeywords ?? []).join("\n") || location2.locationCode !== overview.settings.rankLocation?.locationCode || location2.languageCode !== overview.settings.rankLocation?.languageCode;
+    useEffect(() => {
+      onDirtyChange?.(changed);
+    }, [changed, onDirtyChange]);
     const save = async () => {
+      if (!changed || saving) return;
       setSaving(true);
       setMessage(null);
+      setSaveError(null);
       try {
         const out = await api("POST", "/admin/seo/settings", {
           autoCycle: draft.autoCycle,
@@ -10387,7 +9363,7 @@ ${block(Object.entries(TOKENS))}
         await refresh();
         notify?.("SEO settings saved.");
       } catch (error) {
-        setMessage({ tone: "bad", text: errorText(error) });
+        setSaveError(errorText(error));
       } finally {
         setSaving(false);
       }
@@ -10396,6 +9372,7 @@ ${block(Object.entries(TOKENS))}
       setDraft(overview.settings);
       setTouched(false);
       setMessage(null);
+      setSaveError(null);
     };
     const addEvent = async () => {
       if (!eventForm.label.trim()) {
@@ -10426,146 +9403,1464 @@ ${block(Object.entries(TOKENS))}
       }
     };
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsx(Panel, { title: "Cycle", subtitle: "What the desk does on its own, and when it holds off.", children: /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
-        /* @__PURE__ */ jsx(Field, { label: "Automatic cycles", hint: "On: the desk files a ticket for the worst open findings when none is open.", children: /* @__PURE__ */ jsx(
-          Segmented,
+      /* @__PURE__ */ jsxs(FormPane, { className: "aw-settings-form", children: [
+        message ? /* @__PURE__ */ jsx("p", { className: message.tone === "ok" ? "aw-muted" : "aw-warn", role: "status", children: message.text }) : null,
+        /* @__PURE__ */ jsxs(Panel, { title: "Cycle", subtitle: "What the desk does on its own, and when it holds off.", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Automatic cycles", hint: "On: the desk files a ticket for the worst open findings when none is open.", children: /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              label: "Automatic cycles",
+              value: Boolean(draft.autoCycle),
+              options: [
+                { value: true, label: "On" },
+                { value: false, label: "Off" }
+              ],
+              onChange: (value) => set("autoCycle", value)
+            }
+          ) }),
+          /* @__PURE__ */ jsx(
+            Field,
+            {
+              label: "Volatility hold",
+              hint: "On: after a Google core update the agent only does technical fixes, because rankings swing during the update and a rewrite hides what worked.",
+              children: /* @__PURE__ */ jsx(
+                Segmented,
+                {
+                  label: "Volatility hold",
+                  value: Boolean(draft.volatilityHold),
+                  options: [
+                    { value: true, label: "On" },
+                    { value: false, label: "Off" }
+                  ],
+                  onChange: (value) => set("volatilityHold", value)
+                }
+              )
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxs(Panel, { title: "Guides", subtitle: "One guide per rank keyword and buyer question, filed within the weekly limit.", children: [
+          /* @__PURE__ */ jsx(Field, { label: "Automatic guide cycles", hint: "On: the desk files a ticket for the first target no guide answers, within the weekly limit below.", children: /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              label: "Automatic guide cycles",
+              value: Boolean(draft.guidesAuto),
+              options: [
+                { value: true, label: "On" },
+                { value: false, label: "Off" }
+              ],
+              onChange: (value) => set("guidesAuto", value)
+            }
+          ) }),
+          /* @__PURE__ */ jsx(Field, { label: "Guides per week", hint: "How many guide cycles a week at most, 0 to 7. A target waits three weeks between attempts.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", className: "aw-settings-num", min: "0", max: "7", value: draft.guidesPerWeek ?? 2, onChange: (event) => set("guidesPerWeek", Number(event.target.value)) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Auto-merge guide PRs", hint: "On: a guide PR that passes the checks and the content gate merges itself and pings IndexNow. Off: it waits for you on GitHub.", children: /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              label: "Auto-merge guide PRs",
+              value: Boolean(draft.guidesAutoMerge),
+              options: [
+                { value: true, label: "On" },
+                { value: false, label: "Off" }
+              ],
+              onChange: (value) => set("guidesAutoMerge", value)
+            }
+          ) })
+        ] }),
+        /* @__PURE__ */ jsx(Panel, { title: "Buyer questions", children: /* @__PURE__ */ jsx(Field, { label: "Questions for the weekly GEO probe", hint: `One per line, at most 20. ${usedQuestions} used.`, children: /* @__PURE__ */ jsx("textarea", { rows: 10, value: questions.join("\n"), onChange: (event) => set("geoQuestions", event.target.value.split("\n").slice(0, 20)) }) }) }),
+        /* @__PURE__ */ jsxs(
+          Panel,
           {
-            label: "Automatic cycles",
-            value: Boolean(draft.autoCycle),
-            options: [
-              { value: true, label: "On" },
-              { value: false, label: "Off" }
-            ],
-            onChange: (value) => set("autoCycle", value)
-          }
-        ) }),
-        /* @__PURE__ */ jsx(
-          Field,
-          {
-            label: "Volatility hold",
-            hint: "On: after a Google core update the agent only does technical fixes, because rankings swing during the update and a rewrite hides what worked.",
-            children: /* @__PURE__ */ jsx(
-              Segmented,
-              {
-                label: "Volatility hold",
-                value: Boolean(draft.volatilityHold),
-                options: [
-                  { value: true, label: "On" },
-                  { value: false, label: "Off" }
-                ],
-                onChange: (value) => set("volatilityHold", value)
-              }
-            )
-          }
-        )
-      ] }) }),
-      /* @__PURE__ */ jsx(Panel, { title: "Guides", subtitle: "One guide per rank keyword and buyer question, filed within the weekly limit.", children: /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
-        /* @__PURE__ */ jsx(Field, { label: "Automatic guide cycles", hint: "On: the desk files a ticket for the first target no guide answers, within the weekly limit below.", children: /* @__PURE__ */ jsx(
-          Segmented,
-          {
-            label: "Automatic guide cycles",
-            value: Boolean(draft.guidesAuto),
-            options: [
-              { value: true, label: "On" },
-              { value: false, label: "Off" }
-            ],
-            onChange: (value) => set("guidesAuto", value)
-          }
-        ) }),
-        /* @__PURE__ */ jsx(Field, { label: "Guides per week", hint: "How many guide cycles a week at most, 0 to 7. A target waits three weeks between attempts.", children: /* @__PURE__ */ jsx("input", { inputMode: "numeric", min: "0", max: "7", value: draft.guidesPerWeek ?? 2, onChange: (event) => set("guidesPerWeek", Number(event.target.value)) }) }),
-        /* @__PURE__ */ jsx(Field, { label: "Auto-merge guide PRs", hint: "On: a guide PR that passes the checks and the content gate merges itself and pings IndexNow. Off: it waits for you on GitHub.", children: /* @__PURE__ */ jsx(
-          Segmented,
-          {
-            label: "Auto-merge guide PRs",
-            value: Boolean(draft.guidesAutoMerge),
-            options: [
-              { value: true, label: "On" },
-              { value: false, label: "Off" }
-            ],
-            onChange: (value) => set("guidesAutoMerge", value)
-          }
-        ) })
-      ] }) }),
-      /* @__PURE__ */ jsx(Panel, { title: "Buyer questions", children: /* @__PURE__ */ jsx(Field, { label: "Questions for the weekly GEO probe", hint: `One per line, at most 20. ${usedQuestions} used.`, children: /* @__PURE__ */ jsx("textarea", { rows: 10, value: questions.join("\n"), onChange: (event) => set("geoQuestions", event.target.value.split("\n").slice(0, 20)) }) }) }),
-      /* @__PURE__ */ jsxs(
-        Panel,
-        {
-          title: "Google ranks",
-          actions: overview.rank?.rankReady ? /* @__PURE__ */ jsx(StateIndicator, { state: "tracking_on", tone: "ok", label: "Tracking on" }) : /* @__PURE__ */ jsx(StateIndicator, { state: "no_key", tone: "bad", label: "No API key" }),
-          children: [
-            !overview.rank?.rankReady ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
-              "Rank tracking is off. Add the DATAFORSEO_API_KEY secret to the intercom Worker (",
-              /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "npx wrangler secret put DATAFORSEO_API_KEY" }),
-              ", run in ",
-              /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "worker/" }),
-              ")."
-            ] }) : null,
-            /* @__PURE__ */ jsx(
-              Field,
-              {
-                label: "Keywords to track on Google",
-                hint: `One per line, at most 25. ${keywords.filter((keyword) => keyword.trim()).length} used. DataForSEO charges about $0.006 per keyword at depth 100.`,
-                children: /* @__PURE__ */ jsx("textarea", { rows: 10, value: keywords.join("\n"), onChange: (event) => set("rankKeywords", event.target.value.split("\n").slice(0, 25)) })
-              }
-            ),
-            /* @__PURE__ */ jsxs("div", { className: "aw-grid2", children: [
+            title: "Google ranks",
+            actions: overview.rank?.rankReady ? /* @__PURE__ */ jsx(StateIndicator, { state: "tracking_on", tone: "ok", label: "Tracking on" }) : /* @__PURE__ */ jsx(StateIndicator, { state: "no_key", tone: "bad", label: "No API key" }),
+            children: [
+              !overview.rank?.rankReady ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+                "Rank tracking is off. Add the DATAFORSEO_API_KEY secret to the intercom Worker (",
+                /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "npx wrangler secret put DATAFORSEO_API_KEY" }),
+                ", run in ",
+                /* @__PURE__ */ jsx("span", { className: "aw-mono", children: "worker/" }),
+                ")."
+              ] }) : null,
+              /* @__PURE__ */ jsx(
+                Field,
+                {
+                  label: "Keywords to track on Google",
+                  hint: `One per line, at most 25. ${keywords.filter((keyword) => keyword.trim()).length} used. DataForSEO charges about $0.006 per keyword at depth 100.`,
+                  children: /* @__PURE__ */ jsx("textarea", { rows: 10, value: keywords.join("\n"), onChange: (event) => set("rankKeywords", event.target.value.split("\n").slice(0, 25)) })
+                }
+              ),
               /* @__PURE__ */ jsx(Field, { label: "Location code", hint: "DataForSEO's Google location: 2840 is the United States.", children: /* @__PURE__ */ jsx(
                 "input",
                 {
                   type: "number",
+                  className: "aw-settings-num",
                   min: "1",
                   value: location2.locationCode ?? 2840,
                   onChange: (event) => set("rankLocation", { ...location2, locationCode: Number(event.target.value) })
                 }
               ) }),
-              /* @__PURE__ */ jsx(Field, { label: "Language code", hint: "The search language, for example en.", children: /* @__PURE__ */ jsx("input", { value: location2.languageCode ?? "en", onChange: (event) => set("rankLocation", { ...location2, languageCode: event.target.value }) }) })
+              /* @__PURE__ */ jsx(Field, { label: "Language code", hint: "The search language, for example en.", children: /* @__PURE__ */ jsx("input", { className: "aw-settings-num", value: location2.languageCode ?? "en", onChange: (event) => set("rankLocation", { ...location2, languageCode: event.target.value }) }) })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          Panel,
+          {
+            title: "Events",
+            subtitle: "Core updates, algorithm updates, fixes and notes. The score line marks them, and a core update in the last 14 days holds content rewrites.",
+            children: [
+              /* @__PURE__ */ jsxs("div", { className: "aw-inline aw-seo-events-form", children: [
+                /* @__PURE__ */ jsx("select", { value: eventForm.kind, "aria-label": "Event kind", onChange: (event) => setEventForm((form) => ({ ...form, kind: event.target.value })), children: EVENT_KINDS.map((kind) => /* @__PURE__ */ jsx("option", { value: kind.value, children: kind.label }, kind.value)) }),
+                /* @__PURE__ */ jsx(
+                  "input",
+                  {
+                    value: eventForm.label,
+                    placeholder: "Label, for example Google core update started",
+                    "aria-label": "Event label",
+                    onChange: (event) => setEventForm((form) => ({ ...form, label: event.target.value }))
+                  }
+                ),
+                /* @__PURE__ */ jsx("input", { type: "date", value: eventForm.day, "aria-label": "Event day", onChange: (event) => setEventForm((form) => ({ ...form, day: event.target.value })) }),
+                /* @__PURE__ */ jsx(Button, { disabled: eventBusy, onClick: addEvent, children: eventBusy ? "Adding\u2026" : "Add event" })
+              ] }),
+              (overview.events ?? []).length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: overview.events.map((event) => /* @__PURE__ */ jsxs("li", { className: "aw-seo-row", children: [
+                /* @__PURE__ */ jsx(MetaChip, { children: EVENT_LABEL2[event.kind] ?? event.kind }),
+                /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: event.label }),
+                /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                  longDay(event.day),
+                  event.source ? ` \xB7 ${event.source}` : ""
+                ] }),
+                /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+                /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => removeEvent(event), children: "Delete" })
+              ] }, event.id)) }) : /* @__PURE__ */ jsx(Empty, { title: "No events yet", hint: "Add a core update so the score chart shows when the SERP was moving." })
+            ]
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsx(
+        SaveBar,
+        {
+          dirty: changed,
+          saving,
+          error: saveError,
+          onSave: save,
+          onDiscard: reset,
+          saveLabel: "Save SEO settings",
+          discardLabel: "Discard"
+        }
+      )
+    ] });
+  }
+
+  // packages/admin-ui/src/fleet.jsx
+  var pct3 = (a, b) => b ? Math.round(a / b * 100) : 0;
+  var capabilityLabel = (id, caps) => caps.find((c) => c.id === id)?.label ?? ({
+    "os:darwin": "macOS",
+    "os:linux": "Linux",
+    "os:win32": "Windows"
+  }[id] ?? id.replace(/^os:/, ""));
+  var osLabel = (os) => os ? capabilityLabel(`os:${os}`, []) : "\u2014";
+  var closeOnEscape4 = (open, close) => (e) => {
+    if (e.key !== "Escape" || e.defaultPrevented || !open) return;
+    if (e.target?.closest?.("input, textarea, select, [contenteditable], [role=menu], [role=dialog]")) return;
+    e.preventDefault();
+    close();
+  };
+  function useRevealInspector(root, key) {
+    const narrow = useMedia("(max-width: 900px)");
+    useEffect(() => {
+      if (narrow && key != null) root.current?.querySelector(".ui-inspector")?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    }, [narrow, key, root]);
+  }
+  function TicketLink2({ id, children }) {
+    const { openTicket } = useAdmin();
+    return /* @__PURE__ */ jsx(
+      "a",
+      {
+        className: "aw-titlelink",
+        href: `#ticket=${id}`,
+        tabIndex: -1,
+        title: typeof children === "string" ? children : void 0,
+        onClick: (e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return void e.stopPropagation();
+          e.preventDefault();
+          e.stopPropagation();
+          openTicket(id);
+        },
+        children
+      }
+    );
+  }
+  function nodeStateProps(n, m) {
+    if (n.unregistered) {
+      if (!m.loaded) return { state: "checking", label: "Checking\u2026" };
+      if (m.state === "unset") return { state: "unset", label: "Not set up", tone: "warn" };
+      return { state: "unregistered", label: m.serviceUp ? "Not registered yet" : "Off", tone: m.serviceUp ? "warn" : "bad" };
+    }
+    if (!n.online) return { state: "offline", label: `Offline \xB7 ${ago(n.lastSeenAt)}`, title: `Last seen ${ago(n.lastSeenAt)} ago` };
+    if (n.draining) return { state: "draining", label: "Draining", tone: "warn", title: "Finishes what it has, then takes nothing new" };
+    return { state: "online" };
+  }
+  var unhealthy = (n) => (n.executors ?? []).filter((e) => n.health?.executors?.[e] && !n.health.executors[e].ok);
+  function workloadLine(n) {
+    const sys = n.health?.system;
+    const parts = [`${n.running.length}/${n.slots} busy`];
+    if (sys) {
+      const load = sys.load?.[0]?.toFixed?.(2);
+      if (load != null) parts.push(`load ${load}/${sys.cpus ?? "?"}`);
+      if (sys.memFreePct != null) parts.push(`mem ${100 - sys.memFreePct}%`);
+      if (sys.disk) parts.push(`disk ${pct3(sys.disk.totalGb - sys.disk.freeGb, sys.disk.totalGb)}%`);
+    }
+    return parts.join(" \xB7 ");
+  }
+  var NODE_COLUMNS = (m) => [
+    {
+      key: "name",
+      header: "Node",
+      render: (n) => /* @__PURE__ */ jsxs(Fragment2, { children: [
+        n.local ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(MetaChip, { children: "This Mac" }),
+          " "
+        ] }) : null,
+        /* @__PURE__ */ jsx("strong", { title: n.id, children: n.id })
+      ] })
+    },
+    { key: "state", header: "State", fit: true, render: (n) => /* @__PURE__ */ jsx(StateIndicator, { ...nodeStateProps(n, m) }) },
+    { key: "platform", header: "Platform", fit: true, render: (n) => n.unregistered ? "\u2014" : `${osLabel(n.os)} \xB7 v${n.version}` },
+    {
+      key: "agents",
+      header: "Agents",
+      render: (n) => {
+        const bad = unhealthy(n);
+        return /* @__PURE__ */ jsxs(Fragment2, { children: [
+          bad.length ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx(StateIndicator, { state: "check", label: `${bad.length} not healthy`, title: bad.map((e) => `${e}: ${n.health.executors[e].error ?? "not healthy"}`).join("; ") }),
+            " "
+          ] }) : null,
+          /* @__PURE__ */ jsx("span", { title: n.executors.join(", ") || void 0, children: n.executors.length ? n.executors.join(", ") : "\u2014" })
+        ] });
+      }
+    },
+    { key: "workload", header: "Workload", render: (n) => n.unregistered ? "\u2014" : /* @__PURE__ */ jsx("span", { title: workloadLine(n), children: workloadLine(n) }) },
+    {
+      key: "battery",
+      header: "Battery",
+      fit: true,
+      render: (n) => {
+        const b = n.health?.system?.battery;
+        return b ? /* @__PURE__ */ jsxs("span", { title: b.onPower ? "On power" : "On battery", children: [
+          b.percent,
+          "%",
+          b.onPower ? " \u26A1" : ""
+        ] }) : "\u2014";
+      }
+    },
+    { key: "projects", header: "Projects", numeric: true, render: (n) => /* @__PURE__ */ jsx("span", { title: n.slugs.join(", ") || "No projects yet", children: n.slugs.length }) }
+  ];
+  function RunsTable({ runs, label, empty }) {
+    const { openTicket } = useAdmin();
+    return /* @__PURE__ */ jsx(
+      DataTable,
+      {
+        label,
+        rows: runs,
+        onOpen: (r) => openTicket(r.ticket_id),
+        empty,
+        columns: [
+          { key: "title", header: "Title", render: (r) => /* @__PURE__ */ jsx(TicketLink2, { id: r.ticket_id, children: r.title }) },
+          { key: "id", header: "#", mono: true, fit: true, render: (r) => `#${r.ticket_id}` },
+          { key: "agent", header: "Agent", fit: true, render: (r) => r.executor },
+          { key: "started", header: "Started", fit: true, render: (r) => `${ago(r.started_at)} ago` }
+        ]
+      }
+    );
+  }
+  function NodeInspector({ n, m, onClose }) {
+    const { api, act, ask, data, setModal } = useAdmin();
+    const caps = data.catalog?.capabilities ?? [];
+    const sys = n.health?.system;
+    const edit = () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(NodeModal, { node: n, local: n.local, onClose: close }) });
+    const machineReady = n.local && m.loaded && !m.consentError;
+    return /* @__PURE__ */ jsxs(Inspector, { title: n.id, label: `Node ${n.id}`, storageKey: "ptech.fleet.inspector.w", onClose, className: "aw-fleet__inspector", children: [
+      /* @__PURE__ */ jsxs("div", { className: "ui-meta", children: [
+        /* @__PURE__ */ jsx(StateIndicator, { ...nodeStateProps(n, m) }),
+        n.local ? /* @__PURE__ */ jsx(MetaChip, { children: "This Mac" }) : null
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
+        n.local ? machineReady ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          m.state === "working" || m.state === "ready" ? /* @__PURE__ */ jsx(Button, { title: "What is running finishes, nothing new starts", onClick: () => void m.pause(), children: "Pause" }) : null,
+          m.consented && (m.state === "pausing" || m.state === "paused") ? /* @__PURE__ */ jsx(Button, { title: "This Mac takes work again", onClick: () => void m.resume(), children: "Resume" }) : null,
+          m.serviceUp ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx(Button, { kind: "ghost", title: "Restart the worker service", onClick: () => void m.restart(), children: "Restart" }),
+            /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => m.stopNow(), children: "Stop now" })
+          ] }) : m.consented ? /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => void m.start(), children: m.svc?.loaded ? "Start worker" : "Install worker" }) : null
+        ] }) : null : /* @__PURE__ */ jsx(
+          Button,
+          {
+            onClick: () => act(() => api("PATCH", `/admin/nodes/${n.id}`, { draining: !n.draining }), n.draining ? `${n.id} takes work again.` : `${n.id} finishes what it has, then takes nothing new.`),
+            children: n.draining ? "Resume" : "Drain"
+          }
+        ),
+        !n.unregistered ? /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: edit, children: "Edit\u2026" }) : null,
+        !n.local && !n.online ? /* @__PURE__ */ jsx(
+          Button,
+          {
+            kind: "ghost",
+            onClick: () => ask({ title: `Forget ${n.id}?`, text: "It re-registers on its next heartbeat if it is still alive.", confirm: "Forget", danger: true, run: () => act(() => api("DELETE", `/admin/nodes/${n.id}`), `Forgot ${n.id}.`) }),
+            children: "Forget\u2026"
+          }
+        ) : null
+      ] }),
+      /* @__PURE__ */ jsxs("dl", { className: "ui-props", children: [
+        n.local ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx("dt", { children: "Worker" }),
+          /* @__PURE__ */ jsxs("dd", { children: [
+            m.svc?.state ?? "unknown",
+            m.svc?.pid ? ` \xB7 pid ${m.svc.pid}` : ""
+          ] })
+        ] }) : null,
+        !n.unregistered ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx("dt", { children: "Platform" }),
+          /* @__PURE__ */ jsxs("dd", { children: [
+            osLabel(n.os),
+            " \xB7 v",
+            n.version
+          ] }),
+          /* @__PURE__ */ jsx("dt", { children: "Last seen" }),
+          /* @__PURE__ */ jsxs("dd", { children: [
+            ago(n.lastSeenAt),
+            " ago"
+          ] }),
+          /* @__PURE__ */ jsx("dt", { children: "Workload" }),
+          /* @__PURE__ */ jsxs("dd", { children: [
+            n.running.length,
+            " of ",
+            n.slots,
+            " runs busy"
+          ] })
+        ] }) : null,
+        sys ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx("dt", { children: "Load" }),
+          /* @__PURE__ */ jsxs("dd", { children: [
+            sys.load?.[0]?.toFixed?.(2) ?? "\u2014",
+            " on ",
+            sys.cpus,
+            " CPUs"
+          ] }),
+          sys.memFreePct != null ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx("dt", { children: "Memory" }),
+            /* @__PURE__ */ jsxs("dd", { children: [
+              100 - sys.memFreePct,
+              "% used"
+            ] })
+          ] }) : null,
+          sys.disk ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx("dt", { children: "Disk" }),
+            /* @__PURE__ */ jsxs("dd", { children: [
+              pct3(sys.disk.totalGb - sys.disk.freeGb, sys.disk.totalGb),
+              "% used \xB7 ",
+              sys.disk.freeGb,
+              " GB free"
+            ] })
+          ] }) : null,
+          sys.battery ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx("dt", { children: "Battery" }),
+            /* @__PURE__ */ jsxs("dd", { children: [
+              sys.battery.percent,
+              "% \xB7 ",
+              sys.battery.onPower ? "on power" : "on battery"
+            ] })
+          ] }) : null,
+          sys.uptimeSec != null ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            /* @__PURE__ */ jsx("dt", { children: "Up" }),
+            /* @__PURE__ */ jsx("dd", { children: span(sys.uptimeSec) })
+          ] }) : null
+        ] }) : null
+      ] }),
+      n.health?.process?.lastError ? /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
+        /* @__PURE__ */ jsx(StateIndicator, { state: "failed", label: "Last error" }),
+        /* @__PURE__ */ jsx("p", { className: "ui-quote", children: n.health.process.lastError })
+      ] }) : null,
+      !n.local && !n.unregistered ? /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
+        /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Agents" }),
+        /* @__PURE__ */ jsx("div", { className: "ui-meta", children: n.executors.length ? n.executors.map((e) => {
+          const ex = n.health?.executors?.[e];
+          return ex ? /* @__PURE__ */ jsx(StateIndicator, { state: ex.ok ? "ok" : "failed", label: `${e}${ex.version ? ` ${ex.version}` : ""}`, title: ex.ok ? void 0 : ex.error ?? "not healthy" }, e) : /* @__PURE__ */ jsx(StateIndicator, { state: "unchecked", label: e, title: "No health report yet" }, e);
+        }) : /* @__PURE__ */ jsx("span", { className: "ui-note", children: "None" }) })
+      ] }) : null,
+      !n.unregistered ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
+          /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Can do" }),
+          /* @__PURE__ */ jsx("div", { className: "ui-meta", children: n.capabilities.length ? n.capabilities.map((c) => /* @__PURE__ */ jsx(MetaChip, { children: capabilityLabel(c, caps) }, c)) : /* @__PURE__ */ jsx("span", { className: "ui-note", children: "\u2014" }) })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
+          /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
+            "Projects \xB7 ",
+            n.slugs.length
+          ] }),
+          /* @__PURE__ */ jsx("div", { className: "ui-meta", children: n.slugs.length ? n.slugs.map((s) => /* @__PURE__ */ jsx(MetaChip, { mono: true, children: s }, s)) : /* @__PURE__ */ jsx("span", { className: "ui-note", children: "No projects yet" }) })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
+          /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
+            "Running \xB7 ",
+            n.running.length,
+            " of ",
+            n.slots
+          ] }),
+          /* @__PURE__ */ jsx(RunsTable, { runs: n.running, label: `Runs on ${n.id}`, empty: { title: "Nothing running.", hint: `${n.slots} free ${n.slots === 1 ? "slot" : "slots"}.` } })
+        ] })
+      ] }) : null,
+      n.local ? /* @__PURE__ */ jsxs("div", { className: "ui-section aw-fleet-machine", children: [
+        /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Lending" }),
+        /* @__PURE__ */ jsx(MachinePanel, {})
+      ] }) : null
+    ] });
+  }
+  function NodeModal({ node, local, onClose }) {
+    const { api, act, data } = useAdmin();
+    const caps = data.catalog?.capabilities ?? [];
+    const [slots, setSlots] = useState(node.overrides?.slots ?? node.slots);
+    const [executors, setExecutors] = useState(node.overrides?.executors ?? node.executors);
+    const [capabilities, setCapabilities] = useState(node.overrides?.capabilities ?? node.capabilities.filter((c) => !c.startsWith("os:")));
+    const save = () => act(() => api("PATCH", `/admin/nodes/${node.id}`, { overrides: { slots, capabilities, ...!local ? { executors } : {} } }), `${node.id} picks this up on its next heartbeat.`).then(onClose, () => void 0);
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: `Node ${node.id}`,
+        subtitle: "Overrides from here win over the node\u2019s own config file.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: save, children: "Save" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Slots", hint: "How many items it runs at once.", children: /* @__PURE__ */ jsx(Segmented, { value: slots, options: [1, 2, 3, 4].map((n) => ({ value: n, label: String(n) })), onChange: setSlots }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Agents it offers", children: local ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Manage the agents this Mac lends from This Mac." }) : /* @__PURE__ */ jsx(Chips, { value: executors, options: EXECUTORS.map((e) => ({ value: e, label: e })), onChange: setExecutors }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Capabilities", children: /* @__PURE__ */ jsx(Chips, { value: capabilities, options: caps.map((c) => ({ value: c.id, label: capabilityLabel(c.id, caps), hint: c.hint })), onChange: setCapabilities }) })
+        ]
+      }
+    );
+  }
+  function FleetView() {
+    const { data, open, openTicket } = useAdmin();
+    const m = useMachine();
+    const root = useRef(null);
+    const [selectedKey, setSelectedKey] = useState(null);
+    const nodes = useMemo(() => {
+      const list2 = data.nodes.map((n) => ({ ...n, local: m.live && Boolean(m.nodeId) && n.id === m.nodeId }));
+      if (m.live && !list2.some((n) => n.local)) {
+        list2.unshift({ id: m.nodeId || "This Mac", local: true, unregistered: true, online: false, draining: false, slots: m.slots, executors: m.lending, capabilities: [], slugs: [], running: [] });
+      }
+      return list2.sort((a, b) => Number(b.local) - Number(a.local));
+    }, [data.nodes, m.live, m.nodeId, m.slots, m.lending]);
+    const keyOf = (n) => n.unregistered ? "__this-mac" : n.id;
+    const selected = selectedKey == null ? null : nodes.find((n) => keyOf(n) === selectedKey) ?? null;
+    const close = () => setSelectedKey(null);
+    useRevealInspector(root, selected ? selectedKey : null);
+    const runs = [...data.running, ...data.recent].slice(0, 8);
+    return /* @__PURE__ */ jsxs("div", { ref: root, className: "ui-workspace aw-fleet", onKeyDown: closeOnEscape4(Boolean(selected), close), children: [
+      /* @__PURE__ */ jsx(UiStyles, {}),
+      /* @__PURE__ */ jsx(
+        PageHeader,
+        {
+          title: "Fleet",
+          subtitle: "The machines that run agents, what waits for them, and the end-to-end checks. Select a node to inspect it.",
+          overflow: [{ label: "Settings: work queue\u2026", run: () => openSettings(open, "queue") }]
+        }
+      ),
+      /* @__PURE__ */ jsxs("div", { className: "ui-split", children: [
+        /* @__PURE__ */ jsxs("div", { className: "ui-split__main", children: [
+          /* @__PURE__ */ jsx(HealthView, { compact: true }),
+          /* @__PURE__ */ jsxs("section", { className: "ui-section", children: [
+            /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
+              "Nodes \xB7 ",
+              nodes.length
+            ] }),
+            /* @__PURE__ */ jsx(
+              DataTable,
+              {
+                label: "Nodes",
+                columns: NODE_COLUMNS(m),
+                rows: nodes,
+                rowKey: keyOf,
+                selected: selected ? selectedKey : null,
+                onSelect: (n) => setSelectedKey(keyOf(n)),
+                onOpen: (n) => setSelectedKey(keyOf(n)),
+                empty: { title: "No node has connected yet.", hint: "Open the desktop app and lend This Mac from the status bar, or start a node with its config file." }
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxs("section", { className: "ui-section", children: [
+            /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
+              "Queue \xB7 ",
+              data.queue.length
+            ] }),
+            /* @__PURE__ */ jsx(
+              DataTable,
+              {
+                label: "Queue",
+                rows: data.queue,
+                onOpen: (q) => openTicket(q.id),
+                empty: { title: "Nothing is waiting.", hint: "Approved work starts as soon as a node with a free slot can take it." },
+                columns: [
+                  { key: "title", header: "Title", render: (q) => /* @__PURE__ */ jsx(TicketLink2, { id: q.id, children: q.title }) },
+                  { key: "id", header: "#", mono: true, fit: true, render: (q) => `#${q.id}` },
+                  { key: "project", header: "Project", fit: true, render: (q) => q.slug ?? "\u2014" },
+                  { key: "priority", header: "Priority", fit: true, render: (q) => priorityName(q.priority) },
+                  { key: "waiting", header: "Waiting", numeric: true, render: (q) => span(q.waitingSeconds) },
+                  {
+                    key: "why",
+                    header: "Why waiting",
+                    render: (q) => q.eligible.length ? /* @__PURE__ */ jsx("span", { title: q.reason, children: q.reason }) : /* @__PURE__ */ jsxs("span", { title: q.reason, children: [
+                      /* @__PURE__ */ jsx(StateIndicator, { state: "stuck", tone: "bad", label: "Blocked" }),
+                      " ",
+                      q.reason || "No node can take this"
+                    ] })
+                  }
+                ]
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxs("section", { className: "ui-section", children: [
+            /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Recent runs" }),
+            /* @__PURE__ */ jsx(
+              DataTable,
+              {
+                label: "Recent runs",
+                rows: runs,
+                onOpen: (r) => openTicket(r.ticket_id),
+                empty: { title: "No runs yet.", hint: "Runs appear here when a node starts approved work." },
+                columns: [
+                  { key: "title", header: "Title", render: (r) => /* @__PURE__ */ jsx(TicketLink2, { id: r.ticket_id, children: r.title }) },
+                  { key: "id", header: "#", mono: true, fit: true, render: (r) => `#${r.ticket_id}` },
+                  {
+                    key: "result",
+                    header: "Result",
+                    fit: true,
+                    render: (r) => r.status === "running" || !r.status ? /* @__PURE__ */ jsx(StateIndicator, { state: "running" }) : /* @__PURE__ */ jsx(StateIndicator, { state: r.status })
+                  },
+                  { key: "agent", header: "Agent", render: (r) => /* @__PURE__ */ jsxs("span", { title: r.model ? `${r.executor} ${r.model}` : r.executor, children: [
+                    r.executor,
+                    r.model ? /* @__PURE__ */ jsxs("span", { className: "ui-note", children: [
+                      " ",
+                      r.model
+                    ] }) : null
+                  ] }) },
+                  { key: "node", header: "Node", fit: true, render: (r) => r.node_id ?? "This Mac" },
+                  { key: "cost", header: "Cost", numeric: true, render: (r) => usd(r.cost_micro_usd) },
+                  { key: "finished", header: "Finished", fit: true, render: (r) => r.finished_at ? `${ago(r.finished_at)} ago` : "\u2014" }
+                ]
+              }
+            )
+          ] })
+        ] }),
+        selected ? /* @__PURE__ */ jsx(NodeInspector, { n: selected, m, onClose: close }) : null
+      ] })
+    ] });
+  }
+  var usageLine = (u) => u ? [
+    u.billedCents && `${money(u.billedCents)} billed`,
+    u.openCents && `${money(u.openCents)} open`,
+    u.aiCents && `AI ${money(u.aiCents)}`,
+    u.ourCents && `first previews ${money(u.ourCents)} on us`
+  ].filter(Boolean).join(" \xB7 ") || "nothing owed" : "";
+  function RepoModal({ project, onClose }) {
+    const { api, act } = useAdmin();
+    const [repo, setRepo] = useState(project.repo ?? "");
+    const submit = () => act(() => api("PUT", `/admin/projects/${project.id}/repo`, { repo: repo.trim() }), "Repo saved.").then(onClose, () => void 0);
+    return /* @__PURE__ */ jsx(
+      Modal,
+      {
+        title: `Repo for ${project.name}`,
+        subtitle: "Nodes clone this on their next sync. A private repo needs a node whose git can reach it.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !repo.trim(), onClick: submit, children: "Save" })
+        ] }),
+        children: /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) })
+      }
+    );
+  }
+  function FirstPreviewControl({ c }) {
+    const { api, act, data } = useAdmin();
+    const globalLimit = data.settings?.first_preview_limit_usd;
+    const [usd2, setUsd] = useState(c.firstPreviewLimitUsd ?? "");
+    useEffect(() => setUsd(c.firstPreviewLimitUsd ?? ""), [c.id, c.firstPreviewLimitUsd]);
+    const save = () => {
+      const raw = String(usd2).trim();
+      const value = raw === "" ? null : Number(raw);
+      if (value !== null && (!Number.isFinite(value) || value < 0 || value > 1e3)) return;
+      if (value === (c.firstPreviewLimitUsd ?? null)) return;
+      void act(() => api("PATCH", `/admin/clients/${c.id}`, { firstPreviewLimitUsd: value }), "First preview limit saved.");
+    };
+    return /* @__PURE__ */ jsx(
+      Field,
+      {
+        label: "First preview limit (USD)",
+        hint: `Blank follows the setting (${globalLimit ?? 2}). 0 turns the first preview off for this client.`,
+        children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              inputMode: "decimal",
+              value: usd2,
+              placeholder: String(globalLimit ?? 2),
+              "aria-label": "First preview limit in dollars",
+              onChange: (e) => setUsd(e.target.value),
+              onBlur: save
+            }
+          ),
+          /* @__PURE__ */ jsx("span", { className: "aw-muted", children: c.first_preview_at ? `used ${ago(c.first_preview_at)} ago` : "not used yet" }),
+          c.first_preview_at ? /* @__PURE__ */ jsx(
+            Button,
+            {
+              size: "sm",
+              title: "Give this account its free first preview again",
+              onClick: () => void act(() => api("PATCH", `/admin/clients/${c.id}`, { grantFirstPreview: true }), "First preview granted again."),
+              children: "Grant again"
+            }
+          ) : null
+        ] })
+      }
+    );
+  }
+  function ClientControls({ c }) {
+    const { api, act, data } = useAdmin();
+    const toggle = (ids) => {
+      const added = ids.filter((x) => !c.projectIds.includes(x));
+      const removed = c.projectIds.filter((x) => !ids.includes(x));
+      return act(async () => {
+        for (const p of added) await api("PUT", `/admin/clients/${c.id}/projects/${p}`);
+        for (const p of removed) await api("DELETE", `/admin/clients/${c.id}/projects/${p}`);
+      }, "Saved.");
+    };
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx("p", { className: "aw-muted", children: usageLine(c.usage) }),
+      /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
+        /* @__PURE__ */ jsx(
+          "select",
+          {
+            "aria-label": "Language",
+            value: c.locale ?? "en-US",
+            onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { locale: e.target.value }), "Language saved."),
+            children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code))
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "select",
+          {
+            "aria-label": "Translation",
+            title: "Who translates this client\u2019s messages. They can change it themselves.",
+            value: c.translation ?? "deepseek",
+            onChange: (e) => void act(() => api("PATCH", `/admin/clients/${c.id}`, { translation: e.target.value }), "Saved."),
+            children: [
+              /* @__PURE__ */ jsx("option", { value: "deepseek", children: "DeepSeek" }),
+              /* @__PURE__ */ jsx("option", { value: "cloudflare", children: "Workers AI" }),
+              /* @__PURE__ */ jsx("option", { value: "off", children: "no translation" })
+            ]
+          }
+        )
+      ] }),
+      c.role !== "admin" ? /* @__PURE__ */ jsx(FirstPreviewControl, { c }) : null,
+      /* @__PURE__ */ jsx(InviteControls, { c }),
+      /* @__PURE__ */ jsx(Chips, { value: c.projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: (ids) => void toggle(ids) })
+    ] });
+  }
+  function InviteControls({ c }) {
+    const { api, act, ask } = useAdmin();
+    if (!c.pending && !c.inviteExpiresAt) return null;
+    const left = c.inviteExpiresAt ? Math.max(0, c.inviteExpiresAt - Date.now() / 1e3) : 0;
+    return /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+      /* @__PURE__ */ jsx(StateIndicator, { state: c.pending ? "invited" : "invite_live", tone: c.pending ? "warn" : "info", label: c.pending ? "Invited, not signed in yet" : "Invite link live", title: c.email }),
+      left > 0 ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+        "link expires in ",
+        span(left)
+      ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: "link expired" }),
+      /* @__PURE__ */ jsx(
+        Button,
+        {
+          size: "sm",
+          title: "Send a fresh link. The old unused links stop working.",
+          onClick: () => void act(() => api("POST", `/admin/clients/${c.id}/invite`, {}), `Invite resent to ${c.email}.`),
+          children: "Resend"
+        }
+      ),
+      /* @__PURE__ */ jsx(
+        Button,
+        {
+          size: "sm",
+          kind: "ghost",
+          title: "Every unused invite link stops working. A signed-in session is not touched.",
+          onClick: () => ask({
+            title: `Revoke invite for ${c.name || c.email}?`,
+            text: `Unused invite links for ${c.email} stop working. Existing signed-in sessions are not affected.`,
+            confirm: "Revoke link",
+            danger: true,
+            run: () => act(() => api("DELETE", `/admin/clients/${c.id}/invite`), "Invite link revoked.").catch(() => void 0)
+          }),
+          children: "Revoke"
+        }
+      )
+    ] });
+  }
+  function InviteClientModal({ onClose, client }) {
+    const { api, act, data } = useAdmin();
+    const [email, setEmail] = useState(client?.email ?? "");
+    const [name, setName] = useState(client?.name ?? "");
+    const [locale, setLocale] = useState(client?.locale ?? "en-US");
+    const [projectIds, setProjectIds] = useState(data.projects.length === 1 ? [data.projects[0].id] : []);
+    const [note, setNote] = useState("");
+    const ready = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && projectIds.length > 0;
+    const send = () => act(
+      () => api("POST", "/admin/clients", {
+        email: email.trim(),
+        name: name.trim() || void 0,
+        locale,
+        projectIds,
+        note: note.trim() || void 0
+      }),
+      (out) => out.invite?.sent === false ? `Added ${email.trim()}, but the email could not be sent. Use Resend on their row in Clients.` : out.user?.verified_at ? `${email.trim()} now has ${projectIds.length} more project${projectIds.length === 1 ? "" : "s"} and a new link.` : `Invited ${email.trim()}.`
+    ).then(onClose, () => void 0);
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: client ? `Add ${client.name || client.email} to projects` : "Invite a client",
+        kind: "create",
+        subtitle: "They get a link that signs them in for the projects you pick. No sign-up needed; the link works once and lasts 7 days.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !ready, onClick: send, children: "Send invite" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Email", children: /* @__PURE__ */ jsx("input", { type: "email", value: email, maxLength: 254, placeholder: "client@example.com", onChange: (e) => setEmail(e.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Name", hint: "Optional. The account keeps its own name if it already exists.", children: /* @__PURE__ */ jsx("input", { value: name, maxLength: 80, placeholder: "Their name", onChange: (e) => setName(e.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Language", hint: "The language of the invite email and the portal. They can change it.", children: /* @__PURE__ */ jsx("select", { value: locale, onChange: (e) => setLocale(e.target.value), children: LOCALES.map((l) => /* @__PURE__ */ jsx("option", { value: l.code, children: l.english }, l.code)) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Projects", hint: "At least one. An existing account gains these and keeps the rest. They see every request on them.", children: data.projects.length ? /* @__PURE__ */ jsx(Chips, { value: projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: setProjectIds }) : /* @__PURE__ */ jsx("span", { className: "aw-warn", children: "No projects yet. Make one first." }) }),
+          /* @__PURE__ */ jsx(Field, { label: "Note", hint: "Optional. Your own words, added under the link. Not translated.", children: /* @__PURE__ */ jsx("textarea", { rows: 3, value: note, maxLength: 1e3, placeholder: "Anything you want them to read first", onChange: (e) => setNote(e.target.value) }) })
+        ]
+      }
+    );
+  }
+  function ProjectEditModal({ project, onClose }) {
+    const { api, act } = useAdmin();
+    const [name, setName] = useState(project.name);
+    const [kind, setKind] = useState(project.kind ?? "existing");
+    const changed = name.trim() !== project.name || kind !== (project.kind ?? "existing");
+    const save = () => act(
+      () => api("PATCH", `/admin/projects/${project.id}`, {
+        ...name.trim() !== project.name ? { name: name.trim() } : {},
+        ...kind !== (project.kind ?? "existing") ? { kind } : {}
+      }),
+      "Project saved."
+    ).then(onClose, () => void 0);
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        title: `Edit ${project.name}`,
+        subtitle: `Slug ${project.slug} stays: nodes keep its folder under that name, and its first site is named after it.`,
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !name.trim() || !changed, onClick: save, children: "Save" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Name", hint: "What the client sees in the portal and in their emails.", children: /* @__PURE__ */ jsx("input", { value: name, maxLength: 80, onChange: (e) => setName(e.target.value) }) }),
+          /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx(
+            Segmented,
+            {
+              value: kind,
+              options: [
+                { value: "existing", label: "Existing code or system" },
+                { value: "new", label: "New website" }
+              ],
+              onChange: setKind
+            }
+          ) })
+        ]
+      }
+    );
+  }
+  var closedTicket = (t) => ["done", "declined"].includes(t.status);
+  var ticketsOf = (data, c) => data.tickets.filter((t) => t.kind !== "system" && t.client_email === c.email).sort((x, y) => closedTicket(x) - closedTicket(y) || y.updated_at - x.updated_at);
+  var lastSeenOf = (c) => c.lastSeenAt ?? c.last_seen_at ?? null;
+  var TRANSLATION_LABEL = { deepseek: "DeepSeek", cloudflare: "Workers AI", off: "No translation" };
+  var localeName = (code) => LOCALES.find((l) => l.code === code)?.english ?? code;
+  function projectNodeState(p, nodes) {
+    const holders = nodes.filter((n) => n.slugs.includes(p.slug));
+    if (holders.some((n) => n.online && !n.draining)) return { state: "online", label: "Node available" };
+    if (holders.length) return { state: "draining", tone: "warn", label: "Nodes offline or draining" };
+    return { state: "no_node", tone: "bad", label: "No node has this project" };
+  }
+  var siteStateOf = (p) => {
+    const sites = p.sites ?? (p.site ? [p.site] : []);
+    if (!sites.length) return "No site";
+    const states = [...new Set(sites.map((site) => site.state?.replaceAll("_", " ")).filter(Boolean))];
+    return states.join(", ") || "Site status unavailable";
+  };
+  function ClientView({ id }) {
+    const { data, openTicket, open: openTab } = useAdmin();
+    const c = data.clients.find((x) => x.id === id);
+    if (!c) return data.loaded ? /* @__PURE__ */ jsx("div", { className: "aw-view", children: /* @__PURE__ */ jsx(Empty, { title: "No such client.", hint: "They may have been removed. The directory lists everyone.", action: /* @__PURE__ */ jsx(Button, { onClick: () => openTab("clients"), children: "Open Clients" }) }) }) : /* @__PURE__ */ jsx(Skeleton, { variant: "pane", label: "Loading the client\u2026" });
+    const tickets = ticketsOf(data, c);
+    const open = tickets.filter((t) => !closedTicket(t)).length;
+    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-client", children: [
+      /* @__PURE__ */ jsx(UiStyles, {}),
+      /* @__PURE__ */ jsx(
+        PageHeader,
+        {
+          title: c.name || c.email,
+          subtitle: `${c.name ? `${c.email} \xB7 ` : ""}${open} open of ${tickets.length} \xB7 client for ${ago(c.created_at)}${c.handoff ? ` \xB7 hand-off: ${c.handoff}` : ""}`
+        }
+      ),
+      /* @__PURE__ */ jsx(FormPane, { className: "aw-group", children: /* @__PURE__ */ jsx(ClientControls, { c }) }),
+      /* @__PURE__ */ jsxs("section", { className: "ui-section", children: [
+        /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
+          "Requests \xB7 ",
+          tickets.length
+        ] }),
+        /* @__PURE__ */ jsx(
+          DataTable,
+          {
+            label: "Requests",
+            rows: tickets,
+            onOpen: (t) => openTicket(t.id),
+            empty: { title: "No requests yet.", hint: "What this client files in the portal, or asks their assistant for, appears here." },
+            columns: [
+              { key: "id", header: "#", mono: true, fit: true, render: (t) => `#${t.id}` },
+              {
+                key: "title",
+                header: "Title",
+                render: (t) => /* @__PURE__ */ jsxs(Fragment2, { children: [
+                  /* @__PURE__ */ jsx(TicketLink2, { id: t.id, children: t.title }),
+                  t.client_waiting_since && !closedTicket(t) ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                    " ",
+                    /* @__PURE__ */ jsx(StateIndicator, { state: "waiting", tone: "warn", label: "Waiting for you" })
+                  ] }) : null
+                ] })
+              },
+              { key: "status", header: "Status", fit: true, render: (t) => /* @__PURE__ */ jsx(StateIndicator, { state: t.status }) },
+              { key: "project", header: "Project", render: (t) => t.project_name ?? "\u2014" },
+              { key: "cost", header: "Cost", numeric: true, render: (t) => money(chargeOf(t).totalCents) },
+              { key: "updated", header: "Updated", fit: true, render: (t) => `${ago(t.updated_at)} ago` }
+            ]
+          }
+        )
+      ] })
+    ] });
+  }
+  var clientMenu = (c, open) => [
+    { label: "Open", run: () => open(`c:${c.id}`) },
+    { label: "Email\u2026", run: () => window.open(`mailto:${c.email}`) },
+    { label: "Copy email address", run: () => void navigator.clipboard?.writeText(c.email) }
+  ];
+  function ClientInspector({ c, onClose }) {
+    const { api, act, ask, data, open, setModal } = useAdmin();
+    const tickets = ticketsOf(data, c);
+    const openCount = tickets.filter((t) => !closedTicket(t)).length;
+    const projects = data.projects.filter((p) => (c.projectIds ?? []).includes(p.id));
+    const lastSeen = lastSeenOf(c);
+    const remove = (p) => ask({
+      title: `Remove ${c.email} from ${p.name}?`,
+      text: "They stop seeing its requests and stop getting its emails. Their account and their own requests stay.",
+      confirm: "Remove",
+      danger: true,
+      run: () => act(() => api("DELETE", `/admin/clients/${c.id}/projects/${p.id}`), `Removed ${c.email} from ${p.name}.`).catch(() => void 0)
+    });
+    return /* @__PURE__ */ jsxs(Inspector, { title: c.name || c.email, label: `Client ${c.email}`, storageKey: "ptech.clients.inspector.w", onClose, children: [
+      c.pending ? /* @__PURE__ */ jsx(StateIndicator, { state: "invited", tone: "warn", label: "Invited, not signed in yet" }) : null,
+      /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
+        /* @__PURE__ */ jsx(Button, { onClick: () => open(`c:${c.id}`), title: "Open client page  Enter", children: "Open client page" }),
+        /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(InviteClientModal, { client: c, onClose: close }) }), children: "Add to projects\u2026" }),
+        /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => window.open(`mailto:${c.email}`), children: "Email\u2026" })
+      ] }),
+      /* @__PURE__ */ jsxs("dl", { className: "ui-props", children: [
+        /* @__PURE__ */ jsx("dt", { children: "Email" }),
+        /* @__PURE__ */ jsx("dd", { children: c.email }),
+        c.name ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx("dt", { children: "Name" }),
+          /* @__PURE__ */ jsx("dd", { children: c.name })
+        ] }) : null,
+        /* @__PURE__ */ jsx("dt", { children: "Requests" }),
+        /* @__PURE__ */ jsxs("dd", { children: [
+          openCount,
+          " open of ",
+          tickets.length
+        ] }),
+        /* @__PURE__ */ jsx("dt", { children: "Client for" }),
+        /* @__PURE__ */ jsx("dd", { children: ago(c.created_at) }),
+        /* @__PURE__ */ jsx("dt", { children: "Last seen" }),
+        /* @__PURE__ */ jsx("dd", { children: lastSeen ? `${ago(lastSeen)} ago` : "Unavailable" }),
+        /* @__PURE__ */ jsx("dt", { children: "Language" }),
+        /* @__PURE__ */ jsx("dd", { children: localeName(c.locale ?? "en-US") }),
+        /* @__PURE__ */ jsx("dt", { children: "Translation" }),
+        /* @__PURE__ */ jsx("dd", { children: TRANSLATION_LABEL[c.translation ?? "deepseek"] ?? c.translation }),
+        c.role !== "admin" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx("dt", { children: "First preview" }),
+          /* @__PURE__ */ jsx("dd", { children: c.first_preview_at ? `used ${ago(c.first_preview_at)} ago` : "not used yet" })
+        ] }) : null,
+        c.handoff ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx("dt", { children: "Hand-off" }),
+          /* @__PURE__ */ jsx("dd", { children: c.handoff })
+        ] }) : null
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
+        /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Usage" }),
+        /* @__PURE__ */ jsx("p", { className: "ui-note", children: c.usage ? usageLine(c.usage) : "Usage unavailable" })
+      ] }),
+      c.pending || c.inviteExpiresAt ? /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
+        /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Invite" }),
+        /* @__PURE__ */ jsx(InviteControls, { c })
+      ] }) : null,
+      /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
+        /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
+          "Projects \xB7 ",
+          projects.length
+        ] }),
+        /* @__PURE__ */ jsx(
+          DataTable,
+          {
+            label: `Projects of ${c.name || c.email}`,
+            rows: projects,
+            onOpen: (p) => open(`p:${p.id}`),
+            empty: { title: "No projects.", hint: "Add them to a project to give them a portal for it." },
+            columns: [
+              { key: "name", header: "Project", render: (p) => /* @__PURE__ */ jsx("strong", { title: p.slug, children: p.name }) },
+              { key: "node", header: "Node", render: (p) => /* @__PURE__ */ jsx(StateIndicator, { ...projectNodeState(p, data.nodes) }) },
+              { key: "site", header: "Site", render: (p) => siteStateOf(p) },
+              { key: "people", header: "People", render: (p) => `${p.clients?.length ?? 0}` },
+              {
+                key: "actions",
+                header: "Actions",
+                fit: true,
+                render: (p) => /* @__PURE__ */ jsxs("span", { className: "ui-meta", children: [
+                  /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", "aria-label": `Open ${p.name}`, onClick: (e) => {
+                    e.stopPropagation();
+                    open(`p:${p.id}`);
+                  }, children: "Open" }),
+                  /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", "aria-label": `Remove from ${p.name}`, onClick: (e) => {
+                    e.stopPropagation();
+                    remove(p);
+                  }, children: "Remove\u2026" })
+                ] })
+              }
+            ]
+          }
+        )
+      ] })
+    ] });
+  }
+  var CLIENT_SORTS = {
+    name: (c) => (c.name || c.email).toLowerCase(),
+    projects: (c) => c.projectIds?.length ?? 0,
+    seen: (c) => lastSeenOf(c) ?? 0
+  };
+  function ClientsView() {
+    const { data, setModal, open } = useAdmin();
+    const root = useRef(null);
+    const [sort, setSort] = useState({ key: "name", dir: 1 });
+    const [selectedId, setSelectedId] = useState(null);
+    const rows = useMemo(() => {
+      const get = CLIENT_SORTS[sort.key];
+      return [...data.clients].sort((a, b) => (get(a) > get(b) ? 1 : get(a) < get(b) ? -1 : 0) * sort.dir);
+    }, [data.clients, sort]);
+    const selected = selectedId == null ? null : rows.find((c) => c.id === selectedId) ?? null;
+    const close = () => setSelectedId(null);
+    useRevealInspector(root, selected?.id ?? null);
+    const invite = () => setModal({ kind: "custom", render: (onClose) => /* @__PURE__ */ jsx(InviteClientModal, { onClose }) });
+    return /* @__PURE__ */ jsxs("div", { ref: root, className: "ui-workspace aw-clients", onKeyDown: closeOnEscape4(Boolean(selected), close), children: [
+      /* @__PURE__ */ jsx(UiStyles, {}),
+      /* @__PURE__ */ jsx(
+        PageHeader,
+        {
+          title: "Clients",
+          subtitle: data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : "Who you work for. Select a client to inspect them; Enter opens their page.",
+          actions: /* @__PURE__ */ jsx(Button, { kind: "primary", icon: "plus", onClick: invite, children: "Invite client" }),
+          overflow: [{ label: "New project\u2026", run: () => setModal({ kind: "project" }) }]
+        }
+      ),
+      /* @__PURE__ */ jsxs("div", { className: "ui-split", children: [
+        /* @__PURE__ */ jsx("div", { className: "ui-split__main", children: /* @__PURE__ */ jsx(
+          DataTable,
+          {
+            label: "Clients",
+            rows,
+            selected: selected?.id ?? null,
+            onSelect: (c) => setSelectedId(c.id),
+            onOpen: (c) => open(`c:${c.id}`),
+            menu: (c) => clientMenu(c, open),
+            sort,
+            onSort: (key) => setSort((s) => ({ key, dir: s.key === key ? -s.dir : key === "name" ? 1 : -1 })),
+            empty: { title: "No clients yet.", hint: "Invite a client and they get a portal account for their projects." },
+            columns: [
+              {
+                key: "name",
+                header: "Client",
+                sortable: true,
+                render: (c) => /* @__PURE__ */ jsxs("span", { title: c.email, children: [
+                  /* @__PURE__ */ jsx("strong", { children: c.name || c.email }),
+                  c.name ? /* @__PURE__ */ jsxs("span", { className: "ui-note", children: [
+                    " ",
+                    c.email
+                  ] }) : null
+                ] })
+              },
+              { key: "projects", header: "Projects", numeric: true, sortable: true, render: (c) => c.projectIds?.length ?? 0 },
+              { key: "usage", header: "Usage", render: (c) => c.usage ? usageLine(c.usage) : "Usage unavailable" },
+              {
+                key: "seen",
+                header: "Last seen",
+                fit: true,
+                sortable: true,
+                render: (c) => c.pending ? /* @__PURE__ */ jsx(StateIndicator, { state: "invited", tone: "warn", label: "Invited" }) : lastSeenOf(c) ? `${ago(lastSeenOf(c))} ago` : /* @__PURE__ */ jsx("span", { title: "Last seen unavailable", children: "\u2014" })
+              }
+            ]
+          }
+        ) }),
+        selected ? /* @__PURE__ */ jsx(ClientInspector, { c: selected, onClose: close }) : null
+      ] })
+    ] });
+  }
+  function TranslationsPanel() {
+    const { api, act } = useAdmin();
+    const [status, setStatus] = useState(null);
+    const load = useCallback(() => api("GET", "/admin/i18n").then(setStatus, () => void 0), [api]);
+    usePoll(load, status?.requestedAt || status?.runningSince ? 15e3 : 12e4, [load, status?.requestedAt, status?.runningSince]);
+    useEffect(() => void load(), [load]);
+    const last = status?.last;
+    const rejected = last ? Object.entries(last.rejected ?? {}) : [];
+    const failed = last ? Object.entries(last.failed ?? {}) : [];
+    const busy = Boolean(status?.requestedAt || status?.runningSince);
+    return /* @__PURE__ */ jsxs("section", { className: "aw-panel", children: [
+      /* @__PURE__ */ jsxs("h3", { className: "aw-row-h", children: [
+        "Translations",
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(
+          Button,
+          {
+            size: "sm",
+            disabled: !status?.ready || busy,
+            disabledReason: !status ? "Reading the translation status\u2026" : !status.ready ? "Needs DEEPSEEK_API_KEY and the GitHub App secrets on the Worker." : "A translation run is already queued or running.",
+            title: "Translate every interface and email string that is missing or out of date, in all languages, and commit it to master",
+            onClick: () => void act(() => api("POST", "/admin/i18n/sync", {}), "Translation starts within 5 minutes.").then(setStatus, () => void 0),
+            children: status?.runningSince ? "Translating\u2026" : status?.requestedAt ? "Queued" : "Translate now"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "Translates every interface and email string that is new or re-worded, in all languages, with DeepSeek, and commits it to ",
+        status?.repo ?? "the repo",
+        ". That push deploys like any other. Until then, untranslated strings show in English."
+      ] }),
+      status?.englishChanged && !busy ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        "English changed on master since the last translation",
+        status.checkedAt ? ` (checked ${ago(status.checkedAt)} ago)` : "",
+        "."
+      ] }) : null,
+      status ? /* @__PURE__ */ jsxs("label", { className: "aw-check", children: [
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "checkbox",
+            checked: Boolean(status.auto),
+            onChange: (e) => void act(
+              () => api("PUT", "/admin/i18n", { auto: e.target.checked }),
+              e.target.checked ? "Translations now follow every English change." : "Translations run only from the button."
+            ).then(setStatus, () => void 0)
+          }
+        ),
+        "Translate automatically whenever English changes"
+      ] }) : null,
+      status && !status.ready ? /* @__PURE__ */ jsx("p", { className: "aw-warn", children: "Needs DEEPSEEK_API_KEY and the GitHub App secrets on the Worker." }) : null,
+      status?.runningSince ? /* @__PURE__ */ jsxs("p", { children: [
+        "Translating since ",
+        ago(status.runningSince),
+        " ago."
+      ] }) : status?.requestedAt ? /* @__PURE__ */ jsxs("p", { children: [
+        "Queued ",
+        ago(status.requestedAt),
+        " ago; the next five-minute tick runs it."
+      ] }) : null,
+      last ? /* @__PURE__ */ jsxs("p", { className: last.ok ? "aw-muted" : "aw-warn", children: [
+        "Last run ",
+        ago(last.at),
+        " ago (",
+        last.trigger === "manual" ? "by hand" : "English changed",
+        "):",
+        " ",
+        last.error ? last.error : last.keys || last.removed ? `${last.keys} string${last.keys === 1 ? "" : "s"} in ${last.locales} language${last.locales === 1 ? "" : "s"}${last.removed ? `, ${last.removed} old removed` : ""}${last.commit ? `, commit ${last.commit.slice(0, 7)}` : ""}.` : "everything was already translated."
+      ] }) : status ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No run yet." }) : null,
+      failed.length ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
+        "Failed: ",
+        failed.map(([code, why]) => `${code} (${why})`).join("; ")
+      ] }) : null,
+      rejected.length ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "Kept in English (the placeholders did not survive): ",
+        rejected.map(([code, keys]) => `${code}: ${keys.join(", ")}`).join("; ")
+      ] }) : null
+    ] });
+  }
+  var SETTING_NUMBERS = {
+    stallMinutes: { max: 1440, min: 0, error: "Enter a whole number from 0 to 1,440." },
+    maxAttempts: { max: 10, min: 1, error: "Enter a whole number from 1 to 10." },
+    autoApproveCents: { max: 1e5, min: 0, decimal: true, error: "Enter USD from 0 to 100,000, with at most two decimal places." },
+    first_preview_limit_usd: { max: 1e3, min: 0, decimal: true, error: "Enter USD from 0 to 1,000, with at most two decimal places." }
+  };
+  var SITES_HOST = /^(?=.{3,100}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+  function settingsText(settings) {
+    return Object.fromEntries(Object.entries(settings).map(([key, value]) => [
+      key,
+      key === "autoApproveCents" ? (value / 100).toFixed(2) : key in SETTING_NUMBERS ? String(value) : value
+    ]));
+  }
+  function validateSettings(draft, current) {
+    const parsed = { ...draft };
+    const errors = {};
+    for (const [key, { min, max, decimal, error }] of Object.entries(SETTING_NUMBERS)) {
+      const input = (draft[key] ?? "").trim();
+      const numeric = Number(input);
+      const valid = decimal ? /^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(input) : /^\d+$/.test(input);
+      if (!valid || numeric < min || numeric > max) errors[key] = error;
+      else parsed[key] = key === "autoApproveCents" ? Math.round(numeric * 100) : numeric;
+    }
+    parsed.sitesDomain = (draft.sitesDomain ?? "").trim().toLowerCase();
+    if (!SITES_HOST.test(parsed.sitesDomain)) errors.sitesDomain = "Enter a hostname like ptechsolutions.dev, without a protocol or path.";
+    const patch = Object.fromEntries(Object.entries(parsed).filter(([key, value]) => value !== current[key]));
+    return { patch, errors };
+  }
+  var QUEUE_KEYS = ["stallMinutes", "maxAttempts", "defaultPriority", "notifyRunFinished", "autoApproveCents"];
+  var PORTAL_KEYS = ["sitesDomain", "clientPublish", "first_preview_limit_usd"];
+  var pick = (object, keys) => Object.fromEntries(Object.entries(object).filter(([key]) => keys.includes(key)));
+  function useAdminSettings(keys, onDirtyChange) {
+    const { api, act, ask } = useAdmin();
+    const [edits, setEdits] = useState({});
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState(null);
+    const [read, setRead] = useState({ loading: true, settings: null });
+    const [readAttempt, setReadAttempt] = useState(0);
+    useEffect(() => {
+      let current = true;
+      api("GET", "/admin/settings").then(({ settings }) => {
+        if (current) setRead({ loading: false, settings: settings ?? null });
+      }, () => {
+        if (current) setRead({ loading: false, settings: null });
+      });
+      return () => {
+        current = false;
+      };
+    }, [api, readAttempt]);
+    const baseline = settingsText(read.settings ?? {});
+    const draft = { ...baseline, ...edits };
+    const set = (key, value) => setEdits((previous) => ({ ...previous, [key]: value }));
+    const changed = Object.keys(edits).some((key) => edits[key] !== baseline[key]);
+    const all = validateSettings(draft, read.settings ?? {});
+    const patch = pick(all.patch, keys);
+    const errors = pick(all.errors, keys);
+    const invalid = Object.keys(errors).length > 0;
+    const dirty = changed && (invalid || Object.keys(patch).length > 0);
+    useEffect(() => {
+      onDirtyChange?.(dirty);
+    }, [dirty, onDirtyChange]);
+    useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+    const save = async () => {
+      setSaving(true);
+      setSaveError(null);
+      try {
+        const { settings } = await act(() => api("PATCH", "/admin/settings", patch), "Settings saved.");
+        setRead({ loading: false, settings });
+        setEdits({});
+      } catch (error) {
+        setSaveError(error?.message ?? "Could not save.");
+      } finally {
+        setSaving(false);
+      }
+    };
+    const submit = () => {
+      if (saving || !Object.keys(patch).length) return;
+      if (invalid) {
+        setSaveError("Fix the highlighted fields first.");
+        return;
+      }
+      if (!Object.hasOwn(patch, "sitesDomain")) return void save();
+      ask({
+        title: `Change sites domain to ${patch.sitesDomain}?`,
+        text: "This changes the default addresses shown for existing managed sites as well as new sites. Make sure the new domain is ready before saving.",
+        confirm: "Change domain",
+        run: save
+      });
+    };
+    const discard = () => {
+      setEdits({});
+      setSaveError(null);
+    };
+    const retry = () => {
+      setRead({ loading: true, settings: null });
+      setReadAttempt((attempt) => attempt + 1);
+    };
+    const textInput = (key, mode, className) => /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          inputMode: mode,
+          className,
+          value: draft[key] ?? "",
+          disabled: saving,
+          "aria-invalid": errors[key] ? true : void 0,
+          "aria-describedby": errors[key] ? `aw-settings-error-${key}` : void 0,
+          onChange: (e) => set(key, e.target.value)
+        }
+      ),
+      errors[key] ? /* @__PURE__ */ jsx("span", { id: `aw-settings-error-${key}`, className: "aw-warn", children: errors[key] }) : null
+    ] });
+    const status = !read.settings ? read.loading ? /* @__PURE__ */ jsx(Skeleton, { lines: 4, label: "Reading settings\u2026" }) : /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+      /* @__PURE__ */ jsx("p", { className: "aw-warn", role: "alert", children: "Could not read settings." }),
+      /* @__PURE__ */ jsx(Button, { size: "sm", onClick: retry, children: "Retry" })
+    ] }) : null;
+    const saveBar = read.settings ? /* @__PURE__ */ jsx(
+      SaveBar,
+      {
+        dirty,
+        saving,
+        error: saveError ?? (dirty && invalid ? "Fix the highlighted fields first." : null),
+        onSave: submit,
+        onDiscard: discard,
+        saveLabel: "Save"
+      }
+    ) : null;
+    return { draft, set, saving, textInput, status, saveBar };
+  }
+  function QueueSettings({ onDirtyChange }) {
+    const form = useAdminSettings(QUEUE_KEYS, onDirtyChange);
+    const { draft, set, saving, textInput } = form;
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsx(FormPane, { className: "aw-settings-form", children: /* @__PURE__ */ jsx(Panel, { children: form.status ?? /* @__PURE__ */ jsxs(Fragment2, { children: [
+        /* @__PURE__ */ jsx(Field, { label: "Stalled after (minutes)", hint: "An in-progress item with no report for this long is flagged.", children: textInput("stallMinutes", "numeric", "aw-settings-num") }),
+        /* @__PURE__ */ jsx(Field, { label: "Attempts before review", hint: "Node restarts do not count.", children: textInput("maxAttempts", "numeric", "aw-settings-num") }),
+        /* @__PURE__ */ jsx(Field, { label: "Default priority", children: /* @__PURE__ */ jsx(Segmented, { label: "Default priority", value: draft.defaultPriority ?? 0, options: PRIORITIES, onChange: (v) => !saving && set("defaultPriority", v) }) }),
+        /* @__PURE__ */ jsx(Field, { label: "Email me when a run finishes", children: /* @__PURE__ */ jsx(Segmented, { label: "Email me when a run finishes", value: Boolean(draft.notifyRunFinished), options: [{ value: true, label: "On" }, { value: false, label: "Off" }], onChange: (v) => !saving && set("notifyRunFinished", v) }) }),
+        /* @__PURE__ */ jsx(Field, { label: "Auto-approve runs under (USD)", hint: "An Autopilot request with its own budget at or below this starts without you. 0 turns it off.", children: textInput("autoApproveCents", "decimal", "aw-settings-num") })
+      ] }) }) }),
+      form.saveBar
+    ] });
+  }
+  function PortalSettings({ onDirtyChange }) {
+    const form = useAdminSettings(PORTAL_KEYS, onDirtyChange);
+    const { draft, set, saving, textInput } = form;
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      /* @__PURE__ */ jsxs(FormPane, { className: "aw-settings-form", children: [
+        /* @__PURE__ */ jsx(Panel, { title: "Portal", children: form.status ?? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Field, { label: "Sites domain", children: textInput("sitesDomain", "url") }),
+          /* @__PURE__ */ jsx(Field, { label: "Clients may publish their site", children: /* @__PURE__ */ jsx(Segmented, { label: "Clients may publish their site", value: Boolean(draft.clientPublish), options: [{ value: true, label: "Yes" }, { value: false, label: "No" }], onChange: (v) => !saving && set("clientPublish", v) }) }),
+          /* @__PURE__ */ jsx(
+            Field,
+            {
+              label: "First preview limit (USD)",
+              hint: "A new client's first request starts by itself, with its AI run capped at this many dollars. Free to the client. 0 turns it off.",
+              children: textInput("first_preview_limit_usd", "decimal", "aw-settings-num")
+            }
+          )
+        ] }) }),
+        /* @__PURE__ */ jsx(TranslationsPanel, {})
+      ] }),
+      form.saveBar
+    ] });
+  }
+  function MachineSettings() {
+    const { platform, host } = useAdmin();
+    if (platform !== "dsh" || !host) {
+      return /* @__PURE__ */ jsx(FormPane, { className: "aw-settings-form", children: /* @__PURE__ */ jsx(EmptyState, { title: "Only in the desktop app", hint: "MCP servers and skills belong to the machine that runs the agents. Open Settings in the desktop app to change them." }) });
+    }
+    return /* @__PURE__ */ jsx(FormPane, { className: "aw-settings-form", children: /* @__PURE__ */ jsx(Panel, { title: "This machine\u2019s tools", subtitle: "MCP servers and skills the agents on this machine can use.", children: /* @__PURE__ */ jsx(ToolboxPanel, {}) }) });
+  }
+  function AccountSettings() {
+    const { platform, host, notify, reload, data } = useAdmin();
+    const [token, setToken] = useState("");
+    const [busy, setBusy] = useState(null);
+    const desktop = platform === "dsh" && Boolean(host);
+    const user = data?.user ?? data?.identity?.user ?? null;
+    const access = data?.access;
+    const signedIn = Boolean(user) && !data?.error;
+    const who = user?.email ?? user?.name ?? null;
+    const role = access?.superAdmin ? "Administrator" : access?.canUseWorkbench ? "Developer" : null;
+    const signIn = async () => {
+      setBusy("in");
+      try {
+        const r = await host.command(`login ${token.trim()}`);
+        notify(r.text, r.ok ? "ok" : "error");
+        setToken("");
+        void reload?.();
+      } finally {
+        setBusy(null);
+      }
+    };
+    const signOut = async () => {
+      setBusy("out");
+      try {
+        notify((await host.command("logout")).text);
+        void reload?.();
+      } finally {
+        setBusy(null);
+      }
+    };
+    return /* @__PURE__ */ jsxs(FormPane, { className: "aw-settings-form", children: [
+      /* @__PURE__ */ jsxs(
+        Panel,
+        {
+          title: "Sign-in",
+          actions: data?.loaded === false ? null : /* @__PURE__ */ jsx(
+            StateIndicator,
+            {
+              state: signedIn ? "online" : "offline",
+              tone: signedIn ? "ok" : "bad",
+              label: signedIn ? "Signed in" : "Not signed in"
+            }
+          ),
+          children: [
+            who ? /* @__PURE__ */ jsxs("div", { className: "aw-field", children: [
+              /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: "Account" }),
+              /* @__PURE__ */ jsxs("span", { children: [
+                who,
+                role ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
+                  " \xB7 ",
+                  role
+                ] }) : null
+              ] })
+            ] }) : null,
+            desktop ? /* @__PURE__ */ jsx(Field, { label: "Session token", hint: "Sign in on ptechsolutions.net/portal, then paste the session token here. It stays on this machine.", children: /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
+              /* @__PURE__ */ jsx("input", { type: "password", className: "aw-settings-token", value: token, placeholder: "paste token", onChange: (e) => setToken(e.target.value) }),
+              /* @__PURE__ */ jsx(
+                Button,
+                {
+                  kind: "primary",
+                  busy: busy === "in",
+                  disabled: !token.trim() || Boolean(busy),
+                  disabledReason: "Paste the session token first.",
+                  onClick: signIn,
+                  children: "Save"
+                }
+              ),
+              /* @__PURE__ */ jsx(Button, { kind: "ghost", busy: busy === "out", disabled: Boolean(busy), onClick: signOut, children: "Sign out" })
+            ] }) }) : /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+              "This page uses your portal session. ",
+              /* @__PURE__ */ jsx("a", { href: "/portal", children: "Manage sign-in on the portal" }),
+              "."
             ] })
           ]
         }
       ),
-      /* @__PURE__ */ jsxs(
-        Panel,
-        {
-          title: "Events",
-          subtitle: "Core updates, algorithm updates, fixes and notes. The score line marks them, and a core update in the last 14 days holds content rewrites.",
-          children: [
-            /* @__PURE__ */ jsxs("div", { className: "aw-inline aw-seo-events-form", children: [
-              /* @__PURE__ */ jsx("select", { value: eventForm.kind, "aria-label": "Event kind", onChange: (event) => setEventForm((form) => ({ ...form, kind: event.target.value })), children: EVENT_KINDS.map((kind) => /* @__PURE__ */ jsx("option", { value: kind.value, children: kind.label }, kind.value)) }),
-              /* @__PURE__ */ jsx(
-                "input",
-                {
-                  value: eventForm.label,
-                  placeholder: "Label, for example Google core update started",
-                  "aria-label": "Event label",
-                  onChange: (event) => setEventForm((form) => ({ ...form, label: event.target.value }))
-                }
-              ),
-              /* @__PURE__ */ jsx("input", { type: "date", value: eventForm.day, "aria-label": "Event day", onChange: (event) => setEventForm((form) => ({ ...form, day: event.target.value })) }),
-              /* @__PURE__ */ jsx(Button, { disabled: eventBusy, onClick: addEvent, children: eventBusy ? "Adding\u2026" : "Add event" })
-            ] }),
-            (overview.events ?? []).length ? /* @__PURE__ */ jsx("ul", { className: "aw-rows", children: overview.events.map((event) => /* @__PURE__ */ jsxs("li", { className: "aw-seo-row", children: [
-              /* @__PURE__ */ jsx(MetaChip, { children: EVENT_LABEL2[event.kind] ?? event.kind }),
-              /* @__PURE__ */ jsx("span", { className: "aw-row__title", children: event.label }),
-              /* @__PURE__ */ jsxs("span", { className: "aw-muted", children: [
-                longDay(event.day),
-                event.source ? ` \xB7 ${event.source}` : ""
-              ] }),
-              /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-              /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => removeEvent(event), children: "Delete" })
-            ] }, event.id)) }) : /* @__PURE__ */ jsx(Empty, { title: "No events yet", hint: "Add a core update so the score chart shows when the SERP was moving." })
-          ]
-        }
-      ),
-      /* @__PURE__ */ jsxs("div", { className: "aw-seo-savebar", children: [
-        /* @__PURE__ */ jsxs("span", { className: "aw-seo-savebar__state", role: "status", children: [
-          changed ? "Unsaved changes" : "All changes saved",
-          message ? /* @__PURE__ */ jsxs("span", { className: message.tone === "bad" ? "aw-warn" : message.tone === "warn" ? "aw-warn" : "aw-muted", children: [
-            " \xB7 ",
-            message.text
-          ] }) : null
+      /* @__PURE__ */ jsxs(Panel, { title: "About", children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-field", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: "Running in" }),
+          /* @__PURE__ */ jsx("span", { children: desktop ? "The desktop app" : "The web admin" })
         ] }),
-        /* @__PURE__ */ jsx(Button, { disabled: !changed || saving, onClick: reset, children: "Reset" }),
-        /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !changed || saving, onClick: save, children: saving ? "Saving\u2026" : "Save settings" })
+        host?.version ? /* @__PURE__ */ jsxs("div", { className: "aw-field", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: "Version" }),
+          /* @__PURE__ */ jsx("span", { className: "aw-mono", children: host.version })
+        ] }) : null,
+        data?.fetchedAt ? /* @__PURE__ */ jsxs("div", { className: "aw-field", children: [
+          /* @__PURE__ */ jsx("span", { className: "aw-field__label", children: "Last synced" }),
+          /* @__PURE__ */ jsxs("span", { children: [
+            ago(Math.floor(data.fetchedAt / 1e3)),
+            " ago"
+          ] })
+        ] }) : null,
+        /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+          "The theme follows ",
+          desktop ? "the desktop app" : "your system",
+          "."
+        ] })
+      ] })
+    ] });
+  }
+  var SETTINGS_SECTIONS = [
+    { id: "queue", label: "Work queue", hint: "How runs are picked up, retried and reported." },
+    { id: "machine", label: "This machine & tools", hint: "MCP servers and skills on this machine.", desktop: true },
+    { id: "portal", label: "Portal & translations", hint: "What the client portal does on its own, and its languages." },
+    { id: "marketing", label: "Marketing", hint: "Sending, safety and content for the outreach desk." },
+    { id: "seo", label: "SEO", hint: "Cycles, guides, buyer questions, rank tracking and events." },
+    { id: "account", label: "Account & about", hint: "Who is signed in, and where this admin runs." }
+  ];
+  var hashSection = () => typeof window === "undefined" ? null : settingsSection(window.location.hash.slice(1));
+  function SettingsView({ section: requested } = {}) {
+    const { platform, host, ask } = useAdmin();
+    const desktop = platform === "dsh" && Boolean(host);
+    const sections = SETTINGS_SECTIONS.filter((s) => !s.desktop || desktop);
+    const known = (id) => id && sections.some((s) => s.id === id) ? id : null;
+    const [section, setSection] = useState(() => known(settingsSection(`settings#${requested ?? ""}`) ?? requested) ?? known(takePendingSection()) ?? known(hashSection()) ?? sections[0].id);
+    const dirty = useRef(false);
+    const current = useRef(section);
+    current.current = section;
+    const onDirtyChange = useCallback((value) => {
+      dirty.current = value;
+    }, []);
+    const go = useCallback((next) => {
+      if (!next || next === current.current) return;
+      const show = () => {
+        dirty.current = false;
+        setSection(next);
+      };
+      if (!dirty.current) return show();
+      const from = SETTINGS_SECTIONS.find((s) => s.id === current.current)?.label ?? "this section";
+      ask({
+        title: "Discard unsaved changes?",
+        text: `${from} has changes that are not saved yet.`,
+        confirm: "Discard changes",
+        danger: true,
+        run: show
+      });
+    }, [ask]);
+    const goKnown = useCallback((id) => {
+      const target = known(id);
+      if (target) go(target);
+    }, [go, desktop]);
+    useEffect(() => {
+      if (requested) goKnown(settingsSection(`settings#${requested}`) ?? requested);
+    }, [requested, goKnown]);
+    useEffect(() => onSettingsSection(goKnown), [goKnown]);
+    useEffect(() => {
+      if (typeof window === "undefined") return void 0;
+      const fromHash = () => {
+        const id = hashSection();
+        if (id) goKnown(id);
+      };
+      window.addEventListener("hashchange", fromHash);
+      return () => window.removeEventListener("hashchange", fromHash);
+    }, [goKnown]);
+    const navRef = useRef(null);
+    const onNavKey = (e) => {
+      if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+      const buttons = navRef.current ? [...navRef.current.querySelectorAll("button")] : [];
+      if (!buttons.length) return;
+      e.preventDefault();
+      const i = buttons.indexOf(document.activeElement);
+      const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : -1;
+      const next = e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1 : (Math.max(i, 0) + step + buttons.length) % buttons.length;
+      buttons[next].focus();
+    };
+    const info = sections.find((s) => s.id === section) ?? sections[0];
+    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace aw-settings", children: [
+      /* @__PURE__ */ jsx(UiStyles, {}),
+      /* @__PURE__ */ jsx(PageHeader, { title: "Settings", subtitle: info.hint }),
+      /* @__PURE__ */ jsxs("div", { className: "aw-settings__body", children: [
+        /* @__PURE__ */ jsx("nav", { className: "aw-settings__nav", "aria-label": "Settings sections", ref: navRef, onKeyDown: onNavKey, children: sections.map((s) => /* @__PURE__ */ jsx(
+          "button",
+          {
+            type: "button",
+            className: "aw-settings__navitem",
+            "aria-current": s.id === section ? "page" : void 0,
+            "data-section": s.id,
+            onClick: () => go(s.id),
+            children: s.label
+          },
+          s.id
+        )) }),
+        /* @__PURE__ */ jsxs("section", { className: "aw-settings__main", "aria-label": info.label, "data-section": section, children: [
+          section === "queue" ? /* @__PURE__ */ jsx(QueueSettings, { onDirtyChange }) : null,
+          section === "machine" ? /* @__PURE__ */ jsx(MachineSettings, {}) : null,
+          section === "portal" ? /* @__PURE__ */ jsx(PortalSettings, { onDirtyChange }) : null,
+          section === "marketing" ? /* @__PURE__ */ jsx(MarketingSettings, { onDirtyChange }) : null,
+          section === "seo" ? /* @__PURE__ */ jsx(SeoSettings, { onDirtyChange }) : null,
+          section === "account" ? /* @__PURE__ */ jsx(AccountSettings, {}) : null
+        ] })
       ] })
     ] });
   }
@@ -11044,7 +11339,6 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-panel > header { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; }
 .aw-panel > h3 { font-size: var(--aw-type-md); font-weight: 600; margin-bottom: var(--aw-space-3); }
 .aw-panel p { margin: 6px 0; }
-.aw-settings { max-width: 900px; }
 
 /* \u2014\u2014\u2014\u2014\u2014 this Mac as a worker \u2014\u2014\u2014\u2014\u2014 */
 .aw-mpillbar { display: inline-flex; align-items: center; gap: 0; }
@@ -11906,7 +12200,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-directory__name strong { font-weight: 500; }
 .aw-health--compact .aw-health__row { min-height: var(--aw-row-h-tight); }
 /* marketing */
-.aw-mk-anchor { scroll-margin-block: var(--ui-sp-4); }
 .aw-mk-controls { margin-bottom: var(--ui-sp-3); }
 .aw-mk-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ui-sp-2); margin-bottom: var(--ui-sp-3); min-width: 0; }
 .aw-mk-bar > .aw-search { min-width: 0; flex: 1 1 200px; max-width: 320px; }
@@ -12006,8 +12299,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-seo-row { cursor: default; }
 .aw-seo .aw-rows .aw-seo-row { display: flex; align-items: center; gap: var(--aw-space-2); min-height: var(--aw-row-h); padding: 0 var(--aw-space-1); }
 .aw-seo-events-form { margin-bottom: var(--aw-space-3); }
-.aw-seo-savebar { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; padding: var(--aw-space-2) 0; border-top: 1px solid var(--aw-hairline); background: var(--aw-surface); }
-.aw-seo-savebar__state { flex: 1; min-width: 160px; font-size: var(--aw-type-sm); color: var(--aw-ink-2); }
 
 /* fleet, clients, settings */
 .aw-fleet .aw-group, .aw-clients .aw-group, .aw-client .aw-group { margin: var(--aw-space-5) 0; }
@@ -12034,9 +12325,52 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-clients .aw-row > .aw-muted:last-child { flex: none; }
 .aw-clients .aw-directory__name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--aw-type-sm); }
 .aw-client .aw-toolbar { margin-bottom: var(--aw-space-3); }
-.aw-settings .aw-field { margin-bottom: var(--aw-space-3); }
-.aw-settings .aw-panel > h3 { margin-bottom: var(--aw-space-3); }
-.aw-settings__foot { position: sticky; bottom: 0; display: flex; align-items: center; gap: var(--aw-space-3); margin: var(--aw-space-4) 0 calc(-1 * var(--aw-space-6)); padding: var(--aw-space-2) 0; background: var(--aw-surface); border-top: 1px solid var(--aw-hairline); }
+/* \u2014\u2014 Settings: one workspace \u2014 header, 180px section nav, bounded form, one SaveBar \u2014\u2014 */
+.aw-settings__body { flex: 1; min-height: 0; min-width: 0; display: flex; gap: var(--ui-sp-5); }
+.aw-settings__nav { flex: none; width: 180px; display: flex; flex-direction: column; gap: 2px; padding-top: var(--ui-sp-1); }
+.aw-settings__navitem {
+  display: flex; align-items: center; height: 28px; padding: 0 var(--ui-sp-3); border: 0; border-radius: var(--ui-r-md);
+  background: none; color: var(--ui-ink-2); font: inherit; font-size: var(--ui-fs-md); text-align: left; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: inset 2px 0 0 transparent;
+}
+.aw-settings__navitem:hover { background: var(--ui-bg-hover); color: var(--ui-ink); }
+.aw-settings__navitem[aria-current="page"] { background: var(--ui-bg-selected); color: var(--ui-ink); font-weight: 600; box-shadow: inset 2px 0 0 var(--ui-accent); }
+.aw-settings__navitem:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: -2px; }
+.aw-settings__main { flex: 1; min-width: 0; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.aw-settings__main > .ui-form { flex: 1 0 auto; width: 100%; padding-bottom: var(--ui-sp-4); }
+.aw-settings__main > .ui-savebar { margin-top: auto; padding-inline: 0; max-width: var(--ui-form-max); width: 100%; }
+.aw-settings-form__head { display: flex; align-items: center; gap: var(--ui-sp-3); flex-wrap: wrap; margin-bottom: var(--ui-sp-3); }
+.aw-settings-form__fill { flex: 1; }
+/* Field row: the label beside its control, hint and error under the control. */
+.aw-settings-form .aw-field {
+  display: grid; grid-template-columns: minmax(140px, 200px) minmax(0, 1fr); align-items: start;
+  gap: var(--ui-sp-1) var(--ui-sp-4); margin-bottom: var(--ui-sp-4);
+}
+.aw-settings-form .aw-field > .aw-field__label { grid-column: 1; grid-row: 1 / span 3; padding-top: 5px; color: var(--ui-ink-2); }
+.aw-settings-form .aw-field > :not(.aw-field__label) { grid-column: 2; min-width: 0; }
+.aw-settings-form .aw-field > input:not([type="checkbox"]):not(.aw-settings-num),
+.aw-settings-form .aw-field > select { max-width: 360px; }
+.aw-settings-form .aw-settings-num { width: 120px; max-width: 100%; }
+.aw-settings-form .aw-settings-token { flex: 0 1 240px; width: 240px; min-width: 0; }
+/* Segmented stays intrinsic: never stretched to the column. */
+.aw-settings-form .aw-seg { justify-self: start; align-self: start; width: fit-content; max-width: 100%; }
+.aw-settings-form .aw-panel > h3 { margin-bottom: var(--ui-sp-3); }
+.aw-settings-form .aw-mk-settings-fields { gap: 0; }
+.aw-settings-form .aw-panel { margin-bottom: var(--ui-sp-2); }
+.aw-settings__main > .ui-form > .aw-panel:first-child:not(:has(> header)) { border-top: 0; padding-top: 0; }
+.aw-settings-form .aw-panel__head { margin-bottom: var(--ui-sp-3); }
+@media (max-width: 900px) {
+  .aw-settings__body { flex-direction: column; gap: var(--ui-sp-3); flex: none; }
+  .aw-settings__nav { width: auto; flex-direction: row; gap: 0; overflow-x: auto; padding-top: 0; border-bottom: 1px solid var(--ui-border); }
+  .aw-settings__navitem { flex: none; height: 32px; border-radius: 0; box-shadow: inset 0 -2px 0 transparent; }
+  .aw-settings__navitem[aria-current="page"] { background: none; box-shadow: inset 0 -2px 0 var(--ui-accent); }
+  .aw-settings__main { overflow: visible; flex: none; }
+}
+@media (max-width: 600px) {
+  .aw-settings-form .aw-field { grid-template-columns: minmax(0, 1fr); }
+  .aw-settings-form .aw-field > .aw-field__label { grid-row: auto; padding-top: 0; }
+  .aw-settings-form .aw-field > :not(.aw-field__label) { grid-column: 1; }
+}
 /* the ticket rail */
 .aw-details__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--aw-space-2); margin-bottom: var(--aw-space-3); }
 .aw-details__pair > .aw-field { margin-bottom: 0; }
@@ -12664,24 +12998,24 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     };
   }
   function singleFlight(fn) {
-    let pending = null;
+    let pending2 = null;
     return (...args) => {
-      if (pending) return pending;
+      if (pending2) return pending2;
       let resolve, reject;
-      pending = new Promise((yes, no) => {
+      pending2 = new Promise((yes, no) => {
         resolve = yes;
         reject = no;
       });
-      const result = pending;
+      const result = pending2;
       try {
         Promise.resolve(fn(...args)).then(resolve, reject);
       } catch (error) {
         reject(error);
       }
       result.then(() => {
-        pending = null;
+        pending2 = null;
       }, () => {
-        pending = null;
+        pending2 = null;
       });
       return result;
     };
@@ -16132,6 +16466,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       case "settings":
         return /* @__PURE__ */ jsx(SettingsView, {});
       default:
+        if (isSettingsKey(name)) return /* @__PURE__ */ jsx(SettingsView, { section: settingsSection(name) ?? void 0 });
         return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Unknown view." });
     }
   }
@@ -16154,10 +16489,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const submit = async () => {
       if (busyRef.current || !title.trim() || !brief.trim() || !projectId) return;
       busyRef.current = true;
-      const pending = submitRef.current({ title, brief, projectId, priority, requires, executor, approve });
+      const pending2 = submitRef.current({ title, brief, projectId, priority, requires, executor, approve });
       setBusy(true);
       try {
-        const out = await pending;
+        const out = await pending2;
         if (out) {
           onClose();
           openTicket(out.id);
@@ -17025,11 +17360,11 @@ ${question.text ?? ""}`)) {
       }
       if (Date.now() < retryAt) return fallback(line);
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        const pending = bridge ??= locate();
+        const pending2 = bridge ??= locate();
         try {
-          return await send(await pending, line);
+          return await send(await pending2, line);
         } catch {
-          if (bridge === pending) bridge = null;
+          if (bridge === pending2) bridge = null;
         }
       }
       retryAt = Date.now() + BRIDGE_RETRY_MS;
@@ -18119,10 +18454,10 @@ ${question.text ?? ""}`)) {
       useEffect(() => {
         mounted.current = true;
         void load();
-        let pending = null;
+        let pending2 = null;
         const soon = () => {
-          clearTimeout(pending);
-          pending = setTimeout(() => void load(), SECTION_DEBOUNCE_MS);
+          clearTimeout(pending2);
+          pending2 = setTimeout(() => void load(), SECTION_DEBOUNCE_MS);
         };
         const stopAttention = attention.subscribe(soon);
         window.addEventListener("admin:changed", soon);
@@ -18131,7 +18466,7 @@ ${question.text ?? ""}`)) {
         return () => {
           mounted.current = false;
           stopAttention();
-          clearTimeout(pending);
+          clearTimeout(pending2);
           clearInterval(every);
           window.removeEventListener("admin:changed", soon);
           window.removeEventListener("focus", soon);
@@ -18633,10 +18968,10 @@ ${question.text ?? ""}`)) {
       useEffect(() => {
         mounted.current = true;
         void load();
-        let pending = null;
+        let pending2 = null;
         const soon = () => {
-          clearTimeout(pending);
-          pending = setTimeout(() => void load(), 250);
+          clearTimeout(pending2);
+          pending2 = setTimeout(() => void load(), 250);
         };
         const stopAttention = attention.subscribe(soon);
         window.addEventListener("admin:changed", soon);
@@ -18645,7 +18980,7 @@ ${question.text ?? ""}`)) {
         return () => {
           mounted.current = false;
           stopAttention();
-          clearTimeout(pending);
+          clearTimeout(pending2);
           clearInterval(every);
           window.removeEventListener("admin:changed", soon);
           window.removeEventListener("focus", soon);

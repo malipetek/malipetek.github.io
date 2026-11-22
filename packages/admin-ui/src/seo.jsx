@@ -8,11 +8,13 @@
  * Grammar (06-design-system.md §6): one PageHeader with one primary
  * (`Run audit`), five tabs, and on each tab an object list (DataTable) with
  * the selected object in the right Inspector. Status is a StateIndicator;
- * scores and positions are plain numbers. Settings stays reachable from the
- * header's overflow menu until it moves into the unified Settings.
+ * scores and positions are plain numbers. The desk's settings live in the
+ * unified Settings (Settings → SEO, `SeoSettings` below); the header's
+ * overflow links there.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin, usePoll } from './store.js';
+import { openSettings } from './settings-link.js';
 import { ago, errorText, when } from './format.js';
 import {
   Button,
@@ -27,6 +29,7 @@ import {
   PageHeader,
   PageTabs,
   Panel,
+  SaveBar,
   Segmented,
   StateIndicator,
   StatRow,
@@ -224,7 +227,7 @@ function useSelection(rows, keyOf) {
 const SectionTitle = ({ children }) => <h3 className="ui-section__title">{children}</h3>;
 
 export function SeoView() {
-  const { api, ask, notify, openTicket } = useAdmin();
+  const { api, ask, notify, openTicket, open } = useAdmin();
   const [overview, setOverview] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState('overview');
@@ -309,7 +312,6 @@ export function SeoView() {
   const cadence = RUN_CADENCE.map((entry) => ({ ...entry, at: state[entry.stateKey] ?? null }));
   const late = cadence.filter((entry) => runLate(entry.at, entry.days));
   const waitReason = busy ? `Wait for the ${RUN_BUSY[busy] ?? busy} to finish.` : undefined;
-  const settings = tab === 'settings';
 
   const desk = { api, ask, notify, openTicket, refresh, run, busy, tick, hosts, overview, writeGuide, guideBusy };
 
@@ -317,8 +319,7 @@ export function SeoView() {
     <div className="ui-workspace aw-seo">
       <UiStyles />
       <PageHeader
-        title={settings ? 'SEO settings' : 'SEO'}
-        back={settings ? { label: 'SEO', run: () => switchTab('overview') } : undefined}
+        title="SEO"
         subtitle={cadence.map((entry) => `${entry.label} ${entry.at ? `${ago(entry.at)} ago` : 'not run yet'}`).join(' · ')}
         meta={
           late.length ? (
@@ -351,7 +352,8 @@ export function SeoView() {
           { label: busy === 'ranks' ? 'Checking rankings…' : 'Check rankings now…', run: () => run('ranks'), disabled: Boolean(busy), disabledReason: waitReason },
           { label: busy === 'cycle' ? 'Filing the fix cycle…' : 'Run a fix cycle now…', run: () => run('cycle'), disabled: Boolean(busy), disabledReason: waitReason },
           { label: guideBusy ? 'Filing the guide cycle…' : 'Write a guide now…', run: writeGuide, disabled: guideBusy },
-          { label: 'SEO settings', run: () => switchTab('settings') },
+          { separator: true },
+          { label: 'SEO settings…', run: () => openSettings(open, 'seo') },
         ]}
       />
 
@@ -375,13 +377,6 @@ export function SeoView() {
       {tab === 'answers' ? <GeoTab desk={desk} /> : null}
       {tab === 'ranks' ? <RankingsTab desk={desk} /> : null}
       {tab === 'citations' ? <CitationsTab desk={desk} onClaimPrimary={setPrimaryClaimed} /> : null}
-      {settings ? (
-        <div className="ui-split">
-          <div className="ui-split__main">
-            <SettingsTab api={api} overview={overview} refresh={refresh} notify={notify} />
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -1984,11 +1979,39 @@ function CitationInspector({ citation, draft, statuses, changed, saving, onEdit,
 
 /* ——————————————————————— settings ——————————————————————— */
 
-function SettingsTab({ api, overview, refresh, notify }) {
+/**
+ * Settings → SEO: cycles, guides, buyer questions, rank tracking and events in
+ * one bounded form with one SaveBar. Reads the desk overview itself, so it
+ * works wherever Settings is mounted. Events save on their own (add/delete).
+ */
+export function SeoSettings({ onDirtyChange }) {
+  const { api, notify } = useAdmin();
+  const [overview, setOverview] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const load = useCallback(
+    () =>
+      api('GET', '/admin/seo/overview')
+        .then((data) => {
+          setOverview(data);
+          setLoadError(null);
+        })
+        .catch(setLoadError),
+    [api],
+  );
+  useEffect(() => {
+    void load();
+  }, [load]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+  if (!overview) return loadError ? <ErrorNote error={loadError} onRetry={load} /> : <Loading label="Loading SEO settings…" />;
+  return <SeoSettingsForm api={api} overview={overview} refresh={load} notify={notify} onDirtyChange={onDirtyChange} />;
+}
+
+function SeoSettingsForm({ api, overview, refresh, notify, onDirtyChange }) {
   const [draft, setDraft] = useState(overview.settings);
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
+  const [saveError, setSaveError] = useState(null);
   const [eventForm, setEventForm] = useState({ kind: 'core_update', label: '', day: '' });
   const [eventBusy, setEventBusy] = useState(false);
 
@@ -2015,9 +2038,15 @@ function SettingsTab({ api, overview, refresh, notify }) {
     location.locationCode !== overview.settings.rankLocation?.locationCode ||
     location.languageCode !== overview.settings.rankLocation?.languageCode;
 
+  useEffect(() => {
+    onDirtyChange?.(changed);
+  }, [changed, onDirtyChange]);
+
   const save = async () => {
+    if (!changed || saving) return;
     setSaving(true);
     setMessage(null);
+    setSaveError(null);
     try {
       const out = await api('POST', '/admin/seo/settings', {
         autoCycle: draft.autoCycle,
@@ -2035,7 +2064,7 @@ function SettingsTab({ api, overview, refresh, notify }) {
       await refresh();
       notify?.('SEO settings saved.');
     } catch (error) {
-      setMessage({ tone: 'bad', text: errorText(error) });
+      setSaveError(errorText(error));
     } finally {
       setSaving(false);
     }
@@ -2045,6 +2074,7 @@ function SettingsTab({ api, overview, refresh, notify }) {
     setDraft(overview.settings);
     setTouched(false);
     setMessage(null);
+    setSaveError(null);
   };
 
   const addEvent = async () => {
@@ -2079,8 +2109,13 @@ function SettingsTab({ api, overview, refresh, notify }) {
 
   return (
     <>
+      <FormPane className="aw-settings-form">
+      {message ? (
+        <p className={message.tone === 'ok' ? 'aw-muted' : 'aw-warn'} role="status">
+          {message.text}
+        </p>
+      ) : null}
       <Panel title="Cycle" subtitle="What the desk does on its own, and when it holds off.">
-        <div className="aw-grid2">
           <Field label="Automatic cycles" hint="On: the desk files a ticket for the worst open findings when none is open.">
             <Segmented
               label="Automatic cycles"
@@ -2106,11 +2141,9 @@ function SettingsTab({ api, overview, refresh, notify }) {
               onChange={(value) => set('volatilityHold', value)}
             />
           </Field>
-        </div>
       </Panel>
 
       <Panel title="Guides" subtitle="One guide per rank keyword and buyer question, filed within the weekly limit.">
-        <div className="aw-grid2">
           <Field label="Automatic guide cycles" hint="On: the desk files a ticket for the first target no guide answers, within the weekly limit below.">
             <Segmented
               label="Automatic guide cycles"
@@ -2123,7 +2156,7 @@ function SettingsTab({ api, overview, refresh, notify }) {
             />
           </Field>
           <Field label="Guides per week" hint="How many guide cycles a week at most, 0 to 7. A target waits three weeks between attempts.">
-            <input inputMode="numeric" min="0" max="7" value={draft.guidesPerWeek ?? 2} onChange={(event) => set('guidesPerWeek', Number(event.target.value))} />
+            <input inputMode="numeric" className="aw-settings-num" min="0" max="7" value={draft.guidesPerWeek ?? 2} onChange={(event) => set('guidesPerWeek', Number(event.target.value))} />
           </Field>
           <Field label="Auto-merge guide PRs" hint="On: a guide PR that passes the checks and the content gate merges itself and pings IndexNow. Off: it waits for you on GitHub.">
             <Segmented
@@ -2136,7 +2169,6 @@ function SettingsTab({ api, overview, refresh, notify }) {
               onChange={(value) => set('guidesAutoMerge', value)}
             />
           </Field>
-        </div>
       </Panel>
 
       <Panel title="Buyer questions">
@@ -2161,19 +2193,18 @@ function SettingsTab({ api, overview, refresh, notify }) {
         >
           <textarea rows={10} value={keywords.join('\n')} onChange={(event) => set('rankKeywords', event.target.value.split('\n').slice(0, 25))} />
         </Field>
-        <div className="aw-grid2">
           <Field label="Location code" hint="DataForSEO's Google location: 2840 is the United States.">
             <input
               type="number"
+              className="aw-settings-num"
               min="1"
               value={location.locationCode ?? 2840}
               onChange={(event) => set('rankLocation', { ...location, locationCode: Number(event.target.value) })}
             />
           </Field>
           <Field label="Language code" hint="The search language, for example en.">
-            <input value={location.languageCode ?? 'en'} onChange={(event) => set('rankLocation', { ...location, languageCode: event.target.value })} />
+            <input className="aw-settings-num" value={location.languageCode ?? 'en'} onChange={(event) => set('rankLocation', { ...location, languageCode: event.target.value })} />
           </Field>
-        </div>
       </Panel>
 
       <Panel
@@ -2221,18 +2252,16 @@ function SettingsTab({ api, overview, refresh, notify }) {
         )}
       </Panel>
 
-      <div className="aw-seo-savebar">
-        <span className="aw-seo-savebar__state" role="status">
-          {changed ? 'Unsaved changes' : 'All changes saved'}
-          {message ? <span className={message.tone === 'bad' ? 'aw-warn' : message.tone === 'warn' ? 'aw-warn' : 'aw-muted'}> · {message.text}</span> : null}
-        </span>
-        <Button disabled={!changed || saving} onClick={reset}>
-          Reset
-        </Button>
-        <Button kind="primary" disabled={!changed || saving} onClick={save}>
-          {saving ? 'Saving…' : 'Save settings'}
-        </Button>
-      </div>
+      </FormPane>
+      <SaveBar
+        dirty={changed}
+        saving={saving}
+        error={saveError}
+        onSave={save}
+        onDiscard={reset}
+        saveLabel="Save SEO settings"
+        discardLabel="Discard"
+      />
     </>
   );
 }
