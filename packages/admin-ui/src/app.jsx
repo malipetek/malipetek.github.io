@@ -15,6 +15,7 @@ import { AGENTS, CLIENT_VISIBLE, PRIORITIES, STATUS_LABEL, errorText, needsYou, 
 import { Button, Chips, Confirm, Dot, Field, Icon, Modal, Resizer, Segmented, Skeleton, Toast, cx, layerOpen, useContextMenu } from './ui.jsx';
 import { BoardView, InboxView, ListView } from './board.jsx';
 import { TicketDetails, TicketView } from './ticket.jsx';
+import { InjectedStyles } from './ui/injected-styles.js';
 import { ClientView, ClientsView, FleetView, SettingsView } from './fleet.jsx';
 import { isSettingsKey, settingsSection } from './settings-link.js';
 import { MachineOnboarding, MachineStatusPill } from './machine.jsx';
@@ -363,7 +364,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
 
   return (
     <AdminContext.Provider value={ctx}>
-      <style>{STYLES}</style>
+      <InjectedStyles id="aw-app-styles" css={STYLES} />
       <div ref={rootRef} className={cx('aw', fullscreen && 'aw--fullscreen', `aw--${platform}`, underButtons && 'aw--inset', !showExplorer && 'aw--noexplorer')}>
         <nav className="aw-activity" aria-label="Views">
           {main.map(activityButton)}
@@ -1079,7 +1080,7 @@ export function ProjectPage({ api, id, host = null, files = null }) {
   const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk: setQuestion, onNotify });
   const value = { api, files, host, platform: host ? 'dsh' : 'web', data, reload, open, openTicket, notify, act, setStatus, ask: setQuestion, setModal, boardProject, setBoardProject };
   return <div className={cx('aw', host && 'aw--dsh')} style={{ display: 'block', height: '100%', overflowY: 'auto' }}>
-    <style>{STYLES}</style>
+    <InjectedStyles id="aw-app-styles" css={STYLES} />
     <AdminContext.Provider value={value}>
       {destination.startsWith('p:') ? <ProjectView key={destination} id={destination.slice(2)} /> : destination.startsWith('t:') ? <TicketView key={destination} id={Number(destination.slice(2))} active /> : workbenchAllowed(destination, data.access) ? <View name={destination} /> : <p className="aw-empty">This destination requires administrator access.</p>}
       <Toast toast={toast} onDismiss={dismissToast} />
@@ -1160,7 +1161,7 @@ export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
   if (loading && !ticket) {
     return (
       <div className="aw" style={scope}>
-        <style>{STYLES}</style>
+        <InjectedStyles id="aw-app-styles" css={STYLES} />
         <Skeleton variant="ticket" label="Loading ticket…" />
       </div>
     );
@@ -1168,14 +1169,14 @@ export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
   if (!ticket) {
     return (
       <div className="aw" style={scope}>
-        <style>{STYLES}</style>
+        <InjectedStyles id="aw-app-styles" css={STYLES} />
         <p className="aw-muted" style={{ padding: 12, fontSize: 12 }}>That ticket is not available.</p>
       </div>
     );
   }
   return (
     <div className="aw aw--dsh" style={scope}>
-      <style>{STYLES}</style>
+      <InjectedStyles id="aw-app-styles" css={STYLES} />
       <AdminContext.Provider value={value}>
         <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} page={page} />
         <Toast toast={toast} onDismiss={dismissToast} />
@@ -1209,7 +1210,7 @@ export function ClientPage({ api, host = null, files = null, clientId }) {
   const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files });
   return (
     <div className="aw aw--dsh" style={{ display: 'block', height: '100%', overflowY: 'auto' }}>
-      <style>{STYLES}</style>
+      <InjectedStyles id="aw-app-styles" css={STYLES} />
       <AdminContext.Provider value={value}>
         {data.error ? <p className="aw-empty">{errorText(data.error)}</p> : <ClientView id={clientId} />}
         <Toast toast={toast} onDismiss={dismissToast} />
@@ -1229,7 +1230,7 @@ function TicketThread({ api, host, files, ticketId, autoMeter, chrome = true }) 
   const scope = { display: 'block', height: '100%', overflowY: 'auto' };
   return (
     <div className="aw aw--dsh" style={scope}>
-      <style>{STYLES}</style>
+      <InjectedStyles id="aw-app-styles" css={STYLES} />
       <AdminContext.Provider value={value}>
         <TicketView id={ticketId} active={autoMeter} details={false} chrome={chrome} />
         <Toast toast={toast} onDismiss={dismissToast} />

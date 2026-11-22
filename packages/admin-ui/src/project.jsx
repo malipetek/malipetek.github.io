@@ -11,6 +11,7 @@ import { briefPayload, createProjectResource, projectTickets, projectWork, proje
 import { operatorTicketCounts, stationsFor, unshippedPreview } from './project-world-model.mjs';
 import { PipelineStrip, ProjectMap } from './project-world.jsx';
 import projectStyles from './project-styles.js';
+import { InjectedStyles } from './ui/injected-styles.js';
 
 const errorText = error => error?.message || String(error || 'Request failed');
 const pathFor = project => `/admin/projects/${encodeURIComponent(project.id)}`;
@@ -232,7 +233,7 @@ export function ProjectView({ id, initialTab = 'Overview' }) {
   if (!project) {
     return (
       <div className="aw-view aw-project">
-        <style>{projectStyles}</style>
+        <InjectedStyles id="aw-project-styles" css={projectStyles} />
         <ResourceState state={remote} refresh={refresh}>
           {!remote.loading ? (
             <Empty
@@ -266,7 +267,7 @@ export function ProjectView({ id, initialTab = 'Overview' }) {
 
   return (
     <div className="aw-view aw-project" key={id}>
-      <style>{projectStyles}</style>
+      <InjectedStyles id="aw-project-styles" css={projectStyles} />
       <PageHeader
         title={project.name}
         subtitle={
