@@ -1501,7 +1501,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-settings-form .aw-panel__head { margin-bottom: var(--ui-sp-3); }
 @media (max-width: 900px) {
   .aw-settings__body { flex-direction: column; gap: var(--ui-sp-3); flex: none; }
-  .aw-settings__nav { width: auto; flex-direction: row; gap: 0; overflow-x: auto; padding-top: 0; border-bottom: 1px solid var(--ui-border); }
+  .aw-settings__nav { width: auto; flex-direction: row; flex-wrap: wrap; gap: 0 6px; overflow: visible; padding-top: 0; border-bottom: 0; }
   .aw-settings__navitem { flex: none; height: 32px; border-radius: 0; box-shadow: inset 0 -2px 0 transparent; }
   .aw-settings__navitem[aria-current="page"] { background: none; box-shadow: inset 0 -2px 0 var(--ui-accent); }
   .aw-settings__main { overflow: visible; flex: none; }
