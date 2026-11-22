@@ -17905,6 +17905,107 @@ ${question.text ?? ""}`)) {
         }
       );
     }
+    function dockAge(value) {
+      const raw = typeof value === "number" ? value : Number(value);
+      const stamp = Number.isFinite(raw) && raw > 0 && raw < 1e12 ? raw * 1e3 : new Date(value).getTime();
+      const ms = Date.now() - stamp;
+      if (!Number.isFinite(ms)) return "";
+      const minutes = Math.max(0, Math.floor(ms / 6e4));
+      if (minutes < 1) return "just now";
+      if (minutes < 60) return `${minutes}m`;
+      const hours = Math.floor(minutes / 60);
+      return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+    }
+    function RunsDockHost() {
+      const [open, setOpen] = useState(false);
+      const [runs, setRuns] = useState({ running: [], recent: [] });
+      const [busy, setBusy] = useState(0);
+      useEffect(() => {
+        const onKey = (event) => {
+          const key = typeof event.key === "string" ? event.key.toLowerCase() : "";
+          if ((event.metaKey || event.ctrlKey) && !event.shiftKey && key === "j") {
+            const target = event.target;
+            if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]') !== null) return;
+            event.preventDefault();
+            setOpen((value) => !value);
+            return;
+          }
+          if (event.key === "Escape") setOpen(false);
+        };
+        window.addEventListener("keydown", onKey, true);
+        return () => window.removeEventListener("keydown", onKey, true);
+      }, []);
+      useEffect(() => {
+        if (!open) return void 0;
+        let cancelled = false;
+        const load = () => {
+          api("GET", "/admin/runs").then((data) => {
+            if (cancelled) return;
+            setRuns({
+              running: Array.isArray(data?.running) ? data.running : [],
+              recent: Array.isArray(data?.recent) ? data.recent : []
+            });
+          }).catch(() => void 0);
+        };
+        load();
+        const timer = setInterval(load, 5e3);
+        return () => {
+          cancelled = true;
+          clearInterval(timer);
+        };
+      }, [open]);
+      if (!open) return null;
+      const stop = (run) => {
+        setBusy(run.id);
+        api("POST", `/admin/runs/${run.id}/cancel`).catch(() => void 0).finally(() => {
+          setBusy(0);
+          api("GET", "/admin/runs").then((data) => setRuns({
+            running: Array.isArray(data?.running) ? data.running : [],
+            recent: Array.isArray(data?.recent) ? data.recent : []
+          })).catch(() => void 0);
+        });
+      };
+      return /* @__PURE__ */ jsxs("div", { className: "pta-agentdock", role: "dialog", "aria-label": "Live runs", children: [
+        /* @__PURE__ */ jsxs("header", { className: "pta-agentdock__head", children: [
+          /* @__PURE__ */ jsx("strong", { children: "Runs" }),
+          /* @__PURE__ */ jsx("span", { className: "pta-agentdock__meta", children: runs.running.length ? `${runs.running.length} live` : "nothing live" }),
+          /* @__PURE__ */ jsx("span", { className: "pta-agentdock__fill" }),
+          /* @__PURE__ */ jsx("span", { className: "pta-agentdock__hint", children: "\u2318J" }),
+          /* @__PURE__ */ jsx("button", { type: "button", className: "pta-agentdock__close", "aria-label": "Close runs", onClick: () => setOpen(false), children: "\xD7" })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "pta-agentdock__list", children: [
+          runs.running.length ? runs.running.map((run) => /* @__PURE__ */ jsxs("div", { className: "pta-agentdock__row", children: [
+            /* @__PURE__ */ jsx("span", { className: "pta-agentdock__dot pta-agentdock__dot--live", "aria-hidden": "true" }),
+            /* @__PURE__ */ jsx("button", { type: "button", className: "pta-agentdock__title", onClick: () => {
+              setOpen(false);
+              void openTicketRun({ id: run.ticket_id ?? run.ticketId ?? run.id });
+            }, children: run.title || `Run #${run.id}` }),
+            /* @__PURE__ */ jsxs("span", { className: "pta-agentdock__detail", children: [
+              "#",
+              run.id,
+              run.node ? ` \xB7 ${run.node}` : "",
+              run.executor ? ` \xB7 ${run.executor}` : ""
+            ] }),
+            /* @__PURE__ */ jsx("span", { className: "pta-agentdock__age", children: dockAge(run.started_at) }),
+            /* @__PURE__ */ jsx("button", { type: "button", className: "pta-agentdock__stop", disabled: busy === run.id, onClick: () => stop(run), children: busy === run.id ? "Stopping\u2026" : "Stop" })
+          ] }, run.id)) : /* @__PURE__ */ jsx("p", { className: "pta-agentdock__empty", children: "No run is live. Open one from Inbox, or press \u2318J to close." }),
+          runs.recent.length ? /* @__PURE__ */ jsx("p", { className: "pta-agentdock__label", children: "Recent" }) : null,
+          runs.recent.slice(0, 4).map((run) => /* @__PURE__ */ jsxs("div", { className: "pta-agentdock__row pta-agentdock__row--quiet", children: [
+            /* @__PURE__ */ jsx("span", { className: `pta-agentdock__dot pta-agentdock__dot--${run.result === "failed" ? "bad" : run.result === "passed" ? "done" : "idle"}`, "aria-hidden": "true" }),
+            /* @__PURE__ */ jsx("button", { type: "button", className: "pta-agentdock__title", onClick: () => {
+              setOpen(false);
+              void openTicketRun({ id: run.ticket_id ?? run.ticketId ?? run.id });
+            }, children: run.title || `Run #${run.id}` }),
+            /* @__PURE__ */ jsxs("span", { className: "pta-agentdock__detail", children: [
+              "#",
+              run.id,
+              run.node ? ` \xB7 ${run.node}` : ""
+            ] }),
+            /* @__PURE__ */ jsx("span", { className: "pta-agentdock__age", children: dockAge(run.finished_at || run.started_at) })
+          ] }, `recent-${run.id}`))
+        ] })
+      ] });
+    }
     function NotificationHost() {
       const [toasts, setToasts] = useState([]);
       const timers = useRef(/* @__PURE__ */ new Map());
@@ -18752,6 +18853,29 @@ ${question.text ?? ""}`)) {
     .pta-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#ff5a1f);outline-offset:-2px}
     .pta-row__state{flex:0 0 auto}
     .pta-row__chip{flex:0 0 auto;max-width:190px}
+.pta-agentdock{position:fixed;right:18px;bottom:46px;z-index:70;width:400px;max-width:calc(100vw - 24px);max-height:52vh;display:flex;flex-direction:column;border:1px solid var(--ui-border,rgba(127,127,127,.24));border-radius:12px;background:var(--dsw-alias-bg-elevated,#23252a);color:var(--dsw-alias-label-primary,inherit);box-shadow:0 18px 48px rgba(0,0,0,.45);overflow:hidden;font-size:12.5px}
+    .pta-agentdock__head{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--ui-border,rgba(127,127,127,.18));flex:none}
+    .pta-agentdock__head strong{font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.75}
+    .pta-agentdock__meta{font-size:11.5px;opacity:.55}
+    .pta-agentdock__fill{flex:1}
+    .pta-agentdock__hint{font-size:10.5px;opacity:.4;border:1px solid var(--ui-border,rgba(127,127,127,.24));border-radius:4px;padding:0 4px}
+    .pta-agentdock__close{border:0;background:transparent;color:inherit;font-size:16px;line-height:1;opacity:.55;cursor:pointer;padding:0 2px}
+    .pta-agentdock__list{overflow:auto;padding:2px 0 6px}
+    .pta-agentdock__row{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--ui-border,rgba(127,127,127,.10));min-width:0}
+    .pta-agentdock__row:last-child{border-bottom:0}
+    .pta-agentdock__row--quiet{opacity:.72}
+    .pta-agentdock__dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--ui-ink-3,#888)}
+    .pta-agentdock__dot--live{background:var(--ui-info,#5b9cf5)}
+    .pta-agentdock__dot--bad{background:var(--ui-bad,#e5484d)}
+    .pta-agentdock__dot--done{background:var(--ui-done,#30a46c)}
+    .pta-agentdock__title{flex:1 1 14ch;min-width:8ch;border:0;background:transparent;color:inherit;font:inherit;font-weight:500;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;padding:0}
+    .pta-agentdock__title:hover{text-decoration:underline}
+    .pta-agentdock__detail{flex:0 1 auto;min-width:0;font-size:11px;opacity:.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pta-agentdock__age{flex:none;font-size:11px;opacity:.55;font-variant-numeric:tabular-nums}
+    .pta-agentdock__stop{flex:none;border:1px solid var(--ui-border,rgba(127,127,127,.28));border-radius:5px;background:transparent;color:inherit;font-size:11px;padding:1px 6px;cursor:pointer;opacity:.8}
+    .pta-agentdock__stop:hover{opacity:1;border-color:var(--ui-accent,#ff5a1f)}
+    .pta-agentdock__empty{margin:0;padding:14px 12px;font-size:12px;opacity:.6;line-height:1.5}
+    .pta-agentdock__label{margin:8px 12px 2px;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;opacity:.4}
 .pta-native-task,.pta-native-history{min-height:0;padding-bottom:calc(var(--dsh-composer-height, 96px) + 12px);box-sizing:border-box}
     .pta-native-task .aw-ticket,.pta-native-history > *{min-height:0}
     .pta-inbox{position:relative;display:flex;flex-direction:row;height:100%;min-height:0;min-width:0;width:100%;overflow:hidden;background:transparent;container-type:inline-size;container-name:pta-inbox}
@@ -20118,6 +20242,7 @@ ${question.text ?? ""}`)) {
     ctx.slots.inject("shell.overlay", () => ctx.slots.register({ name: "shell.overlay", id: "admin-ui-styles", order: 1 }, PluginUiStyles));
     ctx.slots.inject("shell.overlay", () => ctx.slots.register({ name: "shell.overlay", id: "admin-notifications", order: 40 }, NotificationHost));
     ctx.slots.inject("shell.overlay", () => ctx.slots.register({ name: "shell.overlay", id: "admin-confirm", order: 45 }, ConfirmHost));
+    ctx.slots.inject("shell.overlay", () => ctx.slots.register({ name: "shell.overlay", id: "admin-runs-dock", order: 47 }, RunsDockHost));
     ctx.slots.inject("settings.section", () => ctx.slots.register({ name: "settings.section", id: "admin", order: 60, label: "Admin" }, AdminSettingsSection));
     ctx.effect(
       () => ctx.sidebarRightTabs.register({
