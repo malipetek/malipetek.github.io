@@ -90,7 +90,7 @@ export function ReviewButton({ ticket, runs }) {
         plan.kind === 'git-graph' ? (
           <GitGraphReview key={`${ticket.id}:${target?.runId}:${target?.ref}`} ticket={ticket} target={target} gitGraph={plan.gitGraph} onClose={() => setOpen(false)} />
         ) : (
-          <Modal title={`Run ${plan.run.id}: changes`} subtitle={`${plan.older ? 'Older evidence fallback · ' : ''}Recorded evidence, not the current repository state`} onClose={() => setOpen(false)} wide>
+          <Modal kind="confirm" title={`Run ${plan.run.id}: changes`} subtitle={`${plan.older ? 'Older evidence fallback · ' : ''}Recorded evidence, not the current repository state`} onClose={() => setOpen(false)} wide>
             <pre className="aw-diff">{recordedPatch(plan.run) ?? 'No patch or statistics recorded.'}</pre>
           </Modal>
         )
@@ -141,7 +141,7 @@ function GitGraphReview({ ticket, target, gitGraph, onClose }) {
   }, [ticket.project_slug, gitRef, gitGraph, host, retry]);
   const View = gitGraph.View;
   return (
-    <Modal title={`Review #${ticket.id}`} subtitle={`${attribution} · ${state.text}`} onClose={onClose} full>
+    <Modal kind="confirm" title={`Review #${ticket.id}`} subtitle={`${attribution} · ${state.text}`} onClose={onClose} full>
       <div className="aw-review">
         {state.status === 'ready' ? (
           <View sessionId={state.sessionId} />
@@ -186,7 +186,7 @@ export function RecordedEvidence({ runs = [], screenshots = [], review, initialO
     {open ? (
       <div className="aw-evidence__body" id={panelId}>
         <p className="aw-muted aw-evidence__hint">One column per run’s saved evidence, not a code diff between runs. Selection does not change what runs or lands next.</p>
-        <div className="aw-inline" style={{flexWrap:'wrap'}}>
+        <div className="aw-inline">
           <label>Run <select aria-label="Evidence run" value={runId ?? ''} onChange={e => setRunId(e.target.value)}>
             {runId != null && !selected ? <option value={runId}>Run #{runId} · unavailable</option> : null}
             {options.map(run => <option key={run.id} value={run.id}>Run #{run.id} · {run.status}</option>)}
@@ -197,7 +197,7 @@ export function RecordedEvidence({ runs = [], screenshots = [], review, initialO
             {options.map(run => <option key={run.id} value={run.id}>Run #{run.id} · {run.status}</option>)}
           </select></label>
         </div>
-        <div style={{display:'flex',flexWrap:'wrap',gap:16}}>
+        <div className="aw-evidence__cols">
           <EvidenceColumn run={selected} runId={runId} screenshots={screenshots} review={review} />
           {compareId ? <EvidenceColumn run={comparison} runId={compareId} screenshots={screenshots} review={review} /> : null}
         </div>
@@ -209,7 +209,7 @@ function EvidenceColumn({run, runId, screenshots, review}) {
   if (!run) return <p role="status">Run #{runId} evidence is unavailable.</p>;
   const checks = verification(run.verify_ok);
   const shots = screenshots.filter(shot => String(shot.runId) === String(run.id));
-  return <div style={{flex:'1 1 280px',minWidth:0}}>
+  return <div className="aw-evidence__col">
     <h3>Run #{run.id}</h3>
     <p className="aw-muted">{run.status} · {run.executor} · {run.branch ? `Recorded branch: ${run.branch} (mutable)` : 'No branch recorded'}</p>
     {run.commit_sha ? <p>Recorded commit: <code>{run.commit_sha}</code></p> : <p className="aw-muted">No immutable commit recorded.</p>}

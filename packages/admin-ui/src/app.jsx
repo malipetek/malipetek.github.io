@@ -818,7 +818,7 @@ function ShortcutSheet({ onClose }) {
     [['?'], 'This sheet'],
   ];
   return (
-    <Modal title="Keyboard shortcuts" subtitle="Everything else is in the palette." onClose={onClose} wide>
+    <Modal kind="confirm" title="Keyboard shortcuts" subtitle="Everything else is in the palette." onClose={onClose} wide>
       <dl className="aw-keys">
         {rows.map(([keys, what]) => (
           <div key={what}>
@@ -862,7 +862,7 @@ export function TaskModal({ preset = {}, onClose }) {
     finally { busyRef.current = false; setBusy(false); }
   };
   return (
-    <Modal
+    <Modal kind="create"
       title="New task"
       subtitle="Your own work on one of your projects. The brief is trusted guidance for the agent."
       onClose={() => !busyRef.current && onClose()}
@@ -884,7 +884,7 @@ export function TaskModal({ preset = {}, onClose }) {
         </>
       }
     >
-      <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+      <fieldset disabled={busy} className="aw-formset">
       <Field label="Title">
         <input disabled={busy} value={title} maxLength={140} placeholder="Fix the checkout total rounding" onChange={(e) => setTitle(e.target.value)} />
       </Field>
@@ -974,7 +974,7 @@ export function ProjectModal({ onClose }) {
     finally { busyRef.current = false; setBusy(false); }
   };
   return (
-    <Modal
+    <Modal kind="create"
       title="New project"
       subtitle="Create the project, then choose where to develop it."
       onClose={() => !busyRef.current && onClose()}
@@ -989,7 +989,7 @@ export function ProjectModal({ onClose }) {
     >
       {receipt?.repoError ? <p role="status" className="aw-callout">Project created; repository setup needs attention: {String(receipt.repoError)}</p> : null}
       {setupError ? <p role="alert" className="aw-callout">{created ? 'Project created. Local setup failed; retry does not create another project. ' : ''}{setupError}</p> : null}
-      <fieldset disabled={busy || Boolean(created)} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+      <fieldset disabled={busy || Boolean(created)} className="aw-formset">
       <Field label="Name">
         <input
           value={name}
@@ -1079,7 +1079,7 @@ export function ProjectPage({ api, id, host = null, files = null }) {
   const onNotify = useCallback((text, kind) => host?.notify?.(text, kind), [host]);
   const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk: setQuestion, onNotify });
   const value = { api, files, host, platform: host ? 'dsh' : 'web', data, reload, open, openTicket, notify, act, setStatus, ask: setQuestion, setModal, boardProject, setBoardProject };
-  return <div className={cx('aw', host && 'aw--dsh')} style={{ display: 'block', height: '100%', overflowY: 'auto' }}>
+  return <div className={cx('aw', host && 'aw--dsh', 'aw--scroll')}>
     <InjectedStyles id="aw-app-styles" css={STYLES} />
     <AdminContext.Provider value={value}>
       {destination.startsWith('p:') ? <ProjectView key={destination} id={destination.slice(2)} /> : destination.startsWith('t:') ? <TicketView key={destination} id={Number(destination.slice(2))} active /> : workbenchAllowed(destination, data.access) ? <View name={destination} /> : <p className="aw-empty">This destination requires administrator access.</p>}
@@ -1155,12 +1155,10 @@ export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
   // which is exactly how it looked in the conversation's side pane. Block
   // layout, because `.aw` is also the app shell's grid. As a page, the host
   // scrolls and this only sets the frame.
-  const scope = page
-    ? { display: 'block', padding: '18px 24px 28px', maxWidth: 820, margin: '0 auto' }
-    : { display: 'block', height: '100%', overflowY: 'auto' };
+  const scope = page ? 'aw--page' : 'aw--scroll';
   if (loading && !ticket) {
     return (
-      <div className="aw" style={scope}>
+      <div className={cx('aw', scope)}>
         <InjectedStyles id="aw-app-styles" css={STYLES} />
         <Skeleton variant="ticket" label="Loading ticket…" />
       </div>
@@ -1168,14 +1166,14 @@ export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
   }
   if (!ticket) {
     return (
-      <div className="aw" style={scope}>
+      <div className={cx('aw', scope)}>
         <InjectedStyles id="aw-app-styles" css={STYLES} />
-        <p className="aw-muted" style={{ padding: 12, fontSize: 12 }}>That ticket is not available.</p>
+        <p className="aw-muted aw-unavailable">That ticket is not available.</p>
       </div>
     );
   }
   return (
-    <div className="aw aw--dsh" style={scope}>
+    <div className={cx('aw aw--dsh', scope)}>
       <InjectedStyles id="aw-app-styles" css={STYLES} />
       <AdminContext.Provider value={value}>
         <TicketDetails ticket={ticket} runs={runs} land={land} meter={meter} reload={reload} page={page} />
@@ -1209,7 +1207,7 @@ export function ClientPage({ api, host = null, files = null, clientId }) {
   }, [reloadData]);
   const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files });
   return (
-    <div className="aw aw--dsh" style={{ display: 'block', height: '100%', overflowY: 'auto' }}>
+    <div className="aw aw--dsh aw--scroll">
       <InjectedStyles id="aw-app-styles" css={STYLES} />
       <AdminContext.Provider value={value}>
         {data.error ? <p className="aw-empty">{errorText(data.error)}</p> : <ClientView id={clientId} />}
@@ -1227,9 +1225,8 @@ function TicketThread({ api, host, files, ticketId, autoMeter, chrome = true }) 
   const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files });
   // `.aw` scopes the panel's variables; block layout, because `.aw` is also the
   // app shell's grid. The page scrolls inside the tab, not the conversation.
-  const scope = { display: 'block', height: '100%', overflowY: 'auto' };
   return (
-    <div className="aw aw--dsh" style={scope}>
+    <div className="aw aw--dsh aw--scroll">
       <InjectedStyles id="aw-app-styles" css={STYLES} />
       <AdminContext.Provider value={value}>
         <TicketView id={ticketId} active={autoMeter} details={false} chrome={chrome} />

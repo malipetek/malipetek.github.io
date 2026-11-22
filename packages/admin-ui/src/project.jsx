@@ -844,7 +844,7 @@ function ProjectGitGraph({ host, project, onClose }) {
   const [state, refresh] = useProjectResource(load);
   const View = host.gitGraph.View;
   return (
-    <Modal title={`${project.name} · Git Graph`} onClose={onClose} full>
+    <Modal kind="confirm" title={`${project.name} · Git Graph`} onClose={onClose} full>
       <div className="aw-review">
         <ResourceState state={state} refresh={refresh}>
           {state.value ? <View sessionId={state.value.sessionId} /> : null}
@@ -1020,7 +1020,7 @@ function ProjectInviteModal({ project, onClose }) {
     }
   };
   return (
-    <Modal
+    <Modal kind="create"
       title={`Add people to ${project.name}`}
       subtitle="Each address gets a link that signs them in (one use, 7 days). They see every request on this project; prices stay with whoever filed."
       onClose={onClose}

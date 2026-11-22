@@ -112,7 +112,7 @@ function AddMcpModal({ busy, onClose, onSubmit }) {
   };
 
   return (
-    <Modal
+    <Modal kind="create"
       title="Add MCP server"
       subtitle="Written to the config the fleet agents read on this machine."
       onClose={onClose}

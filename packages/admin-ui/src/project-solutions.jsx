@@ -291,7 +291,7 @@ export function IntegrationFieldsModal({ project, entry, onClose, onSaved }) {
   };
   const edit = (field) => (event) => setValues({ ...values, [field.name]: event.target.value });
   return (
-    <Modal
+    <Modal kind="create"
       title={`Connect ${entry.label} values`}
       subtitle={entry.scope}
       onClose={onClose}

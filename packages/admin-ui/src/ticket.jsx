@@ -77,7 +77,7 @@ export function TicketView({ id, active, details = true, chrome = true }) {
         <Resizer host=".aw-ticket" cssVar="--aw-details-w" def={300} min={200} max={640} invert storage="aw.details.w" className="aw-resize--details" />
       ) : null}
       <div className="aw-ticket__main">
-        {error ? <div className="aw-banner aw-banner--warn" role="alert"><span style={{ flex: 1, minWidth: 0 }}>Refresh failed. Showing ticket evidence last fetched {fetchedAt ? new Date(fetchedAt).toLocaleString() : 'at an unknown time'}. {errorText(error)}</span> <Button size="sm" onClick={reload}>Retry refresh</Button></div> : null}
+        {error ? <div className="aw-banner aw-banner--warn" role="alert"><span className="aw-banner__text">Refresh failed. Showing ticket evidence last fetched {fetchedAt ? new Date(fetchedAt).toLocaleString() : 'at an unknown time'}. {errorText(error)}</span> <Button size="sm" onClick={reload}>Retry refresh</Button></div> : null}
         <header className="aw-ticket__head">
           {chrome ? (
           <div className="aw-ticket__crumbs">
@@ -233,7 +233,7 @@ function TicketActions({ ticket, runs, land, reload }) {
         </span>
       ) : null}
       {land?.ref && !land.requestedAt ? (
-        <span className="aw-muted" style={{ fontSize: 12 }}>
+        <span className="aw-muted aw-land-ref">
           {canLand ? 'last landed on' : 'landed on'} {land.ref}
           {land.sha ? ` (${String(land.sha).slice(0, 8)})` : ''}
         </span>
@@ -476,7 +476,7 @@ function RunSteps({ run, live }) {
   }, [steps, live]);
   if (!open) {
     return (
-      <button type="button" className="aw-link" style={{ fontSize: 12, margin: '2px 0 4px' }} onClick={() => setOpen(true)}>
+      <button type="button" className="aw-link aw-steps-toggle aw-steps-toggle--show" onClick={() => setOpen(true)}>
         Show steps
       </button>
     );
@@ -497,7 +497,7 @@ function RunSteps({ run, live }) {
         ))}
       </ol>
       {live ? null : (
-        <button type="button" className="aw-link" style={{ fontSize: 12 }} onClick={() => setOpen(false)}>
+        <button type="button" className="aw-link aw-steps-toggle" onClick={() => setOpen(false)}>
           Hide steps
         </button>
       )}
@@ -1041,7 +1041,7 @@ function TimeModal({ seconds, onClose, onSave }) {
   const [minutes, setMinutes] = useState(String(Math.round(seconds / 6) / 10));
   const ok = Number.isFinite(Number(minutes)) && Number(minutes) >= 0;
   return (
-    <Modal
+    <Modal kind="create"
       title="Correct your time"
       subtitle="The meter missed something, or counted a break. This replaces the total."
       onClose={onClose}

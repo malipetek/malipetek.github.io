@@ -1,4 +1,4 @@
-import { useInsertionEffect } from 'react';
+import { useLayoutEffect } from 'react';
 
 /**
  * One `<style>` element per stylesheet, in the document head, reused by every
@@ -6,7 +6,7 @@ import { useInsertionEffect } from 'react';
  * this keeps the CSS out of the component tree and out of duplicate rules.
  */
 export function InjectedStyles({ id, css }) {
-  useInsertionEffect(() => {
+  useLayoutEffect(() => {
     if (typeof document === 'undefined') return undefined;
     let element = document.getElementById(id);
     if (element === null) {

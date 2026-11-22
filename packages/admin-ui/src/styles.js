@@ -111,6 +111,9 @@ export const STYLES = `
 @media (prefers-reduced-motion: reduce) { .aw { --aw-dur: 0ms; } }
 .aw *, .aw *::before, .aw *::after { box-sizing: border-box; }
 .aw--fullscreen { position: fixed; inset: 0; z-index: 50; height: 100dvh; }
+/* A standalone panel (Harness ticket, client, side panel): block layout, because .aw is also the shell's grid. */
+.aw.aw--scroll { display: block; height: 100%; overflow-y: auto; }
+.aw.aw--page { display: block; padding: 18px var(--ui-sp-5, 24px) 28px; max-width: 820px; margin: 0 auto; }
 .aw h2, .aw h3, .aw h4 { font-family: inherit; margin: 0; letter-spacing: 0; }
 .aw button { font: inherit; color: inherit; }
 .aw a { color: inherit; }
@@ -140,6 +143,8 @@ export const STYLES = `
 .aw-link { background: none; border: 0; padding: 0; color: var(--aw-ink); text-decoration: underline; text-decoration-color: var(--aw-hairline-strong); text-underline-offset: 2px; cursor: pointer; }
 .aw-link:hover { text-decoration-color: currentColor; }
 .aw-link:disabled { color: var(--aw-ink-3); cursor: default; }
+.aw-formset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.aw-muted.aw-unavailable { padding: var(--ui-sp-3, 12px); font-size: var(--ui-fs-sm, 12px); }
 .aw-empty { padding: var(--aw-space-6) var(--aw-space-4); text-align: center; color: var(--aw-ink-2); }
 .aw-callout { display: flex; align-items: flex-start; gap: var(--aw-space-2); padding: var(--aw-space-2) var(--aw-space-3); border-radius: var(--aw-radius-md); background: var(--aw-info-wash); margin: var(--aw-space-2) 0; overflow-wrap: anywhere; }
 .aw-error { color: var(--aw-bad-ink); font-size: var(--aw-type-sm); }
@@ -367,6 +372,7 @@ export const STYLES = `
 .aw-banner--bad { background: var(--aw-bad-wash); }
 .aw-banner--warn { background: var(--aw-warn-wash); }
 .aw-banner--ok { background: var(--aw-ok-wash); }
+.aw-banner__text { flex: 1; min-width: 0; }
 .aw-snippet { display: block; font-weight: 400; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
 .aw-files { list-style: none; margin: var(--aw-space-2) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .aw-file { font: inherit; font-size: var(--aw-type-sm); display: inline-flex; gap: 6px; align-items: baseline; padding: 2px 8px; border: 1px solid var(--aw-hairline-strong); border-radius: var(--aw-radius-md); background: transparent; color: inherit; cursor: pointer; max-width: 100%; overflow-wrap: anywhere; }
@@ -412,6 +418,9 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-steps li { display: flex; gap: var(--aw-space-2); align-items: baseline; min-width: 0; }
 .aw-steps time { flex: none; color: var(--aw-ink-3); font-family: var(--aw-mono); font-size: var(--aw-type-xs); }
 .aw-steps span { min-width: 0; overflow-wrap: anywhere; }
+.aw-link.aw-steps-toggle { font-size: var(--ui-fs-sm, 12px); }
+.aw-link.aw-steps-toggle--show { margin: 2px 0 var(--ui-sp-1, 4px); }
+.aw-muted.aw-land-ref { font-size: var(--ui-fs-sm, 12px); }
 .aw-step--tool span { font-family: var(--aw-mono); font-size: var(--aw-type-xs); }
 .aw-step--node span { color: var(--aw-ink-2); }
 .aw-step--error span { color: var(--aw-bad-ink); }
@@ -590,6 +599,8 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-evidence__toggle { flex: none; font-size: var(--aw-type-sm); }
 .aw-evidence__body { margin-top: var(--aw-space-2); }
 .aw-evidence__hint { margin: 0 0 var(--aw-space-2); font-size: var(--aw-type-sm); }
+.aw-evidence__cols { display: flex; flex-wrap: wrap; gap: var(--ui-sp-4, 16px); }
+.aw-evidence__col { flex: 1 1 280px; min-width: 0; }
 .aw-md { margin: 6px 0 8px; overflow-wrap: anywhere; max-width: var(--aw-measure); }
 .aw-md p { margin: 0 0 6px; }
 .aw-md p:last-child, .aw-md ul:last-child, .aw-md ol:last-child, .aw-md pre:last-child { margin-bottom: 0; }
@@ -1291,6 +1302,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-skel__lane { height: 280px; border-radius: var(--aw-radius-lg); background: var(--aw-surface-sidebar); padding: var(--aw-space-3); display: flex; flex-direction: column; gap: var(--aw-space-2); }
 .aw-skel__card { height: 64px; border-radius: var(--aw-radius-md); background: var(--aw-surface); }
 .aw-skel--pane { padding: var(--aw-space-4) var(--aw-space-5); }
+.aw-skel.aw-skel--ticket { gap: var(--ui-sp-2, 8px); }
 @keyframes aw-skel { 50% { opacity: .55; } }
 @media (prefers-reduced-motion: reduce) { .aw-skel__bar { animation: none; } }
 

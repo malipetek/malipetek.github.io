@@ -133,7 +133,7 @@ export function Skeleton({ variant = 'text', lines = 3, rows = 6, label = 'Loadi
         <div style={{ height: 12 }} />
         {Array.from({ length: variant === 'ticket' ? 3 : rows }, (_, i) =>
           variant === 'ticket' ? (
-            <div key={i} className="aw-skel" style={{ gap: 8 }}>
+            <div key={i} className="aw-skel aw-skel--ticket">
               {bar('18%')}
               {bar(widths[i])}
               {bar(widths[i + 2])}
@@ -524,7 +524,7 @@ export function Confirm({ ask, onClose }) {
     }
   };
   return (
-    <Modal
+    <Modal kind="confirm"
       title={ask.title}
       subtitle={ask.text}
       onClose={close}

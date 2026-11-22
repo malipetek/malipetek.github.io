@@ -303,7 +303,7 @@ function NodeModal({ node, local, onClose }) {
   const save = () =>
     act(() => api('PATCH', `/admin/nodes/${node.id}`, { overrides: { slots, capabilities, ...(!local ? { executors } : {}) } }), `${node.id} picks this up on its next heartbeat.`).then(onClose, () => undefined);
   return (
-    <Modal
+    <Modal kind="create"
       title={`Node ${node.id}`}
       subtitle="Overrides from here win over the node’s own config file."
       onClose={onClose}
@@ -448,7 +448,7 @@ export function RepoModal({ project, onClose }) {
   const [repo, setRepo] = useState(project.repo ?? '');
   const submit = () => act(() => api('PUT', `/admin/projects/${project.id}/repo`, { repo: repo.trim() }), 'Repo saved.').then(onClose, () => undefined);
   return (
-    <Modal
+    <Modal kind="create"
       title={`Repo for ${project.name}`}
       subtitle="Nodes clone this on their next sync. A private repo needs a node whose git can reach it."
       onClose={onClose}
@@ -681,7 +681,7 @@ export function ProjectEditModal({ project, onClose }) {
       'Project saved.',
     ).then(onClose, () => undefined);
   return (
-    <Modal
+    <Modal kind="create"
       title={`Edit ${project.name}`}
       subtitle={`Slug ${project.slug} stays: nodes keep its folder under that name, and its first site is named after it.`}
       onClose={onClose}
@@ -760,7 +760,7 @@ function AddPeopleModal({ project, onClose }) {
     }
   };
   return (
-    <Modal
+    <Modal kind="create"
       title={`Add people to ${project.name}`}
       subtitle="Each address gets a link that signs them in (one use, 7 days). They see every request on this project; prices stay with whoever filed."
       onClose={onClose}

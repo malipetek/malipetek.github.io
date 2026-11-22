@@ -604,7 +604,7 @@ var __awPlugin = (() => {
         /* @__PURE__ */ jsx("div", { style: { height: 12 } }),
         Array.from(
           { length: variant === "ticket" ? 3 : rows },
-          (_, i) => variant === "ticket" ? /* @__PURE__ */ jsxs("div", { className: "aw-skel", style: { gap: 8 }, children: [
+          (_, i) => variant === "ticket" ? /* @__PURE__ */ jsxs("div", { className: "aw-skel aw-skel--ticket", children: [
             bar("18%"),
             bar(widths[i]),
             bar(widths[i + 2])
@@ -883,6 +883,7 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsx(
       Modal,
       {
+        kind: "confirm",
         title: ask.title,
         subtitle: ask.text,
         onClose: close,
@@ -2664,7 +2665,7 @@ ${block(Object.entries(TOKENS))}
           children: label
         }
       ),
-      open ? plan.kind === "git-graph" ? /* @__PURE__ */ jsx(GitGraphReview, { ticket, target, gitGraph: plan.gitGraph, onClose: () => setOpen(false) }, `${ticket.id}:${target?.runId}:${target?.ref}`) : /* @__PURE__ */ jsx(Modal, { title: `Run ${plan.run.id}: changes`, subtitle: `${plan.older ? "Older evidence fallback \xB7 " : ""}Recorded evidence, not the current repository state`, onClose: () => setOpen(false), wide: true, children: /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: recordedPatch(plan.run) ?? "No patch or statistics recorded." }) }) : null
+      open ? plan.kind === "git-graph" ? /* @__PURE__ */ jsx(GitGraphReview, { ticket, target, gitGraph: plan.gitGraph, onClose: () => setOpen(false) }, `${ticket.id}:${target?.runId}:${target?.ref}`) : /* @__PURE__ */ jsx(Modal, { kind: "confirm", title: `Run ${plan.run.id}: changes`, subtitle: `${plan.older ? "Older evidence fallback \xB7 " : ""}Recorded evidence, not the current repository state`, onClose: () => setOpen(false), wide: true, children: /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: recordedPatch(plan.run) ?? "No patch or statistics recorded." }) }) : null
     ] });
   }
   function GitGraphReview({ ticket, target, gitGraph, onClose }) {
@@ -2702,7 +2703,7 @@ ${block(Object.entries(TOKENS))}
       };
     }, [ticket.project_slug, gitRef, gitGraph, host, retry]);
     const View2 = gitGraph.View;
-    return /* @__PURE__ */ jsx(Modal, { title: `Review #${ticket.id}`, subtitle: `${attribution} \xB7 ${state.text}`, onClose, full: true, children: /* @__PURE__ */ jsx("div", { className: "aw-review", children: state.status === "ready" ? /* @__PURE__ */ jsx(View2, { sessionId: state.sessionId }) : /* @__PURE__ */ jsxs("div", { className: cx("aw-empty", state.status === "failed" && "aw-error"), role: state.status === "failed" ? "alert" : "status", children: [
+    return /* @__PURE__ */ jsx(Modal, { kind: "confirm", title: `Review #${ticket.id}`, subtitle: `${attribution} \xB7 ${state.text}`, onClose, full: true, children: /* @__PURE__ */ jsx("div", { className: "aw-review", children: state.status === "ready" ? /* @__PURE__ */ jsx(View2, { sessionId: state.sessionId }) : /* @__PURE__ */ jsxs("div", { className: cx("aw-empty", state.status === "failed" && "aw-error"), role: state.status === "failed" ? "alert" : "status", children: [
       state.text,
       state.status === "failed" ? /* @__PURE__ */ jsx(Button, { onClick: () => setRetry((n) => n + 1), children: "Retry repository review" }) : null
     ] }) }) });
@@ -2743,7 +2744,7 @@ ${block(Object.entries(TOKENS))}
       ] }),
       open ? /* @__PURE__ */ jsxs("div", { className: "aw-evidence__body", id: panelId, children: [
         /* @__PURE__ */ jsx("p", { className: "aw-muted aw-evidence__hint", children: "One column per run\u2019s saved evidence, not a code diff between runs. Selection does not change what runs or lands next." }),
-        /* @__PURE__ */ jsxs("div", { className: "aw-inline", style: { flexWrap: "wrap" }, children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-inline", children: [
           /* @__PURE__ */ jsxs("label", { children: [
             "Run ",
             /* @__PURE__ */ jsxs("select", { "aria-label": "Evidence run", value: runId ?? "", onChange: (e) => setRunId(e.target.value), children: [
@@ -2778,7 +2779,7 @@ ${block(Object.entries(TOKENS))}
             ] })
           ] })
         ] }),
-        /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 16 }, children: [
+        /* @__PURE__ */ jsxs("div", { className: "aw-evidence__cols", children: [
           /* @__PURE__ */ jsx(EvidenceColumn, { run: selected, runId, screenshots, review }),
           compareId ? /* @__PURE__ */ jsx(EvidenceColumn, { run: comparison, runId: compareId, screenshots, review }) : null
         ] })
@@ -2793,7 +2794,7 @@ ${block(Object.entries(TOKENS))}
     ] });
     const checks = verification(run.verify_ok);
     const shots = screenshots.filter((shot) => String(shot.runId) === String(run.id));
-    return /* @__PURE__ */ jsxs("div", { style: { flex: "1 1 280px", minWidth: 0 }, children: [
+    return /* @__PURE__ */ jsxs("div", { className: "aw-evidence__col", children: [
       /* @__PURE__ */ jsxs("h3", { children: [
         "Run #",
         run.id
@@ -3035,7 +3036,7 @@ ${block(Object.entries(TOKENS))}
       details ? /* @__PURE__ */ jsx(Resizer, { host: ".aw-ticket", cssVar: "--aw-details-w", def: 300, min: 200, max: 640, invert: true, storage: "aw.details.w", className: "aw-resize--details" }) : null,
       /* @__PURE__ */ jsxs("div", { className: "aw-ticket__main", children: [
         error ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", role: "alert", children: [
-          /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
+          /* @__PURE__ */ jsxs("span", { className: "aw-banner__text", children: [
             "Refresh failed. Showing ticket evidence last fetched ",
             fetchedAt ? new Date(fetchedAt).toLocaleString() : "at an unknown time",
             ". ",
@@ -3176,7 +3177,7 @@ ${block(Object.entries(TOKENS))}
         /* @__PURE__ */ jsx("span", { className: "aw-live" }),
         " landing\u2026"
       ] }) : null,
-      land?.ref && !land.requestedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted", style: { fontSize: 12 }, children: [
+      land?.ref && !land.requestedAt ? /* @__PURE__ */ jsxs("span", { className: "aw-muted aw-land-ref", children: [
         canLand ? "last landed on" : "landed on",
         " ",
         land.ref,
@@ -3350,7 +3351,7 @@ ${block(Object.entries(TOKENS))}
       if (live && el && el.scrollHeight - el.scrollTop - el.clientHeight < 60) el.scrollTop = el.scrollHeight;
     }, [steps, live]);
     if (!open) {
-      return /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", style: { fontSize: 12, margin: "2px 0 4px" }, onClick: () => setOpen(true), children: "Show steps" });
+      return /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link aw-steps-toggle aw-steps-toggle--show", onClick: () => setOpen(true), children: "Show steps" });
     }
     const failure = error ? /* @__PURE__ */ jsxs("p", { role: "alert", className: "aw-error", children: [
       "Steps could not refresh. ",
@@ -3373,7 +3374,7 @@ ${block(Object.entries(TOKENS))}
         /* @__PURE__ */ jsx("b", { className: "aw-step__mark", "aria-hidden": "true", children: STEP_MARK[step.kind] ?? "\xB7" }),
         /* @__PURE__ */ jsx("span", { children: step.text })
       ] }, step.seq)) }),
-      live ? null : /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link", style: { fontSize: 12 }, onClick: () => setOpen(false), children: "Hide steps" })
+      live ? null : /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link aw-steps-toggle", onClick: () => setOpen(false), children: "Hide steps" })
     ] });
   }
   function RunCard({ run, latest }) {
@@ -3859,6 +3860,7 @@ ${block(Object.entries(TOKENS))}
     return /* @__PURE__ */ jsx(
       Modal,
       {
+        kind: "create",
         title: "Correct your time",
         subtitle: "The meter missed something, or counted a break. This replaces the total.",
         onClose,
@@ -4206,6 +4208,7 @@ ${block(Object.entries(TOKENS))}
     return /* @__PURE__ */ jsxs(
       Modal,
       {
+        kind: "confirm",
         title: "Lend this Mac to the fleet?",
         onClose: () => !busy && later(),
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
@@ -4429,6 +4432,7 @@ ${block(Object.entries(TOKENS))}
     return /* @__PURE__ */ jsxs(
       Modal,
       {
+        kind: "create",
         title: "Add MCP server",
         subtitle: "Written to the config the fleet agents read on this machine.",
         onClose,
@@ -9840,6 +9844,7 @@ ${block(Object.entries(TOKENS))}
     return /* @__PURE__ */ jsxs(
       Modal,
       {
+        kind: "create",
         title: `Node ${node.id}`,
         subtitle: "Overrides from here win over the node\u2019s own config file.",
         onClose,
@@ -9985,6 +9990,7 @@ ${block(Object.entries(TOKENS))}
     return /* @__PURE__ */ jsx(
       Modal,
       {
+        kind: "create",
         title: `Repo for ${project.name}`,
         subtitle: "Nodes clone this on their next sync. A private repo needs a node whose git can reach it.",
         onClose,
@@ -10172,6 +10178,7 @@ ${block(Object.entries(TOKENS))}
     return /* @__PURE__ */ jsxs(
       Modal,
       {
+        kind: "create",
         title: `Edit ${project.name}`,
         subtitle: `Slug ${project.slug} stays: nodes keep its folder under that name, and its first site is named after it.`,
         onClose,
@@ -10987,6 +10994,9 @@ ${block(Object.entries(TOKENS))}
 @media (prefers-reduced-motion: reduce) { .aw { --aw-dur: 0ms; } }
 .aw *, .aw *::before, .aw *::after { box-sizing: border-box; }
 .aw--fullscreen { position: fixed; inset: 0; z-index: 50; height: 100dvh; }
+/* A standalone panel (Harness ticket, client, side panel): block layout, because .aw is also the shell's grid. */
+.aw.aw--scroll { display: block; height: 100%; overflow-y: auto; }
+.aw.aw--page { display: block; padding: 18px var(--ui-sp-5, 24px) 28px; max-width: 820px; margin: 0 auto; }
 .aw h2, .aw h3, .aw h4 { font-family: inherit; margin: 0; letter-spacing: 0; }
 .aw button { font: inherit; color: inherit; }
 .aw a { color: inherit; }
@@ -11016,6 +11026,8 @@ ${block(Object.entries(TOKENS))}
 .aw-link { background: none; border: 0; padding: 0; color: var(--aw-ink); text-decoration: underline; text-decoration-color: var(--aw-hairline-strong); text-underline-offset: 2px; cursor: pointer; }
 .aw-link:hover { text-decoration-color: currentColor; }
 .aw-link:disabled { color: var(--aw-ink-3); cursor: default; }
+.aw-formset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.aw-muted.aw-unavailable { padding: var(--ui-sp-3, 12px); font-size: var(--ui-fs-sm, 12px); }
 .aw-empty { padding: var(--aw-space-6) var(--aw-space-4); text-align: center; color: var(--aw-ink-2); }
 .aw-callout { display: flex; align-items: flex-start; gap: var(--aw-space-2); padding: var(--aw-space-2) var(--aw-space-3); border-radius: var(--aw-radius-md); background: var(--aw-info-wash); margin: var(--aw-space-2) 0; overflow-wrap: anywhere; }
 .aw-error { color: var(--aw-bad-ink); font-size: var(--aw-type-sm); }
@@ -11243,6 +11255,7 @@ ${block(Object.entries(TOKENS))}
 .aw-banner--bad { background: var(--aw-bad-wash); }
 .aw-banner--warn { background: var(--aw-warn-wash); }
 .aw-banner--ok { background: var(--aw-ok-wash); }
+.aw-banner__text { flex: 1; min-width: 0; }
 .aw-snippet { display: block; font-weight: 400; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
 .aw-files { list-style: none; margin: var(--aw-space-2) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .aw-file { font: inherit; font-size: var(--aw-type-sm); display: inline-flex; gap: 6px; align-items: baseline; padding: 2px 8px; border: 1px solid var(--aw-hairline-strong); border-radius: var(--aw-radius-md); background: transparent; color: inherit; cursor: pointer; max-width: 100%; overflow-wrap: anywhere; }
@@ -11288,6 +11301,9 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-steps li { display: flex; gap: var(--aw-space-2); align-items: baseline; min-width: 0; }
 .aw-steps time { flex: none; color: var(--aw-ink-3); font-family: var(--aw-mono); font-size: var(--aw-type-xs); }
 .aw-steps span { min-width: 0; overflow-wrap: anywhere; }
+.aw-link.aw-steps-toggle { font-size: var(--ui-fs-sm, 12px); }
+.aw-link.aw-steps-toggle--show { margin: 2px 0 var(--ui-sp-1, 4px); }
+.aw-muted.aw-land-ref { font-size: var(--ui-fs-sm, 12px); }
 .aw-step--tool span { font-family: var(--aw-mono); font-size: var(--aw-type-xs); }
 .aw-step--node span { color: var(--aw-ink-2); }
 .aw-step--error span { color: var(--aw-bad-ink); }
@@ -11466,6 +11482,8 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-evidence__toggle { flex: none; font-size: var(--aw-type-sm); }
 .aw-evidence__body { margin-top: var(--aw-space-2); }
 .aw-evidence__hint { margin: 0 0 var(--aw-space-2); font-size: var(--aw-type-sm); }
+.aw-evidence__cols { display: flex; flex-wrap: wrap; gap: var(--ui-sp-4, 16px); }
+.aw-evidence__col { flex: 1 1 280px; min-width: 0; }
 .aw-md { margin: 6px 0 8px; overflow-wrap: anywhere; max-width: var(--aw-measure); }
 .aw-md p { margin: 0 0 6px; }
 .aw-md p:last-child, .aw-md ul:last-child, .aw-md ol:last-child, .aw-md pre:last-child { margin-bottom: 0; }
@@ -12167,6 +12185,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-skel__lane { height: 280px; border-radius: var(--aw-radius-lg); background: var(--aw-surface-sidebar); padding: var(--aw-space-3); display: flex; flex-direction: column; gap: var(--aw-space-2); }
 .aw-skel__card { height: 64px; border-radius: var(--aw-radius-md); background: var(--aw-surface); }
 .aw-skel--pane { padding: var(--aw-space-4) var(--aw-space-5); }
+.aw-skel.aw-skel--ticket { gap: var(--ui-sp-2, 8px); }
 @keyframes aw-skel { 50% { opacity: .55; } }
 @media (prefers-reduced-motion: reduce) { .aw-skel__bar { animation: none; } }
 
@@ -12929,6 +12948,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return /* @__PURE__ */ jsxs(
       Modal,
       {
+        kind: "create",
         title: `Connect ${entry.label} values`,
         subtitle: entry.scope,
         onClose,
@@ -15923,7 +15943,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     }, [host, project.id]);
     const [state, refresh] = useProjectResource(load);
     const View2 = host.gitGraph.View;
-    return /* @__PURE__ */ jsx(Modal, { title: `${project.name} \xB7 Git Graph`, onClose, full: true, children: /* @__PURE__ */ jsx("div", { className: "aw-review", children: /* @__PURE__ */ jsx(ResourceState, { state, refresh, children: state.value ? /* @__PURE__ */ jsx(View2, { sessionId: state.value.sessionId }) : null }) }) });
+    return /* @__PURE__ */ jsx(Modal, { kind: "confirm", title: `${project.name} \xB7 Git Graph`, onClose, full: true, children: /* @__PURE__ */ jsx("div", { className: "aw-review", children: /* @__PURE__ */ jsx(ResourceState, { state, refresh, children: state.value ? /* @__PURE__ */ jsx(View2, { sessionId: state.value.sessionId }) : null }) }) });
   }
   function DeployHistory({ project, site, refresh }) {
     const { api, ask } = useAdmin();
@@ -16076,6 +16096,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return /* @__PURE__ */ jsxs(
       Modal,
       {
+        kind: "create",
         title: `Add people to ${project.name}`,
         subtitle: "Each address gets a link that signs them in (one use, 7 days). They see every request on this project; prices stay with whoever filed.",
         onClose,
@@ -16522,6 +16543,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return /* @__PURE__ */ jsx(
       Modal,
       {
+        kind: "create",
         title: "New task",
         subtitle: "Your own work on one of your projects. The brief is trusted guidance for the agent.",
         onClose: () => !busyRef.current && onClose(),
@@ -16544,7 +16566,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             }
           )
         ] }),
-        children: /* @__PURE__ */ jsxs("fieldset", { disabled: busy, style: { border: 0, padding: 0, margin: 0, minWidth: 0 }, children: [
+        children: /* @__PURE__ */ jsxs("fieldset", { disabled: busy, className: "aw-formset", children: [
           /* @__PURE__ */ jsx(Field, { label: "Title", children: /* @__PURE__ */ jsx("input", { disabled: busy, value: title, maxLength: 140, placeholder: "Fix the checkout total rounding", onChange: (e) => setTitle(e.target.value) }) }),
           /* @__PURE__ */ jsx(Field, { label: "Brief", hint: "What to change, where, and how to check it.", children: /* @__PURE__ */ jsx(
             "textarea",
@@ -16626,6 +16648,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return /* @__PURE__ */ jsxs(
       Modal,
       {
+        kind: "create",
         title: "New project",
         subtitle: "Create the project, then choose where to develop it.",
         onClose: () => !busyRef.current && onClose(),
@@ -16642,7 +16665,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             created ? "Project created. Local setup failed; retry does not create another project. " : "",
             setupError
           ] }) : null,
-          /* @__PURE__ */ jsxs("fieldset", { disabled: busy || Boolean(created), style: { border: 0, padding: 0, margin: 0, minWidth: 0 }, children: [
+          /* @__PURE__ */ jsxs("fieldset", { disabled: busy || Boolean(created), className: "aw-formset", children: [
             /* @__PURE__ */ jsx(Field, { label: "Name", children: /* @__PURE__ */ jsx(
               "input",
               {
@@ -16724,7 +16747,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const onNotify = useCallback((text, kind) => host?.notify?.(text, kind), [host]);
     const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk: setQuestion, onNotify });
     const value = { api, files, host, platform: host ? "dsh" : "web", data, reload, open, openTicket, notify, act, setStatus, ask: setQuestion, setModal, boardProject, setBoardProject };
-    return /* @__PURE__ */ jsxs("div", { className: cx("aw", host && "aw--dsh"), style: { display: "block", height: "100%", overflowY: "auto" }, children: [
+    return /* @__PURE__ */ jsxs("div", { className: cx("aw", host && "aw--dsh", "aw--scroll"), children: [
       /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
       /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
         destination.startsWith("p:") ? /* @__PURE__ */ jsx(ProjectView, { id: destination.slice(2) }, destination) : destination.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(destination.slice(2)), active: true }, destination) : workbenchAllowed(destination, data.access) ? /* @__PURE__ */ jsx(View, { name: destination }) : /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "This destination requires administrator access." }),
@@ -16780,20 +16803,20 @@ ${question.text ?? ""}`)) {
       void reloadTicket();
     }, [reloadData, reloadTicket]);
     const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files: null });
-    const scope = page ? { display: "block", padding: "18px 24px 28px", maxWidth: 820, margin: "0 auto" } : { display: "block", height: "100%", overflowY: "auto" };
+    const scope = page ? "aw--page" : "aw--scroll";
     if (loading && !ticket) {
-      return /* @__PURE__ */ jsxs("div", { className: "aw", style: scope, children: [
+      return /* @__PURE__ */ jsxs("div", { className: cx("aw", scope), children: [
         /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
         /* @__PURE__ */ jsx(Skeleton, { variant: "ticket", label: "Loading ticket\u2026" })
       ] });
     }
     if (!ticket) {
-      return /* @__PURE__ */ jsxs("div", { className: "aw", style: scope, children: [
+      return /* @__PURE__ */ jsxs("div", { className: cx("aw", scope), children: [
         /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
-        /* @__PURE__ */ jsx("p", { className: "aw-muted", style: { padding: 12, fontSize: 12 }, children: "That ticket is not available." })
+        /* @__PURE__ */ jsx("p", { className: "aw-muted aw-unavailable", children: "That ticket is not available." })
       ] });
     }
-    return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: scope, children: [
+    return /* @__PURE__ */ jsxs("div", { className: cx("aw aw--dsh", scope), children: [
       /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
       /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
         /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload, page }),
@@ -16811,7 +16834,7 @@ ${question.text ?? ""}`)) {
       void reloadData();
     }, [reloadData]);
     const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files });
-    return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: { display: "block", height: "100%", overflowY: "auto" }, children: [
+    return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh aw--scroll", children: [
       /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
       /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
         data.error ? /* @__PURE__ */ jsx("p", { className: "aw-empty", children: errorText(data.error) }) : /* @__PURE__ */ jsx(ClientView, { id: clientId }),
@@ -16825,8 +16848,7 @@ ${question.text ?? ""}`)) {
       void reloadData();
     }, [reloadData]);
     const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files });
-    const scope = { display: "block", height: "100%", overflowY: "auto" };
-    return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: scope, children: [
+    return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh aw--scroll", children: [
       /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
       /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
         /* @__PURE__ */ jsx(TicketView, { id: ticketId, active: autoMeter, details: false, chrome }),
@@ -17941,7 +17963,7 @@ ${question.text ?? ""}`)) {
       useEffect(() => {
         const onKey = (event) => {
           const key = typeof event.key === "string" ? event.key.toLowerCase() : "";
-          if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && key === "k") {
+          if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && key === "k") {
             event.preventDefault();
             event.stopImmediatePropagation();
             setQuery("");
@@ -18048,7 +18070,7 @@ ${question.text ?? ""}`)) {
           /* @__PURE__ */ jsx("span", { children: "\u21B5 open" }),
           /* @__PURE__ */ jsx("span", { children: "esc close" }),
           /* @__PURE__ */ jsx("span", { className: "pta-palette__fill" }),
-          /* @__PURE__ */ jsx("span", { children: "\u2318\u21E7K" })
+          /* @__PURE__ */ jsx("span", { children: "\u2318K" })
         ] })
       ] }) });
     }

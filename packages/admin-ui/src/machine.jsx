@@ -380,7 +380,7 @@ function OnboardingModal({ m, onClose }) {
     }
   };
   return (
-    <Modal
+    <Modal kind="confirm"
       title="Lend this Mac to the fleet?"
       onClose={() => !busy && later()}
       actions={
@@ -430,7 +430,7 @@ function OnboardingModal({ m, onClose }) {
 /** The pill’s modal: the panel with a frame. */
 function MachineModal({ onClose }) {
   return (
-    <Modal title="This Mac as a fleet worker" onClose={onClose}>
+    <Modal kind="create" title="This Mac as a fleet worker" onClose={onClose}>
       <MachinePanel />
     </Modal>
   );
