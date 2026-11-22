@@ -456,13 +456,21 @@ function apply(ctx) {
   function NativeTask({ sessionId }) {
     const ticket = ticketFromCwd(useSessionCwd(sessionId));
     if (!ticket) return null;
-    return <TicketPage key={`${sessionId}:${ticket.ticketId}`} api={api} host={host} files={files} ticketId={ticket.ticketId} autoMeter={false} chrome={false} />;
+    return (
+      <div className="pta-native-task">
+        <TicketPage key={`${sessionId}:${ticket.ticketId}`} api={api} host={host} files={files} ticketId={ticket.ticketId} autoMeter={false} chrome={false} />
+      </div>
+    );
   }
 
   function NativeHistory({ sessionId }) {
     const ticket = ticketFromCwd(useSessionCwd(sessionId));
     if (!ticket) return null;
-    return <ConversationHistory key={`${sessionId}:${ticket.ticketId}`} api={api} ticketId={ticket.ticketId} openTicket={openTicketRun} />;
+    return (
+      <div className="pta-native-history">
+        <ConversationHistory key={`${sessionId}:${ticket.ticketId}`} api={api} ticketId={ticket.ticketId} openTicket={openTicketRun} />
+      </div>
+    );
   }
 
   /** Live-read one session's folder and title from the catalog, as one string (updates on refresh/import). */
@@ -1888,6 +1896,8 @@ function apply(ctx) {
     .pta-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#ff5a1f);outline-offset:-2px}
     .pta-row__state{flex:0 0 auto}
     .pta-row__chip{flex:0 0 auto;max-width:190px}
+.pta-native-task,.pta-native-history{min-height:0;padding-bottom:calc(var(--dsh-composer-height, 96px) + 12px);box-sizing:border-box}
+    .pta-native-task .aw-ticket,.pta-native-history > *{min-height:0}
     .pta-inbox{position:relative;display:flex;flex-direction:row;height:100%;min-height:0;min-width:0;width:100%;overflow:hidden;background:transparent;container-type:inline-size;container-name:pta-inbox}
     .pta-inbox__main{flex:1 1 auto;min-width:0;height:100%;overflow-y:auto}
     .pta-inbox__page{height:auto;overflow:visible}
