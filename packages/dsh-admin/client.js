@@ -816,7 +816,6 @@ var __awPlugin = (() => {
     }, [token]);
     return token;
   }
-  var layerOpen = () => layers.length > 0;
   function Modal({ title, subtitle, onClose, children, actions, wide, full, focus, sheet }) {
     const ref = useRef(null);
     const layer = useLayer();
@@ -2913,13 +2912,6 @@ var __awPlugin = (() => {
   };
   var lendLabel = (e) => LEND[e]?.label ?? e;
   var DEFER_LENDING_KEY = "aw.deferMachineLending";
-  var lendingDeferred = () => {
-    try {
-      return globalThis.sessionStorage?.getItem(DEFER_LENDING_KEY) === "1";
-    } catch {
-      return false;
-    }
-  };
   var deferLending = () => {
     try {
       globalThis.sessionStorage?.setItem(DEFER_LENDING_KEY, "1");
@@ -2928,14 +2920,6 @@ var __awPlugin = (() => {
   };
   var DEFAULT_LEND = ["dsh-go", "dsh-claude", "dsh", "dsh-devin"];
   var STATE_DOT = { working: "ok", ready: "ok", pausing: "warn", paused: "warn", off: "bad", unset: null };
-  var HINT = {
-    working: "This Mac is running approved client tickets with your subscriptions.",
-    ready: "This Mac takes approved client work when it arrives.",
-    pausing: "Drained: what is running finishes, nothing new starts.",
-    paused: "Paused: this Mac takes no new work.",
-    off: "The worker service on this Mac is not running.",
-    unset: "This Mac can run approved client tickets. Say yes or no once."
-  };
   var nowSec = () => Math.floor(Date.now() / 1e3);
   var notEmpty = (list2) => Array.isArray(list2) && list2.length ? list2 : null;
   var IDLE = { loaded: false, info: null, consent: null, consentError: null, error: null };
@@ -3111,48 +3095,6 @@ var __awPlugin = (() => {
     const names = (notEmpty(m.node?.executors) ?? m.lending).map(lendLabel).join(", ");
     return names || "nothing";
   };
-  var pillText = (m) => {
-    if (m.consentError) return "This Mac: lending record unavailable";
-    if (!m.loaded) return "Checking this Mac\u2026";
-    const prefix = "This Mac: ";
-    switch (m.state) {
-      case "working":
-        return `${prefix}${m.running.length} of ${m.slots} runs busy \xB7 ${lendNames(m)}`;
-      case "pausing":
-        return `${prefix}pausing \xB7 ${m.running.length} of ${m.slots} runs busy`;
-      case "paused":
-        return `${prefix}paused`;
-      case "off":
-        return `${prefix}off`;
-      case "ready":
-        return `${prefix}ready \xB7 ${lendNames(m)}`;
-      default:
-        return `${prefix}not set up`;
-    }
-  };
-  function PauseIcon({ size = 13 }) {
-    return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.2", strokeLinecap: "round", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: "M9 5v14M15 5v14" }) });
-  }
-  function MachineStatusPill() {
-    const m = useMachine();
-    const { setModal } = useAdmin();
-    if (!m.live) return null;
-    const open = () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(MachineModal, { onClose: close }) });
-    const toggle = !m.loaded || m.consentError ? null : m.state === "working" || m.state === "ready" ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "Pause: what is running finishes, nothing new starts", onClick: () => void m.pause(), children: /* @__PURE__ */ jsx(PauseIcon, {}) }) : m.consented && (m.state === "pausing" || m.state === "paused") ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", title: "Resume: this Mac takes work again", onClick: () => void m.resume(), children: /* @__PURE__ */ jsx(Icon, { name: "play", size: 13 }) }) : null;
-    return /* @__PURE__ */ jsxs("span", { className: "aw-mpillbar", children: [
-      /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-mpill", title: m.loaded && !m.consentError ? `${HINT[m.state] ?? ""} Click for the panel.` : "Open this Mac\u2019s worker panel", onClick: open, children: [
-        /* @__PURE__ */ jsx(Dot, { state: STATE_DOT[m.state] }),
-        pillText(m)
-      ] }),
-      toggle
-    ] });
-  }
-  function MachineOnboarding() {
-    const m = useMachine();
-    const [dismissed, setDismissed] = useState(lendingDeferred);
-    const show = m.live && m.loaded && !dismissed && !m.signedOut && !m.consentError && m.consent && !m.consent.acceptedAt && !m.consent.declinedAt;
-    return show ? /* @__PURE__ */ jsx(OnboardingModal, { m, onClose: () => setDismissed(true) }) : null;
-  }
   function OnboardingModal({ m, onClose }) {
     const [lend, setLend] = useState(() => DEFAULT_LEND.slice());
     const [showAll, setShowAll] = useState(false);
@@ -3211,9 +3153,6 @@ var __awPlugin = (() => {
         ]
       }
     );
-  }
-  function MachineModal({ onClose }) {
-    return /* @__PURE__ */ jsx(Modal, { title: "This Mac as a fleet worker", onClose, children: /* @__PURE__ */ jsx(MachinePanel, {}) });
   }
   var stateLine = (m) => {
     switch (m.state) {
@@ -12841,72 +12780,13 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     submit.project = null;
     return submit;
   }
-  function destinationFromHash(hash) {
-    const query = new URLSearchParams(hash.replace(/^#/, ""));
-    const id = Number(query.get("ticket"));
-    if (Number.isInteger(id) && id > 0) return `t:${id}`;
-    if (query.get("project")) return `p:${query.get("project")}`;
-    if (query.get("client")) return `c:${query.get("client")}`;
-    return null;
-  }
   function workbenchAllowed(key, access) {
     if (access?.superAdmin) return true;
     return ["inbox", "board", "list"].includes(key) || key.startsWith("p:") || key.startsWith("t:");
   }
 
   // packages/admin-ui/src/app.jsx
-  var VIEWS = [
-    { key: "inbox", label: "Needs you", icon: "inbox" },
-    { key: "board", label: "Board", icon: "board" },
-    { key: "list", label: "All work", icon: "list" },
-    { key: "marketing", label: "Marketing", icon: "megaphone" },
-    { key: "seo", label: "SEO", icon: "seo" },
-    { key: "fleet", label: "Fleet", icon: "fleet" },
-    { key: "clients", label: "Clients", icon: "clients" },
-    { key: "settings", label: "Settings", icon: "settings" }
-  ];
-  var viewOf = (key) => VIEWS.find((v) => v.key === key);
-  var aliasView = (key) => key === "health" ? "fleet" : key;
-  var TABS_KEY2 = "aw-tabs-v1";
-  var NARROW_WIDTH = "(max-width: 900px)";
-  var domId = (prefix, key) => `${prefix}-${String(key).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   var isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
-  var MOD = isMac ? "\u2318" : "Ctrl+";
-  var viewKey = (platform, n) => platform === "dsh" ? `${MOD}${n}` : `${isMac ? "\u2303\u2325" : "Ctrl+Alt+"}${n}`;
-  var closeKey = (platform) => platform === "dsh" ? `${MOD}W` : `${isMac ? "\u2303\u2325" : "Ctrl+Alt+"}W`;
-  function loadTabs() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(TABS_KEY2) ?? "null");
-      if (saved && Array.isArray(saved.tabs) && saved.tabs.length) {
-        const tabs = saved.tabs.map(aliasView);
-        const active = aliasView(saved.active ?? tabs[0]);
-        return { tabs, active: tabs.includes(active) ? active : tabs[0] };
-      }
-    } catch {
-    }
-    return { tabs: ["inbox", "board"], active: "inbox" };
-  }
-  var typingIn = (el) => el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.tagName === "SELECT" || el?.isContentEditable;
-  function useUnderWindowButtons(ref, enabled2) {
-    const [under, setUnder] = useState(false);
-    useEffect(() => {
-      const el = ref.current;
-      if (!enabled2 || !el) return void 0;
-      const check = () => {
-        const r = el.getBoundingClientRect();
-        setUnder(r.left < 90 && r.top < 30);
-      };
-      check();
-      const observer = new ResizeObserver(check);
-      observer.observe(el);
-      window.addEventListener("resize", check);
-      return () => {
-        observer.disconnect();
-        window.removeEventListener("resize", check);
-      };
-    }, [ref, enabled2]);
-    return under;
-  }
   function useWorkbenchActions({ api, reload, setAsk, onNotify }) {
     const [toast, setToast] = useState(null);
     const notify = useCallback((text, kind = "ok") => {
@@ -12953,319 +12833,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
     return { notify, act, setStatus, toast, dismissToast };
   }
-  function AdminApp({ api, platform = "web", host = null, fullscreen = false, files = null }) {
-    const rootRef = useRef(null);
-    const underButtons = useUnderWindowButtons(rootRef, platform === "dsh");
-    const [data, reload] = useAdminData(api);
-    const [{ tabs, active }, setTabs] = useState(loadTabs);
-    const [boardProject, setBoardProject] = useState("all");
-    const [modal, setModal] = useState(null);
-    const [ask, setAsk] = useState(null);
-    const [palette, setPalette] = useState(false);
-    const [keys, setKeys] = useState(false);
-    const [sidebar, setSidebar] = useState(true);
-    const [drawer, setDrawer] = useState(false);
-    const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && Boolean(window.matchMedia?.(NARROW_WIDTH).matches));
-    const tabRefs = useRef({});
-    const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk });
-    const signedOut = data.error && ["unauthorized", "signed_out", "forbidden"].includes(data.error.code);
-    useEffect(() => {
-      try {
-        localStorage.setItem(TABS_KEY2, JSON.stringify({ tabs, active }));
-      } catch {
-      }
-    }, [tabs, active]);
-    useEffect(() => {
-      if (typeof window === "undefined" || !window.matchMedia) return void 0;
-      const query = window.matchMedia(NARROW_WIDTH);
-      const sync = () => setNarrow(query.matches);
-      sync();
-      query.addEventListener("change", sync);
-      return () => query.removeEventListener("change", sync);
-    }, []);
-    const open = useCallback((key) => {
-      const target = aliasView(key);
-      if (!target) return void 0;
-      setDrawer(false);
-      if (target.startsWith("p:") && host?.openProject) return host.openProject(target.slice(2));
-      setTabs((s) => ({ tabs: s.tabs.includes(target) ? s.tabs : [...s.tabs, target], active: target }));
-      return void 0;
-    }, [host]);
-    const closeMany = useCallback(
-      (drop) => setTabs((s) => {
-        const gone = new Set(drop(s.tabs));
-        const next = s.tabs.filter((t) => !gone.has(t));
-        if (!next.length) return { tabs: ["inbox"], active: "inbox" };
-        if (!gone.has(s.active)) return { tabs: next, active: s.active };
-        const i = s.tabs.indexOf(s.active);
-        const left = s.tabs.slice(0, i).reverse().find((t) => !gone.has(t));
-        return { tabs: next, active: left ?? next[0] };
-      }),
-      []
-    );
-    const close = useCallback((key) => closeMany(() => [key]), [closeMany]);
-    const openTicket = useCallback((id) => open(`t:${id}`), [open]);
-    useEffect(() => {
-      if (typeof window === "undefined") return void 0;
-      const fromHash = () => {
-        const hash = window.location.hash.slice(1);
-        const destination = destinationFromHash(hash);
-        if (destination) open(destination);
-        const view = aliasView(hash);
-        if (viewOf(view)) open(view);
-      };
-      fromHash();
-      window.addEventListener("hashchange", fromHash);
-      return () => window.removeEventListener("hashchange", fromHash);
-    }, [open, openTicket]);
-    const toggleExplorer = useCallback(() => {
-      if (narrow) setDrawer((d) => !d);
-      else setSidebar((s) => !s);
-    }, [narrow]);
-    const allowedViews = VIEWS.filter((v) => workbenchAllowed(v.key, data.access));
-    const visibleTabs = tabs.filter((key) => workbenchAllowed(key, data.access));
-    const shell = useRef({});
-    shell.current = { palette, modal, ask, keys, ready: data.loaded && !signedOut, active, visibleTabs, allowedViews, drawer };
-    useEffect(() => {
-      const onKey = (e) => {
-        const mod = e.metaKey || e.ctrlKey;
-        const key = e.key.toLowerCase();
-        const state = shell.current;
-        const typing = typingIn(e.target);
-        const viaWeb = e.ctrlKey && e.altKey;
-        if (mod && !e.altKey && key === "k") {
-          e.preventDefault();
-          setPalette((p) => !p);
-          return;
-        }
-        if (layerOpen() || state.palette) return;
-        if (mod && !e.altKey && key === "b") {
-          e.preventDefault();
-          toggleExplorer();
-          return;
-        }
-        const digit = /^Digit([1-8])$/.exec(e.code)?.[1];
-        if (digit && state.ready && (platform === "dsh" && mod && !e.altKey || viaWeb)) {
-          const view = VIEWS[Number(digit) - 1];
-          if (view && workbenchAllowed(view.key, data.access)) {
-            e.preventDefault();
-            open(view.key);
-          }
-          return;
-        }
-        if (e.code === "KeyW" && (platform === "dsh" && mod && !e.altKey || viaWeb)) {
-          e.preventDefault();
-          if (state.active) close(state.active);
-          return;
-        }
-        if (e.ctrlKey && e.key === "Tab" && state.visibleTabs.length > 1) {
-          e.preventDefault();
-          const i = state.visibleTabs.indexOf(state.active);
-          const next = state.visibleTabs[(i + (e.shiftKey ? -1 : 1) + state.visibleTabs.length) % state.visibleTabs.length];
-          setTabs((s) => ({ ...s, active: next }));
-          return;
-        }
-        if (e.key === "Escape") {
-          if (state.drawer) setDrawer(false);
-          return;
-        }
-        if (typing || mod || e.altKey || !state.ready || state.modal || state.ask) return;
-        if (key === "n") {
-          e.preventDefault();
-          setModal({ kind: "task" });
-        } else if (e.key === "?") {
-          e.preventDefault();
-          setKeys(true);
-        }
-      };
-      window.addEventListener("keydown", onKey);
-      return () => window.removeEventListener("keydown", onKey);
-    }, [toggleExplorer, open, close, platform, data.access]);
-    useEffect(() => {
-      if (data.loaded && !workbenchAllowed(active, data.access)) open("board");
-    }, [data.loaded, data.access, active, open]);
-    useEffect(() => {
-      tabRefs.current[active]?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-    }, [active]);
-    const ctx = useMemo(
-      () => ({ api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, ask: setAsk, setModal, boardProject, setBoardProject, activeTab: active, closeTab: close }),
-      [api, files, data, reload, platform, host, open, openTicket, setStatus, act, notify, boardProject, active, close]
-    );
-    const inbox = needsYou(data);
-    const inboxCount = inbox.waiting.length + inbox.review.length + inbox.new.length + inbox.stalled.length + inbox.stuck.length;
-    const ticketById = new Map(data.tickets.map((t) => [t.id, t]));
-    const tabLabel = (key) => {
-      if (key.startsWith("t:")) {
-        const t = ticketById.get(Number(key.slice(2)));
-        return t ? `#${t.id} ${t.title}` : `#${key.slice(2)}`;
-      }
-      if (key.startsWith("p:")) return data.projects.find((p) => p.id === key.slice(2))?.name ?? "Project";
-      if (key.startsWith("c:")) {
-        const c = data.clients.find((x) => x.id === key.slice(2));
-        return c ? c.name || c.email : "Client";
-      }
-      return viewOf(key)?.label ?? key;
-    };
-    const shiftTab = (e, key) => {
-      const i = visibleTabs.indexOf(key);
-      if (i < 0) return;
-      let next = null;
-      if (e.key === "ArrowRight") next = visibleTabs[(i + 1) % visibleTabs.length];
-      else if (e.key === "ArrowLeft") next = visibleTabs[(i - 1 + visibleTabs.length) % visibleTabs.length];
-      else if (e.key === "Home") next = visibleTabs[0];
-      else if (e.key === "End") next = visibleTabs[visibleTabs.length - 1];
-      else if (e.key === "Delete") {
-        e.preventDefault();
-        close(key);
-        return;
-      }
-      if (next == null) return;
-      e.preventDefault();
-      setTabs((s) => ({ ...s, active: next }));
-      tabRefs.current[next]?.focus();
-    };
-    const showExplorer = !narrow && sidebar || narrow && drawer;
-    const main = allowedViews.filter((v) => v.key !== "settings");
-    const settingsView = allowedViews.find((v) => v.key === "settings");
-    const activityButton = (v) => /* @__PURE__ */ jsxs(
-      "button",
-      {
-        type: "button",
-        "aria-label": v.label,
-        "aria-current": active === v.key ? "page" : void 0,
-        "aria-keyshortcuts": platform === "dsh" ? `Meta+${VIEWS.indexOf(v) + 1}` : `Control+Alt+${VIEWS.indexOf(v) + 1}`,
-        "data-tip": `${v.label}  ${viewKey(platform, VIEWS.indexOf(v) + 1)}`,
-        "data-tip-side": "right",
-        onClick: () => open(v.key),
-        children: [
-          /* @__PURE__ */ jsx(Icon, { name: v.icon, size: 20 }),
-          v.key === "inbox" && inboxCount ? /* @__PURE__ */ jsx("span", { className: "aw-badge", "aria-label": `${inboxCount} need you`, children: inboxCount }) : null
-        ]
-      },
-      v.key
-    );
-    return /* @__PURE__ */ jsxs(AdminContext.Provider, { value: ctx, children: [
-      /* @__PURE__ */ jsx("style", { children: STYLES }),
-      /* @__PURE__ */ jsxs("div", { ref: rootRef, className: cx("aw", fullscreen && "aw--fullscreen", `aw--${platform}`, underButtons && "aw--inset", !showExplorer && "aw--noexplorer"), children: [
-        /* @__PURE__ */ jsxs("nav", { className: "aw-activity", "aria-label": "Views", children: [
-          main.map(activityButton),
-          /* @__PURE__ */ jsx("span", { className: "aw-activity__spacer" }),
-          /* @__PURE__ */ jsx("button", { type: "button", "aria-label": "New task", "aria-keyshortcuts": "N", "data-tip": "New task  N", "data-tip-side": "right", onClick: () => setModal({ kind: "task" }), children: /* @__PURE__ */ jsx(Icon, { name: "plus", size: 20 }) }),
-          /* @__PURE__ */ jsx("button", { type: "button", "aria-label": "Search and commands", "aria-keyshortcuts": "Meta+K Control+K", "data-tip": `Search and commands  ${MOD}K`, "data-tip-side": "right", onClick: () => setPalette(true), children: /* @__PURE__ */ jsx(Icon, { name: "search", size: 20 }) }),
-          settingsView ? activityButton(settingsView) : null
-        ] }),
-        narrow && drawer ? /* @__PURE__ */ jsx("div", { className: "aw-drawer-scrim", onClick: () => setDrawer(false) }) : null,
-        showExplorer ? /* @__PURE__ */ jsx(Explorer, { drawer: narrow }) : null,
-        !narrow && sidebar ? /* @__PURE__ */ jsx(Resizer, { host: ".aw", cssVar: "--aw-explorer-w", def: 260, min: 180, max: 520, storage: "aw.explorer.w", className: "aw-resize--explorer" }) : null,
-        /* @__PURE__ */ jsxs("main", { className: "aw-main", children: [
-          /* @__PURE__ */ jsxs("div", { className: "aw-tabs", children: [
-            /* @__PURE__ */ jsx(
-              Button,
-              {
-                kind: "ghost",
-                size: "sm",
-                className: "aw-tabs__toggle",
-                "aria-label": showExplorer ? "Hide explorer" : "Show explorer",
-                "aria-expanded": showExplorer,
-                "aria-keyshortcuts": "Meta+B Control+B",
-                title: `${showExplorer ? "Hide" : "Show"} explorer (${MOD}B)`,
-                onClick: toggleExplorer,
-                children: /* @__PURE__ */ jsx(Icon, { name: "sidebar", size: 16 })
-              }
-            ),
-            /* @__PURE__ */ jsx("div", { className: "aw-tablist", role: "tablist", "aria-label": "Open views", children: visibleTabs.map((key) => /* @__PURE__ */ jsx(
-              Tab,
-              {
-                tabKey: key,
-                active: key === active,
-                label: tabLabel(key),
-                icon: key.startsWith("p:") ? "folder" : key.startsWith("t:") ? "ticket" : key.startsWith("c:") ? "clients" : viewOf(key)?.icon ?? "list",
-                closeShortcut: closeKey(platform),
-                refFn: (node) => {
-                  if (node) tabRefs.current[key] = node;
-                  else delete tabRefs.current[key];
-                },
-                onSelect: () => setTabs((s) => ({ ...s, active: key })),
-                onClose: () => close(key),
-                onCloseOthers: () => closeMany((all) => all.filter((t) => t !== key)),
-                onCloseRight: () => closeMany((all) => all.slice(all.indexOf(key) + 1)),
-                isLast: visibleTabs[visibleTabs.length - 1] === key,
-                only: visibleTabs.length === 1,
-                onKeyDown: (e) => shiftTab(e, key)
-              },
-              key
-            )) })
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "aw-content", children: [
-            !signedOut && data.error && data.loaded ? /* @__PURE__ */ jsxs("div", { className: "aw-topbanner", role: "alert", children: [
-              /* @__PURE__ */ jsxs("span", { children: [
-                errorText(data.error),
-                data.fetchedAt ? ` Showing data from ${new Date(data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : ""
-              ] }),
-              /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => void reload(), children: "Retry" })
-            ] }) : null,
-            signedOut ? /* @__PURE__ */ jsx(SignedOut, {}) : !data.loaded ? /* @__PURE__ */ jsx("div", { className: "aw-loading--fill", children: /* @__PURE__ */ jsx(Skeleton, { variant: "pane", label: "Loading the workbench\u2026" }) }) : visibleTabs.map((key) => /* @__PURE__ */ jsx("section", { id: domId("aw-pane", key), role: "tabpanel", "aria-labelledby": domId("aw-tab", key), className: "aw-pane", hidden: key !== active, children: key.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(key.slice(2)), active: key === active }) : key.startsWith("p:") ? /* @__PURE__ */ jsx(ProjectView, { id: key.slice(2) }) : key.startsWith("c:") ? /* @__PURE__ */ jsx(ClientView, { id: key.slice(2) }) : /* @__PURE__ */ jsx(View, { name: key }) }, key))
-          ] })
-        ] }),
-        /* @__PURE__ */ jsx(StatusBar, { onPalette: () => setPalette(true), onKeys: () => setKeys(true) }),
-        /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast }),
-        palette ? /* @__PURE__ */ jsx(Palette, { onClose: () => setPalette(false), onKeys: () => setKeys(true), toggleExplorer }) : null,
-        keys ? /* @__PURE__ */ jsx(ShortcutSheet, { onClose: () => setKeys(false) }) : null,
-        /* @__PURE__ */ jsx(MachineOnboarding, {}),
-        modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal(null) }) : null,
-        modal?.kind === "project" ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal(null) }) : null,
-        modal?.kind === "custom" ? modal.render(() => setModal(null)) : null,
-        ask ? /* @__PURE__ */ jsx(Confirm, { ask, onClose: () => setAsk(null) }) : null
-      ] })
-    ] });
-  }
-  function Tab({ tabKey, active, label, icon, refFn, onSelect, onClose, onCloseOthers, onCloseRight, isLast, only, onKeyDown, closeShortcut }) {
-    const ctxMenu = useContextMenu(() => [
-      { label: "Close", shortcut: closeShortcut, run: onClose },
-      { label: "Close others", run: onCloseOthers, disabled: only, disabledReason: "This is the only tab." },
-      { label: "Close tabs to the right", run: onCloseRight, disabled: isLast, disabledReason: "No tabs to the right." }
-    ], "Tab actions");
-    return /* @__PURE__ */ jsxs(
-      "div",
-      {
-        ref: refFn,
-        role: "tab",
-        id: domId("aw-tab", tabKey),
-        "aria-selected": active,
-        "aria-controls": domId("aw-pane", tabKey),
-        tabIndex: active ? 0 : -1,
-        className: cx("aw-tab", active && "is-active"),
-        onClick: onSelect,
-        onMouseDown: (e) => e.button === 1 && e.preventDefault(),
-        onAuxClick: (e) => e.button === 1 && onClose(),
-        onContextMenu: ctxMenu.bind.onContextMenu,
-        onKeyDown: (e) => {
-          ctxMenu.bind.onKeyDown(e);
-          if (!e.defaultPrevented) onKeyDown(e);
-        },
-        title: label,
-        children: [
-          /* @__PURE__ */ jsx(Icon, { name: icon, size: 14 }),
-          /* @__PURE__ */ jsx("span", { className: "aw-tab__label", children: label }),
-          /* @__PURE__ */ jsx(
-            "button",
-            {
-              type: "button",
-              className: "aw-tab__close",
-              "aria-label": `Close ${label}`,
-              tabIndex: -1,
-              onClick: (e) => {
-                e.stopPropagation();
-                onClose();
-              },
-              children: /* @__PURE__ */ jsx(Icon, { name: "close", size: 12 })
-            }
-          ),
-          ctxMenu.menu
-        ]
-      }
-    );
-  }
   function View({ name }) {
     switch (name) {
       case "inbox":
@@ -13289,281 +12856,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       default:
         return /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "Unknown view." });
     }
-  }
-  function SignedOut() {
-    const { platform, data } = useAdmin();
-    return /* @__PURE__ */ jsxs("div", { className: "aw-empty", children: [
-      /* @__PURE__ */ jsx("p", { children: errorText(data.error) }),
-      platform === "web" ? /* @__PURE__ */ jsxs("p", { children: [
-        /* @__PURE__ */ jsx("a", { href: "/portal", children: "Sign in on the portal" }),
-        ", then come back."
-      ] }) : /* @__PURE__ */ jsxs("p", { children: [
-        "Open Settings and choose ",
-        /* @__PURE__ */ jsx("strong", { children: "Sign in with portal" }),
-        "."
-      ] }),
-      platform === "dsh" ? /* @__PURE__ */ jsx(SettingsView, {}) : null
-    ] });
-  }
-  var NEEDS_YOU = /* @__PURE__ */ new Set(["new", "review"]);
-  function Explorer({ drawer = false }) {
-    const { data, open, openTicket, setModal, setBoardProject, boardProject, activeTab } = useAdmin();
-    const [openSlug, setOpenSlug] = useState({});
-    const byProject = /* @__PURE__ */ new Map();
-    for (const t of data.tickets) {
-      const key = t.project_id ?? "";
-      if (!byProject.has(key)) byProject.set(key, []);
-      byProject.get(key).push(t);
-    }
-    const live = (t) => !["done", "declined"].includes(t.status);
-    const runningTicket = new Set(data.running.map((r) => r.ticket_id));
-    return /* @__PURE__ */ jsxs("aside", { className: cx("aw-explorer", drawer && "aw-explorer--drawer"), "aria-label": "Explorer", children: [
-      /* @__PURE__ */ jsxs("h3", { children: [
-        "Projects",
-        data.access?.canUseWorkbench ? /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", iconOnly: true, icon: "plus", "aria-label": "New project", onClick: () => setModal({ kind: "project" }) }) : null
-      ] }),
-      /* @__PURE__ */ jsxs("ul", { className: "aw-tree", role: "tree", "aria-label": "Projects and open work", children: [
-        data.projects.map((p) => {
-          const items = (byProject.get(p.id) ?? []).filter(live);
-          const expanded = openSlug[p.id] ?? items.length > 0;
-          return /* @__PURE__ */ jsx(
-            ExplorerProject,
-            {
-              project: p,
-              items,
-              expanded,
-              selected: activeTab === `p:${p.id}` || boardProject === p.id,
-              activeTab,
-              running: runningTicket,
-              onToggle: () => setOpenSlug((s) => ({ ...s, [p.id]: !expanded })),
-              onOpen: () => {
-                setBoardProject(p.id);
-                open(`p:${p.id}`);
-              },
-              onBoard: () => {
-                setBoardProject(p.id);
-                open("board");
-              },
-              onTask: () => setModal({ kind: "task", projectId: p.id }),
-              openTicket
-            },
-            p.id
-          );
-        }),
-        !data.projects.length ? /* @__PURE__ */ jsx("li", { className: "aw-tree__none", role: "none", children: "No projects yet" }) : null
-      ] })
-    ] });
-  }
-  function ExplorerProject({ project: p, items, expanded, selected, activeTab, running, onToggle, onOpen, onBoard, onTask, openTicket }) {
-    const menu = useContextMenu([
-      { label: "Open project", run: onOpen },
-      { label: "Show on the board", run: onBoard },
-      { label: "New task in this project\u2026", shortcut: "N", run: onTask },
-      { separator: true },
-      { label: expanded ? "Collapse" : "Expand", run: onToggle }
-    ], `${p.name} actions`);
-    return /* @__PURE__ */ jsxs("li", { role: "treeitem", "aria-expanded": expanded, "aria-selected": selected, children: [
-      /* @__PURE__ */ jsxs("div", { className: cx("aw-tree__row", selected && "is-active"), ...menu.bind, children: [
-        /* @__PURE__ */ jsx("button", { type: "button", className: "aw-tree__twist", onClick: onToggle, "aria-expanded": expanded, "aria-label": expanded ? `Collapse ${p.name}` : `Expand ${p.name}`, children: /* @__PURE__ */ jsx(Icon, { name: "chevron", size: 12 }) }),
-        /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-tree__name", onClick: onOpen, title: `Open ${p.name}`, children: [
-          /* @__PURE__ */ jsx(Icon, { name: "folder", size: 14 }),
-          " ",
-          /* @__PURE__ */ jsx("span", { children: p.name })
-        ] }),
-        items.length ? /* @__PURE__ */ jsx("span", { className: "aw-count", "aria-label": `${items.length} open`, children: items.length }) : null
-      ] }),
-      expanded ? /* @__PURE__ */ jsxs("ul", { role: "group", children: [
-        items.map((t) => /* @__PURE__ */ jsx(ExplorerTicket, { t, active: activeTab === `t:${t.id}`, running: running.has(t.id), openTicket }, t.id)),
-        !items.length ? /* @__PURE__ */ jsx("li", { className: "aw-tree__none", role: "none", children: "No open work" }) : null
-      ] }) : null,
-      menu.menu
-    ] });
-  }
-  function ExplorerTicket({ t, active, running, openTicket }) {
-    const { platform } = useAdmin();
-    const menu = useContextMenu([
-      { label: "Open", run: () => openTicket(t.id) },
-      {
-        label: "Copy link",
-        run: () => void navigator.clipboard?.writeText(`${platform === "web" ? location.origin + location.pathname : "https://ptechsolutions.net/portal/admin"}#ticket=${t.id}`)
-      }
-    ], `#${t.id} actions`);
-    const state = running ? "live" : NEEDS_YOU.has(t.status) ? "needs" : "open";
-    const stateText = running ? "agent running" : STATUS_LABEL[t.status] ?? t.status;
-    return /* @__PURE__ */ jsxs("li", { role: "treeitem", "aria-selected": active, children: [
-      /* @__PURE__ */ jsx("div", { className: cx("aw-tree__leafrow", active && "is-active"), ...menu.bind, children: /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-tree__leaf", onClick: () => openTicket(t.id), title: `#${t.id} ${t.title} \xB7 ${stateText}`, children: [
-        /* @__PURE__ */ jsx("span", { className: cx("aw-mark", state !== "open" && `aw-mark--${state}`), "aria-hidden": "true" }),
-        /* @__PURE__ */ jsx("span", { className: "aw-tree__title", children: t.title }),
-        /* @__PURE__ */ jsxs("span", { className: "aw-sr", children: [
-          ", ",
-          stateText
-        ] }),
-        /* @__PURE__ */ jsxs("span", { className: "aw-tree__id", children: [
-          "#",
-          t.id
-        ] })
-      ] }) }),
-      menu.menu
-    ] });
-  }
-  function StatusBar({ onPalette, onKeys }) {
-    const { data, open, reload, platform } = useAdmin();
-    const [syncing, setSyncing] = useState(false);
-    const online = data.nodes.filter((n) => n.online).length;
-    const waiting = data.queue.length;
-    const stuck = data.queue.filter((q) => !q.eligible.length).length;
-    const health = !data.nodes.length ? "bad" : online === data.nodes.length ? "ok" : online ? "warn" : "bad";
-    const sync = () => {
-      setSyncing(true);
-      void Promise.resolve(reload()).finally(() => setSyncing(false));
-    };
-    const time = data.fetchedAt ? new Date(data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
-    return /* @__PURE__ */ jsxs("footer", { className: "aw-status", children: [
-      data.access?.superAdmin ? /* @__PURE__ */ jsxs("button", { type: "button", onClick: () => open("fleet"), title: "Open Fleet: nodes, the queue and health", children: [
-        /* @__PURE__ */ jsx(Dot, { state: health }),
-        /* @__PURE__ */ jsxs("span", { children: [
-          online,
-          " of ",
-          data.nodes.length,
-          " ",
-          data.nodes.length === 1 ? "node" : "nodes",
-          " online \xB7 ",
-          data.running.length,
-          " running \xB7 ",
-          waiting,
-          " queued",
-          stuck ? ` \xB7 ${stuck} stuck` : ""
-        ] })
-      ] }) : /* @__PURE__ */ jsxs("span", { className: "aw-status__item", children: [
-        data.projects.length,
-        " ",
-        data.projects.length === 1 ? "project" : "projects"
-      ] }),
-      platform === "dsh" ? /* @__PURE__ */ jsx(MachineStatusPill, {}) : null,
-      /* @__PURE__ */ jsx("span", { className: "aw-status__fill" }),
-      /* @__PURE__ */ jsxs("button", { type: "button", onClick: sync, disabled: syncing, title: "Refresh now (it also refreshes every 15 seconds)", className: data.error ? "aw-status__err" : void 0, children: [
-        /* @__PURE__ */ jsx(Icon, { name: "refresh", size: 12 }),
-        syncing ? "Syncing\u2026" : data.error ? "Sync failed \xB7 retry" : time ? `Synced ${time}` : "Not synced yet"
-      ] }),
-      /* @__PURE__ */ jsx("button", { type: "button", onClick: onPalette, title: "Search and commands", children: /* @__PURE__ */ jsxs("kbd", { children: [
-        MOD,
-        "K"
-      ] }) }),
-      /* @__PURE__ */ jsx("button", { type: "button", onClick: onKeys, title: "Keyboard shortcuts", "aria-label": "Keyboard shortcuts", children: /* @__PURE__ */ jsx("kbd", { children: "?" }) })
-    ] });
-  }
-  function Palette({ onClose, onKeys, toggleExplorer }) {
-    const { data, open, openTicket, setModal, reload, activeTab, closeTab, platform } = useAdmin();
-    const [q, setQ] = useState("");
-    const [i, setI] = useState(0);
-    const input = useRef(null);
-    const listRef = useRef(null);
-    useEffect(() => {
-      const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      input.current?.focus();
-      return () => opener?.focus?.();
-    }, []);
-    const { items, total } = useMemo(() => {
-      const cmds = [
-        { label: "New task\u2026", hint: "N", run: () => setModal({ kind: "task" }) },
-        ...data.access?.canUseWorkbench ? [{ label: "New project\u2026", hint: "command", run: () => setModal({ kind: "project" }) }] : [],
-        { label: "Refresh", hint: "command", run: () => void reload() },
-        { label: "Toggle explorer", hint: `${MOD}B`, run: toggleExplorer },
-        ...activeTab ? [{ label: "Close tab", hint: closeKey(platform), run: () => closeTab(activeTab) }] : [],
-        { label: "Keyboard shortcuts", hint: "?", run: onKeys },
-        ...VIEWS.filter((v) => workbenchAllowed(v.key, data.access)).map((v) => ({ label: `Go to ${v.label}`, hint: viewKey(platform, VIEWS.indexOf(v) + 1), run: () => open(v.key) })),
-        ...data.projects.map((p) => ({ label: p.name, hint: "project", run: () => open(`p:${p.id}`) })),
-        ...data.clients.map((c) => ({ label: c.name || c.email, hint: c.name ? `client \xB7 ${c.email}` : "client", run: () => open(`c:${c.id}`) })),
-        ...data.tickets.map((t) => ({ label: `#${t.id} ${t.title}`, hint: `${STATUS_LABEL[t.status]} \xB7 ${t.project_name ?? "no project"}`, run: () => openTicket(t.id) }))
-      ];
-      const needle = q.trim().toLowerCase();
-      const matched = needle ? cmds.filter((c) => `${c.label} ${c.hint}`.toLowerCase().includes(needle)) : cmds;
-      return { items: matched.slice(0, 40), total: matched.length };
-    }, [q, data, open, openTicket, setModal, reload, toggleExplorer, activeTab, closeTab, onKeys, platform]);
-    useEffect(() => {
-      listRef.current?.querySelector(".is-active")?.scrollIntoView?.({ block: "nearest" });
-    }, [i]);
-    const pick = (item) => {
-      onClose();
-      item?.run();
-    };
-    return /* @__PURE__ */ jsx("div", { className: "aw-scrim aw-scrim--top", onMouseDown: (e) => e.target === e.currentTarget && onClose(), children: /* @__PURE__ */ jsxs("div", { className: "aw-palette", role: "dialog", "aria-label": "Command palette", children: [
-      /* @__PURE__ */ jsx(
-        "input",
-        {
-          ref: input,
-          role: "combobox",
-          "aria-label": "Search tickets, views and commands",
-          "aria-expanded": "true",
-          "aria-controls": "aw-palette-list",
-          "aria-autocomplete": "list",
-          "aria-activedescendant": items[i] ? `aw-palette-option-${i}` : void 0,
-          value: q,
-          placeholder: "Search tickets, projects, clients and commands\u2026",
-          onChange: (e) => {
-            setQ(e.target.value);
-            setI(0);
-          },
-          onKeyDown: (e) => {
-            if (e.key === "Escape") onClose();
-            else if (e.key === "ArrowDown") e.preventDefault(), setI((n) => Math.min(items.length - 1, n + 1));
-            else if (e.key === "ArrowUp") e.preventDefault(), setI((n) => Math.max(0, n - 1));
-            else if (e.key === "Home" && e.metaKey) e.preventDefault(), setI(0);
-            else if (e.key === "Enter") pick(items[i]);
-            else if (e.key === "Tab") e.preventDefault();
-          }
-        }
-      ),
-      /* @__PURE__ */ jsxs("ul", { id: "aw-palette-list", role: "listbox", "aria-label": "Results", ref: listRef, children: [
-        items.map((item, n) => /* @__PURE__ */ jsxs(
-          "li",
-          {
-            id: `aw-palette-option-${n}`,
-            role: "option",
-            "aria-selected": n === i,
-            className: n === i ? "is-active" : "",
-            onMouseEnter: () => setI(n),
-            onMouseDown: () => pick(item),
-            children: [
-              /* @__PURE__ */ jsx("span", { children: item.label }),
-              /* @__PURE__ */ jsx("small", { children: item.hint })
-            ]
-          },
-          item.label + n
-        )),
-        !items.length ? /* @__PURE__ */ jsx("li", { className: "aw-muted", role: "presentation", children: "No matches. Try a ticket number, a project or a view." }) : null
-      ] }),
-      total > items.length ? /* @__PURE__ */ jsxs("p", { className: "aw-palette__count", children: [
-        "Showing ",
-        items.length,
-        " of ",
-        total
-      ] }) : null
-    ] }) });
-  }
-  function ShortcutSheet({ onClose }) {
-    const { platform } = useAdmin();
-    const alt = isMac ? "\u2303\u2325" : "Ctrl+Alt+";
-    const rows = [
-      [[`${MOD}K`], "Search and commands"],
-      [[`${MOD}B`], "Show or hide the explorer"],
-      [[platform === "dsh" ? `${MOD}1\u20268` : `${alt}1\u20268`], "Needs you, Board, All work, Marketing, SEO, Fleet, Clients, Settings"],
-      [[closeKey(platform)], "Close the tab"],
-      [["\u2303Tab", "\u2303\u21E7Tab"], "Next / previous tab"],
-      [["\u2190", "\u2192", "Home", "End"], "Move along tabs and section tabs"],
-      [["N"], "New task"],
-      [["/"], "Filter the list (web)"],
-      [["J", "K", "\u2191", "\u2193"], "Move between rows"],
-      [["Return"], "Open the row, or confirm"],
-      [["\u21E7F10"], "Actions for the focused row or tab"],
-      [[`${MOD}Return`], "Send or save the form"],
-      [["Esc"], "Close the menu, dialog or drawer"],
-      [["?"], "This sheet"]
-    ];
-    return /* @__PURE__ */ jsx(Modal, { title: "Keyboard shortcuts", subtitle: "Everything else is in the palette.", onClose, wide: true, children: /* @__PURE__ */ jsx("dl", { className: "aw-keys", children: rows.map(([keys, what]) => /* @__PURE__ */ jsxs("div", { children: [
-      /* @__PURE__ */ jsx("dt", { children: keys.map((k) => /* @__PURE__ */ jsx("kbd", { className: "aw-kbd", children: k }, k)) }),
-      /* @__PURE__ */ jsx("dd", { children: what })
-    ] }, what)) }) });
   }
   function TaskModal({ preset = {}, onClose }) {
     const { api, data, act, openTicket } = useAdmin();
@@ -14334,910 +13626,23 @@ ${question.text ?? ""}`)) {
     ] });
   }
 
-  // packages/dsh-admin/src/project-park.mjs
-  var STALL_SECONDS = 45 * 60;
-  var ISO_TILE = Object.freeze({ width: 120, height: 60 });
-  var CLOSED_STATUSES = /* @__PURE__ */ new Set(["done", "declined"]);
-  var TERMINAL_RUN_STATUSES = /* @__PURE__ */ new Set(["done", "failed", "cancelled", "canceled", "completed"]);
-  var STATE_RANK = Object.freeze({ calm: 0, active: 1, attention: 2, bad: 3 });
-  function iso2(x, y, z = 0, options = {}) {
-    const tileW = Number.isFinite(options?.tileW) ? options.tileW : ISO_TILE.width;
-    const tileH = Number.isFinite(options?.tileH) ? options.tileH : ISO_TILE.height;
-    const originX = Number.isFinite(options?.originX) ? options.originX : 0;
-    const originY = Number.isFinite(options?.originY) ? options.originY : 0;
-    const nx = Number.isFinite(x) ? x : 0;
-    const ny = Number.isFinite(y) ? y : 0;
-    const nz = Number.isFinite(z) ? z : 0;
-    return {
-      x: originX + (nx - ny) * (tileW / 2),
-      y: originY + (nx + ny) * (tileH / 2) - nz
-    };
-  }
-  function toUnixSeconds(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n) || n <= 0) return 0;
-    return n > 1e11 ? n / 1e3 : n;
-  }
-  function isClosedTicket(ticket) {
-    return CLOSED_STATUSES.has(ticket?.status);
-  }
-  function isWaitingTicket(ticket) {
-    return Boolean(ticket) && Number(ticket.client_waiting_since ?? 0) > 0 && !isClosedTicket(ticket) && ticket.status !== "new";
-  }
-  function isNeedsYouTicket(ticket) {
-    if (!ticket || typeof ticket !== "object") return false;
-    return ticket.status === "new" || ticket.status === "review" || isWaitingTicket(ticket);
-  }
-  function isStalledTicket(ticket, nowSeconds) {
-    if (!ticket || ticket.status !== "in_progress") return false;
-    const updated = toUnixSeconds(ticket.updated_at);
-    return updated > 0 && nowSeconds - updated > STALL_SECONDS;
-  }
-  function activeRunTicketKeys(runs) {
-    const list2 = Array.isArray(runs) ? runs : Array.isArray(runs?.running) ? runs.running : [];
-    const keys = /* @__PURE__ */ new Set();
-    for (const run of list2) {
-      if (!run || typeof run !== "object") continue;
-      if (typeof run.status === "string" && TERMINAL_RUN_STATUSES.has(run.status)) continue;
-      if (toUnixSeconds(run.finished_at) > 0) continue;
-      if (run.ticket_id === null || run.ticket_id === void 0 || run.ticket_id === "") continue;
-      keys.add(String(run.ticket_id));
-    }
-    return keys;
-  }
-  function countFailingSites(project) {
-    const sites = Array.isArray(project?.sites) ? project.sites : project?.site && typeof project.site === "object" ? [project.site] : [];
-    let failing = 0;
-    for (const site of sites) {
-      if (!site || typeof site !== "object") continue;
-      const failedState = site.state === "failed";
-      const rebuildFailed = typeof site.rebuildError === "string" && site.rebuildError.trim().length > 0;
-      if (failedState || rebuildFailed) failing += 1;
-    }
-    return failing;
-  }
-  function clientLabelFor(project, projectTickets2) {
-    const names = [];
-    const seen = /* @__PURE__ */ new Set();
-    const push = (raw) => {
-      if (typeof raw !== "string") return;
-      const trimmed = raw.trim();
-      if (!trimmed) return;
-      const key = trimmed.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      names.push(trimmed);
-    };
-    if (Array.isArray(project?.clients)) {
-      for (const person of project.clients) {
-        if (!person || typeof person !== "object") continue;
-        push(person.name || person.email);
-      }
-    }
-    if (names.length === 0) {
-      for (const ticket of projectTickets2) {
-        if (ticket?.kind === "system") continue;
-        push(ticket?.client_name || ticket?.client_email);
-      }
-    }
-    if (names.length === 0) return "";
-    if (names.length <= 2) return names.join(", ");
-    return `${names[0]} +${names.length - 1}`;
-  }
-  function stateFromCounts(counts) {
-    if (counts.failing > 0 || counts.stalled > 0) return "bad";
-    if (counts.needsYou > 0) return "attention";
-    if (counts.running > 0) return "active";
-    return "calm";
-  }
-  function compareUrgency(a, b) {
-    return STATE_RANK[b.state] - STATE_RANK[a.state] || b.counts.failing - a.counts.failing || b.counts.stalled - a.counts.stalled || b.counts.needsYou - a.counts.needsYou || b.counts.running - a.counts.running || a.name.localeCompare(b.name, void 0, { sensitivity: "base" }) || String(a.id).localeCompare(String(b.id));
-  }
-  function parkPlots({ projects = [], tickets = [], runs = [], now = Date.now() } = {}) {
-    const projectList = Array.isArray(projects) ? projects : [];
-    if (projectList.length === 0) return [];
-    const ticketList = Array.isArray(tickets) ? tickets : [];
-    const nowSeconds = toUnixSeconds(now) || Date.now() / 1e3;
-    const activeRunTickets = activeRunTicketKeys(runs);
-    const ticketsByProject = /* @__PURE__ */ new Map();
-    for (const ticket of ticketList) {
-      if (!ticket || typeof ticket !== "object") continue;
-      if (ticket.project_id === null || ticket.project_id === void 0 || ticket.project_id === "") continue;
-      const key = String(ticket.project_id);
-      let bucket = ticketsByProject.get(key);
-      if (!bucket) {
-        bucket = [];
-        ticketsByProject.set(key, bucket);
-      }
-      bucket.push(ticket);
-    }
-    const seenIds = /* @__PURE__ */ new Set();
-    const rawPlots = [];
-    for (const project of projectList) {
-      if (!project || typeof project !== "object") continue;
-      const validId = typeof project.id === "string" && project.id.trim().length > 0 || typeof project.id === "number" && Number.isFinite(project.id);
-      if (!validId) continue;
-      const idKey = String(project.id);
-      if (seenIds.has(idKey)) continue;
-      seenIds.add(idKey);
-      const name = typeof project.name === "string" && project.name.trim() || typeof project.slug === "string" && project.slug.trim() || idKey;
-      const ownTickets = ticketsByProject.get(idKey) ?? [];
-      const needsYouIds = /* @__PURE__ */ new Set();
-      const stalledIds = /* @__PURE__ */ new Set();
-      const runningIds = /* @__PURE__ */ new Set();
-      for (let idx = 0; idx < ownTickets.length; idx += 1) {
-        const ticket = ownTickets[idx];
-        const ticketKey = ticket.id != null && ticket.id !== "" ? String(ticket.id) : `idx:${idx}`;
-        if (isNeedsYouTicket(ticket)) needsYouIds.add(ticketKey);
-        if (isStalledTicket(ticket, nowSeconds)) stalledIds.add(ticketKey);
-        if (ticket.status === "in_progress" && activeRunTickets.has(ticketKey)) runningIds.add(ticketKey);
-      }
-      const counts = {
-        needsYou: needsYouIds.size,
-        running: runningIds.size,
-        stalled: stalledIds.size,
-        failing: countFailingSites(project)
-      };
-      rawPlots.push({
-        id: project.id,
-        name,
-        client: clientLabelFor(project, ownTickets),
-        state: stateFromCounts(counts),
-        counts
-      });
-    }
-    rawPlots.sort(compareUrgency);
-    const rows = rawPlots.length > 1 ? 2 : 1;
-    const cols = Math.ceil(rawPlots.length / rows);
-    return rawPlots.map((plot, index) => {
-      const band = Math.floor(index / rows);
-      const depth = index % rows;
-      const x = band;
-      const y = cols - 1 - band + (rows - 1 - depth);
-      return {
-        id: plot.id,
-        name: plot.name,
-        client: plot.client,
-        state: plot.state,
-        counts: plot.counts,
-        x,
-        y
-      };
-    });
-  }
-  function countsSummary(counts) {
-    if (!counts) return "Calm, nothing waiting";
-    const parts = [];
-    if (counts.failing > 0) parts.push(`${counts.failing} failing ${counts.failing === 1 ? "site" : "sites"}`);
-    if (counts.stalled > 0) parts.push(`${counts.stalled} stalled`);
-    if (counts.needsYou > 0) parts.push(`${counts.needsYou} ${counts.needsYou === 1 ? "needs" : "need"} you`);
-    if (counts.running > 0) parts.push(`${counts.running} running`);
-    return parts.length > 0 ? parts.join(", ") : "Calm, nothing waiting";
-  }
-  function plotAriaLabel(plot) {
-    const who = plot.client ? `${plot.name} (${plot.client})` : plot.name;
-    return `${who} \u2014 ${plot.state}: ${countsSummary(plot.counts)}`;
-  }
-  var PARK_FILTERS = Object.freeze([
-    { key: "all", label: "All" },
-    { key: "needsYou", label: "Needs you" },
-    { key: "failing", label: "Failing" },
-    { key: "stalled", label: "Stalled" },
-    { key: "running", label: "Running" }
-  ]);
-  function plotMatches(plot, filter) {
-    if (!filter || filter === "all") return true;
-    return Number(plot?.counts?.[filter] ?? 0) > 0;
-  }
-  function filterCounts(plots = []) {
-    const out = { all: 0, needsYou: 0, failing: 0, stalled: 0, running: 0 };
-    for (const plot of plots) {
-      out.all += 1;
-      for (const key of ["needsYou", "failing", "stalled", "running"]) {
-        if (plotMatches(plot, key)) out[key] += 1;
-      }
-    }
-    return out;
-  }
-  function shortAge(seconds) {
-    const s = Math.max(0, Math.floor(Number(seconds) || 0));
-    if (s < 60) return `${s}s`;
-    if (s < 3600) return `${Math.floor(s / 60)}m`;
-    if (s < 86400) return `${Math.floor(s / 3600)}h`;
-    return `${Math.floor(s / 86400)}d`;
-  }
-  var KIND_RANK = Object.freeze({ stalled: 0, needsYou: 1, running: 2, open: 3 });
-  function runStartsByTicket(runs) {
-    const list2 = Array.isArray(runs) ? runs : Array.isArray(runs?.running) ? runs.running : [];
-    const starts = /* @__PURE__ */ new Map();
-    for (const run of list2) {
-      if (!run || run.ticket_id === null || run.ticket_id === void 0) continue;
-      if (run.finished_at || TERMINAL_RUN_STATUSES.has(String(run.status ?? "").toLowerCase())) continue;
-      const started = toUnixSeconds(run.started_at ?? run.created_at);
-      const key = String(run.ticket_id);
-      if (started && (!starts.has(key) || started < starts.get(key))) starts.set(key, started);
-    }
-    return starts;
-  }
-  function plotTickets(plot, tickets = [], runs = [], now = Date.now(), recent = []) {
-    if (!plot) return [];
-    const nowSeconds = toUnixSeconds(now) || Date.now() / 1e3;
-    const running = activeRunTicketKeys(runs);
-    const starts = runStartsByTicket(runs);
-    const rows = [];
-    for (const ticket of Array.isArray(tickets) ? tickets : []) {
-      if (!ticket || isClosedTicket(ticket)) continue;
-      if (String(ticket.project_id ?? "") !== String(plot.id)) continue;
-      const key = String(ticket.id);
-      const kind = isStalledTicket(ticket, nowSeconds) ? "stalled" : isNeedsYouTicket(ticket) ? "needsYou" : ticket.status === "in_progress" && running.has(key) ? "running" : "open";
-      const since = kind === "running" ? starts.get(key) : toUnixSeconds(ticket.updated_at ?? ticket.created_at);
-      const app = typeof ticket.assistant_app === "string" && ticket.assistant_app.trim() ? ticket.assistant_app.trim() : null;
-      rows.push({
-        id: ticket.id,
-        title: typeof ticket.title === "string" && ticket.title.trim() ? ticket.title.trim() : `#${ticket.id}`,
-        status: ticket.status ?? "open",
-        kind,
-        age: since ? shortAge(nowSeconds - since) : null,
-        ageSeconds: since ? Math.max(0, nowSeconds - since) : 0,
-        via: app,
-        wait: ticketWait(ticket, recent, now)
-      });
-    }
-    rows.sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || b.ageSeconds - a.ageSeconds);
-    return rows;
-  }
-  function plotHeadline(plot, tickets = [], runs = [], now = Date.now()) {
-    const top = plotTickets(plot, tickets, runs, now)[0];
-    if (!top) return null;
-    const title = top.title.length > 28 ? `${top.title.slice(0, 27)}\u2026` : top.title;
-    return [`#${top.id} ${title}`, top.via ? `via ${top.via}` : null, top.age].filter(Boolean).join(" \xB7 ");
-  }
-  var OK_RUN = /* @__PURE__ */ new Set(["ok", "done", "completed", "succeeded", "success"]);
-  var FAILED_RUN = /* @__PURE__ */ new Set(["failed", "error", "errored", "timeout", "timed_out"]);
-  function runKind(run) {
-    const status = String(run?.status ?? "").toLowerCase();
-    if (status === "running" && !toUnixSeconds(run?.finished_at)) return "running";
-    if (OK_RUN.has(status)) return "ok";
-    if (FAILED_RUN.has(status)) return "failed";
-    return "other";
-  }
-  function runTrail(ticketId, running = [], recent = [], now = Date.now(), limit = 6) {
-    if (ticketId === null || ticketId === void 0) return null;
-    const key = String(ticketId);
-    const nowSeconds = toUnixSeconds(now) || Date.now() / 1e3;
-    const seen = /* @__PURE__ */ new Map();
-    for (const run of [...Array.isArray(recent) ? recent : [], ...Array.isArray(running) ? running : []]) {
-      if (!run || String(run.ticket_id) !== key) continue;
-      seen.set(String(run.id ?? `${run.started_at}`), run);
-    }
-    if (seen.size === 0) return null;
-    const runs = [...seen.values()].map((run) => {
-      const kind = runKind(run);
-      const started = toUnixSeconds(run.started_at);
-      const finished = toUnixSeconds(run.finished_at);
-      const seconds = started ? Math.max(0, (finished || (kind === "running" ? nowSeconds : 0)) - started) : 0;
-      return { id: run.id ?? null, kind, status: run.status ?? null, started, seconds: finished || kind === "running" ? seconds : 0 };
-    }).sort((a, b) => (a.started || 0) - (b.started || 0));
-    const failed = runs.filter((r) => r.kind === "failed").length;
-    const agentSeconds = runs.reduce((sum, r) => sum + r.seconds, 0);
-    const parts = [`${runs.length} ${runs.length === 1 ? "run" : "runs"}`];
-    if (failed) parts.push(`${failed} failed`);
-    if (runs.some((r) => r.kind === "running")) parts.push("running now");
-    if (agentSeconds > 0) parts.push(`${shortAge(agentSeconds)} agent`);
-    return { runs: runs.slice(-limit), total: runs.length, failed, agentSeconds, summary: parts.join(" \xB7 ") };
-  }
-  function longAge(seconds) {
-    const s = Math.max(0, Math.floor(Number(seconds) || 0));
-    if (s < 60) return `${s}s`;
-    if (s < 3600) return `${Math.floor(s / 60)}m`;
-    if (s < 86400) {
-      const m = Math.floor(s % 3600 / 60);
-      return `${Math.floor(s / 3600)}h${m ? ` ${m}m` : ""}`;
-    }
-    const h = Math.floor(s % 86400 / 3600);
-    return `${Math.floor(s / 86400)}d${h ? ` ${h}h` : ""}`;
-  }
-  function ticketWait(ticket, recent = [], now = Date.now()) {
-    if (!ticket || isClosedTicket(ticket)) return null;
-    const nowSeconds = toUnixSeconds(now) || Date.now() / 1e3;
-    const key = String(ticket.id);
-    let since = 0;
-    let label = null;
-    if (ticket.status === "review") {
-      for (const run of Array.isArray(recent) ? recent : []) {
-        if (!run || String(run.ticket_id) !== key) continue;
-        const finished = toUnixSeconds(run.finished_at);
-        if (finished > since) since = finished;
-      }
-      if (!since) since = toUnixSeconds(ticket.updated_at);
-      label = "on you";
-    } else if (ticket.status === "new") {
-      since = toUnixSeconds(ticket.created_at ?? ticket.updated_at);
-      label = "for approval";
-    } else if (isWaitingTicket(ticket)) {
-      since = toUnixSeconds(ticket.client_waiting_since);
-      label = "on your reply";
-    }
-    if (!label || !since || since > nowSeconds) return null;
-    const seconds = nowSeconds - since;
-    return { seconds, text: `waiting ${longAge(seconds)} ${label}` };
-  }
-  function plotWaitLabel(plot, tickets = [], runs = [], now = Date.now(), recent = []) {
-    const longest = plotTickets(plot, tickets, runs, now, recent).reduce((max, row) => Math.max(max, row.wait?.seconds ?? 0), 0);
-    return longest > 0 ? `Needs you \xB7 ${shortAge(longest)}` : null;
-  }
-
-  // packages/dsh-admin/src/project-park.jsx
-  function RunBand({ trail }) {
-    if (!trail) return null;
-    return /* @__PURE__ */ jsxs("span", { className: "pta-park__runs", title: trail.summary, children: [
-      /* @__PURE__ */ jsx("span", { className: "pta-park__runband", "aria-hidden": "true", children: trail.runs.map((run, i) => /* @__PURE__ */ jsx("i", { className: `pta-park__run is-${run.kind}` }, String(run.id ?? i))) }),
-      /* @__PURE__ */ jsx("span", { className: "pta-park__runs-text", children: trail.summary })
-    ] });
-  }
-  var KIND_LABEL = { stalled: "Stalled", needsYou: "Needs you", running: "Running", open: "Open" };
-  var STROKE_INK = 1.2;
-  function round1(value) {
-    return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
-  }
-  function pointsAttr(pts) {
-    return pts.map((p) => `${round1(p.x)},${round1(p.y)}`).join(" ");
-  }
-  function isoBoxFaces(x0, y0, z0, wx, wy, h, opts) {
-    const b10 = iso2(x0 + wx, y0, z0, opts);
-    const b11 = iso2(x0 + wx, y0 + wy, z0, opts);
-    const b01 = iso2(x0, y0 + wy, z0, opts);
-    const t00 = iso2(x0, y0, z0 + h, opts);
-    const t10 = iso2(x0 + wx, y0, z0 + h, opts);
-    const t11 = iso2(x0 + wx, y0 + wy, z0 + h, opts);
-    const t01 = iso2(x0, y0 + wy, z0 + h, opts);
-    return {
-      top: pointsAttr([t00, t10, t11, t01]),
-      left: pointsAttr([t01, t11, b11, b01]),
-      right: pointsAttr([t11, t10, b10, b11]),
-      corners: { b10, b11, b01, t00, t10, t11, t01 }
-    };
-  }
-  function shortName(name, max = 12) {
-    const clean = String(name ?? "").trim();
-    if (clean.length <= max) return clean;
-    return `${clean.slice(0, max - 1)}\u2026`;
-  }
-  function beaconsFor(counts) {
-    const list2 = [];
-    if (counts.failing > 0) list2.push({ kind: "failing", value: counts.failing });
-    if (counts.stalled > 0) list2.push({ kind: "stalled", value: counts.stalled });
-    if (counts.needsYou > 0) list2.push({ kind: "needsYou", value: counts.needsYou });
-    if (counts.running > 0) list2.push({ kind: "running", value: counts.running });
-    return list2;
-  }
-  function IsoBox2({ faces, topFill, leftFill, rightFill, strokeClass = "pta-park__ink", strokeWidth = STROKE_INK }) {
-    return /* @__PURE__ */ jsxs(Fragment2, { children: [
-      /* @__PURE__ */ jsx("polygon", { points: faces.left, fill: leftFill, className: strokeClass, strokeWidth, strokeLinejoin: "round" }),
-      /* @__PURE__ */ jsx("polygon", { points: faces.right, fill: rightFill, className: strokeClass, strokeWidth, strokeLinejoin: "round" }),
-      /* @__PURE__ */ jsx("polygon", { points: faces.top, fill: topFill, className: strokeClass, strokeWidth, strokeLinejoin: "round" })
-    ] });
-  }
-  function BeaconPin({ x, y, stemBottomY, kind, value }) {
-    const text = value > 99 ? "99+" : String(value);
-    const rx = round1(x);
-    const ry = round1(y);
-    const sb = round1(stemBottomY);
-    const w = text.length > 2 ? 20 : text.length > 1 ? 16 : 14;
-    const hw = w / 2;
-    return /* @__PURE__ */ jsxs("g", { className: `pta-park__beacon pta-park__beacon--${kind}`, children: [
-      kind === "running" ? /* @__PURE__ */ jsx("circle", { cx: rx, cy: ry, r: "9", className: "pta-park__pulse", fill: "none", strokeWidth: "1.2" }) : null,
-      /* @__PURE__ */ jsx("line", { x1: rx, y1: ry + 5, x2: rx, y2: sb, className: "pta-park__ink", strokeWidth: STROKE_INK, strokeLinecap: "round" }),
-      /* @__PURE__ */ jsx("circle", { cx: rx, cy: sb, r: "1.6", className: "pta-park__pin-foot" }),
-      kind === "failing" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-        /* @__PURE__ */ jsx(
-          "polygon",
-          {
-            points: pointsAttr([
-              { x: rx, y: ry - 6.5 },
-              { x: rx + hw + 1.5, y: ry + 2 },
-              { x: rx, y: ry + 9.5 },
-              { x: rx - hw - 1.5, y: ry + 2 }
-            ]),
-            className: "pta-park__beacon-side pta-park__ink",
-            strokeWidth: STROKE_INK,
-            strokeLinejoin: "round"
-          }
-        ),
-        /* @__PURE__ */ jsx(
-          "polygon",
-          {
-            points: pointsAttr([
-              { x: rx, y: ry - 8.5 },
-              { x: rx + hw + 1.5, y: ry },
-              { x: rx, y: ry + 7.5 },
-              { x: rx - hw - 1.5, y: ry }
-            ]),
-            className: "pta-park__beacon-cap pta-park__ink",
-            strokeWidth: STROKE_INK,
-            strokeLinejoin: "round"
-          }
-        )
-      ] }) : kind === "stalled" ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-        /* @__PURE__ */ jsx(
-          "rect",
-          {
-            x: round1(rx - hw),
-            y: round1(ry - 5),
-            width: w,
-            height: "13",
-            rx: "2.5",
-            className: "pta-park__beacon-side pta-park__ink",
-            strokeWidth: STROKE_INK
-          }
-        ),
-        /* @__PURE__ */ jsx(
-          "rect",
-          {
-            x: round1(rx - hw),
-            y: round1(ry - 7),
-            width: w,
-            height: "13",
-            rx: "2.5",
-            className: "pta-park__beacon-cap pta-park__ink",
-            strokeWidth: STROKE_INK
-          }
-        )
-      ] }) : /* @__PURE__ */ jsxs(Fragment2, { children: [
-        /* @__PURE__ */ jsx(
-          "rect",
-          {
-            x: round1(rx - hw),
-            y: round1(ry - 5),
-            width: w,
-            height: "13",
-            rx: "6.5",
-            className: "pta-park__beacon-side pta-park__ink",
-            strokeWidth: STROKE_INK
-          }
-        ),
-        /* @__PURE__ */ jsx(
-          "rect",
-          {
-            x: round1(rx - hw),
-            y: round1(ry - 7),
-            width: w,
-            height: "13",
-            rx: "6.5",
-            className: "pta-park__beacon-cap pta-park__ink",
-            strokeWidth: STROKE_INK
-          }
-        )
-      ] }),
-      /* @__PURE__ */ jsx("text", { x: rx, y: round1(ry + 2.5), textAnchor: "middle", className: "pta-park__beacon-num", children: text })
-    ] });
-  }
-  function PlotTile({ plot, opts, active, dimmed = false, picked = false, onActivate, onDeactivate, onSelect, onStep }) {
-    const { x, y, state, counts, name } = plot;
-    const center = iso2(x, y, 0, opts);
-    const pad = isoBoxFaces(x - 0.42, y - 0.42, 0, 0.84, 0.84, 4, opts);
-    const halo = [
-      iso2(x - 0.45, y - 0.45, 4, opts),
-      iso2(x + 0.45, y - 0.45, 4, opts),
-      iso2(x + 0.45, y + 0.45, 4, opts),
-      iso2(x - 0.45, y + 0.45, 4, opts)
-    ];
-    const bHeight = state === "calm" ? 16 : 19;
-    const building = isoBoxFaces(x - 0.31, y - 0.31, 4, 0.36, 0.34, bHeight, opts);
-    const roofCap = isoBoxFaces(x - 0.27, y - 0.27, 4 + bHeight, 0.28, 0.26, 3, opts);
-    const winL1a = iso2(x - 0.23, y + 0.03, 4 + bHeight - 5, opts);
-    const winL1b = iso2(x - 0.03, y + 0.03, 4 + bHeight - 5, opts);
-    const winL2a = iso2(x - 0.23, y + 0.03, 4 + bHeight - 10, opts);
-    const winL2b = iso2(x - 0.03, y + 0.03, 4 + bHeight - 10, opts);
-    const winR1a = iso2(x + 0.05, y - 0.23, 4 + bHeight - 5, opts);
-    const winR1b = iso2(x + 0.05, y - 0.04, 4 + bHeight - 5, opts);
-    const winR2a = iso2(x + 0.05, y - 0.23, 4 + bHeight - 10, opts);
-    const winR2b = iso2(x + 0.05, y - 0.04, 4 + bHeight - 10, opts);
-    const desk = isoBoxFaces(x + 0.12, y - 0.16, 4, 0.21, 0.44, 5.5, opts);
-    const ticks = [-0.05, 0.06, 0.17].map((dy) => ({
-      a: iso2(x + 0.15, y + dy, 9.5, opts),
-      b: iso2(x + 0.3, y + dy, 9.5, opts)
-    }));
-    const parcel = counts.running > 0 ? isoBoxFaces(x + 0.17, y + 0.01, 9.5, 0.11, 0.11, 5.5, opts) : null;
-    const beacons = beaconsFor(counts);
-    const anchorTop = iso2(x - 0.1, y - 0.1, 4 + bHeight + 3, opts);
-    const beaconY = anchorTop.y - 10;
-    const label = shortName(name, 11);
-    const pillW = Math.min(76, Math.max(34, label.length * 5.6 + 10));
-    const pillX = round1(center.x - pillW / 2);
-    const pillY = round1(center.y + 10);
-    const ariaLabel = plotAriaLabel(plot);
-    const open = () => onSelect?.(plot);
-    return /* @__PURE__ */ jsxs(
-      "g",
-      {
-        className: `pta-park__plot${active ? " is-active" : ""}${dimmed ? " is-dimmed" : ""}${picked ? " is-picked" : ""}`,
-        "data-state": state,
-        "data-plot-id": String(plot.id),
-        role: "button",
-        tabIndex: 0,
-        "aria-label": ariaLabel,
-        "aria-expanded": picked,
-        onClick: open,
-        onKeyDown: (event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            open();
-          } else if (["j", "k", "ArrowRight", "ArrowLeft"].includes(event.key)) {
-            event.preventDefault();
-            onStep?.(plot.id, event.key === "j" || event.key === "ArrowRight" ? 1 : -1);
-          }
-        },
-        onMouseEnter: () => onActivate(plot.id),
-        onMouseLeave: () => onDeactivate(plot.id),
-        onFocus: () => onActivate(plot.id),
-        onBlur: () => onDeactivate(plot.id),
-        children: [
-          /* @__PURE__ */ jsx("title", { children: ariaLabel }),
-          /* @__PURE__ */ jsxs("g", { className: "pta-park__lift", children: [
-            /* @__PURE__ */ jsx(
-              IsoBox2,
-              {
-                faces: pad,
-                topFill: "var(--park-pad-top)",
-                leftFill: "var(--park-pad-left)",
-                rightFill: "var(--park-pad-right)",
-                strokeClass: "pta-park__pad-edge",
-                strokeWidth: STROKE_INK
-              }
-            ),
-            /* @__PURE__ */ jsx("polygon", { points: pointsAttr(halo), fill: "none", className: "pta-park__halo", strokeWidth: "1.6", strokeLinejoin: "round" }),
-            /* @__PURE__ */ jsx(
-              IsoBox2,
-              {
-                faces: desk,
-                topFill: "var(--park-desk-top)",
-                leftFill: "var(--park-desk-left)",
-                rightFill: "var(--park-desk-right)"
-              }
-            ),
-            ticks.map((tick, idx) => /* @__PURE__ */ jsx(
-              "line",
-              {
-                x1: round1(tick.a.x),
-                y1: round1(tick.a.y),
-                x2: round1(tick.b.x),
-                y2: round1(tick.b.y),
-                className: "pta-park__detail",
-                strokeWidth: "1",
-                strokeLinecap: "round"
-              },
-              idx
-            )),
-            parcel ? /* @__PURE__ */ jsx(
-              IsoBox2,
-              {
-                faces: parcel,
-                topFill: "var(--park-parcel-top)",
-                leftFill: "var(--park-parcel-left)",
-                rightFill: "var(--park-parcel-right)"
-              }
-            ) : null,
-            /* @__PURE__ */ jsx(
-              IsoBox2,
-              {
-                faces: building,
-                topFill: "var(--park-top)",
-                leftFill: "var(--park-left)",
-                rightFill: "var(--park-right)"
-              }
-            ),
-            /* @__PURE__ */ jsx("line", { x1: round1(winL1a.x), y1: round1(winL1a.y), x2: round1(winL1b.x), y2: round1(winL1b.y), className: "pta-park__detail", strokeWidth: "1.1", strokeLinecap: "round" }),
-            /* @__PURE__ */ jsx("line", { x1: round1(winL2a.x), y1: round1(winL2a.y), x2: round1(winL2b.x), y2: round1(winL2b.y), className: "pta-park__detail", strokeWidth: "1.1", strokeLinecap: "round" }),
-            /* @__PURE__ */ jsx("line", { x1: round1(winR1a.x), y1: round1(winR1a.y), x2: round1(winR1b.x), y2: round1(winR1b.y), className: "pta-park__detail", strokeWidth: "1.1", strokeLinecap: "round" }),
-            /* @__PURE__ */ jsx("line", { x1: round1(winR2a.x), y1: round1(winR2a.y), x2: round1(winR2b.x), y2: round1(winR2b.y), className: "pta-park__detail", strokeWidth: "1.1", strokeLinecap: "round" }),
-            /* @__PURE__ */ jsx(
-              IsoBox2,
-              {
-                faces: roofCap,
-                topFill: "var(--park-top)",
-                leftFill: "var(--park-left)",
-                rightFill: "var(--park-right)"
-              }
-            ),
-            beacons.map((beacon, idx) => {
-              const offset = (idx - (beacons.length - 1) / 2) * 18;
-              return /* @__PURE__ */ jsx(
-                BeaconPin,
-                {
-                  x: anchorTop.x + offset,
-                  y: beaconY,
-                  stemBottomY: anchorTop.y,
-                  kind: beacon.kind,
-                  value: beacon.value
-                },
-                beacon.kind
-              );
-            })
-          ] }),
-          /* @__PURE__ */ jsxs("g", { className: "pta-park__tag", children: [
-            /* @__PURE__ */ jsx("rect", { x: pillX, y: pillY, width: round1(pillW), height: "13", rx: "3", className: "pta-park__tag-bg", strokeWidth: "1" }),
-            /* @__PURE__ */ jsx("text", { x: round1(center.x), y: round1(pillY + 9.4), textAnchor: "middle", className: "pta-park__tag-text", children: label })
-          ] })
-        ]
-      }
-    );
-  }
-  function ProjectPark({ projects = [], tickets = [], runs = [], recentRuns = [], now = Date.now(), onSelect, onOpenTicket }) {
-    const [activeId, setActiveId] = useState(null);
-    const [filter, setFilter] = useState("all");
-    const [pickedId, setPickedId] = useState(null);
-    const rootRef = useRef(null);
-    const plots = useMemo(
-      () => parkPlots({ projects, tickets, runs, now }),
-      [projects, tickets, runs, now]
-    );
-    const counts = useMemo(() => filterCounts(plots), [plots]);
-    useEffect(() => {
-      if (pickedId === null) return void 0;
-      const onKey = (event) => {
-        if (event.key === "Escape") setPickedId(null);
-      };
-      const onDown = (event) => {
-        if (rootRef.current && !rootRef.current.contains(event.target)) setPickedId(null);
-      };
-      document.addEventListener("keydown", onKey);
-      document.addEventListener("mousedown", onDown);
-      return () => {
-        document.removeEventListener("keydown", onKey);
-        document.removeEventListener("mousedown", onDown);
-      };
-    }, [pickedId]);
-    const step = (id, delta) => {
-      const order = plots.filter((plot) => plotMatches(plot, filter));
-      if (order.length === 0) return;
-      const at = order.findIndex((plot) => plot.id === id);
-      const next = order[(at + delta + order.length) % order.length];
-      const el = rootRef.current?.querySelector(`[data-plot-id="${CSS.escape(String(next.id))}"]`);
-      el?.focus();
-    };
-    const painted = useMemo(
-      () => [...plots].sort((a, b) => a.x + a.y - (b.x + b.y) || a.x - a.y - (b.x - b.y)),
-      [plots]
-    );
-    const layout = useMemo(() => {
-      if (plots.length === 0) return null;
-      const rawPts = plots.map((plot) => iso2(plot.x, plot.y, 0));
-      const minX = Math.min(...rawPts.map((pt) => pt.x));
-      const maxX = Math.max(...rawPts.map((pt) => pt.x));
-      const minY = Math.min(...rawPts.map((pt) => pt.y));
-      const maxY = Math.max(...rawPts.map((pt) => pt.y));
-      const padLeft = 64;
-      const padRight = 64;
-      const padTop = 60;
-      const padBottom = 30;
-      const width = Math.max(240, Math.round(maxX - minX + padLeft + padRight));
-      const height = Math.round(maxY - minY + padTop + padBottom);
-      return {
-        width,
-        height,
-        opts: {
-          tileW: ISO_TILE.width,
-          tileH: ISO_TILE.height,
-          originX: padLeft - minX,
-          originY: padTop - minY
-        }
-      };
-    }, [plots]);
-    if (!layout || plots.length === 0) return null;
-    const activePlot = activeId !== null ? plots.find((plot) => plot.id === activeId) ?? null : null;
-    const activeHeadline = activePlot ? [plotWaitLabel(activePlot, tickets, runs, now, recentRuns), plotHeadline(activePlot, tickets, runs, now)].filter(Boolean).join(" \xB7 ") || null : null;
-    const pickedPlot = pickedId !== null ? plots.find((plot) => plot.id === pickedId) ?? null : null;
-    const pickedRows = pickedPlot ? plotTickets(pickedPlot, tickets, runs, now, recentRuns).slice(0, 4) : [];
-    const pickedProject = pickedPlot ? projects.find((p) => String(p?.id) === String(pickedPlot.id)) : null;
-    const pickedSite = pickedProject ? Array.isArray(pickedProject.sites) ? pickedProject.sites[0] : pickedProject.site : null;
-    const pickedUrl = pickedSite?.customDomain ? `https://${String(pickedSite.customDomain).replace(/^https?:\/\//, "")}` : pickedSite?.productionUrl ?? null;
-    const pick = (plot) => setPickedId((prev) => prev === plot.id ? null : plot.id);
-    const activate = (id) => setActiveId(id);
-    const deactivate = (id) => setActiveId((prev) => prev === id ? null : prev);
-    return /* @__PURE__ */ jsxs("section", { className: "pta-park", "aria-label": "Project park", ref: rootRef, children: [
-      /* @__PURE__ */ jsxs("div", { className: "pta-park__head", children: [
-        /* @__PURE__ */ jsxs("div", { className: "pta-park__title", children: [
-          /* @__PURE__ */ jsx("span", { className: "pta-park__label", children: "Project park" }),
-          /* @__PURE__ */ jsx("span", { className: "pta-count", children: plots.length })
-        ] }),
-        activePlot ? /* @__PURE__ */ jsxs("div", { className: "pta-park__tip", role: "status", children: [
-          /* @__PURE__ */ jsx("strong", { children: activePlot.name }),
-          activePlot.client ? /* @__PURE__ */ jsxs("span", { className: "pta-park__tip-client", children: [
-            "\xB7 ",
-            activePlot.client
-          ] }) : null,
-          /* @__PURE__ */ jsx("span", { className: "pta-park__tip-counts", children: activeHeadline ?? countsSummary(activePlot.counts) })
-        ] }) : /* @__PURE__ */ jsx("div", { className: "pta-park__filters", role: "group", "aria-label": "Filter projects", children: PARK_FILTERS.map((f) => /* @__PURE__ */ jsxs(
-          "button",
-          {
-            type: "button",
-            className: `pta-park__filter pta-park__filter--${f.key}`,
-            "aria-pressed": filter === f.key,
-            disabled: f.key !== "all" && counts[f.key] === 0,
-            onClick: () => setFilter((prev) => prev === f.key ? "all" : f.key),
-            children: [
-              f.key !== "all" ? /* @__PURE__ */ jsx("i", { className: "pta-park__swatch", "aria-hidden": "true" }) : null,
-              f.label,
-              /* @__PURE__ */ jsx("span", { className: "pta-park__filter-n", children: counts[f.key] })
-            ]
-          },
-          f.key
-        )) })
-      ] }),
-      /* @__PURE__ */ jsx("div", { className: "pta-park__scroll", children: /* @__PURE__ */ jsxs(
-        "svg",
-        {
-          className: "pta-park__svg",
-          width: layout.width,
-          height: layout.height,
-          viewBox: `0 0 ${layout.width} ${layout.height}`,
-          role: "img",
-          "aria-label": `Project park with ${plots.length} ${plots.length === 1 ? "project" : "projects"}, sorted most urgent front-left`,
-          children: [
-            /* @__PURE__ */ jsx("defs", { children: /* @__PURE__ */ jsxs("pattern", { id: "pta-park-dots", width: "20", height: "10", patternUnits: "userSpaceOnUse", children: [
-              /* @__PURE__ */ jsx("circle", { cx: "5", cy: "2.5", r: "0.9", className: "pta-park__dot" }),
-              /* @__PURE__ */ jsx("circle", { cx: "15", cy: "7.5", r: "0.9", className: "pta-park__dot" })
-            ] }) }),
-            /* @__PURE__ */ jsx("rect", { x: "0", y: "0", width: layout.width, height: layout.height, fill: "url(#pta-park-dots)" }),
-            painted.map((plot) => /* @__PURE__ */ jsx(
-              PlotTile,
-              {
-                plot,
-                opts: layout.opts,
-                active: activeId === plot.id,
-                dimmed: !plotMatches(plot, filter),
-                picked: pickedId === plot.id,
-                onActivate: activate,
-                onDeactivate: deactivate,
-                onSelect: pick,
-                onStep: step
-              },
-              String(plot.id)
-            ))
-          ]
-        }
-      ) }),
-      pickedPlot ? /* @__PURE__ */ jsxs("div", { className: "pta-park__strip", role: "region", "aria-label": `${pickedPlot.name}: open work`, children: [
-        /* @__PURE__ */ jsxs("div", { className: "pta-park__strip-head", children: [
-          /* @__PURE__ */ jsx("strong", { children: pickedPlot.name }),
-          pickedPlot.client ? /* @__PURE__ */ jsx("span", { className: "pta-park__strip-client", children: pickedPlot.client }) : null,
-          /* @__PURE__ */ jsxs("span", { className: "pta-park__strip-actions", children: [
-            pickedUrl ? /* @__PURE__ */ jsx("a", { href: pickedUrl, target: "_blank", rel: "noreferrer", className: "pta-park__strip-link", children: "Site \u2197" }) : null,
-            /* @__PURE__ */ jsx("button", { type: "button", className: "pta-park__strip-link", onClick: () => onSelect?.(pickedPlot), children: "Open project" }),
-            /* @__PURE__ */ jsx("button", { type: "button", className: "pta-park__strip-close", "aria-label": "Close", onClick: () => setPickedId(null), children: "\xD7" })
-          ] })
-        ] }),
-        pickedRows.length ? /* @__PURE__ */ jsx("ul", { className: "pta-park__strip-list", children: pickedRows.map((row) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs(
-          "button",
-          {
-            type: "button",
-            className: `pta-park__strip-row is-${row.kind}`,
-            title: "Open the ticket's conversation",
-            onClick: () => onOpenTicket?.({ id: row.id, title: row.title }),
-            children: [
-              /* @__PURE__ */ jsx("span", { className: "pta-park__strip-kind", children: KIND_LABEL[row.kind] }),
-              /* @__PURE__ */ jsxs("span", { className: "pta-park__strip-title", children: [
-                "#",
-                row.id,
-                " ",
-                row.title
-              ] }),
-              row.via ? /* @__PURE__ */ jsxs("span", { className: "pta-park__strip-via", children: [
-                "via ",
-                row.via
-              ] }) : null,
-              /* @__PURE__ */ jsx(RunBand, { trail: runTrail(row.id, runs, recentRuns, now) }),
-              row.wait ? /* @__PURE__ */ jsx("span", { className: "pta-park__strip-age is-wait", title: row.wait.text, children: row.wait.text }) : row.age ? /* @__PURE__ */ jsx("span", { className: "pta-park__strip-age", children: row.age }) : null
-            ]
-          }
-        ) }, String(row.id))) }) : /* @__PURE__ */ jsx("p", { className: "pta-park__strip-empty", children: "Nothing open on this project." })
-      ] }) : null,
-      /* @__PURE__ */ jsx("ul", { className: "pta-sr", "aria-label": "Projects by urgency", children: plots.map((plot) => /* @__PURE__ */ jsx("li", { children: plotAriaLabel(plot) }, String(plot.id))) })
-    ] });
-  }
-  var PROJECT_PARK_STYLES = `
-  .pta-park{position:relative;margin:0 0 14px;padding:7px 10px 6px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.24));border-radius:10px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.05));overflow:hidden}
-  .pta-park__head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:20px;margin:0 0 4px}
-  .pta-park__title{display:inline-flex;align-items:center;gap:2px;flex:0 0 auto}
-  .pta-park__label{font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--dsw-alias-label-secondary,inherit);opacity:.82}
-  .pta-park__legend{display:inline-flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:10.5px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.85))}
-  .pta-park__leg{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
-  .pta-park__swatch{display:inline-block;width:7px;height:7px;border-radius:2px;border:1px solid rgba(20,24,30,.45)}
-  .pta-park__swatch--bad{background:var(--dsw-alias-state-danger-primary,#e5534b)}
-  .pta-park__swatch--attention{background:var(--dsw-alias-state-warning-primary,#d18f2e)}
-  .pta-park__swatch--active{background:var(--dsw-alias-state-business-primary,#4c8dff)}
-  .pta-park__swatch--calm{background:var(--dsw-alias-label-tertiary,#8a9099)}
-  .pta-park__tip{display:inline-flex;align-items:baseline;gap:6px;min-width:0;max-width:75%;padding:1px 8px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.35));border-radius:6px;background:rgba(128,134,142,.16);font-size:11px;line-height:18px;color:var(--dsw-alias-label-primary,inherit);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .pta-park__tip strong{font-weight:600;flex:0 0 auto}
-  .pta-park__tip-client{color:var(--dsw-alias-label-secondary,inherit);opacity:.78;overflow:hidden;text-overflow:ellipsis}
-  .pta-park__tip-counts{color:var(--dsw-alias-label-secondary,inherit);margin-left:2px;overflow:hidden;text-overflow:ellipsis}
-  .pta-park__scroll{overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;max-height:150px;scrollbar-width:thin}
-  .pta-park__svg{display:block;user-select:none}
-  .pta-park__dot{fill:var(--dsw-alias-border-primary,rgba(127,127,127,.42));opacity:.65}
-  .pta-park__ink{stroke:var(--pta-park-ink,#1c2128)}
-  .pta-park__pad-edge{stroke:var(--dsw-alias-border-primary,rgba(127,127,127,.58))}
-  .pta-park__detail{stroke:var(--pta-park-ink,#1c2128);opacity:.5}
-  .pta-park__pin-foot{fill:var(--pta-park-ink,#1c2128)}
-  .pta-park__plot{cursor:pointer;outline:none;--park-desk-top:#dfe3e8;--park-desk-left:#b9c0ca;--park-desk-right:#8f98a6;--park-parcel-top:#a8c7ff;--park-parcel-left:#5d98ff;--park-parcel-right:#366bc9}
-  .pta-park__plot[data-state="calm"]{--park-top:#dde1e7;--park-left:#b8c0cb;--park-right:#8d96a4;--park-pad-top:rgba(138,144,153,.18);--park-pad-left:rgba(138,144,153,.28);--park-pad-right:rgba(138,144,153,.38);--park-halo:var(--dsw-alias-label-secondary,#8a9099)}
-  .pta-park__plot[data-state="active"]{--park-top:#9bc0ff;--park-left:#5895ff;--park-right:#3468c7;--park-top:color-mix(in srgb,var(--dsw-alias-state-business-primary,#4c8dff) 46%,#fff);--park-left:color-mix(in srgb,var(--dsw-alias-state-business-primary,#4c8dff) 84%,#fff);--park-right:color-mix(in srgb,var(--dsw-alias-state-business-primary,#4c8dff) 76%,#000);--park-pad-top:rgba(76,141,255,.18);--park-pad-left:rgba(76,141,255,.28);--park-pad-right:rgba(76,141,255,.38);--park-halo:var(--dsw-alias-state-business-primary,#4c8dff)}
-  .pta-park__plot[data-state="attention"]{--park-top:#f3cf90;--park-left:#dfa13e;--park-right:#a86f1c;--park-top:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#d18f2e) 46%,#fff);--park-left:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#d18f2e) 86%,#fff);--park-right:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#d18f2e) 76%,#000);--park-pad-top:rgba(209,143,46,.18);--park-pad-left:rgba(209,143,46,.28);--park-pad-right:rgba(209,143,46,.38);--park-halo:var(--dsw-alias-state-warning-primary,#d18f2e)}
-  .pta-park__plot[data-state="bad"]{--park-top:#f59e99;--park-left:#e55a52;--park-right:#ad352e;--park-top:color-mix(in srgb,var(--dsw-alias-state-danger-primary,#e5534b) 48%,#fff);--park-left:color-mix(in srgb,var(--dsw-alias-state-danger-primary,#e5534b) 86%,#fff);--park-right:color-mix(in srgb,var(--dsw-alias-state-danger-primary,#e5534b) 74%,#000);--park-pad-top:rgba(229,83,75,.18);--park-pad-left:rgba(229,83,75,.28);--park-pad-right:rgba(229,83,75,.38);--park-halo:var(--dsw-alias-state-danger-primary,#e5534b)}
-  .pta-park__lift{transition:transform .14s ease-out}
-  .pta-park__plot:hover .pta-park__lift,.pta-park__plot:focus-visible .pta-park__lift{transform:translateY(-2px)}
-  .pta-park__halo{stroke:var(--park-halo,var(--dsw-alias-brand-primary,#ff5a1f));opacity:0;transition:opacity .12s ease-out}
-  .pta-park__plot:hover .pta-park__halo{opacity:.75}
-  .pta-park__plot:focus-visible .pta-park__halo{opacity:1;stroke-width:2}
-  .pta-park__beacon--failing .pta-park__beacon-cap{fill:var(--dsw-alias-state-danger-primary,#e5534b)}
-  .pta-park__beacon--failing .pta-park__beacon-side{fill:#a83029}
-  .pta-park__beacon--stalled .pta-park__beacon-cap{fill:#d9483b}
-  .pta-park__beacon--stalled .pta-park__beacon-side{fill:#962920}
-  .pta-park__beacon--needsYou .pta-park__beacon-cap{fill:var(--dsw-alias-state-warning-primary,#d18f2e)}
-  .pta-park__beacon--needsYou .pta-park__beacon-side{fill:#996418}
-  .pta-park__beacon--running .pta-park__beacon-cap{fill:var(--dsw-alias-state-business-primary,#4c8dff)}
-  .pta-park__beacon--running .pta-park__beacon-side{fill:#2d5db5}
-  .pta-park__beacon-num{font-size:8.5px;font-weight:700;fill:#fff;font-variant-numeric:tabular-nums;pointer-events:none}
-  .pta-park__beacon--needsYou .pta-park__beacon-num{fill:#1c2128}
-  .pta-park__pulse{stroke:var(--dsw-alias-state-business-primary,#4c8dff);opacity:.65;transform-box:fill-box;transform-origin:center;animation:pta-park-pulse 2s ease-out infinite}
-  @keyframes pta-park-pulse{0%{transform:scale(.85);opacity:.75}70%{transform:scale(1.45);opacity:0}100%{transform:scale(1.45);opacity:0}}
-  .pta-park__tag-bg{fill:rgba(128,134,142,.24);stroke:var(--dsw-alias-border-secondary,rgba(127,127,127,.42))}
-  .pta-park__tag-text{font-size:9px;font-weight:550;fill:var(--dsw-alias-label-primary,currentColor);pointer-events:none}
-  @media (prefers-reduced-motion:reduce){.pta-park__pulse{animation:none;opacity:.45}.pta-park__lift,.pta-park__halo{transition:none}}
-  .pta-park__filters{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end}
-  .pta-park__filter{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary,inherit);font:inherit;font-size:10.5px;line-height:17px;cursor:pointer}
-  .pta-park__filter:hover:not(:disabled){background:rgba(128,134,142,.16)}
-  .pta-park__filter[aria-pressed="true"]{background:rgba(128,134,142,.24);color:var(--dsw-alias-label-primary,inherit);border-color:var(--dsw-alias-border-primary,rgba(127,127,127,.5))}
-  .pta-park__filter:disabled{opacity:.4;cursor:default}
-  .pta-park__filter-n{font-variant-numeric:tabular-nums;opacity:.75}
-  .pta-park__filter--needsYou .pta-park__swatch{background:var(--dsw-alias-state-warning-primary,#d18f2e)}
-  .pta-park__filter--failing .pta-park__swatch{background:var(--dsw-alias-state-danger-primary,#e5534b)}
-  .pta-park__filter--stalled .pta-park__swatch{background:#d9483b}
-  .pta-park__filter--running .pta-park__swatch{background:var(--dsw-alias-state-business-primary,#4c8dff)}
-  .pta-park__plot.is-dimmed{opacity:.25}
-  .pta-park__plot.is-picked .pta-park__halo{opacity:1;stroke-width:2}
-  .pta-park__strip{margin:4px 0 2px;padding:6px 8px;border-radius:8px;background:rgba(128,134,142,.12);font-size:11.5px;color:var(--dsw-alias-label-primary,inherit)}
-  .pta-park__strip-head{display:flex;align-items:baseline;gap:8px;margin:0 0 4px}
-  .pta-park__strip-client{color:var(--dsw-alias-label-secondary,inherit);opacity:.8}
-  .pta-park__strip-actions{margin-left:auto;display:inline-flex;align-items:center;gap:8px}
-  .pta-park__strip-link{background:none;border:0;padding:0;font:inherit;font-size:11px;color:var(--dsw-alias-label-secondary,inherit);text-decoration:underline;cursor:pointer}
-  .pta-park__strip-close{background:none;border:0;padding:0 2px;font-size:14px;line-height:1;color:var(--dsw-alias-label-secondary,inherit);cursor:pointer}
-  .pta-park__strip-list{list-style:none;margin:0;padding:0;display:grid;gap:2px}
-  .pta-park__strip-row{display:flex;align-items:baseline;gap:8px;width:100%;padding:3px 6px;border:0;border-radius:6px;background:transparent;font:inherit;color:inherit;text-align:left;cursor:pointer}
-  .pta-park__strip-row:hover,.pta-park__strip-row:focus-visible{background:rgba(128,134,142,.18);outline:none}
-  .pta-park__strip-kind{flex:0 0 64px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;opacity:.8}
-  .pta-park__strip-row.is-stalled .pta-park__strip-kind{color:#d9483b;opacity:1}
-  .pta-park__strip-row.is-needsYou .pta-park__strip-kind{color:var(--dsw-alias-state-warning-primary,#d18f2e);opacity:1}
-  .pta-park__strip-row.is-running .pta-park__strip-kind{color:var(--dsw-alias-state-business-primary,#4c8dff);opacity:1}
-  .pta-park__strip-title{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .pta-park__strip-via{flex:0 0 auto;padding:0 5px;border-radius:4px;background:rgba(128,134,142,.2);font-size:10px}
-  .pta-park__strip-age{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary,inherit)}
-  .pta-park__strip-age.is-wait{color:var(--dsw-alias-state-warning-primary,#d18f2e)}
-  .pta-park__runs{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--dsw-alias-label-secondary,inherit);white-space:nowrap}
-  .pta-park__runband{display:inline-flex;gap:2px}
-  .pta-park__run{display:inline-block;width:8px;height:8px;border-radius:2px;background:rgba(128,134,142,.45)}
-  .pta-park__run.is-ok{background:var(--dsw-alias-state-success-primary,#35c07a)}
-  .pta-park__run.is-failed{background:var(--dsw-alias-state-danger-primary,#e5534b)}
-  .pta-park__run.is-running{background:var(--dsw-alias-state-business-primary,#4c8dff);animation:pta-park-run 1.6s ease-in-out infinite}
-  @keyframes pta-park-run{50%{opacity:.35}}
-  @media (prefers-reduced-motion:reduce){.pta-park__run.is-running{animation:none}}
-  .pta-park__strip-empty{margin:0;color:var(--dsw-alias-label-secondary,inherit)}
-`;
-
   // packages/dsh-admin/src/client.jsx
   var PANEL_ID = "admin";
   var NAMESPACE = "admin";
   var CLIENT_VERSION = "3.9.0";
   var DICTIONARY = { title: "Admin" };
   var STATUS_TINT = {
+    stalled: "var(--dsw-alias-state-danger-primary, #e5534b)",
     new: "var(--dsw-alias-state-warning-primary, #d18f2e)",
+    review: "var(--dsw-alias-state-warning-primary, #d18f2e)",
+    running: "var(--dsw-alias-state-business-primary, #4c8dff)",
+    in_progress: "var(--dsw-alias-state-business-primary, #4c8dff)",
     approved: "var(--dsw-alias-state-business-primary, #4c8dff)",
-    in_progress: "var(--dsw-alias-state-success-primary, #2f9e5b)",
-    review: "var(--dsw-alias-state-business-primary, #4c8dff)",
-    done: "var(--dsw-alias-label-tertiary, #8a9099)",
+    done: "var(--dsw-alias-state-success-primary, #2f9e5b)",
+    ok: "var(--dsw-alias-state-success-primary, #2f9e5b)",
     declined: "var(--dsw-alias-label-tertiary, #8a9099)"
   };
-  var tintOfStatus = (status) => STATUS_TINT[status] ?? STATUS_TINT.done;
+  var tintOfStatus = (status) => STATUS_TINT[status] ?? STATUS_TINT.declined;
   var SESSION_RETRY_CODES = /* @__PURE__ */ new Set(["session/writer-held", "session/not-found", "session/agent-busy"]);
   var MAX_SESSION_TRIES = 4;
   var lastSessionId;
@@ -15534,12 +13939,23 @@ ${question.text ?? ""}`)) {
         }
       );
     }
-    function openTicket(run) {
-      ctx.layout?.selectPanel?.("admin-workbench");
-      const target = `#ticket=${run.ticketId}`;
-      if (window.location.hash === target) window.dispatchEvent(new HashChangeEvent("hashchange"));
-      else window.location.hash = target;
+    const ticketPages = /* @__PURE__ */ new Map();
+    function openTicket(run, selectPanel = (key) => ctx.layout?.selectPanel?.(key)) {
+      const id = Number(run?.ticketId ?? run?.id ?? run);
+      if (!Number.isInteger(id) || id <= 0) return;
+      const key = `admin-ticket-${id}`;
+      if (!ticketPages.has(id)) {
+        ticketPages.set(
+          id,
+          ctx.slots.register({ name: "main", key, locale: NAMESPACE }, () => /* @__PURE__ */ jsx(TicketPage, { api, host, files, ticketId: id }, key))
+        );
+      }
+      selectPanel(key);
     }
+    ctx.effect(() => () => {
+      for (const dispose of ticketPages.values()) dispose();
+      ticketPages.clear();
+    }, "admin: ticket pages");
     function TicketMark({ sessionId }) {
       const run = ticketFromCwd(useSessionCwd(sessionId));
       if (!run) return null;
@@ -15597,8 +14013,8 @@ ${question.text ?? ""}`)) {
     };
     const taskEmptyStyle = { margin: 0, padding: "2px 8px", fontSize: 12, opacity: 0.6 };
     const RUN_TINT = {
-      running: "var(--dsw-alias-state-success-primary, #35c07a)",
-      ok: "var(--dsw-alias-label-secondary, #8a9099)",
+      running: "var(--dsw-alias-state-business-primary, #4c8dff)",
+      ok: "var(--dsw-alias-state-success-primary, #2f9e5b)",
       failed: "var(--dsw-alias-state-danger-primary, #e5534b)"
     };
     const ago2 = (unix) => {
@@ -15928,7 +14344,7 @@ ${question.text ?? ""}`)) {
             {
               toast,
               onOpen: (item) => {
-                openTicket({ ticketId: item.ticketId });
+                void openTicketRun({ id: item.ticketId });
                 remove(item.key);
               },
               onClose: (item) => remove(item.key)
@@ -15994,35 +14410,6 @@ ${question.text ?? ""}`)) {
         ] }) })
       ] });
     }
-    function AdminEntryIcon(props) {
-      const counts = useSyncExternalStore(attention.subscribe, attention.get);
-      const waiting = counts ? counts.approve + counts.review + counts.waiting : 0;
-      const parts = counts ? [
-        counts.approve && `${counts.approve} to approve`,
-        counts.review && `${counts.review} to review`,
-        counts.waiting && `${counts.waiting} client${counts.waiting === 1 ? "" : "s"} waiting`,
-        counts.running && `${counts.running} running`
-      ].filter(Boolean) : [];
-      const badge = {
-        position: "absolute",
-        top: -5,
-        right: -7,
-        minWidth: 13,
-        height: 13,
-        padding: "0 3px",
-        borderRadius: 7,
-        fontSize: 9,
-        fontWeight: 700,
-        lineHeight: "13px",
-        textAlign: "center",
-        color: "#fff",
-        boxSizing: "border-box"
-      };
-      return /* @__PURE__ */ jsxs("span", { style: { position: "relative", display: "inline-flex" }, title: parts.length ? parts.join(" \xB7 ") : void 0, children: [
-        /* @__PURE__ */ jsx(AdminIcon, { size: props?.size ?? 16 }),
-        waiting > 0 ? /* @__PURE__ */ jsx("span", { style: { ...badge, background: "var(--dsw-alias-state-warning-primary, #d18f2e)" }, children: waiting > 99 ? "99+" : waiting }) : counts?.running ? /* @__PURE__ */ jsx("span", { style: { ...badge, minWidth: 7, width: 7, height: 7, top: -2, right: -3, padding: 0, background: "var(--dsw-alias-state-success-primary, #2f9e5b)" } }) : null
-      ] });
-    }
     function InboxIcon({ size = 16 }) {
       return /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: [
         /* @__PURE__ */ jsx("path", { d: "M4 13h4l2 3h4l2-3h4" }),
@@ -16041,44 +14428,38 @@ ${question.text ?? ""}`)) {
         /* @__PURE__ */ jsx("path", { d: "m15 15 5 5M8 11h5M8 8.5h3" })
       ] });
     }
+    function WorkEntryIcon(props) {
+      return /* @__PURE__ */ jsx(AdminIcon, { size: props?.size ?? 16 });
+    }
     function MarketingEntryIcon(props) {
       return /* @__PURE__ */ jsx(MarketingGlyph, { size: props?.size ?? 16 });
     }
     function SeoEntryIcon(props) {
       return /* @__PURE__ */ jsx(SeoGlyph, { size: props?.size ?? 16 });
     }
+    function FleetEntryIcon(props) {
+      return /* @__PURE__ */ jsx(Icon, { name: "fleet", size: props?.size ?? 16 });
+    }
+    function SettingsEntryIcon(props) {
+      return /* @__PURE__ */ jsx(Icon, { name: "settings", size: props?.size ?? 16 });
+    }
     function InboxEntryIcon(props) {
       const counts = useSyncExternalStore(attention.subscribe, attention.get);
       const waiting = counts ? counts.approve + counts.review + counts.waiting : 0;
-      return /* @__PURE__ */ jsxs("span", { style: { position: "relative", display: "inline-flex" }, title: waiting ? `${waiting} item(s) need you` : "Inbox", children: [
+      const parts = counts ? [
+        counts.approve && `${counts.approve} to approve`,
+        counts.review && `${counts.review} to review`,
+        counts.waiting && `${counts.waiting} client${counts.waiting === 1 ? "" : "s"} waiting`,
+        counts.running && `${counts.running} running`
+      ].filter(Boolean) : [];
+      return /* @__PURE__ */ jsxs("span", { className: "pta-sidebar-inbox", title: parts.length ? parts.join(" \xB7 ") : "Inbox", children: [
         /* @__PURE__ */ jsx(InboxIcon, { size: props?.size ?? 16 }),
-        waiting > 0 ? /* @__PURE__ */ jsx(
-          "span",
-          {
-            style: {
-              position: "absolute",
-              top: -5,
-              right: -7,
-              minWidth: 13,
-              height: 13,
-              padding: "0 3px",
-              borderRadius: 7,
-              fontSize: 9,
-              fontWeight: 700,
-              lineHeight: "13px",
-              textAlign: "center",
-              color: "#fff",
-              boxSizing: "border-box",
-              background: "var(--dsw-alias-state-warning-primary, #d18f2e)"
-            },
-            children: waiting > 99 ? "99+" : waiting
-          }
-        ) : null
+        waiting > 0 ? /* @__PURE__ */ jsx("span", { className: "pta-sidebar-count", children: waiting > 99 ? "99+" : waiting }) : null
       ] });
     }
     const CLIENT_ROWS_MS = 6e4;
     const CLIENT_ROWS_MAX = 12;
-    const CLIENT_ROWS_ORDER = 15;
+    const CLIENT_ROWS_ORDER = 20;
     const CLIENT_TINTS = ["#4c8dff", "#d18f2e", "#2f9e5b", "#b45fd6", "#d1495b", "#1f9fb4", "#8a8f2e", "#6b6fd6"];
     let sectionAvailable = false;
     let refreshClientRows = () => {
@@ -16283,9 +14664,9 @@ ${question.text ?? ""}`)) {
         for (const id of [...clientPages.keys()]) releaseClientPage(id);
       };
     }
-    const isClosedTicket2 = (t) => t.status === "done" || t.status === "declined";
-    const openTicketCount = (tickets) => tickets.filter((t) => !isClosedTicket2(t)).length;
-    const ticketOrder = (a, b) => Number(isClosedTicket2(a)) - Number(isClosedTicket2(b)) || (b.updated_at ?? 0) - (a.updated_at ?? 0);
+    const isClosedTicket = (t) => t.status === "done" || t.status === "declined";
+    const openTicketCount = (tickets) => tickets.filter((t) => !isClosedTicket(t)).length;
+    const ticketOrder = (a, b) => Number(isClosedTicket(a)) - Number(isClosedTicket(b)) || (b.updated_at ?? 0) - (a.updated_at ?? 0);
     function copyTicketLink(ticket) {
       const link = `https://ptechsolutions.net/portal/admin#ticket=${ticket.id}`;
       void navigator.clipboard?.writeText(link).catch(() => void 0);
@@ -16323,7 +14704,8 @@ ${question.text ?? ""}`)) {
       }
       openTicket({ ticketId: ticket.id });
     }
-    function openClientPage(client, selectPanel) {
+    function openClientPage(client, selectPanel = (key) => ctx.layout?.selectPanel?.(key)) {
+      if (!client?.id) return;
       ensureClientPage(client);
       try {
         selectPanel(`admin-client-${client.id}`);
@@ -16336,13 +14718,13 @@ ${question.text ?? ""}`)) {
     }
     function TicketList({ Row, tickets, changed }) {
       const [showClosed, setShowClosed] = useState(false);
-      const open = tickets.filter((t) => !isClosedTicket2(t));
-      const closed2 = tickets.filter((t) => isClosedTicket2(t));
+      const open = tickets.filter((t) => !isClosedTicket(t));
+      const closed2 = tickets.filter((t) => isClosedTicket(t));
       const shown = showClosed ? [...open, ...closed2] : open;
       const menu = (ticket) => {
         const items = [
           { id: "open", label: "Open conversation", onSelect: () => void openTicketRun(ticket) },
-          { id: "workbench", label: "Open in workbench", onSelect: () => openTicket({ ticketId: ticket.id }) }
+          { id: "ticket", label: "Open ticket page", onSelect: () => openTicket({ ticketId: ticket.id }) }
         ];
         if (ticket.status === "new") items.push({ id: "approve", label: "Approve", onSelect: () => void approveTicket(ticket, changed) });
         items.push({ id: "copy", label: "Copy ticket link", separatorBefore: true, onSelect: () => copyTicketLink(ticket) });
@@ -16371,7 +14753,9 @@ ${question.text ?? ""}`)) {
       ] });
     }
     function projectTint(tickets) {
-      const open = tickets.filter((ticket) => !isClosedTicket2(ticket));
+      const open = tickets.filter((ticket) => !isClosedTicket(ticket));
+      const stalledBefore = Date.now() / 1e3 - 45 * 60;
+      if (open.some((ticket) => ticket.status === "in_progress" && Number(ticket.updated_at ?? 0) < stalledBefore)) return tintOfStatus("stalled");
       if (open.some((ticket) => ticket.status === "new")) return tintOfStatus("new");
       if (open.some((ticket) => ticket.status === "review")) return tintOfStatus("review");
       if (open.some((ticket) => ticket.status === "in_progress")) return tintOfStatus("in_progress");
@@ -16710,10 +15094,15 @@ ${question.text ?? ""}`)) {
       return /* @__PURE__ */ jsx(TicketHeaderReadout, { sessionId, run, titled }, `${run.ticketId}:${sessionId}`);
     }
     const files = { download: (path) => json(`download ${path}`) };
-    function AdminPage() {
-      return /* @__PURE__ */ jsx(AdminApp, { api, host, files, platform: "dsh" });
-    }
     const NATIVE_STYLES = `
+    .pta-sidebar-inbox{display:inline-flex;align-items:center;justify-content:center}
+    .pta-sidebar-count{display:none}
+    [class*="_panelEntryWide"] .pta-sidebar-count{display:inline-block;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1;color:var(--dsw-alias-label-tertiary,#8a9099);pointer-events:none;transition:opacity 120ms ease}
+    [class*="_panelEntryWide"]:hover:has([class*="_panelUnpin"]) .pta-sidebar-count,[class*="_panelEntryWide"]:has(:focus-visible):has([class*="_panelUnpin"]) .pta-sidebar-count{opacity:0}
+    .pta-work{display:flex;flex-direction:column;height:100%;min-height:0}
+    .pta-work__bar{display:flex;align-items:center;gap:8px;padding:14px 20px 0;flex:none}
+    .pta-work>.aw-view{flex:1 1 auto;min-height:0;padding-top:10px}
+    .pta-work>.aw-view--board{height:auto}
     .pta-ticket-form{display:grid;gap:6px;max-width:40rem}
     .pta-ticket-form label{display:grid;gap:4px}
     .pta-ticket-form textarea{min-height:4rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-translucent,currentColor);border-radius:6px}
@@ -16736,17 +15125,7 @@ ${question.text ?? ""}`)) {
     .pta-head h1{margin:0;font-size:24px;line-height:1.15;font-weight:650;letter-spacing:-0.02em}
     .pta-head p{margin:6px 0 0;font-size:13px;opacity:.65;max-width:620px}
     .pta-head__actions{display:flex;align-items:center;gap:8px;margin-left:auto;padding-top:2px}
-    .pta-kpis{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 18px}
-    .pta-kpi{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.22));border-radius:10px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.06));color:inherit;font:inherit;text-align:left;cursor:pointer}
-    .pta-kpi:disabled{cursor:default}
-    .pta-kpi:not(:disabled):hover{border-color:var(--dsw-alias-border-primary,rgba(127,127,127,.4))}
-    .pta-kpi__value{font-size:22px;font-weight:650;line-height:1.1;font-variant-numeric:tabular-nums}
-    .pta-kpi__label{font-size:11.5px;opacity:.7}
-    .pta-kpis .pta-kpi{flex-direction:row;align-items:baseline;gap:6px;padding:5px 11px;border-radius:999px}
-    .pta-kpis .pta-kpi__value{font-size:15px}
-    .pta-kpis .pta-kpi__label{font-size:12px}
-    .pta-kpis .pta-kpi.is-zero{opacity:.45;background:transparent}
-    .pta-row:not(:hover):not(:focus-within) .pta-btn--reveal{visibility:hidden}
+    @media (hover:hover){.pta-row .pta-actions{opacity:0;pointer-events:none;transition:opacity 120ms ease}.pta-row:hover .pta-actions,.pta-row:focus-visible .pta-actions,.pta-row:focus-within .pta-actions{opacity:1;pointer-events:auto}}
     .pta-section{margin:0 0 22px}
     .pta-section__head{display:flex;align-items:baseline;gap:10px;padding:0 2px 7px}
     .pta-section__head h3{margin:0;font-size:13px;font-weight:600}
@@ -16794,7 +15173,7 @@ ${question.text ?? ""}`)) {
     .pta-confirm__box h3{margin:0 0 6px;font-size:15px}
     .pta-confirm__box p{margin:0;font-size:12.5px;color:var(--dsw-alias-label-secondary,inherit)}
     .pta-confirm__actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
-    .pta-dot--running{background:var(--dsw-alias-state-success-primary,#2f9e5b)}
+    .pta-dot--running{background:var(--dsw-alias-state-business-primary,#4c8dff)}
     .pta-dot--danger{background:var(--dsw-alias-state-danger-primary,#e5534b)}
     .pta-task-row{border-bottom:0;border-radius:6px;padding:6px 8px;align-items:flex-start}
     .pta-task-row--run{padding:3px 8px 3px 23px;font-size:11.5px}
@@ -16859,8 +15238,8 @@ ${question.text ?? ""}`)) {
     .pta-hist__item[data-type=run] .pta-hist__dot{background:#58a6ff}
     .pta-hist__item[data-type=land] .pta-hist__dot{background:#3fb950}
     .pta-hist__item[data-status=done] .pta-hist__dot{background:#3fb950}
-    .pta-hist__item[data-status="in review"] .pta-hist__dot{background:#a371f7}
-    .pta-hist__item[data-status="in progress"] .pta-hist__dot,.pta-hist__item[data-status=approved] .pta-hist__dot{background:#d29922}
+    .pta-hist__item[data-status="in review"] .pta-hist__dot{background:var(--dsw-alias-state-warning-primary,#d18f2e)}
+    .pta-hist__item[data-status="in progress"] .pta-hist__dot,.pta-hist__item[data-status=approved] .pta-hist__dot{background:var(--dsw-alias-state-business-primary,#4c8dff)}
     .pta-hist__item[data-status=declined] .pta-hist__dot{background:#f85149}
     .pta-hist__text{min-width:0;overflow-wrap:anywhere}
     .pta-hist__text strong{font-weight:550}
@@ -16890,19 +15269,19 @@ ${question.text ?? ""}`)) {
     .pta-msg__body{font-size:13px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow-y:auto}
     .pta-runs{display:flex;flex-direction:column;gap:4px;margin-top:2px;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18))}
     .pta-run{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
-    @media (max-width:760px){.pta-page{padding:18px 16px 40px}.pta-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.pta-head{flex-direction:column}.pta-head__actions{margin-left:0;width:100%}.pta-search{flex:1 1 auto;min-width:0}.pta-tag{max-width:120px}}
-    ${PROJECT_PARK_STYLES}
+    @media (max-width:760px){.pta-page{padding:18px 16px 40px}.pta-head{flex-direction:column}.pta-head__actions{margin-left:0;width:100%}.pta-search{flex:1 1 auto;min-width:0}.pta-tag{max-width:120px}}
   `;
     const CLIENT_VISIBLE_STATUSES = /* @__PURE__ */ new Set(["approved", "declined", "done"]);
     let handledDeepLink = false;
-    const WORKBENCH_PANEL = "admin-workbench";
-    const INBOX_PANEL = "admin-inbox";
     const HOME_PANEL = "admin";
+    const WORK_PANEL = "admin-work";
     const MARKETING_PANEL = "admin-marketing";
     const SEO_PANEL = "admin-seo";
+    const FLEET_PANEL = "admin-fleet";
+    const SETTINGS_PANEL = "admin-settings";
     const ticketLabel = (ticket) => ticket?.title_en || ticket?.title || "(untitled)";
     const dollars = (cents) => Number.isFinite(Number(cents)) ? `$${(Number(cents) / 100).toFixed(2)}` : "";
-    const isWaiting = (ticket) => Boolean(ticket) && Number(ticket?.client_waiting_since ?? 0) > 0 && !isClosedTicket2(ticket) && ticket?.status !== "new";
+    const isWaiting = (ticket) => Boolean(ticket) && Number(ticket?.client_waiting_since ?? 0) > 0 && !isClosedTicket(ticket) && ticket?.status !== "new";
     function useLiveAdmin() {
       const [state, setState] = useState({
         tickets: [],
@@ -16979,7 +15358,7 @@ ${question.text ?? ""}`)) {
         queue: Array.isArray(data.queue) ? data.queue : [],
         nodes: []
       });
-      const openWaiting = shared.waiting.filter((ticket) => !isClosedTicket2(ticket));
+      const openWaiting = shared.waiting.filter((ticket) => !isClosedTicket(ticket));
       return {
         approvals: shared.new,
         reviews: shared.review,
@@ -16991,19 +15370,6 @@ ${question.text ?? ""}`)) {
       };
     }
     const stalledReason = (ticket) => `no report for ${ago2(ticket.updated_at)}`;
-    let pendingInboxFilter = null;
-    function openInboxFilter(filter) {
-      pendingInboxFilter = filter;
-      window.dispatchEvent(new CustomEvent("pta:inbox-filter", { detail: { filter } }));
-      ctx.layout?.selectPanel?.(INBOX_PANEL);
-    }
-    function actionableCount(groups) {
-      const ids = /* @__PURE__ */ new Set();
-      for (const list2 of [groups.approvals, groups.reviews, groups.waiting, groups.stalled, groups.stuck]) {
-        for (const ticket of list2) ids.add(ticket.id);
-      }
-      return ids.size;
-    }
     async function changeTicketStatus(ticket, status) {
       const requeue = status === "approved" && ticket.status !== "new";
       if (requeue) {
@@ -17036,21 +15402,21 @@ ${question.text ?? ""}`)) {
     function TicketRowActions({ ticket }) {
       if (ticket.status === "new") {
         return /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(PtaButton, { kind: "primary", onClick: () => void changeTicketStatus(ticket, "approved"), children: "Approve" }),
+          /* @__PURE__ */ jsx(PtaButton, { kind: "default", onClick: () => void changeTicketStatus(ticket, "approved"), children: "Approve" }),
           /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: () => void changeTicketStatus(ticket, "declined"), children: "Decline" })
         ] });
       }
       if (ticket.status === "review") {
         return /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(PtaButton, { kind: "primary", onClick: () => void changeTicketStatus(ticket, "done"), children: "Mark done" }),
-          /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", className: "pta-btn--reveal", onClick: () => void changeTicketStatus(ticket, "approved"), children: "Queue another run" })
+          /* @__PURE__ */ jsx(PtaButton, { kind: "default", onClick: () => void changeTicketStatus(ticket, "done"), children: "Mark done" }),
+          /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: () => void changeTicketStatus(ticket, "approved"), children: "Queue another run" })
         ] });
       }
       if (isWaiting(ticket)) {
         return /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: () => void markTicketAnswered(ticket), children: "No reply needed" });
       }
       if (ticket.status === "in_progress") {
-        return /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", className: "pta-btn--reveal", onClick: () => void changeTicketStatus(ticket, "approved"), children: "Queue another run" });
+        return /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: () => void changeTicketStatus(ticket, "approved"), children: "Queue another run" });
       }
       return null;
     }
@@ -17106,9 +15472,10 @@ ${question.text ?? ""}`)) {
         ] })
       ] }) });
     }
-    function TicketLine({ ticket, actions = null, reason = "", detail = "", showAge = true }) {
+    function TicketLine({ ticket, actions = null, reason = "", detail = "", showAge = true, stalled = false }) {
       const open = () => void openTicketRun(ticket);
       const via = assistantBadge(ticket);
+      const dotTint = tintOfStatus(stalled ? "stalled" : ticket.status);
       return /* @__PURE__ */ jsxs(
         "div",
         {
@@ -17123,7 +15490,7 @@ ${question.text ?? ""}`)) {
             }
           },
           children: [
-            /* @__PURE__ */ jsx("span", { className: "pta-dot", style: { background: tintOfStatus(ticket.status) } }),
+            /* @__PURE__ */ jsx("span", { className: "pta-dot", style: { background: dotTint } }),
             /* @__PURE__ */ jsxs("span", { className: "pta-id", children: [
               "#",
               ticket.id
@@ -17164,12 +15531,6 @@ ${question.text ?? ""}`)) {
         window.addEventListener("keydown", onKeyDown);
         return () => window.removeEventListener("keydown", onKeyDown);
       }, [rootRef]);
-    }
-    function Kpi({ label, value, hint, tint, onClick }) {
-      return /* @__PURE__ */ jsxs("button", { type: "button", className: `pta-kpi${Number(value) === 0 ? " is-zero" : ""}`, onClick, title: hint, disabled: !onClick || Number(value) === 0, children: [
-        /* @__PURE__ */ jsx("span", { className: "pta-kpi__value", style: { color: tint }, children: value }),
-        /* @__PURE__ */ jsx("span", { className: "pta-kpi__label", children: label })
-      ] });
     }
     function EmptyState2({ title, text, children }) {
       return /* @__PURE__ */ jsxs("div", { className: "pta-empty", children: [
@@ -17240,153 +15601,15 @@ ${question.text ?? ""}`)) {
         state.error ? /* @__PURE__ */ jsx("p", { className: "pta-warn", role: "status", children: state.error }) : null
       ] });
     }
-    function NeedsYouPage() {
-      const data = useLiveAdmin();
-      const root = useRef(null);
-      useRowNavigation(root);
-      const groups = useMemo(() => ticketGroups(data), [data]);
-      const total = actionableCount(groups);
-      const goInbox = () => ctx.layout?.selectPanel?.(INBOX_PANEL);
-      const goWorkbench = () => ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
-      if (data.loading && data.at === 0) return /* @__PURE__ */ jsx("div", { className: "pta-page", ref: root, children: /* @__PURE__ */ jsx("p", { className: "pta-empty", children: "Loading\u2026" }) });
-      if (data.error) {
-        return /* @__PURE__ */ jsxs("div", { className: "pta-page", ref: root, children: [
-          /* @__PURE__ */ jsx("header", { className: "pta-head", children: /* @__PURE__ */ jsxs("div", { children: [
-            /* @__PURE__ */ jsx("h1", { children: "Needs you" }),
-            /* @__PURE__ */ jsx("p", { children: isAuthError(data.code) ? data.error || "Connect PTech Admin to the portal to see what is waiting." : "The portal could not be reached." })
-          ] }) }),
-          isAuthError(data.code) ? /* @__PURE__ */ jsx(PortalSignIn, { onDone: () => void data.reload() }) : /* @__PURE__ */ jsxs("div", { className: "pta-empty", children: [
-            /* @__PURE__ */ jsx("h3", { children: "Could not reach the portal" }),
-            /* @__PURE__ */ jsx("p", { children: data.error }),
-            /* @__PURE__ */ jsx(PtaButton, { onClick: () => void data.reload(), children: "Try again" })
-          ] })
-        ] });
-      }
-      const section = (key, title, hint, items, actions, reasonOf) => items.length === 0 ? null : /* @__PURE__ */ jsxs("section", { className: "pta-section", children: [
-        /* @__PURE__ */ jsxs("div", { className: "pta-section__head", children: [
-          /* @__PURE__ */ jsxs("h3", { children: [
-            title,
-            " ",
-            /* @__PURE__ */ jsx("span", { className: "pta-count", children: items.length })
-          ] }),
-          /* @__PURE__ */ jsx("span", { className: "pta-meta", children: hint })
-        ] }),
-        /* @__PURE__ */ jsx("div", { className: "pta-rows", children: items.map((ticket) => /* @__PURE__ */ jsx(
-          TicketLine,
-          {
-            ticket,
-            reason: reasonOf ? reasonOf(ticket) : "",
-            showAge: key !== "stalled",
-            actions: actions ? actions(ticket) : /* @__PURE__ */ jsx(TicketRowActions, { ticket })
-          },
-          ticket.id
-        )) })
-      ] }, key);
-      const stuckReason = new Map(
-        data.queue.filter((item) => !(Array.isArray(item?.eligible) ? item.eligible.length > 0 : Boolean(item?.eligible))).map((item) => [Number(item.id), item.reason ?? "no eligible node"])
-      );
-      return /* @__PURE__ */ jsxs("div", { className: "pta-page", ref: root, children: [
-        /* @__PURE__ */ jsxs("header", { className: "pta-head", children: [
-          /* @__PURE__ */ jsxs("div", { children: [
-            /* @__PURE__ */ jsx("h1", { children: "Needs you" }),
-            /* @__PURE__ */ jsx("p", { children: total === 0 ? "Nothing is waiting on you. Agents are on it." : `${total} item${total === 1 ? "" : "s"} want a decision.` })
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "pta-head__actions", children: [
-            /* @__PURE__ */ jsx(PtaButton, { onClick: goInbox, children: "Open Inbox" }),
-            /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: goWorkbench, children: "Workbench" })
-          ] })
-        ] }),
-        /* @__PURE__ */ jsx(
-          ProjectPark,
-          {
-            projects: data.projects,
-            tickets: data.tickets,
-            runs: data.running,
-            recentRuns: data.recent,
-            now: data.at || Date.now(),
-            onSelect: (plot) => openProjectPage(plot),
-            onOpenTicket: (ticket) => void openTicketRun(ticket)
-          }
-        ),
-        /* @__PURE__ */ jsxs("div", { className: "pta-kpis", children: [
-          /* @__PURE__ */ jsx(Kpi, { label: "To approve", value: groups.approvals.length, tint: tintOfStatus("new"), onClick: () => openInboxFilter("approval"), hint: "New requests; nothing runs until you approve." }),
-          /* @__PURE__ */ jsx(Kpi, { label: "To review", value: groups.reviews.length, tint: tintOfStatus("review"), onClick: () => openInboxFilter("review"), hint: "Finished runs waiting for your check." }),
-          /* @__PURE__ */ jsx(Kpi, { label: "Clients waiting", value: groups.waiting.length, tint: tintOfStatus("approved"), onClick: () => openInboxFilter("reply"), hint: "They wrote last and have heard nothing since." }),
-          /* @__PURE__ */ jsx(Kpi, { label: "Stalled", value: groups.stalled.length, tint: tintOfStatus("in_progress"), onClick: () => openInboxFilter("stalled"), hint: "In progress for 45+ minutes without a report." }),
-          /* @__PURE__ */ jsx(Kpi, { label: "Running now", value: groups.running.length, tint: tintOfStatus("in_progress"), hint: "Agents working right now. Listed at the bottom of this page." })
-        ] }),
-        section("approvals", "Approve or decline", "New requests. Nothing runs until you decide.", groups.approvals),
-        section("review", "Check the agent\u2019s work", "Finished runs waiting for you.", groups.reviews),
-        section("waiting", "Answer the client", "They wrote last and have heard nothing since.", groups.waiting),
-        section("stalled", "Stalled", "In progress for 45+ minutes without a report.", groups.stalled, null, stalledReason),
-        section("stuck", "No node can take these", "Approved, but nothing eligible can run them.", groups.stuck, null, (ticket) => stuckReason.get(Number(ticket.id)) ?? ""),
-        groups.running.length > 0 ? /* @__PURE__ */ jsxs("section", { className: "pta-section", children: [
-          /* @__PURE__ */ jsxs("div", { className: "pta-section__head", children: [
-            /* @__PURE__ */ jsxs("h3", { children: [
-              "Running now ",
-              /* @__PURE__ */ jsx("span", { className: "pta-count", children: groups.running.length })
-            ] }),
-            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: "Live agent work." })
-          ] }),
-          /* @__PURE__ */ jsx("div", { className: "pta-rows", children: groups.running.map((run) => /* @__PURE__ */ jsxs("button", { type: "button", className: "pta-row", onClick: () => void openTicketRun({ id: run.ticket_id, title: run.title }), children: [
-            /* @__PURE__ */ jsx("span", { className: "pta-dot pta-dot--running" }),
-            /* @__PURE__ */ jsxs("span", { className: "pta-id", children: [
-              "#",
-              run.ticket_id
-            ] }),
-            /* @__PURE__ */ jsx("span", { className: "pta-title", children: run.title || "run" }),
-            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: run.executor }),
-            /* @__PURE__ */ jsxs("span", { className: "pta-meta", children: [
-              "on ",
-              run.node_id ?? "this machine"
-            ] }),
-            /* @__PURE__ */ jsx("span", { className: "pta-fill" }),
-            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ago2(run.started_at ?? run.updated_at) })
-          ] }, run.id)) })
-        ] }) : null,
-        groups.failed.length > 0 ? /* @__PURE__ */ jsxs("section", { className: "pta-section", children: [
-          /* @__PURE__ */ jsxs("div", { className: "pta-section__head", children: [
-            /* @__PURE__ */ jsx("h3", { children: "Failed runs, last 24h" }),
-            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: "These stop until someone looks." })
-          ] }),
-          /* @__PURE__ */ jsx("div", { className: "pta-rows", children: groups.failed.map((run) => /* @__PURE__ */ jsxs("button", { type: "button", className: "pta-row", onClick: () => void openTicketRun({ id: run.ticket_id, title: run.title }), children: [
-            /* @__PURE__ */ jsx("span", { className: "pta-dot pta-dot--danger" }),
-            /* @__PURE__ */ jsxs("span", { className: "pta-id", children: [
-              "#",
-              run.ticket_id
-            ] }),
-            /* @__PURE__ */ jsx("span", { className: "pta-title", children: run.title || "run" }),
-            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: run.executor }),
-            /* @__PURE__ */ jsxs("span", { className: "pta-meta", children: [
-              "on ",
-              run.node_id ?? "this machine"
-            ] }),
-            /* @__PURE__ */ jsx("span", { className: "pta-fill" }),
-            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ago2(run.finished_at) })
-          ] }, run.id)) })
-        ] }) : null,
-        total === 0 && groups.failed.length === 0 ? /* @__PURE__ */ jsxs(EmptyState2, { title: "Inbox zero", text: "No approvals, no reviews, no client waiting. New work will appear here and in a notification.", children: [
-          /* @__PURE__ */ jsx(PtaButton, { onClick: goInbox, children: "Open Inbox" }),
-          /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: goWorkbench, children: "Workbench" })
-        ] }) : null
-      ] });
-    }
     function InboxPage() {
       const data = useLiveAdmin();
       const groups = useMemo(() => ticketGroups(data), [data]);
-      const [filter, setFilter] = useState(() => {
-        const preset = pendingInboxFilter;
-        pendingInboxFilter = null;
-        return preset ?? "all";
-      });
+      const [filter, setFilter] = useState("all");
       const [query, setQuery] = useState("");
       const search = useRef(null);
       const root = useRef(null);
       useEffect(() => {
-        const onPreset = (event) => {
-          pendingInboxFilter = null;
-          setFilter(event.detail?.filter ?? "all");
-        };
+        const onPreset = (event) => setFilter(event.detail?.filter ?? "all");
         const onKey = (event) => {
           if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
             const target = event.target;
@@ -17406,7 +15629,6 @@ ${question.text ?? ""}`)) {
           window.removeEventListener("keydown", onKey);
         };
       }, []);
-      const goWorkbench = () => ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
       const all = useMemo(() => {
         const seen = /* @__PURE__ */ new Map();
         const add = (ticket, kind) => {
@@ -17424,6 +15646,9 @@ ${question.text ?? ""}`)) {
         for (const ticket of groups.stuck) add(ticket, "stuck");
         return [...seen.values()];
       }, [groups]);
+      const stuckReason = useMemo(() => new Map(
+        data.queue.filter((item) => !(Array.isArray(item?.eligible) ? item.eligible.length > 0 : Boolean(item?.eligible))).map((item) => [Number(item.id), item.reason ?? "no eligible node"])
+      ), [data.queue]);
       const filters = [
         { key: "all", label: "All", count: all.length },
         { key: "approval", label: "Approvals", count: groups.approvals.length },
@@ -17438,62 +15663,128 @@ ${question.text ?? ""}`)) {
         if (needle.length === 0) return true;
         return `${ticket.id} ${ticketLabel(ticket)} ${ticket.project_name ?? ""} ${ticket.client_email ?? ""}`.toLowerCase().includes(needle);
       });
-      if (data.error && isAuthError(data.code)) {
+      if (data.loading && data.at === 0) {
+        return /* @__PURE__ */ jsx("div", { className: "pta-page", ref: root, children: /* @__PURE__ */ jsx("p", { className: "pta-empty", children: "Loading\u2026" }) });
+      }
+      if (data.error) {
         return /* @__PURE__ */ jsxs("div", { className: "pta-page", ref: root, children: [
           /* @__PURE__ */ jsx("header", { className: "pta-head", children: /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx("h1", { children: "Inbox" }),
-            /* @__PURE__ */ jsx("p", { children: "Connect PTech Admin to the portal to see what is waiting." })
+            /* @__PURE__ */ jsx("p", { children: isAuthError(data.code) ? data.error || "Connect PTech Admin to the portal to see what is waiting." : "The portal could not be reached." })
           ] }) }),
-          /* @__PURE__ */ jsx(PortalSignIn, { onDone: () => void data.reload() })
+          isAuthError(data.code) ? /* @__PURE__ */ jsx(PortalSignIn, { onDone: () => void data.reload() }) : /* @__PURE__ */ jsxs("div", { className: "pta-empty", children: [
+            /* @__PURE__ */ jsx("h3", { children: "Could not reach the portal" }),
+            /* @__PURE__ */ jsx("p", { children: data.error }),
+            /* @__PURE__ */ jsx(PtaButton, { onClick: () => void data.reload(), children: "Try again" })
+          ] })
         ] });
       }
       return /* @__PURE__ */ jsxs("div", { className: "pta-page", ref: root, children: [
         /* @__PURE__ */ jsxs("header", { className: "pta-head", children: [
           /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx("h1", { children: "Inbox" }),
-            /* @__PURE__ */ jsx("p", { children: "Approvals, reviews and client replies in one place. The same items notify you as they arrive." })
+            /* @__PURE__ */ jsx("p", { children: all.length === 0 ? "Nothing is waiting on you. Agents are on it." : `${all.length} item${all.length === 1 ? "" : "s"} want a decision.` })
           ] }),
-          /* @__PURE__ */ jsxs("div", { className: "pta-head__actions", children: [
-            /* @__PURE__ */ jsx(
-              "input",
-              {
-                ref: search,
-                className: "pta-search",
-                value: query,
-                placeholder: "Search tickets, clients, projects\u2026  /",
-                onChange: (event) => setQuery(event.target.value),
-                onKeyDown: (event) => {
-                  if (event.key === "Escape") {
-                    setQuery("");
-                    event.currentTarget.blur();
-                  }
-                },
-                "aria-label": "Search the inbox"
-              }
-            ),
-            /* @__PURE__ */ jsx(PtaButton, { kind: "ghost", onClick: goWorkbench, children: "Workbench" })
-          ] })
+          /* @__PURE__ */ jsx("div", { className: "pta-head__actions", children: /* @__PURE__ */ jsx(
+            "input",
+            {
+              ref: search,
+              className: "pta-search",
+              value: query,
+              placeholder: "Search tickets, clients, projects\u2026  /",
+              onChange: (event) => setQuery(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === "Escape") {
+                  setQuery("");
+                  event.currentTarget.blur();
+                }
+              },
+              "aria-label": "Search the inbox"
+            }
+          ) })
         ] }),
         /* @__PURE__ */ jsx("div", { className: "pta-filters", children: filters.map((item) => /* @__PURE__ */ jsxs("button", { type: "button", className: `pta-filter${filter === item.key ? " is-active" : ""}`, onClick: () => setFilter(item.key), children: [
           item.label,
           item.count ? /* @__PURE__ */ jsx("span", { className: "pta-count", children: item.count }) : null
         ] }, item.key)) }),
         /* @__PURE__ */ jsx("p", { className: "pta-meta pta-hint", children: "j/k to move \xB7 Enter to open \xB7 / to search" }),
-        shown.length === 0 ? /* @__PURE__ */ jsx(EmptyState2, { title: all.length === 0 ? "Inbox zero" : "Nothing in this filter", text: all.length === 0 ? "New approvals, reviews and client replies will land here and notify you." : "Try another filter, or clear the search." }) : /* @__PURE__ */ jsx("div", { className: "pta-rows pta-rows--inbox", children: shown.map(({ ticket, kinds }) => /* @__PURE__ */ jsx(
-          TicketLine,
-          {
-            ticket,
-            reason: kinds.has("stalled") ? stalledReason(ticket) : "",
-            showAge: !kinds.has("stalled"),
-            actions: /* @__PURE__ */ jsx(TicketRowActions, { ticket }),
-            detail: isWaiting(ticket) ? "waiting" : ""
-          },
-          ticket.id
-        )) })
+        shown.length === 0 ? /* @__PURE__ */ jsx(EmptyState2, { title: all.length === 0 ? "Inbox zero" : "Nothing in this filter", text: all.length === 0 ? "New approvals, reviews and client replies will land here and notify you." : "Try another filter, or clear the search." }) : /* @__PURE__ */ jsx("div", { className: "pta-rows pta-rows--inbox", children: shown.map(({ ticket, kinds }) => {
+          const stalled = kinds.has("stalled");
+          const reason = stalled ? stalledReason(ticket) : kinds.has("stuck") ? stuckReason.get(Number(ticket.id)) ?? "no eligible node" : "";
+          return /* @__PURE__ */ jsx(
+            TicketLine,
+            {
+              ticket,
+              stalled,
+              reason,
+              showAge: !stalled,
+              actions: /* @__PURE__ */ jsx(TicketRowActions, { ticket }),
+              detail: isWaiting(ticket) ? "waiting" : ""
+            },
+            ticket.id
+          );
+        }) })
       ] });
     }
-    function DeskPage({ children }) {
+    const EMPTY_DESK_DATA = {
+      loaded: true,
+      error: null,
+      fetchedAt: 0,
+      tickets: [],
+      projects: [],
+      clients: [],
+      usageTotal: null,
+      nodes: [],
+      queue: [],
+      running: [],
+      recent: [],
+      settings: null,
+      catalog: null
+    };
+    function openNativeDestination(key) {
+      const target = String(key ?? "");
+      if (!target) return;
+      if (target.startsWith("t:")) {
+        void openTicketRun({ id: Number(target.slice(2)) });
+        return;
+      }
+      if (target.startsWith("p:")) {
+        openProjectPage({ id: target.slice(2) });
+        return;
+      }
+      if (target.startsWith("c:")) {
+        openClientPage({ id: target.slice(2) });
+        return;
+      }
+      if (target === "inbox") {
+        ctx.layout?.selectPanel?.(HOME_PANEL);
+        return;
+      }
+      if (target === "board" || target === "list" || target === "work") {
+        ctx.layout?.selectPanel?.(WORK_PANEL);
+        return;
+      }
+      if (target === "marketing") {
+        ctx.layout?.selectPanel?.(MARKETING_PANEL);
+        return;
+      }
+      if (target === "seo") {
+        ctx.layout?.selectPanel?.(SEO_PANEL);
+        return;
+      }
+      if (target === "fleet" || target === "health") {
+        ctx.layout?.selectPanel?.(FLEET_PANEL);
+        return;
+      }
+      if (target === "settings") {
+        ctx.layout?.selectPanel?.(SETTINGS_PANEL);
+      }
+    }
+    function DeskShell({ children, data, reload, allowSignedOut = false }) {
       const [toast, setToast] = useState(null);
+      const [modal, setModal] = useState(null);
+      const [askState, setAskState] = useState(null);
+      const [boardProject, setBoardProject] = useState("all");
       const timer = useRef(null);
       const notify = useCallback((text, kind = "ok") => {
         clearTimeout(timer.current);
@@ -17505,39 +15796,126 @@ ${question.text ?? ""}`)) {
         try {
           const out = await fn();
           if (done !== void 0) notify(typeof done === "function" ? done(out) : done);
+          void reload();
+          window.dispatchEvent(new CustomEvent("admin:changed", { detail: { kind: "desk.mutation" } }));
           return out;
         } catch (error) {
           notify(error?.message ?? String(error), "error");
           throw error;
         }
-      }, [notify]);
+      }, [notify, reload]);
+      const setStatus = useCallback((ticket, status) => {
+        if (status === ticket.status) return Promise.resolve();
+        const run = () => act(() => api("PATCH", `/admin/tickets/${ticket.id}`, { status }), `#${ticket.id} \u2192 ${STATUS_LABEL[status] ?? status}`);
+        if (ticket.kind !== "system" && CLIENT_VISIBLE_STATUSES.has(status)) {
+          return new Promise(
+            (resolve) => setAskState({
+              title: `${STATUS_LABEL[status] ?? status}: #${ticket.id}?`,
+              text: `${ticket.client_email ?? ticket.clientEmail ?? "The client"} is emailed about this change.`,
+              confirm: STATUS_LABEL[status] ?? status,
+              danger: status === "declined",
+              run: () => run().then(resolve, resolve)
+            })
+          );
+        }
+        return run().catch(() => void 0);
+      }, [act]);
       const context = useMemo(() => ({
         api,
         act,
         notify,
+        ask: setAskState,
+        setModal,
+        setStatus,
+        data,
+        reload,
+        boardProject,
+        setBoardProject,
+        open: openNativeDestination,
         openTicket: (id) => void openTicketRun({ id }),
+        activeTab: null,
+        closeTab: () => {
+        },
         platform: "dsh",
         host,
         files
-      }), [api, act, notify, host]);
+      }), [act, notify, setStatus, data, reload, boardProject]);
+      const signedOut = !allowSignedOut && Boolean(data.error && isAuthError(data.error.code));
       return /* @__PURE__ */ jsxs(
         "div",
         {
-          className: "aw pta-desk",
+          className: "aw aw--dsh pta-desk",
           style: { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(0, 1fr)", height: "100%", minHeight: 0 },
           children: [
             /* @__PURE__ */ jsx("style", { children: STYLES }),
-            /* @__PURE__ */ jsx("div", { className: "aw-content", style: { overflow: "auto", height: "100%" }, children: /* @__PURE__ */ jsx(AdminContext.Provider, { value: context, children }) }),
+            /* @__PURE__ */ jsx("div", { className: "aw-content", style: { overflow: "auto", height: "100%" }, children: /* @__PURE__ */ jsxs(AdminContext.Provider, { value: context, children: [
+              signedOut ? /* @__PURE__ */ jsx("div", { className: "pta-page", children: /* @__PURE__ */ jsx(PortalSignIn, { onDone: () => void reload() }) }) : !allowSignedOut && !data.loaded ? /* @__PURE__ */ jsx("div", { className: "aw-loading--fill", children: /* @__PURE__ */ jsx(Skeleton, { variant: "pane", label: "Loading\u2026" }) }) : children,
+              modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal(null) }) : null,
+              modal?.kind === "project" ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal(null) }) : null,
+              modal?.kind === "custom" ? modal.render(() => setModal(null)) : null,
+              askState ? /* @__PURE__ */ jsx(Confirm, { ask: askState, onClose: () => setAskState(null) }) : null
+            ] }) }),
             toast ? /* @__PURE__ */ jsx("div", { className: `aw-toast${toast.kind === "error" ? " is-error" : ""}`, role: "status", children: toast.text }) : null
           ]
         }
       );
+    }
+    function DeskPageWithData({ children, allowSignedOut = false }) {
+      const [data, reload] = useAdminData(api);
+      useEffect(() => {
+        const onChanged = () => void reload();
+        window.addEventListener("admin:changed", onChanged);
+        return () => window.removeEventListener("admin:changed", onChanged);
+      }, [reload]);
+      return /* @__PURE__ */ jsx(DeskShell, { data, reload, allowSignedOut, children });
+    }
+    function DeskPage({ children, withData = false, allowSignedOut = false }) {
+      const noopReload = useCallback(() => Promise.resolve(), []);
+      if (withData) return /* @__PURE__ */ jsx(DeskPageWithData, { allowSignedOut, children });
+      return /* @__PURE__ */ jsx(DeskShell, { data: EMPTY_DESK_DATA, reload: noopReload, allowSignedOut: true, children });
+    }
+    function WorkPage() {
+      const [mode, setMode] = useState(() => {
+        try {
+          return localStorage.getItem("pta.work.mode") === "board" ? "board" : "list";
+        } catch {
+          return "list";
+        }
+      });
+      const switchMode = (next) => {
+        setMode(next);
+        try {
+          localStorage.setItem("pta.work.mode", next);
+        } catch {
+        }
+      };
+      return /* @__PURE__ */ jsx(DeskPage, { withData: true, children: /* @__PURE__ */ jsxs("div", { className: "pta-work", children: [
+        /* @__PURE__ */ jsx("div", { className: "pta-work__bar", children: /* @__PURE__ */ jsx(
+          Segmented,
+          {
+            value: mode,
+            label: "Work view",
+            options: [
+              { value: "list", label: "List" },
+              { value: "board", label: "Board" }
+            ],
+            onChange: switchMode
+          }
+        ) }),
+        mode === "board" ? /* @__PURE__ */ jsx(BoardView, {}) : /* @__PURE__ */ jsx(ListView, {})
+      ] }) });
     }
     function MarketingPage() {
       return /* @__PURE__ */ jsx(DeskPage, { children: /* @__PURE__ */ jsx(MarketingView, {}) });
     }
     function SeoPage() {
       return /* @__PURE__ */ jsx(DeskPage, { children: /* @__PURE__ */ jsx(SeoView, {}) });
+    }
+    function FleetPage() {
+      return /* @__PURE__ */ jsx(DeskPage, { withData: true, children: /* @__PURE__ */ jsx(FleetView, {}) });
+    }
+    function SettingsPage() {
+      return /* @__PURE__ */ jsx(DeskPage, { withData: true, allowSignedOut: true, children: /* @__PURE__ */ jsx(SettingsView, {}) });
     }
     const WORKSPACE_TEXT = {
       ready: "Workspace ready.",
@@ -17732,12 +16110,6 @@ ${question.text ?? ""}`)) {
       });
       const route = (parts.shift() ?? "").toLowerCase();
       const target = parts.join("/");
-      const openHash = (hash) => {
-        ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
-        const wanted = `#${hash}`;
-        if (window.location.hash === wanted) window.dispatchEvent(new HashChangeEvent("hashchange"));
-        else window.location.hash = wanted;
-      };
       if (route === "ticket") {
         const id = Number.parseInt(target, 10);
         if (!Number.isInteger(id) || id <= 0) return false;
@@ -17761,7 +16133,23 @@ ${question.text ?? ""}`)) {
       if (route === "client") {
         if (target.length === 0) return false;
         handledDeepLink = true;
-        openHash(`client=${encodeURIComponent(target)}`);
+        openClientPage({ id: target });
+        return true;
+      }
+      if (route === "project") {
+        if (target.length === 0) return false;
+        handledDeepLink = true;
+        openProjectPage({ id: target });
+        return true;
+      }
+      if (route === "inbox") {
+        handledDeepLink = true;
+        ctx.layout?.selectPanel?.(HOME_PANEL);
+        return true;
+      }
+      if (route === "work" || route === "board" || route === "list") {
+        handledDeepLink = true;
+        ctx.layout?.selectPanel?.(WORK_PANEL);
         return true;
       }
       if (route === "seo") {
@@ -17774,9 +16162,14 @@ ${question.text ?? ""}`)) {
         ctx.layout?.selectPanel?.(MARKETING_PANEL);
         return true;
       }
-      if (route === "health") {
+      if (route === "fleet" || route === "health") {
         handledDeepLink = true;
-        openHash(route);
+        ctx.layout?.selectPanel?.(FLEET_PANEL);
+        return true;
+      }
+      if (route === "settings") {
+        handledDeepLink = true;
+        ctx.layout?.selectPanel?.(SETTINGS_PANEL);
         return true;
       }
       return false;
@@ -17799,15 +16192,18 @@ ${question.text ?? ""}`)) {
     ctx.inject(["locale"], (localeCtx) => {
       localeCtx.effect(() => localeCtx.locale.register(NAMESPACE, { en: DICTIONARY }), "admin: locale namespace");
     });
-    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: HOME_PANEL, locale: NAMESPACE }, NeedsYouPage));
-    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: INBOX_PANEL, locale: NAMESPACE }, InboxPage));
+    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: HOME_PANEL, locale: NAMESPACE }, InboxPage));
+    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: WORK_PANEL, locale: NAMESPACE }, WorkPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: MARKETING_PANEL, locale: NAMESPACE }, MarketingPage));
     ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: SEO_PANEL, locale: NAMESPACE }, SeoPage));
-    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: WORKBENCH_PANEL, locale: NAMESPACE }, AdminPage));
-    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: HOME_PANEL, order: 11, label: "Needs you" }, AdminEntryIcon));
-    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: INBOX_PANEL, order: 12, label: "Inbox" }, InboxEntryIcon));
+    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: FLEET_PANEL, locale: NAMESPACE }, FleetPage));
+    ctx.slots.inject("main", () => ctx.slots.register({ name: "main", key: SETTINGS_PANEL, locale: NAMESPACE }, SettingsPage));
+    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: HOME_PANEL, order: 11, label: "Inbox" }, InboxEntryIcon));
+    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: WORK_PANEL, order: 12, label: "Work" }, WorkEntryIcon));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: MARKETING_PANEL, order: 13, label: "Marketing" }, MarketingEntryIcon));
     ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: SEO_PANEL, order: 14, label: "SEO" }, SeoEntryIcon));
+    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: FLEET_PANEL, order: 15, label: "Fleet" }, FleetEntryIcon));
+    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({ name: "sidebar.panellist", id: SETTINGS_PANEL, order: 16, label: "Settings" }, SettingsEntryIcon));
     ctx.inject(["conversation"], (scope) => {
       nativeConversation = scope.conversation;
       scope.effect(() => () => {
@@ -17838,7 +16234,7 @@ ${question.text ?? ""}`)) {
         }
       }, 900);
       return () => clearTimeout(timer);
-    }, "admin: initial needs-you view");
+    }, "admin: initial inbox view");
     ctx.slots.inject("sidebar.panellist", () => syncClientRows());
     ctx.slots.inject("sidebar.workspaces.section", () => {
       sectionAvailable = true;

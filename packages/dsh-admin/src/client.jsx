@@ -13,21 +13,24 @@
  */
 import { createTicketDetailReader, ticketActivity, sendTicketMessage, requestTicketWorkspace, migrateTicketView } from './ticket-chat.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { AdminApp, ClientPage, ProjectPage, TicketPage } from '../../admin-ui/src/index.js';
+import { ClientPage, ProjectPage, TicketPage } from '../../admin-ui/src/index.js';
+import { TaskModal, ProjectModal } from '../../admin-ui/src/app.jsx';
 import { openLocalProject } from '../native-project.mjs';
 import { sidebarTicketLabel, sidebarRunShortcut } from './sidebar-presentation.mjs';
 import { createConversationMeter, formatRecordedTime } from './conversation-meter.mjs';
-import { AdminContext } from '../../admin-ui/src/store.js';
+import { AdminContext, useAdminData } from '../../admin-ui/src/store.js';
 import { ConversationGitGraph } from './conversation-git-graph.mjs';
+import { BoardView, ListView } from '../../admin-ui/src/board.jsx';
+import { FleetView, SettingsView } from '../../admin-ui/src/fleet.jsx';
 import { MarketingView } from '../../admin-ui/src/marketing.jsx';
 import { SeoView } from '../../admin-ui/src/seo.jsx';
+import { Confirm, Icon, Segmented, Skeleton } from '../../admin-ui/src/ui.jsx';
 import { STYLES } from '../../admin-ui/src/styles.js';
 import { assistantBadge, assistantBadgeTitle } from '../../admin-ui/src/ticket-assistant.mjs';
 import { STATUS_LABEL, needsYou } from '../../admin-ui/src/format.js';
 import { panelTransport } from './panel-transport.mjs';
 import { ConversationHistory } from './conversation-history.jsx';
 import { nextRowIndex } from './row-navigation.mjs';
-import { ProjectPark, PROJECT_PARK_STYLES } from './project-park.jsx';
 
 /** Panel identity: one id addresses both the sidebar row and the main page. */
 const PANEL_ID = 'admin';
@@ -39,17 +42,20 @@ const DICTIONARY = { title: 'Admin' };
 /**
  * The one ticket-status tint map: the task desk, the client tree and the
  * native pages all read it, so a status has one colour in the whole plugin.
- * The words are `STATUS_LABEL` from the shared workbench (packages/admin-ui).
+ * The words are `STATUS_LABEL` from `packages/admin-ui`.
  */
 const STATUS_TINT = {
+  stalled: 'var(--dsw-alias-state-danger-primary, #e5534b)',
   new: 'var(--dsw-alias-state-warning-primary, #d18f2e)',
+  review: 'var(--dsw-alias-state-warning-primary, #d18f2e)',
+  running: 'var(--dsw-alias-state-business-primary, #4c8dff)',
+  in_progress: 'var(--dsw-alias-state-business-primary, #4c8dff)',
   approved: 'var(--dsw-alias-state-business-primary, #4c8dff)',
-  in_progress: 'var(--dsw-alias-state-success-primary, #2f9e5b)',
-  review: 'var(--dsw-alias-state-business-primary, #4c8dff)',
-  done: 'var(--dsw-alias-label-tertiary, #8a9099)',
+  done: 'var(--dsw-alias-state-success-primary, #2f9e5b)',
+  ok: 'var(--dsw-alias-state-success-primary, #2f9e5b)',
   declined: 'var(--dsw-alias-label-tertiary, #8a9099)',
 };
-const tintOfStatus = (status) => STATUS_TINT[status] ?? STATUS_TINT.done;
+const tintOfStatus = (status) => STATUS_TINT[status] ?? STATUS_TINT.declined;
 
 /**
  * Rejections that mean "not this Session" rather than "this call failed".
@@ -470,14 +476,26 @@ function apply(ctx) {
     );
   }
 
-  function openTicket(run) {
-    // The full ticket lives in the workbench; a ticket with a run opens its
-    // conversation instead (see openTicketRun).
-    ctx.layout?.selectPanel?.('admin-workbench');
-    const target = `#ticket=${run.ticketId}`;
-    if (window.location.hash === target) window.dispatchEvent(new HashChangeEvent('hashchange'));
-    else window.location.hash = target;
+  /** Native ticket pages, registered on demand for tickets without a session. */
+  const ticketPages = new Map();
+  function openTicket(run, selectPanel = (key) => ctx.layout?.selectPanel?.(key)) {
+    const id = Number(run?.ticketId ?? run?.id ?? run);
+    if (!Number.isInteger(id) || id <= 0) return;
+    const key = `admin-ticket-${id}`;
+    if (!ticketPages.has(id)) {
+      ticketPages.set(
+        id,
+        ctx.slots.register({ name: 'main', key, locale: NAMESPACE }, () => (
+          <TicketPage key={key} api={api} host={host} files={files} ticketId={id} />
+        )),
+      );
+    }
+    selectPanel(key);
   }
+  ctx.effect(() => () => {
+    for (const dispose of ticketPages.values()) dispose();
+    ticketPages.clear();
+  }, 'admin: ticket pages');
 
   /** A bounded shortcut in the run row's leading cell; the title owns visible text. */
   function TicketMark({ sessionId }) {
@@ -543,8 +561,8 @@ function apply(ctx) {
   const taskEmptyStyle = { margin: 0, padding: '2px 8px', fontSize: 12, opacity: 0.6 };
 
   const RUN_TINT = {
-    running: 'var(--dsw-alias-state-success-primary, #35c07a)',
-    ok: 'var(--dsw-alias-label-secondary, #8a9099)',
+    running: 'var(--dsw-alias-state-business-primary, #4c8dff)',
+    ok: 'var(--dsw-alias-state-success-primary, #2f9e5b)',
     failed: 'var(--dsw-alias-state-danger-primary, #e5534b)',
   };
   const ago = (unix) => {
@@ -921,7 +939,7 @@ function apply(ctx) {
             key={toast.key}
             toast={toast}
             onOpen={(item) => {
-              openTicket({ ticketId: item.ticketId });
+              void openTicketRun({ id: item.ticketId });
               remove(item.key);
             }}
             onClose={(item) => remove(item.key)}
@@ -997,50 +1015,7 @@ function apply(ctx) {
     );
   }
 
-  /**
-   * The Admin entry's icon, with a count of what is waiting on Ali — tickets
-   * to approve or review, clients waiting for an answer — and a green dot when
-   * nothing is waiting but an agent is working.
-   */
-  function AdminEntryIcon(props) {
-    const counts = useSyncExternalStore(attention.subscribe, attention.get);
-    const waiting = counts ? counts.approve + counts.review + counts.waiting : 0;
-    const parts = counts
-      ? [
-          counts.approve && `${counts.approve} to approve`,
-          counts.review && `${counts.review} to review`,
-          counts.waiting && `${counts.waiting} client${counts.waiting === 1 ? '' : 's'} waiting`,
-          counts.running && `${counts.running} running`,
-        ].filter(Boolean)
-      : [];
-    const badge = {
-      position: 'absolute',
-      top: -5,
-      right: -7,
-      minWidth: 13,
-      height: 13,
-      padding: '0 3px',
-      borderRadius: 7,
-      fontSize: 9,
-      fontWeight: 700,
-      lineHeight: '13px',
-      textAlign: 'center',
-      color: '#fff',
-      boxSizing: 'border-box',
-    };
-    return (
-      <span style={{ position: 'relative', display: 'inline-flex' }} title={parts.length ? parts.join(' · ') : undefined}>
-        <AdminIcon size={props?.size ?? 16} />
-        {waiting > 0 ? (
-          <span style={{ ...badge, background: 'var(--dsw-alias-state-warning-primary, #d18f2e)' }}>{waiting > 99 ? '99+' : waiting}</span>
-        ) : counts?.running ? (
-          <span style={{ ...badge, minWidth: 7, width: 7, height: 7, top: -2, right: -3, padding: 0, background: 'var(--dsw-alias-state-success-primary, #2f9e5b)' }} />
-        ) : null}
-      </span>
-    );
-  }
-
-  /** The Inbox's own glyph: a tray, with the actionable count. */
+  /** The Inbox's own glyph: a tray, with a right-aligned tabular count. */
   function InboxIcon({ size = 16 }) {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1069,6 +1044,10 @@ function apply(ctx) {
     );
   }
 
+  function WorkEntryIcon(props) {
+    return <AdminIcon size={props?.size ?? 16} />;
+  }
+
   function MarketingEntryIcon(props) {
     return <MarketingGlyph size={props?.size ?? 16} />;
   }
@@ -1077,34 +1056,29 @@ function apply(ctx) {
     return <SeoGlyph size={props?.size ?? 16} />;
   }
 
+  function FleetEntryIcon(props) {
+    return <Icon name="fleet" size={props?.size ?? 16} />;
+  }
+
+  function SettingsEntryIcon(props) {
+    return <Icon name="settings" size={props?.size ?? 16} />;
+  }
+
   function InboxEntryIcon(props) {
     const counts = useSyncExternalStore(attention.subscribe, attention.get);
     const waiting = counts ? counts.approve + counts.review + counts.waiting : 0;
+    const parts = counts
+      ? [
+          counts.approve && `${counts.approve} to approve`,
+          counts.review && `${counts.review} to review`,
+          counts.waiting && `${counts.waiting} client${counts.waiting === 1 ? '' : 's'} waiting`,
+          counts.running && `${counts.running} running`,
+        ].filter(Boolean)
+      : [];
     return (
-      <span style={{ position: 'relative', display: 'inline-flex' }} title={waiting ? `${waiting} item(s) need you` : 'Inbox'}>
+      <span className="pta-sidebar-inbox" title={parts.length ? parts.join(' · ') : 'Inbox'}>
         <InboxIcon size={props?.size ?? 16} />
-        {waiting > 0 ? (
-          <span
-            style={{
-              position: 'absolute',
-              top: -5,
-              right: -7,
-              minWidth: 13,
-              height: 13,
-              padding: '0 3px',
-              borderRadius: 7,
-              fontSize: 9,
-              fontWeight: 700,
-              lineHeight: '13px',
-              textAlign: 'center',
-              color: '#fff',
-              boxSizing: 'border-box',
-              background: 'var(--dsw-alias-state-warning-primary, #d18f2e)',
-            }}
-          >
-            {waiting > 99 ? '99+' : waiting}
-          </span>
-        ) : null}
+        {waiting > 0 ? <span className="pta-sidebar-count">{waiting > 99 ? '99+' : waiting}</span> : null}
       </span>
     );
   }
@@ -1124,7 +1098,7 @@ function apply(ctx) {
    */
   const CLIENT_ROWS_MS = 60_000;
   const CLIENT_ROWS_MAX = 12;
-  const CLIENT_ROWS_ORDER = 15;
+  const CLIENT_ROWS_ORDER = 20;
   const CLIENT_TINTS = ['#4c8dff', '#d18f2e', '#2f9e5b', '#b45fd6', '#d1495b', '#1f9fb4', '#8a8f2e', '#6b6fd6'];
 
   /** True while the workspace browser declares the section slot. */
@@ -1418,7 +1392,8 @@ function apply(ctx) {
   }
 
   /** Open a client's main page, registering it first if the poll has not run yet. */
-  function openClientPage(client, selectPanel) {
+  function openClientPage(client, selectPanel = (key) => ctx.layout?.selectPanel?.(key)) {
+    if (!client?.id) return;
     ensureClientPage(client);
     try {
       selectPanel(`admin-client-${client.id}`);
@@ -1441,7 +1416,7 @@ function apply(ctx) {
     const menu = (ticket) => {
       const items = [
         { id: 'open', label: 'Open conversation', onSelect: () => void openTicketRun(ticket) },
-        { id: 'workbench', label: 'Open in workbench', onSelect: () => openTicket({ ticketId: ticket.id }) },
+        { id: 'ticket', label: 'Open ticket page', onSelect: () => openTicket({ ticketId: ticket.id }) },
       ];
       if (ticket.status === 'new') items.push({ id: 'approve', label: 'Approve', onSelect: () => void approveTicket(ticket, changed) });
       items.push({ id: 'copy', label: 'Copy ticket link', separatorBefore: true, onSelect: () => copyTicketLink(ticket) });
@@ -1473,6 +1448,8 @@ function apply(ctx) {
   /** The status dot of a project row: its most urgent open ticket, if any. */
   function projectTint(tickets) {
     const open = tickets.filter((ticket) => !isClosedTicket(ticket));
+    const stalledBefore = Date.now() / 1000 - 45 * 60;
+    if (open.some((ticket) => ticket.status === 'in_progress' && Number(ticket.updated_at ?? 0) < stalledBefore)) return tintOfStatus('stalled');
     if (open.some((ticket) => ticket.status === 'new')) return tintOfStatus('new');
     if (open.some((ticket) => ticket.status === 'review')) return tintOfStatus('review');
     if (open.some((ticket) => ticket.status === 'in_progress')) return tintOfStatus('in_progress');
@@ -1857,19 +1834,22 @@ function apply(ctx) {
   // need the bytes, which the bridge cannot carry: /admin attach takes paths.
   const files = { download: (path) => json(`download ${path}`) };
 
-  function AdminPage() {
-    return <AdminApp api={api} host={host} files={files} platform="dsh" />;
-  }
-
   /* ————— PTech Admin: the native surfaces ————— */
 
   /**
-   * The native admin experience: a Needs-you home, an Inbox, and a ticket
-   * strip that lives in the run's own chat. The workbench stays one click
-   * away for fleet, SEO, health and the settings that do not belong in chat.
+   * The native admin experience: one Inbox home, native Work/Fleet/Settings
+   * and Marketing/SEO desks, and a ticket strip that lives in the run's own chat.
    */
 
   const NATIVE_STYLES = `
+    .pta-sidebar-inbox{display:inline-flex;align-items:center;justify-content:center}
+    .pta-sidebar-count{display:none}
+    [class*="_panelEntryWide"] .pta-sidebar-count{display:inline-block;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1;color:var(--dsw-alias-label-tertiary,#8a9099);pointer-events:none;transition:opacity 120ms ease}
+    [class*="_panelEntryWide"]:hover:has([class*="_panelUnpin"]) .pta-sidebar-count,[class*="_panelEntryWide"]:has(:focus-visible):has([class*="_panelUnpin"]) .pta-sidebar-count{opacity:0}
+    .pta-work{display:flex;flex-direction:column;height:100%;min-height:0}
+    .pta-work__bar{display:flex;align-items:center;gap:8px;padding:14px 20px 0;flex:none}
+    .pta-work>.aw-view{flex:1 1 auto;min-height:0;padding-top:10px}
+    .pta-work>.aw-view--board{height:auto}
     .pta-ticket-form{display:grid;gap:6px;max-width:40rem}
     .pta-ticket-form label{display:grid;gap:4px}
     .pta-ticket-form textarea{min-height:4rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-translucent,currentColor);border-radius:6px}
@@ -1892,17 +1872,7 @@ function apply(ctx) {
     .pta-head h1{margin:0;font-size:24px;line-height:1.15;font-weight:650;letter-spacing:-0.02em}
     .pta-head p{margin:6px 0 0;font-size:13px;opacity:.65;max-width:620px}
     .pta-head__actions{display:flex;align-items:center;gap:8px;margin-left:auto;padding-top:2px}
-    .pta-kpis{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 18px}
-    .pta-kpi{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.22));border-radius:10px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.06));color:inherit;font:inherit;text-align:left;cursor:pointer}
-    .pta-kpi:disabled{cursor:default}
-    .pta-kpi:not(:disabled):hover{border-color:var(--dsw-alias-border-primary,rgba(127,127,127,.4))}
-    .pta-kpi__value{font-size:22px;font-weight:650;line-height:1.1;font-variant-numeric:tabular-nums}
-    .pta-kpi__label{font-size:11.5px;opacity:.7}
-    .pta-kpis .pta-kpi{flex-direction:row;align-items:baseline;gap:6px;padding:5px 11px;border-radius:999px}
-    .pta-kpis .pta-kpi__value{font-size:15px}
-    .pta-kpis .pta-kpi__label{font-size:12px}
-    .pta-kpis .pta-kpi.is-zero{opacity:.45;background:transparent}
-    .pta-row:not(:hover):not(:focus-within) .pta-btn--reveal{visibility:hidden}
+    @media (hover:hover){.pta-row .pta-actions{opacity:0;pointer-events:none;transition:opacity 120ms ease}.pta-row:hover .pta-actions,.pta-row:focus-visible .pta-actions,.pta-row:focus-within .pta-actions{opacity:1;pointer-events:auto}}
     .pta-section{margin:0 0 22px}
     .pta-section__head{display:flex;align-items:baseline;gap:10px;padding:0 2px 7px}
     .pta-section__head h3{margin:0;font-size:13px;font-weight:600}
@@ -1950,7 +1920,7 @@ function apply(ctx) {
     .pta-confirm__box h3{margin:0 0 6px;font-size:15px}
     .pta-confirm__box p{margin:0;font-size:12.5px;color:var(--dsw-alias-label-secondary,inherit)}
     .pta-confirm__actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
-    .pta-dot--running{background:var(--dsw-alias-state-success-primary,#2f9e5b)}
+    .pta-dot--running{background:var(--dsw-alias-state-business-primary,#4c8dff)}
     .pta-dot--danger{background:var(--dsw-alias-state-danger-primary,#e5534b)}
     .pta-task-row{border-bottom:0;border-radius:6px;padding:6px 8px;align-items:flex-start}
     .pta-task-row--run{padding:3px 8px 3px 23px;font-size:11.5px}
@@ -2015,8 +1985,8 @@ function apply(ctx) {
     .pta-hist__item[data-type=run] .pta-hist__dot{background:#58a6ff}
     .pta-hist__item[data-type=land] .pta-hist__dot{background:#3fb950}
     .pta-hist__item[data-status=done] .pta-hist__dot{background:#3fb950}
-    .pta-hist__item[data-status="in review"] .pta-hist__dot{background:#a371f7}
-    .pta-hist__item[data-status="in progress"] .pta-hist__dot,.pta-hist__item[data-status=approved] .pta-hist__dot{background:#d29922}
+    .pta-hist__item[data-status="in review"] .pta-hist__dot{background:var(--dsw-alias-state-warning-primary,#d18f2e)}
+    .pta-hist__item[data-status="in progress"] .pta-hist__dot,.pta-hist__item[data-status=approved] .pta-hist__dot{background:var(--dsw-alias-state-business-primary,#4c8dff)}
     .pta-hist__item[data-status=declined] .pta-hist__dot{background:#f85149}
     .pta-hist__text{min-width:0;overflow-wrap:anywhere}
     .pta-hist__text strong{font-weight:550}
@@ -2046,18 +2016,18 @@ function apply(ctx) {
     .pta-msg__body{font-size:13px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow-y:auto}
     .pta-runs{display:flex;flex-direction:column;gap:4px;margin-top:2px;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18))}
     .pta-run{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
-    @media (max-width:760px){.pta-page{padding:18px 16px 40px}.pta-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.pta-head{flex-direction:column}.pta-head__actions{margin-left:0;width:100%}.pta-search{flex:1 1 auto;min-width:0}.pta-tag{max-width:120px}}
-    ${PROJECT_PARK_STYLES}
+    @media (max-width:760px){.pta-page{padding:18px 16px 40px}.pta-head{flex-direction:column}.pta-head__actions{margin-left:0;width:100%}.pta-search{flex:1 1 auto;min-width:0}.pta-tag{max-width:120px}}
   `;
 
   const CLIENT_VISIBLE_STATUSES = new Set(['approved', 'declined', 'done']);
   /** A deep link arrived before the initial-view timer: it owns the first screen. */
   let handledDeepLink = false;
-  const WORKBENCH_PANEL = 'admin-workbench';
-  const INBOX_PANEL = 'admin-inbox';
   const HOME_PANEL = 'admin';
+  const WORK_PANEL = 'admin-work';
   const MARKETING_PANEL = 'admin-marketing';
   const SEO_PANEL = 'admin-seo';
+  const FLEET_PANEL = 'admin-fleet';
+  const SETTINGS_PANEL = 'admin-settings';
 
   const ticketLabel = (ticket) => ticket?.title_en || ticket?.title || '(untitled)';
   const dollars = (cents) => (Number.isFinite(Number(cents)) ? `$${(Number(cents) / 100).toFixed(2)}` : '');
@@ -2163,26 +2133,6 @@ function apply(ctx) {
   /** Why a stalled row is flagged, with how long it has been quiet. */
   const stalledReason = (ticket) => `no report for ${ago(ticket.updated_at)}`;
 
-  /**
-   * A Needs-you KPI opens the Inbox on its own filter. The panel may mount
-   * after the click or already be mounted, so the choice is both stored and
-   * broadcast.
-   */
-  let pendingInboxFilter = null;
-  function openInboxFilter(filter) {
-    pendingInboxFilter = filter;
-    window.dispatchEvent(new CustomEvent('pta:inbox-filter', { detail: { filter } }));
-    ctx.layout?.selectPanel?.(INBOX_PANEL);
-  }
-
-  function actionableCount(groups) {
-    const ids = new Set();
-    for (const list of [groups.approvals, groups.reviews, groups.waiting, groups.stalled, groups.stuck]) {
-      for (const ticket of list) ids.add(ticket.id);
-    }
-    return ids.size;
-  }
-
   /** Set a ticket's status, confirming the moves that email the client. */
   async function changeTicketStatus(ticket, status) {
     const requeue = status === 'approved' && ticket.status !== 'new';
@@ -2215,12 +2165,12 @@ function apply(ctx) {
     window.dispatchEvent(new CustomEvent('admin:changed', { detail: { kind: 'ticket.answered', ticketId: ticket.id } }));
   }
 
-  /** The moves a row offers, chosen by status rather than by page. */
+  /** The moves a row offers, chosen by status rather than by page. Quiet by default. */
   function TicketRowActions({ ticket }) {
     if (ticket.status === 'new') {
       return (
         <>
-          <PtaButton kind="primary" onClick={() => void changeTicketStatus(ticket, 'approved')}>Approve</PtaButton>
+          <PtaButton kind="default" onClick={() => void changeTicketStatus(ticket, 'approved')}>Approve</PtaButton>
           <PtaButton kind="ghost" onClick={() => void changeTicketStatus(ticket, 'declined')}>Decline</PtaButton>
         </>
       );
@@ -2228,8 +2178,8 @@ function apply(ctx) {
     if (ticket.status === 'review') {
       return (
         <>
-          <PtaButton kind="primary" onClick={() => void changeTicketStatus(ticket, 'done')}>Mark done</PtaButton>
-          <PtaButton kind="ghost" className="pta-btn--reveal" onClick={() => void changeTicketStatus(ticket, 'approved')}>Queue another run</PtaButton>
+          <PtaButton kind="default" onClick={() => void changeTicketStatus(ticket, 'done')}>Mark done</PtaButton>
+          <PtaButton kind="ghost" onClick={() => void changeTicketStatus(ticket, 'approved')}>Queue another run</PtaButton>
         </>
       );
     }
@@ -2237,7 +2187,7 @@ function apply(ctx) {
       return <PtaButton kind="ghost" onClick={() => void markTicketAnswered(ticket)}>No reply needed</PtaButton>;
     }
     if (ticket.status === 'in_progress') {
-      return <PtaButton kind="ghost" className="pta-btn--reveal" onClick={() => void changeTicketStatus(ticket, 'approved')}>Queue another run</PtaButton>;
+      return <PtaButton kind="ghost" onClick={() => void changeTicketStatus(ticket, 'approved')}>Queue another run</PtaButton>;
     }
     return null;
   }
@@ -2310,10 +2260,11 @@ function apply(ctx) {
     );
   }
 
-  function TicketLine({ ticket, actions = null, reason = '', detail = '', showAge = true }) {
+  function TicketLine({ ticket, actions = null, reason = '', detail = '', showAge = true, stalled = false }) {
     const open = () => void openTicketRun(ticket);
     // Who filed it: a person in the portal, or the client's assistant over MCP.
     const via = assistantBadge(ticket);
+    const dotTint = tintOfStatus(stalled ? 'stalled' : ticket.status);
     return (
       <div
         className="pta-row"
@@ -2327,7 +2278,7 @@ function apply(ctx) {
           }
         }}
       >
-        <span className="pta-dot" style={{ background: tintOfStatus(ticket.status) }} />
+        <span className="pta-dot" style={{ background: dotTint }} />
         <span className="pta-id">#{ticket.id}</span>
         <span className="pta-title" title={ticketLabel(ticket)}>{ticketLabel(ticket)}</span>
         {ticket.kind === 'system'
@@ -2349,7 +2300,7 @@ function apply(ctx) {
    * page. The rows are queried from that page's own root element, so a
    * mounted-but-hidden page never moves focus for the page the user is looking
    * at. Rows are plain `.pta-row` elements, which covers the divs on Inbox and
-   * Needs you and the run buttons on Needs you alike.
+   * the run buttons on Tasks alike.
    */
   function navigateRowFocus(root, event) {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return false;
@@ -2374,15 +2325,6 @@ function apply(ctx) {
       window.addEventListener('keydown', onKeyDown);
       return () => window.removeEventListener('keydown', onKeyDown);
     }, [rootRef]);
-  }
-
-  function Kpi({ label, value, hint, tint, onClick }) {
-    return (
-      <button type="button" className={`pta-kpi${Number(value) === 0 ? ' is-zero' : ''}`} onClick={onClick} title={hint} disabled={!onClick || Number(value) === 0}>
-        <span className="pta-kpi__value" style={{ color: tint }}>{value}</span>
-        <span className="pta-kpi__label">{label}</span>
-      </button>
-    );
   }
 
   function EmptyState({ title, text, children }) {
@@ -2475,162 +2417,15 @@ function apply(ctx) {
     );
   }
 
-  function NeedsYouPage() {
-    const data = useLiveAdmin();
-    const root = useRef(null);
-    useRowNavigation(root);
-    const groups = useMemo(() => ticketGroups(data), [data]);
-    const total = actionableCount(groups);
-    const goInbox = () => ctx.layout?.selectPanel?.(INBOX_PANEL);
-    const goWorkbench = () => ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
-    if (data.loading && data.at === 0) return <div className="pta-page" ref={root}><p className="pta-empty">Loading…</p></div>;
-    if (data.error) {
-      return (
-        <div className="pta-page" ref={root}>
-          <header className="pta-head">
-            <div>
-              <h1>Needs you</h1>
-              <p>{isAuthError(data.code) ? data.error || 'Connect PTech Admin to the portal to see what is waiting.' : 'The portal could not be reached.'}</p>
-            </div>
-          </header>
-          {isAuthError(data.code) ? (
-            <PortalSignIn onDone={() => void data.reload()} />
-          ) : (
-            <div className="pta-empty">
-              <h3>Could not reach the portal</h3>
-              <p>{data.error}</p>
-              <PtaButton onClick={() => void data.reload()}>Try again</PtaButton>
-            </div>
-          )}
-        </div>
-      );
-    }
-    const section = (key, title, hint, items, actions, reasonOf) => items.length === 0 ? null : (
-      <section key={key} className="pta-section">
-        <div className="pta-section__head">
-          <h3>{title} <span className="pta-count">{items.length}</span></h3>
-          <span className="pta-meta">{hint}</span>
-        </div>
-        <div className="pta-rows">
-          {items.map((ticket) => (
-            <TicketLine
-              key={ticket.id}
-              ticket={ticket}
-              reason={reasonOf ? reasonOf(ticket) : ''}
-              showAge={key !== 'stalled'}
-              actions={actions ? actions(ticket) : <TicketRowActions ticket={ticket} />}
-            />
-          ))}
-        </div>
-      </section>
-    );
-    const stuckReason = new Map(
-      data.queue
-        .filter((item) => !(Array.isArray(item?.eligible) ? item.eligible.length > 0 : Boolean(item?.eligible)))
-        .map((item) => [Number(item.id), item.reason ?? 'no eligible node']),
-    );
-    return (
-      <div className="pta-page" ref={root}>
-        <header className="pta-head">
-          <div>
-            <h1>Needs you</h1>
-            <p>
-              {total === 0
-                ? 'Nothing is waiting on you. Agents are on it.'
-                : `${total} item${total === 1 ? '' : 's'} want a decision.`}
-            </p>
-          </div>
-          <div className="pta-head__actions">
-            <PtaButton onClick={goInbox}>Open Inbox</PtaButton>
-            <PtaButton kind="ghost" onClick={goWorkbench}>Workbench</PtaButton>
-          </div>
-        </header>
-
-        <ProjectPark
-          projects={data.projects}
-          tickets={data.tickets}
-          runs={data.running}
-          recentRuns={data.recent}
-          now={data.at || Date.now()}
-          onSelect={(plot) => openProjectPage(plot)}
-          onOpenTicket={(ticket) => void openTicketRun(ticket)}
-        />
-
-        <div className="pta-kpis">
-          <Kpi label="To approve" value={groups.approvals.length} tint={tintOfStatus('new')} onClick={() => openInboxFilter('approval')} hint="New requests; nothing runs until you approve." />
-          <Kpi label="To review" value={groups.reviews.length} tint={tintOfStatus('review')} onClick={() => openInboxFilter('review')} hint="Finished runs waiting for your check." />
-          <Kpi label="Clients waiting" value={groups.waiting.length} tint={tintOfStatus('approved')} onClick={() => openInboxFilter('reply')} hint="They wrote last and have heard nothing since." />
-          <Kpi label="Stalled" value={groups.stalled.length} tint={tintOfStatus('in_progress')} onClick={() => openInboxFilter('stalled')} hint="In progress for 45+ minutes without a report." />
-          <Kpi label="Running now" value={groups.running.length} tint={tintOfStatus('in_progress')} hint="Agents working right now. Listed at the bottom of this page." />
-        </div>
-
-        {section('approvals', 'Approve or decline', 'New requests. Nothing runs until you decide.', groups.approvals)}
-        {section('review', 'Check the agent’s work', 'Finished runs waiting for you.', groups.reviews)}
-        {section('waiting', 'Answer the client', 'They wrote last and have heard nothing since.', groups.waiting)}
-        {section('stalled', 'Stalled', 'In progress for 45+ minutes without a report.', groups.stalled, null, stalledReason)}
-        {section('stuck', 'No node can take these', 'Approved, but nothing eligible can run them.', groups.stuck, null, (ticket) => stuckReason.get(Number(ticket.id)) ?? '')}
-
-        {groups.running.length > 0 ? (
-          <section className="pta-section">
-            <div className="pta-section__head"><h3>Running now <span className="pta-count">{groups.running.length}</span></h3><span className="pta-meta">Live agent work.</span></div>
-            <div className="pta-rows">
-              {groups.running.map((run) => (
-                <button key={run.id} type="button" className="pta-row" onClick={() => void openTicketRun({ id: run.ticket_id, title: run.title })}>
-                  <span className="pta-dot pta-dot--running" />
-                  <span className="pta-id">#{run.ticket_id}</span>
-                  <span className="pta-title">{run.title || 'run'}</span>
-                  <span className="pta-meta">{run.executor}</span>
-                  <span className="pta-meta">on {run.node_id ?? 'this machine'}</span>
-                  <span className="pta-fill" />
-                  <span className="pta-meta">{ago(run.started_at ?? run.updated_at)}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {groups.failed.length > 0 ? (
-          <section className="pta-section">
-            <div className="pta-section__head"><h3>Failed runs, last 24h</h3><span className="pta-meta">These stop until someone looks.</span></div>
-            <div className="pta-rows">
-              {groups.failed.map((run) => (
-                <button key={run.id} type="button" className="pta-row" onClick={() => void openTicketRun({ id: run.ticket_id, title: run.title })}>
-                  <span className="pta-dot pta-dot--danger" />
-                  <span className="pta-id">#{run.ticket_id}</span>
-                  <span className="pta-title">{run.title || 'run'}</span>
-                  <span className="pta-meta">{run.executor}</span>
-                  <span className="pta-meta">on {run.node_id ?? 'this machine'}</span>
-                  <span className="pta-fill" />
-                  <span className="pta-meta">{ago(run.finished_at)}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {total === 0 && groups.failed.length === 0 ? (
-          <EmptyState title="Inbox zero" text="No approvals, no reviews, no client waiting. New work will appear here and in a notification.">
-            <PtaButton onClick={goInbox}>Open Inbox</PtaButton>
-            <PtaButton kind="ghost" onClick={goWorkbench}>Workbench</PtaButton>
-          </EmptyState>
-        ) : null}
-      </div>
-    );
-  }
-
   function InboxPage() {
     const data = useLiveAdmin();
     const groups = useMemo(() => ticketGroups(data), [data]);
-    const [filter, setFilter] = useState(() => {
-      const preset = pendingInboxFilter;
-      pendingInboxFilter = null;
-      return preset ?? 'all';
-    });
+    const [filter, setFilter] = useState('all');
     const [query, setQuery] = useState('');
     const search = useRef(null);
     const root = useRef(null);
     useEffect(() => {
-      const onPreset = (event) => { pendingInboxFilter = null; setFilter(event.detail?.filter ?? 'all'); };
+      const onPreset = (event) => setFilter(event.detail?.filter ?? 'all');
       // "/" jumps to search from anywhere on the page; Escape clears it. The
       // same listener runs the row keys (j/k, arrows, Home/End), so this page
       // has exactly one page-wide key handler.
@@ -2650,7 +2445,6 @@ function apply(ctx) {
       window.addEventListener('keydown', onKey);
       return () => { window.removeEventListener('pta:inbox-filter', onPreset); window.removeEventListener('keydown', onKey); };
     }, []);
-    const goWorkbench = () => ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
     const all = useMemo(() => {
       const seen = new Map();
       // One ticket can be in more than one bucket — a review ticket the client
@@ -2671,6 +2465,11 @@ function apply(ctx) {
       for (const ticket of groups.stuck) add(ticket, 'stuck');
       return [...seen.values()];
     }, [groups]);
+    const stuckReason = useMemo(() => new Map(
+      data.queue
+        .filter((item) => !(Array.isArray(item?.eligible) ? item.eligible.length > 0 : Boolean(item?.eligible)))
+        .map((item) => [Number(item.id), item.reason ?? 'no eligible node']),
+    ), [data.queue]);
     const filters = [
       { key: 'all', label: 'All', count: all.length },
       { key: 'approval', label: 'Approvals', count: groups.approvals.length },
@@ -2687,11 +2486,27 @@ function apply(ctx) {
         .toLowerCase()
         .includes(needle);
     });
-    if (data.error && isAuthError(data.code)) {
+    if (data.loading && data.at === 0) {
+      return <div className="pta-page" ref={root}><p className="pta-empty">Loading…</p></div>;
+    }
+    if (data.error) {
       return (
         <div className="pta-page" ref={root}>
-          <header className="pta-head"><div><h1>Inbox</h1><p>Connect PTech Admin to the portal to see what is waiting.</p></div></header>
-          <PortalSignIn onDone={() => void data.reload()} />
+          <header className="pta-head">
+            <div>
+              <h1>Inbox</h1>
+              <p>{isAuthError(data.code) ? data.error || 'Connect PTech Admin to the portal to see what is waiting.' : 'The portal could not be reached.'}</p>
+            </div>
+          </header>
+          {isAuthError(data.code) ? (
+            <PortalSignIn onDone={() => void data.reload()} />
+          ) : (
+            <div className="pta-empty">
+              <h3>Could not reach the portal</h3>
+              <p>{data.error}</p>
+              <PtaButton onClick={() => void data.reload()}>Try again</PtaButton>
+            </div>
+          )}
         </div>
       );
     }
@@ -2700,7 +2515,11 @@ function apply(ctx) {
         <header className="pta-head">
           <div>
             <h1>Inbox</h1>
-            <p>Approvals, reviews and client replies in one place. The same items notify you as they arrive.</p>
+            <p>
+              {all.length === 0
+                ? 'Nothing is waiting on you. Agents are on it.'
+                : `${all.length} item${all.length === 1 ? '' : 's'} want a decision.`}
+            </p>
           </div>
           <div className="pta-head__actions">
             <input
@@ -2712,7 +2531,6 @@ function apply(ctx) {
               onKeyDown={(event) => { if (event.key === 'Escape') { setQuery(''); event.currentTarget.blur(); } }}
               aria-label="Search the inbox"
             />
-            <PtaButton kind="ghost" onClick={goWorkbench}>Workbench</PtaButton>
           </div>
         </header>
         <div className="pta-filters">
@@ -2727,30 +2545,57 @@ function apply(ctx) {
           <EmptyState title={all.length === 0 ? 'Inbox zero' : 'Nothing in this filter'} text={all.length === 0 ? 'New approvals, reviews and client replies will land here and notify you.' : 'Try another filter, or clear the search.'} />
         ) : (
           <div className="pta-rows pta-rows--inbox">
-            {shown.map(({ ticket, kinds }) => (
-              <TicketLine
-                key={ticket.id}
-                ticket={ticket}
-                reason={kinds.has('stalled') ? stalledReason(ticket) : ''}
-                showAge={!kinds.has('stalled')}
-                actions={<TicketRowActions ticket={ticket} />}
-                detail={isWaiting(ticket) ? 'waiting' : ''}
-              />
-            ))}
+            {shown.map(({ ticket, kinds }) => {
+              const stalled = kinds.has('stalled');
+              const reason = stalled
+                ? stalledReason(ticket)
+                : kinds.has('stuck')
+                  ? (stuckReason.get(Number(ticket.id)) ?? 'no eligible node')
+                  : '';
+              return (
+                <TicketLine
+                  key={ticket.id}
+                  ticket={ticket}
+                  stalled={stalled}
+                  reason={reason}
+                  showAge={!stalled}
+                  actions={<TicketRowActions ticket={ticket} />}
+                  detail={isWaiting(ticket) ? 'waiting' : ''}
+                />
+              );
+            })}
           </div>
         )}
       </div>
     );
   }
 
-  /**
-   * The Marketing and SEO desks are the shared workbench views, but they are
-   * first-class main pages here. Their contract is tiny: `api`, `act`,
-   * `notify` and (for SEO) `openTicket`, so a local provider is enough; no
-   * activity bar, tabs or explorer around them.
-   */
-  function DeskPage({ children }) {
+  const EMPTY_DESK_DATA = {
+    loaded: true, error: null, fetchedAt: 0,
+    tickets: [], projects: [], clients: [], usageTotal: null,
+    nodes: [], queue: [], running: [], recent: [], settings: null, catalog: null,
+  };
+
+  /** Route an internal `admin-ui` destination key to its native desktop panel. */
+  function openNativeDestination(key) {
+    const target = String(key ?? '');
+    if (!target) return;
+    if (target.startsWith('t:')) { void openTicketRun({ id: Number(target.slice(2)) }); return; }
+    if (target.startsWith('p:')) { openProjectPage({ id: target.slice(2) }); return; }
+    if (target.startsWith('c:')) { openClientPage({ id: target.slice(2) }); return; }
+    if (target === 'inbox') { ctx.layout?.selectPanel?.(HOME_PANEL); return; }
+    if (target === 'board' || target === 'list' || target === 'work') { ctx.layout?.selectPanel?.(WORK_PANEL); return; }
+    if (target === 'marketing') { ctx.layout?.selectPanel?.(MARKETING_PANEL); return; }
+    if (target === 'seo') { ctx.layout?.selectPanel?.(SEO_PANEL); return; }
+    if (target === 'fleet' || target === 'health') { ctx.layout?.selectPanel?.(FLEET_PANEL); return; }
+    if (target === 'settings') { ctx.layout?.selectPanel?.(SETTINGS_PANEL); }
+  }
+
+  function DeskShell({ children, data, reload, allowSignedOut = false }) {
     const [toast, setToast] = useState(null);
+    const [modal, setModal] = useState(null);
+    const [askState, setAskState] = useState(null);
+    const [boardProject, setBoardProject] = useState('all');
     const timer = useRef(null);
     const notify = useCallback((text, kind = 'ok') => {
       clearTimeout(timer.current);
@@ -2762,29 +2607,74 @@ function apply(ctx) {
       try {
         const out = await fn();
         if (done !== undefined) notify(typeof done === 'function' ? done(out) : done);
+        void reload();
+        window.dispatchEvent(new CustomEvent('admin:changed', { detail: { kind: 'desk.mutation' } }));
         return out;
       } catch (error) {
         notify(error?.message ?? String(error), 'error');
         throw error;
       }
-    }, [notify]);
+    }, [notify, reload]);
+    const setStatus = useCallback((ticket, status) => {
+      if (status === ticket.status) return Promise.resolve();
+      const run = () => act(() => api('PATCH', `/admin/tickets/${ticket.id}`, { status }), `#${ticket.id} → ${STATUS_LABEL[status] ?? status}`);
+      if (ticket.kind !== 'system' && CLIENT_VISIBLE_STATUSES.has(status)) {
+        return new Promise((resolve) =>
+          setAskState({
+            title: `${STATUS_LABEL[status] ?? status}: #${ticket.id}?`,
+            text: `${ticket.client_email ?? ticket.clientEmail ?? 'The client'} is emailed about this change.`,
+            confirm: STATUS_LABEL[status] ?? status,
+            danger: status === 'declined',
+            run: () => run().then(resolve, resolve),
+          }),
+        );
+      }
+      return run().catch(() => undefined);
+    }, [act]);
     const context = useMemo(() => ({
       api,
       act,
       notify,
+      ask: setAskState,
+      setModal,
+      setStatus,
+      data,
+      reload,
+      boardProject,
+      setBoardProject,
+      open: openNativeDestination,
       openTicket: (id) => void openTicketRun({ id }),
+      activeTab: null,
+      closeTab: () => {},
       platform: 'dsh',
       host,
       files,
-    }), [api, act, notify, host]);
+    }), [act, notify, setStatus, data, reload, boardProject]);
+    const signedOut = !allowSignedOut && Boolean(data.error && isAuthError(data.error.code));
     return (
       <div
-        className="aw pta-desk"
+        className="aw aw--dsh pta-desk"
         style={{ gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)', height: '100%', minHeight: 0 }}
       >
         <style>{STYLES}</style>
         <div className="aw-content" style={{ overflow: 'auto', height: '100%' }}>
-          <AdminContext.Provider value={context}>{children}</AdminContext.Provider>
+          <AdminContext.Provider value={context}>
+            {signedOut ? (
+              <div className="pta-page">
+                <PortalSignIn onDone={() => void reload()} />
+              </div>
+            ) : !allowSignedOut && !data.loaded ? (
+              <div className="aw-loading--fill">
+                <Skeleton variant="pane" label="Loading…" />
+              </div>
+            ) : (
+              children
+            )}
+            {modal?.kind === 'task' ? <TaskModal preset={modal} onClose={() => setModal(null)} /> : null}
+            {modal?.kind === 'project' ? <ProjectModal onClose={() => setModal(null)} /> : null}
+            {modal?.kind === 'custom' ? modal.render(() => setModal(null)) : null}
+            {askState ? <Confirm ask={askState} onClose={() => setAskState(null)} /> : null}
+          </AdminContext.Provider>
         </div>
         {toast ? (
           <div className={`aw-toast${toast.kind === 'error' ? ' is-error' : ''}`} role="status">
@@ -2795,12 +2685,73 @@ function apply(ctx) {
     );
   }
 
+  function DeskPageWithData({ children, allowSignedOut = false }) {
+    const [data, reload] = useAdminData(api);
+    useEffect(() => {
+      const onChanged = () => void reload();
+      window.addEventListener('admin:changed', onChanged);
+      return () => window.removeEventListener('admin:changed', onChanged);
+    }, [reload]);
+    return <DeskShell data={data} reload={reload} allowSignedOut={allowSignedOut}>{children}</DeskShell>;
+  }
+
+  /**
+   * Native host wrapper for shared `admin-ui` views (Work, Marketing, SEO,
+   * Fleet, Settings): supplies `AdminContext`, confirms, modals and toasts
+   * directly on the stage with zero outer activity bar, tabs or explorer.
+   */
+  function DeskPage({ children, withData = false, allowSignedOut = false }) {
+    const noopReload = useCallback(() => Promise.resolve(), []);
+    if (withData) return <DeskPageWithData allowSignedOut={allowSignedOut}>{children}</DeskPageWithData>;
+    return <DeskShell data={EMPTY_DESK_DATA} reload={noopReload} allowSignedOut>{children}</DeskShell>;
+  }
+
+  function WorkPage() {
+    const [mode, setMode] = useState(() => {
+      try {
+        return localStorage.getItem('pta.work.mode') === 'board' ? 'board' : 'list';
+      } catch {
+        return 'list';
+      }
+    });
+    const switchMode = (next) => {
+      setMode(next);
+      try { localStorage.setItem('pta.work.mode', next); } catch { /* ignore */ }
+    };
+    return (
+      <DeskPage withData>
+        <div className="pta-work">
+          <div className="pta-work__bar">
+            <Segmented
+              value={mode}
+              label="Work view"
+              options={[
+                { value: 'list', label: 'List' },
+                { value: 'board', label: 'Board' },
+              ]}
+              onChange={switchMode}
+            />
+          </div>
+          {mode === 'board' ? <BoardView /> : <ListView />}
+        </div>
+      </DeskPage>
+    );
+  }
+
   function MarketingPage() {
     return <DeskPage><MarketingView /></DeskPage>;
   }
 
   function SeoPage() {
     return <DeskPage><SeoView /></DeskPage>;
+  }
+
+  function FleetPage() {
+    return <DeskPage withData><FleetView /></DeskPage>;
+  }
+
+  function SettingsPage() {
+    return <DeskPage withData allowSignedOut><SettingsView /></DeskPage>;
   }
 
   const WORKSPACE_TEXT = {
@@ -2965,10 +2916,16 @@ function apply(ctx) {
   /**
    * Open a `ptech-admin://` link: the plugin half of the desktop URL scheme.
    *
-   *   ptech-admin://ticket/12   the ticket's conversation, or the workbench
-   *   ptech-admin://client/<id> that client's page
+   *   ptech-admin://ticket/12   the ticket's conversation, or native ticket page
+   *   ptech-admin://client/<id> that client's native page
+   *   ptech-admin://project/<id> that project's native page
+   *   ptech-admin://inbox       the Inbox home
+   *   ptech-admin://work        the Work desk (List / Board)
    *   ptech-admin://seo         the SEO desk
-   *   ptech-admin://health      the health desk
+   *   ptech-admin://marketing   the Marketing desk
+   *   ptech-admin://fleet       the Fleet & health desk
+   *   ptech-admin://health      the Fleet & health desk
+   *   ptech-admin://settings    the Settings desk
    *   ptech-admin://auth?code=  finish a portal sign-in started in the browser
    *
    * The fork's URL handler calls `globalThis.__dshAdminOpenLink(url)` (or
@@ -2995,17 +2952,6 @@ function apply(ctx) {
       });
     const route = (parts.shift() ?? '').toLowerCase();
     const target = parts.join('/');
-    /**
-     * Select the Admin panel and put a route in its hash. A hash that is
-     * already current still dispatches `hashchange`, because the workbench
-     * only reads the hash on mount and on that event.
-     */
-    const openHash = (hash) => {
-      ctx.layout?.selectPanel?.(WORKBENCH_PANEL);
-      const wanted = `#${hash}`;
-      if (window.location.hash === wanted) window.dispatchEvent(new HashChangeEvent('hashchange'));
-      else window.location.hash = wanted;
-    };
     if (route === 'ticket') {
       const id = Number.parseInt(target, 10);
       if (!Number.isInteger(id) || id <= 0) return false;
@@ -3032,7 +2978,23 @@ function apply(ctx) {
     if (route === 'client') {
       if (target.length === 0) return false;
       handledDeepLink = true;
-      openHash(`client=${encodeURIComponent(target)}`);
+      openClientPage({ id: target });
+      return true;
+    }
+    if (route === 'project') {
+      if (target.length === 0) return false;
+      handledDeepLink = true;
+      openProjectPage({ id: target });
+      return true;
+    }
+    if (route === 'inbox') {
+      handledDeepLink = true;
+      ctx.layout?.selectPanel?.(HOME_PANEL);
+      return true;
+    }
+    if (route === 'work' || route === 'board' || route === 'list') {
+      handledDeepLink = true;
+      ctx.layout?.selectPanel?.(WORK_PANEL);
       return true;
     }
     if (route === 'seo') {
@@ -3045,9 +3007,14 @@ function apply(ctx) {
       ctx.layout?.selectPanel?.(MARKETING_PANEL);
       return true;
     }
-    if (route === 'health') {
+    if (route === 'fleet' || route === 'health') {
       handledDeepLink = true;
-      openHash(route);
+      ctx.layout?.selectPanel?.(FLEET_PANEL);
+      return true;
+    }
+    if (route === 'settings') {
+      handledDeepLink = true;
+      ctx.layout?.selectPanel?.(SETTINGS_PANEL);
       return true;
     }
     return false;
@@ -3074,17 +3041,20 @@ function apply(ctx) {
   ctx.inject(['locale'], (localeCtx) => {
     localeCtx.effect(() => localeCtx.locale.register(NAMESPACE, { en: DICTIONARY }), 'admin: locale namespace');
   });
-  // The native home is the default main page; Inbox is its own page and the
-  // full workbench stays one click away.
-  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: HOME_PANEL, locale: NAMESPACE }, NeedsYouPage));
-  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: INBOX_PANEL, locale: NAMESPACE }, InboxPage));
+  // Inbox is the default main page; Work, Marketing, SEO, Fleet and Settings
+  // mount natively through DeskPage with no outer shell-in-shell chrome.
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: HOME_PANEL, locale: NAMESPACE }, InboxPage));
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: WORK_PANEL, locale: NAMESPACE }, WorkPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: MARKETING_PANEL, locale: NAMESPACE }, MarketingPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: SEO_PANEL, locale: NAMESPACE }, SeoPage));
-  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: WORKBENCH_PANEL, locale: NAMESPACE }, AdminPage));
-  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: HOME_PANEL, order: 11, label: 'Needs you' }, AdminEntryIcon));
-  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: INBOX_PANEL, order: 12, label: 'Inbox' }, InboxEntryIcon));
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: FLEET_PANEL, locale: NAMESPACE }, FleetPage));
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: SETTINGS_PANEL, locale: NAMESPACE }, SettingsPage));
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: HOME_PANEL, order: 11, label: 'Inbox' }, InboxEntryIcon));
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: WORK_PANEL, order: 12, label: 'Work' }, WorkEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: MARKETING_PANEL, order: 13, label: 'Marketing' }, MarketingEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: SEO_PANEL, order: 14, label: 'SEO' }, SeoEntryIcon));
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: FLEET_PANEL, order: 15, label: 'Fleet' }, FleetEntryIcon));
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: SETTINGS_PANEL, order: 16, label: 'Settings' }, SettingsEntryIcon));
   ctx.inject(['conversation'], (scope) => {
     nativeConversation = scope.conversation;
     scope.effect(() => () => { nativeConversation = null; }, 'admin: native view selection');
@@ -3100,7 +3070,7 @@ function apply(ctx) {
     ctx.slots.register({ name: 'conversation.chat.activity-frame', id: 'admin-ticket-activity' }, TicketActivityFrame));
   ctx.slots.inject('conversation.input.dock', () =>
     ctx.slots.register({ name: 'conversation.input.dock', id: 'admin-ticket', order: 20, locale: NAMESPACE }, TicketDock));
-  // The native pages own their own small stylesheet; no workbench CSS leaks
+  // The native pages own their own small stylesheet; no admin-ui CSS leaks
   // into the native conversation.
   ctx.effect(() => {
     const style = document.createElement('style');
@@ -3109,7 +3079,7 @@ function apply(ctx) {
     document.head.append(style);
     return () => style.remove();
   }, 'admin: native styles');
-  // A cold launch lands on Needs you. A deep link that arrived first (a
+  // A cold launch lands on Inbox. A deep link that arrived first (a
   // ticket, a client, a sign-in) wins, and a renderer reload of the same
   // window simply comes back here.
   ctx.effect(() => {
@@ -3122,7 +3092,7 @@ function apply(ctx) {
       }
     }, 900);
     return () => clearTimeout(timer);
-  }, 'admin: initial needs-you view');
+  }, 'admin: initial inbox view');
   // Each client gets a row of its own under Admin.
   ctx.slots.inject('sidebar.panellist', () => syncClientRows());
   // The PTech Admin workspace browser declares `sidebar.workspaces.section`.
