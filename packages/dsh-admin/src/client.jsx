@@ -456,7 +456,7 @@ function apply(ctx) {
   function NativeTask({ sessionId }) {
     const ticket = ticketFromCwd(useSessionCwd(sessionId));
     if (!ticket) return null;
-    return <TicketPage key={`${sessionId}:${ticket.ticketId}`} api={api} host={host} files={files} ticketId={ticket.ticketId} autoMeter={false} />;
+    return <TicketPage key={`${sessionId}:${ticket.ticketId}`} api={api} host={host} files={files} ticketId={ticket.ticketId} autoMeter={false} chrome={false} />;
   }
 
   function NativeHistory({ sessionId }) {

@@ -54,7 +54,7 @@ const PRIMARY = {
  * its own instead — the status moves then move up into the header, because
  * that column is where they lived.
  */
-export function TicketView({ id, active, details = true }) {
+export function TicketView({ id, active, details = true, chrome = true }) {
   const { api, act } = useAdmin();
   const [{ ticket, messages, runs, review, screenshots, land, error, loading, fetchedAt }, reload] = useTicket(api, id);
   const meter = useMeter(api, ticket, active);
@@ -79,6 +79,7 @@ export function TicketView({ id, active, details = true }) {
       <div className="aw-ticket__main">
         {error ? <div className="aw-banner aw-banner--warn" role="alert"><span style={{ flex: 1, minWidth: 0 }}>Refresh failed. Showing ticket evidence last fetched {fetchedAt ? new Date(fetchedAt).toLocaleString() : 'at an unknown time'}. {errorText(error)}</span> <Button size="sm" onClick={reload}>Retry refresh</Button></div> : null}
         <header className="aw-ticket__head">
+          {chrome ? (
           <div className="aw-ticket__crumbs">
             <span className="aw-mono">#{ticket.id}</span>
             <span>{ticket.project_name ?? 'no project'}</span>
@@ -102,7 +103,8 @@ export function TicketView({ id, active, details = true }) {
               </span>
             ) : null}
           </div>
-          <h2 title={ticket.title_en ? `Original: ${ticket.title}` : undefined}>{ticket.title_en || ticket.title}</h2>
+          ) : null}
+          {chrome ? <h2 title={ticket.title_en ? `Original: ${ticket.title}` : undefined}>{ticket.title_en || ticket.title}</h2> : null}
           {clientWaiting(ticket) ? (
             <div className="aw-banner aw-banner--warn">
               <Dot state="warn" /> The client wrote {ago(ticket.client_waiting_since)} ago and is waiting for an answer.

@@ -3020,7 +3020,7 @@ ${block(Object.entries(TOKENS))}
     done: [["approved", RUN_AGAIN, "ghost"]],
     declined: [["new", "Reopen", "ghost"]]
   };
-  function TicketView({ id, active, details = true }) {
+  function TicketView({ id, active, details = true, chrome = true }) {
     const { api, act } = useAdmin();
     const [{ ticket, messages, runs, review, screenshots, land, error, loading, fetchedAt }, reload] = useTicket(api, id);
     const meter = useMeter(api, ticket, active);
@@ -3045,7 +3045,7 @@ ${block(Object.entries(TOKENS))}
           /* @__PURE__ */ jsx(Button, { size: "sm", onClick: reload, children: "Retry refresh" })
         ] }) : null,
         /* @__PURE__ */ jsxs("header", { className: "aw-ticket__head", children: [
-          /* @__PURE__ */ jsxs("div", { className: "aw-ticket__crumbs", children: [
+          chrome ? /* @__PURE__ */ jsxs("div", { className: "aw-ticket__crumbs", children: [
             /* @__PURE__ */ jsxs("span", { className: "aw-mono", children: [
               "#",
               ticket.id
@@ -3069,8 +3069,8 @@ ${block(Object.entries(TOKENS))}
               "writes in ",
               localeInfo(ticket.client_locale)?.english ?? ticket.client_locale
             ] }) : null
-          ] }),
-          /* @__PURE__ */ jsx("h2", { title: ticket.title_en ? `Original: ${ticket.title}` : void 0, children: ticket.title_en || ticket.title }),
+          ] }) : null,
+          chrome ? /* @__PURE__ */ jsx("h2", { title: ticket.title_en ? `Original: ${ticket.title}` : void 0, children: ticket.title_en || ticket.title }) : null,
           clientWaiting(ticket) ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", children: [
             /* @__PURE__ */ jsx(Dot, { state: "warn" }),
             " The client wrote ",
@@ -16784,9 +16784,9 @@ ${question.text ?? ""}`)) {
       ] })
     ] });
   }
-  function TicketPage({ api, host = null, files = null, ticketId, part = "thread", autoMeter = true }) {
+  function TicketPage({ api, host = null, files = null, ticketId, part = "thread", autoMeter = true, chrome = true }) {
     if (part === "details") return /* @__PURE__ */ jsx(TicketSidePanel, { api, host, ticketId, page: true });
-    return /* @__PURE__ */ jsx(TicketThread, { api, host, files, ticketId, autoMeter });
+    return /* @__PURE__ */ jsx(TicketThread, { api, host, files, ticketId, autoMeter, chrome });
   }
   function ClientPage({ api, host = null, files = null, clientId }) {
     const [data, reloadData] = useAdminData(api);
@@ -16802,7 +16802,7 @@ ${question.text ?? ""}`)) {
       ] })
     ] });
   }
-  function TicketThread({ api, host, files, ticketId, autoMeter }) {
+  function TicketThread({ api, host, files, ticketId, autoMeter, chrome = true }) {
     const [data, reloadData] = useAdminData(api);
     const reload = useCallback(() => {
       void reloadData();
@@ -16812,7 +16812,7 @@ ${question.text ?? ""}`)) {
     return /* @__PURE__ */ jsxs("div", { className: "aw aw--dsh", style: scope, children: [
       /* @__PURE__ */ jsx("style", { children: STYLES }),
       /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
-        /* @__PURE__ */ jsx(TicketView, { id: ticketId, active: autoMeter, details: false }),
+        /* @__PURE__ */ jsx(TicketView, { id: ticketId, active: autoMeter, details: false, chrome }),
         /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast })
       ] })
     ] });
@@ -17533,7 +17533,7 @@ ${question.text ?? ""}`)) {
     function NativeTask({ sessionId }) {
       const ticket = ticketFromCwd(useSessionCwd(sessionId));
       if (!ticket) return null;
-      return /* @__PURE__ */ jsx(TicketPage, { api, host, files, ticketId: ticket.ticketId, autoMeter: false }, `${sessionId}:${ticket.ticketId}`);
+      return /* @__PURE__ */ jsx(TicketPage, { api, host, files, ticketId: ticket.ticketId, autoMeter: false, chrome: false }, `${sessionId}:${ticket.ticketId}`);
     }
     function NativeHistory({ sessionId }) {
       const ticket = ticketFromCwd(useSessionCwd(sessionId));

@@ -1190,11 +1190,11 @@ export function TicketSidePanel({ api, host = null, ticketId, page = false }) {
  * workbench: the Harness conversation's Ticket view. Same `TicketView`, data
  * hooks, provider and styles as the workbench page, so the two cannot drift.
  */
-export function TicketPage({ api, host = null, files = null, ticketId, part = 'thread', autoMeter = true }) {
+export function TicketPage({ api, host = null, files = null, ticketId, part = 'thread', autoMeter = true, chrome = true }) {
   // A host with a narrow conversation shows the details as a tab of their own
   // (`part: 'details'`) rather than as a column that squeezes the thread.
   if (part === 'details') return <TicketSidePanel api={api} host={host} ticketId={ticketId} page />;
-  return <TicketThread api={api} host={host} files={files} ticketId={ticketId} autoMeter={autoMeter} />;
+  return <TicketThread api={api} host={host} files={files} ticketId={ticketId} autoMeter={autoMeter} chrome={chrome} />;
 }
 
 /**
@@ -1218,7 +1218,7 @@ export function ClientPage({ api, host = null, files = null, clientId }) {
   );
 }
 
-function TicketThread({ api, host, files, ticketId, autoMeter }) {
+function TicketThread({ api, host, files, ticketId, autoMeter, chrome = true }) {
   const [data, reloadData] = useAdminData(api);
   const reload = useCallback(() => {
     void reloadData();
@@ -1231,7 +1231,7 @@ function TicketThread({ api, host, files, ticketId, autoMeter }) {
     <div className="aw aw--dsh" style={scope}>
       <style>{STYLES}</style>
       <AdminContext.Provider value={value}>
-        <TicketView id={ticketId} active={autoMeter} details={false} />
+        <TicketView id={ticketId} active={autoMeter} details={false} chrome={chrome} />
         <Toast toast={toast} onDismiss={dismissToast} />
       </AdminContext.Provider>
     </div>
