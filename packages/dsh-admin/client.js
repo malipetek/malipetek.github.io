@@ -551,6 +551,7 @@ var __awPlugin = (() => {
         className: cx("aw-btn", `aw-btn--${kind}`, size && `aw-btn--${size}`, iconOnly && "aw-btn--icon", className),
         disabled: isDisabled,
         "aria-busy": busy || props["aria-busy"] || void 0,
+        "data-primary": kind === "primary" ? "true" : void 0,
         "aria-describedby": disabled && disabledReason ? reasonId : props["aria-describedby"],
         "data-tip": !(disabled && disabledReason) && tipText && !props.title ? tipText : void 0,
         ...props,

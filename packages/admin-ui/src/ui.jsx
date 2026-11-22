@@ -50,6 +50,7 @@ export function Button({ kind = 'default', size, className, busy = false, disabl
       className={cx('aw-btn', `aw-btn--${kind}`, size && `aw-btn--${size}`, iconOnly && 'aw-btn--icon', className)}
       disabled={isDisabled}
       aria-busy={busy || props['aria-busy'] || undefined}
+      data-primary={kind === 'primary' ? 'true' : undefined}
       aria-describedby={disabled && disabledReason ? reasonId : props['aria-describedby']}
       data-tip={!(disabled && disabledReason) && tipText && !props.title ? tipText : undefined}
       {...props}
