@@ -25,6 +25,7 @@ import { FleetView, SettingsView } from '../../admin-ui/src/fleet.jsx';
 import { MarketingView } from '../../admin-ui/src/marketing.jsx';
 import { SeoView } from '../../admin-ui/src/seo.jsx';
 import { Confirm, Icon, Segmented, Skeleton } from '../../admin-ui/src/ui.jsx';
+import { Inspector, MetaChip, StateIndicator, UiStyles, resolveState } from '../../admin-ui/src/ui/index.js';
 import { STYLES } from '../../admin-ui/src/styles.js';
 import { assistantBadge, assistantBadgeTitle } from '../../admin-ui/src/ticket-assistant.mjs';
 import { STATUS_LABEL, needsYou } from '../../admin-ui/src/format.js';
@@ -1878,11 +1879,35 @@ function apply(ctx) {
     .pta-section__head h3{margin:0;font-size:13px;font-weight:600}
     .pta-count{display:inline-block;min-width:16px;margin-left:5px;padding:0 5px;border-radius:8px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.16));font-size:10px;line-height:16px;text-align:center;vertical-align:1px}
     .pta-rows{display:flex;flex-direction:column;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.22));border-radius:10px;overflow:hidden;background:var(--dsw-alias-bg-primary,transparent)}
-    .pta-rows--inbox{max-width:none}
+    .pta-rows--inbox{max-width:none;container-type:inline-size;container-name:pta-inbox-list}
     .pta-row{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:8px 12px;border:0;border-bottom:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.14));background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
     .pta-row:last-child{border-bottom:0}
     .pta-row:hover{background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.07))}
+    .pta-row[aria-selected="true"]{background:var(--ui-bg-selected,var(--dsw-alias-bg-secondary,rgba(127,127,127,.12)));box-shadow:inset 2px 0 0 var(--ui-accent,var(--dsw-alias-brand-primary,#ff5a1f))}
+    .pta-row[aria-selected="true"]:hover{background:var(--ui-bg-selected,var(--dsw-alias-bg-secondary,rgba(127,127,127,.14)))}
     .pta-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#ff5a1f);outline-offset:-2px}
+    .pta-row__state{flex:0 0 auto}
+    .pta-row__chip{flex:0 0 auto;max-width:190px}
+    .pta-inbox{position:relative;display:flex;flex-direction:row;height:100%;min-height:0;min-width:0;width:100%;overflow:hidden;background:transparent;container-type:inline-size;container-name:pta-inbox}
+    .pta-inbox__main{flex:1 1 auto;min-width:0;height:100%;overflow-y:auto}
+    .pta-inbox__page{height:auto;overflow:visible}
+    .pta-inbox__scrim{display:none}
+    .pta-inbox__inspector{height:100%}
+    .pta-insp{display:flex;flex-direction:column;gap:var(--ui-sp-4,16px)}
+    .pta-insp__top{display:flex;flex-direction:column;gap:var(--ui-sp-2,8px)}
+    .pta-insp__badges{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-sp-2,8px)}
+    .pta-insp__title{margin:0;font-size:var(--ui-fs-lg,15px);line-height:var(--ui-lh-tight,1.25);font-weight:600;color:var(--ui-ink,inherit);overflow-wrap:anywhere}
+    .pta-insp__reason{margin:0;padding:var(--ui-sp-2,8px) var(--ui-sp-3,12px);border-radius:var(--ui-r-md,6px);background:color-mix(in srgb,var(--ui-warn,#d18f2e) 12%,transparent);color:var(--ui-warn,#d18f2e);font-size:var(--ui-fs-sm,12px);line-height:var(--ui-lh,1.45)}
+    .pta-insp__actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-sp-2,8px);padding-bottom:var(--ui-sp-4,16px);border-bottom:1px solid var(--ui-border,rgba(127,127,127,.2))}
+    .pta-insp__actions .pta-btn{height:var(--ui-ctl-h,28px);padding:0 var(--ui-sp-3,12px);font-size:var(--ui-fs-md,13px);font-weight:500;border-radius:var(--ui-r-md,6px)}
+    .pta-insp__meta{display:grid;grid-template-columns:84px minmax(0,1fr);gap:var(--ui-sp-2,8px) var(--ui-sp-3,12px);margin:0;font-size:var(--ui-fs-sm,12px);line-height:var(--ui-lh,1.45)}
+    .pta-insp__meta dt{color:var(--ui-ink-3,rgba(127,127,127,.75));font-weight:500}
+    .pta-insp__meta dd{margin:0;color:var(--ui-ink,inherit);min-width:0;overflow-wrap:anywhere}
+    .pta-insp__chips{display:flex;flex-wrap:wrap;gap:var(--ui-sp-1,4px)}
+    @container pta-inbox-list (max-width:600px){.pta-row__state{gap:0}.pta-row__state>span:last-child{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}.pta-row__chip{max-width:130px}}
+    @container pta-inbox-list (max-width:440px){.pta-row__project{display:none}.pta-row__chip{max-width:96px}}
+    @media (max-width:900px){.pta-inbox__scrim{display:block;position:absolute;inset:0;z-index:9;background:var(--ui-scrim,rgba(0,0,0,.32))}.pta-inbox .pta-inbox__inspector{position:absolute;top:0;right:0;bottom:0;z-index:10;width:min(380px,calc(100% - 24px));max-width:100%;border-top:0;border-left:1px solid var(--ui-border,rgba(127,127,127,.22));background:var(--ui-bg-subtle,var(--dsw-alias-bg-elevated,#23252a));box-shadow:var(--ui-shadow,0 12px 32px rgba(0,0,0,.32))}}
+    @container pta-inbox (max-width:740px){.pta-inbox__scrim{display:block;position:absolute;inset:0;z-index:9;background:var(--ui-scrim,rgba(0,0,0,.32))}.pta-inbox .pta-inbox__inspector{position:absolute;top:0;right:0;bottom:0;z-index:10;width:min(380px,calc(100% - 24px));max-width:100%;border-top:0;border-left:1px solid var(--ui-border,rgba(127,127,127,.22));background:var(--ui-bg-subtle,var(--dsw-alias-bg-elevated,#23252a));box-shadow:var(--ui-shadow,0 12px 32px rgba(0,0,0,.32))}.pta-inbox .pta-inbox__inspector .ui-resize{display:none}}
     .pta-dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%}
     .pta-id{flex:0 0 auto;font-variant-numeric:tabular-nums;font-size:11.5px;opacity:.6}
     .pta-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
@@ -2192,8 +2217,142 @@ function apply(ctx) {
     return null;
   }
 
+  /**
+   * Applicable Inspector actions for one Inbox ticket: always includes Open,
+   * reuses the row action functions, and marks exactly one action as primary.
+   */
+  function inspectorActions(ticket, stalled) {
+    const actions = [];
+    if (ticket.status === 'new') {
+      actions.push({ key: 'approve', label: 'Approve', primary: true, run: () => void changeTicketStatus(ticket, 'approved') });
+      actions.push({ key: 'decline', label: 'Decline', kind: 'ghost', run: () => void changeTicketStatus(ticket, 'declined') });
+      actions.push({ key: 'open', label: 'Open', kind: 'default', title: 'Open conversation or ticket (Enter)', run: () => void openTicketRun(ticket) });
+      return actions;
+    }
+    if (ticket.status === 'review') {
+      actions.push({ key: 'done', label: 'Mark done', primary: true, run: () => void changeTicketStatus(ticket, 'done') });
+      actions.push({ key: 'requeue', label: 'Queue another run', kind: 'default', run: () => void changeTicketStatus(ticket, 'approved') });
+      if (isWaiting(ticket)) {
+        actions.push({ key: 'answered', label: 'No reply needed', kind: 'ghost', run: () => void markTicketAnswered(ticket) });
+      }
+      actions.push({ key: 'open', label: 'Open', kind: 'default', title: 'Open conversation or ticket (Enter)', run: () => void openTicketRun(ticket) });
+      return actions;
+    }
+    if (stalled && ticket.status === 'in_progress') {
+      actions.push({ key: 'requeue', label: 'Queue another run', primary: true, run: () => void changeTicketStatus(ticket, 'approved') });
+      if (isWaiting(ticket)) {
+        actions.push({ key: 'answered', label: 'No reply needed', kind: 'ghost', run: () => void markTicketAnswered(ticket) });
+      }
+      actions.push({ key: 'open', label: 'Open', kind: 'default', title: 'Open conversation or ticket (Enter)', run: () => void openTicketRun(ticket) });
+      return actions;
+    }
+    actions.push({ key: 'open', label: 'Open', primary: true, title: 'Open conversation or ticket (Enter)', run: () => void openTicketRun(ticket) });
+    if (isWaiting(ticket)) {
+      actions.push({ key: 'answered', label: 'No reply needed', kind: 'default', run: () => void markTicketAnswered(ticket) });
+    }
+    if (ticket.status === 'in_progress') {
+      actions.push({ key: 'requeue', label: 'Queue another run', kind: 'ghost', run: () => void changeTicketStatus(ticket, 'approved') });
+    }
+    return actions;
+  }
+
+  function InboxInspector({ entry, reason, onClose }) {
+    const { ticket, kinds } = entry;
+    const stalled = kinds.has('stalled');
+    const waiting = isWaiting(ticket);
+    const stateKey = stalled ? 'stalled' : ticket.status;
+    const via = assistantBadge(ticket);
+    const actions = inspectorActions(ticket, stalled);
+    const updatedAt = ticket.updated_at ? new Date(Number(ticket.updated_at) * 1000).toLocaleString() : '';
+    const waitingSince = waiting && ticket.client_waiting_since ? ago(ticket.client_waiting_since) : '';
+    const ownerLabel = ticket.kind === 'system' ? 'Owner' : 'Client';
+    const ownerValue = ticket.kind === 'system'
+      ? 'My task'
+      : (ticket.client_name && ticket.client_email
+          ? `${ticket.client_name} (${ticket.client_email})`
+          : (ticket.client_name || ticket.client_email || 'Client'));
+    const kindLabels = [
+      kinds.has('approval') && 'Needs approval',
+      kinds.has('review') && 'Ready for review',
+      kinds.has('reply') && 'Client reply',
+      kinds.has('stalled') && 'Stalled',
+      kinds.has('stuck') && 'Stuck in queue',
+    ].filter(Boolean);
+
+    return (
+      <Inspector
+        className="pta-inbox__inspector"
+        title={`#${ticket.id}`}
+        label={`Ticket #${ticket.id}`}
+        storageKey="pta.inbox.inspector.width"
+        defaultWidth={380}
+        onClose={onClose}
+      >
+        <div className="pta-insp">
+          <div className="pta-insp__top">
+            <div className="pta-insp__badges">
+              <StateIndicator state={stateKey} />
+              {waiting ? <MetaChip>Client waiting</MetaChip> : null}
+              {ticket.kind === 'system' ? <MetaChip>My task</MetaChip> : null}
+              {via ? <MetaChip title={assistantBadgeTitle(ticket)}>{via}</MetaChip> : null}
+            </div>
+            <h3 className="pta-insp__title">{ticketLabel(ticket)}</h3>
+            {reason ? <p className="pta-insp__reason" role="status">{reason}</p> : null}
+          </div>
+
+          <div className="pta-insp__actions">
+            {actions.map((action) => (
+              <PtaButton
+                key={action.key}
+                kind={action.primary ? 'primary' : (action.kind ?? 'default')}
+                title={action.title}
+                onClick={action.run}
+              >
+                {action.label}
+              </PtaButton>
+            ))}
+          </div>
+
+          <dl className="pta-insp__meta">
+            <dt>Ticket</dt>
+            <dd><MetaChip mono>#{ticket.id}</MetaChip></dd>
+            <dt>Project</dt>
+            <dd>{ticket.project_name || 'No project'}</dd>
+            <dt>{ownerLabel}</dt>
+            <dd>{ownerValue}</dd>
+            <dt>Age</dt>
+            <dd title={updatedAt || undefined}>{ago(ticket.updated_at)}</dd>
+            {waitingSince ? (
+              <>
+                <dt>Waiting</dt>
+                <dd>{waitingSince}</dd>
+              </>
+            ) : null}
+            {kindLabels.length > 0 ? (
+              <>
+                <dt>Queue</dt>
+                <dd className="pta-insp__chips">
+                  {kindLabels.map((label) => <MetaChip key={label}>{label}</MetaChip>)}
+                </dd>
+              </>
+            ) : null}
+          </dl>
+        </div>
+      </Inspector>
+    );
+  }
+
   function PtaButton({ children, kind = 'default', className = '', ...rest }) {
-    return <button type="button" className={`pta-btn pta-btn--${kind}${className ? ` ${className}` : ''}`} {...rest}>{children}</button>;
+    return (
+      <button
+        type="button"
+        className={`pta-btn pta-btn--${kind}${className ? ` ${className}` : ''}`}
+        data-primary={kind === 'primary' ? 'true' : undefined}
+        {...rest}
+      >
+        {children}
+      </button>
+    );
   }
 
   function StatusPill({ status }) {
@@ -2260,37 +2419,58 @@ function apply(ctx) {
     );
   }
 
-  function TicketLine({ ticket, actions = null, reason = '', detail = '', showAge = true, stalled = false }) {
-    const open = () => void openTicketRun(ticket);
+  function TicketLine({
+    ticket,
+    actions = null,
+    reason = '',
+    detail = '',
+    showAge = true,
+    stalled = false,
+    selected = false,
+    onSelect = null,
+    onOpen = null,
+  }) {
+    const open = () => (onOpen ? onOpen(ticket) : void openTicketRun(ticket));
+    const select = () => (onSelect ? onSelect(ticket) : open());
     // Who filed it: a person in the portal, or the client's assistant over MCP.
     const via = assistantBadge(ticket);
-    const dotTint = tintOfStatus(stalled ? 'stalled' : ticket.status);
+    const stateKey = stalled ? 'stalled' : ticket.status;
+    const stateLabel = resolveState(stateKey).label;
+    const rowTitle = `${stateLabel} · #${ticket.id} ${ticketLabel(ticket)}`;
     return (
       <div
-        className="pta-row"
-        role="button"
+        className={`pta-row${selected ? ' is-selected' : ''}`}
+        role="option"
+        aria-selected={selected}
+        data-ticket-id={ticket.id}
         tabIndex={0}
-        onClick={open}
+        title={rowTitle}
+        onClick={select}
+        onDoubleClick={open}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === 'Enter') {
             event.preventDefault();
             open();
+          } else if (event.key === ' ') {
+            event.preventDefault();
+            select();
           }
         }}
       >
-        <span className="pta-dot" style={{ background: dotTint }} />
+        <StateIndicator state={stateKey} className="pta-row__state" title={stateLabel} />
         <span className="pta-id">#{ticket.id}</span>
         <span className="pta-title" title={ticketLabel(ticket)}>{ticketLabel(ticket)}</span>
         {ticket.kind === 'system'
-          ? <span className="pta-tag">My task</span>
-          : <span className="pta-tag pta-tag--client" title={ticket.client_email ?? ''}>{ticket.client_email || 'client'}</span>}
-        {via ? <span className="pta-tag pta-tag--client" title={assistantBadgeTitle(ticket)}>{via}</span> : null}
-        <span className="pta-meta">{ticket.project_name || 'no project'}</span>
+          ? <MetaChip className="pta-row__chip">My task</MetaChip>
+          : <MetaChip className="pta-row__chip" title={ticket.client_email ?? ''}>{ticket.client_email || 'client'}</MetaChip>}
+        {via ? <MetaChip className="pta-row__chip" title={assistantBadgeTitle(ticket)}>{via}</MetaChip> : null}
+        <span className="pta-meta pta-row__project">{ticket.project_name || 'no project'}</span>
         {reason ? <span className="pta-warn">{reason}</span> : null}
         <span className="pta-fill" />
         {detail ? <span className="pta-meta">{detail}</span> : null}
         {showAge ? <span className="pta-meta">{ago(ticket.updated_at)}</span> : null}
-        {actions ? <span className="pta-actions" onClick={(event) => event.stopPropagation()}>{actions}</span> : null}
+        {actions ? <span className="pta-actions" onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>{actions}</span> : null}
       </div>
     );
   }
@@ -2302,19 +2482,24 @@ function apply(ctx) {
    * at. Rows are plain `.pta-row` elements, which covers the divs on Inbox and
    * the run buttons on Tasks alike.
    */
-  function navigateRowFocus(root, event) {
+  function navigateRowFocus(root, event, { currentIndex = null, onMove = null } = {}) {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return false;
     const target = event.target;
     if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return false;
+    if (target instanceof Element && target.closest('[role="separator"], .pta-confirm')) return false;
+    if (document.querySelector('.pta-confirm')) return false;
     if (!root?.isConnected || root.offsetParent === null) return false;
     const rows = Array.from(root.querySelectorAll('.pta-row'));
     const active = document.activeElement;
     const focusedRow = active instanceof Element ? active.closest('.pta-row') : null;
-    const index = nextRowIndex(focusedRow ? rows.indexOf(focusedRow) : -1, rows.length, event.key);
+    const focusedIndex = focusedRow ? rows.indexOf(focusedRow) : -1;
+    const baseIndex = focusedIndex >= 0 ? focusedIndex : (typeof currentIndex === 'number' ? currentIndex : -1);
+    const index = nextRowIndex(baseIndex, rows.length, event.key);
     if (index === null || index >= rows.length) return false;
     event.preventDefault();
     rows[index].focus({ preventScroll: true });
     rows[index].scrollIntoView({ block: 'nearest' });
+    onMove?.(index, rows[index]);
     return true;
   }
 
@@ -2422,29 +2607,10 @@ function apply(ctx) {
     const groups = useMemo(() => ticketGroups(data), [data]);
     const [filter, setFilter] = useState('all');
     const [query, setQuery] = useState('');
+    const [selectedId, setSelectedId] = useState(null);
+    const [inspectorOpen, setInspectorOpen] = useState(() => (typeof window === 'undefined' ? true : window.innerWidth > 900));
     const search = useRef(null);
     const root = useRef(null);
-    useEffect(() => {
-      const onPreset = (event) => setFilter(event.detail?.filter ?? 'all');
-      // "/" jumps to search from anywhere on the page; Escape clears it. The
-      // same listener runs the row keys (j/k, arrows, Home/End), so this page
-      // has exactly one page-wide key handler.
-      const onKey = (event) => {
-        if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey) {
-          const target = event.target;
-          const typing = target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
-          if (!typing && search.current?.isConnected && search.current.offsetParent !== null) {
-            event.preventDefault();
-            search.current.focus();
-            return;
-          }
-        }
-        navigateRowFocus(root.current, event);
-      };
-      window.addEventListener('pta:inbox-filter', onPreset);
-      window.addEventListener('keydown', onKey);
-      return () => { window.removeEventListener('pta:inbox-filter', onPreset); window.removeEventListener('keydown', onKey); };
-    }, []);
     const all = useMemo(() => {
       const seen = new Map();
       // One ticket can be in more than one bucket — a review ticket the client
@@ -2479,93 +2645,203 @@ function apply(ctx) {
       { key: 'stuck', label: 'Stuck', count: groups.stuck.length },
     ];
     const needle = query.trim().toLowerCase();
-    const shown = all.filter(({ ticket, kinds }) => {
+    const shown = useMemo(() => all.filter(({ ticket, kinds }) => {
       if (filter !== 'all' && !kinds.has(filter)) return false;
       if (needle.length === 0) return true;
       return `${ticket.id} ${ticketLabel(ticket)} ${ticket.project_name ?? ''} ${ticket.client_email ?? ''}`
         .toLowerCase()
         .includes(needle);
-    });
+    }), [all, filter, needle]);
+
+    // Selection survives filter/search changes when still visible; otherwise
+    // falls back to the first visible row.
+    const matchedIndex = selectedId == null ? -1 : shown.findIndex((entry) => entry.ticket.id === selectedId);
+    const activeIndex = shown.length === 0 ? -1 : (matchedIndex >= 0 ? matchedIndex : 0);
+    const selectedEntry = inspectorOpen && activeIndex >= 0 ? shown[activeIndex] : null;
+    useEffect(() => {
+      if (shown.length === 0) return;
+      if (matchedIndex >= 0) return;
+      if (selectedId != null || inspectorOpen) setSelectedId(shown[0].ticket.id);
+    }, [shown, matchedIndex, selectedId, inspectorOpen]);
+
+    const reasonFor = useCallback((entry) => {
+      if (!entry) return '';
+      if (entry.kinds.has('stalled')) return stalledReason(entry.ticket);
+      if (entry.kinds.has('stuck')) return stuckReason.get(Number(entry.ticket.id)) ?? 'no eligible node';
+      return '';
+    }, [stuckReason]);
+
+    const closeInspector = useCallback(() => {
+      setInspectorOpen(false);
+      const rows = root.current ? Array.from(root.current.querySelectorAll('.pta-row')) : [];
+      const row = activeIndex >= 0 ? rows[activeIndex] : null;
+      if (row) row.focus({ preventScroll: true });
+    }, [activeIndex]);
+
+    const navRef = useRef({ shown: [], activeIndex: -1, selectedEntry: null, inspectorOpen: false, closeInspector: () => {} });
+    navRef.current = { shown, activeIndex, selectedEntry, inspectorOpen, closeInspector };
+
+    useEffect(() => {
+      const onPreset = (event) => setFilter(event.detail?.filter ?? 'all');
+      // "/" jumps to search from anywhere on the page; Escape closes the
+      // Inspector (or clears search when focused there); Enter opens the
+      // selected ticket; j/k/arrows/Home/End move selection.
+      const onKey = (event) => {
+        const currentRoot = root.current;
+        if (!currentRoot?.isConnected || currentRoot.offsetParent === null) return;
+        const target = event.target;
+        const typing = target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+        if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+          if (!typing && !document.querySelector('.pta-confirm') && search.current?.isConnected && search.current.offsetParent !== null) {
+            event.preventDefault();
+            search.current.focus();
+            return;
+          }
+        }
+        if (event.key === 'Escape' && !event.defaultPrevented && !typing && !document.querySelector('.pta-confirm')) {
+          if (navRef.current.inspectorOpen) {
+            event.preventDefault();
+            navRef.current.closeInspector();
+            return;
+          }
+        }
+        if (event.key === 'Enter' && !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.altKey && !typing && !document.querySelector('.pta-confirm')) {
+          const interactive = target instanceof Element && target.closest('button, a, [role="separator"], .pta-row');
+          if (!interactive && navRef.current.selectedEntry) {
+            event.preventDefault();
+            void openTicketRun(navRef.current.selectedEntry.ticket);
+            return;
+          }
+        }
+        navigateRowFocus(currentRoot, event, {
+          currentIndex: navRef.current.activeIndex,
+          onMove: (index) => {
+            const entry = navRef.current.shown[index];
+            if (!entry) return;
+            setSelectedId(entry.ticket.id);
+            setInspectorOpen(true);
+          },
+        });
+      };
+      window.addEventListener('pta:inbox-filter', onPreset);
+      window.addEventListener('keydown', onKey);
+      return () => { window.removeEventListener('pta:inbox-filter', onPreset); window.removeEventListener('keydown', onKey); };
+    }, []);
     if (data.loading && data.at === 0) {
-      return <div className="pta-page" ref={root}><p className="pta-empty">Loading…</p></div>;
+      return (
+        <div className="ui pta-inbox" ref={root}>
+          <div className="pta-inbox__main">
+            <div className="pta-page pta-inbox__page"><p className="pta-empty">Loading…</p></div>
+          </div>
+        </div>
+      );
     }
     if (data.error) {
       return (
-        <div className="pta-page" ref={root}>
-          <header className="pta-head">
-            <div>
-              <h1>Inbox</h1>
-              <p>{isAuthError(data.code) ? data.error || 'Connect PTech Admin to the portal to see what is waiting.' : 'The portal could not be reached.'}</p>
+        <div className="ui pta-inbox" ref={root}>
+          <div className="pta-inbox__main">
+            <div className="pta-page pta-inbox__page">
+              <header className="pta-head">
+                <div>
+                  <h1>Inbox</h1>
+                  <p>{isAuthError(data.code) ? data.error || 'Connect PTech Admin to the portal to see what is waiting.' : 'The portal could not be reached.'}</p>
+                </div>
+              </header>
+              {isAuthError(data.code) ? (
+                <PortalSignIn onDone={() => void data.reload()} />
+              ) : (
+                <div className="pta-empty">
+                  <h3>Could not reach the portal</h3>
+                  <p>{data.error}</p>
+                  <PtaButton onClick={() => void data.reload()}>Try again</PtaButton>
+                </div>
+              )}
             </div>
-          </header>
-          {isAuthError(data.code) ? (
-            <PortalSignIn onDone={() => void data.reload()} />
-          ) : (
-            <div className="pta-empty">
-              <h3>Could not reach the portal</h3>
-              <p>{data.error}</p>
-              <PtaButton onClick={() => void data.reload()}>Try again</PtaButton>
-            </div>
-          )}
+          </div>
         </div>
       );
     }
     return (
-      <div className="pta-page" ref={root}>
-        <header className="pta-head">
-          <div>
-            <h1>Inbox</h1>
-            <p>
-              {all.length === 0
-                ? 'Nothing is waiting on you. Agents are on it.'
-                : `${all.length} item${all.length === 1 ? '' : 's'} want a decision.`}
-            </p>
-          </div>
-          <div className="pta-head__actions">
-            <input
-              ref={search}
-              className="pta-search"
-              value={query}
-              placeholder="Search tickets, clients, projects…  /"
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => { if (event.key === 'Escape') { setQuery(''); event.currentTarget.blur(); } }}
-              aria-label="Search the inbox"
-            />
-          </div>
-        </header>
-        <div className="pta-filters">
-          {filters.map((item) => (
-            <button key={item.key} type="button" className={`pta-filter${filter === item.key ? ' is-active' : ''}`} onClick={() => setFilter(item.key)}>
-              {item.label}{item.count ? <span className="pta-count">{item.count}</span> : null}
-            </button>
-          ))}
-        </div>
-        <p className="pta-meta pta-hint">j/k to move · Enter to open · / to search</p>
-        {shown.length === 0 ? (
-          <EmptyState title={all.length === 0 ? 'Inbox zero' : 'Nothing in this filter'} text={all.length === 0 ? 'New approvals, reviews and client replies will land here and notify you.' : 'Try another filter, or clear the search.'} />
-        ) : (
-          <div className="pta-rows pta-rows--inbox">
-            {shown.map(({ ticket, kinds }) => {
-              const stalled = kinds.has('stalled');
-              const reason = stalled
-                ? stalledReason(ticket)
-                : kinds.has('stuck')
-                  ? (stuckReason.get(Number(ticket.id)) ?? 'no eligible node')
-                  : '';
-              return (
-                <TicketLine
-                  key={ticket.id}
-                  ticket={ticket}
-                  stalled={stalled}
-                  reason={reason}
-                  showAge={!stalled}
-                  actions={<TicketRowActions ticket={ticket} />}
-                  detail={isWaiting(ticket) ? 'waiting' : ''}
+      <div className="ui pta-inbox" ref={root} data-inspector={selectedEntry ? 'open' : 'closed'}>
+        <div className="pta-inbox__main">
+          <div className="pta-page pta-inbox__page">
+            <header className="pta-head">
+              <div>
+                <h1>Inbox</h1>
+                <p>
+                  {all.length === 0
+                    ? 'Nothing is waiting on you. Agents are on it.'
+                    : `${all.length} item${all.length === 1 ? '' : 's'} want a decision.`}
+                </p>
+              </div>
+              <div className="pta-head__actions">
+                <input
+                  ref={search}
+                  className="pta-search"
+                  value={query}
+                  placeholder="Search tickets, clients, projects…  /"
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setQuery('');
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  aria-label="Search the inbox"
                 />
-              );
-            })}
+              </div>
+            </header>
+            <div className="pta-filters">
+              {filters.map((item) => (
+                <button key={item.key} type="button" className={`pta-filter${filter === item.key ? ' is-active' : ''}`} onClick={() => setFilter(item.key)}>
+                  {item.label}{item.count ? <span className="pta-count">{item.count}</span> : null}
+                </button>
+              ))}
+            </div>
+            <p className="pta-meta pta-hint">j/k to move · Enter to open · Esc to close · / to search</p>
+            {shown.length === 0 ? (
+              <EmptyState title={all.length === 0 ? 'Inbox zero' : 'Nothing in this filter'} text={all.length === 0 ? 'New approvals, reviews and client replies will land here and notify you.' : 'Try another filter, or clear the search.'} />
+            ) : (
+              <div className="pta-rows pta-rows--inbox" role="listbox" aria-label="Inbox tickets">
+                {shown.map((entry) => {
+                  const { ticket, kinds } = entry;
+                  const stalled = kinds.has('stalled');
+                  const reason = reasonFor(entry);
+                  const selected = selectedEntry?.ticket.id === ticket.id;
+                  return (
+                    <TicketLine
+                      key={ticket.id}
+                      ticket={ticket}
+                      stalled={stalled}
+                      reason={reason}
+                      showAge={!stalled}
+                      selected={selected}
+                      onSelect={() => {
+                        setSelectedId(ticket.id);
+                        setInspectorOpen(true);
+                      }}
+                      onOpen={() => void openTicketRun(ticket)}
+                      actions={<TicketRowActions ticket={ticket} />}
+                      detail={isWaiting(ticket) ? 'waiting' : ''}
+                    />
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </div>
+        {selectedEntry ? (
+          <>
+            <div className="pta-inbox__scrim" aria-hidden="true" onClick={closeInspector} />
+            <InboxInspector
+              entry={selectedEntry}
+              reason={reasonFor(selectedEntry)}
+              onClose={closeInspector}
+            />
+          </>
+        ) : null}
       </div>
     );
   }
@@ -3130,6 +3406,13 @@ function apply(ctx) {
     ctx.slots.register({ name: 'sidebar.session.row.leading', id: 'admin-ticket', order: 10, locale: NAMESPACE }, TicketMark));
   ctx.slots.inject('sidebar.session.row.hover', () =>
     ctx.slots.register({ name: 'sidebar.session.row.hover', id: 'admin-ticket', order: 10, locale: NAMESPACE }, TicketHover));
+  // Mount the v2 primitive stylesheet once at the plugin root so StateIndicator,
+  // MetaChip and Inspector are styled without restyling the host app.
+  function PluginUiStyles() {
+    return <UiStyles />;
+  }
+  ctx.slots.inject('shell.overlay', () =>
+    ctx.slots.register({ name: 'shell.overlay', id: 'admin-ui-styles', order: 1 }, PluginUiStyles));
   // Notifications live in the frame-wide overlay, so a toast survives switching
   // panels and pages and never sits inside a column's scroll container.
   ctx.slots.inject('shell.overlay', () =>

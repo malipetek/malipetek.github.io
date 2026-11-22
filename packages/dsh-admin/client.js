@@ -103,25 +103,25 @@ var __awPlugin = (() => {
     }
     return { state: "unavailable" };
   }
-  function migrateTicketView(storage, marker = "dsh.admin.ticket-view-migrated") {
-    if (!storage) return 0;
+  function migrateTicketView(storage2, marker = "dsh.admin.ticket-view-migrated") {
+    if (!storage2) return 0;
     try {
-      if (storage.getItem(marker) !== null) return 0;
+      if (storage2.getItem(marker) !== null) return 0;
       let moved = 0;
-      for (let index = 0; index < storage.length; index += 1) {
-        const key = storage.key(index);
+      for (let index = 0; index < storage2.length; index += 1) {
+        const key = storage2.key(index);
         if (typeof key !== "string" || !key.startsWith("dsh.conversation.")) continue;
         let state;
         try {
-          state = JSON.parse(storage.getItem(key) ?? "null");
+          state = JSON.parse(storage2.getItem(key) ?? "null");
         } catch {
           continue;
         }
         if (state === null || typeof state !== "object" || state.view !== "admin-task") continue;
-        storage.setItem(key, JSON.stringify({ ...state, view: "chat" }));
+        storage2.setItem(key, JSON.stringify({ ...state, view: "chat" }));
         moved += 1;
       }
-      storage.setItem(marker, "1");
+      storage2.setItem(marker, "1");
       return moved;
     } catch {
       return 0;
@@ -672,13 +672,13 @@ var __awPlugin = (() => {
       /* @__PURE__ */ jsx("small", { children: it.label })
     ] }, i)) });
   }
-  function Resizer({ host, cssVar, def, min, max, invert = false, storage, className }) {
+  function Resizer({ host, cssVar, def, min, max, invert = false, storage: storage2, className }) {
     const ref = useRef(null);
     useEffect(() => {
       const el = ref.current;
       const pane = el?.closest(host);
       if (!el || !pane) return void 0;
-      const saved = storage ? Number(localStorage.getItem(storage)) : 0;
+      const saved = storage2 ? Number(localStorage.getItem(storage2)) : 0;
       if (saved >= min && saved <= max) pane.style.setProperty(cssVar, `${saved}px`);
       let startX = 0;
       let startW = def;
@@ -694,7 +694,7 @@ var __awPlugin = (() => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
         const w = Math.round(read());
-        if (storage && w >= min && w <= max) localStorage.setItem(storage, String(w));
+        if (storage2 && w >= min && w <= max) localStorage.setItem(storage2, String(w));
       };
       const down = (e) => {
         e.preventDefault();
@@ -712,7 +712,7 @@ var __awPlugin = (() => {
         const grow = (e.key === "ArrowRight" ? 1 : -1) * (invert ? -1 : 1);
         const w = Math.min(max, Math.max(min, Math.round(read()) + grow * 16));
         pane.style.setProperty(cssVar, `${w}px`);
-        if (storage && w >= min && w <= max) localStorage.setItem(storage, String(w));
+        if (storage2 && w >= min && w <= max) localStorage.setItem(storage2, String(w));
       };
       el.addEventListener("pointerdown", down);
       el.addEventListener("keydown", key);
@@ -722,7 +722,7 @@ var __awPlugin = (() => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
       };
-    }, [host, cssVar, def, min, max, invert, storage]);
+    }, [host, cssVar, def, min, max, invert, storage2]);
     return /* @__PURE__ */ jsx("div", { ref, className: cx("aw-resize", className), role: "separator", "aria-orientation": "vertical", "aria-label": "Resize pane", tabIndex: 0 });
   }
   function Segmented({ value, options, onChange, disabled, label }) {
@@ -13488,6 +13488,526 @@ ${question.text ?? ""}`)) {
     return createElement(SessionGraph, { key: sessionId, sessionId });
   }
 
+  // packages/admin-ui/src/ui/tokens.js
+  var TYPE = Object.freeze({ xs: 11, sm: 12, md: 13, lg: 15, xl: 18 });
+  var SPACE = Object.freeze([0, 4, 8, 12, 16, 24, 32]);
+  var RADII = Object.freeze({ sm: 4, md: 6, lg: 8 });
+  var MOTION = Object.freeze({ dur: "120ms", ease: "cubic-bezier(.2, 0, 0, 1)" });
+  var SIZE = Object.freeze({
+    bar: 38,
+    // ObjectBar / ContextBar
+    filter: 36,
+    // FilterBar
+    row: 34,
+    // DataTable row
+    subnav: 32,
+    sideRow: 28,
+    control: 28,
+    // Button md
+    controlSm: 24,
+    // Button sm
+    status: 24,
+    // StatusBar
+    sidebar: 220,
+    formMax: 720,
+    // form controls never stretch past this
+    stackBelow: 720,
+    // DataTable stacks rows at or below this container width
+    inspector: 380,
+    inspectorMin: 300,
+    inspectorMax: 560
+  });
+  var LIGHT = {
+    bg: "#FFFFFF",
+    "bg-subtle": "#F6F6F4",
+    "bg-raised": "#FFFFFF",
+    border: "rgba(22, 20, 15, .10)",
+    "border-strong": "rgba(22, 20, 15, .18)",
+    ink: "#16140F",
+    "ink-2": "#5D5850",
+    "ink-3": "#8A847A",
+    ok: "#2F9E5B",
+    warn: "#D99A16",
+    bad: "#D6453D",
+    info: "#3B7BD9",
+    shadow: "0 0 0 1px rgba(22, 20, 15, .08), 0 12px 32px rgba(0, 0, 0, .16)"
+  };
+  var DARK = {
+    bg: "#141416",
+    "bg-subtle": "#1A1A1D",
+    "bg-raised": "#222226",
+    border: "rgba(255, 255, 255, .09)",
+    "border-strong": "rgba(255, 255, 255, .16)",
+    ink: "#F2F2F3",
+    "ink-2": "#A1A1AA",
+    "ink-3": "#71717A",
+    ok: "#3FB36D",
+    warn: "#E5A82A",
+    bad: "#E5534B",
+    info: "#4C8DF0",
+    shadow: "0 0 0 1px rgba(255, 255, 255, .08), 0 12px 32px rgba(0, 0, 0, .48)"
+  };
+  var PALETTE = Object.freeze({ light: Object.freeze({ ...LIGHT }), dark: Object.freeze({ ...DARK }) });
+  var ACCENT = "#FF5A1F";
+  var ACCENT_INK = "#FFFFFF";
+  var HOST = {
+    bg: ["--dsw-alias-bg-base"],
+    "bg-subtle": ["--dsw-alias-bg-layer-1"],
+    "bg-raised": ["--dsw-alias-bg-elevated"],
+    border: ["--dsw-alias-border-l2"],
+    "border-strong": ["--dsw-alias-border-l3"],
+    ink: ["--dsw-alias-label-primary"],
+    "ink-2": ["--dsw-alias-label-secondary"],
+    "ink-3": ["--dsw-alias-label-tertiary"],
+    ok: ["--dsw-alias-state-success-primary"],
+    warn: ["--dsw-alias-state-warning-primary", "--dsw-alias-state-warn-primary"],
+    bad: ["--dsw-alias-state-danger-primary", "--dsw-alias-state-error-primary"],
+    info: ["--dsw-alias-state-business-primary"],
+    shadow: []
+  };
+  var chain = (aliases, last) => aliases.reduceRight((inner, name) => `var(${name}, ${inner})`, last);
+  var block = (pairs) => pairs.map(([k, v]) => `  ${k}: ${v};`).join("\n");
+  var fallbacks = (palette) => block(Object.entries(palette).map(([k, v]) => [`--ui-fb-${k}`, v]));
+  var ROOT = ":where(.ui, .aw)";
+  var TOKENS = Object.freeze({
+    ...Object.fromEntries(Object.keys(HOST).map((k) => [`--ui-${k}`, chain(HOST[k], `var(--ui-fb-${k})`)])),
+    "--ui-bg-hover": chain(["--dsw-alias-interactive-bg-hover"], "color-mix(in srgb, var(--ui-ink) 6%, transparent)"),
+    "--ui-bg-selected": "color-mix(in srgb, var(--ui-ink) 9%, transparent)",
+    "--ui-accent": chain(["--dsw-alias-brand-primary"], ACCENT),
+    "--ui-accent-hover": "color-mix(in srgb, var(--ui-accent) 88%, var(--ui-ink))",
+    "--ui-accent-ink": ACCENT_INK,
+    "--ui-accent-wash": "color-mix(in srgb, var(--ui-accent) 12%, transparent)",
+    "--ui-focus": "var(--ui-accent)",
+    "--ui-scrim": "rgba(0, 0, 0, .32)",
+    "--ui-font": "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Inter, system-ui, sans-serif",
+    "--ui-mono": "ui-monospace, 'SF Mono', Menlo, monospace",
+    ...Object.fromEntries(Object.entries(TYPE).map(([k, v]) => [`--ui-fs-${k}`, `${v}px`])),
+    "--ui-lh": "1.45",
+    "--ui-lh-tight": "1.25",
+    ...Object.fromEntries(SPACE.slice(1).map((v, i) => [`--ui-sp-${i + 1}`, `${v}px`])),
+    ...Object.fromEntries(Object.entries(RADII).map(([k, v]) => [`--ui-r-${k}`, `${v}px`])),
+    "--ui-bar-h": `${SIZE.bar}px`,
+    "--ui-filter-h": `${SIZE.filter}px`,
+    "--ui-row-h": `${SIZE.row}px`,
+    "--ui-subnav-h": `${SIZE.subnav}px`,
+    "--ui-side-row-h": `${SIZE.sideRow}px`,
+    "--ui-ctl-h": `${SIZE.control}px`,
+    "--ui-ctl-h-sm": `${SIZE.controlSm}px`,
+    "--ui-status-h": `${SIZE.status}px`,
+    "--ui-sidebar-w": `${SIZE.sidebar}px`,
+    "--ui-form-max": `${SIZE.formMax}px`,
+    "--ui-inspector-w": `${SIZE.inspector}px`,
+    "--ui-dur": MOTION.dur,
+    "--ui-ease": MOTION.ease
+  });
+  var TOKEN_NAMES = Object.freeze(Object.keys(TOKENS));
+  var TOKENS_CSS = `
+${ROOT} {
+${fallbacks(LIGHT)}
+}
+@media (prefers-color-scheme: dark) {
+  ${ROOT} {
+${fallbacks(DARK)}
+  }
+}
+:where([data-theme='dark']) ${ROOT}, :where(.ui, .aw)[data-theme='dark'] {
+${fallbacks(DARK)}
+}
+:where([data-theme='light']) ${ROOT}, :where(.ui, .aw)[data-theme='light'] {
+${fallbacks(LIGHT)}
+}
+${ROOT} {
+${block(Object.entries(TOKENS))}
+}
+@media (prefers-reduced-motion: reduce) {
+  ${ROOT} { --ui-dur: 0ms; }
+}
+`;
+
+  // packages/admin-ui/src/ui/css.js
+  var PRIMITIVES_CSS = `
+.ui {
+  font-family: var(--ui-font);
+  font-size: var(--ui-fs-md);
+  line-height: var(--ui-lh);
+  color: var(--ui-ink);
+  background: var(--ui-bg);
+}
+.ui-sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+:where(.ui, .aw) :where(.ui-btn, .ui-row, .ui-resize, .ui-inspector, .ui-iconbtn):focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -2px;
+}
+
+/* \u2014\u2014 buttons (internal to the primitives) \u2014\u2014 */
+.ui-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--ui-sp-1);
+  height: var(--ui-ctl-h); padding: 0 var(--ui-sp-3);
+  border: 1px solid var(--ui-border-strong); border-radius: var(--ui-r-md);
+  background: var(--ui-bg-raised); color: var(--ui-ink);
+  font: inherit; font-size: var(--ui-fs-md); font-weight: 500; white-space: nowrap;
+  cursor: pointer; transition: background var(--ui-dur) var(--ui-ease);
+}
+.ui-btn:hover:not(:disabled) { background: var(--ui-bg-hover); }
+.ui-btn:disabled { opacity: .5; cursor: not-allowed; }
+.ui-btn--sm { height: var(--ui-ctl-h-sm); padding: 0 var(--ui-sp-2); font-size: var(--ui-fs-sm); }
+.ui-btn--ghost { border-color: transparent; background: transparent; }
+.ui-btn--primary { border-color: transparent; background: var(--ui-accent); color: var(--ui-accent-ink); }
+.ui-btn--primary:hover:not(:disabled) { background: var(--ui-accent-hover); }
+.ui-iconbtn { width: var(--ui-ctl-h); padding: 0; }
+
+/* \u2014\u2014 StateIndicator: 6px dot + label, transparent background \u2014\u2014 */
+.ui-state {
+  display: inline-flex; align-items: center; gap: var(--ui-sp-1);
+  font-size: var(--ui-fs-sm); font-weight: 500; line-height: var(--ui-lh-tight);
+  color: var(--ui-ink-2); background: transparent; white-space: nowrap;
+}
+.ui-state__dot {
+  --ui-tone: var(--ui-ink-3);
+  width: 6px; height: 6px; border-radius: 50%; flex: none;
+  background: var(--ui-tone);
+}
+.ui-state[data-tone='ok'] .ui-state__dot { --ui-tone: var(--ui-ok); }
+.ui-state[data-tone='warn'] .ui-state__dot { --ui-tone: var(--ui-warn); }
+.ui-state[data-tone='bad'] .ui-state__dot { --ui-tone: var(--ui-bad); }
+.ui-state[data-tone='info'] .ui-state__dot { --ui-tone: var(--ui-info); }
+.ui-state[data-ring] .ui-state__dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ui-tone); }
+.ui-state[data-dashed] .ui-state__dot { background: transparent; border: 1px dashed var(--ui-tone); }
+.ui-state[data-live] .ui-state__dot { animation: ui-pulse 1.6s var(--ui-ease) infinite; }
+.ui-state--dot-only { gap: 0; }
+@keyframes ui-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .ui-state[data-live] .ui-state__dot { animation: none; } }
+
+/* \u2014\u2014 MetaChip: monochrome metadata, never a status colour \u2014\u2014 */
+.ui-chip {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 var(--ui-sp-1);
+  border-radius: var(--ui-r-sm); background: var(--ui-bg-selected); color: var(--ui-ink-2);
+  font-size: var(--ui-fs-xs); font-weight: 500; white-space: nowrap; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.ui-chip--mono { font-family: var(--ui-mono); font-variant-numeric: tabular-nums; }
+
+/* \u2014\u2014 DataTable \u2014\u2014 */
+.ui-table-wrap { container-type: inline-size; min-width: 0; }
+.ui-table { width: 100%; border-collapse: collapse; font-size: var(--ui-fs-md); }
+.ui-table th {
+  height: var(--ui-row-h); padding: 0 var(--ui-sp-3); text-align: left;
+  font-size: var(--ui-fs-xs); font-weight: 500; color: var(--ui-ink-3);
+  border-bottom: 1px solid var(--ui-border); white-space: nowrap;
+}
+.ui-table td {
+  height: var(--ui-row-h); padding: 0 var(--ui-sp-3);
+  border-bottom: 1px solid var(--ui-border); vertical-align: middle;
+  max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ui-table :is(th, td)[data-fit] { width: 1%; max-width: none; }
+.ui-table :is(th, td)[data-numeric] { text-align: right; font-variant-numeric: tabular-nums; }
+.ui-table td[data-mono] { font-family: var(--ui-mono); font-variant-numeric: tabular-nums; }
+.ui-row { cursor: default; outline: none; transition: background var(--ui-dur) var(--ui-ease); }
+.ui-row:hover { background: var(--ui-bg-hover); }
+.ui-row[aria-selected='true'] { background: var(--ui-bg-selected); box-shadow: inset 2px 0 0 var(--ui-accent); }
+.ui-row--skeleton td::after {
+  content: ''; display: block; height: 8px; border-radius: var(--ui-r-sm);
+  background: var(--ui-bg-selected);
+}
+.ui-table__note { padding: var(--ui-sp-5) var(--ui-sp-4); color: var(--ui-ink-2); font-size: var(--ui-fs-md); }
+.ui-table__note strong { display: block; color: var(--ui-ink); font-weight: 500; margin-bottom: var(--ui-sp-1); }
+.ui-table__note--error strong { color: var(--ui-bad); }
+.ui-table__note .ui-btn { margin-top: var(--ui-sp-2); }
+@container (max-width: 720px) {
+  .ui-table, .ui-table tbody, .ui-table tr, .ui-table td { display: block; width: auto; }
+  .ui-table thead { display: none; }
+  .ui-table tr.ui-row { padding: var(--ui-sp-2) var(--ui-sp-3); border-bottom: 1px solid var(--ui-border); }
+  .ui-table td { height: auto; max-width: none; padding: 0; border: 0; white-space: normal; text-align: left; }
+  .ui-table td[data-numeric] { text-align: left; }
+  .ui-table td + td { margin-top: var(--ui-sp-1); font-size: var(--ui-fs-sm); color: var(--ui-ink-2); }
+  .ui-table td + td[data-label]::before { content: attr(data-label) ' \xB7 '; color: var(--ui-ink-3); }
+}
+
+/* \u2014\u2014 Inspector: resizable right pane \u2014\u2014 */
+.ui-inspector {
+  position: relative; display: flex; flex-direction: column; min-width: 0;
+  width: var(--ui-inspector-w); flex: none;
+  border-left: 1px solid var(--ui-border); background: var(--ui-bg-subtle);
+}
+.ui-inspector__head {
+  display: flex; align-items: center; gap: var(--ui-sp-2);
+  height: var(--ui-bar-h); padding: 0 var(--ui-sp-2) 0 var(--ui-sp-4);
+  border-bottom: 1px solid var(--ui-border); flex: none;
+}
+.ui-inspector__title {
+  flex: 1; min-width: 0; margin: 0; font-size: var(--ui-fs-lg); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ui-inspector__body { flex: 1; min-height: 0; overflow: auto; padding: var(--ui-sp-4); }
+.ui-resize {
+  position: absolute; top: 0; bottom: 0; left: -3px; width: 6px; cursor: col-resize; z-index: 1;
+  background: transparent; transition: background var(--ui-dur) var(--ui-ease);
+}
+.ui-resize:hover, .ui-resize[data-drag] { background: var(--ui-accent-wash); }
+@media (max-width: 900px) {
+  .ui-inspector { width: 100%; border-left: 0; border-top: 1px solid var(--ui-border); }
+  .ui-resize { display: none; }
+}
+
+/* \u2014\u2014 ContextBar: 38px, one primary at most \u2014\u2014 */
+.ui-contextbar {
+  display: flex; align-items: center; gap: var(--ui-sp-2); min-width: 0;
+  height: var(--ui-bar-h); padding: 0 var(--ui-sp-3) 0 var(--ui-sp-4);
+  border-bottom: 1px solid var(--ui-border); background: var(--ui-bg); flex: none;
+}
+.ui-contextbar__title {
+  margin: 0; min-width: 0; font-size: var(--ui-fs-lg); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ui-contextbar__meta { display: flex; align-items: center; gap: var(--ui-sp-2); min-width: 0; color: var(--ui-ink-2); font-size: var(--ui-fs-sm); }
+.ui-contextbar__spacer { flex: 1; }
+.ui-contextbar__actions { display: flex; align-items: center; gap: var(--ui-sp-1); flex: none; }
+
+/* \u2014\u2014 forms and SaveBar \u2014\u2014 */
+.ui-form { max-width: var(--ui-form-max); }
+.ui-savebar {
+  position: sticky; bottom: 0; z-index: 2;
+  display: flex; align-items: center; gap: var(--ui-sp-2);
+  min-height: var(--ui-bar-h); padding: var(--ui-sp-1) var(--ui-sp-4);
+  border-top: 1px solid var(--ui-border); background: var(--ui-bg);
+}
+.ui-savebar__msg { flex: 1; min-width: 0; font-size: var(--ui-fs-sm); color: var(--ui-ink-2); }
+.ui-savebar__msg[data-error] { color: var(--ui-bad); }
+
+/* \u2014\u2014 Shell \u2014\u2014 */
+.ui-shell { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.ui-shell__body { flex: 1; min-height: 0; display: flex; }
+.ui-shell__sidebar {
+  width: var(--ui-sidebar-w); flex: none; overflow: auto;
+  border-right: 1px solid var(--ui-border); background: var(--ui-bg-subtle); font-size: var(--ui-fs-sm);
+}
+.ui-shell__stage { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+.ui-shell__status {
+  height: var(--ui-status-h); flex: none; display: flex; align-items: center; gap: var(--ui-sp-3);
+  padding: 0 var(--ui-sp-3); border-top: 1px solid var(--ui-border);
+  font-size: var(--ui-fs-xs); color: var(--ui-ink-2); background: var(--ui-bg-subtle);
+}
+@media (max-width: 900px) {
+  .ui-shell__body { flex-direction: column; }
+  .ui-shell__sidebar { width: auto; border-right: 0; border-bottom: 1px solid var(--ui-border); }
+}
+`;
+  var UI_CSS = TOKENS_CSS + PRIMITIVES_CSS;
+
+  // packages/admin-ui/src/ui/state.js
+  var S = (tone2, label, extra = {}) => Object.freeze({ tone: tone2, label, ...extra });
+  var STATE_MAP = Object.freeze({
+    // tickets
+    new: S("info", "New"),
+    approved: S("neutral", "Approved", { ring: true }),
+    queued: S("neutral", "Queued", { ring: true }),
+    in_progress: S("info", "Running", { live: true }),
+    running: S("info", "Running", { live: true }),
+    review: S("warn", "In review"),
+    check: S("warn", "Check"),
+    stalled: S("bad", "Stalled"),
+    done: S("ok", "Done"),
+    declined: S("neutral", "Declined", { dashed: true }),
+    unknown: S("neutral", "Unknown", { dashed: true }),
+    // runs and checks
+    failed: S("bad", "Failed"),
+    ok: S("ok", "Passed"),
+    passed: S("ok", "Passed"),
+    // nodes
+    online: S("ok", "Online"),
+    offline: S("bad", "Offline"),
+    // contacts
+    replied: S("ok", "Replied"),
+    opted_out: S("bad", "Opted out"),
+    bounced: S("bad", "Bounced")
+  });
+  var TONES = Object.freeze(["ok", "warn", "bad", "info", "neutral"]);
+  function humanize(value) {
+    const text = String(value ?? "").trim().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+    if (!text) return "";
+    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+  }
+  function resolveState(state, overrides = {}) {
+    const key = String(state ?? "unknown").trim().toLowerCase().replace(/[\s-]+/g, "_") || "unknown";
+    const known = STATE_MAP[key];
+    const base = known ?? { tone: "neutral", label: humanize(key) };
+    const tone2 = TONES.includes(overrides.tone) ? overrides.tone : base.tone;
+    return {
+      key,
+      tone: tone2,
+      label: overrides.label ?? base.label,
+      live: overrides.live ?? Boolean(base.live),
+      ring: Boolean(base.ring),
+      dashed: Boolean(base.dashed)
+    };
+  }
+
+  // packages/admin-ui/src/ui/behavior.js
+  var clamp = (n, min, max) => Math.min(max, Math.max(min, n));
+  function clampWidth(value, { min = SIZE.inspectorMin, max = SIZE.inspectorMax, def = SIZE.inspector } = {}) {
+    const n = Number(value);
+    if (value == null || value === "" || !Number.isFinite(n)) return clamp(def, min, max);
+    return clamp(Math.round(n), min, max);
+  }
+  function readWidth(storage2, key, limits = {}) {
+    if (!key) return clampWidth(void 0, limits);
+    try {
+      const raw = storage2?.getItem?.(key);
+      return clampWidth(raw == null ? void 0 : raw, limits);
+    } catch {
+      return clampWidth(void 0, limits);
+    }
+  }
+  function writeWidth(storage2, key, width) {
+    if (!key) return;
+    try {
+      storage2?.setItem?.(key, String(width));
+    } catch {
+    }
+  }
+  function resizeKey(key, width, { min = SIZE.inspectorMin, max = SIZE.inspectorMax, step = 16, invert = true } = {}) {
+    const dir = invert ? -1 : 1;
+    if (key === "ArrowLeft") return clamp(width - step * dir, min, max);
+    if (key === "ArrowRight") return clamp(width + step * dir, min, max);
+    if (key === "Home") return min;
+    if (key === "End") return max;
+    return null;
+  }
+
+  // packages/admin-ui/src/ui/primitives.jsx
+  var storage = () => typeof window === "undefined" ? null : window.localStorage;
+  function UiStyles() {
+    return /* @__PURE__ */ jsx("style", { "data-ui-styles": "v2", children: UI_CSS });
+  }
+  function UiButton({ kind = "secondary", size, busy = false, className, children, disabled, ...props }) {
+    return /* @__PURE__ */ jsx(
+      "button",
+      {
+        type: "button",
+        className: cx("ui-btn", kind !== "secondary" && `ui-btn--${kind}`, size === "sm" && "ui-btn--sm", className),
+        "data-primary": kind === "primary" ? "true" : void 0,
+        disabled: Boolean(disabled || busy),
+        "aria-busy": busy || void 0,
+        ...props,
+        children
+      }
+    );
+  }
+  function StateIndicator({ state, label, tone: tone2, live, dotOnly = false, title, className }) {
+    const s = resolveState(state, { label, tone: tone2, live });
+    return /* @__PURE__ */ jsxs(
+      "span",
+      {
+        className: cx("ui-state", dotOnly && "ui-state--dot-only", className),
+        "data-state": s.key,
+        "data-tone": s.tone,
+        "data-live": s.live ? "" : void 0,
+        "data-ring": s.ring ? "" : void 0,
+        "data-dashed": s.dashed ? "" : void 0,
+        title: title ?? (dotOnly ? s.label : void 0),
+        children: [
+          /* @__PURE__ */ jsx("span", { className: "ui-state__dot", "aria-hidden": "true" }),
+          /* @__PURE__ */ jsx("span", { className: dotOnly ? "ui-sr" : void 0, children: s.label })
+        ]
+      }
+    );
+  }
+  function MetaChip({ children, title, mono = false, className }) {
+    return /* @__PURE__ */ jsx("span", { className: cx("ui-chip", mono && "ui-chip--mono", className), title, children });
+  }
+  function Inspector({
+    title,
+    actions,
+    onClose,
+    children,
+    label,
+    storageKey = "ui.inspector.width",
+    defaultWidth = SIZE.inspector,
+    minWidth = SIZE.inspectorMin,
+    maxWidth = SIZE.inspectorMax,
+    resizable = true,
+    className
+  }) {
+    const limits = { min: minWidth, max: maxWidth, def: defaultWidth };
+    const [width, setWidth] = useState(() => clampWidth(defaultWidth, limits));
+    const [drag, setDrag] = useState(false);
+    const widthRef = useRef(width);
+    widthRef.current = width;
+    useEffect(() => {
+      if (storageKey) setWidth(readWidth(storage(), storageKey, limits));
+    }, [storageKey, minWidth, maxWidth, defaultWidth]);
+    const commit = useCallback((w) => {
+      setWidth(w);
+      writeWidth(storage(), storageKey, w);
+    }, [storageKey]);
+    const onPointerDown = (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = widthRef.current;
+      setDrag(true);
+      const move = (ev) => setWidth(clampWidth(startW + (startX - ev.clientX), limits));
+      const up = () => {
+        setDrag(false);
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        commit(widthRef.current);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    };
+    const onSepKey = (e) => {
+      const next = resizeKey(e.key, widthRef.current, { min: minWidth, max: maxWidth });
+      if (next == null) return;
+      e.preventDefault();
+      commit(next);
+    };
+    const name = label ?? (typeof title === "string" ? title : "Inspector");
+    return /* @__PURE__ */ jsxs(
+      "aside",
+      {
+        className: cx("ui-inspector", className),
+        "aria-label": name,
+        style: { "--ui-inspector-w": `${width}px` },
+        onKeyDown: onClose ? (e) => {
+          if (e.key === "Escape" && !e.defaultPrevented) {
+            e.preventDefault();
+            onClose();
+          }
+        } : void 0,
+        children: [
+          resizable ? /* @__PURE__ */ jsx(
+            "div",
+            {
+              className: "ui-resize",
+              role: "separator",
+              "aria-orientation": "vertical",
+              "aria-label": `Resize ${name}`,
+              "aria-valuenow": width,
+              "aria-valuemin": minWidth,
+              "aria-valuemax": maxWidth,
+              tabIndex: 0,
+              "data-drag": drag ? "" : void 0,
+              onPointerDown,
+              onKeyDown: onSepKey
+            }
+          ) : null,
+          title || actions || onClose ? /* @__PURE__ */ jsxs("div", { className: "ui-inspector__head", children: [
+            /* @__PURE__ */ jsx("h2", { className: "ui-inspector__title", children: title }),
+            actions,
+            onClose ? /* @__PURE__ */ jsx(UiButton, { kind: "ghost", className: "ui-iconbtn", "aria-label": `Close ${name}`, title: "Close  Esc", onClick: onClose, children: /* @__PURE__ */ jsx(Icon, { name: "close" }) }) : null
+          ] }) : null,
+          /* @__PURE__ */ jsx("div", { className: "ui-inspector__body", children })
+        ]
+      }
+    );
+  }
+  var HOST_MODES = Object.freeze(["embedded", "standalone"]);
+
   // packages/dsh-admin/src/panel-transport.mjs
   function panelTransport(legacy, { desktop = false, fetcher = globalThis.fetch } = {}) {
     async function quiet(line) {
@@ -15132,11 +15652,35 @@ ${question.text ?? ""}`)) {
     .pta-section__head h3{margin:0;font-size:13px;font-weight:600}
     .pta-count{display:inline-block;min-width:16px;margin-left:5px;padding:0 5px;border-radius:8px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.16));font-size:10px;line-height:16px;text-align:center;vertical-align:1px}
     .pta-rows{display:flex;flex-direction:column;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.22));border-radius:10px;overflow:hidden;background:var(--dsw-alias-bg-primary,transparent)}
-    .pta-rows--inbox{max-width:none}
+    .pta-rows--inbox{max-width:none;container-type:inline-size;container-name:pta-inbox-list}
     .pta-row{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:8px 12px;border:0;border-bottom:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.14));background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
     .pta-row:last-child{border-bottom:0}
     .pta-row:hover{background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.07))}
+    .pta-row[aria-selected="true"]{background:var(--ui-bg-selected,var(--dsw-alias-bg-secondary,rgba(127,127,127,.12)));box-shadow:inset 2px 0 0 var(--ui-accent,var(--dsw-alias-brand-primary,#ff5a1f))}
+    .pta-row[aria-selected="true"]:hover{background:var(--ui-bg-selected,var(--dsw-alias-bg-secondary,rgba(127,127,127,.14)))}
     .pta-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#ff5a1f);outline-offset:-2px}
+    .pta-row__state{flex:0 0 auto}
+    .pta-row__chip{flex:0 0 auto;max-width:190px}
+    .pta-inbox{position:relative;display:flex;flex-direction:row;height:100%;min-height:0;min-width:0;width:100%;overflow:hidden;background:transparent;container-type:inline-size;container-name:pta-inbox}
+    .pta-inbox__main{flex:1 1 auto;min-width:0;height:100%;overflow-y:auto}
+    .pta-inbox__page{height:auto;overflow:visible}
+    .pta-inbox__scrim{display:none}
+    .pta-inbox__inspector{height:100%}
+    .pta-insp{display:flex;flex-direction:column;gap:var(--ui-sp-4,16px)}
+    .pta-insp__top{display:flex;flex-direction:column;gap:var(--ui-sp-2,8px)}
+    .pta-insp__badges{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-sp-2,8px)}
+    .pta-insp__title{margin:0;font-size:var(--ui-fs-lg,15px);line-height:var(--ui-lh-tight,1.25);font-weight:600;color:var(--ui-ink,inherit);overflow-wrap:anywhere}
+    .pta-insp__reason{margin:0;padding:var(--ui-sp-2,8px) var(--ui-sp-3,12px);border-radius:var(--ui-r-md,6px);background:color-mix(in srgb,var(--ui-warn,#d18f2e) 12%,transparent);color:var(--ui-warn,#d18f2e);font-size:var(--ui-fs-sm,12px);line-height:var(--ui-lh,1.45)}
+    .pta-insp__actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-sp-2,8px);padding-bottom:var(--ui-sp-4,16px);border-bottom:1px solid var(--ui-border,rgba(127,127,127,.2))}
+    .pta-insp__actions .pta-btn{height:var(--ui-ctl-h,28px);padding:0 var(--ui-sp-3,12px);font-size:var(--ui-fs-md,13px);font-weight:500;border-radius:var(--ui-r-md,6px)}
+    .pta-insp__meta{display:grid;grid-template-columns:84px minmax(0,1fr);gap:var(--ui-sp-2,8px) var(--ui-sp-3,12px);margin:0;font-size:var(--ui-fs-sm,12px);line-height:var(--ui-lh,1.45)}
+    .pta-insp__meta dt{color:var(--ui-ink-3,rgba(127,127,127,.75));font-weight:500}
+    .pta-insp__meta dd{margin:0;color:var(--ui-ink,inherit);min-width:0;overflow-wrap:anywhere}
+    .pta-insp__chips{display:flex;flex-wrap:wrap;gap:var(--ui-sp-1,4px)}
+    @container pta-inbox-list (max-width:600px){.pta-row__state{gap:0}.pta-row__state>span:last-child{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}.pta-row__chip{max-width:130px}}
+    @container pta-inbox-list (max-width:440px){.pta-row__project{display:none}.pta-row__chip{max-width:96px}}
+    @media (max-width:900px){.pta-inbox__scrim{display:block;position:absolute;inset:0;z-index:9;background:var(--ui-scrim,rgba(0,0,0,.32))}.pta-inbox .pta-inbox__inspector{position:absolute;top:0;right:0;bottom:0;z-index:10;width:min(380px,calc(100% - 24px));max-width:100%;border-top:0;border-left:1px solid var(--ui-border,rgba(127,127,127,.22));background:var(--ui-bg-subtle,var(--dsw-alias-bg-elevated,#23252a));box-shadow:var(--ui-shadow,0 12px 32px rgba(0,0,0,.32))}}
+    @container pta-inbox (max-width:740px){.pta-inbox__scrim{display:block;position:absolute;inset:0;z-index:9;background:var(--ui-scrim,rgba(0,0,0,.32))}.pta-inbox .pta-inbox__inspector{position:absolute;top:0;right:0;bottom:0;z-index:10;width:min(380px,calc(100% - 24px));max-width:100%;border-top:0;border-left:1px solid var(--ui-border,rgba(127,127,127,.22));background:var(--ui-bg-subtle,var(--dsw-alias-bg-elevated,#23252a));box-shadow:var(--ui-shadow,0 12px 32px rgba(0,0,0,.32))}.pta-inbox .pta-inbox__inspector .ui-resize{display:none}}
     .pta-dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%}
     .pta-id{flex:0 0 auto;font-variant-numeric:tabular-nums;font-size:11.5px;opacity:.6}
     .pta-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
@@ -15421,8 +15965,124 @@ ${question.text ?? ""}`)) {
       }
       return null;
     }
+    function inspectorActions(ticket, stalled) {
+      const actions = [];
+      if (ticket.status === "new") {
+        actions.push({ key: "approve", label: "Approve", primary: true, run: () => void changeTicketStatus(ticket, "approved") });
+        actions.push({ key: "decline", label: "Decline", kind: "ghost", run: () => void changeTicketStatus(ticket, "declined") });
+        actions.push({ key: "open", label: "Open", kind: "default", title: "Open conversation or ticket (Enter)", run: () => void openTicketRun(ticket) });
+        return actions;
+      }
+      if (ticket.status === "review") {
+        actions.push({ key: "done", label: "Mark done", primary: true, run: () => void changeTicketStatus(ticket, "done") });
+        actions.push({ key: "requeue", label: "Queue another run", kind: "default", run: () => void changeTicketStatus(ticket, "approved") });
+        if (isWaiting(ticket)) {
+          actions.push({ key: "answered", label: "No reply needed", kind: "ghost", run: () => void markTicketAnswered(ticket) });
+        }
+        actions.push({ key: "open", label: "Open", kind: "default", title: "Open conversation or ticket (Enter)", run: () => void openTicketRun(ticket) });
+        return actions;
+      }
+      if (stalled && ticket.status === "in_progress") {
+        actions.push({ key: "requeue", label: "Queue another run", primary: true, run: () => void changeTicketStatus(ticket, "approved") });
+        if (isWaiting(ticket)) {
+          actions.push({ key: "answered", label: "No reply needed", kind: "ghost", run: () => void markTicketAnswered(ticket) });
+        }
+        actions.push({ key: "open", label: "Open", kind: "default", title: "Open conversation or ticket (Enter)", run: () => void openTicketRun(ticket) });
+        return actions;
+      }
+      actions.push({ key: "open", label: "Open", primary: true, title: "Open conversation or ticket (Enter)", run: () => void openTicketRun(ticket) });
+      if (isWaiting(ticket)) {
+        actions.push({ key: "answered", label: "No reply needed", kind: "default", run: () => void markTicketAnswered(ticket) });
+      }
+      if (ticket.status === "in_progress") {
+        actions.push({ key: "requeue", label: "Queue another run", kind: "ghost", run: () => void changeTicketStatus(ticket, "approved") });
+      }
+      return actions;
+    }
+    function InboxInspector({ entry, reason, onClose }) {
+      const { ticket, kinds } = entry;
+      const stalled = kinds.has("stalled");
+      const waiting = isWaiting(ticket);
+      const stateKey = stalled ? "stalled" : ticket.status;
+      const via = assistantBadge(ticket);
+      const actions = inspectorActions(ticket, stalled);
+      const updatedAt = ticket.updated_at ? new Date(Number(ticket.updated_at) * 1e3).toLocaleString() : "";
+      const waitingSince = waiting && ticket.client_waiting_since ? ago2(ticket.client_waiting_since) : "";
+      const ownerLabel = ticket.kind === "system" ? "Owner" : "Client";
+      const ownerValue = ticket.kind === "system" ? "My task" : ticket.client_name && ticket.client_email ? `${ticket.client_name} (${ticket.client_email})` : ticket.client_name || ticket.client_email || "Client";
+      const kindLabels = [
+        kinds.has("approval") && "Needs approval",
+        kinds.has("review") && "Ready for review",
+        kinds.has("reply") && "Client reply",
+        kinds.has("stalled") && "Stalled",
+        kinds.has("stuck") && "Stuck in queue"
+      ].filter(Boolean);
+      return /* @__PURE__ */ jsx(
+        Inspector,
+        {
+          className: "pta-inbox__inspector",
+          title: `#${ticket.id}`,
+          label: `Ticket #${ticket.id}`,
+          storageKey: "pta.inbox.inspector.width",
+          defaultWidth: 380,
+          onClose,
+          children: /* @__PURE__ */ jsxs("div", { className: "pta-insp", children: [
+            /* @__PURE__ */ jsxs("div", { className: "pta-insp__top", children: [
+              /* @__PURE__ */ jsxs("div", { className: "pta-insp__badges", children: [
+                /* @__PURE__ */ jsx(StateIndicator, { state: stateKey }),
+                waiting ? /* @__PURE__ */ jsx(MetaChip, { children: "Client waiting" }) : null,
+                ticket.kind === "system" ? /* @__PURE__ */ jsx(MetaChip, { children: "My task" }) : null,
+                via ? /* @__PURE__ */ jsx(MetaChip, { title: assistantBadgeTitle(ticket), children: via }) : null
+              ] }),
+              /* @__PURE__ */ jsx("h3", { className: "pta-insp__title", children: ticketLabel(ticket) }),
+              reason ? /* @__PURE__ */ jsx("p", { className: "pta-insp__reason", role: "status", children: reason }) : null
+            ] }),
+            /* @__PURE__ */ jsx("div", { className: "pta-insp__actions", children: actions.map((action) => /* @__PURE__ */ jsx(
+              PtaButton,
+              {
+                kind: action.primary ? "primary" : action.kind ?? "default",
+                title: action.title,
+                onClick: action.run,
+                children: action.label
+              },
+              action.key
+            )) }),
+            /* @__PURE__ */ jsxs("dl", { className: "pta-insp__meta", children: [
+              /* @__PURE__ */ jsx("dt", { children: "Ticket" }),
+              /* @__PURE__ */ jsx("dd", { children: /* @__PURE__ */ jsxs(MetaChip, { mono: true, children: [
+                "#",
+                ticket.id
+              ] }) }),
+              /* @__PURE__ */ jsx("dt", { children: "Project" }),
+              /* @__PURE__ */ jsx("dd", { children: ticket.project_name || "No project" }),
+              /* @__PURE__ */ jsx("dt", { children: ownerLabel }),
+              /* @__PURE__ */ jsx("dd", { children: ownerValue }),
+              /* @__PURE__ */ jsx("dt", { children: "Age" }),
+              /* @__PURE__ */ jsx("dd", { title: updatedAt || void 0, children: ago2(ticket.updated_at) }),
+              waitingSince ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                /* @__PURE__ */ jsx("dt", { children: "Waiting" }),
+                /* @__PURE__ */ jsx("dd", { children: waitingSince })
+              ] }) : null,
+              kindLabels.length > 0 ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                /* @__PURE__ */ jsx("dt", { children: "Queue" }),
+                /* @__PURE__ */ jsx("dd", { className: "pta-insp__chips", children: kindLabels.map((label) => /* @__PURE__ */ jsx(MetaChip, { children: label }, label)) })
+              ] }) : null
+            ] })
+          ] })
+        }
+      );
+    }
     function PtaButton({ children, kind = "default", className = "", ...rest }) {
-      return /* @__PURE__ */ jsx("button", { type: "button", className: `pta-btn pta-btn--${kind}${className ? ` ${className}` : ""}`, ...rest, children });
+      return /* @__PURE__ */ jsx(
+        "button",
+        {
+          type: "button",
+          className: `pta-btn pta-btn--${kind}${className ? ` ${className}` : ""}`,
+          "data-primary": kind === "primary" ? "true" : void 0,
+          ...rest,
+          children
+        }
+      );
     }
     function StatusPill2({ status }) {
       const tint = tintOfStatus(status);
@@ -15473,55 +16133,81 @@ ${question.text ?? ""}`)) {
         ] })
       ] }) });
     }
-    function TicketLine({ ticket, actions = null, reason = "", detail = "", showAge = true, stalled = false }) {
-      const open = () => void openTicketRun(ticket);
+    function TicketLine({
+      ticket,
+      actions = null,
+      reason = "",
+      detail = "",
+      showAge = true,
+      stalled = false,
+      selected = false,
+      onSelect = null,
+      onOpen = null
+    }) {
+      const open = () => onOpen ? onOpen(ticket) : void openTicketRun(ticket);
+      const select = () => onSelect ? onSelect(ticket) : open();
       const via = assistantBadge(ticket);
-      const dotTint = tintOfStatus(stalled ? "stalled" : ticket.status);
+      const stateKey = stalled ? "stalled" : ticket.status;
+      const stateLabel = resolveState(stateKey).label;
+      const rowTitle = `${stateLabel} \xB7 #${ticket.id} ${ticketLabel(ticket)}`;
       return /* @__PURE__ */ jsxs(
         "div",
         {
-          className: "pta-row",
-          role: "button",
+          className: `pta-row${selected ? " is-selected" : ""}`,
+          role: "option",
+          "aria-selected": selected,
+          "data-ticket-id": ticket.id,
           tabIndex: 0,
-          onClick: open,
+          title: rowTitle,
+          onClick: select,
+          onDoubleClick: open,
           onKeyDown: (event) => {
-            if (event.key === "Enter" || event.key === " ") {
+            if (event.target !== event.currentTarget) return;
+            if (event.key === "Enter") {
               event.preventDefault();
               open();
+            } else if (event.key === " ") {
+              event.preventDefault();
+              select();
             }
           },
           children: [
-            /* @__PURE__ */ jsx("span", { className: "pta-dot", style: { background: dotTint } }),
+            /* @__PURE__ */ jsx(StateIndicator, { state: stateKey, className: "pta-row__state", title: stateLabel }),
             /* @__PURE__ */ jsxs("span", { className: "pta-id", children: [
               "#",
               ticket.id
             ] }),
             /* @__PURE__ */ jsx("span", { className: "pta-title", title: ticketLabel(ticket), children: ticketLabel(ticket) }),
-            ticket.kind === "system" ? /* @__PURE__ */ jsx("span", { className: "pta-tag", children: "My task" }) : /* @__PURE__ */ jsx("span", { className: "pta-tag pta-tag--client", title: ticket.client_email ?? "", children: ticket.client_email || "client" }),
-            via ? /* @__PURE__ */ jsx("span", { className: "pta-tag pta-tag--client", title: assistantBadgeTitle(ticket), children: via }) : null,
-            /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ticket.project_name || "no project" }),
+            ticket.kind === "system" ? /* @__PURE__ */ jsx(MetaChip, { className: "pta-row__chip", children: "My task" }) : /* @__PURE__ */ jsx(MetaChip, { className: "pta-row__chip", title: ticket.client_email ?? "", children: ticket.client_email || "client" }),
+            via ? /* @__PURE__ */ jsx(MetaChip, { className: "pta-row__chip", title: assistantBadgeTitle(ticket), children: via }) : null,
+            /* @__PURE__ */ jsx("span", { className: "pta-meta pta-row__project", children: ticket.project_name || "no project" }),
             reason ? /* @__PURE__ */ jsx("span", { className: "pta-warn", children: reason }) : null,
             /* @__PURE__ */ jsx("span", { className: "pta-fill" }),
             detail ? /* @__PURE__ */ jsx("span", { className: "pta-meta", children: detail }) : null,
             showAge ? /* @__PURE__ */ jsx("span", { className: "pta-meta", children: ago2(ticket.updated_at) }) : null,
-            actions ? /* @__PURE__ */ jsx("span", { className: "pta-actions", onClick: (event) => event.stopPropagation(), children: actions }) : null
+            actions ? /* @__PURE__ */ jsx("span", { className: "pta-actions", onClick: (event) => event.stopPropagation(), onDoubleClick: (event) => event.stopPropagation(), children: actions }) : null
           ]
         }
       );
     }
-    function navigateRowFocus(root, event) {
+    function navigateRowFocus(root, event, { currentIndex = null, onMove = null } = {}) {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return false;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return false;
+      if (target instanceof Element && target.closest('[role="separator"], .pta-confirm')) return false;
+      if (document.querySelector(".pta-confirm")) return false;
       if (!root?.isConnected || root.offsetParent === null) return false;
       const rows = Array.from(root.querySelectorAll(".pta-row"));
       const active = document.activeElement;
       const focusedRow = active instanceof Element ? active.closest(".pta-row") : null;
-      const index = nextRowIndex(focusedRow ? rows.indexOf(focusedRow) : -1, rows.length, event.key);
+      const focusedIndex = focusedRow ? rows.indexOf(focusedRow) : -1;
+      const baseIndex = focusedIndex >= 0 ? focusedIndex : typeof currentIndex === "number" ? currentIndex : -1;
+      const index = nextRowIndex(baseIndex, rows.length, event.key);
       if (index === null || index >= rows.length) return false;
       event.preventDefault();
       rows[index].focus({ preventScroll: true });
       rows[index].scrollIntoView({ block: "nearest" });
+      onMove?.(index, rows[index]);
       return true;
     }
     function useRowNavigation(rootRef) {
@@ -15607,29 +16293,10 @@ ${question.text ?? ""}`)) {
       const groups = useMemo(() => ticketGroups(data), [data]);
       const [filter, setFilter] = useState("all");
       const [query, setQuery] = useState("");
+      const [selectedId, setSelectedId] = useState(null);
+      const [inspectorOpen, setInspectorOpen] = useState(() => typeof window === "undefined" ? true : window.innerWidth > 900);
       const search = useRef(null);
       const root = useRef(null);
-      useEffect(() => {
-        const onPreset = (event) => setFilter(event.detail?.filter ?? "all");
-        const onKey = (event) => {
-          if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
-            const target = event.target;
-            const typing = target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
-            if (!typing && search.current?.isConnected && search.current.offsetParent !== null) {
-              event.preventDefault();
-              search.current.focus();
-              return;
-            }
-          }
-          navigateRowFocus(root.current, event);
-        };
-        window.addEventListener("pta:inbox-filter", onPreset);
-        window.addEventListener("keydown", onKey);
-        return () => {
-          window.removeEventListener("pta:inbox-filter", onPreset);
-          window.removeEventListener("keydown", onKey);
-        };
-      }, []);
       const all = useMemo(() => {
         const seen = /* @__PURE__ */ new Map();
         const add = (ticket, kind) => {
@@ -15659,16 +16326,85 @@ ${question.text ?? ""}`)) {
         { key: "stuck", label: "Stuck", count: groups.stuck.length }
       ];
       const needle = query.trim().toLowerCase();
-      const shown = all.filter(({ ticket, kinds }) => {
+      const shown = useMemo(() => all.filter(({ ticket, kinds }) => {
         if (filter !== "all" && !kinds.has(filter)) return false;
         if (needle.length === 0) return true;
         return `${ticket.id} ${ticketLabel(ticket)} ${ticket.project_name ?? ""} ${ticket.client_email ?? ""}`.toLowerCase().includes(needle);
-      });
+      }), [all, filter, needle]);
+      const matchedIndex = selectedId == null ? -1 : shown.findIndex((entry) => entry.ticket.id === selectedId);
+      const activeIndex = shown.length === 0 ? -1 : matchedIndex >= 0 ? matchedIndex : 0;
+      const selectedEntry = inspectorOpen && activeIndex >= 0 ? shown[activeIndex] : null;
+      useEffect(() => {
+        if (shown.length === 0) return;
+        if (matchedIndex >= 0) return;
+        if (selectedId != null || inspectorOpen) setSelectedId(shown[0].ticket.id);
+      }, [shown, matchedIndex, selectedId, inspectorOpen]);
+      const reasonFor = useCallback((entry) => {
+        if (!entry) return "";
+        if (entry.kinds.has("stalled")) return stalledReason(entry.ticket);
+        if (entry.kinds.has("stuck")) return stuckReason.get(Number(entry.ticket.id)) ?? "no eligible node";
+        return "";
+      }, [stuckReason]);
+      const closeInspector = useCallback(() => {
+        setInspectorOpen(false);
+        const rows = root.current ? Array.from(root.current.querySelectorAll(".pta-row")) : [];
+        const row = activeIndex >= 0 ? rows[activeIndex] : null;
+        if (row) row.focus({ preventScroll: true });
+      }, [activeIndex]);
+      const navRef = useRef({ shown: [], activeIndex: -1, selectedEntry: null, inspectorOpen: false, closeInspector: () => {
+      } });
+      navRef.current = { shown, activeIndex, selectedEntry, inspectorOpen, closeInspector };
+      useEffect(() => {
+        const onPreset = (event) => setFilter(event.detail?.filter ?? "all");
+        const onKey = (event) => {
+          const currentRoot = root.current;
+          if (!currentRoot?.isConnected || currentRoot.offsetParent === null) return;
+          const target = event.target;
+          const typing = target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+          if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+            if (!typing && !document.querySelector(".pta-confirm") && search.current?.isConnected && search.current.offsetParent !== null) {
+              event.preventDefault();
+              search.current.focus();
+              return;
+            }
+          }
+          if (event.key === "Escape" && !event.defaultPrevented && !typing && !document.querySelector(".pta-confirm")) {
+            if (navRef.current.inspectorOpen) {
+              event.preventDefault();
+              navRef.current.closeInspector();
+              return;
+            }
+          }
+          if (event.key === "Enter" && !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.altKey && !typing && !document.querySelector(".pta-confirm")) {
+            const interactive = target instanceof Element && target.closest('button, a, [role="separator"], .pta-row');
+            if (!interactive && navRef.current.selectedEntry) {
+              event.preventDefault();
+              void openTicketRun(navRef.current.selectedEntry.ticket);
+              return;
+            }
+          }
+          navigateRowFocus(currentRoot, event, {
+            currentIndex: navRef.current.activeIndex,
+            onMove: (index) => {
+              const entry = navRef.current.shown[index];
+              if (!entry) return;
+              setSelectedId(entry.ticket.id);
+              setInspectorOpen(true);
+            }
+          });
+        };
+        window.addEventListener("pta:inbox-filter", onPreset);
+        window.addEventListener("keydown", onKey);
+        return () => {
+          window.removeEventListener("pta:inbox-filter", onPreset);
+          window.removeEventListener("keydown", onKey);
+        };
+      }, []);
       if (data.loading && data.at === 0) {
-        return /* @__PURE__ */ jsx("div", { className: "pta-page", ref: root, children: /* @__PURE__ */ jsx("p", { className: "pta-empty", children: "Loading\u2026" }) });
+        return /* @__PURE__ */ jsx("div", { className: "ui pta-inbox", ref: root, children: /* @__PURE__ */ jsx("div", { className: "pta-inbox__main", children: /* @__PURE__ */ jsx("div", { className: "pta-page pta-inbox__page", children: /* @__PURE__ */ jsx("p", { className: "pta-empty", children: "Loading\u2026" }) }) }) });
       }
       if (data.error) {
-        return /* @__PURE__ */ jsxs("div", { className: "pta-page", ref: root, children: [
+        return /* @__PURE__ */ jsx("div", { className: "ui pta-inbox", ref: root, children: /* @__PURE__ */ jsx("div", { className: "pta-inbox__main", children: /* @__PURE__ */ jsxs("div", { className: "pta-page pta-inbox__page", children: [
           /* @__PURE__ */ jsx("header", { className: "pta-head", children: /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx("h1", { children: "Inbox" }),
             /* @__PURE__ */ jsx("p", { children: isAuthError(data.code) ? data.error || "Connect PTech Admin to the portal to see what is waiting." : "The portal could not be reached." })
@@ -15678,53 +16414,76 @@ ${question.text ?? ""}`)) {
             /* @__PURE__ */ jsx("p", { children: data.error }),
             /* @__PURE__ */ jsx(PtaButton, { onClick: () => void data.reload(), children: "Try again" })
           ] })
-        ] });
+        ] }) }) });
       }
-      return /* @__PURE__ */ jsxs("div", { className: "pta-page", ref: root, children: [
-        /* @__PURE__ */ jsxs("header", { className: "pta-head", children: [
-          /* @__PURE__ */ jsxs("div", { children: [
-            /* @__PURE__ */ jsx("h1", { children: "Inbox" }),
-            /* @__PURE__ */ jsx("p", { children: all.length === 0 ? "Nothing is waiting on you. Agents are on it." : `${all.length} item${all.length === 1 ? "" : "s"} want a decision.` })
+      return /* @__PURE__ */ jsxs("div", { className: "ui pta-inbox", ref: root, "data-inspector": selectedEntry ? "open" : "closed", children: [
+        /* @__PURE__ */ jsx("div", { className: "pta-inbox__main", children: /* @__PURE__ */ jsxs("div", { className: "pta-page pta-inbox__page", children: [
+          /* @__PURE__ */ jsxs("header", { className: "pta-head", children: [
+            /* @__PURE__ */ jsxs("div", { children: [
+              /* @__PURE__ */ jsx("h1", { children: "Inbox" }),
+              /* @__PURE__ */ jsx("p", { children: all.length === 0 ? "Nothing is waiting on you. Agents are on it." : `${all.length} item${all.length === 1 ? "" : "s"} want a decision.` })
+            ] }),
+            /* @__PURE__ */ jsx("div", { className: "pta-head__actions", children: /* @__PURE__ */ jsx(
+              "input",
+              {
+                ref: search,
+                className: "pta-search",
+                value: query,
+                placeholder: "Search tickets, clients, projects\u2026  /",
+                onChange: (event) => setQuery(event.target.value),
+                onKeyDown: (event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setQuery("");
+                    event.currentTarget.blur();
+                  }
+                },
+                "aria-label": "Search the inbox"
+              }
+            ) })
           ] }),
-          /* @__PURE__ */ jsx("div", { className: "pta-head__actions", children: /* @__PURE__ */ jsx(
-            "input",
-            {
-              ref: search,
-              className: "pta-search",
-              value: query,
-              placeholder: "Search tickets, clients, projects\u2026  /",
-              onChange: (event) => setQuery(event.target.value),
-              onKeyDown: (event) => {
-                if (event.key === "Escape") {
-                  setQuery("");
-                  event.currentTarget.blur();
-                }
+          /* @__PURE__ */ jsx("div", { className: "pta-filters", children: filters.map((item) => /* @__PURE__ */ jsxs("button", { type: "button", className: `pta-filter${filter === item.key ? " is-active" : ""}`, onClick: () => setFilter(item.key), children: [
+            item.label,
+            item.count ? /* @__PURE__ */ jsx("span", { className: "pta-count", children: item.count }) : null
+          ] }, item.key)) }),
+          /* @__PURE__ */ jsx("p", { className: "pta-meta pta-hint", children: "j/k to move \xB7 Enter to open \xB7 Esc to close \xB7 / to search" }),
+          shown.length === 0 ? /* @__PURE__ */ jsx(EmptyState2, { title: all.length === 0 ? "Inbox zero" : "Nothing in this filter", text: all.length === 0 ? "New approvals, reviews and client replies will land here and notify you." : "Try another filter, or clear the search." }) : /* @__PURE__ */ jsx("div", { className: "pta-rows pta-rows--inbox", role: "listbox", "aria-label": "Inbox tickets", children: shown.map((entry) => {
+            const { ticket, kinds } = entry;
+            const stalled = kinds.has("stalled");
+            const reason = reasonFor(entry);
+            const selected = selectedEntry?.ticket.id === ticket.id;
+            return /* @__PURE__ */ jsx(
+              TicketLine,
+              {
+                ticket,
+                stalled,
+                reason,
+                showAge: !stalled,
+                selected,
+                onSelect: () => {
+                  setSelectedId(ticket.id);
+                  setInspectorOpen(true);
+                },
+                onOpen: () => void openTicketRun(ticket),
+                actions: /* @__PURE__ */ jsx(TicketRowActions, { ticket }),
+                detail: isWaiting(ticket) ? "waiting" : ""
               },
-              "aria-label": "Search the inbox"
-            }
-          ) })
-        ] }),
-        /* @__PURE__ */ jsx("div", { className: "pta-filters", children: filters.map((item) => /* @__PURE__ */ jsxs("button", { type: "button", className: `pta-filter${filter === item.key ? " is-active" : ""}`, onClick: () => setFilter(item.key), children: [
-          item.label,
-          item.count ? /* @__PURE__ */ jsx("span", { className: "pta-count", children: item.count }) : null
-        ] }, item.key)) }),
-        /* @__PURE__ */ jsx("p", { className: "pta-meta pta-hint", children: "j/k to move \xB7 Enter to open \xB7 / to search" }),
-        shown.length === 0 ? /* @__PURE__ */ jsx(EmptyState2, { title: all.length === 0 ? "Inbox zero" : "Nothing in this filter", text: all.length === 0 ? "New approvals, reviews and client replies will land here and notify you." : "Try another filter, or clear the search." }) : /* @__PURE__ */ jsx("div", { className: "pta-rows pta-rows--inbox", children: shown.map(({ ticket, kinds }) => {
-          const stalled = kinds.has("stalled");
-          const reason = stalled ? stalledReason(ticket) : kinds.has("stuck") ? stuckReason.get(Number(ticket.id)) ?? "no eligible node" : "";
-          return /* @__PURE__ */ jsx(
-            TicketLine,
+              ticket.id
+            );
+          }) })
+        ] }) }),
+        selectedEntry ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx("div", { className: "pta-inbox__scrim", "aria-hidden": "true", onClick: closeInspector }),
+          /* @__PURE__ */ jsx(
+            InboxInspector,
             {
-              ticket,
-              stalled,
-              reason,
-              showAge: !stalled,
-              actions: /* @__PURE__ */ jsx(TicketRowActions, { ticket }),
-              detail: isWaiting(ticket) ? "waiting" : ""
-            },
-            ticket.id
-          );
-        }) })
+              entry: selectedEntry,
+              reason: reasonFor(selectedEntry),
+              onClose: closeInspector
+            }
+          )
+        ] }) : null
       ] });
     }
     const EMPTY_DESK_DATA = {
@@ -16260,6 +17019,10 @@ ${question.text ?? ""}`)) {
     ctx.slots.inject("conversation.session.header.actions", () => ctx.slots.register({ name: "conversation.session.header.actions", id: "admin-ticket", order: 5, locale: NAMESPACE }, TicketHeaderChip));
     ctx.slots.inject("sidebar.session.row.leading", () => ctx.slots.register({ name: "sidebar.session.row.leading", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketMark));
     ctx.slots.inject("sidebar.session.row.hover", () => ctx.slots.register({ name: "sidebar.session.row.hover", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketHover));
+    function PluginUiStyles() {
+      return /* @__PURE__ */ jsx(UiStyles, {});
+    }
+    ctx.slots.inject("shell.overlay", () => ctx.slots.register({ name: "shell.overlay", id: "admin-ui-styles", order: 1 }, PluginUiStyles));
     ctx.slots.inject("shell.overlay", () => ctx.slots.register({ name: "shell.overlay", id: "admin-notifications", order: 40 }, NotificationHost));
     ctx.slots.inject("shell.overlay", () => ctx.slots.register({ name: "shell.overlay", id: "admin-confirm", order: 45 }, ConfirmHost));
     ctx.slots.inject("settings.section", () => ctx.slots.register({ name: "settings.section", id: "admin", order: 60, label: "Admin" }, AdminSettingsSection));
