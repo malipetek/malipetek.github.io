@@ -50,8 +50,6 @@ window.__ModuleLoader__.load({
      * it is; that file is the answer. Bump both together.
      */
     const CLIENT_VERSION = '1.2.0';
-    /** Delay before the mount handshake, so a Session exists to authorize it. */
-    const HANDSHAKE_DELAY_MS = 1500;
     /** The file Remote caps one text page at this many lines. */
     const PAGE_LINES = 5000;
     /** Hard stop so a pathological store cannot spin the reader. */
@@ -1752,21 +1750,11 @@ window.__ModuleLoader__.load({
         console.warn('[action-cards] could not reach the Sidebar tab registry:', error);
       }
 
-      // Announce this bundle to the Host once, so `client.json` can prove which
-      // Client version is actually loaded. Best effort, and it spends no model
-      // turn: it is a Cordis command like every other write from this side.
-      ctx.effect(() => {
-        const handle = setTimeout(() => {
-          const snapshot = ctx.sessions?.list?.getSnapshot();
-          const sessionId = Array.isArray(snapshot?.ids) ? snapshot.ids[0] : undefined;
-          if (typeof sessionId !== 'string' || sessionId.length === 0) return;
-          void runCommand(sessionId, commandLine(`hello ${CLIENT_VERSION}`)).catch(() => {
-            // A handshake that cannot land says nothing about the card or the pill.
-          });
-        }, HANDSHAKE_DELAY_MS);
-        if (typeof handle?.unref === 'function') handle.unref();
-        return () => clearTimeout(handle);
-      }, 'action-cards: mount handshake');
+      // No mount handshake: `/actions hello` writes a diagnostics record, but it
+      // also lands in the conversation as a command result, so every mount added
+      // a `host ... speaking; client ...` row. The Host command still exists for
+      // manual diagnostics; nothing calls it automatically.
+
     }
 
     return { name: 'action-cards', inject, apply };
