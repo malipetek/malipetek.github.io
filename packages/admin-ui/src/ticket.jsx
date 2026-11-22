@@ -25,7 +25,7 @@ import {
   when,
 } from './format.js';
 import { Button, Chips, Dot, ErrorNote, Field, Modal, Resizer, Segmented, Skeleton, StatusPill, Tag, cx } from './ui.jsx';
-import { ReviewButton } from './review.jsx';
+import { RecordedEvidence, ReviewButton } from './review.jsx';
 import { createSubmission } from './submit-state.js';
 import { sortedRuns } from './run-evidence.js';
 import { createStepRequest } from './request-state.js';
@@ -134,6 +134,12 @@ export function TicketView({ id, active, details = true }) {
             latestRunId={sortedRuns(runs)[0]?.id}
             screenshots={screenshots.filter((shot) => review?.runId != null && String(shot.runId) === String(review.runId))}
           />
+        ) : null}
+        {runs.length ? (
+          <details className="aw-evidence-more">
+            <summary>Evidence &amp; diff · {runs.length} run{runs.length === 1 ? '' : 's'}</summary>
+            <RecordedEvidence runs={runs} screenshots={screenshots} review={review} />
+          </details>
         ) : null}
         <Timeline key={`timeline-${ticket.id}`} ticket={ticket} messages={messages} runs={runs} />
         <Composer key={ticket.id} ticket={ticket} onSent={reload} replyAt={replyAt} />

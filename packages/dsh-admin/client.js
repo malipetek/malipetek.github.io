@@ -134,7 +134,9 @@ var __awPlugin = (() => {
 
   // packages/admin-ui/src/run-evidence.js
   var sortedRuns = (runs = []) => [...runs].sort((a, b) => Number(b.id) - Number(a.id));
+  var selectedRun = (runs, id) => id == null ? sortedRuns(runs)[0] ?? null : runs.find((run) => String(run.id) === String(id)) ?? null;
   var recordedPatch = (run) => [run?.diff, run?.diff_stat].find((text) => typeof text === "string" && text.trim()) ?? null;
+  var verification = (value) => value == null ? "unknown" : value === true || value === 1 ? "passed" : "failed";
   var mergeSteps = (previous = [], fresh = []) => [...new Map([...previous, ...fresh].map((step) => [step.seq, step])).values()].sort((a, b) => a.seq - b.seq);
   function reviewTarget(runs) {
     const sorted = sortedRuns(runs);
@@ -1115,6 +1117,710 @@ var __awPlugin = (() => {
     return null;
   }
 
+  // packages/admin-ui/src/ui/tokens.js
+  var TYPE = Object.freeze({ xs: 11, sm: 12, md: 13, lg: 15, xl: 18 });
+  var SPACE = Object.freeze([0, 4, 8, 12, 16, 24, 32]);
+  var RADII = Object.freeze({ sm: 4, md: 6, lg: 8 });
+  var MOTION = Object.freeze({ dur: "120ms", ease: "cubic-bezier(.2, 0, 0, 1)" });
+  var SIZE = Object.freeze({
+    bar: 38,
+    // ObjectBar / ContextBar
+    filter: 36,
+    // FilterBar
+    row: 34,
+    // DataTable row
+    subnav: 32,
+    sideRow: 28,
+    control: 28,
+    // Button md
+    controlSm: 24,
+    // Button sm
+    status: 24,
+    // StatusBar
+    sidebar: 220,
+    formMax: 720,
+    // form controls never stretch past this
+    stackBelow: 720,
+    // DataTable stacks rows at or below this container width
+    inspector: 380,
+    inspectorMin: 300,
+    inspectorMax: 560
+  });
+  var LIGHT = {
+    bg: "#FFFFFF",
+    "bg-subtle": "#F6F6F4",
+    "bg-raised": "#FFFFFF",
+    border: "rgba(22, 20, 15, .10)",
+    "border-strong": "rgba(22, 20, 15, .18)",
+    ink: "#16140F",
+    "ink-2": "#5D5850",
+    "ink-3": "#8A847A",
+    ok: "#2F9E5B",
+    warn: "#D99A16",
+    bad: "#D6453D",
+    info: "#3B7BD9",
+    shadow: "0 0 0 1px rgba(22, 20, 15, .08), 0 12px 32px rgba(0, 0, 0, .16)"
+  };
+  var DARK = {
+    bg: "#141416",
+    "bg-subtle": "#1A1A1D",
+    "bg-raised": "#222226",
+    border: "rgba(255, 255, 255, .09)",
+    "border-strong": "rgba(255, 255, 255, .16)",
+    ink: "#F2F2F3",
+    "ink-2": "#A1A1AA",
+    "ink-3": "#71717A",
+    ok: "#3FB36D",
+    warn: "#E5A82A",
+    bad: "#E5534B",
+    info: "#4C8DF0",
+    shadow: "0 0 0 1px rgba(255, 255, 255, .08), 0 12px 32px rgba(0, 0, 0, .48)"
+  };
+  var PALETTE = Object.freeze({ light: Object.freeze({ ...LIGHT }), dark: Object.freeze({ ...DARK }) });
+  var ACCENT = "#FF5A1F";
+  var ACCENT_INK = "#FFFFFF";
+  var HOST = {
+    bg: ["--dsw-alias-bg-base"],
+    "bg-subtle": ["--dsw-alias-bg-layer-1"],
+    "bg-raised": ["--dsw-alias-bg-elevated"],
+    border: ["--dsw-alias-border-l2"],
+    "border-strong": ["--dsw-alias-border-l3"],
+    ink: ["--dsw-alias-label-primary"],
+    "ink-2": ["--dsw-alias-label-secondary"],
+    "ink-3": ["--dsw-alias-label-tertiary"],
+    ok: ["--dsw-alias-state-success-primary"],
+    warn: ["--dsw-alias-state-warning-primary", "--dsw-alias-state-warn-primary"],
+    bad: ["--dsw-alias-state-danger-primary", "--dsw-alias-state-error-primary"],
+    info: ["--dsw-alias-state-business-primary"],
+    shadow: []
+  };
+  var chain = (aliases, last) => aliases.reduceRight((inner, name) => `var(${name}, ${inner})`, last);
+  var block = (pairs) => pairs.map(([k, v]) => `  ${k}: ${v};`).join("\n");
+  var fallbacks = (palette) => block(Object.entries(palette).map(([k, v]) => [`--ui-fb-${k}`, v]));
+  var ROOT = ":where(.ui, .aw)";
+  var TOKENS = Object.freeze({
+    ...Object.fromEntries(Object.keys(HOST).map((k) => [`--ui-${k}`, chain(HOST[k], `var(--ui-fb-${k})`)])),
+    "--ui-bg-hover": chain(["--dsw-alias-interactive-bg-hover"], "color-mix(in srgb, var(--ui-ink) 6%, transparent)"),
+    "--ui-bg-selected": "color-mix(in srgb, var(--ui-ink) 9%, transparent)",
+    "--ui-accent": chain(["--dsw-alias-brand-primary"], ACCENT),
+    "--ui-accent-hover": "color-mix(in srgb, var(--ui-accent) 88%, var(--ui-ink))",
+    "--ui-accent-ink": ACCENT_INK,
+    "--ui-accent-wash": "color-mix(in srgb, var(--ui-accent) 12%, transparent)",
+    "--ui-focus": "var(--ui-accent)",
+    "--ui-scrim": "rgba(0, 0, 0, .32)",
+    "--ui-font": "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Inter, system-ui, sans-serif",
+    "--ui-mono": "ui-monospace, 'SF Mono', Menlo, monospace",
+    ...Object.fromEntries(Object.entries(TYPE).map(([k, v]) => [`--ui-fs-${k}`, `${v}px`])),
+    "--ui-lh": "1.45",
+    "--ui-lh-tight": "1.25",
+    ...Object.fromEntries(SPACE.slice(1).map((v, i) => [`--ui-sp-${i + 1}`, `${v}px`])),
+    ...Object.fromEntries(Object.entries(RADII).map(([k, v]) => [`--ui-r-${k}`, `${v}px`])),
+    "--ui-bar-h": `${SIZE.bar}px`,
+    "--ui-filter-h": `${SIZE.filter}px`,
+    "--ui-row-h": `${SIZE.row}px`,
+    "--ui-subnav-h": `${SIZE.subnav}px`,
+    "--ui-side-row-h": `${SIZE.sideRow}px`,
+    "--ui-ctl-h": `${SIZE.control}px`,
+    "--ui-ctl-h-sm": `${SIZE.controlSm}px`,
+    "--ui-status-h": `${SIZE.status}px`,
+    "--ui-sidebar-w": `${SIZE.sidebar}px`,
+    "--ui-form-max": `${SIZE.formMax}px`,
+    "--ui-inspector-w": `${SIZE.inspector}px`,
+    "--ui-dur": MOTION.dur,
+    "--ui-ease": MOTION.ease
+  });
+  var TOKEN_NAMES = Object.freeze(Object.keys(TOKENS));
+  var TOKENS_CSS = `
+${ROOT} {
+${fallbacks(LIGHT)}
+}
+@media (prefers-color-scheme: dark) {
+  ${ROOT} {
+${fallbacks(DARK)}
+  }
+}
+:where([data-theme='dark']) ${ROOT}, :where(.ui, .aw)[data-theme='dark'] {
+${fallbacks(DARK)}
+}
+:where([data-theme='light']) ${ROOT}, :where(.ui, .aw)[data-theme='light'] {
+${fallbacks(LIGHT)}
+}
+${ROOT} {
+${block(Object.entries(TOKENS))}
+}
+@media (prefers-reduced-motion: reduce) {
+  ${ROOT} { --ui-dur: 0ms; }
+}
+`;
+
+  // packages/admin-ui/src/ui/css.js
+  var PRIMITIVES_CSS = `
+.ui {
+  font-family: var(--ui-font);
+  font-size: var(--ui-fs-md);
+  line-height: var(--ui-lh);
+  color: var(--ui-ink);
+  background: var(--ui-bg);
+}
+.ui-sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+:where(.ui, .aw) :where(.ui-btn, .ui-row, .ui-resize, .ui-inspector, .ui-iconbtn, .ui-table__sort, .ui-disclosure > summary):focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -2px;
+}
+
+/* \u2014\u2014 buttons (internal to the primitives) \u2014\u2014 */
+.ui-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--ui-sp-1);
+  height: var(--ui-ctl-h); padding: 0 var(--ui-sp-3);
+  border: 1px solid var(--ui-border-strong); border-radius: var(--ui-r-md);
+  background: var(--ui-bg-raised); color: var(--ui-ink);
+  font: inherit; font-size: var(--ui-fs-md); font-weight: 500; white-space: nowrap;
+  cursor: pointer; transition: background var(--ui-dur) var(--ui-ease);
+}
+.ui-btn:hover:not(:disabled) { background: var(--ui-bg-hover); }
+.ui-btn:disabled { opacity: .5; cursor: not-allowed; }
+.ui-btn--sm { height: var(--ui-ctl-h-sm); padding: 0 var(--ui-sp-2); font-size: var(--ui-fs-sm); }
+.ui-btn--ghost { border-color: transparent; background: transparent; }
+.ui-btn--primary { border-color: transparent; background: var(--ui-accent); color: var(--ui-accent-ink); }
+.ui-btn--primary:hover:not(:disabled) { background: var(--ui-accent-hover); }
+.ui-iconbtn { width: var(--ui-ctl-h); padding: 0; }
+
+/* \u2014\u2014 StateIndicator: 6px dot + label, transparent background \u2014\u2014 */
+.ui-state {
+  display: inline-flex; align-items: center; gap: var(--ui-sp-1);
+  font-size: var(--ui-fs-sm); font-weight: 500; line-height: var(--ui-lh-tight);
+  color: var(--ui-ink-2); background: transparent; white-space: nowrap;
+}
+.ui-state__dot {
+  --ui-tone: var(--ui-ink-3);
+  width: 6px; height: 6px; border-radius: 50%; flex: none;
+  background: var(--ui-tone);
+}
+.ui-state[data-tone='ok'] .ui-state__dot { --ui-tone: var(--ui-ok); }
+.ui-state[data-tone='warn'] .ui-state__dot { --ui-tone: var(--ui-warn); }
+.ui-state[data-tone='bad'] .ui-state__dot { --ui-tone: var(--ui-bad); }
+.ui-state[data-tone='info'] .ui-state__dot { --ui-tone: var(--ui-info); }
+.ui-state[data-ring] .ui-state__dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ui-tone); }
+.ui-state[data-dashed] .ui-state__dot { background: transparent; border: 1px dashed var(--ui-tone); }
+.ui-state[data-live] .ui-state__dot { animation: ui-pulse 1.6s var(--ui-ease) infinite; }
+.ui-state--dot-only { gap: 0; }
+@keyframes ui-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .ui-state[data-live] .ui-state__dot { animation: none; } }
+
+/* \u2014\u2014 MetaChip: monochrome metadata, never a status colour \u2014\u2014 */
+.ui-chip {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 var(--ui-sp-1);
+  border-radius: var(--ui-r-sm); background: var(--ui-bg-selected); color: var(--ui-ink-2);
+  font-size: var(--ui-fs-xs); font-weight: 500; white-space: nowrap; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.ui-chip--mono { font-family: var(--ui-mono); font-variant-numeric: tabular-nums; }
+
+/* \u2014\u2014 DataTable \u2014\u2014 */
+.ui-table-wrap { container-type: inline-size; min-width: 0; }
+.ui-table { width: 100%; border-collapse: collapse; font-size: var(--ui-fs-md); }
+.ui-table th {
+  height: var(--ui-row-h); padding: 0 var(--ui-sp-3); text-align: left;
+  font-size: var(--ui-fs-xs); font-weight: 500; color: var(--ui-ink-3);
+  border-bottom: 1px solid var(--ui-border); white-space: nowrap;
+}
+.ui-table td {
+  height: var(--ui-row-h); padding: 0 var(--ui-sp-3);
+  border-bottom: 1px solid var(--ui-border); vertical-align: middle;
+  max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ui-table :is(th, td)[data-fit] { width: 1%; max-width: none; }
+.ui-table :is(th, td)[data-numeric] { text-align: right; font-variant-numeric: tabular-nums; }
+.ui-table td[data-mono] { font-family: var(--ui-mono); font-variant-numeric: tabular-nums; }
+.ui-row { cursor: default; outline: none; transition: background var(--ui-dur) var(--ui-ease); }
+.ui-row:hover { background: var(--ui-bg-hover); }
+.ui-row[aria-selected='true'] { background: var(--ui-bg-selected); box-shadow: inset 2px 0 0 var(--ui-accent); }
+.ui-row--skeleton td::after {
+  content: ''; display: block; height: 8px; border-radius: var(--ui-r-sm);
+  background: var(--ui-bg-selected);
+}
+.ui-table__sort {
+  display: inline-flex; align-items: center; gap: var(--ui-sp-1); height: 100%;
+  padding: 0; border: 0; background: transparent; color: inherit;
+  font: inherit; cursor: pointer;
+}
+.ui-table__sort:hover { color: var(--ui-ink); }
+.ui-table__arrow { display: inline-block; min-width: 1ch; }
+.ui-table__note { padding: var(--ui-sp-5) var(--ui-sp-4); color: var(--ui-ink-2); font-size: var(--ui-fs-md); }
+.ui-table__note strong { display: block; color: var(--ui-ink); font-weight: 500; margin-bottom: var(--ui-sp-1); }
+.ui-table__note--error strong { color: var(--ui-bad); }
+.ui-table__note .ui-btn { margin-top: var(--ui-sp-2); }
+@container (max-width: 720px) {
+  .ui-table, .ui-table tbody, .ui-table tr, .ui-table td { display: block; width: auto; }
+  .ui-table thead { display: none; }
+  .ui-table tr.ui-row { padding: var(--ui-sp-2) var(--ui-sp-3); border-bottom: 1px solid var(--ui-border); }
+  .ui-table td { height: auto; max-width: none; padding: 0; border: 0; white-space: normal; text-align: left; }
+  .ui-table td[data-numeric] { text-align: left; }
+  .ui-table td + td { margin-top: var(--ui-sp-1); font-size: var(--ui-fs-sm); color: var(--ui-ink-2); }
+  .ui-table td + td[data-label]::before { content: attr(data-label) ' \xB7 '; color: var(--ui-ink-3); }
+}
+
+/* \u2014\u2014 Inspector: resizable right pane \u2014\u2014 */
+.ui-inspector {
+  position: relative; display: flex; flex-direction: column; min-width: 0;
+  width: var(--ui-inspector-w); flex: none;
+  border-left: 1px solid var(--ui-border); background: var(--ui-bg-subtle);
+}
+.ui-inspector__head {
+  display: flex; align-items: center; gap: var(--ui-sp-2);
+  height: var(--ui-bar-h); padding: 0 var(--ui-sp-2) 0 var(--ui-sp-4);
+  border-bottom: 1px solid var(--ui-border); flex: none;
+}
+.ui-inspector__title {
+  flex: 1; min-width: 0; margin: 0; font-size: var(--ui-fs-lg); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ui-inspector__body { flex: 1; min-height: 0; overflow: auto; padding: var(--ui-sp-4); }
+.ui-resize {
+  position: absolute; top: 0; bottom: 0; left: -3px; width: 6px; cursor: col-resize; z-index: 1;
+  background: transparent; transition: background var(--ui-dur) var(--ui-ease);
+}
+.ui-resize:hover, .ui-resize[data-drag] { background: var(--ui-accent-wash); }
+@media (max-width: 900px) {
+  .ui-inspector { width: 100%; border-left: 0; border-top: 1px solid var(--ui-border); }
+  .ui-resize { display: none; }
+}
+
+/* \u2014\u2014 Workspace: a collection with its Inspector beside it, never over it \u2014\u2014 */
+.ui-workspace {
+  display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0;
+  padding: var(--ui-sp-4) var(--ui-sp-5) 0;
+}
+.ui-split { flex: 1; min-height: 0; min-width: 0; display: flex; gap: var(--ui-sp-3); }
+.ui-split__main {
+  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  overflow: auto; padding-bottom: var(--ui-sp-4);
+}
+.ui-split > .ui-inspector { margin-bottom: var(--ui-sp-4); border: 1px solid var(--ui-border); border-radius: var(--ui-r-lg); }
+.ui-selectable[data-selected] { border-color: var(--ui-accent); box-shadow: inset 2px 0 0 var(--ui-accent); }
+@media (max-width: 900px) {
+  .ui-workspace { height: auto; padding: var(--ui-sp-3) var(--ui-sp-3) 0; }
+  .ui-split { flex-direction: column; flex: none; }
+  .ui-split__main { flex: none; overflow: visible; }
+}
+
+/* \u2014\u2014 Inspector content: properties, sections, one action row \u2014\u2014 */
+.ui-props {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--ui-sp-1) var(--ui-sp-3);
+  margin: 0; font-size: var(--ui-fs-sm);
+}
+.ui-props dt { color: var(--ui-ink-3); }
+.ui-props dd { margin: 0; min-width: 0; color: var(--ui-ink); overflow-wrap: anywhere; }
+.ui-section { margin-top: var(--ui-sp-4); }
+.ui-section__title { margin: 0 0 var(--ui-sp-2); font-size: var(--ui-fs-xs); font-weight: 500; color: var(--ui-ink-3); }
+.ui-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-2); margin: var(--ui-sp-3) 0; }
+.ui-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-2); font-size: var(--ui-fs-xs); color: var(--ui-ink-3); }
+.ui-meta strong { color: var(--ui-ink-2); font-weight: 500; }
+.ui-quote {
+  margin: var(--ui-sp-1) 0 0; font-size: var(--ui-fs-sm); color: var(--ui-ink-2); white-space: pre-wrap;
+  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ui-note { margin: 0; font-size: var(--ui-fs-sm); color: var(--ui-ink-3); }
+
+/* \u2014\u2014 Disclosure: a collapsible section, closed until asked \u2014\u2014 */
+.ui-disclosure { margin: var(--ui-sp-3) 0; border: 1px solid var(--ui-border); border-radius: var(--ui-r-lg); background: var(--ui-bg-subtle); }
+.ui-disclosure > summary {
+  display: flex; align-items: center; gap: var(--ui-sp-2); min-height: var(--ui-bar-h);
+  padding: 0 var(--ui-sp-3); cursor: pointer; list-style: none;
+  font-size: var(--ui-fs-md); font-weight: 500; color: var(--ui-ink);
+  border-radius: var(--ui-r-lg);
+}
+.ui-disclosure > summary::-webkit-details-marker { display: none; }
+.ui-disclosure > summary::before {
+  content: '\u25B8'; color: var(--ui-ink-3); transition: transform var(--ui-dur) var(--ui-ease);
+}
+.ui-disclosure[open] > summary::before { transform: rotate(90deg); }
+.ui-disclosure__hint { margin-left: auto; font-size: var(--ui-fs-xs); font-weight: 400; color: var(--ui-ink-3); }
+.ui-disclosure__body { padding: var(--ui-sp-3); border-top: 1px solid var(--ui-border); min-width: 0; }
+
+/* \u2014\u2014 ContextBar: 38px, one primary at most \u2014\u2014 */
+.ui-contextbar {
+  display: flex; align-items: center; gap: var(--ui-sp-2); min-width: 0;
+  height: var(--ui-bar-h); padding: 0 var(--ui-sp-3) 0 var(--ui-sp-4);
+  border-bottom: 1px solid var(--ui-border); background: var(--ui-bg); flex: none;
+}
+.ui-contextbar__title {
+  margin: 0; min-width: 0; font-size: var(--ui-fs-lg); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ui-contextbar__meta { display: flex; align-items: center; gap: var(--ui-sp-2); min-width: 0; color: var(--ui-ink-2); font-size: var(--ui-fs-sm); }
+.ui-contextbar__spacer { flex: 1; }
+.ui-contextbar__actions { display: flex; align-items: center; gap: var(--ui-sp-1); flex: none; }
+
+/* \u2014\u2014 forms and SaveBar \u2014\u2014 */
+.ui-form { max-width: var(--ui-form-max); }
+.ui-savebar {
+  position: sticky; bottom: 0; z-index: 2;
+  display: flex; align-items: center; gap: var(--ui-sp-2);
+  min-height: var(--ui-bar-h); padding: var(--ui-sp-1) var(--ui-sp-4);
+  border-top: 1px solid var(--ui-border); background: var(--ui-bg);
+}
+.ui-savebar__msg { flex: 1; min-width: 0; font-size: var(--ui-fs-sm); color: var(--ui-ink-2); }
+.ui-savebar__msg[data-error] { color: var(--ui-bad); }
+
+/* \u2014\u2014 Shell \u2014\u2014 */
+.ui-shell { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.ui-shell__body { flex: 1; min-height: 0; display: flex; }
+.ui-shell__sidebar {
+  width: var(--ui-sidebar-w); flex: none; overflow: auto;
+  border-right: 1px solid var(--ui-border); background: var(--ui-bg-subtle); font-size: var(--ui-fs-sm);
+}
+.ui-shell__stage { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+.ui-shell__status {
+  height: var(--ui-status-h); flex: none; display: flex; align-items: center; gap: var(--ui-sp-3);
+  padding: 0 var(--ui-sp-3); border-top: 1px solid var(--ui-border);
+  font-size: var(--ui-fs-xs); color: var(--ui-ink-2); background: var(--ui-bg-subtle);
+}
+@media (max-width: 900px) {
+  .ui-shell__body { flex-direction: column; }
+  .ui-shell__sidebar { width: auto; border-right: 0; border-bottom: 1px solid var(--ui-border); }
+}
+`;
+  var UI_CSS = TOKENS_CSS + PRIMITIVES_CSS;
+
+  // packages/admin-ui/src/ui/state.js
+  var S = (tone2, label, extra = {}) => Object.freeze({ tone: tone2, label, ...extra });
+  var STATE_MAP = Object.freeze({
+    // tickets
+    new: S("info", "New"),
+    approved: S("neutral", "Approved", { ring: true }),
+    queued: S("neutral", "Queued", { ring: true }),
+    in_progress: S("info", "Running", { live: true }),
+    running: S("info", "Running", { live: true }),
+    review: S("warn", "In review"),
+    check: S("warn", "Check"),
+    stalled: S("bad", "Stalled"),
+    done: S("ok", "Done"),
+    declined: S("neutral", "Declined", { dashed: true }),
+    unknown: S("neutral", "Unknown", { dashed: true }),
+    // runs and checks
+    failed: S("bad", "Failed"),
+    ok: S("ok", "Passed"),
+    passed: S("ok", "Passed"),
+    // nodes
+    online: S("ok", "Online"),
+    offline: S("bad", "Offline"),
+    // contacts
+    replied: S("ok", "Replied"),
+    opted_out: S("bad", "Opted out"),
+    bounced: S("bad", "Bounced")
+  });
+  var TONES = Object.freeze(["ok", "warn", "bad", "info", "neutral"]);
+  function humanize(value) {
+    const text = String(value ?? "").trim().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+    if (!text) return "";
+    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+  }
+  function resolveState(state, overrides = {}) {
+    const key = String(state ?? "unknown").trim().toLowerCase().replace(/[\s-]+/g, "_") || "unknown";
+    const known = STATE_MAP[key];
+    const base = known ?? { tone: "neutral", label: humanize(key) };
+    const tone2 = TONES.includes(overrides.tone) ? overrides.tone : base.tone;
+    return {
+      key,
+      tone: tone2,
+      label: overrides.label ?? base.label,
+      live: overrides.live ?? Boolean(base.live),
+      ring: Boolean(base.ring),
+      dashed: Boolean(base.dashed)
+    };
+  }
+
+  // packages/admin-ui/src/ui/behavior.js
+  function tableKeyAction(e, current, count) {
+    if (!e || e.metaKey || e.ctrlKey || e.altKey) return null;
+    if (e.key === "ContextMenu" || e.shiftKey && e.key === "F10") return { type: "menu" };
+    if (e.shiftKey) return null;
+    if (e.key === "Enter") return current >= 0 && current < count ? { type: "open" } : null;
+    const index = nextRowIndex(current, count, e.key);
+    return index == null ? null : { type: "move", index };
+  }
+  var clamp = (n, min, max) => Math.min(max, Math.max(min, n));
+  function clampWidth(value, { min = SIZE.inspectorMin, max = SIZE.inspectorMax, def = SIZE.inspector } = {}) {
+    const n = Number(value);
+    if (value == null || value === "" || !Number.isFinite(n)) return clamp(def, min, max);
+    return clamp(Math.round(n), min, max);
+  }
+  function readWidth(storage2, key, limits = {}) {
+    if (!key) return clampWidth(void 0, limits);
+    try {
+      const raw = storage2?.getItem?.(key);
+      return clampWidth(raw == null ? void 0 : raw, limits);
+    } catch {
+      return clampWidth(void 0, limits);
+    }
+  }
+  function writeWidth(storage2, key, width) {
+    if (!key) return;
+    try {
+      storage2?.setItem?.(key, String(width));
+    } catch {
+    }
+  }
+  function resizeKey(key, width, { min = SIZE.inspectorMin, max = SIZE.inspectorMax, step = 16, invert = true } = {}) {
+    const dir = invert ? -1 : 1;
+    if (key === "ArrowLeft") return clamp(width - step * dir, min, max);
+    if (key === "ArrowRight") return clamp(width + step * dir, min, max);
+    if (key === "Home") return min;
+    if (key === "End") return max;
+    return null;
+  }
+
+  // packages/admin-ui/src/ui/primitives.jsx
+  var storage = () => typeof window === "undefined" ? null : window.localStorage;
+  function UiStyles() {
+    return /* @__PURE__ */ jsx("style", { "data-ui-styles": "v2", children: UI_CSS });
+  }
+  function UiButton({ kind = "secondary", size, busy = false, className, children, disabled, ...props }) {
+    return /* @__PURE__ */ jsx(
+      "button",
+      {
+        type: "button",
+        className: cx("ui-btn", kind !== "secondary" && `ui-btn--${kind}`, size === "sm" && "ui-btn--sm", className),
+        "data-primary": kind === "primary" ? "true" : void 0,
+        disabled: Boolean(disabled || busy),
+        "aria-busy": busy || void 0,
+        ...props,
+        children
+      }
+    );
+  }
+  function StateIndicator({ state, label, tone: tone2, live, dotOnly = false, title, className }) {
+    const s = resolveState(state, { label, tone: tone2, live });
+    return /* @__PURE__ */ jsxs(
+      "span",
+      {
+        className: cx("ui-state", dotOnly && "ui-state--dot-only", className),
+        "data-state": s.key,
+        "data-tone": s.tone,
+        "data-live": s.live ? "" : void 0,
+        "data-ring": s.ring ? "" : void 0,
+        "data-dashed": s.dashed ? "" : void 0,
+        title: title ?? (dotOnly ? s.label : void 0),
+        children: [
+          /* @__PURE__ */ jsx("span", { className: "ui-state__dot", "aria-hidden": "true" }),
+          /* @__PURE__ */ jsx("span", { className: dotOnly ? "ui-sr" : void 0, children: s.label })
+        ]
+      }
+    );
+  }
+  function MetaChip({ children, title, mono = false, className }) {
+    return /* @__PURE__ */ jsx("span", { className: cx("ui-chip", mono && "ui-chip--mono", className), title, children });
+  }
+  function DataTable({
+    columns,
+    rows = [],
+    rowKey = (row) => row?.id,
+    selected,
+    defaultSelected = null,
+    onSelect,
+    onOpen,
+    menu,
+    sort,
+    onSort,
+    label,
+    state,
+    error,
+    onRetry,
+    empty,
+    skeletonRows = 6,
+    className
+  }) {
+    const status = state ?? (error ? "error" : "ready");
+    const keys = rows.map((row, i) => String(rowKey(row, i)));
+    const [own, setOwn] = useState(defaultSelected == null ? null : String(defaultSelected));
+    const current = selected !== void 0 ? selected == null ? null : String(selected) : own;
+    const selIndex = current == null ? -1 : keys.indexOf(current);
+    const body = useRef(null);
+    const [menuState, setMenuState] = useState(null);
+    const focusRow = (i) => body.current?.querySelectorAll("[data-row]")[i]?.focus();
+    const select = (i, focus = false) => {
+      if (i < 0 || i >= rows.length) return;
+      if (selected === void 0) setOwn(keys[i]);
+      if (keys[i] !== current) onSelect?.(rows[i], keys[i]);
+      if (focus) focusRow(i);
+    };
+    const openMenu = (i, x, y) => {
+      const items = (typeof menu === "function" ? menu(rows[i]) : menu)?.filter(Boolean) ?? [];
+      if (items.length) setMenuState({ x, y, items });
+    };
+    const onKey = (i) => (e) => {
+      const action = tableKeyAction(e, i, rows.length);
+      if (!action) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (action.type === "move") select(action.index, true);
+      else if (action.type === "open") onOpen?.(rows[i], keys[i]);
+      else if (action.type === "menu") {
+        const r = e.currentTarget.getBoundingClientRect();
+        openMenu(i, r.left + 16, r.top + Math.min(r.height, SIZE.row));
+      }
+    };
+    const cols = columns.map((c) => ({ ...c, fit: c.fit ?? Boolean(c.numeric), label: c.label ?? (typeof c.header === "string" ? c.header : c.key) }));
+    const head = /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { children: cols.map((c) => {
+      const sortable = Boolean(c.sortable && onSort);
+      const on = sortable && sort?.key === c.key;
+      return /* @__PURE__ */ jsx(
+        "th",
+        {
+          scope: "col",
+          "data-numeric": c.numeric ? "" : void 0,
+          "data-fit": c.fit ? "" : void 0,
+          "aria-sort": sortable ? on ? sort.dir > 0 ? "ascending" : "descending" : "none" : void 0,
+          children: sortable ? /* @__PURE__ */ jsxs("button", { type: "button", className: "ui-table__sort", onClick: () => onSort(c.key), children: [
+            c.header,
+            /* @__PURE__ */ jsx("span", { className: "ui-table__arrow", "aria-hidden": "true", children: on ? sort.dir > 0 ? "\u2191" : "\u2193" : "" })
+          ] }) : c.header
+        },
+        c.key
+      );
+    }) }) });
+    if (status === "error") {
+      const text = typeof error === "string" ? error : error?.message ?? "Something went wrong.";
+      return /* @__PURE__ */ jsx("div", { className: cx("ui-table-wrap", className), children: /* @__PURE__ */ jsxs("div", { className: "ui-table__note ui-table__note--error", role: "alert", children: [
+        /* @__PURE__ */ jsxs("strong", { children: [
+          "Could not load ",
+          label ? label.toLowerCase() : "this list"
+        ] }),
+        text,
+        onRetry ? /* @__PURE__ */ jsx("div", { children: /* @__PURE__ */ jsx(UiButton, { size: "sm", onClick: onRetry, children: "Retry" }) }) : null
+      ] }) });
+    }
+    if (status === "ready" && rows.length === 0) {
+      return /* @__PURE__ */ jsx("div", { className: cx("ui-table-wrap", className), children: /* @__PURE__ */ jsxs("div", { className: "ui-table__note", role: "status", children: [
+        /* @__PURE__ */ jsx("strong", { children: empty?.title ?? "Nothing here yet" }),
+        empty?.hint ?? null,
+        empty?.action ? /* @__PURE__ */ jsx("div", { children: empty.action }) : null
+      ] }) });
+    }
+    const loading = status === "loading";
+    const tabStop = selIndex >= 0 ? selIndex : 0;
+    return /* @__PURE__ */ jsxs("div", { className: cx("ui-table-wrap", className), children: [
+      /* @__PURE__ */ jsxs("table", { className: "ui-table", role: "grid", "aria-label": label, "aria-busy": loading || void 0, "aria-rowcount": loading ? void 0 : rows.length + 1, children: [
+        head,
+        /* @__PURE__ */ jsx("tbody", { ref: body, children: loading ? Array.from({ length: skeletonRows }, (_, i) => /* @__PURE__ */ jsx("tr", { className: "ui-row ui-row--skeleton", "aria-hidden": "true", children: cols.map((c) => /* @__PURE__ */ jsx("td", { "data-fit": c.fit ? "" : void 0 }, c.key)) }, `sk${i}`)) : rows.map((row, i) => /* @__PURE__ */ jsx(
+          "tr",
+          {
+            "data-row": "",
+            "data-key": keys[i],
+            className: "ui-row",
+            "aria-selected": i === selIndex,
+            "aria-rowindex": i + 2,
+            tabIndex: i === tabStop ? 0 : -1,
+            onClick: () => select(i),
+            onDoubleClick: () => onOpen?.(row, keys[i]),
+            onKeyDown: onKey(i),
+            onContextMenu: menu ? (e) => {
+              e.preventDefault();
+              select(i);
+              openMenu(i, e.clientX, e.clientY);
+            } : void 0,
+            children: cols.map((c) => /* @__PURE__ */ jsx("td", { "data-label": c.label, "data-numeric": c.numeric ? "" : void 0, "data-fit": c.fit ? "" : void 0, "data-mono": c.mono ? "" : void 0, children: c.render ? c.render(row, i) : row?.[c.key] }, c.key))
+          },
+          keys[i]
+        )) })
+      ] }),
+      loading ? /* @__PURE__ */ jsx("span", { className: "ui-sr", role: "status", children: "Loading\u2026" }) : null,
+      menuState ? /* @__PURE__ */ jsx(Menu, { items: menuState.items, at: { x: menuState.x, y: menuState.y }, label: `${label ?? "Row"} actions`, onClose: () => setMenuState(null) }) : null
+    ] });
+  }
+  function Inspector({
+    title,
+    actions,
+    onClose,
+    children,
+    label,
+    storageKey = "ui.inspector.width",
+    defaultWidth = SIZE.inspector,
+    minWidth = SIZE.inspectorMin,
+    maxWidth = SIZE.inspectorMax,
+    resizable = true,
+    className
+  }) {
+    const limits = { min: minWidth, max: maxWidth, def: defaultWidth };
+    const [width, setWidth] = useState(() => clampWidth(defaultWidth, limits));
+    const [drag, setDrag] = useState(false);
+    const widthRef = useRef(width);
+    widthRef.current = width;
+    useEffect(() => {
+      if (storageKey) setWidth(readWidth(storage(), storageKey, limits));
+    }, [storageKey, minWidth, maxWidth, defaultWidth]);
+    const commit = useCallback((w) => {
+      setWidth(w);
+      writeWidth(storage(), storageKey, w);
+    }, [storageKey]);
+    const onPointerDown = (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = widthRef.current;
+      setDrag(true);
+      const move = (ev) => setWidth(clampWidth(startW + (startX - ev.clientX), limits));
+      const up = () => {
+        setDrag(false);
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        commit(widthRef.current);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    };
+    const onSepKey = (e) => {
+      const next = resizeKey(e.key, widthRef.current, { min: minWidth, max: maxWidth });
+      if (next == null) return;
+      e.preventDefault();
+      commit(next);
+    };
+    const name = label ?? (typeof title === "string" ? title : "Inspector");
+    return /* @__PURE__ */ jsxs(
+      "aside",
+      {
+        className: cx("ui-inspector", className),
+        "aria-label": name,
+        style: { "--ui-inspector-w": `${width}px` },
+        onKeyDown: onClose ? (e) => {
+          if (e.key === "Escape" && !e.defaultPrevented) {
+            e.preventDefault();
+            onClose();
+          }
+        } : void 0,
+        children: [
+          resizable ? /* @__PURE__ */ jsx(
+            "div",
+            {
+              className: "ui-resize",
+              role: "separator",
+              "aria-orientation": "vertical",
+              "aria-label": `Resize ${name}`,
+              "aria-valuenow": width,
+              "aria-valuemin": minWidth,
+              "aria-valuemax": maxWidth,
+              tabIndex: 0,
+              "data-drag": drag ? "" : void 0,
+              onPointerDown,
+              onKeyDown: onSepKey
+            }
+          ) : null,
+          title || actions || onClose ? /* @__PURE__ */ jsxs("div", { className: "ui-inspector__head", children: [
+            /* @__PURE__ */ jsx("h2", { className: "ui-inspector__title", children: title }),
+            actions,
+            onClose ? /* @__PURE__ */ jsx(UiButton, { kind: "ghost", className: "ui-iconbtn", "aria-label": `Close ${name}`, title: "Close  Esc", onClick: onClose, children: /* @__PURE__ */ jsx(Icon, { name: "close" }) }) : null
+          ] }) : null,
+          /* @__PURE__ */ jsx("div", { className: "ui-inspector__body", children })
+        ]
+      }
+    );
+  }
+  var HOST_MODES = Object.freeze(["embedded", "standalone"]);
+
   // packages/admin-ui/src/board.jsx
   function useFilters() {
     const { api, boardProject, setBoardProject } = useAdmin();
@@ -1143,9 +1849,9 @@ var __awPlugin = (() => {
     };
     return { boardProject, setBoardProject, kind, setKind, q, setQ, apply: apply2, hits };
   }
-  function NewTaskButton({ f }) {
+  function NewTaskButton({ f, quiet = false }) {
     const { setModal } = useAdmin();
-    return /* @__PURE__ */ jsx(Button, { kind: "primary", icon: "plus", shortcut: "N", onClick: () => setModal({ kind: "task", projectId: f.boardProject === "all" ? void 0 : f.boardProject }), children: "New task" });
+    return /* @__PURE__ */ jsx(Button, { kind: quiet ? "default" : "primary", icon: "plus", shortcut: "N", onClick: () => setModal({ kind: "task", projectId: f.boardProject === "all" ? void 0 : f.boardProject }), children: "New task" });
   }
   var filtered = (f) => f.boardProject !== "all" || f.kind !== "all" || f.q.trim();
   var clearFilters = (f) => {
@@ -1213,10 +1919,8 @@ var __awPlugin = (() => {
     done: [["approved", RUN_AGAIN]],
     declined: [["new", "Reopen"]]
   };
-  function useTicketMenu(t) {
-    const { openTicket, platform } = useAdmin();
-    const move = useMove();
-    return useContextMenu(() => [
+  function ticketMenuItems(t, { openTicket, platform, move }) {
+    return [
       { label: "Open", run: () => openTicket(t.id) },
       {
         label: "Copy link",
@@ -1224,7 +1928,105 @@ var __awPlugin = (() => {
       },
       ...ROW_MOVES[t.status]?.length ? [{ separator: true }] : [],
       ...(ROW_MOVES[t.status] ?? []).map(([s, label]) => ({ label, run: () => void move(t, s), danger: s === "declined" }))
-    ], `#${t.id} actions`);
+    ];
+  }
+  function useTicketMenu(t) {
+    const { openTicket, platform } = useAdmin();
+    const move = useMove();
+    return useContextMenu(() => ticketMenuItems(t, { openTicket, platform, move }), `#${t.id} actions`);
+  }
+  var STALL_AFTER_S = 45 * 60;
+  function ticketState(t, running = []) {
+    if (running.some((r) => r.ticket_id === t.id)) return "running";
+    if (t.status === "in_progress" && Date.now() / 1e3 - (t.updated_at ?? 0) > STALL_AFTER_S) return "stalled";
+    return t.status;
+  }
+  var ownerOf = (t) => t.kind === "system" ? MINE_LABEL : t.client_name || t.client_email || "\u2014";
+  var LEAD_MOVE = { new: "approved", review: "done" };
+  var closeOnEscape = (selected, close) => (e) => {
+    if (e.key !== "Escape" || e.defaultPrevented || selected == null) return;
+    if (e.target?.closest?.('input, textarea, select, [contenteditable], [role="menu"], [role="dialog"]')) return;
+    e.preventDefault();
+    close();
+  };
+  function useSettled(value, ms = 250) {
+    const [settled, setSettled] = useState(value);
+    useEffect(() => {
+      const timer = setTimeout(() => setSettled(value), ms);
+      return () => clearTimeout(timer);
+    }, [value, ms]);
+    return settled;
+  }
+  function ThreadPreview({ id }) {
+    const { api } = useAdmin();
+    const [{ ticket, messages, review, loading }] = useTicket(api, id);
+    if (loading && !ticket) return /* @__PURE__ */ jsx("p", { className: "ui-note", role: "status", children: "Loading the thread\u2026" });
+    if (!ticket) return /* @__PURE__ */ jsx("p", { className: "ui-note", role: "alert", children: "Could not load the thread. Open the ticket to retry." });
+    const latest = [...messages ?? []].reverse().find((m) => m.author !== "system" && (m.body ?? "").trim());
+    const who = (m) => m.author === "ali" ? "You" : m.author === "client" ? ticket.client_name ?? ticket.client_email ?? "Client" : m.author === "runner" ? "Agent report" : m.author;
+    return /* @__PURE__ */ jsxs(Fragment2, { children: [
+      review ? /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
+        /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
+          "Pre-review \xB7 run #",
+          review.runId ?? "unknown"
+        ] }),
+        /* @__PURE__ */ jsx(StateIndicator, { state: review.verdict === "pass" ? "passed" : review.verdict === "attention" ? "check" : "failed" }),
+        /* @__PURE__ */ jsx("p", { className: "ui-quote", children: review.headline })
+      ] }) : null,
+      /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
+        /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Latest message" }),
+        latest ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsxs("div", { className: "ui-meta", children: [
+            /* @__PURE__ */ jsx("strong", { children: who(latest) }),
+            latest.internal === 1 ? /* @__PURE__ */ jsx(MetaChip, { children: "private note" }) : null,
+            /* @__PURE__ */ jsx("time", { children: when(latest.created_at) })
+          ] }),
+          /* @__PURE__ */ jsx("p", { className: "ui-quote", children: latest.body })
+        ] }) : /* @__PURE__ */ jsx("p", { className: "ui-note", children: "No messages yet." })
+      ] })
+    ] });
+  }
+  function WorkInspector({ t, hit, onClose }) {
+    const { data, openTicket } = useAdmin();
+    const move = useMove();
+    const settledId = useSettled(t.id);
+    const run = data.running.find((r) => r.ticket_id === t.id);
+    const queued = data.queue.find((q) => q.id === t.id);
+    const moves = ROW_MOVES[t.status] ?? [];
+    const lead = moves.find(([s]) => s === LEAD_MOVE[t.status]);
+    const rest = moves.filter((m) => m !== lead);
+    const cost = chargeOf(t).totalCents;
+    return /* @__PURE__ */ jsxs(Inspector, { title: `#${t.id} ${t.title}`, label: `Ticket #${t.id}`, storageKey: "ptech.work.inspector.w", onClose, children: [
+      /* @__PURE__ */ jsx(StateIndicator, { state: ticketState(t, data.running) }),
+      /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
+        lead ? /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: () => void move(t, lead[0]), children: lead[1] }) : null,
+        rest.map(([s, label]) => /* @__PURE__ */ jsx(Button, { kind: s === "declined" ? "ghost" : "default", onClick: () => void move(t, s), children: label }, s)),
+        /* @__PURE__ */ jsx(Button, { kind: lead ? "default" : "primary", onClick: () => openTicket(t.id), title: "Open ticket  Enter", children: "Open ticket" })
+      ] }),
+      /* @__PURE__ */ jsxs("dl", { className: "ui-props", children: [
+        /* @__PURE__ */ jsx("dt", { children: "Project" }),
+        /* @__PURE__ */ jsx("dd", { children: t.project_name ?? "No project" }),
+        /* @__PURE__ */ jsx("dt", { children: "For" }),
+        /* @__PURE__ */ jsx("dd", { title: t.kind === "system" ? void 0 : t.client_email, children: ownerOf(t) }),
+        /* @__PURE__ */ jsx("dt", { children: "Priority" }),
+        /* @__PURE__ */ jsx("dd", { children: t.priority ? priorityName(t.priority) : "Normal" }),
+        /* @__PURE__ */ jsx("dt", { children: "Agent" }),
+        /* @__PURE__ */ jsx("dd", { children: run ? `${run.executor} on ${run.node_id ?? "Harness"}` : t.source === "assistant" ? "Their assistant" : t.executor ?? "Auto" }),
+        /* @__PURE__ */ jsx("dt", { children: "Cost" }),
+        /* @__PURE__ */ jsx("dd", { children: money(cost) }),
+        /* @__PURE__ */ jsx("dt", { children: "Updated" }),
+        /* @__PURE__ */ jsxs("dd", { children: [
+          ago(t.updated_at),
+          " ago"
+        ] })
+      ] }),
+      queued && !queued.eligible.length ? /* @__PURE__ */ jsx("div", { className: "ui-section", children: /* @__PURE__ */ jsx(StateIndicator, { state: "stuck", tone: "bad", label: queued.reason || "No node can take this" }) }) : null,
+      hit ? /* @__PURE__ */ jsxs("div", { className: "ui-section", children: [
+        /* @__PURE__ */ jsx("h3", { className: "ui-section__title", children: "Matched in the thread" }),
+        /* @__PURE__ */ jsx("p", { className: "ui-quote", children: hit })
+      ] }) : null,
+      settledId === t.id ? /* @__PURE__ */ jsx(ThreadPreview, { id: t.id }, t.id) : /* @__PURE__ */ jsx("p", { className: "ui-note", role: "status", children: "Loading the thread\u2026" })
+    ] });
   }
   function useRowNav(count, open) {
     const { platform } = useAdmin();
@@ -1252,25 +2054,33 @@ var __awPlugin = (() => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) e.stopPropagation();
     else e.preventDefault();
   };
-  function TicketCard({ t, draggable, cell, onKey }) {
+  function TicketCard({ t, draggable, cell, onKey, selected = false, onSelect }) {
     const { data, openTicket } = useAdmin();
     const menu = useTicketMenu(t);
     const run = data.running.find((r) => r.ticket_id === t.id);
     const queued = data.queue.find((q) => q.id === t.id);
     const cost = chargeOf(t).totalCents;
+    const state = ticketState(t, data.running);
     return /* @__PURE__ */ jsxs(
       "article",
       {
         ref: cell ?? void 0,
-        onContextMenu: menu.bind.onContextMenu,
+        onContextMenu: (e) => {
+          onSelect?.(t);
+          menu.bind.onContextMenu(e);
+        },
         "aria-label": `#${t.id} ${t.title}`,
-        className: cx("aw-card", run && "is-running", queued && !queued.eligible.length && "is-stuck"),
+        "aria-current": selected ? "true" : void 0,
+        "data-selected": selected ? "" : void 0,
+        className: cx("aw-card", "ui-selectable", run && "is-running", queued && !queued.eligible.length && "is-stuck"),
         draggable,
         onDragStart: (e) => {
           e.dataTransfer.setData("text/x-ticket", String(t.id));
           e.dataTransfer.effectAllowed = "move";
         },
-        onClick: () => openTicket(t.id),
+        onClick: () => onSelect ? onSelect(t) : openTicket(t.id),
+        onDoubleClick: onSelect ? () => openTicket(t.id) : void 0,
+        onFocus: onSelect ? (e) => e.target === e.currentTarget && onSelect(t) : void 0,
         onKeyDown: (e) => {
           menu.bind.onKeyDown(e);
           if (!e.defaultPrevented) (onKey ?? ((ev) => ev.key === "Enter" && openTicket(t.id)))(e);
@@ -1282,9 +2092,8 @@ var __awPlugin = (() => {
               "#",
               t.id
             ] }),
-            t.source === "assistant" ? /* @__PURE__ */ jsx(Tag, { title: "The client\u2019s own assistant (ChatGPT, \u2026) made this change on their subscription", children: "their AI" }) : null,
-            (t.priority ?? 0) > 0 ? /* @__PURE__ */ jsx(Tag, { children: priorityName(t.priority) }) : null,
-            clientWaiting(t) ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "awaiting reply" }) : null,
+            t.source === "assistant" ? /* @__PURE__ */ jsx(MetaChip, { title: "The client\u2019s own assistant (ChatGPT, \u2026) made this change on their subscription", children: "their AI" }) : null,
+            (t.priority ?? 0) > 0 ? /* @__PURE__ */ jsx(MetaChip, { children: priorityName(t.priority) }) : null,
             /* @__PURE__ */ jsx("span", { className: "aw-card__age", children: ago(t.updated_at) })
           ] }),
           /* @__PURE__ */ jsx("h4", { children: /* @__PURE__ */ jsx("a", { className: "aw-titlelink", href: `#ticket=${t.id}`, tabIndex: -1, onClick: titleLinkClick, children: t.title }) }),
@@ -1293,31 +2102,22 @@ var __awPlugin = (() => {
             t.kind === "system" ? /* @__PURE__ */ jsx("span", { children: MINE_LABEL }) : t.client_name || t.client_email ? /* @__PURE__ */ jsx("span", { title: t.client_email, children: t.client_name || t.client_email }) : null
           ] }),
           /* @__PURE__ */ jsxs("div", { className: "aw-card__foot", children: [
-            run ? /* @__PURE__ */ jsxs("span", { className: "aw-running", children: [
-              /* @__PURE__ */ jsx("span", { className: "aw-live" }),
-              " ",
-              run.executor,
-              " on ",
-              run.node_id ?? "Harness"
-            ] }) : t.executor ? /* @__PURE__ */ jsx(Tag, { children: t.executor }) : null,
-            listOf(t.requires).map((r) => /* @__PURE__ */ jsx(Tag, { tone: "dash", children: r }, r)),
+            run ? /* @__PURE__ */ jsx(StateIndicator, { state: "running", label: `${run.executor} on ${run.node_id ?? "Harness"}` }) : state === "stalled" ? /* @__PURE__ */ jsx(StateIndicator, { state: "stalled" }) : clientWaiting(t) ? /* @__PURE__ */ jsx(StateIndicator, { state: "waiting", tone: "warn", label: "Awaiting reply" }) : null,
+            !run && t.executor ? /* @__PURE__ */ jsx(MetaChip, { children: t.executor }) : null,
+            listOf(t.requires).map((r) => /* @__PURE__ */ jsx(MetaChip, { children: r }, r)),
             /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
             cost ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: money(cost) }) : null
           ] }),
-          queued && !queued.eligible.length ? /* @__PURE__ */ jsxs("p", { className: "aw-card__warn", children: [
-            /* @__PURE__ */ jsx(Dot, { state: "bad" }),
-            " ",
-            /* @__PURE__ */ jsx("span", { children: queued.reason })
-          ] }) : null,
+          queued && !queued.eligible.length ? /* @__PURE__ */ jsx("p", { className: "aw-card__warn", children: /* @__PURE__ */ jsx(StateIndicator, { state: "stuck", tone: "bad", label: queued.reason || "No node can take this" }) }) : null,
           menu.menu
         ]
       }
     );
   }
-  function ColumnCards({ items }) {
+  function ColumnCards({ items, selected, onSelect }) {
     const { openTicket } = useAdmin();
     const nav = useRowNav(items.length, (i) => openTicket(items[i].id));
-    return /* @__PURE__ */ jsx(Fragment2, { children: items.map((t, i) => /* @__PURE__ */ jsx(TicketCard, { t, draggable: true, cell: nav.cell(i), onKey: (e) => nav.onKey(e, i) }, t.id)) });
+    return /* @__PURE__ */ jsx(Fragment2, { children: items.map((t, i) => /* @__PURE__ */ jsx(TicketCard, { t, draggable: true, cell: nav.cell(i), onKey: (e) => nav.onKey(e, i), selected: selected === t.id, onSelect }, t.id)) });
   }
   function BoardView() {
     const { data } = useAdmin();
@@ -1325,76 +2125,109 @@ var __awPlugin = (() => {
     const f = useFilters();
     const [showClosed, setShowClosed] = useState(false);
     const [over, setOver] = useState(null);
+    const [selectedId, setSelectedId] = useState(null);
     const tickets = f.apply(data.tickets);
     const columns = showClosed ? STATUSES : STATUSES.filter((s) => s !== "declined");
     const byId = new Map(data.tickets.map((t) => [t.id, t]));
-    return /* @__PURE__ */ jsxs("div", { className: "aw-view aw-view--board", children: [
-      /* @__PURE__ */ jsx(PageHeader, { title: "Board", subtitle: "Every request by status. Drag a card to another column, or right-click it, to move it.", actions: /* @__PURE__ */ jsx(NewTaskButton, { f }) }),
+    const visible2 = tickets.filter((t) => columns.includes(t.status));
+    const selected = selectedId == null ? null : visible2.find((t) => t.id === selectedId) ?? null;
+    const close = () => setSelectedId(null);
+    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace", onKeyDown: closeOnEscape(selected?.id, close), children: [
+      /* @__PURE__ */ jsx(UiStyles, {}),
+      /* @__PURE__ */ jsx(PageHeader, { title: "Board", subtitle: "Every request by status. Click a card to inspect it; drag it to another column, or right-click it, to move it.", actions: /* @__PURE__ */ jsx(NewTaskButton, { f, quiet: Boolean(selected) }) }),
       /* @__PURE__ */ jsx(FilterBar, { f, extra: /* @__PURE__ */ jsx(Segmented, { label: "Columns", value: showClosed, options: [{ value: false, label: "Open" }, { value: true, label: "+ Declined" }], onChange: setShowClosed }) }),
-      /* @__PURE__ */ jsx("div", { className: "aw-board", children: columns.map((s) => {
-        let items = tickets.filter((t) => t.status === s);
-        const more = s === "done" && items.length > 25 ? items.length - 25 : 0;
-        if (more) items = items.slice(0, 25);
-        return /* @__PURE__ */ jsxs(
-          "section",
-          {
-            className: cx("aw-col", over === s && "is-over"),
-            onDragOver: (e) => {
-              e.preventDefault();
-              setOver(s);
+      /* @__PURE__ */ jsxs("div", { className: "ui-split", children: [
+        /* @__PURE__ */ jsx("div", { className: "ui-split__main", children: /* @__PURE__ */ jsx("div", { className: "aw-board", children: columns.map((s) => {
+          let items = tickets.filter((t) => t.status === s);
+          const more = s === "done" && items.length > 25 ? items.length - 25 : 0;
+          if (more) items = items.slice(0, 25);
+          return /* @__PURE__ */ jsxs(
+            "section",
+            {
+              className: cx("aw-col", over === s && "is-over"),
+              onDragOver: (e) => {
+                e.preventDefault();
+                setOver(s);
+              },
+              onDragLeave: () => setOver((o) => o === s ? null : o),
+              onDrop: (e) => {
+                e.preventDefault();
+                setOver(null);
+                const t = byId.get(Number(e.dataTransfer.getData("text/x-ticket")));
+                if (t) void move(t, s);
+              },
+              children: [
+                /* @__PURE__ */ jsxs("header", { title: STATUS_HINT[s], children: [
+                  /* @__PURE__ */ jsx(StateIndicator, { state: s, label: STATUS_LABEL[s] }),
+                  /* @__PURE__ */ jsx("span", { className: "aw-count", children: tickets.filter((t) => t.status === s).length })
+                ] }),
+                /* @__PURE__ */ jsxs("div", { className: "aw-col__body", children: [
+                  /* @__PURE__ */ jsx(ColumnCards, { items, selected: selected?.id, onSelect: (t) => setSelectedId(t.id) }),
+                  more ? /* @__PURE__ */ jsxs("p", { className: "aw-muted aw-center", children: [
+                    "+",
+                    more,
+                    " older"
+                  ] }) : null,
+                  !items.length ? /* @__PURE__ */ jsx("p", { className: "aw-col__empty", children: STATUS_HINT[s] }) : null
+                ] })
+              ]
             },
-            onDragLeave: () => setOver((o) => o === s ? null : o),
-            onDrop: (e) => {
-              e.preventDefault();
-              setOver(null);
-              const t = byId.get(Number(e.dataTransfer.getData("text/x-ticket")));
-              if (t) void move(t, s);
-            },
-            children: [
-              /* @__PURE__ */ jsxs("header", { title: STATUS_HINT[s], children: [
-                /* @__PURE__ */ jsx("span", { className: `aw-sq aw-sq--${s}`, "aria-hidden": "true" }),
-                STATUS_LABEL[s],
-                /* @__PURE__ */ jsx("span", { className: "aw-count", children: tickets.filter((t) => t.status === s).length })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "aw-col__body", children: [
-                /* @__PURE__ */ jsx(ColumnCards, { items }),
-                more ? /* @__PURE__ */ jsxs("p", { className: "aw-muted aw-center", children: [
-                  "+",
-                  more,
-                  " older"
-                ] }) : null,
-                !items.length ? /* @__PURE__ */ jsx("p", { className: "aw-col__empty", children: STATUS_HINT[s] }) : null
-              ] })
-            ]
-          },
-          s
-        );
-      }) })
+            s
+          );
+        }) }) }),
+        selected ? /* @__PURE__ */ jsx(WorkInspector, { t: selected, hit: f.hits.get(selected.id), onClose: close }) : null
+      ] })
     ] });
   }
-  var COLUMNS = [
-    { key: "id", label: "#", get: (t) => t.id, num: true },
-    { key: "title", label: "Title", get: (t) => t.title.toLowerCase() },
-    { key: "status", label: "Status", get: (t) => STATUSES.indexOf(t.status) },
-    { key: "project", label: "Project", get: (t) => t.project_name ?? "" },
-    { key: "who", label: "For", get: (t) => t.kind === "system" ? "" : t.client_email ?? "" },
-    { key: "priority", label: "Priority", get: (t) => t.priority ?? 0 },
-    { key: "agent", label: "Agent", get: (t) => t.executor ?? "" },
-    { key: "cost", label: "Cost", get: (t) => chargeOf(t).totalCents, num: true },
-    { key: "updated", label: "Updated", get: (t) => t.updated_at }
-  ];
+  var SORTS = {
+    id: (t) => t.id,
+    title: (t) => t.title.toLowerCase(),
+    state: (t) => STATUSES.indexOf(t.status),
+    project: (t) => t.project_name ?? "",
+    who: (t) => t.kind === "system" ? "" : t.client_email ?? "",
+    age: (t) => t.updated_at,
+    cost: (t) => chargeOf(t).totalCents
+  };
   function ListView() {
-    const { data, openTicket } = useAdmin();
+    const { data, openTicket, platform } = useAdmin();
     const f = useFilters();
     const [status, setStatusFilter] = useState("open");
-    const [sort, setSort] = useState({ key: "updated", dir: -1 });
+    const [sort, setSort] = useState({ key: "age", dir: -1 });
+    const [selectedId, setSelectedId] = useState(null);
     const rows = useMemo(() => {
-      const col = COLUMNS.find((c) => c.key === sort.key);
-      return f.apply(data.tickets).filter((t) => status === "all" || (status === "open" ? !["done", "declined"].includes(t.status) : t.status === status)).sort((a, b) => (col.get(a) > col.get(b) ? 1 : col.get(a) < col.get(b) ? -1 : 0) * sort.dir);
+      const get = SORTS[sort.key];
+      return f.apply(data.tickets).filter((t) => status === "all" || (status === "open" ? !["done", "declined"].includes(t.status) : t.status === status)).sort((a, b) => (get(a) > get(b) ? 1 : get(a) < get(b) ? -1 : 0) * sort.dir);
     }, [data.tickets, f, status, sort]);
-    const nav = useRowNav(rows.length, (i) => openTicket(rows[i].id));
-    return /* @__PURE__ */ jsxs("div", { className: "aw-view", children: [
-      /* @__PURE__ */ jsx(PageHeader, { title: "All work", subtitle: "Every request in one table. Click a column to sort; click a row to open it.", actions: /* @__PURE__ */ jsx(NewTaskButton, { f }) }),
+    const selected = selectedId == null ? null : rows.find((t) => t.id === selectedId) ?? null;
+    const close = () => setSelectedId(null);
+    const move = useMove();
+    const columns = [
+      { key: "id", header: "#", mono: true, fit: true, sortable: true, render: (t) => `#${t.id}` },
+      {
+        key: "title",
+        header: "Title",
+        sortable: true,
+        render: (t) => /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx("a", { className: "aw-titlelink", href: `#ticket=${t.id}`, tabIndex: -1, onClick: titleLinkClick, children: t.title }),
+          t.priority ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+            " ",
+            /* @__PURE__ */ jsx(MetaChip, { children: priorityName(t.priority) })
+          ] }) : null,
+          f.hits.get(t.id) ? /* @__PURE__ */ jsxs("small", { className: "aw-muted aw-snippet", children: [
+            " ",
+            f.hits.get(t.id)
+          ] }) : null
+        ] })
+      },
+      { key: "state", header: "State", fit: true, sortable: true, render: (t) => /* @__PURE__ */ jsx(StateIndicator, { state: ticketState(t, data.running) }) },
+      { key: "project", header: "Project", sortable: true, render: (t) => t.project_name ?? "\u2014" },
+      { key: "who", header: "For", sortable: true, render: (t) => /* @__PURE__ */ jsx("span", { title: t.kind === "system" ? void 0 : t.client_email, children: ownerOf(t) }) },
+      { key: "age", header: "Age", fit: true, sortable: true, render: (t) => /* @__PURE__ */ jsx("span", { title: `Updated ${when(t.updated_at)}`, children: ago(t.updated_at) }) },
+      { key: "cost", header: "Cost", numeric: true, sortable: true, render: (t) => money(chargeOf(t).totalCents) }
+    ];
+    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace", onKeyDown: closeOnEscape(selected?.id, close), children: [
+      /* @__PURE__ */ jsx(UiStyles, {}),
+      /* @__PURE__ */ jsx(PageHeader, { title: "All work", subtitle: "Every request in one table. Click a column to sort; select a row to inspect it, Enter to open it.", actions: /* @__PURE__ */ jsx(NewTaskButton, { f, quiet: Boolean(selected) }) }),
       /* @__PURE__ */ jsx(
         FilterBar,
         {
@@ -1406,68 +2239,33 @@ var __awPlugin = (() => {
           ] })
         }
       ),
-      /* @__PURE__ */ jsxs("div", { className: "aw-tablewrap", children: [
-        /* @__PURE__ */ jsxs("table", { className: "aw-table aw-table--stack aw-table--rows", children: [
-          /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { children: COLUMNS.map((c) => /* @__PURE__ */ jsx("th", { className: c.num ? "aw-num" : void 0, "aria-sort": sort.key === c.key ? sort.dir > 0 ? "ascending" : "descending" : "none", onClick: () => setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : 1 })), children: /* @__PURE__ */ jsxs("button", { type: "button", onClick: (e) => {
-            e.stopPropagation();
-            setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : 1 }));
-          }, children: [
-            c.label,
-            sort.key === c.key ? sort.dir > 0 ? " \u2191" : " \u2193" : ""
-          ] }) }, c.key)) }) }),
-          /* @__PURE__ */ jsx("tbody", { children: rows.map((t, i) => /* @__PURE__ */ jsx(ListRow, { t, hit: f.hits.get(t.id), cell: nav.cell(i), onKey: (e) => nav.onKey(e, i) }, t.id)) })
-        ] }),
-        !rows.length ? /* @__PURE__ */ jsx(
-          EmptyState,
+      /* @__PURE__ */ jsxs("div", { className: "ui-split", children: [
+        /* @__PURE__ */ jsx("div", { className: "ui-split__main", children: /* @__PURE__ */ jsx(
+          DataTable,
           {
-            title: data.tickets.length ? "Nothing matches these filters." : "No requests yet.",
-            hint: data.tickets.length ? "Clear the filters, or choose Everything in the status filter." : "Requests from clients and your own tasks appear here.",
-            action: data.tickets.length ? /* @__PURE__ */ jsx(Button, { onClick: () => {
-              clearFilters(f);
-              setStatusFilter("all");
-            }, children: "Clear filters" }) : /* @__PURE__ */ jsx(NewTaskButton, { f })
+            label: "Work",
+            columns,
+            rows,
+            rowKey: (t) => t.id,
+            selected: selected?.id ?? null,
+            onSelect: (t) => setSelectedId(t.id),
+            onOpen: (t) => openTicket(t.id),
+            menu: (t) => ticketMenuItems(t, { openTicket, platform, move }),
+            sort,
+            onSort: (key) => setSort((s) => ({ key, dir: s.key === key ? -s.dir : key === "age" || key === "cost" ? -1 : 1 })),
+            empty: {
+              title: data.tickets.length ? "Nothing matches these filters." : "No requests yet.",
+              hint: data.tickets.length ? "Clear the filters, or choose Everything in the status filter." : "Requests from clients and your own tasks appear here.",
+              action: data.tickets.length ? /* @__PURE__ */ jsx(Button, { onClick: () => {
+                clearFilters(f);
+                setStatusFilter("all");
+              }, children: "Clear filters" }) : /* @__PURE__ */ jsx(NewTaskButton, { f, quiet: true })
+            }
           }
-        ) : null
+        ) }),
+        selected ? /* @__PURE__ */ jsx(WorkInspector, { t: selected, hit: f.hits.get(selected.id), onClose: close }) : null
       ] })
     ] });
-  }
-  function ListRow({ t, hit, cell, onKey }) {
-    const { openTicket } = useAdmin();
-    const menu = useTicketMenu(t);
-    return /* @__PURE__ */ jsxs(
-      "tr",
-      {
-        ref: cell,
-        onClick: () => openTicket(t.id),
-        tabIndex: 0,
-        onContextMenu: menu.bind.onContextMenu,
-        onKeyDown: (e) => {
-          menu.bind.onKeyDown(e);
-          if (!e.defaultPrevented) onKey(e);
-        },
-        children: [
-          /* @__PURE__ */ jsxs("td", { className: "aw-num aw-muted", children: [
-            "#",
-            t.id
-          ] }),
-          /* @__PURE__ */ jsxs("td", { className: "aw-table__title", children: [
-            /* @__PURE__ */ jsx("a", { className: "aw-titlelink", href: `#ticket=${t.id}`, tabIndex: -1, onClick: titleLinkClick, children: t.title }),
-            hit ? /* @__PURE__ */ jsx("small", { className: "aw-muted aw-snippet", children: hit }) : null,
-            menu.menu
-          ] }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Status", children: /* @__PURE__ */ jsx(StatusPill, { status: t.status }) }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Project", children: t.project_name ?? "\u2014" }),
-          /* @__PURE__ */ jsx("td", { "data-label": "For", children: t.kind === "system" ? /* @__PURE__ */ jsx("span", { className: "aw-muted", children: MINE_LABEL }) : t.client_email }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Priority", children: t.priority ? priorityName(t.priority) : /* @__PURE__ */ jsx("span", { className: "aw-faint", children: "Normal" }) }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Agent", children: t.source === "assistant" ? "their assistant" : t.executor ?? /* @__PURE__ */ jsx("span", { className: "aw-faint", children: "Auto" }) }),
-          /* @__PURE__ */ jsx("td", { "data-label": "Cost", className: "aw-num", children: money(chargeOf(t).totalCents) }),
-          /* @__PURE__ */ jsxs("td", { "data-label": "Updated", className: "aw-muted", children: [
-            ago(t.updated_at),
-            " ago"
-          ] })
-        ]
-      }
-    );
   }
   function InboxRow({ g, t, q, cell, onKey, move }) {
     const { openTicket } = useAdmin();
@@ -1716,6 +2514,89 @@ var __awPlugin = (() => {
     return typeof code === "string" && /^en(-|$)/i.test(code);
   }
 
+  // packages/admin-ui/src/markdown.js
+  var MAX_INLINE_DEPTH = 4;
+  function markdownInline(input, depth = 0) {
+    const text = String(input ?? "");
+    if (!text) return [];
+    if (depth >= MAX_INLINE_DEPTH) return [{ type: "text", text }];
+    const token = /`([^`\n]+)`|\*\*([^\s*](?:[^*\n]*[^\s*])?)\*\*|\*([^\s*](?:[^*\n]*[^\s*])?)\*|\[([^\]\n]+)\]\(([^)\s]+)\)|<((?:https?|mailto):[^>\s]+)>|\\([\\`*_[\]()<>])/g;
+    const spans = [];
+    const pushText = (value) => {
+      if (!value) return;
+      const last = spans[spans.length - 1];
+      if (last?.type === "text") last.text += value;
+      else spans.push({ type: "text", text: value });
+    };
+    let match;
+    let at = 0;
+    while (match = token.exec(text)) {
+      pushText(text.slice(at, match.index));
+      at = token.lastIndex;
+      const [, code, strong, em, label, href, autolink, escaped] = match;
+      if (code != null) spans.push({ type: "code", text: code });
+      else if (strong != null) spans.push({ type: "strong", spans: markdownInline(strong, depth + 1) });
+      else if (em != null) spans.push({ type: "em", spans: markdownInline(em, depth + 1) });
+      else if (label != null) spans.push({ type: "link", href: href ?? "", spans: markdownInline(label, depth + 1) });
+      else if (autolink != null) spans.push({ type: "link", href: autolink, spans: [{ type: "text", text: autolink }] });
+      else if (escaped != null) pushText(escaped);
+      else pushText(match[0]);
+    }
+    pushText(text.slice(at));
+    return spans;
+  }
+  var LIST_ITEM = /^\s{0,3}(?:([-*+])|(\d+)[.)])\s+(.*)$/;
+  var HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+  var FENCE = /^\s{0,3}```([\w-]*)\s*$/;
+  function markdownBlocks(input) {
+    const lines = String(input ?? "").replace(/\r\n?/g, "\n").split("\n");
+    const blocks = [];
+    let paragraph = [];
+    const flush = () => {
+      if (!paragraph.length) return;
+      blocks.push({ type: "paragraph", spans: markdownInline(paragraph.join(" ")) });
+      paragraph = [];
+    };
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      const fence = line.match(FENCE);
+      if (fence) {
+        flush();
+        const body = [];
+        i += 1;
+        while (i < lines.length && !FENCE.test(lines[i])) {
+          body.push(lines[i]);
+          i += 1;
+        }
+        blocks.push({ type: "code", lang: fence[1] || null, text: body.join("\n") });
+        continue;
+      }
+      if (!line.trim()) {
+        flush();
+        continue;
+      }
+      const heading = line.match(HEADING);
+      if (heading) {
+        flush();
+        blocks.push({ type: "heading", level: heading[1].length, spans: markdownInline(heading[2]) });
+        continue;
+      }
+      const item = line.match(LIST_ITEM);
+      if (item) {
+        flush();
+        const ordered = item[2] != null;
+        const last = blocks[blocks.length - 1];
+        const target = last?.type === "list" && last.ordered === ordered ? last : null;
+        if (target) target.items.push({ spans: markdownInline(item[3]) });
+        else blocks.push({ type: "list", ordered, items: [{ spans: markdownInline(item[3]) }] });
+        continue;
+      }
+      paragraph.push(line.replace(/^\s{0,3}>\s?/, ""));
+    }
+    flush();
+    return blocks;
+  }
+
   // packages/admin-ui/src/review.jsx
   var portalTicketUrl = (id) => `https://ptechsolutions.net/portal/admin#ticket=${id}`;
   function newestDiff(runs) {
@@ -1804,6 +2685,167 @@ var __awPlugin = (() => {
       state.text,
       state.status === "failed" ? /* @__PURE__ */ jsx(Button, { onClick: () => setRetry((n) => n + 1), children: "Retry repository review" }) : null
     ] }) }) });
+  }
+  function RecordedEvidence({ runs = [], screenshots = [], review, initialOpen = false }) {
+    const [runId, setRunId] = useState(null);
+    const [compareId, setCompareId] = useState("");
+    const [open, setOpen] = useState(initialOpen);
+    useEffect(() => {
+      if (runId == null && runs.length) setRunId(sortedRuns(runs)[0].id);
+    }, [runs, runId]);
+    if (!runs.length) return null;
+    const selected = selectedRun(runs, runId);
+    const comparison = compareId ? selectedRun(runs, compareId) : null;
+    const options = sortedRuns(runs);
+    const checks = selected ? verification(selected.verify_ok) : null;
+    const line = selected ? [`Run #${selected.id}`, selected.status, selected.commit_sha ? `commit ${String(selected.commit_sha).slice(0, 8)}` : "no commit recorded", `verification ${checks}`, comparison ? `comparing #${comparison.id}` : compareId ? `comparing #${compareId}` : null].filter(Boolean).join(" \xB7 ") : `Run #${runId} \xB7 unavailable`;
+    const panelId = `aw-evidence-panel-${runId ?? "none"}`;
+    return /* @__PURE__ */ jsxs("section", { className: "aw-prereview aw-evidence", "aria-label": "Recorded run evidence", children: [
+      /* @__PURE__ */ jsxs("header", { className: "aw-evidence__head", children: [
+        /* @__PURE__ */ jsx("strong", { children: "Recorded evidence" }),
+        /* @__PURE__ */ jsxs("span", { className: "aw-muted aw-evidence__line", children: [
+          "\xB7 ",
+          line
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            type: "button",
+            className: "aw-link aw-evidence__toggle",
+            "aria-expanded": open,
+            "aria-controls": open ? panelId : void 0,
+            onClick: () => setOpen((value) => !value),
+            children: open ? "Hide details" : "Show details"
+          }
+        )
+      ] }),
+      open ? /* @__PURE__ */ jsxs("div", { className: "aw-evidence__body", id: panelId, children: [
+        /* @__PURE__ */ jsx("p", { className: "aw-muted aw-evidence__hint", children: "One column per run\u2019s saved evidence, not a code diff between runs. Selection does not change what runs or lands next." }),
+        /* @__PURE__ */ jsxs("div", { className: "aw-inline", style: { flexWrap: "wrap" }, children: [
+          /* @__PURE__ */ jsxs("label", { children: [
+            "Run ",
+            /* @__PURE__ */ jsxs("select", { "aria-label": "Evidence run", value: runId ?? "", onChange: (e) => setRunId(e.target.value), children: [
+              runId != null && !selected ? /* @__PURE__ */ jsxs("option", { value: runId, children: [
+                "Run #",
+                runId,
+                " \xB7 unavailable"
+              ] }) : null,
+              options.map((run) => /* @__PURE__ */ jsxs("option", { value: run.id, children: [
+                "Run #",
+                run.id,
+                " \xB7 ",
+                run.status
+              ] }, run.id))
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxs("label", { children: [
+            "Compare with ",
+            /* @__PURE__ */ jsxs("select", { "aria-label": "Comparison run", value: compareId, onChange: (e) => setCompareId(e.target.value), children: [
+              /* @__PURE__ */ jsx("option", { value: "", children: "No comparison" }),
+              compareId && !comparison ? /* @__PURE__ */ jsxs("option", { value: compareId, children: [
+                "Run #",
+                compareId,
+                " \xB7 unavailable"
+              ] }) : null,
+              options.map((run) => /* @__PURE__ */ jsxs("option", { value: run.id, children: [
+                "Run #",
+                run.id,
+                " \xB7 ",
+                run.status
+              ] }, run.id))
+            ] })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 16 }, children: [
+          /* @__PURE__ */ jsx(EvidenceColumn, { run: selected, runId, screenshots, review }),
+          compareId ? /* @__PURE__ */ jsx(EvidenceColumn, { run: comparison, runId: compareId, screenshots, review }) : null
+        ] })
+      ] }) : null
+    ] });
+  }
+  function EvidenceColumn({ run, runId, screenshots, review }) {
+    if (!run) return /* @__PURE__ */ jsxs("p", { role: "status", children: [
+      "Run #",
+      runId,
+      " evidence is unavailable."
+    ] });
+    const checks = verification(run.verify_ok);
+    const shots = screenshots.filter((shot) => String(shot.runId) === String(run.id));
+    return /* @__PURE__ */ jsxs("div", { style: { flex: "1 1 280px", minWidth: 0 }, children: [
+      /* @__PURE__ */ jsxs("h3", { children: [
+        "Run #",
+        run.id
+      ] }),
+      /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        run.status,
+        " \xB7 ",
+        run.executor,
+        " \xB7 ",
+        run.branch ? `Recorded branch: ${run.branch} (mutable)` : "No branch recorded"
+      ] }),
+      run.commit_sha ? /* @__PURE__ */ jsxs("p", { children: [
+        "Recorded commit: ",
+        /* @__PURE__ */ jsx("code", { children: run.commit_sha })
+      ] }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No immutable commit recorded." }),
+      /* @__PURE__ */ jsxs("p", { children: [
+        "Verification: ",
+        checks,
+        checks === "unknown" ? " \xB7 no result recorded" : ""
+      ] }),
+      run.verify_command ? /* @__PURE__ */ jsxs("p", { children: [
+        "Recorded check: ",
+        /* @__PURE__ */ jsx("code", { children: run.verify_command })
+      ] }) : null,
+      run.verify_output ? /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: run.verify_output }) : null,
+      review && String(review.runId) === String(run.id) ? /* @__PURE__ */ jsxs("p", { children: [
+        "Pre-review for run #",
+        run.id,
+        ": ",
+        review.verdict,
+        " \xB7 ",
+        review.headline
+      ] }) : /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "No pre-review recorded for run #",
+        run.id,
+        "."
+      ] }),
+      run.summary ? /* @__PURE__ */ jsx("div", { className: "aw-md", children: /* @__PURE__ */ jsx(MarkdownReport, { text: run.summary }) }) : /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "No summary recorded." }),
+      /* @__PURE__ */ jsx("pre", { className: "aw-diff", children: recordedPatch(run) || "No patch or statistics recorded." }),
+      shots.length ? shots.map((shot) => /* @__PURE__ */ jsxs("figure", { children: [
+        /* @__PURE__ */ jsx("a", { href: shot.url, target: "_blank", rel: "noreferrer", children: /* @__PURE__ */ jsx("img", { style: { maxWidth: "100%" }, src: shot.url, alt: `Run #${run.id} \xB7 ${shot.kind}`, loading: "lazy" }) }),
+        /* @__PURE__ */ jsxs("figcaption", { children: [
+          "Run #",
+          run.id,
+          " \xB7 ",
+          shot.kind
+        ] })
+      ] }, `${shot.runId}-${shot.kind}`)) : /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+        "No screenshots recorded for run #",
+        run.id,
+        "."
+      ] })
+    ] });
+  }
+  function MarkdownReport({ text }) {
+    return markdownBlocks(text).map((block2, index) => {
+      if (block2.type === "code") return /* @__PURE__ */ jsx("pre", { className: "aw-diff aw-md__code", children: block2.text }, index);
+      if (block2.type === "list") {
+        const items = block2.items.map((item, at) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsx(Inline, { spans: item.spans }) }, at));
+        return block2.ordered ? /* @__PURE__ */ jsx("ol", { className: "aw-md__list", children: items }, index) : /* @__PURE__ */ jsx("ul", { className: "aw-md__list", children: items }, index);
+      }
+      if (block2.type === "heading") return /* @__PURE__ */ jsx("p", { className: "aw-md__heading", children: /* @__PURE__ */ jsx("strong", { children: /* @__PURE__ */ jsx(Inline, { spans: block2.spans }) }) }, index);
+      return /* @__PURE__ */ jsx("p", { children: /* @__PURE__ */ jsx(Inline, { spans: block2.spans }) }, index);
+    });
+  }
+  function Inline({ spans }) {
+    return spans.map((span2, index) => {
+      if (span2.type === "strong") return /* @__PURE__ */ jsx("strong", { children: /* @__PURE__ */ jsx(Inline, { spans: span2.spans }) }, index);
+      if (span2.type === "em") return /* @__PURE__ */ jsx("em", { children: /* @__PURE__ */ jsx(Inline, { spans: span2.spans }) }, index);
+      if (span2.type === "code") return /* @__PURE__ */ jsx("code", { children: span2.text }, index);
+      if (span2.type === "link") return /* @__PURE__ */ jsx("span", { title: span2.href, children: /* @__PURE__ */ jsx(Inline, { spans: span2.spans }) }, index);
+      return span2.text;
+    });
   }
 
   // packages/admin-ui/src/submit-state.js
@@ -2037,6 +3079,15 @@ var __awPlugin = (() => {
             screenshots: screenshots.filter((shot) => review?.runId != null && String(shot.runId) === String(review.runId))
           }
         ) : null,
+        runs.length ? /* @__PURE__ */ jsxs("details", { className: "aw-evidence-more", children: [
+          /* @__PURE__ */ jsxs("summary", { children: [
+            "Evidence & diff \xB7 ",
+            runs.length,
+            " run",
+            runs.length === 1 ? "" : "s"
+          ] }),
+          /* @__PURE__ */ jsx(RecordedEvidence, { runs, screenshots, review })
+        ] }) : null,
         /* @__PURE__ */ jsx(Timeline, { ticket, messages, runs }, `timeline-${ticket.id}`),
         /* @__PURE__ */ jsx(Composer, { ticket, onSent: reload, replyAt }, ticket.id)
       ] }),
@@ -7901,6 +8952,9 @@ button.aw-file:hover { background: var(--aw-hover); }
 /* \u2014\u2014\u2014\u2014\u2014 ticket: thread + inspector \u2014\u2014\u2014\u2014\u2014 */
 .aw-ticket { display: grid; grid-template-columns: minmax(0, 1fr) var(--aw-details-w, 300px); min-height: 100%; position: relative; }
 .aw-ticket--solo { grid-template-columns: minmax(0, 1fr); }
+.aw-evidence-more { border-top: 1px solid var(--aw-hairline); margin-top: var(--aw-space-3); padding-top: var(--aw-space-2); }
+.aw-evidence-more > summary { cursor: pointer; font-size: var(--aw-type-sm); color: var(--aw-ink-2); }
+.aw-evidence-more > summary:hover { color: var(--aw-ink); }
 .aw-ticket__quick { margin-top: var(--aw-space-3); }
 .aw-ticket__quick .aw-ticket__actions { padding-bottom: 0; border-bottom: 0; }
 .aw-ticket__main { padding: var(--aw-space-4) var(--aw-space-5) var(--aw-space-4); min-width: 0; display: flex; flex-direction: column; }
@@ -13487,526 +14541,6 @@ ${question.text ?? ""}`)) {
     if (typeof sessionId !== "string" || sessionId.length === 0) return graphBody(sessionId, void 0, "unavailable");
     return createElement(SessionGraph, { key: sessionId, sessionId });
   }
-
-  // packages/admin-ui/src/ui/tokens.js
-  var TYPE = Object.freeze({ xs: 11, sm: 12, md: 13, lg: 15, xl: 18 });
-  var SPACE = Object.freeze([0, 4, 8, 12, 16, 24, 32]);
-  var RADII = Object.freeze({ sm: 4, md: 6, lg: 8 });
-  var MOTION = Object.freeze({ dur: "120ms", ease: "cubic-bezier(.2, 0, 0, 1)" });
-  var SIZE = Object.freeze({
-    bar: 38,
-    // ObjectBar / ContextBar
-    filter: 36,
-    // FilterBar
-    row: 34,
-    // DataTable row
-    subnav: 32,
-    sideRow: 28,
-    control: 28,
-    // Button md
-    controlSm: 24,
-    // Button sm
-    status: 24,
-    // StatusBar
-    sidebar: 220,
-    formMax: 720,
-    // form controls never stretch past this
-    stackBelow: 720,
-    // DataTable stacks rows at or below this container width
-    inspector: 380,
-    inspectorMin: 300,
-    inspectorMax: 560
-  });
-  var LIGHT = {
-    bg: "#FFFFFF",
-    "bg-subtle": "#F6F6F4",
-    "bg-raised": "#FFFFFF",
-    border: "rgba(22, 20, 15, .10)",
-    "border-strong": "rgba(22, 20, 15, .18)",
-    ink: "#16140F",
-    "ink-2": "#5D5850",
-    "ink-3": "#8A847A",
-    ok: "#2F9E5B",
-    warn: "#D99A16",
-    bad: "#D6453D",
-    info: "#3B7BD9",
-    shadow: "0 0 0 1px rgba(22, 20, 15, .08), 0 12px 32px rgba(0, 0, 0, .16)"
-  };
-  var DARK = {
-    bg: "#141416",
-    "bg-subtle": "#1A1A1D",
-    "bg-raised": "#222226",
-    border: "rgba(255, 255, 255, .09)",
-    "border-strong": "rgba(255, 255, 255, .16)",
-    ink: "#F2F2F3",
-    "ink-2": "#A1A1AA",
-    "ink-3": "#71717A",
-    ok: "#3FB36D",
-    warn: "#E5A82A",
-    bad: "#E5534B",
-    info: "#4C8DF0",
-    shadow: "0 0 0 1px rgba(255, 255, 255, .08), 0 12px 32px rgba(0, 0, 0, .48)"
-  };
-  var PALETTE = Object.freeze({ light: Object.freeze({ ...LIGHT }), dark: Object.freeze({ ...DARK }) });
-  var ACCENT = "#FF5A1F";
-  var ACCENT_INK = "#FFFFFF";
-  var HOST = {
-    bg: ["--dsw-alias-bg-base"],
-    "bg-subtle": ["--dsw-alias-bg-layer-1"],
-    "bg-raised": ["--dsw-alias-bg-elevated"],
-    border: ["--dsw-alias-border-l2"],
-    "border-strong": ["--dsw-alias-border-l3"],
-    ink: ["--dsw-alias-label-primary"],
-    "ink-2": ["--dsw-alias-label-secondary"],
-    "ink-3": ["--dsw-alias-label-tertiary"],
-    ok: ["--dsw-alias-state-success-primary"],
-    warn: ["--dsw-alias-state-warning-primary", "--dsw-alias-state-warn-primary"],
-    bad: ["--dsw-alias-state-danger-primary", "--dsw-alias-state-error-primary"],
-    info: ["--dsw-alias-state-business-primary"],
-    shadow: []
-  };
-  var chain = (aliases, last) => aliases.reduceRight((inner, name) => `var(${name}, ${inner})`, last);
-  var block = (pairs) => pairs.map(([k, v]) => `  ${k}: ${v};`).join("\n");
-  var fallbacks = (palette) => block(Object.entries(palette).map(([k, v]) => [`--ui-fb-${k}`, v]));
-  var ROOT = ":where(.ui, .aw)";
-  var TOKENS = Object.freeze({
-    ...Object.fromEntries(Object.keys(HOST).map((k) => [`--ui-${k}`, chain(HOST[k], `var(--ui-fb-${k})`)])),
-    "--ui-bg-hover": chain(["--dsw-alias-interactive-bg-hover"], "color-mix(in srgb, var(--ui-ink) 6%, transparent)"),
-    "--ui-bg-selected": "color-mix(in srgb, var(--ui-ink) 9%, transparent)",
-    "--ui-accent": chain(["--dsw-alias-brand-primary"], ACCENT),
-    "--ui-accent-hover": "color-mix(in srgb, var(--ui-accent) 88%, var(--ui-ink))",
-    "--ui-accent-ink": ACCENT_INK,
-    "--ui-accent-wash": "color-mix(in srgb, var(--ui-accent) 12%, transparent)",
-    "--ui-focus": "var(--ui-accent)",
-    "--ui-scrim": "rgba(0, 0, 0, .32)",
-    "--ui-font": "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Inter, system-ui, sans-serif",
-    "--ui-mono": "ui-monospace, 'SF Mono', Menlo, monospace",
-    ...Object.fromEntries(Object.entries(TYPE).map(([k, v]) => [`--ui-fs-${k}`, `${v}px`])),
-    "--ui-lh": "1.45",
-    "--ui-lh-tight": "1.25",
-    ...Object.fromEntries(SPACE.slice(1).map((v, i) => [`--ui-sp-${i + 1}`, `${v}px`])),
-    ...Object.fromEntries(Object.entries(RADII).map(([k, v]) => [`--ui-r-${k}`, `${v}px`])),
-    "--ui-bar-h": `${SIZE.bar}px`,
-    "--ui-filter-h": `${SIZE.filter}px`,
-    "--ui-row-h": `${SIZE.row}px`,
-    "--ui-subnav-h": `${SIZE.subnav}px`,
-    "--ui-side-row-h": `${SIZE.sideRow}px`,
-    "--ui-ctl-h": `${SIZE.control}px`,
-    "--ui-ctl-h-sm": `${SIZE.controlSm}px`,
-    "--ui-status-h": `${SIZE.status}px`,
-    "--ui-sidebar-w": `${SIZE.sidebar}px`,
-    "--ui-form-max": `${SIZE.formMax}px`,
-    "--ui-inspector-w": `${SIZE.inspector}px`,
-    "--ui-dur": MOTION.dur,
-    "--ui-ease": MOTION.ease
-  });
-  var TOKEN_NAMES = Object.freeze(Object.keys(TOKENS));
-  var TOKENS_CSS = `
-${ROOT} {
-${fallbacks(LIGHT)}
-}
-@media (prefers-color-scheme: dark) {
-  ${ROOT} {
-${fallbacks(DARK)}
-  }
-}
-:where([data-theme='dark']) ${ROOT}, :where(.ui, .aw)[data-theme='dark'] {
-${fallbacks(DARK)}
-}
-:where([data-theme='light']) ${ROOT}, :where(.ui, .aw)[data-theme='light'] {
-${fallbacks(LIGHT)}
-}
-${ROOT} {
-${block(Object.entries(TOKENS))}
-}
-@media (prefers-reduced-motion: reduce) {
-  ${ROOT} { --ui-dur: 0ms; }
-}
-`;
-
-  // packages/admin-ui/src/ui/css.js
-  var PRIMITIVES_CSS = `
-.ui {
-  font-family: var(--ui-font);
-  font-size: var(--ui-fs-md);
-  line-height: var(--ui-lh);
-  color: var(--ui-ink);
-  background: var(--ui-bg);
-}
-.ui-sr {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
-}
-:where(.ui, .aw) :where(.ui-btn, .ui-row, .ui-resize, .ui-inspector, .ui-iconbtn):focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: -2px;
-}
-
-/* \u2014\u2014 buttons (internal to the primitives) \u2014\u2014 */
-.ui-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--ui-sp-1);
-  height: var(--ui-ctl-h); padding: 0 var(--ui-sp-3);
-  border: 1px solid var(--ui-border-strong); border-radius: var(--ui-r-md);
-  background: var(--ui-bg-raised); color: var(--ui-ink);
-  font: inherit; font-size: var(--ui-fs-md); font-weight: 500; white-space: nowrap;
-  cursor: pointer; transition: background var(--ui-dur) var(--ui-ease);
-}
-.ui-btn:hover:not(:disabled) { background: var(--ui-bg-hover); }
-.ui-btn:disabled { opacity: .5; cursor: not-allowed; }
-.ui-btn--sm { height: var(--ui-ctl-h-sm); padding: 0 var(--ui-sp-2); font-size: var(--ui-fs-sm); }
-.ui-btn--ghost { border-color: transparent; background: transparent; }
-.ui-btn--primary { border-color: transparent; background: var(--ui-accent); color: var(--ui-accent-ink); }
-.ui-btn--primary:hover:not(:disabled) { background: var(--ui-accent-hover); }
-.ui-iconbtn { width: var(--ui-ctl-h); padding: 0; }
-
-/* \u2014\u2014 StateIndicator: 6px dot + label, transparent background \u2014\u2014 */
-.ui-state {
-  display: inline-flex; align-items: center; gap: var(--ui-sp-1);
-  font-size: var(--ui-fs-sm); font-weight: 500; line-height: var(--ui-lh-tight);
-  color: var(--ui-ink-2); background: transparent; white-space: nowrap;
-}
-.ui-state__dot {
-  --ui-tone: var(--ui-ink-3);
-  width: 6px; height: 6px; border-radius: 50%; flex: none;
-  background: var(--ui-tone);
-}
-.ui-state[data-tone='ok'] .ui-state__dot { --ui-tone: var(--ui-ok); }
-.ui-state[data-tone='warn'] .ui-state__dot { --ui-tone: var(--ui-warn); }
-.ui-state[data-tone='bad'] .ui-state__dot { --ui-tone: var(--ui-bad); }
-.ui-state[data-tone='info'] .ui-state__dot { --ui-tone: var(--ui-info); }
-.ui-state[data-ring] .ui-state__dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ui-tone); }
-.ui-state[data-dashed] .ui-state__dot { background: transparent; border: 1px dashed var(--ui-tone); }
-.ui-state[data-live] .ui-state__dot { animation: ui-pulse 1.6s var(--ui-ease) infinite; }
-.ui-state--dot-only { gap: 0; }
-@keyframes ui-pulse { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .ui-state[data-live] .ui-state__dot { animation: none; } }
-
-/* \u2014\u2014 MetaChip: monochrome metadata, never a status colour \u2014\u2014 */
-.ui-chip {
-  display: inline-flex; align-items: center; height: 18px; padding: 0 var(--ui-sp-1);
-  border-radius: var(--ui-r-sm); background: var(--ui-bg-selected); color: var(--ui-ink-2);
-  font-size: var(--ui-fs-xs); font-weight: 500; white-space: nowrap; max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis;
-}
-.ui-chip--mono { font-family: var(--ui-mono); font-variant-numeric: tabular-nums; }
-
-/* \u2014\u2014 DataTable \u2014\u2014 */
-.ui-table-wrap { container-type: inline-size; min-width: 0; }
-.ui-table { width: 100%; border-collapse: collapse; font-size: var(--ui-fs-md); }
-.ui-table th {
-  height: var(--ui-row-h); padding: 0 var(--ui-sp-3); text-align: left;
-  font-size: var(--ui-fs-xs); font-weight: 500; color: var(--ui-ink-3);
-  border-bottom: 1px solid var(--ui-border); white-space: nowrap;
-}
-.ui-table td {
-  height: var(--ui-row-h); padding: 0 var(--ui-sp-3);
-  border-bottom: 1px solid var(--ui-border); vertical-align: middle;
-  max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.ui-table :is(th, td)[data-fit] { width: 1%; max-width: none; }
-.ui-table :is(th, td)[data-numeric] { text-align: right; font-variant-numeric: tabular-nums; }
-.ui-table td[data-mono] { font-family: var(--ui-mono); font-variant-numeric: tabular-nums; }
-.ui-row { cursor: default; outline: none; transition: background var(--ui-dur) var(--ui-ease); }
-.ui-row:hover { background: var(--ui-bg-hover); }
-.ui-row[aria-selected='true'] { background: var(--ui-bg-selected); box-shadow: inset 2px 0 0 var(--ui-accent); }
-.ui-row--skeleton td::after {
-  content: ''; display: block; height: 8px; border-radius: var(--ui-r-sm);
-  background: var(--ui-bg-selected);
-}
-.ui-table__note { padding: var(--ui-sp-5) var(--ui-sp-4); color: var(--ui-ink-2); font-size: var(--ui-fs-md); }
-.ui-table__note strong { display: block; color: var(--ui-ink); font-weight: 500; margin-bottom: var(--ui-sp-1); }
-.ui-table__note--error strong { color: var(--ui-bad); }
-.ui-table__note .ui-btn { margin-top: var(--ui-sp-2); }
-@container (max-width: 720px) {
-  .ui-table, .ui-table tbody, .ui-table tr, .ui-table td { display: block; width: auto; }
-  .ui-table thead { display: none; }
-  .ui-table tr.ui-row { padding: var(--ui-sp-2) var(--ui-sp-3); border-bottom: 1px solid var(--ui-border); }
-  .ui-table td { height: auto; max-width: none; padding: 0; border: 0; white-space: normal; text-align: left; }
-  .ui-table td[data-numeric] { text-align: left; }
-  .ui-table td + td { margin-top: var(--ui-sp-1); font-size: var(--ui-fs-sm); color: var(--ui-ink-2); }
-  .ui-table td + td[data-label]::before { content: attr(data-label) ' \xB7 '; color: var(--ui-ink-3); }
-}
-
-/* \u2014\u2014 Inspector: resizable right pane \u2014\u2014 */
-.ui-inspector {
-  position: relative; display: flex; flex-direction: column; min-width: 0;
-  width: var(--ui-inspector-w); flex: none;
-  border-left: 1px solid var(--ui-border); background: var(--ui-bg-subtle);
-}
-.ui-inspector__head {
-  display: flex; align-items: center; gap: var(--ui-sp-2);
-  height: var(--ui-bar-h); padding: 0 var(--ui-sp-2) 0 var(--ui-sp-4);
-  border-bottom: 1px solid var(--ui-border); flex: none;
-}
-.ui-inspector__title {
-  flex: 1; min-width: 0; margin: 0; font-size: var(--ui-fs-lg); font-weight: 600;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.ui-inspector__body { flex: 1; min-height: 0; overflow: auto; padding: var(--ui-sp-4); }
-.ui-resize {
-  position: absolute; top: 0; bottom: 0; left: -3px; width: 6px; cursor: col-resize; z-index: 1;
-  background: transparent; transition: background var(--ui-dur) var(--ui-ease);
-}
-.ui-resize:hover, .ui-resize[data-drag] { background: var(--ui-accent-wash); }
-@media (max-width: 900px) {
-  .ui-inspector { width: 100%; border-left: 0; border-top: 1px solid var(--ui-border); }
-  .ui-resize { display: none; }
-}
-
-/* \u2014\u2014 ContextBar: 38px, one primary at most \u2014\u2014 */
-.ui-contextbar {
-  display: flex; align-items: center; gap: var(--ui-sp-2); min-width: 0;
-  height: var(--ui-bar-h); padding: 0 var(--ui-sp-3) 0 var(--ui-sp-4);
-  border-bottom: 1px solid var(--ui-border); background: var(--ui-bg); flex: none;
-}
-.ui-contextbar__title {
-  margin: 0; min-width: 0; font-size: var(--ui-fs-lg); font-weight: 600;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.ui-contextbar__meta { display: flex; align-items: center; gap: var(--ui-sp-2); min-width: 0; color: var(--ui-ink-2); font-size: var(--ui-fs-sm); }
-.ui-contextbar__spacer { flex: 1; }
-.ui-contextbar__actions { display: flex; align-items: center; gap: var(--ui-sp-1); flex: none; }
-
-/* \u2014\u2014 forms and SaveBar \u2014\u2014 */
-.ui-form { max-width: var(--ui-form-max); }
-.ui-savebar {
-  position: sticky; bottom: 0; z-index: 2;
-  display: flex; align-items: center; gap: var(--ui-sp-2);
-  min-height: var(--ui-bar-h); padding: var(--ui-sp-1) var(--ui-sp-4);
-  border-top: 1px solid var(--ui-border); background: var(--ui-bg);
-}
-.ui-savebar__msg { flex: 1; min-width: 0; font-size: var(--ui-fs-sm); color: var(--ui-ink-2); }
-.ui-savebar__msg[data-error] { color: var(--ui-bad); }
-
-/* \u2014\u2014 Shell \u2014\u2014 */
-.ui-shell { display: flex; flex-direction: column; min-height: 0; height: 100%; }
-.ui-shell__body { flex: 1; min-height: 0; display: flex; }
-.ui-shell__sidebar {
-  width: var(--ui-sidebar-w); flex: none; overflow: auto;
-  border-right: 1px solid var(--ui-border); background: var(--ui-bg-subtle); font-size: var(--ui-fs-sm);
-}
-.ui-shell__stage { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
-.ui-shell__status {
-  height: var(--ui-status-h); flex: none; display: flex; align-items: center; gap: var(--ui-sp-3);
-  padding: 0 var(--ui-sp-3); border-top: 1px solid var(--ui-border);
-  font-size: var(--ui-fs-xs); color: var(--ui-ink-2); background: var(--ui-bg-subtle);
-}
-@media (max-width: 900px) {
-  .ui-shell__body { flex-direction: column; }
-  .ui-shell__sidebar { width: auto; border-right: 0; border-bottom: 1px solid var(--ui-border); }
-}
-`;
-  var UI_CSS = TOKENS_CSS + PRIMITIVES_CSS;
-
-  // packages/admin-ui/src/ui/state.js
-  var S = (tone2, label, extra = {}) => Object.freeze({ tone: tone2, label, ...extra });
-  var STATE_MAP = Object.freeze({
-    // tickets
-    new: S("info", "New"),
-    approved: S("neutral", "Approved", { ring: true }),
-    queued: S("neutral", "Queued", { ring: true }),
-    in_progress: S("info", "Running", { live: true }),
-    running: S("info", "Running", { live: true }),
-    review: S("warn", "In review"),
-    check: S("warn", "Check"),
-    stalled: S("bad", "Stalled"),
-    done: S("ok", "Done"),
-    declined: S("neutral", "Declined", { dashed: true }),
-    unknown: S("neutral", "Unknown", { dashed: true }),
-    // runs and checks
-    failed: S("bad", "Failed"),
-    ok: S("ok", "Passed"),
-    passed: S("ok", "Passed"),
-    // nodes
-    online: S("ok", "Online"),
-    offline: S("bad", "Offline"),
-    // contacts
-    replied: S("ok", "Replied"),
-    opted_out: S("bad", "Opted out"),
-    bounced: S("bad", "Bounced")
-  });
-  var TONES = Object.freeze(["ok", "warn", "bad", "info", "neutral"]);
-  function humanize(value) {
-    const text = String(value ?? "").trim().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
-    if (!text) return "";
-    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
-  }
-  function resolveState(state, overrides = {}) {
-    const key = String(state ?? "unknown").trim().toLowerCase().replace(/[\s-]+/g, "_") || "unknown";
-    const known = STATE_MAP[key];
-    const base = known ?? { tone: "neutral", label: humanize(key) };
-    const tone2 = TONES.includes(overrides.tone) ? overrides.tone : base.tone;
-    return {
-      key,
-      tone: tone2,
-      label: overrides.label ?? base.label,
-      live: overrides.live ?? Boolean(base.live),
-      ring: Boolean(base.ring),
-      dashed: Boolean(base.dashed)
-    };
-  }
-
-  // packages/admin-ui/src/ui/behavior.js
-  var clamp = (n, min, max) => Math.min(max, Math.max(min, n));
-  function clampWidth(value, { min = SIZE.inspectorMin, max = SIZE.inspectorMax, def = SIZE.inspector } = {}) {
-    const n = Number(value);
-    if (value == null || value === "" || !Number.isFinite(n)) return clamp(def, min, max);
-    return clamp(Math.round(n), min, max);
-  }
-  function readWidth(storage2, key, limits = {}) {
-    if (!key) return clampWidth(void 0, limits);
-    try {
-      const raw = storage2?.getItem?.(key);
-      return clampWidth(raw == null ? void 0 : raw, limits);
-    } catch {
-      return clampWidth(void 0, limits);
-    }
-  }
-  function writeWidth(storage2, key, width) {
-    if (!key) return;
-    try {
-      storage2?.setItem?.(key, String(width));
-    } catch {
-    }
-  }
-  function resizeKey(key, width, { min = SIZE.inspectorMin, max = SIZE.inspectorMax, step = 16, invert = true } = {}) {
-    const dir = invert ? -1 : 1;
-    if (key === "ArrowLeft") return clamp(width - step * dir, min, max);
-    if (key === "ArrowRight") return clamp(width + step * dir, min, max);
-    if (key === "Home") return min;
-    if (key === "End") return max;
-    return null;
-  }
-
-  // packages/admin-ui/src/ui/primitives.jsx
-  var storage = () => typeof window === "undefined" ? null : window.localStorage;
-  function UiStyles() {
-    return /* @__PURE__ */ jsx("style", { "data-ui-styles": "v2", children: UI_CSS });
-  }
-  function UiButton({ kind = "secondary", size, busy = false, className, children, disabled, ...props }) {
-    return /* @__PURE__ */ jsx(
-      "button",
-      {
-        type: "button",
-        className: cx("ui-btn", kind !== "secondary" && `ui-btn--${kind}`, size === "sm" && "ui-btn--sm", className),
-        "data-primary": kind === "primary" ? "true" : void 0,
-        disabled: Boolean(disabled || busy),
-        "aria-busy": busy || void 0,
-        ...props,
-        children
-      }
-    );
-  }
-  function StateIndicator({ state, label, tone: tone2, live, dotOnly = false, title, className }) {
-    const s = resolveState(state, { label, tone: tone2, live });
-    return /* @__PURE__ */ jsxs(
-      "span",
-      {
-        className: cx("ui-state", dotOnly && "ui-state--dot-only", className),
-        "data-state": s.key,
-        "data-tone": s.tone,
-        "data-live": s.live ? "" : void 0,
-        "data-ring": s.ring ? "" : void 0,
-        "data-dashed": s.dashed ? "" : void 0,
-        title: title ?? (dotOnly ? s.label : void 0),
-        children: [
-          /* @__PURE__ */ jsx("span", { className: "ui-state__dot", "aria-hidden": "true" }),
-          /* @__PURE__ */ jsx("span", { className: dotOnly ? "ui-sr" : void 0, children: s.label })
-        ]
-      }
-    );
-  }
-  function MetaChip({ children, title, mono = false, className }) {
-    return /* @__PURE__ */ jsx("span", { className: cx("ui-chip", mono && "ui-chip--mono", className), title, children });
-  }
-  function Inspector({
-    title,
-    actions,
-    onClose,
-    children,
-    label,
-    storageKey = "ui.inspector.width",
-    defaultWidth = SIZE.inspector,
-    minWidth = SIZE.inspectorMin,
-    maxWidth = SIZE.inspectorMax,
-    resizable = true,
-    className
-  }) {
-    const limits = { min: minWidth, max: maxWidth, def: defaultWidth };
-    const [width, setWidth] = useState(() => clampWidth(defaultWidth, limits));
-    const [drag, setDrag] = useState(false);
-    const widthRef = useRef(width);
-    widthRef.current = width;
-    useEffect(() => {
-      if (storageKey) setWidth(readWidth(storage(), storageKey, limits));
-    }, [storageKey, minWidth, maxWidth, defaultWidth]);
-    const commit = useCallback((w) => {
-      setWidth(w);
-      writeWidth(storage(), storageKey, w);
-    }, [storageKey]);
-    const onPointerDown = (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      const startX = e.clientX;
-      const startW = widthRef.current;
-      setDrag(true);
-      const move = (ev) => setWidth(clampWidth(startW + (startX - ev.clientX), limits));
-      const up = () => {
-        setDrag(false);
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", up);
-        commit(widthRef.current);
-      };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", up);
-    };
-    const onSepKey = (e) => {
-      const next = resizeKey(e.key, widthRef.current, { min: minWidth, max: maxWidth });
-      if (next == null) return;
-      e.preventDefault();
-      commit(next);
-    };
-    const name = label ?? (typeof title === "string" ? title : "Inspector");
-    return /* @__PURE__ */ jsxs(
-      "aside",
-      {
-        className: cx("ui-inspector", className),
-        "aria-label": name,
-        style: { "--ui-inspector-w": `${width}px` },
-        onKeyDown: onClose ? (e) => {
-          if (e.key === "Escape" && !e.defaultPrevented) {
-            e.preventDefault();
-            onClose();
-          }
-        } : void 0,
-        children: [
-          resizable ? /* @__PURE__ */ jsx(
-            "div",
-            {
-              className: "ui-resize",
-              role: "separator",
-              "aria-orientation": "vertical",
-              "aria-label": `Resize ${name}`,
-              "aria-valuenow": width,
-              "aria-valuemin": minWidth,
-              "aria-valuemax": maxWidth,
-              tabIndex: 0,
-              "data-drag": drag ? "" : void 0,
-              onPointerDown,
-              onKeyDown: onSepKey
-            }
-          ) : null,
-          title || actions || onClose ? /* @__PURE__ */ jsxs("div", { className: "ui-inspector__head", children: [
-            /* @__PURE__ */ jsx("h2", { className: "ui-inspector__title", children: title }),
-            actions,
-            onClose ? /* @__PURE__ */ jsx(UiButton, { kind: "ghost", className: "ui-iconbtn", "aria-label": `Close ${name}`, title: "Close  Esc", onClick: onClose, children: /* @__PURE__ */ jsx(Icon, { name: "close" }) }) : null
-          ] }) : null,
-          /* @__PURE__ */ jsx("div", { className: "ui-inspector__body", children })
-        ]
-      }
-    );
-  }
-  var HOST_MODES = Object.freeze(["embedded", "standalone"]);
 
   // packages/dsh-admin/src/panel-transport.mjs
   function panelTransport(legacy, { desktop = false, fetcher = globalThis.fetch } = {}) {

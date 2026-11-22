@@ -96,6 +96,9 @@ export function MetaChip({ children, title, mono = false, className }) {
  * `onOpen(row, key)`: Enter or double-click.
  * `menu`: items or `(row) => items` (legacy Menu item shape); right-click,
  *   Shift+F10 or the ContextMenu key opens it on the row.
+ * Sorting (optional): `sort: { key, dir }` (dir 1 ascending, -1 descending) and
+ *   `onSort(key)`; columns with `sortable` get a header button and `aria-sort`.
+ *   The table never reorders rows itself: the caller sorts.
  * `state`: 'ready' | 'loading' | 'error' (default: 'error' when `error`, else 'ready');
  *   `empty: { title, hint, action }` when ready with no rows; `onRetry` on error.
  * Keyboard: j/k/↑/↓ move, Home/End jump, Enter opens; one roving tab stop.
@@ -109,6 +112,8 @@ export function DataTable({
   onSelect,
   onOpen,
   menu,
+  sort,
+  onSort,
   label,
   state,
   error,
@@ -153,9 +158,26 @@ export function DataTable({
   const head = (
     <thead>
       <tr>
-        {cols.map((c) => (
-          <th key={c.key} scope="col" data-numeric={c.numeric ? '' : undefined} data-fit={c.fit ? '' : undefined}>{c.header}</th>
-        ))}
+        {cols.map((c) => {
+          const sortable = Boolean(c.sortable && onSort);
+          const on = sortable && sort?.key === c.key;
+          return (
+            <th
+              key={c.key}
+              scope="col"
+              data-numeric={c.numeric ? '' : undefined}
+              data-fit={c.fit ? '' : undefined}
+              aria-sort={sortable ? (on ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none') : undefined}
+            >
+              {sortable ? (
+                <button type="button" className="ui-table__sort" onClick={() => onSort(c.key)}>
+                  {c.header}
+                  <span className="ui-table__arrow" aria-hidden="true">{on ? (sort.dir > 0 ? '↑' : '↓') : ''}</span>
+                </button>
+              ) : c.header}
+            </th>
+          );
+        })}
       </tr>
     </thead>
   );

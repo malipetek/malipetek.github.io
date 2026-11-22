@@ -375,6 +375,9 @@ button.aw-file:hover { background: var(--aw-hover); }
 /* ————— ticket: thread + inspector ————— */
 .aw-ticket { display: grid; grid-template-columns: minmax(0, 1fr) var(--aw-details-w, 300px); min-height: 100%; position: relative; }
 .aw-ticket--solo { grid-template-columns: minmax(0, 1fr); }
+.aw-evidence-more { border-top: 1px solid var(--aw-hairline); margin-top: var(--aw-space-3); padding-top: var(--aw-space-2); }
+.aw-evidence-more > summary { cursor: pointer; font-size: var(--aw-type-sm); color: var(--aw-ink-2); }
+.aw-evidence-more > summary:hover { color: var(--aw-ink); }
 .aw-ticket__quick { margin-top: var(--aw-space-3); }
 .aw-ticket__quick .aw-ticket__actions { padding-bottom: 0; border-bottom: 0; }
 .aw-ticket__main { padding: var(--aw-space-4) var(--aw-space-5) var(--aw-space-4); min-width: 0; display: flex; flex-direction: column; }

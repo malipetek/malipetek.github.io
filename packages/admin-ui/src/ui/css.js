@@ -17,7 +17,7 @@ const PRIMITIVES_CSS = `
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
-:where(.ui, .aw) :where(.ui-btn, .ui-row, .ui-resize, .ui-inspector, .ui-iconbtn):focus-visible {
+:where(.ui, .aw) :where(.ui-btn, .ui-row, .ui-resize, .ui-inspector, .ui-iconbtn, .ui-table__sort, .ui-disclosure > summary):focus-visible {
   outline: 2px solid var(--ui-focus);
   outline-offset: -2px;
 }
@@ -93,6 +93,13 @@ const PRIMITIVES_CSS = `
   content: ''; display: block; height: 8px; border-radius: var(--ui-r-sm);
   background: var(--ui-bg-selected);
 }
+.ui-table__sort {
+  display: inline-flex; align-items: center; gap: var(--ui-sp-1); height: 100%;
+  padding: 0; border: 0; background: transparent; color: inherit;
+  font: inherit; cursor: pointer;
+}
+.ui-table__sort:hover { color: var(--ui-ink); }
+.ui-table__arrow { display: inline-block; min-width: 1ch; }
 .ui-table__note { padding: var(--ui-sp-5) var(--ui-sp-4); color: var(--ui-ink-2); font-size: var(--ui-fs-md); }
 .ui-table__note strong { display: block; color: var(--ui-ink); font-weight: 500; margin-bottom: var(--ui-sp-1); }
 .ui-table__note--error strong { color: var(--ui-bad); }
@@ -132,6 +139,58 @@ const PRIMITIVES_CSS = `
   .ui-inspector { width: 100%; border-left: 0; border-top: 1px solid var(--ui-border); }
   .ui-resize { display: none; }
 }
+
+/* —— Workspace: a collection with its Inspector beside it, never over it —— */
+.ui-workspace {
+  display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0;
+  padding: var(--ui-sp-4) var(--ui-sp-5) 0;
+}
+.ui-split { flex: 1; min-height: 0; min-width: 0; display: flex; gap: var(--ui-sp-3); }
+.ui-split__main {
+  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  overflow: auto; padding-bottom: var(--ui-sp-4);
+}
+.ui-split > .ui-inspector { margin-bottom: var(--ui-sp-4); border: 1px solid var(--ui-border); border-radius: var(--ui-r-lg); }
+.ui-selectable[data-selected] { border-color: var(--ui-accent); box-shadow: inset 2px 0 0 var(--ui-accent); }
+@media (max-width: 900px) {
+  .ui-workspace { height: auto; padding: var(--ui-sp-3) var(--ui-sp-3) 0; }
+  .ui-split { flex-direction: column; flex: none; }
+  .ui-split__main { flex: none; overflow: visible; }
+}
+
+/* —— Inspector content: properties, sections, one action row —— */
+.ui-props {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--ui-sp-1) var(--ui-sp-3);
+  margin: 0; font-size: var(--ui-fs-sm);
+}
+.ui-props dt { color: var(--ui-ink-3); }
+.ui-props dd { margin: 0; min-width: 0; color: var(--ui-ink); overflow-wrap: anywhere; }
+.ui-section { margin-top: var(--ui-sp-4); }
+.ui-section__title { margin: 0 0 var(--ui-sp-2); font-size: var(--ui-fs-xs); font-weight: 500; color: var(--ui-ink-3); }
+.ui-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-2); margin: var(--ui-sp-3) 0; }
+.ui-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-2); font-size: var(--ui-fs-xs); color: var(--ui-ink-3); }
+.ui-meta strong { color: var(--ui-ink-2); font-weight: 500; }
+.ui-quote {
+  margin: var(--ui-sp-1) 0 0; font-size: var(--ui-fs-sm); color: var(--ui-ink-2); white-space: pre-wrap;
+  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ui-note { margin: 0; font-size: var(--ui-fs-sm); color: var(--ui-ink-3); }
+
+/* —— Disclosure: a collapsible section, closed until asked —— */
+.ui-disclosure { margin: var(--ui-sp-3) 0; border: 1px solid var(--ui-border); border-radius: var(--ui-r-lg); background: var(--ui-bg-subtle); }
+.ui-disclosure > summary {
+  display: flex; align-items: center; gap: var(--ui-sp-2); min-height: var(--ui-bar-h);
+  padding: 0 var(--ui-sp-3); cursor: pointer; list-style: none;
+  font-size: var(--ui-fs-md); font-weight: 500; color: var(--ui-ink);
+  border-radius: var(--ui-r-lg);
+}
+.ui-disclosure > summary::-webkit-details-marker { display: none; }
+.ui-disclosure > summary::before {
+  content: '▸'; color: var(--ui-ink-3); transition: transform var(--ui-dur) var(--ui-ease);
+}
+.ui-disclosure[open] > summary::before { transform: rotate(90deg); }
+.ui-disclosure__hint { margin-left: auto; font-size: var(--ui-fs-xs); font-weight: 400; color: var(--ui-ink-3); }
+.ui-disclosure__body { padding: var(--ui-sp-3); border-top: 1px solid var(--ui-border); min-width: 0; }
 
 /* —— ContextBar: 38px, one primary at most —— */
 .ui-contextbar {

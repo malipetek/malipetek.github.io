@@ -1,6 +1,10 @@
-/* Needs you, the board, and the list: three ways to look at the same tickets. */
+/*
+ * Needs you, the board, and the list: three ways to look at the same tickets.
+ * The board and the list are v2 workspaces: selecting a card or row opens the
+ * Work Inspector beside them (never over them); Enter opens the ticket.
+ */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useAdmin } from './store.js';
+import { useAdmin, useTicket } from './store.js';
 import {
   MINE_LABEL,
   REQUEUE_WARNING,
@@ -16,9 +20,10 @@ import {
   needsYou,
   priorityName,
   usd,
+  when,
 } from './format.js';
 import { nextRowIndex } from './row-navigation.mjs';
-import { Button, Dot, EmptyState, PageHeader, Segmented, StatusPill, Tag, Toolbar, cx, useContextMenu } from './ui.jsx';
+import { Button, DataTable, Dot, EmptyState, Inspector, MetaChip, PageHeader, Segmented, StateIndicator, Toolbar, UiStyles, cx, useContextMenu } from './ui/index.js';
 
 /** Filter bar shared by the board and the list. */
 function useFilters() {
@@ -56,11 +61,15 @@ function useFilters() {
   return { boardProject, setBoardProject, kind, setKind, q, setQ, apply, hits };
 }
 
-/** The one primary action of the board and the list: a new task, preset to the filtered project. */
-function NewTaskButton({ f }) {
+/**
+ * The board's and the list's primary action: a new task, preset to the
+ * filtered project. While the Inspector is open its action is the one
+ * primary on screen, so this steps down to a plain button.
+ */
+function NewTaskButton({ f, quiet = false }) {
   const { setModal } = useAdmin();
   return (
-    <Button kind="primary" icon="plus" shortcut="N" onClick={() => setModal({ kind: 'task', projectId: f.boardProject === 'all' ? undefined : f.boardProject })}>
+    <Button kind={quiet ? 'default' : 'primary'} icon="plus" shortcut="N" onClick={() => setModal({ kind: 'task', projectId: f.boardProject === 'all' ? undefined : f.boardProject })}>
       New task
     </Button>
   );
@@ -146,11 +155,9 @@ const ROW_MOVES = {
   declined: [['new', 'Reopen']],
 };
 
-/** Right-click (or Shift+F10) on a ticket row or card: open, copy its link, and its status moves. */
-export function useTicketMenu(t) {
-  const { openTicket, platform } = useAdmin();
-  const move = useMove();
-  return useContextMenu(() => [
+/** A ticket's menu items: open, copy its link, and its status moves. */
+function ticketMenuItems(t, { openTicket, platform, move }) {
+  return [
     { label: 'Open', run: () => openTicket(t.id) },
     {
       label: 'Copy link',
@@ -158,7 +165,147 @@ export function useTicketMenu(t) {
     },
     ...(ROW_MOVES[t.status]?.length ? [{ separator: true }] : []),
     ...(ROW_MOVES[t.status] ?? []).map(([s, label]) => ({ label, run: () => void move(t, s), danger: s === 'declined' })),
-  ], `#${t.id} actions`);
+  ];
+}
+
+/** Right-click (or Shift+F10) on a ticket row or card: open, copy its link, and its status moves. */
+export function useTicketMenu(t) {
+  const { openTicket, platform } = useAdmin();
+  const move = useMove();
+  return useContextMenu(() => ticketMenuItems(t, { openTicket, platform, move }), `#${t.id} actions`);
+}
+
+/** In progress this long without a report is stalled (the same rule as Needs you). */
+const STALL_AFTER_S = 45 * 60;
+
+/** The one state a ticket shows: a live run first, then stalled, then its status. */
+export function ticketState(t, running = []) {
+  if (running.some((r) => r.ticket_id === t.id)) return 'running';
+  if (t.status === 'in_progress' && Date.now() / 1000 - (t.updated_at ?? 0) > STALL_AFTER_S) return 'stalled';
+  return t.status;
+}
+
+/** Who a ticket is for: the client, or the operator's own work. */
+const ownerOf = (t) => (t.kind === 'system' ? MINE_LABEL : t.client_name || t.client_email || '—');
+
+/** The move the Inspector makes primary for a status; anything else is secondary. */
+const LEAD_MOVE = { new: 'approved', review: 'done' };
+
+/** Escape closes the Inspector from anywhere in the workspace, unless something nearer used it. */
+const closeOnEscape = (selected, close) => (e) => {
+  if (e.key !== 'Escape' || e.defaultPrevented || selected == null) return;
+  if (e.target?.closest?.('input, textarea, select, [contenteditable], [role="menu"], [role="dialog"]')) return;
+  e.preventDefault();
+  close();
+};
+
+/** Wait for the selection to rest before fetching its thread, so j/k does not fire a request per row. */
+function useSettled(value, ms = 250) {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return settled;
+}
+
+/** The thread's newest message, and the pre-review when there is one. */
+function ThreadPreview({ id }) {
+  const { api } = useAdmin();
+  const [{ ticket, messages, review, loading }] = useTicket(api, id);
+  if (loading && !ticket) return <p className="ui-note" role="status">Loading the thread…</p>;
+  if (!ticket) return <p className="ui-note" role="alert">Could not load the thread. Open the ticket to retry.</p>;
+  const latest = [...(messages ?? [])].reverse().find((m) => m.author !== 'system' && (m.body ?? '').trim());
+  const who = (m) => (m.author === 'ali' ? 'You' : m.author === 'client' ? ticket.client_name ?? ticket.client_email ?? 'Client' : m.author === 'runner' ? 'Agent report' : m.author);
+  return (
+    <>
+      {review ? (
+        <div className="ui-section">
+          <h3 className="ui-section__title">Pre-review · run #{review.runId ?? 'unknown'}</h3>
+          <StateIndicator state={review.verdict === 'pass' ? 'passed' : review.verdict === 'attention' ? 'check' : 'failed'} />
+          <p className="ui-quote">{review.headline}</p>
+        </div>
+      ) : null}
+      <div className="ui-section">
+        <h3 className="ui-section__title">Latest message</h3>
+        {latest ? (
+          <>
+            <div className="ui-meta">
+              <strong>{who(latest)}</strong>
+              {latest.internal === 1 ? <MetaChip>private note</MetaChip> : null}
+              <time>{when(latest.created_at)}</time>
+            </div>
+            <p className="ui-quote">{latest.body}</p>
+          </>
+        ) : (
+          <p className="ui-note">No messages yet.</p>
+        )}
+      </div>
+    </>
+  );
+}
+
+/**
+ * The Work Inspector: what the selected ticket is, who it is for, what it
+ * cost, its latest message, and the moves it offers. The lead move (Approve,
+ * Mark done) is the screen's one primary; with no lead move, Open is.
+ */
+function WorkInspector({ t, hit, onClose }) {
+  const { data, openTicket } = useAdmin();
+  const move = useMove();
+  const settledId = useSettled(t.id);
+  const run = data.running.find((r) => r.ticket_id === t.id);
+  const queued = data.queue.find((q) => q.id === t.id);
+  const moves = ROW_MOVES[t.status] ?? [];
+  const lead = moves.find(([s]) => s === LEAD_MOVE[t.status]);
+  const rest = moves.filter((m) => m !== lead);
+  const cost = chargeOf(t).totalCents;
+  return (
+    <Inspector title={`#${t.id} ${t.title}`} label={`Ticket #${t.id}`} storageKey="ptech.work.inspector.w" onClose={onClose}>
+      <StateIndicator state={ticketState(t, data.running)} />
+      <div className="ui-actions">
+        {lead ? (
+          <Button kind="primary" onClick={() => void move(t, lead[0])}>
+            {lead[1]}
+          </Button>
+        ) : null}
+        {rest.map(([s, label]) => (
+          <Button key={s} kind={s === 'declined' ? 'ghost' : 'default'} onClick={() => void move(t, s)}>
+            {label}
+          </Button>
+        ))}
+        <Button kind={lead ? 'default' : 'primary'} onClick={() => openTicket(t.id)} title="Open ticket  Enter">
+          Open ticket
+        </Button>
+      </div>
+      <dl className="ui-props">
+        <dt>Project</dt>
+        <dd>{t.project_name ?? 'No project'}</dd>
+        <dt>For</dt>
+        <dd title={t.kind === 'system' ? undefined : t.client_email}>{ownerOf(t)}</dd>
+        <dt>Priority</dt>
+        <dd>{t.priority ? priorityName(t.priority) : 'Normal'}</dd>
+        <dt>Agent</dt>
+        <dd>{run ? `${run.executor} on ${run.node_id ?? 'Harness'}` : t.source === 'assistant' ? 'Their assistant' : t.executor ?? 'Auto'}</dd>
+        <dt>Cost</dt>
+        <dd>{money(cost)}</dd>
+        <dt>Updated</dt>
+        <dd>{ago(t.updated_at)} ago</dd>
+      </dl>
+      {queued && !queued.eligible.length ? (
+        <div className="ui-section">
+          <StateIndicator state="stuck" tone="bad" label={queued.reason || 'No node can take this'} />
+        </div>
+      ) : null}
+      {hit ? (
+        <div className="ui-section">
+          <h3 className="ui-section__title">Matched in the thread</h3>
+          <p className="ui-quote">{hit}</p>
+        </div>
+      ) : null}
+      {settledId === t.id ? <ThreadPreview key={t.id} id={t.id} /> : <p className="ui-note" role="status">Loading the thread…</p>}
+    </Inspector>
+  );
 }
 
 /**
@@ -196,24 +343,36 @@ const titleLinkClick = (e) => {
   else e.preventDefault();
 };
 
-export function TicketCard({ t, draggable, cell, onKey }) {
+/**
+ * A board card. `onSelect` makes a click select it (the board's Inspector);
+ * without it a click opens the ticket, as before. Enter always opens.
+ */
+export function TicketCard({ t, draggable, cell, onKey, selected = false, onSelect }) {
   const { data, openTicket } = useAdmin();
   const menu = useTicketMenu(t);
   const run = data.running.find((r) => r.ticket_id === t.id);
   const queued = data.queue.find((q) => q.id === t.id);
   const cost = chargeOf(t).totalCents;
+  const state = ticketState(t, data.running);
   return (
     <article
       ref={cell ?? undefined}
-      onContextMenu={menu.bind.onContextMenu}
+      onContextMenu={(e) => {
+        onSelect?.(t);
+        menu.bind.onContextMenu(e);
+      }}
       aria-label={`#${t.id} ${t.title}`}
-      className={cx('aw-card', run && 'is-running', queued && !queued.eligible.length && 'is-stuck')}
+      aria-current={selected ? 'true' : undefined}
+      data-selected={selected ? '' : undefined}
+      className={cx('aw-card', 'ui-selectable', run && 'is-running', queued && !queued.eligible.length && 'is-stuck')}
       draggable={draggable}
       onDragStart={(e) => {
         e.dataTransfer.setData('text/x-ticket', String(t.id));
         e.dataTransfer.effectAllowed = 'move';
       }}
-      onClick={() => openTicket(t.id)}
+      onClick={() => (onSelect ? onSelect(t) : openTicket(t.id))}
+      onDoubleClick={onSelect ? () => openTicket(t.id) : undefined}
+      onFocus={onSelect ? (e) => e.target === e.currentTarget && onSelect(t) : undefined}
       onKeyDown={(e) => {
         menu.bind.onKeyDown(e);
         if (!e.defaultPrevented) (onKey ?? ((ev) => ev.key === 'Enter' && openTicket(t.id)))(e);
@@ -223,10 +382,9 @@ export function TicketCard({ t, draggable, cell, onKey }) {
       <div className="aw-card__top">
         <span className="aw-card__id">#{t.id}</span>
         {t.source === 'assistant' ? (
-          <Tag title="The client’s own assistant (ChatGPT, …) made this change on their subscription">their AI</Tag>
+          <MetaChip title="The client’s own assistant (ChatGPT, …) made this change on their subscription">their AI</MetaChip>
         ) : null}
-        {(t.priority ?? 0) > 0 ? <Tag>{priorityName(t.priority)}</Tag> : null}
-        {clientWaiting(t) ? <Tag tone="warn">awaiting reply</Tag> : null}
+        {(t.priority ?? 0) > 0 ? <MetaChip>{priorityName(t.priority)}</MetaChip> : null}
         <span className="aw-card__age">{ago(t.updated_at)}</span>
       </div>
       <h4>
@@ -240,34 +398,37 @@ export function TicketCard({ t, draggable, cell, onKey }) {
       </div>
       <div className="aw-card__foot">
         {run ? (
-          <span className="aw-running">
-            <span className="aw-live" /> {run.executor} on {run.node_id ?? 'Harness'}
-          </span>
-        ) : t.executor ? (
-          <Tag>{t.executor}</Tag>
+          <StateIndicator state="running" label={`${run.executor} on ${run.node_id ?? 'Harness'}`} />
+        ) : state === 'stalled' ? (
+          <StateIndicator state="stalled" />
+        ) : clientWaiting(t) ? (
+          <StateIndicator state="waiting" tone="warn" label="Awaiting reply" />
         ) : null}
+        {!run && t.executor ? <MetaChip>{t.executor}</MetaChip> : null}
         {listOf(t.requires).map((r) => (
-          <Tag key={r} tone="dash">
-            {r}
-          </Tag>
+          <MetaChip key={r}>{r}</MetaChip>
         ))}
         <span className="aw-toolbar__fill" />
         {cost ? <span className="aw-muted">{money(cost)}</span> : null}
       </div>
-      {queued && !queued.eligible.length ? <p className="aw-card__warn"><Dot state="bad" /> <span>{queued.reason}</span></p> : null}
+      {queued && !queued.eligible.length ? (
+        <p className="aw-card__warn">
+          <StateIndicator state="stuck" tone="bad" label={queued.reason || 'No node can take this'} />
+        </p>
+      ) : null}
       {menu.menu}
     </article>
   );
 }
 
 /** One board column's cards, with the column's own keyboard order. */
-function ColumnCards({ items }) {
+function ColumnCards({ items, selected, onSelect }) {
   const { openTicket } = useAdmin();
   const nav = useRowNav(items.length, (i) => openTicket(items[i].id));
   return (
     <>
       {items.map((t, i) => (
-        <TicketCard key={t.id} t={t} draggable cell={nav.cell(i)} onKey={(e) => nav.onKey(e, i)} />
+        <TicketCard key={t.id} t={t} draggable cell={nav.cell(i)} onKey={(e) => nav.onKey(e, i)} selected={selected === t.id} onSelect={onSelect} />
       ))}
     </>
   );
@@ -279,81 +440,114 @@ export function BoardView() {
   const f = useFilters();
   const [showClosed, setShowClosed] = useState(false);
   const [over, setOver] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
   const tickets = f.apply(data.tickets);
   const columns = showClosed ? STATUSES : STATUSES.filter((s) => s !== 'declined');
   const byId = new Map(data.tickets.map((t) => [t.id, t]));
+  const visible = tickets.filter((t) => columns.includes(t.status));
+  const selected = selectedId == null ? null : visible.find((t) => t.id === selectedId) ?? null;
+  const close = () => setSelectedId(null);
   return (
-    <div className="aw-view aw-view--board">
-      <PageHeader title="Board" subtitle="Every request by status. Drag a card to another column, or right-click it, to move it." actions={<NewTaskButton f={f} />} />
+    <div className="ui-workspace" onKeyDown={closeOnEscape(selected?.id, close)}>
+      <UiStyles />
+      <PageHeader title="Board" subtitle="Every request by status. Click a card to inspect it; drag it to another column, or right-click it, to move it." actions={<NewTaskButton f={f} quiet={Boolean(selected)} />} />
       <FilterBar f={f} extra={<Segmented label="Columns" value={showClosed} options={[{ value: false, label: 'Open' }, { value: true, label: '+ Declined' }]} onChange={setShowClosed} />} />
-      <div className="aw-board">
-        {columns.map((s) => {
-          let items = tickets.filter((t) => t.status === s);
-          const more = s === 'done' && items.length > 25 ? items.length - 25 : 0;
-          if (more) items = items.slice(0, 25);
-          return (
-            <section
-              key={s}
-              className={cx('aw-col', over === s && 'is-over')}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setOver(s);
-              }}
-              onDragLeave={() => setOver((o) => (o === s ? null : o))}
-              onDrop={(e) => {
-                e.preventDefault();
-                setOver(null);
-                const t = byId.get(Number(e.dataTransfer.getData('text/x-ticket')));
-                // Dropping on Approved is queueing again: the same warning as the ticket page.
-                if (t) void move(t, s);
-              }}
-            >
-              <header title={STATUS_HINT[s]}>
-                <span className={`aw-sq aw-sq--${s}`} aria-hidden="true" />
-                {STATUS_LABEL[s]}
-                <span className="aw-count">{tickets.filter((t) => t.status === s).length}</span>
-              </header>
-              <div className="aw-col__body">
-                <ColumnCards items={items} />
-                {more ? <p className="aw-muted aw-center">+{more} older</p> : null}
-                {!items.length ? <p className="aw-col__empty">{STATUS_HINT[s]}</p> : null}
-              </div>
-            </section>
-          );
-        })}
+      <div className="ui-split">
+        <div className="ui-split__main">
+          <div className="aw-board">
+            {columns.map((s) => {
+              let items = tickets.filter((t) => t.status === s);
+              const more = s === 'done' && items.length > 25 ? items.length - 25 : 0;
+              if (more) items = items.slice(0, 25);
+              return (
+                <section
+                  key={s}
+                  className={cx('aw-col', over === s && 'is-over')}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setOver(s);
+                  }}
+                  onDragLeave={() => setOver((o) => (o === s ? null : o))}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setOver(null);
+                    const t = byId.get(Number(e.dataTransfer.getData('text/x-ticket')));
+                    // Dropping on Approved is queueing again: the same warning as the ticket page.
+                    if (t) void move(t, s);
+                  }}
+                >
+                  <header title={STATUS_HINT[s]}>
+                    <StateIndicator state={s} label={STATUS_LABEL[s]} />
+                    <span className="aw-count">{tickets.filter((t) => t.status === s).length}</span>
+                  </header>
+                  <div className="aw-col__body">
+                    <ColumnCards items={items} selected={selected?.id} onSelect={(t) => setSelectedId(t.id)} />
+                    {more ? <p className="aw-muted aw-center">+{more} older</p> : null}
+                    {!items.length ? <p className="aw-col__empty">{STATUS_HINT[s]}</p> : null}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </div>
+        {selected ? <WorkInspector t={selected} hit={f.hits.get(selected.id)} onClose={close} /> : null}
       </div>
     </div>
   );
 }
 
-const COLUMNS = [
-  { key: 'id', label: '#', get: (t) => t.id, num: true },
-  { key: 'title', label: 'Title', get: (t) => t.title.toLowerCase() },
-  { key: 'status', label: 'Status', get: (t) => STATUSES.indexOf(t.status) },
-  { key: 'project', label: 'Project', get: (t) => t.project_name ?? '' },
-  { key: 'who', label: 'For', get: (t) => (t.kind === 'system' ? '' : t.client_email ?? '') },
-  { key: 'priority', label: 'Priority', get: (t) => t.priority ?? 0 },
-  { key: 'agent', label: 'Agent', get: (t) => t.executor ?? '' },
-  { key: 'cost', label: 'Cost', get: (t) => chargeOf(t).totalCents, num: true },
-  { key: 'updated', label: 'Updated', get: (t) => t.updated_at },
-];
+const SORTS = {
+  id: (t) => t.id,
+  title: (t) => t.title.toLowerCase(),
+  state: (t) => STATUSES.indexOf(t.status),
+  project: (t) => t.project_name ?? '',
+  who: (t) => (t.kind === 'system' ? '' : t.client_email ?? ''),
+  age: (t) => t.updated_at,
+  cost: (t) => chargeOf(t).totalCents,
+};
 
 export function ListView() {
-  const { data, openTicket } = useAdmin();
+  const { data, openTicket, platform } = useAdmin();
   const f = useFilters();
   const [status, setStatusFilter] = useState('open');
-  const [sort, setSort] = useState({ key: 'updated', dir: -1 });
+  const [sort, setSort] = useState({ key: 'age', dir: -1 });
+  const [selectedId, setSelectedId] = useState(null);
   const rows = useMemo(() => {
-    const col = COLUMNS.find((c) => c.key === sort.key);
+    const get = SORTS[sort.key];
     return f
       .apply(data.tickets)
       .filter((t) => status === 'all' || (status === 'open' ? !['done', 'declined'].includes(t.status) : t.status === status))
-      .sort((a, b) => (col.get(a) > col.get(b) ? 1 : col.get(a) < col.get(b) ? -1 : 0) * sort.dir);
+      .sort((a, b) => (get(a) > get(b) ? 1 : get(a) < get(b) ? -1 : 0) * sort.dir);
   }, [data.tickets, f, status, sort]);
-  const nav = useRowNav(rows.length, (i) => openTicket(rows[i].id));
+  const selected = selectedId == null ? null : rows.find((t) => t.id === selectedId) ?? null;
+  const close = () => setSelectedId(null);
+  const move = useMove();
+  const columns = [
+    { key: 'id', header: '#', mono: true, fit: true, sortable: true, render: (t) => `#${t.id}` },
+    {
+      key: 'title',
+      header: 'Title',
+      sortable: true,
+      render: (t) => (
+        <>
+          <a className="aw-titlelink" href={`#ticket=${t.id}`} tabIndex={-1} onClick={titleLinkClick}>
+            {t.title}
+          </a>
+          {t.priority ? <> <MetaChip>{priorityName(t.priority)}</MetaChip></> : null}
+          {f.hits.get(t.id) ? <small className="aw-muted aw-snippet"> {f.hits.get(t.id)}</small> : null}
+        </>
+      ),
+    },
+    { key: 'state', header: 'State', fit: true, sortable: true, render: (t) => <StateIndicator state={ticketState(t, data.running)} /> },
+    { key: 'project', header: 'Project', sortable: true, render: (t) => t.project_name ?? '—' },
+    { key: 'who', header: 'For', sortable: true, render: (t) => <span title={t.kind === 'system' ? undefined : t.client_email}>{ownerOf(t)}</span> },
+    { key: 'age', header: 'Age', fit: true, sortable: true, render: (t) => <span title={`Updated ${when(t.updated_at)}`}>{ago(t.updated_at)}</span> },
+    { key: 'cost', header: 'Cost', numeric: true, sortable: true, render: (t) => money(chargeOf(t).totalCents) },
+  ];
   return (
-    <div className="aw-view">
-      <PageHeader title="All work" subtitle="Every request in one table. Click a column to sort; click a row to open it." actions={<NewTaskButton f={f} />} />
+    <div className="ui-workspace" onKeyDown={closeOnEscape(selected?.id, close)}>
+      <UiStyles />
+      <PageHeader title="All work" subtitle="Every request in one table. Click a column to sort; select a row to inspect it, Enter to open it." actions={<NewTaskButton f={f} quiet={Boolean(selected)} />} />
       <FilterBar
         f={f}
         extra={
@@ -368,70 +562,29 @@ export function ListView() {
           </select>
         }
       />
-      <div className="aw-tablewrap">
-        <table className="aw-table aw-table--stack aw-table--rows">
-          <thead>
-            <tr>
-              {COLUMNS.map((c) => (
-                <th key={c.key} className={c.num ? 'aw-num' : undefined} aria-sort={sort.key === c.key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'} onClick={() => setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : 1 }))}>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : 1 })); }}>
-                    {c.label}
-                    {sort.key === c.key ? (sort.dir > 0 ? ' ↑' : ' ↓') : ''}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((t, i) => (
-              <ListRow key={t.id} t={t} hit={f.hits.get(t.id)} cell={nav.cell(i)} onKey={(e) => nav.onKey(e, i)} />
-            ))}
-          </tbody>
-        </table>
-        {!rows.length ? (
-          <EmptyState
-            title={data.tickets.length ? 'Nothing matches these filters.' : 'No requests yet.'}
-            hint={data.tickets.length ? 'Clear the filters, or choose Everything in the status filter.' : 'Requests from clients and your own tasks appear here.'}
-            action={data.tickets.length ? <Button onClick={() => { clearFilters(f); setStatusFilter('all'); }}>Clear filters</Button> : <NewTaskButton f={f} />}
+      <div className="ui-split">
+        <div className="ui-split__main">
+          <DataTable
+            label="Work"
+            columns={columns}
+            rows={rows}
+            rowKey={(t) => t.id}
+            selected={selected?.id ?? null}
+            onSelect={(t) => setSelectedId(t.id)}
+            onOpen={(t) => openTicket(t.id)}
+            menu={(t) => ticketMenuItems(t, { openTicket, platform, move })}
+            sort={sort}
+            onSort={(key) => setSort((s) => ({ key, dir: s.key === key ? -s.dir : key === 'age' || key === 'cost' ? -1 : 1 }))}
+            empty={{
+              title: data.tickets.length ? 'Nothing matches these filters.' : 'No requests yet.',
+              hint: data.tickets.length ? 'Clear the filters, or choose Everything in the status filter.' : 'Requests from clients and your own tasks appear here.',
+              action: data.tickets.length ? <Button onClick={() => { clearFilters(f); setStatusFilter('all'); }}>Clear filters</Button> : <NewTaskButton f={f} quiet />,
+            }}
           />
-        ) : null}
+        </div>
+        {selected ? <WorkInspector t={selected} hit={f.hits.get(selected.id)} onClose={close} /> : null}
       </div>
     </div>
-  );
-}
-
-function ListRow({ t, hit, cell, onKey }) {
-  const { openTicket } = useAdmin();
-  const menu = useTicketMenu(t);
-  return (
-    <tr
-      ref={cell}
-      onClick={() => openTicket(t.id)}
-      tabIndex={0}
-      onContextMenu={menu.bind.onContextMenu}
-      onKeyDown={(e) => {
-        menu.bind.onKeyDown(e);
-        if (!e.defaultPrevented) onKey(e);
-      }}
-    >
-      <td className="aw-num aw-muted">#{t.id}</td>
-      <td className="aw-table__title">
-        <a className="aw-titlelink" href={`#ticket=${t.id}`} tabIndex={-1} onClick={titleLinkClick}>
-          {t.title}
-        </a>
-        {hit ? <small className="aw-muted aw-snippet">{hit}</small> : null}
-        {menu.menu}
-      </td>
-      <td data-label="Status">
-        <StatusPill status={t.status} />
-      </td>
-      <td data-label="Project">{t.project_name ?? '—'}</td>
-      <td data-label="For">{t.kind === 'system' ? <span className="aw-muted">{MINE_LABEL}</span> : t.client_email}</td>
-      <td data-label="Priority">{t.priority ? priorityName(t.priority) : <span className="aw-faint">Normal</span>}</td>
-      <td data-label="Agent">{t.source === 'assistant' ? 'their assistant' : t.executor ?? <span className="aw-faint">Auto</span>}</td>
-      <td data-label="Cost" className="aw-num">{money(chargeOf(t).totalCents)}</td>
-      <td data-label="Updated" className="aw-muted">{ago(t.updated_at)} ago</td>
-    </tr>
   );
 }
 
