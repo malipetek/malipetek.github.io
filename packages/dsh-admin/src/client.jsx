@@ -1910,13 +1910,13 @@ function apply(ctx) {
     @container pta-inbox (max-width:740px){.pta-inbox__scrim{display:block;position:absolute;inset:0;z-index:9;background:var(--ui-scrim,rgba(0,0,0,.32))}.pta-inbox .pta-inbox__inspector{position:absolute;top:0;right:0;bottom:0;z-index:10;width:min(380px,calc(100% - 24px));max-width:100%;border-top:0;border-left:1px solid var(--ui-border,rgba(127,127,127,.22));background:var(--ui-bg-subtle,var(--dsw-alias-bg-elevated,#23252a));box-shadow:var(--ui-shadow,0 12px 32px rgba(0,0,0,.32))}.pta-inbox .pta-inbox__inspector .ui-resize{display:none}}
     .pta-dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%}
     .pta-id{flex:0 0 auto;font-variant-numeric:tabular-nums;font-size:11.5px;opacity:.6}
-    .pta-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
-    .pta-tag{flex:0 0 auto;padding:1px 5px;border-radius:4px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));font-size:10px;opacity:.8;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pta-title{flex:1 1 260px;min-width:16ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+    .pta-tag{flex:0 1 auto;padding:1px 5px;border-radius:4px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.3));font-size:10px;opacity:.8;max-width:130px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .pta-tag--client{border-color:transparent;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.14));opacity:.75}
     .pta-meta{flex:0 0 auto;font-size:11px;opacity:.55;white-space:nowrap}
     .pta-hint{margin:6px 2px 10px;font-size:10.5px;opacity:.45}
-    .pta-warn{flex:0 0 auto;font-size:11px;color:var(--dsw-alias-state-warning-primary,#d18f2e);white-space:nowrap}
-    .pta-fill{flex:1 1 auto;min-width:8px}
+    .pta-warn{flex:0 1 auto;min-width:0;max-width:150px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--dsw-alias-state-warning-primary,#d18f2e);white-space:nowrap}
+    .pta-fill{flex:0 0 8px;min-width:8px}
     .pta-actions{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto}
     .pta-btn{height:23px;padding:0 8px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.34));border-radius:5px;background:transparent;color:inherit;font:inherit;font-size:11.5px;line-height:1;white-space:nowrap;cursor:pointer}
     .pta-btn:hover{background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.1))}
