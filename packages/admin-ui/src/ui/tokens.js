@@ -72,6 +72,16 @@ const DARK = {
 export const PALETTE = Object.freeze({ light: Object.freeze({ ...LIGHT }), dark: Object.freeze({ ...DARK }) });
 export const ACCENT = '#FF5A1F';
 export const ACCENT_INK = '#FFFFFF';
+/**
+ * Fixed colours the legacy stylesheet (styles.js) interpolates, so raw colour
+ * stays in this file. Not theme tokens: like the `.aw` fallbacks they feed,
+ * they do not switch with the colour scheme. The rest of those fallbacks are
+ * the LIGHT values above.
+ */
+export const LEGACY_LITERALS = Object.freeze({
+  paper: '#F7F6F3', // the site's --paper: the legacy sidebar surface fallback
+  shade: '#000000', // darkening mixes and opaque mask-gradient stops
+});
 
 /** The public colour tokens and the host alias each one follows first. */
 const HOST = {

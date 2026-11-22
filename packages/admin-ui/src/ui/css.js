@@ -208,6 +208,20 @@ const PRIMITIVES_CSS = `
 .ui-contextbar__spacer { flex: 1; }
 .ui-contextbar__actions { display: flex; align-items: center; gap: var(--ui-sp-1); flex: none; }
 
+/* —— FilterBar: search, filters, fill, actions; wraps on narrow panes —— */
+.ui-filterbar {
+  display: flex; align-items: center; gap: var(--ui-sp-2); flex-wrap: wrap;
+  min-height: 30px; margin-bottom: var(--ui-sp-3); min-width: 0;
+}
+.ui-filterbar .aw-search {
+  padding-left: 28px;
+  background-repeat: no-repeat; background-position: 8px 50%; background-size: 14px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3'/%3E%3C/svg%3E");
+}
+@media (max-width: 600px) {
+  .ui-filterbar > select, .ui-filterbar > .aw-search { flex: 1 1 140px; }
+}
+
 /* —— forms and SaveBar —— */
 .ui-form { max-width: var(--ui-form-max); }
 .ui-savebar {

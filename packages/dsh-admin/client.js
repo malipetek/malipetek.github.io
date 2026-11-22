@@ -509,6 +509,27 @@ var __awPlugin = (() => {
     };
   }
 
+  // packages/admin-ui/src/ui/layer.js
+  var layers = [];
+  var isTop = (token) => layers[layers.length - 1] === token;
+  function useLayer() {
+    const [token] = useState(() => ({}));
+    useEffect(() => {
+      layers.push(token);
+      return () => {
+        const i = layers.indexOf(token);
+        if (i >= 0) layers.splice(i, 1);
+      };
+    }, [token]);
+    return token;
+  }
+  var layerOpen = () => layers.length > 0;
+  var uidSeq = 0;
+  var useUid = (prefix) => {
+    const [id] = useState(() => `${prefix}-${++uidSeq}`);
+    return id;
+  };
+
   // host-react:react/jsx-runtime
   var R2 = globalThis.__AW_REACT__;
   var Fragment2 = R2.Fragment;
@@ -520,14 +541,153 @@ var __awPlugin = (() => {
     return R2.createElement(type, key === void 0 ? rest : { ...rest, key }, ...children);
   }
 
+  // packages/admin-ui/src/ui/menu.jsx
+  var cx = (...parts) => parts.filter(Boolean).join(" ");
+  function Menu({ items, at, anchor, onClose, label = "Actions" }) {
+    const ref = useRef(null);
+    const layer = useLayer();
+    const list2 = items.filter(Boolean);
+    const actionable = list2.map((it, i) => it.separator || it.heading || it.disabled ? -1 : i).filter((i) => i >= 0);
+    const [active, setActive] = useState(actionable[0] ?? -1);
+    const [pos, setPos] = useState(() => ({ left: at?.x ?? 0, top: at?.y ?? 0, visibility: "hidden" }));
+    const opener = useRef(null);
+    const typed = useRef({ text: "", at: 0 });
+    useLayoutEffect(() => {
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const el = ref.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      let left = at?.x ?? 0;
+      let top = at?.y ?? 0;
+      if (anchor?.current) {
+        const a = anchor.current.getBoundingClientRect();
+        left = a.right - r.width;
+        top = a.bottom + 4;
+        if (left < 8) left = a.left;
+      }
+      left = Math.max(8, Math.min(left, window.innerWidth - r.width - 8));
+      if (top + r.height > window.innerHeight - 8) top = Math.max(8, (anchor?.current ? anchor.current.getBoundingClientRect().top - 4 : top) - r.height);
+      setPos({ left, top, visibility: "visible" });
+      el.focus();
+    }, []);
+    const close = useCallback((restore = true) => {
+      onClose();
+      if (restore) opener.current?.focus?.();
+    }, [onClose]);
+    useEffect(() => {
+      const down = (e) => {
+        if (ref.current && !ref.current.contains(e.target)) close(false);
+      };
+      const blur = () => close(false);
+      window.addEventListener("pointerdown", down, true);
+      window.addEventListener("blur", blur);
+      window.addEventListener("resize", blur);
+      return () => {
+        window.removeEventListener("pointerdown", down, true);
+        window.removeEventListener("blur", blur);
+        window.removeEventListener("resize", blur);
+      };
+    }, [close]);
+    const run = (item) => {
+      if (!item || item.disabled || item.separator || item.heading) return;
+      if (item.href) {
+        window.open(item.href, "_blank", "noopener,noreferrer");
+        close(false);
+        return;
+      }
+      close(true);
+      setTimeout(() => item.run?.(), 0);
+    };
+    const step = (dir) => {
+      if (!actionable.length) return;
+      const at0 = actionable.indexOf(active);
+      const next = at0 < 0 ? dir > 0 ? 0 : actionable.length - 1 : (at0 + dir + actionable.length) % actionable.length;
+      setActive(actionable[next]);
+    };
+    const onKey = (e) => {
+      if (!isTop(layer)) return;
+      e.stopPropagation();
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        step(1);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        step(-1);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        setActive(actionable[0]);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        setActive(actionable[actionable.length - 1]);
+      } else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        run(list2[active]);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        close(true);
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        close(true);
+      } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const now = Date.now();
+        typed.current = { text: (now - typed.current.at < 600 ? typed.current.text : "") + e.key.toLowerCase(), at: now };
+        const hit = actionable.find((i) => String(list2[i].label).toLowerCase().startsWith(typed.current.text));
+        if (hit != null) setActive(hit);
+      }
+    };
+    const menuId = useUid("aw-menu");
+    return /* @__PURE__ */ jsx(
+      "ul",
+      {
+        ref,
+        id: menuId,
+        className: "aw-menu",
+        role: "menu",
+        "aria-label": label,
+        tabIndex: -1,
+        "aria-activedescendant": active >= 0 ? `${menuId}-${active}` : void 0,
+        style: pos,
+        onKeyDown: onKey,
+        onClick: (e) => e.stopPropagation(),
+        onMouseDown: (e) => e.stopPropagation(),
+        onContextMenu: (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        },
+        children: list2.map(
+          (item, i) => item.separator ? /* @__PURE__ */ jsx("li", { className: "aw-menu__sep", role: "separator" }, `s${i}`) : item.heading ? /* @__PURE__ */ jsx("li", { className: "aw-menu__label", role: "presentation", children: item.heading }, `h${i}`) : /* @__PURE__ */ jsxs(
+            "li",
+            {
+              id: `${menuId}-${i}`,
+              role: "menuitem",
+              "aria-disabled": item.disabled || void 0,
+              className: cx("aw-menu__item", item.danger && "aw-menu__item--danger", i === active && "is-active"),
+              title: item.disabled ? item.disabledReason : item.hint,
+              onMouseEnter: () => setActive(item.disabled ? -1 : i),
+              onClick: () => run(item),
+              children: [
+                /* @__PURE__ */ jsxs("span", { children: [
+                  item.label,
+                  item.href ? /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: " \u2197" }) : null,
+                  item.href ? /* @__PURE__ */ jsx("span", { className: "aw-sr", children: " (opens in a new tab)" }) : null,
+                  item.disabled && item.disabledReason ? /* @__PURE__ */ jsxs("span", { className: "aw-sr", children: [
+                    " \u2014 ",
+                    item.disabledReason
+                  ] }) : null
+                ] }),
+                item.shortcut ? /* @__PURE__ */ jsx("small", { children: item.shortcut }) : null
+              ]
+            },
+            `${item.label}-${i}`
+          )
+        )
+      }
+    );
+  }
+
   // packages/admin-ui/src/ui.jsx
   var modalSeq = 0;
-  var uidSeq = 0;
-  var useUid = (prefix) => {
-    const [id] = useState(() => `${prefix}-${++uidSeq}`);
-    return id;
-  };
-  var cx = (...parts) => parts.filter(Boolean).join(" ");
+  var cx2 = (...parts) => parts.filter(Boolean).join(" ");
   function useMedia(query) {
     const read = () => typeof window !== "undefined" && Boolean(window.matchMedia?.(query).matches);
     const [match, setMatch] = useState(read);
@@ -550,7 +710,7 @@ var __awPlugin = (() => {
       "button",
       {
         type: "button",
-        className: cx("aw-btn", `aw-btn--${kind}`, size && `aw-btn--${size}`, iconOnly && "aw-btn--icon", className),
+        className: cx2("aw-btn", `aw-btn--${kind}`, size && `aw-btn--${size}`, iconOnly && "aw-btn--icon", className),
         disabled: isDisabled,
         "aria-busy": busy || props["aria-busy"] || void 0,
         "data-primary": kind === "primary" ? "true" : void 0,
@@ -571,9 +731,9 @@ var __awPlugin = (() => {
   }
   var StatusPill = ({ status }) => /* @__PURE__ */ jsx("span", { className: `aw-pill aw-pill--${status}`, children: STATUS_LABEL[status] ?? status });
   var Dot = ({ state }) => /* @__PURE__ */ jsx("span", { className: `aw-dot aw-dot--${state}`, "aria-hidden": "true" });
-  var Tag = ({ children, tone: tone2, title }) => /* @__PURE__ */ jsx("span", { className: cx("aw-tag", tone2 && `aw-tag--${tone2}`), title, children });
+  var Tag = ({ children, tone: tone2, title }) => /* @__PURE__ */ jsx("span", { className: cx2("aw-tag", tone2 && `aw-tag--${tone2}`), title, children });
   function EmptyState({ title, hint, action, icon, inline = false }) {
-    return /* @__PURE__ */ jsxs("div", { className: cx("aw-emptybox", inline && "aw-emptybox--inline"), children: [
+    return /* @__PURE__ */ jsxs("div", { className: cx2("aw-emptybox", inline && "aw-emptybox--inline"), children: [
       icon ? /* @__PURE__ */ jsx("span", { className: "aw-emptybox__icon", children: /* @__PURE__ */ jsx(Icon, { name: icon, size: 20 }) }) : null,
       /* @__PURE__ */ jsx("strong", { children: title }),
       hint ? /* @__PURE__ */ jsx("span", { className: "aw-emptybox__hint", children: hint }) : null,
@@ -582,7 +742,7 @@ var __awPlugin = (() => {
   }
   var Empty = EmptyState;
   function Skeleton({ variant = "text", lines = 3, rows = 6, label = "Loading\u2026" }) {
-    const bar = (w, extra) => /* @__PURE__ */ jsx("span", { className: cx("aw-skel__bar", extra), style: { width: w } });
+    const bar = (w, extra) => /* @__PURE__ */ jsx("span", { className: cx2("aw-skel__bar", extra), style: { width: w } });
     const widths = ["92%", "78%", "85%", "64%", "88%", "70%"];
     let body;
     if (variant === "board") {
@@ -617,7 +777,7 @@ var __awPlugin = (() => {
     } else {
       body = Array.from({ length: lines }, (_, i) => /* @__PURE__ */ jsx("span", { className: "aw-skel__bar", style: { width: widths[i % widths.length] } }, i));
     }
-    return /* @__PURE__ */ jsxs("div", { className: cx("aw-skel", (variant === "pane" || variant === "ticket") && "aw-skel--pane"), role: "status", "aria-live": "polite", children: [
+    return /* @__PURE__ */ jsxs("div", { className: cx2("aw-skel", (variant === "pane" || variant === "ticket") && "aw-skel--pane"), role: "status", "aria-live": "polite", children: [
       /* @__PURE__ */ jsx("span", { className: "aw-sr", children: label }),
       body
     ] });
@@ -661,11 +821,8 @@ var __awPlugin = (() => {
       ] }) : null
     ] });
   }
-  function Toolbar({ children, label }) {
-    return /* @__PURE__ */ jsx("div", { className: "aw-toolbar", role: "toolbar", "aria-label": label, children });
-  }
   function StatRow({ items }) {
-    return /* @__PURE__ */ jsx("div", { className: "aw-statrow", children: (items ?? []).map((it, i) => /* @__PURE__ */ jsxs("div", { className: cx("aw-statrow__item", it.tone && `aw-statrow__item--${it.tone}`), title: it.hint, children: [
+    return /* @__PURE__ */ jsx("div", { className: "aw-statrow", children: (items ?? []).map((it, i) => /* @__PURE__ */ jsxs("div", { className: cx2("aw-statrow__item", it.tone && `aw-statrow__item--${it.tone}`), title: it.hint, children: [
       /* @__PURE__ */ jsx("strong", { children: it.value }),
       /* @__PURE__ */ jsx("small", { children: it.label })
     ] }, i)) });
@@ -721,7 +878,7 @@ var __awPlugin = (() => {
         window.removeEventListener("pointerup", up);
       };
     }, [host, cssVar, def, min, max, invert, storage2]);
-    return /* @__PURE__ */ jsx("div", { ref, className: cx("aw-resize", className), role: "separator", "aria-orientation": "vertical", "aria-label": "Resize pane", tabIndex: 0 });
+    return /* @__PURE__ */ jsx("div", { ref, className: cx2("aw-resize", className), role: "separator", "aria-orientation": "vertical", "aria-label": "Resize pane", tabIndex: 0 });
   }
   function Segmented({ value, options, onChange, disabled, label }) {
     const ref = useRef(null);
@@ -802,19 +959,6 @@ var __awPlugin = (() => {
     ] });
   }
   var FOCUSABLE = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
-  var layers = [];
-  var isTop = (token) => layers[layers.length - 1] === token;
-  function useLayer() {
-    const [token] = useState(() => ({}));
-    useEffect(() => {
-      layers.push(token);
-      return () => {
-        const i = layers.indexOf(token);
-        if (i >= 0) layers.splice(i, 1);
-      };
-    }, [token]);
-    return token;
-  }
   function Modal({ title, subtitle, onClose, children, actions, wide, full, focus, sheet }) {
     const ref = useRef(null);
     const layer = useLayer();
@@ -850,7 +994,7 @@ var __awPlugin = (() => {
       window.addEventListener("keydown", onKey);
       return () => window.removeEventListener("keydown", onKey);
     }, [onClose, layer]);
-    return /* @__PURE__ */ jsx("div", { className: "aw-scrim", onMouseDown: (e) => e.target === e.currentTarget && onClose(), children: /* @__PURE__ */ jsxs("div", { className: cx("aw-modal", wide && "aw-modal--wide", full && "aw-modal--full", sheet && "aw-modal--sheet"), role: "dialog", "aria-modal": "true", "aria-labelledby": titleId, ref, tabIndex: -1, children: [
+    return /* @__PURE__ */ jsx("div", { className: "aw-scrim", onMouseDown: (e) => e.target === e.currentTarget && onClose(), children: /* @__PURE__ */ jsxs("div", { className: cx2("aw-modal", wide && "aw-modal--wide", full && "aw-modal--full", sheet && "aw-modal--sheet"), role: "dialog", "aria-modal": "true", "aria-labelledby": titleId, ref, tabIndex: -1, children: [
       /* @__PURE__ */ jsxs("header", { className: "aw-modal__head", children: [
         /* @__PURE__ */ jsxs("div", { children: [
           /* @__PURE__ */ jsx("h2", { id: titleId, children: title }),
@@ -900,144 +1044,10 @@ var __awPlugin = (() => {
   }
   function Toast({ toast, onDismiss }) {
     if (!toast) return null;
-    return /* @__PURE__ */ jsxs("div", { className: cx("aw-toast", toast.kind === "error" && "is-error"), role: toast.kind === "error" ? "alert" : "status", children: [
+    return /* @__PURE__ */ jsxs("div", { className: cx2("aw-toast", toast.kind === "error" && "is-error"), role: toast.kind === "error" ? "alert" : "status", children: [
       /* @__PURE__ */ jsx("span", { children: toast.text }),
       /* @__PURE__ */ jsx("button", { type: "button", className: "aw-toast__close", "aria-label": "Dismiss", onClick: onDismiss, children: /* @__PURE__ */ jsx(Icon, { name: "close", size: 14 }) })
     ] });
-  }
-  function Menu({ items, at, anchor, onClose, label = "Actions" }) {
-    const ref = useRef(null);
-    const layer = useLayer();
-    const list2 = items.filter(Boolean);
-    const actionable = list2.map((it, i) => it.separator || it.heading || it.disabled ? -1 : i).filter((i) => i >= 0);
-    const [active, setActive] = useState(actionable[0] ?? -1);
-    const [pos, setPos] = useState(() => ({ left: at?.x ?? 0, top: at?.y ?? 0, visibility: "hidden" }));
-    const opener = useRef(null);
-    const typed = useRef({ text: "", at: 0 });
-    useLayoutEffect(() => {
-      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      const el = ref.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      let left = at?.x ?? 0;
-      let top = at?.y ?? 0;
-      if (anchor?.current) {
-        const a = anchor.current.getBoundingClientRect();
-        left = a.right - r.width;
-        top = a.bottom + 4;
-        if (left < 8) left = a.left;
-      }
-      left = Math.max(8, Math.min(left, window.innerWidth - r.width - 8));
-      if (top + r.height > window.innerHeight - 8) top = Math.max(8, (anchor?.current ? anchor.current.getBoundingClientRect().top - 4 : top) - r.height);
-      setPos({ left, top, visibility: "visible" });
-      el.focus();
-    }, []);
-    const close = useCallback((restore = true) => {
-      onClose();
-      if (restore) opener.current?.focus?.();
-    }, [onClose]);
-    useEffect(() => {
-      const down = (e) => {
-        if (ref.current && !ref.current.contains(e.target)) close(false);
-      };
-      const blur = () => close(false);
-      window.addEventListener("pointerdown", down, true);
-      window.addEventListener("blur", blur);
-      window.addEventListener("resize", blur);
-      return () => {
-        window.removeEventListener("pointerdown", down, true);
-        window.removeEventListener("blur", blur);
-        window.removeEventListener("resize", blur);
-      };
-    }, [close]);
-    const run = (item) => {
-      if (!item || item.disabled || item.separator || item.heading) return;
-      close(true);
-      setTimeout(() => item.run?.(), 0);
-    };
-    const step = (dir) => {
-      if (!actionable.length) return;
-      const at0 = actionable.indexOf(active);
-      const next = at0 < 0 ? dir > 0 ? 0 : actionable.length - 1 : (at0 + dir + actionable.length) % actionable.length;
-      setActive(actionable[next]);
-    };
-    const onKey = (e) => {
-      if (!isTop(layer)) return;
-      e.stopPropagation();
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        step(1);
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        step(-1);
-      } else if (e.key === "Home") {
-        e.preventDefault();
-        setActive(actionable[0]);
-      } else if (e.key === "End") {
-        e.preventDefault();
-        setActive(actionable[actionable.length - 1]);
-      } else if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        run(list2[active]);
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        close(true);
-      } else if (e.key === "Tab") {
-        e.preventDefault();
-        close(true);
-      } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        const now = Date.now();
-        typed.current = { text: (now - typed.current.at < 600 ? typed.current.text : "") + e.key.toLowerCase(), at: now };
-        const hit = actionable.find((i) => String(list2[i].label).toLowerCase().startsWith(typed.current.text));
-        if (hit != null) setActive(hit);
-      }
-    };
-    const menuId = useUid("aw-menu");
-    return /* @__PURE__ */ jsx(
-      "ul",
-      {
-        ref,
-        id: menuId,
-        className: "aw-menu",
-        role: "menu",
-        "aria-label": label,
-        tabIndex: -1,
-        "aria-activedescendant": active >= 0 ? `${menuId}-${active}` : void 0,
-        style: pos,
-        onKeyDown: onKey,
-        onClick: (e) => e.stopPropagation(),
-        onMouseDown: (e) => e.stopPropagation(),
-        onContextMenu: (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        },
-        children: list2.map(
-          (item, i) => item.separator ? /* @__PURE__ */ jsx("li", { className: "aw-menu__sep", role: "separator" }, `s${i}`) : item.heading ? /* @__PURE__ */ jsx("li", { className: "aw-menu__label", role: "presentation", children: item.heading }, `h${i}`) : /* @__PURE__ */ jsxs(
-            "li",
-            {
-              id: `${menuId}-${i}`,
-              role: "menuitem",
-              "aria-disabled": item.disabled || void 0,
-              className: cx("aw-menu__item", item.danger && "aw-menu__item--danger", i === active && "is-active"),
-              title: item.disabled ? item.disabledReason : item.hint,
-              onMouseEnter: () => setActive(item.disabled ? -1 : i),
-              onClick: () => run(item),
-              children: [
-                /* @__PURE__ */ jsxs("span", { children: [
-                  item.label,
-                  item.disabled && item.disabledReason ? /* @__PURE__ */ jsxs("span", { className: "aw-sr", children: [
-                    " \u2014 ",
-                    item.disabledReason
-                  ] }) : null
-                ] }),
-                item.shortcut ? /* @__PURE__ */ jsx("small", { children: item.shortcut }) : null
-              ]
-            },
-            `${item.label}-${i}`
-          )
-        )
-      }
-    );
   }
   function OverflowMenu({ items, label = "More actions", size }) {
     const [open, setOpen] = useState(false);
@@ -1095,10 +1105,15 @@ var __awPlugin = (() => {
     chevronLeft: "M15 6l-6 6 6 6",
     sidebar: "M4 5h16v14H4zM9 5v14",
     keyboard: "M3 7h18v10H3zM7 11h.01M11 11h.01M15 11h.01M7 14h10",
-    check: "M5 12l5 5 9-10"
+    check: "M5 12l5 5 9-10",
+    pause: "M9 5v14M15 5v14",
+    branch: "M6 3v12a3 3 0 1 0 3 3M6 9h8a4 4 0 0 0 4-4M18 3v4M4 3h4",
+    globe: "M21 12a9 9 0 1 0-18 0 9 9 0 0 0 18 0M3 12h18M12 3c4 5 4 13 0 18-4-5-4-13 0-18",
+    file: "M14 3H5v18h14V8l-5-5v5h5M8 12h8M8 16h8"
   };
+  var WEIGHT = { more: 2.6, pause: 2.2 };
   function Icon({ name, size = 16 }) {
-    return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: name === "more" ? 2.6 : 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", focusable: "false", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] ?? PATHS.list }) });
+    return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: WEIGHT[name] ?? 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", focusable: "false", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] ?? PATHS.list }) });
   }
 
   // packages/admin-ui/src/row-navigation.mjs
@@ -1176,6 +1191,12 @@ var __awPlugin = (() => {
   var PALETTE = Object.freeze({ light: Object.freeze({ ...LIGHT }), dark: Object.freeze({ ...DARK }) });
   var ACCENT = "#FF5A1F";
   var ACCENT_INK = "#FFFFFF";
+  var LEGACY_LITERALS = Object.freeze({
+    paper: "#F7F6F3",
+    // the site's --paper: the legacy sidebar surface fallback
+    shade: "#000000"
+    // darkening mixes and opaque mask-gradient stops
+  });
   var HOST = {
     bg: ["--dsw-alias-bg-base"],
     "bg-subtle": ["--dsw-alias-bg-layer-1"],
@@ -1454,6 +1475,20 @@ ${block(Object.entries(TOKENS))}
 .ui-contextbar__spacer { flex: 1; }
 .ui-contextbar__actions { display: flex; align-items: center; gap: var(--ui-sp-1); flex: none; }
 
+/* \u2014\u2014 FilterBar: search, filters, fill, actions; wraps on narrow panes \u2014\u2014 */
+.ui-filterbar {
+  display: flex; align-items: center; gap: var(--ui-sp-2); flex-wrap: wrap;
+  min-height: 30px; margin-bottom: var(--ui-sp-3); min-width: 0;
+}
+.ui-filterbar .aw-search {
+  padding-left: 28px;
+  background-repeat: no-repeat; background-position: 8px 50%; background-size: 14px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3'/%3E%3C/svg%3E");
+}
+@media (max-width: 600px) {
+  .ui-filterbar > select, .ui-filterbar > .aw-search { flex: 1 1 140px; }
+}
+
 /* \u2014\u2014 forms and SaveBar \u2014\u2014 */
 .ui-form { max-width: var(--ui-form-max); }
 .ui-savebar {
@@ -1583,7 +1618,7 @@ ${block(Object.entries(TOKENS))}
       "button",
       {
         type: "button",
-        className: cx("ui-btn", kind !== "secondary" && `ui-btn--${kind}`, size === "sm" && "ui-btn--sm", className),
+        className: cx2("ui-btn", kind !== "secondary" && `ui-btn--${kind}`, size === "sm" && "ui-btn--sm", className),
         "data-primary": kind === "primary" ? "true" : void 0,
         disabled: Boolean(disabled || busy),
         "aria-busy": busy || void 0,
@@ -1597,7 +1632,7 @@ ${block(Object.entries(TOKENS))}
     return /* @__PURE__ */ jsxs(
       "span",
       {
-        className: cx("ui-state", dotOnly && "ui-state--dot-only", className),
+        className: cx2("ui-state", dotOnly && "ui-state--dot-only", className),
         "data-state": s.key,
         "data-tone": s.tone,
         "data-live": s.live ? "" : void 0,
@@ -1612,8 +1647,9 @@ ${block(Object.entries(TOKENS))}
     );
   }
   function MetaChip({ children, title, mono = false, className }) {
-    return /* @__PURE__ */ jsx("span", { className: cx("ui-chip", mono && "ui-chip--mono", className), title, children });
+    return /* @__PURE__ */ jsx("span", { className: cx2("ui-chip", mono && "ui-chip--mono", className), title, children });
   }
+  var CELL_CONTROL = 'button, a[href], input, select, textarea, [contenteditable], [role="button"], label';
   function DataTable({
     columns,
     rows = [],
@@ -1652,6 +1688,7 @@ ${block(Object.entries(TOKENS))}
       if (items.length) setMenuState({ x, y, items });
     };
     const onKey = (i) => (e) => {
+      if (e.target !== e.currentTarget && e.target?.closest?.(CELL_CONTROL)) return;
       const action = tableKeyAction(e, i, rows.length);
       if (!action) return;
       e.preventDefault();
@@ -1684,7 +1721,7 @@ ${block(Object.entries(TOKENS))}
     }) }) });
     if (status === "error") {
       const text = typeof error === "string" ? error : error?.message ?? "Something went wrong.";
-      return /* @__PURE__ */ jsx("div", { className: cx("ui-table-wrap", className), children: /* @__PURE__ */ jsxs("div", { className: "ui-table__note ui-table__note--error", role: "alert", children: [
+      return /* @__PURE__ */ jsx("div", { className: cx2("ui-table-wrap", className), children: /* @__PURE__ */ jsxs("div", { className: "ui-table__note ui-table__note--error", role: "alert", children: [
         /* @__PURE__ */ jsxs("strong", { children: [
           "Could not load ",
           label ? label.toLowerCase() : "this list"
@@ -1694,7 +1731,7 @@ ${block(Object.entries(TOKENS))}
       ] }) });
     }
     if (status === "ready" && rows.length === 0) {
-      return /* @__PURE__ */ jsx("div", { className: cx("ui-table-wrap", className), children: /* @__PURE__ */ jsxs("div", { className: "ui-table__note", role: "status", children: [
+      return /* @__PURE__ */ jsx("div", { className: cx2("ui-table-wrap", className), children: /* @__PURE__ */ jsxs("div", { className: "ui-table__note", role: "status", children: [
         /* @__PURE__ */ jsx("strong", { children: empty?.title ?? "Nothing here yet" }),
         empty?.hint ?? null,
         empty?.action ? /* @__PURE__ */ jsx("div", { children: empty.action }) : null
@@ -1702,7 +1739,7 @@ ${block(Object.entries(TOKENS))}
     }
     const loading = status === "loading";
     const tabStop = selIndex >= 0 ? selIndex : 0;
-    return /* @__PURE__ */ jsxs("div", { className: cx("ui-table-wrap", className), children: [
+    return /* @__PURE__ */ jsxs("div", { className: cx2("ui-table-wrap", className), children: [
       /* @__PURE__ */ jsxs("table", { className: "ui-table", role: "grid", "aria-label": label, "aria-busy": loading || void 0, "aria-rowcount": loading ? void 0 : rows.length + 1, children: [
         head,
         /* @__PURE__ */ jsx("tbody", { ref: body, children: loading ? Array.from({ length: skeletonRows }, (_, i) => /* @__PURE__ */ jsx("tr", { className: "ui-row ui-row--skeleton", "aria-hidden": "true", children: cols.map((c) => /* @__PURE__ */ jsx("td", { "data-fit": c.fit ? "" : void 0 }, c.key)) }, `sk${i}`)) : rows.map((row, i) => /* @__PURE__ */ jsx(
@@ -1782,7 +1819,7 @@ ${block(Object.entries(TOKENS))}
     return /* @__PURE__ */ jsxs(
       "aside",
       {
-        className: cx("ui-inspector", className),
+        className: cx2("ui-inspector", className),
         "aria-label": name,
         style: { "--ui-inspector-w": `${width}px` },
         onKeyDown: onClose ? (e) => {
@@ -1818,8 +1855,11 @@ ${block(Object.entries(TOKENS))}
       }
     );
   }
+  function FilterBar({ children, label = "Filters", className }) {
+    return /* @__PURE__ */ jsx("div", { className: cx2("ui-filterbar", className), role: "toolbar", "aria-label": label, children });
+  }
   function FormPane({ children, className, ...props }) {
-    return /* @__PURE__ */ jsx("div", { className: cx("ui-form", className), ...props, children });
+    return /* @__PURE__ */ jsx("div", { className: cx2("ui-form", className), ...props, children });
   }
   function SaveBar({ dirty = false, saving = false, error, onSave, onDiscard, saveLabel = "Save changes", discardLabel = "Discard", message }) {
     useEffect(() => {
@@ -1881,7 +1921,7 @@ ${block(Object.entries(TOKENS))}
     f.setKind("all");
     f.setQ("");
   };
-  function FilterBar({ f, extra }) {
+  function BoardFilters({ f, extra }) {
     const { data, platform } = useAdmin();
     const search = useRef(null);
     useEffect(() => {
@@ -1895,7 +1935,7 @@ ${block(Object.entries(TOKENS))}
       window.addEventListener("keydown", onKey);
       return () => window.removeEventListener("keydown", onKey);
     }, [platform]);
-    return /* @__PURE__ */ jsxs(Toolbar, { label: "Filters", children: [
+    return /* @__PURE__ */ jsxs(FilterBar, { label: "Filters", children: [
       /* @__PURE__ */ jsx("input", { ref: search, className: "aw-search", type: "search", value: f.q, "aria-label": "Filter, or search threads", "aria-keyshortcuts": platform === "web" ? "/" : void 0, placeholder: "Filter, or search threads\u2026", onChange: (e) => f.setQ(e.target.value) }),
       /* @__PURE__ */ jsxs("select", { value: f.boardProject, onChange: (e) => f.setBoardProject(e.target.value), "aria-label": "Project", children: [
         /* @__PURE__ */ jsx("option", { value: "all", children: "All projects" }),
@@ -1967,7 +2007,7 @@ ${block(Object.entries(TOKENS))}
   var LEAD_MOVE = { new: "approved", review: "done" };
   var closeOnEscape = (selected, close) => (e) => {
     if (e.key !== "Escape" || e.defaultPrevented || selected == null) return;
-    if (e.target?.closest?.('input, textarea, select, [contenteditable], [role="menu"], [role="dialog"]')) return;
+    if (layerOpen() || e.target?.closest?.('input, textarea, select, [contenteditable], [role="dialog"]')) return;
     e.preventDefault();
     close();
   };
@@ -2094,7 +2134,7 @@ ${block(Object.entries(TOKENS))}
         "aria-label": `#${t.id} ${t.title}`,
         "aria-current": selected ? "true" : void 0,
         "data-selected": selected ? "" : void 0,
-        className: cx("aw-card", "ui-selectable", run && "is-running", queued && !queued.eligible.length && "is-stuck"),
+        className: cx2("aw-card", "ui-selectable", run && "is-running", queued && !queued.eligible.length && "is-stuck"),
         draggable,
         onDragStart: (e) => {
           e.dataTransfer.setData("text/x-ticket", String(t.id));
@@ -2157,7 +2197,7 @@ ${block(Object.entries(TOKENS))}
     return /* @__PURE__ */ jsxs("div", { className: "ui-workspace", onKeyDown: closeOnEscape(selected?.id, close), children: [
       /* @__PURE__ */ jsx(UiStyles, {}),
       /* @__PURE__ */ jsx(PageHeader, { title: "Board", subtitle: "Every request by status. Click a card to inspect it; drag it to another column, or right-click it, to move it.", actions: /* @__PURE__ */ jsx(NewTaskButton, { f, quiet: Boolean(selected) }) }),
-      /* @__PURE__ */ jsx(FilterBar, { f, extra: /* @__PURE__ */ jsx(Segmented, { label: "Columns", value: showClosed, options: [{ value: false, label: "Open" }, { value: true, label: "+ Declined" }], onChange: setShowClosed }) }),
+      /* @__PURE__ */ jsx(BoardFilters, { f, extra: /* @__PURE__ */ jsx(Segmented, { label: "Columns", value: showClosed, options: [{ value: false, label: "Open" }, { value: true, label: "+ Declined" }], onChange: setShowClosed }) }),
       /* @__PURE__ */ jsxs("div", { className: "ui-split", children: [
         /* @__PURE__ */ jsx("div", { className: "ui-split__main", children: /* @__PURE__ */ jsx("div", { className: "aw-board", children: columns.map((s) => {
           let items = tickets.filter((t) => t.status === s);
@@ -2166,7 +2206,7 @@ ${block(Object.entries(TOKENS))}
           return /* @__PURE__ */ jsxs(
             "section",
             {
-              className: cx("aw-col", over === s && "is-over"),
+              className: cx2("aw-col", over === s && "is-over"),
               onDragOver: (e) => {
                 e.preventDefault();
                 setOver(s);
@@ -2251,7 +2291,7 @@ ${block(Object.entries(TOKENS))}
       /* @__PURE__ */ jsx(UiStyles, {}),
       /* @__PURE__ */ jsx(PageHeader, { title: "All work", subtitle: "Every request in one table. Click a column to sort; select a row to inspect it, Enter to open it.", actions: /* @__PURE__ */ jsx(NewTaskButton, { f, quiet: Boolean(selected) }) }),
       /* @__PURE__ */ jsx(
-        FilterBar,
+        BoardFilters,
         {
           f,
           extra: /* @__PURE__ */ jsxs("select", { value: status, onChange: (e) => setStatusFilter(e.target.value), "aria-label": "Status", children: [
@@ -2703,7 +2743,7 @@ ${block(Object.entries(TOKENS))}
       };
     }, [ticket.project_slug, gitRef, gitGraph, host, retry]);
     const View2 = gitGraph.View;
-    return /* @__PURE__ */ jsx(Modal, { kind: "confirm", title: `Review #${ticket.id}`, subtitle: `${attribution} \xB7 ${state.text}`, onClose, full: true, children: /* @__PURE__ */ jsx("div", { className: "aw-review", children: state.status === "ready" ? /* @__PURE__ */ jsx(View2, { sessionId: state.sessionId }) : /* @__PURE__ */ jsxs("div", { className: cx("aw-empty", state.status === "failed" && "aw-error"), role: state.status === "failed" ? "alert" : "status", children: [
+    return /* @__PURE__ */ jsx(Modal, { kind: "confirm", title: `Review #${ticket.id}`, subtitle: `${attribution} \xB7 ${state.text}`, onClose, full: true, children: /* @__PURE__ */ jsx("div", { className: "aw-review", children: state.status === "ready" ? /* @__PURE__ */ jsx(View2, { sessionId: state.sessionId }) : /* @__PURE__ */ jsxs("div", { className: cx2("aw-empty", state.status === "failed" && "aw-error"), role: state.status === "failed" ? "alert" : "status", children: [
       state.text,
       state.status === "failed" ? /* @__PURE__ */ jsx(Button, { onClick: () => setRetry((n) => n + 1), children: "Retry repository review" }) : null
     ] }) }) });
@@ -3032,7 +3072,7 @@ ${block(Object.entries(TOKENS))}
     }
     const isClient = ticket.kind !== "system";
     const via = assistantBadge(ticket);
-    return /* @__PURE__ */ jsxs("div", { className: cx("aw-ticket", !details && "aw-ticket--solo"), children: [
+    return /* @__PURE__ */ jsxs("div", { className: cx2("aw-ticket", !details && "aw-ticket--solo"), children: [
       details ? /* @__PURE__ */ jsx(Resizer, { host: ".aw-ticket", cssVar: "--aw-details-w", def: 300, min: 200, max: 640, invert: true, storage: "aw.details.w", className: "aw-resize--details" }) : null,
       /* @__PURE__ */ jsxs("div", { className: "aw-ticket__main", children: [
         error ? /* @__PURE__ */ jsxs("div", { className: "aw-banner aw-banner--warn", role: "alert", children: [
@@ -3189,7 +3229,7 @@ ${block(Object.entries(TOKENS))}
     if (!review) return null;
     const tone2 = review.verdict === "pass" ? "ok" : review.verdict === "attention" ? "warn" : "bad";
     const label = review.verdict === "pass" ? "pass" : review.verdict === "attention" ? "check" : "fail";
-    return /* @__PURE__ */ jsxs("section", { className: cx("aw-prereview", `aw-prereview--${tone2}`), children: [
+    return /* @__PURE__ */ jsxs("section", { className: cx2("aw-prereview", `aw-prereview--${tone2}`), children: [
       /* @__PURE__ */ jsxs("header", { children: [
         /* @__PURE__ */ jsx(Dot, { state: tone2 }),
         /* @__PURE__ */ jsxs("strong", { children: [
@@ -3253,7 +3293,7 @@ ${block(Object.entries(TOKENS))}
       "button",
       {
         type: "button",
-        className: cx("aw-fold__chev", fold.open && "is-open"),
+        className: cx2("aw-fold__chev", fold.open && "is-open"),
         "aria-expanded": fold.open,
         "aria-label": fold.open ? "Fold" : "Unfold",
         onClick: (e) => {
@@ -3274,8 +3314,8 @@ ${block(Object.entries(TOKENS))}
     const translated = m.original !== void 0;
     const body = translated && original ? m.original : m.body;
     const fold = useFold(body, latest);
-    return /* @__PURE__ */ jsxs("li", { className: cx("aw-msg", `aw-msg--${m.author}`, m.internal === 1 && "is-private"), children: [
-      /* @__PURE__ */ jsxs("header", { className: cx(fold.long && "aw-fold"), onClick: fold.toggle, children: [
+    return /* @__PURE__ */ jsxs("li", { className: cx2("aw-msg", `aw-msg--${m.author}`, m.internal === 1 && "is-private"), children: [
+      /* @__PURE__ */ jsxs("header", { className: cx2(fold.long && "aw-fold"), onClick: fold.toggle, children: [
         /* @__PURE__ */ jsx(FoldChevron, { fold }),
         /* @__PURE__ */ jsx("strong", { children: m.author === "ali" ? "You" : m.author === "client" ? ticket.client_name ?? ticket.client_email ?? "Client" : m.author }),
         m.internal === 1 ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "private \xB7 agent reads it" }) : m.author === "ali" ? /* @__PURE__ */ jsx(Tag, { tone: "client", children: "emailed" }) : null,
@@ -3294,7 +3334,7 @@ ${block(Object.entries(TOKENS))}
         ) : null,
         /* @__PURE__ */ jsx("time", { children: when(m.created_at) })
       ] }),
-      body ? /* @__PURE__ */ jsx("div", { className: cx("aw-msg__body", fold.long && !fold.open && "is-clipped"), children: body }) : null,
+      body ? /* @__PURE__ */ jsx("div", { className: cx2("aw-msg__body", fold.long && !fold.open && "is-clipped"), children: body }) : null,
       fold.long ? /* @__PURE__ */ jsx(FoldMore, { fold, text: body }) : null,
       m.files?.length ? /* @__PURE__ */ jsx(FileChips, { ticketId: ticket.id, files: m.files }) : null
     ] });
@@ -3381,8 +3421,8 @@ ${block(Object.entries(TOKENS))}
     const live = run.status === "running";
     const summary = run.summary ?? "";
     const fold = useFold(summary, latest);
-    return /* @__PURE__ */ jsxs("li", { className: cx("aw-run", `aw-run--${live ? "live" : run.status}`), children: [
-      /* @__PURE__ */ jsxs("header", { className: cx(fold.long && "aw-fold"), onClick: fold.toggle, children: [
+    return /* @__PURE__ */ jsxs("li", { className: cx2("aw-run", `aw-run--${live ? "live" : run.status}`), children: [
+      /* @__PURE__ */ jsxs("header", { className: cx2(fold.long && "aw-fold"), onClick: fold.toggle, children: [
         /* @__PURE__ */ jsx(FoldChevron, { fold }),
         live ? /* @__PURE__ */ jsx("span", { className: "aw-live" }) : /* @__PURE__ */ jsx(Dot, { state: run.status === "ok" ? "ok" : "bad" }),
         /* @__PURE__ */ jsxs("strong", { children: [
@@ -3408,7 +3448,7 @@ ${block(Object.entries(TOKENS))}
         ] })
       ] }),
       /* @__PURE__ */ jsx(RunSteps, { run, live }),
-      summary ? /* @__PURE__ */ jsx("div", { className: cx("aw-run__summary", fold.long && !fold.open && "is-clipped"), children: summary }) : live ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Working\u2026 the report appears here when it finishes." }) : null,
+      summary ? /* @__PURE__ */ jsx("div", { className: cx2("aw-run__summary", fold.long && !fold.open && "is-clipped"), children: summary }) : live ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Working\u2026 the report appears here when it finishes." }) : null,
       /* @__PURE__ */ jsxs("footer", { children: [
         fold.long ? /* @__PURE__ */ jsx(FoldMore, { fold, text: summary }) : null,
         run.diff_stat ? /* @__PURE__ */ jsx("code", { className: "aw-muted", children: run.diff_stat.split("\n").pop() }) : null,
@@ -3561,7 +3601,7 @@ ${block(Object.entries(TOKENS))}
         setBusy(false);
       }
     };
-    return /* @__PURE__ */ jsxs("div", { className: cx("aw-composer", note && "is-note"), children: [
+    return /* @__PURE__ */ jsxs("div", { className: cx2("aw-composer", note && "is-note"), children: [
       /* @__PURE__ */ jsxs("div", { className: "aw-composer__head", children: [
         isClient ? /* @__PURE__ */ jsx(
           Segmented,
@@ -3769,7 +3809,7 @@ ${block(Object.entries(TOKENS))}
     const queued = data.queue.find((q) => q.id === ticket.id);
     const where = predict(data.nodes, { slug: ticket.project_slug, requires, executor: ticket.executor, kind: ticket.kind });
     const price = billOf({ humanSeconds: meter.seconds, aiMicroUsd: ticket.ai_micro_usd ?? 0, firstPreview: Boolean(ticket.first_preview) });
-    return /* @__PURE__ */ jsxs("aside", { className: cx("aw-details", page && "aw-details--page"), "aria-label": "Details", children: [
+    return /* @__PURE__ */ jsxs("aside", { className: cx2("aw-details", page && "aw-details--page"), "aria-label": "Details", children: [
       /* @__PURE__ */ jsx(TicketActions, { ticket, runs, land, reload }),
       /* @__PURE__ */ jsxs("div", { className: "aw-details__pair", children: [
         /* @__PURE__ */ jsx(Field, { label: "Project", children: /* @__PURE__ */ jsxs("select", { value: ticket.project_id ?? "", onChange: (e) => void patch({ projectId: e.target.value || null }, "Project saved."), children: [
@@ -3893,7 +3933,7 @@ ${block(Object.entries(TOKENS))}
   // packages/admin-ui/src/health.jsx
   var tone = (status) => status === "ok" ? "ok" : status === "fail" ? "bad" : "warn";
   function CheckRow({ check }) {
-    return /* @__PURE__ */ jsxs("li", { className: cx("aw-health__row", `aw-health__row--${tone(check.status)}`), children: [
+    return /* @__PURE__ */ jsxs("li", { className: cx2("aw-health__row", `aw-health__row--${tone(check.status)}`), children: [
       /* @__PURE__ */ jsx(Dot, { state: tone(check.status) }),
       /* @__PURE__ */ jsx("strong", { className: "aw-health__name", children: check.label }),
       /* @__PURE__ */ jsx("span", { className: "aw-health__detail aw-muted", title: check.detail, children: check.detail }),
@@ -4274,7 +4314,7 @@ ${block(Object.entries(TOKENS))}
       ] })
     ] });
     const askAgain = () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(OnboardingModal, { m, onClose: close }) });
-    return /* @__PURE__ */ jsxs("article", { className: cx("aw-node", "aw-machine", `aw-node--${STATE_DOT[m.state] ?? "warn"}`), children: [
+    return /* @__PURE__ */ jsxs("article", { className: cx2("aw-node", "aw-machine", `aw-node--${STATE_DOT[m.state] ?? "warn"}`), children: [
       /* @__PURE__ */ jsxs("header", { children: [
         /* @__PURE__ */ jsx(Dot, { state: STATE_DOT[m.state] }),
         /* @__PURE__ */ jsx("h3", { children: "This Mac" }),
@@ -4292,7 +4332,7 @@ ${block(Object.entries(TOKENS))}
           /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => m.stopNow(), children: "Stop now" })
         ] }) : m.consented ? /* @__PURE__ */ jsx(Button, { size: "sm", kind: "primary", onClick: () => void m.start(), children: m.svc?.loaded ? "Start worker" : "Install worker" }) : null
       ] }),
-      /* @__PURE__ */ jsx("p", { className: cx("aw-mstate", (m.state === "off" || m.state === "unset") && "aw-warn"), children: stateLine(m) }),
+      /* @__PURE__ */ jsx("p", { className: cx2("aw-mstate", (m.state === "off" || m.state === "unset") && "aw-warn"), children: stateLine(m) }),
       m.error ? /* @__PURE__ */ jsxs("p", { className: "aw-warn", children: [
         "Could not read this Mac\u2019s worker: ",
         m.error
@@ -4372,7 +4412,7 @@ ${block(Object.entries(TOKENS))}
   function ServerRow({ server, target, busy, onToggle, onRemove }) {
     const on = enabled(server);
     const env = [...server.envKeys ?? [], ...server.headerKeys ?? []];
-    return /* @__PURE__ */ jsxs("li", { className: cx("aw-toolbox__row", !on && "is-off"), children: [
+    return /* @__PURE__ */ jsxs("li", { className: cx2("aw-toolbox__row", !on && "is-off"), children: [
       /* @__PURE__ */ jsx(Dot, { state: on ? "ok" : "warn" }),
       /* @__PURE__ */ jsxs("div", { className: "aw-toolbox__main", children: [
         /* @__PURE__ */ jsxs("div", { className: "aw-toolbox__title", children: [
@@ -5105,7 +5145,7 @@ ${block(Object.entries(TOKENS))}
     return /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter", title: `${label}: ${pct(rate ?? 0)} of the ${pct(limit)} limit`, children: [
       /* @__PURE__ */ jsx("span", { className: "aw-mk-meter__label", children: label }),
       /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter__track", children: [
-        /* @__PURE__ */ jsx("i", { className: cx("aw-mk-meter__fill", `aw-mk-meter__fill--${tone2}`), style: { width: `${pctOf * 80}%` } }),
+        /* @__PURE__ */ jsx("i", { className: cx2("aw-mk-meter__fill", `aw-mk-meter__fill--${tone2}`), style: { width: `${pctOf * 80}%` } }),
         /* @__PURE__ */ jsx("i", { className: "aw-mk-meter__limit" })
       ] }),
       /* @__PURE__ */ jsxs("span", { className: "aw-mk-meter__num", children: [
@@ -10889,27 +10929,28 @@ ${block(Object.entries(TOKENS))}
   }
 
   // packages/admin-ui/src/styles.js
+  var LIGHT2 = PALETTE.light;
   var STYLES = `
 .aw {
   /* \u2014\u2014 colour \u2014\u2014 */
-  --aw-surface: var(--dsw-alias-bg-base, var(--bone, #fff));
-  --aw-surface-sidebar: var(--dsw-alias-bg-layer-1, var(--paper, #f7f6f3));
-  --aw-surface-raised: var(--dsw-alias-bg-base, var(--bone, #fff));
-  --aw-ink: var(--dsw-alias-label-primary, var(--ink, #16140f));
-  --aw-ink-2: var(--dsw-alias-label-secondary, var(--ink-soft, #5d5850));
+  --aw-surface: var(--dsw-alias-bg-base, var(--bone, ${LIGHT2.bg}));
+  --aw-surface-sidebar: var(--dsw-alias-bg-layer-1, var(--paper, ${LEGACY_LITERALS.paper}));
+  --aw-surface-raised: var(--dsw-alias-bg-base, var(--bone, ${LIGHT2.bg}));
+  --aw-ink: var(--dsw-alias-label-primary, var(--ink, ${LIGHT2.ink}));
+  --aw-ink-2: var(--dsw-alias-label-secondary, var(--ink-soft, ${LIGHT2["ink-2"]}));
   --aw-ink-3: color-mix(in srgb, var(--aw-ink-2) 68%, var(--aw-surface));
   --aw-fill: var(--dsw-alias-bg-layer-2, color-mix(in srgb, var(--aw-ink) 6%, var(--aw-surface)));
   --aw-hover: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, var(--aw-ink) 6%, transparent));
   --aw-selected: color-mix(in srgb, var(--aw-ink) 9%, transparent);
   --aw-hairline: var(--dsw-alias-border-l2, color-mix(in srgb, var(--aw-ink) 11%, var(--aw-surface)));
   --aw-hairline-strong: var(--dsw-alias-border-l3, color-mix(in srgb, var(--aw-ink) 20%, var(--aw-surface)));
-  --aw-accent: var(--orange, #ff5a1f);
-  --aw-accent-ink: #fff;
+  --aw-accent: var(--orange, ${ACCENT});
+  --aw-accent-ink: ${ACCENT_INK};
   --aw-accent-wash: color-mix(in srgb, var(--aw-accent) 12%, transparent);
-  --aw-ok: var(--dsw-alias-state-success-primary, #2f9e5b);
-  --aw-warn: var(--dsw-alias-state-warn-primary, #d99a16);
-  --aw-bad: var(--dsw-alias-state-error-primary, #d6453d);
-  --aw-info: var(--dsw-alias-state-business-primary, #3b7bd9);
+  --aw-ok: var(--dsw-alias-state-success-primary, ${LIGHT2.ok});
+  --aw-warn: var(--dsw-alias-state-warn-primary, ${LIGHT2.warn});
+  --aw-bad: var(--dsw-alias-state-error-primary, ${LIGHT2.bad});
+  --aw-info: var(--dsw-alias-state-business-primary, ${LIGHT2.info});
   --aw-ok-wash: color-mix(in srgb, var(--aw-ok) 12%, transparent);
   --aw-warn-wash: color-mix(in srgb, var(--aw-warn) 14%, transparent);
   --aw-bad-wash: color-mix(in srgb, var(--aw-bad) 11%, transparent);
@@ -10938,7 +10979,6 @@ ${block(Object.entries(TOKENS))}
   --aw-type-md: 13px;
   --aw-type-lg: 15px;
   --aw-type-xl: 18px;
-  --aw-type-2xl: 22px;
   --aw-measure: 72ch;
   --aw-measure-table: 1180px;
   /* \u2014\u2014 geometry \u2014\u2014 */
@@ -10951,32 +10991,6 @@ ${block(Object.entries(TOKENS))}
   --aw-shadow-float: 0 0 0 1px color-mix(in srgb, var(--aw-ink) 10%, transparent), 0 12px 32px rgba(0, 0, 0, .18);
   --aw-dur: 140ms;
   --aw-ease: cubic-bezier(.2, 0, 0, 1);
-  /* \u2014\u2014 aliases: the pre-contract names; do not use in new code \u2014\u2014 */
-  --aw-bg: var(--aw-surface);
-  --aw-bg2: var(--aw-surface-sidebar);
-  --aw-bg3: var(--aw-fill);
-  --aw-text: var(--aw-ink);
-  --aw-text2: var(--aw-ink-2);
-  --aw-text3: var(--aw-ink-3);
-  --aw-border: var(--aw-hairline);
-  --aw-border2: var(--aw-hairline-strong);
-  --aw-line: var(--aw-hairline);
-  --aw-violet: #8a63d2;
-  --aw-r-sm: var(--aw-radius-sm);
-  --aw-r-md: var(--aw-radius-md);
-  --aw-r-lg: var(--aw-radius-lg);
-  --aw-r-pill: var(--aw-radius-pill);
-  --aw-sp-1: 4px;
-  --aw-sp-2: 6px;
-  --aw-sp-3: 8px;
-  --aw-sp-4: 12px;
-  --aw-sp-5: 16px;
-  --aw-sp-6: 24px;
-  --aw-fs-xs: var(--aw-type-xs);
-  --aw-fs-sm: var(--aw-type-sm);
-  --aw-fs-md: var(--aw-type-md);
-  --aw-fs-lg: var(--aw-type-lg);
-  --aw-fs-xl: var(--aw-type-xl);
 
   display: grid;
   grid-template-columns: var(--aw-activity-w) auto minmax(0, 1fr);
@@ -11014,10 +11028,11 @@ ${block(Object.entries(TOKENS))}
 .aw :is(button, a, summary, [role=tab], [role=option], [role=menuitem], [tabindex]):focus-visible { outline: 2px solid var(--aw-focus); outline-offset: 2px; }
 .aw :is(input, select, textarea):focus { outline: none; }
 .aw :is(input, select, textarea):focus-visible, .aw :is(input, select, textarea):focus { outline: 2px solid color-mix(in srgb, var(--aw-focus) 55%, transparent); outline-offset: -1px; }
-.aw [hidden] { display: none !important; }
-.aw-sr { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.aw [hidden]:not(#aw-override) { display: none; }
+.aw-sr { width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.aw-sr:not(#aw-override) { position: absolute; }
 .aw-mono { font-family: var(--aw-mono); font-size: var(--aw-type-sm); }
-.aw-num, .aw-table, .aw-statrow, .aw-cost { font-variant-numeric: tabular-nums; }
+.aw-num, .aw-statrow, .aw-cost { font-variant-numeric: tabular-nums; }
 .aw-muted { color: var(--aw-ink-2); }
 .aw-faint { color: var(--aw-ink-3); }
 .aw-warn { color: var(--aw-warn-ink); }
@@ -11128,21 +11143,23 @@ ${block(Object.entries(TOKENS))}
 .aw-btn:active:not(:disabled) { background: var(--aw-selected); }
 .aw-btn:disabled { color: var(--aw-ink-3); border-color: var(--aw-hairline); background: var(--aw-surface); cursor: default; }
 .aw-btn--sm { height: 24px; padding: 0 8px; font-size: var(--aw-type-sm); gap: 4px; }
-.aw-btn--primary { background: var(--aw-accent); color: var(--aw-accent-ink) !important; border-color: transparent; }
-.aw-btn--primary:hover:not(:disabled) { background: color-mix(in srgb, var(--aw-accent) 88%, #000); }
-.aw-btn--primary:active:not(:disabled) { background: color-mix(in srgb, var(--aw-accent) 80%, #000); }
-.aw-btn--primary:disabled { background: var(--aw-fill); border-color: transparent; color: var(--aw-ink-3) !important; opacity: 1; }
-.aw-btn--danger { color: var(--aw-bad-ink) !important; }
+.aw-btn--primary { background: var(--aw-accent); border-color: transparent; }
+.aw-btn--primary:not(#aw-override) { color: var(--aw-accent-ink); }
+.aw-btn--primary:hover:not(:disabled) { background: color-mix(in srgb, var(--aw-accent) 88%, ${LEGACY_LITERALS.shade}); }
+.aw-btn--primary:active:not(:disabled) { background: color-mix(in srgb, var(--aw-accent) 80%, ${LEGACY_LITERALS.shade}); }
+.aw-btn--primary:disabled { background: var(--aw-fill); border-color: transparent; opacity: 1; }
+.aw-btn--primary:disabled:not(#aw-override) { color: var(--aw-ink-3); }
+.aw-btn--danger:not(#aw-override) { color: var(--aw-bad-ink); }
 .aw-btn--danger:hover:not(:disabled) { background: var(--aw-bad-wash); border-color: color-mix(in srgb, var(--aw-bad) 40%, transparent); }
 .aw-btn--ghost { border-color: transparent; background: none; color: var(--aw-ink-2); }
 .aw-btn--ghost:hover:not(:disabled) { color: var(--aw-ink); }
 .aw-btn--ghost:disabled { border-color: transparent; background: none; }
 .aw-btn--icon { width: 28px; padding: 0; }
 .aw-btn--sm.aw-btn--icon { width: 24px; }
-.aw-btn[aria-busy=true] { color: transparent !important; }
+.aw-btn[aria-busy=true]:not(#aw-override) { color: transparent; }
 .aw-btn[aria-busy=true]::before { content: ''; position: absolute; inset: 0; margin: auto; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--aw-ink-3); border-top-color: var(--aw-ink); animation: aw-spin .7s linear infinite; }
 .aw-btn--primary[aria-busy=true] { background: var(--aw-accent); }
-.aw-btn--primary[aria-busy=true]::before { border-color: rgba(255,255,255,.45); border-top-color: #fff; }
+.aw-btn--primary[aria-busy=true]::before { border-color: rgba(255,255,255,.45); border-top-color: var(--aw-accent-ink); }
 .aw-btn__kbd { margin-left: 4px; color: inherit; opacity: .6; font-size: var(--aw-type-xs); }
 
 /* \u2014\u2014\u2014\u2014\u2014 controls: segmented, chips, fields \u2014\u2014\u2014\u2014\u2014 */
@@ -11169,9 +11186,7 @@ ${block(Object.entries(TOKENS))}
 .aw-people li { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .aw-people__who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .aw-people .aw-check { font-size: var(--aw-type-sm); color: var(--aw-ink-2); white-space: nowrap; }
-.aw-toolbar { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; margin-bottom: var(--aw-space-3); min-height: 30px; }
 .aw-search { width: 220px; max-width: 100%; }
-.aw-toolbar .aw-search { padding-left: 28px; background: var(--aw-surface) no-repeat 8px 50% / 14px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3'/%3E%3C/svg%3E"); }
 
 /* \u2014\u2014\u2014\u2014\u2014 status: pills, tags, dots \u2014\u2014\u2014\u2014\u2014 */
 .aw-pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: var(--aw-radius-pill); font-size: var(--aw-type-xs); font-weight: 600; background: var(--aw-fill); color: var(--aw-ink-2); white-space: nowrap; }
@@ -11191,7 +11206,7 @@ ${block(Object.entries(TOKENS))}
 .aw-dot--ok { background: var(--aw-ok); } .aw-dot--warn { background: var(--aw-warn); } .aw-dot--bad { background: var(--aw-bad); } .aw-dot--info { background: var(--aw-info); }
 .aw-live { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; background: var(--aw-info); animation: aw-breathe 1.6s ease-in-out infinite; }
 @keyframes aw-pulse { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .aw-live, .aw-mark--live, .aw *::before { animation: none !important; } .aw [data-tip]:hover::after { animation: aw-tip 0s linear 400ms backwards; } }
+@media (prefers-reduced-motion: reduce) { .aw-live:not(#aw-override), .aw-mark--live:not(#aw-override), .aw *:not(#aw-override)::before { animation: none; } .aw [data-tip]:hover::after { animation: aw-tip 0s linear 400ms backwards; } }
 .aw-tag { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--aw-radius-sm); background: var(--aw-fill); font-size: var(--aw-type-xs); font-weight: 500; color: var(--aw-ink-2); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .aw-tag--dash { background: none; box-shadow: inset 0 0 0 1px var(--aw-hairline); }
 .aw-tag--client, .aw-tag--info { background: var(--aw-info-wash); color: var(--aw-info-ink); }
@@ -11225,18 +11240,6 @@ ${block(Object.entries(TOKENS))}
 .aw-card__warn { display: flex; gap: 6px; align-items: baseline; margin: 6px 0 0; font-size: var(--aw-type-xs); color: var(--aw-bad-ink); }
 
 /* \u2014\u2014\u2014\u2014\u2014 tables: 36px rows, hairlines, numeric right \u2014\u2014\u2014\u2014\u2014 */
-.aw-tablewrap, .aw-table-wrap { overflow-x: auto; }
-.aw-table { width: 100%; border-collapse: collapse; font-size: var(--aw-type-md); }
-.aw-table th { position: sticky; top: 0; z-index: 1; background: var(--aw-surface); text-align: left; font-size: var(--aw-type-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--aw-ink-3); height: 30px; padding: 0 var(--aw-space-2); border-bottom: 1px solid var(--aw-hairline); white-space: nowrap; user-select: none; }
-.aw-table th[aria-sort] { cursor: pointer; }
-.aw-table th[aria-sort]:hover { color: var(--aw-ink); }
-.aw-table th button { all: unset; cursor: pointer; }
-.aw-table th button:focus-visible { outline: 2px solid var(--aw-focus); outline-offset: 2px; }
-.aw-table td { height: var(--aw-row-h-table); padding: 0 var(--aw-space-2); border-bottom: 1px solid var(--aw-hairline); white-space: nowrap; }
-.aw-table .is-num, .aw-table td.aw-num, .aw-table th.aw-num { text-align: right; font-variant-numeric: tabular-nums; }
-.aw-table tbody tr { cursor: pointer; }
-.aw-table tbody tr:hover { background: var(--aw-hover); }
-.aw-table__title { white-space: normal !important; min-width: 220px; font-weight: 500; padding-block: 6px !important; }
 
 /* \u2014\u2014\u2014\u2014\u2014 rows: the list pattern (hairlines, no box) \u2014\u2014\u2014\u2014\u2014 */
 .aw-inbox { max-width: var(--aw-measure-table); }
@@ -11245,7 +11248,7 @@ ${block(Object.entries(TOKENS))}
 .aw-group > h3 .aw-count, .aw-group > header .aw-count { margin-left: 0; padding-left: 0; }
 .aw-group > p { margin: 2px 0 var(--aw-space-2); }
 .aw-row-h { display: flex; align-items: center; gap: var(--aw-space-2); }
-.aw-group > h3 + .aw-rows, .aw-group > header + .aw-rows, .aw-group > h3 + .aw-tablewrap, .aw-group > header + .aw-tablewrap { margin-top: var(--aw-space-2); }
+.aw-group > h3 + .aw-rows, .aw-group > header + .aw-rows { margin-top: var(--aw-space-2); }
 .aw-rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--aw-hairline); }
 .aw-rows > li { border-bottom: 1px solid var(--aw-hairline); }
 .aw-row { display: flex; align-items: center; gap: var(--aw-space-3); min-height: var(--aw-row-h-table); padding: 4px var(--aw-space-2); cursor: pointer; flex-wrap: wrap; }
@@ -11283,13 +11286,14 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-event::before { content: ''; flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--aw-ink-3); transform: translateY(-2px); }
 .aw-event time { margin-left: auto; white-space: nowrap; color: var(--aw-ink-3); }
 .aw-msg { padding: var(--aw-space-3) 0; }
-.aw-msg.is-private { background: color-mix(in srgb, var(--aw-warn) 7%, var(--aw-surface)); padding: var(--aw-space-3); border-radius: var(--aw-radius-md); border-top-color: transparent !important; margin: 2px 0; }
+.aw-msg.is-private { background: color-mix(in srgb, var(--aw-warn) 7%, var(--aw-surface)); padding: var(--aw-space-3); border-radius: var(--aw-radius-md); margin: 2px 0; }
+.aw-msg.is-private:not(#aw-override) { border-top-color: transparent; }
 .aw-msg.is-private + li { border-top-color: transparent; }
 .aw-msg header, .aw-run header { display: flex; align-items: center; gap: var(--aw-space-2); flex-wrap: wrap; margin-bottom: 4px; font-size: var(--aw-type-sm); }
 .aw-msg header strong, .aw-run header strong { font-weight: 600; font-size: var(--aw-type-md); }
 .aw-msg header time, .aw-run header time { margin-left: auto; color: var(--aw-ink-3); }
 .aw-msg__body { white-space: pre-wrap; overflow-wrap: anywhere; max-width: var(--aw-measure); line-height: 1.55; }
-.aw-msg__body.is-clipped, .aw-run__summary.is-clipped { max-height: 7.5em; overflow: hidden; mask-image: linear-gradient(#000 55%, transparent); -webkit-mask-image: linear-gradient(#000 55%, transparent); }
+.aw-msg__body.is-clipped, .aw-run__summary.is-clipped { max-height: 7.5em; overflow: hidden; mask-image: linear-gradient(${LEGACY_LITERALS.shade} 55%, transparent); -webkit-mask-image: linear-gradient(${LEGACY_LITERALS.shade} 55%, transparent); }
 .aw-fold { cursor: pointer; user-select: none; }
 .aw-fold__chev { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: -4px; border: 0; padding: 0; background: none; color: var(--aw-ink-3); cursor: pointer; border-radius: var(--aw-radius-sm); transition: transform var(--aw-dur) var(--aw-ease); }
 .aw-fold__chev:hover { background: var(--aw-hover); color: var(--aw-ink); }
@@ -11317,7 +11321,8 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-composer__head, .aw-composer__foot { display: flex; align-items: center; gap: var(--aw-space-2) var(--aw-space-3); flex-wrap: wrap; font-size: var(--aw-type-sm); }
 .aw-composer__head { margin-bottom: 4px; }
 .aw-composer__foot { margin-top: 4px; }
-.aw-composer textarea { border: 0; padding: 4px 2px; background: none; outline: none !important; min-height: calc(3 * 1.5em + 8px); resize: none; }
+.aw-composer textarea { border: 0; padding: 4px 2px; background: none; min-height: calc(3 * 1.5em + 8px); resize: none; }
+.aw-composer textarea:not(#aw-override) { outline: none; }
 .aw-details { border-left: 1px solid var(--aw-hairline); background: var(--aw-surface-sidebar); padding: var(--aw-space-4); overflow-y: auto; position: sticky; top: 0; height: 100cqh; align-self: start; }
 .aw-details select, .aw-details input { width: 100%; }
 .aw-site { display: flex; flex-direction: column; gap: 6px; padding: 0; }
@@ -11333,7 +11338,6 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-details--page .aw-ticket__actions { flex-direction: row; flex-wrap: wrap; align-items: center; }
 .aw-details--page .aw-ticket__actions > button { width: auto; }
 .aw-details--page .aw-field { max-width: 520px; }
-.aw-details__h { font-size: var(--aw-type-xs); font-weight: 600; color: var(--aw-ink-3); margin: var(--aw-space-4) 0 6px !important; }
 .aw-cost { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--aw-space-2); padding: var(--aw-space-3) 0; }
 .aw-cost > div { display: flex; flex-direction: column; gap: 2px; }
 .aw-cost strong { font-size: var(--aw-type-lg); font-weight: 600; }
@@ -11422,15 +11426,15 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-modal__foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--aw-space-2); padding: var(--aw-space-3) var(--aw-space-4); border-top: 1px solid var(--aw-hairline); flex-wrap: wrap; }
 .aw-modal__foot .aw-predict { margin: 0 auto 0 0; }
 .aw-palette { width: min(620px, 100%); background: var(--aw-surface-raised); border-radius: 10px; box-shadow: var(--aw-shadow-float); overflow: hidden; animation: aw-rise var(--aw-dur) var(--aw-ease); }
-.aw-palette input { width: 100%; border: 0 !important; border-bottom: 1px solid var(--aw-hairline) !important; border-radius: 0 !important; padding: 14px 16px !important; font-size: var(--aw-type-lg) !important; outline: none !important; background: none; }
+.aw-palette input { width: 100%; background: none; }
+.aw-palette input:not(#aw-override) { border: 0; border-bottom: 1px solid var(--aw-hairline); border-radius: 0; padding: 14px 16px; font-size: var(--aw-type-lg); outline: none; }
 .aw-palette ul { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow-y: auto; }
 .aw-palette li { display: flex; align-items: center; gap: var(--aw-space-3); height: 32px; padding: 0 10px; border-radius: var(--aw-radius-md); cursor: pointer; }
 .aw-palette li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aw-palette li small { color: var(--aw-ink-3); white-space: nowrap; font-size: var(--aw-type-xs); }
 .aw-palette li.is-active { background: var(--aw-selected); }
-.aw-palette__group { height: 26px !important; padding-top: 6px !important; font-size: var(--aw-type-xs); font-weight: 600; color: var(--aw-ink-3); cursor: default !important; }
 .aw-toast { position: absolute; z-index: 30; right: var(--aw-space-4); bottom: calc(var(--aw-status-h) + var(--aw-space-3)); max-width: 420px; display: flex; align-items: flex-start; gap: var(--aw-space-3); padding: 10px 12px 10px 14px; border-radius: var(--aw-radius-lg); background: var(--aw-ink); color: var(--aw-surface); box-shadow: var(--aw-shadow-float); font-size: var(--aw-type-md); animation: aw-rise var(--aw-dur) var(--aw-ease); }
-.aw-toast.is-error { background: var(--aw-bad); color: #fff; }
+.aw-toast.is-error { background: var(--aw-bad); color: var(--aw-accent-ink); }
 
 /* \u2014\u2014\u2014\u2014\u2014 pane resize handles \u2014\u2014\u2014\u2014\u2014 */
 .aw-resize { position: absolute; top: 0; bottom: 0; width: 9px; cursor: col-resize; z-index: 8; touch-action: none; }
@@ -11953,34 +11957,29 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-mk .aw-row { padding: var(--ui-sp-2) 0; }
 .aw-mk .aw-row + .aw-row { border-top: 1px solid var(--ui-border); }
 .aw-mk .aw-row:hover { background: var(--ui-bg-hover); }
-
-.aw-table--compact td, .aw-table--compact th { padding-top: var(--aw-space-2, 8px); padding-bottom: var(--aw-space-2, 8px); }
-.aw-table--static tbody tr, .aw-table--static th { cursor: default; }
-.aw-table--static tbody tr:hover { background: transparent; }
-.aw-table, .aw-mk-meter__num, .aw-chart__tick, .aw-chart__day, .aw-needs, .aw-mk-kinds { font-variant-numeric: tabular-nums; }
-.aw-table th.aw-mk-num, .aw-table td.aw-mk-num { text-align: right; }
+.aw-mk-meter__num, .aw-chart__tick, .aw-chart__day, .aw-needs, .aw-mk-kinds { font-variant-numeric: tabular-nums; }
 
 .aw-mk-health { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 240px; }
 .aw-mk-health .aw-mk-meter { margin: 0; }
 .aw-mk-meter { display: inline-flex; align-items: center; gap: 8px; margin: 2px 14px 2px 0; white-space: nowrap; }
-.aw-mk-meter__label { color: var(--aw-ink-2, var(--aw-text2)); font-size: var(--aw-type-sm, 12px); min-width: 62px; }
-.aw-mk-meter__track { position: relative; width: 72px; height: 5px; background: var(--aw-fill, var(--aw-bg3)); border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px)); flex: none; }
-.aw-mk-meter__fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px)); background: var(--aw-ok); }
+.aw-mk-meter__label { color: var(--aw-ink-2); font-size: var(--aw-type-sm, 12px); min-width: 62px; }
+.aw-mk-meter__track { position: relative; width: 72px; height: 5px; background: var(--aw-fill); border-radius: var(--aw-radius-sm); flex: none; }
+.aw-mk-meter__fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: var(--aw-radius-sm); background: var(--aw-ok); }
 .aw-mk-meter__fill--warn { background: var(--aw-warn); }
 .aw-mk-meter__fill--bad { background: var(--aw-bad); }
-.aw-mk-meter__limit { position: absolute; top: -2px; bottom: -2px; left: 80%; width: 1px; background: var(--aw-ink-2, var(--aw-text2)); opacity: .55; }
-.aw-mk-meter__num { color: var(--aw-ink-2, var(--aw-text2)); font-size: var(--aw-type-sm, 12px); }
+.aw-mk-meter__limit { position: absolute; top: -2px; bottom: -2px; left: 80%; width: 1px; background: var(--aw-ink-2); opacity: .55; }
+.aw-mk-meter__num { color: var(--aw-ink-2); font-size: var(--aw-type-sm, 12px); }
 .aw-mk-bad { color: var(--aw-bad); }
 
 .aw-mk-findings { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--aw-space-2, 8px) var(--aw-space-4, 16px); margin-top: var(--aw-space-3, 12px); padding-top: var(--aw-space-2, 8px); font-size: var(--aw-type-sm, 12px); }
 .aw-mk-kinds-label { margin: 0; font-size: var(--aw-type-sm, 12px); }
 .aw-mk-kinds { display: flex; flex-wrap: wrap; gap: var(--aw-space-1, 4px) var(--aw-space-4, 16px); margin: 0; font-size: var(--aw-type-sm, 12px); }
 .aw-mk-kind { display: inline-flex; align-items: baseline; gap: 5px; }
-.aw-mk-kind dt { color: var(--aw-ink-2, var(--aw-text2)); }
-.aw-mk-kind dd { margin: 0; font-weight: 600; color: var(--aw-ink, var(--aw-text)); }
+.aw-mk-kind dt { color: var(--aw-ink-2); }
+.aw-mk-kind dd { margin: 0; font-weight: 600; color: var(--aw-ink); }
 
 .aw-needs { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
-.aw-needs li { display: flex; align-items: center; gap: var(--aw-space-3, 12px); min-height: var(--aw-row-h-table, 36px); padding: var(--aw-space-2, 8px) 0; border-top: 1px solid var(--aw-hairline, var(--aw-border)); }
+.aw-needs li { display: flex; align-items: center; gap: var(--aw-space-3, 12px); min-height: var(--aw-row-h-table, 36px); padding: var(--aw-space-2, 8px) 0; border-top: 1px solid var(--aw-hairline); }
 .aw-needs li:first-child { border-top: 0; }
 .aw-needs li > span { flex: 1; min-width: 0; }
 .aw-needs .aw-btn { flex: none; margin-left: auto; }
@@ -11991,11 +11990,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 /* Quiet single-purpose 14-day chart */
 .aw-chart { margin: 0; }
 .aw-chart__head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--aw-space-2, 8px) var(--aw-space-4, 16px); margin: 0 0 var(--aw-space-2, 8px); }
-.aw-chart__totals { color: var(--aw-ink-2, var(--aw-text2)); font-size: var(--aw-type-sm, 12px); font-variant-numeric: tabular-nums; }
-.aw-chart__legend { display: inline-flex; align-items: center; gap: var(--aw-space-3, 12px); font-size: var(--aw-type-xs, 11px); color: var(--aw-ink-2, var(--aw-text2)); }
+.aw-chart__totals { color: var(--aw-ink-2); font-size: var(--aw-type-sm, 12px); font-variant-numeric: tabular-nums; }
+.aw-chart__legend { display: inline-flex; align-items: center; gap: var(--aw-space-3, 12px); font-size: var(--aw-type-xs, 11px); color: var(--aw-ink-2); }
 .aw-chart__legend span { display: inline-flex; align-items: center; gap: 4px; }
 .aw-chart__key { display: inline-block; width: 7px; height: 7px; border-radius: 2px; }
-.aw-chart__key--sent { background: var(--aw-fill, var(--aw-bg3)); border: 1px solid var(--aw-hairline-strong, var(--aw-border2)); }
+.aw-chart__key--sent { background: var(--aw-fill); border: 1px solid var(--aw-hairline-strong); }
 .aw-chart__key--bounce { background: var(--aw-bad); }
 .aw-chart__key--reply { background: var(--aw-ok); border-radius: 50%; }
 .aw-chart__key--post { background: var(--ui-info); }
@@ -12009,30 +12008,30 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-chart__post { fill: var(--ui-info); }
 
 /* Replies: hairline rows with aligned timestamp and explicit row action */
-.aw-mk-replies { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--aw-hairline, var(--aw-border)); }
+.aw-mk-replies { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--aw-hairline); }
 .aw-mk-reply {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
   gap: var(--aw-space-3, 12px);
   padding: var(--aw-space-3, 12px) var(--aw-space-1, 4px);
-  border-bottom: 1px solid var(--aw-hairline, var(--aw-border));
+  border-bottom: 1px solid var(--aw-hairline);
   cursor: pointer;
 }
 .aw-mk-reply:last-child { border-bottom: 0; }
 .aw-mk-reply:hover { background: var(--aw-hover); }
 .aw-mk-reply__body { min-width: 0; }
-.aw-mk-reply__who { display: block; font-size: var(--aw-type-md, 13px); font-weight: 600; color: var(--aw-ink, var(--aw-text)); }
+.aw-mk-reply__who { display: block; font-size: var(--aw-type-md, 13px); font-weight: 600; color: var(--aw-ink); }
 .aw-mk-reply__text { margin: 2px 0 0; font-size: var(--aw-type-sm, 12px); max-width: var(--aw-measure, 72ch); }
 .aw-mk-reply__meta { display: inline-flex; align-items: center; gap: var(--aw-space-2, 8px); white-space: nowrap; }
 .aw-mk-reply__age { font-size: var(--aw-type-xs, 11px); font-variant-numeric: tabular-nums; }
 
 /* Marketing loading skeletons */
 .aw-mk-skel { display: grid; gap: var(--aw-space-2, 8px); padding: var(--aw-space-2, 8px) 0; }
-.aw-mk-skel__row { display: block; height: 18px; border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px)); background: var(--aw-fill, var(--aw-bg3)); max-width: 540px; }
+.aw-mk-skel__row { display: block; height: 18px; border-radius: var(--aw-radius-sm); background: var(--aw-fill); max-width: 540px; }
 .aw-mk-skel__row:nth-child(2) { max-width: 420px; opacity: .75; }
 .aw-mk-skel__row:nth-child(3) { max-width: 480px; opacity: .55; }
-.aw-mk-skel__chart { display: block; height: 164px; border-radius: var(--aw-radius-md, var(--aw-r-md, 6px)); background: var(--aw-fill, var(--aw-bg3)); opacity: .65; }
+.aw-mk-skel__chart { display: block; height: 164px; border-radius: var(--aw-radius-md); background: var(--aw-fill); opacity: .65; }
 
 .aw-form2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--aw-space-4, 16px); max-width: 860px; }
 
@@ -12040,71 +12039,39 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 @media (max-width: 720px) {
   .aw-mk .aw-panel { padding: var(--aw-space-4, 16px) 0; }
   .aw-form2 { grid-template-columns: 1fr; }
-  .aw-table--stack thead { display: none; }
-  .aw-table--stack, .aw-table--stack tbody, .aw-table--stack tr { display: block; width: 100%; }
-  .aw-table--stack tr { padding: var(--aw-space-2, 8px) 0; border-top: 1px solid var(--aw-hairline, var(--aw-border)); }
-  .aw-table--stack tbody tr:first-child { border-top: 0; padding-top: 0; }
-  .aw-table--stack td {
-    display: grid;
-    grid-template-columns: 68px minmax(0, 1fr);
-    align-items: baseline;
-    gap: var(--aw-space-2, 8px);
-    padding: 3px 0;
-    border-bottom: 0;
-    white-space: normal;
-    text-align: left;
-    font-size: var(--aw-type-sm, 12px);
-  }
-  .aw-table--stack td::before {
-    content: attr(data-label);
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: .04em;
-    color: var(--aw-ink-2, var(--aw-text2));
-  }
-  .aw-table--stack td:first-child { display: block; font-weight: 600; font-size: var(--aw-type-md, 13px); padding-bottom: 4px; }
-  .aw-table--stack td:first-child::before { content: none; }
-  .aw-table--stack .aw-mk-health { min-width: 0; }
-  .aw-table--stack .aw-mk-meter { display: flex; margin: 0; gap: 6px; }
-  .aw-table--stack .aw-mk-meter__track { width: 52px; }
-  .aw-mk-exp-table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px var(--aw-space-3, 12px); }
-  .aw-mk-exp-table tbody td:first-child { grid-column: 1 / -1; }
-  .aw-mk-exp-table tbody td { grid-template-columns: auto 1fr; }
-  .aw-mk-exp-table tbody td.aw-mk-num { text-align: left; }
   .aw-mk-reply { grid-template-columns: minmax(0, 1fr); gap: var(--aw-space-1, 4px); }
   .aw-mk-reply > .aw-tag { justify-self: start; }
   .aw-mk-reply__meta { justify-content: space-between; width: 100%; }
 }
 .aw-mk-window input { flex: none; width: 58px; min-width: 0; }
 .aw-mk-window input[aria-label="Window offset minutes"] { width: 72px; }
-.aw-divider { border: 0; border-top: 1px solid var(--aw-hairline, var(--aw-border)); margin: var(--aw-space-4, 16px) 0 var(--aw-space-1, 4px); }
+.aw-divider { border: 0; border-top: 1px solid var(--aw-hairline); margin: var(--aw-space-4, 16px) 0 var(--aw-space-1, 4px); }
 
 /* Project solutions: kinds of work, the fleet note, and the client's connections. */
-.aw-dot--muted { background: var(--aw-hairline-strong, var(--aw-border2)); }
+.aw-dot--muted { background: var(--aw-hairline-strong); }
 .aw-psol { margin: 2px 0; }
-.aw-psol__h { margin: var(--aw-space-3, 12px) 0 var(--aw-space-1, 4px); font-size: var(--aw-type-xs, 11px); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-ink-2, var(--aw-text2)); }
+.aw-psol__h { margin: var(--aw-space-3, 12px) 0 var(--aw-space-1, 4px); font-size: var(--aw-type-xs, 11px); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--aw-ink-2); }
 .aw-psol__h:first-child { margin-top: 0; }
-.aw-psol__fleet { margin: var(--aw-space-2, 8px) 0 0; font-size: var(--aw-type-sm, 12px); color: var(--aw-ink-2, var(--aw-text2)); }
-.aw-psol__fleet--warn { color: color-mix(in srgb, var(--aw-warn) 80%, var(--aw-ink, var(--aw-text))); font-weight: 600; }
+.aw-psol__fleet { margin: var(--aw-space-2, 8px) 0 0; font-size: var(--aw-type-sm, 12px); color: var(--aw-ink-2); }
+.aw-psol__fleet--warn { color: color-mix(in srgb, var(--aw-warn) 80%, var(--aw-ink)); font-weight: 600; }
 .aw-psol__rows { list-style: none; margin: 0; padding: 0; }
-.aw-psol__row { display: flex; align-items: center; gap: var(--aw-space-2, 8px); min-height: var(--aw-row-h-table, 36px); padding: var(--aw-space-2, 8px) 0; border-top: 1px solid var(--aw-hairline, var(--aw-border)); }
+.aw-psol__row { display: flex; align-items: center; gap: var(--aw-space-2, 8px); min-height: var(--aw-row-h-table, 36px); padding: var(--aw-space-2, 8px) 0; border-top: 1px solid var(--aw-hairline); }
 .aw-psol__row:first-child { border-top: 0; }
 .aw-psol__rowmain { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--aw-space-2, 8px); flex-wrap: wrap; }
-.aw-psol__miss { font-family: var(--aw-mono); font-size: var(--aw-type-xs, 11px); color: var(--aw-ink-2, var(--aw-text2)); }
+.aw-psol__miss { font-family: var(--aw-mono); font-size: var(--aw-type-xs, 11px); color: var(--aw-ink-2); }
 .aw-psol__err { font-size: var(--aw-type-sm, 12px); color: var(--aw-bad); }
 .aw-psol__rowact { flex: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .aw-psol__skel { display: grid; gap: var(--aw-space-2, 8px); padding: var(--aw-space-1, 4px) 0; }
-.aw-psol__skel > span:not(.aw-sr-only) { display: block; height: 20px; max-width: 440px; border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px)); background: var(--aw-fill, var(--aw-bg3)); }
+.aw-psol__skel > span:not(.aw-sr-only) { display: block; height: 20px; max-width: 440px; border-radius: var(--aw-radius-sm); background: var(--aw-fill); }
 .aw-psol__skel > span:last-child { max-width: 340px; opacity: .7; }
 .aw-psol__brief { margin-top: var(--aw-space-3, 12px); }
-.aw-psol__brief > summary { cursor: pointer; color: var(--aw-ink-2, var(--aw-text2)); font-size: var(--aw-type-sm, 12px); }
+.aw-psol__brief > summary { cursor: pointer; color: var(--aw-ink-2); font-size: var(--aw-type-sm, 12px); }
 .aw-psol__brief[open] > summary { margin-bottom: var(--aw-space-1, 4px); }
-.aw-psol__briefitem { padding: var(--aw-space-2, 8px) 0; border-top: 1px solid var(--aw-hairline, var(--aw-border)); font-size: var(--aw-type-sm, 12px); max-width: var(--aw-measure, 72ch); }
-.aw-psol__briefitem ul { margin: 2px 0 var(--aw-space-2, 8px); padding-left: 18px; color: var(--aw-ink-2, var(--aw-text2)); }
+.aw-psol__briefitem { padding: var(--aw-space-2, 8px) 0; border-top: 1px solid var(--aw-hairline); font-size: var(--aw-type-sm, 12px); max-width: var(--aw-measure, 72ch); }
+.aw-psol__briefitem ul { margin: 2px 0 var(--aw-space-2, 8px); padding-left: 18px; color: var(--aw-ink-2); }
 .aw-psol__tags { display: inline-flex; align-items: center; gap: var(--aw-space-1, 4px); flex-wrap: wrap; }
 .aw-psol__steps { margin: 0 0 10px; padding-left: 20px; }
-.aw-psol__steps li { margin: 3px 0; font-size: var(--aw-type-sm, 12px); color: var(--aw-ink-2, var(--aw-text2)); }
+.aw-psol__steps li { margin: 3px 0; font-size: var(--aw-type-sm, 12px); color: var(--aw-ink-2); }
 @media (max-width: 720px) {
   .aw-psol__row { flex-wrap: wrap; }
   .aw-psol__rowact { width: 100%; padding-left: 16px; }
@@ -12152,7 +12119,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-pagetabs::-webkit-scrollbar { display: none; }
 @media (max-width: 900px) {
   /* A tab strip that runs off the edge reads as scrolled, not clipped. */
-  .aw-pagetabs { padding-right: 20px; mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent); }
+  .aw-pagetabs { padding-right: 20px; mask-image: linear-gradient(to right, ${LEGACY_LITERALS.shade} calc(100% - 20px), transparent); -webkit-mask-image: linear-gradient(to right, ${LEGACY_LITERALS.shade} calc(100% - 20px), transparent); }
 }
 
 .aw-pagetabs button { appearance: none; flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 2px; margin-bottom: -1px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--aw-ink-2); font: inherit; font-size: var(--aw-type-md); cursor: pointer; white-space: nowrap; }
@@ -12210,7 +12177,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 }
 @keyframes aw-slide { from { transform: translateX(-12px); opacity: 0; } }
 /* Keyboard rows: visible focus wherever a row can receive it. */
-.aw-table tbody tr:focus-visible, .aw-row:focus-visible { outline: 2px solid var(--aw-focus); outline-offset: -2px; }
+.aw-row:focus-visible { outline: 2px solid var(--aw-focus); outline-offset: -2px; }
 .aw-titlelink { color: inherit; text-decoration: none; }
 .aw-titlelink:hover { text-decoration: underline; text-decoration-color: var(--aw-hairline-strong); }
 /* The right rail's rare controls, folded behind one summary. */
@@ -12344,7 +12311,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-health__pass > summary { cursor: pointer; padding: 4px var(--aw-space-2); font-size: var(--aw-type-sm); color: var(--aw-ink-2); }
 .aw-machine .aw-kv { margin-bottom: var(--aw-space-2); }
 .aw-machine .aw-mexes { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 2px var(--aw-space-4); }
-.aw-fleet .aw-table td, .aw-client .aw-table td, .aw-clients .aw-table td { height: var(--aw-row-h); }
 /* This Mac's panel inside the node Inspector: the Inspector owns its title, state and controls, and lists its runs. */
 .aw-fleet-machine .aw-machine { padding: 0; border: 0; }
 .aw-fleet-machine .aw-machine > header, .aw-fleet-machine .aw-machine > .aw-rows { display: none; }
@@ -12359,7 +12325,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-clients .aw-row > .aw-muted { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--aw-type-sm); }
 .aw-clients .aw-row > .aw-muted:last-child { flex: none; }
 .aw-clients .aw-directory__name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--aw-type-sm); }
-.aw-client .aw-toolbar { margin-bottom: var(--aw-space-3); }
 /* \u2014\u2014 Settings: one workspace \u2014 header, 180px section nav, bounded form, one SaveBar \u2014\u2014 */
 .aw-settings__body { flex: 1; min-height: 0; min-width: 0; display: flex; gap: var(--ui-sp-5); }
 .aw-settings__nav { flex: none; width: 180px; display: flex; flex-direction: column; gap: 2px; padding-top: var(--ui-sp-1); }
@@ -12434,13 +12399,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 
 /* Compact stacked rows (aw-table--rows, with aw-table--stack): the title on
    its own line, then the other cells as label-value pairs that wrap. */
-@media (max-width: 720px) {
-  .aw-table--rows tr { display: flex !important; flex-wrap: wrap; align-items: baseline; gap: 2px var(--aw-space-3); padding: var(--aw-space-2) 2px !important; }
-  .aw-table--rows td { display: inline-flex !important; width: auto !important; height: auto; align-items: baseline; gap: 4px; padding: 0 !important; border: 0; font-size: var(--aw-type-sm); white-space: nowrap !important; text-align: left !important; }
-  .aw-table--rows td::before { display: inline !important; margin: 0 !important; font-size: var(--aw-type-xs) !important; font-weight: 400 !important; text-transform: none !important; letter-spacing: 0 !important; color: var(--aw-ink-3) !important; }
-  .aw-table--rows td:first-child { order: -2; font-weight: 400; color: var(--aw-ink-3); }
-  .aw-table--rows td.aw-table__title { order: -1; flex: 1 1 calc(100% - 60px); min-width: 0; font-size: var(--aw-type-md); white-space: normal !important; }
-}
 /* \u2014\u2014\u2014\u2014\u2014 narrow: one pane, bottom bar, sheets \u2014\u2014\u2014\u2014\u2014 */
 @media (max-width: 720px) {
   .aw-board { grid-auto-columns: minmax(78vw, 1fr); }
@@ -12468,7 +12426,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   .aw-pagehead__secondary { display: none; }
   .aw-pagehead__meta { display: none; }
   .aw-pagehead__side { flex: 0 0 auto; margin-left: auto; justify-content: flex-end; }
-  .aw-toolbar > select, .aw-toolbar > .aw-search { flex: 1 1 140px; }
   .aw-scrim { padding: 0; place-items: end stretch; }
   .aw-scrim--top { padding: 8px; place-items: start stretch; }
   .aw-modal { width: 100%; max-height: 92%; border-radius: 12px 12px 0 0; animation-name: aw-sheet; }
@@ -14938,49 +14895,14 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-project button { scroll-margin-block: 80px; }
 .aw-project :is(button, a, input, textarea, summary):focus-visible { outline: 2px solid var(--aw-focus, var(--aw-accent)); outline-offset: 2px; }
 .aw-project :is(input, textarea) { caret-color: var(--aw-accent); }
-.aw-project ::selection { background: var(--aw-accent); color: var(--aw-surface, var(--aw-bg)); }
+.aw-project ::selection { background: var(--aw-accent); color: var(--aw-surface); }
 
-/* Header overflow menu ("\u2026") */
-.aw-project__overflow { position: relative; display: inline-flex; }
-.aw-project__overflow-btn { width: 30px; padding: 0; justify-content: center; font-size: 16px; line-height: 1; }
-.aw-project__menu {
-  position: absolute;
-  top: calc(100% + var(--aw-space-1, 4px));
-  right: 0;
-  z-index: 25;
-  min-width: 176px;
-  padding: var(--aw-space-1, 4px);
-  border-radius: var(--aw-radius-lg, var(--aw-r-lg, 8px));
-  border: 1px solid var(--aw-hairline-strong, var(--aw-border2));
-  background: var(--aw-surface-raised, var(--aw-bg));
-  box-shadow: var(--aw-shadow-float, 0 8px 24px rgba(0, 0, 0, .18));
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.aw-project__menuitem {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px));
-  background: transparent;
-  color: var(--aw-ink, var(--aw-text));
-  font-size: var(--aw-type-sm, 12px);
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.aw-project__menuitem:hover { background: var(--aw-hover); text-decoration: none; }
-.aw-project__menuitem:disabled { opacity: .45; cursor: default; }
 
 /* Sections: separated by hairlines and breathing room, never nested cards */
 .aw-project__actions { display: flex; flex-wrap: wrap; gap: var(--aw-space-2, 8px); align-items: center; }
 .aw-project__local-actions { margin-bottom: var(--aw-space-3, 12px); }
 .aw-project__body { min-width: 0; }
-.aw-project__section { padding: var(--aw-space-5, 24px) 0; border-bottom: 1px solid var(--aw-hairline, var(--aw-border)); min-width: 0; }
+.aw-project__section { padding: var(--aw-space-5, 24px) 0; border-bottom: 1px solid var(--aw-hairline); min-width: 0; }
 .aw-project__section:first-child { padding-top: var(--aw-space-3, 12px); }
 .aw-project__section:last-child { border-bottom: 0; }
 .aw-project__section > :first-child { margin-top: 0; }
@@ -14991,7 +14913,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 /* Brief */
 .aw-project__brief { margin: var(--aw-space-2, 8px) 0 0; }
 .aw-project__brief dt {
-  color: var(--aw-ink-2, var(--aw-text2));
+  color: var(--aw-ink-2);
   font-size: var(--aw-type-xs, 11px);
   font-weight: 600;
   text-transform: uppercase;
@@ -15016,10 +14938,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   margin: var(--aw-space-2, 8px) 0 0;
 }
 .aw-project__topology > li { display: flex; align-items: flex-start; gap: var(--aw-space-3, 12px); min-width: 0; }
-.aw-project__topology > li > svg { margin-top: 2px; color: var(--aw-ink-2, var(--aw-text2)); flex-shrink: 0; }
+.aw-project__topology > li > svg { margin-top: 2px; color: var(--aw-ink-2); flex-shrink: 0; }
 .aw-project__topology > li > div { display: flex; flex-direction: column; gap: var(--aw-space-1, 4px); min-width: 0; }
 .aw-project__topology strong { font-size: var(--aw-type-sm, 12px); font-weight: 600; }
-.aw-project__topology span, .aw-project__topology a { color: var(--aw-ink-2, var(--aw-text2)); font-size: var(--aw-type-sm, 12px); line-height: 1.5; overflow-wrap: anywhere; }
+.aw-project__topology span, .aw-project__topology a { color: var(--aw-ink-2); font-size: var(--aw-type-sm, 12px); line-height: 1.5; overflow-wrap: anywhere; }
 .aw-project__topology a { color: var(--aw-accent); }
 .aw-project__destination { display: flex; flex-direction: column; gap: 2px; margin-bottom: var(--aw-space-2, 8px); }
 
@@ -15030,7 +14952,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   align-items: center;
   gap: var(--aw-space-3, 12px);
   min-height: var(--aw-row-h-table, 36px);
-  border-bottom: 1px solid var(--aw-hairline, var(--aw-border));
+  border-bottom: 1px solid var(--aw-hairline);
   padding: var(--aw-space-2, 8px) 0;
   min-width: 0;
 }
@@ -15045,7 +14967,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   border: 0;
   padding: 0;
   background: transparent;
-  color: var(--aw-ink, var(--aw-text));
+  color: var(--aw-ink);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -15064,7 +14986,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   gap: var(--aw-space-3, 12px);
   flex-wrap: wrap;
   padding: var(--aw-space-2, 8px) var(--aw-space-3, 12px);
-  border-radius: var(--aw-radius-md, var(--aw-r-md, 6px));
+  border-radius: var(--aw-radius-md);
   background: color-mix(in srgb, var(--aw-bad) 10%, transparent);
   color: var(--aw-bad);
   font-size: var(--aw-type-sm, 12px);
@@ -15074,32 +14996,21 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-project__success { color: var(--aw-ok); margin-block: var(--aw-space-2, 8px); font-size: var(--aw-type-sm, 12px); }
 .aw-project__handoff { max-width: var(--aw-measure, 72ch); }
 
-/* Shape-matched loading skeleton */
-.aw-project__skel { display: grid; gap: var(--aw-space-2, 8px); padding: var(--aw-space-2, 8px) 0; }
-.aw-project__skel-row {
-  display: block;
-  height: 16px;
-  border-radius: var(--aw-radius-sm, var(--aw-r-sm, 4px));
-  background: var(--aw-fill, var(--aw-bg3));
-  max-width: 480px;
-}
-.aw-project__skel-row:nth-child(2) { max-width: 360px; opacity: .75; }
-.aw-project__skel-row:nth-child(3) { max-width: 420px; opacity: .55; }
 
 /* Disclosures & file/secret blocks */
 .aw-project details { padding: var(--aw-space-2, 8px) 0; }
-.aw-project summary { cursor: pointer; color: var(--aw-ink, var(--aw-text)); font-weight: 500; padding: var(--aw-space-1, 4px) 0; font-size: var(--aw-type-md, 13px); }
+.aw-project summary { cursor: pointer; color: var(--aw-ink); font-weight: 500; padding: var(--aw-space-1, 4px) 0; font-size: var(--aw-type-md, 13px); }
 .aw-project__invite { display: flex; align-items: end; gap: var(--aw-space-3, 12px); margin-top: var(--aw-space-3, 12px); max-width: 560px; }
 .aw-project__invite .aw-field { flex: 1; margin-bottom: 0; }
-.aw-project__files { list-style: none; margin: var(--aw-space-2, 8px) 0; padding: 0; max-height: 300px; overflow: auto; border-top: 1px solid var(--aw-hairline, var(--aw-border)); }
-.aw-project__files li { border-bottom: 1px solid var(--aw-hairline, var(--aw-border)); }
-.aw-project__files button { display: flex; gap: var(--aw-space-2, 8px); align-items: center; width: 100%; color: var(--aw-ink, var(--aw-text)); background: none; border: 0; font: inherit; text-align: left; padding: 7px 6px; cursor: pointer; }
+.aw-project__files { list-style: none; margin: var(--aw-space-2, 8px) 0; padding: 0; max-height: 300px; overflow: auto; border-top: 1px solid var(--aw-hairline); }
+.aw-project__files li { border-bottom: 1px solid var(--aw-hairline); }
+.aw-project__files button { display: flex; gap: var(--aw-space-2, 8px); align-items: center; width: 100%; color: var(--aw-ink); background: none; border: 0; font: inherit; text-align: left; padding: 7px 6px; cursor: pointer; }
 .aw-project__files button:hover { background: var(--aw-hover); }
 .aw-project__files button:disabled { opacity: .5; cursor: wait; }
 .aw-project__file, .aw-project__reveal {
-  background: var(--aw-surface-sidebar, var(--aw-bg2));
-  border: 1px solid var(--aw-hairline, var(--aw-border));
-  border-radius: var(--aw-radius-md, var(--aw-r-md, 6px));
+  background: var(--aw-surface-sidebar);
+  border: 1px solid var(--aw-hairline);
+  border-radius: var(--aw-radius-md);
   padding: var(--aw-space-3, 12px);
   margin-top: var(--aw-space-3, 12px);
   min-width: 0;
@@ -15112,7 +15023,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-project__world { margin-top: var(--ui-sp-3, var(--aw-space-3, 12px)); }
 
 /* Sub-block separator inside Local checkout & People */
-.aw-project__connect { border-top: 1px solid var(--aw-hairline, var(--aw-border)); padding-top: var(--aw-space-4, 16px); margin-top: var(--aw-space-4, 16px); }
+.aw-project__connect { border-top: 1px solid var(--aw-hairline); padding-top: var(--aw-space-4, 16px); margin-top: var(--aw-space-4, 16px); }
 .aw-project__connect .aw-row-h { margin-bottom: var(--aw-space-2, 8px); }
 .aw-project__connect .aw-row-h h4 { margin: 0; }
 .aw-project__connect .aw-seg button { font-size: var(--aw-type-sm, 12px); }
@@ -15120,27 +15031,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 
 /* People table */
 .aw-project__ownership { margin-top: 0; font-size: var(--aw-type-md, 13px); }
-.aw-project__people { width: 100%; border-collapse: collapse; margin-top: var(--aw-space-3, 12px); font-size: var(--aw-type-md, 13px); }
-.aw-project__people th {
-  text-align: left;
-  font-size: var(--aw-type-xs, 11px);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .05em;
-  color: var(--aw-ink-2, var(--aw-text2));
-  padding: 6px 12px 6px 0;
-  border-bottom: 1px solid var(--aw-hairline, var(--aw-border));
-}
-.aw-project__people td {
-  padding: var(--aw-space-2, 8px) 12px var(--aw-space-2, 8px) 0;
-  border-bottom: 1px solid var(--aw-hairline, var(--aw-border));
-  vertical-align: middle;
-}
-.aw-project__people tr:last-child td { border-bottom: 0; }
+.aw-project__people { margin-top: var(--aw-space-3, 12px); }
 .aw-project__peoplewho { min-width: 0; overflow-wrap: anywhere; }
 .aw-project__rolecell { display: inline-flex; align-items: center; gap: var(--aw-space-1, 4px); flex-wrap: wrap; }
-.aw-project__peopleact { text-align: right; white-space: nowrap; }
-.aw-project__peopleact .aw-check { font-size: var(--aw-type-sm, 12px); color: var(--aw-ink-2, var(--aw-text2)); margin-right: var(--aw-space-2, 8px); }
+.aw-project__peopleact { display: inline-flex; align-items: center; gap: var(--aw-space-2, 8px); white-space: nowrap; }
+.aw-project__peopleact .aw-check { font-size: var(--aw-type-sm, 12px); color: var(--aw-ink-2); }
 
 /* Narrow layout (\u2264760px & 390px): zero horizontal scroll, compact rows */
 @media (max-width: 760px) {
@@ -15152,12 +15047,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   .aw-project__worklink > .aw-muted { margin-left: 0; }
   .aw-project__invite { align-items: stretch; flex-direction: column; }
   .aw-project .aw-row-h { flex-wrap: wrap; gap: var(--aw-space-2, 8px); }
-  .aw-project__people, .aw-project__people tbody, .aw-project__people tr, .aw-project__people td { display: block; width: 100%; }
-  .aw-project__people thead { display: none; }
-  .aw-project__people tr { padding: var(--aw-space-2, 8px) 0; border-bottom: 1px solid var(--aw-hairline, var(--aw-border)); }
-  .aw-project__people tr:last-child { border-bottom: 0; }
-  .aw-project__people td { border-bottom: 0; padding: 3px 0; }
-  .aw-project__peopleact { text-align: left; display: flex; align-items: center; gap: var(--aw-space-2, 8px); }
 }
 `;
 
@@ -15238,14 +15127,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       state.success ? /* @__PURE__ */ jsx("p", { className: "aw-project__success", role: "status", children: state.success }) : null
     ] });
   }
-  function SectionSkeleton({ rows = 3, label = "Loading\u2026" }) {
-    return /* @__PURE__ */ jsxs("div", { className: "aw-project__skel", role: "status", "aria-label": label, children: [
-      /* @__PURE__ */ jsx("span", { className: "aw-sr-only", children: label }),
-      Array.from({ length: rows }).map((_, i) => /* @__PURE__ */ jsx("span", { className: "aw-project__skel-row", "aria-hidden": "true" }, i))
-    ] });
-  }
   function ResourceState({ state, refresh, rows = 3, children }) {
-    if (state.loading) return /* @__PURE__ */ jsx(SectionSkeleton, { rows });
+    if (state.loading) return /* @__PURE__ */ jsx(Skeleton, { variant: "rows", rows });
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       state.error ? /* @__PURE__ */ jsxs("div", { className: "aw-project__error-bar", role: "alert", children: [
         /* @__PURE__ */ jsxs("span", { children: [
@@ -15255,94 +15138,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         /* @__PURE__ */ jsx(Button, { size: "sm", disabled: state.refreshing, onClick: refresh, children: "Retry" })
       ] }) : null,
       children
-    ] });
-  }
-  function HeaderOverflow({ items, label = "More actions" }) {
-    const [open, setOpen] = useState(false);
-    const triggerRef = useRef(null);
-    const menuRef = useRef(null);
-    useEffect(() => {
-      if (!open) return void 0;
-      const onPointer = (e) => {
-        if (menuRef.current?.contains(e.target) || triggerRef.current?.contains(e.target)) return;
-        setOpen(false);
-      };
-      const onKey = (e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          setOpen(false);
-          triggerRef.current?.focus();
-        }
-      };
-      window.addEventListener("pointerdown", onPointer);
-      window.addEventListener("keydown", onKey);
-      return () => {
-        window.removeEventListener("pointerdown", onPointer);
-        window.removeEventListener("keydown", onKey);
-      };
-    }, [open]);
-    useEffect(() => {
-      if (!open) return;
-      menuRef.current?.querySelector("button:not(:disabled), a[href]")?.focus();
-    }, [open]);
-    const onMenuKey = (e) => {
-      if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
-      const els = menuRef.current ? [...menuRef.current.querySelectorAll("button:not(:disabled), a[href]")] : [];
-      if (!els.length) return;
-      e.preventDefault();
-      const idx = els.indexOf(document.activeElement);
-      const next = e.key === "Home" ? 0 : e.key === "End" ? els.length - 1 : (idx + (e.key === "ArrowDown" ? 1 : -1) + els.length) % els.length;
-      els[next].focus();
-    };
-    const visible2 = items.filter(Boolean);
-    if (!visible2.length) return null;
-    return /* @__PURE__ */ jsxs("div", { className: "aw-project__overflow", children: [
-      /* @__PURE__ */ jsx(
-        "button",
-        {
-          ref: triggerRef,
-          type: "button",
-          className: "aw-btn aw-project__overflow-btn",
-          "aria-label": label,
-          "aria-haspopup": "menu",
-          "aria-expanded": open,
-          title: label,
-          onClick: () => setOpen((v) => !v),
-          children: "\u22EF"
-        }
-      ),
-      open ? /* @__PURE__ */ jsx("div", { ref: menuRef, className: "aw-project__menu", role: "menu", "aria-label": label, onKeyDown: onMenuKey, children: visible2.map(
-        (item) => item.href ? /* @__PURE__ */ jsxs(
-          "a",
-          {
-            role: "menuitem",
-            className: "aw-project__menuitem",
-            href: item.href,
-            target: "_blank",
-            rel: "noreferrer",
-            onClick: () => setOpen(false),
-            children: [
-              item.label,
-              " \u2197"
-            ]
-          },
-          item.label
-        ) : /* @__PURE__ */ jsx(
-          "button",
-          {
-            type: "button",
-            role: "menuitem",
-            className: "aw-project__menuitem",
-            disabled: item.disabled,
-            onClick: () => {
-              setOpen(false);
-              item.run?.();
-            },
-            children: item.label
-          },
-          item.label
-        )
-      ) }) : null
     ] });
   }
   function ProjectView({ id, initialTab = "Overview" }) {
@@ -15432,7 +15227,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
               /* @__PURE__ */ jsx(Icon, { name: "plus" }),
               " Add work"
             ] }),
-            /* @__PURE__ */ jsx(HeaderOverflow, { items: overflowItems, label: "Project actions" })
+            /* @__PURE__ */ jsx(OverflowMenu, { items: overflowItems, label: "Project actions" })
           ] })
         }
       ),
@@ -15611,14 +15406,6 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       /* @__PURE__ */ jsx(Feedback, { state })
     ] });
   }
-  function ProjectIcon({ name }) {
-    const paths = {
-      branch: "M6 3v12a3 3 0 1 0 3 3M6 9h8a4 4 0 0 0 4-4M18 3v4M4 3h4",
-      globe: "M21 12a9 9 0 1 0-18 0 9 9 0 0 0 18 0M3 12h18M12 3c4 5 4 13 0 18-4-5-4-13 0-18",
-      file: "M14 3H5v18h14V8l-5-5v5h5M8 12h8M8 16h8"
-    };
-    return /* @__PURE__ */ jsx("svg", { "aria-hidden": "true", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.5", strokeLinecap: "round", strokeLinejoin: "round", children: /* @__PURE__ */ jsx("path", { d: paths[name] }) });
-  }
   function Topology({ project, local, git }) {
     const topology = projectTopology(project, local, git);
     return /* @__PURE__ */ jsxs("ol", { className: "aw-project__topology", "aria-label": "Development to deployment", children: [
@@ -15630,7 +15417,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         ] })
       ] }),
       /* @__PURE__ */ jsxs("li", { children: [
-        /* @__PURE__ */ jsx(ProjectIcon, { name: "branch" }),
+        /* @__PURE__ */ jsx(Icon, { name: "branch" }),
         /* @__PURE__ */ jsxs("div", { children: [
           /* @__PURE__ */ jsx("strong", { children: "Repository & ref" }),
           topology.repoUrl ? /* @__PURE__ */ jsx("a", { href: topology.repoUrl, target: "_blank", rel: "noreferrer", children: topology.repoUrl }) : /* @__PURE__ */ jsx("span", { children: project.repo ? "Repository configured; open it with your Git client." : "No repository linked" }),
@@ -15642,7 +15429,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         ] })
       ] }),
       /* @__PURE__ */ jsxs("li", { children: [
-        /* @__PURE__ */ jsx(ProjectIcon, { name: "globe" }),
+        /* @__PURE__ */ jsx(Icon, { name: "globe" }),
         /* @__PURE__ */ jsxs("div", { children: [
           /* @__PURE__ */ jsx("strong", { children: "Preview & production" }),
           topology.sites.length ? topology.sites.map((site) => /* @__PURE__ */ jsxs("div", { className: "aw-project__destination", children: [
@@ -15892,7 +15679,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
               }
             },
             children: [
-              entry.type === "directory" ? /* @__PURE__ */ jsx(Icon, { name: "folder" }) : /* @__PURE__ */ jsx(ProjectIcon, { name: "file" }),
+              entry.type === "directory" ? /* @__PURE__ */ jsx(Icon, { name: "folder" }) : /* @__PURE__ */ jsx(Icon, { name: "file" }),
               entry.name,
               entry.type === "directory" ? "/" : ""
             ]
@@ -16147,67 +15934,84 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     }
     const rows = [...byKey.values()];
     if (!rows.length) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nobody yet. Only you see this project." });
-    return /* @__PURE__ */ jsxs("table", { className: "aw-project__people", children: [
-      /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-        /* @__PURE__ */ jsx("th", { children: "Person" }),
-        /* @__PURE__ */ jsx("th", { children: "Role" }),
-        canManage ? /* @__PURE__ */ jsx("th", { "aria-label": "Manage" }) : null
-      ] }) }),
-      /* @__PURE__ */ jsx("tbody", { children: rows.map((row) => /* @__PURE__ */ jsxs("tr", { children: [
-        /* @__PURE__ */ jsx("td", { className: "aw-project__peoplewho", children: row.userId && row.role === "Client" ? /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-link aw-people__who", title: row.email, onClick: () => open(`c:${row.userId}`), children: [
-          row.name ? `${row.name} \xB7 ` : "",
-          row.email
-        ] }) : /* @__PURE__ */ jsxs("span", { className: "aw-people__who", title: row.email, children: [
-          row.name ? `${row.name} \xB7 ` : "",
-          row.email
-        ] }) }),
-        /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs("span", { className: "aw-project__rolecell", children: [
-          /* @__PURE__ */ jsx(Tag, { tone: row.role === "Trusted developer" ? void 0 : "dash", children: row.role }),
-          row.client?.pending ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "invited" }) : null
-        ] }) }),
-        canManage ? /* @__PURE__ */ jsx("td", { className: "aw-project__peopleact", children: row.client ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsxs("label", { className: "aw-check", title: "Mail them about every request on this project, not only the ones they filed", children: [
-            /* @__PURE__ */ jsx(
-              "input",
-              {
-                type: "checkbox",
-                checked: Boolean(row.client.copy),
-                onChange: (event) => void act(
-                  () => api("PUT", `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`, { copy: event.target.checked }),
-                  event.target.checked ? `${row.client.email} gets every request on ${project.name}.` : `${row.client.email} gets only their own requests.`
-                ).then(onPeopleChanged)
-              }
-            ),
-            "all emails"
-          ] }),
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              size: "sm",
-              kind: "ghost",
-              title: "Take them off this project",
-              onClick: () => ask({
-                title: `Remove ${row.client.email} from ${project.name}?`,
-                text: "They stop seeing its requests and stop getting its emails. Their account and their own requests stay.",
-                confirm: "Remove",
-                danger: true,
-                run: () => act(() => api("DELETE", `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`), `Removed ${row.client.email}.`).then(onPeopleChanged).catch(() => void 0)
-              }),
-              children: "\u2715"
-            }
-          )
-        ] }) : row.developer ? /* @__PURE__ */ jsx(
-          Button,
+    return /* @__PURE__ */ jsx(
+      DataTable,
+      {
+        className: "aw-project__people",
+        label: "People on this project",
+        rows,
+        rowKey: (row) => row.key,
+        columns: [
           {
-            size: "sm",
-            kind: "ghost",
-            disabled: busy,
-            onClick: () => onRemoveDeveloper(row.developer),
-            children: "Remove access"
-          }
-        ) : null }) : null
-      ] }, row.key)) })
-    ] });
+            key: "who",
+            header: "Person",
+            render: (row) => /* @__PURE__ */ jsx("span", { className: "aw-project__peoplewho", children: row.userId && row.role === "Client" ? /* @__PURE__ */ jsxs("button", { type: "button", className: "aw-link aw-people__who", title: row.email, onClick: () => open(`c:${row.userId}`), children: [
+              row.name ? `${row.name} \xB7 ` : "",
+              row.email
+            ] }) : /* @__PURE__ */ jsxs("span", { className: "aw-people__who", title: row.email, children: [
+              row.name ? `${row.name} \xB7 ` : "",
+              row.email
+            ] }) })
+          },
+          {
+            key: "role",
+            header: "Role",
+            fit: true,
+            render: (row) => /* @__PURE__ */ jsxs("span", { className: "aw-project__rolecell", children: [
+              /* @__PURE__ */ jsx(Tag, { tone: row.role === "Trusted developer" ? void 0 : "dash", children: row.role }),
+              row.client?.pending ? /* @__PURE__ */ jsx(Tag, { tone: "warn", children: "invited" }) : null
+            ] })
+          },
+          canManage ? {
+            key: "manage",
+            header: /* @__PURE__ */ jsx("span", { className: "aw-sr", children: "Manage" }),
+            label: "Manage",
+            fit: true,
+            render: (row) => /* @__PURE__ */ jsx("span", { className: "aw-project__peopleact", children: row.client ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+              /* @__PURE__ */ jsxs("label", { className: "aw-check", title: "Mail them about every request on this project, not only the ones they filed", children: [
+                /* @__PURE__ */ jsx(
+                  "input",
+                  {
+                    type: "checkbox",
+                    checked: Boolean(row.client.copy),
+                    onChange: (event) => void act(
+                      () => api("PUT", `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`, { copy: event.target.checked }),
+                      event.target.checked ? `${row.client.email} gets every request on ${project.name}.` : `${row.client.email} gets only their own requests.`
+                    ).then(onPeopleChanged)
+                  }
+                ),
+                "all emails"
+              ] }),
+              /* @__PURE__ */ jsx(
+                Button,
+                {
+                  size: "sm",
+                  kind: "ghost",
+                  title: "Take them off this project",
+                  onClick: () => ask({
+                    title: `Remove ${row.client.email} from ${project.name}?`,
+                    text: "They stop seeing its requests and stop getting its emails. Their account and their own requests stay.",
+                    confirm: "Remove",
+                    danger: true,
+                    run: () => act(() => api("DELETE", `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`), `Removed ${row.client.email}.`).then(onPeopleChanged).catch(() => void 0)
+                  }),
+                  children: "\u2715"
+                }
+              )
+            ] }) : row.developer ? /* @__PURE__ */ jsx(
+              Button,
+              {
+                size: "sm",
+                kind: "ghost",
+                disabled: busy,
+                onClick: () => onRemoveDeveloper(row.developer),
+                children: "Remove access"
+              }
+            ) : null })
+          } : null
+        ].filter(Boolean)
+      }
+    );
   }
   function People({ project, refresh }) {
     const { api, data, ask, setModal } = useAdmin();
@@ -16747,7 +16551,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const onNotify = useCallback((text, kind) => host?.notify?.(text, kind), [host]);
     const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk: setQuestion, onNotify });
     const value = { api, files, host, platform: host ? "dsh" : "web", data, reload, open, openTicket, notify, act, setStatus, ask: setQuestion, setModal, boardProject, setBoardProject };
-    return /* @__PURE__ */ jsxs("div", { className: cx("aw", host && "aw--dsh", "aw--scroll"), children: [
+    return /* @__PURE__ */ jsxs("div", { className: cx2("aw", host && "aw--dsh", "aw--scroll"), children: [
       /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
       /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
         destination.startsWith("p:") ? /* @__PURE__ */ jsx(ProjectView, { id: destination.slice(2) }, destination) : destination.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(destination.slice(2)), active: true }, destination) : workbenchAllowed(destination, data.access) ? /* @__PURE__ */ jsx(View, { name: destination }) : /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "This destination requires administrator access." }),
@@ -16805,18 +16609,18 @@ ${question.text ?? ""}`)) {
     const { value, toast, dismissToast } = useTicketContext({ api, data, reload, host, files: null });
     const scope = page ? "aw--page" : "aw--scroll";
     if (loading && !ticket) {
-      return /* @__PURE__ */ jsxs("div", { className: cx("aw", scope), children: [
+      return /* @__PURE__ */ jsxs("div", { className: cx2("aw", scope), children: [
         /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
         /* @__PURE__ */ jsx(Skeleton, { variant: "ticket", label: "Loading ticket\u2026" })
       ] });
     }
     if (!ticket) {
-      return /* @__PURE__ */ jsxs("div", { className: cx("aw", scope), children: [
+      return /* @__PURE__ */ jsxs("div", { className: cx2("aw", scope), children: [
         /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
         /* @__PURE__ */ jsx("p", { className: "aw-muted aw-unavailable", children: "That ticket is not available." })
       ] });
     }
-    return /* @__PURE__ */ jsxs("div", { className: cx("aw aw--dsh", scope), children: [
+    return /* @__PURE__ */ jsxs("div", { className: cx2("aw aw--dsh", scope), children: [
       /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
       /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
         /* @__PURE__ */ jsx(TicketDetails, { ticket, runs, land, meter, reload, page }),

@@ -309,14 +309,6 @@ const pillText = (m) => {
   }
 };
 
-function PauseIcon({ size = 13 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-      <path d="M9 5v14M15 5v14" />
-    </svg>
-  );
-}
-
 /**
  * Always in the header on the Harness: what this Mac is doing as a worker
  * right now. One click opens the panel; the icon beside it pauses or resumes
@@ -330,7 +322,7 @@ export function MachineStatusPill() {
   const toggle =
     !m.loaded || m.consentError ? null : m.state === 'working' || m.state === 'ready' ? (
       <Button kind="ghost" size="sm" title="Pause: what is running finishes, nothing new starts" onClick={() => void m.pause()}>
-        <PauseIcon />
+        <Icon name="pause" size={13} />
       </Button>
     ) : m.consented && (m.state === 'pausing' || m.state === 'paused') ? (
       <Button kind="ghost" size="sm" title="Resume: this Mac takes work again" onClick={() => void m.resume()}>

@@ -6,13 +6,10 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { STATUS_LABEL, errorText } from './format.js';
+import { isTop, useLayer, useUid } from './ui/layer.js';
+import { Menu } from './ui/menu.jsx';
 
 let modalSeq = 0;
-let uidSeq = 0;
-const useUid = (prefix) => {
-  const [id] = useState(() => `${prefix}-${++uidSeq}`);
-  return id;
-};
 
 export const cx = (...parts) => parts.filter(Boolean).join(' ');
 
@@ -226,10 +223,6 @@ export function PageHeader({ title, subtitle, meta, actions, secondary, overflow
   );
 }
 
-/** Filters and sort in one row: search first, selects, fill, then actions. */
-export function Toolbar({ children, label }) {
-  return <div className="aw-toolbar" role="toolbar" aria-label={label}>{children}</div>;
-}
 
 /** Figures in a line; `tone` colours the value and is always beside its label. */
 export function StatRow({ items }) {
@@ -417,22 +410,7 @@ export function Field({ label, hint, error, children }) {
 
 const FOCUSABLE = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
-/** The layers open right now, top last: Escape closes only the top one. */
-const layers = [];
-const isTop = (token) => layers[layers.length - 1] === token;
-function useLayer() {
-  const [token] = useState(() => ({}));
-  useEffect(() => {
-    layers.push(token);
-    return () => {
-      const i = layers.indexOf(token);
-      if (i >= 0) layers.splice(i, 1);
-    };
-  }, [token]);
-  return token;
-}
-/** True while any menu, dialog or palette is open (the shell's shortcuts stand down). */
-export const layerOpen = () => layers.length > 0;
+export { layerOpen } from './ui/layer.js';
 
 /**
  * The one dialog: focus starts inside (`focus` names a selector to prefer),
@@ -558,134 +536,8 @@ export function Toast({ toast, onDismiss }) {
 
 /* ————— menus ————— */
 
-/**
- * A menu of actions at a point or under an anchor. Items:
- * `{ label, run, hint, shortcut, danger, disabled, disabledReason }`,
- * `{ separator: true }` or `{ heading: 'Label' }`. Arrows/Home/End move,
- * typing jumps, Return or Space runs, Escape or Tab closes; focus returns to
- * whatever had it when the menu opened.
- */
-export function Menu({ items, at, anchor, onClose, label = 'Actions' }) {
-  const ref = useRef(null);
-  const layer = useLayer();
-  const list = items.filter(Boolean);
-  const actionable = list.map((it, i) => (it.separator || it.heading || it.disabled ? -1 : i)).filter((i) => i >= 0);
-  const [active, setActive] = useState(actionable[0] ?? -1);
-  const [pos, setPos] = useState(() => ({ left: at?.x ?? 0, top: at?.y ?? 0, visibility: 'hidden' }));
-  const opener = useRef(null);
-  const typed = useRef({ text: '', at: 0 });
-
-  useLayoutEffect(() => {
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const el = ref.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    let left = at?.x ?? 0;
-    let top = at?.y ?? 0;
-    if (anchor?.current) {
-      const a = anchor.current.getBoundingClientRect();
-      left = a.right - r.width;
-      top = a.bottom + 4;
-      if (left < 8) left = a.left;
-    }
-    left = Math.max(8, Math.min(left, window.innerWidth - r.width - 8));
-    if (top + r.height > window.innerHeight - 8) top = Math.max(8, (anchor?.current ? anchor.current.getBoundingClientRect().top - 4 : top) - r.height);
-    setPos({ left, top, visibility: 'visible' });
-    el.focus();
-  }, []);
-
-  const close = useCallback((restore = true) => {
-    onClose();
-    if (restore) opener.current?.focus?.();
-  }, [onClose]);
-
-  useEffect(() => {
-    const down = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) close(false);
-    };
-    const blur = () => close(false);
-    window.addEventListener('pointerdown', down, true);
-    window.addEventListener('blur', blur);
-    window.addEventListener('resize', blur);
-    return () => {
-      window.removeEventListener('pointerdown', down, true);
-      window.removeEventListener('blur', blur);
-      window.removeEventListener('resize', blur);
-    };
-  }, [close]);
-
-  const run = (item) => {
-    if (!item || item.disabled || item.separator || item.heading) return;
-    close(true);
-    // After focus has gone back, so a dialog the action opens returns there too.
-    setTimeout(() => item.run?.(), 0);
-  };
-  const step = (dir) => {
-    if (!actionable.length) return;
-    const at0 = actionable.indexOf(active);
-    const next = at0 < 0 ? (dir > 0 ? 0 : actionable.length - 1) : (at0 + dir + actionable.length) % actionable.length;
-    setActive(actionable[next]);
-  };
-  const onKey = (e) => {
-    if (!isTop(layer)) return;
-    e.stopPropagation();
-    if (e.key === 'ArrowDown') { e.preventDefault(); step(1); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); step(-1); }
-    else if (e.key === 'Home') { e.preventDefault(); setActive(actionable[0]); }
-    else if (e.key === 'End') { e.preventDefault(); setActive(actionable[actionable.length - 1]); }
-    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(list[active]); }
-    else if (e.key === 'Escape') { e.preventDefault(); close(true); }
-    else if (e.key === 'Tab') { e.preventDefault(); close(true); }
-    else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      const now = Date.now();
-      typed.current = { text: (now - typed.current.at < 600 ? typed.current.text : '') + e.key.toLowerCase(), at: now };
-      const hit = actionable.find((i) => String(list[i].label).toLowerCase().startsWith(typed.current.text));
-      if (hit != null) setActive(hit);
-    }
-  };
-  const menuId = useUid('aw-menu');
-  return (
-    <ul
-      ref={ref}
-      id={menuId}
-      className="aw-menu"
-      role="menu"
-      aria-label={label}
-      tabIndex={-1}
-      aria-activedescendant={active >= 0 ? `${menuId}-${active}` : undefined}
-      style={pos}
-      onKeyDown={onKey}
-      onClick={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.stopPropagation()}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
-    >
-      {list.map((item, i) =>
-        item.separator ? (
-          <li key={`s${i}`} className="aw-menu__sep" role="separator" />
-        ) : item.heading ? (
-          <li key={`h${i}`} className="aw-menu__label" role="presentation">{item.heading}</li>
-        ) : (
-          <li
-            key={`${item.label}-${i}`}
-            id={`${menuId}-${i}`}
-            role="menuitem"
-            aria-disabled={item.disabled || undefined}
-            className={cx('aw-menu__item', item.danger && 'aw-menu__item--danger', i === active && 'is-active')}
-            title={item.disabled ? item.disabledReason : item.hint}
-            onMouseEnter={() => setActive(item.disabled ? -1 : i)}
-            onClick={() => run(item)}
-          >
-            <span>{item.label}{item.disabled && item.disabledReason ? <span className="aw-sr"> — {item.disabledReason}</span> : null}</span>
-            {item.shortcut ? <small>{item.shortcut}</small> : null}
-          </li>
-        ),
-      )}
-    </ul>
-  );
-}
+// Menu lives in ui/menu.jsx (the one role="menu"); re-exported here for old import paths.
+export { Menu };
 
 /** The "…" button that opens a menu of the actions that are not inline. */
 export function OverflowMenu({ items, label = 'More actions', size }) {
@@ -755,10 +607,16 @@ const PATHS = {
   sidebar: 'M4 5h16v14H4zM9 5v14',
   keyboard: 'M3 7h18v10H3zM7 11h.01M11 11h.01M15 11h.01M7 14h10',
   check: 'M5 12l5 5 9-10',
+  pause: 'M9 5v14M15 5v14',
+  branch: 'M6 3v12a3 3 0 1 0 3 3M6 9h8a4 4 0 0 0 4-4M18 3v4M4 3h4',
+  globe: 'M21 12a9 9 0 1 0-18 0 9 9 0 0 0 18 0M3 12h18M12 3c4 5 4 13 0 18-4-5-4-13 0-18',
+  file: 'M14 3H5v18h14V8l-5-5v5h5M8 12h8M8 16h8',
 };
+/** Glyphs drawn heavier than the 1.5 default so they read at small sizes. */
+const WEIGHT = { more: 2.6, pause: 2.2 };
 export function Icon({ name, size = 16 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={name === 'more' ? 2.6 : 1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={WEIGHT[name] ?? 1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       <path d={PATHS[name] ?? PATHS.list} />
     </svg>
   );

@@ -1,7 +1,7 @@
 /* Project destination shared by the web workbench and the native host. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin } from './store.js';
-import { Button, Empty, ErrorNote, Field, Icon, Modal, PageHeader, PageTabs, Segmented, StatusPill, Tag } from './ui.jsx';
+import { Button, DataTable, Empty, ErrorNote, Field, Icon, Modal, OverflowMenu, PageHeader, PageTabs, Segmented, Skeleton, StatusPill, Tag } from './ui/index.js';
 import { RepoModal, ProjectEditModal } from './fleet.jsx';
 import { LOCALES } from '../../../src/lib/locales.js';
 import { ProjectSolutions, SolutionTags } from './project-solutions.jsx';
@@ -69,20 +69,8 @@ function Feedback({ state }) {
   );
 }
 
-/** Shape-matched loading skeleton; announces politely once for screen readers. */
-function SectionSkeleton({ rows = 3, label = 'Loading…' }) {
-  return (
-    <div className="aw-project__skel" role="status" aria-label={label}>
-      <span className="aw-sr-only">{label}</span>
-      {Array.from({ length: rows }).map((_, i) => (
-        <span key={i} className="aw-project__skel-row" aria-hidden="true" />
-      ))}
-    </div>
-  );
-}
-
 function ResourceState({ state, refresh, rows = 3, children }) {
-  if (state.loading) return <SectionSkeleton rows={rows} />;
+  if (state.loading) return <Skeleton variant="rows" rows={rows} />;
   return (
     <>
       {state.error ? (
@@ -93,105 +81,6 @@ function ResourceState({ state, refresh, rows = 3, children }) {
       ) : null}
       {children}
     </>
-  );
-}
-
-/** Quiet header overflow menu ("…") with keyboard Escape/arrows and focus return. */
-function HeaderOverflow({ items, label = 'More actions' }) {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef(null);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onPointer = (e) => {
-      if (menuRef.current?.contains(e.target) || triggerRef.current?.contains(e.target)) return;
-      setOpen(false);
-    };
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
-    };
-    window.addEventListener('pointerdown', onPointer);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('pointerdown', onPointer);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    menuRef.current?.querySelector('button:not(:disabled), a[href]')?.focus();
-  }, [open]);
-
-  const onMenuKey = (e) => {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
-    const els = menuRef.current ? [...menuRef.current.querySelectorAll('button:not(:disabled), a[href]')] : [];
-    if (!els.length) return;
-    e.preventDefault();
-    const idx = els.indexOf(document.activeElement);
-    const next =
-      e.key === 'Home' ? 0
-        : e.key === 'End' ? els.length - 1
-          : (idx + (e.key === 'ArrowDown' ? 1 : -1) + els.length) % els.length;
-    els[next].focus();
-  };
-
-  const visible = items.filter(Boolean);
-  if (!visible.length) return null;
-
-  return (
-    <div className="aw-project__overflow">
-      <button
-        ref={triggerRef}
-        type="button"
-        className="aw-btn aw-project__overflow-btn"
-        aria-label={label}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={label}
-        onClick={() => setOpen((v) => !v)}
-      >
-        ⋯
-      </button>
-      {open ? (
-        <div ref={menuRef} className="aw-project__menu" role="menu" aria-label={label} onKeyDown={onMenuKey}>
-          {visible.map((item) =>
-            item.href ? (
-              <a
-                key={item.label}
-                role="menuitem"
-                className="aw-project__menuitem"
-                href={item.href}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => setOpen(false)}
-              >
-                {item.label} ↗
-              </a>
-            ) : (
-              <button
-                key={item.label}
-                type="button"
-                role="menuitem"
-                className="aw-project__menuitem"
-                disabled={item.disabled}
-                onClick={() => {
-                  setOpen(false);
-                  item.run?.();
-                }}
-              >
-                {item.label}
-              </button>
-            ),
-          )}
-        </div>
-      ) : null}
-    </div>
   );
 }
 
@@ -284,7 +173,7 @@ export function ProjectView({ id, initialTab = 'Overview' }) {
             <Button kind="primary" onClick={() => setModal({ kind: 'task', projectId: id })}>
               <Icon name="plus" /> Add work
             </Button>
-            <HeaderOverflow items={overflowItems} label="Project actions" />
+            <OverflowMenu items={overflowItems} label="Project actions" />
           </>
         }
       />
@@ -475,19 +364,6 @@ function Brief({ project, refresh, setTab }) {
   );
 }
 
-function ProjectIcon({ name }) {
-  const paths = {
-    branch: 'M6 3v12a3 3 0 1 0 3 3M6 9h8a4 4 0 0 0 4-4M18 3v4M4 3h4',
-    globe: 'M21 12a9 9 0 1 0-18 0 9 9 0 0 0 18 0M3 12h18M12 3c4 5 4 13 0 18-4-5-4-13 0-18',
-    file: 'M14 3H5v18h14V8l-5-5v5h5M8 12h8M8 16h8',
-  };
-  return (
-    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d={paths[name]} />
-    </svg>
-  );
-}
-
 function Topology({ project, local, git }) {
   const topology = projectTopology(project, local, git);
   return (
@@ -500,7 +376,7 @@ function Topology({ project, local, git }) {
         </div>
       </li>
       <li>
-        <ProjectIcon name="branch" />
+        <Icon name="branch" />
         <div>
           <strong>Repository & ref</strong>
           {topology.repoUrl
@@ -511,7 +387,7 @@ function Topology({ project, local, git }) {
         </div>
       </li>
       <li>
-        <ProjectIcon name="globe" />
+        <Icon name="globe" />
         <div>
           <strong>Preview & production</strong>
           {topology.sites.length ? topology.sites.map(site => (
@@ -788,7 +664,7 @@ function LocalFiles({ project, host }) {
                   }
                 }}
               >
-                {entry.type === 'directory' ? <Icon name="folder" /> : <ProjectIcon name="file" />}
+                {entry.type === 'directory' ? <Icon name="folder" /> : <Icon name="file" />}
                 {entry.name}{entry.type === 'directory' ? '/' : ''}
               </button>
             </li>
@@ -1079,68 +955,84 @@ function PeopleTable({ project, recipients, clients, memberships, canManage, onP
   const rows = [...byKey.values()];
   if (!rows.length) return <p className="aw-muted">Nobody yet. Only you see this project.</p>;
   return (
-    <table className="aw-project__people">
-      <thead><tr><th>Person</th><th>Role</th>{canManage ? <th aria-label="Manage" /> : null}</tr></thead>
-      <tbody>
-        {rows.map(row => (
-          <tr key={row.key}>
-            <td className="aw-project__peoplewho">
+    <DataTable
+      className="aw-project__people"
+      label="People on this project"
+      rows={rows}
+      rowKey={row => row.key}
+      columns={[
+        {
+          key: 'who',
+          header: 'Person',
+          render: row => (
+            <span className="aw-project__peoplewho">
               {row.userId && row.role === 'Client'
                 ? <button type="button" className="aw-link aw-people__who" title={row.email} onClick={() => open(`c:${row.userId}`)}>{row.name ? `${row.name} · ` : ''}{row.email}</button>
                 : <span className="aw-people__who" title={row.email}>{row.name ? `${row.name} · ` : ''}{row.email}</span>}
-            </td>
-            <td>
-              <span className="aw-project__rolecell">
-                <Tag tone={row.role === 'Trusted developer' ? undefined : 'dash'}>{row.role}</Tag>
-                {row.client?.pending ? <Tag tone="warn">invited</Tag> : null}
-              </span>
-            </td>
-            {canManage ? (
-              <td className="aw-project__peopleact">
-                {row.client ? (
-                  <>
-                    <label className="aw-check" title="Mail them about every request on this project, not only the ones they filed">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(row.client.copy)}
-                        onChange={event => void act(
-                          () => api('PUT', `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`, { copy: event.target.checked }),
-                          event.target.checked ? `${row.client.email} gets every request on ${project.name}.` : `${row.client.email} gets only their own requests.`,
-                        ).then(onPeopleChanged)}
-                      />
-                      all emails
-                    </label>
-                    <Button
-                      size="sm"
-                      kind="ghost"
-                      title="Take them off this project"
-                      onClick={() => ask({
-                        title: `Remove ${row.client.email} from ${project.name}?`,
-                        text: 'They stop seeing its requests and stop getting its emails. Their account and their own requests stay.',
-                        confirm: 'Remove',
-                        danger: true,
-                        run: () => act(() => api('DELETE', `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`), `Removed ${row.client.email}.`).then(onPeopleChanged).catch(() => undefined),
-                      })}
-                    >
-                      ✕
-                    </Button>
-                  </>
-                ) : row.developer ? (
+            </span>
+          ),
+        },
+        {
+          key: 'role',
+          header: 'Role',
+          fit: true,
+          render: row => (
+            <span className="aw-project__rolecell">
+              <Tag tone={row.role === 'Trusted developer' ? undefined : 'dash'}>{row.role}</Tag>
+              {row.client?.pending ? <Tag tone="warn">invited</Tag> : null}
+            </span>
+          ),
+        },
+        canManage ? {
+          key: 'manage',
+          header: <span className="aw-sr">Manage</span>,
+          label: 'Manage',
+          fit: true,
+          render: row => (
+            <span className="aw-project__peopleact">
+              {row.client ? (
+                <>
+                  <label className="aw-check" title="Mail them about every request on this project, not only the ones they filed">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(row.client.copy)}
+                      onChange={event => void act(
+                        () => api('PUT', `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`, { copy: event.target.checked }),
+                        event.target.checked ? `${row.client.email} gets every request on ${project.name}.` : `${row.client.email} gets only their own requests.`,
+                      ).then(onPeopleChanged)}
+                    />
+                    all emails
+                  </label>
                   <Button
                     size="sm"
                     kind="ghost"
-                    disabled={busy}
-                    onClick={() => onRemoveDeveloper(row.developer)}
+                    title="Take them off this project"
+                    onClick={() => ask({
+                      title: `Remove ${row.client.email} from ${project.name}?`,
+                      text: 'They stop seeing its requests and stop getting its emails. Their account and their own requests stay.',
+                      confirm: 'Remove',
+                      danger: true,
+                      run: () => act(() => api('DELETE', `/admin/clients/${row.client.id}/projects/${encodeURIComponent(project.id)}`), `Removed ${row.client.email}.`).then(onPeopleChanged).catch(() => undefined),
+                    })}
                   >
-                    Remove access
+                    ✕
                   </Button>
-                ) : null}
-              </td>
-            ) : null}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+                </>
+              ) : row.developer ? (
+                <Button
+                  size="sm"
+                  kind="ghost"
+                  disabled={busy}
+                  onClick={() => onRemoveDeveloper(row.developer)}
+                >
+                  Remove access
+                </Button>
+              ) : null}
+            </span>
+          ),
+        } : null,
+      ].filter(Boolean)}
+    />
   );
 }
 

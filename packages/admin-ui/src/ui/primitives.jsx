@@ -4,7 +4,8 @@
  * imports these from `ui/index.js`, never from this file.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Icon, Menu, cx } from '../ui.jsx';
+import { Icon, cx } from '../ui.jsx';
+import { Menu } from './menu.jsx';
 import { UI_CSS } from './css.js';
 import { resolveState } from './state.js';
 import { SIZE } from './tokens.js';
@@ -103,6 +104,8 @@ export function MetaChip({ children, title, mono = false, className }) {
  *   `empty: { title, hint, action }` when ready with no rows; `onRetry` on error.
  * Keyboard: j/k/↑/↓ move, Home/End jump, Enter opens; one roving tab stop.
  */
+const CELL_CONTROL = 'button, a[href], input, select, textarea, [contenteditable], [role="button"], label';
+
 export function DataTable({
   columns,
   rows = [],
@@ -142,6 +145,8 @@ export function DataTable({
     if (items.length) setMenuState({ x, y, items });
   };
   const onKey = (i) => (e) => {
+    // Keys typed into a control inside a cell (a checkbox, a button, a link) stay with it.
+    if (e.target !== e.currentTarget && e.target?.closest?.(CELL_CONTROL)) return;
     const action = tableKeyAction(e, i, rows.length);
     if (!action) return;
     e.preventDefault();
@@ -375,6 +380,18 @@ export function ContextBar({ title, back, state, meta, primary, actions, overflo
       </div>
     </header>
   );
+}
+
+/* ————— FilterBar ————— */
+
+/**
+ * Filters and sort for a collection, in one wrapping row: search first, then
+ * selects and segmented controls, a fill (`<span className="aw-toolbar__fill" />`),
+ * then actions such as "Clear filters". An `.aw-search` input inside gets the
+ * magnifier. Replaces the legacy `Toolbar` / `.aw-toolbar`.
+ */
+export function FilterBar({ children, label = 'Filters', className }) {
+  return <div className={cx('ui-filterbar', className)} role="toolbar" aria-label={label}>{children}</div>;
 }
 
 /* ————— forms ————— */

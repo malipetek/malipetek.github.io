@@ -23,7 +23,7 @@ import {
   when,
 } from './format.js';
 import { nextRowIndex } from './row-navigation.mjs';
-import { Button, DataTable, Dot, EmptyState, Inspector, MetaChip, PageHeader, Segmented, StateIndicator, Toolbar, UiStyles, cx, useContextMenu } from './ui/index.js';
+import { Button, DataTable, Dot, EmptyState, Inspector, MetaChip, PageHeader, Segmented, StateIndicator, FilterBar, UiStyles, cx, layerOpen, useContextMenu } from './ui/index.js';
 
 /** Filter bar shared by the board and the list. */
 function useFilters() {
@@ -82,7 +82,7 @@ const clearFilters = (f) => {
   f.setQ('');
 };
 
-function FilterBar({ f, extra }) {
+function BoardFilters({ f, extra }) {
   const { data, platform } = useAdmin();
   const search = useRef(null);
   // '/' focuses the filter, the way every list app does; typing is untouched.
@@ -98,7 +98,7 @@ function FilterBar({ f, extra }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [platform]);
   return (
-    <Toolbar label="Filters">
+    <FilterBar label="Filters">
       <input ref={search} className="aw-search" type="search" value={f.q} aria-label="Filter, or search threads" aria-keyshortcuts={platform === 'web' ? '/' : undefined} placeholder="Filter, or search threads…" onChange={(e) => f.setQ(e.target.value)} />
       <select value={f.boardProject} onChange={(e) => f.setBoardProject(e.target.value)} aria-label="Project">
         <option value="all">All projects</option>
@@ -121,7 +121,7 @@ function FilterBar({ f, extra }) {
       {extra}
       <span className="aw-toolbar__fill" />
       {filtered(f) ? <Button kind="ghost" size="sm" onClick={() => clearFilters(f)}>Clear filters</Button> : null}
-    </Toolbar>
+    </FilterBar>
   );
 }
 
@@ -194,7 +194,8 @@ const LEAD_MOVE = { new: 'approved', review: 'done' };
 /** Escape closes the Inspector from anywhere in the workspace, unless something nearer used it. */
 const closeOnEscape = (selected, close) => (e) => {
   if (e.key !== 'Escape' || e.defaultPrevented || selected == null) return;
-  if (e.target?.closest?.('input, textarea, select, [contenteditable], [role="menu"], [role="dialog"]')) return;
+  // An open menu or dialog owns Escape (the shared layer stack), so the Inspector stays.
+  if (layerOpen() || e.target?.closest?.('input, textarea, select, [contenteditable], [role="dialog"]')) return;
   e.preventDefault();
   close();
 };
@@ -451,7 +452,7 @@ export function BoardView() {
     <div className="ui-workspace" onKeyDown={closeOnEscape(selected?.id, close)}>
       <UiStyles />
       <PageHeader title="Board" subtitle="Every request by status. Click a card to inspect it; drag it to another column, or right-click it, to move it." actions={<NewTaskButton f={f} quiet={Boolean(selected)} />} />
-      <FilterBar f={f} extra={<Segmented label="Columns" value={showClosed} options={[{ value: false, label: 'Open' }, { value: true, label: '+ Declined' }]} onChange={setShowClosed} />} />
+      <BoardFilters f={f} extra={<Segmented label="Columns" value={showClosed} options={[{ value: false, label: 'Open' }, { value: true, label: '+ Declined' }]} onChange={setShowClosed} />} />
       <div className="ui-split">
         <div className="ui-split__main">
           <div className="aw-board">
@@ -548,7 +549,7 @@ export function ListView() {
     <div className="ui-workspace" onKeyDown={closeOnEscape(selected?.id, close)}>
       <UiStyles />
       <PageHeader title="All work" subtitle="Every request in one table. Click a column to sort; select a row to inspect it, Enter to open it." actions={<NewTaskButton f={f} quiet={Boolean(selected)} />} />
-      <FilterBar
+      <BoardFilters
         f={f}
         extra={
           <select value={status} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Status">

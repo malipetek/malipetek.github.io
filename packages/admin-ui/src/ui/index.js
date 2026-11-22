@@ -8,7 +8,7 @@
  * each legacy export is replaced here, not renamed, when its v2 version lands.
  */
 export * from '../ui.jsx';
-export { StateIndicator, MetaChip, DataTable, Inspector, ContextBar, SaveBar, FormPane, Shell, UiStyles, HOST_MODES } from './primitives.jsx';
+export { StateIndicator, MetaChip, DataTable, Inspector, ContextBar, FilterBar, SaveBar, FormPane, Shell, UiStyles, HOST_MODES } from './primitives.jsx';
 export { STATE_MAP, TONES, resolveState, humanize } from './state.js';
 export { TOKENS, TOKEN_NAMES, TOKENS_CSS, TYPE, SPACE, RADII, MOTION, SIZE } from './tokens.js';
 export { UI_CSS } from './css.js';
