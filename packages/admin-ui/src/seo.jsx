@@ -1364,6 +1364,20 @@ function sourceRows(rows) {
     .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
 }
 
+/** Whether an answer names us, cites us, cites others, or cites nothing. */
+function coverageProps(entry) {
+  if (!entry.latest) return { state: 'not_asked', tone: 'neutral', label: 'Not asked' };
+  const urls = entry.latest.citedUrls ?? [];
+  let ours = false;
+  for (const url of urls) {
+    try { if (isOurDomain(new URL(url).hostname.replace(/^www\./, ''))) { ours = true; break; } } catch { /* ignore */ }
+  }
+  if (entry.latest.mentionsUs) return { state: 'named', tone: 'ok', label: 'Named us' };
+  if (ours) return { state: 'cited', tone: 'info', label: 'Cited only' };
+  if (urls.length) return { state: 'not_cited', tone: 'bad', label: 'Not cited' };
+  return { state: 'no_source', tone: 'neutral', label: 'No source' };
+}
+
 const namedProps = (entry) =>
   !entry.latest
     ? { state: 'not_asked', tone: 'neutral', label: 'Not asked yet' }
@@ -1482,7 +1496,7 @@ function GeoTab({ desk }) {
             ),
           },
           { key: 'asked', header: 'Asked', numeric: true, render: (entry) => entry.runs.length },
-          { key: 'named', header: 'Named us', fit: true, render: (entry) => <StateIndicator {...namedProps(entry)} title={entry.runs.length ? `${entry.named} of ${entry.runs.length} answers named us` : undefined} /> },
+          { key: 'coverage', header: 'Coverage', fit: true, render: (entry) => <StateIndicator {...coverageProps(entry)} title={entry.runs.length ? `${entry.named} of ${entry.runs.length} answers named us` : undefined} /> },
           { key: 'checked', header: 'Last checked', fit: true, render: (entry) => (entry.latest ? shortDay(entry.latest.day) : '—') },
         ]}
       />

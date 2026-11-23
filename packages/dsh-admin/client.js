@@ -8850,6 +8850,24 @@ ${block(Object.entries(TOKENS))}
     }
     return [...map.values()].map((row) => ({ ...row, count: row.questions.length })).sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
   }
+  function coverageProps(entry) {
+    if (!entry.latest) return { state: "not_asked", tone: "neutral", label: "Not asked" };
+    const urls = entry.latest.citedUrls ?? [];
+    let ours = false;
+    for (const url of urls) {
+      try {
+        if (isOurDomain(new URL(url).hostname.replace(/^www\./, ""))) {
+          ours = true;
+          break;
+        }
+      } catch {
+      }
+    }
+    if (entry.latest.mentionsUs) return { state: "named", tone: "ok", label: "Named us" };
+    if (ours) return { state: "cited", tone: "info", label: "Cited only" };
+    if (urls.length) return { state: "not_cited", tone: "bad", label: "Not cited" };
+    return { state: "no_source", tone: "neutral", label: "No source" };
+  }
   var namedProps = (entry) => !entry.latest ? { state: "not_asked", tone: "neutral", label: "Not asked yet" } : entry.latest.mentionsUs ? { state: "named", tone: "ok", label: "Named" } : { state: "not_named", tone: "neutral", label: "Not named" };
   function GeoTab({ desk }) {
     const { api, tick, run, busy } = desk;
@@ -8950,7 +8968,7 @@ ${block(Object.entries(TOKENS))}
                   ] })
                 },
                 { key: "asked", header: "Asked", numeric: true, render: (entry) => entry.runs.length },
-                { key: "named", header: "Named us", fit: true, render: (entry) => /* @__PURE__ */ jsx(StateIndicator, { ...namedProps(entry), title: entry.runs.length ? `${entry.named} of ${entry.runs.length} answers named us` : void 0 }) },
+                { key: "coverage", header: "Coverage", fit: true, render: (entry) => /* @__PURE__ */ jsx(StateIndicator, { ...coverageProps(entry), title: entry.runs.length ? `${entry.named} of ${entry.runs.length} answers named us` : void 0 }) },
                 { key: "checked", header: "Last checked", fit: true, render: (entry) => entry.latest ? shortDay2(entry.latest.day) : "\u2014" }
               ]
             }
