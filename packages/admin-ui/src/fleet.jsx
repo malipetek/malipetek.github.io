@@ -518,14 +518,6 @@ function FirstPreviewControl({ c }) {
 /** A client’s bill, language, translator and projects. */
 function ClientControls({ c }) {
   const { api, act, data } = useAdmin();
-  const toggle = (ids) => {
-    const added = ids.filter((x) => !c.projectIds.includes(x));
-    const removed = c.projectIds.filter((x) => !ids.includes(x));
-    return act(async () => {
-      for (const p of added) await api('PUT', `/admin/clients/${c.id}/projects/${p}`);
-      for (const p of removed) await api('DELETE', `/admin/clients/${c.id}/projects/${p}`);
-    }, 'Saved.');
-  };
   return (
     <>
       <p className="aw-muted">{usageLine(c.usage)}</p>
@@ -554,7 +546,6 @@ function ClientControls({ c }) {
       </div>
       {c.role !== 'admin' ? <FirstPreviewControl c={c} /> : null}
       <InviteControls c={c} />
-      <Chips value={c.projectIds} options={data.projects.map((p) => ({ value: p.id, label: p.name }))} onChange={(ids) => void toggle(ids)} />
     </>
   );
 }
@@ -893,6 +884,119 @@ const siteStateOf = (p) => {
 };
 
 /** One client: who they are, what they owe, and every request they filed, open ones first. */
+/**
+ * Assign a client to projects: search, multi-select, one save. Replaces the
+ * flat chip row, which stopped working once there were more than a handful
+ * of projects and saved each toggle as its own request.
+ */
+function AssignProjectsModal({ client, onClose }) {
+  const { api, act, data } = useAdmin();
+  const [picked, setPicked] = useState(() => new Set(client.projectIds ?? []));
+  const [query, setQuery] = useState('');
+  const [saving, setSaving] = useState(false);
+  const needle = query.trim().toLowerCase();
+  const projects = data.projects
+    .filter((p) => !needle || `${p.name} ${p.slug ?? ''}`.toLowerCase().includes(needle))
+    .slice()
+    .sort((a, b) => Number(picked.has(b.id)) - Number(picked.has(a.id)) || a.name.localeCompare(b.name));
+  const added = [...picked].filter((id) => !(client.projectIds ?? []).includes(id));
+  const removed = (client.projectIds ?? []).filter((id) => !picked.has(id));
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await act(async () => {
+        for (const id of added) await api('PUT', `/admin/clients/${client.id}/projects/${id}`);
+        for (const id of removed) await api('DELETE', `/admin/clients/${client.id}/projects/${id}`);
+      }, added.length && removed.length ? `${added.length} added, ${removed.length} removed.` : added.length ? 'Projects assigned.' : removed.length ? 'Projects removed.' : 'Saved.');
+      onClose();
+    } catch { /* act reports */ } finally { setSaving(false); }
+  };
+  return (
+    <Modal kind="create"
+      title={`Projects for ${client.name || client.email}`}
+      subtitle="Being on a project gives them its portal and its requests. Removing a project takes both away; their account and requests stay."
+      onClose={onClose}
+      actions={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button kind="primary" busy={saving} disabled={saving || (!added.length && !removed.length)} onClick={() => void save()}>
+            {saving ? 'Saving…' : added.length || removed.length ? `Save · ${added.length} added, ${removed.length} removed` : 'No changes'}
+          </Button>
+        </>
+      }
+    >
+      <Field label="Find a project">
+        <input value={query} placeholder="Search by name or slug…" onChange={(e) => setQuery(e.target.value)} />
+      </Field>
+      <div className="aw-assign__list" role="group" aria-label="Projects">
+        {projects.length === 0 ? <p className="aw-muted">No project matches “{query}”.</p> : projects.map((p) => {
+          const checked = picked.has(p.id);
+          return (
+            <label key={p.id} className="aw-assign__row" data-checked={checked || undefined}>
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => setPicked((current) => {
+                  const next = new Set(current);
+                  if (next.has(p.id)) next.delete(p.id); else next.add(p.id);
+                  return next;
+                })}
+              />
+              <span className="aw-assign__name">{p.name}</span>
+              {p.slug ? <span className="aw-assign__slug">{p.slug}</span> : null}
+              {checked ? <span className="aw-assign__state">Assigned</span> : null}
+            </label>
+          );
+        })}
+      </div>
+      <p className="aw-muted">{picked.size} of {data.projects.length} projects selected.</p>
+    </Modal>
+  );
+}
+
+/** A client's projects as a real list: requests, open work, and a way out. */
+function ClientProjects({ client }) {
+  const { data, open, api, act, ask, setModal } = useAdmin();
+  const tickets = ticketsOf(data, client);
+  const projects = data.projects.filter((p) => (client.projectIds ?? []).includes(p.id));
+  const stats = (project) => {
+    const rows = tickets.filter((t) => t.project_id === project.id);
+    return { total: rows.length, open: rows.filter((t) => !closedTicket(t)).length };
+  };
+  const remove = (project) => ask({
+    title: `Remove ${client.email} from ${project.name}?`,
+    text: 'They stop seeing its requests and stop getting its emails. Their account and their own requests stay.',
+    confirm: 'Remove',
+    danger: true,
+    run: () => act(() => api('DELETE', `/admin/clients/${client.id}/projects/${project.id}`), `Removed ${client.email} from ${project.name}.`).catch(() => undefined),
+  });
+  return (
+    <section className="ui-section">
+      <div className="aw-section-head">
+        <h3 className="ui-section__title">Projects · {projects.length}</h3>
+        <Button size="sm" onClick={() => setModal({ kind: 'custom', render: (close) => <AssignProjectsModal client={client} onClose={close} /> })}>
+          Assign projects…
+        </Button>
+      </div>
+      <DataTable
+        label={`Projects of ${client.name || client.email}`}
+        rows={projects}
+        rowKey={(p) => p.id}
+        onOpen={(p) => open(`p:${p.id}`)}
+        empty={{ title: 'Not on a project yet', hint: 'Assign a project to give this client its portal and its requests.' }}
+        columns={[
+          { key: 'name', header: 'Project', render: (p) => <span title={p.slug}>{p.name}{p.slug ? <span className="ui-note"> · {p.slug}</span> : null}</span> },
+          { key: 'requests', header: 'Requests', numeric: true, fit: true, render: (p) => stats(p).total },
+          { key: 'open', header: 'Open', numeric: true, fit: true, render: (p) => stats(p).open },
+          { key: 'access', header: 'Portal', fit: true, render: () => <StateIndicator state="active" tone="ok" label="Can open" /> },
+          { key: 'remove', header: '', fit: true, render: (p) => <Button size="sm" kind="ghost" onClick={() => remove(p)}>Remove…</Button> },
+        ]}
+      />
+    </section>
+  );
+}
+
 export function ClientView({ id }) {
   const { data, openTicket, open: openTab } = useAdmin();
   const c = data.clients.find((x) => x.id === id);
@@ -909,6 +1013,7 @@ export function ClientView({ id }) {
       <FormPane className="aw-group">
         <ClientControls c={c} />
       </FormPane>
+      <ClientProjects client={c} />
       <section className="ui-section">
         <h3 className="ui-section__title">Requests · {tickets.length}</h3>
         <DataTable
@@ -970,7 +1075,12 @@ function ClientInspector({ c, onClose }) {
       {c.pending ? <StateIndicator state="invited" tone="warn" label="Invited, not signed in yet" /> : null}
       <div className="ui-actions">
         <Button onClick={() => open(`c:${c.id}`)} title="Open client page  Enter">Open client page</Button>
-        <Button kind="ghost" onClick={() => setModal({ kind: 'custom', render: (close) => <InviteClientModal client={c} onClose={close} /> })}>Add to projects…</Button>
+        <Button kind="ghost" onClick={() => setModal({
+          kind: 'custom',
+          render: (close) => c.pending
+            ? <InviteClientModal client={c} onClose={close} />
+            : <AssignProjectsModal client={c} onClose={close} />,
+        })}>{c.pending ? 'Add to projects…' : 'Assign projects…'}</Button>
         <Button kind="ghost" onClick={() => window.open(`mailto:${c.email}`)}>Email…</Button>
       </div>
       <dl className="ui-props">

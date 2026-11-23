@@ -10222,14 +10222,6 @@ ${block(Object.entries(TOKENS))}
   }
   function ClientControls({ c }) {
     const { api, act, data } = useAdmin();
-    const toggle = (ids) => {
-      const added = ids.filter((x) => !c.projectIds.includes(x));
-      const removed = c.projectIds.filter((x) => !ids.includes(x));
-      return act(async () => {
-        for (const p of added) await api("PUT", `/admin/clients/${c.id}/projects/${p}`);
-        for (const p of removed) await api("DELETE", `/admin/clients/${c.id}/projects/${p}`);
-      }, "Saved.");
-    };
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       /* @__PURE__ */ jsx("p", { className: "aw-muted", children: usageLine(c.usage) }),
       /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
@@ -10258,8 +10250,7 @@ ${block(Object.entries(TOKENS))}
         )
       ] }),
       c.role !== "admin" ? /* @__PURE__ */ jsx(FirstPreviewControl, { c }) : null,
-      /* @__PURE__ */ jsx(InviteControls, { c }),
-      /* @__PURE__ */ jsx(Chips, { value: c.projectIds, options: data.projects.map((p) => ({ value: p.id, label: p.name })), onChange: (ids) => void toggle(ids) })
+      /* @__PURE__ */ jsx(InviteControls, { c })
     ] });
   }
   function InviteControls({ c }) {
@@ -10395,6 +10386,125 @@ ${block(Object.entries(TOKENS))}
     const states = [...new Set(sites.map((site) => site.state?.replaceAll("_", " ")).filter(Boolean))];
     return states.join(", ") || "Site status unavailable";
   };
+  function AssignProjectsModal({ client, onClose }) {
+    const { api, act, data } = useAdmin();
+    const [picked, setPicked] = useState(() => new Set(client.projectIds ?? []));
+    const [query, setQuery] = useState("");
+    const [saving, setSaving] = useState(false);
+    const needle = query.trim().toLowerCase();
+    const projects = data.projects.filter((p) => !needle || `${p.name} ${p.slug ?? ""}`.toLowerCase().includes(needle)).slice().sort((a, b) => Number(picked.has(b.id)) - Number(picked.has(a.id)) || a.name.localeCompare(b.name));
+    const added = [...picked].filter((id) => !(client.projectIds ?? []).includes(id));
+    const removed = (client.projectIds ?? []).filter((id) => !picked.has(id));
+    const save = async () => {
+      if (saving) return;
+      setSaving(true);
+      try {
+        await act(async () => {
+          for (const id of added) await api("PUT", `/admin/clients/${client.id}/projects/${id}`);
+          for (const id of removed) await api("DELETE", `/admin/clients/${client.id}/projects/${id}`);
+        }, added.length && removed.length ? `${added.length} added, ${removed.length} removed.` : added.length ? "Projects assigned." : removed.length ? "Projects removed." : "Saved.");
+        onClose();
+      } catch {
+      } finally {
+        setSaving(false);
+      }
+    };
+    return /* @__PURE__ */ jsxs(
+      Modal,
+      {
+        kind: "create",
+        title: `Projects for ${client.name || client.email}`,
+        subtitle: "Being on a project gives them its portal and its requests. Removing a project takes both away; their account and requests stay.",
+        onClose,
+        actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
+          /* @__PURE__ */ jsx(Button, { kind: "primary", busy: saving, disabled: saving || !added.length && !removed.length, onClick: () => void save(), children: saving ? "Saving\u2026" : added.length || removed.length ? `Save \xB7 ${added.length} added, ${removed.length} removed` : "No changes" })
+        ] }),
+        children: [
+          /* @__PURE__ */ jsx(Field, { label: "Find a project", children: /* @__PURE__ */ jsx("input", { value: query, placeholder: "Search by name or slug\u2026", onChange: (e) => setQuery(e.target.value) }) }),
+          /* @__PURE__ */ jsx("div", { className: "aw-assign__list", role: "group", "aria-label": "Projects", children: projects.length === 0 ? /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+            "No project matches \u201C",
+            query,
+            "\u201D."
+          ] }) : projects.map((p) => {
+            const checked = picked.has(p.id);
+            return /* @__PURE__ */ jsxs("label", { className: "aw-assign__row", "data-checked": checked || void 0, children: [
+              /* @__PURE__ */ jsx(
+                "input",
+                {
+                  type: "checkbox",
+                  checked,
+                  onChange: () => setPicked((current) => {
+                    const next = new Set(current);
+                    if (next.has(p.id)) next.delete(p.id);
+                    else next.add(p.id);
+                    return next;
+                  })
+                }
+              ),
+              /* @__PURE__ */ jsx("span", { className: "aw-assign__name", children: p.name }),
+              p.slug ? /* @__PURE__ */ jsx("span", { className: "aw-assign__slug", children: p.slug }) : null,
+              checked ? /* @__PURE__ */ jsx("span", { className: "aw-assign__state", children: "Assigned" }) : null
+            ] }, p.id);
+          }) }),
+          /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+            picked.size,
+            " of ",
+            data.projects.length,
+            " projects selected."
+          ] })
+        ]
+      }
+    );
+  }
+  function ClientProjects({ client }) {
+    const { data, open, api, act, ask, setModal } = useAdmin();
+    const tickets = ticketsOf(data, client);
+    const projects = data.projects.filter((p) => (client.projectIds ?? []).includes(p.id));
+    const stats = (project) => {
+      const rows = tickets.filter((t) => t.project_id === project.id);
+      return { total: rows.length, open: rows.filter((t) => !closedTicket(t)).length };
+    };
+    const remove = (project) => ask({
+      title: `Remove ${client.email} from ${project.name}?`,
+      text: "They stop seeing its requests and stop getting its emails. Their account and their own requests stay.",
+      confirm: "Remove",
+      danger: true,
+      run: () => act(() => api("DELETE", `/admin/clients/${client.id}/projects/${project.id}`), `Removed ${client.email} from ${project.name}.`).catch(() => void 0)
+    });
+    return /* @__PURE__ */ jsxs("section", { className: "ui-section", children: [
+      /* @__PURE__ */ jsxs("div", { className: "aw-section-head", children: [
+        /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
+          "Projects \xB7 ",
+          projects.length
+        ] }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(AssignProjectsModal, { client, onClose: close }) }), children: "Assign projects\u2026" })
+      ] }),
+      /* @__PURE__ */ jsx(
+        DataTable,
+        {
+          label: `Projects of ${client.name || client.email}`,
+          rows: projects,
+          rowKey: (p) => p.id,
+          onOpen: (p) => open(`p:${p.id}`),
+          empty: { title: "Not on a project yet", hint: "Assign a project to give this client its portal and its requests." },
+          columns: [
+            { key: "name", header: "Project", render: (p) => /* @__PURE__ */ jsxs("span", { title: p.slug, children: [
+              p.name,
+              p.slug ? /* @__PURE__ */ jsxs("span", { className: "ui-note", children: [
+                " \xB7 ",
+                p.slug
+              ] }) : null
+            ] }) },
+            { key: "requests", header: "Requests", numeric: true, fit: true, render: (p) => stats(p).total },
+            { key: "open", header: "Open", numeric: true, fit: true, render: (p) => stats(p).open },
+            { key: "access", header: "Portal", fit: true, render: () => /* @__PURE__ */ jsx(StateIndicator, { state: "active", tone: "ok", label: "Can open" }) },
+            { key: "remove", header: "", fit: true, render: (p) => /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => remove(p), children: "Remove\u2026" }) }
+          ]
+        }
+      )
+    ] });
+  }
   function ClientView({ id }) {
     const { data, openTicket, open: openTab } = useAdmin();
     const c = data.clients.find((x) => x.id === id);
@@ -10411,6 +10521,7 @@ ${block(Object.entries(TOKENS))}
         }
       ),
       /* @__PURE__ */ jsx(FormPane, { className: "aw-group", children: /* @__PURE__ */ jsx(ClientControls, { c }) }),
+      /* @__PURE__ */ jsx(ClientProjects, { client: c }),
       /* @__PURE__ */ jsxs("section", { className: "ui-section", children: [
         /* @__PURE__ */ jsxs("h3", { className: "ui-section__title", children: [
           "Requests \xB7 ",
@@ -10468,7 +10579,10 @@ ${block(Object.entries(TOKENS))}
       c.pending ? /* @__PURE__ */ jsx(StateIndicator, { state: "invited", tone: "warn", label: "Invited, not signed in yet" }) : null,
       /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
         /* @__PURE__ */ jsx(Button, { onClick: () => open(`c:${c.id}`), title: "Open client page  Enter", children: "Open client page" }),
-        /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(InviteClientModal, { client: c, onClose: close }) }), children: "Add to projects\u2026" }),
+        /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => setModal({
+          kind: "custom",
+          render: (close) => c.pending ? /* @__PURE__ */ jsx(InviteClientModal, { client: c, onClose: close }) : /* @__PURE__ */ jsx(AssignProjectsModal, { client: c, onClose: close })
+        }), children: c.pending ? "Add to projects\u2026" : "Assign projects\u2026" }),
         /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => window.open(`mailto:${c.email}`), children: "Email\u2026" })
       ] }),
       /* @__PURE__ */ jsxs("dl", { className: "ui-props", children: [
@@ -12458,6 +12572,15 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   :is(.aw-fleet, .aw-clients, .aw-client) .ui-table td[data-fit] { width: auto; }
   :is(.aw-fleet, .aw-clients, .aw-client) .ui-table td + td { display: inline-block; max-width: 100%; margin: var(--ui-sp-1) var(--ui-sp-3) 0 0; vertical-align: top; }
 }
+.aw-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-sp-3, 12px); margin: 0 0 var(--ui-sp-2, 8px); }
+.aw-section-head .ui-section__title { margin: 0; }
+.aw-assign__list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; margin: var(--ui-sp-3, 12px) 0; padding: 4px; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: var(--ui-r-lg, 10px); background: var(--ui-bg-subtle, var(--aw-fill)); }
+.aw-assign__row { display: flex; align-items: center; gap: 10px; padding: 7px 9px; border-radius: var(--ui-r-md, 6px); cursor: pointer; font-size: var(--ui-fs-sm, 12px); }
+.aw-assign__row:hover { background: var(--ui-bg-hover, var(--aw-fill)); }
+.aw-assign__row[data-checked] { background: var(--ui-bg-selected, var(--aw-fill)); }
+.aw-assign__name { flex: 0 1 auto; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-assign__slug { flex: 1; min-width: 0; color: var(--ui-ink-3, inherit); font-family: var(--ui-mono, ui-monospace); font-size: var(--ui-fs-xs, 11px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-assign__state { flex: none; color: var(--ui-ink-3, inherit); font-size: var(--ui-fs-xs, 11px); }
 .aw-clients .aw-row { flex-wrap: nowrap; }
 .aw-clients .aw-row > .aw-muted { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--aw-type-sm); }
 .aw-clients .aw-row > .aw-muted:last-child { flex: none; }
