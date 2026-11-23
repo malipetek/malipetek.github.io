@@ -1459,7 +1459,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   .aw-settings-form .aw-field > :not(.aw-field__label) { grid-column: 1; }
 }
 /* the ticket rail */
-.aw-details__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--aw-space-2); margin-bottom: var(--aw-space-3); }
+.aw-details__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--aw-space-2); margin-bottom: var(--aw-space-3); }
 .aw-details__pair > .aw-field { margin-bottom: 0; }
 .aw-details__pair select { font-size: var(--aw-type-sm); padding-inline: var(--aw-space-2) 22px; }
 .aw-details .aw-seg { display: flex; width: fit-content; max-width: 100%; }
