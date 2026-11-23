@@ -1347,7 +1347,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-seo .aw-pagehead__titles p { white-space: normal; }
 .aw-seo-strip { padding-bottom: var(--ui-sp-2); margin-bottom: var(--ui-sp-3); border-bottom: 1px solid var(--ui-border); }
 .aw-seo-modes { display: flex; align-items: center; gap: var(--ui-sp-3, 12px); flex-wrap: wrap; margin: var(--ui-sp-3, 12px) 0; }
-.aw-seo-source-question { display: block; padding: 2px 0; text-align: left; font-size: var(--ui-fs-sm, 12px); }
+.aw-seo-source-question { display: block; padding: 2px 0; text-align: left; font-size: var(--ui-fs-sm, 12px); white-space: normal; overflow-wrap: anywhere; }
 .aw-seo-strip .aw-statrow { margin: var(--ui-sp-2) 0 0; }
 .aw-seo-strip .aw-statrow__item strong { font-size: var(--ui-fs-lg); font-weight: 600; }
 .aw-seo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: var(--ui-sp-4) var(--ui-sp-6); }
