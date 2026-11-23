@@ -42,6 +42,10 @@ export function Menu({ items, at, anchor, onClose, label = 'Actions' }) {
     left = Math.max(8, Math.min(left, window.innerWidth - r.width - 8));
     if (top + r.height > window.innerHeight - 8) top = Math.max(8, (anchor?.current ? anchor.current.getBoundingClientRect().top - 4 : top) - r.height);
     setPos({ left, top, visibility: 'visible' });
+    // A visibility:hidden element cannot take focus, and the state above lands
+    // only on the next render: show it now, or focus stays on the opener and
+    // Escape, the arrows and Return never reach the menu.
+    el.style.visibility = 'visible';
     el.focus();
   }, []);
 

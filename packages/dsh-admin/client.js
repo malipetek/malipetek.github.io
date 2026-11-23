@@ -568,6 +568,7 @@ var __awPlugin = (() => {
       left = Math.max(8, Math.min(left, window.innerWidth - r.width - 8));
       if (top + r.height > window.innerHeight - 8) top = Math.max(8, (anchor?.current ? anchor.current.getBoundingClientRect().top - 4 : top) - r.height);
       setPos({ left, top, visibility: "visible" });
+      el.style.visibility = "visible";
       el.focus();
     }, []);
     const close = useCallback((restore = true) => {
@@ -2011,6 +2012,23 @@ ${block(Object.entries(TOKENS))}
     e.preventDefault();
     close();
   };
+  function useInspectorClose(selectedId, setSelectedId) {
+    const root = useRef(null);
+    const returning = useRef(false);
+    const close = () => {
+      const inside = Boolean(document.activeElement?.closest?.(".ui-inspector"));
+      setSelectedId(null);
+      if (!inside || selectedId == null) return;
+      requestAnimationFrame(() => {
+        const target = root.current?.querySelector(`[data-key="${selectedId}"], [data-ticket="${selectedId}"]`);
+        if (!target) return;
+        returning.current = true;
+        target.focus();
+        returning.current = false;
+      });
+    };
+    return { root, close, returning };
+  }
   function useSettled(value, ms = 250) {
     const [settled, setSettled] = useState(value);
     useEffect(() => {
@@ -2134,6 +2152,7 @@ ${block(Object.entries(TOKENS))}
         "aria-label": `#${t.id} ${t.title}`,
         "aria-current": selected ? "true" : void 0,
         "data-selected": selected ? "" : void 0,
+        "data-ticket": t.id,
         className: cx2("aw-card", "ui-selectable", run && "is-running", queued && !queued.eligible.length && "is-stuck"),
         draggable,
         onDragStart: (e) => {
@@ -2193,8 +2212,11 @@ ${block(Object.entries(TOKENS))}
     const byId = new Map(data.tickets.map((t) => [t.id, t]));
     const visible2 = tickets.filter((t) => columns.includes(t.status));
     const selected = selectedId == null ? null : visible2.find((t) => t.id === selectedId) ?? null;
-    const close = () => setSelectedId(null);
-    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace", onKeyDown: closeOnEscape(selected?.id, close), children: [
+    const { root, close, returning } = useInspectorClose(selected?.id, setSelectedId);
+    const select = (t) => {
+      if (!returning.current) setSelectedId(t.id);
+    };
+    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace", ref: root, onKeyDown: closeOnEscape(selected?.id, close), children: [
       /* @__PURE__ */ jsx(UiStyles, {}),
       /* @__PURE__ */ jsx(PageHeader, { title: "Board", subtitle: "Every request by status. Click a card to inspect it; drag it to another column, or right-click it, to move it.", actions: /* @__PURE__ */ jsx(NewTaskButton, { f, quiet: Boolean(selected) }) }),
       /* @__PURE__ */ jsx(BoardFilters, { f, extra: /* @__PURE__ */ jsx(Segmented, { label: "Columns", value: showClosed, options: [{ value: false, label: "Open" }, { value: true, label: "+ Declined" }], onChange: setShowClosed }) }),
@@ -2224,7 +2246,7 @@ ${block(Object.entries(TOKENS))}
                   /* @__PURE__ */ jsx("span", { className: "aw-count", children: tickets.filter((t) => t.status === s).length })
                 ] }),
                 /* @__PURE__ */ jsxs("div", { className: "aw-col__body", children: [
-                  /* @__PURE__ */ jsx(ColumnCards, { items, selected: selected?.id, onSelect: (t) => setSelectedId(t.id) }),
+                  /* @__PURE__ */ jsx(ColumnCards, { items, selected: selected?.id, onSelect: select }),
                   more ? /* @__PURE__ */ jsxs("p", { className: "aw-muted aw-center", children: [
                     "+",
                     more,
@@ -2261,7 +2283,7 @@ ${block(Object.entries(TOKENS))}
       return f.apply(data.tickets).filter((t) => status === "all" || (status === "open" ? !["done", "declined"].includes(t.status) : t.status === status)).sort((a, b) => (get(a) > get(b) ? 1 : get(a) < get(b) ? -1 : 0) * sort.dir);
     }, [data.tickets, f, status, sort]);
     const selected = selectedId == null ? null : rows.find((t) => t.id === selectedId) ?? null;
-    const close = () => setSelectedId(null);
+    const { root, close } = useInspectorClose(selected?.id, setSelectedId);
     const move = useMove();
     const columns = [
       { key: "id", header: "#", mono: true, fit: true, sortable: true, render: (t) => `#${t.id}` },
@@ -2287,7 +2309,7 @@ ${block(Object.entries(TOKENS))}
       { key: "age", header: "Age", fit: true, sortable: true, render: (t) => /* @__PURE__ */ jsx("span", { title: `Updated ${when(t.updated_at)}`, children: ago(t.updated_at) }) },
       { key: "cost", header: "Cost", numeric: true, sortable: true, render: (t) => money(chargeOf(t).totalCents) }
     ];
-    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace", onKeyDown: closeOnEscape(selected?.id, close), children: [
+    return /* @__PURE__ */ jsxs("div", { className: "ui-workspace", ref: root, onKeyDown: closeOnEscape(selected?.id, close), children: [
       /* @__PURE__ */ jsx(UiStyles, {}),
       /* @__PURE__ */ jsx(PageHeader, { title: "All work", subtitle: "Every request in one table. Click a column to sort; select a row to inspect it, Enter to open it.", actions: /* @__PURE__ */ jsx(NewTaskButton, { f, quiet: Boolean(selected) }) }),
       /* @__PURE__ */ jsx(

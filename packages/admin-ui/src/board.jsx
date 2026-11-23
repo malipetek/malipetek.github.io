@@ -200,6 +200,31 @@ const closeOnEscape = (selected, close) => (e) => {
   close();
 };
 
+/**
+ * Close the Inspector without losing the keyboard. When focus was inside it
+ * (its close button, an action) the Inspector unmounts under it and focus
+ * would fall to <body>; hand it back to the selected row or card instead.
+ * `returning` is true while that focus lands, so a card that selects on focus
+ * does not reopen the Inspector it just closed.
+ */
+function useInspectorClose(selectedId, setSelectedId) {
+  const root = useRef(null);
+  const returning = useRef(false);
+  const close = () => {
+    const inside = Boolean(document.activeElement?.closest?.('.ui-inspector'));
+    setSelectedId(null);
+    if (!inside || selectedId == null) return;
+    requestAnimationFrame(() => {
+      const target = root.current?.querySelector(`[data-key="${selectedId}"], [data-ticket="${selectedId}"]`);
+      if (!target) return;
+      returning.current = true;
+      target.focus();
+      returning.current = false;
+    });
+  };
+  return { root, close, returning };
+}
+
 /** Wait for the selection to rest before fetching its thread, so j/k does not fire a request per row. */
 function useSettled(value, ms = 250) {
   const [settled, setSettled] = useState(value);
@@ -365,6 +390,7 @@ export function TicketCard({ t, draggable, cell, onKey, selected = false, onSele
       aria-label={`#${t.id} ${t.title}`}
       aria-current={selected ? 'true' : undefined}
       data-selected={selected ? '' : undefined}
+      data-ticket={t.id}
       className={cx('aw-card', 'ui-selectable', run && 'is-running', queued && !queued.eligible.length && 'is-stuck')}
       draggable={draggable}
       onDragStart={(e) => {
@@ -447,9 +473,12 @@ export function BoardView() {
   const byId = new Map(data.tickets.map((t) => [t.id, t]));
   const visible = tickets.filter((t) => columns.includes(t.status));
   const selected = selectedId == null ? null : visible.find((t) => t.id === selectedId) ?? null;
-  const close = () => setSelectedId(null);
+  const { root, close, returning } = useInspectorClose(selected?.id, setSelectedId);
+  const select = (t) => {
+    if (!returning.current) setSelectedId(t.id);
+  };
   return (
-    <div className="ui-workspace" onKeyDown={closeOnEscape(selected?.id, close)}>
+    <div className="ui-workspace" ref={root} onKeyDown={closeOnEscape(selected?.id, close)}>
       <UiStyles />
       <PageHeader title="Board" subtitle="Every request by status. Click a card to inspect it; drag it to another column, or right-click it, to move it." actions={<NewTaskButton f={f} quiet={Boolean(selected)} />} />
       <BoardFilters f={f} extra={<Segmented label="Columns" value={showClosed} options={[{ value: false, label: 'Open' }, { value: true, label: '+ Declined' }]} onChange={setShowClosed} />} />
@@ -482,7 +511,7 @@ export function BoardView() {
                     <span className="aw-count">{tickets.filter((t) => t.status === s).length}</span>
                   </header>
                   <div className="aw-col__body">
-                    <ColumnCards items={items} selected={selected?.id} onSelect={(t) => setSelectedId(t.id)} />
+                    <ColumnCards items={items} selected={selected?.id} onSelect={select} />
                     {more ? <p className="aw-muted aw-center">+{more} older</p> : null}
                     {!items.length ? <p className="aw-col__empty">{STATUS_HINT[s]}</p> : null}
                   </div>
@@ -521,7 +550,7 @@ export function ListView() {
       .sort((a, b) => (get(a) > get(b) ? 1 : get(a) < get(b) ? -1 : 0) * sort.dir);
   }, [data.tickets, f, status, sort]);
   const selected = selectedId == null ? null : rows.find((t) => t.id === selectedId) ?? null;
-  const close = () => setSelectedId(null);
+  const { root, close } = useInspectorClose(selected?.id, setSelectedId);
   const move = useMove();
   const columns = [
     { key: 'id', header: '#', mono: true, fit: true, sortable: true, render: (t) => `#${t.id}` },
@@ -546,7 +575,7 @@ export function ListView() {
     { key: 'cost', header: 'Cost', numeric: true, sortable: true, render: (t) => money(chargeOf(t).totalCents) },
   ];
   return (
-    <div className="ui-workspace" onKeyDown={closeOnEscape(selected?.id, close)}>
+    <div className="ui-workspace" ref={root} onKeyDown={closeOnEscape(selected?.id, close)}>
       <UiStyles />
       <PageHeader title="All work" subtitle="Every request in one table. Click a column to sort; select a row to inspect it, Enter to open it." actions={<NewTaskButton f={f} quiet={Boolean(selected)} />} />
       <BoardFilters
