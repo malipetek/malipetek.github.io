@@ -10498,7 +10498,7 @@ ${block(Object.entries(TOKENS))}
             ] }) },
             { key: "requests", header: "Requests", numeric: true, fit: true, render: (p) => stats(p).total },
             { key: "open", header: "Open", numeric: true, fit: true, render: (p) => stats(p).open },
-            { key: "access", header: "Portal", fit: true, render: () => /* @__PURE__ */ jsx(StateIndicator, { state: "active", tone: "ok", label: "Can open" }) },
+            { key: "access", header: "Portal", fit: true, render: () => /* @__PURE__ */ jsx(MetaChip, { children: "Open" }) },
             { key: "remove", header: "", fit: true, render: (p) => /* @__PURE__ */ jsx(Button, { size: "sm", kind: "ghost", onClick: () => remove(p), children: "Remove\u2026" }) }
           ]
         }

@@ -989,7 +989,7 @@ function ClientProjects({ client }) {
           { key: 'name', header: 'Project', render: (p) => <span title={p.slug}>{p.name}{p.slug ? <span className="ui-note"> · {p.slug}</span> : null}</span> },
           { key: 'requests', header: 'Requests', numeric: true, fit: true, render: (p) => stats(p).total },
           { key: 'open', header: 'Open', numeric: true, fit: true, render: (p) => stats(p).open },
-          { key: 'access', header: 'Portal', fit: true, render: () => <StateIndicator state="active" tone="ok" label="Can open" /> },
+          { key: 'access', header: 'Portal', fit: true, render: () => <MetaChip>Open</MetaChip> },
           { key: 'remove', header: '', fit: true, render: (p) => <Button size="sm" kind="ghost" onClick={() => remove(p)}>Remove…</Button> },
         ]}
       />
