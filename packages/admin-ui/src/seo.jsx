@@ -1340,6 +1340,30 @@ function questionRows(data) {
   });
 }
 
+/** Aggregate the latest cited URLs per question into one row per domain. */
+function sourceRows(rows) {
+  const map = new Map();
+  for (const entry of rows) {
+    const run = entry.latest;
+    if (!run) continue;
+    const seen = new Set();
+    for (const url of run.citedUrls ?? []) {
+      let domain;
+      try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch { continue; }
+      if (seen.has(domain)) continue;
+      seen.add(domain);
+      const row = map.get(domain) ?? { domain, urls: [], questions: [], latest: run.day };
+      row.urls.push(url);
+      row.questions.push(entry.question);
+      if (run.day > row.latest) row.latest = run.day;
+      map.set(domain, row);
+    }
+  }
+  return [...map.values()]
+    .map((row) => ({ ...row, count: row.questions.length }))
+    .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
+}
+
 const namedProps = (entry) =>
   !entry.latest
     ? { state: 'not_asked', tone: 'neutral', label: 'Not asked yet' }
@@ -1368,13 +1392,25 @@ function GeoTab({ desk }) {
   }, [api, tick, attempt]);
 
   const rows = useMemo(() => questionRows(data), [data]);
-  const { key, selected, select, close } = useSelection(rows, (entry) => entry.question);
+  const sources = useMemo(() => sourceRows(rows), [rows]);
+  const [mode, setMode] = useState('questions');
+  const activeRows = mode === 'sources' ? sources : rows;
+  const { key, selected, select, close } = useSelection(activeRows, (entry) => entry.domain ?? entry.question);
   const retry = () => setAttempt((n) => n + 1);
+  const openQuestion = (question) => {
+    const row = rows.find((entry) => entry.question === question);
+    if (row) {
+      setMode('questions');
+      select(row);
+    }
+  };
 
   return (
     <SeoSplit
       onClose={close}
-      inspector={selected ? <AnswerInspector entry={selected} onClose={close} onProbe={() => run('geo')} busy={busy} engineReady={data?.engineReady !== false} /> : null}
+      inspector={selected ? (mode === 'sources'
+        ? <SourceInspector entry={selected} onClose={close} onQuestion={openQuestion} />
+        : <AnswerInspector entry={selected} onClose={close} onProbe={() => run('geo')} busy={busy} engineReady={data?.engineReady !== false} />) : null}
     >
       {data?.engineReady === false ? (
         <div className="aw-banner aw-banner--warn">
@@ -1395,6 +1431,19 @@ function GeoTab({ desk }) {
         </div>
       ) : null}
 
+      <div className="aw-seo-modes">
+        <Segmented
+          aria-label="AI answers view"
+          value={mode}
+          onChange={(next) => { setMode(next); close(); }}
+          options={[
+            { value: 'questions', label: `Questions · ${rows.length}` },
+            { value: 'sources', label: `Sources · ${sources.length}` },
+          ]}
+        />
+        {mode === 'sources' ? <span className="ui-note">Domains AI answers cited instead of us; open a question to act on it.</span> : null}
+      </div>
+
       {error && data ? <ErrorNote error={error} onRetry={retry} /> : null}
 
       {data ? (
@@ -1409,6 +1458,7 @@ function GeoTab({ desk }) {
         </details>
       ) : null}
 
+      {mode === 'questions' ? (
       <DataTable
         label="Buyer questions"
         state={!data && !error ? 'loading' : !data && error ? 'error' : 'ready'}
@@ -1436,10 +1486,56 @@ function GeoTab({ desk }) {
           { key: 'checked', header: 'Last checked', fit: true, render: (entry) => (entry.latest ? shortDay(entry.latest.day) : '—') },
         ]}
       />
+      ) : (
+        <DataTable
+          label="Cited sources"
+          state={!data && !error ? 'loading' : !data && error ? 'error' : 'ready'}
+          error={error}
+          onRetry={retry}
+          rows={sources}
+          rowKey={(entry) => entry.domain}
+          selected={key}
+          onSelect={select}
+          onOpen={select}
+          empty={{ title: 'No cited sources yet', hint: 'Run the GEO probe; it keeps the URLs each answer cited.' }}
+          columns={[
+            { key: 'domain', header: 'Source', render: (entry) => <span title={entry.urls.join('\n')}>{entry.domain}</span> },
+            { key: 'count', header: 'Cited in', numeric: true, fit: true, render: (entry) => entry.count },
+            { key: 'questions', header: 'Questions', render: (entry) => entry.questions.join(' · ') },
+            { key: 'latest', header: 'Last seen', fit: true, render: (entry) => (entry.latest ? shortDay(entry.latest) : '—') },
+          ]}
+        />
+      )}
       <p className="ui-note aw-seo-gap">
         Each weekly probe asks every question once and keeps whether the answer named us, the URLs it cited and the companies it named instead.
       </p>
     </SeoSplit>
+  );
+}
+
+/** One cited domain, the URLs, and the questions it appeared in. */
+function SourceInspector({ entry, onClose, onQuestion }) {
+  return (
+    <Inspector title={entry.domain} label="Cited source" storageKey="ptech.seo.source.w" defaultWidth={SEO_INSPECTOR_W} onClose={onClose}>
+      <p className="aw-seo-detail">Cited in {entry.count} {entry.count === 1 ? 'answer' : 'answers'}.</p>
+      <section className="ui-section">
+        <SectionTitle>Cited URLs · {entry.urls.length}</SectionTitle>
+        <ul className="aw-seo-list">
+          {entry.urls.map((url) => (
+            <li key={url}><OutLink href={url}>{url}</OutLink></li>
+          ))}
+        </ul>
+      </section>
+      <section className="ui-section">
+        <SectionTitle>Questions</SectionTitle>
+        {entry.questions.map((question) => (
+          <button type="button" key={question} className="aw-link aw-seo-source-question" onClick={() => onQuestion(question)}>
+            {question}
+          </button>
+        ))}
+      </section>
+      <p className="ui-note">These pages are the evidence the answer already trusts. Getting named here, or publishing a stronger page for the same question, is how we enter the answer.</p>
+    </Inspector>
   );
 }
 

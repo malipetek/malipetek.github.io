@@ -8826,6 +8826,30 @@ ${block(Object.entries(TOKENS))}
       return { ...entry, runs, latest: runs[0] ?? null, named: runs.filter((run) => run.mentionsUs).length };
     });
   }
+  function sourceRows(rows) {
+    const map = /* @__PURE__ */ new Map();
+    for (const entry of rows) {
+      const run = entry.latest;
+      if (!run) continue;
+      const seen = /* @__PURE__ */ new Set();
+      for (const url of run.citedUrls ?? []) {
+        let domain;
+        try {
+          domain = new URL(url).hostname.replace(/^www\./, "");
+        } catch {
+          continue;
+        }
+        if (seen.has(domain)) continue;
+        seen.add(domain);
+        const row = map.get(domain) ?? { domain, urls: [], questions: [], latest: run.day };
+        row.urls.push(url);
+        row.questions.push(entry.question);
+        if (run.day > row.latest) row.latest = run.day;
+        map.set(domain, row);
+      }
+    }
+    return [...map.values()].map((row) => ({ ...row, count: row.questions.length })).sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
+  }
   var namedProps = (entry) => !entry.latest ? { state: "not_asked", tone: "neutral", label: "Not asked yet" } : entry.latest.mentionsUs ? { state: "named", tone: "ok", label: "Named" } : { state: "not_named", tone: "neutral", label: "Not named" };
   function GeoTab({ desk }) {
     const { api, tick, run, busy } = desk;
@@ -8844,13 +8868,23 @@ ${block(Object.entries(TOKENS))}
       };
     }, [api, tick, attempt]);
     const rows = useMemo(() => questionRows(data), [data]);
-    const { key, selected, select, close } = useSelection(rows, (entry) => entry.question);
+    const sources = useMemo(() => sourceRows(rows), [rows]);
+    const [mode, setMode] = useState("questions");
+    const activeRows = mode === "sources" ? sources : rows;
+    const { key, selected, select, close } = useSelection(activeRows, (entry) => entry.domain ?? entry.question);
     const retry = () => setAttempt((n) => n + 1);
+    const openQuestion = (question) => {
+      const row = rows.find((entry) => entry.question === question);
+      if (row) {
+        setMode("questions");
+        select(row);
+      }
+    };
     return /* @__PURE__ */ jsxs(
       SeoSplit,
       {
         onClose: close,
-        inspector: selected ? /* @__PURE__ */ jsx(AnswerInspector, { entry: selected, onClose: close, onProbe: () => run("geo"), busy, engineReady: data?.engineReady !== false }) : null,
+        inspector: selected ? mode === "sources" ? /* @__PURE__ */ jsx(SourceInspector, { entry: selected, onClose: close, onQuestion: openQuestion }) : /* @__PURE__ */ jsx(AnswerInspector, { entry: selected, onClose: close, onProbe: () => run("geo"), busy, engineReady: data?.engineReady !== false }) : null,
         children: [
           data?.engineReady === false ? /* @__PURE__ */ jsx("div", { className: "aw-banner aw-banner--warn", children: "The probe is off: the Worker has no DEEPSEEK_API_KEY. The desk keeps the questions, and the probe runs once the key is set." }) : null,
           data ? /* @__PURE__ */ jsx("div", { className: "aw-seo-strip", children: /* @__PURE__ */ jsx(
@@ -8864,6 +8898,24 @@ ${block(Object.entries(TOKENS))}
               ]
             }
           ) }) : null,
+          /* @__PURE__ */ jsxs("div", { className: "aw-seo-modes", children: [
+            /* @__PURE__ */ jsx(
+              Segmented,
+              {
+                "aria-label": "AI answers view",
+                value: mode,
+                onChange: (next) => {
+                  setMode(next);
+                  close();
+                },
+                options: [
+                  { value: "questions", label: `Questions \xB7 ${rows.length}` },
+                  { value: "sources", label: `Sources \xB7 ${sources.length}` }
+                ]
+              }
+            ),
+            mode === "sources" ? /* @__PURE__ */ jsx("span", { className: "ui-note", children: "Domains AI answers cited instead of us; open a question to act on it." }) : null
+          ] }),
           error && data ? /* @__PURE__ */ jsx(ErrorNote, { error, onRetry: retry }) : null,
           data ? /* @__PURE__ */ jsxs("details", { className: "ui-disclosure", children: [
             /* @__PURE__ */ jsxs("summary", { children: [
@@ -8875,7 +8927,7 @@ ${block(Object.entries(TOKENS))}
             ] }),
             /* @__PURE__ */ jsx("div", { className: "ui-disclosure__body", children: /* @__PURE__ */ jsx(GeoChart, { weeks: data.weeks ?? [] }) })
           ] }) : null,
-          /* @__PURE__ */ jsx(
+          mode === "questions" ? /* @__PURE__ */ jsx(
             DataTable,
             {
               label: "Buyer questions",
@@ -8902,11 +8954,54 @@ ${block(Object.entries(TOKENS))}
                 { key: "checked", header: "Last checked", fit: true, render: (entry) => entry.latest ? shortDay2(entry.latest.day) : "\u2014" }
               ]
             }
+          ) : /* @__PURE__ */ jsx(
+            DataTable,
+            {
+              label: "Cited sources",
+              state: !data && !error ? "loading" : !data && error ? "error" : "ready",
+              error,
+              onRetry: retry,
+              rows: sources,
+              rowKey: (entry) => entry.domain,
+              selected: key,
+              onSelect: select,
+              onOpen: select,
+              empty: { title: "No cited sources yet", hint: "Run the GEO probe; it keeps the URLs each answer cited." },
+              columns: [
+                { key: "domain", header: "Source", render: (entry) => /* @__PURE__ */ jsx("span", { title: entry.urls.join("\n"), children: entry.domain }) },
+                { key: "count", header: "Cited in", numeric: true, fit: true, render: (entry) => entry.count },
+                { key: "questions", header: "Questions", render: (entry) => entry.questions.join(" \xB7 ") },
+                { key: "latest", header: "Last seen", fit: true, render: (entry) => entry.latest ? shortDay2(entry.latest) : "\u2014" }
+              ]
+            }
           ),
           /* @__PURE__ */ jsx("p", { className: "ui-note aw-seo-gap", children: "Each weekly probe asks every question once and keeps whether the answer named us, the URLs it cited and the companies it named instead." })
         ]
       }
     );
+  }
+  function SourceInspector({ entry, onClose, onQuestion }) {
+    return /* @__PURE__ */ jsxs(Inspector, { title: entry.domain, label: "Cited source", storageKey: "ptech.seo.source.w", defaultWidth: SEO_INSPECTOR_W, onClose, children: [
+      /* @__PURE__ */ jsxs("p", { className: "aw-seo-detail", children: [
+        "Cited in ",
+        entry.count,
+        " ",
+        entry.count === 1 ? "answer" : "answers",
+        "."
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "ui-section", children: [
+        /* @__PURE__ */ jsxs(SectionTitle, { children: [
+          "Cited URLs \xB7 ",
+          entry.urls.length
+        ] }),
+        /* @__PURE__ */ jsx("ul", { className: "aw-seo-list", children: entry.urls.map((url) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsx(OutLink, { href: url, children: url }) }, url)) })
+      ] }),
+      /* @__PURE__ */ jsxs("section", { className: "ui-section", children: [
+        /* @__PURE__ */ jsx(SectionTitle, { children: "Questions" }),
+        entry.questions.map((question) => /* @__PURE__ */ jsx("button", { type: "button", className: "aw-link aw-seo-source-question", onClick: () => onQuestion(question), children: question }, question))
+      ] }),
+      /* @__PURE__ */ jsx("p", { className: "ui-note", children: "These pages are the evidence the answer already trusts. Getting named here, or publishing a stronger page for the same question, is how we enter the answer." })
+    ] });
   }
   function AnswerInspector({ entry, onClose, onProbe, busy, engineReady }) {
     const [runId, setRunId] = useState(entry.latest?.id ?? null);
@@ -12261,6 +12356,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 /* seo: one quiet strip, sections without cards, DataTable + Inspector per tab */
 .aw-seo .aw-pagehead__titles p { white-space: normal; }
 .aw-seo-strip { padding-bottom: var(--ui-sp-2); margin-bottom: var(--ui-sp-3); border-bottom: 1px solid var(--ui-border); }
+.aw-seo-modes { display: flex; align-items: center; gap: var(--ui-sp-3, 12px); flex-wrap: wrap; margin: var(--ui-sp-3, 12px) 0; }
+.aw-seo-source-question { display: block; padding: 2px 0; text-align: left; font-size: var(--ui-fs-sm, 12px); }
 .aw-seo-strip .aw-statrow { margin: var(--ui-sp-2) 0 0; }
 .aw-seo-strip .aw-statrow__item strong { font-size: var(--ui-fs-lg); font-weight: 600; }
 .aw-seo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: var(--ui-sp-4) var(--ui-sp-6); }
