@@ -12572,6 +12572,12 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   :is(.aw-fleet, .aw-clients, .aw-client) .ui-table td[data-fit] { width: auto; }
   :is(.aw-fleet, .aw-clients, .aw-client) .ui-table td + td { display: inline-block; max-width: 100%; margin: var(--ui-sp-1) var(--ui-sp-3) 0 0; vertical-align: top; }
 }
+.aw-steps { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px); margin: 0 0 var(--ui-sp-4, 16px); padding: 0; list-style: none; counter-reset: aw-step; }
+.aw-steps li { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: 999px; font-size: var(--ui-fs-xs, 11px); color: var(--ui-ink-3, inherit); }
+.aw-steps li::before { counter-increment: aw-step; content: counter(aw-step); display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--ui-fill, var(--aw-fill)); font-variant-numeric: tabular-nums; }
+.aw-steps li[data-current] { border-color: var(--ui-accent, var(--aw-accent)); color: var(--ui-ink, inherit); }
+.aw-steps li[data-current]::before { background: var(--ui-accent, var(--aw-accent)); color: var(--aw-accent-ink, var(--ui-accent-ink, inherit)); }
+.aw-steps li[data-done] { color: var(--ui-ink, inherit); }
 .aw-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-sp-3, 12px); margin: 0 0 var(--ui-sp-2, 8px); }
 .aw-section-head .ui-section__title { margin: 0; }
 .aw-assign__list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; margin: var(--ui-sp-3, 12px) 0; padding: 4px; border: 1px solid var(--ui-border, var(--aw-hairline)); border-radius: var(--ui-r-lg, 10px); background: var(--ui-bg-subtle, var(--aw-fill)); }
@@ -16663,11 +16669,12 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   }
   function ProjectModal({ onClose }) {
     const { api, act, host, open, data, notify } = useAdmin();
+    const [step, setStep] = useState(0);
     const [name, setName] = useState("");
     const [slug, setSlug] = useState("");
     const [edited, setEdited] = useState(false);
     const [kind, setKind] = useState("existing");
-    const [code, setCode] = useState("create");
+    const [code, setCode] = useState("folder");
     const [repo, setRepo] = useState("");
     const [what, setWhat] = useState("");
     const [goal, setGoal] = useState("");
@@ -16675,6 +16682,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const [localPath, setLocalPath] = useState("");
     const [busy, setBusy] = useState(false);
     const [setupError, setSetupError] = useState(null);
+    const [clientIds, setClientIds] = useState([]);
+    const [clientQuery, setClientQuery] = useState("");
     const submission = useRef(null);
     const busyRef = useRef(false);
     if (!submission.current) submission.current = createProjectSubmission(
@@ -16689,10 +16698,24 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       { requireSlug: Boolean(data.access?.superAdmin) }
     );
     const created = submission.current.project;
-    const ready = name.trim() && (!data.access?.superAdmin || /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug)) && (code !== "repo" || repo.trim()) && (data.access?.superAdmin || what.trim() && goal.trim());
+    const existing = kind === "existing";
+    const steps = existing ? ["Source", "Details", "Clients", "Review"] : ["Details"];
+    const last = steps.length - 1;
+    const readyName = name.trim() && (!data.access?.superAdmin || /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug));
+    const readyBrief = data.access?.superAdmin || what.trim() && goal.trim();
+    const readySource = !existing || (code === "folder" ? localPath.trim() : code === "repo" ? repo.trim() : true);
+    const ready = readyName && readyBrief && readySource;
+    const stepReady = !existing || (step === 0 ? readySource : step === 1 ? readyName && readyBrief : true);
     const go = (project) => {
       onClose();
       open(`p:${project.id}`);
+    };
+    const detect = (value, fromRepo) => {
+      const base = String(value).trim().replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).pop() ?? "";
+      const cleaned = fromRepo ? base.replace(/\.git$/, "") : base;
+      if (!cleaned) return;
+      if (!name.trim()) setName(cleaned.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
+      if (!edited && !slug.trim()) setSlug(slugify(cleaned));
     };
     const submit = async () => {
       if (busyRef.current || !ready) return;
@@ -16701,7 +16724,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       setSetupError(null);
       try {
         const project = await submission.current({ name, slug, kind, code, repo: code === "repo" ? repo.trim() : void 0, brief: { what: what.trim(), goal: goal.trim() }, localPath: localPath.trim() });
-        if (project) go(project);
+        if (!project) return;
+        for (const id of clientIds) {
+          await api("PUT", `/admin/clients/${id}/projects/${project.id}`).catch(() => notify?.("Project created, but assigning a client failed.", "error"));
+        }
+        go(project);
       } catch (error) {
         setSetupError(errorText(error));
       } finally {
@@ -16709,16 +16736,23 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         setBusy(false);
       }
     };
+    const next = () => {
+      if (step < last) setStep(step + 1);
+      else void submit();
+    };
+    const back = () => step === 0 || !existing ? onClose() : setStep(step - 1);
+    const clients = data.clients ?? [];
+    const shownClients = clients.filter((c) => !clientQuery.trim() || `${c.name ?? ""} ${c.email ?? ""}`.toLowerCase().includes(clientQuery.trim().toLowerCase()));
     return /* @__PURE__ */ jsxs(
       Modal,
       {
         kind: "create",
-        title: "New project",
-        subtitle: "Create the project, then choose where to develop it.",
+        title: existing ? "Add an existing project" : "New project",
+        subtitle: existing ? `Step ${step + 1} of ${steps.length} \xB7 ${steps[step]}` : "Create the project, then choose where to develop it.",
         onClose: () => !busyRef.current && onClose(),
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: () => created ? go(created) : onClose(), children: created ? "Open project" : "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !ready, disabledReason: busy ? void 0 : "Fill in the name and the required fields first.", onClick: submit, children: busy ? "Saving\u2026" : created ? "Retry local setup" : "Create project" })
+          /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: back, children: step === 0 || !existing ? created ? "Open project" : "Cancel" : "Back" }),
+          !created ? /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy || !stepReady || step === last && !ready, disabledReason: busy ? void 0 : step === 0 && !readySource ? "Choose a folder or repository first." : "Fill in the name and the required fields first.", onClick: next, children: busy ? "Saving\u2026" : step < last ? "Continue" : "Create project" }) : /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: busy, onClick: () => created && go(created), children: "Open project" })
         ] }),
         children: [
           receipt?.repoError ? /* @__PURE__ */ jsxs("p", { role: "status", className: "aw-callout", children: [
@@ -16729,68 +16763,81 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             created ? "Project created. Local setup failed; retry does not create another project. " : "",
             setupError
           ] }) : null,
+          existing ? /* @__PURE__ */ jsx("ol", { className: "aw-steps", "aria-label": "Setup steps", children: steps.map((label, index) => /* @__PURE__ */ jsx("li", { "data-current": index === step || void 0, "data-done": index < step || void 0, children: label }, label)) }) : null,
           /* @__PURE__ */ jsxs("fieldset", { disabled: busy || Boolean(created), className: "aw-formset", children: [
-            /* @__PURE__ */ jsx(Field, { label: "Name", children: /* @__PURE__ */ jsx(
-              "input",
-              {
-                value: name,
-                maxLength: 80,
-                placeholder: "Acme storefront",
-                onChange: (e) => {
-                  setName(e.target.value);
-                  if (!edited) setSlug(slugify(e.target.value));
-                }
-              }
-            ) }),
-            data.access?.superAdmin ? /* @__PURE__ */ jsx(Field, { label: "Slug", hint: "Lowercase and dashes.", children: /* @__PURE__ */ jsx(
-              "input",
-              {
-                className: "aw-mono",
-                value: slug,
-                maxLength: 63,
-                onChange: (e) => {
-                  setEdited(true);
-                  setSlug(e.target.value.toLowerCase());
-                }
-              }
-            ) }) : null,
-            !data.access?.superAdmin ? /* @__PURE__ */ jsxs(Fragment2, { children: [
-              /* @__PURE__ */ jsx(Field, { label: "What are you building?", children: /* @__PURE__ */ jsx("textarea", { value: what, maxLength: 4e3, onChange: (e) => setWhat(e.target.value) }) }),
-              /* @__PURE__ */ jsx(Field, { label: "What should happen first?", children: /* @__PURE__ */ jsx("textarea", { value: goal, maxLength: 4e3, onChange: (e) => setGoal(e.target.value) }) })
+            existing && step === 0 ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+              /* @__PURE__ */ jsx(Field, { label: "Where is it?", children: /* @__PURE__ */ jsx(Segmented, { value: code, options: [{ value: "folder", label: "Folder on this computer" }, { value: "repo", label: "Git repository" }], onChange: (value) => {
+                setCode(value);
+                setStep(0);
+              } }) }),
+              code === "folder" ? /* @__PURE__ */ jsx(Field, { label: "Folder", hint: "An existing checkout on this computer. Nothing is cloned or created in it.", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: localPath, placeholder: host?.projectConfigureLocal ? "/Users/you/Projects/acme" : "Unavailable in this host", disabled: !host?.projectConfigureLocal, onChange: (e) => {
+                setLocalPath(e.target.value);
+                detect(e.target.value, false);
+              } }) }) : /* @__PURE__ */ jsx(Field, { label: "Repository URL", hint: "Nodes clone this. A private repo needs a node whose git can reach it.", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => {
+                setRepo(e.target.value);
+                detect(e.target.value, true);
+              } }) }),
+              /* @__PURE__ */ jsx("p", { className: "ui-note", children: name.trim() ? `Will create \u201C${name.trim()}\u201D${slug ? ` (${slug})` : ""}.` : "The name and slug are taken from the folder or repository; you can change them next." })
             ] }) : null,
-            /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx(
-              Segmented,
-              {
-                value: kind,
-                options: [
-                  { value: "existing", label: "Existing code or system" },
-                  { value: "new", label: "New website" }
-                ],
-                onChange: setKind
-              }
-            ) }),
-            /* @__PURE__ */ jsx(
-              Field,
-              {
-                label: "Code",
-                hint: code === "create" ? kind === "new" ? "A node makes a private repo from the site template (main + preview)." : "A node makes a private repo with a README." : code === "repo" ? "Nodes clone this. A private repo needs a node whose git can reach it." : data.access?.superAdmin ? "A node with a folder named like the slug shares its origin." : "Create the project without linking a repository yet.",
-                children: /* @__PURE__ */ jsx(
-                  Segmented,
-                  {
-                    value: code,
-                    options: [
-                      { value: "create", label: "Create a repo" },
-                      { value: "repo", label: "Use a repo URL" },
-                      { value: "folder", label: data.access?.superAdmin ? "Folder on a node" : "Not linked yet" }
-                    ],
-                    onChange: setCode
-                  }
-                )
-              }
-            ),
-            code === "repo" ? /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) }) : null
-          ] }),
-          host?.projectConfigureLocal ? /* @__PURE__ */ jsx(Field, { label: "Local checkout folder (optional)", hint: "Map an existing checkout on this computer. This does not clone a repository.", children: /* @__PURE__ */ jsx("input", { disabled: busy, value: localPath, placeholder: "/Users/you/Projects/acme", onChange: (e) => setLocalPath(e.target.value) }) }) : null
+            !existing || step === 1 ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+              /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx(Segmented, { value: kind, options: [{ value: "existing", label: "Existing code or system" }, { value: "new", label: "New website" }], onChange: (value) => {
+                setKind(value);
+                setStep(0);
+              } }) }),
+              /* @__PURE__ */ jsx(Field, { label: "Name", children: /* @__PURE__ */ jsx("input", { value: name, maxLength: 80, placeholder: "Acme storefront", onChange: (e) => {
+                setName(e.target.value);
+                if (!edited) setSlug(slugify(e.target.value));
+              } }) }),
+              data.access?.superAdmin ? /* @__PURE__ */ jsx(Field, { label: "Slug", hint: "Lowercase and dashes.", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: slug, maxLength: 63, onChange: (e) => {
+                setEdited(true);
+                setSlug(e.target.value.toLowerCase());
+              } }) }) : null,
+              !data.access?.superAdmin ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                /* @__PURE__ */ jsx(Field, { label: "What are you building?", children: /* @__PURE__ */ jsx("textarea", { value: what, maxLength: 4e3, onChange: (e) => setWhat(e.target.value) }) }),
+                /* @__PURE__ */ jsx(Field, { label: "What should happen first?", children: /* @__PURE__ */ jsx("textarea", { value: goal, maxLength: 4e3, onChange: (e) => setGoal(e.target.value) }) })
+              ] }) : null,
+              !existing ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                /* @__PURE__ */ jsx(Field, { label: "Code", hint: code === "create" ? "A node makes a private repo from the site template (main + preview)." : code === "repo" ? "Nodes clone this. A private repo needs a node whose git can reach it." : data.access?.superAdmin ? "A node with a folder named like the slug shares its origin." : "Create the project without linking a repository yet.", children: /* @__PURE__ */ jsx(Segmented, { value: code, options: [{ value: "create", label: "Create a repo" }, { value: "repo", label: "Use a repo URL" }, { value: "folder", label: data.access?.superAdmin ? "Folder on a node" : "Not linked yet" }], onChange: setCode }) }),
+                code === "repo" ? /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) }) : null,
+                host?.projectConfigureLocal ? /* @__PURE__ */ jsx(Field, { label: "Local checkout folder (optional)", hint: "Map an existing checkout on this computer. This does not clone a repository.", children: /* @__PURE__ */ jsx("input", { disabled: busy, value: localPath, placeholder: "/Users/you/Projects/acme", onChange: (e) => setLocalPath(e.target.value) }) }) : null
+              ] }) : /* @__PURE__ */ jsxs("p", { className: "ui-note", children: [
+                "Source: ",
+                /* @__PURE__ */ jsx("span", { className: "aw-mono", children: code === "folder" ? localPath || "\u2014" : repo || "\u2014" })
+              ] })
+            ] }) : null,
+            existing && step === 2 ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+              /* @__PURE__ */ jsx(Field, { label: "Find a client", children: /* @__PURE__ */ jsx("input", { value: clientQuery, placeholder: "Search by name or email\u2026", onChange: (e) => setClientQuery(e.target.value) }) }),
+              /* @__PURE__ */ jsx("div", { className: "aw-assign__list", role: "group", "aria-label": "Clients", children: shownClients.length === 0 ? /* @__PURE__ */ jsx("p", { className: "aw-muted", children: clients.length ? `No client matches \u201C${clientQuery}\u201D.` : "No clients yet. You can assign them from the client page later." }) : shownClients.map((c) => {
+                const checked = clientIds.includes(c.id);
+                return /* @__PURE__ */ jsxs("label", { className: "aw-assign__row", "data-checked": checked || void 0, children: [
+                  /* @__PURE__ */ jsx("input", { type: "checkbox", checked, onChange: () => setClientIds((current) => checked ? current.filter((id) => id !== c.id) : [...current, c.id]) }),
+                  /* @__PURE__ */ jsx("span", { className: "aw-assign__name", children: c.name || c.email }),
+                  c.name ? /* @__PURE__ */ jsx("span", { className: "aw-assign__slug", children: c.email }) : null,
+                  checked ? /* @__PURE__ */ jsx("span", { className: "aw-assign__state", children: "Assigned" }) : null
+                ] }, c.id);
+              }) }),
+              /* @__PURE__ */ jsxs("p", { className: "aw-muted", children: [
+                clientIds.length,
+                " of ",
+                clients.length,
+                " clients selected. You can change this later on either side."
+              ] })
+            ] }) : null,
+            existing && step === 3 ? /* @__PURE__ */ jsxs("dl", { className: "ui-props", children: [
+              /* @__PURE__ */ jsx("dt", { children: "Name" }),
+              /* @__PURE__ */ jsx("dd", { children: name }),
+              /* @__PURE__ */ jsx("dt", { children: "Slug" }),
+              /* @__PURE__ */ jsx("dd", { className: "aw-mono", children: slug || "\u2014" }),
+              /* @__PURE__ */ jsx("dt", { children: "Source" }),
+              /* @__PURE__ */ jsx("dd", { className: "aw-mono", children: code === "folder" ? localPath : repo }),
+              /* @__PURE__ */ jsx("dt", { children: "Clients" }),
+              /* @__PURE__ */ jsx("dd", { children: clientIds.length ? clientIds.map((id) => clients.find((c) => c.id === id)?.name || clients.find((c) => c.id === id)?.email).join(", ") : "None yet" }),
+              !data.access?.superAdmin ? /* @__PURE__ */ jsxs(Fragment2, { children: [
+                /* @__PURE__ */ jsx("dt", { children: "Brief" }),
+                /* @__PURE__ */ jsx("dd", { children: what })
+              ] }) : null
+            ] }) : null
+          ] })
         ]
       }
     );

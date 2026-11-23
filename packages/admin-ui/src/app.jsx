@@ -936,11 +936,12 @@ export function TaskModal({ preset = {}, onClose }) {
 
 export function ProjectModal({ onClose }) {
   const { api, act, host, open, data, notify } = useAdminCtx();
+  const [step, setStep] = useState(0);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [edited, setEdited] = useState(false);
   const [kind, setKind] = useState('existing');
-  const [code, setCode] = useState('create');
+  const [code, setCode] = useState('folder');
   const [repo, setRepo] = useState('');
   const [what, setWhat] = useState('');
   const [goal, setGoal] = useState('');
@@ -948,6 +949,8 @@ export function ProjectModal({ onClose }) {
   const [localPath, setLocalPath] = useState('');
   const [busy, setBusy] = useState(false);
   const [setupError, setSetupError] = useState(null);
+  const [clientIds, setClientIds] = useState([]);
+  const [clientQuery, setClientQuery] = useState('');
   const submission = useRef(null);
   const busyRef = useRef(false);
   if (!submission.current) submission.current = createProjectSubmission(
@@ -962,101 +965,146 @@ export function ProjectModal({ onClose }) {
     { requireSlug: Boolean(data.access?.superAdmin) },
   );
   const created = submission.current.project;
-  const ready = name.trim() && (!data.access?.superAdmin || /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug)) && (code !== 'repo' || repo.trim()) && (data.access?.superAdmin || (what.trim() && goal.trim()));
+  const existing = kind === 'existing';
+  const steps = existing ? ['Source', 'Details', 'Clients', 'Review'] : ['Details'];
+  const last = steps.length - 1;
+  const readyName = name.trim() && (!data.access?.superAdmin || /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug));
+  const readyBrief = data.access?.superAdmin || (what.trim() && goal.trim());
+  const readySource = !existing || (code === 'folder' ? localPath.trim() : code === 'repo' ? repo.trim() : true);
+  const ready = readyName && readyBrief && readySource;
+  const stepReady = !existing || (step === 0 ? readySource : step === 1 ? readyName && readyBrief : true);
   const go = (project) => { onClose(); open(`p:${project.id}`); };
+  const detect = (value, fromRepo) => {
+    const base = String(value).trim().replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).pop() ?? '';
+    const cleaned = fromRepo ? base.replace(/\.git$/, '') : base;
+    if (!cleaned) return;
+    if (!name.trim()) setName(cleaned.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
+    if (!edited && !slug.trim()) setSlug(slugify(cleaned));
+  };
   const submit = async () => {
     if (busyRef.current || !ready) return;
     busyRef.current = true; setBusy(true); setSetupError(null);
     try {
       const project = await submission.current({ name, slug, kind, code, repo: code === 'repo' ? repo.trim() : undefined, brief: { what: what.trim(), goal: goal.trim() }, localPath: localPath.trim() });
-      if (project) go(project);
+      if (!project) return;
+      for (const id of clientIds) {
+        await api('PUT', `/admin/clients/${id}/projects/${project.id}`).catch(() => notify?.('Project created, but assigning a client failed.', 'error'));
+      }
+      go(project);
     } catch (error) { setSetupError(errorText(error)); }
     finally { busyRef.current = false; setBusy(false); }
   };
+  const next = () => { if (step < last) setStep(step + 1); else void submit(); };
+  const back = () => (step === 0 || !existing ? onClose() : setStep(step - 1));
+  const clients = data.clients ?? [];
+  const shownClients = clients.filter((c) => !clientQuery.trim() || `${c.name ?? ''} ${c.email ?? ''}`.toLowerCase().includes(clientQuery.trim().toLowerCase()));
   return (
     <Modal kind="create"
-      title="New project"
-      subtitle="Create the project, then choose where to develop it."
+      title={existing ? 'Add an existing project' : 'New project'}
+      subtitle={existing ? `Step ${step + 1} of ${steps.length} · ${steps[step]}` : 'Create the project, then choose where to develop it.'}
       onClose={() => !busyRef.current && onClose()}
       actions={
         <>
-          <Button disabled={busy} onClick={() => created ? go(created) : onClose()}>{created ? 'Open project' : 'Cancel'}</Button>
-          <Button kind="primary" disabled={busy || !ready} disabledReason={busy ? undefined : 'Fill in the name and the required fields first.'} onClick={submit}>
-            {busy ? 'Saving…' : created ? 'Retry local setup' : 'Create project'}
-          </Button>
+          <Button disabled={busy} onClick={back}>{step === 0 || !existing ? (created ? 'Open project' : 'Cancel') : 'Back'}</Button>
+          {!created ? (
+            <Button kind="primary" disabled={busy || !stepReady || (step === last && !ready)} disabledReason={busy ? undefined : step === 0 && !readySource ? 'Choose a folder or repository first.' : 'Fill in the name and the required fields first.'} onClick={next}>
+              {busy ? 'Saving…' : step < last ? 'Continue' : 'Create project'}
+            </Button>
+          ) : (
+            <Button kind="primary" disabled={busy} onClick={() => created && go(created)}>Open project</Button>
+          )}
         </>
       }
     >
       {receipt?.repoError ? <p role="status" className="aw-callout">Project created; repository setup needs attention: {String(receipt.repoError)}</p> : null}
       {setupError ? <p role="alert" className="aw-callout">{created ? 'Project created. Local setup failed; retry does not create another project. ' : ''}{setupError}</p> : null}
-      <fieldset disabled={busy || Boolean(created)} className="aw-formset">
-      <Field label="Name">
-        <input
-          value={name}
-          maxLength={80}
-          placeholder="Acme storefront"
-          onChange={(e) => {
-            setName(e.target.value);
-            if (!edited) setSlug(slugify(e.target.value));
-          }}
-        />
-      </Field>
-      {data.access?.superAdmin ? <Field label="Slug" hint="Lowercase and dashes.">
-        <input
-          className="aw-mono"
-          value={slug}
-          maxLength={63}
-          onChange={(e) => {
-            setEdited(true);
-            setSlug(e.target.value.toLowerCase());
-          }}
-        />
-      </Field> : null}
-      {!data.access?.superAdmin ? <>
-        <Field label="What are you building?"><textarea value={what} maxLength={4000} onChange={(e) => setWhat(e.target.value)} /></Field>
-        <Field label="What should happen first?"><textarea value={goal} maxLength={4000} onChange={(e) => setGoal(e.target.value)} /></Field>
-      </> : null}
-      <Field label="What it is">
-        <Segmented
-          value={kind}
-          options={[
-            { value: 'existing', label: 'Existing code or system' },
-            { value: 'new', label: 'New website' },
-          ]}
-          onChange={setKind}
-        />
-      </Field>
-      <Field
-        label="Code"
-        hint={
-          code === 'create'
-            ? kind === 'new'
-              ? 'A node makes a private repo from the site template (main + preview).'
-              : 'A node makes a private repo with a README.'
-            : code === 'repo'
-              ? 'Nodes clone this. A private repo needs a node whose git can reach it.'
-              : data.access?.superAdmin ? 'A node with a folder named like the slug shares its origin.' : 'Create the project without linking a repository yet.'
-        }
-      >
-        <Segmented
-          value={code}
-          options={[
-            { value: 'create', label: 'Create a repo' },
-            { value: 'repo', label: 'Use a repo URL' },
-            { value: 'folder', label: data.access?.superAdmin ? 'Folder on a node' : 'Not linked yet' },
-          ]}
-          onChange={setCode}
-        />
-      </Field>
-      {code === 'repo' ? (
-        <Field label="Repo URL">
-          <input className="aw-mono" value={repo} maxLength={300} placeholder="https://github.com/owner/repo" onChange={(e) => setRepo(e.target.value)} />
-        </Field>
+      {existing ? (
+        <ol className="aw-steps" aria-label="Setup steps">
+          {steps.map((label, index) => (
+            <li key={label} data-current={index === step || undefined} data-done={index < step || undefined}>{label}</li>
+          ))}
+        </ol>
       ) : null}
+      <fieldset disabled={busy || Boolean(created)} className="aw-formset">
+        {existing && step === 0 ? (
+          <>
+            <Field label="Where is it?">
+              <Segmented value={code} options={[{ value: 'folder', label: 'Folder on this computer' }, { value: 'repo', label: 'Git repository' }]} onChange={(value) => { setCode(value); setStep(0); }} />
+            </Field>
+            {code === 'folder' ? (
+              <Field label="Folder" hint="An existing checkout on this computer. Nothing is cloned or created in it.">
+                <input className="aw-mono" value={localPath} placeholder={host?.projectConfigureLocal ? '/Users/you/Projects/acme' : 'Unavailable in this host'} disabled={!host?.projectConfigureLocal} onChange={(e) => { setLocalPath(e.target.value); detect(e.target.value, false); }} />
+              </Field>
+            ) : (
+              <Field label="Repository URL" hint="Nodes clone this. A private repo needs a node whose git can reach it.">
+                <input className="aw-mono" value={repo} maxLength={300} placeholder="https://github.com/owner/repo" onChange={(e) => { setRepo(e.target.value); detect(e.target.value, true); }} />
+              </Field>
+            )}
+            <p className="ui-note">{name.trim() ? `Will create “${name.trim()}”${slug ? ` (${slug})` : ''}.` : 'The name and slug are taken from the folder or repository; you can change them next.'}</p>
+          </>
+        ) : null}
+
+        {!existing || step === 1 ? (
+          <>
+            <Field label="What it is">
+              <Segmented value={kind} options={[{ value: 'existing', label: 'Existing code or system' }, { value: 'new', label: 'New website' }]} onChange={(value) => { setKind(value); setStep(0); }} />
+            </Field>
+            <Field label="Name">
+              <input value={name} maxLength={80} placeholder="Acme storefront" onChange={(e) => { setName(e.target.value); if (!edited) setSlug(slugify(e.target.value)); }} />
+            </Field>
+            {data.access?.superAdmin ? <Field label="Slug" hint="Lowercase and dashes.">
+              <input className="aw-mono" value={slug} maxLength={63} onChange={(e) => { setEdited(true); setSlug(e.target.value.toLowerCase()); }} />
+            </Field> : null}
+            {!data.access?.superAdmin ? <>
+              <Field label="What are you building?"><textarea value={what} maxLength={4000} onChange={(e) => setWhat(e.target.value)} /></Field>
+              <Field label="What should happen first?"><textarea value={goal} maxLength={4000} onChange={(e) => setGoal(e.target.value)} /></Field>
+            </> : null}
+            {!existing ? (
+              <>
+                <Field label="Code" hint={code === 'create' ? 'A node makes a private repo from the site template (main + preview).' : code === 'repo' ? 'Nodes clone this. A private repo needs a node whose git can reach it.' : data.access?.superAdmin ? 'A node with a folder named like the slug shares its origin.' : 'Create the project without linking a repository yet.'}>
+                  <Segmented value={code} options={[{ value: 'create', label: 'Create a repo' }, { value: 'repo', label: 'Use a repo URL' }, { value: 'folder', label: data.access?.superAdmin ? 'Folder on a node' : 'Not linked yet' }]} onChange={setCode} />
+                </Field>
+                {code === 'repo' ? <Field label="Repo URL"><input className="aw-mono" value={repo} maxLength={300} placeholder="https://github.com/owner/repo" onChange={(e) => setRepo(e.target.value)} /></Field> : null}
+                {host?.projectConfigureLocal ? <Field label="Local checkout folder (optional)" hint="Map an existing checkout on this computer. This does not clone a repository."><input disabled={busy} value={localPath} placeholder="/Users/you/Projects/acme" onChange={(e) => setLocalPath(e.target.value)} /></Field> : null}
+              </>
+            ) : (
+              <p className="ui-note">Source: <span className="aw-mono">{code === 'folder' ? localPath || '—' : repo || '—'}</span></p>
+            )}
+          </>
+        ) : null}
+
+        {existing && step === 2 ? (
+          <>
+            <Field label="Find a client">
+              <input value={clientQuery} placeholder="Search by name or email…" onChange={(e) => setClientQuery(e.target.value)} />
+            </Field>
+            <div className="aw-assign__list" role="group" aria-label="Clients">
+              {shownClients.length === 0 ? <p className="aw-muted">{clients.length ? `No client matches “${clientQuery}”.` : 'No clients yet. You can assign them from the client page later.'}</p> : shownClients.map((c) => {
+                const checked = clientIds.includes(c.id);
+                return (
+                  <label key={c.id} className="aw-assign__row" data-checked={checked || undefined}>
+                    <input type="checkbox" checked={checked} onChange={() => setClientIds((current) => checked ? current.filter((id) => id !== c.id) : [...current, c.id])} />
+                    <span className="aw-assign__name">{c.name || c.email}</span>
+                    {c.name ? <span className="aw-assign__slug">{c.email}</span> : null}
+                    {checked ? <span className="aw-assign__state">Assigned</span> : null}
+                  </label>
+                );
+              })}
+            </div>
+            <p className="aw-muted">{clientIds.length} of {clients.length} clients selected. You can change this later on either side.</p>
+          </>
+        ) : null}
+
+        {existing && step === 3 ? (
+          <dl className="ui-props">
+            <dt>Name</dt><dd>{name}</dd>
+            <dt>Slug</dt><dd className="aw-mono">{slug || '—'}</dd>
+            <dt>Source</dt><dd className="aw-mono">{code === 'folder' ? localPath : repo}</dd>
+            <dt>Clients</dt><dd>{clientIds.length ? clientIds.map((id) => clients.find((c) => c.id === id)?.name || clients.find((c) => c.id === id)?.email).join(', ') : 'None yet'}</dd>
+            {!data.access?.superAdmin ? <><dt>Brief</dt><dd>{what}</dd></> : null}
+          </dl>
+        ) : null}
       </fieldset>
-      {host?.projectConfigureLocal ? <Field label="Local checkout folder (optional)" hint="Map an existing checkout on this computer. This does not clone a repository.">
-        <input disabled={busy} value={localPath} placeholder="/Users/you/Projects/acme" onChange={(e) => setLocalPath(e.target.value)} />
-      </Field> : null}
     </Modal>
   );
 }
