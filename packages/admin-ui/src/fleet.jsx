@@ -891,7 +891,7 @@ const siteStateOf = (p) => {
  * of projects and saved each toggle as its own request.
  */
 function AssignProjectsModal({ client, onClose }) {
-  const { api, act, data } = useAdmin();
+  const { api, act, data, setModal } = useAdmin();
   const [picked, setPicked] = useState(() => new Set(client.projectIds ?? []));
   const [query, setQuery] = useState('');
   const [saving, setSaving] = useState(false);
@@ -920,6 +920,7 @@ function AssignProjectsModal({ client, onClose }) {
       onClose={onClose}
       actions={
         <>
+          <Button onClick={() => { onClose(); setModal({ kind: 'project', clientIds: [client.id] }); }}>New project…</Button>
           <Button onClick={onClose}>Cancel</Button>
           <Button kind="primary" busy={saving} disabled={saving || (!added.length && !removed.length)} onClick={() => void save()}>
             {saving ? 'Saving…' : added.length || removed.length ? `Save · ${added.length} added, ${removed.length} removed` : 'No changes'}
