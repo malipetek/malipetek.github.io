@@ -1171,8 +1171,12 @@ export function ClientsView() {
       <PageHeader
         title="Clients"
         subtitle={data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : 'Who you work for. Select a client to inspect them; Enter opens their page.'}
-        actions={<Button kind="primary" icon="plus" onClick={invite}>Invite client</Button>}
-        overflow={[{ label: 'New project…', run: () => setModal({ kind: 'project' }) }]}
+        actions={
+          <>
+            <Button onClick={() => setModal({ kind: 'project' })}>New project</Button>
+            <Button kind="primary" icon="plus" onClick={invite}>Invite client</Button>
+          </>
+        }
       />
       <div className="ui-split">
         <div className="ui-split__main">
