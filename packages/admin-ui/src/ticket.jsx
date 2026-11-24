@@ -849,7 +849,6 @@ function AdminSite({ project, site }) {
           {unpublished && !placeholder ? (
             <Button
               size="sm"
-              kind="primary"
               onClick={() =>
                 ask({
                   title: 'Publish the preview?',

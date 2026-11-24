@@ -3787,7 +3787,6 @@ ${block(Object.entries(TOKENS))}
           Button,
           {
             size: "sm",
-            kind: "primary",
             onClick: () => ask({
               title: "Publish the preview?",
               text: `${site.productionUrl} will show exactly what ${site.previewUrl} shows now. You can roll back from the project's deploys.`,
@@ -16753,10 +16752,12 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const steps = existing ? ["Source", "Details", "Clients", "Review"] : ["Details"];
     const last = steps.length - 1;
     const slugTaken = Boolean(slug) && data.projects.some((p) => p.slug === slug.toLowerCase());
+    const repoKey = (value) => String(value ?? "").trim().replace(/\.git$/, "").replace(/\/+$/, "").toLowerCase();
+    const repoTaken = Boolean(repo.trim()) && data.projects.some((p) => repoKey(p.repo) === repoKey(repo));
     const readyName = name.trim() && (!data.access?.superAdmin || /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug) && !slugTaken);
     const readyBrief = data.access?.superAdmin || what.trim() && goal.trim();
-    const readySource = !existing || (code === "folder" ? localPath.trim() : code === "repo" ? repo.trim() : true);
-    const ready = readyName && readyBrief && readySource;
+    const readySource = !existing || (code === "folder" ? localPath.trim() : code === "repo" ? Boolean(repo.trim()) && !repoTaken : true);
+    const ready = readyName && readyBrief && readySource && !(code === "repo" && repoTaken);
     const stepReady = !existing || (step === 0 ? readySource : step === 1 ? readyName && readyBrief : true);
     const go = (project) => {
       onClose();
@@ -16838,7 +16839,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                     notify?.(errorText(error), "error");
                   }
                 }, children: "Choose folder\u2026" }) : null
-              ] }) }) : /* @__PURE__ */ jsx(Field, { label: "Repository URL", hint: "Nodes clone this. A private repo needs a node whose git can reach it.", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => {
+              ] }) }) : /* @__PURE__ */ jsx(Field, { label: "Repository URL", hint: repoTaken ? "Another project already uses this repository. One repo, one project." : "Nodes clone this. A private repo needs a node whose git can reach it.", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, "aria-invalid": repoTaken || void 0, placeholder: "https://github.com/owner/repo", onChange: (e) => {
                 setRepo(e.target.value);
                 detect(e.target.value, true);
               } }) }),
@@ -16869,7 +16870,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
               ] }) : null,
               !existing ? /* @__PURE__ */ jsxs(Fragment2, { children: [
                 /* @__PURE__ */ jsx(Field, { label: "Code", hint: code === "create" ? "A node makes a private repo from the site template (main + preview)." : code === "repo" ? "Nodes clone this. A private repo needs a node whose git can reach it." : data.access?.superAdmin ? "A node with a folder named like the slug shares its origin." : "Create the project without linking a repository yet.", children: /* @__PURE__ */ jsx(Segmented, { value: code, options: [{ value: "create", label: "Create a repo" }, { value: "repo", label: "Use a repo URL" }, { value: "folder", label: data.access?.superAdmin ? "Folder on a node" : "Not linked yet" }], onChange: setCode }) }),
-                code === "repo" ? /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) }) : null,
+                code === "repo" ? /* @__PURE__ */ jsx(Field, { label: "Repo URL", hint: repoTaken ? "Another project already uses this repository." : void 0, children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, "aria-invalid": repoTaken || void 0, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) }) : null,
                 host?.projectConfigureLocal ? /* @__PURE__ */ jsx(Field, { label: "Local checkout folder (optional)", hint: "Map an existing checkout on this computer. This does not clone a repository.", children: /* @__PURE__ */ jsxs("div", { className: "aw-pick", children: [
                   /* @__PURE__ */ jsx("input", { disabled: busy, value: localPath, placeholder: "/Users/you/Projects/acme", onChange: (e) => setLocalPath(e.target.value) }),
                   host?.canPickDirectory ? /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: async () => {
