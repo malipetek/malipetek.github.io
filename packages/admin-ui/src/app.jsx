@@ -1037,7 +1037,17 @@ export function ProjectModal({ onClose, initialClients = [] }) {
             ) : null}
             {code === 'folder' && canFolder ? (
               <Field label="Folder" hint="An existing checkout on this computer. Nothing is cloned or created in it.">
-                <input className="aw-mono" value={localPath} placeholder="/Users/you/Projects/acme" onChange={(e) => { setLocalPath(e.target.value); detect(e.target.value, false); }} />
+                <div className="aw-pick">
+                  <input className="aw-mono" value={localPath} placeholder="/Users/you/Projects/acme" onChange={(e) => { setLocalPath(e.target.value); detect(e.target.value, false); }} />
+                  {host?.canPickDirectory ? (
+                    <Button onClick={async () => {
+                      try {
+                        const picked = await host.pickDirectory();
+                        if (picked) { setLocalPath(picked); detect(picked, false); }
+                      } catch (error) { notify?.(errorText(error), 'error'); }
+                    }}>Choose folder…</Button>
+                  ) : null}
+                </div>
               </Field>
             ) : (
               <Field label="Repository URL" hint="Nodes clone this. A private repo needs a node whose git can reach it.">
@@ -1069,7 +1079,19 @@ export function ProjectModal({ onClose, initialClients = [] }) {
                   <Segmented value={code} options={[{ value: 'create', label: 'Create a repo' }, { value: 'repo', label: 'Use a repo URL' }, { value: 'folder', label: data.access?.superAdmin ? 'Folder on a node' : 'Not linked yet' }]} onChange={setCode} />
                 </Field>
                 {code === 'repo' ? <Field label="Repo URL"><input className="aw-mono" value={repo} maxLength={300} placeholder="https://github.com/owner/repo" onChange={(e) => setRepo(e.target.value)} /></Field> : null}
-                {host?.projectConfigureLocal ? <Field label="Local checkout folder (optional)" hint="Map an existing checkout on this computer. This does not clone a repository."><input disabled={busy} value={localPath} placeholder="/Users/you/Projects/acme" onChange={(e) => setLocalPath(e.target.value)} /></Field> : null}
+                {host?.projectConfigureLocal ? <Field label="Local checkout folder (optional)" hint="Map an existing checkout on this computer. This does not clone a repository.">
+                  <div className="aw-pick">
+                    <input disabled={busy} value={localPath} placeholder="/Users/you/Projects/acme" onChange={(e) => setLocalPath(e.target.value)} />
+                    {host?.canPickDirectory ? (
+                      <Button disabled={busy} onClick={async () => {
+                        try {
+                          const picked = await host.pickDirectory();
+                          if (picked) setLocalPath(picked);
+                        } catch (error) { notify?.(errorText(error), 'error'); }
+                      }}>Choose folder…</Button>
+                    ) : null}
+                  </div>
+                </Field> : null}
               </>
             ) : (
               <p className="ui-note">Source: <span className="aw-mono">{code === 'folder' ? localPath || '—' : repo || '—'}</span></p>

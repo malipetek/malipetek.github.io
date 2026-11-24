@@ -386,6 +386,9 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-fold__more { margin-top: 4px; font-size: var(--aw-type-sm); }
 .aw-run { padding: var(--aw-space-3) 0; }
 .aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-type-sm); max-width: var(--aw-measure); line-height: 1.55; margin-top: 4px; }
+.aw-pick { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); }
+.aw-pick > input { flex: 1; min-width: 0; }
+.aw-pick > .ui-btn { flex: none; }
 .aw-steps { list-style: none; margin: 6px 0 4px; padding: 6px var(--aw-space-2); display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; border-radius: var(--aw-radius-md); background: var(--aw-surface-sidebar); font-size: var(--aw-type-sm); }
 .aw-steps li { display: flex; gap: var(--aw-space-2); align-items: baseline; min-width: 0; }
 .aw-steps time { flex: none; color: var(--aw-ink-3); font-family: var(--aw-mono); font-size: var(--aw-type-xs); }

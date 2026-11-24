@@ -11593,6 +11593,9 @@ button.aw-file:hover { background: var(--aw-hover); }
 .aw-fold__more { margin-top: 4px; font-size: var(--aw-type-sm); }
 .aw-run { padding: var(--aw-space-3) 0; }
 .aw-run__summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--aw-type-sm); max-width: var(--aw-measure); line-height: 1.55; margin-top: 4px; }
+.aw-pick { display: flex; align-items: center; gap: var(--ui-sp-2, 8px); }
+.aw-pick > input { flex: 1; min-width: 0; }
+.aw-pick > .ui-btn { flex: none; }
 .aw-steps { list-style: none; margin: 6px 0 4px; padding: 6px var(--aw-space-2); display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; border-radius: var(--aw-radius-md); background: var(--aw-surface-sidebar); font-size: var(--aw-type-sm); }
 .aw-steps li { display: flex; gap: var(--aw-space-2); align-items: baseline; min-width: 0; }
 .aw-steps time { flex: none; color: var(--aw-ink-3); font-family: var(--aw-mono); font-size: var(--aw-type-xs); }
@@ -16817,10 +16820,23 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                 setCode(value);
                 setStep(0);
               } }) }) : null,
-              code === "folder" && canFolder ? /* @__PURE__ */ jsx(Field, { label: "Folder", hint: "An existing checkout on this computer. Nothing is cloned or created in it.", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: localPath, placeholder: "/Users/you/Projects/acme", onChange: (e) => {
-                setLocalPath(e.target.value);
-                detect(e.target.value, false);
-              } }) }) : /* @__PURE__ */ jsx(Field, { label: "Repository URL", hint: "Nodes clone this. A private repo needs a node whose git can reach it.", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => {
+              code === "folder" && canFolder ? /* @__PURE__ */ jsx(Field, { label: "Folder", hint: "An existing checkout on this computer. Nothing is cloned or created in it.", children: /* @__PURE__ */ jsxs("div", { className: "aw-pick", children: [
+                /* @__PURE__ */ jsx("input", { className: "aw-mono", value: localPath, placeholder: "/Users/you/Projects/acme", onChange: (e) => {
+                  setLocalPath(e.target.value);
+                  detect(e.target.value, false);
+                } }),
+                host?.canPickDirectory ? /* @__PURE__ */ jsx(Button, { onClick: async () => {
+                  try {
+                    const picked = await host.pickDirectory();
+                    if (picked) {
+                      setLocalPath(picked);
+                      detect(picked, false);
+                    }
+                  } catch (error) {
+                    notify?.(errorText(error), "error");
+                  }
+                }, children: "Choose folder\u2026" }) : null
+              ] }) }) : /* @__PURE__ */ jsx(Field, { label: "Repository URL", hint: "Nodes clone this. A private repo needs a node whose git can reach it.", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => {
                 setRepo(e.target.value);
                 detect(e.target.value, true);
               } }) }),
@@ -16846,7 +16862,17 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
               !existing ? /* @__PURE__ */ jsxs(Fragment2, { children: [
                 /* @__PURE__ */ jsx(Field, { label: "Code", hint: code === "create" ? "A node makes a private repo from the site template (main + preview)." : code === "repo" ? "Nodes clone this. A private repo needs a node whose git can reach it." : data.access?.superAdmin ? "A node with a folder named like the slug shares its origin." : "Create the project without linking a repository yet.", children: /* @__PURE__ */ jsx(Segmented, { value: code, options: [{ value: "create", label: "Create a repo" }, { value: "repo", label: "Use a repo URL" }, { value: "folder", label: data.access?.superAdmin ? "Folder on a node" : "Not linked yet" }], onChange: setCode }) }),
                 code === "repo" ? /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) }) : null,
-                host?.projectConfigureLocal ? /* @__PURE__ */ jsx(Field, { label: "Local checkout folder (optional)", hint: "Map an existing checkout on this computer. This does not clone a repository.", children: /* @__PURE__ */ jsx("input", { disabled: busy, value: localPath, placeholder: "/Users/you/Projects/acme", onChange: (e) => setLocalPath(e.target.value) }) }) : null
+                host?.projectConfigureLocal ? /* @__PURE__ */ jsx(Field, { label: "Local checkout folder (optional)", hint: "Map an existing checkout on this computer. This does not clone a repository.", children: /* @__PURE__ */ jsxs("div", { className: "aw-pick", children: [
+                  /* @__PURE__ */ jsx("input", { disabled: busy, value: localPath, placeholder: "/Users/you/Projects/acme", onChange: (e) => setLocalPath(e.target.value) }),
+                  host?.canPickDirectory ? /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: async () => {
+                    try {
+                      const picked = await host.pickDirectory();
+                      if (picked) setLocalPath(picked);
+                    } catch (error) {
+                      notify?.(errorText(error), "error");
+                    }
+                  }, children: "Choose folder\u2026" }) : null
+                ] }) }) : null
               ] }) : /* @__PURE__ */ jsxs("p", { className: "ui-note", children: [
                 "Source: ",
                 /* @__PURE__ */ jsx("span", { className: "aw-mono", children: code === "folder" ? localPath || "\u2014" : repo || "\u2014" })
@@ -17577,7 +17603,7 @@ ${question.text ?? ""}`)) {
   function AdminIcon({ size = 16 }) {
     return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: "M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v7h-4z" }) });
   }
-  var inject = ["slots", "sessions", "layout", "remote", "remote.commands", "sidebarRightTabs", "sidebarRight"];
+  var inject = ["slots", "sessions", "layout", "remote", "remote.commands", "sidebarRightTabs", "sidebarRight", "directoryPicker"];
   function apply(ctx) {
     migrateTicketView(globalThis.localStorage);
     const desktop = globalThis.location?.protocol === "dsh-app:" && globalThis.location?.hostname === "app";
@@ -17688,8 +17714,20 @@ ${question.text ?? ""}`)) {
       );
     }
     const localProject = (action, args) => json(`project-local ${action} ${JSON.stringify(args)}`);
+    const folderCapability = (() => {
+      try {
+        return ctx.directoryPicker?.capability?.() ?? null;
+      } catch {
+        return null;
+      }
+    })();
     const host = {
       version: false ? void 0 : "1.1.0",
+      canPickDirectory: folderCapability?.kind === "native",
+      pickDirectory: async () => {
+        if (folderCapability?.kind !== "native") throw new Error("No native folder picker is available in this host.");
+        return folderCapability.pick(new AbortController().signal);
+      },
       command,
       json,
       gitGraph,
