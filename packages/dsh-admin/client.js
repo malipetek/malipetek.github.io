@@ -10159,8 +10159,10 @@ ${block(Object.entries(TOKENS))}
     u.ourCents && `first previews ${money(u.ourCents)} on us`
   ].filter(Boolean).join(" \xB7 ") || "nothing owed" : "";
   function RepoModal({ project, onClose }) {
-    const { api, act } = useAdmin();
+    const { api, act, data } = useAdmin();
     const [repo, setRepo] = useState(project.repo ?? "");
+    const key = (value) => String(value ?? "").trim().replace(/\.git$/, "").replace(/\/+$/, "").toLowerCase();
+    const taken = Boolean(repo.trim()) && data.projects.some((p) => p.id !== project.id && key(p.repo) === key(repo));
     const submit = () => act(() => api("PUT", `/admin/projects/${project.id}/repo`, { repo: repo.trim() }), "Repo saved.").then(onClose, () => void 0);
     return /* @__PURE__ */ jsx(
       Modal,
@@ -10171,9 +10173,9 @@ ${block(Object.entries(TOKENS))}
         onClose,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
           /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
-          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !repo.trim(), onClick: submit, children: "Save" })
+          /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !repo.trim() || taken, onClick: submit, children: "Save" })
         ] }),
-        children: /* @__PURE__ */ jsx(Field, { label: "Repo URL", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) })
+        children: /* @__PURE__ */ jsx(Field, { label: "Repo URL", hint: taken ? "Another project already uses this repository. One repo, one project." : void 0, children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: repo, maxLength: 300, "aria-invalid": taken || void 0, placeholder: "https://github.com/owner/repo", onChange: (e) => setRepo(e.target.value) }) })
       }
     );
   }

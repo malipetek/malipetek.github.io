@@ -445,8 +445,10 @@ const usageLine = (u) =>
     : '';
 
 export function RepoModal({ project, onClose }) {
-  const { api, act } = useAdmin();
+  const { api, act, data } = useAdmin();
   const [repo, setRepo] = useState(project.repo ?? '');
+  const key = (value) => String(value ?? '').trim().replace(/\.git$/, '').replace(/\/+$/, '').toLowerCase();
+  const taken = Boolean(repo.trim()) && data.projects.some((p) => p.id !== project.id && key(p.repo) === key(repo));
   const submit = () => act(() => api('PUT', `/admin/projects/${project.id}/repo`, { repo: repo.trim() }), 'Repo saved.').then(onClose, () => undefined);
   return (
     <Modal kind="create"
@@ -456,14 +458,14 @@ export function RepoModal({ project, onClose }) {
       actions={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button kind="primary" disabled={!repo.trim()} onClick={submit}>
+          <Button kind="primary" disabled={!repo.trim() || taken} onClick={submit}>
             Save
           </Button>
         </>
       }
     >
-      <Field label="Repo URL">
-        <input className="aw-mono" value={repo} maxLength={300} placeholder="https://github.com/owner/repo" onChange={(e) => setRepo(e.target.value)} />
+      <Field label="Repo URL" hint={taken ? 'Another project already uses this repository. One repo, one project.' : undefined}>
+        <input className="aw-mono" value={repo} maxLength={300} aria-invalid={taken || undefined} placeholder="https://github.com/owner/repo" onChange={(e) => setRepo(e.target.value)} />
       </Field>
     </Modal>
   );
