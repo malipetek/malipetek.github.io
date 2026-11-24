@@ -2111,7 +2111,7 @@ function apply(ctx) {
     .pta-count{display:inline-block;min-width:16px;margin-left:5px;padding:0 5px;border-radius:8px;background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.16));font-size:10px;line-height:16px;text-align:center;vertical-align:1px}
     .pta-rows{display:flex;flex-direction:column;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.22));border-radius:10px;overflow:hidden;background:var(--dsw-alias-bg-primary,transparent)}
     .pta-rows--inbox{max-width:none;container-type:inline-size;container-name:pta-inbox-list}
-    .pta-row{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:8px 12px;border:0;border-bottom:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.14));background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+    .pta-row{position:relative;display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:8px 12px;border:0;border-bottom:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.14));background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
     .pta-row:last-child{border-bottom:0}
     .pta-row:hover{background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.07))}
     .pta-row[aria-selected="true"]{background:var(--ui-bg-selected,var(--dsw-alias-bg-secondary,rgba(127,127,127,.12)));box-shadow:inset 2px 0 0 var(--ui-accent,var(--dsw-alias-brand-primary,#ff5a1f))}
@@ -2185,7 +2185,7 @@ function apply(ctx) {
     .pta-hint{margin:6px 2px 10px;font-size:10.5px;opacity:.45}
     .pta-warn{flex:0 1 auto;min-width:0;max-width:150px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--dsw-alias-state-warning-primary,#d18f2e);white-space:nowrap}
     .pta-fill{flex:0 0 8px;min-width:8px}
-    .pta-actions{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto}
+    .pta-actions{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;position:absolute;right:10px;top:50%;transform:translateY(-50%);padding:4px 6px 4px 22px;border-radius:6px;background:linear-gradient(90deg,transparent,var(--dsw-alias-bg-secondary,rgba(127,127,127,.12)) 20px)}
     .pta-btn{height:23px;padding:0 8px;border:1px solid var(--dsw-alias-border-secondary,rgba(127,127,127,.34));border-radius:5px;background:transparent;color:inherit;font:inherit;font-size:11.5px;line-height:1;white-space:nowrap;cursor:pointer}
     .pta-btn:hover{background:var(--dsw-alias-bg-secondary,rgba(127,127,127,.1))}
     .pta-btn:disabled{opacity:.45;cursor:default}
