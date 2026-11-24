@@ -3670,15 +3670,6 @@ function apply(ctx) {
       refreshClientRows();
     };
   });
-  // Client rows make the panel list long; give it its own scroll so the
-  // workspace browser below keeps at least half the column.
-  ctx.effect(() => {
-    const style = document.createElement('style');
-    style.dataset.admin = 'panel-scroll';
-    style.textContent = '[class*="_panelList"]{max-height:45vh;overflow-y:auto;overscroll-behavior:contain;flex-shrink:0}';
-    document.head.append(style);
-    return () => style.remove();
-  }, 'admin: scrollable panel list');
   // A run's ticket, as a view of its own conversation: the whole ticket page
   // beside Chat and Trajectory, and a chip in the header that names it. The
   // chip registers the view, because it renders for exactly the session in front.

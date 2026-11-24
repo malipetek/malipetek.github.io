@@ -20562,13 +20562,6 @@ ${question.text ?? ""}`)) {
         refreshClientRows();
       };
     });
-    ctx.effect(() => {
-      const style = document.createElement("style");
-      style.dataset.admin = "panel-scroll";
-      style.textContent = '[class*="_panelList"]{max-height:45vh;overflow-y:auto;overscroll-behavior:contain;flex-shrink:0}';
-      document.head.append(style);
-      return () => style.remove();
-    }, "admin: scrollable panel list");
     ctx.slots.inject("conversation.session.header.actions", () => ctx.slots.register({ name: "conversation.session.header.actions", id: "admin-ticket", order: 5, locale: NAMESPACE }, TicketHeaderChip));
     ctx.slots.inject("sidebar.session.row.leading", () => ctx.slots.register({ name: "sidebar.session.row.leading", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketMark));
     ctx.slots.inject("sidebar.session.row.hover", () => ctx.slots.register({ name: "sidebar.session.row.hover", id: "admin-ticket", order: 10, locale: NAMESPACE }, TicketHover));
