@@ -10,6 +10,7 @@ import {
   Empty,
   EmptyState,
   Field,
+  FilterBar,
   FormPane,
   Inspector,
   MetaChip,
@@ -1151,10 +1152,15 @@ export function ClientsView() {
   const root = useRef(null);
   const [sort, setSort] = useState({ key: 'name', dir: 1 });
   const [selectedId, setSelectedId] = useState(null);
+  const [query, setQuery] = useState('');
+  const [scope, setScope] = useState('all');
   const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const match = (c) => (scope === 'invited' ? c.pending : scope === 'active' ? !c.pending : true)
+      && (!q || `${c.name ?? ''} ${c.email ?? ''}`.toLowerCase().includes(q));
     const get = CLIENT_SORTS[sort.key];
-    return [...data.clients].sort((a, b) => (get(a) > get(b) ? 1 : get(a) < get(b) ? -1 : 0) * sort.dir);
-  }, [data.clients, sort]);
+    return data.clients.filter(match).sort((a, b) => (get(a) > get(b) ? 1 : get(a) < get(b) ? -1 : 0) * sort.dir);
+  }, [data.clients, sort, query, scope]);
   const selected = selectedId == null ? null : rows.find((c) => c.id === selectedId) ?? null;
   const close = () => setSelectedId(null);
   useRevealInspector(root, selected?.id ?? null);
@@ -1170,6 +1176,13 @@ export function ClientsView() {
       />
       <div className="ui-split">
         <div className="ui-split__main">
+          <FilterBar label="Client filters">
+            <input className="aw-search" type="search" value={query} aria-label="Filter clients by name or email" placeholder="Filter clients…" onChange={(e) => setQuery(e.target.value)} />
+            <Segmented value={scope} options={[{ value: 'all', label: 'All' }, { value: 'active', label: 'Active' }, { value: 'invited', label: 'Invited' }]} onChange={setScope} label="Client state" />
+            {query || scope !== 'all' ? <Button kind="ghost" size="sm" onClick={() => { setQuery(''); setScope('all'); }}>Clear filters</Button> : null}
+            <span className="aw-toolbar__fill" />
+            <span className="ui-note">{rows.length} of {data.clients.length}</span>
+          </FilterBar>
           <DataTable
             label="Clients"
             rows={rows}
@@ -1179,7 +1192,9 @@ export function ClientsView() {
             menu={(c) => clientMenu(c, open)}
             sort={sort}
             onSort={(key) => setSort((s) => ({ key, dir: s.key === key ? -s.dir : key === 'name' ? 1 : -1 }))}
-            empty={{ title: 'No clients yet.', hint: 'Invite a client and they get a portal account for their projects.' }}
+            empty={query || scope !== 'all'
+              ? { title: 'No clients match those filters.', hint: 'Clear the search or choose All.' }
+              : { title: 'No clients yet.', hint: 'Invite a client and they get a portal account for their projects.' }}
             columns={[
               {
                 key: 'name',
