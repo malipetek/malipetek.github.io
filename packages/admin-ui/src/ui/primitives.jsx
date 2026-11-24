@@ -41,9 +41,11 @@ function MoreMenu({ items, label = 'More actions' }) {
   if (!list.length) return null;
   return (
     <>
-      <UiButton ref={anchor} kind="ghost" className="ui-iconbtn" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <Icon name="more" />
-      </UiButton>
+      <span ref={anchor} className="ui-moremenu-anchor">
+        <UiButton kind="ghost" className="ui-iconbtn" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <Icon name="more" />
+        </UiButton>
+      </span>
       {open ? <Menu items={list} anchor={anchor} label={label} onClose={() => setOpen(false)} /> : null}
     </>
   );

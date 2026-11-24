@@ -38,6 +38,7 @@ const PRIMITIVES_CSS = `
 .ui-btn--primary { border-color: transparent; background: var(--ui-accent); color: var(--ui-accent-ink); }
 .ui-btn--primary:hover:not(:disabled) { background: var(--ui-accent-hover); }
 .ui-iconbtn { width: var(--ui-ctl-h); padding: 0; }
+.ui-moremenu-anchor { display: inline-flex; flex: none; }
 
 /* —— StateIndicator: 6px dot + label, transparent background —— */
 .ui-state {

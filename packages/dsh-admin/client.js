@@ -1306,6 +1306,7 @@ ${block(Object.entries(TOKENS))}
 .ui-btn--primary { border-color: transparent; background: var(--ui-accent); color: var(--ui-accent-ink); }
 .ui-btn--primary:hover:not(:disabled) { background: var(--ui-accent-hover); }
 .ui-iconbtn { width: var(--ui-ctl-h); padding: 0; }
+.ui-moremenu-anchor { display: inline-flex; flex: none; }
 
 /* \u2014\u2014 StateIndicator: 6px dot + label, transparent background \u2014\u2014 */
 .ui-state {
