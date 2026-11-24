@@ -844,7 +844,7 @@ export function TaskModal({ preset = {}, onClose }) {
   const [approve, setApprove] = useState(false);
   const [busy, setBusy] = useState(false);
   const slug = data.projects.find((p) => p.id === projectId)?.slug ?? null;
-  const where = predict(data.nodes, { slug, requires, executor, kind: 'system' });
+  const where = projectId ? predict(data.nodes, { slug, requires, executor, kind: 'system' }) : null;
   const caps = data.catalog?.capabilities ?? [];
   const submitRef = useRef(null);
   if (!submitRef.current) submitRef.current = createTaskSubmission((body) =>
@@ -869,9 +869,9 @@ export function TaskModal({ preset = {}, onClose }) {
       wide
       actions={
         <>
-          {data.access?.superAdmin ? <span className={`aw-predict aw-predict--${where.state}`}>
+          {data.access?.superAdmin && where ? <span className={`aw-predict aw-predict--${where.state}`}>
             <Dot state={where.state} /> {where.text}
-          </span> : <span className="aw-muted">{approve ? 'The agent will be queued.' : 'Draft only · no agent starts.'}</span>}
+          </span> : <span className="aw-muted">{!projectId ? 'Pick a project to see where it runs.' : approve ? 'The agent will be queued when you save.' : 'Draft only · no agent starts.'}</span>}
           <Button disabled={busy} onClick={onClose}>Cancel</Button>
           <Button
             kind="primary"
@@ -921,7 +921,7 @@ export function TaskModal({ preset = {}, onClose }) {
           </select>
         </Field>
         <Field label="Start">
-          <Segmented value={approve} disabled={busy} options={[{ value: false, label: 'Save draft' }, { value: true, label: 'Queue agent' }]} onChange={setApprove} />
+          <Segmented value={approve} disabled={busy} options={[{ value: false, label: 'Draft only' }, { value: true, label: 'Queue agent' }]} onChange={setApprove} />
         </Field>
       </div>
       {caps.length ? (

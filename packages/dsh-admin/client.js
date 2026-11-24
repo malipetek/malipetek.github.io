@@ -16638,7 +16638,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const [approve, setApprove] = useState(false);
     const [busy, setBusy] = useState(false);
     const slug = data.projects.find((p) => p.id === projectId)?.slug ?? null;
-    const where = predict(data.nodes, { slug, requires, executor, kind: "system" });
+    const where = projectId ? predict(data.nodes, { slug, requires, executor, kind: "system" }) : null;
     const caps = data.catalog?.capabilities ?? [];
     const submitRef = useRef(null);
     if (!submitRef.current) submitRef.current = createTaskSubmission((body) => act(() => api("POST", "/admin/work", body), (o) => `Saved #${o.id}${body.approve ? " and queued it" : " as a draft"}.`));
@@ -16669,11 +16669,11 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         onClose: () => !busyRef.current && onClose(),
         wide: true,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-          data.access?.superAdmin ? /* @__PURE__ */ jsxs("span", { className: `aw-predict aw-predict--${where.state}`, children: [
+          data.access?.superAdmin && where ? /* @__PURE__ */ jsxs("span", { className: `aw-predict aw-predict--${where.state}`, children: [
             /* @__PURE__ */ jsx(Dot, { state: where.state }),
             " ",
             where.text
-          ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: approve ? "The agent will be queued." : "Draft only \xB7 no agent starts." }),
+          ] }) : /* @__PURE__ */ jsx("span", { className: "aw-muted", children: !projectId ? "Pick a project to see where it runs." : approve ? "The agent will be queued when you save." : "Draft only \xB7 no agent starts." }),
           /* @__PURE__ */ jsx(Button, { disabled: busy, onClick: onClose, children: "Cancel" }),
           /* @__PURE__ */ jsx(
             Button,
@@ -16710,7 +16710,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             ] }) }),
             /* @__PURE__ */ jsx(Field, { label: "Priority", children: /* @__PURE__ */ jsx(Segmented, { value: priority, options: PRIORITIES, onChange: setPriority }) }),
             /* @__PURE__ */ jsx(Field, { label: "Agent", children: /* @__PURE__ */ jsx("select", { value: executor ?? "", onChange: (e) => setExecutor(e.target.value || null), children: AGENTS.map((agent) => /* @__PURE__ */ jsx("option", { value: agent.value ?? "", title: agent.hint, children: agent.label }, String(agent.value))) }) }),
-            /* @__PURE__ */ jsx(Field, { label: "Start", children: /* @__PURE__ */ jsx(Segmented, { value: approve, disabled: busy, options: [{ value: false, label: "Save draft" }, { value: true, label: "Queue agent" }], onChange: setApprove }) })
+            /* @__PURE__ */ jsx(Field, { label: "Start", children: /* @__PURE__ */ jsx(Segmented, { value: approve, disabled: busy, options: [{ value: false, label: "Draft only" }, { value: true, label: "Queue agent" }], onChange: setApprove }) })
           ] }),
           caps.length ? /* @__PURE__ */ jsx(Field, { label: "Needs", hint: "Only nodes with all of these take it.", children: /* @__PURE__ */ jsx(Chips, { value: requires, options: caps.map((c) => ({ value: c.id, label: c.label, hint: c.hint })), onChange: setRequires }) }) : null
         ] })
