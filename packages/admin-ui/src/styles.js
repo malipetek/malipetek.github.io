@@ -1214,11 +1214,13 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 .aw-pagetabs__badge { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border-radius: var(--aw-radius-pill); background: var(--aw-fill); color: var(--aw-ink-2); font-size: var(--aw-type-xs); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ————— Menu, context menu, overflow ————— */
+.aw-overflow-anchor { display: inline-flex; flex: none; }
 .aw-menu { position: fixed; z-index: 70; min-width: 200px; max-width: 320px; max-height: min(480px, 80vh); overflow-y: auto; padding: 4px; border-radius: var(--aw-radius-lg); background: var(--aw-surface-raised); color: var(--aw-ink); box-shadow: var(--aw-shadow-float); font-size: var(--aw-type-md); animation: aw-fade var(--aw-dur) var(--aw-ease); list-style: none; margin: 0; }
 .aw-menu:focus { outline: none; }
 .aw-menu__item { display: flex; align-items: center; gap: var(--aw-space-3); width: 100%; height: 28px; padding: 0 var(--aw-space-2); border: 0; border-radius: var(--aw-radius-sm); background: none; color: inherit; text-align: left; cursor: default; white-space: nowrap; }
 .aw-menu__item > span:first-child { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .aw-menu__item small { color: var(--aw-ink-3); font-size: var(--aw-type-xs); }
+.aw-menu__item:hover { background: var(--aw-hover); }
 .aw-menu__item.is-active, .aw-menu__item:focus-visible { background: var(--aw-accent); color: var(--aw-accent-ink); outline: none; }
 .aw-menu__item.is-active small { color: inherit; opacity: .75; }
 .aw-menu__item--danger { color: var(--aw-bad-ink); }

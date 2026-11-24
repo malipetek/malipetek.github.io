@@ -547,7 +547,9 @@ export function OverflowMenu({ items, label = 'More actions', size }) {
   if (!list.length) return null;
   return (
     <>
-      <Button ref={anchor} kind="ghost" size={size} iconOnly icon="more" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} />
+      <span ref={anchor} className="aw-overflow-anchor">
+        <Button kind="ghost" size={size} iconOnly icon="more" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} />
+      </span>
       {open ? <Menu items={list} anchor={anchor} label={label} onClose={() => setOpen(false)} /> : null}
     </>
   );

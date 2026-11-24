@@ -21,7 +21,7 @@ export function Menu({ items, at, anchor, onClose, label = 'Actions' }) {
   const layer = useLayer();
   const list = items.filter(Boolean);
   const actionable = list.map((it, i) => (it.separator || it.heading || it.disabled ? -1 : i)).filter((i) => i >= 0);
-  const [active, setActive] = useState(actionable[0] ?? -1);
+  const [active, setActive] = useState(-1);
   const [pos, setPos] = useState(() => ({ left: at?.x ?? 0, top: at?.y ?? 0, visibility: 'hidden' }));
   const opener = useRef(null);
   const typed = useRef({ text: '', at: 0 });
