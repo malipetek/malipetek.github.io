@@ -1055,13 +1055,14 @@ export function ProjectModal({ onClose, initialClients = [] }) {
               </Field>
             )}
             <p className="ui-note">{name.trim() ? `Will create “${name.trim()}”${slug ? ` (${slug})` : ''}.` : canFolder ? 'The name and slug are taken from the folder or repository; you can change them next.' : 'The name and slug are taken from the repository; you can change them next.'}</p>
+            <Button kind="ghost" size="sm" onClick={() => { setKind('new'); setCode('create'); setStep(0); }}>This is a new website instead →</Button>
           </>
         ) : null}
 
         {!existing || step === 1 ? (
           <>
             <Field label="What it is">
-              <Segmented value={kind} options={[{ value: 'existing', label: 'Existing code or system' }, { value: 'new', label: 'New website' }]} onChange={(value) => { setKind(value); setStep(0); }} />
+              <Segmented value={kind} options={[{ value: 'existing', label: 'Existing code or system' }, { value: 'new', label: 'New website' }]} onChange={(value) => { setKind(value); setCode(value === 'new' ? 'create' : canFolder ? 'folder' : 'repo'); setStep(0); }} />
             </Field>
             <Field label="Name">
               <input value={name} maxLength={80} placeholder="Acme storefront" onChange={(e) => { setName(e.target.value); if (!edited) setSlug(slugify(e.target.value)); }} />

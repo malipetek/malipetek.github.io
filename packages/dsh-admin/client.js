@@ -16842,11 +16842,17 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                 setRepo(e.target.value);
                 detect(e.target.value, true);
               } }) }),
-              /* @__PURE__ */ jsx("p", { className: "ui-note", children: name.trim() ? `Will create \u201C${name.trim()}\u201D${slug ? ` (${slug})` : ""}.` : canFolder ? "The name and slug are taken from the folder or repository; you can change them next." : "The name and slug are taken from the repository; you can change them next." })
+              /* @__PURE__ */ jsx("p", { className: "ui-note", children: name.trim() ? `Will create \u201C${name.trim()}\u201D${slug ? ` (${slug})` : ""}.` : canFolder ? "The name and slug are taken from the folder or repository; you can change them next." : "The name and slug are taken from the repository; you can change them next." }),
+              /* @__PURE__ */ jsx(Button, { kind: "ghost", size: "sm", onClick: () => {
+                setKind("new");
+                setCode("create");
+                setStep(0);
+              }, children: "This is a new website instead \u2192" })
             ] }) : null,
             !existing || step === 1 ? /* @__PURE__ */ jsxs(Fragment2, { children: [
               /* @__PURE__ */ jsx(Field, { label: "What it is", children: /* @__PURE__ */ jsx(Segmented, { value: kind, options: [{ value: "existing", label: "Existing code or system" }, { value: "new", label: "New website" }], onChange: (value) => {
                 setKind(value);
+                setCode(value === "new" ? "create" : canFolder ? "folder" : "repo");
                 setStep(0);
               } }) }),
               /* @__PURE__ */ jsx(Field, { label: "Name", children: /* @__PURE__ */ jsx("input", { value: name, maxLength: 80, placeholder: "Acme storefront", onChange: (e) => {
