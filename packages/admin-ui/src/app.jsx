@@ -461,7 +461,7 @@ export function AdminApp({ api, platform = 'web', host = null, fullscreen = fals
         {keys ? <ShortcutSheet onClose={() => setKeys(false)} /> : null}
         <MachineOnboarding />
         {modal?.kind === 'task' ? <TaskModal preset={modal} onClose={() => setModal(null)} /> : null}
-        {modal?.kind === 'project' ? <ProjectModal onClose={() => setModal(null)} /> : null}
+        {modal?.kind === 'project' ? <ProjectModal onClose={() => setModal(null)} initialClients={modal?.clientIds ?? []} /> : null}
         {modal?.kind === 'custom' ? modal.render(() => setModal(null)) : null}
         {ask ? <Confirm ask={ask} onClose={() => setAsk(null)} /> : null}
       </div>
@@ -934,7 +934,7 @@ export function TaskModal({ preset = {}, onClose }) {
   );
 }
 
-export function ProjectModal({ onClose }) {
+export function ProjectModal({ onClose, initialClients = [] }) {
   const { api, act, host, open, data, notify } = useAdminCtx();
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
@@ -950,7 +950,7 @@ export function ProjectModal({ onClose }) {
   const [localPath, setLocalPath] = useState('');
   const [busy, setBusy] = useState(false);
   const [setupError, setSetupError] = useState(null);
-  const [clientIds, setClientIds] = useState([]);
+  const [clientIds, setClientIds] = useState(() => [...initialClients]);
   const [clientQuery, setClientQuery] = useState('');
   const submission = useRef(null);
   const busyRef = useRef(false);
@@ -969,7 +969,8 @@ export function ProjectModal({ onClose }) {
   const existing = kind === 'existing';
   const steps = existing ? ['Source', 'Details', 'Clients', 'Review'] : ['Details'];
   const last = steps.length - 1;
-  const readyName = name.trim() && (!data.access?.superAdmin || /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug));
+  const slugTaken = Boolean(slug) && data.projects.some((p) => p.slug === slug.toLowerCase());
+  const readyName = name.trim() && (!data.access?.superAdmin || (/^[a-z0-9][a-z0-9-]{0,62}$/.test(slug) && !slugTaken));
   const readyBrief = data.access?.superAdmin || (what.trim() && goal.trim());
   const readySource = !existing || (code === 'folder' ? localPath.trim() : code === 'repo' ? repo.trim() : true);
   const ready = readyName && readyBrief && readySource;
@@ -1055,8 +1056,8 @@ export function ProjectModal({ onClose }) {
             <Field label="Name">
               <input value={name} maxLength={80} placeholder="Acme storefront" onChange={(e) => { setName(e.target.value); if (!edited) setSlug(slugify(e.target.value)); }} />
             </Field>
-            {data.access?.superAdmin ? <Field label="Slug" hint="Lowercase and dashes.">
-              <input className="aw-mono" value={slug} maxLength={63} onChange={(e) => { setEdited(true); setSlug(e.target.value.toLowerCase()); }} />
+            {data.access?.superAdmin ? <Field label="Slug" hint={slugTaken ? 'Already used by another project. Slug is the project\'s address, so it must be unique.' : 'Lowercase and dashes.'}>
+              <input className="aw-mono" value={slug} maxLength={63} aria-invalid={slugTaken || undefined} onChange={(e) => { setEdited(true); setSlug(e.target.value.toLowerCase()); }} />
             </Field> : null}
             {!data.access?.superAdmin ? <>
               <Field label="What are you building?"><textarea value={what} maxLength={4000} onChange={(e) => setWhat(e.target.value)} /></Field>
@@ -1136,7 +1137,7 @@ export function ProjectPage({ api, id, host = null, files = null }) {
       {destination.startsWith('p:') ? <ProjectView key={destination} id={destination.slice(2)} /> : destination.startsWith('t:') ? <TicketView key={destination} id={Number(destination.slice(2))} active /> : workbenchAllowed(destination, data.access) ? <View name={destination} /> : <p className="aw-empty">This destination requires administrator access.</p>}
       <Toast toast={toast} onDismiss={dismissToast} />
       {modal?.kind === 'task' ? <TaskModal preset={modal} onClose={() => setModal(null)} /> : null}
-      {modal?.kind === 'project' && data.access?.canUseWorkbench ? <ProjectModal onClose={() => setModal(null)} /> : null}
+      {modal?.kind === 'project' && data.access?.canUseWorkbench ? <ProjectModal onClose={() => setModal(null)} initialClients={modal?.clientIds ?? []} /> : null}
       {modal?.kind === 'custom' ? modal.render(() => setModal(null)) : null}
       {question ? <Confirm ask={question} onClose={() => setQuestion(null)} /> : null}
     </AdminContext.Provider>

@@ -22,13 +22,13 @@ var __awPlugin = (() => {
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // src/client.jsx
+  // packages/dsh-admin/src/client.jsx
   var client_exports = {};
   __export(client_exports, {
     default: () => client_default
   });
 
-  // src/ticket-chat.mjs
+  // packages/dsh-admin/src/ticket-chat.mjs
   function linkedTicketDetail(detail, ticketId, sessionId) {
     return typeof sessionId === "string" && sessionId !== "" && detail?.ticket?.id === ticketId && Array.isArray(detail.runs) && detail.runs.some((run) => run?.session_id === sessionId) ? detail : null;
   }
@@ -132,7 +132,7 @@ var __awPlugin = (() => {
   var R = globalThis.__AW_REACT__;
   var { createContext, createElement, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } = R;
 
-  // ../admin-ui/src/run-evidence.js
+  // packages/admin-ui/src/run-evidence.js
   var sortedRuns = (runs = []) => [...runs].sort((a, b) => Number(b.id) - Number(a.id));
   var selectedRun = (runs, id) => id == null ? sortedRuns(runs)[0] ?? null : runs.find((run) => String(run.id) === String(id)) ?? null;
   var recordedPatch = (run) => [run?.diff, run?.diff_stat].find((text) => typeof text === "string" && text.trim()) ?? null;
@@ -148,7 +148,7 @@ var __awPlugin = (() => {
     return null;
   }
 
-  // ../admin-ui/src/request-state.js
+  // packages/admin-ui/src/request-state.js
   function createStepRequest(api, runId, publish) {
     let state = { steps: null, error: null }, after = 0, generation = 0, inflight = null;
     return {
@@ -216,7 +216,7 @@ var __awPlugin = (() => {
     return { access, identity, results: Object.fromEntries(paths.map((path, i) => [path, results[i]])) };
   }
 
-  // ../admin-ui/src/store.js
+  // packages/admin-ui/src/store.js
   var AdminContext = createContext(null);
   var useAdmin = () => useContext(AdminContext);
   var EMPTY = {
@@ -338,7 +338,7 @@ var __awPlugin = (() => {
     return { seconds, running, open };
   }
 
-  // ../../src/lib/pricing.js
+  // src/lib/pricing.js
   var HOURLY_USD = 100;
   var ATTENTION = [
     {
@@ -390,7 +390,7 @@ var __awPlugin = (() => {
     return `${Math.floor(s / 3600)}h ${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}m`;
   }
 
-  // ../admin-ui/src/format.js
+  // packages/admin-ui/src/format.js
   var chargeOf = (t) => billOf({
     humanSeconds: t.human_seconds ?? 0,
     aiMicroUsd: t.ai_micro_usd ?? 0,
@@ -509,7 +509,7 @@ var __awPlugin = (() => {
     };
   }
 
-  // ../admin-ui/src/ui/layer.js
+  // packages/admin-ui/src/ui/layer.js
   var layers = [];
   var isTop = (token) => layers[layers.length - 1] === token;
   function useLayer() {
@@ -541,7 +541,7 @@ var __awPlugin = (() => {
     return R2.createElement(type, key === void 0 ? rest : { ...rest, key }, ...children);
   }
 
-  // ../admin-ui/src/ui/menu.jsx
+  // packages/admin-ui/src/ui/menu.jsx
   var cx = (...parts) => parts.filter(Boolean).join(" ");
   function Menu({ items, at, anchor, onClose, label = "Actions" }) {
     const ref = useRef(null);
@@ -686,7 +686,7 @@ var __awPlugin = (() => {
     );
   }
 
-  // ../admin-ui/src/ui.jsx
+  // packages/admin-ui/src/ui.jsx
   var modalSeq = 0;
   var cx2 = (...parts) => parts.filter(Boolean).join(" ");
   function useMedia(query) {
@@ -1117,7 +1117,7 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: WEIGHT[name] ?? 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", focusable: "false", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] ?? PATHS.list }) });
   }
 
-  // ../admin-ui/src/row-navigation.mjs
+  // packages/admin-ui/src/row-navigation.mjs
   var NEXT_KEYS = /* @__PURE__ */ new Set(["j", "ArrowDown"]);
   var PREV_KEYS = /* @__PURE__ */ new Set(["k", "ArrowUp"]);
   function nextRowIndex(current, count, key) {
@@ -1130,7 +1130,7 @@ var __awPlugin = (() => {
     return null;
   }
 
-  // ../admin-ui/src/ui/tokens.js
+  // packages/admin-ui/src/ui/tokens.js
   var TYPE = Object.freeze({ xs: 11, sm: 12, md: 13, lg: 15, xl: 18 });
   var SPACE = Object.freeze([0, 4, 8, 12, 16, 24, 32]);
   var RADII = Object.freeze({ sm: 4, md: 6, lg: 8 });
@@ -1272,7 +1272,7 @@ ${block(Object.entries(TOKENS))}
 }
 `;
 
-  // ../admin-ui/src/ui/css.js
+  // packages/admin-ui/src/ui/css.js
   var PRIMITIVES_CSS = `
 .ui {
   font-family: var(--ui-font);
@@ -1522,7 +1522,7 @@ ${block(Object.entries(TOKENS))}
 `;
   var UI_CSS = TOKENS_CSS + PRIMITIVES_CSS;
 
-  // ../admin-ui/src/ui/state.js
+  // packages/admin-ui/src/ui/state.js
   var S = (tone2, label, extra = {}) => Object.freeze({ tone: tone2, label, ...extra });
   var STATE_MAP = Object.freeze({
     // tickets
@@ -1570,7 +1570,7 @@ ${block(Object.entries(TOKENS))}
     };
   }
 
-  // ../admin-ui/src/ui/behavior.js
+  // packages/admin-ui/src/ui/behavior.js
   function tableKeyAction(e, current, count) {
     if (!e || e.metaKey || e.ctrlKey || e.altKey) return null;
     if (e.key === "ContextMenu" || e.shiftKey && e.key === "F10") return { type: "menu" };
@@ -1610,7 +1610,7 @@ ${block(Object.entries(TOKENS))}
     return null;
   }
 
-  // ../admin-ui/src/ui/primitives.jsx
+  // packages/admin-ui/src/ui/primitives.jsx
   var storage = () => typeof window === "undefined" ? null : window.localStorage;
   function UiStyles() {
     return /* @__PURE__ */ jsx("style", { "data-ui-styles": "v2", children: UI_CSS });
@@ -1885,7 +1885,7 @@ ${block(Object.entries(TOKENS))}
   }
   var HOST_MODES = Object.freeze(["embedded", "standalone"]);
 
-  // ../admin-ui/src/board.jsx
+  // packages/admin-ui/src/board.jsx
   function useFilters() {
     const { api, boardProject, setBoardProject } = useAdmin();
     const [kind, setKind] = useState("all");
@@ -1914,8 +1914,8 @@ ${block(Object.entries(TOKENS))}
     return { boardProject, setBoardProject, kind, setKind, q, setQ, apply: apply2, hits };
   }
   function NewTaskButton({ f, quiet = false }) {
-    const { setModal } = useAdmin();
-    return /* @__PURE__ */ jsx(Button, { kind: quiet ? "default" : "primary", icon: "plus", shortcut: "N", onClick: () => setModal({ kind: "task", projectId: f.boardProject === "all" ? void 0 : f.boardProject }), children: "New task" });
+    const { setModal: setModal2 } = useAdmin();
+    return /* @__PURE__ */ jsx(Button, { kind: quiet ? "default" : "primary", icon: "plus", shortcut: "N", onClick: () => setModal2({ kind: "task", projectId: f.boardProject === "all" ? void 0 : f.boardProject }), children: "New task" });
   }
   var filtered = (f) => f.boardProject !== "all" || f.kind !== "all" || f.q.trim();
   var clearFilters = (f) => {
@@ -2504,7 +2504,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../../src/lib/attachments.js
+  // src/lib/attachments.js
   var FILE_LIMITS = {
     /** Per file. */
     bytes: 10 * 1024 * 1024,
@@ -2552,7 +2552,7 @@ ${block(Object.entries(TOKENS))}
     return null;
   }
 
-  // ../../src/lib/locales.js
+  // src/lib/locales.js
   var LOCALES = [
     { code: "en-US", native: "English (United States)", english: "English (United States)", m2m: "en" },
     { code: "am", native: "\u12A0\u121B\u122D\u129B", english: "Amharic", m2m: "am", beta: true },
@@ -2599,7 +2599,7 @@ ${block(Object.entries(TOKENS))}
     return typeof code === "string" && /^en(-|$)/i.test(code);
   }
 
-  // ../admin-ui/src/markdown.js
+  // packages/admin-ui/src/markdown.js
   var MAX_INLINE_DEPTH = 4;
   function markdownInline(input, depth = 0) {
     const text = String(input ?? "");
@@ -2682,7 +2682,7 @@ ${block(Object.entries(TOKENS))}
     return blocks;
   }
 
-  // ../admin-ui/src/review.jsx
+  // packages/admin-ui/src/review.jsx
   var portalTicketUrl = (id) => `https://ptechsolutions.net/portal/admin#ticket=${id}`;
   function newestDiff(runs) {
     return [...runs ?? []].sort((a, b) => b.id - a.id).find((run) => recordedPatch(run)) ?? null;
@@ -2933,7 +2933,7 @@ ${block(Object.entries(TOKENS))}
     });
   }
 
-  // ../admin-ui/src/submit-state.js
+  // packages/admin-ui/src/submit-state.js
   function createSubmission() {
     let busy = false, pending2 = null;
     const queueOnly = async () => {
@@ -2971,7 +2971,7 @@ ${block(Object.entries(TOKENS))}
     };
   }
 
-  // ../admin-ui/src/mention-delivery.js
+  // packages/admin-ui/src/mention-delivery.js
   var visibleRecipients = (recipients, internal) => recipients.filter((person) => !internal || person.memberType === "trusted_developer");
   async function deliverMentions({ api, projectId, ticketId, messageId, recipientUserIds, requestId }) {
     if (!recipientUserIds?.length) return { ok: true, deliveries: [] };
@@ -2992,7 +2992,7 @@ ${block(Object.entries(TOKENS))}
     };
   }
 
-  // ../admin-ui/src/mention-recipients.jsx
+  // packages/admin-ui/src/mention-recipients.jsx
   function MentionRecipients({ api, projectId, onChange, disabled = false, internal = false }) {
     const [open, setOpen] = useState(false);
     const [state, setState] = useState({ projectId: null, internal: null, recipients: [], loading: true, error: false });
@@ -3051,7 +3051,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../admin-ui/src/ticket-assistant.mjs
+  // packages/admin-ui/src/ticket-assistant.mjs
   var ASSISTANT_BADGE_MAX = 24;
   function assistantName(ticket) {
     const value = ticket?.assistant_app;
@@ -3070,7 +3070,7 @@ ${block(Object.entries(TOKENS))}
     return name === null ? null : `Filed by the client's assistant (${name}) through PTech's MCP server`;
   }
 
-  // ../admin-ui/src/ticket.jsx
+  // packages/admin-ui/src/ticket.jsx
   var PRIMARY = {
     new: [
       ["approved", "Approve", "primary"],
@@ -3936,7 +3936,7 @@ ${block(Object.entries(TOKENS))}
     );
   }
 
-  // ../admin-ui/src/ui/injected-styles.js
+  // packages/admin-ui/src/ui/injected-styles.js
   function InjectedStyles({ id, css }) {
     useLayoutEffect(() => {
       if (typeof document === "undefined") return void 0;
@@ -3953,7 +3953,7 @@ ${block(Object.entries(TOKENS))}
     return null;
   }
 
-  // ../admin-ui/src/health.jsx
+  // packages/admin-ui/src/health.jsx
   var tone = (status) => status === "ok" ? "ok" : status === "fail" ? "bad" : "warn";
   function CheckRow({ check }) {
     return /* @__PURE__ */ jsxs("li", { className: cx2("aw-health__row", `aw-health__row--${tone(check.status)}`), children: [
@@ -4052,7 +4052,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../admin-ui/src/machine.jsx
+  // packages/admin-ui/src/machine.jsx
   var CONSENT_VERSION = 1;
   var LEND = {
     "dsh-go": { label: "Flash", plan: "OpenCode Go \xB7 DeepSeek v4.1 flash", note: "counts against the OpenCode Go plan\u2019s limits" },
@@ -4327,7 +4327,7 @@ ${block(Object.entries(TOKENS))}
   };
   function MachinePanel() {
     const m = useMachine();
-    const { openTicket, setModal } = useAdmin();
+    const { openTicket, setModal: setModal2 } = useAdmin();
     if (!m.live) return null;
     if (!m.loaded || m.consentError) return /* @__PURE__ */ jsxs("article", { className: "aw-node aw-machine", children: [
       /* @__PURE__ */ jsx("header", { children: /* @__PURE__ */ jsx("h3", { children: "This Mac" }) }),
@@ -4336,7 +4336,7 @@ ${block(Object.entries(TOKENS))}
         /* @__PURE__ */ jsx(Button, { size: "sm", onClick: m.refresh, children: "Retry" })
       ] })
     ] });
-    const askAgain = () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(OnboardingModal, { m, onClose: close }) });
+    const askAgain = () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(OnboardingModal, { m, onClose: close }) });
     return /* @__PURE__ */ jsxs("article", { className: cx2("aw-node", "aw-machine", `aw-node--${STATE_DOT[m.state] ?? "warn"}`), children: [
       /* @__PURE__ */ jsxs("header", { children: [
         /* @__PURE__ */ jsx(Dot, { state: STATE_DOT[m.state] }),
@@ -4421,7 +4421,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../admin-ui/src/toolbox.jsx
+  // packages/admin-ui/src/toolbox.jsx
   var TARGETS = [
     { value: "claude", label: "Claude Code" },
     { value: "opencode", label: "OpenCode" }
@@ -4609,7 +4609,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../admin-ui/src/settings-link.js
+  // packages/admin-ui/src/settings-link.js
   var SETTINGS_SECTION_IDS = Object.freeze(["queue", "machine", "portal", "marketing", "seo", "account"]);
   var ALIASES = {
     "work-queue": "queue",
@@ -4654,7 +4654,7 @@ ${block(Object.entries(TOKENS))}
     return () => window.removeEventListener(EVENT, listener);
   }
 
-  // ../admin-ui/src/marketing.jsx
+  // packages/admin-ui/src/marketing.jsx
   var CONTACT_STATUSES = ["new", "queued", "contacted", "replied", "paused", "opted_out", "bounced"];
   var MESSAGE_STATUSES = ["draft", "scheduled", "sending", "sent", "failed", "cancelled"];
   var CHANNELS = [
@@ -4865,7 +4865,7 @@ ${block(Object.entries(TOKENS))}
     const { api, act, ask, notify, open } = useAdmin();
     const [selectedBulk, setSelectedBulk] = useState(() => /* @__PURE__ */ new Set());
     const [tab, setTab] = useState("overview");
-    const [modal, setModal] = useState(null);
+    const [modal, setModal2] = useState(null);
     const [inspector, setInspector] = useState(null);
     const [filters, setFilters] = useState({ status: "", q: "", source: "", offset: 0 });
     const filter = useCallback((patch) => {
@@ -4900,7 +4900,7 @@ ${block(Object.entries(TOKENS))}
     const run = useCallback((fn, message) => mutate(fn, message).catch(() => void 0), [mutate]);
     const done = useCallback(
       (message) => {
-        setModal(null);
+        setModal2(null);
         if (message) notify(message);
         refresh();
       },
@@ -4971,18 +4971,18 @@ ${block(Object.entries(TOKENS))}
         settings.live ? sendingOverflowItem : { label: "Review next", run: () => setInspector({ kind: "review" }) },
         { label: "Run now", run: runNow },
         { separator: true },
-        { label: "Add contact", run: () => setModal({ kind: "contact" }) },
-        { label: "Import CSV", run: () => setModal({ kind: "import" }) },
-        { label: "Compose", run: () => setModal({ kind: "compose", channel: "email" }) },
+        { label: "Add contact", run: () => setModal2({ kind: "contact" }) },
+        { label: "Import CSV", run: () => setModal2({ kind: "import" }) },
+        { label: "Compose", run: () => setModal2({ kind: "compose", channel: "email" }) },
         { label: "Draft posts", run: draftPosts },
         { separator: true },
         settingsItem
       ];
     } else if (tab === "contacts") {
-      headerAction = /* @__PURE__ */ jsx(Button, { kind: headerPrimaryKind, onClick: () => setModal({ kind: "contact" }), children: "Add contact" });
+      headerAction = /* @__PURE__ */ jsx(Button, { kind: headerPrimaryKind, onClick: () => setModal2({ kind: "contact" }), children: "Add contact" });
       headerOverflow = [
-        { label: "Import CSV", run: () => setModal({ kind: "import" }) },
-        { label: "Queue everyone", run: () => setModal({ kind: "bulkqueue" }) },
+        { label: "Import CSV", run: () => setModal2({ kind: "import" }) },
+        { label: "Queue everyone", run: () => setModal2({ kind: "bulkqueue" }) },
         { separator: true },
         ...deskOverflowItems
       ];
@@ -4997,7 +4997,7 @@ ${block(Object.entries(TOKENS))}
         }
       );
       headerOverflow = [
-        { label: "Compose email", run: () => setModal({ kind: "compose", channel: "email" }) },
+        { label: "Compose email", run: () => setModal2({ kind: "compose", channel: "email" }) },
         {
           label: "Re-render scheduled",
           hint: "Re-render unedited scheduled emails using current sequence wording",
@@ -5009,7 +5009,7 @@ ${block(Object.entries(TOKENS))}
     } else if (tab === "posts") {
       headerAction = /* @__PURE__ */ jsx(Button, { kind: headerPrimaryKind, onClick: draftPosts, children: "Draft posts" });
       headerOverflow = [
-        { label: "Compose post", run: () => setModal({ kind: "compose", channel: "x" }) },
+        { label: "Compose post", run: () => setModal2({ kind: "compose", channel: "x" }) },
         { separator: true },
         ...deskOverflowItems
       ];
@@ -5090,8 +5090,8 @@ ${block(Object.entries(TOKENS))}
           onOptOut: optOutContact,
           onRefresh: refresh,
           notify,
-          onAddContact: () => setModal({ kind: "contact" }),
-          onImport: () => setModal({ kind: "import" })
+          onAddContact: () => setModal2({ kind: "contact" }),
+          onImport: () => setModal2({ kind: "import" })
         }
       ) : null,
       tab === "email" ? /* @__PURE__ */ jsx(
@@ -5136,16 +5136,16 @@ ${block(Object.entries(TOKENS))}
           closeInspector
         }
       ) : null,
-      modal?.kind === "import" ? /* @__PURE__ */ jsx(ImportModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
-      modal?.kind === "bulkqueue" ? /* @__PURE__ */ jsx(BulkQueueModal, { sequences: overview.sequences, onClose: () => setModal(null), onDone: done, api }) : null,
-      modal?.kind === "contact" ? /* @__PURE__ */ jsx(ContactModal, { sequences: overview.sequences, api, onClose: () => setModal(null), onSaved: done }) : null,
+      modal?.kind === "import" ? /* @__PURE__ */ jsx(ImportModal, { sequences: overview.sequences, onClose: () => setModal2(null), onDone: done, api }) : null,
+      modal?.kind === "bulkqueue" ? /* @__PURE__ */ jsx(BulkQueueModal, { sequences: overview.sequences, onClose: () => setModal2(null), onDone: done, api }) : null,
+      modal?.kind === "contact" ? /* @__PURE__ */ jsx(ContactModal, { sequences: overview.sequences, api, onClose: () => setModal2(null), onSaved: done }) : null,
       modal?.kind === "compose" ? /* @__PURE__ */ jsx(
         ComposeModal,
         {
           initialChannel: modal.channel,
           contacts: contacts.filter((c) => !["opted_out", "bounced"].includes(c.status)),
           api,
-          onClose: () => setModal(null),
+          onClose: () => setModal2(null),
           onSaved: done
         }
       ) : null
@@ -7745,7 +7745,7 @@ ${block(Object.entries(TOKENS))}
     );
   }
 
-  // ../admin-ui/src/seo.jsx
+  // packages/admin-ui/src/seo.jsx
   var DAY = 864e5;
   var SEO_INSPECTOR_W = 320;
   var SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
@@ -9746,7 +9746,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../admin-ui/src/fleet.jsx
+  // packages/admin-ui/src/fleet.jsx
   var pct3 = (a, b) => b ? Math.round(a / b * 100) : 0;
   var capabilityLabel = (id, caps) => caps.find((c) => c.id === id)?.label ?? ({
     "os:darwin": "macOS",
@@ -9870,10 +9870,10 @@ ${block(Object.entries(TOKENS))}
     );
   }
   function NodeInspector({ n, m, onClose }) {
-    const { api, act, ask, data, setModal } = useAdmin();
+    const { api, act, ask, data, setModal: setModal2 } = useAdmin();
     const caps = data.catalog?.capabilities ?? [];
     const sys = n.health?.system;
-    const edit = () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(NodeModal, { node: n, local: n.local, onClose: close }) });
+    const edit = () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(NodeModal, { node: n, local: n.local, onClose: close }) });
     const machineReady = n.local && m.loaded && !m.consentError;
     return /* @__PURE__ */ jsxs(Inspector, { title: n.id, label: `Node ${n.id}`, storageKey: "ptech.fleet.inspector.w", onClose, className: "aw-fleet__inspector", children: [
       /* @__PURE__ */ jsxs("div", { className: "ui-meta", children: [
@@ -10025,6 +10025,10 @@ ${block(Object.entries(TOKENS))}
         subtitle: "Overrides from here win over the node\u2019s own config file.",
         onClose,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: () => {
+            onClose();
+            setModal({ kind: "project", clientIds: [client.id] });
+          }, children: "New project\u2026" }),
           /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
           /* @__PURE__ */ jsx(Button, { kind: "primary", onClick: save, children: "Save" })
         ] }),
@@ -10171,6 +10175,10 @@ ${block(Object.entries(TOKENS))}
         subtitle: "Nodes clone this on their next sync. A private repo needs a node whose git can reach it.",
         onClose,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: () => {
+            onClose();
+            setModal({ kind: "project", clientIds: [client.id] });
+          }, children: "New project\u2026" }),
           /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
           /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !repo.trim(), onClick: submit, children: "Save" })
         ] }),
@@ -10291,11 +10299,11 @@ ${block(Object.entries(TOKENS))}
       )
     ] });
   }
-  function InviteClientModal({ onClose, client }) {
+  function InviteClientModal({ onClose, client: client2 }) {
     const { api, act, data } = useAdmin();
-    const [email, setEmail] = useState(client?.email ?? "");
-    const [name, setName] = useState(client?.name ?? "");
-    const [locale, setLocale] = useState(client?.locale ?? "en-US");
+    const [email, setEmail] = useState(client2?.email ?? "");
+    const [name, setName] = useState(client2?.name ?? "");
+    const [locale, setLocale] = useState(client2?.locale ?? "en-US");
     const [projectIds, setProjectIds] = useState(data.projects.length === 1 ? [data.projects[0].id] : []);
     const [note, setNote] = useState("");
     const ready = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && projectIds.length > 0;
@@ -10312,11 +10320,15 @@ ${block(Object.entries(TOKENS))}
     return /* @__PURE__ */ jsxs(
       Modal,
       {
-        title: client ? `Add ${client.name || client.email} to projects` : "Invite a client",
+        title: client2 ? `Add ${client2.name || client2.email} to projects` : "Invite a client",
         kind: "create",
         subtitle: "They get a link that signs them in for the projects you pick. No sign-up needed; the link works once and lasts 7 days.",
         onClose,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: () => {
+            onClose();
+            setModal({ kind: "project", clientIds: [client2.id] });
+          }, children: "New project\u2026" }),
           /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
           /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !ready, onClick: send, children: "Send invite" })
         ] }),
@@ -10350,6 +10362,10 @@ ${block(Object.entries(TOKENS))}
         subtitle: `Slug ${project.slug} stays: nodes keep its folder under that name, and its first site is named after it.`,
         onClose,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: () => {
+            onClose();
+            setModal({ kind: "project", clientIds: [client.id] });
+          }, children: "New project\u2026" }),
           /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
           /* @__PURE__ */ jsx(Button, { kind: "primary", disabled: !name.trim() || !changed, onClick: save, children: "Save" })
         ] }),
@@ -10387,22 +10403,22 @@ ${block(Object.entries(TOKENS))}
     const states = [...new Set(sites.map((site) => site.state?.replaceAll("_", " ")).filter(Boolean))];
     return states.join(", ") || "Site status unavailable";
   };
-  function AssignProjectsModal({ client, onClose }) {
-    const { api, act, data } = useAdmin();
-    const [picked, setPicked] = useState(() => new Set(client.projectIds ?? []));
+  function AssignProjectsModal({ client: client2, onClose }) {
+    const { api, act, data, setModal: setModal2 } = useAdmin();
+    const [picked, setPicked] = useState(() => new Set(client2.projectIds ?? []));
     const [query, setQuery] = useState("");
     const [saving, setSaving] = useState(false);
     const needle = query.trim().toLowerCase();
     const projects = data.projects.filter((p) => !needle || `${p.name} ${p.slug ?? ""}`.toLowerCase().includes(needle)).slice().sort((a, b) => Number(picked.has(b.id)) - Number(picked.has(a.id)) || a.name.localeCompare(b.name));
-    const added = [...picked].filter((id) => !(client.projectIds ?? []).includes(id));
-    const removed = (client.projectIds ?? []).filter((id) => !picked.has(id));
+    const added = [...picked].filter((id) => !(client2.projectIds ?? []).includes(id));
+    const removed = (client2.projectIds ?? []).filter((id) => !picked.has(id));
     const save = async () => {
       if (saving) return;
       setSaving(true);
       try {
         await act(async () => {
-          for (const id of added) await api("PUT", `/admin/clients/${client.id}/projects/${id}`);
-          for (const id of removed) await api("DELETE", `/admin/clients/${client.id}/projects/${id}`);
+          for (const id of added) await api("PUT", `/admin/clients/${client2.id}/projects/${id}`);
+          for (const id of removed) await api("DELETE", `/admin/clients/${client2.id}/projects/${id}`);
         }, added.length && removed.length ? `${added.length} added, ${removed.length} removed.` : added.length ? "Projects assigned." : removed.length ? "Projects removed." : "Saved.");
         onClose();
       } catch {
@@ -10414,10 +10430,14 @@ ${block(Object.entries(TOKENS))}
       Modal,
       {
         kind: "create",
-        title: `Projects for ${client.name || client.email}`,
+        title: `Projects for ${client2.name || client2.email}`,
         subtitle: "Being on a project gives them its portal and its requests. Removing a project takes both away; their account and requests stay.",
         onClose,
         actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
+          /* @__PURE__ */ jsx(Button, { onClick: () => {
+            onClose();
+            setModal2({ kind: "project", clientIds: [client2.id] });
+          }, children: "New project\u2026" }),
           /* @__PURE__ */ jsx(Button, { onClick: onClose, children: "Cancel" }),
           /* @__PURE__ */ jsx(Button, { kind: "primary", busy: saving, disabled: saving || !added.length && !removed.length, onClick: () => void save(), children: saving ? "Saving\u2026" : added.length || removed.length ? `Save \xB7 ${added.length} added, ${removed.length} removed` : "No changes" })
         ] }),
@@ -10458,20 +10478,20 @@ ${block(Object.entries(TOKENS))}
       }
     );
   }
-  function ClientProjects({ client }) {
-    const { data, open, api, act, ask, setModal } = useAdmin();
-    const tickets = ticketsOf(data, client);
-    const projects = data.projects.filter((p) => (client.projectIds ?? []).includes(p.id));
+  function ClientProjects({ client: client2 }) {
+    const { data, open, api, act, ask, setModal: setModal2 } = useAdmin();
+    const tickets = ticketsOf(data, client2);
+    const projects = data.projects.filter((p) => (client2.projectIds ?? []).includes(p.id));
     const stats = (project) => {
       const rows = tickets.filter((t) => t.project_id === project.id);
       return { total: rows.length, open: rows.filter((t) => !closedTicket(t)).length };
     };
     const remove = (project) => ask({
-      title: `Remove ${client.email} from ${project.name}?`,
+      title: `Remove ${client2.email} from ${project.name}?`,
       text: "They stop seeing its requests and stop getting its emails. Their account and their own requests stay.",
       confirm: "Remove",
       danger: true,
-      run: () => act(() => api("DELETE", `/admin/clients/${client.id}/projects/${project.id}`), `Removed ${client.email} from ${project.name}.`).catch(() => void 0)
+      run: () => act(() => api("DELETE", `/admin/clients/${client2.id}/projects/${project.id}`), `Removed ${client2.email} from ${project.name}.`).catch(() => void 0)
     });
     return /* @__PURE__ */ jsxs("section", { className: "ui-section", children: [
       /* @__PURE__ */ jsxs("div", { className: "aw-section-head", children: [
@@ -10479,12 +10499,12 @@ ${block(Object.entries(TOKENS))}
           "Projects \xB7 ",
           projects.length
         ] }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(AssignProjectsModal, { client, onClose: close }) }), children: "Assign projects\u2026" })
+        /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(AssignProjectsModal, { client: client2, onClose: close }) }), children: "Assign projects\u2026" })
       ] }),
       /* @__PURE__ */ jsx(
         DataTable,
         {
-          label: `Projects of ${client.name || client.email}`,
+          label: `Projects of ${client2.name || client2.email}`,
           rows: projects,
           rowKey: (p) => p.id,
           onOpen: (p) => open(`p:${p.id}`),
@@ -10564,7 +10584,7 @@ ${block(Object.entries(TOKENS))}
     { label: "Copy email address", run: () => void navigator.clipboard?.writeText(c.email) }
   ];
   function ClientInspector({ c, onClose }) {
-    const { api, act, ask, data, open, setModal } = useAdmin();
+    const { api, act, ask, data, open, setModal: setModal2 } = useAdmin();
     const tickets = ticketsOf(data, c);
     const openCount = tickets.filter((t) => !closedTicket(t)).length;
     const projects = data.projects.filter((p) => (c.projectIds ?? []).includes(p.id));
@@ -10580,7 +10600,7 @@ ${block(Object.entries(TOKENS))}
       c.pending ? /* @__PURE__ */ jsx(StateIndicator, { state: "invited", tone: "warn", label: "Invited, not signed in yet" }) : null,
       /* @__PURE__ */ jsxs("div", { className: "ui-actions", children: [
         /* @__PURE__ */ jsx(Button, { onClick: () => open(`c:${c.id}`), title: "Open client page  Enter", children: "Open client page" }),
-        /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => setModal({
+        /* @__PURE__ */ jsx(Button, { kind: "ghost", onClick: () => setModal2({
           kind: "custom",
           render: (close) => c.pending ? /* @__PURE__ */ jsx(InviteClientModal, { client: c, onClose: close }) : /* @__PURE__ */ jsx(AssignProjectsModal, { client: c, onClose: close })
         }), children: c.pending ? "Add to projects\u2026" : "Assign projects\u2026" }),
@@ -10668,7 +10688,7 @@ ${block(Object.entries(TOKENS))}
     seen: (c) => lastSeenOf(c) ?? 0
   };
   function ClientsView() {
-    const { data, setModal, open } = useAdmin();
+    const { data, setModal: setModal2, open } = useAdmin();
     const root = useRef(null);
     const [sort, setSort] = useState({ key: "name", dir: 1 });
     const [selectedId, setSelectedId] = useState(null);
@@ -10683,7 +10703,7 @@ ${block(Object.entries(TOKENS))}
     const selected = selectedId == null ? null : rows.find((c) => c.id === selectedId) ?? null;
     const close = () => setSelectedId(null);
     useRevealInspector(root, selected?.id ?? null);
-    const invite = () => setModal({ kind: "custom", render: (onClose) => /* @__PURE__ */ jsx(InviteClientModal, { onClose }) });
+    const invite = () => setModal2({ kind: "custom", render: (onClose) => /* @__PURE__ */ jsx(InviteClientModal, { onClose }) });
     return /* @__PURE__ */ jsxs("div", { ref: root, className: "ui-workspace aw-clients", onKeyDown: closeOnEscape4(Boolean(selected), close), children: [
       /* @__PURE__ */ jsx(UiStyles, {}),
       /* @__PURE__ */ jsx(
@@ -10692,7 +10712,7 @@ ${block(Object.entries(TOKENS))}
           title: "Clients",
           subtitle: data.usageTotal ? `Across all clients: ${usageLine(data.usageTotal)}.` : "Who you work for. Select a client to inspect them; Enter opens their page.",
           actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsx(Button, { onClick: () => setModal({ kind: "project" }), children: "New project" }),
+            /* @__PURE__ */ jsx(Button, { onClick: () => setModal2({ kind: "project" }), children: "New project" }),
             /* @__PURE__ */ jsx(Button, { kind: "primary", icon: "plus", onClick: invite, children: "Invite client" })
           ] })
         }
@@ -11200,7 +11220,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // ../admin-ui/src/styles.js
+  // packages/admin-ui/src/styles.js
   var LIGHT2 = PALETTE.light;
   var STYLES = `
 .aw {
@@ -12730,7 +12750,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 
 `;
 
-  // ../admin-ui/src/solutions.js
+  // packages/admin-ui/src/solutions.js
   var SOLUTION_CATALOG = [
     {
       id: "web",
@@ -12950,7 +12970,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     }
   ];
 
-  // ../admin-ui/src/project-solutions.jsx
+  // packages/admin-ui/src/project-solutions.jsx
   var pathFor = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
   var CLIENT_PORTAL_URL = "https://ptechsolutions.net/portal";
   var SHORT = {
@@ -13213,7 +13233,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
   }
 
-  // ../admin-ui/src/project-model.js
+  // packages/admin-ui/src/project-model.js
   function briefPayload(raw = {}, kind = "existing") {
     const answer = (value) => typeof value === "string" ? value.trim() : "";
     const what = answer(raw.what), goal = answer(raw.goal);
@@ -13305,7 +13325,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     };
   }
 
-  // ../admin-ui/src/project-world-model.mjs
+  // packages/admin-ui/src/project-world-model.mjs
   var ISO_COS = Math.cos(Math.PI / 6);
   var ISO_SIN = 0.5;
   var DEFAULT_ISO = Object.freeze({
@@ -14241,7 +14261,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return { count: items.length, text: parts.join(" \xB7 "), items: rows.map(({ stamp, ...rest }) => rest) };
   }
 
-  // ../admin-ui/src/project-world.jsx
+  // packages/admin-ui/src/project-world.jsx
   var STATE_SPEC = {
     ok: { state: "ok", tone: "ok", key: "world.state.ok", fallback: "Healthy", live: false },
     active: { state: "running", tone: "info", key: "world.state.active", fallback: "Running", live: true },
@@ -15163,7 +15183,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
 
-  // ../admin-ui/src/project-styles.js
+  // packages/admin-ui/src/project-styles.js
   var project_styles_default = `
 .aw-project { max-width: var(--aw-measure-table, 1180px); margin: 0 auto; width: 100%; min-width: 0; box-sizing: border-box; }
 /* Allow header meta chips and slug to wrap cleanly on narrow widths without clipping glyphs. */
@@ -15341,7 +15361,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 }
 `;
 
-  // ../admin-ui/src/project.jsx
+  // packages/admin-ui/src/project.jsx
   var errorText2 = (error) => error?.message || String(error || "Request failed");
   var pathFor2 = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
   var TABS = ["Overview", "Work", "Setup"];
@@ -15432,7 +15452,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
   function ProjectView({ id, initialTab = "Overview" }) {
-    const { api, data, host, setModal, reload } = useAdmin();
+    const { api, data, host, setModal: setModal2, reload } = useAdmin();
     const load = useCallback(async () => {
       const result = await api("GET", "/admin/projects");
       return { project: (result.projects ?? []).find((project2) => project2.id === id) ?? null };
@@ -15488,7 +15508,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const overflowItems = [
       {
         label: "Edit project",
-        run: () => setModal({
+        run: () => setModal2({
           kind: "custom",
           render: (close) => /* @__PURE__ */ jsx(ProjectEditModal, { project, onClose: () => {
             close();
@@ -15514,7 +15534,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
             project.slug
           ] }),
           actions: /* @__PURE__ */ jsxs(Fragment2, { children: [
-            /* @__PURE__ */ jsxs(Button, { kind: "primary", onClick: () => setModal({ kind: "task", projectId: id }), children: [
+            /* @__PURE__ */ jsxs(Button, { kind: "primary", onClick: () => setModal2({ kind: "task", projectId: id }), children: [
               /* @__PURE__ */ jsx(Icon, { name: "plus" }),
               " Add work"
             ] }),
@@ -15550,7 +15570,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return parts.join(" \xB7 ");
   }
   function Overview({ project, refresh, setTab }) {
-    const { data, api, setModal } = useAdmin();
+    const { data, api, setModal: setModal2 } = useAdmin();
     const work = projectWork(data.tickets, project.id);
     const mapTickets = useMemo(() => projectTickets(data.tickets, project.id, { includeSystem: true }), [data.tickets, project.id]);
     const sites = useMemo(
@@ -15579,10 +15599,10 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const handleMapAction = useCallback((action) => {
       if (action === "work") setTab("Work");
       else if (action === "activity") setTab("Work", "project-activity");
-      else if (action === "add_work") setModal({ kind: "task", projectId: project.id });
+      else if (action === "add_work") setModal2({ kind: "task", projectId: project.id });
       else if (action === "repo") setTab("Setup", "project-repo");
       else if (action === "link_repo") {
-        setModal({
+        setModal2({
           kind: "custom",
           render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
             close();
@@ -15590,7 +15610,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           } })
         });
       } else if (action === "hosting") setTab("Setup", "project-hosting");
-    }, [project, refresh, setModal, setTab]);
+    }, [project, refresh, setModal2, setTab]);
     const needs = work.filter((ticket) => ["new", "review"].includes(ticket.status)).sort((a, b) => (a.status === "review" ? 0 : 1) - (b.status === "review" ? 0 : 1) || (b.updated_at ?? 0) - (a.updated_at ?? 0));
     return /* @__PURE__ */ jsxs(Fragment2, { children: [
       /* @__PURE__ */ jsxs("section", { className: "aw-project__section", "aria-label": "Needs attention", children: [
@@ -15604,7 +15624,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           {
             title: "Nothing needs you",
             hint: "Every open request is moving. New and review requests appear here.",
-            action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "task", projectId: project.id }), children: "Add work" })
+            action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "task", projectId: project.id }), children: "Add work" })
           }
         )
       ] }),
@@ -15749,7 +15769,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
   function Resources({ project, refresh, host }) {
-    const { api, setModal } = useAdmin();
+    const { api, setModal: setModal2 } = useAdmin();
     const [state, write] = useWrite();
     const native = typeof host?.projectLocalInfo === "function";
     const loadLocal = useCallback(async () => {
@@ -15790,7 +15810,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         ] }) : /* @__PURE__ */ jsxs("div", { className: "aw-project__handoff", children: [
           /* @__PURE__ */ jsx("p", { children: "This browser cannot access your local files. Open this project in PTech Admin to connect a checkout, edit files and continue a development conversation." }),
           /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Repository links, work, recorded agent evidence and hosted deployments remain available here." }),
-          /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: resourceUrl(project.repo) ? /* @__PURE__ */ jsx("a", { className: "aw-btn aw-btn--sm", href: resourceUrl(project.repo), target: "_blank", rel: "noreferrer", children: "Open repository \u2197" }) : /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
+          /* @__PURE__ */ jsx("div", { className: "aw-project__actions", children: resourceUrl(project.repo) ? /* @__PURE__ */ jsx("a", { className: "aw-btn aw-btn--sm", href: resourceUrl(project.repo), target: "_blank", rel: "noreferrer", children: "Open repository \u2197" }) : /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
             close();
             void refresh();
           } }) }), children: "Link a repository" }) })
@@ -15800,7 +15820,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
         /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
           /* @__PURE__ */ jsx("h3", { children: "Repository & integrations" }),
           /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
+          /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(RepoModal, { project, onClose: () => {
             close();
             void refresh();
           } }) }), children: project.repo ? "Change repository" : "Link repository" })
@@ -16071,7 +16091,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
   };
   var WORK_FILTER_EMPTY = { open: "Nothing open", review: "Nothing waiting for review", done: "Nothing finished yet", all: "No work yet" };
   function Work({ project }) {
-    const { data, setModal } = useAdmin();
+    const { data, setModal: setModal2 } = useAdmin();
     const tickets = projectWork(data.tickets, project.id);
     const [filter, setFilter] = useState("open");
     const shown = useMemo(() => tickets.filter(WORK_FILTERS[filter] ?? WORK_FILTERS.open), [tickets, filter]);
@@ -16083,7 +16103,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
           /* @__PURE__ */ jsx(Segmented, { value: filter, onChange: setFilter, label: "Work filter", options: [{ value: "open", label: "Open" }, { value: "review", label: "Review" }, { value: "done", label: "Done" }, { value: "all", label: "All" }] })
         ] }),
         /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Save a draft for later, queue an agent deliberately, or continue the same work locally. Open a request for its conversation and evidence." }),
-        shown.length ? /* @__PURE__ */ jsx(WorkList, { tickets: shown }) : tickets.length ? /* @__PURE__ */ jsx(Empty, { title: WORK_FILTER_EMPTY[filter] ?? WORK_FILTER_EMPTY.open, hint: "Switch the filter to see the rest of this project's work.", action: filter !== "all" ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setFilter("all"), children: "Show all work" }) : null }) : /* @__PURE__ */ jsx(Empty, { title: "No work yet", hint: "Add the first outcome you want to deliver.", action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "task", projectId: project.id }), children: "Add work" }) })
+        shown.length ? /* @__PURE__ */ jsx(WorkList, { tickets: shown }) : tickets.length ? /* @__PURE__ */ jsx(Empty, { title: WORK_FILTER_EMPTY[filter] ?? WORK_FILTER_EMPTY.open, hint: "Switch the filter to see the rest of this project's work.", action: filter !== "all" ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setFilter("all"), children: "Show all work" }) : null }) : /* @__PURE__ */ jsx(Empty, { title: "No work yet", hint: "Add the first outcome you want to deliver.", action: /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "task", projectId: project.id }), children: "Add work" }) })
       ] }),
       /* @__PURE__ */ jsx(Activity, { project })
     ] });
@@ -16146,7 +16166,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const [busy, setBusy] = useState(false);
     const emails = emailsIn(text);
     const bad = emails.filter((email) => !EMAIL_RE.test(email));
-    const already = new Set((project.clients ?? []).map((client) => client.email.toLowerCase()));
+    const already = new Set((project.clients ?? []).map((client2) => client2.email.toLowerCase()));
     const fresh = emails.filter((email) => EMAIL_RE.test(email) && !already.has(email));
     const send = async () => {
       setBusy(true);
@@ -16212,16 +16232,16 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }
       byKey.set(key, { key, userId: person.userId ?? null, name: person.name || null, email: person.email, role: person.memberType === "trusted_developer" ? "Trusted developer" : "Client", client: null, developer: null });
     }
-    for (const client of Array.isArray(clients) ? clients : []) {
-      if (!client?.id && !client?.email) continue;
-      const key = String(client.id ?? client.email);
+    for (const client2 of Array.isArray(clients) ? clients : []) {
+      if (!client2?.id && !client2?.email) continue;
+      const key = String(client2.id ?? client2.email);
       const row = byKey.get(key);
       if (row) {
-        row.client = client;
-        if (!row.name) row.name = client.name || null;
+        row.client = client2;
+        if (!row.name) row.name = client2.name || null;
         continue;
       }
-      byKey.set(key, { key, userId: client.id ?? null, name: client.name || null, email: client.email, role: "Client", client, developer: null });
+      byKey.set(key, { key, userId: client2.id ?? null, name: client2.name || null, email: client2.email, role: "Client", client: client2, developer: null });
     }
     const rows = [...byKey.values()];
     if (!rows.length) return /* @__PURE__ */ jsx("p", { className: "aw-muted", children: "Nobody yet. Only you see this project." });
@@ -16305,7 +16325,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
   }
   function People({ project, refresh }) {
-    const { api, data, ask, setModal } = useAdmin();
+    const { api, data, ask, setModal: setModal2 } = useAdmin();
     const load = useCallback(() => api("GET", `${pathFor2(project)}/memberships`), [api, project.id]);
     const [state, refreshPeople] = useProjectResource(load);
     const loadRecipients = useCallback(() => api("GET", `${pathFor2(project)}/recipients`), [api, project.id]);
@@ -16346,7 +16366,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       /* @__PURE__ */ jsxs("div", { className: "aw-row-h", children: [
         /* @__PURE__ */ jsx("h3", { children: "People & access" }),
         /* @__PURE__ */ jsx("span", { className: "aw-toolbar__fill" }),
-        admin ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(ProjectInviteModal, { project, onClose: () => {
+        admin ? /* @__PURE__ */ jsx(Button, { size: "sm", onClick: () => setModal2({ kind: "custom", render: (close) => /* @__PURE__ */ jsx(ProjectInviteModal, { project, onClose: () => {
           close();
           void peopleChanged();
         } }) }), children: "Add people" }) : null
@@ -16487,7 +16507,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
 
-  // ../admin-ui/src/workbench.js
+  // packages/admin-ui/src/workbench.js
   function projectCreationRequest(input, access) {
     const { name, slug, kind, code, repo, brief } = input;
     if (access?.superAdmin) return { path: "/admin/projects", body: { name, slug, kind, code, repo } };
@@ -16529,7 +16549,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return ["inbox", "board", "list"].includes(key) || key.startsWith("p:") || key.startsWith("t:");
   }
 
-  // ../admin-ui/src/app.jsx
+  // packages/admin-ui/src/app.jsx
   var isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
   function useWorkbenchActions({ api, reload, setAsk, onNotify }) {
     const [toast, setToast] = useState(null);
@@ -16692,7 +16712,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
       }
     );
   }
-  function ProjectModal({ onClose }) {
+  function ProjectModal({ onClose, initialClients = [] }) {
     const { api, act, host, open, data, notify } = useAdmin();
     const [step, setStep] = useState(0);
     const [name, setName] = useState("");
@@ -16708,7 +16728,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const [localPath, setLocalPath] = useState("");
     const [busy, setBusy] = useState(false);
     const [setupError, setSetupError] = useState(null);
-    const [clientIds, setClientIds] = useState([]);
+    const [clientIds, setClientIds] = useState(() => [...initialClients]);
     const [clientQuery, setClientQuery] = useState("");
     const submission = useRef(null);
     const busyRef = useRef(false);
@@ -16727,7 +16747,8 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const existing = kind === "existing";
     const steps = existing ? ["Source", "Details", "Clients", "Review"] : ["Details"];
     const last = steps.length - 1;
-    const readyName = name.trim() && (!data.access?.superAdmin || /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug));
+    const slugTaken = Boolean(slug) && data.projects.some((p) => p.slug === slug.toLowerCase());
+    const readyName = name.trim() && (!data.access?.superAdmin || /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug) && !slugTaken);
     const readyBrief = data.access?.superAdmin || what.trim() && goal.trim();
     const readySource = !existing || (code === "folder" ? localPath.trim() : code === "repo" ? repo.trim() : true);
     const ready = readyName && readyBrief && readySource;
@@ -16814,7 +16835,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
                 setName(e.target.value);
                 if (!edited) setSlug(slugify(e.target.value));
               } }) }),
-              data.access?.superAdmin ? /* @__PURE__ */ jsx(Field, { label: "Slug", hint: "Lowercase and dashes.", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: slug, maxLength: 63, onChange: (e) => {
+              data.access?.superAdmin ? /* @__PURE__ */ jsx(Field, { label: "Slug", hint: slugTaken ? "Already used by another project. Slug is the project's address, so it must be unique." : "Lowercase and dashes.", children: /* @__PURE__ */ jsx("input", { className: "aw-mono", value: slug, maxLength: 63, "aria-invalid": slugTaken || void 0, onChange: (e) => {
                 setEdited(true);
                 setSlug(e.target.value.toLowerCase());
               } }) }) : null,
@@ -16872,7 +16893,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const [data, reload] = useAdminData(api);
     const [navigation, setNavigation] = useState({ id, destination: `p:${id}` });
     const destination = navigation.id === id ? navigation.destination : `p:${id}`;
-    const [modal, setModal] = useState(null);
+    const [modal, setModal2] = useState(null);
     const [question, setQuestion] = useState(null);
     const [boardProject, setBoardProject] = useState(id);
     const open = useCallback((key) => {
@@ -16883,15 +16904,15 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     const openTicket = useCallback((target) => open(`t:${target}`), [open]);
     const onNotify = useCallback((text, kind) => host?.notify?.(text, kind), [host]);
     const { notify, act, setStatus, toast, dismissToast } = useWorkbenchActions({ api, reload, setAsk: setQuestion, onNotify });
-    const value = { api, files, host, platform: host ? "dsh" : "web", data, reload, open, openTicket, notify, act, setStatus, ask: setQuestion, setModal, boardProject, setBoardProject };
+    const value = { api, files, host, platform: host ? "dsh" : "web", data, reload, open, openTicket, notify, act, setStatus, ask: setQuestion, setModal: setModal2, boardProject, setBoardProject };
     return /* @__PURE__ */ jsxs("div", { className: cx2("aw", host && "aw--dsh", "aw--scroll"), children: [
       /* @__PURE__ */ jsx(InjectedStyles, { id: "aw-app-styles", css: STYLES }),
       /* @__PURE__ */ jsxs(AdminContext.Provider, { value, children: [
         destination.startsWith("p:") ? /* @__PURE__ */ jsx(ProjectView, { id: destination.slice(2) }, destination) : destination.startsWith("t:") ? /* @__PURE__ */ jsx(TicketView, { id: Number(destination.slice(2)), active: true }, destination) : workbenchAllowed(destination, data.access) ? /* @__PURE__ */ jsx(View, { name: destination }) : /* @__PURE__ */ jsx("p", { className: "aw-empty", children: "This destination requires administrator access." }),
         /* @__PURE__ */ jsx(Toast, { toast, onDismiss: dismissToast }),
-        modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal(null) }) : null,
-        modal?.kind === "project" && data.access?.canUseWorkbench ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal(null) }) : null,
-        modal?.kind === "custom" ? modal.render(() => setModal(null)) : null,
+        modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal2(null) }) : null,
+        modal?.kind === "project" && data.access?.canUseWorkbench ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal2(null), initialClients: modal?.clientIds ?? [] }) : null,
+        modal?.kind === "custom" ? modal.render(() => setModal2(null)) : null,
         question ? /* @__PURE__ */ jsx(Confirm, { ask: question, onClose: () => setQuestion(null) }) : null
       ] })
     ] });
@@ -16994,7 +17015,7 @@ ${question.text ?? ""}`)) {
     ] });
   }
 
-  // native-project.mjs
+  // packages/dsh-admin/native-project.mjs
   async function openLocalProject({ projectId, mode = "session", appId }, { info, sessions, workspace, remote = {} }) {
     const local = await info({ projectId });
     if (!local.exists || !local.path) throw new Error("Configure an existing local checkout first.");
@@ -17018,7 +17039,7 @@ ${question.text ?? ""}`)) {
     return unwrap(await remote.session.openWorkspacePath({ path: local.path, ...mode === "reveal" ? { action: "reveal" } : appId ? { application: appId } : {} }));
   }
 
-  // src/sidebar-presentation.mjs
+  // packages/dsh-admin/src/sidebar-presentation.mjs
   function sidebarTicketLabel(ticket) {
     return ticket.title?.trim() || ticket.title_en?.trim() || `Ticket #${ticket.id}`;
   }
@@ -17026,7 +17047,7 @@ ${question.text ?? ""}`)) {
     return `Open ${run.kind === "task" ? "my task" : "client ticket"} #${run.ticketId}`;
   }
 
-  // src/conversation-meter.mjs
+  // packages/dsh-admin/src/conversation-meter.mjs
   var LOCK = "ptech-admin:conversation-time";
   var IDLE_MS = 6e4;
   var BATCH = 20;
@@ -17221,7 +17242,7 @@ ${question.text ?? ""}`)) {
     };
   }
 
-  // src/conversation-git-graph.mjs
+  // packages/dsh-admin/src/conversation-git-graph.mjs
   async function graphEligibility(sessionId, signal, fetcher = globalThis.fetch) {
     try {
       const response = await fetcher("api/admin/command", {
@@ -17275,7 +17296,7 @@ ${question.text ?? ""}`)) {
     return createElement(SessionGraph, { key: sessionId, sessionId });
   }
 
-  // src/panel-transport.mjs
+  // packages/dsh-admin/src/panel-transport.mjs
   function panelTransport(legacy, { desktop = false, fetcher = globalThis.fetch } = {}) {
     async function quiet(line) {
       try {
@@ -17297,7 +17318,7 @@ ${question.text ?? ""}`)) {
     return Object.assign(desktop ? quiet : (line) => legacy(line), { quiet });
   }
 
-  // src/conversation-history.mjs
+  // packages/dsh-admin/src/conversation-history.mjs
   var byNewest = (a, b) => b.at - a.at || (b.kind === "run") - (a.kind === "run") || b.item.id - a.item.id;
   function taskHistoryEvents(messages = [], runs = []) {
     return [
@@ -17331,7 +17352,7 @@ ${question.text ?? ""}`)) {
     return groups;
   }
 
-  // src/conversation-history.jsx
+  // packages/dsh-admin/src/conversation-history.jsx
   var clock2 = (unix) => unix ? new Date(unix * 1e3).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
   function ConversationHistory({ api, ticketId, openTicket }) {
     const [{ ticket, messages, runs, loading, error }] = useTicket(api, ticketId);
@@ -17414,7 +17435,7 @@ ${question.text ?? ""}`)) {
     ] });
   }
 
-  // src/client.jsx
+  // packages/dsh-admin/src/client.jsx
   var PANEL_ID = "admin";
   var NAMESPACE = "admin";
   var CLIENT_VERSION = "3.9.0";
@@ -18728,13 +18749,13 @@ ${question.text ?? ""}`)) {
       }
       openTicket({ ticketId: ticket.id });
     }
-    function openClientPage(client, selectPanel = (key) => ctx.layout?.selectPanel?.(key)) {
-      if (!client?.id) return;
-      ensureClientPage(client);
+    function openClientPage(client2, selectPanel = (key) => ctx.layout?.selectPanel?.(key)) {
+      if (!client2?.id) return;
+      ensureClientPage(client2);
       try {
-        selectPanel(`admin-client-${client.id}`);
+        selectPanel(`admin-client-${client2.id}`);
       } catch (error) {
-        console.warn(`admin: could not select the page for client ${client.id}:`, error?.message ?? error);
+        console.warn(`admin: could not select the page for client ${client2.id}:`, error?.message ?? error);
       }
     }
     function TreeNote({ children, nested = false }) {
@@ -18795,8 +18816,8 @@ ${question.text ?? ""}`)) {
       const active = (c) => Math.max(latest.get(c.email) ?? 0, c.created_at ?? 0);
       const eligible = clients.filter((c) => c.role !== "admin" && typeof c.id === "string" && c.email).sort((a, b) => active(b) - active(a));
       const placed = /* @__PURE__ */ new Set();
-      const tree = eligible.map((client) => {
-        const own = tickets.filter((t) => t.kind !== "system" && t.client_email === client.email);
+      const tree = eligible.map((client2) => {
+        const own = tickets.filter((t) => t.kind !== "system" && t.client_email === client2.email);
         for (const t of own) placed.add(t.id);
         const byProject = /* @__PURE__ */ new Map();
         const noProject = [];
@@ -18809,7 +18830,7 @@ ${question.text ?? ""}`)) {
           if (!byProject.has(pid)) byProject.set(pid, []);
           byProject.get(pid).push(t);
         }
-        const ids = [...new Set((Array.isArray(client.projectIds) ? client.projectIds : []).map(String))];
+        const ids = [...new Set((Array.isArray(client2.projectIds) ? client2.projectIds : []).map(String))];
         for (const pid of byProject.keys()) if (!ids.includes(pid)) ids.push(pid);
         const groups = ids.map((pid) => ({
           id: pid,
@@ -18822,7 +18843,7 @@ ${question.text ?? ""}`)) {
         }
         const approve = own.filter((t) => t.status === "new").length;
         const answer = own.filter((t) => Boolean(t.client_waiting_since) && !["new", "done", "declined"].includes(t.status)).length;
-        return { client, approve, answer, badge: approve + answer, projects: groups };
+        return { client: client2, approve, answer, badge: approve + answer, projects: groups };
       });
       const unsorted = tickets.filter((t) => t.kind !== "system" && !placed.has(t.id)).sort(ticketOrder);
       return { tree, unsorted };
@@ -18885,26 +18906,26 @@ ${question.text ?? ""}`)) {
       }, [load]);
       const { tree, unsorted } = buildClientTree(state.clients, state.projects, state.tickets);
       const mine = state.tickets.filter((t) => t.kind === "system").sort(ticketOrder);
-      const openTotal = tree.reduce((sum, client) => sum + client.projects.reduce((inner, project) => inner + openTicketCount(project.tickets), 0), 0) + openTicketCount(unsorted) + openTicketCount(mine);
+      const openTotal = tree.reduce((sum, client2) => sum + client2.projects.reduce((inner, project) => inner + openTicketCount(project.tickets), 0), 0) + openTicketCount(unsorted) + openTicketCount(mine);
       const refresh = /* @__PURE__ */ jsx("button", { type: "button", className: "pta-iconbtn", "aria-label": "Refresh clients", title: "Refresh clients", onClick: () => void load(), children: "\u21BB" });
       return /* @__PURE__ */ jsxs(Section, { id: "admin-clients", title: "Clients", count: openTotal || void 0, actions: refresh, children: [
         state.loading && /* @__PURE__ */ jsx(TreeNote, { children: "Loading clients\u2026" }),
         state.error !== "" && /* @__PURE__ */ jsx(TreeRow, { label: `${state.error} \u2014 click to retry`, onClick: () => void load() }),
-        tree.map(({ client, badge, projects }, index) => {
-          const clientKey = `client:${client.id}`;
+        tree.map(({ client: client2, badge, projects }, index) => {
+          const clientKey = `client:${client2.id}`;
           const clientExpanded = rowOpen(clientKey, index === 0);
           return /* @__PURE__ */ jsx(
             TreeRow,
             {
               appearance: "container",
-              icon: clientAvatar(client),
-              label: client.name || client.email,
+              icon: clientAvatar(client2),
+              label: client2.name || client2.email,
               badge: badge || void 0,
               expanded: clientExpanded,
               onToggle: (open) => setRowOpen(clientKey, open),
-              onClick: () => openClientPage(client, selectPanel),
+              onClick: () => openClientPage(client2, selectPanel),
               children: projects.length > 0 ? projects.map((project, projectIndex) => {
-                const projectKey = `project:${client.id}:${project.id}`;
+                const projectKey = `project:${client2.id}:${project.id}`;
                 const projectDefault = index === 0 && projectIndex === 0 && project.tickets.length > 0;
                 const projectExpanded = rowOpen(projectKey, projectDefault);
                 return /* @__PURE__ */ jsx(
@@ -18920,11 +18941,11 @@ ${question.text ?? ""}`)) {
                     menuItems: project.tickets.length === 0 ? void 0 : [{ id: "open-project-tickets", label: "Show project tickets", onSelect: () => setRowOpen(projectKey, true) }],
                     children: project.tickets.length > 0 ? /* @__PURE__ */ jsx(TicketList, { Row: TreeRow, tickets: project.tickets, changed: () => void load() }) : void 0
                   },
-                  `${client.id}:${project.id}`
+                  `${client2.id}:${project.id}`
                 );
               }) : void 0
             },
-            client.id
+            client2.id
           );
         }),
         !state.loading && state.error === "" && tree.length === 0 && /* @__PURE__ */ jsx(TreeNote, { children: "No clients yet" }),
@@ -20090,7 +20111,7 @@ ${question.text ?? ""}`)) {
     }
     function DeskShell({ children, data, reload, allowSignedOut = false }) {
       const [toast, setToast] = useState(null);
-      const [modal, setModal] = useState(null);
+      const [modal, setModal2] = useState(null);
       const [askState, setAskState] = useState(null);
       const [boardProject, setBoardProject] = useState("all");
       const timer = useRef(null);
@@ -20133,7 +20154,7 @@ ${question.text ?? ""}`)) {
         act,
         notify,
         ask: setAskState,
-        setModal,
+        setModal: setModal2,
         setStatus,
         data,
         reload,
@@ -20158,9 +20179,9 @@ ${question.text ?? ""}`)) {
             /* @__PURE__ */ jsx("style", { children: STYLES }),
             /* @__PURE__ */ jsx("div", { className: "aw-content", style: { overflow: "auto", height: "100%" }, children: /* @__PURE__ */ jsxs(AdminContext.Provider, { value: context, children: [
               signedOut ? /* @__PURE__ */ jsx("div", { className: "pta-page", children: /* @__PURE__ */ jsx(PortalSignIn, { onDone: () => void reload() }) }) : !allowSignedOut && !data.loaded ? /* @__PURE__ */ jsx("div", { className: "aw-loading--fill", children: /* @__PURE__ */ jsx(Skeleton, { variant: "pane", label: "Loading\u2026" }) }) : children,
-              modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal(null) }) : null,
-              modal?.kind === "project" ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal(null) }) : null,
-              modal?.kind === "custom" ? modal.render(() => setModal(null)) : null,
+              modal?.kind === "task" ? /* @__PURE__ */ jsx(TaskModal, { preset: modal, onClose: () => setModal2(null) }) : null,
+              modal?.kind === "project" ? /* @__PURE__ */ jsx(ProjectModal, { onClose: () => setModal2(null) }) : null,
+              modal?.kind === "custom" ? modal.render(() => setModal2(null)) : null,
               askState ? /* @__PURE__ */ jsx(Confirm, { ask: askState, onClose: () => setAskState(null) }) : null
             ] }) }),
             toast ? /* @__PURE__ */ jsx("div", { className: `aw-toast${toast.kind === "error" ? " is-error" : ""}`, role: "status", children: toast.text }) : null
