@@ -21,7 +21,7 @@ import { createConversationMeter, formatRecordedTime } from './conversation-mete
 import { AdminContext, useAdminData } from '../../admin-ui/src/store.js';
 import { ConversationGitGraph } from './conversation-git-graph.mjs';
 import { BoardView, ListView } from '../../admin-ui/src/board.jsx';
-import { FleetView, SettingsView } from '../../admin-ui/src/fleet.jsx';
+import { ClientsView, FleetView, SettingsView } from '../../admin-ui/src/fleet.jsx';
 import { MarketingView } from '../../admin-ui/src/marketing.jsx';
 import { SeoView } from '../../admin-ui/src/seo.jsx';
 import { Confirm, Icon, Segmented, Skeleton } from '../../admin-ui/src/ui.jsx';
@@ -902,6 +902,7 @@ function apply(ctx) {
     { id: 'admin-work', label: 'Work', hint: 'list and board of all work' },
     { id: 'admin-marketing', label: 'Marketing', hint: 'contacts, email, social' },
     { id: 'admin-seo', label: 'SEO', hint: 'audit, rankings, citations' },
+    { id: 'admin-clients', label: 'Clients', hint: 'people, projects, invites' },
     { id: 'admin-fleet', label: 'Fleet', hint: 'nodes, queue, runs' },
     { id: 'admin-settings', label: 'Settings', hint: 'queue, portal, marketing, SEO' },
     { id: 'projects', label: 'Projects', hint: 'the workspace projects' },
@@ -923,7 +924,7 @@ function apply(ctx) {
     useEffect(() => {
       const onKey = (event) => {
         const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
-        if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && key === 'k') {
+        if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && key === 'k') {
           event.preventDefault();
           event.stopImmediatePropagation();
           setQuery('');
@@ -1002,7 +1003,7 @@ function apply(ctx) {
               </button>
             ))}
           </div>
-          <footer className="pta-palette__foot"><span>↑↓ move</span><span>↵ open</span><span>esc close</span><span className="pta-palette__fill" /><span>⌘⇧K</span></footer>
+          <footer className="pta-palette__foot"><span>↑↓ move</span><span>↵ open</span><span>esc close</span><span className="pta-palette__fill" /><span>⌘K</span></footer>
         </div>
       </div>
     );
@@ -1281,6 +1282,10 @@ function apply(ctx) {
 
   function SeoEntryIcon(props) {
     return <SeoGlyph size={props?.size ?? 16} />;
+  }
+
+  function ClientsEntryIcon(props) {
+    return <Icon name="clients" size={props?.size ?? 16} />;
   }
 
   function FleetEntryIcon(props) {
@@ -2314,6 +2319,7 @@ function apply(ctx) {
   const WORK_PANEL = 'admin-work';
   const MARKETING_PANEL = 'admin-marketing';
   const SEO_PANEL = 'admin-seo';
+  const CLIENTS_PANEL = 'admin-clients';
   const FLEET_PANEL = 'admin-fleet';
   const SETTINGS_PANEL = 'admin-settings';
 
@@ -3285,6 +3291,10 @@ function apply(ctx) {
     return <DeskPage><SeoView /></DeskPage>;
   }
 
+  function ClientsPage() {
+    return <DeskPage withData><ClientsView /></DeskPage>;
+  }
+
   function FleetPage() {
     return <DeskPage withData><FleetView /></DeskPage>;
   }
@@ -3586,12 +3596,14 @@ function apply(ctx) {
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: WORK_PANEL, locale: NAMESPACE }, WorkPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: MARKETING_PANEL, locale: NAMESPACE }, MarketingPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: SEO_PANEL, locale: NAMESPACE }, SeoPage));
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: CLIENTS_PANEL, locale: NAMESPACE }, ClientsPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: FLEET_PANEL, locale: NAMESPACE }, FleetPage));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: SETTINGS_PANEL, locale: NAMESPACE }, SettingsPage));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: HOME_PANEL, order: 11, label: 'Inbox' }, InboxEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: WORK_PANEL, order: 12, label: 'Work' }, WorkEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: MARKETING_PANEL, order: 13, label: 'Marketing' }, MarketingEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: SEO_PANEL, order: 14, label: 'SEO' }, SeoEntryIcon));
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: CLIENTS_PANEL, order: 14.5, label: 'Clients' }, ClientsEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: FLEET_PANEL, order: 15, label: 'Fleet' }, FleetEntryIcon));
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: SETTINGS_PANEL, order: 16, label: 'Settings' }, SettingsEntryIcon));
   ctx.inject(['conversation'], (scope) => {
