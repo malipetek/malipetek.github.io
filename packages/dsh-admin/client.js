@@ -22,13 +22,13 @@ var __awPlugin = (() => {
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // packages/dsh-admin/src/client.jsx
+  // src/client.jsx
   var client_exports = {};
   __export(client_exports, {
     default: () => client_default
   });
 
-  // packages/dsh-admin/src/ticket-chat.mjs
+  // src/ticket-chat.mjs
   function linkedTicketDetail(detail, ticketId, sessionId) {
     return typeof sessionId === "string" && sessionId !== "" && detail?.ticket?.id === ticketId && Array.isArray(detail.runs) && detail.runs.some((run) => run?.session_id === sessionId) ? detail : null;
   }
@@ -132,7 +132,7 @@ var __awPlugin = (() => {
   var R = globalThis.__AW_REACT__;
   var { createContext, createElement, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } = R;
 
-  // packages/admin-ui/src/run-evidence.js
+  // ../admin-ui/src/run-evidence.js
   var sortedRuns = (runs = []) => [...runs].sort((a, b) => Number(b.id) - Number(a.id));
   var selectedRun = (runs, id) => id == null ? sortedRuns(runs)[0] ?? null : runs.find((run) => String(run.id) === String(id)) ?? null;
   var recordedPatch = (run) => [run?.diff, run?.diff_stat].find((text) => typeof text === "string" && text.trim()) ?? null;
@@ -148,7 +148,7 @@ var __awPlugin = (() => {
     return null;
   }
 
-  // packages/admin-ui/src/request-state.js
+  // ../admin-ui/src/request-state.js
   function createStepRequest(api, runId, publish) {
     let state = { steps: null, error: null }, after = 0, generation = 0, inflight = null;
     return {
@@ -216,7 +216,7 @@ var __awPlugin = (() => {
     return { access, identity, results: Object.fromEntries(paths.map((path, i) => [path, results[i]])) };
   }
 
-  // packages/admin-ui/src/store.js
+  // ../admin-ui/src/store.js
   var AdminContext = createContext(null);
   var useAdmin = () => useContext(AdminContext);
   var EMPTY = {
@@ -338,7 +338,7 @@ var __awPlugin = (() => {
     return { seconds, running, open };
   }
 
-  // src/lib/pricing.js
+  // ../../src/lib/pricing.js
   var HOURLY_USD = 100;
   var ATTENTION = [
     {
@@ -390,7 +390,7 @@ var __awPlugin = (() => {
     return `${Math.floor(s / 3600)}h ${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}m`;
   }
 
-  // packages/admin-ui/src/format.js
+  // ../admin-ui/src/format.js
   var chargeOf = (t) => billOf({
     humanSeconds: t.human_seconds ?? 0,
     aiMicroUsd: t.ai_micro_usd ?? 0,
@@ -509,7 +509,7 @@ var __awPlugin = (() => {
     };
   }
 
-  // packages/admin-ui/src/ui/layer.js
+  // ../admin-ui/src/ui/layer.js
   var layers = [];
   var isTop = (token) => layers[layers.length - 1] === token;
   function useLayer() {
@@ -541,7 +541,7 @@ var __awPlugin = (() => {
     return R2.createElement(type, key === void 0 ? rest : { ...rest, key }, ...children);
   }
 
-  // packages/admin-ui/src/ui/menu.jsx
+  // ../admin-ui/src/ui/menu.jsx
   var cx = (...parts) => parts.filter(Boolean).join(" ");
   function Menu({ items, at, anchor, onClose, label = "Actions" }) {
     const ref = useRef(null);
@@ -686,7 +686,7 @@ var __awPlugin = (() => {
     );
   }
 
-  // packages/admin-ui/src/ui.jsx
+  // ../admin-ui/src/ui.jsx
   var modalSeq = 0;
   var cx2 = (...parts) => parts.filter(Boolean).join(" ");
   function useMedia(query) {
@@ -1117,7 +1117,7 @@ var __awPlugin = (() => {
     return /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: WEIGHT[name] ?? 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", focusable: "false", children: /* @__PURE__ */ jsx("path", { d: PATHS[name] ?? PATHS.list }) });
   }
 
-  // packages/admin-ui/src/row-navigation.mjs
+  // ../admin-ui/src/row-navigation.mjs
   var NEXT_KEYS = /* @__PURE__ */ new Set(["j", "ArrowDown"]);
   var PREV_KEYS = /* @__PURE__ */ new Set(["k", "ArrowUp"]);
   function nextRowIndex(current, count, key) {
@@ -1130,7 +1130,7 @@ var __awPlugin = (() => {
     return null;
   }
 
-  // packages/admin-ui/src/ui/tokens.js
+  // ../admin-ui/src/ui/tokens.js
   var TYPE = Object.freeze({ xs: 11, sm: 12, md: 13, lg: 15, xl: 18 });
   var SPACE = Object.freeze([0, 4, 8, 12, 16, 24, 32]);
   var RADII = Object.freeze({ sm: 4, md: 6, lg: 8 });
@@ -1272,7 +1272,7 @@ ${block(Object.entries(TOKENS))}
 }
 `;
 
-  // packages/admin-ui/src/ui/css.js
+  // ../admin-ui/src/ui/css.js
   var PRIMITIVES_CSS = `
 .ui {
   font-family: var(--ui-font);
@@ -1522,7 +1522,7 @@ ${block(Object.entries(TOKENS))}
 `;
   var UI_CSS = TOKENS_CSS + PRIMITIVES_CSS;
 
-  // packages/admin-ui/src/ui/state.js
+  // ../admin-ui/src/ui/state.js
   var S = (tone2, label, extra = {}) => Object.freeze({ tone: tone2, label, ...extra });
   var STATE_MAP = Object.freeze({
     // tickets
@@ -1570,7 +1570,7 @@ ${block(Object.entries(TOKENS))}
     };
   }
 
-  // packages/admin-ui/src/ui/behavior.js
+  // ../admin-ui/src/ui/behavior.js
   function tableKeyAction(e, current, count) {
     if (!e || e.metaKey || e.ctrlKey || e.altKey) return null;
     if (e.key === "ContextMenu" || e.shiftKey && e.key === "F10") return { type: "menu" };
@@ -1610,7 +1610,7 @@ ${block(Object.entries(TOKENS))}
     return null;
   }
 
-  // packages/admin-ui/src/ui/primitives.jsx
+  // ../admin-ui/src/ui/primitives.jsx
   var storage = () => typeof window === "undefined" ? null : window.localStorage;
   function UiStyles() {
     return /* @__PURE__ */ jsx("style", { "data-ui-styles": "v2", children: UI_CSS });
@@ -1885,7 +1885,7 @@ ${block(Object.entries(TOKENS))}
   }
   var HOST_MODES = Object.freeze(["embedded", "standalone"]);
 
-  // packages/admin-ui/src/board.jsx
+  // ../admin-ui/src/board.jsx
   function useFilters() {
     const { api, boardProject, setBoardProject } = useAdmin();
     const [kind, setKind] = useState("all");
@@ -2504,7 +2504,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // src/lib/attachments.js
+  // ../../src/lib/attachments.js
   var FILE_LIMITS = {
     /** Per file. */
     bytes: 10 * 1024 * 1024,
@@ -2552,7 +2552,7 @@ ${block(Object.entries(TOKENS))}
     return null;
   }
 
-  // src/lib/locales.js
+  // ../../src/lib/locales.js
   var LOCALES = [
     { code: "en-US", native: "English (United States)", english: "English (United States)", m2m: "en" },
     { code: "am", native: "\u12A0\u121B\u122D\u129B", english: "Amharic", m2m: "am", beta: true },
@@ -2599,7 +2599,7 @@ ${block(Object.entries(TOKENS))}
     return typeof code === "string" && /^en(-|$)/i.test(code);
   }
 
-  // packages/admin-ui/src/markdown.js
+  // ../admin-ui/src/markdown.js
   var MAX_INLINE_DEPTH = 4;
   function markdownInline(input, depth = 0) {
     const text = String(input ?? "");
@@ -2682,7 +2682,7 @@ ${block(Object.entries(TOKENS))}
     return blocks;
   }
 
-  // packages/admin-ui/src/review.jsx
+  // ../admin-ui/src/review.jsx
   var portalTicketUrl = (id) => `https://ptechsolutions.net/portal/admin#ticket=${id}`;
   function newestDiff(runs) {
     return [...runs ?? []].sort((a, b) => b.id - a.id).find((run) => recordedPatch(run)) ?? null;
@@ -2933,7 +2933,7 @@ ${block(Object.entries(TOKENS))}
     });
   }
 
-  // packages/admin-ui/src/submit-state.js
+  // ../admin-ui/src/submit-state.js
   function createSubmission() {
     let busy = false, pending2 = null;
     const queueOnly = async () => {
@@ -2971,7 +2971,7 @@ ${block(Object.entries(TOKENS))}
     };
   }
 
-  // packages/admin-ui/src/mention-delivery.js
+  // ../admin-ui/src/mention-delivery.js
   var visibleRecipients = (recipients, internal) => recipients.filter((person) => !internal || person.memberType === "trusted_developer");
   async function deliverMentions({ api, projectId, ticketId, messageId, recipientUserIds, requestId }) {
     if (!recipientUserIds?.length) return { ok: true, deliveries: [] };
@@ -2992,7 +2992,7 @@ ${block(Object.entries(TOKENS))}
     };
   }
 
-  // packages/admin-ui/src/mention-recipients.jsx
+  // ../admin-ui/src/mention-recipients.jsx
   function MentionRecipients({ api, projectId, onChange, disabled = false, internal = false }) {
     const [open, setOpen] = useState(false);
     const [state, setState] = useState({ projectId: null, internal: null, recipients: [], loading: true, error: false });
@@ -3051,7 +3051,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/ticket-assistant.mjs
+  // ../admin-ui/src/ticket-assistant.mjs
   var ASSISTANT_BADGE_MAX = 24;
   function assistantName(ticket) {
     const value = ticket?.assistant_app;
@@ -3070,7 +3070,7 @@ ${block(Object.entries(TOKENS))}
     return name === null ? null : `Filed by the client's assistant (${name}) through PTech's MCP server`;
   }
 
-  // packages/admin-ui/src/ticket.jsx
+  // ../admin-ui/src/ticket.jsx
   var PRIMARY = {
     new: [
       ["approved", "Approve", "primary"],
@@ -3936,7 +3936,7 @@ ${block(Object.entries(TOKENS))}
     );
   }
 
-  // packages/admin-ui/src/ui/injected-styles.js
+  // ../admin-ui/src/ui/injected-styles.js
   function InjectedStyles({ id, css }) {
     useLayoutEffect(() => {
       if (typeof document === "undefined") return void 0;
@@ -3953,7 +3953,7 @@ ${block(Object.entries(TOKENS))}
     return null;
   }
 
-  // packages/admin-ui/src/health.jsx
+  // ../admin-ui/src/health.jsx
   var tone = (status) => status === "ok" ? "ok" : status === "fail" ? "bad" : "warn";
   function CheckRow({ check }) {
     return /* @__PURE__ */ jsxs("li", { className: cx2("aw-health__row", `aw-health__row--${tone(check.status)}`), children: [
@@ -4052,7 +4052,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/machine.jsx
+  // ../admin-ui/src/machine.jsx
   var CONSENT_VERSION = 1;
   var LEND = {
     "dsh-go": { label: "Flash", plan: "OpenCode Go \xB7 DeepSeek v4.1 flash", note: "counts against the OpenCode Go plan\u2019s limits" },
@@ -4421,7 +4421,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/toolbox.jsx
+  // ../admin-ui/src/toolbox.jsx
   var TARGETS = [
     { value: "claude", label: "Claude Code" },
     { value: "opencode", label: "OpenCode" }
@@ -4609,7 +4609,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/settings-link.js
+  // ../admin-ui/src/settings-link.js
   var SETTINGS_SECTION_IDS = Object.freeze(["queue", "machine", "portal", "marketing", "seo", "account"]);
   var ALIASES = {
     "work-queue": "queue",
@@ -4654,7 +4654,7 @@ ${block(Object.entries(TOKENS))}
     return () => window.removeEventListener(EVENT, listener);
   }
 
-  // packages/admin-ui/src/marketing.jsx
+  // ../admin-ui/src/marketing.jsx
   var CONTACT_STATUSES = ["new", "queued", "contacted", "replied", "paused", "opted_out", "bounced"];
   var MESSAGE_STATUSES = ["draft", "scheduled", "sending", "sent", "failed", "cancelled"];
   var CHANNELS = [
@@ -7745,7 +7745,7 @@ ${block(Object.entries(TOKENS))}
     );
   }
 
-  // packages/admin-ui/src/seo.jsx
+  // ../admin-ui/src/seo.jsx
   var DAY = 864e5;
   var SEO_INSPECTOR_W = 320;
   var SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
@@ -9746,7 +9746,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/fleet.jsx
+  // ../admin-ui/src/fleet.jsx
   var pct3 = (a, b) => b ? Math.round(a / b * 100) : 0;
   var capabilityLabel = (id, caps) => caps.find((c) => c.id === id)?.label ?? ({
     "os:darwin": "macOS",
@@ -11198,7 +11198,7 @@ ${block(Object.entries(TOKENS))}
     ] });
   }
 
-  // packages/admin-ui/src/styles.js
+  // ../admin-ui/src/styles.js
   var LIGHT2 = PALETTE.light;
   var STYLES = `
 .aw {
@@ -12728,7 +12728,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 
 `;
 
-  // packages/admin-ui/src/solutions.js
+  // ../admin-ui/src/solutions.js
   var SOLUTION_CATALOG = [
     {
       id: "web",
@@ -12948,7 +12948,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     }
   ];
 
-  // packages/admin-ui/src/project-solutions.jsx
+  // ../admin-ui/src/project-solutions.jsx
   var pathFor = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
   var CLIENT_PORTAL_URL = "https://ptechsolutions.net/portal";
   var SHORT = {
@@ -13211,7 +13211,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     );
   }
 
-  // packages/admin-ui/src/project-model.js
+  // ../admin-ui/src/project-model.js
   function briefPayload(raw = {}, kind = "existing") {
     const answer = (value) => typeof value === "string" ? value.trim() : "";
     const what = answer(raw.what), goal = answer(raw.goal);
@@ -13303,7 +13303,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     };
   }
 
-  // packages/admin-ui/src/project-world-model.mjs
+  // ../admin-ui/src/project-world-model.mjs
   var ISO_COS = Math.cos(Math.PI / 6);
   var ISO_SIN = 0.5;
   var DEFAULT_ISO = Object.freeze({
@@ -14239,7 +14239,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return { count: items.length, text: parts.join(" \xB7 "), items: rows.map(({ stamp, ...rest }) => rest) };
   }
 
-  // packages/admin-ui/src/project-world.jsx
+  // ../admin-ui/src/project-world.jsx
   var STATE_SPEC = {
     ok: { state: "ok", tone: "ok", key: "world.state.ok", fallback: "Healthy", live: false },
     active: { state: "running", tone: "info", key: "world.state.active", fallback: "Running", live: true },
@@ -15161,7 +15161,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
 
-  // packages/admin-ui/src/project-styles.js
+  // ../admin-ui/src/project-styles.js
   var project_styles_default = `
 .aw-project { max-width: var(--aw-measure-table, 1180px); margin: 0 auto; width: 100%; min-width: 0; box-sizing: border-box; }
 /* Allow header meta chips and slug to wrap cleanly on narrow widths without clipping glyphs. */
@@ -15339,7 +15339,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
 }
 `;
 
-  // packages/admin-ui/src/project.jsx
+  // ../admin-ui/src/project.jsx
   var errorText2 = (error) => error?.message || String(error || "Request failed");
   var pathFor2 = (project) => `/admin/projects/${encodeURIComponent(project.id)}`;
   var TABS = ["Overview", "Work", "Setup"];
@@ -16485,7 +16485,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     ] });
   }
 
-  // packages/admin-ui/src/workbench.js
+  // ../admin-ui/src/workbench.js
   function projectCreationRequest(input, access) {
     const { name, slug, kind, code, repo, brief } = input;
     if (access?.superAdmin) return { path: "/admin/projects", body: { name, slug, kind, code, repo } };
@@ -16527,7 +16527,7 @@ button.aw-world__drift-item:hover { text-decoration: underline; }
     return ["inbox", "board", "list"].includes(key) || key.startsWith("p:") || key.startsWith("t:");
   }
 
-  // packages/admin-ui/src/app.jsx
+  // ../admin-ui/src/app.jsx
   var isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
   function useWorkbenchActions({ api, reload, setAsk, onNotify }) {
     const [toast, setToast] = useState(null);
@@ -16992,7 +16992,7 @@ ${question.text ?? ""}`)) {
     ] });
   }
 
-  // packages/dsh-admin/native-project.mjs
+  // native-project.mjs
   async function openLocalProject({ projectId, mode = "session", appId }, { info, sessions, workspace, remote = {} }) {
     const local = await info({ projectId });
     if (!local.exists || !local.path) throw new Error("Configure an existing local checkout first.");
@@ -17016,7 +17016,7 @@ ${question.text ?? ""}`)) {
     return unwrap(await remote.session.openWorkspacePath({ path: local.path, ...mode === "reveal" ? { action: "reveal" } : appId ? { application: appId } : {} }));
   }
 
-  // packages/dsh-admin/src/sidebar-presentation.mjs
+  // src/sidebar-presentation.mjs
   function sidebarTicketLabel(ticket) {
     return ticket.title?.trim() || ticket.title_en?.trim() || `Ticket #${ticket.id}`;
   }
@@ -17024,7 +17024,7 @@ ${question.text ?? ""}`)) {
     return `Open ${run.kind === "task" ? "my task" : "client ticket"} #${run.ticketId}`;
   }
 
-  // packages/dsh-admin/src/conversation-meter.mjs
+  // src/conversation-meter.mjs
   var LOCK = "ptech-admin:conversation-time";
   var IDLE_MS = 6e4;
   var BATCH = 20;
@@ -17219,7 +17219,7 @@ ${question.text ?? ""}`)) {
     };
   }
 
-  // packages/dsh-admin/src/conversation-git-graph.mjs
+  // src/conversation-git-graph.mjs
   async function graphEligibility(sessionId, signal, fetcher = globalThis.fetch) {
     try {
       const response = await fetcher("api/admin/command", {
@@ -17273,7 +17273,7 @@ ${question.text ?? ""}`)) {
     return createElement(SessionGraph, { key: sessionId, sessionId });
   }
 
-  // packages/dsh-admin/src/panel-transport.mjs
+  // src/panel-transport.mjs
   function panelTransport(legacy, { desktop = false, fetcher = globalThis.fetch } = {}) {
     async function quiet(line) {
       try {
@@ -17295,7 +17295,7 @@ ${question.text ?? ""}`)) {
     return Object.assign(desktop ? quiet : (line) => legacy(line), { quiet });
   }
 
-  // packages/dsh-admin/src/conversation-history.mjs
+  // src/conversation-history.mjs
   var byNewest = (a, b) => b.at - a.at || (b.kind === "run") - (a.kind === "run") || b.item.id - a.item.id;
   function taskHistoryEvents(messages = [], runs = []) {
     return [
@@ -17329,7 +17329,7 @@ ${question.text ?? ""}`)) {
     return groups;
   }
 
-  // packages/dsh-admin/src/conversation-history.jsx
+  // src/conversation-history.jsx
   var clock2 = (unix) => unix ? new Date(unix * 1e3).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
   function ConversationHistory({ api, ticketId, openTicket }) {
     const [{ ticket, messages, runs, loading, error }] = useTicket(api, ticketId);
@@ -17412,7 +17412,7 @@ ${question.text ?? ""}`)) {
     ] });
   }
 
-  // packages/dsh-admin/src/client.jsx
+  // src/client.jsx
   var PANEL_ID = "admin";
   var NAMESPACE = "admin";
   var CLIENT_VERSION = "3.9.0";
@@ -19117,6 +19117,12 @@ ${question.text ?? ""}`)) {
     }
     const files = { download: (path) => json(`download ${path}`) };
     const NATIVE_STYLES = `
+
+    /* The navigation takes its full height; the workspaces below get the rest
+       and scroll inside their own region, so the panel list never clips. */
+    [data-sidebar-scrollport]{grid-template-rows:8px max-content 2px minmax(0,1fr)!important}
+    div:has(> [data-sidebar-scrollport]){container-type:normal!important}
+    [data-sidebar-scrollport] > div:last-child{container-type:size!important;min-height:0!important}
     .pta-sidebar-inbox{display:inline-flex;align-items:center;justify-content:center}
     .pta-sidebar-count{display:none}
     [class*="_panelEntryWide"] .pta-sidebar-count{display:inline-block;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1;color:var(--dsw-alias-label-tertiary,#8a9099);pointer-events:none;transition:opacity 120ms ease}

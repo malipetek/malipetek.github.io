@@ -2075,6 +2075,12 @@ function apply(ctx) {
    */
 
   const NATIVE_STYLES = `
+
+    /* The navigation takes its full height; the workspaces below get the rest
+       and scroll inside their own region, so the panel list never clips. */
+    [data-sidebar-scrollport]{grid-template-rows:8px max-content 2px minmax(0,1fr)!important}
+    div:has(> [data-sidebar-scrollport]){container-type:normal!important}
+    [data-sidebar-scrollport] > div:last-child{container-type:size!important;min-height:0!important}
     .pta-sidebar-inbox{display:inline-flex;align-items:center;justify-content:center}
     .pta-sidebar-count{display:none}
     [class*="_panelEntryWide"] .pta-sidebar-count{display:inline-block;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1;color:var(--dsw-alias-label-tertiary,#8a9099);pointer-events:none;transition:opacity 120ms ease}
