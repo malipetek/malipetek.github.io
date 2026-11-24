@@ -17643,6 +17643,7 @@ ${question.text ?? ""}`)) {
     }
     const localProject = (action, args) => json(`project-local ${action} ${JSON.stringify(args)}`);
     const host = {
+      version: false ? void 0 : "1.1.0",
       command,
       json,
       gitGraph,

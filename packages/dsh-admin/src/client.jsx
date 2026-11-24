@@ -405,6 +405,7 @@ function apply(ctx) {
   /** One stable object so React effects that depend on it do not re-run. */
   const localProject = (action, args) => json(`project-local ${action} ${JSON.stringify(args)}`);
   const host = {
+    version: typeof __PTECH_ADMIN_VERSION__ === 'undefined' ? undefined : __PTECH_ADMIN_VERSION__,
     command, json, gitGraph, conversation, openTicket: (target) => openTicketRun({ id: target?.ticketId ?? target }),
     projectLocalInfo: (args) => localProject('info', args),
     projectConfigureLocal: (args) => localProject('configure', args),

@@ -5,7 +5,7 @@
  *
  *   node packages/dsh-admin/build.mjs
  */
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // esbuild is not a direct dependency; use the copy Astro's toolchain installs.
 const fromRoot = createRequire(join(here, '../../package.json'));
 const { build } = createRequire(fromRoot.resolve('astro/package.json'))('esbuild');
+const VERSION = JSON.parse(readFileSync(join(here, 'package.json'), 'utf8')).version;
 const HOOKS = ['createContext', 'createElement', 'Fragment', 'useCallback', 'useContext', 'useEffect', 'useLayoutEffect', 'useMemo', 'useRef', 'useState', 'useSyncExternalStore'];
 
 const hostReact = {
@@ -45,6 +46,7 @@ const out = await build({
   jsx: 'automatic',
   target: 'es2022',
   legalComments: 'none',
+  define: { __PTECH_ADMIN_VERSION__: JSON.stringify(VERSION) },
   plugins: [hostReact],
 });
 
